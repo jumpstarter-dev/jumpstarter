@@ -1155,7 +1155,7 @@ func TestListenQueueConcurrentDialDuringReconnection(t *testing.T) {
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	svc.listenQueues.Store(leaseName, g1)
+	svc.swapListenQueue(leaseName, g1)
 
 	var deliveredCount int64
 	var mu sync.Mutex
@@ -1189,32 +1189,19 @@ func TestListenQueueConcurrentDialDuringReconnection(t *testing.T) {
 		dialWg.Add(1)
 		go func() {
 			defer dialWg.Done()
-			v, ok := svc.listenQueues.Load(leaseName)
-			if !ok {
+			ctx := context.Background()
+			err := svc.sendToListener(ctx, leaseName, &pb.ListenResponse{
+				RouterEndpoint: "ep", RouterToken: testRouterToken,
+			})
+			if err != nil {
 				rejectedMu.Lock()
 				rejectedCount++
 				rejectedMu.Unlock()
 				return
 			}
-			q := v.(*listenQueue)
-			select {
-			case <-q.done:
-				rejectedMu.Lock()
-				rejectedCount++
-				rejectedMu.Unlock()
-				return
-			default:
-			}
-			select {
-			case <-q.done:
-				rejectedMu.Lock()
-				rejectedCount++
-				rejectedMu.Unlock()
-			case q.ch <- &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}:
-				sentMu.Lock()
-				sentCount++
-				sentMu.Unlock()
-			}
+			sentMu.Lock()
+			sentCount++
+			sentMu.Unlock()
 		}()
 
 		if i == 25 {
@@ -1222,8 +1209,7 @@ func TestListenQueueConcurrentDialDuringReconnection(t *testing.T) {
 				ch:   make(chan *pb.ListenResponse, 8),
 				done: make(chan struct{}),
 			}
-			old, _ := svc.listenQueues.Swap(leaseName, g2)
-			old.(*listenQueue).closeDone()
+			svc.swapListenQueue(leaseName, g2)
 
 			localG2 := g2
 			go func() {
