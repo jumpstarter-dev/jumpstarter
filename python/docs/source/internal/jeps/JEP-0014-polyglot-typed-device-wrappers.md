@@ -1,8 +1,8 @@
-# JEP-0004: Polyglot Typed Device Wrappers
+# JEP-0014: Polyglot Typed Device Wrappers
 
 | Field             | Value                                                                                    |
 | ----------------- | ---------------------------------------------------------------------------------------- |
-| **JEP**           | 0004                                                                                     |
+| **JEP**           | 0014                                                                                     |
 | **Title**         | Polyglot Typed Device Wrappers                                                           |
 | **Author(s)**     | @kirkbrauer (Kirk Brauer)                                                                |
 | **Status**        | Draft                                                                                    |
@@ -10,7 +10,7 @@
 | **Created**       | 2026-04-06                                                                               |
 | **Updated**       | 2026-04-11                                                                               |
 | **Discussion**    | [Matrix](https://matrix.to/#/#jumpstarter:matrix.org)                                    |
-| **Requires**      | JEP-0001 (implemented), JEP-0002 (implemented), JEP-0003 (implemented)                  |
+| **Requires**      | JEP-0011 (implemented), JEP-0012 (implemented), JEP-0013 (implemented)                  |
 | **Supersedes**    | —                                                                                        |
 | **Superseded-By** | —                                                                                        |
 
@@ -18,7 +18,7 @@
 
 ## Abstract
 
-This JEP provides a code generation pipeline that produces type-safe device wrapper libraries in Python, Java, TypeScript, and Rust from the canonical `.proto` interface definitions (JEP-0001) and `ExporterClass` specifications (JEP-0002). A two-stage pipeline first uses standard `protoc` to generate language-specific message and service stubs — which, thanks to JEP-0003's native gRPC services, are directly usable as typed clients — then uses `jmp codegen` to compose those stubs into ExporterClass-typed device wrappers with named, non-nullable accessors for required interfaces and nullable accessors for optional ones.
+This JEP provides a code generation pipeline that produces type-safe device wrapper libraries in Python, Java, TypeScript, and Rust from the canonical `.proto` interface definitions (JEP-0011) and `ExporterClass` specifications (JEP-0012). A two-stage pipeline first uses standard `protoc` to generate language-specific message and service stubs — which, thanks to JEP-0013's native gRPC services, are directly usable as typed clients — then uses `jmp codegen` to compose those stubs into ExporterClass-typed device wrappers with named, non-nullable accessors for required interfaces and nullable accessors for optional ones.
 
 Each target language requires a minimal runtime library (~200 lines) that handles session management (connecting to `JUMPSTARTER_HOST`), UUID metadata interception, and `@exportstream` forwarding. Non-Python clients initially operate under `jmp shell`, which handles lease acquisition, authentication, and channel setup — keeping per-language runtime requirements small. A Java runtime library already exists as an MVP on the `jumpstarter-java` branch, providing `ExporterSession` and driver discovery, which serves as the starting point for JVM-based codegen.
 
@@ -26,9 +26,9 @@ Alongside generated client types, the pipeline optionally generates test framewo
 
 ## Motivation
 
-With JEP-0003's native gRPC services now implemented, Jumpstarter's wire protocol is no longer opaque. Each driver interface (power, serial, network, etc.) is exposed as a standard gRPC service with fully-typed protobuf messages. Any language with a `protoc` plugin can generate type-safe client stubs automatically. The remaining challenge is not "implementing a wire protocol in every language" but rather composing those `protoc`-generated stubs into ergonomic device wrappers, providing session management for `jmp shell`, and integrating with each language's test framework.
+With JEP-0013's native gRPC services now implemented, Jumpstarter's wire protocol is no longer opaque. Each driver interface (power, serial, network, etc.) is exposed as a standard gRPC service with fully-typed protobuf messages. Any language with a `protoc` plugin can generate type-safe client stubs automatically. The remaining challenge is not "implementing a wire protocol in every language" but rather composing those `protoc`-generated stubs into ergonomic device wrappers, providing session management for `jmp shell`, and integrating with each language's test framework.
 
-JEP-0001 solves the schema problem: every interface now has a canonical `.proto` definition with full type information. JEP-0002 solves the contract problem: an `ExporterClass` declares exactly which interfaces a device provides, distinguishing required from optional. JEP-0003 solves the transport problem: native gRPC services mean standard `protoc` stubs work directly — no custom dispatch code needed. This JEP combines all three into a complete codegen pipeline that produces ready-to-use client libraries and test fixtures in multiple languages.
+JEP-0011 solves the schema problem: every interface now has a canonical `.proto` definition with full type information. JEP-0012 solves the contract problem: an `ExporterClass` declares exactly which interfaces a device provides, distinguishing required from optional. JEP-0013 solves the transport problem: native gRPC services mean standard `protoc` stubs work directly — no custom dispatch code needed. This JEP combines all three into a complete codegen pipeline that produces ready-to-use client libraries and test fixtures in multiple languages.
 
 The immediate drivers for polyglot support are:
 
@@ -77,7 +77,7 @@ Code generation happens in two stages, each using the appropriate tool for the j
 
 ```
                      ┌──────────────────┐
-                     │   .proto files   │ ← from JEP-0001
+                     │   .proto files   │ ← from JEP-0011
                      │  (per interface) │
                      └────────┬─────────┘
                               │
@@ -95,7 +95,7 @@ Code generation happens in two stages, each using the appropriate tool for the j
               └───────────────┼───────────────┘
                               │
                    ┌──────────▼──────────┐
-                   │   ExporterClass     │ ← from JEP-0002
+                   │   ExporterClass     │ ← from JEP-0012
                    │   definition        │
                    └──────────┬──────────┘
                               │
@@ -114,21 +114,21 @@ Code generation happens in two stages, each using the appropriate tool for the j
     └───────────────┘  └─────────────┘ └─────────────┘
 ```
 
-**Stage 1: `protoc` stubs (standard tooling).** The `.proto` files produced by JEP-0001's `jmp proto export` are fed into `protoc` with language-specific plugins (`protoc-gen-grpc-java`, `protoc-gen-ts`, `protoc-gen-prost`). This produces standard message classes and gRPC service stubs in each target language. Thanks to JEP-0003, these stubs are directly usable as native gRPC clients — they call the per-interface gRPC services that the exporter now registers alongside the legacy `ExporterService`. Proto comments from JEP-0001 flow through to produce language-native documentation (Javadoc, TSDoc, `///`, docstrings).
+**Stage 1: `protoc` stubs (standard tooling).** The `.proto` files produced by JEP-0011's `jmp proto export` are fed into `protoc` with language-specific plugins (`protoc-gen-grpc-java`, `protoc-gen-ts`, `protoc-gen-prost`). This produces standard message classes and gRPC service stubs in each target language. Thanks to JEP-0013, these stubs are directly usable as native gRPC clients — they call the per-interface gRPC services that the exporter now registers alongside the legacy `ExporterService`. Proto comments from JEP-0011 flow through to produce language-native documentation (Javadoc, TSDoc, `///`, docstrings).
 
-**Stage 2: `jmp codegen` wrapper (Jumpstarter-specific).** The Jumpstarter-specific `jmp codegen` tool reads an `ExporterClass` definition (JEP-0002), resolves its `DriverInterface` references, and generates:
+**Stage 2: `jmp codegen` wrapper (Jumpstarter-specific).** The Jumpstarter-specific `jmp codegen` tool reads an `ExporterClass` definition (JEP-0012), resolves its `DriverInterface` references, and generates:
 
 1. **Per-interface typed client classes** that wrap the Stage 1 stubs with session management (channel from `ExporterSession`) and UUID metadata injection (routing calls to the correct driver instance via `x-jumpstarter-driver-uuid` header).
 2. **An ExporterClass device wrapper** that composes the per-interface clients into a single device object with named accessors. Required interfaces become non-nullable; optional interfaces become nullable.
 3. **Test framework fixtures** (optional, via `--test-fixtures`) that provide zero-boilerplate device setup for JUnit, pytest, Rust `#[test]`, and Jest/Vitest.
 
-### Wire Protocol: Native gRPC (JEP-0003)
+### Wire Protocol: Native gRPC (JEP-0013)
 
-JEP-0003 is now fully implemented (Phases 1-3). Exporters register native gRPC services for each driver interface alongside the legacy `ExporterService`. The generated typed client wrappers in this JEP build directly on that foundation — each generated client (e.g., `PowerClient`) wraps the `protoc`-generated blocking or async stub for the corresponding native gRPC service (e.g., `PowerInterfaceGrpc.PowerInterfaceBlockingStub`), handling channel setup, UUID metadata injection, and proto message construction internally. Users interact with clean, idiomatic APIs (`power.on()`) rather than raw gRPC stubs.
+JEP-0013 is now fully implemented (Phases 1-3). Exporters register native gRPC services for each driver interface alongside the legacy `ExporterService`. The generated typed client wrappers in this JEP build directly on that foundation — each generated client (e.g., `PowerClient`) wraps the `protoc`-generated blocking or async stub for the corresponding native gRPC service (e.g., `PowerInterfaceGrpc.PowerInterfaceBlockingStub`), handling channel setup, UUID metadata injection, and proto message construction internally. Users interact with clean, idiomatic APIs (`power.on()`) rather than raw gRPC stubs.
 
-With JEP-0003's native gRPC transport, the per-language runtime is minimal:
+With JEP-0013's native gRPC transport, the per-language runtime is minimal:
 
-| Component | With `DriverCall` (legacy) | With native gRPC (JEP-0003) |
+| Component | With `DriverCall` (legacy) | With native gRPC (JEP-0013) |
 |-----------|---------------------------|------------------------------|
 | Value serde | ~30 lines per language | **Eliminated** — standard protobuf |
 | Driver dispatch | ~60 lines per language | **Eliminated** — standard `protoc` stubs |
@@ -141,7 +141,7 @@ With JEP-0003's native gRPC transport, the per-language runtime is minimal:
 
 The eliminated components (Value serde, driver dispatch) were the most error-prone and hardest to test across languages. Standard `protoc` stubs are battle-tested in every target language.
 
-`@exportstream` methods (JEP-0001) use native gRPC bidi streaming with `StreamData { bytes payload }` messages for byte transport.
+`@exportstream` methods (JEP-0011) use native gRPC bidi streaming with `StreamData { bytes payload }` messages for byte transport.
 
 ### CLI Interface
 
@@ -174,7 +174,7 @@ The `--test-fixtures` flag generates framework-specific test helpers alongside t
 
 #### Python
 
-JEP-0001's `jmp proto generate` already generates per-interface client classes (e.g., `PowerClient`). JEP-0004's Python codegen focuses on the ExporterClass-typed wrapper that composes multiple interface clients into a single device object, plus a pytest base class for testing:
+JEP-0011's `jmp proto generate` already generates per-interface client classes (e.g., `PowerClient`). JEP-0014's Python codegen focuses on the ExporterClass-typed wrapper that composes multiple interface clients into a single device object, plus a pytest base class for testing:
 
 ```python
 # generated: jumpstarter_gen/devices/dev_board.py
@@ -453,7 +453,7 @@ describe("power", () => {
 
 ### Core Runtime Library Per Language
 
-Each language needs a minimal runtime library alongside the generated code. With JEP-0003's native gRPC services, the runtime is significantly simpler than it would have been with `DriverCall` dispatch:
+Each language needs a minimal runtime library alongside the generated code. With JEP-0013's native gRPC services, the runtime is significantly simpler than it would have been with `DriverCall` dispatch:
 
 | Component              | What it does                                                                                                | Estimated size |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------- | -------------- |
@@ -519,11 +519,11 @@ With a `build.rs` that invokes codegen during `cargo build`.
 
 ### API / Protocol Changes
 
-No new protocol changes beyond those introduced by JEP-0003. This JEP consumes JEP-0003's native gRPC services and UUID metadata routing, JEP-0001's `.proto` files and `FileDescriptorProto` descriptors, and JEP-0002's ExporterClass CRDs — without modifying any of them. The `jmp codegen` CLI subcommand is new.
+No new protocol changes beyond those introduced by JEP-0013. This JEP consumes JEP-0013's native gRPC services and UUID metadata routing, JEP-0011's `.proto` files and `FileDescriptorProto` descriptors, and JEP-0012's ExporterClass CRDs — without modifying any of them. The `jmp codegen` CLI subcommand is new.
 
 ### Hardware Considerations
 
-This JEP is purely a code generation and build tooling change. No hardware is required or affected. The generated clients interact with hardware through native gRPC services (JEP-0003), including native bidi streaming for `@exportstream` byte transport.
+This JEP is purely a code generation and build tooling change. No hardware is required or affected. The generated clients interact with hardware through native gRPC services (JEP-0013), including native bidi streaming for `@exportstream` byte transport.
 
 ## Design Details
 
@@ -535,7 +535,7 @@ This JEP is purely a code generation and build tooling change. No hardware is re
 │                                                         │
 │  ┌────────────────┐  ┌─────────────────┐  ┌───────────────┐ │
 │  │ ExporterClass  │  │ DriverInterface │  │ .proto files  │ │
-│  │ YAML/CRD       │  │ CRDs            │  │ (JEP-0001)    │ │
+│  │ YAML/CRD       │  │ CRDs            │  │ (JEP-0011)    │ │
 │  └───────┬────────┘  └───────┬─────────┘  └──────┬────────┘ │
 │         │                 │                 │           │
 │         ▼                 ▼                 ▼           │
@@ -561,7 +561,7 @@ This JEP is purely a code generation and build tooling change. No hardware is re
 
 ### Handling `@exportstream` Methods in Non-Python Languages
 
-JEP-0001 defines `@exportstream` methods as raw byte stream constructors (e.g., `TcpNetwork.connect()`, `PySerial.connect()`) that produce bidirectional byte channels. These are represented as native gRPC bidi streaming RPCs with `StreamData { bytes payload }` messages.
+JEP-0011 defines `@exportstream` methods as raw byte stream constructors (e.g., `TcpNetwork.connect()`, `PySerial.connect()`) that produce bidirectional byte channels. These are represented as native gRPC bidi streaming RPCs with `StreamData { bytes payload }` messages.
 
 In generated non-Python clients, `stream_constructor` methods produce a language-native byte stream object:
 
@@ -587,7 +587,7 @@ Methods that compose multiple interface calls or add minor client-side logic:
 
 `PowerClient.cycle(wait=2)` calls `off()`, sleeps for `wait` seconds, then calls `on()`. This is three lines of client-side orchestration that would need to be reimplemented in every target language. **Recommendation:** move `cycle()` to the exporter as an `@export` method so it becomes a single RPC. Some drivers (e.g., RideSX) already implement `cycle()` server-side. This should be standardized across all power drivers before polyglot codegen ships.
 
-`PowerClient.read()` wraps streaming results in `PowerReading` — with JEP-0003's native gRPC, the proto message class's native deserialization handles this in each language. Auto-generation handles this.
+`PowerClient.read()` wraps streaming results in `PowerReading` — with JEP-0013's native gRPC, the proto message class's native deserialization handles this in each language. Auto-generation handles this.
 
 `PowerClient.rescue()` calls a method not part of `PowerInterface`. It's a DutLink-specific extension. **Recommendation:** either add `rescue()` to the standard `PowerInterface` or document it as a driver-specific extension that won't appear in auto-generated clients for the base power interface.
 
@@ -622,7 +622,7 @@ Similarly, device-specific composite clients like `RideSXClient` (fastboot detec
 ### Error Handling
 
 - **Missing required interface at runtime:** If `session.requireDriver("power")` fails because the exporter's report doesn't contain a matching driver, the runtime throws a descriptive error naming the missing interface and the ExporterClass. This should not happen if the controller correctly validates the ExporterClass at lease time — it's a defense-in-depth check.
-- **Proto version mismatch:** With native gRPC, proto version mismatches between client stubs and server implementations are handled by standard protobuf wire compatibility rules. Structural compatibility checking (JEP-0002) catches breaking changes at registration time.
+- **Proto version mismatch:** With native gRPC, proto version mismatches between client stubs and server implementations are handled by standard protobuf wire compatibility rules. Structural compatibility checking (JEP-0012) catches breaking changes at registration time.
 - **`protoc` not installed:** `jmp codegen stubs` requires `protoc` to be available. If it's missing, the CLI provides an actionable error with installation instructions for the user's platform.
 
 ### Security Implications
@@ -655,7 +655,7 @@ The generated clients inherit the security model of the Jumpstarter Python clien
 
 ### Hardware-in-the-Loop Tests
 
-No HiL tests are required for the codegen tooling itself. The generated clients use JEP-0003's native gRPC services, which have their own HiL test coverage. Once a generated client passes integration tests against a mock exporter under `jmp shell`, it will work against real hardware through the same gRPC channel.
+No HiL tests are required for the codegen tooling itself. The generated clients use JEP-0013's native gRPC services, which have their own HiL test coverage. Once a generated client passes integration tests against a mock exporter under `jmp shell`, it will work against real hardware through the same gRPC channel.
 
 ### Manual Verification
 
@@ -689,7 +689,7 @@ No HiL tests are required for the codegen tooling itself. The generated clients 
 This JEP is **fully backward compatible.** It introduces new tooling and generated code without modifying any existing components:
 
 - The existing Python client is unchanged. The generated Python ExporterClass wrapper is a new layer on top of the existing interface clients — it doesn't replace them.
-- The generated clients use native gRPC services (JEP-0003) for all driver communication, including native bidi streaming for `@exportstream` byte channels. The existing `ExporterService` and `DriverCall` RPC remain available for legacy clients.
+- The generated clients use native gRPC services (JEP-0013) for all driver communication, including native bidi streaming for `@exportstream` byte channels. The existing `ExporterService` and `DriverCall` RPC remain available for legacy clients.
 - No operator-side changes. The generated clients connect to existing exporters through the existing controller and router infrastructure.
 - The `jmp codegen` command is a new CLI subcommand that doesn't affect existing commands.
 
@@ -697,7 +697,7 @@ This JEP is **fully backward compatible.** It introduces new tooling and generat
 
 ### `DriverCall` wrappers instead of native gRPC stubs
 
-An earlier draft of this JEP proposed generating typed wrappers that delegate to `DriverCall` with `google.protobuf.Value` arguments — essentially automating what the Python client does today. This was rejected because JEP-0003's native gRPC services eliminate the need for `DriverCall` dispatch and `ValueCodec` in generated clients. Standard `protoc` stubs are battle-tested in every target language and require no custom serialization code. Using native gRPC also enables per-method metrics and tracing (`/PowerInterface/On` instead of generic `/ExporterService/DriverCall`).
+An earlier draft of this JEP proposed generating typed wrappers that delegate to `DriverCall` with `google.protobuf.Value` arguments — essentially automating what the Python client does today. This was rejected because JEP-0013's native gRPC services eliminate the need for `DriverCall` dispatch and `ValueCodec` in generated clients. Standard `protoc` stubs are battle-tested in every target language and require no custom serialization code. Using native gRPC also enables per-method metrics and tracing (`/PowerInterface/On` instead of generic `/ExporterService/DriverCall`).
 
 ### gRPC-Web for browser clients instead of TypeScript codegen
 
@@ -735,7 +735,7 @@ Building full client packages with lease acquisition, controller authentication,
 
 2. **Package naming convention:** What package names should the generated artifacts use? Proposal: `dev.jumpstarter:driver-power` (Maven), `@jumpstarter/driver-power` (npm), `jumpstarter-driver-power` (crate). Need to confirm these don't conflict with existing packages.
 
-3. **ExporterClass resolution for offline codegen:** *(Partially resolved)* The JEP-0002 PoC implements both cluster-based resolution (via `jmp admin get exporterclasses` and `jmp admin get driverinterfaces`) and local YAML file support. The `--exporter-class-file` approach for offline use is validated by the admin CLI. Remaining question: should `jmp codegen` reuse the admin CLI's resolution logic directly, or implement its own lightweight resolver?
+3. **ExporterClass resolution for offline codegen:** *(Partially resolved)* The JEP-0012 PoC implements both cluster-based resolution (via `jmp admin get exporterclasses` and `jmp admin get driverinterfaces`) and local YAML file support. The `--exporter-class-file` approach for offline use is validated by the admin CLI. Remaining question: should `jmp codegen` reuse the admin CLI's resolution logic directly, or implement its own lightweight resolver?
 
 ### Can wait until implementation
 
@@ -743,11 +743,11 @@ Building full client packages with lease acquisition, controller authentication,
 
 5. **Error type mapping:** Should generated clients define language-specific exception types (e.g., `DeviceNotFoundError`, `InterfaceMismatchError`) or use the language's standard gRPC error types?
 
-6. **Versioned package publication:** Should each ExporterClass version produce a separate package version? E.g., `dev.jumpstarter:my-device:1.0.0` maps to an ExporterClass with `interface_version` `1.0.0` from JEP-0001.
+6. **Versioned package publication:** Should each ExporterClass version produce a separate package version? E.g., `dev.jumpstarter:my-device:1.0.0` maps to an ExporterClass with `interface_version` `1.0.0` from JEP-0011.
 
 7. **Resource adapter scope per language:** Should the initial resource adapter in Java/TypeScript support only local file streaming (simplest, covers the most common flash use case), or should it support the full opendal operator set (HTTP, S3, OCI) from day one? Local-file-only is ~40 lines; full opendal support requires JNI/NAPI bindings to the Rust opendal library or a reimplementation of the operator resolution logic.
 
-8. **`PowerClient.cycle()` migration path:** Moving `cycle()` server-side requires updating all power driver implementations to add `@export def cycle(self, wait)`. Should this be a coordinated change before JEP-0004 ships, or should generated clients include a fallback `cycle()` that calls `off()` + `sleep()` + `on()` client-side when the server doesn't support the method?
+8. **`PowerClient.cycle()` migration path:** Moving `cycle()` server-side requires updating all power driver implementations to add `@export def cycle(self, wait)`. Should this be a coordinated change before JEP-0014 ships, or should generated clients include a fallback `cycle()` that calls `off()` + `sleep()` + `on()` client-side when the server doesn't support the method?
 
 9. **Convenience method layering convention:** For methods like `cycle()` that exist on the current `PowerClient` but not in `PowerInterface`, should the generated client include them as client-side helpers, or should it strictly generate only interface methods? A strict approach keeps the generated code clean; a permissive approach avoids breaking existing Python users who expect `client.power.cycle()` to work.
 
@@ -774,7 +774,7 @@ The following are **not** part of this JEP but are natural extensions enabled by
 | Phase | Deliverable                                                                                                   | Depends On                 | Status       |
 | ----- | ------------------------------------------------------------------------------------------------------------- | -------------------------- | ------------ |
 | 0     | **Prerequisite:** Move `PowerClient.cycle()` server-side across all standard power drivers                    | —                          | planned      |
-| 1     | Merge `jumpstarter-java` branch; update Java runtime for native gRPC (`ExporterSession` + UUID interceptor)   | JEP-0003 (done)            | planned      |
+| 1     | Merge `jumpstarter-java` branch; update Java runtime for native gRPC (`ExporterSession` + UUID interceptor)   | JEP-0013 (done)            | planned      |
 | 2     | `jmp codegen` CLI — reads ExporterClass + DriverInterface, invokes `protoc`, emits Java typed wrappers        | Phase 1                    | planned      |
 | 3     | Java testing: JUnit 5 `JumpstarterExtension` + `@JumpstarterDevice` annotation                               | Phase 2                    | planned      |
 | 4     | Python ExporterClass wrapper codegen + pytest `DevBoardTest` base class                                | Phase 2                    | planned      |
@@ -784,24 +784,24 @@ The following are **not** part of this JEP but are natural extensions enabled by
 
 Phase 0 is a prerequisite that cleans up the interface/client boundary: methods like `cycle()` that are currently client-side orchestration become server-side `@export` methods, making them available through auto-generated clients in every language without per-language reimplementation.
 
-Phase 1 merges the existing `jumpstarter-java` branch (which provides `ExporterSession`, `DriverReport`, `ValueCodec`, and `DriverClient` with Gradle build and tests) and updates it for JEP-0003: adding a `UuidMetadataInterceptor`, a method to create per-driver native gRPC stubs from the session's channel, and deprecating `ValueCodec` and `DriverClient.call()` in favor of protoc-generated stubs.
+Phase 1 merges the existing `jumpstarter-java` branch (which provides `ExporterSession`, `DriverReport`, `ValueCodec`, and `DriverClient` with Gradle build and tests) and updates it for JEP-0013: adding a `UuidMetadataInterceptor`, a method to create per-driver native gRPC stubs from the session's channel, and deprecating `ValueCodec` and `DriverClient.call()` in favor of protoc-generated stubs.
 
 Priority order: **Java first** (JVM test framework use cases drive immediate demand), **then Python** (developer experience improvement for the existing ecosystem), **then TypeScript** (web dashboard and MCP server), **then Rust** (performance-critical flash tooling — benefits most from native opendal integration).
 
 ## Implementation History
 
 - 2026-04-06: JEP drafted
-- 2026-04-07: JEP-0001 PoC complete (descriptor builder, CLI `jmp interface generate`, proto files for bundled drivers)
+- 2026-04-07: JEP-0011 PoC complete (descriptor builder, CLI `jmp interface generate`, proto files for bundled drivers)
 - 2026-04-07: Java client MVP implemented (`ExporterSession`, `DriverClient`, `ValueCodec`, `DriverReport` with Gradle build, unit tests, integration tests)
-- 2026-04-10: JEP-0002 PoC complete (ExporterClass and DriverInterface CRDs, Go controller validation, Python admin CLI)
-- 2026-04-11: JEP-0003 Phases 1-3 implemented (native gRPC services, exporter registration, Python client transparent routing)
-- 2026-04-11: JEP-0004 revised — simplified to `jmp shell`-first approach with native gRPC (JEP-0003) as foundation; added testing primitives as core deliverable; removed `DriverCall`/`ValueCodec` as required runtime components; changed primary JVM target from Kotlin to Java; added rejected alternative for `DriverCall` wrappers and full standalone clients
+- 2026-04-10: JEP-0012 PoC complete (ExporterClass and DriverInterface CRDs, Go controller validation, Python admin CLI)
+- 2026-04-11: JEP-0013 Phases 1-3 implemented (native gRPC services, exporter registration, Python client transparent routing)
+- 2026-04-11: JEP-0014 revised — simplified to `jmp shell`-first approach with native gRPC (JEP-0013) as foundation; added testing primitives as core deliverable; removed `DriverCall`/`ValueCodec` as required runtime components; changed primary JVM target from Kotlin to Java; added rejected alternative for `DriverCall` wrappers and full standalone clients
 
 ## References
 
-- [JEP-0001: Protobuf Introspection and Interface Generation](./JEP-0001-protobuf-introspection-interface-generation.md)
-- [JEP-0002: ExporterClass Mechanism](./JEP-0002-deviceclass-mechanism.md)
-- [JEP-0003: Native gRPC Services for Driver Interfaces](./JEP-0003-native-grpc-services.md)
+- [JEP-0011: Protobuf Introspection and Interface Generation](./JEP-0011-protobuf-introspection-interface-generation.md)
+- [JEP-0012: ExporterClass Mechanism](./JEP-0012-deviceclass-mechanism.md)
+- [JEP-0013: Native gRPC Services for Driver Interfaces](./JEP-0013-native-grpc-services.md)
 - [gRPC Code Generation](https://grpc.io/docs/languages/)
 - [Buf Connect](https://connectrpc.com/)
 - [OpenAPI Generator](https://openapi-generator.tech/)

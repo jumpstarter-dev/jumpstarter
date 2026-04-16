@@ -2,7 +2,7 @@
 
 Generates ExporterClass-typed device wrappers and pytest test fixtures.
 
-For Python, per-interface clients already exist from `jmp proto generate` (JEP-1).
+For Python, per-interface clients already exist from `jmp proto generate` (JEP-11).
 This generator adds the ExporterClass composition layer on top:
   - DevBoardDevice class composing PowerClient, SerialClient, etc.
   - DevBoardTest pytest base class extending JumpstarterTest
@@ -216,7 +216,7 @@ def _gen_test_fixture(ctx: CodegenContext) -> str:
 class PythonLanguageGenerator(LanguageGenerator):
     """Python code generator for jmp codegen.
 
-    For Python, per-interface clients already exist from JEP-1's `jmp proto generate`.
+    For Python, per-interface clients already exist from JEP-11's `jmp proto generate`.
     This generator produces the ExporterClass composition layer:
       1. Device wrapper class composing existing per-interface clients
       2. pytest test fixture extending JumpstarterTest

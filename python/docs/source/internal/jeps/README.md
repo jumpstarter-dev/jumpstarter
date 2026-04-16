@@ -38,6 +38,7 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 | 0011 | [Protobuf Introspection and Interface Generation](JEP-0011-protobuf-introspection-interface-generation.md) | Draft | @kirkbrauer (Kirk Brauer) |
 | 0012 | [ExporterClass Mechanism](JEP-0012-deviceclass-mechanism.md) | Draft | @kirkbrauer (Kirk Brauer) |
 | 0013 | [Native gRPC Services for Driver Interfaces](JEP-0013-native-grpc-services.md) | Draft | @kirkbrauer (Kirk Brauer) |
+| 0014 | [Polyglot Typed Device Wrappers](JEP-0014-polyglot-typed-device-wrappers.md) | Draft | @kirkbrauer (Kirk Brauer) |
 
 ### Informational JEPs
 
@@ -125,4 +126,5 @@ JEP-0010-renode-integration.md
 JEP-0011-protobuf-introspection-interface-generation.md
 JEP-0012-deviceclass-mechanism.md
 JEP-0013-native-grpc-services.md
+JEP-0014-polyglot-typed-device-wrappers.md
 ```
