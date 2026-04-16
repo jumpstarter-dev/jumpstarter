@@ -347,15 +347,18 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 if e.code() == grpc.StatusCode.UNAVAILABLE:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
-                        logger.warning(
+                        logger.debug(
                             "Exporter unavailable and dial timeout (%.1fs) exceeded after %d attempts",
-                            self.dial_timeout, attempt + 1
+                            self.dial_timeout,
+                            attempt + 1,
                         )
-                        return
-                    delay = min(base_delay * (2 ** attempt), max_delay, remaining)
+                        raise
+                    delay = min(base_delay * (2**attempt), max_delay, remaining)
                     logger.debug(
                         "Exporter unavailable, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
-                        delay, attempt + 1, remaining
+                        delay,
+                        attempt + 1,
+                        remaining,
                     )
                     await sleep(delay)
                     attempt += 1
