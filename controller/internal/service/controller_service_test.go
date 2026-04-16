@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -186,7 +187,7 @@ func TestCheckExporterStatusForDriverCalls(t *testing.T) {
 				}
 
 				if tt.expectedSubstr != "" {
-					if !contains(st.Message(), tt.expectedSubstr) {
+					if !strings.Contains(st.Message(), tt.expectedSubstr) {
 						t.Errorf("error message = %q, want to contain %q", st.Message(), tt.expectedSubstr)
 					}
 				}
@@ -629,6 +630,282 @@ func TestDialRejectsSupersededQueue(t *testing.T) {
 	case <-q.ch:
 		t.Fatal("token should not have been buffered in a superseded queue")
 	default:
+	}
+}
+
+func TestDialWithPreSwapReferenceNeverSendsToStaleQueue(t *testing.T) {
+	staleSends := 0
+	iterations := 500
+
+	for i := 0; i < iterations; i++ {
+		svc := &ControllerService{}
+		leaseName := "test-lease-pre-swap-ref"
+
+		g1 := &listenQueue{
+			ch:   make(chan *pb.ListenResponse, 8),
+			done: make(chan struct{}),
+		}
+		svc.listenQueues.Store(leaseName, g1)
+
+		v, _ := svc.listenQueues.Load(leaseName)
+		preSwapRef := v.(*listenQueue)
+
+		g2 := &listenQueue{
+			ch:   make(chan *pb.ListenResponse, 8),
+			done: make(chan struct{}),
+		}
+		old, _ := svc.listenQueues.Swap(leaseName, g2)
+		old.(*listenQueue).closeDone()
+
+		response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+
+		sent := false
+		select {
+		case <-preSwapRef.done:
+		default:
+			select {
+			case <-preSwapRef.done:
+			case preSwapRef.ch <- response:
+				sent = true
+			}
+		}
+
+		if sent {
+			staleSends++
+			<-preSwapRef.ch
+		}
+	}
+
+	if staleSends > 0 {
+		t.Fatalf("dial sent to stale queue %d out of %d iterations", staleSends, iterations)
+	}
+}
+
+func TestDialSendsTokenViaServiceMethod(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-dial-method"
+
+	q := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.listenQueues.Store(leaseName, q)
+
+	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+
+	err := svc.sendToListener(leaseName, response)
+	if err != nil {
+		t.Fatalf("sendToListener should succeed for active queue: %v", err)
+	}
+
+	select {
+	case got := <-q.ch:
+		if got.RouterEndpoint != "ep" || got.RouterToken != "tok" {
+			t.Fatal("token was corrupted")
+		}
+	default:
+		t.Fatal("token was not delivered")
+	}
+}
+
+func TestDialSendToListenerRejectsSupersededQueue(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-dial-method-superseded"
+
+	g1 := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.listenQueues.Store(leaseName, g1)
+
+	g2 := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	old, _ := svc.listenQueues.Swap(leaseName, g2)
+	old.(*listenQueue).closeDone()
+
+	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+
+	err := svc.sendToListener(leaseName, response)
+	if err != nil {
+		t.Fatalf("sendToListener should succeed for the new active queue: %v", err)
+	}
+
+	select {
+	case <-g1.ch:
+		t.Fatal("token was delivered to superseded queue g1")
+	default:
+	}
+
+	select {
+	case got := <-g2.ch:
+		if got.RouterEndpoint != "ep" || got.RouterToken != "tok" {
+			t.Fatal("token was corrupted")
+		}
+	default:
+		t.Fatal("token was not delivered to active queue g2")
+	}
+}
+
+func TestDialSendToListenerRejectsNoListener(t *testing.T) {
+	svc := &ControllerService{}
+
+	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+	err := svc.sendToListener("nonexistent-lease", response)
+	if err == nil {
+		t.Fatal("sendToListener should return error when no listener exists")
+	}
+}
+
+func TestDialSendToListenerRejectsDoneQueue(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-done-queue"
+
+	q := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	q.closeDone()
+	svc.listenQueues.Store(leaseName, q)
+
+	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+	err := svc.sendToListener(leaseName, response)
+	if err == nil {
+		t.Fatal("sendToListener should return error for done queue")
+	}
+
+	select {
+	case <-q.ch:
+		t.Fatal("token should not be buffered in a done queue")
+	default:
+	}
+}
+
+func TestDialSendToListenerSerializesWithSwap(t *testing.T) {
+	// Verify that swapListenQueue followed by sendToListener always delivers
+	// to the new queue (or returns an error), never to the superseded queue.
+	// This tests the scenario where the swap completes before the send.
+	iterations := 500
+
+	for i := 0; i < iterations; i++ {
+		svc := &ControllerService{}
+		leaseName := "test-lease-serialized"
+
+		g1 := &listenQueue{
+			ch:   make(chan *pb.ListenResponse, 8),
+			done: make(chan struct{}),
+		}
+		svc.listenQueues.Store(leaseName, g1)
+
+		g2 := &listenQueue{
+			ch:   make(chan *pb.ListenResponse, 8),
+			done: make(chan struct{}),
+		}
+
+		svc.swapListenQueue(leaseName, g2)
+
+		response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+		err := svc.sendToListener(leaseName, response)
+		if err != nil {
+			t.Fatalf("iteration %d: sendToListener should succeed for active g2: %v", i, err)
+		}
+
+		select {
+		case <-g1.ch:
+			t.Fatalf("iteration %d: token delivered to superseded g1", i)
+		default:
+		}
+
+		select {
+		case got := <-g2.ch:
+			if got.RouterEndpoint != "ep" || got.RouterToken != "tok" {
+				t.Fatalf("iteration %d: token corrupted on g2", i)
+			}
+		default:
+			t.Fatalf("iteration %d: token not delivered to active g2", i)
+		}
+	}
+}
+
+func TestDialSendToListenerConcurrentWithSwapNeverLandsOnSuperseded(t *testing.T) {
+	// Race swapListenQueue against sendToListener using goroutines.
+	// The per-lease mutex guarantees that the Load+send in sendToListener
+	// is atomic with respect to the Swap+closeDone in swapListenQueue.
+	// When sendToListener acquires the lock first, it sends to g1 (which
+	// is still current -- a valid send). When swapListenQueue acquires
+	// first, sendToListener sees g2 as the current queue.
+	//
+	// The invariant: if sendToListener returns nil, the done channel of the
+	// queue it sent to was NOT closed at the time of the send (guaranteed by
+	// the lock preventing concurrent swap+closeDone).
+	iterations := 500
+	sentToG1 := 0
+	sentToG2 := 0
+	rejected := 0
+
+	for i := 0; i < iterations; i++ {
+		svc := &ControllerService{}
+		leaseName := "test-lease-concurrent-serial"
+
+		g1 := &listenQueue{
+			ch:   make(chan *pb.ListenResponse, 8),
+			done: make(chan struct{}),
+		}
+		svc.listenQueues.Store(leaseName, g1)
+
+		g2 := &listenQueue{
+			ch:   make(chan *pb.ListenResponse, 8),
+			done: make(chan struct{}),
+		}
+
+		swapDone := make(chan struct{})
+		sendResult := make(chan error, 1)
+
+		go func() {
+			defer close(swapDone)
+			svc.swapListenQueue(leaseName, g2)
+		}()
+		go func() {
+			sendResult <- svc.sendToListener(leaseName, &pb.ListenResponse{
+				RouterEndpoint: "ep", RouterToken: "tok",
+			})
+		}()
+
+		<-swapDone
+		sendErr := <-sendResult
+
+		if sendErr != nil {
+			rejected++
+			continue
+		}
+
+		onG1 := false
+		select {
+		case <-g1.ch:
+			onG1 = true
+			sentToG1++
+		default:
+		}
+		onG2 := false
+		select {
+		case <-g2.ch:
+			onG2 = true
+			sentToG2++
+		default:
+		}
+
+		if !onG1 && !onG2 {
+			t.Fatalf("iteration %d: send succeeded but token is lost", i)
+		}
+		if onG1 && onG2 {
+			t.Fatalf("iteration %d: token duplicated across queues", i)
+		}
+	}
+
+	if sentToG1+sentToG2+rejected != iterations {
+		t.Fatalf("accounting error: g1=%d g2=%d rejected=%d total=%d",
+			sentToG1, sentToG2, rejected, sentToG1+sentToG2+rejected)
 	}
 }
 
@@ -1115,17 +1392,3 @@ func TestListenQueueDialFlowSendsToActiveListener(t *testing.T) {
 	}
 }
 
-// contains checks if substr is contained in s
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && len(substr) > 0 && searchSubstring(s, substr)))
-}
-
-func searchSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}

@@ -80,6 +80,7 @@ type ControllerService struct {
 	ServerOptions []grpc.ServerOption
 	Router        config.Router
 	listenQueues  sync.Map
+	leaseLocks    sync.Map
 }
 
 type listenQueue struct {
@@ -90,6 +91,50 @@ type listenQueue struct {
 
 func (q *listenQueue) closeDone() {
 	q.closeOnce.Do(func() { close(q.done) })
+}
+
+func (s *ControllerService) getLeaseLock(leaseName string) *sync.Mutex {
+	v, _ := s.leaseLocks.LoadOrStore(leaseName, &sync.Mutex{})
+	return v.(*sync.Mutex)
+}
+
+// swapListenQueue atomically replaces the listen queue for a lease and signals
+// the previous queue to stop. The per-lease lock serializes this with
+// sendToListener so that Dial never sends a token to a superseded queue.
+func (s *ControllerService) swapListenQueue(leaseName string, newQueue *listenQueue) {
+	mu := s.getLeaseLock(leaseName)
+	mu.Lock()
+	defer mu.Unlock()
+	old, loaded := s.listenQueues.Swap(leaseName, newQueue)
+	if loaded {
+		old.(*listenQueue).closeDone()
+	}
+}
+
+// sendToListener delivers a response to the active listener for a lease. The
+// per-lease lock guarantees that the queue loaded here cannot be superseded
+// between the load and the send, eliminating the TOCTOU race between Dial and
+// a reconnecting Listen.
+func (s *ControllerService) sendToListener(leaseName string, response *pb.ListenResponse) error {
+	mu := s.getLeaseLock(leaseName)
+	mu.Lock()
+	defer mu.Unlock()
+	v, ok := s.listenQueues.Load(leaseName)
+	if !ok {
+		return status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
+	}
+	q := v.(*listenQueue)
+	select {
+	case <-q.done:
+		return status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
+	default:
+	}
+	select {
+	case <-q.done:
+		return status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
+	case q.ch <- response:
+		return nil
+	}
 }
 
 type wrappedStream struct {
@@ -453,11 +498,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	old, loaded := s.listenQueues.Swap(leaseName, wrapper)
-	if loaded {
-		prev := old.(*listenQueue)
-		prev.closeDone()
-	}
+	s.swapListenQueue(leaseName, wrapper)
 	defer s.listenQueues.CompareAndDelete(leaseName, wrapper)
 	defer wrapper.closeDone()
 	for {
@@ -754,22 +795,8 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		RouterToken:    token,
 	}
 
-	v, ok := s.listenQueues.Load(leaseName)
-	if !ok {
-		return nil, status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
-	}
-	q := v.(*listenQueue)
-	select {
-	case <-q.done:
-		return nil, status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
-	default:
-	}
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-q.done:
-		return nil, status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
-	case q.ch <- response:
+	if err := s.sendToListener(leaseName, response); err != nil {
+		return nil, err
 	}
 
 	logger.Info("Client dial assigned stream", "stream", stream)
