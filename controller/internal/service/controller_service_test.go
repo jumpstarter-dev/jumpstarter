@@ -31,6 +31,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const testRouterToken = "tok"
+
 func drainChannel(ch <-chan *pb.ListenResponse) int {
 	count := 0
 	for {
@@ -457,12 +459,12 @@ func TestListenQueueReconnectPreventsStaleCleanup(t *testing.T) {
 		t.Fatal("queue entry does not match the reconnected wrapper")
 	}
 
-	token := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+	token := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
 	reconnectWrapper.ch <- token
 
 	select {
 	case msg := <-reconnectWrapper.ch:
-		if msg.RouterEndpoint != "ep" || msg.RouterToken != "tok" {
+		if msg.RouterEndpoint != "ep" || msg.RouterToken != testRouterToken {
 			t.Fatal("token was corrupted after stale cleanup attempt")
 		}
 	default:
@@ -549,7 +551,7 @@ func TestListenQueueStaleReaderConsumesDialToken(t *testing.T) {
 		t.Fatal("queue entry should exist for lease")
 	}
 	currentQueue := v.(*listenQueue)
-	token := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+	token := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
 	currentQueue.ch <- token
 
 	// G1 should NOT receive the token (its done channel is closed).
@@ -563,7 +565,7 @@ func TestListenQueueStaleReaderConsumesDialToken(t *testing.T) {
 	// G2 MUST receive the token.
 	select {
 	case got := <-g2Queue.ch:
-		if got.RouterEndpoint != "ep" || got.RouterToken != "tok" {
+		if got.RouterEndpoint != "ep" || got.RouterToken != testRouterToken {
 			t.Fatal("token received by G2 was corrupted")
 		}
 	default:
@@ -594,7 +596,7 @@ func TestListenQueueStaleReaderAlwaysDetectsSupersession(t *testing.T) {
 
 		v, _ := svc.listenQueues.Load(leaseName)
 		currentQueue := v.(*listenQueue)
-		currentQueue.ch <- &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+		currentQueue.ch <- &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
 
 		// G1's done is closed, so it should always detect supersession.
 		// If the token ends up on G1's channel, that is a stale win.
@@ -618,7 +620,7 @@ func TestDialRejectsSupersededQueue(t *testing.T) {
 	}
 	close(q.done)
 
-	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
 
 	rejected := false
 	select {
@@ -669,7 +671,7 @@ func TestDialWithPreSwapReferenceNeverSendsToStaleQueue(t *testing.T) {
 		old, _ := svc.listenQueues.Swap(leaseName, g2)
 		old.(*listenQueue).closeDone()
 
-		response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+		response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
 
 		sent := false
 		select {
@@ -703,7 +705,7 @@ func TestDialSendsTokenViaServiceMethod(t *testing.T) {
 	}
 	svc.listenQueues.Store(leaseName, q)
 
-	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
 
 	err := svc.sendToListener(context.Background(), leaseName, response)
 	if err != nil {
@@ -712,7 +714,7 @@ func TestDialSendsTokenViaServiceMethod(t *testing.T) {
 
 	select {
 	case got := <-q.ch:
-		if got.RouterEndpoint != "ep" || got.RouterToken != "tok" {
+		if got.RouterEndpoint != "ep" || got.RouterToken != testRouterToken {
 			t.Fatal("token was corrupted")
 		}
 	default:
@@ -737,7 +739,7 @@ func TestDialSendToListenerRejectsSupersededQueue(t *testing.T) {
 	old, _ := svc.listenQueues.Swap(leaseName, g2)
 	old.(*listenQueue).closeDone()
 
-	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
 
 	err := svc.sendToListener(context.Background(), leaseName, response)
 	if err != nil {
@@ -752,7 +754,7 @@ func TestDialSendToListenerRejectsSupersededQueue(t *testing.T) {
 
 	select {
 	case got := <-g2.ch:
-		if got.RouterEndpoint != "ep" || got.RouterToken != "tok" {
+		if got.RouterEndpoint != "ep" || got.RouterToken != testRouterToken {
 			t.Fatal("token was corrupted")
 		}
 	default:
@@ -763,7 +765,7 @@ func TestDialSendToListenerRejectsSupersededQueue(t *testing.T) {
 func TestDialSendToListenerRejectsNoListener(t *testing.T) {
 	svc := &ControllerService{}
 
-	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
 	err := svc.sendToListener(context.Background(), "nonexistent-lease", response)
 	if err == nil {
 		t.Fatal("sendToListener should return error when no listener exists")
@@ -781,7 +783,7 @@ func TestDialSendToListenerRejectsDoneQueue(t *testing.T) {
 	q.closeDone()
 	svc.listenQueues.Store(leaseName, q)
 
-	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
 	err := svc.sendToListener(context.Background(), leaseName, response)
 	if err == nil {
 		t.Fatal("sendToListener should return error for done queue")
@@ -817,7 +819,7 @@ func TestDialSendToListenerSerializesWithSwap(t *testing.T) {
 
 		svc.swapListenQueue(leaseName, g2)
 
-		response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+		response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
 		err := svc.sendToListener(context.Background(), leaseName, response)
 		if err != nil {
 			t.Fatalf("iteration %d: sendToListener should succeed for active g2: %v", i, err)
@@ -831,7 +833,7 @@ func TestDialSendToListenerSerializesWithSwap(t *testing.T) {
 
 		select {
 		case got := <-g2.ch:
-			if got.RouterEndpoint != "ep" || got.RouterToken != "tok" {
+			if got.RouterEndpoint != "ep" || got.RouterToken != testRouterToken {
 				t.Fatalf("iteration %d: token corrupted on g2", i)
 			}
 		default:
@@ -880,7 +882,7 @@ func TestDialSendToListenerConcurrentWithSwapNeverLandsOnSuperseded(t *testing.T
 		}()
 		go func() {
 			sendResult <- svc.sendToListener(context.Background(), leaseName, &pb.ListenResponse{
-				RouterEndpoint: "ep", RouterToken: "tok",
+				RouterEndpoint: "ep", RouterToken: testRouterToken,
 			})
 		}()
 
@@ -1045,7 +1047,7 @@ func TestListenQueueDoneClosedBeforeMapDeleteWithConcurrentDial(t *testing.T) {
 	v, _ := svc.listenQueues.Load(leaseName)
 	q := v.(*listenQueue)
 
-	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
+	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}
 
 	// Close done (simulating closeDone() running first in defer chain).
 	q.closeDone()
@@ -1208,7 +1210,7 @@ func TestListenQueueConcurrentDialDuringReconnection(t *testing.T) {
 				rejectedMu.Lock()
 				rejectedCount++
 				rejectedMu.Unlock()
-			case q.ch <- &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}:
+			case q.ch <- &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: testRouterToken}:
 				sentMu.Lock()
 				sentCount++
 				sentMu.Unlock()
@@ -1366,7 +1368,7 @@ func TestSendToListenerReturnsWhenContextCancelledAndBufferFull(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- svc.sendToListener(ctx, leaseName, &pb.ListenResponse{
-			RouterEndpoint: "ep", RouterToken: "tok",
+			RouterEndpoint: "ep", RouterToken: testRouterToken,
 		})
 	}()
 
@@ -1399,7 +1401,7 @@ func TestSendToListenerUnblocksWhenContextCancelledDuringBackpressure(t *testing
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- svc.sendToListener(ctx, leaseName, &pb.ListenResponse{
-			RouterEndpoint: "ep", RouterToken: "tok",
+			RouterEndpoint: "ep", RouterToken: testRouterToken,
 		})
 	}()
 
@@ -1530,7 +1532,7 @@ func TestDeadlockChainBrokenByContextCancellation(t *testing.T) {
 	sendDone := make(chan error, 1)
 	go func() {
 		sendDone <- svc.sendToListener(ctx, leaseName, &pb.ListenResponse{
-			RouterEndpoint: "ep", RouterToken: "tok",
+			RouterEndpoint: "ep", RouterToken: testRouterToken,
 		})
 	}()
 
@@ -1583,4 +1585,3 @@ func TestDeadlockChainBrokenByContextCancellation(t *testing.T) {
 		t.Fatal("active queue should be g2")
 	}
 }
-
