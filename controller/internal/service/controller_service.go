@@ -115,7 +115,7 @@ func (s *ControllerService) swapListenQueue(leaseName string, newQueue *listenQu
 // per-lease lock guarantees that the queue loaded here cannot be superseded
 // between the load and the send, eliminating the TOCTOU race between Dial and
 // a reconnecting Listen.
-func (s *ControllerService) sendToListener(ctx context.Context, leaseName string, response *pb.ListenResponse) error {
+func (s *ControllerService) sendToListener(_ context.Context, leaseName string, response *pb.ListenResponse) error {
 	mu := s.getLeaseLock(leaseName)
 	mu.Lock()
 	defer mu.Unlock()
@@ -130,12 +130,10 @@ func (s *ControllerService) sendToListener(ctx context.Context, leaseName string
 	default:
 	}
 	select {
-	case <-q.done:
-		return status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
-	case <-ctx.Done():
-		return ctx.Err()
 	case q.ch <- response:
 		return nil
+	default:
+		return status.Errorf(codes.ResourceExhausted, "listener buffer full on lease %s", leaseName)
 	}
 }
 
