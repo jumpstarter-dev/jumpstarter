@@ -1033,9 +1033,18 @@ func TestListenQueueDialReturnsUnavailableWhenNoListener(t *testing.T) {
 	svc := &ControllerService{}
 	leaseName := "nonexistent-lease"
 
-	_, ok := svc.listenQueues.Load(leaseName)
-	if ok {
-		t.Fatal("expected no entry for nonexistent lease")
+	err := svc.sendToListener(context.Background(), leaseName, &pb.ListenResponse{
+		RouterEndpoint: "ep", RouterToken: testRouterToken,
+	})
+	if err == nil {
+		t.Fatal("sendToListener should return error for nonexistent lease")
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %v", err)
+	}
+	if st.Code() != codes.Unavailable {
+		t.Fatalf("expected codes.Unavailable, got %v", st.Code())
 	}
 }
 
@@ -1055,6 +1064,13 @@ func TestListenQueueDialReturnsUnavailableWhenDoneClosed(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("sendToListener should return error for done queue")
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %v", err)
+	}
+	if st.Code() != codes.Unavailable {
+		t.Fatalf("expected codes.Unavailable, got %v", st.Code())
 	}
 }
 
@@ -1230,7 +1246,14 @@ func TestListenQueueListenLoopDeliversTokensAndExitsOnDone(t *testing.T) {
 		for {
 			select {
 			case <-wrapper.done:
-				return
+				for {
+					select {
+					case msg := <-wrapper.ch:
+						delivered <- msg
+					default:
+						return
+					}
+				}
 			case msg := <-wrapper.ch:
 				delivered <- msg
 			}
@@ -1659,5 +1682,99 @@ func TestSwapNotBlockedWhenBufferFull(t *testing.T) {
 	}
 	if v != g2 {
 		t.Fatal("active queue should be g2")
+	}
+}
+
+func TestListenQueueDrainsBufferedTokensOnSupersession(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-drain-on-supersession"
+
+	wrapper := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.swapListenQueue(leaseName, wrapper)
+
+	err := svc.sendToListener(context.Background(), leaseName, &pb.ListenResponse{
+		RouterEndpoint: "ep1", RouterToken: "tok1",
+	})
+	if err != nil {
+		t.Fatalf("first sendToListener failed: %v", err)
+	}
+	err = svc.sendToListener(context.Background(), leaseName, &pb.ListenResponse{
+		RouterEndpoint: "ep2", RouterToken: "tok2",
+	})
+	if err != nil {
+		t.Fatalf("second sendToListener failed: %v", err)
+	}
+
+	superseder := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.swapListenQueue(leaseName, superseder)
+
+	select {
+	case <-wrapper.done:
+	default:
+		t.Fatal("wrapper.done should be closed after supersession")
+	}
+
+	if len(wrapper.ch) != 2 {
+		t.Fatalf("expected 2 buffered tokens before drain, got %d", len(wrapper.ch))
+	}
+
+	drained := drainChannel(wrapper.ch)
+	if drained != 2 {
+		t.Fatalf("expected 2 tokens to drain from superseded queue, got %d", drained)
+	}
+}
+
+func TestListenQueueListenLoopDrainsOnSupersession(t *testing.T) {
+	wrapper := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+
+	wrapper.ch <- &pb.ListenResponse{RouterEndpoint: "ep1", RouterToken: "tok1"}
+	wrapper.ch <- &pb.ListenResponse{RouterEndpoint: "ep2", RouterToken: "tok2"}
+
+	wrapper.closeDone()
+
+	delivered := make(chan *pb.ListenResponse, 8)
+	loopExited := make(chan struct{})
+
+	go func() {
+		defer close(loopExited)
+		for {
+			select {
+			case <-wrapper.done:
+				for {
+					select {
+					case msg := <-wrapper.ch:
+						delivered <- msg
+					default:
+						return
+					}
+				}
+			case msg := <-wrapper.ch:
+				delivered <- msg
+			}
+		}
+	}()
+
+	select {
+	case <-loopExited:
+	case <-time.After(time.Second):
+		t.Fatal("listen loop did not exit after done was closed")
+	}
+
+	close(delivered)
+	var count int
+	for range delivered {
+		count++
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 drained tokens from listen loop, got %d", count)
 	}
 }

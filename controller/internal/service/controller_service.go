@@ -542,7 +542,16 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		case <-ctx.Done():
 			return nil
 		case <-wrapper.done:
-			return nil
+			for {
+				select {
+				case msg := <-wrapper.ch:
+					if err := stream.Send(msg); err != nil {
+						return err
+					}
+				default:
+					return nil
+				}
+			}
 		case msg := <-wrapper.ch:
 			if err := stream.Send(msg); err != nil {
 				return err
