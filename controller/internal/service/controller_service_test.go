@@ -1511,3 +1511,76 @@ func TestLeaseLockPreservedWhenNewListenerTakesOver(t *testing.T) {
 	}
 }
 
+func TestDeadlockChainBrokenByContextCancellation(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-deadlock-chain"
+
+	g1 := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.swapListenQueue(leaseName, g1)
+
+	for i := 0; i < 8; i++ {
+		g1.ch <- &pb.ListenResponse{RouterEndpoint: "fill", RouterToken: "fill"}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sendDone := make(chan error, 1)
+	go func() {
+		sendDone <- svc.sendToListener(ctx, leaseName, &pb.ListenResponse{
+			RouterEndpoint: "ep", RouterToken: "tok",
+		})
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	g2 := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	swapDone := make(chan struct{})
+	go func() {
+		defer close(swapDone)
+		svc.swapListenQueue(leaseName, g2)
+	}()
+
+	select {
+	case <-swapDone:
+		t.Fatal("swapListenQueue should be blocked waiting for the per-lease mutex")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	cancel()
+
+	select {
+	case err := <-sendDone:
+		if err == nil {
+			t.Fatal("sendToListener should return a context error")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("sendToListener did not unblock after context cancellation")
+	}
+
+	select {
+	case <-swapDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("swapListenQueue did not proceed after sendToListener released the mutex")
+	}
+
+	select {
+	case <-g1.done:
+	default:
+		t.Fatal("g1 done channel should be closed after swap")
+	}
+
+	v, ok := svc.listenQueues.Load(leaseName)
+	if !ok {
+		t.Fatal("queue should exist for g2")
+	}
+	if v != g2 {
+		t.Fatal("active queue should be g2")
+	}
+}
+
