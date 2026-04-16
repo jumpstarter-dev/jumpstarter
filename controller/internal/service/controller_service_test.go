@@ -1272,7 +1272,7 @@ func TestListenQueueListenLoopDeliversTokensAndExitsOnDone(t *testing.T) {
 	}
 }
 
-func TestSendToListenerReturnsWhenContextCancelledAndBufferFull(t *testing.T) {
+func TestSendToListenerReturnsResourceExhaustedWithCancelledContextAndBufferFull(t *testing.T) {
 	svc := &ControllerService{}
 	leaseName := "test-lease-ctx-cancel-buffer-full"
 
@@ -1289,26 +1289,25 @@ func TestSendToListenerReturnsWhenContextCancelledAndBufferFull(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- svc.sendToListener(ctx, leaseName, &pb.ListenResponse{
-			RouterEndpoint: "ep", RouterToken: testRouterToken,
-		})
-	}()
+	err := svc.sendToListener(ctx, leaseName, &pb.ListenResponse{
+		RouterEndpoint: "ep", RouterToken: testRouterToken,
+	})
+	if err == nil {
+		t.Fatal("sendToListener should return error when buffer is full")
+	}
 
-	select {
-	case err := <-errCh:
-		if err == nil {
-			t.Fatal("sendToListener should return error when context is cancelled and buffer full")
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("sendToListener blocked indefinitely with cancelled context and full buffer")
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %v", err)
+	}
+	if st.Code() != codes.ResourceExhausted {
+		t.Fatalf("expected ResourceExhausted, got %v", st.Code())
 	}
 }
 
-func TestSendToListenerUnblocksWhenContextCancelledDuringBackpressure(t *testing.T) {
+func TestSendToListenerReturnsImmediatelyDuringBackpressure(t *testing.T) {
 	svc := &ControllerService{}
-	leaseName := "test-lease-ctx-cancel-backpressure"
+	leaseName := "test-lease-backpressure-immediate"
 
 	q := &listenQueue{
 		ch:   make(chan *pb.ListenResponse, 8),
@@ -1320,25 +1319,19 @@ func TestSendToListenerUnblocksWhenContextCancelledDuringBackpressure(t *testing
 		q.ch <- &pb.ListenResponse{RouterEndpoint: "fill", RouterToken: "fill"}
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	err := svc.sendToListener(context.Background(), leaseName, &pb.ListenResponse{
+		RouterEndpoint: "ep", RouterToken: testRouterToken,
+	})
+	if err == nil {
+		t.Fatal("sendToListener should return error when buffer is full")
+	}
 
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- svc.sendToListener(ctx, leaseName, &pb.ListenResponse{
-			RouterEndpoint: "ep", RouterToken: testRouterToken,
-		})
-	}()
-
-	time.Sleep(50 * time.Millisecond)
-	cancel()
-
-	select {
-	case err := <-errCh:
-		if err == nil {
-			t.Fatal("sendToListener should return error when context is cancelled")
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("sendToListener did not unblock after context cancellation")
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %v", err)
+	}
+	if st.Code() != codes.ResourceExhausted {
+		t.Fatalf("expected ResourceExhausted, got %v", st.Code())
 	}
 }
 
@@ -1424,9 +1417,88 @@ func TestLeaseLockPreservedWhenNewListenerTakesOver(t *testing.T) {
 	}
 }
 
-func TestDeadlockChainBrokenByContextCancellation(t *testing.T) {
+func TestSendToListenerReturnsResourceExhaustedWhenBufferFull(t *testing.T) {
 	svc := &ControllerService{}
-	leaseName := "test-deadlock-chain"
+	leaseName := "test-lease-buffer-full-nonblocking"
+
+	q := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.swapListenQueue(leaseName, q)
+
+	for i := 0; i < 8; i++ {
+		q.ch <- &pb.ListenResponse{RouterEndpoint: "fill", RouterToken: "fill"}
+	}
+
+	err := svc.sendToListener(context.Background(), leaseName, &pb.ListenResponse{
+		RouterEndpoint: "ep", RouterToken: testRouterToken,
+	})
+	if err == nil {
+		t.Fatal("sendToListener should return error when buffer is full")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %v", err)
+	}
+	if st.Code() != codes.ResourceExhausted {
+		t.Fatalf("expected ResourceExhausted, got %v", st.Code())
+	}
+}
+
+func TestSendToListenerDoesNotBlockMutexWhenBufferFull(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-no-mutex-block"
+
+	q := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.swapListenQueue(leaseName, q)
+
+	for i := 0; i < 8; i++ {
+		q.ch <- &pb.ListenResponse{RouterEndpoint: "fill", RouterToken: "fill"}
+	}
+
+	sendDone := make(chan struct{})
+	sendErr := make(chan error, 1)
+	go func() {
+		defer close(sendDone)
+		sendErr <- svc.sendToListener(context.Background(), leaseName, &pb.ListenResponse{
+			RouterEndpoint: "ep", RouterToken: testRouterToken,
+		})
+	}()
+
+	select {
+	case <-sendDone:
+		if err := <-sendErr; err == nil {
+			t.Fatal("sendToListener should return error when buffer is full")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("sendToListener blocked when buffer was full; mutex held too long")
+	}
+
+	swapDone := make(chan struct{})
+	go func() {
+		defer close(swapDone)
+		g2 := &listenQueue{
+			ch:   make(chan *pb.ListenResponse, 8),
+			done: make(chan struct{}),
+		}
+		svc.swapListenQueue(leaseName, g2)
+	}()
+
+	select {
+	case <-swapDone:
+	case <-time.After(time.Second):
+		t.Fatal("swapListenQueue blocked because sendToListener held the mutex on full buffer")
+	}
+}
+
+func TestSwapNotBlockedWhenBufferFull(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-no-deadlock-chain"
 
 	g1 := &listenQueue{
 		ch:   make(chan *pb.ListenResponse, 8),
@@ -1438,16 +1510,19 @@ func TestDeadlockChainBrokenByContextCancellation(t *testing.T) {
 		g1.ch <- &pb.ListenResponse{RouterEndpoint: "fill", RouterToken: "fill"}
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-
-	sendDone := make(chan error, 1)
-	go func() {
-		sendDone <- svc.sendToListener(ctx, leaseName, &pb.ListenResponse{
-			RouterEndpoint: "ep", RouterToken: testRouterToken,
-		})
-	}()
-
-	time.Sleep(50 * time.Millisecond)
+	err := svc.sendToListener(context.Background(), leaseName, &pb.ListenResponse{
+		RouterEndpoint: "ep", RouterToken: testRouterToken,
+	})
+	if err == nil {
+		t.Fatal("sendToListener should return error when buffer is full")
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %v", err)
+	}
+	if st.Code() != codes.ResourceExhausted {
+		t.Fatalf("expected ResourceExhausted, got %v", st.Code())
+	}
 
 	g2 := &listenQueue{
 		ch:   make(chan *pb.ListenResponse, 8),
@@ -1461,25 +1536,8 @@ func TestDeadlockChainBrokenByContextCancellation(t *testing.T) {
 
 	select {
 	case <-swapDone:
-		t.Fatal("swapListenQueue should be blocked waiting for the per-lease mutex")
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	cancel()
-
-	select {
-	case err := <-sendDone:
-		if err == nil {
-			t.Fatal("sendToListener should return a context error")
-		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("sendToListener did not unblock after context cancellation")
-	}
-
-	select {
-	case <-swapDone:
-	case <-time.After(2 * time.Second):
-		t.Fatal("swapListenQueue did not proceed after sendToListener released the mutex")
+		t.Fatal("swapListenQueue should not be blocked when sendToListener returned immediately")
 	}
 
 	select {
@@ -1488,8 +1546,8 @@ func TestDeadlockChainBrokenByContextCancellation(t *testing.T) {
 		t.Fatal("g1 done channel should be closed after swap")
 	}
 
-	v, ok := svc.listenQueues.Load(leaseName)
-	if !ok {
+	v, loaded := svc.listenQueues.Load(leaseName)
+	if !loaded {
 		t.Fatal("queue should exist for g2")
 	}
 	if v != g2 {
