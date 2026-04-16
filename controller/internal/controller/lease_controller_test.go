@@ -1947,3 +1947,86 @@ var _ = Describe("Scheduled Leases", func() {
 		})
 	})
 })
+
+var _ = Describe("filterOutNotReadyExporters", func() {
+	makeExporter := func(name string, status string) ApprovedExporter {
+		return ApprovedExporter{
+			Policy: jumpstarterdevv1alpha1.Policy{Priority: 0},
+			Exporter: jumpstarterdevv1alpha1.Exporter{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: "default",
+				},
+				Status: jumpstarterdevv1alpha1.ExporterStatus{
+					ExporterStatusValue: status,
+				},
+			},
+		}
+	}
+
+	When("all exporters are in hook-failed states", func() {
+		It("should exclude them all", func() {
+			exporters := []ApprovedExporter{
+				makeExporter("exp-before-failed", jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHookFailed),
+				makeExporter("exp-after-failed", jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHookFailed),
+			}
+
+			result := filterOutNotReadyExporters(exporters)
+			Expect(result).To(BeEmpty())
+		})
+	})
+
+	When("exporters are in Offline status", func() {
+		It("should exclude them", func() {
+			exporters := []ApprovedExporter{
+				makeExporter("exp-offline", jumpstarterdevv1alpha1.ExporterStatusOffline),
+			}
+
+			result := filterOutNotReadyExporters(exporters)
+			Expect(result).To(BeEmpty())
+		})
+	})
+
+	When("exporters are in mixed states", func() {
+		It("should only keep Available and unset exporters", func() {
+			exporters := []ApprovedExporter{
+				makeExporter("exp-available", jumpstarterdevv1alpha1.ExporterStatusAvailable),
+				makeExporter("exp-unset", ""),
+				makeExporter("exp-unspecified", jumpstarterdevv1alpha1.ExporterStatusUnspecified),
+				makeExporter("exp-offline", jumpstarterdevv1alpha1.ExporterStatusOffline),
+				makeExporter("exp-before-hook", jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHook),
+				makeExporter("exp-after-hook", jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHook),
+				makeExporter("exp-before-failed", jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHookFailed),
+				makeExporter("exp-after-failed", jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHookFailed),
+			}
+
+			result := filterOutNotReadyExporters(exporters)
+			Expect(result).To(HaveLen(3))
+
+			names := make([]string, len(result))
+			for i, ae := range result {
+				names[i] = ae.Exporter.Name
+			}
+			Expect(names).To(ConsistOf("exp-available", "exp-unset", "exp-unspecified"))
+		})
+	})
+
+	When("all exporters are Available", func() {
+		It("should keep them all", func() {
+			exporters := []ApprovedExporter{
+				makeExporter("exp1", jumpstarterdevv1alpha1.ExporterStatusAvailable),
+				makeExporter("exp2", jumpstarterdevv1alpha1.ExporterStatusAvailable),
+			}
+
+			result := filterOutNotReadyExporters(exporters)
+			Expect(result).To(HaveLen(2))
+		})
+	})
+
+	When("input is empty", func() {
+		It("should return empty", func() {
+			result := filterOutNotReadyExporters([]ApprovedExporter{})
+			Expect(result).To(BeEmpty())
+		})
+	})
+})
