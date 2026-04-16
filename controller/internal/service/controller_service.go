@@ -502,10 +502,11 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 	}
 	s.swapListenQueue(leaseName, wrapper)
 	defer func() {
+		mu := s.getLeaseLock(leaseName)
+		mu.Lock()
 		wrapper.closeDone()
-		if s.listenQueues.CompareAndDelete(leaseName, wrapper) {
-			s.leaseLocks.Delete(leaseName)
-		}
+		mu.Unlock()
+		s.listenQueues.CompareAndDelete(leaseName, wrapper)
 	}()
 	for {
 		select {
