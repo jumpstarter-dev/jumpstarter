@@ -33,8 +33,8 @@ class TestRenodeMonitor:
 
         async def mock_connect_tcp(host, port):
             nonlocal call_count
-            call_count += 1
-            if call_count < 3:
+            call_count += 1  # ty: ignore[unresolved-reference]
+            if call_count < 3:  # ty: ignore[unresolved-reference]
                 raise OSError("Connection refused")
             stream = AsyncMock()
             stream.receive = AsyncMock(return_value=b"Renode v1.15\n(monitor) \n")
@@ -128,7 +128,7 @@ class TestRenodeMonitor:
 
         async def mock_connect_tcp(host, port):
             nonlocal call_count
-            call_count += 1
+            call_count += 1  # ty: ignore[unresolved-reference]
             stream = AsyncMock()
             streams.append(stream)
             if call_count < 2:
@@ -254,7 +254,7 @@ class TestRenodeMonitor:
 def _make_driver(**kwargs) -> Renode:
     defaults = {"platform": "platforms/boards/stm32f4_discovery-kit.repl"}
     defaults.update(kwargs)
-    return Renode(**defaults)
+    return Renode(**defaults)  # ty: ignore[missing-argument]
 
 
 class TestRenodePower:
@@ -264,7 +264,7 @@ class TestRenodePower:
         driver = _make_driver(uart="sysbus.usart2")
         driver._firmware_path = "/tmp/test.elf"
         driver._load_command = "sysbus LoadELF"
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
 
         mock_monitor = AsyncMock(spec=RenodeMonitor)
 
@@ -298,7 +298,7 @@ class TestRenodePower:
         """Extra commands are sent between connector Connect and LoadELF."""
         driver = _make_driver(extra_commands=["sysbus WriteDoubleWord 0x40090030 0x0301"])
         driver._firmware_path = "/tmp/test.elf"
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
         mock_monitor = AsyncMock(spec=RenodeMonitor)
 
         with patch(
@@ -327,7 +327,7 @@ class TestRenodePower:
     async def test_power_on_without_firmware(self):
         """When no firmware is set, LoadELF is skipped but start is sent."""
         driver = _make_driver()
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
         mock_monitor = AsyncMock(spec=RenodeMonitor)
 
         with patch(
@@ -354,7 +354,7 @@ class TestRenodePower:
     async def test_power_on_idempotent(self):
         """Second on() call logs warning and does nothing."""
         driver = _make_driver()
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
         power._process = MagicMock()
 
         with patch("jumpstarter_driver_renode.driver.Popen") as mock_popen:
@@ -368,7 +368,7 @@ class TestRenodePower:
     async def test_power_off_terminates_process(self):
         """off() terminates the process, waits, then kills on timeout."""
         driver = _make_driver()
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
 
         mock_process = MagicMock()
         mock_process.terminate = MagicMock()
@@ -391,7 +391,7 @@ class TestRenodePower:
     async def test_power_off_clean_shutdown(self):
         """off() with clean process exit does not call kill()."""
         driver = _make_driver()
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
 
         mock_process = MagicMock()
         mock_process.wait = MagicMock()
@@ -408,7 +408,7 @@ class TestRenodePower:
     async def test_power_off_idempotent(self):
         """Second off() call logs warning and does nothing."""
         driver = _make_driver()
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
         power._process = None
 
         await power.off()
@@ -420,7 +420,7 @@ class TestRenodePower:
     async def test_power_close_calls_off(self):
         """close() terminates the process."""
         driver = _make_driver()
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
         mock_process = MagicMock()
         mock_process.wait = MagicMock()
         power._process = mock_process
@@ -433,7 +433,7 @@ class TestRenodePower:
     def test_close_kills_on_timeout(self):
         """close() kills process when wait() times out."""
         driver = _make_driver()
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
         mock_process = MagicMock()
         mock_process.wait = MagicMock(side_effect=TimeoutExpired("renode", 5))
         power._process = mock_process
@@ -447,7 +447,7 @@ class TestRenodePower:
     def test_close_cleans_up_monitor_socket(self):
         """close() calls close_sync() on the monitor before terminating."""
         driver = _make_driver()
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
         mock_process = MagicMock()
         mock_process.wait = MagicMock()
         power._process = mock_process
@@ -464,7 +464,7 @@ class TestRenodePower:
     async def test_power_on_cleanup_on_failure(self):
         """on() cleans up process when monitor setup fails."""
         driver = _make_driver()
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
 
         mock_monitor = AsyncMock(spec=RenodeMonitor)
         mock_monitor.execute.side_effect = RenodeMonitorError("setup failed")
@@ -498,7 +498,7 @@ class TestRenodePower:
     async def test_off_cleans_up_on_terminate_failure(self):
         """off() resets _process to None even if terminate() raises."""
         driver = _make_driver()
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
 
         mock_process = MagicMock()
         mock_process.terminate = MagicMock(side_effect=ProcessLookupError)
@@ -514,7 +514,7 @@ class TestRenodePower:
     async def test_power_read_not_implemented(self):
         """read() raises NotImplementedError."""
         driver = _make_driver()
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
 
         with pytest.raises(NotImplementedError):
             await power.read()
@@ -522,7 +522,7 @@ class TestRenodePower:
     def test_is_running_property(self):
         """is_running reflects process and monitor state."""
         driver = _make_driver()
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
 
         assert power.is_running is False
 
@@ -546,7 +546,7 @@ class TestRenodeFlasher:
         firmware_file = tmp_path / "test.elf"
         firmware_file.write_bytes(firmware_data)
 
-        flasher: RenodeFlasher = driver.children["flasher"]
+        flasher: RenodeFlasher = driver.children["flasher"]  # ty: ignore[invalid-assignment]
 
         with patch.object(flasher, "resource") as mock_resource:
             mock_res = AsyncMock()
@@ -564,12 +564,12 @@ class TestRenodeFlasher:
     async def test_flash_while_running_sends_load_and_reset(self):
         """When simulation is running, flash() sends load + Reset."""
         driver = _make_driver()
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
         power._process = MagicMock()
         mock_monitor = AsyncMock(spec=RenodeMonitor)
         power._monitor = mock_monitor
 
-        flasher: RenodeFlasher = driver.children["flasher"]
+        flasher: RenodeFlasher = driver.children["flasher"]  # ty: ignore[invalid-assignment]
         elf_data = b"\x7fELF" + b"\x00" * 60
 
         with patch.object(flasher, "resource") as mock_resource:
@@ -589,7 +589,7 @@ class TestRenodeFlasher:
     async def test_flash_custom_load_command(self):
         """flash() uses custom load_command when provided."""
         driver = _make_driver()
-        flasher: RenodeFlasher = driver.children["flasher"]
+        flasher: RenodeFlasher = driver.children["flasher"]  # ty: ignore[invalid-assignment]
 
         with patch.object(flasher, "resource") as mock_resource:
             mock_res = AsyncMock()
@@ -609,7 +609,7 @@ class TestRenodeFlasher:
     async def test_flash_rejects_invalid_load_command(self):
         """flash() rejects load_command values not in the allowlist."""
         driver = _make_driver()
-        flasher: RenodeFlasher = driver.children["flasher"]
+        flasher: RenodeFlasher = driver.children["flasher"]  # ty: ignore[invalid-assignment]
 
         with pytest.raises(ValueError, match="unsupported load_command"):
             await flasher.flash("/some/fw.elf", load_command="logFile @/tmp/evil")
@@ -618,7 +618,7 @@ class TestRenodeFlasher:
     async def test_dump_not_implemented(self):
         """dump() raises NotImplementedError."""
         driver = _make_driver()
-        flasher: RenodeFlasher = driver.children["flasher"]
+        flasher: RenodeFlasher = driver.children["flasher"]  # ty: ignore[invalid-assignment]
 
         with pytest.raises(NotImplementedError, match="not supported"):
             await flasher.dump("/dev/null")
@@ -718,7 +718,7 @@ class TestRenodeConfig:
     async def test_monitor_cmd_success(self):
         """monitor_cmd succeeds when allow_raw_monitor is True and running."""
         driver = _make_driver(allow_raw_monitor=True)
-        power: RenodePower = driver.children["power"]
+        power: RenodePower = driver.children["power"]  # ty: ignore[invalid-assignment]
         mock_monitor = AsyncMock(spec=RenodeMonitor)
         mock_monitor.execute = AsyncMock(return_value="OK\n")
         power._process = MagicMock()

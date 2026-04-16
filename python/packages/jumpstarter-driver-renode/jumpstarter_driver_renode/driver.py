@@ -86,7 +86,7 @@ class RenodeFlasher(FlasherInterface, Driver):
             cmd = _detect_load_command(firmware_path)
         self.parent.set_firmware(firmware_path, cmd)
 
-        power: RenodePower = self.parent.children["power"]
+        power: RenodePower = self.parent.children["power"]  # ty: ignore[invalid-assignment]
         if power.is_running:
             await power.send_monitor_command(f'{cmd} @"{firmware_path}"')
             await power.send_monitor_command("machine Reset")
@@ -295,5 +295,5 @@ class Renode(Driver):
             raise RuntimeError(
                 "raw monitor access is disabled; set allow_raw_monitor: true in exporter config to enable"
             )
-        power: RenodePower = self.children["power"]
+        power: RenodePower = self.children["power"]  # ty: ignore[invalid-assignment]
         return await power.send_monitor_command(command)
