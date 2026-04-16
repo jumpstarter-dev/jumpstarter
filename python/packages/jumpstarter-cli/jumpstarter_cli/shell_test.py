@@ -14,6 +14,7 @@ from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentic
 
 from jumpstarter_cli.shell import (
     _attempt_token_recovery,
+    _handle_after_lease_result,
     _monitor_token_expiry,
     _resolve_lease_from_active_async,
     _shell_with_signal_handling,
@@ -25,6 +26,8 @@ from jumpstarter_cli.shell import (
 )
 
 from jumpstarter.client.grpc import Lease, LeaseList
+from jumpstarter.common import ExporterStatus
+from jumpstarter.common.exceptions import ExporterOfflineError
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
 
@@ -321,6 +324,7 @@ def test_shell_allows_env_lease_without_selector_or_name():
 
     mock_exit.assert_called_once_with(0)
 
+
 def test_resolve_lease_handles_async_list_leases():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
@@ -333,6 +337,7 @@ def test_resolve_lease_handles_async_list_leases():
 
 def _make_expired_jwt() -> str:
     """Create a JWT with an exp claim in the past (no signature verification needed)."""
+
     def b64url(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
@@ -437,9 +442,7 @@ class TestTryRefreshToken:
     @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
     @patch("jumpstarter_cli.shell.Config")
     @patch("jumpstarter_cli.shell.decode_jwt_issuer", return_value="https://issuer")
-    async def test_successful_refresh_without_new_refresh_token(
-        self, _mock_issuer, mock_oidc_cls, _mock_save
-    ):
+    async def test_successful_refresh_without_new_refresh_token(self, _mock_issuer, mock_oidc_cls, _mock_save):
         config = _make_config()
         lease = _make_mock_lease()
 
@@ -471,9 +474,7 @@ class TestTryRefreshToken:
     @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
     @patch("jumpstarter_cli.shell.Config")
     @patch("jumpstarter_cli.shell.decode_jwt_issuer", return_value="https://issuer")
-    async def test_save_failure_does_not_fail_refresh(
-        self, _mock_issuer, mock_oidc_cls, mock_save, caplog
-    ):
+    async def test_save_failure_does_not_fail_refresh(self, _mock_issuer, mock_oidc_cls, mock_save, caplog):
         """Disk save is best-effort; refresh should still succeed."""
         config = _make_config()
         lease = _make_mock_lease()
@@ -547,9 +548,7 @@ class TestTryReloadTokenFromDisk:
 
     @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds", return_value=-10)
-    async def test_returns_false_when_disk_token_is_expired(
-        self, _mock_remaining, mock_client_cfg
-    ):
+    async def test_returns_false_when_disk_token_is_expired(self, _mock_remaining, mock_client_cfg):
         config = _make_config(token="old_tok")
         disk_config = Mock()
         disk_config.token = "disk_tok"
@@ -640,9 +639,7 @@ class TestMonitorTokenExpiry:
     @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell._attempt_token_recovery", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
-    async def test_refreshes_when_below_threshold(
-        self, mock_remaining, mock_recovery, mock_sleep, mock_click
-    ):
+    async def test_refreshes_when_below_threshold(self, mock_remaining, mock_recovery, mock_sleep, mock_click):
         # First call: below threshold; second call: raise to exit
         mock_remaining.side_effect = [60, Exception("done")]
         mock_recovery.return_value = "Token refreshed automatically."
@@ -659,9 +656,7 @@ class TestMonitorTokenExpiry:
     @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell._attempt_token_recovery", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
-    async def test_warns_when_refresh_fails(
-        self, mock_remaining, mock_recovery, mock_sleep, mock_click
-    ):
+    async def test_warns_when_refresh_fails(self, mock_remaining, mock_recovery, mock_sleep, mock_click):
         mock_remaining.side_effect = [60, Exception("done")]
         mock_recovery.return_value = None  # all recovery failed
         config = _make_config()
@@ -674,9 +669,7 @@ class TestMonitorTokenExpiry:
     @patch("jumpstarter_cli.shell.click")
     @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
-    async def test_warns_within_expiry_window(
-        self, mock_remaining, mock_sleep, mock_click
-    ):
+    async def test_warns_within_expiry_window(self, mock_remaining, mock_sleep, mock_click):
         from jumpstarter_cli_common.oidc import TOKEN_EXPIRY_WARNING_SECONDS
 
         # First iteration: within warning window but above refresh threshold
@@ -721,9 +714,7 @@ class TestMonitorTokenExpiry:
     @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell._attempt_token_recovery", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
-    async def test_sleeps_5s_when_below_threshold(
-        self, mock_remaining, mock_recovery, mock_sleep, _mock_click
-    ):
+    async def test_sleeps_5s_when_below_threshold(self, mock_remaining, mock_recovery, mock_sleep, _mock_click):
         mock_remaining.side_effect = [60, Exception("done")]
         mock_recovery.return_value = None
         config = _make_config()
@@ -737,9 +728,7 @@ class TestMonitorTokenExpiry:
     @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell._attempt_token_recovery", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
-    async def test_does_not_cancel_scope_on_expiry(
-        self, mock_remaining, mock_recovery, mock_sleep, _mock_click
-    ):
+    async def test_does_not_cancel_scope_on_expiry(self, mock_remaining, mock_recovery, mock_sleep, _mock_click):
         """The monitor must never cancel the scope — the shell stays alive."""
         mock_remaining.side_effect = [60, Exception("done")]
         mock_recovery.return_value = None
@@ -776,3 +765,53 @@ class TestMonitorTokenExpiry:
         assert len(yellow_calls) >= 1, "Expected yellow warning for near-expiry"
         assert len(red_calls) >= 1, "Expected red warning for actual expiry"
         assert token_state["expired_unrecovered"] is True
+
+
+class TestHandleAfterLeaseResult:
+    def _make_monitor(self, connection_lost=False, current_status=None, status_message=""):
+        monitor = Mock()
+        monitor.connection_lost = connection_lost
+        monitor.current_status = current_status
+        monitor.status_message = status_message
+        return monitor
+
+    def test_hook_completed_successfully(self):
+        monitor = self._make_monitor(current_status=ExporterStatus.AVAILABLE)
+        _handle_after_lease_result(ExporterStatus.AVAILABLE, monitor)
+
+    def test_hook_failed_raises_error(self):
+        monitor = self._make_monitor(
+            current_status=ExporterStatus.AFTER_LEASE_HOOK_FAILED,
+            status_message="hook script exited with code 1",
+        )
+        with pytest.raises(ExporterOfflineError, match="hook script exited with code 1"):
+            _handle_after_lease_result(ExporterStatus.AFTER_LEASE_HOOK_FAILED, monitor)
+
+    def test_connection_lost_during_running_hook_does_not_raise(self):
+        """When connection is lost while hook is still running, client should
+        exit gracefully. The exporter continues the hook autonomously."""
+        monitor = self._make_monitor(
+            connection_lost=True,
+            current_status=ExporterStatus.AFTER_LEASE_HOOK,
+        )
+        _handle_after_lease_result(None, monitor)
+
+    def test_connection_lost_after_hook_failed_raises_error(self):
+        monitor = self._make_monitor(
+            connection_lost=True,
+            current_status=ExporterStatus.AFTER_LEASE_HOOK_FAILED,
+            status_message="hook crashed",
+        )
+        with pytest.raises(ExporterOfflineError, match="hook crashed"):
+            _handle_after_lease_result(None, monitor)
+
+    def test_connection_lost_hook_not_running_exits_gracefully(self):
+        monitor = self._make_monitor(
+            connection_lost=True,
+            current_status=ExporterStatus.LEASE_READY,
+        )
+        _handle_after_lease_result(None, monitor)
+
+    def test_timeout_returns_none(self):
+        monitor = self._make_monitor(connection_lost=False)
+        _handle_after_lease_result(None, monitor)
