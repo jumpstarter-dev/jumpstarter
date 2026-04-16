@@ -196,11 +196,11 @@ class TestDriverMethods:
 
         # Test on() method
         driver.on()
-        driver._line.set_value.assert_called_with(18, mock_gpiod.line.Value.ACTIVE)
+        driver._line.set_value.assert_called_with(18, mock_gpiod.line.Value.ACTIVE)  # ty: ignore[possibly-unbound-attribute]
 
         # Test off() method
         driver.off()
-        driver._line.set_value.assert_called_with(18, mock_gpiod.line.Value.INACTIVE)
+        driver._line.set_value.assert_called_with(18, mock_gpiod.line.Value.INACTIVE)  # ty: ignore[possibly-unbound-attribute]
 
         # Test read_pin() method
         driver._line.get_value.return_value = mock_gpiod.line.Value.ACTIVE  # ty: ignore[invalid-assignment]
@@ -238,7 +238,7 @@ class TestDriverMethods:
         # Test wait_for_active() when already active
         driver._line.get_value.return_value = mock_gpiod.line.Value.ACTIVE  # ty: ignore[invalid-assignment]
         driver.wait_for_active()
-        driver._line.wait_edge_events.assert_not_called()
+        driver._line.wait_edge_events.assert_not_called()  # ty: ignore[possibly-unbound-attribute]
 
         # Test wait_for_active() with timeout
         driver._line.get_value.return_value = mock_gpiod.line.Value.INACTIVE  # ty: ignore[invalid-assignment]
@@ -256,8 +256,8 @@ class TestDriverMethods:
         driver._line.read_edge_events.return_value = [mock_event]  # ty: ignore[invalid-assignment]
 
         driver.wait_for_edge("rising")
-        driver._line.wait_edge_events.assert_called()
-        driver._line.read_edge_events.assert_called()
+        driver._line.wait_edge_events.assert_called()  # ty: ignore[possibly-unbound-attribute]
+        driver._line.read_edge_events.assert_called()  # ty: ignore[possibly-unbound-attribute]
 
         # Test wait_for_edge() with invalid edge type
         with pytest.raises(ValueError, match="Invalid edge type: invalid"):
