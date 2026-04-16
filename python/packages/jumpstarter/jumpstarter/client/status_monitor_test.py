@@ -810,6 +810,39 @@ class TestStatusMonitorStatusMessageUpdate:
         assert monitor.status_message == "hook script exited with code 1"
 
 
+class TestStatusMonitorUnavailableRetryDelay:
+    async def test_unavailable_retries_include_inter_retry_delay(self) -> None:
+        """Test that UNAVAILABLE retries sleep between attempts.
+
+        Without inter-retry delay, 10 UNAVAILABLE errors (which return
+        near-instantly) would be exhausted in milliseconds, providing
+        no time for an exporter to restart. The poll loop must sleep
+        between UNAVAILABLE retries so the threshold spans a meaningful
+        wall-clock duration.
+        """
+        import time
+
+        retry_count = 10
+        poll_interval = 0.05
+        responses = [
+            create_mock_rpc_error(StatusCode.UNAVAILABLE)
+            for _ in range(retry_count)
+        ]
+        stub = MockExporterStub(responses, repeat_last=False)
+        monitor = StatusMonitor(stub, poll_interval=poll_interval)
+
+        start = time.monotonic()
+        await monitor.start()
+        elapsed = time.monotonic() - start
+
+        assert monitor.connection_lost
+        minimum_expected = poll_interval * (retry_count - 1)
+        assert elapsed >= minimum_expected, (
+            f"UNAVAILABLE retries completed in {elapsed:.3f}s, "
+            f"expected at least {minimum_expected:.3f}s with inter-retry delay"
+        )
+
+
 class TestStatusMonitorPRIssues:
     """Regression tests for issues reported during PR review of hooks feature."""
 

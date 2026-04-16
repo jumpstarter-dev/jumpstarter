@@ -406,7 +406,6 @@ class StatusMonitor:
                         logger.warning("GetStatus UNAVAILABLE %d times consecutively", unavailable_retries)
                     else:
                         logger.debug("GetStatus UNAVAILABLE (attempt %d), retrying...", unavailable_retries)
-                    continue
                 elif e.code() == StatusCode.DEADLINE_EXCEEDED:
                     # DEADLINE_EXCEEDED is a transient error (RPC timed out), not a
                     # permanent connection loss. Keep polling - the shell's own timeout
