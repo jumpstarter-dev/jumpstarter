@@ -908,3 +908,38 @@ class TestRunShellWithLeaseAsync:
 
         assert exit_code == 0
         client.end_session_async.assert_called_once()
+
+    async def test_available_status_probe_with_lease_ended_race(self):
+        """When lease expires during the probe (race condition), AVAILABLE
+        should not be treated as connection loss."""
+        monitor = _FakeStatusMonitor()
+        lease = _make_shell_lease(release=True, lease_ended=False)
+        cancel_scope = Mock(cancel_called=False)
+
+        call_count = 0
+
+        async def get_status_race():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return ExporterStatus.LEASE_READY
+            lease.lease_ended = True
+            return ExporterStatus.AVAILABLE
+
+        client = _build_fake_client(monitor, get_status_return=ExporterStatus.LEASE_READY)
+        client.get_status_async = get_status_race
+
+        @asynccontextmanager
+        async def fake_client_from_path(*_a, **_kw):
+            yield client
+
+        with (
+            patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
+            patch("jumpstarter_cli.shell._run_shell_only", return_value=0),
+        ):
+            exit_code = await _run_shell_with_lease_async(
+                lease, False, None, (), cancel_scope
+            )
+
+        assert exit_code == 0
+        assert not monitor._connection_lost
