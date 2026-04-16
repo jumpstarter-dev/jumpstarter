@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 from dataclasses import dataclass
+from types import FrameType
 from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
@@ -155,7 +156,7 @@ class DemuxerManager:
         if cls._signal_handlers_installed:
             return
 
-        def make_handler(sig: signal.Signals) -> Callable[[int, any], None]:  # ty: ignore[invalid-type-form]
+        def make_handler(sig: signal.Signals) -> Callable[[int, FrameType | None], None]:
             """Create a signal handler that cleans up and re-raises the signal."""
 
             def handler(signum: int, frame):
