@@ -522,3 +522,53 @@ class TestMonitorAsyncError:
         callback.assert_called()
         _, remain_arg = callback.call_args[0]
         assert remain_arg == timedelta(0)
+
+    @pytest.mark.anyio
+    async def test_sets_lease_ended_on_cancellation_when_end_time_passed(self):
+        """When _monitor is cancelled while sleeping and the lease has expired
+        based on last_known_end_time, lease_ended must be set to True.
+
+        This reproduces issue #235: when a lease expires during the beforeLease
+        hook and the monitor is cancelled (by monitor_async.__aexit__) before
+        detecting the expiry, lease_ended stays False, causing the client to
+        report 'Connection to exporter lost' instead of exiting gracefully.
+
+        We simulate the boundary timing by:
+        1. Returning an end_time slightly in the future (100ms) so _monitor
+           caches it and starts sleeping for ~100ms
+        2. Sleeping 200ms in the body so the end_time passes during the monitor
+           sleep, then exiting the context (cancelling _monitor)
+        3. The finally block sees that last_known_end_time has passed and sets
+           lease_ended = True
+        """
+        lease = self._make_lease_for_monitor()
+        lease.lease_ended = False
+
+        end_time = datetime.now(tz=timezone.utc) + timedelta(milliseconds=100)
+
+        call_count = 0
+
+        async def get_with_end_time():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return Mock(
+                    effective_begin_time=end_time - timedelta(hours=1),
+                    effective_duration=timedelta(hours=1),
+                    effective_end_time=end_time,
+                )
+            raise Exception("connection lost")
+
+        lease.get = get_with_end_time
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock) as mock_sleep:
+            async def controlled_sleep(duration):
+                await asyncio.sleep(min(duration, 0.5))
+
+            mock_sleep.side_effect = controlled_sleep
+
+            async with lease.monitor_async():
+                await asyncio.sleep(0.2)
+
+        assert call_count >= 1, "get() should have been called at least once to cache end_time"
+        assert lease.lease_ended is True
