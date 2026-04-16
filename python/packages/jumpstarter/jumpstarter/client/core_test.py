@@ -380,8 +380,8 @@ def _clean_source_loggers():
 
 
 class TestLogStreamSourceTagPlacement:
-    async def test_hook_log_message_prepends_source_tag(self) -> None:
-        """F001: Source tag must appear at the beginning of each log message, not at the end."""
+    async def test_hook_log_delegates_tagging_to_formatter(self) -> None:
+        """F050: core.py must NOT prepend source tags -- SourcePrefixFormatter handles that."""
         responses = [
             create_log_stream_response(
                 "hook output line",
@@ -398,13 +398,14 @@ class TestLogStreamSourceTagPlacement:
 
         records = captures["exporter:beforeLease"].records
         assert len(records) == 1
-        assert records[0].getMessage().startswith("[exporter:beforeLease]"), (
-            f"Expected message to start with '[exporter:beforeLease]', "
+        assert records[0].getMessage() == "hook output line", (
+            f"Expected raw message without tag prefix, "
             f"got: '{records[0].getMessage()}'"
         )
+        assert records[0].name == "exporter:beforeLease"
 
-    async def test_after_lease_hook_log_prepends_source_tag(self) -> None:
-        """Source tag for afterLease hook must appear at the beginning."""
+    async def test_after_lease_hook_log_delegates_tagging_to_formatter(self) -> None:
+        """F050: afterLease source tag must come from formatter, not from core.py."""
         responses = [
             create_log_stream_response(
                 "cleanup output",
@@ -421,10 +422,41 @@ class TestLogStreamSourceTagPlacement:
 
         records = captures["exporter:afterLease"].records
         assert len(records) == 1
-        assert records[0].getMessage().startswith("[exporter:afterLease]"), (
-            f"Expected message to start with '[exporter:afterLease]', "
+        assert records[0].getMessage() == "cleanup output", (
+            f"Expected raw message without tag prefix, "
             f"got: '{records[0].getMessage()}'"
         )
+        assert records[0].name == "exporter:afterLease"
+
+    async def test_logger_name_carries_source_for_formatter(self) -> None:
+        """F050: source_logger.name must carry the source tag so formatters can use it."""
+        responses = [
+            create_log_stream_response(
+                "line one",
+                severity="INFO",
+                source=LogSource.BEFORE_LEASE_HOOK,
+            ),
+            create_log_stream_response(
+                "line two",
+                severity="INFO",
+                source=LogSource.AFTER_LEASE_HOOK,
+            ),
+        ]
+
+        client, captures = setup_log_stream_client(responses)
+
+        async with client.log_stream_async(show_all_logs=True):
+            import anyio
+            await anyio.sleep(0.1)
+
+        before_records = captures["exporter:beforeLease"].records
+        after_records = captures["exporter:afterLease"].records
+        assert len(before_records) == 1
+        assert before_records[0].name == "exporter:beforeLease"
+        assert before_records[0].getMessage() == "line one"
+        assert len(after_records) == 1
+        assert after_records[0].name == "exporter:afterLease"
+        assert after_records[0].getMessage() == "line two"
 
 
 class TestLogStreamFiltering:

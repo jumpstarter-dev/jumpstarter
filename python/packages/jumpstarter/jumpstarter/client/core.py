@@ -506,8 +506,7 @@ class AsyncDriverClient(
                                 logger_name = "exporter:system"
 
                             source_logger = logging.getLogger(logger_name)
-                            tagged_message = f"[{logger_name}] {response.message}"
-                            source_logger.log(log_level, tagged_message)
+                            source_logger.log(log_level, response.message)
 
                     # Stream ended normally (server closed it)
                     self.logger.debug("Log stream ended normally, attempting reconnect...")
