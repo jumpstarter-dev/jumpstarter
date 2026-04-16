@@ -31,6 +31,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+func drainChannel(ch <-chan *pb.ListenResponse) int {
+	count := 0
+	for {
+		select {
+		case <-ch:
+			count++
+		default:
+			return count
+		}
+	}
+}
+
 func TestProtoStatusToString(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1232,30 +1244,13 @@ func TestListenQueueConcurrentDialDuringReconnection(t *testing.T) {
 
 	<-g1ListenerDone
 
-	drainCount := 0
-	for {
-		select {
-		case <-g1.ch:
-			drainCount++
-		default:
-			goto drained
-		}
-	}
-drained:
+	drainCount := drainChannel(g1.ch)
 
 	if g2 != nil {
 		g2.closeDone()
 		<-g2ListenerDone
-		for {
-			select {
-			case <-g2.ch:
-				drainCount++
-			default:
-				goto g2drained
-			}
-		}
+		drainCount += drainChannel(g2.ch)
 	}
-g2drained:
 
 	mu.Lock()
 	delivered := deliveredCount
