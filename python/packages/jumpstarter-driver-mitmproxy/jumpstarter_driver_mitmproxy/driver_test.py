@@ -598,16 +598,16 @@ class TestConfigValidation:
             directories={"data": "/tmp/myproxy"},
         )
         try:
-            assert d.directories.data == "/tmp/myproxy"  # ty: ignore[possibly-unbound-attribute]
-            assert d.directories.conf == "/tmp/myproxy/conf"  # ty: ignore[possibly-unbound-attribute]
-            assert d.directories.flows == "/tmp/myproxy/flows"  # ty: ignore[possibly-unbound-attribute]
-            assert d.directories.addons == "/tmp/myproxy/addons"  # ty: ignore[possibly-unbound-attribute]
-            assert d.directories.mocks == "/tmp/myproxy/mock-responses"  # ty: ignore[possibly-unbound-attribute]
-            assert d.directories.files == "/tmp/myproxy/mock-files"  # ty: ignore[possibly-unbound-attribute]
-            assert d.listen.host == "127.0.0.1"  # ty: ignore[possibly-unbound-attribute]
-            assert d.listen.port == 8080  # ty: ignore[possibly-unbound-attribute]
-            assert d.web.host == "127.0.0.1"  # ty: ignore[possibly-unbound-attribute]
-            assert d.web.port == 8081  # ty: ignore[possibly-unbound-attribute]
+            assert d.directories.data == "/tmp/myproxy"
+            assert d.directories.conf == "/tmp/myproxy/conf"
+            assert d.directories.flows == "/tmp/myproxy/flows"
+            assert d.directories.addons == "/tmp/myproxy/addons"
+            assert d.directories.mocks == "/tmp/myproxy/mock-responses"
+            assert d.directories.files == "/tmp/myproxy/mock-files"
+            assert d.listen.host == "127.0.0.1"
+            assert d.listen.port == 8080
+            assert d.web.host == "127.0.0.1"
+            assert d.web.port == 8081
         finally:
             d._stop_capture_server()
 
@@ -619,8 +619,8 @@ class TestConfigValidation:
             },
         )
         try:
-            assert d.directories.conf == "/etc/mitmproxy"  # ty: ignore[possibly-unbound-attribute]
-            assert d.directories.flows == "/tmp/myproxy/flows"  # ty: ignore[possibly-unbound-attribute]
+            assert d.directories.conf == "/etc/mitmproxy"
+            assert d.directories.flows == "/tmp/myproxy/flows"
         finally:
             d._stop_capture_server()
 

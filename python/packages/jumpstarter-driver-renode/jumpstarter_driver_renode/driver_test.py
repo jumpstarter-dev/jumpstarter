@@ -252,9 +252,8 @@ class TestRenodeMonitor:
 
 
 def _make_driver(**kwargs) -> Renode:
-    defaults = {"platform": "platforms/boards/stm32f4_discovery-kit.repl"}
-    defaults.update(kwargs)
-    return Renode(**defaults)  # ty: ignore[missing-argument]
+    platform = kwargs.pop("platform", "platforms/boards/stm32f4_discovery-kit.repl")
+    return Renode(platform=platform, **kwargs)
 
 
 class TestRenodePower:

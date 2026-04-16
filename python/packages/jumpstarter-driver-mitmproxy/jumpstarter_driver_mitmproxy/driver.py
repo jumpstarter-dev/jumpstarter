@@ -352,13 +352,13 @@ class MitmproxyDriver(Driver):
 
     # ── Configuration (from exporter YAML) ──────────────────────
 
-    listen: ListenConfig | dict = field(default_factory=dict)
+    listen: ListenConfig = field(default_factory=ListenConfig)
     """Proxy listener address (host/port). See :class:`ListenConfig`."""
 
-    web: WebConfig | dict = field(default_factory=dict)
+    web: WebConfig = field(default_factory=WebConfig)
     """mitmweb UI address (host/port). See :class:`WebConfig`."""
 
-    directories: DirectoriesConfig | dict = field(default_factory=dict)
+    directories: DirectoriesConfig = field(default_factory=DirectoriesConfig)
     """Directory layout. See :class:`DirectoriesConfig`."""
 
     ssl_insecure: bool = True
