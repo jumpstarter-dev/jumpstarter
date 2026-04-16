@@ -56,7 +56,7 @@ var (
 var (
 	// Marks this field as a resource handle — a UUID string referencing
 	// a client-negotiated stream via the Jumpstarter resource system.
-	// See "Resource Handle Pattern" in JEP-0001.
+	// See "Resource Handle Pattern" in JEP-0011.
 	//
 	// optional bool resource_handle = 50000;
 	E_ResourceHandle = &file_jumpstarter_annotations_annotations_proto_extTypes[1]

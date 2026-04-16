@@ -1,8 +1,8 @@
-# JEP-0001: Protobuf Introspection and Interface Generation
+# JEP-0011: Protobuf Introspection and Interface Generation
 
 | Field             | Value                                                 |
 | ----------------- | ----------------------------------------------------- |
-| **JEP**           | 0001                                                  |
+| **JEP**           | 0011                                                  |
 | **Title**         | Protobuf Introspection and Interface Generation       |
 | **Author(s)**     | @kirkbrauer (Kirk Brauer)                             |
 | **Status**        | Draft                                                 |
@@ -1373,7 +1373,7 @@ Encoding type information into the existing `methods_description` map (e.g., as 
 
 3. **Proto package naming convention:** The proposed convention is `jumpstarter.interfaces.{name}.{version}` (e.g., `jumpstarter.interfaces.power.v1`). Should this be formalized as a requirement for all interfaces, or should driver authors have flexibility?
 
-4. **`UdsInterface` refactoring:** ~~The `UdsInterface` concrete mixin pattern (where `@export` is on the interface itself) must be refactored to use `DriverInterface` + `@abstractmethod`. Should this refactoring be a prerequisite for JEP-0001, or tracked as a separate cleanup?~~ **Resolved:** Deferred to a follow-up task. `UdsInterface` is excluded from Phase 1b migration. The builder will handle non-`DriverInterface` classes via a legacy fallback path during the transition. See "Deferred: `UdsInterface` concrete mixin" in Design Details.
+4. **`UdsInterface` refactoring:** ~~The `UdsInterface` concrete mixin pattern (where `@export` is on the interface itself) must be refactored to use `DriverInterface` + `@abstractmethod`. Should this refactoring be a prerequisite for JEP-0011, or tracked as a separate cleanup?~~ **Resolved:** Deferred to a follow-up task. `UdsInterface` is excluded from Phase 1b migration. The builder will handle non-`DriverInterface` classes via a legacy fallback path during the transition. See "Deferred: `UdsInterface` concrete mixin" in Design Details.
 
 5. **Migration timeline for `DriverInterfaceMeta`:** ~~Should all existing interfaces migrate to the new `DriverInterface` base class in Phase 1, or can migration be gradual?~~ **Resolved:** All standard interfaces (PowerInterface, VirtualPowerInterface, NetworkInterface, FlasherInterface, StorageMuxInterface, StorageMuxFlasherInterface, CompositeInterface) migrate in Phase 1b. UdsInterface is deferred. FlasherClientInterface (a client-side ABC) is explicitly out of scope.
 

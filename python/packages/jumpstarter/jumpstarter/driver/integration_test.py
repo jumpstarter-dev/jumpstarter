@@ -1,4 +1,4 @@
-"""Integration tests for JEP-0001: Protobuf Introspection (Phases 1a, 2).
+"""Integration tests for JEP-0011: Protobuf Introspection (Phases 1a, 2).
 
 These tests verify that DriverInterface + @export work together in
 realistic driver/client scenarios using the serve() test harness.
