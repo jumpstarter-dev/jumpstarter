@@ -599,7 +599,15 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             # (subject to its configured timeout) before cleanup proceeds.
             # Safety timeout: prevent permanent deadlock if before_lease_hook
             # was never set due to a race (e.g. conn_tg cancelled early).
-            with move_on_after(30) as timeout_scope:
+            # Use the configured hook timeout (+ margin) when available so we
+            # never interrupt a legitimately-running beforeLease hook.
+            safety_timeout = 300  # generous default for no-hook / unknown cases
+            if (
+                self.hook_executor
+                and self.hook_executor.config.before_lease
+            ):
+                safety_timeout = self.hook_executor.config.before_lease.timeout + 30
+            with move_on_after(safety_timeout) as timeout_scope:
                 await lease_scope.before_lease_hook.wait()
             if timeout_scope.cancelled_caught:
                 logger.warning(
