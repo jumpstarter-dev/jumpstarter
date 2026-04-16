@@ -693,7 +693,7 @@ func TestDialSendsTokenViaServiceMethod(t *testing.T) {
 
 	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
 
-	err := svc.sendToListener(leaseName, response)
+	err := svc.sendToListener(context.Background(), leaseName, response)
 	if err != nil {
 		t.Fatalf("sendToListener should succeed for active queue: %v", err)
 	}
@@ -727,7 +727,7 @@ func TestDialSendToListenerRejectsSupersededQueue(t *testing.T) {
 
 	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
 
-	err := svc.sendToListener(leaseName, response)
+	err := svc.sendToListener(context.Background(), leaseName, response)
 	if err != nil {
 		t.Fatalf("sendToListener should succeed for the new active queue: %v", err)
 	}
@@ -752,7 +752,7 @@ func TestDialSendToListenerRejectsNoListener(t *testing.T) {
 	svc := &ControllerService{}
 
 	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
-	err := svc.sendToListener("nonexistent-lease", response)
+	err := svc.sendToListener(context.Background(), "nonexistent-lease", response)
 	if err == nil {
 		t.Fatal("sendToListener should return error when no listener exists")
 	}
@@ -770,7 +770,7 @@ func TestDialSendToListenerRejectsDoneQueue(t *testing.T) {
 	svc.listenQueues.Store(leaseName, q)
 
 	response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
-	err := svc.sendToListener(leaseName, response)
+	err := svc.sendToListener(context.Background(), leaseName, response)
 	if err == nil {
 		t.Fatal("sendToListener should return error for done queue")
 	}
@@ -806,7 +806,7 @@ func TestDialSendToListenerSerializesWithSwap(t *testing.T) {
 		svc.swapListenQueue(leaseName, g2)
 
 		response := &pb.ListenResponse{RouterEndpoint: "ep", RouterToken: "tok"}
-		err := svc.sendToListener(leaseName, response)
+		err := svc.sendToListener(context.Background(), leaseName, response)
 		if err != nil {
 			t.Fatalf("iteration %d: sendToListener should succeed for active g2: %v", i, err)
 		}
@@ -867,7 +867,7 @@ func TestDialSendToListenerConcurrentWithSwapNeverLandsOnSuperseded(t *testing.T
 			svc.swapListenQueue(leaseName, g2)
 		}()
 		go func() {
-			sendResult <- svc.sendToListener(leaseName, &pb.ListenResponse{
+			sendResult <- svc.sendToListener(context.Background(), leaseName, &pb.ListenResponse{
 				RouterEndpoint: "ep", RouterToken: "tok",
 			})
 		}()
@@ -1348,6 +1348,76 @@ func TestListenQueueListenLoopDeliversTokensAndExitsOnDone(t *testing.T) {
 	}
 	if v != superseder {
 		t.Fatal("queue entry should be the superseder")
+	}
+}
+
+func TestSendToListenerReturnsWhenContextCancelledAndBufferFull(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-ctx-cancel-buffer-full"
+
+	q := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.listenQueues.Store(leaseName, q)
+
+	for i := 0; i < 8; i++ {
+		q.ch <- &pb.ListenResponse{RouterEndpoint: "fill", RouterToken: "fill"}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- svc.sendToListener(ctx, leaseName, &pb.ListenResponse{
+			RouterEndpoint: "ep", RouterToken: "tok",
+		})
+	}()
+
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("sendToListener should return error when context is cancelled and buffer full")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("sendToListener blocked indefinitely with cancelled context and full buffer")
+	}
+}
+
+func TestSendToListenerUnblocksWhenContextCancelledDuringBackpressure(t *testing.T) {
+	svc := &ControllerService{}
+	leaseName := "test-lease-ctx-cancel-backpressure"
+
+	q := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	svc.listenQueues.Store(leaseName, q)
+
+	for i := 0; i < 8; i++ {
+		q.ch <- &pb.ListenResponse{RouterEndpoint: "fill", RouterToken: "fill"}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- svc.sendToListener(ctx, leaseName, &pb.ListenResponse{
+			RouterEndpoint: "ep", RouterToken: "tok",
+		})
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("sendToListener should return error when context is cancelled")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("sendToListener did not unblock after context cancellation")
 	}
 }
 
