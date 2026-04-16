@@ -248,11 +248,16 @@ def test_flash_http_url_with_oci_credentials_still_uses_direct_http_path():
 
     captured = {}
 
-    def capture_perform(*args):
-        captured["image_url"] = args[3]
-        captured["should_download_to_httpd"] = args[4]
-        captured["oci_username"] = args[14]
-        captured["oci_password"] = args[15]
+    def capture_perform(
+        partition, block_device, path, image_url, should_download_to_httpd,
+        storage_thread, error_queue, cacert_file, insecure_tls, headers,
+        bearer_token, method, fls_version, fls_binary_url,
+        oci_username, oci_password, power_off=True,
+    ):
+        captured["image_url"] = image_url
+        captured["should_download_to_httpd"] = should_download_to_httpd
+        captured["oci_username"] = oci_username
+        captured["oci_password"] = oci_password
 
     client._perform_flash_operation = capture_perform
 
