@@ -186,7 +186,6 @@ class TestCreateClusterAndInstall:
 
     @pytest.mark.asyncio
     async def test_create_cluster_and_install_force_recreate_cancelled(self):
-        from jumpstarter_kubernetes.callbacks import OutputCallback
         from jumpstarter_kubernetes.exceptions import ClusterOperationError
 
         class RejectingCallback:

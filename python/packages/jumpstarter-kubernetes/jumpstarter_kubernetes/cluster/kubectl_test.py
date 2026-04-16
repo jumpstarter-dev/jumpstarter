@@ -452,7 +452,14 @@ class TestGetClusterInfo:
     @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
     async def test_get_cluster_info_context_not_found(self, mock_get_contexts):
         mock_get_contexts.return_value = [
-            {"name": "other-context", "cluster": "other", "server": "https://other", "user": "u", "namespace": "default", "current": False}
+            {
+                "name": "other-context",
+                "cluster": "other",
+                "server": "https://other",
+                "user": "u",
+                "namespace": "default",
+                "current": False,
+            }
         ]
 
         result = await get_cluster_info("missing-context")
@@ -465,9 +472,18 @@ class TestGetClusterInfo:
     @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
     @patch("jumpstarter_kubernetes.cluster.kubectl.check_jumpstarter_installation")
-    async def test_get_cluster_info_inaccessible_cluster(self, mock_check_jumpstarter, mock_run_command, mock_get_contexts):
+    async def test_get_cluster_info_inaccessible_cluster(
+        self, mock_check_jumpstarter, mock_run_command, mock_get_contexts
+    ):
         mock_get_contexts.return_value = [
-            {"name": "test-context", "cluster": "test-cluster", "server": "https://test.example.com", "user": "test-user", "namespace": "default", "current": False}
+            {
+                "name": "test-context",
+                "cluster": "test-cluster",
+                "server": "https://test.example.com",
+                "user": "test-user",
+                "namespace": "default",
+                "current": False,
+            }
         ]
         mock_run_command.return_value = (1, "", "connection refused")
 
@@ -482,9 +498,18 @@ class TestGetClusterInfo:
     @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
     @patch("jumpstarter_kubernetes.cluster.kubectl.check_jumpstarter_installation")
-    async def test_get_cluster_info_version_parse_failure(self, mock_check_jumpstarter, mock_run_command, mock_get_contexts):
+    async def test_get_cluster_info_version_parse_failure(
+        self, mock_check_jumpstarter, mock_run_command, mock_get_contexts
+    ):
         mock_get_contexts.return_value = [
-            {"name": "test-context", "cluster": "test-cluster", "server": "https://test.example.com", "user": "test-user", "namespace": "default", "current": False}
+            {
+                "name": "test-context",
+                "cluster": "test-cluster",
+                "server": "https://test.example.com",
+                "user": "test-user",
+                "namespace": "default",
+                "current": False,
+            }
         ]
         mock_run_command.return_value = (0, "not json", "")
         mock_check_jumpstarter.return_value = V1Alpha1JumpstarterInstance(installed=False)
@@ -497,9 +522,18 @@ class TestGetClusterInfo:
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
-    async def test_get_cluster_info_version_command_runtime_error(self, mock_run_command, mock_get_contexts):
+    async def test_get_cluster_info_version_command_runtime_error(
+        self, mock_run_command, mock_get_contexts
+    ):
         mock_get_contexts.return_value = [
-            {"name": "test-context", "cluster": "test-cluster", "server": "https://test.example.com", "user": "test-user", "namespace": "default", "current": False}
+            {
+                "name": "test-context",
+                "cluster": "test-cluster",
+                "server": "https://test.example.com",
+                "user": "test-user",
+                "namespace": "default",
+                "current": False,
+            }
         ]
         mock_run_command.side_effect = RuntimeError("command failed")
 
@@ -578,8 +612,20 @@ class TestListClusters:
     @patch("jumpstarter_kubernetes.cluster.kubectl.get_cluster_info")
     async def test_list_clusters_with_type_filter(self, mock_get_cluster_info, mock_get_contexts):
         mock_get_contexts.return_value = [
-            {"name": "kind-ctx", "cluster": "kind-cluster", "server": "https://kind", "user": "u", "current": True},
-            {"name": "remote-ctx", "cluster": "remote-cluster", "server": "https://remote", "user": "u", "current": False},
+            {
+                "name": "kind-ctx",
+                "cluster": "kind-cluster",
+                "server": "https://kind",
+                "user": "u",
+                "current": True,
+            },
+            {
+                "name": "remote-ctx",
+                "cluster": "remote-cluster",
+                "server": "https://remote",
+                "user": "u",
+                "current": False,
+            },
         ]
 
         kind_info = V1Alpha1ClusterInfo(
