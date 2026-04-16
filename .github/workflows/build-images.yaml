@@ -169,7 +169,7 @@ jobs:
       - name: Extract metadata (tags, labels) for Docker
         if: steps.check.outputs.skip != 'true'
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ matrix.image_name }}
           tags: |
