@@ -111,20 +111,16 @@ class SomeIp(Driver):
 
     def close(self):
         """Stop the opensomeip client."""
-        if self._osip_client is not None:
-            try:
-                self._osip_client.stop()
-            except Exception:
-                logger.warning("failed to close opensomeip client", exc_info=True)
+        with self._osip_lock:
+            if self._osip_client is not None:
+                try:
+                    self._osip_client.stop()
+                except Exception:
+                    logger.warning("failed to close opensomeip client", exc_info=True)
+                self._osip_client = None
         super().close()
 
     # --- RPC ---
-
-    @export
-    @validate_call(validate_return=True)
-    def start(self) -> None:
-        """Force start the SOME/IP client."""
-        self._ensure_client()
 
     @export
     @validate_call(validate_return=True)
@@ -232,23 +228,31 @@ class SomeIp(Driver):
 
     @export
     @validate_call(validate_return=True)
+    def start(self) -> None:
+        """Force start the SOME/IP client."""
+        self._ensure_client()
+
+    @export
+    @validate_call(validate_return=True)
     def close_connection(self) -> None:
         """Close the SOME/IP connection."""
-        if self._osip_client is not None:
-            try:
-                self._osip_client.stop()
-            except Exception:
-                logger.warning("failed to stop opensomeip client during close_connection", exc_info=True)
+        with self._osip_lock:
+            if self._osip_client is not None:
+                try:
+                    self._osip_client.stop()
+                except Exception:
+                    logger.warning("failed to stop opensomeip client during close_connection", exc_info=True)
+                self._osip_client = None
 
     @export
     @validate_call(validate_return=True)
     def reconnect(self) -> None:
         """Reconnect to the SOME/IP endpoint."""
-        if self._osip_client is not None:
-            try:
-                self._osip_client.stop()
-            except Exception:
-                logger.warning("failed to stop opensomeip client during reconnect", exc_info=True)
-            self._osip_client.start()
-        else:
-            self._ensure_client()
+        with self._osip_lock:
+            if self._osip_client is not None:
+                try:
+                    self._osip_client.stop()
+                except Exception:
+                    logger.warning("failed to stop opensomeip client during reconnect", exc_info=True)
+                self._osip_client = None
+        self._ensure_client()

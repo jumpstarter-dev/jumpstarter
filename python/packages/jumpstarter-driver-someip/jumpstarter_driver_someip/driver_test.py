@@ -204,6 +204,26 @@ def test_someip_close_connection(mock_osip_cls):
 
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_close_connection_resets_client_for_fresh_creation(mock_osip_cls):
+    """After close_connection, the next operation must create a fresh client."""
+    first_client = _make_mock_osip_client()
+    second_client = _make_mock_osip_client()
+    mock_osip_cls.side_effect = [first_client, second_client]
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.start()
+        mock_osip_cls.assert_called_once()
+
+        client.close_connection()
+        first_client.stop.assert_called()
+
+        client.start()
+        assert mock_osip_cls.call_count == 2
+        second_client.start.assert_called_once()
+
+
+@patch("jumpstarter_driver_someip.driver.OsipClient")
 def test_someip_reconnect(mock_osip_cls):
     mock_client = _make_mock_osip_client()
     mock_osip_cls.return_value = mock_client
