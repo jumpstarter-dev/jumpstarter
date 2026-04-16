@@ -242,9 +242,9 @@ def test_flash_http_url_with_oci_credentials_still_uses_direct_http_path():
         def get_url(self):
             return "http://exporter"
 
-    client.http = DummyService()
-    client.tftp = DummyService()
-    client.call = lambda *args, **kwargs: None
+    client.http = DummyService()  # ty: ignore[unresolved-attribute]
+    client.tftp = DummyService()  # ty: ignore[unresolved-attribute]
+    client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
 
     captured = {}
 
@@ -259,7 +259,7 @@ def test_flash_http_url_with_oci_credentials_still_uses_direct_http_path():
         captured["oci_username"] = oci_username
         captured["oci_password"] = oci_password
 
-    client._perform_flash_operation = capture_perform
+    client._perform_flash_operation = capture_perform  # ty: ignore[invalid-assignment]
 
     client.flash(
         "https://example.com/image.raw.xz",
@@ -493,9 +493,9 @@ def test_flash_signed_url_preserves_query_params():
         def get_url(self):
             return "http://exporter"
 
-    client.http = DummyService()
-    client.tftp = DummyService()
-    client.call = lambda *args, **kwargs: None
+    client.http = DummyService()  # ty: ignore[unresolved-attribute]
+    client.tftp = DummyService()  # ty: ignore[unresolved-attribute]
+    client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
 
     captured = {}
 
@@ -503,7 +503,7 @@ def test_flash_signed_url_preserves_query_params():
         captured["image_url"] = image_url
         captured["should_download_to_httpd"] = should_download_to_httpd
 
-    client._perform_flash_operation = capture_perform
+    client._perform_flash_operation = capture_perform  # ty: ignore[invalid-assignment]
 
     # Direct HTTP URL with query params (no force_exporter_http) should preserve full URL
     signed_url = "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
@@ -539,9 +539,9 @@ def test_flash_bearer_token_signed_url_preserves_query_params():
         def get_host(self):
             return "127.0.0.1"
 
-    client.http = DummyService()
-    client.tftp = DummyService()
-    client.call = lambda *args, **kwargs: None
+    client.http = DummyService()  # ty: ignore[unresolved-attribute]
+    client.tftp = DummyService()  # ty: ignore[unresolved-attribute]
+    client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
 
     captured = {}
 
@@ -550,9 +550,9 @@ def test_flash_bearer_token_signed_url_preserves_query_params():
         captured["image_url"] = image_url
         captured["should_download_to_httpd"] = should_download_to_httpd
 
-    client._perform_flash_operation = capture_perform
+    client._perform_flash_operation = capture_perform  # ty: ignore[invalid-assignment]
     # Mock the background transfer thread to prevent it from actually running
-    client._transfer_bg_thread = lambda *args, **kwargs: None
+    client._transfer_bg_thread = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
 
     signed_url = "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
     client.flash(
