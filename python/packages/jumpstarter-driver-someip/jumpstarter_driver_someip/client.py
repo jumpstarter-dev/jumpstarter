@@ -19,6 +19,10 @@ class SomeIpDriverClient(DriverClient):
     and event subscriptions over the Jumpstarter remoting layer.
     """
 
+    def start(self) -> None:
+        """Force start the SOME/IP client."""
+        self.call("start")
+
     # --- RPC ---
 
     def rpc_call(
