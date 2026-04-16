@@ -322,6 +322,8 @@ class StatusMonitor:
             return
 
         deadline_retries = 0
+        unavailable_retries = 0
+        unavailable_max_retries = 10
 
         while self._running:
             try:
@@ -343,6 +345,7 @@ class StatusMonitor:
                     logger.info("Connection recovered, resetting connection_lost flag")
                     self._connection_lost = False
                 deadline_retries = 0
+                unavailable_retries = 0
 
                 # Detect missed transitions
                 if self._status_version > 0 and new_version > self._status_version + 1:
@@ -388,14 +391,22 @@ class StatusMonitor:
                     self._signal_unsupported()
                     break
                 elif e.code() == StatusCode.UNAVAILABLE:
-                    # Connection lost - exporter closed or restarted
-                    logger.info("Connection lost (UNAVAILABLE), signaling waiters")
-                    self._connection_lost = True
-                    self._running = False
-                    # Fire the change event to wake up any waiters
-                    self._any_change_event.set()
-                    self._any_change_event = Event()
-                    break
+                    unavailable_retries += 1
+                    if unavailable_retries >= unavailable_max_retries:
+                        logger.warning(
+                            "GetStatus UNAVAILABLE %d times consecutively, marking connection as lost",
+                            unavailable_retries,
+                        )
+                        self._connection_lost = True
+                        self._running = False
+                        self._any_change_event.set()
+                        self._any_change_event = Event()
+                        break
+                    elif unavailable_retries % 5 == 0:
+                        logger.warning("GetStatus UNAVAILABLE %d times consecutively", unavailable_retries)
+                    else:
+                        logger.debug("GetStatus UNAVAILABLE (attempt %d), retrying...", unavailable_retries)
+                    continue
                 elif e.code() == StatusCode.DEADLINE_EXCEEDED:
                     # DEADLINE_EXCEEDED is a transient error (RPC timed out), not a
                     # permanent connection loss. Keep polling - the shell's own timeout
