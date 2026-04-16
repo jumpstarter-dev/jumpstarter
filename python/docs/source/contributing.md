@@ -99,4 +99,5 @@ Documentation recommended practices:
 
 contributing/development-environment.md
 contributing/internals.md
+internal/jeps/index.md
 ```
