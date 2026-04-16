@@ -607,11 +607,12 @@ class TestHandleAsyncUnavailableRetry:
 
             await lease.handle_async(stream)
 
-        assert dial_call_count == 2
+            assert dial_call_count == 2
+            mock_connect.assert_called_once_with("endpoint", "token", stream, lease.tls_config, lease.grpc_options)
 
     @pytest.mark.anyio
     async def test_handle_async_unavailable_exceeds_dial_timeout(self):
-        """Dial returns UNAVAILABLE until dial_timeout is exceeded."""
+        """Dial returns UNAVAILABLE until dial_timeout is exceeded, then raises."""
         lease = self._make_lease_for_handle()
         lease.dial_timeout = 0.5
         dial_call_count = 0
@@ -624,6 +625,8 @@ class TestHandleAsyncUnavailableRetry:
         lease.controller.Dial = mock_dial
         stream = Mock()
 
-        await lease.handle_async(stream)
+        with pytest.raises(AioRpcError) as exc_info:
+            await lease.handle_async(stream)
 
+        assert exc_info.value.code() == grpc.StatusCode.UNAVAILABLE
         assert dial_call_count >= 2
