@@ -1147,6 +1147,73 @@ class TestHookExecutorPRRegressions:
             f"Expected AVAILABLE status after warn+afterLease, got: {status_calls}"
         )
 
+    async def test_hook_socket_message_at_debug_not_info(self, lease_scope) -> None:
+        """The 'Using dedicated hook socket' message must be at DEBUG, not INFO.
+
+        This message is an internal detail about socket selection and should
+        not appear in client-visible hook output.
+        """
+        lease_scope.hook_socket_path = "/tmp/hook_socket"
+
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="echo 'hello'", timeout=10),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            await executor.execute_before_lease_hook(lease_scope)
+
+            debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
+            info_calls = [str(call) for call in mock_logger.info.call_args_list]
+
+            assert any("Using dedicated hook socket" in call for call in debug_calls), (
+                "Expected 'Using dedicated hook socket' at DEBUG level"
+            )
+            assert not any("Using dedicated hook socket" in call for call in info_calls), (
+                "'Using dedicated hook socket' should NOT be at INFO level"
+            )
+
+    async def test_orchestration_messages_at_debug_not_info(self, lease_scope) -> None:
+        """Orchestration messages from execute_before/after_lease_hook must be at DEBUG.
+
+        Messages like 'Executing before-lease hook for lease' and
+        'beforeLease hook completed successfully' are not inside
+        context_log_source so they add noise without value to the client.
+        """
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="echo 'hello'", timeout=10),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            await executor.run_before_lease_hook(
+                lease_scope,
+                mock_report_status,
+                mock_shutdown,
+            )
+
+            debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
+            info_calls = [str(call) for call in mock_logger.info.call_args_list]
+
+            orchestration_messages = [
+                "Executing before-lease hook for lease",
+                "beforeLease hook completed successfully",
+            ]
+            for msg in orchestration_messages:
+                assert any(msg in call for call in debug_calls), (
+                    f"Expected '{msg}' at DEBUG level, not found in debug calls"
+                )
+                assert not any(msg in call for call in info_calls), (
+                    f"Orchestration message '{msg}' should NOT be at INFO level"
+                )
+
     async def test_after_hook_warn_includes_warning_prefix(self, lease_scope) -> None:
         """Issue E5b: afterLease hook fail with warn should include HOOK_WARNING_PREFIX.
 
