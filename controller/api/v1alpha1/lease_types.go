@@ -61,10 +61,13 @@ type LeaseStatus struct {
 type LeaseConditionType string
 
 const (
-	LeaseConditionTypePending       LeaseConditionType = "Pending"
-	LeaseConditionTypeReady         LeaseConditionType = "Ready"
-	LeaseConditionTypeUnsatisfiable LeaseConditionType = "Unsatisfiable"
-	LeaseConditionTypeInvalid       LeaseConditionType = "Invalid"
+	LeaseConditionTypePending         LeaseConditionType = "Pending"
+	LeaseConditionTypeReady           LeaseConditionType = "Ready"
+	LeaseConditionTypeUnsatisfiable   LeaseConditionType = "Unsatisfiable"
+	LeaseConditionTypeInvalid         LeaseConditionType = "Invalid"
+	LeaseConditionTypeBeforeLeaseHook LeaseConditionType = "BeforeLeaseHook"
+	LeaseConditionTypeAfterLeaseHook  LeaseConditionType = "AfterLeaseHook"
+	LeaseConditionTypeHookFailed      LeaseConditionType = "HookFailed"
 )
 
 type LeaseLabel string
