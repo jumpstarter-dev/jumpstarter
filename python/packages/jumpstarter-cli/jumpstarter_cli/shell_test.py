@@ -943,3 +943,63 @@ class TestRunShellWithLeaseAsync:
 
         assert exit_code == 0
         assert not monitor._connection_lost
+
+
+class TestShellWithSignalHandlingLeaseTimeout:
+
+    async def test_exits_gracefully_when_lease_ended_and_exception_group(self):
+        """BaseExceptionGroup with lease_ended=True should produce exit code 0."""
+        lease = Mock()
+        lease.release = True
+        lease.name = "timeout-lease"
+        lease.lease_ended = True
+        lease.lease_transferred = False
+
+        config = _DummyConfig()
+
+        @asynccontextmanager
+        async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+            yield lease
+
+        config.lease_async = lease_async
+
+        async def fake_run_shell(*_args):
+            raise BaseExceptionGroup("test", [RuntimeError("simulated cancellation")])
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run_shell),
+        ):
+            exit_code = await _shell_with_signal_handling(
+                config, None, None, None, timedelta(minutes=1), False, (), None
+            )
+
+        assert exit_code == 0
+
+    async def test_raises_offline_error_when_lease_not_ended_and_exception_group(self):
+        """BaseExceptionGroup with lease_ended=False should raise ExporterOfflineError."""
+        lease = Mock()
+        lease.release = True
+        lease.name = "active-lease"
+        lease.lease_ended = False
+        lease.lease_transferred = False
+
+        config = _DummyConfig()
+
+        @asynccontextmanager
+        async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+            yield lease
+
+        config.lease_async = lease_async
+
+        async def fake_run_shell(*_args):
+            raise BaseExceptionGroup("test", [RuntimeError("connection broken")])
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run_shell),
+        ):
+            with pytest.raises((ExporterOfflineError, BaseExceptionGroup)):
+                await _shell_with_signal_handling(
+                    config, None, None, None, timedelta(minutes=1), False, (), None
+                )
