@@ -372,14 +372,14 @@ func syncOnlineConditionWithStatus(exporter *jumpstarterdevv1alpha1.Exporter) {
 // Allowed statuses:
 //   - LeaseReady: Normal operation, lease is active
 //   - BeforeLeaseHook: Hook is running, allows j commands from hooks
-//   - AfterLeaseHook: Hook is running, allows j commands from hooks
 //   - Unspecified/"": Backwards compatibility with old exporters that don't report status
 func checkExporterStatusForDriverCalls(exporterStatus string) error {
 	switch exporterStatus {
 	case jumpstarterdevv1alpha1.ExporterStatusLeaseReady,
-		jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHook,
-		jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHook:
+		jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHook:
 		return nil
+	case jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHook:
+		return status.Errorf(codes.FailedPrecondition, "exporter is not ready (status: %s)", exporterStatus)
 	case jumpstarterdevv1alpha1.ExporterStatusUnspecified, "":
 		// Allow for backwards compatibility with old exporters that don't report status.
 		// The exporter-side check will still validate if it's a new exporter.
