@@ -320,18 +320,23 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 response = await self.controller.Dial(jumpstarter_pb2.DialRequest(lease_name=self.name))
                 break
             except AioRpcError as e:
-                if e.code() == grpc.StatusCode.FAILED_PRECONDITION and "not ready" in str(e.details()):
+                is_not_ready = (
+                    e.code() == grpc.StatusCode.FAILED_PRECONDITION
+                    and "not ready" in str(e.details())
+                )
+                is_buffer_full = e.code() == grpc.StatusCode.RESOURCE_EXHAUSTED
+                if is_not_ready or is_buffer_full:
                     remaining = deadline - time.monotonic()
                     if remaining <= 0:
                         logger.debug(
-                            "Exporter not ready and dial timeout (%.1fs) exceeded after %d attempts",
+                            "Dial retry timeout (%.1fs) exceeded after %d attempts",
                             self.dial_timeout, attempt + 1
                         )
                         raise
                     delay = min(base_delay * (2 ** attempt), max_delay, remaining)
                     logger.debug(
-                        "Exporter not ready, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
-                        delay, attempt + 1, remaining
+                        "Dial transient error (%s), retrying in %.1fs (attempt %d, %.1fs remaining)",
+                        e.code().name, delay, attempt + 1, remaining
                     )
                     await sleep(delay)
                     attempt += 1
