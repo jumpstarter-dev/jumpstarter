@@ -34,7 +34,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // LeaseReconciler reconciles a Lease object
@@ -212,6 +214,7 @@ func (r *LeaseReconciler) reconcileStatusHookPhase(
 		lease.SetStatusAfterLeaseHook(false, "Inactive", "The afterLease hook is not running")
 	case jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHook:
 		lease.SetStatusAfterLeaseHook(true, "AfterLeaseHook", "The afterLease hook is executing on the exporter")
+		lease.SetStatusReady(false, "AfterLeaseHook", "The afterLease hook is executing")
 		lease.SetStatusBeforeLeaseHook(false, "Completed", "The beforeLease hook has completed")
 	case jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHookFailed:
 		lease.SetStatusHookFailed("BeforeLeaseHookFailed", "The beforeLease hook failed: %s", exporter.Status.StatusMessage)
@@ -612,9 +615,39 @@ func filterOutOfflineExporters(approvedExporters []ApprovedExporter) []ApprovedE
 	return onlineExporters
 }
 
+func (r *LeaseReconciler) findLeasesForExporter(ctx context.Context, obj client.Object) []reconcile.Request {
+	exporter, ok := obj.(*jumpstarterdevv1alpha1.Exporter)
+	if !ok {
+		return nil
+	}
+
+	var leases jumpstarterdevv1alpha1.LeaseList
+	if err := r.List(ctx, &leases,
+		client.InNamespace(exporter.Namespace),
+		MatchingActiveLeases(),
+	); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, lease := range leases.Items {
+		if lease.Status.ExporterRef != nil && lease.Status.ExporterRef.Name == exporter.Name {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      lease.Name,
+					Namespace: lease.Namespace,
+				},
+			})
+		}
+	}
+	return requests
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *LeaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&jumpstarterdevv1alpha1.Lease{}).
+		Watches(&jumpstarterdevv1alpha1.Exporter{},
+			handler.EnqueueRequestsFromMapFunc(r.findLeasesForExporter)).
 		Complete(r)
 }

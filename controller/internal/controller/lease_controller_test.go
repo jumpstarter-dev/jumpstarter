@@ -763,7 +763,7 @@ var _ = Describe("Lease Hook Phase Propagation", func() {
 	})
 
 	When("the exporter transitions to AfterLeaseHook", func() {
-		It("should set AfterLeaseHook condition on the lease", func() {
+		It("should set AfterLeaseHook condition on the lease and Ready to False", func() {
 			lease := leaseDutA2Sec.DeepCopy()
 			ctx := context.Background()
 			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
@@ -781,6 +781,10 @@ var _ = Describe("Lease Hook Phase Propagation", func() {
 				updatedLease.Status.Conditions,
 				string(jumpstarterdevv1alpha1.LeaseConditionTypeAfterLeaseHook),
 			)).To(BeTrue())
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+			)).To(BeFalse())
 		})
 	})
 
