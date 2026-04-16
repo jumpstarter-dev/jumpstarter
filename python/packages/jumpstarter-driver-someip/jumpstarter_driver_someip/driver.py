@@ -11,7 +11,7 @@ from opensomeip.message import Message
 from opensomeip.sd import SdConfig, ServiceInstance
 from opensomeip.transport import Endpoint
 from opensomeip.types import MessageId
-from pydantic import ConfigDict, validate_call
+from pydantic import ConfigDict, SkipValidation, validate_call
 from pydantic.dataclasses import dataclass
 
 from .common import (
@@ -72,7 +72,9 @@ class SomeIp(Driver):
     multicast_group: str = "239.127.0.1"
     multicast_port: int = 30490
 
-    _osip_client: OsipClient = field(init=False, repr=False)
+    _osip_client: OsipClient | None = field(init=False, repr=False, default=None)
+    _osip_config: ClientConfig = field(init=False, repr=False)
+    _osip_lock: SkipValidation[threading.Lock] = field(init=False, repr=False, default_factory=threading.Lock)
 
     @classmethod
     def client(cls) -> str:
@@ -89,7 +91,7 @@ class SomeIp(Driver):
             )
         mode = TransportMode.TCP if transport_upper == "TCP" else TransportMode.UDP
 
-        config = ClientConfig(
+        self._osip_config = ClientConfig(
             local_endpoint=Endpoint(self.host, self.port),
             sd_config=SdConfig(
                 multicast_endpoint=Endpoint(self.multicast_group, self.multicast_port),
@@ -97,18 +99,32 @@ class SomeIp(Driver):
             ),
             transport_mode=mode,
         )
-        self._osip_client = OsipClient(config)
-        self._osip_client.start()
+
+    def _ensure_client(self) -> OsipClient:
+        """Create and start the OsipClient on first use (thread-safe)."""
+        if self._osip_client is None:
+            with self._osip_lock:
+                if self._osip_client is None:
+                    self._osip_client = OsipClient(self._osip_config)
+                    self._osip_client.start()
+        return self._osip_client
 
     def close(self):
         """Stop the opensomeip client."""
-        try:
-            self._osip_client.stop()
-        except Exception:
-            logger.warning("failed to close opensomeip client", exc_info=True)
+        if self._osip_client is not None:
+            try:
+                self._osip_client.stop()
+            except Exception:
+                logger.warning("failed to close opensomeip client", exc_info=True)
         super().close()
 
     # --- RPC ---
+
+    @export
+    @validate_call(validate_return=True)
+    def start(self) -> None:
+        """Force start the SOME/IP client."""
+        self._ensure_client()
 
     @export
     @validate_call(validate_return=True)
@@ -120,7 +136,7 @@ class SomeIp(Driver):
         timeout: float = 5.0,
     ) -> SomeIpMessageResponse:
         """Make a SOME/IP RPC call and return the response."""
-        response = self._osip_client.call(
+        response = self._ensure_client().call(
             MessageId(service_id, method_id),
             payload=bytes.fromhex(payload.data),
             timeout=timeout,
@@ -142,13 +158,13 @@ class SomeIp(Driver):
             message_id=MessageId(service_id, method_id),
             payload=bytes.fromhex(payload.data),
         )
-        self._osip_client.send(msg)
+        self._ensure_client().send(msg)
 
     @export
     @validate_call(validate_return=True)
     def receive_message(self, timeout: float = 2.0) -> SomeIpMessageResponse:
         """Receive a raw SOME/IP message."""
-        receiver = self._osip_client.transport.receiver
+        receiver = self._ensure_client().transport.receiver
         msg = _receive_from_queue(receiver, timeout, f"No message received within {timeout}s")
         return _message_to_response(msg)
 
@@ -183,7 +199,7 @@ class SomeIp(Driver):
                 )
             event.set()
 
-        self._osip_client.find(service, callback=on_found)
+        self._ensure_client().find(service, callback=on_found)
         event.wait(timeout=timeout)
         with lock:
             return list(found)
@@ -192,19 +208,19 @@ class SomeIp(Driver):
     @validate_call(validate_return=True)
     def subscribe_eventgroup(self, eventgroup_id: int) -> None:
         """Subscribe to a SOME/IP event group."""
-        self._osip_client.subscribe_events(eventgroup_id)
+        self._ensure_client().subscribe_events(eventgroup_id)
 
     @export
     @validate_call(validate_return=True)
     def unsubscribe_eventgroup(self, eventgroup_id: int) -> None:
         """Unsubscribe from a SOME/IP event group."""
-        self._osip_client.unsubscribe_events(eventgroup_id)
+        self._ensure_client().unsubscribe_events(eventgroup_id)
 
     @export
     @validate_call(validate_return=True)
     def receive_event(self, timeout: float = 5.0) -> SomeIpEventNotification:
         """Receive the next event notification."""
-        receiver = self._osip_client.event_subscriber.notifications()
+        receiver = self._ensure_client().event_subscriber.notifications()
         msg = _receive_from_queue(receiver, timeout, f"No event received within {timeout}s")
         return SomeIpEventNotification(
             service_id=msg.message_id.service_id,
@@ -218,17 +234,21 @@ class SomeIp(Driver):
     @validate_call(validate_return=True)
     def close_connection(self) -> None:
         """Close the SOME/IP connection."""
-        try:
-            self._osip_client.stop()
-        except Exception:
-            logger.warning("failed to stop opensomeip client during close_connection", exc_info=True)
+        if self._osip_client is not None:
+            try:
+                self._osip_client.stop()
+            except Exception:
+                logger.warning("failed to stop opensomeip client during close_connection", exc_info=True)
 
     @export
     @validate_call(validate_return=True)
     def reconnect(self) -> None:
         """Reconnect to the SOME/IP endpoint."""
-        try:
-            self._osip_client.stop()
-        except Exception:
-            logger.warning("failed to stop opensomeip client during reconnect", exc_info=True)
-        self._osip_client.start()
+        if self._osip_client is not None:
+            try:
+                self._osip_client.stop()
+            except Exception:
+                logger.warning("failed to stop opensomeip client during reconnect", exc_info=True)
+            self._osip_client.start()
+        else:
+            self._ensure_client()
