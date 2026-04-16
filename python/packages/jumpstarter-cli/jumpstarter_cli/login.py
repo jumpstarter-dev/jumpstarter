@@ -228,11 +228,13 @@ async def login(  # noqa: C901
     match config:
         # we are updating an existing config
         case ClientConfigV1Alpha1():
-            assert config.token is not None
+            if config.token is None:
+                raise click.ClickException("No token set in client config. Please login again.")
             issuer = decode_jwt_issuer(config.token)
             config_kind = "client"
         case ExporterConfigV1Alpha1():
-            assert config.token is not None
+            if config.token is None:
+                raise click.ClickException("No token set in exporter config. Please login again.")
             issuer = decode_jwt_issuer(config.token)
             config_kind = "exporter"
         # we are creating a new config
