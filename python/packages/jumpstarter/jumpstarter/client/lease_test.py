@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from rich.console import Console
 
+from jumpstarter.client.exceptions import LeaseError
 from jumpstarter.client.lease import Lease, LeaseAcquisitionSpinner
 
 
@@ -334,6 +335,37 @@ class TestLeaseAcquisitionSpinner:
             spinner.update_status("Message 4")
 
             assert mock_spinner.update.call_count == 4
+
+
+class TestRequestAsyncOwnership:
+    """Tests for lease ownership validation in request_async."""
+
+    def _make_lease(self, *, name="test-lease", client_name="my-client"):
+        lease = object.__new__(Lease)
+        lease.name = name
+        lease.client_name = client_name
+        lease.selector = None
+        lease.get = AsyncMock()
+        return lease
+
+    @pytest.mark.anyio
+    async def test_raises_when_lease_belongs_to_different_client(self):
+        """request_async should raise LeaseError when the lease belongs to another client."""
+        lease = self._make_lease(client_name="my-client")
+        lease.get.return_value = Mock(client="other-client", selector=None)
+
+        with pytest.raises(LeaseError, match="belongs to client 'other-client'"):
+            await lease.request_async()
+
+    @pytest.mark.anyio
+    async def test_skips_check_when_client_name_is_none(self):
+        """request_async should skip ownership check when client_name is not set."""
+        lease = self._make_lease(client_name=None)
+        lease.get.return_value = Mock(client="other-client", selector=None)
+        lease._acquire = AsyncMock(return_value=lease)
+
+        result = await lease.request_async()
+        assert result is lease
 
 
 class TestRefreshChannel:
