@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 _TOKEN_REFRESH_THRESHOLD_SECONDS = 120
 
 
+
 def _run_shell_only(lease, config, command, path: str) -> int:
     """Run just the shell command without log streaming."""
     allow = config.drivers.allow if config is not None else getattr(lease, "allow", [])
@@ -579,7 +580,9 @@ async def _shell_direct_async(
         async with create_task_group() as tg:
             tg.start_soon(signal_handler, tg.cancel_scope)
             try:
-                exit_code = await _run_shell_with_lease_async(lease, exporter_logs, config, command, tg.cancel_scope)
+                exit_code = await _run_shell_with_lease_async(
+                    lease, exporter_logs, config, command, tg.cancel_scope
+                )
             except grpc.aio.AioRpcError as e:
                 if e.code() == grpc.StatusCode.UNAUTHENTICATED:
                     raise click.ClickException("Authentication failed: invalid or missing passphrase") from None

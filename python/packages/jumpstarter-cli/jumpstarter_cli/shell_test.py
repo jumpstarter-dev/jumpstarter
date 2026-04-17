@@ -899,7 +899,7 @@ class TestRunShellWithLeaseAsync:
 
         async def get_status_race():
             nonlocal call_count
-            call_count += 1
+            call_count += 1  # ty: ignore[unresolved-reference]
             if call_count == 1:
                 return ExporterStatus.LEASE_READY
             lease.lease_ended = True
