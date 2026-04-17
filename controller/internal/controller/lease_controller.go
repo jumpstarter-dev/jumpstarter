@@ -34,7 +34,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // LeaseReconciler reconciles a Lease object
@@ -83,6 +85,10 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	if err := r.reconcileStatusBeginEndTimes(ctx, &lease); err != nil {
+		return result, err
+	}
+
+	if err := r.reconcileStatusHookPhase(ctx, &lease); err != nil {
 		return result, err
 	}
 
@@ -175,6 +181,49 @@ func (r *LeaseReconciler) reconcileStatusBeginEndTimes(
 		logger.Info("Updating begin time for lease", "lease", lease.Name, "exporter", lease.GetExporterName(), "client", lease.GetClientName())
 		now := time.Now()
 		lease.Status.BeginTime = &metav1.Time{Time: now}
+	}
+
+	return nil
+}
+
+// nolint:unparam
+func (r *LeaseReconciler) reconcileStatusHookPhase(
+	ctx context.Context,
+	lease *jumpstarterdevv1alpha1.Lease,
+) error {
+	if lease.Status.ExporterRef == nil || lease.Status.Ended {
+		return nil
+	}
+
+	var exporter jumpstarterdevv1alpha1.Exporter
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: lease.Namespace,
+		Name:      lease.Status.ExporterRef.Name,
+	}, &exporter); err != nil {
+		return fmt.Errorf("reconcileStatusHookPhase: failed to get exporter: %w", err)
+	}
+
+	switch exporter.Status.ExporterStatusValue {
+	case jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHook:
+		lease.SetStatusBeforeLeaseHook(true, "BeforeLeaseHook", "The beforeLease hook is executing on the exporter")
+		lease.SetStatusReady(false, "BeforeLeaseHook", "Waiting for beforeLease hook to complete")
+		lease.SetStatusAfterLeaseHook(false, "Inactive", "The afterLease hook is not running")
+	case jumpstarterdevv1alpha1.ExporterStatusLeaseReady:
+		lease.SetStatusReady(true, "Ready", "An exporter has been acquired for the client")
+		lease.SetStatusBeforeLeaseHook(false, "Completed", "The beforeLease hook has completed")
+		lease.SetStatusAfterLeaseHook(false, "Inactive", "The afterLease hook is not running")
+	case jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHook:
+		lease.SetStatusAfterLeaseHook(true, "AfterLeaseHook", "The afterLease hook is executing on the exporter")
+		lease.SetStatusReady(false, "AfterLeaseHook", "The afterLease hook is executing")
+		lease.SetStatusBeforeLeaseHook(false, "Completed", "The beforeLease hook has completed")
+	case jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHookFailed:
+		lease.SetStatusHookFailed("BeforeLeaseHookFailed", "The beforeLease hook failed: %s", exporter.Status.StatusMessage)
+		lease.SetStatusReady(false, "HookFailed", "The beforeLease hook failed")
+		lease.SetStatusBeforeLeaseHook(false, "Failed", "The beforeLease hook failed")
+	case jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHookFailed:
+		lease.SetStatusHookFailed("AfterLeaseHookFailed", "The afterLease hook failed: %s", exporter.Status.StatusMessage)
+		lease.SetStatusAfterLeaseHook(false, "Failed", "The afterLease hook failed")
+	default:
 		lease.SetStatusReady(true, "Ready", "An exporter has been acquired for the client")
 	}
 
@@ -566,9 +615,39 @@ func filterOutOfflineExporters(approvedExporters []ApprovedExporter) []ApprovedE
 	return onlineExporters
 }
 
+func (r *LeaseReconciler) findLeasesForExporter(ctx context.Context, obj client.Object) []reconcile.Request {
+	exporter, ok := obj.(*jumpstarterdevv1alpha1.Exporter)
+	if !ok {
+		return nil
+	}
+
+	var leases jumpstarterdevv1alpha1.LeaseList
+	if err := r.List(ctx, &leases,
+		client.InNamespace(exporter.Namespace),
+		MatchingActiveLeases(),
+	); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, lease := range leases.Items {
+		if lease.Status.ExporterRef != nil && lease.Status.ExporterRef.Name == exporter.Name {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      lease.Name,
+					Namespace: lease.Namespace,
+				},
+			})
+		}
+	}
+	return requests
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *LeaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&jumpstarterdevv1alpha1.Lease{}).
+		Watches(&jumpstarterdevv1alpha1.Exporter{},
+			handler.EnqueueRequestsFromMapFunc(r.findLeasesForExporter)).
 		Complete(r)
 }
