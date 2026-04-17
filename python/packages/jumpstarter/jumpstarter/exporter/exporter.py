@@ -357,6 +357,11 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     )
                 )
             logger.info(f"Updated status to {status}: {message}")
+        except grpc.aio.AioRpcError as e:
+            if e.code() == grpc.StatusCode.UNIMPLEMENTED:
+                logger.warning("ReportStatus not supported by controller, status updates will be skipped")
+            else:
+                logger.error(f"Failed to update status: {e}")
         except Exception as e:
             logger.error(f"Failed to update status: {e}")
 
