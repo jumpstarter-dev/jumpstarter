@@ -15,8 +15,7 @@ orphan: true
   - Hardware-related proposals must address the Hardware Considerations section.
   - Protocol/API changes must include backward compatibility analysis.
   - Write as if teaching the feature to a new Jumpstarter contributor.
-  - Each design decision should document alternatives considered and rationale
-    (following the ADR pattern used in the project).
+  - Each design decision should document alternatives considered and rationale.
   - Sections marked (mandatory) must be filled in. Sections marked (optional)
     may be omitted if not applicable.
 -->
@@ -114,8 +113,6 @@ orphan: true
 
 <!--
   Document each significant design decision using the pattern below.
-  This follows the Architecture Decision Record (ADR) convention used
-  elsewhere in the project (see python/docs/source/internal/adr/).
 
   For each decision, state what was decided, what alternatives were
   considered, and why the chosen approach was preferred. This section
@@ -220,7 +217,7 @@ Reference specific project constraints, prior art, or technical tradeoffs.
 ## Consequences *(mandatory)*
 
 <!--
-  Summarize the expected outcomes of this proposal, following ADR convention.
+  Summarize the expected outcomes of this proposal.
 -->
 
 ### Positive

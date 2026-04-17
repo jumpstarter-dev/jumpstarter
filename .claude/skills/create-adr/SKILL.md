@@ -1,1 +1,0 @@
-../../../.cursor/skills/create-adr/SKILL.md

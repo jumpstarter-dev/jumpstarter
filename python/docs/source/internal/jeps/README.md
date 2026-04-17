@@ -42,14 +42,6 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 | ---------- | ----- | ------ | --------- |
 | *none yet* |       |        |           |
 
-## Related: Architecture Decision Records (ADRs)
-
-For technical decisions scoped to a single component or driver (e.g., choosing a
-control interface for a new driver), use an Architecture Decision Record instead
-of a JEP. ADRs live in `python/docs/source/internal/adr/` and are submitted
-alongside the implementation PR. See [JEP-0000](JEP-0000-jep-process.md) for
-guidance on when to use a JEP vs an ADR.
-
 ## Status Key
 
 > **Note:** [JEP-0000](JEP-0000-jep-process.md) is the canonical source for
@@ -58,7 +50,7 @@ guidance on when to use a JEP vs an ADR.
 | Status       | Meaning                                          |
 | ------------ | ------------------------------------------------ |
 | Draft        | Author is still writing; not yet open for review |
-| Proposed     | PR is open and under community discussion        |
+| Discussion   | PR is open and under community discussion        |
 | Accepted     | Design approved; implementation may begin        |
 | Implementing | Implementation in progress                       |
 | Implemented  | Reference implementation merged                  |
@@ -71,7 +63,7 @@ guidance on when to use a JEP vs an ADR.
 
 ## For AI Agents
 
-For detailed conventions on creating JEPs and ADRs, see the agent rule files
+For detailed conventions on creating JEPs, see the agent rule files
 in `.cursor/rules/jep-adr-process.mdc` (or `.claude/rules/jep-adr-process.md`).
 
 Key references:

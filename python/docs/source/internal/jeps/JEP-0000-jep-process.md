@@ -70,29 +70,6 @@ Not every change needs a JEP. Use the following guidelines:
 When in doubt, ask in [Matrix](https://matrix.to/#/#jumpstarter:matrix.org) or
 open a GitHub issue to gauge whether your idea warrants a JEP.
 
-## JEPs and Architecture Decision Records (ADRs)
-
-The project uses both JEPs and Architecture Decision Records (ADRs). They serve
-different purposes and operate at different scopes:
-
-| Aspect       | JEP                                               | ADR                                             |
-| ------------ | ------------------------------------------------- | ----------------------------------------------- |
-| **Scope**    | Cross-cutting changes to the project              | Scoped to a single component or driver          |
-| **Process**  | Requires community review and maintainer approval | Included with the implementation PR             |
-| **When**     | Before implementation begins                      | Alongside or within an implementation PR        |
-| **Location** | `python/docs/source/internal/jeps/` directory     | `python/docs/source/internal/adr/` directory    |
-| **Example**  | New lease scheduling strategy                     | Choice of telnet vs pyrenode3 for Renode driver |
-
-**Use a JEP** when the change affects multiple components, changes public APIs or
-protocols, or requires community consensus. **Use an ADR** when you are making a
-significant technical decision within a self-contained piece of work (e.g., a new
-driver) that does not need project-wide review but should be documented for
-posterity.
-
-JEPs borrow the structured decision format from ADRs: each design decision in a
-JEP should document alternatives considered and rationale, following the `DD-N`
-pattern in the [JEP template](JEP-NNNN-template.md).
-
 ## JEP Types
 
 | Type                | Description                                                                                                                                |
@@ -106,7 +83,7 @@ pattern in the [JEP template](JEP-NNNN-template.md).
 ```{mermaid}
 flowchart TD
     A([Start]) --> B[Draft]
-    B -->|PR opened| C[Proposed]
+    B -->|PR opened| C[Discussion]
     C -->|Maintainers approve| D[Accepted]
     C -->|Maintainers decline| E[Rejected]
     D -->|Work begins| F[Implementing]
@@ -125,7 +102,7 @@ flowchart TD
 | Status           | Meaning                                                                              |
 | ---------------- | ------------------------------------------------------------------------------------ |
 | **Draft**        | Author is still writing the JEP. Not yet open for formal review.                     |
-| **Proposed**     | JEP PR is open and under community discussion.                                       |
+| **Discussion**   | JEP PR is open and under community discussion.                                       |
 | **Accepted**     | Maintainers have approved the design. Implementation may begin.                      |
 | **Implementing** | Implementation is in progress. The JEP may be updated with implementation learnings. |
 | **Implemented**  | Reference implementation is complete and merged.                                     |
@@ -173,7 +150,7 @@ Apply the `jep` label to the pull request.
 
 Fill in every section of the template. Sections marked `(Optional)` may be
 omitted if not applicable, but all required sections must be present. Set
-the JEP status to **Proposed** when the PR is ready for review.
+the JEP status to **Discussion** when the PR is ready for review.
 
 ### 3. Discussion and Revision
 

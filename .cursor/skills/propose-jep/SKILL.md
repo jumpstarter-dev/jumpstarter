@@ -56,5 +56,5 @@ Show the user:
 
 - The file path of the new JEP
 - A summary of sections that are complete vs need further work
-- Remind them to set status to `Proposed` when the PR is ready for review
+- Remind them to set status to `Discussion` when the PR is ready for review
 - Remind them to apply the `jep` label to their pull request
