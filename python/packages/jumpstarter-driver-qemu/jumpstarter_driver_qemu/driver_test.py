@@ -473,6 +473,67 @@ async def test_flash_oci_fls_timeout():
 
 
 @pytest.mark.anyio
+async def test_flash_oci_inner_wait_timeout():
+    """Inner wait_for timeout should continue the loop without raising."""
+    driver = Qemu(flash_timeout=600)
+    flasher = driver.children["flasher"]
+    mock_process = _create_mock_process(stdout_lines=["output\n"])
+
+    original_wait_for = asyncio.wait_for
+    timeout_fired = False
+
+    async def mock_wait_for(awaitable, *, timeout):
+        nonlocal timeout_fired
+        if not timeout_fired:  # ty: ignore[unresolved-reference]
+            timeout_fired = True
+            if hasattr(awaitable, "close"):
+                awaitable.close()
+            raise asyncio.TimeoutError()
+        return await original_wait_for(awaitable, timeout=timeout)
+
+    with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process):
+            with patch("asyncio.wait_for", mock_wait_for):
+                results = await _collect_flash_oci(flasher, "oci://quay.io/org/image:tag")
+
+                assert timeout_fired
+                assert any(r[2] == 0 for r in results)
+
+
+@pytest.mark.anyio
+async def test_flash_oci_process_cleanup_on_early_exit():
+    """Finally block should kill process when generator is abandoned early."""
+    driver = Qemu()
+    flasher = driver.children["flasher"]
+
+    mock_process = MagicMock()
+    mock_process.returncode = None
+
+    async def mock_wait():
+        mock_process.returncode = 0
+        return 0
+
+    mock_process.wait = mock_wait
+    mock_process.kill = MagicMock()
+
+    stdout_stream = MagicMock()
+    stdout_stream.readline = AsyncMock(side_effect=[b"line1\n", b"line2\n", b""])
+    mock_process.stdout = stdout_stream
+
+    stderr_stream = MagicMock()
+    stderr_stream.readline = AsyncMock(side_effect=[b""])
+    mock_process.stderr = stderr_stream
+
+    with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process):
+        gen = flasher._stream_subprocess(["fls", "from-url", "oci://img", "/tmp/root"], None)  # ty: ignore[unresolved-attribute]
+        async for _ in gen:
+            break
+        await gen.aclose()
+
+        mock_process.kill.assert_called()
+
+
+@pytest.mark.anyio
 async def test_flash_oci_fls_not_found():
     """FileNotFoundError should raise RuntimeError with install hint."""
     driver = Qemu()

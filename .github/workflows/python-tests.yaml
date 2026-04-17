@@ -118,7 +118,7 @@ jobs:
       - name: Run pytest
         working-directory: python
         env:
-          PYTEST_ADDOPTS: "--cov --cov-report=xml"
+          PYTEST_ADDOPTS: "--cov=. --cov-report=xml"
         run: |
             make test
 
