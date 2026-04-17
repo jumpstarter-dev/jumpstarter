@@ -23,6 +23,9 @@ dev = [
 [project.scripts]
 jmp-admin = "jumpstarter_cli_admin:admin"
 
+[tool.coverage.run]
+source = ["."]
+
 [tool.hatch.build.targets.wheel]
 packages = ["jumpstarter_cli_admin"]
 

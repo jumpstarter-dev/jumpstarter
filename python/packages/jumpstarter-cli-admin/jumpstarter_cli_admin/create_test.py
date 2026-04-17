@@ -491,29 +491,6 @@ class TestClusterCreation:
 
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
     @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
-    def test_create_cluster_with_custom_chart(self, mock_validate, mock_create):
-        """Test with custom chart and version options"""
-        mock_validate.return_value = "kind"
-        mock_create.return_value = None
-
-        result = self.runner.invoke(create, [
-            "cluster", "test-cluster", "--kind", "kind",
-            "--chart", "oci://custom.registry/helm/chart",
-            "--chart-name", "custom-jumpstarter",
-            "--version", "v1.2.3"
-        ])
-
-        assert result.exit_code == 0
-        mock_create.assert_called_once()
-
-        # Verify custom chart options
-        kwargs = mock_create.call_args[1]
-        assert kwargs.get("chart") == "oci://custom.registry/helm/chart"
-        assert kwargs.get("chart_name") == "custom-jumpstarter"
-        assert kwargs.get("version") == "v1.2.3"
-
-    @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
     def test_create_cluster_with_custom_endpoints(self, mock_validate, mock_create):
         """Test with custom IP, basedomain, and endpoints"""
         mock_validate.return_value = "kind"
@@ -621,18 +598,6 @@ class TestClusterCreation:
             # Clean up
             import os
             os.unlink(cert_path)
-
-    @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
-    @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")
-    def test_create_cluster_helm_not_installed(self, mock_validate, mock_create):
-        """Test error when helm is not installed (for installation)"""
-        mock_validate.return_value = "kind"
-        mock_create.side_effect = click.ClickException("helm is not installed")
-
-        result = self.runner.invoke(create, ["cluster", "test-cluster", "--kind", "kind"])
-
-        assert result.exit_code != 0
-        assert "helm is not installed" in result.output
 
     @patch("jumpstarter_cli_admin.create.create_cluster_and_install")
     @patch("jumpstarter_cli_admin.create.validate_cluster_type_selection")

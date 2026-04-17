@@ -25,7 +25,6 @@ controller/
 │   │   ├── bundle/                  # OLM bundle manifests
 │   │   ├── test/e2e/               # E2E tests
 │   │   └── Makefile                # Operator-specific make targets
-│   └── helm/                       # Helm charts (alternative deployment)
 ├── api/                            # Jumpstarter core CRDs (Client, Exporter, Lease, etc.)
 ├── internal/                       # Controller business logic
 │   └── config/                     # Config structs used by controller

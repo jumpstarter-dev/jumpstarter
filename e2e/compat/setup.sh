@@ -2,13 +2,13 @@
 # Jumpstarter Compatibility E2E Testing Setup Script
 # This script sets up the environment for cross-version compatibility tests.
 #
-# No OIDC/dex is needed — tests use legacy auth (--unsafe --save).
-# Uses helm directly (no operator) for simplicity.
+# No OIDC/dex is needed -- tests use legacy auth (--unsafe --save).
+# Uses operator-based deployment.
 #
 # Environment variables:
 #   COMPAT_SCENARIO      - "old-controller" or "old-client" (required)
-#   COMPAT_CONTROLLER_TAG - Controller image tag for old-controller scenario (default: v0.7.1)
-#   COMPAT_CLIENT_VERSION - PyPI version for old-client scenario (default: 0.7.1)
+#   COMPAT_CONTROLLER_TAG - Controller release tag for old-controller scenario (default: v0.8.1)
+#   COMPAT_CLIENT_VERSION - PyPI version for old-client scenario (default: 0.8.1)
 
 set -euo pipefail
 
@@ -24,13 +24,10 @@ REPO_ROOT="$(cd "$E2E_DIR/.." && pwd)"
 # Default namespace for tests
 export JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
 
-# Always use helm for compat tests (simpler, direct control)
-export METHOD="helm"
-
 # Scenario configuration
 COMPAT_SCENARIO="${COMPAT_SCENARIO:-old-controller}"
-COMPAT_CONTROLLER_TAG="${COMPAT_CONTROLLER_TAG:-v0.7.0}"
-COMPAT_CLIENT_VERSION="${COMPAT_CLIENT_VERSION:-0.7.1}"
+COMPAT_CONTROLLER_TAG="${COMPAT_CONTROLLER_TAG:-v0.8.1}"
+COMPAT_CLIENT_VERSION="${COMPAT_CLIENT_VERSION:-0.7.4}"
 
 # Color output
 RED='\033[0;31m'
@@ -92,14 +89,10 @@ create_cluster() {
     log_info "Kind cluster created"
 }
 
-# Deploy old controller using the OCI helm chart from quay.io
 deploy_old_controller() {
     log_info "Deploying old controller (version: $COMPAT_CONTROLLER_TAG)..."
 
     cd "$REPO_ROOT"
-
-    # Strip leading 'v' for helm version (v0.7.1 -> 0.7.1)
-    local HELM_VERSION="${COMPAT_CONTROLLER_TAG#v}"
 
     # Compute networking variables
     local IP
@@ -110,26 +103,78 @@ deploy_old_controller() {
 
     kubectl config use-context kind-jumpstarter
 
-    # Install old controller from OCI helm chart
-    log_info "Installing old controller via helm (version: ${HELM_VERSION})..."
-    helm install --namespace jumpstarter-lab \
-        --create-namespace \
-        --set global.baseDomain="${BASEDOMAIN}" \
-        --set jumpstarter-controller.grpc.endpoint="${GRPC_ENDPOINT}" \
-        --set jumpstarter-controller.grpc.routerEndpoint="${GRPC_ROUTER_ENDPOINT}" \
-        --set jumpstarter-controller.grpc.nodeport.enabled=true \
-        --set jumpstarter-controller.grpc.mode=nodeport \
-        --set global.metrics.enabled=false \
-        --version="${HELM_VERSION}" \
-        jumpstarter oci://quay.io/jumpstarter-dev/helm/jumpstarter
+    # Install old controller using operator installer from the release assets
+    local INSTALLER_URL="https://github.com/jumpstarter-dev/jumpstarter/releases/download/${COMPAT_CONTROLLER_TAG}/operator-installer.yaml"
+    log_info "Installing old controller via operator (version: ${COMPAT_CONTROLLER_TAG})..."
+    kubectl apply -f "${INSTALLER_URL}"
 
-    kubectl config set-context --current --namespace=jumpstarter-lab
+    log_info "Waiting for operator to be ready..."
+    kubectl wait --namespace jumpstarter-operator-system \
+        --for=condition=available deployment/jumpstarter-operator-controller-manager \
+        --timeout=120s
+
+    kubectl create namespace "${JS_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+
+    log_info "Creating Jumpstarter CR..."
+    kubectl apply -f - <<EOF
+apiVersion: operator.jumpstarter.dev/v1alpha1
+kind: Jumpstarter
+metadata:
+  name: jumpstarter
+  namespace: ${JS_NAMESPACE}
+spec:
+  baseDomain: ${BASEDOMAIN}
+  certManager:
+    enabled: false
+  authentication:
+    internal:
+      prefix: "internal:"
+      enabled: true
+    autoProvisioning:
+      enabled: true
+  controller:
+    image: quay.io/jumpstarter-dev/jumpstarter-controller
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    grpc:
+      endpoints:
+        - address: ${GRPC_ENDPOINT}
+          nodeport:
+            enabled: true
+            port: 30010
+  routers:
+    image: quay.io/jumpstarter-dev/jumpstarter-controller
+    imagePullPolicy: IfNotPresent
+    replicas: 1
+    grpc:
+      endpoints:
+        - address: ${GRPC_ROUTER_ENDPOINT}
+          nodeport:
+            enabled: true
+            port: 30011
+EOF
+
+    kubectl config set-context --current --namespace="${JS_NAMESPACE}"
+
+    log_info "Waiting for controller deployment..."
+    local retries=90
+    while ! kubectl get deployment jumpstarter-controller -n "${JS_NAMESPACE}" > /dev/null 2>&1; do
+        sleep 2
+        retries=$((retries - 1))
+        if [ ${retries} -eq 0 ]; then
+            log_error "Controller deployment not created after 180s"
+            exit 1
+        fi
+    done
+    kubectl wait --namespace "${JS_NAMESPACE}" \
+        --for=condition=available deployment/jumpstarter-controller \
+        --timeout=180s
 
     # Wait for gRPC endpoints
     local GRPCURL="${REPO_ROOT}/controller/bin/grpcurl"
     log_info "Waiting for gRPC endpoints..."
     for ep in ${GRPC_ENDPOINT} ${GRPC_ROUTER_ENDPOINT}; do
-        local retries=60
+        retries=60
         log_info "  Checking ${ep}..."
         while ! ${GRPCURL} -insecure "${ep}" list > /dev/null 2>&1; do
             sleep 2
@@ -144,20 +189,12 @@ deploy_old_controller() {
     log_info "Old controller deployed"
 }
 
-# Deploy new controller from HEAD
 deploy_new_controller() {
     log_info "Deploying new controller from HEAD..."
 
     cd "$REPO_ROOT"
 
-    if [ -z "${SKIP_BUILD:-}" ]; then
-        make -C controller docker-build
-    else
-        log_info "Skipping controller image build (SKIP_BUILD is set)"
-    fi
-    cd controller
-    ./hack/deploy_with_helm.sh
-    cd "$REPO_ROOT"
+    make -C controller deploy
 
     log_info "New controller deployed"
 }
@@ -199,9 +236,15 @@ setup_test_environment() {
 
     cd "$REPO_ROOT"
 
-    # Get the controller endpoint from helm values
+    # Get the controller endpoint from Jumpstarter CR
     export ENDPOINT
-    ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.endpoint')
+    local BASEDOMAIN
+    BASEDOMAIN=$(kubectl get jumpstarter -n "${JS_NAMESPACE}" jumpstarter -o jsonpath='{.spec.baseDomain}' 2>/dev/null) || true
+    if [ -z "${BASEDOMAIN}" ]; then
+        log_error "Failed to get baseDomain from Jumpstarter CR in namespace ${JS_NAMESPACE}. Is the controller deployed with a Jumpstarter CR?"
+        exit 1
+    fi
+    ENDPOINT="grpc.${BASEDOMAIN}:8082"
 
     log_info "Controller endpoint: $ENDPOINT"
 
