@@ -1053,7 +1053,7 @@ class TestLeaseExpiryDuringHook:
             )
 
         offline_exceptions = [
-            e for e in exc_info.value.exceptions
+            e for e in exc_info.value.exceptions  # ty: ignore[unresolved-attribute]
             if isinstance(e, ExporterOfflineError)
         ]
         assert len(offline_exceptions) == 1
@@ -1094,7 +1094,7 @@ class TestLeaseExpiryDuringHook:
             )
 
         offline_exceptions = [
-            e for e in exc_info.value.exceptions
+            e for e in exc_info.value.exceptions  # ty: ignore[unresolved-attribute]
             if isinstance(e, ExporterOfflineError)
         ]
         assert len(offline_exceptions) == 1
