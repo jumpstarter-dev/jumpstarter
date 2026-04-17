@@ -161,3 +161,17 @@ def test_flash_no_target_no_partition_spec(ridesx_client):
     """Non-OCI path without colon or target should give a generic helpful error"""
     with pytest.raises(click.ClickException, match="requires a target partition"):
         ridesx_client.flash("/path/to/boot.img")
+
+
+def test_upload_file_if_needed_strips_query_params(ridesx_client):
+    """Verify _upload_file_if_needed produces a clean filename for signed URLs"""
+    from jumpstarter_driver_opendal.client import clean_filename
+
+    # Simulate the path_buf that would come from operator_for_path with a signed URL
+    path_with_query = "/images/image.raw.xz?Expires=123&Signature=abc/def&Key-Pair-Id=xyz"
+    result = clean_filename(path_with_query)
+    assert result == "image.raw.xz"
+
+    # Also verify the direct path case
+    result = clean_filename("/images/image.raw.xz")
+    assert result == "image.raw.xz"

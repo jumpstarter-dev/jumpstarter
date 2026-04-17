@@ -10,7 +10,7 @@ import time
 from concurrent.futures import CancelledError
 from contextlib import contextmanager
 from dataclasses import dataclass
-from pathlib import Path, PosixPath
+from pathlib import Path
 from queue import Queue
 from urllib.parse import urlparse
 
@@ -18,7 +18,13 @@ import click
 import pexpect
 import requests
 from jumpstarter_driver_composite.client import CompositeClient
-from jumpstarter_driver_opendal.client import FlasherClient, OpendalClient, operator_for_path
+from jumpstarter_driver_opendal.client import (
+    FlasherClient,
+    OpendalClient,
+    clean_filename,
+    operator_for_path,
+    path_with_query,
+)
 from jumpstarter_driver_opendal.common import PathBuf
 from jumpstarter_driver_pyserial.client import Console
 from opendal import Metadata, Operator
@@ -167,10 +173,10 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                         "http", root="/", endpoint=f"{parsed.scheme}://{parsed.netloc}", token=bearer_token
                     )
                     operator_scheme = "http"
-                    path = Path(parsed.path)
+                    path = path_with_query(parsed)
                 else:
                     path, operator, operator_scheme = operator_for_path(path)
-            image_url = self.http.get_url() + "/" + path.name
+            image_url = self.http.get_url() + "/" + self._filename(path)
 
         # start counting time for the flash operation
         start_time = time.time()
@@ -966,9 +972,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             original_url: Original URL for HTTP fallback
             headers: HTTP headers for requests
         """
-        self.logger.info(f"Writing image to storage in the background: {src_path}")
+        filename = self._filename(src_path)
+        self.logger.info(f"Writing image to storage in the background: {filename}")
         try:
-            filename = Path(src_path).name if isinstance(src_path, (str, os.PathLike)) else src_path.name
 
             if src_operator_scheme == "fs":
                 file_hash = self._sha256_file(src_operator, src_path)
@@ -1019,7 +1025,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     ) -> tuple[Metadata | None, str]:
         """Create a metadata json string from a metadata object"""
         metadata = None
-        metadata_dict = {"path": str(src_path)}
+        metadata_dict = {"path": clean_filename(src_path)}
 
         try:
             metadata = src_operator.stat(src_path)
@@ -1088,8 +1094,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         raise NotImplementedError("Dump is not implemented for this driver yet")
 
     def _filename(self, path: PathBuf) -> str:
-        """Extract filename from url or path"""
-        if path.startswith("oci://"):
+        """Extract filename from url or path, stripping any query parameters"""
+        if isinstance(path, str) and path.startswith("oci://"):
             oci_path = path[6:]  # Remove "oci://" prefix
             if ":" in oci_path:
                 repository, tag = oci_path.rsplit(":", 1)
@@ -1098,10 +1104,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             else:
                 repo_name = oci_path.split("/")[-1] if "/" in oci_path else oci_path
                 return repo_name
-        elif path.startswith(("http://", "https://")):
-            return urlparse(path).path.split("/")[-1]
         else:
-            return Path(path).name
+            return clean_filename(path)
 
     def _upload_artifact(self, storage, path: PathBuf, operator: Operator):
         """Upload artifact to storage"""
@@ -1636,17 +1640,12 @@ def _get_decompression_command(filename_or_url) -> str:
     Determine the appropriate decompression command based on file extension
 
     Args:
-        filename (str): Name of the file to check
+        filename_or_url (str): Name of the file or URL to check
 
     Returns:
-        str: Decompression command ('zcat', 'xzcat', or 'cat' for uncompressed)
+        str: Decompression command ('zcat |', 'xzcat |', or '' for uncompressed)
     """
-    if type(filename_or_url) is PosixPath:
-        filename = filename_or_url.name
-    elif filename_or_url.startswith(("http://", "https://")):
-        filename = urlparse(filename_or_url).path.split("/")[-1]
-
-    filename = filename.lower()
+    filename = clean_filename(filename_or_url).lower()
     if filename.endswith((".gz", ".gzip")):
         return "zcat |"
     elif filename.endswith(".xz"):
