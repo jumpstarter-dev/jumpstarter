@@ -73,7 +73,7 @@ docs = [
 dev = [
     "ruff==0.15.10",
     "typos>=1.23.6",
-    "pre-commit>=3.8.0",
+    "pre-commit>=4.5.1",
     "esbonio>=0.16.5",
     "ty>=0.0.1a8",
     "diff-cover>=10.2.0",
