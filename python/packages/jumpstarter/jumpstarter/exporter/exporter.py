@@ -587,11 +587,38 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 yield session, main_path, hook_path
         logger.info("Session closed")
 
+    def _should_run_after_lease_cleanup(self, lease_scope: LeaseContext) -> bool:
+        """Determine whether afterLease hook and lease release should run.
+
+        Returns False when a client simply disconnects from a pre-created
+        lease without calling EndSession and the lease has not expired.
+        In that case the lease stays active for reconnection.
+
+        Returns True when any of:
+        - EndSession was requested (auto-created lease teardown)
+        - Lease has ended (expired or released by controller)
+        - Exporter is shutting down (needs cleanup)
+        - Running in standalone mode (no controller, always clean up)
+        """
+        if lease_scope.end_session_requested.is_set():
+            return True
+        if lease_scope.lease_ended.is_set():
+            return True
+        if self._stop_requested:
+            return True
+        if self._standalone:
+            return True
+        return False
+
     async def _cleanup_after_lease(self, lease_scope: LeaseContext) -> None:
         """Run afterLease hook cleanup when handle_lease exits.
 
         This handles the finally-block logic: shielding from cancellation,
         running the afterLease hook if appropriate, and transitioning to AVAILABLE.
+
+        When a client disconnects without calling EndSession on a still-active
+        lease (pre-created lease scenario), the afterLease hook is skipped and
+        the lease remains active for reconnection (issue #238).
         """
         with CancelScope(shield=True):
             # Wait for beforeLease hook to complete before running afterLease.
@@ -614,6 +641,16 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     "Timed out waiting for before_lease_hook; forcing it set to avoid deadlock"
                 )
                 lease_scope.before_lease_hook.set()
+
+            if not self._should_run_after_lease_cleanup(lease_scope):
+                logger.info(
+                    "Client disconnected without EndSession on active lease %s, "
+                    "skipping afterLease hook to keep lease available for reconnection",
+                    lease_scope.lease_name,
+                )
+                if not lease_scope.after_lease_hook_done.is_set():
+                    lease_scope.after_lease_hook_done.set()
+                return
 
             if not lease_scope.after_lease_hook_started.is_set():
                 lease_scope.after_lease_hook_started.set()
