@@ -59,4 +59,5 @@ contributing.md
 glossary.md
 
 reference/index.md
+internal/index.md
 ```

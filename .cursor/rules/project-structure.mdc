@@ -14,7 +14,10 @@ jumpstarter/
 │   ├── pyproject.toml      # Main workspace configuration
 │   ├── packages/           # All Python packages
 │   ├── examples/           # Example applications
-│   ├── docs/               # Documentation
+│   ├── docs/               # Documentation (Sphinx)
+│   │   └── source/
+│   │       └── internal/   # JEPs (rendered as part of docs)
+│   │           └── jeps/   # Jumpstarter Enhancement Proposals
 │   └── __templates__/      # Templates for creating new drivers
 ├── controller/             # Controller components
 ├── protocol/               # Protocol definitions

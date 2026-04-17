@@ -1,0 +1,1 @@
+../../.cursor/rules/jep-adr-process.mdc
