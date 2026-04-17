@@ -25,6 +25,7 @@ from jumpstarter_cli.shell import (
 )
 
 from jumpstarter.client.grpc import Lease, LeaseList
+from jumpstarter.common.exceptions import ExporterOfflineError
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
 
@@ -776,3 +777,125 @@ class TestMonitorTokenExpiry:
         assert len(yellow_calls) >= 1, "Expected yellow warning for near-expiry"
         assert len(red_calls) >= 1, "Expected red warning for actual expiry"
         assert token_state["expired_unrecovered"] is True
+
+
+class TestLeaseExpiryDuringHook:
+    """Tests for issue #235: graceful exit when lease expires during beforeLease hook."""
+
+    async def test_lease_ended_during_hook_exits_gracefully(self):
+        """When BaseExceptionGroup is raised and lease_ended is True,
+        the client should exit with code 0 instead of raising
+        ExporterOfflineError('Connection to exporter lost').
+        """
+        lease = Mock()
+        lease.release = True
+        lease.name = "test-lease"
+        lease.lease_ended = True
+        lease.lease_transferred = False
+
+        config = _DummyConfig()
+
+        @asynccontextmanager
+        async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+            yield lease
+
+        config.lease_async = lease_async
+
+        async def fake_run_shell(*_args):
+            raise BaseExceptionGroup(
+                "connection errors",
+                [ConnectionError("stream broke")],
+            )
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run_shell),
+        ):
+            exit_code = await _shell_with_signal_handling(
+                config, None, None, None, timedelta(minutes=1), False, (), None,
+            )
+
+        assert exit_code == 0
+
+    async def test_genuine_connection_loss_raises_error(self):
+        """When BaseExceptionGroup is raised and lease_ended is False and
+        lease_transferred is False, ExporterOfflineError('Connection to
+        exporter lost') must be raised (wrapped in an ExceptionGroup by
+        the outer task group).
+        """
+        lease = Mock()
+        lease.release = True
+        lease.name = "test-lease"
+        lease.lease_ended = False
+        lease.lease_transferred = False
+
+        config = _DummyConfig()
+
+        @asynccontextmanager
+        async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+            yield lease
+
+        config.lease_async = lease_async
+
+        async def fake_run_shell(*_args):
+            raise BaseExceptionGroup(
+                "connection errors",
+                [ConnectionError("stream broke")],
+            )
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run_shell),
+            pytest.raises(BaseExceptionGroup) as exc_info,
+        ):
+            await _shell_with_signal_handling(
+                config, None, None, None, timedelta(minutes=1), False, (), None,
+            )
+
+        offline_exceptions = [
+            e for e in exc_info.value.exceptions  # ty: ignore[unresolved-attribute]
+            if isinstance(e, ExporterOfflineError)
+        ]
+        assert len(offline_exceptions) == 1
+        assert "Connection to exporter lost" in str(offline_exceptions[0])
+
+    async def test_lease_transferred_raises_transfer_error(self):
+        """When BaseExceptionGroup is raised and lease_transferred is True,
+        the appropriate transfer error must be raised (wrapped in an
+        ExceptionGroup by the outer task group).
+        """
+        lease = Mock()
+        lease.release = True
+        lease.name = "test-lease"
+        lease.lease_ended = False
+        lease.lease_transferred = True
+
+        config = _DummyConfig()
+
+        @asynccontextmanager
+        async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+            yield lease
+
+        config.lease_async = lease_async
+
+        async def fake_run_shell(*_args):
+            raise BaseExceptionGroup(
+                "connection errors",
+                [ConnectionError("stream broke")],
+            )
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run_shell),
+            pytest.raises(BaseExceptionGroup) as exc_info,
+        ):
+            await _shell_with_signal_handling(
+                config, None, None, None, timedelta(minutes=1), False, (), None,
+            )
+
+        offline_exceptions = [
+            e for e in exc_info.value.exceptions  # ty: ignore[unresolved-attribute]
+            if isinstance(e, ExporterOfflineError)
+        ]
+        assert len(offline_exceptions) == 1
+        assert "transferred" in str(offline_exceptions[0])
