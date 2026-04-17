@@ -394,6 +394,7 @@ class TestCleanupWithoutBeforeLeaseHook:
         with anyio.fail_after(2.5):
             await exporter._cleanup_after_lease(lease_ctx)
 
+        assert not lease_ctx.before_lease_hook.is_set()
         assert ExporterStatus.AFTER_LEASE_HOOK in statuses
         assert ExporterStatus.AVAILABLE in statuses
         assert lease_ctx.after_lease_hook_done.is_set()

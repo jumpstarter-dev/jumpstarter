@@ -754,10 +754,6 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         await self._report_status(ExporterStatus.LEASE_READY, "Ready for commands")
                         lease_scope.before_lease_hook.set()
             finally:
-                # Keep the no-before-hook path non-blocking even if conn_tg is
-                # cancelled before the ready signal is emitted.
-                if not has_before_lease_hook and not lease_scope.before_lease_hook.is_set():
-                    lease_scope.before_lease_hook.set()
                 # Close the listen stream to signal termination to listen_rx
                 await listen_tx.aclose()
                 # Run afterLease hook before closing the session
