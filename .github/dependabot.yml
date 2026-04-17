@@ -7,28 +7,59 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/controller"
     schedule:
-      interval: weekly
+      interval: "monthly"
+      time: "04:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 3
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
 
   # Go modules for operator
   - package-ecosystem: "gomod"
     directory: "/controller/deploy/operator"
     schedule:
-      interval: weekly
+      interval: "monthly"
+      time: "04:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 3
+    groups:
+      go-operator-dependencies:
+        patterns:
+          - "*"
 
   # Python dependencies
   - package-ecosystem: "pip"
     directory: "/python"
     schedule:
-      interval: weekly
+      interval: "monthly"
+      time: "04:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 3
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
 
   # Devcontainers
   - package-ecosystem: "devcontainers"
     directory: "/python"
     schedule:
-      interval: weekly
+      interval: "monthly"
+      time: "04:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 3
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: weekly
+      interval: "monthly"
+      time: "04:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 3
+    groups:
+      github-actions:
+        patterns:
+          - "*"
