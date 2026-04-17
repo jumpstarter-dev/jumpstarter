@@ -25,6 +25,9 @@ dev = [
   "pytest-cov>=5.0.0",
 ]
 
+[tool.coverage.run]
+source = ["."]
+
 [tool.hatch.build.targets.wheel]
 packages = ["jumpstarter_cli_common"]
 
