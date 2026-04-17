@@ -59,18 +59,13 @@ def hook_config() -> HookConfigV1Alpha1:
 
 @pytest.fixture
 def lease_scope():
-    from anyio import Event
-
     from jumpstarter.exporter.lease_context import LeaseContext
 
     lease_scope = LeaseContext(
         lease_name="test-lease-123",
-        before_lease_hook=Event(),
         client_name="test-client",
     )
-    # Add mock session to lease_scope
     mock_session = MagicMock()
-    # Return a no-op context manager for context_log_source
     mock_session.context_log_source.return_value = nullcontext()
     lease_scope.session = mock_session
     lease_scope.socket_path = "/tmp/test_socket"
@@ -206,8 +201,6 @@ class TestHookExecutor:
         """
         from contextlib import contextmanager
 
-        from anyio import Event
-
         from jumpstarter.exporter.lease_context import LeaseContext
 
         hook_config = HookConfigV1Alpha1(
@@ -215,7 +208,6 @@ class TestHookExecutor:
         )
         executor = HookExecutor(config=hook_config)
 
-        # Track whether context_log_source is active when warning is logged
         context_active = False
         warning_logged_in_context = False
 
@@ -230,7 +222,6 @@ class TestHookExecutor:
 
         lease_scope = LeaseContext(
             lease_name="test-lease-ctx",
-            before_lease_hook=Event(),
             client_name="test-client",
         )
         mock_session = MagicMock()
@@ -432,6 +423,7 @@ class TestHookExecutor:
         )
 
         assert lease_scope.skip_after_lease_hook is True
+        assert lease_scope.lifecycle.skip_after_lease is True
         mock_shutdown.assert_called_once_with(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
 
     async def test_before_lease_hook_endlease_does_not_set_skip_flag(self, lease_scope) -> None:
@@ -778,22 +770,21 @@ class TestHookExecutorPRRegressions:
             # User output should be at INFO level
             assert any("user output" in call for call in info_calls)
 
-    async def test_before_lease_hook_always_sets_event_on_failure(self, lease_scope) -> None:
-        """Issue C3: before_lease_hook event must be set even when hook fails.
-
-        When the beforeLease hook fails with on_failure=endLease, the event must
-        still be set to unblock process_connections in handle_lease. Otherwise
-        the lease hangs indefinitely.
-        """
+    async def test_before_lease_hook_reports_failure_status(self, lease_scope) -> None:
+        """When the beforeLease hook fails with on_failure=endLease, the hook must
+        report BEFORE_LEASE_HOOK_FAILED status. The lifecycle transition to READY
+        is now handled by the exporter wrapper, not the hook executor."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="endLease"),
         )
         executor = HookExecutor(config=hook_config)
 
-        mock_report_status = AsyncMock()
-        mock_shutdown = MagicMock()
+        status_calls = []
 
-        assert not lease_scope.before_lease_hook.is_set()
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
 
         await executor.run_before_lease_hook(
             lease_scope,
@@ -801,15 +792,12 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        # Event must always be set to unblock connections
-        assert lease_scope.before_lease_hook.is_set()
+        failed = [s for s, _ in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
+        assert len(failed) > 0
 
-    async def test_before_lease_hook_always_sets_event_on_exit(self, lease_scope) -> None:
-        """Issue C3b: before_lease_hook event must be set when hook fails with exit.
-
-        Same as C3 but for on_failure=exit. The event must be set, shutdown called,
-        and skip_after_lease_hook set to True.
-        """
+    async def test_before_lease_hook_exit_sets_skip_and_shutdown(self, lease_scope) -> None:
+        """When hook fails with on_failure=exit, shutdown is called
+        and skip_after_lease_hook is set."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
         )
@@ -824,7 +812,6 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        assert lease_scope.before_lease_hook.is_set()
         assert lease_scope.skip_after_lease_hook is True
         mock_shutdown.assert_called_once()
 

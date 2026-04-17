@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from anyio import Event
 
 from jumpstarter.common import ExporterStatus
+from jumpstarter.exporter.lease_lifecycle import LeaseLifecycle
 
 if TYPE_CHECKING:
     from jumpstarter.exporter.session import Session
@@ -19,42 +20,42 @@ if TYPE_CHECKING:
 class LeaseContext:
     """Encapsulates all resources associated with an active lease.
 
-    This class bundles together the session, socket path, synchronization event,
+    This class bundles together the session, socket path, lifecycle controller,
     and lease identity information that are needed throughout the lease lifecycle.
     By grouping these resources, we make their relationships and lifecycles explicit.
 
     Attributes:
         lease_name: Name of the current lease assigned by the controller
+        lifecycle: LeaseLifecycle FSM that coordinates all lease phase transitions
+        end_session_requested: Event that signals when client requests end session (gRPC layer)
         session: The Session object managing the device and gRPC services (set in handle_lease)
         socket_path: Unix socket path where the session is serving (set in handle_lease)
         hook_socket_path: Separate Unix socket for hook j commands to avoid SSL frame corruption
-        before_lease_hook: Event that signals when before-lease hook completes
-        end_session_requested: Event that signals when client requests end session (to run afterLease hook)
-        after_lease_hook_started: Event that signals when afterLease hook has started (prevents double execution)
-        after_lease_hook_done: Event that signals when afterLease hook has completed
-        lease_ended: Event that signals when the lease has ended (from controller status update)
         client_name: Name of the client currently holding the lease (empty if unleased)
         current_status: Current exporter status (stored here for access before session is created)
         status_message: Message describing the current status
     """
 
     lease_name: str
-    before_lease_hook: Event
+    lifecycle: LeaseLifecycle = field(default_factory=LeaseLifecycle)
     end_session_requested: Event = field(default_factory=Event)
-    after_lease_hook_started: Event = field(default_factory=Event)
-    after_lease_hook_done: Event = field(default_factory=Event)
-    lease_ended: Event = field(default_factory=Event)  # Signals lease has ended (from controller)
     session: "Session | None" = None
     socket_path: str = ""
-    hook_socket_path: str = ""  # Separate socket for hook j commands to avoid SSL corruption
+    hook_socket_path: str = ""
     client_name: str = field(default="")
     current_status: ExporterStatus = field(default=ExporterStatus.AVAILABLE)
     status_message: str = field(default="")
-    skip_after_lease_hook: bool = False
+
+    @property
+    def skip_after_lease_hook(self) -> bool:
+        return self.lifecycle.skip_after_lease
+
+    @skip_after_lease_hook.setter
+    def skip_after_lease_hook(self, value: bool) -> None:
+        self.lifecycle.skip_after_lease = value
 
     def __post_init__(self):
         """Validate that required resources are present."""
-        assert self.before_lease_hook is not None, "LeaseScope requires a before_lease_hook event"
         assert self.lease_name, "LeaseScope requires a non-empty lease_name"
 
     def is_ready(self) -> bool:
@@ -90,22 +91,22 @@ class LeaseContext:
         """
         self.current_status = status
         self.status_message = message
-        # Also update session if it exists
         if self.session:
             self.session.update_status(status, message)
 
     def drivers_ready(self) -> bool:
-        """Check if drivers are ready for use (beforeLease hook completed).
+        """Check if drivers are ready for use (lifecycle has reached READY or later).
 
-        Returns True if the beforeLease hook has completed and drivers can be accessed.
-        Used by Session to gate driver calls during hook execution.
+        Returns True if the lease lifecycle has passed the READY gate and drivers
+        can be accessed. Used by Session to gate driver calls during hook execution.
         """
-        return self.before_lease_hook.is_set()
+        return self.lifecycle.drivers_ready()
 
     async def wait_for_drivers(self) -> None:
-        """Wait for drivers to be ready (beforeLease hook to complete).
+        """Wait for drivers to be ready (lifecycle reaches READY phase).
 
-        This method blocks until the beforeLease hook completes, allowing
-        clients to connect early but wait for driver access.
+        This method blocks until the beforeLease hook completes and the lifecycle
+        transitions to READY, allowing clients to connect early but wait for
+        driver access.
         """
-        await self.before_lease_hook.wait()
+        await self.lifecycle.wait_ready()

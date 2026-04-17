@@ -594,7 +594,6 @@ class HookExecutor:
                     error_msg = "Timeout waiting for lease scope to be ready"
                     logger.error(error_msg)
                     await report_status(ExporterStatus.BEFORE_LEASE_HOOK_FAILED, error_msg)
-                    lease_scope.before_lease_hook.set()
                     return
                 await anyio.sleep(interval)
                 elapsed += interval
@@ -652,11 +651,6 @@ class HookExecutor:
                 ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                 f"beforeLease hook failed: {e}",
             )
-            # Unexpected errors don't trigger shutdown - just block the lease
-
-        finally:
-            # Always set the event to unblock connections
-            lease_scope.before_lease_hook.set()
 
     async def run_after_lease_hook(
         self,
