@@ -336,6 +336,22 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     await sleep(delay)
                     attempt += 1
                     continue
+                if e.code() == grpc.StatusCode.UNAVAILABLE:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        logger.warning(
+                            "Exporter unavailable and dial timeout (%.1fs) exceeded after %d attempts",
+                            self.dial_timeout, attempt + 1
+                        )
+                        raise
+                    delay = min(base_delay * (2 ** attempt), max_delay, remaining)
+                    logger.debug(
+                        "Exporter unavailable, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
+                        delay, attempt + 1, remaining
+                    )
+                    await sleep(delay)
+                    attempt += 1
+                    continue
                 # Exporter went offline or lease ended - log and exit gracefully
                 if "permission denied" in str(e.details()).lower():
                     self.lease_transferred = True
