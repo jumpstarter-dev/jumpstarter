@@ -1,8 +1,7 @@
-from unittest.mock import AsyncMock, PropertyMock, patch
+from unittest.mock import AsyncMock
 
 import grpc
 import pytest
-
 from jumpstarter_protocol import router_pb2
 
 from .router import RouterStream
