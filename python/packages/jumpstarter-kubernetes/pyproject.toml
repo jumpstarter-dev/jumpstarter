@@ -24,6 +24,9 @@ dev = [
   "pytest-cov>=5.0.0",
 ]
 
+[tool.coverage.run]
+source = ["."]
+
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
 source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
