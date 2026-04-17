@@ -127,9 +127,9 @@ def _generate_shell_init(shell_name: str, use_profiles: bool, j_commands: list[s
 
     elif shell_name.endswith("zsh"):
         lines = []
-        lines.append("autoload -Uz compinit && compinit")
         if use_profiles:
             lines.append('[ -f ~/.zshrc ] && source ~/.zshrc')
+        lines.append("autoload -Uz compinit && compinit")
         lines.append(f'eval "$({jmp} completion zsh 2>/dev/null)"')
         lines.append(f'eval "$({jmp_admin} completion zsh 2>/dev/null)"')
         if j_commands:
