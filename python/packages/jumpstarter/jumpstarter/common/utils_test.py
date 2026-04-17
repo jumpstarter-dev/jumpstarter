@@ -116,12 +116,12 @@ def test_generate_zsh_init_without_j_commands():
     assert "compdef" not in content
 
 
-def test_generate_zsh_init_with_profiles_loads_compinit_before_zshrc():
+def test_generate_zsh_init_with_profiles_loads_zshrc_before_compinit():
     content = _generate_shell_init("zsh", use_profiles=True, j_commands=["power"])
     assert ".zshrc" in content
     compinit_pos = content.index("autoload -Uz compinit && compinit")
     zshrc_pos = content.index(".zshrc")
-    assert compinit_pos < zshrc_pos
+    assert zshrc_pos < compinit_pos
 
 
 def test_generate_fish_init_with_j_commands():
