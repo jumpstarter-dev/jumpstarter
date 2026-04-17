@@ -7,7 +7,7 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/controller"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
       time: "04:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 3
@@ -20,7 +20,7 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/controller/deploy/operator"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
       time: "04:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 3
@@ -33,7 +33,7 @@ updates:
   - package-ecosystem: "pip"
     directory: "/python"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
       time: "04:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 3
@@ -46,7 +46,7 @@ updates:
   - package-ecosystem: "devcontainers"
     directory: "/python"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
       time: "04:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 3
@@ -55,7 +55,7 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "monthly"
+      interval: "weekly"
       time: "04:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 3
