@@ -531,7 +531,7 @@ class HookExecutor:
             logger.debug("No before-lease hook configured")
             return None
 
-        logger.debug("Executing before-lease hook for lease %s", lease_scope.lease_name)
+        logger.info("Executing before-lease hook for lease %s", lease_scope.lease_name)
         return await self._execute_hook(
             self.config.before_lease,
             lease_scope,
@@ -554,7 +554,7 @@ class HookExecutor:
             logger.debug("No after-lease hook configured")
             return None
 
-        logger.debug("Executing after-lease hook for lease %s", lease_scope.lease_name)
+        logger.info("Executing after-lease hook for lease %s", lease_scope.lease_name)
         return await self._execute_hook(
             self.config.after_lease,
             lease_scope,
@@ -608,7 +608,7 @@ class HookExecutor:
             await report_status(ExporterStatus.BEFORE_LEASE_HOOK, "Running beforeLease hook")
 
             # Execute hook with lease scope
-            logger.debug("Executing before-lease hook for lease %s", lease_scope.lease_name)
+            logger.info("Executing before-lease hook for lease %s", lease_scope.lease_name)
             warning = await self._execute_hook(
                 self.config.before_lease,
                 lease_scope,
@@ -699,7 +699,7 @@ class HookExecutor:
             await report_status(ExporterStatus.AFTER_LEASE_HOOK, "Running afterLease hooks")
 
             # Execute hook with lease scope
-            logger.debug("Executing after-lease hook for lease %s", lease_scope.lease_name)
+            logger.info("Executing after-lease hook for lease %s", lease_scope.lease_name)
             warning = await self._execute_hook(
                 self.config.after_lease,
                 lease_scope,

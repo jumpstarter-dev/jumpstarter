@@ -505,6 +505,7 @@ class AsyncDriverClient(
                             else:  # SYSTEM
                                 logger_name = "exporter:system"
 
+                            # Log through logger for RichHandler formatting
                             source_logger = logging.getLogger(logger_name)
                             source_logger.log(log_level, response.message)
 
