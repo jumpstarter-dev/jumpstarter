@@ -9,7 +9,7 @@
 | **Type**           | Standards Track |
 | **Created**        | 2026-04-17 |
 | **Updated**        | 2026-04-17 |
-| **Discussion**     | Pending PR creation |
+| **Discussion**     | [PR #617](https://github.com/jumpstarter-dev/jumpstarter/pull/617) |
 
 ---
 
