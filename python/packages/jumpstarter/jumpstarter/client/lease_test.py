@@ -5,9 +5,23 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from grpc import StatusCode
+from grpc.aio import AioRpcError
 from rich.console import Console
 
 from jumpstarter.client.lease import Lease, LeaseAcquisitionSpinner
+
+
+class MockAioRpcError(AioRpcError):
+    def __init__(self, status_code: StatusCode, message: str = ""):
+        self._status_code = status_code
+        self._message = message
+
+    def code(self) -> StatusCode:
+        return self._status_code
+
+    def details(self) -> str:
+        return self._message
 
 
 class TestLeaseAcquisitionSpinner:
@@ -522,3 +536,55 @@ class TestMonitorAsyncError:
         callback.assert_called()
         _, remain_arg = callback.call_args[0]
         assert remain_arg == timedelta(0)
+
+
+class TestHandleAsyncDialRetry:
+    def _make_lease(self):
+        lease = object.__new__(Lease)
+        lease.name = "test-lease"
+        lease.dial_timeout = 5.0
+        lease.controller = Mock()
+        lease.tls_config = Mock()
+        lease.grpc_options = {}
+        lease.lease_transferred = False
+        return lease
+
+    @pytest.mark.anyio
+    async def test_retries_on_resource_exhausted(self):
+        lease = self._make_lease()
+        call_count = 0
+
+        async def mock_dial(request):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise MockAioRpcError(StatusCode.RESOURCE_EXHAUSTED, "listener buffer full on lease test-lease")
+            response = Mock()
+            response.router_endpoint = "ep"
+            response.router_token = "tok"
+            return response
+
+        lease.controller.Dial = mock_dial
+
+        with patch("jumpstarter.client.lease.connect_router_stream") as mock_connect:
+            mock_connect.return_value.__aenter__ = AsyncMock()
+            mock_connect.return_value.__aexit__ = AsyncMock(return_value=False)
+            with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+                await lease.handle_async(Mock())
+
+        assert call_count == 2
+
+    @pytest.mark.anyio
+    async def test_resource_exhausted_respects_dial_timeout(self):
+        lease = self._make_lease()
+        lease.dial_timeout = 0.0
+
+        async def mock_dial(request):
+            raise MockAioRpcError(StatusCode.RESOURCE_EXHAUSTED, "listener buffer full on lease test-lease")
+
+        lease.controller.Dial = mock_dial
+
+        with pytest.raises(AioRpcError) as exc_info:
+            await lease.handle_async(Mock())
+
+        assert exc_info.value.code() == StatusCode.RESOURCE_EXHAUSTED
