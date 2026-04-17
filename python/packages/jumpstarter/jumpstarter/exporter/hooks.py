@@ -103,7 +103,7 @@ class HookExecutor:
         # Falls back to main socket if hook socket not available (backward compatibility)
         socket_path = lease_scope.hook_socket_path or lease_scope.socket_path
         if lease_scope.hook_socket_path:
-            logger.info(
+            logger.debug(
                 "Using dedicated hook socket: %s (main socket: %s)",
                 lease_scope.hook_socket_path,
                 lease_scope.socket_path,
@@ -620,7 +620,7 @@ class HookExecutor:
             else:
                 msg = "Ready for commands"
             await report_status(ExporterStatus.LEASE_READY, msg)
-            logger.info("beforeLease hook completed successfully")
+            logger.debug("beforeLease hook completed successfully")
 
         except HookExecutionError as e:
             if e.should_shutdown_exporter():
@@ -711,7 +711,7 @@ class HookExecutor:
             else:
                 msg = "Available for new lease"
             await report_status(ExporterStatus.AVAILABLE, msg)
-            logger.info("afterLease hook completed successfully")
+            logger.debug("afterLease hook completed successfully")
 
         except HookExecutionError as e:
             if e.should_shutdown_exporter():
