@@ -311,6 +311,7 @@ class TestBeforeLeaseHookSafetyTimeout:
         from unittest.mock import patch
 
         lease_ctx = make_lease_context()
+        lease_ctx.lease_ended.set()
         exporter = make_exporter(lease_ctx)
 
         statuses = []
