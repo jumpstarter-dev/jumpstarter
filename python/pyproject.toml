@@ -61,7 +61,7 @@ docs = [
     "myst-parser>=5.0.0",
     "sphinxcontrib-mermaid>=2.0.1",
     "furo>=2024.8.6",
-    "esbonio>=0.16.4",
+    "esbonio>=2.0.0",
     "sphinx-autobuild>=2024.4.16",
     "sphinx-click>=6.0.0",
     "sphinx-substitution-extensions>=2024.10.17",
@@ -74,7 +74,7 @@ dev = [
     "ruff==0.15.10",
     "typos>=1.23.6",
     "pre-commit>=3.8.0",
-    "esbonio>=0.16.5",
+    "esbonio>=2.0.0",
     "ty>=0.0.1a8",
     "diff-cover>=10.2.0",
 ]
