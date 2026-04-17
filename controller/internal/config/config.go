@@ -3,11 +3,9 @@ package config
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/keepalive"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/yaml"
@@ -65,29 +63,6 @@ func LoadConfiguration(
 	var router Router
 	if err := yaml.Unmarshal([]byte(rawRouter), &router); err != nil {
 		return nil, "", nil, nil, nil, err
-	}
-
-	rawAuthenticationConfiguration, ok := configmap.Data["authentication"]
-	if ok {
-		// backwards compatibility
-		// TODO: remove in 0.7.0
-		authenticator, prefix, err := oidc.LoadAuthenticationConfiguration(
-			ctx,
-			scheme,
-			[]byte(rawAuthenticationConfiguration),
-			signer,
-			certificateAuthority,
-		)
-		if err != nil {
-			return nil, "", nil, nil, nil, err
-		}
-
-		return authenticator, prefix, router, []grpc.ServerOption{
-			grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-				MinTime:             1 * time.Second,
-				PermitWithoutStream: true,
-			}),
-		}, &Provisioning{Enabled: false}, nil
 	}
 
 	rawConfig, ok := configmap.Data["config"]

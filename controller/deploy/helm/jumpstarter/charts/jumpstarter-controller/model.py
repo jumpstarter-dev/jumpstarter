@@ -358,7 +358,6 @@ class Model(BaseModel):
     enabled: Optional[bool] = Field(
         None, description="Whether to enable jumpstarter controller"
     )
-    authenticationConfig: Optional[str] = None
     config: Optional[JumpstarterConfig] = None
     namespace: Optional[str] = Field(
         None,
