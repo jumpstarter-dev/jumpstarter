@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import anyio
 import pytest
 from grpc import StatusCode
 from grpc.aio import AioRpcError
@@ -330,25 +331,15 @@ SOURCE_LOGGER_NAMES = [
 
 
 def setup_log_stream_client(responses, show_all_logs=True):
-    """Set up a mock client with LogStream responses and capturing loggers.
-
-    Returns (client, captures) where captures is a dict
-    mapping logger name to LogCapture handler.
-
-    The mock LogStream yields all responses once and then raises
-    CANCELLED on subsequent calls to prevent reconnect loops.
-    """
     from jumpstarter.client.core import AsyncDriverClient
 
-    call_count = 0
+    all_delivered = anyio.Event()
 
     async def mock_log_stream(_):
-        nonlocal call_count
-        call_count += 1
-        if call_count > 1:
-            raise create_mock_rpc_error(StatusCode.CANCELLED)
         for r in responses:
             yield r
+        all_delivered.set()
+        await anyio.sleep_forever()
 
     stub = MagicMock()
     stub.LogStream = mock_log_stream
@@ -367,21 +358,36 @@ def setup_log_stream_client(responses, show_all_logs=True):
         logger.addHandler(capture)
         captures[name] = capture
 
-    return client, captures
+    return client, captures, all_delivered
 
 
 @pytest.fixture(autouse=True)
 def _clean_source_loggers():
-    """Remove handlers from source loggers after each test."""
     yield
     for name in SOURCE_LOGGER_NAMES:
         logger = logging.getLogger(name)
         logger.handlers.clear()
 
 
+class TestLogStreamResponseFactory:
+    def test_create_response_without_source(self) -> None:
+        response = create_log_stream_response("plain message")
+        assert response.message == "plain message"
+        assert response.severity == "INFO"
+        assert response.HasField("source") is False
+        assert response.source is None
+
+    def test_create_response_with_source(self) -> None:
+        response = create_log_stream_response(
+            "hook message", severity="DEBUG", source=LogSource.BEFORE_LEASE_HOOK
+        )
+        assert response.message == "hook message"
+        assert response.severity == "DEBUG"
+        assert response.HasField("source") is True
+
+
 class TestLogStreamSourceTagPlacement:
     async def test_hook_log_delegates_tagging_to_formatter(self) -> None:
-        """F050: core.py must NOT prepend source tags -- SourcePrefixFormatter handles that."""
         responses = [
             create_log_stream_response(
                 "hook output line",
@@ -390,22 +396,18 @@ class TestLogStreamSourceTagPlacement:
             ),
         ]
 
-        client, captures = setup_log_stream_client(responses)
+        client, captures, delivered = setup_log_stream_client(responses)
 
         async with client.log_stream_async(show_all_logs=True):
-            import anyio
-            await anyio.sleep(0.1)
+            with anyio.fail_after(2):
+                await delivered.wait()
 
         records = captures["exporter:beforeLease"].records
         assert len(records) == 1
-        assert records[0].getMessage() == "hook output line", (
-            f"Expected raw message without tag prefix, "
-            f"got: '{records[0].getMessage()}'"
-        )
+        assert records[0].getMessage() == "hook output line"
         assert records[0].name == "exporter:beforeLease"
 
     async def test_after_lease_hook_log_delegates_tagging_to_formatter(self) -> None:
-        """F050: afterLease source tag must come from formatter, not from core.py."""
         responses = [
             create_log_stream_response(
                 "cleanup output",
@@ -414,22 +416,18 @@ class TestLogStreamSourceTagPlacement:
             ),
         ]
 
-        client, captures = setup_log_stream_client(responses)
+        client, captures, delivered = setup_log_stream_client(responses)
 
         async with client.log_stream_async(show_all_logs=True):
-            import anyio
-            await anyio.sleep(0.1)
+            with anyio.fail_after(2):
+                await delivered.wait()
 
         records = captures["exporter:afterLease"].records
         assert len(records) == 1
-        assert records[0].getMessage() == "cleanup output", (
-            f"Expected raw message without tag prefix, "
-            f"got: '{records[0].getMessage()}'"
-        )
+        assert records[0].getMessage() == "cleanup output"
         assert records[0].name == "exporter:afterLease"
 
     async def test_logger_name_carries_source_for_formatter(self) -> None:
-        """F050: source_logger.name must carry the source tag so formatters can use it."""
         responses = [
             create_log_stream_response(
                 "line one",
@@ -443,11 +441,11 @@ class TestLogStreamSourceTagPlacement:
             ),
         ]
 
-        client, captures = setup_log_stream_client(responses)
+        client, captures, delivered = setup_log_stream_client(responses)
 
         async with client.log_stream_async(show_all_logs=True):
-            import anyio
-            await anyio.sleep(0.1)
+            with anyio.fail_after(2):
+                await delivered.wait()
 
         before_records = captures["exporter:beforeLease"].records
         after_records = captures["exporter:afterLease"].records
@@ -461,7 +459,6 @@ class TestLogStreamSourceTagPlacement:
 
 class TestLogStreamFiltering:
     async def test_show_all_logs_false_filters_system_logs(self) -> None:
-        """F041: With show_all_logs=False, system/debug logs must be filtered out."""
         responses = [
             create_log_stream_response(
                 "debug system message",
@@ -475,23 +472,18 @@ class TestLogStreamFiltering:
             ),
         ]
 
-        client, captures = setup_log_stream_client(responses, show_all_logs=False)
+        client, captures, delivered = setup_log_stream_client(responses, show_all_logs=False)
 
         async with client.log_stream_async(show_all_logs=False):
-            import anyio
-            await anyio.sleep(0.1)
+            with anyio.fail_after(2):
+                await delivered.wait()
 
         system_records = captures["exporter:system"].records
         hook_records = captures["exporter:beforeLease"].records
-        assert len(system_records) == 0, (
-            f"Expected 0 system log records with show_all_logs=False, got {len(system_records)}"
-        )
-        assert len(hook_records) == 1, (
-            f"Expected 1 hook log record, got {len(hook_records)}"
-        )
+        assert len(system_records) == 0
+        assert len(hook_records) == 1
 
     async def test_show_all_logs_false_shows_hook_logs(self) -> None:
-        """With show_all_logs=False, hook logs must still be displayed."""
         responses = [
             create_log_stream_response(
                 "before hook output",
@@ -505,23 +497,18 @@ class TestLogStreamFiltering:
             ),
         ]
 
-        client, captures = setup_log_stream_client(responses, show_all_logs=False)
+        client, captures, delivered = setup_log_stream_client(responses, show_all_logs=False)
 
         async with client.log_stream_async(show_all_logs=False):
-            import anyio
-            await anyio.sleep(0.1)
+            with anyio.fail_after(2):
+                await delivered.wait()
 
         before_records = captures["exporter:beforeLease"].records
         after_records = captures["exporter:afterLease"].records
-        assert len(before_records) == 1, (
-            f"Expected 1 beforeLease log record, got {len(before_records)}"
-        )
-        assert len(after_records) == 1, (
-            f"Expected 1 afterLease log record, got {len(after_records)}"
-        )
+        assert len(before_records) == 1
+        assert len(after_records) == 1
 
     async def test_show_all_logs_true_shows_system_logs(self) -> None:
-        """With show_all_logs=True (default), system logs must be displayed."""
         responses = [
             create_log_stream_response(
                 "system message",
@@ -535,17 +522,28 @@ class TestLogStreamFiltering:
             ),
         ]
 
-        client, captures = setup_log_stream_client(responses, show_all_logs=True)
+        client, captures, delivered = setup_log_stream_client(responses, show_all_logs=True)
 
         async with client.log_stream_async(show_all_logs=True):
-            import anyio
-            await anyio.sleep(0.1)
+            with anyio.fail_after(2):
+                await delivered.wait()
 
         system_records = captures["exporter:system"].records
         hook_records = captures["exporter:beforeLease"].records
-        assert len(system_records) == 1, (
-            f"Expected 1 system log record, got {len(system_records)}"
-        )
-        assert len(hook_records) == 1, (
-            f"Expected 1 hook log record, got {len(hook_records)}"
-        )
+        assert len(system_records) == 1
+        assert len(hook_records) == 1
+
+    async def test_log_without_source_routes_to_system(self) -> None:
+        responses = [
+            create_log_stream_response("no source message"),
+        ]
+
+        client, captures, delivered = setup_log_stream_client(responses, show_all_logs=True)
+
+        async with client.log_stream_async(show_all_logs=True):
+            with anyio.fail_after(2):
+                await delivered.wait()
+
+        system_records = captures["exporter:system"].records
+        assert len(system_records) == 1
+        assert system_records[0].getMessage() == "no source message"
