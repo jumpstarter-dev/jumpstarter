@@ -508,6 +508,12 @@ def test_someip_no_remote_endpoint_by_default(mock_osip_cls, mock_config_cls):
     assert "remote_endpoint" not in kwargs
 
 
+def test_someip_remote_port_without_remote_host_rejected():
+    """remote_port without remote_host is rejected."""
+    with pytest.raises(ValueError, match="remote_port requires remote_host"):
+        SomeIp(host="127.0.0.1", port=30490, remote_port=31000)
+
+
 @patch("jumpstarter_driver_someip.driver.ClientConfig")
 @patch("jumpstarter_driver_someip.driver.OsipClient")
 def test_someip_rpc_call_with_remote_endpoint(mock_osip_cls, _mock_config_cls):

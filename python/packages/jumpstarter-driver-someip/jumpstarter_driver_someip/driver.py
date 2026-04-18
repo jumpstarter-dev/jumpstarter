@@ -102,9 +102,13 @@ class SomeIp(Driver):
             "transport_mode": mode,
         }
 
+        if self.remote_port is not None and self.remote_host is None:
+            raise ValueError("remote_port requires remote_host to be set")
+
         if self.remote_host is not None:
             config_kwargs["remote_endpoint"] = Endpoint(
-                self.remote_host, self.remote_port or self.port
+                self.remote_host,
+                self.remote_port if self.remote_port is not None else self.port,
             )
 
         self._osip_config = ClientConfig(**config_kwargs)
