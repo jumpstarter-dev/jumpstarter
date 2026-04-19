@@ -495,17 +495,24 @@ func (in *LeaseList) DeepCopyObject() runtime.Object {
 func (in *LeaseSpec) DeepCopyInto(out *LeaseSpec) {
 	*out = *in
 	out.ClientRef = in.ClientRef
-	if in.ExporterRef != nil {
-		in, out := &in.ExporterRef, &out.ExporterRef
-		*out = new(v1.LocalObjectReference)
-		**out = **in
-	}
 	if in.Duration != nil {
 		in, out := &in.Duration, &out.Duration
 		*out = new(metav1.Duration)
 		**out = **in
 	}
 	in.Selector.DeepCopyInto(&out.Selector)
+	if in.ExporterRef != nil {
+		in, out := &in.ExporterRef, &out.ExporterRef
+		*out = new(v1.LocalObjectReference)
+		**out = **in
+	}
+	if in.Tags != nil {
+		in, out := &in.Tags, &out.Tags
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.BeginTime != nil {
 		in, out := &in.BeginTime, &out.BeginTime
 		*out = (*in).DeepCopy()

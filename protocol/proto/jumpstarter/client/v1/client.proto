@@ -103,6 +103,7 @@ message Lease {
   ];
   repeated jumpstarter.v1.Condition conditions = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
   optional string exporter_name = 12 [(google.api.field_behavior) = IMMUTABLE];
+  map<string, string> tags = 13 [(google.api.field_behavior) = IMMUTABLE];
 }
 
 message GetExporterRequest {
@@ -143,6 +144,7 @@ message ListLeasesRequest {
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
   string filter = 4 [(google.api.field_behavior) = OPTIONAL];
   optional bool only_active = 5 [(google.api.field_behavior) = OPTIONAL];
+  string tag_filter = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
 message ListLeasesResponse {
