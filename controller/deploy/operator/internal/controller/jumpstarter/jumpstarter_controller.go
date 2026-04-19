@@ -1145,6 +1145,11 @@ func (r *JumpstarterReconciler) buildConfig(jumpstarter *operatorv1alpha1.Jumpst
 
 	cfg.Authentication = auth
 
+	// Lease policy configuration
+	cfg.LeasePolicy = config.LeasePolicy{
+		MaxTags: jumpstarter.Spec.LeasePolicy.MaxTags,
+	}
+
 	// gRPC keepalive configuration
 	if jumpstarter.Spec.Controller.GRPC.Keepalive != nil {
 		ka := &cfg.Grpc.Keepalive
