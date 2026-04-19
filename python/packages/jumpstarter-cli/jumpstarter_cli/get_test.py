@@ -241,10 +241,10 @@ class TestGetExportersCallsPaginatedMethod:
 
         with patch("jumpstarter_cli.get.model_print"):
             get_leases.callback.__wrapped__.__wrapped__(
-                config=config, selector=None, output="text", show_all=False, all_clients=False
+                config=config, selector=None, output="text", show_all=False, all_clients=False, tag_filter=None,
             )
 
-        config.list_leases.assert_called_once_with(filter=None, only_active=True)
+        config.list_leases.assert_called_once_with(filter=None, only_active=True, tag_filter=None)
 
 
 class TestGetExportersIntegration:
@@ -433,13 +433,13 @@ class TestGetLeasesClientFiltering:
 
         with patch("jumpstarter_cli.get.model_print") as mock_print:
             _unwrapped_get_leases(
-                config=config, selector=None, output=None, show_all=False, all_clients=False,
+                config=config, selector=None, output=None, show_all=False, all_clients=False, tag_filter=None,
             )
 
         printed_leases = mock_print.call_args[0][0]
         assert len(printed_leases.leases) == 1
         assert printed_leases.leases[0].name == "my-lease"
-        config.list_leases.assert_called_once_with(filter=None, only_active=True)
+        config.list_leases.assert_called_once_with(filter=None, only_active=True, tag_filter=None)
 
     def test_all_flag_requests_inactive_leases_own_only(self):
         from unittest.mock import patch
@@ -450,13 +450,13 @@ class TestGetLeasesClientFiltering:
 
         with patch("jumpstarter_cli.get.model_print") as mock_print:
             _unwrapped_get_leases(
-                config=config, selector=None, output=None, show_all=True, all_clients=False,
+                config=config, selector=None, output=None, show_all=True, all_clients=False, tag_filter=None,
             )
 
         printed_leases = mock_print.call_args[0][0]
         assert len(printed_leases.leases) == 1
         assert printed_leases.leases[0].name == "my-lease"
-        config.list_leases.assert_called_once_with(filter=None, only_active=False)
+        config.list_leases.assert_called_once_with(filter=None, only_active=False, tag_filter=None)
 
     def test_all_clients_shows_everyone_active(self):
         from unittest.mock import patch
@@ -467,12 +467,12 @@ class TestGetLeasesClientFiltering:
 
         with patch("jumpstarter_cli.get.model_print") as mock_print:
             _unwrapped_get_leases(
-                config=config, selector=None, output=None, show_all=False, all_clients=True,
+                config=config, selector=None, output=None, show_all=False, all_clients=True, tag_filter=None,
             )
 
         printed_leases = mock_print.call_args[0][0]
         assert len(printed_leases.leases) == 2
-        config.list_leases.assert_called_once_with(filter=None, only_active=True)
+        config.list_leases.assert_called_once_with(filter=None, only_active=True, tag_filter=None)
 
     def test_all_and_all_clients_shows_everything(self):
         from unittest.mock import patch
@@ -483,9 +483,9 @@ class TestGetLeasesClientFiltering:
 
         with patch("jumpstarter_cli.get.model_print") as mock_print:
             _unwrapped_get_leases(
-                config=config, selector=None, output=None, show_all=True, all_clients=True,
+                config=config, selector=None, output=None, show_all=True, all_clients=True, tag_filter=None,
             )
 
         printed_leases = mock_print.call_args[0][0]
         assert len(printed_leases.leases) == 2
-        config.list_leases.assert_called_once_with(filter=None, only_active=False)
+        config.list_leases.assert_called_once_with(filter=None, only_active=False, tag_filter=None)

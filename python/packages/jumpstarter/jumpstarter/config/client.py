@@ -167,7 +167,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.GetExporter(name=name)
 
-    async def _collect_all_leases(self, svc, page_size=100, only_active=True, filter=None):
+    async def _collect_all_leases(self, svc, page_size=100, only_active=True, filter=None, tag_filter=None):
         from jumpstarter.client.grpc import LeaseList
 
         all_leases = []
@@ -178,6 +178,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 page_token=page_token,
                 filter=filter,
                 only_active=only_active,
+                tag_filter=tag_filter,
             )
             all_leases.extend(page.leases)
             if not page.next_page_token:
@@ -250,6 +251,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         exporter_name: str | None = None,
         begin_time: datetime | None = None,
         lease_id: str | None = None,
+        tags: dict[str, str] | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.CreateLease(
@@ -258,6 +260,7 @@ class ClientConfigV1Alpha1(BaseSettings):
             duration=duration,
             begin_time=begin_time,
             lease_id=lease_id,
+            tags=tags,
         )
 
     @_blocking_compat
@@ -278,9 +281,12 @@ class ClientConfigV1Alpha1(BaseSettings):
         filter: str | None = None,
         only_active: bool = True,
         page_size: int = 100,
+        tag_filter: str | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await self._collect_all_leases(svc, page_size=page_size, only_active=only_active, filter=filter)
+        return await self._collect_all_leases(
+            svc, page_size=page_size, only_active=only_active, filter=filter, tag_filter=tag_filter,
+        )
 
     @_blocking_compat
     @_handle_connection_error

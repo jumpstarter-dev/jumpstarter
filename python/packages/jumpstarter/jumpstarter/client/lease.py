@@ -83,6 +83,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     portal: BlockingPortal
     namespace: str
     name: str | None = field(default=None)
+    tags: dict[str, str] = field(default_factory=dict)
     allow: list[str]
     unsafe: bool
     release: bool = True  # release on contexts exit
@@ -124,6 +125,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     exporter_name=self.requested_exporter_name,
                     duration=self.duration,
                     lease_id=self.name,
+                    tags=self.tags or None,
                 )
             ).name
         logger.info("Acquiring lease %s for selector %s for duration %s", self.name, self.selector, self.duration)

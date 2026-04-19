@@ -30,6 +30,12 @@ def create():
     default=None,
     help="Optional lease ID to request (if not provided, server will generate one)",
 )
+@click.option(
+    "--tag",
+    "tags",
+    multiple=True,
+    help="Tag to set on the lease (key=value format, can be specified multiple times)",
+)
 @opt_output_all
 @handle_exceptions_with_reauthentication(relogin_client)
 def create_lease(
@@ -39,6 +45,7 @@ def create_lease(
     duration: timedelta,
     begin_time: datetime | None,
     lease_id: str | None,
+    tags: tuple[str, ...],
     output: OutputType,
 ):
     """
@@ -75,12 +82,20 @@ def create_lease(
     if not selector and not exporter_name:
         raise click.UsageError("one of --selector/-l or --name/-n is required")
 
+    parsed_tags = {}
+    for tag in tags:
+        if "=" not in tag:
+            raise click.UsageError(f"Invalid tag format: {tag!r} (expected key=value)")
+        k, v = tag.split("=", 1)
+        parsed_tags[k] = v
+
     lease = config.create_lease(
         selector=selector,
         exporter_name=exporter_name,
         duration=duration,
         begin_time=begin_time,
         lease_id=lease_id,
+        tags=parsed_tags or None,
     )
 
     model_print(lease, output)
