@@ -39,12 +39,14 @@ type ClientService struct {
 	cpb.UnimplementedClientServiceServer
 	kclient.Client
 	auth.Auth
+	MaxTags int32
 }
 
-func NewClientService(client kclient.Client, auth auth.Auth) *ClientService {
+func NewClientService(client kclient.Client, auth auth.Auth, maxTags int32) *ClientService {
 	return &ClientService{
-		Client: client,
-		Auth:   auth,
+		Client:  client,
+		Auth:    auth,
+		MaxTags: maxTags,
 	}
 }
 
@@ -137,6 +139,27 @@ func (s *ClientService) ListLeases(ctx context.Context, req *cpb.ListLeasesReque
 		return nil, err
 	}
 
+	// Apply user tag filter by auto-prefixing keys with metadata.jumpstarter.dev/
+	if req.TagFilter != "" {
+		tagSelector, err := labels.Parse(req.TagFilter)
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid tag_filter: %v", err)
+		}
+		requirements, _ := tagSelector.Requirements()
+		for _, r := range requirements {
+			prefixedKey := jumpstarterdevv1alpha1.LeaseTagMetadataPrefix + r.Key()
+			requirement, err := labels.NewRequirement(
+				prefixedKey,
+				r.Operator(),
+				r.ValuesUnsorted(),
+			)
+			if err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "invalid tag_filter requirement: %v", err)
+			}
+			selector = selector.Add(*requirement)
+		}
+	}
+
 	// Apply active-only filter by default (when only_active is nil or true)
 	// We must combine this with the user's filter selector into a single
 	// MatchingLabelsSelector, because multiple MatchingLabelsSelector options
@@ -183,6 +206,10 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 
 	if err := validateLeaseTarget(req.Lease); err != nil {
 		return nil, err
+	}
+
+	if err := jumpstarterdevv1alpha1.ValidateLeaseTags(req.Lease.Tags, int(s.MaxTags)); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid lease tags: %v", err)
 	}
 
 	namespace, err := utils.ParseNamespaceIdentifier(req.Parent)

@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.16.3
+    controller-gen.kubebuilder.io/version: v0.18.0
   name: leases.jumpstarter.dev
 spec:
   group: jumpstarter.dev
@@ -146,6 +146,14 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
+              tags:
+                additionalProperties:
+                  type: string
+                description: |-
+                  User-defined tags for the lease. Immutable after creation.
+                  Maximum 10 entries. Keys and values must conform to Kubernetes label rules.
+                maxProperties: 10
+                type: object
             required:
             - clientRef
             - selector
