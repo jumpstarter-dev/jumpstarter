@@ -79,7 +79,17 @@ type ControllerService struct {
 	Attr          authorization.ContextAttributesGetter
 	ServerOptions []grpc.ServerOption
 	Router        config.Router
+	LeasePolicy   *config.LeasePolicy
 	listenQueues  sync.Map
+}
+
+const defaultMaxTags int32 = 10
+
+func (s *ControllerService) effectiveMaxTags() int32 {
+	if s.LeasePolicy != nil && s.LeasePolicy.MaxTags > 0 {
+		return s.LeasePolicy.MaxTags
+	}
+	return defaultMaxTags
 }
 
 type wrappedStream struct {
@@ -1000,7 +1010,7 @@ func (s *ControllerService) Start(ctx context.Context) error {
 	pb.RegisterControllerServiceServer(server, s)
 	cpb.RegisterClientServiceServer(
 		server,
-		clientsvcv1.NewClientService(s.Client, *auth.NewAuth(s.Client, s.Authn, s.Authz, s.Attr)),
+		clientsvcv1.NewClientService(s.Client, *auth.NewAuth(s.Client, s.Authn, s.Authz, s.Attr), s.effectiveMaxTags()),
 	)
 
 	// Register reflection service on gRPC server.

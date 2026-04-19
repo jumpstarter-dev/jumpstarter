@@ -474,6 +474,8 @@ grpc:
   keepalive:
     minTime: 1s
     permitWithoutStream: true
+leasePolicy:
+  maxTags: 10
 provisioning:
   enabled: false
 `
