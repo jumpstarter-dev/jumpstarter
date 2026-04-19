@@ -8,11 +8,11 @@ from .fls import download_fls, get_fls_binary, get_fls_github_url
 @pytest.mark.parametrize(
     "arch,version,expected_binary",
     [
-        ("aarch64", "0.1.9", "fls-aarch64-linux"),
-        ("arm64", "0.1.9", "fls-aarch64-linux"),
+        ("aarch64", "0.1.9", "fls-aarch64-linux-musl"),
+        ("arm64", "0.1.9", "fls-aarch64-linux-musl"),
         ("x86_64", "0.2.0", "fls-x86_64-linux"),
         ("amd64", "0.2.0", "fls-x86_64-linux"),
-        ("unknown", "0.1.9", "fls-aarch64-linux"),  # defaults to aarch64
+        ("unknown", "0.1.9", "fls-aarch64-linux-musl"),  # defaults to aarch64
     ],
 )
 def test_get_fls_github_url_auto_detect(arch, version, expected_binary):
@@ -25,8 +25,8 @@ def test_get_fls_github_url_auto_detect(arch, version, expected_binary):
 @pytest.mark.parametrize(
     "arch,version,expected_binary",
     [
-        ("aarch64", "0.1.9", "fls-aarch64-linux"),
-        ("AARCH64", "0.1.9", "fls-aarch64-linux"),  # case insensitive
+        ("aarch64", "0.1.9", "fls-aarch64-linux-musl"),
+        ("AARCH64", "0.1.9", "fls-aarch64-linux-musl"),  # case insensitive
         ("x86_64", "0.2.0", "fls-x86_64-linux"),
     ],
 )
