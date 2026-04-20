@@ -186,7 +186,7 @@ def _launch_bash(shell, init_content, use_profiles, common_env, context, lease):
                 pass
 
 
-def _launch_fish(shell, init_file, common_env, context, lease):
+def _launch_fish(shell, init_content, common_env, context, lease):
     """Launch a fish shell with completion init and custom prompt."""
     fish_env = common_env | {"_JMP_SHELL_CONTEXT": context}
     fish_fn = (
@@ -203,10 +203,21 @@ def _launch_fish(shell, init_file, common_env, context, lease):
         "end"
     )
     init_cmd = fish_fn
-    if init_file:
+    init_file = None
+    if init_content:
+        init_file = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False)
+        init_file.write(init_content)
+        init_file.close()
         fish_env["_JMP_SHELL_INIT"] = init_file.name
         init_cmd += '; source "$_JMP_SHELL_INIT"'
-    return _run_process([shell, "--init-command", init_cmd], fish_env, lease)
+    try:
+        return _run_process([shell, "--init-command", init_cmd], fish_env, lease)
+    finally:
+        if init_file:
+            try:
+                os.unlink(init_file.name)
+            except OSError:
+                pass
 
 
 def _launch_zsh(shell, init_content, common_env, context, lease, use_profiles):
@@ -285,20 +296,7 @@ def launch_shell(
     if shell_name.endswith("bash"):
         return _launch_bash(shell, init_content, use_profiles, common_env, context, lease)
 
-    init_file = None
-    if init_content:
-        init_file = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False)
-        init_file.write(init_content)
-        init_file.close()
+    if shell_name.endswith("fish"):
+        return _launch_fish(shell, init_content, common_env, context, lease)
 
-    try:
-        if shell_name.endswith("fish"):
-            return _launch_fish(shell, init_file, common_env, context, lease)
-        else:
-            return _run_process([shell], common_env, lease)
-    finally:
-        if init_file:
-            try:
-                os.unlink(init_file.name)
-            except OSError:
-                pass
+    return _run_process([shell], common_env, lease)
