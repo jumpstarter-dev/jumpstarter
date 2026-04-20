@@ -10,8 +10,7 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "jumpstarter",
-    # TODO: replace with "opensomeip>=0.1.4,<0.2.0" once v0.1.4 is published on PyPI
-    "opensomeip @ git+https://github.com/vtz/opensomeip-python.git@ac1afdeb1ffa002ce3af4e5a3ca2c6fc9a690346",
+    "opensomeip>=0.1.4,<0.2.0",
 ]
 
 [project.entry-points."jumpstarter.drivers"]
@@ -22,9 +21,6 @@ dev = [
     "pytest-cov>=6.0.0",
     "pytest>=8.3.3",
 ]
-
-[tool.hatch.metadata]
-allow-direct-references = true
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
