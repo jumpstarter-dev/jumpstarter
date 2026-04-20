@@ -35,6 +35,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_SAFETY_TIMEOUT_SECONDS = 15
+HOOK_TIMEOUT_MARGIN_SECONDS = 30
+
 
 async def _standalone_shutdown_waiter():
     """Wait forever; used so serve_standalone_tcp can be cancelled by stop()."""
@@ -606,12 +609,12 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             # was never set due to a race (e.g. conn_tg cancelled early).
             # Use the configured hook timeout (+ margin) when available so we
             # never interrupt a legitimately-running beforeLease hook.
-            safety_timeout = 15  # generous default for no-hook / unknown cases
+            safety_timeout = DEFAULT_SAFETY_TIMEOUT_SECONDS
             if (
                 self.hook_executor
                 and self.hook_executor.config.before_lease
             ):
-                safety_timeout = self.hook_executor.config.before_lease.timeout + 30
+                safety_timeout = self.hook_executor.config.before_lease.timeout + HOOK_TIMEOUT_MARGIN_SECONDS
             with move_on_after(safety_timeout) as timeout_scope:
                 await lease_scope.before_lease_hook.wait()
             if timeout_scope.cancelled_caught:
