@@ -279,7 +279,7 @@ def test_launch_shell_zsh_restores_zdotdir(tmp_path, monkeypatch):
         )
 
 
-def test_launch_shell_zsh_uses_tmpdir_without_intermediate_file(tmp_path, monkeypatch):
+def test_launch_shell_zsh_uses_tmpdir_with_zshrc_and_zshenv(tmp_path, monkeypatch):
     monkeypatch.setenv("SHELL", "/usr/bin/zsh")
     temp_dirs = []
 
@@ -287,8 +287,8 @@ def test_launch_shell_zsh_uses_tmpdir_without_intermediate_file(tmp_path, monkey
         zdotdir = env.get("ZDOTDIR")
         if zdotdir:
             temp_dirs.append(zdotdir)
-            entries = os.listdir(zdotdir)
-            assert entries == [".zshrc"], f"Expected only .zshrc in ZDOTDIR, found: {entries}"
+            entries = sorted(os.listdir(zdotdir))
+            assert entries == [".zshenv", ".zshrc"], f"Expected .zshenv and .zshrc in ZDOTDIR, found: {entries}"
         return 0
 
     with patch("jumpstarter.common.utils._run_process", mock_run_process):
@@ -303,6 +303,34 @@ def test_launch_shell_zsh_uses_tmpdir_without_intermediate_file(tmp_path, monkey
 
     assert len(temp_dirs) == 1
     assert not os.path.exists(temp_dirs[0])
+
+
+def test_launch_shell_zsh_sources_original_zshenv(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", "/usr/bin/zsh")
+    home_dir = os.path.expanduser("~")
+    original_zshenv = os.path.join(home_dir, ".zshenv")
+
+    def mock_run_process(cmd, env, lease=None):
+        zdotdir = env.get("ZDOTDIR")
+        if zdotdir:
+            zshenv_path = os.path.join(zdotdir, ".zshenv")
+            assert os.path.exists(zshenv_path), ".zshenv must exist in temp ZDOTDIR"
+            with open(zshenv_path) as f:
+                content = f.read()
+            assert original_zshenv in content, (
+                f".zshenv must source original {original_zshenv}"
+            )
+        return 0
+
+    with patch("jumpstarter.common.utils._run_process", mock_run_process):
+        launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+            j_commands=["power"],
+        )
 
 
 @pytest.mark.skipif(not shutil.which("zsh"), reason="zsh not installed")

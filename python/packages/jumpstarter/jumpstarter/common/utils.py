@@ -219,8 +219,12 @@ def _launch_zsh(shell, init_content, common_env, context, lease, use_profiles):
             '${_JMP_SHELL_CONTEXT} %F{yellow}➤%f "\n'
         )
         tmpdir = tempfile.mkdtemp()
-        zshrc_path = os.path.join(tmpdir, ".zshrc")
         original_zdotdir = env.get("ZDOTDIR", os.path.expanduser("~"))
+        original_zshenv = os.path.join(original_zdotdir, ".zshenv")
+        zshenv_path = os.path.join(tmpdir, ".zshenv")
+        with open(zshenv_path, "w") as f:
+            f.write(f"[ -f {shlex.quote(original_zshenv)} ] && source {shlex.quote(original_zshenv)}\n")
+        zshrc_path = os.path.join(tmpdir, ".zshrc")
         with open(zshrc_path, "w") as f:
             f.write(f"ZDOTDIR={shlex.quote(original_zdotdir)}\n")
             f.write(init_content)
