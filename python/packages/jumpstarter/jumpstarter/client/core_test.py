@@ -330,7 +330,7 @@ SOURCE_LOGGER_NAMES = [
 ]
 
 
-def setup_log_stream_client(responses, show_all_logs=True):
+def setup_log_stream_client(responses):
     from jumpstarter.client.core import AsyncDriverClient
 
     all_delivered = anyio.Event()
@@ -472,7 +472,7 @@ class TestLogStreamFiltering:
             ),
         ]
 
-        client, captures, delivered = setup_log_stream_client(responses, show_all_logs=False)
+        client, captures, delivered = setup_log_stream_client(responses)
 
         async with client.log_stream_async(show_all_logs=False):
             with anyio.fail_after(2):
@@ -497,7 +497,7 @@ class TestLogStreamFiltering:
             ),
         ]
 
-        client, captures, delivered = setup_log_stream_client(responses, show_all_logs=False)
+        client, captures, delivered = setup_log_stream_client(responses)
 
         async with client.log_stream_async(show_all_logs=False):
             with anyio.fail_after(2):
@@ -522,7 +522,7 @@ class TestLogStreamFiltering:
             ),
         ]
 
-        client, captures, delivered = setup_log_stream_client(responses, show_all_logs=True)
+        client, captures, delivered = setup_log_stream_client(responses)
 
         async with client.log_stream_async(show_all_logs=True):
             with anyio.fail_after(2):
@@ -538,7 +538,7 @@ class TestLogStreamFiltering:
             create_log_stream_response("no source message"),
         ]
 
-        client, captures, delivered = setup_log_stream_client(responses, show_all_logs=True)
+        client, captures, delivered = setup_log_stream_client(responses)
 
         async with client.log_stream_async(show_all_logs=True):
             with anyio.fail_after(2):
