@@ -92,12 +92,14 @@ _SAFE_COMMAND_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 
 def _validate_j_commands(j_commands: list[str] | None) -> list[str] | None:
+    """Filter j_commands to only include safe alphanumeric names."""
     if j_commands is None:
         return None
     return [cmd for cmd in j_commands if _SAFE_COMMAND_NAME.match(cmd)]
 
 
 def _resolve_cli_paths() -> tuple[str, str, str]:
+    """Resolve absolute paths for jmp, jmp-admin, and j CLI tools."""
     jmp = shutil.which("jmp") or "jmp"
     jmp_admin = shutil.which("jmp-admin") or "jmp-admin"
     j = shutil.which("j") or "j"
@@ -105,6 +107,7 @@ def _resolve_cli_paths() -> tuple[str, str, str]:
 
 
 def _generate_shell_init(shell_name: str, use_profiles: bool, j_commands: list[str] | None = None) -> str:
+    """Generate shell-specific init script content for completion and profile sourcing."""
     j_commands = _validate_j_commands(j_commands)
     jmp, jmp_admin, j = _resolve_cli_paths()
     if shell_name.endswith("bash"):
@@ -154,6 +157,7 @@ def _generate_shell_init(shell_name: str, use_profiles: bool, j_commands: list[s
 
 
 def _launch_bash(shell, init_content, use_profiles, common_env, context, lease):
+    """Launch a bash shell with completion init and custom prompt."""
     env = common_env | {
         "_JMP_SHELL_CONTEXT": context,
         "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
@@ -183,6 +187,7 @@ def _launch_bash(shell, init_content, use_profiles, common_env, context, lease):
 
 
 def _launch_fish(shell, init_file, common_env, context, lease):
+    """Launch a fish shell with completion init and custom prompt."""
     fish_env = common_env | {"_JMP_SHELL_CONTEXT": context}
     fish_fn = (
         "function fish_prompt; "
@@ -205,6 +210,7 @@ def _launch_fish(shell, init_file, common_env, context, lease):
 
 
 def _launch_zsh(shell, init_content, common_env, context, lease, use_profiles):
+    """Launch a zsh shell with completion init, custom prompt, and ZDOTDIR management."""
     env = common_env | {
         "_JMP_SHELL_CONTEXT": context,
         "PS1": f"%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f ",
