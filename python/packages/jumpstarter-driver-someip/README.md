@@ -14,13 +14,15 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 
 ## Configuration
 
-| Parameter         | Type   | Default       | Description                                |
-|-------------------|--------|---------------|--------------------------------------------|
-| `host`            | str    | required      | Local IP address to bind                   |
-| `port`            | int    | 30490         | Local SOME/IP port                         |
-| `transport_mode`  | str    | `UDP`         | Transport protocol: `UDP` or `TCP`         |
-| `multicast_group` | str    | `239.127.0.1` | SD multicast group address                 |
-| `multicast_port`  | int    | 30490         | SD multicast port                          |
+| Parameter         | Type        | Default       | Description                                           |
+|-------------------|-------------|---------------|-------------------------------------------------------|
+| `host`            | str         | required      | Local IP address to bind                              |
+| `port`            | int         | 30490         | Local SOME/IP port                                    |
+| `transport_mode`  | str         | `UDP`         | Transport protocol: `UDP` or `TCP`                    |
+| `multicast_group` | str         | `239.127.0.1` | SD multicast group address                            |
+| `multicast_port`  | int         | 30490         | SD multicast port                                     |
+| `remote_host`     | str \| None | `None`        | Remote ECU IP for static routing (bypasses SD)        |
+| `remote_port`     | int \| None | `None`        | Remote ECU port (defaults to `port` when `remote_host` is set) |
 
 ### UDP (default)
 
@@ -46,6 +48,24 @@ export:
       host: "192.168.1.100"
       port: 30490
       transport_mode: TCP
+```
+
+### Static remote endpoint (no Service Discovery)
+
+When the target ECU does not run SOME/IP-SD (e.g. Zephyr firmware with
+multicast TX disabled), set `remote_host` and optionally `remote_port`
+to send messages directly without Service Discovery:
+
+```yaml
+export:
+  someip:
+    type: jumpstarter_driver_someip.driver.SomeIp
+    config:
+      host: "192.168.100.1"
+      port: 30490
+      transport_mode: UDP
+      remote_host: "192.168.100.10"
+      remote_port: 30490
 ```
 
 ## API Reference
