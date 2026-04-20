@@ -127,5 +127,5 @@ async def refresh_token(config):
     new_refresh_token = tokens.get("refresh_token")
     if new_refresh_token is not None:
         config.refresh_token = new_refresh_token
-    ClientConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
+    ClientConfigV1Alpha1.save(config)
     click.echo("Access token refreshed.")
