@@ -93,25 +93,32 @@ class SomeIp(Driver):
             )
         mode = TransportMode.TCP if transport_upper == "TCP" else TransportMode.UDP
 
-        config_kwargs: dict = {
-            "local_endpoint": Endpoint(self.host, self.port),
-            "sd_config": SdConfig(
-                multicast_endpoint=Endpoint(self.multicast_group, self.multicast_port),
-                unicast_endpoint=Endpoint(self.host, self.port),
-            ),
-            "transport_mode": mode,
-        }
+        local_ep = Endpoint(self.host, self.port)
+        sd_cfg = SdConfig(
+            multicast_endpoint=Endpoint(self.multicast_group, self.multicast_port),
+            unicast_endpoint=Endpoint(self.host, self.port),
+        )
 
         if self.remote_port is not None and self.remote_host is None:
             raise ValueError("remote_port requires remote_host to be set")
 
         if self.remote_host is not None:
-            config_kwargs["remote_endpoint"] = Endpoint(
+            remote_ep = Endpoint(
                 self.remote_host,
                 self.remote_port if self.remote_port is not None else self.port,
             )
-
-        self._osip_config = ClientConfig(**config_kwargs)
+            self._osip_config = ClientConfig(
+                local_endpoint=local_ep,
+                sd_config=sd_cfg,
+                transport_mode=mode,
+                remote_endpoint=remote_ep,
+            )
+        else:
+            self._osip_config = ClientConfig(
+                local_endpoint=local_ep,
+                sd_config=sd_cfg,
+                transport_mode=mode,
+            )
 
     def _ensure_client(self) -> OsipClient:
         """Create and start the OsipClient on first use (thread-safe)."""
