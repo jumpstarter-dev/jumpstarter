@@ -198,6 +198,32 @@ def test_launch_shell_zsh_cleans_up_all_temp_files(tmp_path, monkeypatch):
     assert not os.path.exists(zshrc_paths[0])
 
 
+def test_launch_fish_cleans_up_temp_init_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", "/usr/bin/fish")
+    init_file_paths = []
+
+    def mock_run_process(cmd, env, lease=None):
+        init_path = env.get("_JMP_SHELL_INIT")
+        if init_path:
+            init_file_paths.append(init_path)
+            assert os.path.exists(init_path), "init file must exist during process run"
+        return 0
+
+    with patch("jumpstarter.common.utils._run_process", mock_run_process):
+        exit_code = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+            j_commands=["power", "serial"],
+        )
+
+    assert exit_code == 0
+    assert len(init_file_paths) == 1
+    assert not os.path.exists(init_file_paths[0]), "init file must be cleaned up after process exits"
+
+
 def test_launch_fish_passes_context_via_env(tmp_path, monkeypatch):
     monkeypatch.setenv("SHELL", "/usr/bin/fish")
     captured_env = {}
