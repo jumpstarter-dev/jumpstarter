@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Generator
 from dataclasses import dataclass, field
 
 try:
@@ -8,6 +9,7 @@ try:
 except ImportError:
     gpiod = None
 
+from jumpstarter_driver_power.common import PowerReading
 from jumpstarter_driver_power.driver import PowerInterface
 
 from jumpstarter_driver_gpiod.client import PinState
@@ -236,3 +238,8 @@ class PowerSwitch(PowerInterface, DigitalOutput):
     def off(self) -> None:
         """Switch off the power"""
         DigitalOutput.off(self)
+
+    @export
+    def read(self) -> Generator[PowerReading, None, None]:
+        raise NotImplementedError
+        yield  # makes this a generator function
