@@ -1173,13 +1173,8 @@ class TestHookExecutorPRRegressions:
                 "'Using dedicated hook socket' should NOT be at INFO level"
             )
 
-    async def test_completion_messages_at_debug_not_info(self, lease_scope) -> None:
-        """Hook completion messages must be at DEBUG, not INFO.
-
-        Hook start messages ('Executing before-lease hook') stay at INFO
-        because they are useful when hooks are slow. Only the completion
-        messages are demoted to DEBUG.
-        """
+    async def test_completion_messages_at_info(self, lease_scope) -> None:
+        """Hook completion messages remain at INFO for monitoring slow hooks."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="echo 'hello'", timeout=10),
         )
@@ -1199,14 +1194,10 @@ class TestHookExecutorPRRegressions:
                 mock_shutdown,
             )
 
-            debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
 
-            assert any("beforeLease hook completed successfully" in call for call in debug_calls), (
-                "Expected 'beforeLease hook completed successfully' at DEBUG level"
-            )
-            assert not any("beforeLease hook completed successfully" in call for call in info_calls), (
-                "'beforeLease hook completed successfully' should NOT be at INFO level"
+            assert any("beforeLease hook completed successfully" in call for call in info_calls), (
+                "Expected 'beforeLease hook completed successfully' at INFO level"
             )
 
             assert any("Executing before-lease hook for lease" in call for call in info_calls), (
