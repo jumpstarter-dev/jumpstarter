@@ -13,6 +13,7 @@ def test_create_lease_passes_exporter_name_to_config():
     lease = Mock()
     config.create_lease.return_value = lease
 
+    assert create_lease.callback is not None
     with patch("jumpstarter_cli.create.model_print") as model_print:
         # Skip Click config loading wrapper and call the command body directly.
         inspect.unwrap(create_lease.callback)(
@@ -36,6 +37,7 @@ def test_create_lease_passes_exporter_name_to_config():
 
 
 def test_create_lease_requires_selector_or_name():
+    assert create_lease.callback is not None
     with pytest.raises(click.UsageError, match="one of --selector/-l or --name/-n is required"):
         inspect.unwrap(create_lease.callback)(
             config=Mock(),

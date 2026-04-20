@@ -220,6 +220,7 @@ class TestGetExportersCallsPaginatedMethod:
 
         from jumpstarter_cli.get import get_exporters
 
+        assert get_exporters.callback is not None
         with patch("jumpstarter_cli.get.model_print"):
             get_exporters.callback.__wrapped__.__wrapped__(
                 config=config, selector=None, output="text", with_options=[]
@@ -239,6 +240,7 @@ class TestGetExportersCallsPaginatedMethod:
 
         from jumpstarter_cli.get import get_leases
 
+        assert get_leases.callback is not None
         with patch("jumpstarter_cli.get.model_print"):
             get_leases.callback.__wrapped__.__wrapped__(
                 config=config, selector=None, output="text", show_all=False, all_clients=False
@@ -398,6 +400,7 @@ class TestGetLeasesShortFlags:
         assert "-a" in all_option.opts
 
 
+assert get_leases.callback is not None
 _unwrapped_get_leases = get_leases.callback.__wrapped__.__wrapped__
 
 

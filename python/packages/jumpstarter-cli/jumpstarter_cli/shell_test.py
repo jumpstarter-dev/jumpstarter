@@ -137,6 +137,7 @@ def test_shell_requires_selector_or_name_when_no_leases():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
     config.list_leases = AsyncMock(return_value=_make_lease_list([]))
+    assert shell.callback is not None
     with pytest.raises(click.UsageError, match="no active leases found"):
         shell.callback.__wrapped__.__wrapped__(
             config=config,
@@ -154,6 +155,7 @@ def test_shell_requires_selector_or_name_when_no_leases():
 
 
 def test_shell_allows_existing_lease_name_without_selector_or_name():
+    assert shell.callback is not None
     with (
         patch("jumpstarter_cli.shell.anyio.run", return_value=0),
         patch("jumpstarter_cli.shell.sys.exit") as mock_exit,
@@ -178,6 +180,7 @@ def test_shell_allows_existing_lease_name_without_selector_or_name():
 def test_shell_auto_connects_single_lease():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
+    assert shell.callback is not None
     with (
         patch("jumpstarter_cli.shell.anyio.run", side_effect=["my-only-lease", 0]) as mock_run,
         patch("jumpstarter_cli.shell.sys.exit") as mock_exit,
@@ -208,6 +211,7 @@ def test_shell_no_leases_shows_guidance():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
     config.list_leases = AsyncMock(return_value=_make_lease_list([]))
+    assert shell.callback is not None
     with pytest.raises(click.UsageError, match="no active leases found"):
         shell.callback.__wrapped__.__wrapped__(
             config=config,
@@ -244,6 +248,7 @@ def test_shell_multi_lease_no_tty_error():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
     config.list_leases = AsyncMock(return_value=_make_lease_list(["lease-a", "lease-b"]))
+    assert shell.callback is not None
     with (
         patch("jumpstarter_cli.shell.sys.stdin") as mock_stdin,
         pytest.raises(click.UsageError, match="lease-a"),
@@ -283,6 +288,7 @@ def test_shell_no_own_leases_among_others():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
     config.list_leases = AsyncMock(return_value=lease_list)
+    assert shell.callback is not None
     with pytest.raises(click.UsageError, match="no active leases found"):
         shell.callback.__wrapped__.__wrapped__(
             config=config,
@@ -300,6 +306,7 @@ def test_shell_no_own_leases_among_others():
 
 
 def test_shell_allows_env_lease_without_selector_or_name():
+    assert shell.callback is not None
     with (
         patch("jumpstarter_cli.shell.anyio.run", return_value=0),
         patch("jumpstarter_cli.shell.sys.exit") as mock_exit,
