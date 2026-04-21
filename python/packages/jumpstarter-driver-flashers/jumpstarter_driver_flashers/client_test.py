@@ -470,9 +470,14 @@ def test_decompression_command_with_query_params():
     # Full HTTP URL
     assert _get_decompression_command("https://cdn.example.com/images/image.raw.xz") == "xzcat |"
 
+    # Zstandard compression
+    assert _get_decompression_command(PosixPath("/images/image.raw.zst")) == "zstdcat |"
+    assert _get_decompression_command("https://cdn.example.com/images/image.raw.zst") == "zstdcat |"
+
     # String path with query parameters (as returned by operator_for_path for signed URLs)
     assert _get_decompression_command("/images/image.raw.xz?Expires=123&Signature=abc") == "xzcat |"
     assert _get_decompression_command("/images/image.raw.gz?Expires=123") == "zcat |"
+    assert _get_decompression_command("/images/image.raw.zst?Expires=123") == "zstdcat |"
     assert _get_decompression_command("/images/image.raw?Expires=123") == ""
 
 
@@ -499,7 +504,12 @@ def test_flash_signed_url_preserves_query_params():
 
     captured = {}
 
-    def capture_perform(partition, block_device, path, image_url, should_download_to_httpd, *rest):
+    def capture_perform(
+        partition, block_device, path, image_url, should_download_to_httpd,
+        storage_thread, error_queue, cacert_file, insecure_tls, headers,
+        bearer_token, method, fls_version, fls_binary_url,
+        oci_username, oci_password, power_off=True,
+    ):
         captured["image_url"] = image_url
         captured["should_download_to_httpd"] = should_download_to_httpd
 
@@ -545,7 +555,12 @@ def test_flash_bearer_token_signed_url_preserves_query_params():
 
     captured = {}
 
-    def capture_perform(partition, block_device, path, image_url, should_download_to_httpd, *rest):
+    def capture_perform(
+        partition, block_device, path, image_url, should_download_to_httpd,
+        storage_thread, error_queue, cacert_file, insecure_tls, headers,
+        bearer_token, method, fls_version, fls_binary_url,
+        oci_username, oci_password, power_off=True,
+    ):
         captured["path"] = path
         captured["image_url"] = image_url
         captured["should_download_to_httpd"] = should_download_to_httpd

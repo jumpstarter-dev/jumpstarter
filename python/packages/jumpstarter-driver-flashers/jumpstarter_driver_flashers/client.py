@@ -1643,11 +1643,13 @@ def _get_decompression_command(filename_or_url) -> str:
         filename_or_url (str): Name of the file or URL to check
 
     Returns:
-        str: Decompression command ('zcat |', 'xzcat |', or '' for uncompressed)
+        str: Decompression command ('zcat |', 'xzcat |', 'zstdcat |', or '' for uncompressed)
     """
     filename = clean_filename(filename_or_url).lower()
     if filename.endswith((".gz", ".gzip")):
         return "zcat |"
     elif filename.endswith(".xz"):
         return "xzcat |"
+    elif filename.endswith(".zst"):
+        return "zstdcat |"
     return ""
