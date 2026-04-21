@@ -222,7 +222,7 @@ class TestGetExportersCallsPaginatedMethod:
 
         assert get_exporters.callback is not None
         with patch("jumpstarter_cli.get.model_print"):
-            get_exporters.callback.__wrapped__.__wrapped__(
+            get_exporters.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
                 config=config, selector=None, output="text", with_options=[]
             )
 
@@ -242,7 +242,7 @@ class TestGetExportersCallsPaginatedMethod:
 
         assert get_leases.callback is not None
         with patch("jumpstarter_cli.get.model_print"):
-            get_leases.callback.__wrapped__.__wrapped__(
+            get_leases.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
                 config=config, selector=None, output="text", show_all=False, all_clients=False
             )
 
@@ -401,7 +401,7 @@ class TestGetLeasesShortFlags:
 
 
 assert get_leases.callback is not None
-_unwrapped_get_leases = get_leases.callback.__wrapped__.__wrapped__
+_unwrapped_get_leases = get_leases.callback.__wrapped__.__wrapped__  # ty: ignore[unresolved-attribute]
 
 
 class TestGetLeasesClientFiltering:
