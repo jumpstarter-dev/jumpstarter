@@ -335,6 +335,7 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                             if (
                                 lease.release
                                 and lease.name
+                                and not lease.lease_ended
                                 and not cancel_scope.cancel_called
                                 and not monitor._get_status_unsupported
                             ):
@@ -343,6 +344,12 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                 if not monitor.connection_lost:
                                     try:
                                         probe_status = await client.get_status_async()
+                                        if lease.lease_ended:
+                                            logger.debug(
+                                                "Lease ended during probe (status=%s), skipping afterLease hook",
+                                                probe_status,
+                                            )
+                                            return exit_code
                                         if probe_status is not None and probe_status not in (
                                             ExporterStatus.LEASE_READY,
                                             ExporterStatus.AFTER_LEASE_HOOK,
@@ -353,6 +360,9 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                             )
                                             monitor._connection_lost = True
                                     except Exception:
+                                        if lease.lease_ended:
+                                            logger.debug("Lease ended during probe, skipping afterLease hook")
+                                            return exit_code
                                         logger.debug("Connection probe failed, marking connection as lost")
                                         monitor._connection_lost = True
 

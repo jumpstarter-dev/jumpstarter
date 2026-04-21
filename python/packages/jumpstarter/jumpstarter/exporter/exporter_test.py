@@ -1,14 +1,17 @@
-"""Tests for exporter state machine transitions.
+"""Tests for exporter state machine transitions and status reporting.
 
 These tests verify the exporter correctly handles lease lifecycle edge cases
 including premature lease-end during hooks, unused lease timeouts,
-consecutive leases, and idempotent lease-end signals.
+consecutive leases, idempotent lease-end signals, and gRPC error handling
+in _report_status.
 """
 
+import logging
 from contextlib import nullcontext
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import anyio
+import grpc
 import pytest
 from anyio import Event, create_task_group
 
@@ -426,3 +429,80 @@ class TestIdempotentLeaseEnd:
             f"afterLease hook ran {after_hook_call_count} times, expected exactly 1"
         )
         assert lease_ctx.after_lease_hook_done.is_set()
+
+
+def _make_exporter_for_report_status():
+    """Create an Exporter with real _report_status for testing gRPC error handling."""
+    from jumpstarter.exporter.exporter import Exporter
+
+    exporter = Exporter.__new__(Exporter)
+    exporter._exporter_status = ExporterStatus.AVAILABLE
+    exporter._lease_context = None
+    exporter._standalone = False
+    return exporter
+
+
+class TestReportStatusGrpcErrorHandling:
+    async def test_unimplemented_grpc_error_logs_warning(self, caplog):
+        """When ReportStatus returns UNIMPLEMENTED, a warning is logged
+        instead of an error."""
+        exporter = _make_exporter_for_report_status()
+
+        mock_controller = AsyncMock()
+        error = grpc.aio.AioRpcError(
+            code=grpc.StatusCode.UNIMPLEMENTED,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
+            details="Method not implemented",
+        )
+        mock_controller.ReportStatus = AsyncMock(side_effect=error)
+
+        stub_ctx = AsyncMock()
+        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
+        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
+            with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"):
+                await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+
+        warning_msgs = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("ReportStatus not supported" in r.message for r in warning_msgs), (
+            f"Expected warning about ReportStatus not supported, got: {[r.message for r in caplog.records]}"
+        )
+        # Ensure no ERROR-level log was emitted
+        error_msgs = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert len(error_msgs) == 0, (
+            f"No error should be logged for UNIMPLEMENTED, got: {[r.message for r in error_msgs]}"
+        )
+
+    async def test_other_grpc_error_logs_error(self, caplog):
+        """When ReportStatus returns a gRPC error other than UNIMPLEMENTED,
+        it is logged at ERROR level."""
+        exporter = _make_exporter_for_report_status()
+
+        mock_controller = AsyncMock()
+        error = grpc.aio.AioRpcError(
+            code=grpc.StatusCode.UNAVAILABLE,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
+            details="Service unavailable",
+        )
+        mock_controller.ReportStatus = AsyncMock(side_effect=error)
+
+        stub_ctx = AsyncMock()
+        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
+        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
+            with caplog.at_level(logging.DEBUG, logger="jumpstarter.exporter.exporter"):
+                await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+
+        error_msgs = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert any("Failed to update status" in r.message for r in error_msgs), (
+            f"Expected error about failed status update, got: {[r.message for r in caplog.records]}"
+        )
+        # Ensure no WARNING about "not supported" was logged
+        warning_msgs = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert not any("ReportStatus not supported" in r.message for r in warning_msgs), (
+            "UNAVAILABLE error should not produce 'not supported' warning"
+        )

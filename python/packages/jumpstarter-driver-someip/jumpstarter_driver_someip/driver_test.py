@@ -448,6 +448,93 @@ def test_someip_tcp_transport_mode(mock_osip_cls):
 
 
 # =========================================================================
+# Static remote endpoint tests
+# =========================================================================
+
+
+@patch("jumpstarter_driver_someip.driver.ClientConfig")
+@patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_remote_endpoint_forwarded(mock_osip_cls, mock_config_cls):
+    """Verify remote_host/remote_port are forwarded to ClientConfig."""
+    mock_osip_cls.return_value = _make_mock_osip_client()
+
+    driver = SomeIp(
+        host="192.168.100.1",
+        port=30490,
+        remote_host="192.168.100.10",
+        remote_port=31000,
+    )
+
+    with serve(driver) as client:
+        client.start()
+
+    kwargs = mock_config_cls.call_args[1]
+    assert kwargs["remote_endpoint"].ip == "192.168.100.10"
+    assert kwargs["remote_endpoint"].port == 31000
+
+
+@patch("jumpstarter_driver_someip.driver.ClientConfig")
+@patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_remote_endpoint_defaults_port(mock_osip_cls, mock_config_cls):
+    """When remote_port is omitted, it defaults to the local port."""
+    mock_osip_cls.return_value = _make_mock_osip_client()
+
+    driver = SomeIp(
+        host="192.168.100.1",
+        port=30490,
+        remote_host="192.168.100.10",
+    )
+
+    with serve(driver) as client:
+        client.start()
+
+    kwargs = mock_config_cls.call_args[1]
+    assert kwargs["remote_endpoint"].ip == "192.168.100.10"
+    assert kwargs["remote_endpoint"].port == 30490
+
+
+@patch("jumpstarter_driver_someip.driver.ClientConfig")
+@patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_no_remote_endpoint_by_default(mock_osip_cls, mock_config_cls):
+    """Without remote_host, remote_endpoint is not passed (SD-based discovery)."""
+    mock_osip_cls.return_value = _make_mock_osip_client()
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+
+    with serve(driver) as client:
+        client.start()
+
+    kwargs = mock_config_cls.call_args[1]
+    assert "remote_endpoint" not in kwargs
+
+
+def test_someip_remote_port_without_remote_host_rejected():
+    """remote_port without remote_host is rejected."""
+    with pytest.raises(ValueError, match="remote_port requires remote_host"):
+        SomeIp(host="127.0.0.1", port=30490, remote_port=31000)
+
+
+@patch("jumpstarter_driver_someip.driver.ClientConfig")
+@patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_rpc_call_with_remote_endpoint(mock_osip_cls, _mock_config_cls):
+    """RPC call works when a static remote endpoint is configured."""
+    mock_client = _make_mock_osip_client()
+    mock_osip_cls.return_value = mock_client
+
+    driver = SomeIp(
+        host="192.168.100.1",
+        port=30490,
+        remote_host="192.168.100.10",
+        remote_port=30490,
+    )
+    with serve(driver) as client:
+        resp = client.rpc_call(0x1234, 0x0001, b"\x01\x02\x03")
+        assert resp.service_id == 0x1234
+        assert resp.method_id == 0x0001
+        assert resp.payload == "010203"
+
+
+# =========================================================================
 # Stateful integration tests
 #
 # These use a StatefulOsipClient (conftest.py) that behaves like a real
