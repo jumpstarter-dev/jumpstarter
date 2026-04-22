@@ -15,7 +15,7 @@ import queue
 import socket
 import struct
 import threading
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -386,6 +386,13 @@ class StatefulOsipClient:
             for s in self._registered_services
             if not (s.service_id == service_id and s.instance_id == instance_id)
         ]
+
+
+@pytest.fixture(autouse=True)
+def _mock_get_ext():
+    """Ensure the native-extension guard passes in all tests by default."""
+    with patch("jumpstarter_driver_someip.driver.get_ext", return_value=object()):
+        yield
 
 
 @pytest.fixture
