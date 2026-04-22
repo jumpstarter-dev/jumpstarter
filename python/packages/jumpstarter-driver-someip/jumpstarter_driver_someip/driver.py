@@ -7,7 +7,10 @@ from dataclasses import field
 
 from opensomeip import ClientConfig, TransportMode
 from opensomeip import SomeIpClient as OsipClient
-from opensomeip._bridge import get_ext
+try:
+    from opensomeip._bridge import get_ext
+except ImportError:
+    get_ext = lambda: None  # noqa: E731
 from opensomeip.message import Message
 from opensomeip.sd import SdConfig, ServiceInstance
 from opensomeip.transport import Endpoint
@@ -99,7 +102,9 @@ class SomeIp(Driver):
                 "The SOME/IP driver requires the native extension for network I/O. "
                 "On macOS, rebuild with the system compiler: "
                 "CC=/usr/bin/clang CXX=/usr/bin/clang++ "
-                "pip install --no-cache-dir --force-reinstall --no-binary=opensomeip opensomeip"
+                "pip install --no-cache-dir --force-reinstall --no-binary=opensomeip opensomeip. "
+                "On other platforms, reinstall opensomeip and ensure the C++ "
+                "build toolchain is available."
             )
 
         mode = TransportMode.TCP if transport_upper == "TCP" else TransportMode.UDP
