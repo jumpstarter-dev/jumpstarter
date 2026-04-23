@@ -1,0 +1,1 @@
+../../../.cursor/skills/propose-jep/SKILL.md
