@@ -61,18 +61,6 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 | Active       | Living document, actively maintained (Process JEPs only) |
 | Superseded   | Replaced by a newer JEP                          |
 
-## For AI Agents
-
-For detailed conventions on creating JEPs, see the agent rule files
-in `.cursor/rules/jep-process.mdc` (or `.claude/rules/jep-process.md`).
-
-Key references:
-
-- **Template**: `JEP-NNNN-template.md` in this directory
-- **Canonical process definition**: [JEP-0000](JEP-0000-jep-process.md)
-- **File naming**: `JEP-NNNN-short-title.md` (zero-padded 4-digit number)
-- **JEP numbering**: Incrementing integers, not derived from PR numbers.
-  JEP-0000 through JEP-0009 are reserved for process/meta-JEPs.
 
 ```{toctree}
 :hidden:
