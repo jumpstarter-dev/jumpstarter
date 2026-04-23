@@ -64,7 +64,7 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 ## For AI Agents
 
 For detailed conventions on creating JEPs, see the agent rule files
-in `.cursor/rules/jep-adr-process.mdc` (or `.claude/rules/jep-adr-process.md`).
+in `.cursor/rules/jep-process.mdc` (or `.claude/rules/jep-process.md`).
 
 Key references:
 
