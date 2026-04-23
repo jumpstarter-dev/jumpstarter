@@ -585,6 +585,9 @@ def test_ssh_command_without_identity():
             assert result.stdout == "some stdout"
 
 
+_UTILS = "jumpstarter_driver_ssh._ssh_utils"
+
+
 def test_ssh_identity_temp_file_creation_and_cleanup():
     """Test that temporary identity file is created and cleaned up properly"""
     instance = SSHWrapper(
@@ -597,33 +600,23 @@ def test_ssh_identity_temp_file_creation_and_cleanup():
         with patch('subprocess.run') as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="some stdout", stderr="")
 
-            with patch('tempfile.NamedTemporaryFile') as mock_temp_file:
-                with patch('os.chmod') as mock_chmod:
-                    with patch('os.unlink') as mock_unlink:
-                        # Mock the temporary file
-                        mock_temp_file_instance = MagicMock()
-                        mock_temp_file_instance.name = "/tmp/test_ssh_key_12345"
-                        mock_temp_file_instance.write = MagicMock()
-                        mock_temp_file_instance.close = MagicMock()
-                        mock_temp_file.return_value = mock_temp_file_instance
+            mkstemp_rv = (5, "/tmp/test_ssh_key_12345")
+            with (
+                patch(f"{_UTILS}.tempfile.mkstemp", return_value=mkstemp_rv) as mock_mkstemp,
+                patch(f"{_UTILS}.os.write") as mock_write,
+                patch(f"{_UTILS}.os.close") as mock_close,
+                patch(f"{_UTILS}.os.unlink") as mock_unlink,
+            ):
+                result = client.run(SSHCommandRunOptions(direct=False), ["hostname"])
+                assert isinstance(result, SSHCommandRunResult)
 
-                        # Test SSH command with identity
-                        result = client.run(SSHCommandRunOptions(direct=False), ["hostname"])
-                        assert isinstance(result, SSHCommandRunResult)
+                mock_mkstemp.assert_called_once_with(suffix="_ssh_key")
+                mock_write.assert_called_once_with(5, TEST_SSH_KEY.encode())
+                mock_close.assert_called_once_with(5)
+                mock_unlink.assert_called_once_with("/tmp/test_ssh_key_12345")
 
-                        # Verify temporary file was created
-                        mock_temp_file.assert_called_once_with(mode='w', delete=False, suffix='_ssh_key')
-                        mock_temp_file_instance.write.assert_called_once_with(TEST_SSH_KEY)
-                        mock_temp_file_instance.close.assert_called_once()
-
-                        # Verify proper permissions were set
-                        mock_chmod.assert_called_once_with("/tmp/test_ssh_key_12345", 0o600)
-
-                        # Verify temporary file was cleaned up
-                        mock_unlink.assert_called_once_with("/tmp/test_ssh_key_12345")
-
-                        assert result.return_code == 0
-                        assert result.stdout == "some stdout"
+                assert result.return_code == 0
+                assert result.stdout == "some stdout"
 
 
 def test_ssh_identity_temp_file_creation_error():
@@ -638,16 +631,46 @@ def test_ssh_identity_temp_file_creation_error():
         with patch('subprocess.run') as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
 
-            with patch('tempfile.NamedTemporaryFile') as mock_temp_file:
-                mock_temp_file.side_effect = OSError("Permission denied")
+            with patch(f"{_UTILS}.tempfile.mkstemp") as mock_mkstemp:
+                mock_mkstemp.side_effect = OSError("Permission denied")
 
-                # Test SSH command with identity should raise an error
-                # The exception will be wrapped in an ExceptionGroup due to the context manager
                 with pytest.raises(ExceptionGroup) as exc_info:
                     client.run(SSHCommandRunOptions(direct=False), ["hostname"])
 
-                # Check that the original OSError is in the exception group
-                assert any(isinstance(e, OSError) and "Permission denied" in str(e) for e in exc_info.value.exceptions)
+                assert any(
+                    isinstance(e, OSError) and "Permission denied" in str(e)
+                    for e in exc_info.value.exceptions
+                )
+
+
+def test_ssh_identity_temp_file_creation_error_fd_cleanup():
+    """Test that fd is closed when write fails after mkstemp succeeds"""
+    instance = SSHWrapper(
+        children={"tcp": TcpNetwork(host="127.0.0.1", port=22)},
+        default_username="testuser",
+        ssh_identity=TEST_SSH_KEY
+    )
+
+    with serve(instance) as client:
+        with patch('subprocess.run') as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+
+            mkstemp_rv = (5, "/tmp/test_ssh_key_12345")
+            with (
+                patch(f"{_UTILS}.tempfile.mkstemp", return_value=mkstemp_rv),
+                patch(f"{_UTILS}.os.write", side_effect=OSError("Disk full")),
+                patch(f"{_UTILS}.os.close") as mock_close,
+                patch(f"{_UTILS}.os.unlink") as mock_unlink,
+            ):
+                with pytest.raises(ExceptionGroup) as exc_info:
+                    client.run(SSHCommandRunOptions(direct=False), ["hostname"])
+
+                assert any(
+                    isinstance(e, OSError) and "Disk full" in str(e)
+                    for e in exc_info.value.exceptions
+                )
+                mock_close.assert_called_once_with(5)
+                mock_unlink.assert_called_once_with("/tmp/test_ssh_key_12345")
 
 
 def test_ssh_identity_temp_file_cleanup_error():
@@ -662,36 +685,24 @@ def test_ssh_identity_temp_file_cleanup_error():
         with patch('subprocess.run') as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="some stdout", stderr="")
 
-            with patch('tempfile.NamedTemporaryFile') as mock_temp_file:
-                with patch('os.chmod') as mock_chmod:
-                    with patch('os.unlink') as mock_unlink:
-                        # Mock the temporary file
-                        mock_temp_file_instance = MagicMock()
-                        mock_temp_file_instance.name = "/tmp/test_ssh_key_12345"
-                        mock_temp_file_instance.write = MagicMock()
-                        mock_temp_file_instance.close = MagicMock()
-                        mock_temp_file.return_value = mock_temp_file_instance
+            mkstemp_rv = (5, "/tmp/test_ssh_key_12345")
+            with (
+                patch(f"{_UTILS}.tempfile.mkstemp", return_value=mkstemp_rv),
+                patch(f"{_UTILS}.os.write"),
+                patch(f"{_UTILS}.os.close"),
+                patch(f"{_UTILS}.os.unlink", side_effect=OSError("Permission denied")),
+            ):
+                with patch.object(client, 'logger') as mock_logger:
+                    result = client.run(SSHCommandRunOptions(direct=False), ["hostname"])
+                    assert isinstance(result, SSHCommandRunResult)
 
-                        # Mock cleanup failure
-                        mock_unlink.side_effect = OSError("Permission denied")
+                    mock_logger.warning.assert_called_once()
+                    warning_args = mock_logger.warning.call_args[0]
+                    assert "Failed to clean up identity file" in warning_args[0]
+                    assert "/tmp/test_ssh_key_12345" in warning_args[1]
 
-                        # Test SSH command with identity - should still succeed but log warning
-                        with patch.object(client, 'logger') as mock_logger:
-                            result = client.run(SSHCommandRunOptions(direct=False), ["hostname"])
-                            assert isinstance(result, SSHCommandRunResult)
-
-                            # Verify chmod was called
-                            mock_chmod.assert_called_once_with("/tmp/test_ssh_key_12345", 0o600)
-
-                            # Verify warning was logged
-                            mock_logger.warning.assert_called_once_with(
-                                "Failed to clean up temporary identity file %s: %s",
-                                "/tmp/test_ssh_key_12345",
-                                str(mock_unlink.side_effect)
-                            )
-
-                            assert result.return_code == 0
-                            assert result.stdout == "some stdout"
+                    assert result.return_code == 0
+                    assert result.stdout == "some stdout"
 
 
 def test_ssh_client_properties():

@@ -4,23 +4,28 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
+import time
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
 import click
-from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
+from jumpstarter_driver_ssh._ssh_utils import cleanup_identity_file, create_temp_identity_file
 
+from jumpstarter.client import DriverClient
 from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_command
 
 # Timeout in seconds for subprocess calls (mount test run, umount)
 SUBPROCESS_TIMEOUT = 120
 
+# Polling parameters for mount readiness check
+MOUNT_POLL_INTERVAL = 0.5
+MOUNT_POLL_TIMEOUT = 10.0
+
 
 @dataclass(kw_only=True)
-class SSHMountClient(CompositeClient):
+class SSHMountClient(DriverClient):
 
     def cli(self):
         @driver_click_command(self)
@@ -45,6 +50,10 @@ class SSHMountClient(CompositeClient):
                 )
 
         return mount
+
+    @property
+    def ssh(self):
+        return self.children["ssh"]
 
     @property
     def identity(self) -> str | None:
@@ -106,7 +115,7 @@ class SSHMountClient(CompositeClient):
                                 foreground=foreground)
 
     def _run_sshfs(self, host, port, mountpoint, remote_path, extra_args, *, foreground):
-        identity_file = self._create_temp_identity_file()
+        identity_file = create_temp_identity_file(self.identity, self.logger)
         sshfs_proc = None
 
         try:
@@ -145,7 +154,7 @@ class SSHMountClient(CompositeClient):
                 self.logger.warning("Mountpoint %s may still be mounted after cleanup", mountpoint)
             else:
                 click.echo(f"Unmounted {mountpoint}")
-            self._cleanup_identity_file(identity_file)
+            cleanup_identity_file(identity_file, self.logger)
 
     def _start_sshfs_with_fallback(self, sshfs_args, mountpoint):
         """Start sshfs, retrying without allow_other if it fails on that option.
@@ -170,26 +179,23 @@ class SSHMountClient(CompositeClient):
 
         self._force_umount(mountpoint)
 
-        # Use DEVNULL for stderr to avoid SIGPIPE: if we used PIPE and
-        # closed the parent end after the startup check, sshfs would
-        # receive SIGPIPE on its next stderr write and terminate.
         proc = subprocess.Popen(
             sshfs_args,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
 
-        # Give sshfs a moment to start and check it hasn't failed immediately
-        try:
-            proc.wait(timeout=1)
-            # If it exited within 1s, something went wrong
-            raise click.ClickException(
-                f"sshfs mount failed immediately (exit code {proc.returncode})"
-            )
-        except subprocess.TimeoutExpired:
-            # Good -- sshfs is still running after 1s.
-            # Verify the mount is actually active.
-            if not os.path.ismount(mountpoint):
+        # Poll until mount is ready or sshfs exits unexpectedly
+        deadline = time.monotonic() + MOUNT_POLL_TIMEOUT
+        while True:
+            ret = proc.poll()
+            if ret is not None:
+                raise click.ClickException(
+                    f"sshfs mount failed immediately (exit code {ret})"
+                )
+            if os.path.ismount(mountpoint):
+                break
+            if time.monotonic() >= deadline:
                 proc.terminate()
                 try:
                     proc.wait(timeout=5)
@@ -197,8 +203,9 @@ class SSHMountClient(CompositeClient):
                     proc.kill()
                     proc.wait()
                 raise click.ClickException(
-                    f"sshfs started but {mountpoint} is not mounted"
-                ) from None
+                    f"sshfs started but {mountpoint} is not mounted after {MOUNT_POLL_TIMEOUT}s"
+                )
+            time.sleep(MOUNT_POLL_INTERVAL)
 
         return proc
 
@@ -268,44 +275,6 @@ class SSHMountClient(CompositeClient):
                 sshfs_args.extend(["-o", arg])
 
         return sshfs_args
-
-    def _create_temp_identity_file(self):
-        ssh_identity = self.identity
-        if not ssh_identity:
-            return None
-
-        fd = None
-        temp_path = None
-        try:
-            # mkstemp creates the file with 0o600 permissions atomically,
-            # avoiding the TOCTOU window of NamedTemporaryFile + chmod.
-            fd, temp_path = tempfile.mkstemp(suffix='_ssh_key')
-            os.write(fd, ssh_identity.encode())
-            os.close(fd)
-            fd = None
-            self.logger.debug("Created temporary identity file: %s", temp_path)
-            return temp_path
-        except Exception as e:
-            self.logger.error("Failed to create temporary identity file: %s", e)
-            if fd is not None:
-                try:
-                    os.close(fd)
-                except Exception:
-                    pass
-            if temp_path:
-                try:
-                    os.unlink(temp_path)
-                except Exception:
-                    pass
-            raise
-
-    def _cleanup_identity_file(self, identity_file):
-        if identity_file:
-            try:
-                os.unlink(identity_file)
-                self.logger.debug("Cleaned up temporary identity file: %s", identity_file)
-            except Exception as e:
-                self.logger.warning("Failed to clean up identity file %s: %s", identity_file, e)
 
     def umount(self, mountpoint, *, lazy=False):
         """Unmount an sshfs filesystem (fallback for orphaned mounts)."""

@@ -1,7 +1,5 @@
-import os
 import shlex
 import subprocess
-import tempfile
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from urllib.parse import urlparse
@@ -10,6 +8,7 @@ import click
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 
+from ._ssh_utils import cleanup_identity_file, create_temp_identity_file
 from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_command
 
@@ -151,27 +150,7 @@ class SSHWrapperClient(CompositeClient):
 
     def _run_ssh_local(self, host, port, options, args):
         """Run SSH command with the given host, port, and arguments"""
-        # Create temporary identity file if needed
-        ssh_identity = self.identity
-        identity_file = None
-        temp_file = None
-        if ssh_identity:
-            try:
-                temp_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='_ssh_key')
-                temp_file.write(ssh_identity)
-                temp_file.close()
-                # Set proper permissions (600) for SSH key
-                os.chmod(temp_file.name, 0o600)
-                identity_file = temp_file.name
-                self.logger.debug("Created temporary identity file: %s", identity_file)
-            except Exception as e:
-                self.logger.error("Failed to create temporary identity file: %s", e)
-                if temp_file:
-                    try:
-                        os.unlink(temp_file.name)
-                    except Exception:
-                        pass
-                raise
+        identity_file = create_temp_identity_file(self.identity, self.logger)
 
         try:
             # Build SSH command arguments
@@ -186,13 +165,7 @@ class SSHWrapperClient(CompositeClient):
             # Execute the command
             return self._execute_ssh_command(ssh_args, options)
         finally:
-            # Clean up temporary identity file
-            if identity_file:
-                try:
-                    os.unlink(identity_file)
-                    self.logger.debug("Cleaned up temporary identity file: %s", identity_file)
-                except Exception as e:
-                    self.logger.warning("Failed to clean up temporary identity file %s: %s", identity_file, str(e))
+            cleanup_identity_file(identity_file, self.logger)
 
     def _build_ssh_command_args(self, port, identity_file, args):
         """Build initial SSH command arguments"""

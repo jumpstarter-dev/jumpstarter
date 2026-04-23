@@ -74,6 +74,29 @@ Ctrl+C to unmount.
 The `--umount` flag is available as a fallback for mounts that were orphaned
 (e.g., if the process was killed without cleanup).
 
+## Security: `allow_other` mount option
+
+By default, sshfs is invoked with `-o allow_other`, which permits all local
+users to access the mounted filesystem — not just the user who ran `j mount`.
+This is convenient for build workflows where tools run under different UIDs,
+but it has security implications on multi-user systems:
+
+- Any local user can read (and potentially write) files on the remote device
+  through the mountpoint.
+- The option requires that `/etc/fuse.conf` contains `user_allow_other`;
+  otherwise the mount will fail.
+
+**Automatic fallback:** if `allow_other` is rejected by FUSE (e.g.,
+`user_allow_other` is not set), the driver automatically retries the mount
+without it. In that case only the mounting user can access the filesystem.
+
+To explicitly disable `allow_other` without relying on the fallback, you can
+override the option via `--extra-args`:
+
+```shell
+j mount /mnt/device -o allow_other=0
+```
+
 ## API Reference
 
 ### SSHMountClient
