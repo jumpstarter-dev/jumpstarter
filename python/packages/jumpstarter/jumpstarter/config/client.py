@@ -56,7 +56,6 @@ def _attach_config_if_expired_token(exc: ConnectionError, config: ClientConfigV1
         exc.set_config(config)
 
 
-
 def _handle_connection_error(f):
     @wraps(f)
     async def wrapper(*args, **kwargs):
@@ -330,6 +329,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 release=release_lease,
                 tls_config=self.tls,
                 grpc_options=self.grpcOptions,
+                client_name=self.metadata.name,
                 acquisition_timeout=acquisition_timeout_seconds,
                 dial_timeout=self.leases.dial_timeout,
             ) as lease:
