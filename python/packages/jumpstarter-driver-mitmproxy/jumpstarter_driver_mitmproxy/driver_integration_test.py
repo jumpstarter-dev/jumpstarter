@@ -10,9 +10,11 @@ Requires mitmdump to be installed and on PATH.
 
 from __future__ import annotations
 
+import json
 import socket
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 import requests
@@ -40,13 +42,22 @@ def _wait_for_port(host: str, port: int, timeout: float = 10) -> bool:
     return False
 
 
-def _can_reach_internet() -> bool:
-    """Quick TCP probe to check internet connectivity."""
-    try:
-        with socket.create_connection(("httpbin.org", 80), timeout=3):
-            return True
-    except OSError:
-        return False
+class _LocalHttpHandler(BaseHTTPRequestHandler):
+    """Minimal HTTP handler that returns a JSON response for GET requests."""
+
+    def do_GET(self):
+        body = json.dumps({
+            "headers": dict(self.headers),
+            "url": self.path,
+        })
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(body.encode())
+
+    def log_message(self, format, *args):
+        # Silence request logs during tests
+        pass
 
 
 def _is_mitmdump_available() -> bool:
@@ -313,14 +324,20 @@ class TestMockEndpoints:
             client.stop()
 
 
-@pytest.mark.skipif(
-    not _can_reach_internet(),
-    reason="No internet connectivity (httpbin.org unreachable)",
-)
 class TestPassthrough:
-    """Real HTTP through proxy to the internet."""
+    """HTTP through proxy to an upstream server."""
 
-    def test_passthrough_to_public_api(self, client, proxy_port):
+    @pytest.fixture
+    def upstream(self):
+        """Start a local HTTP server to act as the upstream."""
+        server = HTTPServer(("127.0.0.1", 0), _LocalHttpHandler)
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        yield port
+        server.shutdown()
+
+    def test_passthrough_to_local_server(self, client, proxy_port, upstream):
         client.start("passthrough")
         assert _wait_for_port("127.0.0.1", proxy_port), (
             f"mitmdump did not start on port {proxy_port}"
@@ -328,7 +345,7 @@ class TestPassthrough:
 
         try:
             response = requests.get(
-                "http://httpbin.org/get",
+                f"http://127.0.0.1:{upstream}/get",
                 proxies={"http": f"http://127.0.0.1:{proxy_port}"},
                 timeout=15,
             )
