@@ -35,6 +35,7 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 | JEP  | Title                                                | Status      | Author(s)            |
 | ---- | ---------------------------------------------------- | ----------- | -------------------- |
 | 0010 | [Renode Integration](JEP-0010-renode-integration.md) | Implemented | @vtz (Vinicius Zein) |
+| 0011 | [Metrics, Tracing, and Log Observability](JEP-0011-observability-telemetry-logs.md) | Draft | @mangelajo (Miguel Angel Ajo Pelayo) |
 
 ### Informational JEPs
 
@@ -67,4 +68,5 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 
 JEP-0000-jep-process.md
 JEP-0010-renode-integration.md
+JEP-0011-observability-telemetry-logs.md
 ```
