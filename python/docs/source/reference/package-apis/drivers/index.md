@@ -95,6 +95,8 @@ Drivers for debugging and programming devices:
   UF2 flashing via BOOTSEL mass storage
 * **[Probe-RS](probe-rs.md)** (`jumpstarter-driver-probe-rs`) - Debugging probe
   support
+* **[ST-LINK MSD](stlink-msd.md)** (`jumpstarter-driver-stlink-msd`) - ST-LINK
+  mass storage flasher for STM32 Nucleo and Discovery boards
 * **[Android Emulator](androidemulator.md)** (`jumpstarter-driver-androidemulator`) -
   Android emulator lifecycle management with ADB tunneling
 * **[QEMU](qemu.md)** (`jumpstarter-driver-qemu`) - QEMU virtualization platform
@@ -145,6 +147,7 @@ shell.md
 ssh.md
 snmp.md
 someip.md
+stlink-msd.md
 tasmota.md
 tmt.md
 tftp.md
