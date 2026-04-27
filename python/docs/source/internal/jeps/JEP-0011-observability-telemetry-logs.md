@@ -5,11 +5,11 @@
 | **JEP**           | 0011                                                                  |
 | **Title**         | Metrics, Tracing, and Log Observability                               |
 | **Author(s)**     | @mangelajo (Miguel Angel Ajo Pelayo)                                  |
-| **Status**        | Draft                                                                 |
+| **Status**        | Discussion                                                                 |
 | **Type**          | Standards Track                                                       |
 | **Created**       | 2026-04-23                                                            |
-| **Updated**       | 2026-04-23                                                            |
-| **Discussion**    | *TODO: Matrix thread or GitHub issue/PR when opened*                  |
+| **Updated**       | 2026-04-27                                                            |
+| **Discussion**    | https://github.com/jumpstarter-dev/jumpstarter/pull/631               |
 | **Requires**      | —                                                                     |
 | **Supersedes**    | —                                                                     |
 | **Superseded-By** | —                                                                     |
@@ -163,8 +163,8 @@ are still useful for selection and for tools that only understand metadata.
   pipeline this JEP already establishes (**DD-5**, **DD-7**), so operational
   records (flash started, flash failed, image reference) are queryable,
   filterable, and correlated with surrounding exporter and controller logs
-  using the same label set (`lease_id`, `exporter`, `result`, …) without a
-  second query domain. Kubernetes `Event` objects **(1)** have a short
+  using the same correlation fields (`lease_id`, `exporter`, `result`, …)
+  without a second query domain. Kubernetes `Event` objects **(1)** have a short
   default TTL (~1 h) and still write to etcd on every occurrence;
   `status.conditions` **(2)** is a poor fit for a sequence of operations with
   variable payloads (image digest, byte count, duration); a dedicated CRD
@@ -201,15 +201,17 @@ are still useful for selection and for tools that only understand metadata.
 
 **Rationale:** Scrape is standard, debuggable, and scalable; it matches
   `ServiceMonitor`; it avoids app-side remote-write credentials and
-  complexity in Jumpstarter. See **DD-6** (no OTel), **DD-7** (Telemetry
+  complexity in Jumpstarter. The OpenMetrics exposition format used by
+  the scrape path natively carries exemplars, enabling high-cardinality
+  context (`client`, `lease_id`, `trace_id`) on individual samples without
+  additional infrastructure. See **DD-6** (no OTel), **DD-7** (Telemetry
   Deployment), **DD-8** (HA replicas).
 
 ### DD-4: Log format for services vs CLI
 
 **Alternatives considered:**
 
-1. **JSON always** for every process — best for machines; hard for humans
-   debugging a laptop.
+1. **JSON always** for every process — best for machines; hard for humans.
 2. **Human text default for `jmp`**, **JSON for long-running services** and an
    optional cli push via the metrics endpoint in JSON format (in addition to the
    human friendly output)
@@ -342,7 +344,8 @@ are still useful for selection and for tools that only understand metadata.
 **Context:** The Telemetry process holds in-memory counters. Exporters send
 +1 (e.g. flash success), +N (bytes read/written), or +1 per
 reporting interval (e.g. one “inactive” minute for a lease with
-labels `exporter`, `lease_id`, `client`).
+labels `exporter`, `operation`, `result`). High-cardinality context
+(`lease_id`, `client`, `trace_id`) is attached via exemplars, not labels.
 
 **Alternatives considered:**
 
@@ -352,7 +355,7 @@ labels `exporter`, `lease_id`, `client`).
   pod, which only advances its partial counters for the label
   sets it has seen. Prometheus scrapes all pods (or separate
   `PodMonitor` targets). In PromQL,
-  `sum by (exporter, lease_id, client, …) (…)` after dropping
+  `sum by (exporter, operation, result) (…)` after dropping
   `pod` / `instance` matches the global total, as long as each real
   event is applied at most once in the system (counters are
   additive; increments are partitioned by traffic).
@@ -429,76 +432,75 @@ endpoints; this DD only governs the recommended dashboard experience.
 *Subject to review — names and cardinality rules should be fixed before
 "Implemented".*
 
-| Field / label | Prometheus metric label | Loki stream label | Log line field | Notes |
-| ------------- | :--------------------: | :---------------: | :------------: | ----- |
-| `exporter` | yes | yes | yes | Bounded by cluster size. |
-| `operation` (flash, power, …) | yes | no | yes | Small fixed enum. |
-| `result` (success, failure, …) | yes | no | yes | Small fixed enum. |
-| `component` (controller, router, telemetry, exporter) | no | yes | yes | Fixed set of service names. |
-| `namespace` | no | yes | yes | K8s namespace; bounded. |
-| `lease_id` (or UID) | **no** | **no** | yes | Unbounded — use only in log line JSON. |
-| `client` (identifier) | opt-in | **no** | yes | See *Cardinality guidelines*; avoid PII. |
-| `image_digest`, `build_id`, VCS ref | **no** | **no** | yes | From `spec.context`; unbounded. |
-| W3C `trace_id` / `span_id` | **no** | **no** | yes | Propagate in gRPC metadata and log lines. |
+| Field / label                    | Prom label | Prom exemplar | Loki stream | Log line | Notes                                               |
+| -------------------------------- | :--------: | :-----------: | :---------: | :------: | --------------------------------------------------- |
+| `exporter`                       | yes        | —             | yes         | yes      | Bounded by cluster size.                            |
+| `operation`                      | yes        | —             | no          | yes      | Small fixed enum (flash, power, …).                 |
+| `result`                         | yes        | —             | no          | yes      | Small fixed enum (success, failure, …).             |
+| `component`                      | no         | —             | yes         | yes      | Fixed set (controller, router, telemetry, exporter).|
+| `namespace`                      | no         | —             | yes         | yes      | K8s namespace; bounded.                             |
+| `lease_id`                       | **no**     | yes           | **no**      | yes      | Unbounded; exemplar for drill-down.                 |
+| `client`                         | **no**     | yes           | **no**      | yes      | Exemplar; avoid PII.                                |
+| `image_digest`, `build_id`, etc. | **no**     | yes           | **no**      | yes      | From `spec.context`; always included.               |
+| `trace_id` / `span_id`           | **no**     | yes           | **no**      | yes      | W3C; links metrics to traces via exemplars.         |
 
 Additional `lease.spec.context` correlation fields can be added at runtime;
-they appear as structured log line fields, never as Prometheus or Loki labels.
+they appear as structured log line fields and as Prometheus exemplar keys
+(see *Exemplars for high-cardinality context* below).
 
 ### Cardinality guidelines
 
-Unbounded identifiers (`lease_id`, `image_digest`, `trace_id`, and
+Unbounded identifiers (`lease_id`, `client`, `image_digest`, `trace_id`, and
 any operator-defined `spec.context` keys) must not be used as Prometheus metric
-labels or Loki stream labels. They belong inside structured log line JSON,
-where Loki filter expressions (`| json | lease_id = "…"`) can query them
-without inflating the label index.
+labels or Loki stream labels. They belong inside structured log line JSON
+and Prometheus exemplars (see below), where Loki filter expressions
+(`| json | lease_id = "…"`) and dashboard exemplar overlays can surface them
+without inflating the label index or TSDB series count.
 
 Rules of thumb for this JEP:
 
-- **Prometheus**: each metric label dimension should have < 100 distinct values
-  per scrape target. The default label set for Jumpstarter metrics is
-  `{exporter, operation, result}` — all bounded enums.
+- **Prometheus labels**: each metric label dimension should have < 100 distinct
+  values per scrape target. The default label set for Jumpstarter metrics is
+  `{exporter, operation, result}` — all bounded enums. High-cardinality
+  context is carried via exemplars, not labels.
 - **Loki**: stream labels should be a small fixed set (`{component, exporter,
   namespace}`) to keep active stream count per tenant manageable (Grafana's
   guidance: < 100 k active streams). High-cardinality fields go inside the log
   line body.
 - **Lease context fields** from `spec.context` are propagated into log line
-  JSON only. A future implementation may allow operators to promote specific
-  context keys to Loki stream labels at their own cardinality risk, but the
-  default is log-line-only.
+  JSON and into Prometheus exemplars. They never become Prometheus labels or
+  Loki stream labels.
 
-#### `client` label: opt-in two-tier strategy
+#### Exemplars for high-cardinality context
 
-Per-client metrics (e.g. flash failures by client) are valuable for operators
-but `client` is a semi-bounded dimension whose cardinality depends on
-deployment size. The JEP adopts a two-tier approach:
+Prometheus exemplars attach arbitrary key-value pairs to individual counter
+increments and histogram observations without creating new time series. This
+is the primary mechanism this JEP uses to surface per-request context
+(`client`, `lease_id`, `trace_id`) on metrics while keeping series cardinality
+flat.
 
-1. **Default (off)**: metrics use `{exporter, operation, result}` only.
-   `client` appears in every structured log line, so per-client analysis is
-   available via LogQL:
-   `sum by (client) (count_over_time({component="exporter"} | json | operation="flash" [5m]))`.
-2. **Opt-in**: an operator flag (e.g. `metrics.includeClientLabel: true`) adds
-   `client` to the Prometheus label set. This is safe for deployments with a
-   bounded, stable set of registered clients (rule of thumb: < 200). Operators
-   with short-lived or ephemeral clients (CI runners, dynamic pods) should
-   leave it off to avoid series churn.
+Default exemplar keys emitted on every counter/histogram observation:
 
-Approximate series impact with 20 exporters, 4 operations, 2 results:
+| Key | Source | Purpose |
+| --- | ------ | ------- |
+| `client` | Lease or session identity | "Which client caused this spike?" |
+| `lease_id` | Lease UID | Correlate a metric sample with lease logs. |
+| `trace_id` | W3C `traceparent` | Click-through from metric to trace. |
 
-| Clients | Series per metric (without) | Series per metric (with) |
-| ------- | :-------------------------: | :----------------------: |
-| —       | 160                         | —                        |
-| 150     | 160                         | 24,000                   |
-| 1,000   | 160                         | 160,000                  |
+All `spec.context` keys (e.g. `build_id`, `image_digest`) are automatically
+included as exemplar keys. Because exemplars are per-observation metadata —
+not label dimensions — they have zero impact on series cardinality regardless
+of how many distinct values appear.
 
-At 150 clients and ~10 metrics the total (~240 k series) is well within a
-single Prometheus instance. At 1,000 clients the total (~1.6 M series) is
-feasible but approaches the range where long-term retention benefits from
-Thanos or Mimir, and series churn from ephemeral clients can degrade
-compaction.
+**Dashboard visualization**: when exemplars are enabled on a Prometheus data
+source, metric panels render clickable dots on each sample that carries
+exemplar data. Clicking a dot reveals the attached keys and can link to
+Loki log queries (filtered by `lease_id`) or a Tempo trace view (filtered
+by `trace_id`).
 
-Future work may explore Prometheus exemplars (attaching `client` to individual
-samples without creating full series) as a low-cardinality alternative for
-"which client caused this spike?" queries.
+Per-client analysis remains available via LogQL for operators who do not
+use exemplars:
+`sum by (client) (count_over_time({component="exporter"} | json | operation="flash" [5m]))`.
 
 ### Control-plane aggregation (Controller / Router / optional Telemetry)
 
@@ -551,7 +553,7 @@ logs to the Telemetry service for Loki ingest (see **DD-4**).
 ```{mermaid}
 flowchart LR
   ctrl[jumpstarter-controller] -->|lease lifecycle| exp[Exporter]
-  exp --> drv[Drivers]
+  drv[Drivers] --> exp
   exp -->|increments, events, logs| tel[jumpstarter-telemetry]
 ```
 
@@ -563,7 +565,9 @@ Telemetry (see **DD-2**, **DD-5**, **DD-7**).
 
 ```{mermaid}
 flowchart LR
-  tel[jumpstarter-telemetry] -->|push API| loki[(Loki)]
+  tel[jumpstarter-telemetry] -->|JSON stdout| shipper[Log shipper]
+  shipper -->|pod logs| loki[(Loki)]
+  tel -->|push API| loki
   tel -->|/metrics| prom[(Prometheus)]
 ```
 
@@ -661,29 +665,24 @@ on the OTel SDK in application code.
 
 - Flashing and power paths: at least one driver records an event and/or
   metrics counter on success and failure on real hardware in a lab.
-- *Hardware type TBD in implementation.*
+- Serial and stream paths expose tx/rx byte counts.
 
 ### Manual
 
-- `jmp` default output remains readable; JSON mode under opt-in shows expected
-  fields in a real CI job.
+- `jmp` default output remains readable; JSON structured logs are only sent
+  to jumpstarter-telemetry for general log ingest.
 
 ## Acceptance Criteria
 
-*To be sharpened as design firms up.*
-
-- [ ] Documented lease metadata and/or annotation keys (with size and
-      validation rules) are merged with this JEP for reference.
-- [ ] At least one event or status mechanism for *flash* (or equivalent) success
-      and failure is defined and has an integration test.
 - [ ] Exporter (or sidecar) exposes a documented metrics surface; drivers
       can contribute without reimplementing the HTTP server ad hoc in each
       driver.
 - [ ] Controller and one data-plane service emit structured logs with a
-      documented minimum field set; `jmp` documents human vs machine modes.
-- [ ] If hub forwarding is implemented, document how operators enable it,
-      how backpressure and overflow work, and how Loki-push credentials are
-      mounted (see **DD-4**, **DD-5**, **DD-7**, **DD-8**, **DD-9**).
+      documented minimum field set;
+- [ ] Operator provides a section to enable metrics, with the right details/secret
+      references to integrate with Loki for pushing logs.
+- [ ] Operator attempts to auto-configure Prometheus metric scraping on the right
+      endpoints.
 - [ ] Backward compatibility: existing clients and manifests without the new
       fields continue to work; deployments that do not use hub forwarding
       behave as today.
@@ -730,15 +729,7 @@ on the OTel SDK in application code.
 
 - More code paths, dependencies (for example a Prometheus client
   library, Loki HTTP client, and structured log helpers), and
-  operability
-  documentation burden.
-- Cardinality mistakes can harm Prometheus or backing stores — requires
-  guardrails and review.
-- A poorly tuned forward path can add resource and SPOF-like
-  pressure on the Controller; a dedicated Telemetry Deployment or subprocess and strict queue bounds are likely needed at scale.
-- Informative counters may be overstated on retries (**DD-9**);
-  re-labeling a series as SLO-critical without tightening
-  idempotency is an operational error.
+  operability and documentation burden.
 - Operators must run a functioning cluster log shipper (Promtail, Grafana
   Alloy, Vector, or equivalent) to see Controller and Router logs in Loki.
   This is near-universal in production Kubernetes but worth documenting for
@@ -746,16 +737,17 @@ on the OTel SDK in application code.
 
 ### Risks
 
-- Over-attachment of metadata to *metrics* as labels could overload TSDB;
-  *Cardinality guidelines* defines a label allowlist and pushes variable data
-  to log line fields.
+- High-cardinality metadata accidentally promoted to metric *labels* could
+  overload TSDB. *Cardinality guidelines* restricts labels to bounded enums
+  and routes variable context through exemplars and log line fields instead.
+- Exemplars require the OpenMetrics exposition format and Prometheus >= 2.26
+  with exemplar storage enabled (on by default since Prometheus 2.39).
+  Operators on older Prometheus versions still get full metrics and logs;
+  exemplar-based drill-down is unavailable until they upgrade.
 - Prometheus / Loki / Perses-stack version drift in the field
   — document tested pairs; W3C Trace Context in gRPC remains
   best-effort across Python and Go (no OTel SDK requirement to
   propagate `traceparent` where needed).
-- The Controller (or a bug in the forwarder) mislabeling or dropping data
-  during incidents — mitigated by tests, sampling transparency, and
-  optional parallel scrape/stdout paths for the paranoid.
 
 ## Rejected Alternatives
 
@@ -781,7 +773,11 @@ on the OTel SDK in application code.
 
 - [Prometheus](https://prometheus.io/) and [Alertmanager](https://prometheus.io/docs/alerting/latest/alertmanager/)
   — time-series metrics and alerting; [Prometheus naming and labels](https://prometheus.io/docs/practices/naming/)
-  on cardinality and naming; remote write for non-scrape topologies.
+  on cardinality and naming; remote write for non-scrape topologies;
+  [Exemplars](https://prometheus.io/docs/instrumenting/exposition_formats/#exemplars)
+  for attaching high-cardinality context to individual samples.
+- [Grafana exemplar support](https://grafana.com/docs/grafana/latest/fundamentals/exemplars/)
+  — visualizing exemplars in metric panels and linking to traces or logs.
 - [Loki](https://grafana.com/oss/loki/) — log aggregation, label model, and push
   and query APIs; often combined with [Perses](https://perses.dev/) (see
   **DD-10**) and Grafana Agent / Alloy or
@@ -803,25 +799,9 @@ on the OTel SDK in application code.
 
 ## Unresolved Questions
 
-- Exact `Lease` spec shape: single `context` object vs. multiple optional
-  sub-objects (CI vs. VCS).
 - Event retention: Loki retention policy (per-tenant, per-stream retention
   classes) for annotated log events (**DD-2**); whether Jumpstarter should
   document recommended retention defaults or leave this to operators.
-- **Identity**: how "current user" is defined (K8s user, OIDC subject, client
-  CR name) and what is safe to log in shared environments.
-- If distributed traces are ever added, whether to use Jaeger
-  / Tempo native clients, HTTP-only, or revisit OTel in a
-  *future* JEP (this document excludes mandatory OTel per **DD-6**).
-- Deduplication: multiple flashes of the *same* image in one lease — one event
-  type with counts vs. one row per attempt.
-- **Hub implementation:** in-process forwarder in Controller/Router vs. the
-  optional Jumpstarter Telemetry Deployment (**DD-7**) — final naming,
-  resource limits, and protocol for increments (gRPC vs. HTTP) under load;
-  exporter scrape vs. increments-only mix.
-- Whether gauges of “current sessions” (if any) need a single writer to
-  avoid invalid `sum` on replicas — v1 may stay counters-only per
-  **DD-8** for simplicity.
 
 ## Future Possibilities
 
@@ -832,7 +812,7 @@ on the OTel SDK in application code.
 
 ## Implementation History
 
-- Still nothing implemented. Everything under discussion.
+-
 
 ## References
 
@@ -847,5 +827,4 @@ on the OTel SDK in application code.
 ---
 
 *This JEP is licensed under the
-[Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0),
-consistent with the Jumpstarter project.*
+[Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0)*
