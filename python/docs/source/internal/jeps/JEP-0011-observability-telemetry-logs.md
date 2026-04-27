@@ -66,9 +66,10 @@ exporter-level metrics that a monitoring stack can scrape or receive.
   recording significant actions (for example *flash started*, *flash failed*,
   *image reference*) with typed fields, queryable in **Loki** alongside
   regular logs and distinct from higher-frequency debug output (see **DD-2**).
-- **Exporter metrics** — Counters, histograms, and gauges (naming and labels
-  TBD) exposed from the exporter and optionally enriched by individual drivers
-  (for example storage operations per type).
+- **Exporter metrics** — Counters (operations, bytes), histograms (operation
+  duration), and gauges (active sessions) exposed from the exporter and
+  enriched by individual drivers via the `driver` label (for example
+  `jumpstarter_operation_duration_seconds{driver="usbsdmux"}`).
 - **Jumpstarter Telemetry** (optional) — a dedicated
   component with a well-known ingest path and the same trust
   model (mTLS, ServiceAccount) as Controller/Router;
@@ -344,8 +345,9 @@ are still useful for selection and for tools that only understand metadata.
 **Context:** The Telemetry process holds in-memory counters. Exporters send
 +1 (e.g. flash success), +N (bytes read/written), or +1 per
 reporting interval (e.g. one “inactive” minute for a lease with
-labels `exporter`, `operation`, `result`). High-cardinality context
-(`lease_id`, `client`, `trace_id`) is attached via exemplars, not labels.
+labels `exporter`, `operation`, `result`, `driver`). High-cardinality
+context (`lease_id`, `client`, `trace_id`) is attached via exemplars, not
+labels.
 
 **Alternatives considered:**
 
@@ -437,6 +439,9 @@ endpoints; this DD only governs the recommended dashboard experience.
 | `exporter`                       | yes        | —             | yes         | yes      | Bounded by cluster size.                            |
 | `operation`                      | yes        | —             | no          | yes      | Small fixed enum (flash, power, …).                 |
 | `result`                         | yes        | —             | no          | yes      | Small fixed enum (success, failure, …).             |
+| `driver`                         | yes        | —             | no          | yes      | Driver type (usbsdmux, dutlink, …); bounded (~30).  |
+| `error_type`                     | yes        | —             | no          | yes      | Failure class (timeout, device_error, …); on errors. |
+| `direction`                      | yes        | —             | no          | yes      | tx / rx; for byte-counter and stream metrics only.  |
 | `component`                      | no         | —             | yes         | yes      | Fixed set (controller, router, telemetry, exporter).|
 | `namespace`                      | no         | —             | yes         | yes      | K8s namespace; bounded.                             |
 | `lease_id`                       | **no**     | yes           | **no**      | yes      | Unbounded; exemplar for drill-down.                 |
@@ -460,9 +465,11 @@ without inflating the label index or TSDB series count.
 Rules of thumb for this JEP:
 
 - **Prometheus labels**: each metric label dimension should have < 100 distinct
-  values per scrape target. The default label set for Jumpstarter metrics is
-  `{exporter, operation, result}` — all bounded enums. High-cardinality
-  context is carried via exemplars, not labels.
+  values per scrape target. The label set for Jumpstarter metrics is
+  `{exporter, operation, result, driver}` — all bounded enums.
+  `error_type` is added on failure-path metrics and `direction` on
+  byte-counter metrics. High-cardinality context is carried via exemplars,
+  not labels.
 - **Loki**: stream labels should be a small fixed set (`{component, exporter,
   namespace}`) to keep active stream count per tenant manageable (Grafana's
   guidance: < 100 k active streams). High-cardinality fields go inside the log
@@ -501,6 +508,112 @@ by `trace_id`).
 Per-client analysis remains available via LogQL for operators who do not
 use exemplars:
 `sum by (client) (count_over_time({component="exporter"} | json | operation="flash" [5m]))`.
+
+### Proposed metrics
+
+*Names are illustrative; final naming should follow
+[Prometheus naming conventions](https://prometheus.io/docs/practices/naming/)
+and be fixed before "Implemented".*
+
+| Metric name                                  | Type      | Labels                                       | Description                               |
+| -------------------------------------------- | --------- | -------------------------------------------- | ----------------------------------------- |
+| `jumpstarter_operations_total`               | counter   | `exporter`, `operation`, `result`, `driver`  | Total operations performed.               |
+| `jumpstarter_operation_duration_seconds`      | histogram | `exporter`, `operation`, `result`, `driver`  | Duration of each operation.               |
+| `jumpstarter_operation_errors_total`          | counter   | `exporter`, `operation`, `driver`, `error_type` | Errors by class (timeout, device, …).  |
+| `jumpstarter_stream_bytes_total`             | counter   | `exporter`, `driver`, `direction`            | Bytes transferred (tx/rx) on streams.     |
+| `jumpstarter_active_sessions`                | gauge     | `exporter`                                   | Currently active lease sessions.          |
+| `jumpstarter_lease_acquisitions_total`        | counter   | `result`                                     | Lease acquire attempts (controller).      |
+
+All counters and histograms carry exemplar keys (`client`, `lease_id`,
+`trace_id`, and `spec.context` fields) on every observation.
+
+### Example queries
+
+#### PromQL (Prometheus)
+
+**Flash failure rate per exporter:**
+
+```
+sum by (exporter) (rate(jumpstarter_operations_total{operation="flash", result="failure"}[5m]))
+/
+sum by (exporter) (rate(jumpstarter_operations_total{operation="flash"}[5m]))
+```
+
+**p95 flash duration per driver type:**
+
+```
+histogram_quantile(0.95,
+  sum by (driver, le) (rate(jumpstarter_operation_duration_seconds_bucket{operation="flash"}[5m]))
+)
+```
+
+**Top 5 busiest exporters (all operations, 1 h window):**
+
+```
+topk(5, sum by (exporter) (rate(jumpstarter_operations_total[1h])))
+```
+
+**Alert: exporter flash failure rate > 20% over 15 min:**
+
+```
+(
+  sum by (exporter) (rate(jumpstarter_operations_total{operation="flash", result="failure"}[15m]))
+  /
+  sum by (exporter) (rate(jumpstarter_operations_total{operation="flash"}[15m]))
+) > 0.2
+```
+
+**Error breakdown by class for a specific driver:**
+
+```
+sum by (error_type) (rate(jumpstarter_operation_errors_total{driver="usbsdmux"}[1h]))
+```
+
+**Bytes per second by exporter and direction:**
+
+```
+sum by (exporter, direction) (rate(jumpstarter_stream_bytes_total[5m]))
+```
+
+**HA Telemetry: aggregate across replicas (drop pod/instance):**
+
+```
+sum by (exporter, operation, result) (rate(jumpstarter_operations_total[5m]))
+```
+
+#### LogQL (Loki)
+
+**All flash events for a specific lease:**
+
+```
+{component="exporter"} | json | operation="flash" | lease_id="<uid>"
+```
+
+**Flash failures per client over 5 min (log-based, no exemplars needed):**
+
+```
+sum by (client) (
+  count_over_time({component="exporter"} | json | operation="flash" | result="failure" [5m])
+)
+```
+
+**Controller logs for a specific lease (post-mortem):**
+
+```
+{component="controller"} | json | lease_id="<uid>"
+```
+
+**Error events across all exporters in a namespace:**
+
+```
+{component="exporter", namespace="production"} | json | result="failure"
+```
+
+**Telemetry service health (its own operational logs):**
+
+```
+{component="telemetry"} | json | level="error"
+```
 
 ### Control-plane aggregation (Controller / Router / optional Telemetry)
 
