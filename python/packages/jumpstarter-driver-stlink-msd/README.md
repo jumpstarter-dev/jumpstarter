@@ -11,23 +11,20 @@ built-in mass storage interface handles all the flash programming.
 
 | Format | Handling |
 |--------|----------|
-| `.elf` | Auto-converted to `.bin` via `objcopy`, then copied to the volume |
 | `.bin` | Copied directly to the ST-LINK volume |
 | `.hex` | Copied directly to the ST-LINK volume |
 
-Using `.elf` allows the same build artifact for both virtual (Renode) and physical targets.
+ELF files must be converted externally before flashing:
+
+```shell
+arm-none-eabi-objcopy -O binary zephyr.elf zephyr.bin
+```
 
 ## Installation
 
 ```shell
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-stlink-msd
 ```
-
-For `.elf` support, ensure one of these is on your `PATH`:
-
-- `arm-none-eabi-objcopy` (ARM GCC toolchain)
-- `llvm-objcopy` (LLVM/Clang)
-- `arm-zephyr-eabi-objcopy` (Zephyr SDK)
 
 ## Configuration
 
@@ -37,25 +34,21 @@ export:
     type: jumpstarter_driver_stlink_msd.driver.StlinkMsdFlasher
     config:
       # volume_name: "NOD_H755ZI"   # optional: auto-detected if only one ST-LINK is connected
-      # objcopy_path: "/path/to/objcopy"  # optional: auto-detected from PATH
 ```
 
 | Parameter     | Description                                                      | Type           | Required | Default      |
 |---------------|------------------------------------------------------------------|----------------|----------|--------------|
 | volume_name   | Name of the mounted ST-LINK volume (e.g. `NOD_H755ZI`)          | str \| None    | no       | auto-detect  |
-| objcopy_path  | Path to objcopy binary for ELF-to-BIN conversion                 | str \| None    | no       | auto-detect  |
 
 ## Shell Commands
 
 ```shell
-j flasher flash firmware.elf       # flash an ELF (auto-converts to .bin)
 j flasher flash firmware.bin       # flash a raw binary
+j flasher flash firmware.hex       # flash an Intel HEX file
 j flasher info                     # show ST-LINK volume details
 ```
 
 ## API
 
-- **`flash(source, target=None)`** — Flash firmware to the board. Accepts `.elf`, `.bin`, or `.hex`.
-  ELF files are automatically converted to `.bin` using `objcopy`.
+- **`flash(source, target=None)`** — Flash firmware to the board. Accepts `.bin` or `.hex` files.
 - **`info()`** — Read `DETAILS.TXT` from the ST-LINK volume and return board metadata.
-- **`dump()`** — Not supported (ST-LINK mass storage is write-only).

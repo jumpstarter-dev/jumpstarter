@@ -1,7 +1,6 @@
-from unittest.mock import patch
-
 import pytest
 
+from .driver import _validate_firmware_name
 from .stlink_mount import looks_like_stlink_volume
 
 
@@ -37,34 +36,23 @@ def test_looks_like_stlink_volume_not_dir(tmp_path):
     assert looks_like_stlink_volume(f) is False
 
 
-def test_detect_format():
-    from .driver import _detect_format
-
-    assert _detect_format("firmware.elf") == "elf"
-    assert _detect_format("firmware.bin") == "bin"
-    assert _detect_format("firmware.hex") == "hex"
-    assert _detect_format("firmware.unknown") == "unknown"
-    assert _detect_format("FIRMWARE.ELF") == "elf"
+def test_validate_firmware_name_bin():
+    _validate_firmware_name("firmware.bin")
 
 
-def test_elf_to_bin_missing_objcopy():
-    from .driver import _elf_to_bin
-
-    with pytest.raises(FileNotFoundError, match="No objcopy found"):
-        with patch("jumpstarter_driver_stlink_msd.driver._find_objcopy", return_value=None):
-            _elf_to_bin("/fake/input.elf", "/fake/output.bin")
+def test_validate_firmware_name_hex():
+    _validate_firmware_name("firmware.hex")
 
 
-def test_elf_to_bin_success(tmp_path):
-    from .driver import _elf_to_bin
+def test_validate_firmware_name_bin_uppercase():
+    _validate_firmware_name("FIRMWARE.BIN")
 
-    elf_file = tmp_path / "test.elf"
-    bin_file = tmp_path / "test.bin"
-    elf_file.write_bytes(b"\x7fELF" + b"\x00" * 100)
 
-    fake_objcopy = tmp_path / "fake_objcopy.sh"
-    fake_objcopy.write_text('#!/bin/sh\ncp "$3" "$4"\n')
-    fake_objcopy.chmod(0o755)
+def test_validate_firmware_name_elf_rejected():
+    with pytest.raises(ValueError, match="Unsupported firmware format"):
+        _validate_firmware_name("firmware.elf")
 
-    _elf_to_bin(str(elf_file), str(bin_file), objcopy_path=str(fake_objcopy))
-    assert bin_file.exists()
+
+def test_validate_firmware_name_unknown_rejected():
+    with pytest.raises(ValueError, match="Unsupported firmware format"):
+        _validate_firmware_name("firmware.xyz")

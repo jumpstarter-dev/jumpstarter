@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 import tempfile
 from dataclasses import dataclass
 
@@ -15,61 +14,29 @@ from jumpstarter_driver_opendal.driver import FlasherInterface
 from .stlink_mount import find_all_stlink_mounts, find_stlink_mount
 from jumpstarter.driver import Driver, export
 
-
-def _find_objcopy() -> str | None:
-    """Find an objcopy binary that can handle ARM ELF files."""
-    for name in (
-        "arm-none-eabi-objcopy",
-        "llvm-objcopy",
-        "arm-zephyr-eabi-objcopy",
-        "objcopy",
-    ):
-        path = shutil.which(name)
-        if path:
-            return path
-    return None
+_SUPPORTED_EXTENSIONS = frozenset({".bin", ".hex"})
 
 
-def _elf_to_bin(elf_path: str, bin_path: str, objcopy_path: str | None = None) -> None:
-    """Convert an ELF file to raw binary using objcopy."""
-    objcopy = objcopy_path or _find_objcopy()
-    if objcopy is None:
-        raise FileNotFoundError(
-            "No objcopy found. Install arm-none-eabi-gcc, llvm, or the Zephyr SDK."
+def _validate_firmware_name(name: str) -> None:
+    """Raise if the firmware file extension is not supported by ST-LINK MSD."""
+    _, ext = os.path.splitext(name.lower())
+    if ext not in _SUPPORTED_EXTENSIONS:
+        raise ValueError(
+            f"Unsupported firmware format '{ext or name}'. "
+            f"ST-LINK mass storage only accepts .bin or .hex files. "
+            f"Convert ELF files with: arm-none-eabi-objcopy -O binary input.elf output.bin"
         )
-
-    result = subprocess.run(
-        [objcopy, "-O", "binary", elf_path, bin_path],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"objcopy failed: {result.stderr.strip()}")
-
-
-def _detect_format(filename: str) -> str:
-    """Detect firmware format from filename extension."""
-    lower = filename.lower()
-    if lower.endswith(".elf"):
-        return "elf"
-    if lower.endswith(".bin"):
-        return "bin"
-    if lower.endswith(".hex"):
-        return "hex"
-    return "unknown"
 
 
 @dataclass(kw_only=True)
 class StlinkMsdFlasher(FlasherInterface, Driver):
     """Flash STM32 boards by copying firmware to the ST-LINK USB mass storage volume.
 
-    Supports .elf files (converted to .bin via objcopy), .bin files (copied directly),
-    and .hex files (copied directly). This allows using the same .elf build artifact
-    for both virtual targets (Renode) and physical targets (Nucleo/Discovery boards).
+    Supports .bin and .hex files. ELF files must be converted to .bin
+    externally (e.g. via ``arm-none-eabi-objcopy -O binary``).
     """
 
     volume_name: str | None = None
-    objcopy_path: str | None = None
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -101,7 +68,7 @@ class StlinkMsdFlasher(FlasherInterface, Driver):
 
     @export
     def info(self) -> dict[str, str]:
-        """Read DETAILS.TXT and MBED.HTM from the ST-LINK volume."""
+        """Read DETAILS.TXT from the ST-LINK volume and return board metadata."""
         mount = self._resolve_mount()
         result: dict[str, str] = {}
 
@@ -120,44 +87,34 @@ class StlinkMsdFlasher(FlasherInterface, Driver):
     async def flash(self, source, target: str | None = None):
         """Flash firmware to the STM32 board via ST-LINK mass storage.
 
-        Accepts .elf (auto-converted to .bin), .bin, or .hex files.
-        The ``target`` parameter is the destination filename on the volume
-        (default: ``firmware.bin``).
+        Accepts .bin or .hex files only. ELF files are rejected — convert
+        them externally before flashing.
+
+        :param source: Firmware resource (local path or storage handle).
+        :param target: Destination filename on the volume (default: ``firmware.bin``).
         """
         mount = self._resolve_mount()
-        src_name = target or "firmware.bin"
+        dest_name = target or "firmware.bin"
+        _validate_firmware_name(dest_name)
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_path = os.path.join(tmpdir, "input_firmware")
+            tmp_path = os.path.join(tmpdir, dest_name)
 
             async with await FileWriteStream.from_path(tmp_path) as stream:
                 async with self.resource(source) as res:
                     async for chunk in res:
                         await stream.send(chunk)
 
-            fmt = _detect_format(src_name)
-            if fmt == "unknown":
-                fmt = _detect_format(tmp_path)
-
-            if fmt == "elf":
-                bin_path = os.path.join(tmpdir, "firmware.bin")
-                self.logger.info("Converting ELF to BIN using objcopy")
-                await to_thread.run_sync(
-                    lambda: _elf_to_bin(tmp_path, bin_path, self.objcopy_path)
-                )
-                flash_src = bin_path
-                dest_name = src_name.rsplit(".", 1)[0] + ".bin" if src_name.lower().endswith(".elf") else src_name
-            else:
-                flash_src = tmp_path
-                dest_name = src_name
-
             dest_path = os.path.join(mount, dest_name)
             self.logger.info("Copying firmware to %s", dest_path)
 
             def _copy() -> None:
-                shutil.copy2(flash_src, dest_path)
-                with open(dest_path, "rb") as f:
-                    os.fsync(f.fileno())
+                shutil.copy2(tmp_path, dest_path)
+                fd = os.open(dest_path, os.O_RDONLY)
+                try:
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
 
             await to_thread.run_sync(_copy)
 

@@ -12,17 +12,12 @@ class StlinkMsdFlasherClient(FlasherClient):
     """Client interface for ST-LINK mass storage flasher.
 
     Flashes STM32 boards by copying firmware to the ST-LINK's USB
-    mass storage volume. Supports .elf, .bin, and .hex files.
+    mass storage volume. Supports .bin and .hex files.
     """
 
     def info(self) -> dict[str, str]:
         """Read board info from the ST-LINK volume."""
         return self.call("info")
-
-    def flash_file(self, filepath) -> str:
-        """Flash a local file to the STM32 board."""
-        absolute = Path(filepath).resolve()
-        return self.flash(absolute)
 
     def cli(self):
         base = super().cli()
@@ -42,7 +37,7 @@ class StlinkMsdFlasherClient(FlasherClient):
         @click.argument("file", type=click.Path(exists=True))
         @click.option("--compression", type=click.Choice(Compression, case_sensitive=False))
         def flash(file, compression):
-            """Flash firmware (.elf, .bin, or .hex) to the STM32 board."""
+            """Flash firmware (.bin or .hex) to the STM32 board."""
             name = Path(file).name
             click.echo(f"Flashing {name}...")
             self.flash(file, target=name, compression=compression)
