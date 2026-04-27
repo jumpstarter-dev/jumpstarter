@@ -534,7 +534,7 @@ All counters and histograms carry exemplar keys (`client`, `lease_id`,
 
 **Flash failure rate per exporter:**
 
-```
+```promql
 sum by (exporter) (rate(jumpstarter_operations_total{operation="flash", result="failure"}[5m]))
 /
 sum by (exporter) (rate(jumpstarter_operations_total{operation="flash"}[5m]))
@@ -542,7 +542,7 @@ sum by (exporter) (rate(jumpstarter_operations_total{operation="flash"}[5m]))
 
 **p95 flash duration per driver type:**
 
-```
+```promql
 histogram_quantile(0.95,
   sum by (driver_type, le) (rate(jumpstarter_operation_duration_seconds_bucket{operation="flash"}[5m]))
 )
@@ -550,13 +550,13 @@ histogram_quantile(0.95,
 
 **Top 5 busiest exporters (all operations, 1 h window):**
 
-```
+```promql
 topk(5, sum by (exporter) (rate(jumpstarter_operations_total[1h])))
 ```
 
 **Alert: exporter flash failure rate > 20% over 15 min:**
 
-```
+```promql
 (
   sum by (exporter) (rate(jumpstarter_operations_total{operation="flash", result="failure"}[15m]))
   /
@@ -566,19 +566,19 @@ topk(5, sum by (exporter) (rate(jumpstarter_operations_total[1h])))
 
 **Error breakdown by class for a specific driver:**
 
-```
+```promql
 sum by (error_type) (rate(jumpstarter_operation_errors_total{driver_type="storage"}[1h]))
 ```
 
 **Bytes per second by exporter and direction:**
 
-```
+```promql
 sum by (exporter, direction) (rate(jumpstarter_stream_bytes_total[5m]))
 ```
 
 **HA Telemetry: aggregate across replicas (drop pod/instance):**
 
-```
+```promql
 sum by (exporter, operation, result, driver_type) (rate(jumpstarter_operations_total[5m]))
 ```
 
@@ -586,13 +586,13 @@ sum by (exporter, operation, result, driver_type) (rate(jumpstarter_operations_t
 
 **All flash events for a specific lease:**
 
-```
+```text
 {component="exporter"} | json | operation="flash" | lease_id="<uid>"
 ```
 
 **Flash failures per client over 5 min (log-based, no exemplars needed):**
 
-```
+```text
 sum by (client) (
   count_over_time({component="exporter"} | json | operation="flash" | result="failure" [5m])
 )
@@ -600,19 +600,19 @@ sum by (client) (
 
 **Controller logs for a specific lease (post-mortem):**
 
-```
+```text
 {component="controller"} | json | lease_id="<uid>"
 ```
 
 **Error events across all exporters in a namespace:**
 
-```
+```text
 {component="exporter", namespace="production"} | json | result="failure"
 ```
 
 **Telemetry service health (its own operational logs):**
 
-```
+```text
 {component="telemetry"} | json | level="error"
 ```
 
