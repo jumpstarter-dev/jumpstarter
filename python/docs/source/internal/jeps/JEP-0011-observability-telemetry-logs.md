@@ -537,7 +537,7 @@ When this mode is enabled in a deployment:
 
 #### Client (`jmp`)
 
-```mermaid
+```{mermaid}
 flowchart LR
   jmp([jmp CLI]) -->|session gRPC| exp[Exporter]
   jmp -->|structured logs| tel[jumpstarter-telemetry]
@@ -548,7 +548,7 @@ logs to the Telemetry service for Loki ingest (see **DD-4**).
 
 #### Exporter
 
-```mermaid
+```{mermaid}
 flowchart LR
   ctrl[jumpstarter-controller] -->|lease lifecycle| exp[Exporter]
   exp --> drv[Drivers]
@@ -561,7 +561,7 @@ Telemetry (see **DD-2**, **DD-5**, **DD-7**).
 
 #### Telemetry to backends
 
-```mermaid
+```{mermaid}
 flowchart LR
   tel[jumpstarter-telemetry] -->|push API| loki[(Loki)]
   tel -->|/metrics| prom[(Prometheus)]
@@ -572,7 +572,7 @@ exposes `/metrics` for Prometheus scrape (**DD-3**, **DD-7**).
 
 #### Controller to backends
 
-```mermaid
+```{mermaid}
 flowchart LR
   ctrl[jumpstarter-controller] -->|JSON stdout| shipper[Log shipper]
   shipper -->|pod logs| loki[(Loki)]
@@ -585,7 +585,7 @@ Controller exposes `/metrics` for reconciliation and lease-level counters.
 
 #### Router to backends
 
-```mermaid
+```{mermaid}
 flowchart LR
   router[jumpstarter-router] -->|JSON stdout| shipper[Log shipper]
   shipper -->|pod logs| loki[(Loki)]
@@ -753,7 +753,7 @@ on the OTel SDK in application code.
   — document tested pairs; W3C Trace Context in gRPC remains
   best-effort across Python and Go (no OTel SDK requirement to
   propagate `traceparent` where needed).
-- The Controller (or a bug in the forwarder) mis-labeling or dropping data
+- The Controller (or a bug in the forwarder) mislabeling or dropping data
   during incidents — mitigated by tests, sampling transparency, and
   optional parallel scrape/stdout paths for the paranoid.
 
