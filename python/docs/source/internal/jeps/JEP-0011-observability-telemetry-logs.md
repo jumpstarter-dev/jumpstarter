@@ -117,8 +117,8 @@ exporter-level metrics that a monitoring stack can scrape or receive.
 **Scope:** This decision is about where to store generic metadata on a
 `Lease` that describes *why* a run exists or *where* it came from — for example
 an external build id, pipeline id, VCS revision, or other
-operator-defined keys (team, environment), within cardinality and
-size limits documented elsewhere in this JEP. The same stored context
+operator-defined keys (team, environment), within the cardinality and
+size limits defined in *Cardinality guidelines*. The same stored context
 is the intended source to propagate (where safe) into metric series
 labels and into log line fields for emissions that occur during the
 lease and for logs produced during client access to the platform
@@ -429,14 +429,76 @@ endpoints; this DD only governs the recommended dashboard experience.
 *Subject to review — names and cardinality rules should be fixed before
 "Implemented".*
 
-| Field / label | Where | Notes |
-| ------------- | ----- | ----- |
-| `lease_id` (or UIDs) | Logs, traces, some metrics | K8s object name or UID. |
-| `exporter` | Metrics, logs | `Exporter` name. |
-| `client` (identifier) | Logs, optional | Opaque; avoid PII by default. |
-| W3C `trace_id` / `span_id` | If tracing enabled | Propagate across client ↔ exporter when viable. |
+| Field / label | Prometheus metric label | Loki stream label | Log line field | Notes |
+| ------------- | :--------------------: | :---------------: | :------------: | ----- |
+| `exporter` | yes | yes | yes | Bounded by cluster size. |
+| `operation` (flash, power, …) | yes | no | yes | Small fixed enum. |
+| `result` (success, failure, …) | yes | no | yes | Small fixed enum. |
+| `component` (controller, router, telemetry, exporter) | no | yes | yes | Fixed set of service names. |
+| `namespace` | no | yes | yes | K8s namespace; bounded. |
+| `lease_id` (or UID) | **no** | **no** | yes | Unbounded — use only in log line JSON. |
+| `client` (identifier) | opt-in | **no** | yes | See *Cardinality guidelines*; avoid PII. |
+| `image_digest`, `build_id`, VCS ref | **no** | **no** | yes | From `spec.context`; unbounded. |
+| W3C `trace_id` / `span_id` | **no** | **no** | yes | Propagate in gRPC metadata and log lines. |
 
-Additional lease.spec.context correlation fields can be added in runtime.
+Additional `lease.spec.context` correlation fields can be added at runtime;
+they appear as structured log line fields, never as Prometheus or Loki labels.
+
+### Cardinality guidelines
+
+Unbounded identifiers (`lease_id`, `image_digest`, `trace_id`, and
+any operator-defined `spec.context` keys) must not be used as Prometheus metric
+labels or Loki stream labels. They belong inside structured log line JSON,
+where Loki filter expressions (`| json | lease_id = "…"`) can query them
+without inflating the label index.
+
+Rules of thumb for this JEP:
+
+- **Prometheus**: each metric label dimension should have < 100 distinct values
+  per scrape target. The default label set for Jumpstarter metrics is
+  `{exporter, operation, result}` — all bounded enums.
+- **Loki**: stream labels should be a small fixed set (`{component, exporter,
+  namespace}`) to keep active stream count per tenant manageable (Grafana's
+  guidance: < 100 k active streams). High-cardinality fields go inside the log
+  line body.
+- **Lease context fields** from `spec.context` are propagated into log line
+  JSON only. A future implementation may allow operators to promote specific
+  context keys to Loki stream labels at their own cardinality risk, but the
+  default is log-line-only.
+
+#### `client` label: opt-in two-tier strategy
+
+Per-client metrics (e.g. flash failures by client) are valuable for operators
+but `client` is a semi-bounded dimension whose cardinality depends on
+deployment size. The JEP adopts a two-tier approach:
+
+1. **Default (off)**: metrics use `{exporter, operation, result}` only.
+   `client` appears in every structured log line, so per-client analysis is
+   available via LogQL:
+   `sum by (client) (count_over_time({component="exporter"} | json | operation="flash" [5m]))`.
+2. **Opt-in**: an operator flag (e.g. `metrics.includeClientLabel: true`) adds
+   `client` to the Prometheus label set. This is safe for deployments with a
+   bounded, stable set of registered clients (rule of thumb: < 200). Operators
+   with short-lived or ephemeral clients (CI runners, dynamic pods) should
+   leave it off to avoid series churn.
+
+Approximate series impact with 20 exporters, 4 operations, 2 results:
+
+| Clients | Series per metric (without) | Series per metric (with) |
+| ------- | :-------------------------: | :----------------------: |
+| —       | 160                         | —                        |
+| 150     | 160                         | 24,000                   |
+| 1,000   | 160                         | 160,000                  |
+
+At 150 clients and ~10 metrics the total (~240 k series) is well within a
+single Prometheus instance. At 1,000 clients the total (~1.6 M series) is
+feasible but approaches the range where long-term retention benefits from
+Thanos or Mimir, and series churn from ephemeral clients can degrade
+compaction.
+
+Future work may explore Prometheus exemplars (attaching `client` to individual
+samples without creating full series) as a low-cardinality alternative for
+"which client caused this spike?" queries.
 
 ### Control-plane aggregation (Controller / Router / optional Telemetry)
 
@@ -684,9 +746,9 @@ on the OTel SDK in application code.
 
 ### Risks
 
-- Over-attachment of metadata to *metrics* as labels could overload TSDB; the
-  design may restrict labels to a fixed allowlist and push variable data to
-  event payloads and logs.
+- Over-attachment of metadata to *metrics* as labels could overload TSDB;
+  *Cardinality guidelines* defines a label allowlist and pushes variable data
+  to log line fields.
 - Prometheus / Loki / Perses-stack version drift in the field
   — document tested pairs; W3C Trace Context in gRPC remains
   best-effort across Python and Go (no OTel SDK requirement to
