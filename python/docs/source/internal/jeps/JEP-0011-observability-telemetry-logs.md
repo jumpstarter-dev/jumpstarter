@@ -69,6 +69,10 @@ exporter-level metrics that a monitoring stack can scrape or receive.
 - **As a** platform engineer, **I want** exporter processes to send telemetry
   without holding Loki or Prometheus credentials, **so that** I do not have to
   distribute and rotate secrets on every lab machine.
+- **As an** AI agent orchestrating CI, **I want** machine-readable structured
+  logs and metric exemplars with lease context, **so that** I can
+  programmatically identify failing exporters and correlate test results
+  without parsing free-form text.
 
 ## Proposal
 
