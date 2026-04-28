@@ -113,8 +113,9 @@ exporter-level metrics that a monitoring stack can scrape or receive.
   per-exporter Loki and metrics secrets. The same path can carry operator-chosen structured log lines
   and events (not unbounded default client chatter — see *Control-plane
   aggregation* below).
-- The `jmp` CLI logs remain readable, but also submits logs through the jumpstarter telemetry
-  endpoint, in machine parseable format for loki ingest.
+- The `jmp` CLI output remains human-readable, but when a Telemetry
+  endpoint is available, `jmp` also pushes structured JSON logs to the
+  Jumpstarter Telemetry service for Loki ingest.
 
 ### API / Protocol Changes
 
@@ -284,9 +285,9 @@ are still useful for selection and for tools that only understand metadata.
 **Alternatives considered:**
 
 1. **JSON always** for every process — best for machines; hard for humans.
-2. **Human text default for `jmp`**, **JSON for long-running services** and an
-   optional cli push via the metrics endpoint in JSON format (in addition to the
-   human friendly output)
+2. **Human text default for `jmp`**, **JSON for long-running services** and a
+   CLI push via the Telemetry ingest endpoint in JSON format (in addition to the
+   human-friendly output)
 3. **Single format** with a pretty-printer in front of developers — more moving
    parts.
 
@@ -306,6 +307,52 @@ are still useful for selection and for tools that only understand metadata.
   Loki availability — a Loki outage does not affect lease operations.
   The Telemetry service retains a direct Loki-push because it is an
   isolated workload (**DD-7**) whose core job is Loki ingest.
+
+**Format:** JSONL (one JSON object per line), produced by setting
+  `--zap-encoder=json` on the existing `controller-runtime` / Zap logger
+  (no changes to log call sites — existing `logr` structured fields become
+  JSON keys automatically). The `ts`, `level`, and `msg` fields follow
+  Zap's default JSON encoder output; application code adds domain fields
+  via the standard `logr` `WithValues` / `Info` / `Error` API.
+
+  Base fields present in every log line:
+
+| Field         | Format                                                              | Loki label | Description                               |
+| ------------- | ------------------------------------------------------------------- | :--------: | ----------------------------------------- |
+| `ts`          | ISO-8601 (`2026-04-28T10:15:30.123Z`)                               |     no     | Timestamp (Zap default).                  |
+| `level`       | Lower-case string (`debug`, `info`, `warn`, `error`)                |     no     | Log severity (Zap default).               |
+| `msg`         | Free-form string                                                    |     no     | Human-readable message (Zap default).     |
+| `component`   | Fixed enum (`cli`, `controller`, `router`, `telemetry`, `exporter`) |   **yes**  | Emitting service.                         |
+| `exporter`    | CRD name (when applicable)                                          |   **yes**  | Exporter CRD name; bounded by cluster size.|
+| `lease_id`    | UID string (when applicable)                                        |     no     | Lease UID (high cardinality).             |
+| `operation`   | String (when applicable)                                            |     no     | Operation name (flash, power, …).         |
+| `result`      | String (when applicable)                                            |     no     | Outcome (success, failure, …).            |
+| `driver_type` | Category from predefined set (when applicable)                      |     no     | Driver category (storage, power, …).      |
+| `client`      | CRD name (when applicable)                                          |     no     | Client CRD name (high cardinality).       |
+| *`spec.context` keys* | User-defined strings (during active lease)                  |     no     | All `lease.spec.context` entries (e.g. `build_id`, `image_digest`, VCS ref) added as JSON fields. High cardinality, never stream labels. |
+
+  `namespace` is **not** emitted by the application. Log shippers
+  (Promtail, Grafana Alloy, Vector) automatically inject `namespace`
+  (and `pod`, `container`) from Kubernetes pod metadata via service
+  discovery, so it is available as a Loki stream label without
+  application-level awareness.
+
+  Fields marked as **Loki stream labels** are extracted by the log shipper
+  and used as indexed stream selectors. They must be low-cardinality to
+  keep the active stream count manageable (Grafana recommends < 100 k
+  active streams per tenant). With the labels above, a deployment with
+  200 exporters across 5 namespaces produces roughly 1 000 streams —
+  well within budget. High-cardinality fields like `client` or
+  `lease_id` must stay in the JSON body: promoting `client` to a
+  stream label in a 1 000-client, 200-exporter cluster would create
+  up to 1 000 000 streams, overwhelming the Loki ingester. These fields
+  are instead queried with `| json | client="value"` filter
+  expressions after selecting the relevant streams.
+
+  Multi-line content (e.g. stack traces) is embedded as an escaped string
+  within the JSON value (typically in a `stacktrace` or `error` field),
+  never as bare multi-line text, so each physical line is always one
+  complete JSON object.
 
 ### DD-5: Where Loki and Prometheus (or remote-write) credentials live
 
@@ -507,16 +554,16 @@ endpoints; this DD only governs the recommended dashboard experience.
 
 | Field / label                    | Prom label | Prom exemplar | Loki stream | Log line | Notes                                               |
 | -------------------------------- | :--------: | :-----------: | :---------: | :------: | --------------------------------------------------- |
-| `exporter`                       | yes        | —             | yes         | yes      | Bounded by cluster size.                            |
+| `exporter`                       | yes        | —             | yes         | yes      | CRD name; bounded by cluster size.                  |
 | `operation`                      | yes        | —             | no          | yes      | Small fixed enum (flash, power, …).                 |
 | `result`                         | yes        | —             | no          | yes      | Small fixed enum (success, failure, …).             |
-| `driver_type`                      | yes        | —             | no          | yes      | Category from a predefined set in core (storage, power, …). |
+| `driver_type`                    | yes        | —             | no          | yes      | Category from a predefined set in core (storage, power, …). |
 | `error_type`                     | yes        | —             | no          | yes      | Failure class (timeout, device_error, …); on errors. |
 | `direction`                      | yes        | —             | no          | yes      | tx / rx; for byte-counter and stream metrics only.  |
-| `component`                      | no         | —             | yes         | yes      | Fixed set (controller, router, telemetry, exporter).|
+| `component`                      | no         | —             | yes         | yes      | Fixed set (cli, controller, router, telemetry, exporter).|
 | `namespace`                      | no         | —             | yes         | yes      | K8s namespace; bounded.                             |
 | `lease_id`                       | **no**     | yes           | **no**      | yes      | Unbounded; exemplar for drill-down.                 |
-| `client`                         | **no**     | yes           | **no**      | yes      | Exemplar; avoid PII.                                |
+| `client`                         | **no**     | yes           | **no**      | yes      | CRD name; exemplar for client identity.             |
 | `image_digest`, `build_id`, etc. | **no**     | yes           | **no**      | yes      | From `spec.context`; always included.               |
 | `trace_id` / `span_id`           | **no**     | yes           | **no**      | yes      | W3C; links metrics to traces via exemplars.         |
 
@@ -561,7 +608,7 @@ Default exemplar keys emitted on every counter/histogram observation:
 
 | Key | Source | Purpose |
 | --- | ------ | ------- |
-| `client` | Lease or session identity | "Which client caused this spike?" |
+| `client` | Client CRD name | "Which client caused this spike?" |
 | `lease_id` | Lease UID | Correlate a metric sample with lease logs. |
 | `trace_id` | W3C `traceparent` | Click-through from metric to trace. |
 
