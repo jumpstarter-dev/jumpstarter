@@ -61,7 +61,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.22"
+          go-version: "1.24"
 
       - name: Cache controller image
         id: cache
@@ -104,7 +104,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.22"
+          go-version: "1.24"
 
       - name: Cache operator artifacts
         id: cache
@@ -189,7 +189,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.22"
+          go-version: "1.24"
 
       - name: Download controller image
         uses: actions/download-artifact@v8
@@ -251,7 +251,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.22"
+          go-version: "1.24"
 
       - name: Download python wheels
         uses: actions/download-artifact@v8
@@ -286,7 +286,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.22"
+          go-version: "1.24"
 
       - name: Download controller image
         uses: actions/download-artifact@v8
