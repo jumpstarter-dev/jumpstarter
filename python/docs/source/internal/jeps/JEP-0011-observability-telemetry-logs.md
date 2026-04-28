@@ -163,8 +163,9 @@ identity without re-typing it on every line.
    hard for operators to audit; no stable object-level link to per-lease
    metrics and server logs in the cluster.
 
-**Decision:** the JEP leans toward **(2) for first-class, validated context**
-with **(1) allowed for integration with generic tooling**, pending contributor consensus.
+**Decision:** **(2)** — a typed `spec.context` map under the Lease CRD for
+first-class, validated context. **(1)** (labels/annotations) remains allowed
+for integration with generic tooling that only understands Kubernetes metadata.
 
 **Rationale:** Typed fields make validation and documentation clear; labels
 are still useful for selection and for tools that only understand metadata.
