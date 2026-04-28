@@ -28,6 +28,21 @@ that edge processes never need Loki or cluster-scrape credentials.
 Implementation is expected to land in phases; this JEP describes the end state
 and compatibility rules.
 
+### Phases
+
+| Phase | Scope | Key deliverables |
+| ----- | ----- | ---------------- |
+| 1 | Structured logging + lease context | `spec.context` CRD field; JSON structured logs for all long-running services; correlation fields (`lease_id`, `exporter`, `operation`, `result`) in every log line. |
+| 2 | Metrics endpoints | `/metrics` scrape endpoints on Controller and Router; exporter counter/histogram/gauge metrics with `driver_type`; Prometheus exemplars for high-cardinality context. |
+| 3 | Telemetry service | Optional `jumpstarter-telemetry` Deployment managed by the operator; exporter and client data aggregation; Loki push for edge-originated logs and events. |
+| 4 | In-cluster log scraping | Operator configures log shipper integration (Promtail, Grafana Alloy, Vector) for Controller/Router pod logs; `ServiceMonitor` CRDs for Prometheus autodiscovery. |
+| 5 | Dashboards + alerting | Perses CRD dashboards; starter alert rules; documentation and operator integration. |
+
+Each phase is independently useful and builds on the previous ones.
+Phase 1 can ship without any later phase; operators who only need
+structured logs benefit immediately. Phase 2 adds scrape-ready metrics
+without requiring the Telemetry service.
+
 ## Motivation
 
 Today, operators and CI maintainers need to answer questions that raw Kubernetes
