@@ -165,7 +165,8 @@ identity without re-typing it on every line.
 
 **Decision:** **(2)** — a typed `spec.context` map under the Lease CRD for
 first-class, validated context. **(1)** (labels/annotations) remains allowed
-for integration with generic tooling that only understands Kubernetes metadata.
+for integration with generic tooling that only understands Kubernetes metadata
+or benefits from lease label filtering.
 
 **Rationale:** Typed fields make validation and documentation clear; labels
 are still useful for selection and for tools that only understand metadata.
@@ -234,6 +235,49 @@ are still useful for selection and for tools that only understand metadata.
   context (`client`, `lease_id`, `trace_id`) on individual samples without
   additional infrastructure. See **DD-6** (no OTel), **DD-7** (Telemetry
   Deployment), **DD-8** (HA replicas).
+
+**Exemplar trade-offs and details:**
+
+- **Wire format.** On the OpenMetrics `/metrics` endpoint an exemplar is
+  appended after the sample value:
+
+  ```text
+  jumpstarter_operations_total{exporter="lab-01",operation="flash",result="success"} 42 # {client="ci-bot",lease_id="abc123",trace_id="def456"} 1.0 1625000000.000
+  ```
+
+  The `# {key=value,...} value timestamp` suffix is the exemplar. Grafana
+  (≥ 7.4) renders these as clickable dots on metric panels; clicking a dot
+  reveals the attached keys and can link to a Loki log query (filtered by
+  `lease_id`) or a trace view (filtered by `trace_id`).
+
+- **Size limit.** The [OpenMetrics 1.0 spec](https://prometheus.io/docs/specs/om/open_metrics_spec)
+  imposes a **128 UTF-8 character** limit on the combined length of
+  exemplar label names and values per exemplar.
+  [OpenMetrics 2.0](https://github.com/prometheus/docs/blob/main/docs/specs/om/open_metrics_spec_2_0.md)
+  (experimental, 2026) relaxes this to a soft cap measured in bytes.
+  The exemplar key budget is discussed further in *Exemplars for
+  high-cardinality context*.
+
+- **Sampling.** Client libraries rate-limit exemplar updates internally;
+  the last-seen exemplar per series is served on each scrape, not one
+  per data point. For the Jumpstarter use case this is sufficient:
+  the most recent `lease_id` / `trace_id` on a counter is the value
+  operators need when investigating a spike.
+
+- **Library support.** Go client support is mature
+  (`prometheus/client_golang` ≥ 1.16). The Python ecosystem is less
+  complete but not required for this JEP since metrics are exposed from
+  Go services.
+
+- **Infrastructure requirements.** Prometheus ≥ 2.26 with
+  `--enable-feature=exemplar-storage` and
+  `--storage.tsdb.max-exemplars` (e.g. 100 000). Grafana ≥ 7.4 for
+  exemplar visualization. Perses does not yet support exemplar
+  rendering; until it does, operators who want exemplar click-through
+  can use Grafana alongside Perses or wait for upstream support.
+
+  These limitations are acceptable for the correlation use case this JEP
+  targets.
 
 ### DD-4: Log format for services vs CLI
 
