@@ -127,6 +127,12 @@ exporter-level metrics that a monitoring stack can scrape or receive.
   identifiers in metadata; must remain backward compatible for existing clients
   (unknown metadata ignored by older servers).
 
+**Tracing scope:** This JEP covers *correlation only* — `lease_id`, `trace_id`,
+and `span_id` are propagated as log fields and Prometheus exemplar keys so that
+metrics, logs, and (future) traces can be joined. Full distributed tracing
+(span creation, sampling policies, trace storage and visualization) is deferred
+to a future JEP.
+
 ### Hardware Considerations
 
 - No hardware considerations.
