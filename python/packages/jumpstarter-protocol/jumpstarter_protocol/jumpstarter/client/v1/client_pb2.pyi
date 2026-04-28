@@ -77,6 +77,22 @@ Global___Exporter: typing_extensions.TypeAlias = Exporter
 class Lease(google.protobuf.message.Message):
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
+    @typing.final
+    class TagsEntry(google.protobuf.message.Message):
+        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+        KEY_FIELD_NUMBER: builtins.int
+        VALUE_FIELD_NUMBER: builtins.int
+        key: builtins.str
+        value: builtins.str
+        def __init__(
+            self,
+            *,
+            key: builtins.str = ...,
+            value: builtins.str = ...,
+        ) -> None: ...
+        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+
     NAME_FIELD_NUMBER: builtins.int
     SELECTOR_FIELD_NUMBER: builtins.int
     DURATION_FIELD_NUMBER: builtins.int
@@ -88,10 +104,13 @@ class Lease(google.protobuf.message.Message):
     CLIENT_FIELD_NUMBER: builtins.int
     EXPORTER_FIELD_NUMBER: builtins.int
     CONDITIONS_FIELD_NUMBER: builtins.int
+    EXPORTER_NAME_FIELD_NUMBER: builtins.int
+    TAGS_FIELD_NUMBER: builtins.int
     name: builtins.str
     selector: builtins.str
     client: builtins.str
     exporter: builtins.str
+    exporter_name: builtins.str
     @property
     def duration(self) -> google.protobuf.duration_pb2.Duration: ...
     @property
@@ -106,6 +125,8 @@ class Lease(google.protobuf.message.Message):
     def effective_end_time(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
     @property
     def conditions(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[jumpstarter.v1.kubernetes_pb2.Condition]: ...
+    @property
+    def tags(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]: ...
     def __init__(
         self,
         *,
@@ -120,9 +141,11 @@ class Lease(google.protobuf.message.Message):
         client: builtins.str | None = ...,
         exporter: builtins.str | None = ...,
         conditions: collections.abc.Iterable[jumpstarter.v1.kubernetes_pb2.Condition] | None = ...,
+        exporter_name: builtins.str | None = ...,
+        tags: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "begin_time", b"begin_time", "client", b"client", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "name", b"name", "selector", b"selector"]) -> None: ...
+    def HasField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "begin_time", b"begin_time", "client", b"client", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "name", b"name", "selector", b"selector", "tags", b"tags"]) -> None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_begin_time", b"_begin_time"]) -> typing.Literal["begin_time"] | None: ...
     @typing.overload
@@ -137,6 +160,8 @@ class Lease(google.protobuf.message.Message):
     def WhichOneof(self, oneof_group: typing.Literal["_end_time", b"_end_time"]) -> typing.Literal["end_time"] | None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_exporter", b"_exporter"]) -> typing.Literal["exporter"] | None: ...
+    @typing.overload
+    def WhichOneof(self, oneof_group: typing.Literal["_exporter_name", b"_exporter_name"]) -> typing.Literal["exporter_name"] | None: ...
 
 Global___Lease: typing_extensions.TypeAlias = Lease
 
@@ -222,11 +247,13 @@ class ListLeasesRequest(google.protobuf.message.Message):
     PAGE_TOKEN_FIELD_NUMBER: builtins.int
     FILTER_FIELD_NUMBER: builtins.int
     ONLY_ACTIVE_FIELD_NUMBER: builtins.int
+    TAG_FILTER_FIELD_NUMBER: builtins.int
     parent: builtins.str
     page_size: builtins.int
     page_token: builtins.str
     filter: builtins.str
     only_active: builtins.bool
+    tag_filter: builtins.str
     def __init__(
         self,
         *,
@@ -235,9 +262,10 @@ class ListLeasesRequest(google.protobuf.message.Message):
         page_token: builtins.str = ...,
         filter: builtins.str = ...,
         only_active: builtins.bool | None = ...,
+        tag_filter: builtins.str = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_only_active", b"_only_active", "only_active", b"only_active"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_only_active", b"_only_active", "filter", b"filter", "only_active", b"only_active", "page_size", b"page_size", "page_token", b"page_token", "parent", b"parent"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_only_active", b"_only_active", "filter", b"filter", "only_active", b"only_active", "page_size", b"page_size", "page_token", b"page_token", "parent", b"parent", "tag_filter", b"tag_filter"]) -> None: ...
     def WhichOneof(self, oneof_group: typing.Literal["_only_active", b"_only_active"]) -> typing.Literal["only_active"] | None: ...
 
 Global___ListLeasesRequest: typing_extensions.TypeAlias = ListLeasesRequest

@@ -35,6 +35,10 @@ type LeaseSpec struct {
 	Selector metav1.LabelSelector `json:"selector"`
 	// Optionally pin this lease to a specific exporter name.
 	ExporterRef *corev1.LocalObjectReference `json:"exporterRef,omitempty"`
+	// User-defined tags for the lease. Immutable after creation.
+	// Maximum 10 entries. Keys and values must conform to Kubernetes label rules.
+	// +kubebuilder:validation:MaxProperties=10
+	Tags map[string]string `json:"tags,omitempty"`
 	// The release flag requests the controller to end the lease now
 	Release bool `json:"release,omitempty"`
 	// Requested start time. If omitted, lease starts when exporter is acquired.
@@ -70,8 +74,9 @@ const (
 type LeaseLabel string
 
 const (
-	LeaseLabelEnded      LeaseLabel = "jumpstarter.dev/lease-ended"
-	LeaseLabelEndedValue string     = "true"
+	LeaseLabelEnded        LeaseLabel = "jumpstarter.dev/lease-ended"
+	LeaseLabelEndedValue   string     = "true"
+	LeaseTagMetadataPrefix string     = "metadata.jumpstarter.dev/"
 )
 
 // +kubebuilder:object:root=true

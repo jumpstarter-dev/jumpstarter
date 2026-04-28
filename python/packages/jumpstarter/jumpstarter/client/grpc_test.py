@@ -1,11 +1,13 @@
 from datetime import datetime, timedelta
 from io import StringIO
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
 from rich.console import Console
 from rich.table import Table
 
 from jumpstarter.client.grpc import (
+    ClientService,
     Exporter,
     Lease,
     WithOptions,
@@ -407,7 +409,7 @@ class TestLeaseRichDisplay:
         table = Table()
         Lease.rich_add_columns(table)
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "SELECTOR", "EXPIRES AT", "REMAINING", "CLIENT", "EXPORTER"]
+        assert columns == ["NAME", "SELECTOR", "EXPIRES AT", "REMAINING", "CLIENT", "EXPORTER", "TAGS"]
 
     def test_rich_add_columns_excludes_begin_time_and_duration(self):
         table = Table()
@@ -507,3 +509,56 @@ class TestLeaseRichDisplay:
         output = console.file.getvalue()
         assert "test-lease" in output
         assert "test-client" in output
+
+    def test_rich_display_shows_tags(self):
+        lease = self.create_lease()
+        lease.tags = {"team": "devops", "ci-job": "12345"}
+        table = Table()
+        Lease.rich_add_columns(table)
+        lease.rich_add_rows(table)
+        console = Console(file=StringIO(), force_terminal=True)
+        console.print(table)
+        output = console.file.getvalue()
+        assert "team=devops" in output
+        assert "ci-job=12345" in output
+
+    def test_rich_display_empty_tags(self):
+        lease = self.create_lease()
+        table = Table()
+        Lease.rich_add_columns(table)
+        lease.rich_add_rows(table)
+        # Should not crash with empty tags
+        columns = [col.header for col in table.columns]
+        assert "TAGS" in columns
+
+
+@pytest.mark.asyncio
+async def test_create_lease_sets_tags_on_protobuf():
+    from jumpstarter_protocol import client_pb2
+
+    mock_channel = Mock()
+
+    response_lease = client_pb2.Lease(
+        selector="board=rpi4",
+        client="namespaces/default/clients/test-client",
+    )
+    response_lease.name = "namespaces/default/leases/test-lease"
+    response_lease.tags["team"] = "devops"
+    response_lease.tags["ci-job"] = "999"
+    response_lease.duration.FromTimedelta(timedelta(hours=1))
+
+    mock_stub = Mock()
+    mock_stub.CreateLease = AsyncMock(return_value=response_lease)
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+    svc.stub = mock_stub
+
+    result = await svc.CreateLease(
+        selector="board=rpi4",
+        duration=timedelta(hours=1),
+        tags={"team": "devops", "ci-job": "999"},
+    )
+
+    call_args = mock_stub.CreateLease.call_args[0][0]
+    assert dict(call_args.lease.tags) == {"team": "devops", "ci-job": "999"}
+    assert result.tags == {"team": "devops", "ci-job": "999"}

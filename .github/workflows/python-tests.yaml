@@ -131,7 +131,7 @@ jobs:
               echo "::error::No coverage.xml files found"
               exit 1
             fi
-            uv run diff-cover $coverage_files --compare-branch=origin/${{ github.base_ref }} --fail-under=80
+            uv run diff-cover $coverage_files --compare-branch=origin/${{ github.base_ref }} --fail-under=80 --exclude '*_pb2.py' '*_pb2_grpc.py'
 
   # https://github.com/orgs/community/discussions/26822
   pytest:
