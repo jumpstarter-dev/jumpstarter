@@ -433,6 +433,27 @@ are still useful for selection and for tools that only understand metadata.
   *optional product territory*; this JEP optimizes for low ceremony and
   direct integration.
 
+The proposed Jumpstarter Telemetry service (**DD-7**) is itself a
+non-trivial component (metric aggregation, Loki forwarding, multi-replica
+HA). The distinction is that it is *purpose-built* for Jumpstarter's
+narrow scope: a single Go binary with a single config surface, no
+separate version matrix, and no generic pipeline DSL to learn. An OTel
+Collector serves many use cases but requires operator familiarity with
+its configuration model, receivers, processors, and exporters — overhead
+that is not justified when the data paths are known in advance.
+Additionally, the Telemetry service operates inside Jumpstarter's
+existing authentication and trust domain (mTLS, registered client and
+exporter identities). It can validate that an incoming increment
+actually originates from the claimed exporter or client — preventing
+impersonation or label injection — without requiring a separate
+auth layer. A generic OTel Collector has no awareness of Jumpstarter
+identities and would need external policy to achieve the same guarantee.
+
+**Future extension:** the Telemetry service's ingest endpoint could
+accept OTLP in a future iteration, enabling operators who run OTel
+Collectors on exporter hosts (e.g. for host-level stats) to route data
+through the same trust boundary without a second credential set. This
+is additive and does not require adopting OTel as a project dependency.
 
 ### DD-7: Optional Jumpstarter Telemetry service (dedicated Deployment vs. Controller/Router only)
 
