@@ -853,10 +853,11 @@ When this mode is enabled in a deployment:
   alerting. Because the Controller and Router no longer push to Loki,
   their lease/session operations are inherently isolated from Loki or
   metrics path slowdowns.
-- **Multi-tenancy:** if Loki is multi-tenant, the Telemetry writer (and the
-  cluster log shipper for Controller/Router pod logs) applies org or
-  namespace scoping consistently; label sets are reviewed to avoid
-  cross-tenant leakage.
+- **Multi-tenancy:** write-side tenant scoping (e.g. namespace-based
+  separation in Loki and Prometheus) is a deployment concern handled by
+  the log shipper and Prometheus configuration. Read-side access control
+  (who can query which metrics or logs) is likewise a deployment concern
+  and out of scope for this JEP.
 - This does not require that *all* metrics *originate* in a single
   process: the exporter and drivers still emit the facts;
   Telemetry aggregates and ships to Loki; Controller and
