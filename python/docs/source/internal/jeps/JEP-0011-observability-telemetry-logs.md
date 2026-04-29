@@ -90,6 +90,13 @@ exporter-level metrics that a monitoring stack can scrape or receive.
   enriched by individual drivers via the `driver_type` label. Each driver
   selects a category from a predefined set in jumpstarter core (e.g.
   `storage`, `power`, `network`, `serial`, `console`, `video`).
+  Composite drivers (e.g. Renode, QEMU) that bundle multiple sub-drivers
+  do not emit a single top-level category for delegated work. Instead,
+  each sub-driver emits its own `driver_type` when it performs an
+  operation — a Renode storage sub-driver emits `driver_type="storage"`,
+  its power sub-driver emits `driver_type="power"`, and so on. Any
+  top-level methods on the composite driver itself (e.g. VM lifecycle)
+  emit `driver_type="composite"`.
 - **Jumpstarter Telemetry** (optional) — a dedicated
   component with a well-known ingest path and the same trust
   model (mTLS, ServiceAccount) as Controller/Router;
