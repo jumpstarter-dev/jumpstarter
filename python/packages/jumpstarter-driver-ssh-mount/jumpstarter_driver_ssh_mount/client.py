@@ -258,8 +258,6 @@ class SSHMountClient(CompositeClient):
         if identity_file:
             ssh_opts.append(f"IdentityFile={identity_file}")
 
-        ssh_opts.append("allow_other")
-
         for opt in ssh_opts:
             sshfs_args.extend(["-o", opt])
 

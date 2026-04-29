@@ -125,7 +125,7 @@ def test_mount_sshfs_with_identity():
 
 
 def test_mount_sshfs_allow_other_fallback():
-    """Test sshfs mount falls back when allow_other fails, removing both -o and allow_other"""
+    """Test sshfs mount falls back when allow_other (passed via extra_args) fails"""
     instance = SSHMount(
         children={"ssh": _make_ssh_child()},
     )
@@ -152,7 +152,11 @@ def test_mount_sshfs_allow_other_fallback():
                             mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
 
                             with pytest.raises(Exception, match="sshfs mount failed"):
-                                client.mount("/tmp/test-mount")
+                                client.mount("/tmp/test-mount", extra_args=["allow_other"])
+
+                            # First test run should have allow_other (from extra_args)
+                            first_call_args = mock_run.call_args_list[0][0][0]
+                            assert "allow_other" in first_call_args
 
                             # Second test run should not have allow_other
                             second_call_args = mock_run.call_args_list[1][0][0]
