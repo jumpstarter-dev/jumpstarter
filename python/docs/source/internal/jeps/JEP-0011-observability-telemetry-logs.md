@@ -1021,7 +1021,8 @@ can tune metrics, logging, and exemplar behavior without editing code.
 | `spec.telemetry.loki.secretRef`           | `string`   | —                                                | Secret with Loki credentials (see **DD-5**).                                                   |
 | `spec.telemetry.loki.tls.caSecretRef`     | `string`   | —                                                | Secret containing a CA bundle (`ca.crt` key) to trust for the Loki endpoint.                   |
 | `spec.telemetry.loki.tls.insecureSkipVerify` | `bool`  | `false`                                          | Disable TLS certificate verification (development/testing only).                               |
-| `spec.telemetry.metrics.exemplarKeys`     | `[]string` | `["client", "lease_id"]`                         | Allowlist of keys to include in exemplars (including `spec.context` keys). Only listed keys are emitted; unlisted keys are omitted even if present. |
+| `spec.telemetry.exporterLabels`           | `[]string` | `[]`                                             | Exporter-level label keys (e.g. `board-type`) copied from Exporter CRD labels into log JSON fields and exemplar candidates. |
+| `spec.telemetry.metrics.exemplarKeys`     | `[]string` | `["client", "lease_id"]`                         | Allowlist of keys to include in exemplars (including `spec.context` and `exporterLabels` keys). Only listed keys are emitted; unlisted keys are omitted even if present. |
 | `spec.telemetry.metrics.driverTypeEnum`   | `[]string` | `["power", "storage", "network", "serial", …]`  | Allowed `driver_type` label values. Drivers reporting an unlisted type are mapped to `other`.   |
 | `spec.telemetry.metrics.serviceMonitor`   | `bool`     | `true`                                           | Create `ServiceMonitor` CRDs for Prometheus autodiscovery.                                     |
 | `spec.telemetry.metrics.prometheusRules`  | `bool`     | `false`                                          | Deploy starter `PrometheusRule` CRDs (opt-in).                                                 |
@@ -1037,6 +1038,8 @@ metadata:
 spec:
   telemetry:
     enabled: true
+    exporterLabels:
+      - board-type
     loki:
       url: "https://loki-gateway.monitoring.svc:3100/loki/api/v1/push"
       secretRef: "loki-credentials"
@@ -1047,6 +1050,7 @@ spec:
         - client
         - lease_id
         - build_id
+        - board-type
       driverTypeEnum:
         - power
         - storage
@@ -1066,13 +1070,23 @@ category from this set (or fall back to `other`). This keeps the
 surprises from third-party drivers. Administrators can extend the list
 for site-specific driver categories.
 
+The `exporterLabels` list names Exporter CRD label keys whose values
+are copied into every log JSON field and made available as exemplar
+candidates for operations involving that exporter. For example, setting
+`exporterLabels: ["board-type"]` means an Exporter with the label
+`board-type: rpi4` will include `"board-type": "rpi4"` in its
+structured log lines and in the exemplar candidate pool. The list is
+empty by default — no exporter labels are propagated unless the
+administrator opts in.
+
 The `exemplarKeys` list is an **allowlist** that controls which keys are
-included in Prometheus exemplars. This filters *everything* — both
-built-in keys (`client`, `lease_id`) and `spec.context` keys. Only keys
-present in `exemplarKeys` are emitted; unlisted keys are omitted even if
-available. This gives administrators full control over exemplar budget
-usage: adding a `spec.context` key like `build_id` to the list opts it
-in, while removing `lease_id` frees budget for other entries.
+included in Prometheus exemplars. This filters *everything* — built-in
+keys (`client`, `lease_id`), `spec.context` keys, and `exporterLabels`
+keys alike. Only keys present in `exemplarKeys` are emitted; unlisted
+keys are omitted even if available. This gives administrators full
+control over exemplar budget usage: adding `board-type` to both
+`exporterLabels` and `exemplarKeys` propagates hardware type into
+exemplars, while removing `lease_id` frees budget for other entries.
 
 **Loki transport:** During implementation, evaluate whether the Telemetry
 service should connect to Loki via the HTTP push API
