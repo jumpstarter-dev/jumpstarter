@@ -4,8 +4,8 @@
 | ----------------- | --------------------------------------------------------------------- |
 | **JEP**           | 0011                                                                  |
 | **Title**         | Metrics, Tracing, and Log Observability                               |
-| **Author(s)**     | @mangelajo (Miguel Angel Ajo Pelayo)                                  |
-| **Status**        | Discussion                                                                 |
+| **Author(s)**     | @mangelajo (Miguel Angel Ajo Pelayo <miguelangel@ajo.es>              |
+| **Status**        | Discussion                                                            |
 | **Type**          | Standards Track                                                       |
 | **Created**       | 2026-04-23                                                            |
 | **Updated**       | 2026-04-29                                                            |
@@ -1328,7 +1328,8 @@ all subsequent phases have E2E coverage from the start.
 
 ## Implementation History
 
--
+— JEP-0011 proposed: 2026-04-23
+- JEP-0011 updated based on feedback: 2026-04-29
 
 ## References
 
