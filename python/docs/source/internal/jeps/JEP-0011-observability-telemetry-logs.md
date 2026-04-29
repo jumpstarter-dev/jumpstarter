@@ -830,11 +830,21 @@ When this mode is enabled in a deployment:
   log shipper (Promtail, Grafana Alloy, Vector, or equivalent) scrapes
   their pod logs and delivers them to Loki. This decouples the reconciler
   and session-handling hot paths from Loki availability.
-- **Backpressure** applies to the Telemetry service: its Loki-push and
-  counter queues must be bounded; on overflow, drop (with a counter) or
-  sample. Because the Controller and Router no longer push to Loki, their
-  lease/session operations are inherently isolated from Loki or metrics
-  path slowdowns.
+- **Backpressure:** The Telemetry service uses a bounded ring buffer
+  per destination (Loki push, metric ingest) with a configurable depth
+  (default: 10 000 entries). On overflow, dropped entries are replaced
+  by a single **drop marker** — a synthetic log entry recording the
+  count of dropped entries and the time window. Subsequent drops while
+  the buffer is still full accumulate into the same marker rather than
+  adding new entries, so the queue always retains one slot for the
+  current drop summary. When the buffer drains and the marker is
+  flushed, the downstream log contains an explicit record such as
+  `{"level":"warn","msg":"entries dropped","count":142,"window_seconds":12}`.
+  A `jumpstarter_telemetry_dropped_total` counter (partitioned by
+  `destination={loki,metrics}`) is also incremented on `/metrics` for
+  alerting. Because the Controller and Router no longer push to Loki,
+  their lease/session operations are inherently isolated from Loki or
+  metrics path slowdowns.
 - **Multi-tenancy:** if Loki is multi-tenant, the Telemetry writer (and the
   cluster log shipper for Controller/Router pod logs) applies org or
   namespace scoping consistently; label sets are reviewed to avoid
