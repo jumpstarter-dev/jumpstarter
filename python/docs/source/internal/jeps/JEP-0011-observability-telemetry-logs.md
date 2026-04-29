@@ -233,8 +233,8 @@ are still useful for selection and for tools that only understand metadata.
   `ServiceMonitor`; it avoids app-side remote-write credentials and
   complexity in Jumpstarter. The OpenMetrics exposition format used by
   the scrape path natively carries exemplars, enabling high-cardinality
-  context (`client`, `lease_id`, `trace_id`) on individual samples without
-  additional infrastructure. See **DD-6** (no OTel), **DD-7** (Telemetry
+  context (`client`, `lease_id`, and `trace_id` when present) on individual
+  samples without additional infrastructure. See **DD-6** (no OTel), **DD-7** (Telemetry
   Deployment), **DD-8** (HA replicas).
 
 **Exemplar trade-offs and details:**
@@ -243,7 +243,7 @@ are still useful for selection and for tools that only understand metadata.
   appended after the sample value:
 
   ```text
-  jumpstarter_operations_total{exporter="lab-01",operation="flash",result="success"} 42 # {client="ci-bot",lease_id="abc123",trace_id="def456"} 1.0 1625000000.000
+  jumpstarter_operations_total{exporter="lab-01",operation="flash",result="success"} 42 # {client="ci-bot",lease_id="abc123",build_id="nightly-42"} 1.0 1625000000.000
   ```
 
   The `# {key=value,...} value timestamp` suffix is the exemplar. Grafana
@@ -499,13 +499,13 @@ is additive and does not require adopting OTel as a project dependency.
   (readiness, gated on Loki and Prometheus reachability) endpoints for
   Kubernetes probes.
 
-**Memory budget:** Each in-memory Prometheus series costs roughly
+**Memory budget:** Each in-memory Prometheus series is expected to cost around
   200–300 bytes (labels + counter/histogram state). The bounded label
   set `{exporter, operation, result, driver_type}` caps total series:
   with 200 exporters × 6 operations × 2 results × 6 driver types =
   14 400 series, costing ~3–4 MB. Adding `error_type` and `direction`
   on their respective metrics adds a small multiple. Series that receive
-  no updates for a configurable TTL (default: 10 min) are eligible for
+  no updates for a configurable TTL (i.e. a default: 10 min) are eligible for
   eviction to prevent stale-exporter accumulation after scale-down.
 
 ### DD-8: Multiple Telemetry replicas (HA) and addable counters
@@ -651,21 +651,43 @@ Rules of thumb for this JEP:
 Prometheus exemplars attach arbitrary key-value pairs to individual counter
 increments and histogram observations without creating new time series. This
 is the primary mechanism this JEP uses to surface per-request context
-(`client`, `lease_id`, `trace_id`) on metrics while keeping series cardinality
+(`client`, `lease_id`, and `trace_id` when present) on metrics while keeping series cardinality
 flat.
 
 Default exemplar keys emitted on every counter/histogram observation:
 
-| Key | Source | Purpose |
-| --- | ------ | ------- |
-| `client` | Client CRD name | "Which client caused this spike?" |
-| `lease_id` | Lease UID | Correlate a metric sample with lease logs. |
-| `trace_id` | W3C `traceparent` | Click-through from metric to trace. |
+| Key        | Source                | Purpose                                         |
+| ---------- | --------------------- | ----------------------------------------------- |
+| `client`   | Client CRD name       | "Which client caused this spike?"               |
+| `lease_id` | Lease UID             | Correlate a metric sample with lease logs.      |
+| `trace_id` | W3C `traceparent`     | Included **only when present** in gRPC metadata.|
+
+`trace_id` is not synthesized by Jumpstarter — it is included only when
+an external caller (CI pipeline, user code) propagates a `traceparent`.
+Full distributed tracing (spans, storage, visualization) is deferred to
+a future JEP; when it lands, `trace_id` becomes a default key. Until
+then, omitting it saves ~45 characters of exemplar budget.
 
 All `spec.context` keys (e.g. `build_id`, `image_digest`) are automatically
 included as exemplar keys. Because exemplars are per-observation metadata —
 not label dimensions — they have zero impact on series cardinality regardless
 of how many distinct values appear.
+
+**Exemplar size budget:** The OpenMetrics 1.0 limit is 128 UTF-8
+characters for the combined key-value pairs in a single exemplar.
+The two default keys (`client`, `lease_id`) consume roughly 30–50
+characters, leaving ~80–100 characters for `spec.context` entries
+(or more when `trace_id` is absent). To stay within budget:
+
+1. Default keys (`client`, `lease_id`) are always included first.
+   `trace_id` is added when present in the request context.
+2. `spec.context` keys are added in alphabetical order until the 128-char
+   limit is reached; remaining keys are silently dropped from the
+   exemplar (they remain available in structured log lines).
+3. The `Lease` CRD validates `spec.context` at admission time: key names
+   are limited to 32 characters, values to 64 characters, and the total
+   number of entries to 8. This prevents accidental budget exhaustion and
+   ensures exemplar truncation is rare in practice.
 
 **Dashboard visualization**: when exemplars are enabled on a Prometheus data
 source, metric panels render clickable dots on each sample that carries
@@ -693,7 +715,7 @@ and be fixed before "Implemented".*
 | `jumpstarter_lease_acquisitions_total`        | counter   | `result`                                     | Lease acquire attempts (controller).      |
 
 All counters and histograms carry exemplar keys (`client`, `lease_id`,
-`trace_id`, and `spec.context` fields) on every observation.
+`trace_id` when present, and `spec.context` fields) on every observation.
 
 ### Example queries
 
