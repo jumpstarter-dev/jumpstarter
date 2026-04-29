@@ -724,6 +724,24 @@ and be fixed before "Implemented".*
 All counters and histograms carry exemplar keys (`client`, `lease_id`,
 `trace_id` when present, and `spec.context` fields) on every observation.
 
+### Metric usage and alerting
+
+| Metric                                       | Primary use | Alert? | Starter threshold                              |
+| -------------------------------------------- | ----------- | :----: | ---------------------------------------------- |
+| `jumpstarter_operations_total`               | Dashboard   |  yes   | Failure rate > 20 % over 15 min per exporter.  |
+| `jumpstarter_operation_duration_seconds`      | Dashboard   |  yes   | p95 > 60 s per operation type.                 |
+| `jumpstarter_operation_errors_total`          | Dashboard   |  yes   | Error rate rising; group by `error_type`.       |
+| `jumpstarter_stream_bytes_total`             | Dashboard   |   no   | —                                              |
+| `jumpstarter_active_sessions`                | Dashboard   |  yes   | 0 sessions for > 30 min (possible exporter issue). |
+| `jumpstarter_lease_acquisitions_total`        | Dashboard   |  yes   | Failure rate > 10 % over 15 min.               |
+| `jumpstarter_telemetry_dropped_total`        | Alerting    |  yes   | Any increment (telemetry pipeline saturated).   |
+
+Thresholds are suggestions; operators should tune them to their
+environment. The operator should ship a set of example `PrometheusRule`
+CRDs based on the table above that operators can enable and customize.
+These rules are opt-in and disabled by default to avoid noise in
+environments with different baselines.
+
 **High-frequency byte counters:** `jumpstarter_stream_bytes_total` can
 be incremented at very high rates on serial and video streams. Exporters
 must pre-aggregate byte counts locally and flush a single `+N` increment
