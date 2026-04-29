@@ -724,6 +724,14 @@ and be fixed before "Implemented".*
 All counters and histograms carry exemplar keys (`client`, `lease_id`,
 `trace_id` when present, and `spec.context` fields) on every observation.
 
+**High-frequency byte counters:** `jumpstarter_stream_bytes_total` can
+be incremented at very high rates on serial and video streams. Exporters
+must pre-aggregate byte counts locally and flush a single `+N` increment
+to the Telemetry service at a configurable interval (default: every 5 s
+or every 64 KiB, whichever comes first) rather than sending a per-read
+or per-write RPC. This bounds telemetry RPC volume independently of
+stream throughput.
+
 ### Example queries
 
 #### PromQL (Prometheus)
