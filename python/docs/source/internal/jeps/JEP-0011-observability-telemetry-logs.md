@@ -415,18 +415,32 @@ are still useful for selection and for tools that only understand metadata.
 3. **Both** — **(1)** is required for the documented path; **(2)** is
    optional infrastructure behind Prometheus, not a second
    required app protocol.
+4. **Reverse scrape via gRPC** — exporters maintain a local
+   `prometheus_client.CollectorRegistry` and connect to the Telemetry
+   service via a persistent bidirectional gRPC stream (`MetricsStream`).
+   When Prometheus scrapes the Telemetry service's `/metrics` endpoint,
+   Telemetry fans out scrape requests to all connected exporters, merges
+   the `generate_latest()` responses, and serves the combined result.
+   Controller and Router still expose `/metrics` directly for Prometheus
+   scrape (no change). This avoids push-increment complexity on the wire
+   and keeps full counter state on the exporter at all times.
 
-**Decision:** **(1)** for how cluster Prometheus ingests Jumpstarter
-  aggregated metrics (scrape the Telemetry, Controller,
-  and Router services).
+**Decision:** **(4)** — exporter-originated metrics are reverse-scraped
+  through the Telemetry service via `MetricsStream`.
 
-**Rationale:** Scrape is standard, debuggable, and scalable; it matches
-  `ServiceMonitor`; it avoids app-side remote-write credentials and
-  complexity in Jumpstarter. The OpenMetrics exposition format used by
-  the scrape path natively carries exemplars, enabling high-cardinality
-  context (`client`, `lease_id`, and `trace_id` when present) on individual
-  samples without additional infrastructure. See **DD-6** (no OTel), **DD-7** (Telemetry
-  Deployment), **DD-8** (HA replicas).
+**Rationale:** Exporters are often behind NAT or firewalls and cannot
+  be directly scraped by Prometheus. The reverse-scrape model **(4)**
+  solves this: the exporter initiates an outbound gRPC stream
+  (NAT-friendly, same direction as the existing controller connection),
+  the Telemetry service requests metric snapshots on demand, and full
+  counter state remains on the exporter at all times — eliminating
+  lost-increment concerns (see **DD-9**). The exporter uses standard
+  `prometheus_client` primitives locally, so driver authors instrument
+  with familiar counters and histograms. The OpenMetrics exposition
+  format natively carries exemplars, enabling high-cardinality context
+  (`client`, `lease_id`, and `trace_id` when present) on individual
+  samples without additional infrastructure. See **DD-6** (no OTel),
+  **DD-7** (Telemetry Deployment), **DD-8** (HA replicas).
 
 **Exemplar trade-offs and details:**
 
@@ -457,9 +471,14 @@ are still useful for selection and for tools that only understand metadata.
   operators need when investigating a spike.
 
 - **Library support.** Go client support is mature
-  (`prometheus/client_golang` ≥ 1.16). The Python ecosystem is less
-  complete but not required for this JEP since metrics are exposed from
-  Go services.
+  (`prometheus/client_golang` ≥ 1.16). The Python `prometheus_client`
+  library is used on the exporter side to maintain local registries
+  and produce `generate_latest()` output for the reverse-scrape path
+  (see *API / Protocol Changes*). Exemplar support in the Python
+  library is functional but less complete than Go; if limitations
+  arise, exemplar data can be sent as a sidecar field in
+  `MetricsScrapeResponse` for the Telemetry service to merge
+  server-side.
 
 - **Infrastructure requirements.** Prometheus ≥ 2.26 with
   `--enable-feature=exemplar-storage` and
