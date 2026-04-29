@@ -639,12 +639,13 @@ endpoints; this DD only governs the *recommended* dashboard experience.
 | `namespace`                      | no         | —             | yes         | yes      | K8s namespace; bounded.                             |
 | `lease_id`                       | **no**     | yes           | **no**      | yes      | Unbounded; exemplar for drill-down.                 |
 | `client`                         | **no**     | yes           | **no**      | yes      | CRD name; exemplar for client identity.             |
-| `image_digest`, `build_id`, etc. | **no**     | yes           | **no**      | yes      | From `spec.context`; always included.               |
+| `image_digest`, `build_id`, etc. | **no**     | yes           | **no**      | yes      | From `spec.context`; included when listed in `exemplarKeys`. |
 | `trace_id` / `span_id`           | **no**     | yes           | **no**      | yes      | W3C; links metrics to traces via exemplars.         |
 
 Additional `lease.spec.context` correlation fields can be added at runtime;
-they appear as structured log line fields and as Prometheus exemplar keys
-(see *Exemplars for high-cardinality context* below).
+they appear as structured log line fields and, when listed in the operator's
+`exemplarKeys` allowlist, as Prometheus exemplar keys (see *Exemplars for
+high-cardinality context* below and *Operator configuration*).
 
 ### Cardinality guidelines
 
@@ -1004,6 +1005,92 @@ on the OTel SDK in application code.
   target; the implementation
   plan should name tested combinations (Prometheus and Loki version
   pairs where relevant) in `Implementation History`, not a single product bundle.
+
+### Operator configuration
+
+The Jumpstarter operator CR controls telemetry behavior cluster-wide.
+Observability settings live under `spec.telemetry` so that administrators
+can tune metrics, logging, and exemplar behavior without editing code.
+
+**Key configurable fields:**
+
+| Field                                     | Type       | Default                                          | Description                                                                                    |
+| ----------------------------------------- | ---------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| `spec.telemetry.enabled`                  | `bool`     | `false`                                          | Deploy the optional Telemetry service.                                                         |
+| `spec.telemetry.loki.url`                 | `string`   | —                                                | Loki push endpoint; required when Telemetry is enabled.                                        |
+| `spec.telemetry.loki.secretRef`           | `string`   | —                                                | Secret with Loki credentials (see **DD-5**).                                                   |
+| `spec.telemetry.loki.tls.caSecretRef`     | `string`   | —                                                | Secret containing a CA bundle (`ca.crt` key) to trust for the Loki endpoint.                   |
+| `spec.telemetry.loki.tls.insecureSkipVerify` | `bool`  | `false`                                          | Disable TLS certificate verification (development/testing only).                               |
+| `spec.telemetry.metrics.exemplarKeys`     | `[]string` | `["client", "lease_id"]`                         | Allowlist of keys to include in exemplars (including `spec.context` keys). Only listed keys are emitted; unlisted keys are omitted even if present. |
+| `spec.telemetry.metrics.driverTypeEnum`   | `[]string` | `["power", "storage", "network", "serial", …]`  | Allowed `driver_type` label values. Drivers reporting an unlisted type are mapped to `other`.   |
+| `spec.telemetry.metrics.serviceMonitor`   | `bool`     | `true`                                           | Create `ServiceMonitor` CRDs for Prometheus autodiscovery.                                     |
+| `spec.telemetry.metrics.prometheusRules`  | `bool`     | `false`                                          | Deploy starter `PrometheusRule` CRDs (opt-in).                                                 |
+| `spec.telemetry.backpressure.queueDepth`  | `int`      | `10000`                                          | Ring buffer depth per destination (see backpressure design above).                             |
+
+**Example CR snippet:**
+
+```yaml
+apiVersion: operator.jumpstarter.dev/v1alpha1
+kind: Jumpstarter
+metadata:
+  name: jumpstarter
+spec:
+  telemetry:
+    enabled: true
+    loki:
+      url: "https://loki-gateway.monitoring.svc:3100/loki/api/v1/push"
+      secretRef: "loki-credentials"
+      tls:
+        caSecretRef: "loki-ca-bundle"
+    metrics:
+      exemplarKeys:
+        - client
+        - lease_id
+        - build_id
+      driverTypeEnum:
+        - power
+        - storage
+        - network
+        - serial
+        - video
+        - composite
+      serviceMonitor: true
+      prometheusRules: true
+    backpressure:
+      queueDepth: 20000
+```
+
+The `driverTypeEnum` list acts as an allowlist: drivers must select a
+category from this set (or fall back to `other`). This keeps the
+`driver_type` Prometheus label bounded and prevents cardinality
+surprises from third-party drivers. Administrators can extend the list
+for site-specific driver categories.
+
+The `exemplarKeys` list is an **allowlist** that controls which keys are
+included in Prometheus exemplars. This filters *everything* — both
+built-in keys (`client`, `lease_id`) and `spec.context` keys. Only keys
+present in `exemplarKeys` are emitted; unlisted keys are omitted even if
+available. This gives administrators full control over exemplar budget
+usage: adding a `spec.context` key like `build_id` to the list opts it
+in, while removing `lease_id` frees budget for other entries.
+
+**Loki transport:** During implementation, evaluate whether the Telemetry
+service should connect to Loki via the HTTP push API
+(`/loki/api/v1/push`) or the gRPC endpoint. gRPC may offer better
+throughput and streaming semantics (aligned with Jumpstarter's existing
+gRPC infrastructure), while the HTTP API is simpler to debug and more
+broadly supported by Loki-compatible backends. The `spec.telemetry.loki.url`
+field should accept either scheme (`http://` / `grpc://`) so the choice
+remains a deployment decision.
+
+**Loki TLS:** Many deployments terminate Loki behind a TLS endpoint
+with an internal or self-signed CA. The `spec.telemetry.loki.tls`
+subsection follows the same pattern as the existing operator TLS
+configuration: `caSecretRef` names a Kubernetes Secret whose `ca.crt`
+key contains the PEM-encoded CA bundle to trust. When set, the
+Telemetry service adds this CA to its TLS root pool when connecting to
+Loki. `insecureSkipVerify` disables certificate verification entirely
+and should only be used in development or testing environments.
 
 ## Test Plan
 
