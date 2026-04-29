@@ -126,20 +126,204 @@ exporter-level metrics that a monitoring stack can scrape or receive.
 
 ### API / Protocol Changes
 
-*High level — to be refined during review.*
+#### CRD (Lease)
 
-- **CRD (Lease)**: Additive changes only for the `spec.context` field. Backwards
-  compatibility by making this field empty by default.
-- **gRPC (if applicable)**: Additional controller methods to discover the availability
-  of a metrics, or set of metrics endpoint(s). Optional propagation of `traceparent` and lease
-  identifiers in metadata; must remain backward compatible for existing clients
-  (unknown metadata ignored by older servers).
+Additive changes only for the `spec.context` field. Backwards compatibility
+by making this field empty by default.
 
-**Tracing scope:** This JEP covers *correlation only* — `lease_id`, `trace_id`,
+#### gRPC: Telemetry endpoint discovery (`jumpstarter.proto`)
+
+A new RPC on the existing `ControllerService` lets both exporters and
+clients discover the optional Telemetry endpoint:
+
+```protobuf
+// Added to ControllerService
+rpc GetServiceEndpoints(GetServiceEndpointsRequest)
+    returns (GetServiceEndpointsResponse);
+
+message GetServiceEndpointsRequest {}
+
+message GetServiceEndpointsResponse {
+  // Empty when telemetry is not enabled.
+  repeated TelemetryEndpoint telemetry_endpoints = 1;
+}
+
+message TelemetryEndpoint {
+  string endpoint = 1;           // gRPC address (host:port)
+  string certificate = 2;        // Optional CA cert for the endpoint
+}
+```
+
+Exporters call `GetServiceEndpoints` after `Register`; clients call it
+after authentication. An empty `telemetry_endpoints` list means telemetry
+is not deployed — callers skip all telemetry RPCs. Older controllers
+that do not implement the method return `UNIMPLEMENTED`, which callers
+treat identically to an empty list.
+
+#### gRPC: Telemetry service (`telemetry.proto` — new file)
+
+A new `protocol/proto/jumpstarter/v1/telemetry.proto` defines the
+`TelemetryService` implemented by `jumpstarter-telemetry`. It has two
+RPCs: one for metrics (reverse scrape) and one for log push.
+
+##### Metrics: reverse scrape via `MetricsStream`
+
+Exporters maintain a local `prometheus_client.CollectorRegistry` with
+counters, histograms, and gauges. Rather than pushing increments, the
+exporter opens a persistent bidirectional stream to the Telemetry
+service; the Telemetry service periodically sends a scrape request
+and the exporter responds with the output of
+`prometheus_client.generate_latest()` in OpenMetrics text format.
+
+```protobuf
+service TelemetryService {
+  // Persistent bidirectional stream: telemetry sends scrape requests,
+  // exporter responds with full metric snapshots.
+  rpc MetricsStream(stream MetricsStreamRequest)
+      returns (stream MetricsStreamResponse);
+
+  // Structured log / event push (used by both exporters and clients).
+  rpc PushLogs(PushLogsRequest) returns (PushLogsResponse);
+}
+
+// Exporter → Telemetry
+message MetricsStreamRequest {
+  oneof msg {
+    MetricsRegister register = 1;          // First message: identify this exporter
+    MetricsScrapeResponse scrape_response = 2; // Subsequent: reply to a scrape
+  }
+}
+
+message MetricsRegister {
+  string identity = 1;              // Exporter CRD name (verified against mTLS and auth token by server)
+}
+
+message MetricsScrapeResponse {
+  bytes metrics_text = 1;           // generate_latest() OpenMetrics output
+  google.protobuf.Timestamp timestamp = 2;
+}
+
+// Telemetry → Exporter
+message MetricsStreamResponse {
+  oneof msg {
+    MetricsScrapeRequest scrape_request = 1;
+  }
+}
+
+message MetricsScrapeRequest {}       // "send your /metrics now"
+```
+
+The stream lifecycle:
+
+1. Exporter opens the stream and sends `MetricsRegister`, the jumpstarter-telemetry
+   service authenticates the exporter identity and labels from cluster information.
+2. When Prometheus (or any scraper) hits the Telemetry service's
+   `/metrics` endpoint, Telemetry fans out `MetricsScrapeRequest`
+   to all connected exporters.
+3. Each exporter calls `generate_latest(registry)` and replies with
+   `MetricsScrapeResponse`.
+4. Telemetry merges the responses and serves the combined result,
+   adds and filters any necessary labels or exemplars from data.
+   This on-demand approach avoids stale data and unnecessary
+   background traffic; it can be changed to periodic pre-fetching
+   later if scrape latency became problematic.
+
+**Client-side metrics are not collected.** All metrically-interesting
+operations are observable from the exporter side: `DriverCall` methods
+run on the exporter and can be instrumented there. Client-side drivers
+that orchestrate complex workflows (e.g. serial-console-driven
+flashing) report outcomes back to the exporter via regular
+`DriverCall` methods, keeping the exporter as the single source of
+truth for metrics.
+
+##### Logs: push via `PushLogs`
+
+Both exporters and clients push structured log entries to the
+Telemetry service for Loki ingest:
+
+```protobuf
+message PushLogsRequest {
+  repeated LogEntry entries = 1;
+}
+
+message PushLogsResponse {
+  uint32 accepted = 1;  // Entries accepted
+  uint32 dropped = 2;   // Entries dropped (backpressure)
+}
+
+message LogEntry {
+  google.protobuf.Timestamp timestamp = 1;
+  string severity = 2;        // debug, info, warn, error
+  string message = 3;
+  string component = 4;       // Log stream label: cli, exporter
+  string exporter = 5;        // Log stream label: exporter CRD name
+  string lease_id = 6;        // High-cardinality, log body only
+  string client = 7;          // High-cardinality, log body only
+  string operation = 8;       // flash, power, etc.
+  string result = 9;          // success, failure
+  string driver_type = 10;    // storage, power, network, etc.
+  map<string, string> extra_fields = 11;   // Driver-specific structured data
+}
+```
+
+The Telemetry service maps `component` and `exporter` to Loki stream
+labels and everything else into the JSON body, following the
+cardinality rules in *Cardinality guidelines*. The `exporter` and
+`client` fields are verified server-side with the authenticated
+identity to prevent impersonation. Empty fields or details 
+that can be obtained from lease_id are incorporated into the log.
+
+#### gRPC: `AuditStream` removal (`jumpstarter.proto`)
+
+The existing `AuditStream` RPC on `ControllerService` and its
+`AuditStreamRequest` message are removed. Analysis of the codebase
+shows this is dead code:
+
+- The Go controller has no implementation — calls fall through to
+  `UnimplementedControllerServiceServer` which returns
+  `codes.Unimplemented`.
+- No Python code (exporter or client) calls the RPC.
+- No tests exercise it beyond generated stubs.
+
+Its intended purpose (tracking exporter activity) is fully superseded
+by `TelemetryService.PushLogs` with a richer, properly-designed
+message format.
+
+#### gRPC: `LogStreamResponse` enrichment (`jumpstarter.proto`)
+
+The existing `LogStream` RPC on `ExporterService` is kept — it serves
+a fundamentally different purpose (real-time session logs from
+exporter to connected client) from the Telemetry log push. However,
+the `LogStreamResponse` message is enriched with optional additive
+fields to support richer client-side display and optional dual-path
+forwarding to telemetry:
+
+```protobuf
+message LogStreamResponse {
+  string uuid = 1;
+  string severity = 2;
+  string message = 3;
+  optional LogSource source = 4;
+  // New additive fields:
+  optional string driver_type = 5;     // Category when source=DRIVER
+  optional string operation = 6;       // When the log is part of a known operation
+  optional google.protobuf.Timestamp timestamp = 7;
+  map<string, string> structured_fields = 8;
+}
+```
+
+These fields are optional and backward compatible — older clients
+ignore unknown fields; older exporters simply do not set them.
+
+#### Tracing scope
+
+This JEP covers *correlation only* — `lease_id`, `trace_id`,
 and `span_id` are propagated as log fields and Prometheus exemplar keys so that
 metrics, logs, and (future) traces can be joined. Full distributed tracing
 (span creation, sampling policies, trace storage and visualization) is deferred
-to a future JEP.
+to a future JEP. Optional propagation of `traceparent` and lease
+identifiers in gRPC metadata remains backward compatible (unknown
+metadata ignored by older servers).
 
 ### Hardware Considerations
 
