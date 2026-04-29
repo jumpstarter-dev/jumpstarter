@@ -74,8 +74,9 @@ class SSHMountClient(CompositeClient):
                 "sshfs is not installed. Please install it:\n"
                 "  Fedora/RHEL: sudo dnf install fuse-sshfs\n"
                 "  Debian/Ubuntu: sudo apt-get install sshfs\n"
-                "  macOS: Install macFUSE from https://macfuse.github.io/ and then install\n"
-                "         sshfs from source, as Homebrew has removed sshfs support."
+                "  macOS: Install macFUSE and SSHFS from https://macfuse.github.io/\n"
+                "         Note: macOS kernel extensions require special handling;\n"
+                "         read the install documentation carefully."
             )
 
         mountpoint = os.path.realpath(mountpoint)
@@ -216,21 +217,38 @@ class SSHMountClient(CompositeClient):
         return filtered
 
     def _run_subshell(self, mountpoint, remote_path):
-        """Spawn an interactive subshell with a modified prompt."""
+        """Spawn an interactive subshell with a modified prompt.
+
+        Inserts a ``(mount)`` indicator into the existing shell prompt so
+        that the user can tell they are inside a mount subshell.  When
+        running inside a ``jmp shell`` session the prompt already contains
+        the ``⚡exporter ➤`` pattern; we insert ``(mount)`` just before
+        the arrow so the result looks like ``⚡exporter (mount)➤``.
+        """
         shell = os.environ.get("SHELL", "/bin/sh")
         env = os.environ.copy()
 
-        # Modify the prompt to indicate the active mount
-        prompt_prefix = f"[sshfs:{remote_path}] "
+        mount_tag = "(mount)"
         try:
             if "bash" in shell:
-                env["PS1"] = prompt_prefix + env.get("PS1", r"\$ ")
+                ps1 = env.get("PS1", r"\$ ")
+                # If prompt has the jmp shell arrow, insert (mount) before it
+                if "➤" in ps1:
+                    ps1 = ps1.replace("➤", f"{mount_tag}➤")
+                else:
+                    ps1 = f"[sshfs:{remote_path}] {ps1}"
+                env["PS1"] = ps1
                 subprocess.run(
                     [shell, "--norc", "--noprofile", "-i"],
                     env=env,
                 )
             elif "zsh" in shell:
-                env["PS1"] = prompt_prefix + env.get("PS1", "%# ")
+                ps1 = env.get("PS1", "%# ")
+                if "➤" in ps1:
+                    ps1 = ps1.replace("➤", f"{mount_tag}➤")
+                else:
+                    ps1 = f"[sshfs:{remote_path}] {ps1}"
+                env["PS1"] = ps1
                 subprocess.run([shell, "-i"], env=env)
             else:
                 subprocess.run([shell, "-i"], env=env)
