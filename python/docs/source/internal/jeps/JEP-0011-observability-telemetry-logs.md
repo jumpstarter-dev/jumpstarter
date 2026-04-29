@@ -479,6 +479,35 @@ is additive and does not require adopting OTel as a project dependency.
   Loki spikes and ingest load cannot starve lease
   reconciliation in the controller by moving it to a separate service.
 
+**Identity enforcement:** The Telemetry service validates the source
+  identity of every ingest RPC from the mTLS certificate or
+  ServiceAccount token. The `exporter` and `client` labels on incoming
+  increments are enforced server-side to match the authenticated
+  identity — a compromised or misconfigured exporter cannot submit
+  metrics under another exporter's name or inject arbitrary labels.
+
+**Failure modes:**
+
+| Scenario                        | Behavior                                                                                                                                                                                       |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Telemetry service unavailable   | Exporters and clients treat telemetry RPCs as fire-and-forget with bounded retry (e.g. 1–2 attempts, exponential backoff). Metrics increments are lost; device operations are unaffected.       |
+| Telemetry pod restart           | In-memory counters reset to zero. This is standard Prometheus counter semantics — `rate()` and `increase()` handle resets transparently.                                                       |
+| Loki unreachable                | The Telemetry service buffers log entries in a bounded queue (see *Backpressure* in the control-plane section). On overflow, entries are dropped and `jumpstarter_telemetry_dropped_total` incremented. |
+| Prometheus scrape fails         | No data loss — counters remain in memory; the next successful scrape picks up the current values.                                                                                              |
+
+  The Telemetry service exposes `/healthz` (liveness) and `/readyz`
+  (readiness, gated on Loki and Prometheus reachability) endpoints for
+  Kubernetes probes.
+
+**Memory budget:** Each in-memory Prometheus series costs roughly
+  200–300 bytes (labels + counter/histogram state). The bounded label
+  set `{exporter, operation, result, driver_type}` caps total series:
+  with 200 exporters × 6 operations × 2 results × 6 driver types =
+  14 400 series, costing ~3–4 MB. Adding `error_type` and `direction`
+  on their respective metrics adds a small multiple. Series that receive
+  no updates for a configurable TTL (default: 10 min) are eligible for
+  eviction to prevent stale-exporter accumulation after scale-down.
+
 ### DD-8: Multiple Telemetry replicas (HA) and addable counters
 
 **Context:** The Telemetry process holds in-memory counters. Exporters send
