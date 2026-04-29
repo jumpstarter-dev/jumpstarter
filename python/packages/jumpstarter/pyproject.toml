@@ -21,6 +21,7 @@ dependencies = [
     "rich>=14.0.0",
     "tenacity>=8.2.0",
     "backports-zstd>=1.1.0 ; python_full_version < '3.14'",
+    "click>=8.1.7.2",
 ]
 
 [dependency-groups]

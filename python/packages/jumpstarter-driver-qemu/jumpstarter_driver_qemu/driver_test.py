@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 import requests
-from opendal import Operator
 
 from jumpstarter_driver_qemu.driver import Qemu
 
@@ -77,8 +76,7 @@ def test_driver_qemu(tmp_path, ovmf):
             qemu.flasher.flash(cached_image.resolve())
         else:
             qemu.flasher.flash(
-                f"pub/fedora/linux/releases/43/Cloud/{arch}/images/Fedora-Cloud-Base-Generic-43-1.6.{arch}.qcow2",
-                operator=Operator("http", endpoint="https://download.fedoraproject.org"),
+                f"https://download.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/{arch}/images/Fedora-Cloud-Base-Generic-43-1.6.{arch}.qcow2",
             )
 
         qemu.power.on()

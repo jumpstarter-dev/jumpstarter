@@ -14,7 +14,6 @@ dependencies = [
   "jumpstarter",
   "jumpstarter-driver-composite",
   "jumpstarter-driver-network",
-  "jumpstarter-driver-opendal",
   "jumpstarter-driver-power",
   "jumpstarter-driver-pyserial",
   "pyyaml>=6.0.2",
@@ -38,7 +37,6 @@ source = "vcs"
 raw-options = { 'root' = '../../../' }
 
 [tool.uv.sources]
-jumpstarter-driver-opendal = { workspace = true }
 jumpstarter-driver-composite = { workspace = true }
 jumpstarter-driver-network = { workspace = true }
 jumpstarter-driver-pyserial = { workspace = true }
