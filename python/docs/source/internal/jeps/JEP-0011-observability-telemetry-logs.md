@@ -1073,6 +1073,9 @@ all subsequent phases have E2E coverage from the start.
       references to integrate with Loki for pushing logs.
 - [ ] Operator attempts to auto-configure Prometheus metric scraping on the right
       endpoints.
+- [ ] A JSON schema (or equivalent machine-readable specification) is
+      published for the structured log format, enabling consumers to
+      validate log entries and detect regressions in field names or types.
 - [ ] Backward compatibility: existing clients and manifests without the new
       fields continue to work; deployments that do not use hub forwarding
       behave as today.
