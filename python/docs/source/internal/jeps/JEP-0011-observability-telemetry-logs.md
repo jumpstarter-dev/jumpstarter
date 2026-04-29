@@ -8,7 +8,7 @@
 | **Status**        | Discussion                                                                 |
 | **Type**          | Standards Track                                                       |
 | **Created**       | 2026-04-23                                                            |
-| **Updated**       | 2026-04-27                                                            |
+| **Updated**       | 2026-04-29                                                            |
 | **Discussion**    | https://github.com/jumpstarter-dev/jumpstarter/pull/631               |
 | **Requires**      | —                                                                     |
 | **Supersedes**    | —                                                                     |
@@ -337,6 +337,7 @@ are still useful for selection and for tools that only understand metadata.
 | `driver_type` | Category from predefined set (when applicable)                      |     no     | Driver category (storage, power, …).      |
 | `client`      | CRD name (when applicable)                                          |     no     | Client CRD name (high cardinality).       |
 | *`spec.context` keys* | User-defined strings (during active lease)                  |     no     | All `lease.spec.context` entries (e.g. `build_id`, `image_digest`, VCS ref) added as JSON fields. High cardinality, never stream labels. |
+| *`exporterLabels` keys* | Values from Exporter CRD labels (when configured)         |     no     | Operator-defined exporter labels (e.g. `board-type`); see `spec.telemetry.exporterLabels`. |
 
   `namespace` is **not** emitted by the application. Log shippers
   (Promtail, Grafana Alloy, Vector) automatically inject `namespace`
@@ -399,8 +400,7 @@ are still useful for selection and for tools that only understand metadata.
   cluster's existing log shipping infrastructure. Generic in-cluster
   collectors solve *credentials* but not *semantic* correlation unless
   integrated; the hub (2) reuses the existing trust model
-  (exporter→controller) and can inject labels and tenant headers (for
-  example `X-Scope-OrgID`) in one place. A separate Deployment (**4** /
+  (exporter→controller) and can inject labels and tenant context in one place. A separate Deployment (**4** /
   **DD-7**) is preferable to overloading the main reconciler when
   load or residency of counters matters.
 
@@ -641,6 +641,7 @@ endpoints; this DD only governs the *recommended* dashboard experience.
 | `client`                         | **no**     | yes           | **no**      | yes      | CRD name; exemplar for client identity.             |
 | `image_digest`, `build_id`, etc. | **no**     | yes           | **no**      | yes      | From `spec.context`; included when listed in `exemplarKeys`. |
 | `trace_id` / `span_id`           | **no**     | yes           | **no**      | yes      | W3C; links metrics to traces via exemplars.         |
+| *`exporterLabels` keys*          | **no**     | yes           | **no**      | yes      | From Exporter CRD labels; included when listed in `exemplarKeys`. |
 
 Additional `lease.spec.context` correlation fields can be added at runtime;
 they appear as structured log line fields and, when listed in the operator's
@@ -669,8 +670,8 @@ Rules of thumb for this JEP:
   guidance: < 100 k active streams). High-cardinality fields go inside the log
   line body.
 - **Lease context fields** from `spec.context` are propagated into log line
-  JSON and into Prometheus exemplars. They never become Prometheus labels or
-  Loki stream labels.
+  JSON and, when listed in `exemplarKeys`, into Prometheus exemplars. They
+  never become Prometheus labels or Loki stream labels.
 
 #### Exemplars for high-cardinality context
 
@@ -694,8 +695,9 @@ Full distributed tracing (spans, storage, visualization) is deferred to
 a future JEP; when it lands, `trace_id` becomes a default key. Until
 then, omitting it saves ~45 characters of exemplar budget.
 
-All `spec.context` keys (e.g. `build_id`, `image_digest`) are automatically
-included as exemplar keys. Because exemplars are per-observation metadata —
+`spec.context` keys (e.g. `build_id`, `image_digest`) are included as
+exemplar keys when listed in the operator's `exemplarKeys` allowlist (see
+*Operator configuration*). Because exemplars are per-observation metadata —
 not label dimensions — they have zero impact on series cardinality regardless
 of how many distinct values appear.
 
@@ -740,8 +742,10 @@ and be fixed before "Implemented".*
 | `jumpstarter_active_sessions`                | gauge     | `exporter`                                   | Currently active lease sessions.          |
 | `jumpstarter_lease_acquisitions_total`        | counter   | `result`                                     | Lease acquire attempts (controller).      |
 
-All counters and histograms carry exemplar keys (`client`, `lease_id`,
-`trace_id` when present, and `spec.context` fields) on every observation.
+All counters and histograms carry exemplar keys from the operator's
+`exemplarKeys` allowlist (by default `client` and `lease_id`; `trace_id`
+when present; `spec.context` and `exporterLabels` entries when listed)
+on every observation.
 
 ### Metric usage and alerting
 
