@@ -1014,6 +1014,49 @@ on the OTel SDK in application code.
   metrics counter on success and failure on real hardware in a lab.
 - Serial and stream paths expose tx/rx byte counts.
 
+### Independent testability
+
+Each component must be testable in isolation without deploying the full
+stack:
+
+- **Structured logging**: unit tests validate JSON output format, base
+  fields, and `spec.context` propagation using an in-memory logger — no
+  Loki required.
+- **Exporter metrics**: unit tests verify counter/histogram registration,
+  label correctness, and exemplar attachment using a local Prometheus
+  registry — no Telemetry service required.
+- **Telemetry service**: integration tests use mock gRPC clients and a
+  mock Loki endpoint to verify ingest, counter aggregation, backpressure
+  behavior, and drop markers — no real exporters required.
+- **Operator configuration**: unit tests validate CRD admission
+  (e.g. `spec.context` size limits) and `ServiceMonitor` generation.
+
+### End-to-end (CI)
+
+The full telemetry pipeline should be exercised in GitHub Actions CI.
+Evaluate feasibility of running a minimal Prometheus + Loki stack inside
+the CI environment (e.g. single-binary mode containers); if resource
+constraints make this impractical, at minimum:
+
+- **Loki mock or single-binary**: a lightweight Loki instance (or a mock
+  HTTP/gRPC endpoint that validates the Loki push API contract) receives logs
+  from the Telemetry service and asserts expected fields, stream labels,
+  and `spec.context` propagation across the full exporter → Telemetry →
+  Loki path.
+- **Prometheus scrape**: the existing Go/Ginkgo E2E test suite performs
+  direct HTTP scrapes of the `/metrics` endpoints on Controller, Router,
+  and Telemetry services — no separate Prometheus instance required. The
+  test parses the OpenMetrics response and asserts that documented
+  series, labels, and exemplars appear after a known operation sequence.
+- **Correlation round-trip**: an E2E test runs a lease lifecycle (create →
+  flash → power-cycle → release) and verifies that the same `lease_id`
+  and `exporter` values appear in both scraped metrics (label or
+  exemplar) and ingested log entries, confirming cross-signal
+  correlation.
+
+Feasibility of this stack should be evaluated early (Phase 1) so that
+all subsequent phases have E2E coverage from the start.
+
 ### Manual
 
 - `jmp` default output remains readable; JSON structured logs are only sent
