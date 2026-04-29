@@ -8,7 +8,7 @@ import click
 from jumpstarter_cli_common.blocking import blocking
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
-from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_oidc
+from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_oidc, should_use_device_flow
 from jumpstarter_cli_common.opt import confirm_insecure_tls, opt_insecure_tls, opt_nointeractive
 
 from jumpstarter.common.exceptions import ReauthenticationFailed
@@ -155,6 +155,7 @@ async def login(  # noqa: C901
     connector_id: str,
     callback_port: int | None,
     offline_access: bool,
+    device_flow: bool | None,
     unsafe,
     insecure_tls: bool,
     nointeractive: bool,
@@ -334,6 +335,8 @@ async def login(  # noqa: C901
         tokens = await oidc.token_exchange_grant(token, **kwargs)
     elif username is not None and password is not None:
         tokens = await oidc.password_grant(username, password)
+    elif should_use_device_flow(device_flow):
+        tokens = await oidc.device_code_grant()
     else:
         tokens = await oidc.authorization_code_grant(callback_port=callback_port)
 
@@ -382,7 +385,10 @@ async def relogin_client(config: ClientConfigV1Alpha1):
             except Exception:
                 pass
 
-        tokens = await oidc.authorization_code_grant()
+        if should_use_device_flow():
+            tokens = await oidc.device_code_grant()
+        else:
+            tokens = await oidc.authorization_code_grant()
         config.token = tokens["access_token"]
         refresh_token = tokens.get("refresh_token")
         if refresh_token is not None:
