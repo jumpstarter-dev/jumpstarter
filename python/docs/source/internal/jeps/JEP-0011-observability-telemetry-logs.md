@@ -599,8 +599,26 @@ labels.
   three backends this JEP standardizes on — without carrying the cost of a
   broad plugin ecosystem the project does not need.
 
+**Perses vs Grafana — practical comparison:**
+
+| Aspect               | Perses                                  | Grafana                                    |
+| -------------------- | --------------------------------------- | ------------------------------------------ |
+| License              | Apache 2.0                              | AGPL v3                                    |
+| Governance           | CNCF (vendor-neutral)                   | Grafana Labs (commercial)                  |
+| Dashboard-as-code    | CUE/JSON spec, static validation, SDKs  | JSON export, no built-in validation        |
+| K8s-native CRDs      | Yes                                     | Via third-party operator (grafana-operator)|
+| Exemplar rendering   | Not yet (upstream roadmap)              | Yes (>= 7.4)                               |
+| Data-source scope    | Prometheus, Loki, Tempo                 | Broad plugin ecosystem                     |
+| Maturity / ecosystem | Early (CNCF sandbox/incubating)         | Mature, widely deployed                    |
+
+The main Perses gap today is exemplar visualization. Operators who need
+exemplar overlays on dashboards should use Grafana alongside Perses or
+wait for upstream support. Grafana remains fully compatible — all
+`/metrics` and Loki endpoints are standard — so the choice is
+non-exclusive.
+
 Operators who prefer Grafana can still point it at the same `/metrics` and Loki
-endpoints; this DD only governs the recommended dashboard experience.
+endpoints; this DD only governs the *recommended* dashboard experience.
 
 ## Design Details
 
