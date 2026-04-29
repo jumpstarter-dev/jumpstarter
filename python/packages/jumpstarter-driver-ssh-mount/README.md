@@ -58,6 +58,9 @@ j mount /local/mountpoint --foreground
 # Pass extra sshfs options
 j mount /local/mountpoint -o reconnect -o cache=yes
 
+# Allow other users to access the mount (requires FUSE configuration)
+j mount /local/mountpoint -o allow_other
+
 # Unmount an orphaned mount
 j mount --umount /local/mountpoint
 j mount --umount /local/mountpoint --lazy
@@ -93,4 +96,7 @@ The driver registers as `mount` in the exporter config. When used in a `jmp shel
 
 Note: `extra_args` values (passed via `-o`) are forwarded directly to sshfs. This
 can be used to override defaults such as `StrictHostKeyChecking=no` -- for example,
-`-o StrictHostKeyChecking=yes`.
+`-o StrictHostKeyChecking=yes`. If you need other users on the system to access the
+mounted filesystem, pass `-o allow_other` (requires `user_allow_other` in
+`/etc/fuse.conf`). If `allow_other` fails due to FUSE configuration, the mount will
+automatically retry without it.
