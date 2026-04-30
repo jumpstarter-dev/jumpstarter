@@ -239,7 +239,8 @@ class TestCheckCrInstances:
 
         result = await _check_cr_instances("kubectl", "test-context", None)
 
-        assert result == {}
+        assert "error" in result
+        assert "CR instance check failed" in result["error"]
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
@@ -248,7 +249,9 @@ class TestCheckCrInstances:
 
         result = await _check_cr_instances("kubectl", "test-context", None)
 
-        assert result == {}
+        assert "error" in result
+        assert "CR instance check failed" in result["error"]
+        assert "kubectl not found" in result["error"]
 
 
 class TestCheckJumpstarterInstallation:
