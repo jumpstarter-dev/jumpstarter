@@ -14,8 +14,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 ARG FLS_VERSION=0.2.0
 RUN ARCH=$(uname -m) && \
-    URL="https://github.com/jumpstarter-dev/fls/releases/download/${FLS_VERSION}/fls-${ARCH}-linux" && \
-    TEMP_FILE="/tmp/fls-${ARCH}-linux.tmp" && \
+    SUFFIX="linux" && \
+    if [ "$ARCH" = "aarch64" ]; then SUFFIX="linux-musl"; fi && \
+    URL="https://github.com/jumpstarter-dev/fls/releases/download/${FLS_VERSION}/fls-${ARCH}-${SUFFIX}" && \
+    TEMP_FILE="/tmp/fls-${ARCH}-${SUFFIX}.tmp" && \
     curl -fsSL "${URL}" -o "${TEMP_FILE}" && \
     mv "${TEMP_FILE}" /usr/local/bin/fls && \
     chmod +x /usr/local/bin/fls
