@@ -728,27 +728,30 @@ is additive and does not require adopting OTel as a project dependency.
 **Scrape fan-out:** When Prometheus hits `/metrics`, the Telemetry
   service fans out `MetricsScrapeRequest` to **all connected exporters in
   parallel** and waits up to `spec.telemetry.metrics.scrapeTimeout`
-  for responses. Exporters that do not respond in time
-  are skipped for that scrape — their last-known snapshot is served if
-  available.
+  (default: 7 s) for responses. **Only metrics received during the
+  current fan-out are included in the response.** Exporters that do not
+  respond in time are omitted entirely — no cached or stale data is
+  ever served. This eliminates any risk of double-counting from stale
+  connections where the exporter may have already migrated to another
+  replica (see **DD-8**).
 
-**Memory budget:** The Telemetry service holds parsed metric snapshots
-  from connected exporters between Prometheus scrapes. With 200
-  exporters each producing ~50 series (bounded by `{operation, result,
-  driver_type}` label combinations), the total is ~10 000 series at
-  ~200–300 bytes each, costing ~2–3 MB. Snapshots from exporters that
-  disconnect are evicted after `spec.telemetry.metrics.staleEvictionTTL`
-  (default: 10 min) to prevent stale-exporter accumulation after
-  scale-down.
+**Memory budget:** During a scrape fan-out the Telemetry service
+  temporarily holds metric snapshots from responding exporters until the
+  merged response is written to Prometheus. With 200 exporters each
+  producing ~50 series (bounded by `{operation, result, driver_type}`
+  label combinations), the peak is ~10 000 series at ~200–300 bytes
+  each, costing ~2–3 MB. Snapshots are discarded as soon as the
+  `/metrics` response is flushed — no metric data is retained between
+  scrapes.
 
-### DD-8: Multiple Telemetry replicas (HA) and addable counters
+### DD-8: Multiple Telemetry replicas (HA) and exporter-sticky connections
 
-**Context:** The Telemetry process holds in-memory counters. Exporters send
-+1 (e.g. flash success), +N (bytes read/written), or +1 per
-reporting interval (e.g. one “inactive” minute for a lease with
-labels `exporter`, `operation`, `result`, `driver_type`). High-cardinality
-context (`lease_id`, `client`, `trace_id`) is attached via exemplars, not
-labels.
+**Context:** With the reverse-scrape model (see **DD-3** alternative 4
+and *API / Protocol Changes*), the Telemetry service does not hold
+authoritative counter state — exporters maintain their own local
+`prometheus_client` registries. The Telemetry service only caches the
+latest metric snapshot per exporter. Each exporter opens a single
+long-lived `MetricsStream` to one Telemetry replica.
 
 **Alternatives considered:**
 
@@ -764,15 +767,27 @@ labels.
   additive; increments are partitioned by traffic).
 3. **Strong consistency** (Raft, Redis as source of truth for
   counters) — higher operating cost than this JEP’s v1 scope.
+4. **Multiple replicas with exporter-sticky connections** — each exporter
+   opens a single `MetricsStream` to one replica (sticky by stream).
+   Each replica only caches metric snapshots for its connected
+   exporters. Prometheus scrapes all replicas (via `PodMonitor`);
+   `sum by (exporter, operation, result, driver_type) (…)` after
+   dropping `pod` / `instance` yields the exact global total with no
+   double-counting, because each exporter’s metrics appear on exactly
+   one replica’s `/metrics` output. On replica failure the exporter
+   reconnects to a survivor and the next scrape returns its full
+   current counter state — no data is lost.
 
-**Decision:** **(2)**
+**Decision:** **(4)**
 
-**Rationale:** Sums of cumulative counters across replicas are
-  meaningful when each event is not double-applied; Loki
-  appends are naturally per-replica as well. A possible failure mode is
-  duplicate increments (retries, at-least-once RPCs). But this
-  is informative data, and eventual (and very low chance) of duplication does not
-  justify a more complex design — see **DD-9**.
+**Rationale:** Exporter-sticky connections naturally partition metric
+  snapshots across replicas with no overlap, so `sum` across replicas
+  is exact and double-counting is impossible. Full counter state lives
+  on the exporter, not on the Telemetry service, so replica restarts
+  or failovers cause no data loss. Loki log pushes (`PushLogs`) are
+  naturally per-replica as well and do not require deduplication.
+  Alternative (3) adds operational complexity with no benefit given
+  the reverse-scrape model.
 
 ### DD-9: Idempotency vs. best-effort (acceptable over-count for informative metrics)
 
@@ -1265,7 +1280,6 @@ can tune metrics, logging, and exemplar behavior without editing code.
 | `spec.telemetry.metrics.serviceMonitor`   | `bool`     | `true`                                           | Create `ServiceMonitor` CRDs for Prometheus autodiscovery.                                     |
 | `spec.telemetry.metrics.prometheusRules`  | `bool`     | `false`                                          | Deploy starter `PrometheusRule` CRDs (opt-in).                                                 |
 | `spec.telemetry.metrics.scrapeTimeout`    | `duration` | `7s`                                             | Max time to wait for parallel exporter responses during a `/metrics` fan-out. Must leave headroom within the Prometheus-side `scrape_timeout` |
-| `spec.telemetry.metrics.staleEvictionTTL` | `duration` | `10m`                                            | Evict metric snapshots from disconnected exporters after this duration.                        |
 | `spec.telemetry.backpressure.queueDepth`  | `int`      | `10000`                                          | Ring buffer depth for Loki log push queue.                                                     |
 
 **Example CR snippet:**
@@ -1301,7 +1315,6 @@ spec:
       serviceMonitor: true
       prometheusRules: true
       scrapeTimeout: "7s"
-      staleEvictionTTL: "10m"
     backpressure:
       queueDepth: 20000
 ```
