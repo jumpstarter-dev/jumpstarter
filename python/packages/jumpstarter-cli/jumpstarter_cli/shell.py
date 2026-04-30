@@ -41,7 +41,6 @@ logger = logging.getLogger(__name__)
 _TOKEN_REFRESH_THRESHOLD_SECONDS = 120
 
 
-
 def _run_shell_only(lease, config, command, path: str) -> int:
     """Run just the shell command without log streaming."""
     allow = config.drivers.allow if config is not None else getattr(lease, "allow", [])
@@ -259,6 +258,35 @@ async def _monitor_token_expiry(config, lease, cancel_scope, token_state=None) -
             return
 
 
+def _handle_after_lease_result(result, monitor):
+    """Handle the result of waiting for afterLease hook completion.
+
+    Raises ExporterOfflineError when the hook definitively failed.
+    Returns silently when the outcome is acceptable (hook completed,
+    connection lost while hook was still running, or timeout).
+    """
+    if result == ExporterStatus.AVAILABLE:
+        if monitor.status_message and monitor.status_message.startswith(HOOK_WARNING_PREFIX):
+            warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX) :]
+            click.echo(click.style(f"Warning: {warning_text}", fg="yellow", bold=True))
+        logger.info("afterLease hook completed")
+    elif result == ExporterStatus.AFTER_LEASE_HOOK_FAILED:
+        reason = monitor.status_message or "afterLease hook failed"
+        raise ExporterOfflineError(reason)
+    elif monitor.connection_lost:
+        if monitor.current_status == ExporterStatus.AFTER_LEASE_HOOK_FAILED:
+            reason = monitor.status_message or "afterLease hook failed (connection lost)"
+            raise ExporterOfflineError(reason)
+        if monitor.current_status == ExporterStatus.AFTER_LEASE_HOOK:
+            logger.info(
+                "Connection lost while afterLease hook is running; exporter will continue the hook autonomously"
+            )
+        else:
+            logger.info("Connection lost, skipping afterLease hook wait")
+    elif result is None:
+        logger.warning("Timeout waiting for afterLease hook to complete")
+
+
 async def _run_shell_with_lease_async(lease, exporter_logs, config, command, cancel_scope):  # noqa: C901
     """Run shell with lease context managers and wait for afterLease hook if logs enabled.
 
@@ -378,41 +406,11 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                         with anyio.move_on_after(10):
                                             success = await client.end_session_async()
                                         if success:
-                                            # Wait for hook to complete using background monitor
-                                            # This allows afterLease logs to be displayed in real-time
                                             result = await monitor.wait_for_any_of(
                                                 [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK_FAILED],
                                                 timeout=300.0,
                                             )
-                                            if result == ExporterStatus.AVAILABLE:
-                                                if monitor.status_message and monitor.status_message.startswith(
-                                                    HOOK_WARNING_PREFIX
-                                                ):
-                                                    warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX) :]
-                                                    click.echo(
-                                                        click.style(f"Warning: {warning_text}", fg="yellow", bold=True)
-                                                    )
-                                                logger.info("afterLease hook completed")
-                                            elif result == ExporterStatus.AFTER_LEASE_HOOK_FAILED:
-                                                reason = monitor.status_message or "afterLease hook failed"
-                                                raise ExporterOfflineError(reason)
-                                            elif monitor.connection_lost:
-                                                # If connection lost during afterLease hook lifecycle
-                                                # (running or failed), the exporter shut down
-                                                if monitor.current_status in (
-                                                    ExporterStatus.AFTER_LEASE_HOOK,
-                                                    ExporterStatus.AFTER_LEASE_HOOK_FAILED,
-                                                ):
-                                                    reason = (
-                                                        monitor.status_message
-                                                        or "afterLease hook failed (connection lost)"
-                                                    )
-                                                    raise ExporterOfflineError(reason)
-                                                # Connection lost but hook wasn't running. This is expected when
-                                                # the lease times out — exporter handles its own cleanup.
-                                                logger.info("Connection lost, skipping afterLease hook wait")
-                                            elif result is None:
-                                                logger.warning("Timeout waiting for afterLease hook to complete")
+                                            _handle_after_lease_result(result, monitor)
                                         else:
                                             logger.debug("EndSession not implemented, skipping hook wait")
                                     except ExporterOfflineError:
@@ -580,9 +578,7 @@ async def _shell_direct_async(
         async with create_task_group() as tg:
             tg.start_soon(signal_handler, tg.cancel_scope)
             try:
-                exit_code = await _run_shell_with_lease_async(
-                    lease, exporter_logs, config, command, tg.cancel_scope
-                )
+                exit_code = await _run_shell_with_lease_async(lease, exporter_logs, config, command, tg.cancel_scope)
             except grpc.aio.AioRpcError as e:
                 if e.code() == grpc.StatusCode.UNAUTHENTICATED:
                     raise click.ClickException("Authentication failed: invalid or missing passphrase") from None

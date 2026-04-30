@@ -14,6 +14,7 @@ from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentic
 
 from jumpstarter_cli.shell import (
     _attempt_token_recovery,
+    _handle_after_lease_result,
     _monitor_token_expiry,
     _resolve_lease_from_active_async,
     _run_shell_with_lease_async,
@@ -977,3 +978,53 @@ class TestShellWithSignalHandlingLeaseTimeout:
         ):
             with pytest.raises((ExporterOfflineError, BaseExceptionGroup)):
                 await _shell_with_signal_handling(config, None, None, None, timedelta(minutes=1), False, (), None)
+
+
+class TestHandleAfterLeaseResult:
+    def _make_monitor(self, connection_lost=False, current_status=None, status_message=""):
+        monitor = Mock()
+        monitor.connection_lost = connection_lost
+        monitor.current_status = current_status
+        monitor.status_message = status_message
+        return monitor
+
+    def test_hook_completed_successfully(self):
+        monitor = self._make_monitor(current_status=ExporterStatus.AVAILABLE)
+        _handle_after_lease_result(ExporterStatus.AVAILABLE, monitor)
+
+    def test_hook_failed_raises_error(self):
+        monitor = self._make_monitor(
+            current_status=ExporterStatus.AFTER_LEASE_HOOK_FAILED,
+            status_message="hook script exited with code 1",
+        )
+        with pytest.raises(ExporterOfflineError, match="hook script exited with code 1"):
+            _handle_after_lease_result(ExporterStatus.AFTER_LEASE_HOOK_FAILED, monitor)
+
+    def test_connection_lost_during_running_hook_does_not_raise(self):
+        """When connection is lost while hook is still running, client should
+        exit gracefully. The exporter continues the hook autonomously."""
+        monitor = self._make_monitor(
+            connection_lost=True,
+            current_status=ExporterStatus.AFTER_LEASE_HOOK,
+        )
+        _handle_after_lease_result(None, monitor)
+
+    def test_connection_lost_after_hook_failed_raises_error(self):
+        monitor = self._make_monitor(
+            connection_lost=True,
+            current_status=ExporterStatus.AFTER_LEASE_HOOK_FAILED,
+            status_message="hook crashed",
+        )
+        with pytest.raises(ExporterOfflineError, match="hook crashed"):
+            _handle_after_lease_result(None, monitor)
+
+    def test_connection_lost_hook_not_running_exits_gracefully(self):
+        monitor = self._make_monitor(
+            connection_lost=True,
+            current_status=ExporterStatus.LEASE_READY,
+        )
+        _handle_after_lease_result(None, monitor)
+
+    def test_timeout_returns_none(self):
+        monitor = self._make_monitor(connection_lost=False)
+        _handle_after_lease_result(None, monitor)
