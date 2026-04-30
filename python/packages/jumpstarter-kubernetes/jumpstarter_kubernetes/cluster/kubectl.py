@@ -4,6 +4,7 @@ import json
 from typing import Dict, List, Optional
 
 from ..clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
+from ..exceptions import JumpstarterKubernetesError
 from .common import run_command
 
 
@@ -215,7 +216,7 @@ async def get_cluster_info(
             jumpstarter=jumpstarter_info,
         )
 
-    except Exception as e:
+    except (RuntimeError, json.JSONDecodeError, JumpstarterKubernetesError) as e:
         return V1Alpha1ClusterInfo(
             name=context,
             cluster="unknown",

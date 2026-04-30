@@ -545,6 +545,14 @@ class TestGetClusterInfo:
         assert result.accessible is False
         assert result.version is None
 
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
+    async def test_get_cluster_info_propagates_programming_errors(self, mock_get_contexts):
+        mock_get_contexts.side_effect = TypeError("unexpected type")
+
+        with pytest.raises(TypeError, match="unexpected type"):
+            await get_cluster_info("test-context")
+
 
 class TestListClusters:
     """Test cluster listing functionality."""
