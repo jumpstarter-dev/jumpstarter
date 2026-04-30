@@ -230,7 +230,9 @@ class TestCheckCrInstances:
 
         result = await _check_cr_instances("kubectl", "test-context", None)
 
-        assert result == {}
+        assert "error" in result
+        assert "exit 1" in result["error"]
+        assert "forbidden" in result["error"]
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
