@@ -42,6 +42,9 @@ export:
       root_dir: "/var/lib/iscsi"
       target_name: "demo"
       remove_created_on_close: false  # Keep disk images persistent (default)
+      block_device_allowlist:         # Required to use is_block=True LUNs
+        - /dev/sda
+        - /dev/disk/by-id/my-disk
       # When size_mb is 0 a pre-existing file size is used.
 ```
 
@@ -55,6 +58,7 @@ export:
 | `host`                  | IP address to bind the target to. Empty string will auto-detect | str  | no       | _auto_                        |
 | `port`                  | TCP port the target listens on                                  | int  | no       | `3260`                        |
 | `remove_created_on_close`| Automatically remove created files/directories when driver closes| bool | no       | false                         |
+| `block_device_allowlist`| List of allowed block device paths for `is_block=True` LUNs. Symlinks are resolved before matching. Must be set to use block devices. | list[str] | no | `[]` (empty -- block devices disabled) |
 
 ### File Management
 
