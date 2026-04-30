@@ -257,21 +257,105 @@ class TestStatusMonitorPolling:
 
         assert stub._call_count == 1  # Only tried once before giving up
 
-    async def test_poll_loop_handles_unavailable(self) -> None:
-        """Test that poll loop sets connection_lost on UNAVAILABLE."""
+    async def test_poll_loop_handles_unavailable_as_transient(self) -> None:
+        """Test that poll loop treats single UNAVAILABLE as transient and retries.
+
+        A single UNAVAILABLE error (e.g., exporter briefly restarting) should NOT
+        immediately mark connection as lost. The monitor should continue polling
+        and recover when the exporter comes back online.
+        """
         responses = [
             create_status_response(ExporterStatus.AVAILABLE, version=1),
             create_mock_rpc_error(StatusCode.UNAVAILABLE),
+            create_status_response(ExporterStatus.LEASE_READY, version=2),
         ]
         stub = MockExporterStub(responses)
         monitor = StatusMonitor(stub, poll_interval=0.05)
 
         async with anyio.create_task_group() as tg:
             await monitor.start(tg)
-            await anyio.sleep(0.15)
+            await anyio.sleep(0.3)
+            await monitor.stop()
+
+        assert not monitor.connection_lost
+        assert monitor.current_status == ExporterStatus.LEASE_READY
+
+    async def test_poll_loop_unavailable_threshold(self) -> None:
+        """Test that poll loop marks connection lost after threshold UNAVAILABLE errors.
+
+        If GetStatus returns UNAVAILABLE 10+ consecutive times, the monitor should
+        treat this as a permanently lost connection and set connection_lost.
+        """
+        responses = [
+            create_status_response(ExporterStatus.AVAILABLE, version=1),
+        ] + [
+            create_mock_rpc_error(StatusCode.UNAVAILABLE)
+            for _ in range(15)
+        ]
+        stub = MockExporterStub(responses, repeat_last=False)
+        monitor = StatusMonitor(stub, poll_interval=0.01)
+
+        async with anyio.create_task_group() as tg:
+            await monitor.start(tg)
+            await anyio.sleep(2.0)
             await monitor.stop()
 
         assert monitor.connection_lost
+
+    async def test_poll_loop_unavailable_below_threshold(self) -> None:
+        """Test that UNAVAILABLE below threshold does not mark connection lost.
+
+        5 consecutive UNAVAILABLE errors is well below the threshold of 10, so the
+        monitor should recover when a successful response arrives.
+        """
+        responses = [
+            create_status_response(ExporterStatus.AVAILABLE, version=1),
+        ] + [
+            create_mock_rpc_error(StatusCode.UNAVAILABLE)
+            for _ in range(5)
+        ] + [
+            create_status_response(ExporterStatus.LEASE_READY, version=2),
+        ]
+        stub = MockExporterStub(responses)
+        monitor = StatusMonitor(stub, poll_interval=0.01)
+
+        async with anyio.create_task_group() as tg:
+            await monitor.start(tg)
+            await anyio.sleep(1.0)
+            await monitor.stop()
+
+        assert not monitor.connection_lost
+        assert monitor.current_status == ExporterStatus.LEASE_READY
+
+    async def test_poll_loop_unavailable_counter_resets_on_success(self) -> None:
+        """Test that the UNAVAILABLE retry counter resets after a successful poll.
+
+        If the monitor sees some UNAVAILABLE errors, then a success, then more
+        UNAVAILABLE errors, each run starts counting from zero. The total across
+        both runs should not trigger connection_lost if each run is below threshold.
+        """
+        responses = [
+            create_status_response(ExporterStatus.AVAILABLE, version=1),
+        ] + [
+            create_mock_rpc_error(StatusCode.UNAVAILABLE)
+            for _ in range(5)
+        ] + [
+            create_status_response(ExporterStatus.LEASE_READY, version=2),
+        ] + [
+            create_mock_rpc_error(StatusCode.UNAVAILABLE)
+            for _ in range(5)
+        ] + [
+            create_status_response(ExporterStatus.AVAILABLE, version=3),
+        ]
+        stub = MockExporterStub(responses)
+        monitor = StatusMonitor(stub, poll_interval=0.01)
+
+        async with anyio.create_task_group() as tg:
+            await monitor.start(tg)
+            await anyio.sleep(2.0)
+            await monitor.stop()
+
+        assert not monitor.connection_lost
 
     async def test_poll_loop_handles_deadline_exceeded(self) -> None:
         """Test that poll loop treats DEADLINE_EXCEEDED as transient.
@@ -403,18 +487,19 @@ class TestStatusMonitorWaitForStatus:
 
     async def test_wait_for_status_connection_lost(self) -> None:
         """Test wait_for_status returns False when connection is lost."""
-        # Return UNAVAILABLE to simulate connection loss
         responses = [
             create_status_response(ExporterStatus.AVAILABLE, version=1),
-            create_mock_rpc_error(StatusCode.UNAVAILABLE),
+        ] + [
+            create_mock_rpc_error(StatusCode.UNAVAILABLE)
+            for _ in range(15)
         ]
-        stub = MockExporterStub(responses)
-        monitor = StatusMonitor(stub, poll_interval=0.05)
+        stub = MockExporterStub(responses, repeat_last=False)
+        monitor = StatusMonitor(stub, poll_interval=0.01)
 
         async with anyio.create_task_group() as tg:
             await monitor.start(tg)
 
-            result = await monitor.wait_for_status(ExporterStatus.LEASE_READY, timeout=0.5)
+            result = await monitor.wait_for_status(ExporterStatus.LEASE_READY, timeout=2.0)
 
             await monitor.stop()
 
@@ -531,16 +616,18 @@ class TestStatusMonitorWaitForAnyOf:
         """Test wait_for_any_of returns None when connection is lost."""
         responses = [
             create_status_response(ExporterStatus.AVAILABLE, version=1),
-            create_mock_rpc_error(StatusCode.UNAVAILABLE),
+        ] + [
+            create_mock_rpc_error(StatusCode.UNAVAILABLE)
+            for _ in range(15)
         ]
-        stub = MockExporterStub(responses)
-        monitor = StatusMonitor(stub, poll_interval=0.05)
+        stub = MockExporterStub(responses, repeat_last=False)
+        monitor = StatusMonitor(stub, poll_interval=0.01)
 
         async with anyio.create_task_group() as tg:
             await monitor.start(tg)
 
             targets = [ExporterStatus.LEASE_READY]
-            result = await monitor.wait_for_any_of(targets, timeout=0.5)
+            result = await monitor.wait_for_any_of(targets, timeout=2.0)
 
             await monitor.stop()
 
@@ -723,6 +810,39 @@ class TestStatusMonitorStatusMessageUpdate:
         assert monitor.status_message == "hook script exited with code 1"
 
 
+class TestStatusMonitorUnavailableRetryDelay:
+    async def test_unavailable_retries_include_inter_retry_delay(self) -> None:
+        """Test that UNAVAILABLE retries sleep between attempts.
+
+        Without inter-retry delay, 10 UNAVAILABLE errors (which return
+        near-instantly) would be exhausted in milliseconds, providing
+        no time for an exporter to restart. The poll loop must sleep
+        between UNAVAILABLE retries so the threshold spans a meaningful
+        wall-clock duration.
+        """
+        import time
+
+        retry_count = 10
+        poll_interval = 0.05
+        responses = [
+            create_mock_rpc_error(StatusCode.UNAVAILABLE)
+            for _ in range(retry_count)
+        ]
+        stub = MockExporterStub(responses, repeat_last=False)
+        monitor = StatusMonitor(stub, poll_interval=poll_interval)
+
+        start = time.monotonic()
+        await monitor.start()
+        elapsed = time.monotonic() - start
+
+        assert monitor.connection_lost
+        minimum_expected = poll_interval * (retry_count - 1)
+        assert elapsed >= minimum_expected, (
+            f"UNAVAILABLE retries completed in {elapsed:.3f}s, "
+            f"expected at least {minimum_expected:.3f}s with inter-retry delay"
+        )
+
+
 class TestStatusMonitorPRIssues:
     """Regression tests for issues reported during PR review of hooks feature."""
 
@@ -780,53 +900,52 @@ class TestStatusMonitorPRIssues:
     async def test_lease_timeout_no_hooks_detects_connection_loss(self) -> None:
         """Issue C1: Lease timeout with no hooks should detect connection loss promptly.
 
-        When the exporter goes from LEASE_READY to UNAVAILABLE (lease timeout
+        When the exporter goes from LEASE_READY to sustained UNAVAILABLE (lease timeout
         with no hooks), wait_for_any_of should detect the connection loss and
-        return None within 2 seconds.
+        return None after the retry threshold is exceeded.
         """
         responses = [
             create_status_response(ExporterStatus.LEASE_READY, version=1),
-            create_mock_rpc_error(StatusCode.UNAVAILABLE),
+        ] + [
+            create_mock_rpc_error(StatusCode.UNAVAILABLE)
+            for _ in range(15)
         ]
-        stub = MockExporterStub(responses)
-        monitor = StatusMonitor(stub, poll_interval=0.05)
-
-        import time
+        stub = MockExporterStub(responses, repeat_last=False)
+        monitor = StatusMonitor(stub, poll_interval=0.01)
 
         async with anyio.create_task_group() as tg:
             await monitor.start(tg)
 
-            start = time.monotonic()
             result = await monitor.wait_for_any_of(
                 [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK],
                 timeout=5.0,
             )
-            elapsed = time.monotonic() - start
 
             await monitor.stop()
 
         assert monitor.connection_lost is True
         assert result is None
-        assert elapsed < 2.0, f"Connection loss detection took {elapsed:.1f}s, expected < 2.0s"
 
     async def test_lease_timeout_during_before_hook_detects_connection_loss(self) -> None:
         """Issue C2: Lease timeout during beforeLease should detect connection loss.
 
-        When the exporter transitions from BEFORE_LEASE_HOOK to UNAVAILABLE
+        When the exporter transitions from BEFORE_LEASE_HOOK to sustained UNAVAILABLE
         (lease timeout at boundary of beforeLease), wait_for_status(LEASE_READY)
-        should return False with connection_lost=True.
+        should return False with connection_lost=True after retry threshold is exceeded.
         """
         responses = [
             create_status_response(ExporterStatus.BEFORE_LEASE_HOOK, version=1),
-            create_mock_rpc_error(StatusCode.UNAVAILABLE),
+        ] + [
+            create_mock_rpc_error(StatusCode.UNAVAILABLE)
+            for _ in range(15)
         ]
-        stub = MockExporterStub(responses)
-        monitor = StatusMonitor(stub, poll_interval=0.05)
+        stub = MockExporterStub(responses, repeat_last=False)
+        monitor = StatusMonitor(stub, poll_interval=0.01)
 
         async with anyio.create_task_group() as tg:
             await monitor.start(tg)
 
-            result = await monitor.wait_for_status(ExporterStatus.LEASE_READY, timeout=2.0)
+            result = await monitor.wait_for_status(ExporterStatus.LEASE_READY, timeout=5.0)
 
             await monitor.stop()
 

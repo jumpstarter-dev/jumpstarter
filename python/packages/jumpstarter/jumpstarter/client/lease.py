@@ -244,7 +244,9 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                             # Old controllers (pre-918d6341) mark offline-but-matching
                             # exporters as Unsatisfiable with reason "NoExporter".
                             # This is transient — retry with a new lease.
-                            if condition_present_and_equal(result.conditions, "Unsatisfiable", "True", "NoExporter"):
+                            if condition_present_and_equal(
+                                result.conditions, "Unsatisfiable", "True", "NoExporter"
+                            ):
                                 await self._handle_no_exporter_retry(spinner, message)
                                 continue
                             logger.debug("Lease %s cannot be satisfied: %s", self.name, message)
@@ -330,16 +332,29 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     if remaining <= 0:
                         logger.debug(
                             "Exporter not ready and dial timeout (%.1fs) exceeded after %d attempts",
-                            self.dial_timeout,
-                            attempt + 1,
+                            self.dial_timeout, attempt + 1
                         )
                         raise
-                    delay = min(base_delay * (2**attempt), max_delay, remaining)
+                    delay = min(base_delay * (2 ** attempt), max_delay, remaining)
                     logger.debug(
                         "Exporter not ready, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
-                        delay,
-                        attempt + 1,
-                        remaining,
+                        delay, attempt + 1, remaining
+                    )
+                    await sleep(delay)
+                    attempt += 1
+                    continue
+                if e.code() == grpc.StatusCode.UNAVAILABLE:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        logger.warning(
+                            "Exporter unavailable and dial timeout (%.1fs) exceeded after %d attempts",
+                            self.dial_timeout, attempt + 1
+                        )
+                        raise
+                    delay = min(base_delay * (2 ** attempt), max_delay, remaining)
+                    logger.debug(
+                        "Exporter unavailable, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
+                        delay, attempt + 1, remaining
                     )
                     await sleep(delay)
                     attempt += 1
@@ -348,7 +363,8 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 if "permission denied" in str(e.details()).lower():
                     self.lease_transferred = True
                     logger.warning(
-                        "Lease %s has been transferred to another client. Your session is no longer valid.",
+                        "Lease %s has been transferred to another client. "
+                        "Your session is no longer valid.",
                         self.name,
                     )
                 else:
