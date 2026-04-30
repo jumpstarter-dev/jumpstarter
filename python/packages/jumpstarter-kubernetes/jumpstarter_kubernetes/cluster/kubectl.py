@@ -88,8 +88,8 @@ async def _check_cr_instances(
                     "namespace": namespace or "unknown",
                     "status": "installed",
                 }
-    except (json.JSONDecodeError, RuntimeError):
-        pass
+    except (json.JSONDecodeError, RuntimeError) as e:
+        return {"error": f"CR instance check failed: {e}"}
     return {}
 
 
