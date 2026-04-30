@@ -21,10 +21,10 @@ jobs:
       should_run: ${{ steps.filter.outputs.python }}
       renode_driver: ${{ steps.filter.outputs.renode_driver }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           base: ${{ github.base_ref || github.event.merge_group.base_ref || 'main' }}
@@ -44,7 +44,7 @@ jobs:
         runs-on: [ubuntu-24.04, macos-15]
         python-version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
