@@ -1,5 +1,6 @@
 import logging
 import os
+import secrets
 import signal
 import sys
 
@@ -104,7 +105,7 @@ def _handle_child(config, parsed_bind=None, tls_insecure=False, tls_cert=None, t
                 if tls_insecure:
                     if passphrase:
                         click.echo(
-                            "WARNING: --passphrase has no effect without TLS; "
+                            "WARNING: passphrase authentication is active but TLS is disabled; "
                             "the passphrase will be transmitted in plaintext",
                             err=True,
                         )
@@ -245,16 +246,24 @@ def _serve_with_exc_handling(
     "--passphrase",
     "passphrase",
     default=None,
-    help="Require this passphrase from clients connecting via --tls-grpc-listener.",
+    help="Require this passphrase from clients connecting via --tls-grpc-listener. "
+    "If not provided, a random passphrase is generated automatically.",
+)
+@click.option(
+    "--unsafe-no-auth",
+    "unsafe_no_auth",
+    is_flag=True,
+    help="Disable passphrase authentication entirely (dangerous: allows unauthenticated access).",
 )
 @handle_exceptions
-def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase):
+def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase, unsafe_no_auth):
     """Run an exporter locally."""
     if listener_bind is not None and config is None:
         raise click.UsageError("--exporter-config (or --exporter) is required when using --tls-grpc-listener")
-    if listener_bind is None and (tls_insecure or tls_cert or tls_key or passphrase):
+    if listener_bind is None and (tls_insecure or tls_cert or tls_key or passphrase or unsafe_no_auth):
         raise click.UsageError(
-            "--tls-grpc-insecure, --tls-cert, --tls-key, and --passphrase require --tls-grpc-listener"
+            "--tls-grpc-insecure, --tls-cert, --tls-key, --passphrase, and --unsafe-no-auth "
+            "require --tls-grpc-listener"
         )
     if listener_bind is not None:
         if tls_insecure and (tls_cert or tls_key):
@@ -262,6 +271,29 @@ def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase):
         if not tls_insecure and not (tls_cert and tls_key):
             raise click.UsageError(
                 "--tls-grpc-listener requires either --tls-grpc-insecure or --tls-cert and --tls-key"
+            )
+        if passphrase and unsafe_no_auth:
+            raise click.UsageError("--passphrase and --unsafe-no-auth are mutually exclusive")
+
+        # Auto-generate a passphrase when none is provided and auth is not explicitly disabled
+        if not passphrase and not unsafe_no_auth:
+            passphrase = secrets.token_urlsafe(32)
+            click.echo(
+                f"Generated random passphrase (use --passphrase to set your own): {passphrase}",
+                err=True,
+            )
+
+        if unsafe_no_auth and tls_insecure:
+            click.echo(
+                "WARNING: running without authentication AND without TLS. "
+                "The server is completely unprotected.",
+                err=True,
+            )
+        elif unsafe_no_auth:
+            click.echo(
+                "WARNING: running without authentication. "
+                "Any client with network access can control this exporter.",
+                err=True,
             )
     parsed_bind = _parse_listener_bind(listener_bind) if listener_bind is not None else None
     return _serve_with_exc_handling(config, parsed_bind, tls_insecure, tls_cert, tls_key, passphrase)
