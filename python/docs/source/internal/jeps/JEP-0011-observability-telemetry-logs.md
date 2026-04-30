@@ -1184,25 +1184,30 @@ logs to the Telemetry service for Loki ingest (see **DD-4**).
 flowchart LR
   ctrl[jumpstarter-controller] -->|lease lifecycle| exp[Exporter]
   drv[Drivers] --> exp
-  exp -->|increments, events, logs| tel[jumpstarter-telemetry]
+  exp <-->|MetricsStream| tel[jumpstarter-telemetry]
+  exp -->|PushLogs| tel
 ```
 
-The Controller assigns leases; the Exporter delegates to Drivers
-and forwards metrics increments, operational events, and logs to
-Telemetry (see **DD-2**, **DD-5**, **DD-7**).
+The Controller assigns leases; the Exporter delegates to Drivers and
+maintains local `prometheus_client` counters. It opens a `MetricsStream`
+to Telemetry for reverse-scrape and pushes structured logs via `PushLogs`
+(see **DD-2**, **DD-3**, **DD-5**, **DD-7**).
 
 #### Telemetry to backends
 
 ```{mermaid}
 flowchart LR
-  tel[jumpstarter-telemetry] -->|JSON stdout| shipper[Log shipper]
-  shipper -->|pod logs| loki[(Loki)]
-  tel -->|push API| loki
-  tel -->|/metrics| prom[(Prometheus)]
+  prom[(Prometheus)] -->|scrape /metrics| tel[jumpstarter-telemetry]
+  tel <-->|MetricsStream fan-out| exp[Exporters]
+  tel -->|push API| loki[(Loki)]
+  tel -->|JSON stdout| shipper[Log shipper]
+  shipper -->|pod logs| loki
 ```
 
-Telemetry aggregates exporter and client data and writes to Loki and
-exposes `/metrics` for Prometheus scrape (**DD-3**, **DD-7**).
+On each Prometheus scrape, Telemetry fans out `MetricsScrapeRequest` to
+all connected exporters in parallel, merges responses, and serves the
+combined output. Logs received via `PushLogs` are forwarded to Loki
+(**DD-3**, **DD-7**, **DD-8**).
 
 #### Controller to backends
 
@@ -1230,11 +1235,10 @@ The Router writes structured JSON to stdout (see **DD-4**). A
 cluster log shipper scrapes pod logs and delivers them to Loki. The
 Router exposes `/metrics` for routing and session-level counters.
 
-The diagrams above summarize the hub model described in *Control-plane
-aggregation*. For credential isolation see **DD-5**; for the Telemetry
-Deployment see **DD-7**; for HA summing see **DD-8**; for best-effort
-semantics see **DD-9**. Optional direct exporter→Loki and `/metrics`
-scrape on Exporter Pods remain valid for deployments that prefer them.
+The diagrams above summarize the reverse-scrape hub model described in
+*Control-plane aggregation*. For credential isolation see **DD-5**; for
+the Telemetry Deployment see **DD-7**; for HA with exporter-sticky
+connections see **DD-8**; for best-effort log semantics see **DD-9**.
 No OpenTelemetry Collector is *required* (see **DD-6**); operators may
 run one *alongside* and scrape the same targets if they choose.
 
