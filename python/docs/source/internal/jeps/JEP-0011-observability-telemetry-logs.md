@@ -679,44 +679,67 @@ is additive and does not require adopting OTel as a project dependency.
    ServiceAccount / mTLS as other control-plane binaries.
 3. **Split** into separate sidecars (Loki-only, metrics-only) — more images to
    build and version.
+4. **Dedicated Deployment with reverse-scrape for metrics and push for
+   logs** — same dedicated `jumpstarter-telemetry` Deployment as **(2)**,
+   but instead of receiving increment RPCs the service reverse-scrapes
+   connected exporters via `MetricsStream` (see *API / Protocol
+   Changes*). Exporters maintain local `prometheus_client` registries;
+   the Telemetry service requests `generate_latest()` snapshots on
+   demand when its `/metrics` endpoint is hit, merges the results, and
+   serves them to Prometheus. Logs and events are still pushed by
+   exporters and clients via `PushLogs`. Client-side metrics are not
+   collected — all metrically-interesting operations are observable
+   from the exporter side.
 
-**Decision:** Prefer **(2)** for the optional aggregated-metrics + Loki
+**Decision:** Prefer **(4)** for the optional aggregated-metrics + Loki
   path at scale; allow **(1)** in small or dev clusters; **(3)** only
   if review shows a need. Could still offer a centralized log/event source when
   Loki is not available by using the pod logs, this could be helpful for testing.
 
 **Rationale:** A dedicated workload can scale and restart independently;
-  Loki spikes and ingest load cannot starve lease
-  reconciliation in the controller by moving it to a separate service.
+  Loki spikes and ingest load cannot starve lease reconciliation in the
+  controller. The reverse-scrape model **(4)** is preferred over the
+  increment-push model **(2)** because full counter state stays on the
+  exporter — no metrics are lost when the Telemetry service restarts or
+  is temporarily unavailable, and idempotency concerns are eliminated
+  (see **DD-9**).
 
 **Identity enforcement:** The Telemetry service validates the source
-  identity of every ingest RPC from the mTLS certificate or
-  ServiceAccount token. The `exporter` and `client` labels on incoming
-  increments are enforced server-side to match the authenticated
-  identity — a compromised or misconfigured exporter cannot submit
-  metrics under another exporter's name or inject arbitrary labels.
+  identity of every `MetricsStream` connection and `PushLogs` RPC from
+  the mTLS certificate or ServiceAccount token. The `exporter` and
+  `client` labels on incoming data are enforced server-side to match the
+  authenticated identity — a compromised or misconfigured exporter
+  cannot submit metrics under another exporter's name or inject
+  arbitrary labels.
 
 **Failure modes:**
 
 | Scenario                        | Behavior                                                                                                                                                                                       |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Telemetry service unavailable   | Exporters and clients treat telemetry RPCs as fire-and-forget with bounded retry (e.g. 1–2 attempts, exponential backoff). Metrics increments are lost; device operations are unaffected.       |
-| Telemetry pod restart           | In-memory counters reset to zero. This is standard Prometheus counter semantics — `rate()` and `increase()` handle resets transparently.                                                       |
+| Telemetry service unavailable   | Exporters keep counting locally; no metrics are lost. When the exporter reconnects, the next scrape returns the full current counter state. Log push RPCs are fire-and-forget with bounded retry; log entries may be lost but device operations are unaffected. |
+| Telemetry pod restart           | Metric state is rebuilt on the next scrape from each connected exporter — no permanent data loss. Prometheus `rate()` and `increase()` handle the apparent counter reset transparently. |
 | Loki unreachable                | The Telemetry service buffers log entries in a bounded queue (see *Backpressure* in the control-plane section). On overflow, entries are dropped and `jumpstarter_telemetry_dropped_total` incremented. |
-| Prometheus scrape fails         | No data loss — counters remain in memory; the next successful scrape picks up the current values.                                                                                              |
+| Prometheus scrape fails         | No data loss — the next successful scrape triggers a fresh fan-out to connected exporters and returns current values. |
 
   The Telemetry service exposes `/healthz` (liveness) and `/readyz`
-  (readiness, gated on Loki and Prometheus reachability) endpoints for
-  Kubernetes probes.
+  (readiness, gated on Loki reachability and at least one connected
+  exporter) endpoints for Kubernetes probes.
 
-**Memory budget:** Each in-memory Prometheus series is expected to cost around
-  200–300 bytes (labels + counter/histogram state). The bounded label
-  set `{exporter, operation, result, driver_type}` caps total series:
-  with 200 exporters × 6 operations × 2 results × 6 driver types =
-  14 400 series, costing ~3–4 MB. Adding `error_type` and `direction`
-  on their respective metrics adds a small multiple. Series that receive
-  no updates for a configurable TTL (i.e. a default: 10 min) are eligible for
-  eviction to prevent stale-exporter accumulation after scale-down.
+**Scrape fan-out:** When Prometheus hits `/metrics`, the Telemetry
+  service fans out `MetricsScrapeRequest` to **all connected exporters in
+  parallel** and waits up to `spec.telemetry.metrics.scrapeTimeout`
+  for responses. Exporters that do not respond in time
+  are skipped for that scrape — their last-known snapshot is served if
+  available.
+
+**Memory budget:** The Telemetry service holds parsed metric snapshots
+  from connected exporters between Prometheus scrapes. With 200
+  exporters each producing ~50 series (bounded by `{operation, result,
+  driver_type}` label combinations), the total is ~10 000 series at
+  ~200–300 bytes each, costing ~2–3 MB. Snapshots from exporters that
+  disconnect are evicted after `spec.telemetry.metrics.staleEvictionTTL`
+  (default: 10 min) to prevent stale-exporter accumulation after
+  scale-down.
 
 ### DD-8: Multiple Telemetry replicas (HA) and addable counters
 
@@ -944,6 +967,7 @@ and be fixed before "Implemented".*
 | `jumpstarter_stream_bytes_total`             | counter   | `exporter`, `driver_type`, `direction`            | Bytes transferred (tx/rx) on streams.     |
 | `jumpstarter_active_sessions`                | gauge     | `exporter`                                   | Currently active lease sessions.          |
 | `jumpstarter_lease_acquisitions_total`        | counter   | `result`                                     | Lease acquire attempts (controller).      |
+| `jumpstarter_scrape_timeouts_total`          | counter   | `exporter`                                   | Scrape fan-out timeouts per exporter (Telemetry-side). |
 
 All counters and histograms carry exemplar keys from the operator's
 `exemplarKeys` allowlist (by default `client` and `lease_id`; `trace_id`
@@ -961,6 +985,7 @@ on every observation.
 | `jumpstarter_active_sessions`                | Dashboard   |  yes   | 0 sessions for > 30 min (possible exporter issue). |
 | `jumpstarter_lease_acquisitions_total`        | Dashboard   |  yes   | Failure rate > 10 % over 15 min.               |
 | `jumpstarter_telemetry_dropped_total`        | Alerting    |  yes   | Any increment (telemetry pipeline saturated).   |
+| `jumpstarter_scrape_timeouts_total`          | Alerting    |  yes   | Repeated timeouts for same exporter (connectivity or load issue). |
 
 Thresholds are suggestions; operators should tune them to their
 environment. The operator should ship a set of example `PrometheusRule`
@@ -1022,6 +1047,12 @@ sum by (error_type) (rate(jumpstarter_operation_errors_total{driver_type="storag
 
 ```promql
 sum by (exporter, direction) (rate(jumpstarter_stream_bytes_total[5m]))
+```
+
+**Exporters with repeated scrape timeouts (last 30 min):**
+
+```promql
+topk(10, sum by (exporter) (increase(jumpstarter_scrape_timeouts_total[30m])))
 ```
 
 **HA Telemetry: aggregate across replicas (drop pod/instance):**
@@ -1224,7 +1255,7 @@ can tune metrics, logging, and exemplar behavior without editing code.
 | Field                                     | Type       | Default                                          | Description                                                                                    |
 | ----------------------------------------- | ---------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | `spec.telemetry.enabled`                  | `bool`     | `false`                                          | Deploy the optional Telemetry service.                                                         |
-| `spec.telemetry.loki.url`                 | `string`   | —                                                | Loki push endpoint; required when Telemetry is enabled.                                        |
+| `spec.telemetry.loki.url`                 | `string`   | —                                                | Loki push endpoint; optional — Telemetry can run metrics-only without Loki.                    |
 | `spec.telemetry.loki.secretRef`           | `string`   | —                                                | Secret with Loki credentials (see **DD-5**).                                                   |
 | `spec.telemetry.loki.tls.caSecretRef`     | `string`   | —                                                | Secret containing a CA bundle (`ca.crt` key) to trust for the Loki endpoint.                   |
 | `spec.telemetry.loki.tls.insecureSkipVerify` | `bool`  | `false`                                          | Disable TLS certificate verification (development/testing only).                               |
@@ -1233,7 +1264,9 @@ can tune metrics, logging, and exemplar behavior without editing code.
 | `spec.telemetry.metrics.driverTypeEnum`   | `[]string` | `["power", "storage", "network", "serial", …]`  | Allowed `driver_type` label values. Drivers reporting an unlisted type are mapped to `other`.   |
 | `spec.telemetry.metrics.serviceMonitor`   | `bool`     | `true`                                           | Create `ServiceMonitor` CRDs for Prometheus autodiscovery.                                     |
 | `spec.telemetry.metrics.prometheusRules`  | `bool`     | `false`                                          | Deploy starter `PrometheusRule` CRDs (opt-in).                                                 |
-| `spec.telemetry.backpressure.queueDepth`  | `int`      | `10000`                                          | Ring buffer depth per destination (see backpressure design above).                             |
+| `spec.telemetry.metrics.scrapeTimeout`    | `duration` | `7s`                                             | Max time to wait for parallel exporter responses during a `/metrics` fan-out. Must leave headroom within the Prometheus-side `scrape_timeout` |
+| `spec.telemetry.metrics.staleEvictionTTL` | `duration` | `10m`                                            | Evict metric snapshots from disconnected exporters after this duration.                        |
+| `spec.telemetry.backpressure.queueDepth`  | `int`      | `10000`                                          | Ring buffer depth for Loki log push queue.                                                     |
 
 **Example CR snippet:**
 
@@ -1267,6 +1300,8 @@ spec:
         - composite
       serviceMonitor: true
       prometheusRules: true
+      scrapeTimeout: "7s"
+      staleEvictionTTL: "10m"
     backpressure:
       queueDepth: 20000
 ```
