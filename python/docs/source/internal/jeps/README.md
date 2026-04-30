@@ -32,9 +32,10 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 
 ### Standards Track JEPs
 
-| JEP  | Title                                                | Status      | Author(s)            |
-| ---- | ---------------------------------------------------- | ----------- | -------------------- |
-| 0010 | [Renode Integration](JEP-0010-renode-integration.md) | Implemented | @vtz (Vinicius Zein) |
+| JEP  | Title                                                                                                                  | Status      | Author(s)             |
+| ---- | ---------------------------------------------------------------------------------------------------------------------- | ----------- | --------------------- |
+| 0010 | [Renode Integration](JEP-0010-renode-integration.md)                                                                   | Implemented | @vtz (Vinicius Zein)  |
+| 0011 | [Protobuf Introspection and Interface Generation](JEP-0011-protobuf-introspection-interface-generation.md)             | Discussion  | @kirkbrauer (Kirk Brauer) |
 
 ### Informational JEPs
 
@@ -67,4 +68,5 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 
 JEP-0000-jep-process.md
 JEP-0010-renode-integration.md
+JEP-0011-protobuf-introspection-interface-generation.md
 ```
