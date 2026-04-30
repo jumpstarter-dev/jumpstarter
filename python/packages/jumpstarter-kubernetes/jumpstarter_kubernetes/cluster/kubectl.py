@@ -80,7 +80,7 @@ async def _check_cr_instances(
     cr_resource = "jumpstarters.operator.jumpstarter.dev"
     try:
         cr_cmd = [kubectl, "--context", context, "get", cr_resource, "-A", "-o", "json"]
-        cr_returncode, cr_stdout, _ = await run_command(cr_cmd)
+        cr_returncode, cr_stdout, cr_stderr = await run_command(cr_cmd)
         if cr_returncode == 0:
             cr_data = json.loads(cr_stdout)
             if cr_data.get("items"):
@@ -89,6 +89,8 @@ async def _check_cr_instances(
                     "namespace": namespace or "unknown",
                     "status": "installed",
                 }
+        elif cr_returncode != 0:
+            return {"error": f"CR instance check failed (exit {cr_returncode}): {cr_stderr or cr_stdout}"}
     except (json.JSONDecodeError, RuntimeError) as e:
         return {"error": f"CR instance check failed: {e}"}
     return {}
