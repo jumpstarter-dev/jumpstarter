@@ -789,24 +789,31 @@ long-lived `MetricsStream` to one Telemetry replica.
   Alternative (3) adds operational complexity with no benefit given
   the reverse-scrape model.
 
-### DD-9: Idempotency vs. best-effort (acceptable over-count for informative metrics)
+### DD-9: Idempotency vs. best-effort
+
+**Context:** With the reverse-scrape model, metrics idempotency is a
+non-issue — each scrape returns the full current counter state from the
+exporter, so there are no increments to deduplicate or double-count.
+The only remaining idempotency concern is for `PushLogs` RPCs, where
+a retry could result in duplicate log entries in Loki.
 
 **Alternatives considered:**
 
-1. **Idempotent** increments (deduplication keys or idempotent RPCs) —
-  appropriate for billing- or SLO-sensitive series; more design
-  and storage in the ingest path.
-2. **Best effort** (at-least-once) `+1` / `+N` without global deduplication
-  — simpler; rare extra counts on retries or replays (see
-  **DD-8**).
-3. “Exactly once in the exporter; Telemetry is a dumb adder” —
-  still **(2)** at the edge if the network retries.
+1. **Idempotent** log pushes (deduplication keys per `LogEntry`) —
+  appropriate for billing- or SLO-sensitive log pipelines; requires
+  a dedup store or Loki-side dedup.
+2. **Best effort** (at-least-once) for `PushLogs` without global
+  deduplication — simpler; rare duplicate log entries on retries.
+3. **Metrics idempotency** (dedup keys on metric increments) — no
+  longer applicable; the reverse-scrape model returns full state,
+  making increment deduplication moot.
 
-**Decision:** (2)
+**Decision:** (2) for `PushLogs`; metrics idempotency is not needed.
 
-**Rationale:** Simpler RPCs and no global dedup store in v1;
-  operators treat these numbers as order-of-magnitude signals,
-  not invoices, unless policy changes.
+**Rationale:** Duplicate log entries from occasional retries are
+  acceptable for informative/diagnostic logs. Loki queries are
+  tolerant of rare duplicates. No global dedup store is needed in v1;
+  operators treat these logs as diagnostic signals, not audit trails.
 
 ### DD-10: Perses over Grafana for dashboarding
 
