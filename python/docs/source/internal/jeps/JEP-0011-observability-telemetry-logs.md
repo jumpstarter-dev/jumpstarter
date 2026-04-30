@@ -1488,6 +1488,15 @@ all subsequent phases have E2E coverage from the start.
 - gRPC: new metadata must be additive; servers tolerate missing trace and
   context fields from older clients; clients ignore unknown fields where
   applicable.
+- **`AuditStream` removal:** The `AuditStream` RPC and `AuditStreamRequest`
+  message on `ControllerService` are removed. This RPC was never implemented
+  or called by any client — `Grep` across the codebase confirms zero usage
+  outside its protobuf definition. Removing it is a no-op for all existing
+  deployments. The new `PushLogs` RPC on `TelemetryService` supersedes the
+  intended use case.
+- `LogStreamResponse` enrichment (new optional fields `driver_type`,
+  `operation`, `timestamp`, `structured_fields`) is purely additive and
+  backward-compatible — existing clients ignore unknown fields.
 - No removal of current default CLI behavior; JSON logging only when selected.
 
 ## Consequences
@@ -1551,6 +1560,20 @@ all subsequent phases have E2E coverage from the start.
   unscalable for joins with traces and multi-service incidents.
 - **"Mandatory full tracing for every command"** — high overhead; rejected; prefer
   sampling and opt-in for heavy paths.
+- **"Push metric increments from exporters to telemetry"** — exporters
+  would send `+1`/`+N` counter increments and histogram observations to
+  the Telemetry service, which would maintain in-memory counters and
+  expose them on `/metrics`. Rejected because: (a) counter state would
+  be lost on Telemetry restart, (b) retries introduce double-counting
+  requiring idempotency logic, and (c) high-frequency counters (e.g.
+  stream bytes) generate excessive RPC traffic. The reverse-scrape model
+  keeps full counter state on the exporter and generates zero RPC
+  traffic between scrapes (see **DD-3** alternative 4, **DD-7**).
+- **"Reuse `AuditStream` for telemetry log push"** — `AuditStream` was an
+  unimplemented stub on `ControllerService` with no message schema for
+  structured telemetry data. Rather than retrofitting it, a purpose-built
+  `PushLogs` RPC on the new `TelemetryService` provides a cleaner contract
+  and separates telemetry from the controller's reconciliation API.
 
 ## Prior Art
 
