@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from jumpstarter_kubernetes.cluster.kubectl import (
+    _check_cr_instances,
     check_jumpstarter_installation,
     check_kubernetes_access,
     get_cluster_info,
@@ -189,45 +190,111 @@ class TestGetKubectlContexts:
         mock_run_command.assert_called_once_with(["custom-kubectl", "config", "view", "-o", "json"])
 
 
-class TestCheckJumpstarterInstallation:
-    """Test Jumpstarter installation checking."""
+class TestCheckCrInstances:
+    """Test CR instance detection for Jumpstarter installation."""
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
-    async def test_check_jumpstarter_installation_helm_found(self, mock_run_command):
-        helm_releases = [
-            {
-                "chart": "jumpstarter-1.0.0",
-                "app_version": "1.0.0",
-                "namespace": "jumpstarter-system",
-                "name": "jumpstarter-release",
-                "status": "deployed",
-            }
-        ]
-        # Mock calls: helm list, kubectl get namespaces, kubectl get crds
+    async def test_cr_instances_found_with_namespace(self, mock_run_command):
+        cr_response = {"items": [{"metadata": {"name": "jumpstarter", "namespace": "custom-ns"}}]}
+        mock_run_command.return_value = (0, json.dumps(cr_response), "")
+
+        result = await _check_cr_instances("kubectl", "test-context", "custom-ns")
+
+        assert result == {"installed": True, "namespace": "custom-ns", "status": "installed"}
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_cr_instances_found_without_namespace(self, mock_run_command):
+        cr_response = {"items": [{"metadata": {"name": "jumpstarter"}}]}
+        mock_run_command.return_value = (0, json.dumps(cr_response), "")
+
+        result = await _check_cr_instances("kubectl", "test-context", None)
+
+        assert result == {"installed": True, "namespace": "unknown", "status": "installed"}
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_cr_instances_empty_items(self, mock_run_command):
+        cr_response = {"items": []}
+        mock_run_command.return_value = (0, json.dumps(cr_response), "")
+
+        result = await _check_cr_instances("kubectl", "test-context", None)
+
+        assert result == {}
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_cr_instances_nonzero_return_code(self, mock_run_command):
+        mock_run_command.return_value = (1, "", "forbidden")
+
+        result = await _check_cr_instances("kubectl", "test-context", None)
+
+        assert "error" in result
+        assert "exit 1" in result["error"]
+        assert "forbidden" in result["error"]
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_cr_instances_json_decode_error(self, mock_run_command):
+        mock_run_command.return_value = (0, "not valid json", "")
+
+        result = await _check_cr_instances("kubectl", "test-context", None)
+
+        assert "error" in result
+        assert "CR instance check failed" in result["error"]
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_cr_instances_runtime_error(self, mock_run_command):
+        mock_run_command.side_effect = RuntimeError("kubectl not found")
+
+        result = await _check_cr_instances("kubectl", "test-context", None)
+
+        assert "error" in result
+        assert "CR instance check failed" in result["error"]
+        assert "kubectl not found" in result["error"]
+
+
+class TestCheckJumpstarterInstallation:
+    """Test Jumpstarter installation checking via CRD detection."""
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_check_jumpstarter_installation_crds_only(self, mock_run_command):
+        crds_response = {"items": [{"metadata": {"name": "exporters.jumpstarter.dev"}}]}
+
+        mock_run_command.return_value = (0, json.dumps(crds_response), "")
+
+        result = await check_jumpstarter_installation("test-context")
+
+        assert result.has_crds is True
+        assert result.installed is False
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_check_jumpstarter_installation_with_cr_instances(self, mock_run_command):
+        crds_response = {"items": [
+            {"metadata": {"name": "exporters.jumpstarter.dev"}},
+            {"metadata": {"name": "jumpstarters.operator.jumpstarter.dev"}},
+        ]}
+        cr_response = {"items": [{"metadata": {"name": "jumpstarter", "namespace": "jumpstarter"}}]}
+
         mock_run_command.side_effect = [
-            (0, json.dumps(helm_releases), ""),  # helm list success
-            (0, '{"items": []}', ""),  # kubectl get namespaces
-            (0, '{"items": []}', ""),  # kubectl get crds
+            (0, json.dumps(crds_response), ""),
+            (0, json.dumps(cr_response), ""),
         ]
 
         result = await check_jumpstarter_installation("test-context")
 
+        assert result.has_crds is True
         assert result.installed is True
-        assert result.version == "1.0.0"
-        assert result.namespace == "jumpstarter-system"
-        assert result.chart_name == "jumpstarter-release"
-        assert result.status == "deployed"
+        assert result.status == "installed"
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
-    async def test_check_jumpstarter_installation_no_helm(self, mock_run_command):
-        # Helm command fails, fallback to kubectl
-        mock_run_command.side_effect = [
-            (1, "", "helm not found"),  # helm list fails
-            (0, '{"items": []}', ""),  # kubectl get namespaces
-            (1, "", "not found"),  # kubectl get crds
-        ]
+    async def test_check_jumpstarter_installation_no_crds(self, mock_run_command):
+        mock_run_command.return_value = (0, '{"items": []}', "")
 
         result = await check_jumpstarter_installation("test-context")
 
@@ -236,35 +303,96 @@ class TestCheckJumpstarterInstallation:
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
-    async def test_check_jumpstarter_installation_namespace_found(self, mock_run_command):
-        crds_response = {"items": [{"metadata": {"name": "exporter.jumpstarter.dev"}}]}
-
-        mock_run_command.side_effect = [
-            (1, "", "helm not found"),  # helm list fails
-            (0, json.dumps(crds_response), ""),  # kubectl get crds
-        ]
+    async def test_check_jumpstarter_installation_command_failure(self, mock_run_command):
+        mock_run_command.side_effect = RuntimeError("kubectl not found")
 
         result = await check_jumpstarter_installation("test-context")
 
-        assert result.installed is True
-        assert result.namespace == "unknown"
-        assert result.has_crds is True
-        assert result.status == "manual-install"
+        assert result.installed is False
+        assert result.has_crds is False
+        assert result.error is not None
+        assert "kubectl not found" in result.error
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_check_jumpstarter_installation_nonzero_exit(self, mock_run_command):
+        mock_run_command.return_value = (1, "", "forbidden")
+
+        result = await check_jumpstarter_installation("test-context")
+
+        assert result.installed is False
+        assert result.has_crds is False
+        assert result.error is not None
+        assert "forbidden" in result.error
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
     async def test_check_jumpstarter_installation_custom_namespace(self, mock_run_command):
+        crds_response = {"items": [
+            {"metadata": {"name": "exporters.jumpstarter.dev"}},
+            {"metadata": {"name": "jumpstarters.operator.jumpstarter.dev"}},
+        ]}
+        cr_response = {"items": [{"metadata": {"name": "jumpstarter", "namespace": "custom-ns"}}]}
+
         mock_run_command.side_effect = [
-            (0, "[]", ""),  # helm list
-            (0, '{"items": []}', ""),  # kubectl get crds
+            (0, json.dumps(crds_response), ""),
+            (0, json.dumps(cr_response), ""),
         ]
 
-        await check_jumpstarter_installation("test-context", namespace="custom-ns")
+        result = await check_jumpstarter_installation("test-context", namespace="custom-ns")
 
-        # Verify the helm command was called (namespace parameter not used in current implementation)
-        helm_call = mock_run_command.call_args_list[0]
-        assert "helm" in helm_call[0][0]
-        assert "list" in helm_call[0][0]
+        assert result.installed is True
+        assert result.namespace == "custom-ns"
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_check_jumpstarter_installation_json_decode_error(self, mock_run_command):
+        mock_run_command.return_value = (0, "not valid json at all", "")
+
+        result = await check_jumpstarter_installation("test-context")
+
+        assert result.installed is False
+        assert result.error is not None
+        assert "Failed to parse output" in result.error
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_check_jumpstarter_installation_stdout_without_json_prefix(self, mock_run_command):
+        crds_json = json.dumps({"items": [{"metadata": {"name": "exporters.jumpstarter.dev"}}]})
+        mock_run_command.return_value = (0, crds_json, "")
+
+        result = await check_jumpstarter_installation("test-context")
+
+        assert result.has_crds is True
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_check_jumpstarter_installation_stdout_with_warning_prefix(self, mock_run_command):
+        crds_json = json.dumps({"items": [{"metadata": {"name": "exporters.jumpstarter.dev"}}]})
+        stdout_with_warning = f"Warning: some kubectl warning\n{crds_json}"
+        mock_run_command.return_value = (0, stdout_with_warning, "")
+
+        result = await check_jumpstarter_installation("test-context")
+
+        assert result.has_crds is True
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_check_jumpstarter_installation_cr_check_empty_items(self, mock_run_command):
+        crds_response = {"items": [
+            {"metadata": {"name": "jumpstarters.operator.jumpstarter.dev"}},
+        ]}
+        cr_response = {"items": []}
+
+        mock_run_command.side_effect = [
+            (0, json.dumps(crds_response), ""),
+            (0, json.dumps(cr_response), ""),
+        ]
+
+        result = await check_jumpstarter_installation("test-context")
+
+        assert result.has_crds is True
+        assert result.installed is False
 
 
 class TestGetClusterInfo:
@@ -316,15 +444,116 @@ class TestGetClusterInfo:
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
     async def test_get_cluster_info_invalid_json(self, mock_get_contexts):
-        # Mock get_kubectl_contexts to fail with JSON parse error
         error_msg = "Failed to parse kubectl config: Expecting value: line 1 column 1 (char 0)"
         mock_get_contexts.side_effect = JumpstarterKubernetesError(error_msg)
 
         result = await get_cluster_info("test-context")
 
-        assert result.accessible is False  # Function failed
+        assert result.accessible is False
         assert "Failed to get cluster info" in result.error
         assert "Failed to parse kubectl config" in result.error
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
+    async def test_get_cluster_info_context_not_found(self, mock_get_contexts):
+        mock_get_contexts.return_value = [
+            {
+                "name": "other-context",
+                "cluster": "other",
+                "server": "https://other",
+                "user": "u",
+                "namespace": "default",
+                "current": False,
+            }
+        ]
+
+        result = await get_cluster_info("missing-context")
+
+        assert result.name == "missing-context"
+        assert result.accessible is False
+        assert "not found" in result.error
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    @patch("jumpstarter_kubernetes.cluster.kubectl.check_jumpstarter_installation")
+    async def test_get_cluster_info_inaccessible_cluster(
+        self, mock_check_jumpstarter, mock_run_command, mock_get_contexts
+    ):
+        mock_get_contexts.return_value = [
+            {
+                "name": "test-context",
+                "cluster": "test-cluster",
+                "server": "https://test.example.com",
+                "user": "test-user",
+                "namespace": "default",
+                "current": False,
+            }
+        ]
+        mock_run_command.return_value = (1, "", "connection refused")
+
+        result = await get_cluster_info("test-context")
+
+        assert result.accessible is False
+        assert result.jumpstarter.installed is False
+        assert result.jumpstarter.error == "Cluster not accessible"
+        mock_check_jumpstarter.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    @patch("jumpstarter_kubernetes.cluster.kubectl.check_jumpstarter_installation")
+    async def test_get_cluster_info_version_parse_failure(
+        self, mock_check_jumpstarter, mock_run_command, mock_get_contexts
+    ):
+        mock_get_contexts.return_value = [
+            {
+                "name": "test-context",
+                "cluster": "test-cluster",
+                "server": "https://test.example.com",
+                "user": "test-user",
+                "namespace": "default",
+                "current": False,
+            }
+        ]
+        mock_run_command.return_value = (0, "not json", "")
+        mock_check_jumpstarter.return_value = V1Alpha1JumpstarterInstance(installed=False)
+
+        result = await get_cluster_info("test-context")
+
+        assert result.accessible is True
+        assert result.version == "unknown"
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_get_cluster_info_version_command_runtime_error(
+        self, mock_run_command, mock_get_contexts
+    ):
+        mock_get_contexts.return_value = [
+            {
+                "name": "test-context",
+                "cluster": "test-cluster",
+                "server": "https://test.example.com",
+                "user": "test-user",
+                "namespace": "default",
+                "current": False,
+            }
+        ]
+        mock_run_command.side_effect = RuntimeError("command failed")
+
+        result = await get_cluster_info("test-context")
+
+        assert result.accessible is False
+        assert result.version is None
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
+    async def test_get_cluster_info_propagates_programming_errors(self, mock_get_contexts):
+        mock_get_contexts.side_effect = TypeError("unexpected type")
+
+        with pytest.raises(TypeError, match="unexpected type"):
+            await get_cluster_info("test-context")
 
 
 class TestListClusters:
@@ -387,6 +616,52 @@ class TestListClusters:
     async def test_list_clusters_custom_parameters(self, mock_get_contexts):
         mock_get_contexts.return_value = []
 
-        await list_clusters(kubectl="custom-kubectl", helm="custom-helm", minikube="custom-minikube")
+        await list_clusters(kubectl="custom-kubectl", minikube="custom-minikube")
 
         mock_get_contexts.assert_called_once_with("custom-kubectl")
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
+    @patch("jumpstarter_kubernetes.cluster.kubectl.get_cluster_info")
+    async def test_list_clusters_with_type_filter(self, mock_get_cluster_info, mock_get_contexts):
+        mock_get_contexts.return_value = [
+            {
+                "name": "kind-ctx",
+                "cluster": "kind-cluster",
+                "server": "https://kind",
+                "user": "u",
+                "current": True,
+            },
+            {
+                "name": "remote-ctx",
+                "cluster": "remote-cluster",
+                "server": "https://remote",
+                "user": "u",
+                "current": False,
+            },
+        ]
+
+        kind_info = V1Alpha1ClusterInfo(
+            name="kind-ctx", cluster="kind-cluster", server="https://kind", user="u",
+            namespace="default", is_current=True, type="kind", accessible=True,
+            jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
+        )
+        remote_info = V1Alpha1ClusterInfo(
+            name="remote-ctx", cluster="remote-cluster", server="https://remote", user="u",
+            namespace="default", is_current=False, type="remote", accessible=False,
+            jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
+        )
+        mock_get_cluster_info.side_effect = [kind_info, remote_info]
+
+        result = await list_clusters(cluster_type_filter="kind")
+
+        assert len(result.items) == 1
+        assert result.items[0].name == "kind-ctx"
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
+    async def test_list_clusters_propagates_programming_errors(self, mock_get_contexts):
+        mock_get_contexts.side_effect = TypeError("unexpected type")
+
+        with pytest.raises(TypeError, match="unexpected type"):
+            await list_clusters()

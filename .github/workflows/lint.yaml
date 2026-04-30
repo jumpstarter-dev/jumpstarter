@@ -19,7 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       controller: ${{ steps.filter.outputs.controller }}
-      helm: ${{ steps.filter.outputs.helm }}
       protocol: ${{ steps.filter.outputs.protocol }}
       python: ${{ steps.filter.outputs.python }}
     steps:
@@ -31,9 +30,6 @@ jobs:
             controller:
               - 'controller/**'
               - '.github/workflows/lint.yaml'
-            helm:
-              - 'controller/deploy/helm/**'
-              - '.github/workflow/lint.yaml'
             protocol:
               - 'protocol/**'
               - '.github/workflows/lint.yaml'
@@ -59,20 +55,6 @@ jobs:
       - name: Run go linter
         working-directory: controller
         run: make lint
-
-  lint-helm:
-    needs: changes
-    if: needs.changes.outputs.helm == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Run helm linter
-        working-directory: controller
-        run: make lint-helm
 
   lint-protobuf:
     needs: changes
