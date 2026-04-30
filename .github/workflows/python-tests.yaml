@@ -122,6 +122,28 @@ jobs:
         run: |
           make test
 
+      - name: Fix coverage.xml source paths for diff-cover
+        if: github.event_name == 'pull_request'
+        working-directory: python
+        run: |
+            # Each package's coverage.xml records filenames relative to the
+            # package directory (e.g. "my_pkg/foo.py"), but diff-cover resolves
+            # paths from the git root.  Inject the correct <source> element so
+            # diff-cover can map coverage data back to git diff paths.
+            for f in $(find packages -name coverage.xml 2>/dev/null); do
+              pkg_dir="$(cd "$(dirname "$f")" && pwd)"
+              python3 -c "
+            import xml.etree.ElementTree as ET, sys
+            tree = ET.parse(sys.argv[1])
+            sources = tree.getroot().find('sources')
+            for s in sources.findall('source'):
+                sources.remove(s)
+            el = ET.SubElement(sources, 'source')
+            el.text = sys.argv[2]
+            tree.write(sys.argv[1], xml_declaration=True)
+            " "$f" "$pkg_dir"
+            done
+
       - name: Check coverage on changed lines
         if: github.event_name == 'pull_request'
         working-directory: python

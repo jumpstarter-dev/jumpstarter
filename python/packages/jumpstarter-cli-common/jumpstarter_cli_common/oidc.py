@@ -1,22 +1,93 @@
 import json
 import os
+import secrets
 import ssl
 import time
 from dataclasses import dataclass
 from functools import wraps
 from typing import ClassVar
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import aiohttp
 import certifi
 import click
+import requests
 from aiohttp import web
 from anyio import create_memory_object_stream
 from anyio.to_thread import run_sync
-from authlib.integrations.requests_client import OAuth2Session
 from joserfc.jws import extract_compact
 from yarl import URL
 
 from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT
+
+
+class _OAuth2Client:
+    """Lightweight OAuth2 client using requests.Session.
+
+    Replaces authlib.integrations.requests_client.OAuth2Session to avoid
+    the AuthlibDeprecationWarning triggered by authlib's internal
+    authlib.jose imports (see https://github.com/jumpstarter-dev/jumpstarter/issues/627).
+    """
+
+    def __init__(self, client_id: str, scope: list[str], redirect_uri: str | None = None):
+        self.client_id = client_id
+        self.scope = scope
+        self.redirect_uri = redirect_uri
+        self._session = requests.Session()
+
+    @property
+    def verify(self):
+        return self._session.verify
+
+    @verify.setter
+    def verify(self, value):
+        self._session.verify = value
+
+    def create_authorization_url(self, url: str, **kwargs) -> tuple[str, str]:
+        """Build an authorization URL with a generated state parameter."""
+        state = secrets.token_urlsafe(32)
+        params = {
+            "response_type": "code",
+            "client_id": self.client_id,
+            "scope": " ".join(self.scope),
+            "state": state,
+        }
+        if self.redirect_uri:
+            params["redirect_uri"] = self.redirect_uri
+        params.update(kwargs)
+        separator = "&" if "?" in url else "?"
+        return f"{url}{separator}{urlencode(params)}", state
+
+    def fetch_token(self, url: str, **kwargs) -> dict:
+        """Exchange credentials for an OAuth2 token via HTTP POST."""
+        data = {"client_id": self.client_id}
+
+        # Handle authorization_response: extract the code from the callback URL
+        authorization_response = kwargs.pop("authorization_response", None)
+        if authorization_response:
+            parsed = urlparse(authorization_response)
+            qs = parse_qs(parsed.query)
+            code = qs.get("code", [None])[0]
+            if code:
+                data["code"] = code
+            if self.redirect_uri:
+                data["redirect_uri"] = self.redirect_uri
+            data.setdefault("grant_type", "authorization_code")
+
+        # Merge remaining kwargs into the POST body
+        data.update(kwargs)
+
+        # Ensure scope is a space-separated string
+        if "scope" not in data:
+            data["scope"] = " ".join(self.scope)
+
+        response = self._session.post(
+            url,
+            data=data,
+            headers={"Accept": "application/json"},
+        )
+        response.raise_for_status()
+        return response.json()
 
 
 def _get_ssl_context() -> ssl.SSLContext:
@@ -77,7 +148,7 @@ class Config:
         return list(self.scope)
 
     def client(self, **kwargs):
-        session = OAuth2Session(client_id=self.client_id, scope=self._scopes(), **kwargs)
+        session = _OAuth2Client(client_id=self.client_id, scope=self._scopes(), **kwargs)
         session.verify = False if self.insecure_tls else (os.environ.get("SSL_CERT_FILE") or certifi.where())
         return session
 
