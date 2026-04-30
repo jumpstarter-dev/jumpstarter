@@ -103,7 +103,7 @@ class HookExecutor:
         # Falls back to main socket if hook socket not available (backward compatibility)
         socket_path = lease_scope.hook_socket_path or lease_scope.socket_path
         if lease_scope.hook_socket_path:
-            logger.info(
+            logger.debug(
                 "Using dedicated hook socket: %s (main socket: %s)",
                 lease_scope.hook_socket_path,
                 lease_scope.socket_path,
