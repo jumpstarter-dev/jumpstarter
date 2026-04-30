@@ -255,8 +255,7 @@ async def list_clusters(
 
         return V1Alpha1ClusterList(items=cluster_infos)
 
-    except Exception as e:
-        # Return empty list with error in the first cluster
+    except (RuntimeError, json.JSONDecodeError, JumpstarterKubernetesError) as e:
         error_cluster = V1Alpha1ClusterInfo(
             name="error",
             cluster="error",

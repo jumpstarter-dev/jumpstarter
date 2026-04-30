@@ -657,3 +657,11 @@ class TestListClusters:
 
         assert len(result.items) == 1
         assert result.items[0].name == "kind-ctx"
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
+    async def test_list_clusters_propagates_programming_errors(self, mock_get_contexts):
+        mock_get_contexts.side_effect = TypeError("unexpected type")
+
+        with pytest.raises(TypeError, match="unexpected type"):
+            await list_clusters()
