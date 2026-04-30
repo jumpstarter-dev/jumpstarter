@@ -81,7 +81,7 @@ def _handle_child(config, parsed_bind=None, tls_insecure=False, tls_cert=None, t
 
             with open_signal_receiver(signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT) as signals:
                 async for sig in signals:
-                    if signal_handled:  # ty: ignore[unresolved-reference]
+                    if signal_handled:
                         continue  # Ignore duplicate signals
                     received_signal = sig
                     logger.info("CHILD: Received %d (%s)", received_signal, signal.Signals(received_signal).name)

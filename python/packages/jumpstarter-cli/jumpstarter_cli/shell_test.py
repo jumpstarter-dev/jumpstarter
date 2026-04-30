@@ -106,7 +106,7 @@ async def test_shell_warns_when_expired_token_prevents_cleanup_on_normal_exit():
     async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
         yield lease
 
-    config.lease_async = lease_async
+    config.lease_async = lease_async  # ty: ignore[invalid-assignment]
 
     async def fake_monitor(_config, _lease, _cancel_scope, token_state=None):
         if token_state is not None:
@@ -140,8 +140,9 @@ def test_shell_requires_selector_or_name_when_no_leases():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
     config.list_leases = AsyncMock(return_value=_make_lease_list([]))
+    assert shell.callback is not None
     with pytest.raises(click.UsageError, match="no active leases found"):
-        shell.callback.__wrapped__.__wrapped__(
+        shell.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
             config=config,
             command=(),
             lease_name=None,
@@ -157,6 +158,7 @@ def test_shell_requires_selector_or_name_when_no_leases():
 
 
 def test_shell_allows_existing_lease_name_without_selector_or_name():
+    assert shell.callback is not None
     with (
         patch("jumpstarter_cli.shell.anyio.run", return_value=0),
         patch("jumpstarter_cli.shell.sys.exit") as mock_exit,
@@ -181,11 +183,12 @@ def test_shell_allows_existing_lease_name_without_selector_or_name():
 def test_shell_auto_connects_single_lease():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
+    assert shell.callback is not None
     with (
         patch("jumpstarter_cli.shell.anyio.run", side_effect=["my-only-lease", 0]) as mock_run,
         patch("jumpstarter_cli.shell.sys.exit") as mock_exit,
     ):
-        shell.callback.__wrapped__.__wrapped__(
+        shell.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
             config=config,
             command=(),
             lease_name=None,
@@ -211,8 +214,9 @@ def test_shell_no_leases_shows_guidance():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
     config.list_leases = AsyncMock(return_value=_make_lease_list([]))
+    assert shell.callback is not None
     with pytest.raises(click.UsageError, match="no active leases found"):
-        shell.callback.__wrapped__.__wrapped__(
+        shell.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
             config=config,
             command=(),
             lease_name=None,
@@ -247,12 +251,13 @@ def test_shell_multi_lease_no_tty_error():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
     config.list_leases = AsyncMock(return_value=_make_lease_list(["lease-a", "lease-b"]))
+    assert shell.callback is not None
     with (
         patch("jumpstarter_cli.shell.sys.stdin") as mock_stdin,
         pytest.raises(click.UsageError, match="lease-a"),
     ):
         mock_stdin.isatty.return_value = False
-        shell.callback.__wrapped__.__wrapped__(
+        shell.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
             config=config,
             command=(),
             lease_name=None,
@@ -286,8 +291,9 @@ def test_shell_no_own_leases_among_others():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
     config.list_leases = AsyncMock(return_value=lease_list)
+    assert shell.callback is not None
     with pytest.raises(click.UsageError, match="no active leases found"):
-        shell.callback.__wrapped__.__wrapped__(
+        shell.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
             config=config,
             command=(),
             lease_name=None,
@@ -303,6 +309,7 @@ def test_shell_no_own_leases_among_others():
 
 
 def test_shell_allows_env_lease_without_selector_or_name():
+    assert shell.callback is not None
     with (
         patch("jumpstarter_cli.shell.anyio.run", return_value=0),
         patch("jumpstarter_cli.shell.sys.exit") as mock_exit,
@@ -696,8 +703,7 @@ class TestMonitorTokenExpiry:
 
         def check_cancelled():
             nonlocal call_count
-            call_count += 1  # ty: ignore[unresolved-reference]
-            return call_count > 1
+            call_count += 1            return call_count > 1
 
         config = _make_config()
 
@@ -899,8 +905,7 @@ class TestRunShellWithLeaseAsync:
 
         async def get_status_race():
             nonlocal call_count
-            call_count += 1  # ty: ignore[unresolved-reference]
-            if call_count == 1:
+            call_count += 1            if call_count == 1:
                 return ExporterStatus.LEASE_READY
             lease.lease_ended = True
             return ExporterStatus.AVAILABLE
@@ -937,7 +942,7 @@ class TestShellWithSignalHandlingLeaseTimeout:
         async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
             yield lease
 
-        config.lease_async = lease_async
+        config.lease_async = lease_async  # ty: ignore[invalid-assignment]
 
         async def fake_run_shell(*_args):
             raise BaseExceptionGroup("test", [RuntimeError("simulated cancellation")])
@@ -966,7 +971,7 @@ class TestShellWithSignalHandlingLeaseTimeout:
         async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
             yield lease
 
-        config.lease_async = lease_async
+        config.lease_async = lease_async  # ty: ignore[invalid-assignment]
 
         async def fake_run_shell(*_args):
             raise BaseExceptionGroup("test", [RuntimeError("connection broken")])

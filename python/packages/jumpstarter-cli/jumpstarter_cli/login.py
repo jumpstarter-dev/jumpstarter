@@ -377,7 +377,7 @@ async def relogin_client(config: ClientConfigV1Alpha1):
                 refresh_token = tokens.get("refresh_token")
                 if refresh_token is not None:
                     config.refresh_token = refresh_token
-                ClientConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
+                ClientConfigV1Alpha1.save(config)
                 return
             except Exception:
                 pass
@@ -387,6 +387,6 @@ async def relogin_client(config: ClientConfigV1Alpha1):
         refresh_token = tokens.get("refresh_token")
         if refresh_token is not None:
             config.refresh_token = refresh_token
-        ClientConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
+        ClientConfigV1Alpha1.save(config)
     except Exception as e:
         raise ReauthenticationFailed(f"Failed to re-authenticate: {e}") from e
