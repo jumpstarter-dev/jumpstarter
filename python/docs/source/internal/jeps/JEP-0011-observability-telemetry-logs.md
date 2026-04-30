@@ -33,8 +33,8 @@ and compatibility rules.
 | Phase | Scope | Key deliverables |
 | ----- | ----- | ---------------- |
 | 1 | Structured logging + lease context | `spec.context` CRD field; JSON structured logs for all long-running services; correlation fields (`lease_id`, `exporter`, `operation`, `result`) in every log line. |
-| 2 | Metrics endpoints | `/metrics` scrape endpoints on Controller and Router; exporter counter/histogram/gauge metrics with `driver_type`; Prometheus exemplars for high-cardinality context. |
-| 3 | Telemetry service | Optional `jumpstarter-telemetry` Deployment managed by the operator; exporter and client data aggregation; Loki push for edge-originated logs and events. |
+| 2 | Metrics endpoints | `/metrics` scrape endpoints on Controller and Router; exporter-local `prometheus_client` counters/histograms/gauges with `driver_type`; Prometheus exemplars for high-cardinality context. |
+| 3 | Telemetry service | Optional `jumpstarter-telemetry` Deployment managed by the operator; reverse-scrape of exporter metrics via `MetricsStream`; Loki push for edge-originated logs and events. |
 | 4 | In-cluster log scraping | Operator configures log shipper integration (Promtail, Grafana Alloy, Vector) for Controller/Router pod logs; `ServiceMonitor` CRDs for Prometheus autodiscovery. |
 | 5 | Dashboards + alerting | Perses CRD dashboards; starter alert rules; documentation and operator integration. |
 
@@ -97,13 +97,13 @@ exporter-level metrics that a monitoring stack can scrape or receive.
   its power sub-driver emits `driver_type="power"`, and so on. Any
   top-level methods on the composite driver itself (e.g. VM lifecycle)
   emit `driver_type="composite"`.
-- **Jumpstarter Telemetry** (optional) — a dedicated
-  component with a well-known ingest path and the same trust
-  model (mTLS, ServiceAccount) as Controller/Router;
-  it isolates Loki/series work from the reconciler hot path (see
-  **DD-7**). Multi-replica HA and PromQL `sum` aggregation are
-  covered in **DD-8**; best-effort idempotency for informative metrics in
-  **DD-9**.
+- **Jumpstarter Telemetry** (optional) — a dedicated component that
+  reverse-scrapes connected exporters for metrics via `MetricsStream`
+  and receives structured logs via `PushLogs`, using the same trust
+  model (mTLS, ServiceAccount) as Controller/Router. It isolates
+  Loki/series work from the reconciler hot path (see **DD-7**).
+  Multi-replica HA with exporter-sticky connections is covered in
+  **DD-8**; best-effort log deduplication in **DD-9**.
 
 ### What users see
 
@@ -113,13 +113,15 @@ exporter-level metrics that a monitoring stack can scrape or receive.
   identifier, image digest, or VCS.
 - The controller and/or data plane write structured, annotated log events
   (see **DD-2**) for significant operations such as flash attempts and outcomes.
-- Exporters send increments to the Jumpstarter Telemetry
-  service over the existing exporter↔control-plane trust boundary;
-  the in-cluster side then POSTs to Loki and exposes `/metrics`
-  for scrape (see **DD-3**, **DD-7**), with cluster credentials, avoiding
-  per-exporter Loki and metrics secrets. The same path can carry operator-chosen structured log lines
-  and events (not unbounded default client chatter — see *Control-plane
-  aggregation* below).
+- Exporters maintain local `prometheus_client` counters and open a
+  `MetricsStream` to the Jumpstarter Telemetry service over the
+  existing exporter↔control-plane trust boundary. On each Prometheus
+  scrape, the Telemetry service fans out to connected exporters and
+  serves the merged `/metrics` output (see **DD-3**, **DD-7**), with
+  cluster credentials — avoiding per-exporter Loki and metrics secrets.
+  Exporters and clients also push structured log entries via `PushLogs`
+  (not unbounded default chatter — see *Control-plane aggregation*
+  below).
 - The `jmp` CLI output remains human-readable, but when a Telemetry
   endpoint is available, `jmp` also pushes structured JSON logs to the
   Jumpstarter Telemetry service for Loki ingest.
@@ -587,7 +589,7 @@ are still useful for selection and for tools that only understand metadata.
 4. **Dedicated Jumpstarter Telemetry Deployment** (see **DD-7**)
    instead of folding everything into the Controller — only
    Telemetry holds Loki-push credentials; isolated failure domain
-   and scaling for high-volume increments. Router and Controller
+   and scaling for reverse-scrape and log ingest. Router and Controller
    write structured JSON to stdout (see **DD-4**) and expose `/metrics`
    for Prometheus scrape; a cluster log shipper delivers their pod logs
    to Loki without Jumpstarter-specific Loki credentials.
@@ -653,8 +655,8 @@ its configuration model, receivers, processors, and exporters — overhead
 that is not justified when the data paths are known in advance.
 Additionally, the Telemetry service operates inside Jumpstarter's
 existing authentication and trust domain (mTLS, registered client and
-exporter identities). It can validate that an incoming increment
-actually originates from the claimed exporter or client — preventing
+exporter identities). It can validate that an incoming `MetricsStream`
+or `PushLogs` call originates from the claimed exporter or client — preventing
 impersonation or label injection — without requiring a separate
 auth layer. A generic OTel Collector has no awareness of Jumpstarter
 identities and would need external policy to achieve the same guarantee.
@@ -1016,12 +1018,11 @@ These rules are opt-in and disabled by default to avoid noise in
 environments with different baselines.
 
 **High-frequency byte counters:** `jumpstarter_stream_bytes_total` can
-be incremented at very high rates on serial and video streams. Exporters
-must pre-aggregate byte counts locally and flush a single `+N` increment
-to the Telemetry service at a configurable interval (default: every 5 s
-or every 64 KiB, whichever comes first) rather than sending a per-read
-or per-write RPC. This bounds telemetry RPC volume independently of
-stream throughput.
+be incremented at very high rates on serial and video streams. Because
+metrics live in the exporter's local `prometheus_client` registry, high
+update rates do not generate any RPC traffic — the counter is updated
+in-process and only serialized when the Telemetry service sends a
+`MetricsScrapeRequest`.
 
 ### Example queries
 
@@ -1393,7 +1394,7 @@ and should only be used in development or testing environments.
   correlation fields (`lease_id`, `exporter`, …) and that exporter pods do not require
   Loki or cluster-scrape credentials in their spec.
 - If Telemetry runs with >1 replica: one test verifies that
-  `sum` by business labels (dropping `pod`/`instance`) matches expected totals after partitioned increments (see **DD-8**).
+  `sum` by business labels (dropping `pod`/`instance`) matches expected totals with exporter-sticky connections (see **DD-8**).
 - Lease with metadata: objects validate; events or status updates match expected
   structure.
 
