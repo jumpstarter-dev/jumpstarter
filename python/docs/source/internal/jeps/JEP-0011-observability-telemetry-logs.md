@@ -1121,45 +1121,49 @@ sum by (client) (
 
 When this mode is enabled in a deployment:
 
-- Exporters and clients (`jmp`) send increments (`+1` /
-  `+N`) and structured log/event records to the optional
-  `jumpstarter-telemetry` service (name TBD, see **DD-7**). This dedicated
-  `Service` uses the same mTLS / ServiceAccount / NetworkPolicy model as
-  Controller and Router; it holds in-memory counters, POSTs to
-  the Loki API, and exposes `/metrics` for Prometheus scrape
-  (**DD-3**). HA (multiple replicas) uses `sum` in PromQL (**DD-8**);
-  best-effort duplicate tolerance (**DD-9**). Exporter and edge processes never
+- Exporters maintain local `prometheus_client` registries and open a
+  `MetricsStream` to the optional `jumpstarter-telemetry` service
+  (**DD-7**). On each Prometheus scrape the Telemetry service fans out
+  `MetricsScrapeRequest` to all connected exporters in parallel, merges
+  the responses, and serves the combined output on `/metrics`
+  (**DD-3**). HA (multiple replicas with exporter-sticky connections)
+  uses `sum` in PromQL (**DD-8**). Exporter and edge processes never
   need Loki or cluster-scrape credentials directly (**DD-5**).
+- Exporters and clients (`jmp`) push structured log entries to the
+  Telemetry service via `PushLogs`. The Telemetry service forwards
+  these to Loki. Best-effort duplicate tolerance applies (**DD-9**).
 - Controller and Router emit structured JSON logs to stdout
   (see **DD-4**). They do not push logs directly to Loki; a cluster-level
   log shipper (Promtail, Grafana Alloy, Vector, or equivalent) scrapes
   their pod logs and delivers them to Loki. This decouples the reconciler
   and session-handling hot paths from Loki availability.
 - **Backpressure:** The Telemetry service uses a bounded ring buffer
-  per destination (Loki push, metric ingest) with a configurable depth
-  (default: 10 000 entries). On overflow, dropped entries are replaced
-  by a single **drop marker** — a synthetic log entry recording the
-  count of dropped entries and the time window. Subsequent drops while
-  the buffer is still full accumulate into the same marker rather than
-  adding new entries, so the queue always retains one slot for the
-  current drop summary. When the buffer drains and the marker is
-  flushed, the downstream log contains an explicit record such as
+  for the Loki log push path with a configurable depth
+  (default: 10 000 entries, see `spec.telemetry.backpressure.queueDepth`).
+  On overflow, dropped entries are replaced by a single **drop marker**
+  — a synthetic log entry recording the count of dropped entries and the
+  time window. Subsequent drops while the buffer is still full
+  accumulate into the same marker rather than adding new entries, so the
+  queue always retains one slot for the current drop summary. When the
+  buffer drains and the marker is flushed, the downstream log contains
+  an explicit record such as
   `{"level":"warn","msg":"entries dropped","count":142,"window_seconds":12}`.
   A `jumpstarter_telemetry_dropped_total` counter (partitioned by
-  `destination={loki,metrics}`) is also incremented on `/metrics` for
-  alerting. Because the Controller and Router no longer push to Loki,
-  their lease/session operations are inherently isolated from Loki or
-  metrics path slowdowns.
+  `destination={loki}`) is also incremented on `/metrics` for alerting.
+  Metrics do not need backpressure — the reverse-scrape model is
+  pull-based and transient (no buffering between scrapes).
+  Because the Controller and Router do not push to Loki, their
+  lease/session operations are inherently isolated from Loki slowdowns.
 - **Multi-tenancy:** write-side tenant scoping (e.g. namespace-based
   separation in Loki and Prometheus) is a deployment concern handled by
   the log shipper and Prometheus configuration. Read-side access control
   (who can query which metrics or logs) is likewise a deployment concern
   and out of scope for this JEP.
-- This does not require that *all* metrics *originate* in a single
-  process: the exporter and drivers still emit the facts;
-  Telemetry aggregates and ships to Loki; Controller and
-  Router expose `/metrics` for Prometheus scrape and rely on the
-  log shipper for their stdout logs.
+- Metric facts originate on the exporter (local `prometheus_client`
+  counters/histograms); the Telemetry service is a transparent
+  scrape-aggregation proxy. Controller and Router expose their own
+  `/metrics` for Prometheus scrape and rely on the log shipper for
+  their stdout logs.
 
 ### High-level data flow
 
