@@ -187,6 +187,62 @@ class TestUnusedLeaseTimeout:
         assert ExporterStatus.AVAILABLE in statuses
         assert lease_ctx.after_lease_hook_done.is_set()
 
+    async def test_unused_lease_with_hooks_calls_request_lease_release(self):
+        """When a lease ends with no client and hooks are configured,
+        _request_lease_release must still be called so the controller
+        frees the lease. This prevents the exporter from getting stuck
+        in LeaseReady status permanently."""
+        from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
+        from jumpstarter.exporter.hooks import HookExecutor
+
+        lease_ctx = make_lease_context(client_name="")
+        lease_ctx.before_lease_hook.set()
+
+        hook_config = HookConfigV1Alpha1(
+            after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
+        )
+        hook_executor = HookExecutor(config=hook_config)
+
+        exporter = make_exporter(lease_ctx, hook_executor)
+
+        await exporter._cleanup_after_lease(lease_ctx)
+
+        exporter._request_lease_release.assert_awaited_once()
+
+    async def test_unused_lease_without_hooks_calls_request_lease_release(self):
+        """When a lease ends with no client and no hooks configured,
+        _request_lease_release must be called so the controller frees
+        the lease."""
+        lease_ctx = make_lease_context(client_name="")
+        lease_ctx.before_lease_hook.set()
+
+        exporter = make_exporter(lease_ctx)
+
+        await exporter._cleanup_after_lease(lease_ctx)
+
+        exporter._request_lease_release.assert_awaited_once()
+
+    async def test_unused_lease_during_shutdown_still_releases(self):
+        """When a lease ends with no client during exporter shutdown,
+        _request_lease_release must still be called even though AVAILABLE
+        status is not reported."""
+        lease_ctx = make_lease_context(client_name="")
+        lease_ctx.before_lease_hook.set()
+
+        statuses = []
+
+        async def track_status(status, message=""):
+            statuses.append(status)
+
+        exporter = make_exporter(lease_ctx)
+        exporter._stop_requested = True
+        exporter._report_status = AsyncMock(side_effect=track_status)
+
+        await exporter._cleanup_after_lease(lease_ctx)
+
+        exporter._request_lease_release.assert_awaited_once()
+        assert ExporterStatus.AVAILABLE not in statuses
+
     async def test_new_lease_after_unused_timeout_recovery(self):
         """After recovering from unused lease timeout, a new lease
         can be accepted and processed."""

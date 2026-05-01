@@ -643,6 +643,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         await self._report_status(ExporterStatus.AVAILABLE, "Available for new lease")
                     else:
                         logger.debug("Exporter is shutting down, skipping AVAILABLE status report")
+                    await self._request_lease_release()
                 if not lease_scope.after_lease_hook_done.is_set():
                     lease_scope.after_lease_hook_done.set()
             else:
