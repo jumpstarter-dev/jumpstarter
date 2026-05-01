@@ -60,6 +60,7 @@ class DirectLease(ContextManagerMixin, AsyncContextManagerMixin):
 
     name: str = field(default="direct", init=False)
     exporter_name: str = field(default="direct", init=False)
+    exporter_labels: dict[str, str] = field(default_factory=dict, init=False)
     release: bool = field(default=False, init=False)
     lease_ended: bool = field(default=False, init=False)
 
@@ -93,6 +94,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     acquisition_timeout: int = field(default=7200)  # Timeout in seconds for lease acquisition, polled in 5s intervals
     dial_timeout: float = field(default=30.0)  # Timeout in seconds for Dial retry loop when exporter not ready
     exporter_name: str = field(default="remote", init=False)  # Populated during acquisition
+    exporter_labels: dict[str, str] = field(default_factory=dict, init=False)  # Populated during acquisition
     lease_ending_callback: Callable[[Self, timedelta], None] | None = field(
         default=None, init=False
     )  # Called when lease is ending
@@ -196,6 +198,15 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
 
         return await self._acquire()
 
+    async def _fetch_exporter_labels(self):
+        """Fetch the exporter's labels after lease acquisition."""
+        try:
+            exporter = await self.svc.GetExporter(name=self.exporter_name)
+            self.exporter_labels = exporter.labels
+        except Exception as e:
+            self.exporter_labels = {}
+            logger.warning("Could not fetch labels for exporter %s: %s", self.exporter_name, e)
+
     def _update_spinner_status(self, spinner, result):
         """Update spinner with appropriate status message based on lease conditions."""
         if condition_true(result.conditions, "Pending"):
@@ -236,6 +247,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                             logger.debug("Lease %s acquired", self.name)
                             spinner.update_status(f"Lease {self.name} acquired successfully!", force=True)
                             self.exporter_name = result.exporter
+                            await self._fetch_exporter_labels()
                             break
 
                         # lease unsatisfiable
