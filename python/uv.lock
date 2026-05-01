@@ -22,6 +22,7 @@ members = [
     "jumpstarter-driver-can",
     "jumpstarter-driver-composite",
     "jumpstarter-driver-corellium",
+    "jumpstarter-driver-dds",
     "jumpstarter-driver-doip",
     "jumpstarter-driver-dutlink",
     "jumpstarter-driver-energenie",
@@ -1182,6 +1183,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/09/ad/5429fcc4def93e577a5407988f89cf15305e64920203d4ac14601a9dc876/cryptography-45.0.4-pp311-pypy311_pp73-manylinux_2_34_x86_64.whl", hash = "sha256:0cf13c77d710131d33e63626bd55ae7c0efb701ebdc2b3a7952b9b23a0412862", size = 4388475, upload-time = "2025-06-10T00:03:43.493Z" },
     { url = "https://files.pythonhosted.org/packages/99/49/0ab9774f64555a1b50102757811508f5ace451cf5dc0a2d074a4b9deca6a/cryptography-45.0.4-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:bbc505d1dc469ac12a0a064214879eac6294038d6b24ae9f71faae1448a9608d", size = 3337594, upload-time = "2025-06-10T00:03:45.523Z" },
 ]
+
+[[package]]
+name = "cyclonedds"
+version = "0.10.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "rich-click" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/91/cf/28eb9c823dfc245c540f5286d71b44aeee2a51021fc85b25bb9562be78cc/cyclonedds-0.10.5.tar.gz", hash = "sha256:63fc4d6fdb2fd35181c40f4e90757149f2def5f570ef19fb71edc4f568755f8a", size = 156919, upload-time = "2024-06-05T18:50:42.999Z" }
 
 [[package]]
 name = "dbus-fast"
@@ -2417,6 +2427,39 @@ dev = [
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "requests-mock" },
     { name = "trio", specifier = ">=0.28.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-dds"
+source = { editable = "packages/jumpstarter-driver-dds" }
+dependencies = [
+    { name = "click" },
+    { name = "jumpstarter" },
+]
+
+[package.optional-dependencies]
+cyclonedds = [
+    { name = "cyclonedds" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.1.7.2" },
+    { name = "cyclonedds", marker = "extra == 'cyclonedds'", specifier = ">=0.10.0,<1.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+]
+provides-extras = ["cyclonedds"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
 [[package]]

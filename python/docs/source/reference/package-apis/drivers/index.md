@@ -37,6 +37,8 @@ Drivers that provide various communication interfaces:
 * **[BLE](ble.md)** (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
 * **[CAN](can.md)** (`jumpstarter-driver-can`) - Controller Area Network
   communication
+* **[DDS](dds.md)** (`jumpstarter-driver-dds`) - DDS (Data Distribution Service)
+  pub/sub communication using Eclipse CycloneDDS
 * **[HTTP](http.md)** (`jumpstarter-driver-http`) - HTTP communication
 * **[Mitmproxy](mitmproxy.md)** (`jumpstarter-driver-mitmproxy`) - HTTP(S) interception, mocking, and traffic recording
 * **[Network](network.md)** (`jumpstarter-driver-network`) - Network interfaces
@@ -122,6 +124,7 @@ androidemulator.md
 ble.md
 can.md
 corellium.md
+dds.md
 doip.md
 dutlink.md
 energenie.md
