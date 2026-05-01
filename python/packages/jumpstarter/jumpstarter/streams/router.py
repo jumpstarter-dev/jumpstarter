@@ -58,6 +58,8 @@ class RouterStream(ObjectStream[bytes]):
 
     async def send_eof(self):
         with contextlib.suppress(grpc.aio.AioRpcError, asyncio.exceptions.InvalidStateError):
+            if self.context.done():
+                return
             await self.context.write(self.cls(frame_type=router_pb2.FRAME_TYPE_GOAWAY))
             if isinstance(self.context, grpc.aio.StreamStreamCall):
                 await self.context.done_writing()

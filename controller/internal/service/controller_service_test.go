@@ -110,9 +110,11 @@ func TestCheckExporterStatusForDriverCalls(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "AfterLeaseHook allows driver calls (for j commands in hooks)",
-			status:      jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHook,
-			expectError: false,
+			name:           "AfterLeaseHook is rejected to prevent dial during cleanup",
+			status:         jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHook,
+			expectError:    true,
+			expectedCode:   codes.FailedPrecondition,
+			expectedSubstr: "not ready",
 		},
 		{
 			name:        "Unspecified allows driver calls (backwards compatibility)",
