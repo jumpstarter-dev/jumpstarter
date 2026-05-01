@@ -55,6 +55,7 @@ class TestLeaseEndDuringHook:
         complete before starting the afterLease hook. This prevents
         running afterLease while beforeLease is still in progress."""
         lease_ctx = make_lease_context()
+        lease_ctx.lease_ended.set()
 
         after_lease_started_before_hook_done = False
 
@@ -97,6 +98,7 @@ class TestLeaseEndDuringHook:
         must transition to AVAILABLE once hooks complete."""
         lease_ctx = make_lease_context()
         lease_ctx.before_lease_hook.set()
+        lease_ctx.lease_ended.set()
 
         statuses = []
 
@@ -116,6 +118,7 @@ class TestLeaseEndDuringHook:
         can be created and the exporter processes it normally."""
         lease_ctx_1 = make_lease_context(lease_name="lease-1")
         lease_ctx_1.before_lease_hook.set()
+        lease_ctx_1.lease_ended.set()
 
         statuses = []
 
@@ -131,6 +134,7 @@ class TestLeaseEndDuringHook:
 
         lease_ctx_2 = make_lease_context(lease_name="lease-2")
         lease_ctx_2.before_lease_hook.set()
+        lease_ctx_2.lease_ended.set()
         exporter._lease_context = lease_ctx_2
 
         statuses.clear()
@@ -145,6 +149,7 @@ class TestUnusedLeaseTimeout:
         the exporter must transition to AVAILABLE."""
         lease_ctx = make_lease_context(client_name="")
         lease_ctx.before_lease_hook.set()
+        lease_ctx.lease_ended.set()
 
         statuses = []
 
@@ -167,6 +172,7 @@ class TestUnusedLeaseTimeout:
 
         lease_ctx = make_lease_context(client_name="some-client")
         lease_ctx.before_lease_hook.set()
+        lease_ctx.lease_ended.set()
 
         hook_config = HookConfigV1Alpha1(
             after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
@@ -192,6 +198,7 @@ class TestUnusedLeaseTimeout:
         can be accepted and processed."""
         lease_ctx_1 = make_lease_context(lease_name="unused-lease", client_name="")
         lease_ctx_1.before_lease_hook.set()
+        lease_ctx_1.lease_ended.set()
 
         statuses = []
 
@@ -207,6 +214,7 @@ class TestUnusedLeaseTimeout:
 
         lease_ctx_2 = make_lease_context(lease_name="new-lease", client_name="real-client")
         lease_ctx_2.before_lease_hook.set()
+        lease_ctx_2.lease_ended.set()
         exporter._lease_context = lease_ctx_2
 
         statuses.clear()
@@ -221,6 +229,7 @@ class TestConsecutiveLeaseOrdering:
         previous lease's after_lease_hook_done is set."""
         lease_ctx_1 = make_lease_context(lease_name="lease-1")
         lease_ctx_1.before_lease_hook.set()
+        lease_ctx_1.lease_ended.set()
 
         exporter = make_exporter(lease_ctx_1)
         exporter._report_status = AsyncMock()
@@ -231,6 +240,7 @@ class TestConsecutiveLeaseOrdering:
         exporter._lease_context = None
 
         lease_ctx_2 = make_lease_context(lease_name="lease-2")
+        lease_ctx_2.lease_ended.set()
         exporter._lease_context = lease_ctx_2
         lease_ctx_2.before_lease_hook.set()
 
@@ -270,6 +280,7 @@ class TestConsecutiveLeaseOrdering:
         hook_executor.run_after_lease_hook = tracking_after
 
         lease_ctx_1 = make_lease_context(lease_name="lease-1")
+        lease_ctx_1.lease_ended.set()
         exporter = make_exporter(lease_ctx_1, hook_executor)
         exporter._report_status = AsyncMock()
 
@@ -279,6 +290,7 @@ class TestConsecutiveLeaseOrdering:
         await exporter._cleanup_after_lease(lease_ctx_1)
 
         lease_ctx_2 = make_lease_context(lease_name="lease-2")
+        lease_ctx_2.lease_ended.set()
         exporter._lease_context = lease_ctx_2
 
         await hook_executor.run_before_lease_hook(
@@ -302,7 +314,7 @@ class TestBeforeLeaseHookSafetyTimeout:
         from unittest.mock import patch
 
         lease_ctx = make_lease_context()
-        # Deliberately do NOT set before_lease_hook to simulate the race condition
+        lease_ctx.lease_ended.set()
         exporter = make_exporter(lease_ctx)
 
         statuses = []
@@ -312,21 +324,17 @@ class TestBeforeLeaseHookSafetyTimeout:
 
         exporter._report_status = AsyncMock(side_effect=track_status)
 
-        # Patch move_on_after to use a tiny timeout so the test runs fast
         original_move_on_after = anyio.move_on_after
 
         def fast_move_on_after(delay, *args, **kwargs):
-            # Replace any safety timeout with 0.1s for fast testing
             return original_move_on_after(0.1, *args, **kwargs)
 
         with patch("jumpstarter.exporter.exporter.move_on_after", side_effect=fast_move_on_after):
             await exporter._cleanup_after_lease(lease_ctx)
 
-        # The event should be force-set by the timeout handler
         assert lease_ctx.before_lease_hook.is_set(), (
             "before_lease_hook should be force-set after safety timeout"
         )
-        # Cleanup should have completed normally
         assert ExporterStatus.AVAILABLE in statuses
         assert lease_ctx.after_lease_hook_done.is_set()
 
@@ -345,7 +353,7 @@ class TestBeforeLeaseHookSafetyTimeout:
         hook_executor = HookExecutor(config=hook_config)
 
         lease_ctx = make_lease_context()
-        lease_ctx.before_lease_hook.set()  # Set so we don't actually timeout
+        lease_ctx.before_lease_hook.set()
 
         exporter = make_exporter(lease_ctx, hook_executor)
 
@@ -359,7 +367,6 @@ class TestBeforeLeaseHookSafetyTimeout:
         with patch("jumpstarter.exporter.exporter.move_on_after", side_effect=tracking_move_on_after):
             await exporter._cleanup_after_lease(lease_ctx)
 
-        # The safety timeout should be hook timeout (60) + margin (30) = 90
         assert 90 in captured_timeouts, (
             f"Expected safety timeout of 90s (60 + 30), got timeouts: {captured_timeouts}"
         )
@@ -371,26 +378,217 @@ class TestHandleLeaseFinally:
         reached (no hook executor path), the finally block must ensure
         the event is set so _cleanup_after_lease can proceed."""
         lease_ctx = make_lease_context()
-        # Verify the event starts unset
         assert not lease_ctx.before_lease_hook.is_set()
 
         exporter = make_exporter(lease_ctx)
-        # Mock methods needed by handle_lease
         exporter.uuid = "test-uuid"
         exporter.labels = {}
         exporter.tls = None
         exporter.grpc_options = None
 
-        # We test just the finally-block behavior by calling
-        # _cleanup_after_lease with an unset event: the primary fix is
-        # in handle_lease's finally, but we can verify _cleanup_after_lease
-        # handles the unset event via the safety timeout.
-        # A more direct test: simulate what the finally block does.
         if not lease_ctx.before_lease_hook.is_set():
             lease_ctx.before_lease_hook.set()
 
         assert lease_ctx.before_lease_hook.is_set(), (
             "before_lease_hook must be set after the finally-block logic"
+        )
+
+
+class TestClientDisconnectWithoutEndSession:
+    async def test_cleanup_skips_after_lease_hook_on_disconnect_without_end_session(self):
+        from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
+        from jumpstarter.exporter.hooks import HookExecutor
+
+        hook_config = HookConfigV1Alpha1(
+            after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
+        )
+        hook_executor = HookExecutor(config=hook_config)
+
+        after_hook_call_count = 0
+        original_run_after = hook_executor.run_after_lease_hook
+
+        async def counting_run_after(*args, **kwargs):
+            nonlocal after_hook_call_count
+            after_hook_call_count += 1
+            return await original_run_after(*args, **kwargs)
+
+        hook_executor.run_after_lease_hook = counting_run_after
+
+        lease_ctx = make_lease_context()
+        lease_ctx.before_lease_hook.set()
+        exporter = make_exporter(lease_ctx, hook_executor)
+        exporter._report_status = AsyncMock()
+
+        await exporter._cleanup_after_lease(lease_ctx)
+
+        assert after_hook_call_count == 0, (
+            f"afterLease hook ran {after_hook_call_count} times but should have been "
+            "skipped when client disconnects without EndSession on active lease"
+        )
+
+    async def test_cleanup_does_not_transition_to_available_on_disconnect(self):
+        from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
+        from jumpstarter.exporter.hooks import HookExecutor
+
+        hook_config = HookConfigV1Alpha1(
+            after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
+        )
+        hook_executor = HookExecutor(config=hook_config)
+
+        lease_ctx = make_lease_context()
+        lease_ctx.before_lease_hook.set()
+
+        statuses = []
+
+        async def track_status(status, message=""):
+            statuses.append(status)
+
+        exporter = make_exporter(lease_ctx, hook_executor)
+        exporter._report_status = AsyncMock(side_effect=track_status)
+
+        await exporter._cleanup_after_lease(lease_ctx)
+
+        assert ExporterStatus.AVAILABLE not in statuses, (
+            f"Exporter transitioned to AVAILABLE on client disconnect without "
+            f"EndSession. Statuses: {statuses}"
+        )
+
+    async def test_cleanup_does_not_call_request_lease_release_on_disconnect(self):
+        from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
+        from jumpstarter.exporter.hooks import HookExecutor
+
+        hook_config = HookConfigV1Alpha1(
+            after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
+        )
+        hook_executor = HookExecutor(config=hook_config)
+
+        lease_ctx = make_lease_context()
+        lease_ctx.before_lease_hook.set()
+
+        exporter = make_exporter(lease_ctx, hook_executor)
+        exporter._report_status = AsyncMock()
+        exporter._request_lease_release = AsyncMock()
+
+        await exporter._cleanup_after_lease(lease_ctx)
+
+        exporter._request_lease_release.assert_not_called()
+
+    async def test_cleanup_runs_after_lease_hook_when_lease_ended(self):
+        from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
+        from jumpstarter.exporter.hooks import HookExecutor
+
+        hook_config = HookConfigV1Alpha1(
+            after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
+        )
+        hook_executor = HookExecutor(config=hook_config)
+
+        after_hook_call_count = 0
+        original_run_after = hook_executor.run_after_lease_hook
+
+        async def counting_run_after(*args, **kwargs):
+            nonlocal after_hook_call_count
+            after_hook_call_count += 1
+            return await original_run_after(*args, **kwargs)
+
+        hook_executor.run_after_lease_hook = counting_run_after
+
+        lease_ctx = make_lease_context()
+        lease_ctx.before_lease_hook.set()
+        lease_ctx.lease_ended.set()
+
+        exporter = make_exporter(lease_ctx, hook_executor)
+        exporter._report_status = AsyncMock()
+
+        await exporter._cleanup_after_lease(lease_ctx)
+
+        assert after_hook_call_count == 1, (
+            f"afterLease hook ran {after_hook_call_count} times, expected 1 "
+            "when lease_ended is set"
+        )
+
+    async def test_cleanup_runs_after_lease_hook_when_end_session_requested(self):
+        from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
+        from jumpstarter.exporter.hooks import HookExecutor
+
+        hook_config = HookConfigV1Alpha1(
+            after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
+        )
+        hook_executor = HookExecutor(config=hook_config)
+
+        after_hook_call_count = 0
+        original_run_after = hook_executor.run_after_lease_hook
+
+        async def counting_run_after(*args, **kwargs):
+            nonlocal after_hook_call_count
+            after_hook_call_count += 1
+            return await original_run_after(*args, **kwargs)
+
+        hook_executor.run_after_lease_hook = counting_run_after
+
+        lease_ctx = make_lease_context()
+        lease_ctx.before_lease_hook.set()
+        lease_ctx.end_session_requested.set()
+
+        exporter = make_exporter(lease_ctx, hook_executor)
+        exporter._report_status = AsyncMock()
+
+        await exporter._cleanup_after_lease(lease_ctx)
+
+        assert after_hook_call_count == 1, (
+            f"afterLease hook ran {after_hook_call_count} times, expected 1 "
+            "when end_session_requested is set"
+        )
+
+    async def test_cleanup_runs_after_lease_hook_when_stop_requested(self):
+        from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
+        from jumpstarter.exporter.hooks import HookExecutor
+
+        hook_config = HookConfigV1Alpha1(
+            after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
+        )
+        hook_executor = HookExecutor(config=hook_config)
+
+        after_hook_call_count = 0
+        original_run_after = hook_executor.run_after_lease_hook
+
+        async def counting_run_after(*args, **kwargs):
+            nonlocal after_hook_call_count
+            after_hook_call_count += 1
+            return await original_run_after(*args, **kwargs)
+
+        hook_executor.run_after_lease_hook = counting_run_after
+
+        lease_ctx = make_lease_context()
+        lease_ctx.before_lease_hook.set()
+
+        exporter = make_exporter(lease_ctx, hook_executor)
+        exporter._stop_requested = True
+        exporter._report_status = AsyncMock()
+
+        await exporter._cleanup_after_lease(lease_ctx)
+
+        assert after_hook_call_count == 1, (
+            f"afterLease hook ran {after_hook_call_count} times, expected 1 "
+            "when _stop_requested is True"
+        )
+
+    async def test_cleanup_without_hooks_skips_available_on_disconnect(self):
+        lease_ctx = make_lease_context()
+        lease_ctx.before_lease_hook.set()
+
+        statuses = []
+
+        async def track_status(status, message=""):
+            statuses.append(status)
+
+        exporter = make_exporter(lease_ctx, hook_executor=None)
+        exporter._report_status = AsyncMock(side_effect=track_status)
+
+        await exporter._cleanup_after_lease(lease_ctx)
+
+        assert ExporterStatus.AVAILABLE not in statuses, (
+            f"Exporter transitioned to AVAILABLE on client disconnect without "
+            f"EndSession (no hooks). Statuses: {statuses}"
         )
 
 
@@ -419,6 +617,7 @@ class TestIdempotentLeaseEnd:
 
         lease_ctx = make_lease_context()
         lease_ctx.before_lease_hook.set()
+        lease_ctx.lease_ended.set()
         exporter = make_exporter(lease_ctx, hook_executor)
         exporter._report_status = AsyncMock()
 
