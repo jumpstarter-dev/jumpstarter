@@ -307,6 +307,18 @@ func (l *Lease) SetStatusInvalid(reason, messageFormat string, a ...any) {
 	l.SetStatusCondition(LeaseConditionTypeInvalid, true, reason, messageFormat, a...)
 }
 
+func (l *Lease) SetStatusBeforeLeaseHook(status bool, reason, messageFormat string, a ...any) {
+	l.SetStatusCondition(LeaseConditionTypeBeforeLeaseHook, status, reason, messageFormat, a...)
+}
+
+func (l *Lease) SetStatusAfterLeaseHook(status bool, reason, messageFormat string, a ...any) {
+	l.SetStatusCondition(LeaseConditionTypeAfterLeaseHook, status, reason, messageFormat, a...)
+}
+
+func (l *Lease) SetStatusHookFailed(reason, messageFormat string, a ...any) {
+	l.SetStatusCondition(LeaseConditionTypeHookFailed, true, reason, messageFormat, a...)
+}
+
 func (l *Lease) SetStatusCondition(
 	condition LeaseConditionType,
 	status bool,
