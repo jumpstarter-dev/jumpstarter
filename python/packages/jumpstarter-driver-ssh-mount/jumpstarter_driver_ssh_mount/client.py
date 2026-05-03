@@ -30,7 +30,7 @@ class SSHMountClient(CompositeClient):
         @click.option("--direct", is_flag=True, help="Use direct TCP address")
         @click.option("--lazy", "-l", is_flag=True, help="Lazy unmount (detach filesystem now, clean up later)")
         @click.option("--foreground", is_flag=True, help="Block on sshfs in foreground without spawning a subshell")
-        @click.option("--extra-args", "-o", multiple=True, help="Extra arguments to pass to sshfs")
+        @click.option("--extra-args", "-o", multiple=True, help="Extra sshfs -o options (e.g. -o reconnect)")
         def mount(mountpoint, umount, remote_path, direct, lazy, foreground, extra_args):
             """Mount or unmount remote filesystem via sshfs"""
             if umount:
@@ -224,13 +224,17 @@ class SSHMountClient(CompositeClient):
         running inside a ``jmp shell`` session the prompt already contains
         the ``⚡exporter ➤`` pattern; we insert ``(mount)`` just before
         the arrow so the result looks like ``⚡exporter (mount)➤``.
+
+        Supports bash, zsh, and fish shells, matching the shell detection
+        logic used by ``jmp shell`` in ``jumpstarter.common.utils``.
         """
         shell = os.environ.get("SHELL", "/bin/sh")
+        shell_name = os.path.basename(shell)
         env = os.environ.copy()
 
         mount_tag = "(mount)"
         try:
-            if "bash" in shell:
+            if shell_name.endswith("bash"):
                 ps1 = env.get("PS1", r"\$ ")
                 # If prompt has the jmp shell arrow, insert (mount) before it
                 if "➤" in ps1:
@@ -242,7 +246,24 @@ class SSHMountClient(CompositeClient):
                     [shell, "--norc", "--noprofile", "-i"],
                     env=env,
                 )
-            elif "zsh" in shell:
+            elif shell_name == "fish":
+                # Build a fish_prompt function that inserts (mount) before
+                # the arrow, mirroring the jmp shell fish prompt style.
+                fish_fn = (
+                    "function fish_prompt; "
+                    "set_color grey; "
+                    'printf "%s" (basename $PWD); '
+                    "set_color yellow; "
+                    'printf "⚡"; '
+                    "set_color white; "
+                    f'printf "{mount_tag}"; '
+                    "set_color yellow; "
+                    'printf "➤ "; '
+                    "set_color normal; "
+                    "end"
+                )
+                subprocess.run([shell, "--init-command", fish_fn], env=env)
+            elif shell_name == "zsh":
                 ps1 = env.get("PS1", "%# ")
                 if "➤" in ps1:
                     ps1 = ps1.replace("➤", f"{mount_tag}➤")

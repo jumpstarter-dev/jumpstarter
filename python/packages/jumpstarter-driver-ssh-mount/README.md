@@ -56,10 +56,13 @@ j mount /local/mountpoint --direct
 # Mount in foreground mode (blocks until Ctrl+C)
 j mount /local/mountpoint --foreground
 
-# Pass extra sshfs options
+# Pass extra sshfs options (-o forwards each value as an sshfs -o flag)
 j mount /local/mountpoint -o reconnect -o cache=yes
 
-# Allow other users to access the mount (requires FUSE configuration)
+# Override default SSH options (e.g., enable host key checking)
+j mount /local/mountpoint -o StrictHostKeyChecking=yes
+
+# Allow other users to access the mount (requires user_allow_other in /etc/fuse.conf)
 j mount /local/mountpoint -o allow_other
 
 # Unmount an orphaned mount
@@ -95,9 +98,12 @@ The `--umount` flag is available as a fallback for mounts that were orphaned
 
 The driver registers as `mount` in the exporter config. When used in a `jmp shell` session, the CLI is a single command with a `--umount` flag for unmounting.
 
-Note: `extra_args` values (passed via `-o`) are forwarded directly to sshfs. This
-can be used to override defaults such as `StrictHostKeyChecking=no` -- for example,
-`-o StrictHostKeyChecking=yes`. If you need other users on the system to access the
-mounted filesystem, pass `-o allow_other` (requires `user_allow_other` in
-`/etc/fuse.conf`). If `allow_other` fails due to FUSE configuration, the mount will
-automatically retry without it.
+Note: Each `-o` value is forwarded directly to sshfs as an `-o` option flag. You can
+pass any option that sshfs (and by extension, the underlying SSH client) supports.
+By default, the driver sets `StrictHostKeyChecking=no`, `UserKnownHostsFile=/dev/null`,
+and `LogLevel=ERROR`. To override a default, pass the replacement via `-o` (e.g.,
+`-o StrictHostKeyChecking=yes`). Common options include `reconnect`, `cache=yes`,
+`ServerAliveInterval=15`, and `compression=yes`. If you need other users on the
+system to access the mounted filesystem, pass `-o allow_other` (requires
+`user_allow_other` in `/etc/fuse.conf`). If `allow_other` fails due to FUSE
+configuration, the mount will automatically retry without it.
