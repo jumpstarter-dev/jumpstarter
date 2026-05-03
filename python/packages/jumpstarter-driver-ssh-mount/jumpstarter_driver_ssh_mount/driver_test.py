@@ -704,3 +704,60 @@ def test_subshell_bad_shell_raises_click_exception():
             with patch('subprocess.run', side_effect=FileNotFoundError("No such file")):
                 with pytest.raises(Exception, match="Shell .* not found"):
                     client._run_subshell("/tmp/test-mount", "/")
+
+
+def test_subshell_fish_prompt():
+    """Test that fish shell gets a custom fish_prompt function with (mount) indicator"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        with patch.dict(os.environ, {"SHELL": "/usr/bin/fish"}):
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                client._run_subshell("/tmp/test-mount", "/")
+
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args[0][0]
+                assert call_args[0] == "/usr/bin/fish"
+                assert "--init-command" in call_args
+                # The fish_prompt function should contain (mount) and the arrow
+                init_cmd = call_args[call_args.index("--init-command") + 1]
+                assert "(mount)" in init_cmd
+                assert "fish_prompt" in init_cmd
+
+
+def test_subshell_bash_inserts_mount_tag():
+    """Test that bash prompt inserts (mount) before the arrow when jmp shell prompt is present"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        jmp_ps1 = "\\w ⚡exporter ➤ "
+        with patch.dict(os.environ, {"SHELL": "/bin/bash", "PS1": jmp_ps1}):
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                client._run_subshell("/tmp/test-mount", "/")
+
+                mock_run.assert_called_once()
+                env_passed = mock_run.call_args[1].get("env", {})
+                assert "(mount)➤" in env_passed.get("PS1", "")
+                assert "sshfs" not in env_passed.get("PS1", "")
+
+
+def test_subshell_bash_fallback_prefix():
+    """Test that bash prompt falls back to [sshfs:path] prefix when not in jmp shell"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        with patch.dict(os.environ, {"SHELL": "/bin/bash", "PS1": r"\$ "}):
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                client._run_subshell("/tmp/test-mount", "/home/user")
+
+                env_passed = mock_run.call_args[1].get("env", {})
+                assert env_passed.get("PS1", "").startswith("[sshfs:/home/user]")
