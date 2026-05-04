@@ -1299,6 +1299,17 @@ spec:
                         type: object
                     type: object
                 type: object
+              leasePolicy:
+                default: {}
+                description: Lease policy configuration for controlling lease behavior.
+                properties:
+                  maxTags:
+                    default: 10
+                    description: Maximum number of user-defined tags allowed per lease.
+                    format: int32
+                    minimum: 0
+                    type: integer
+                type: object
               routers:
                 default: {}
                 description: |-
