@@ -1,0 +1,65 @@
+// Copyright 2026 The Jumpstarter Authors
+// (-- api-linter: core::0215::foreign-type-reference=disabled
+// (-- api-linter: core::0192::has-comments=disabled
+// (-- api-linter: core::0191::java-package=disabled
+// (-- api-linter: core::0191::java-outer-classname=disabled
+// (-- api-linter: core::0191::java-multiple-files=disabled
+
+syntax = "proto3";
+
+package jumpstarter.admin.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/protobuf/empty.proto";
+import "jumpstarter/admin/v1/common.proto";
+import "jumpstarter/v1/requests.proto";
+import "jumpstarter/v1/resources.proto";
+
+// LeaseService administers Lease resources via the admin pipeline
+// (multi-issuer OIDC + SAR + Impersonate-*). Every request and response
+// type is reused from jumpstarter.v1 so the legacy client.v1 surface and
+// this admin surface share one source of truth.
+service LeaseService {
+  rpc GetLease(jumpstarter.v1.GetRequest) returns (jumpstarter.v1.Lease) {
+    option (google.api.http) = {get: "/admin/v1/{name=namespaces/*/leases/*}"};
+    option (google.api.method_signature) = "name";
+  }
+  rpc ListLeases(jumpstarter.v1.LeaseListRequest) returns (jumpstarter.v1.LeaseListResponse) {
+    option (google.api.http) = {get: "/admin/v1/{parent=namespaces/*}/leases"};
+    option (google.api.method_signature) = "parent";
+  }
+  rpc CreateLease(jumpstarter.v1.LeaseCreateRequest) returns (jumpstarter.v1.Lease) {
+    option (google.api.http) = {
+      post: "/admin/v1/{parent=namespaces/*}/leases"
+      body: "lease"
+    };
+    option (google.api.method_signature) = "parent,lease,lease_id";
+  }
+  rpc UpdateLease(jumpstarter.v1.LeaseUpdateRequest) returns (jumpstarter.v1.Lease) {
+    option (google.api.http) = {
+      patch: "/admin/v1/{lease.name=namespaces/*/leases/*}"
+      body: "lease"
+    };
+    option (google.api.method_signature) = "lease,update_mask";
+  }
+  rpc DeleteLease(jumpstarter.v1.DeleteRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/admin/v1/{name=namespaces/*/leases/*}"};
+    option (google.api.method_signature) = "name";
+  }
+  rpc WatchLeases(jumpstarter.v1.WatchRequest) returns (stream LeaseEvent) {
+    option (google.api.http) = {get: "/admin/v1/{parent=namespaces/*}/leases:watch"};
+  }
+}
+
+// LeaseEvent envelopes the resource payload with EventType + cursor so
+// clients can resume after a disconnect. The resource itself is the
+// shared jumpstarter.v1.Lease — same wire shape as Get/List.
+message LeaseEvent {
+  EventType event_type = 1;
+  // Populated for ADDED/MODIFIED/DELETED. Absent for BOOKMARK.
+  optional jumpstarter.v1.Lease lease = 2;
+  // Always populated; on BOOKMARK this is the only meaningful field.
+  string resource_version = 3;
+}

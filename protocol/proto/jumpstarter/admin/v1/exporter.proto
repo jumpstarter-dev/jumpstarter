@@ -1,0 +1,56 @@
+// Copyright 2026 The Jumpstarter Authors
+// (-- api-linter: core::0215::foreign-type-reference=disabled
+// (-- api-linter: core::0192::has-comments=disabled
+// (-- api-linter: core::0191::java-package=disabled
+// (-- api-linter: core::0191::java-outer-classname=disabled
+// (-- api-linter: core::0191::java-multiple-files=disabled
+
+syntax = "proto3";
+
+package jumpstarter.admin.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/protobuf/empty.proto";
+import "jumpstarter/admin/v1/common.proto";
+import "jumpstarter/v1/requests.proto";
+import "jumpstarter/v1/resources.proto";
+
+service ExporterService {
+  rpc GetExporter(jumpstarter.v1.GetRequest) returns (jumpstarter.v1.Exporter) {
+    option (google.api.http) = {get: "/admin/v1/{name=namespaces/*/exporters/*}"};
+    option (google.api.method_signature) = "name";
+  }
+  rpc ListExporters(jumpstarter.v1.ExporterListRequest) returns (jumpstarter.v1.ExporterListResponse) {
+    option (google.api.http) = {get: "/admin/v1/{parent=namespaces/*}/exporters"};
+    option (google.api.method_signature) = "parent";
+  }
+  rpc CreateExporter(jumpstarter.v1.ExporterCreateRequest) returns (jumpstarter.v1.Exporter) {
+    option (google.api.http) = {
+      post: "/admin/v1/{parent=namespaces/*}/exporters"
+      body: "exporter"
+    };
+    option (google.api.method_signature) = "parent,exporter,exporter_id";
+  }
+  rpc UpdateExporter(jumpstarter.v1.ExporterUpdateRequest) returns (jumpstarter.v1.Exporter) {
+    option (google.api.http) = {
+      patch: "/admin/v1/{exporter.name=namespaces/*/exporters/*}"
+      body: "exporter"
+    };
+    option (google.api.method_signature) = "exporter,update_mask";
+  }
+  rpc DeleteExporter(jumpstarter.v1.DeleteRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/admin/v1/{name=namespaces/*/exporters/*}"};
+    option (google.api.method_signature) = "name";
+  }
+  rpc WatchExporters(jumpstarter.v1.WatchRequest) returns (stream ExporterEvent) {
+    option (google.api.http) = {get: "/admin/v1/{parent=namespaces/*}/exporters:watch"};
+  }
+}
+
+message ExporterEvent {
+  EventType event_type = 1;
+  optional jumpstarter.v1.Exporter exporter = 2;
+  string resource_version = 3;
+}

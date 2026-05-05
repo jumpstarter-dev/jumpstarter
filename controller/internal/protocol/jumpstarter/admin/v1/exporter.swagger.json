@@ -1,0 +1,461 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "jumpstarter/admin/v1/exporter.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "ExporterService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/admin/v1/{exporter.name}": {
+      "patch": {
+        "operationId": "ExporterService_UpdateExporter",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Exporter"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "exporter.name",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+/exporters/[^/]+"
+          },
+          {
+            "name": "exporter",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "labels": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "online": {
+                  "type": "boolean",
+                  "description": "Deprecated boolean liveness signal kept for client.v1 wire compatibility.\nUse status instead.",
+                  "readOnly": true
+                },
+                "status": {
+                  "$ref": "#/definitions/v1ExporterStatus",
+                  "readOnly": true
+                },
+                "statusMessage": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "username": {
+                  "type": "string",
+                  "description": "Admin-surface extensions (\u003e= 6 so legacy client.v1 callers don't\ncollide with these new fields). All are optional because the legacy\nclient.v1 surface never populates them and admin Get/List/Watch may\nalso legitimately omit token after the bootstrap secret is rotated."
+                },
+                "endpoint": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "token": {
+                  "type": "string",
+                  "description": "token is populated only on CreateExporter responses (the bootstrap\ncredential the controller mints inline) and is never echoed on\nGet/List/Update/Watch.",
+                  "readOnly": true
+                },
+                "metadata": {
+                  "$ref": "#/definitions/v1ResourceMetadata",
+                  "readOnly": true
+                }
+              },
+              "description": "Exporter is the canonical Jumpstarter Exporter resource shape."
+            }
+          }
+        ],
+        "tags": [
+          "ExporterService"
+        ]
+      }
+    },
+    "/admin/v1/{name}": {
+      "get": {
+        "operationId": "ExporterService_GetExporter",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Exporter"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "Resource name in the form \"namespaces/{namespace}/{plural}/{id}\",\ne.g. \"namespaces/lab-foo/leases/abcd1234\".",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+/exporters/[^/]+"
+          }
+        ],
+        "tags": [
+          "ExporterService"
+        ]
+      },
+      "delete": {
+        "operationId": "ExporterService_DeleteExporter",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+/exporters/[^/]+"
+          }
+        ],
+        "tags": [
+          "ExporterService"
+        ]
+      }
+    },
+    "/admin/v1/{parent}/exporters": {
+      "get": {
+        "operationId": "ExporterService_ListExporters",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ExporterListResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "parent",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "filter",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ExporterService"
+        ]
+      },
+      "post": {
+        "operationId": "ExporterService_CreateExporter",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Exporter"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "parent",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+"
+          },
+          {
+            "name": "exporter",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1Exporter"
+            }
+          },
+          {
+            "name": "exporterId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ExporterService"
+        ]
+      }
+    },
+    "/admin/v1/{parent}/exporters:watch": {
+      "get": {
+        "operationId": "ExporterService_WatchExporters",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1ExporterEvent"
+                },
+                "error": {
+                  "$ref": "#/definitions/rpcStatus"
+                }
+              },
+              "title": "Stream result of v1ExporterEvent"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "parent",
+            "description": "Parent collection name, e.g. \"namespaces/lab-foo\".",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+"
+          },
+          {
+            "name": "resourceVersion",
+            "description": "Resume marker. Empty string starts from the current state; otherwise\nresumes after the given resourceVersion. The server returns\nOUT_OF_RANGE if the version is too old to resume from informer cache.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "filter",
+            "description": "Optional Kubernetes label selector applied server-side.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ExporterService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1EventType": {
+      "type": "string",
+      "enum": [
+        "EVENT_TYPE_UNSPECIFIED",
+        "EVENT_TYPE_ADDED",
+        "EVENT_TYPE_MODIFIED",
+        "EVENT_TYPE_DELETED",
+        "EVENT_TYPE_BOOKMARK"
+      ],
+      "default": "EVENT_TYPE_UNSPECIFIED",
+      "description": "EventType classifies a Watch* stream event. Mirrors Kubernetes\nwatch.Event semantics (ADDED, MODIFIED, DELETED, BOOKMARK).\n\n - EVENT_TYPE_BOOKMARK: BOOKMARK carries no resource payload, only a resource_version\ncheckpoint. Servers emit bookmarks every ~30s on otherwise idle\nstreams to keep HTTP connections alive across idle timeouts and\nto give clients a resumable cursor."
+    },
+    "v1Exporter": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "online": {
+          "type": "boolean",
+          "description": "Deprecated boolean liveness signal kept for client.v1 wire compatibility.\nUse status instead.",
+          "readOnly": true
+        },
+        "status": {
+          "$ref": "#/definitions/v1ExporterStatus",
+          "readOnly": true
+        },
+        "statusMessage": {
+          "type": "string",
+          "readOnly": true
+        },
+        "username": {
+          "type": "string",
+          "description": "Admin-surface extensions (\u003e= 6 so legacy client.v1 callers don't\ncollide with these new fields). All are optional because the legacy\nclient.v1 surface never populates them and admin Get/List/Watch may\nalso legitimately omit token after the bootstrap secret is rotated."
+        },
+        "endpoint": {
+          "type": "string",
+          "readOnly": true
+        },
+        "token": {
+          "type": "string",
+          "description": "token is populated only on CreateExporter responses (the bootstrap\ncredential the controller mints inline) and is never echoed on\nGet/List/Update/Watch.",
+          "readOnly": true
+        },
+        "metadata": {
+          "$ref": "#/definitions/v1ResourceMetadata",
+          "readOnly": true
+        }
+      },
+      "description": "Exporter is the canonical Jumpstarter Exporter resource shape."
+    },
+    "v1ExporterEvent": {
+      "type": "object",
+      "properties": {
+        "eventType": {
+          "$ref": "#/definitions/v1EventType"
+        },
+        "exporter": {
+          "$ref": "#/definitions/v1Exporter"
+        },
+        "resourceVersion": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ExporterListResponse": {
+      "type": "object",
+      "properties": {
+        "exporters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Exporter"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ExporterStatus": {
+      "type": "string",
+      "enum": [
+        "EXPORTER_STATUS_UNSPECIFIED",
+        "EXPORTER_STATUS_OFFLINE",
+        "EXPORTER_STATUS_AVAILABLE",
+        "EXPORTER_STATUS_BEFORE_LEASE_HOOK",
+        "EXPORTER_STATUS_LEASE_READY",
+        "EXPORTER_STATUS_AFTER_LEASE_HOOK",
+        "EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED",
+        "EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED"
+      ],
+      "default": "EXPORTER_STATUS_UNSPECIFIED",
+      "description": "- EXPORTER_STATUS_UNSPECIFIED: Unspecified exporter status\n - EXPORTER_STATUS_OFFLINE: Exporter is offline\n - EXPORTER_STATUS_AVAILABLE: Exporter is available to be leased\n - EXPORTER_STATUS_BEFORE_LEASE_HOOK: Exporter is executing before lease hook(s)\n - EXPORTER_STATUS_LEASE_READY: Exporter is leased and ready to accept commands\n - EXPORTER_STATUS_AFTER_LEASE_HOOK: Exporter is executing after lease hook(s)\n - EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED: Exporter before lease hook failed\n - EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED: Exporter after lease hook failed",
+      "title": "Exporter status information"
+    },
+    "v1ResourceMetadata": {
+      "type": "object",
+      "properties": {
+        "createdBy": {
+          "type": "string",
+          "description": "Display-only username of the OIDC caller that last mutated this\nresource (mirrored from the jumpstarter.dev/created-by annotation).\nOptional because resources created by GitOps / kubectl may not carry it.",
+          "readOnly": true
+        },
+        "ownerIssuer": {
+          "type": "string",
+          "description": "OIDC issuer URL of the owner (jumpstarter.dev/owner-issuer annotation).",
+          "readOnly": true
+        },
+        "resourceVersion": {
+          "type": "string",
+          "description": "Kubernetes resourceVersion. Used by clients for optimistic concurrency\nand by Watch* RPCs as a resume cursor.",
+          "readOnly": true
+        }
+      },
+      "description": "ResourceMetadata bundles the identity-attribution and concurrency-control\nfields the controller stamps onto every Jumpstarter resource. Each domain\nresource embeds this as a field named \"metadata\" so admin clients see a\nuniform shape across resources."
+    }
+  }
+}

@@ -23,6 +23,7 @@ import (
 	"github.com/google/uuid"
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
+	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/auth"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/utils"
 	"google.golang.org/grpc/codes"
@@ -52,8 +53,8 @@ func NewClientService(client kclient.Client, auth auth.Auth, maxTags int32) *Cli
 
 func (s *ClientService) GetExporter(
 	ctx context.Context,
-	req *cpb.GetExporterRequest,
-) (*cpb.Exporter, error) {
+	req *pb.GetRequest,
+) (*pb.Exporter, error) {
 	key, err := utils.ParseExporterIdentifier(req.Name)
 	if err != nil {
 		return nil, err
@@ -74,8 +75,8 @@ func (s *ClientService) GetExporter(
 
 func (s *ClientService) ListExporters(
 	ctx context.Context,
-	req *cpb.ListExportersRequest,
-) (*cpb.ListExportersResponse, error) {
+	req *pb.ExporterListRequest,
+) (*pb.ExporterListResponse, error) {
 	namespace, err := utils.ParseNamespaceIdentifier(req.Parent)
 	if err != nil {
 		return nil, err
@@ -104,7 +105,7 @@ func (s *ClientService) ListExporters(
 	return jexporters.ToProtobuf(), nil
 }
 
-func (s *ClientService) GetLease(ctx context.Context, req *cpb.GetLeaseRequest) (*cpb.Lease, error) {
+func (s *ClientService) GetLease(ctx context.Context, req *pb.GetRequest) (*pb.Lease, error) {
 	key, err := utils.ParseLeaseIdentifier(req.Name)
 	if err != nil {
 		return nil, err
@@ -123,7 +124,7 @@ func (s *ClientService) GetLease(ctx context.Context, req *cpb.GetLeaseRequest) 
 	return jlease.ToProtobuf(), nil
 }
 
-func (s *ClientService) ListLeases(ctx context.Context, req *cpb.ListLeasesRequest) (*cpb.ListLeasesResponse, error) {
+func (s *ClientService) ListLeases(ctx context.Context, req *pb.LeaseListRequest) (*pb.LeaseListResponse, error) {
 	namespace, err := utils.ParseNamespaceIdentifier(req.Parent)
 	if err != nil {
 		return nil, err
@@ -188,18 +189,18 @@ func (s *ClientService) ListLeases(ctx context.Context, req *cpb.ListLeasesReque
 		return nil, err
 	}
 
-	var results []*cpb.Lease
+	var results []*pb.Lease
 	for _, lease := range jleases.Items {
 		results = append(results, lease.ToProtobuf())
 	}
 
-	return &cpb.ListLeasesResponse{
+	return &pb.LeaseListResponse{
 		Leases:        results,
 		NextPageToken: jleases.Continue,
 	}, nil
 }
 
-func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseRequest) (*cpb.Lease, error) {
+func (s *ClientService) CreateLease(ctx context.Context, req *pb.LeaseCreateRequest) (*pb.Lease, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "request is required")
 	}
@@ -249,7 +250,7 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 	return jlease.ToProtobuf(), nil
 }
 
-func validateLeaseTarget(lease *cpb.Lease) error {
+func validateLeaseTarget(lease *pb.Lease) error {
 	if lease == nil {
 		return status.Error(codes.InvalidArgument, "lease is required")
 	}
@@ -263,7 +264,7 @@ func validateLeaseTarget(lease *cpb.Lease) error {
 	return nil
 }
 
-func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseRequest) (*cpb.Lease, error) {
+func (s *ClientService) UpdateLease(ctx context.Context, req *pb.LeaseUpdateRequest) (*pb.Lease, error) {
 	key, err := utils.ParseLeaseIdentifier(req.Lease.Name)
 	if err != nil {
 		return nil, err
@@ -352,7 +353,7 @@ func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseReq
 	return jlease.ToProtobuf(), nil
 }
 
-func (s *ClientService) DeleteLease(ctx context.Context, req *cpb.DeleteLeaseRequest) (*emptypb.Empty, error) {
+func (s *ClientService) DeleteLease(ctx context.Context, req *pb.DeleteRequest) (*emptypb.Empty, error) {
 	key, err := utils.ParseLeaseIdentifier(req.Name)
 	if err != nil {
 		return nil, err

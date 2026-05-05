@@ -1,0 +1,142 @@
+// Copyright 2026 The Jumpstarter Authors
+// (-- api-linter: core::0215::foreign-type-reference=disabled
+// (-- api-linter: core::0192::has-comments=disabled
+// (-- api-linter: core::0191::java-package=disabled
+// (-- api-linter: core::0191::java-outer-classname=disabled
+// (-- api-linter: core::0191::java-multiple-files=disabled
+
+// Shared request/response messages used by every Jumpstarter API surface
+// (jumpstarter.client.v1 and jumpstarter.admin.v1). Field tag numbers
+// match the historical layout of jumpstarter.client.v1's local types so
+// deployed jmp CLI binaries that built against client.v1 can still
+// serialize/deserialize wire bytes byte-for-byte unchanged after the
+// types were hoisted here.
+syntax = "proto3";
+
+package jumpstarter.v1;
+
+import "google/api/field_behavior.proto";
+import "google/protobuf/field_mask.proto";
+import "jumpstarter/v1/resources.proto";
+
+// GetRequest is the shared {name} input for every Get* RPC across
+// admin.v1 and client.v1. The resource type is implied by the gRPC
+// method the request is dispatched to.
+message GetRequest {
+  // Resource name in the form "namespaces/{namespace}/{plural}/{id}",
+  // e.g. "namespaces/lab-foo/leases/abcd1234".
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// DeleteRequest is the shared {name} input for every Delete* RPC.
+message DeleteRequest {
+  string name = 1 [(google.api.field_behavior) = REQUIRED];
+}
+
+// WatchRequest is the shared input for every Watch* server-streaming RPC.
+// admin.v1 RPCs use it today; the legacy client.v1 surface does not yet
+// expose Watch, but if it does in future it can reuse this message.
+message WatchRequest {
+  // Parent collection name, e.g. "namespaces/lab-foo".
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+  // Resume marker. Empty string starts from the current state; otherwise
+  // resumes after the given resourceVersion. The server returns
+  // OUT_OF_RANGE if the version is too old to resume from informer cache.
+  string resource_version = 2 [(google.api.field_behavior) = OPTIONAL];
+  // Optional Kubernetes label selector applied server-side.
+  string filter = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// --- Lease ---------------------------------------------------------------
+//
+// Resource-first naming (LeaseListRequest, LeaseCreateRequest, ...) avoids
+// collisions with the legacy jumpstarter.v1.ControllerService runtime
+// types (ListLeasesRequest{} / ListLeasesResponse{names}) which live in
+// the same proto package. Wire format is unchanged — proto3 doesn't
+// transmit message type names — so deployed jmp CLI binaries built
+// against the previous client.v1.ListLeasesRequest continue to interop.
+
+// LeaseListRequest field tags follow the existing client.v1 layout:
+// parent=1, page_size=2, page_token=3, filter=4, only_active=5, tag_filter=6.
+message LeaseListRequest {
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+  optional bool only_active = 5 [(google.api.field_behavior) = OPTIONAL];
+  string tag_filter = 6 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message LeaseListResponse {
+  repeated Lease leases = 1;
+  string next_page_token = 2;
+}
+
+// LeaseCreateRequest field tags follow the existing client.v1 layout:
+// parent=1, lease_id=2, lease=3.
+message LeaseCreateRequest {
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+  string lease_id = 2 [(google.api.field_behavior) = OPTIONAL];
+  Lease lease = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+// LeaseUpdateRequest field tags follow client.v1: lease=1, update_mask=2.
+message LeaseUpdateRequest {
+  Lease lease = 1 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// --- Exporter ------------------------------------------------------------
+
+// ExporterListRequest field tags follow client.v1: parent=1, page_size=2,
+// page_token=3, filter=4.
+message ExporterListRequest {
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message ExporterListResponse {
+  repeated Exporter exporters = 1;
+  string next_page_token = 2;
+}
+
+// ExporterCreateRequest is admin-only today (client.v1 does not expose
+// it). Field numbering mirrors LeaseCreateRequest's pattern for
+// consistency: parent=1, exporter_id=2, exporter=3.
+message ExporterCreateRequest {
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+  string exporter_id = 2 [(google.api.field_behavior) = OPTIONAL];
+  Exporter exporter = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+message ExporterUpdateRequest {
+  Exporter exporter = 1 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// --- Client (admin-only today) -------------------------------------------
+
+message ClientListRequest {
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+  string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message ClientListResponse {
+  repeated Client clients = 1;
+  string next_page_token = 2;
+}
+
+message ClientCreateRequest {
+  string parent = 1 [(google.api.field_behavior) = REQUIRED];
+  string client_id = 2 [(google.api.field_behavior) = OPTIONAL];
+  Client client = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+message ClientUpdateRequest {
+  Client client = 1 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = OPTIONAL];
+}

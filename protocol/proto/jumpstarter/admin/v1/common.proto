@@ -1,0 +1,28 @@
+// Copyright 2026 The Jumpstarter Authors
+// (-- api-linter: core::0215::foreign-type-reference=disabled
+// (-- api-linter: core::0192::has-comments=disabled
+// (-- api-linter: core::0191::java-package=disabled
+// (-- api-linter: core::0191::java-outer-classname=disabled
+// (-- api-linter: core::0191::java-multiple-files=disabled
+
+// Admin-pipeline-only types. Resource shapes (Lease/Exporter/Client) and
+// shared request/response messages live in jumpstarter/v1/resources.proto
+// and jumpstarter/v1/requests.proto. Only items that are exclusive to the
+// Watch streaming surface remain here.
+syntax = "proto3";
+
+package jumpstarter.admin.v1;
+
+// EventType classifies a Watch* stream event. Mirrors Kubernetes
+// watch.Event semantics (ADDED, MODIFIED, DELETED, BOOKMARK).
+enum EventType {
+  EVENT_TYPE_UNSPECIFIED = 0;
+  EVENT_TYPE_ADDED = 1;
+  EVENT_TYPE_MODIFIED = 2;
+  EVENT_TYPE_DELETED = 3;
+  // BOOKMARK carries no resource payload, only a resource_version
+  // checkpoint. Servers emit bookmarks every ~30s on otherwise idle
+  // streams to keep HTTP connections alive across idle timeouts and
+  // to give clients a resumable cursor.
+  EVENT_TYPE_BOOKMARK = 4;
+}

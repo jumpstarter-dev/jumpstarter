@@ -3,7 +3,6 @@ package v1alpha1
 import (
 	"strings"
 
-	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/utils"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -25,11 +24,11 @@ func (e *Exporter) Usernames(prefix string) []string {
 	return usernames
 }
 
-func (e *Exporter) ToProtobuf() *cpb.Exporter {
+func (e *Exporter) ToProtobuf() *pb.Exporter {
 	// get online status from conditions (deprecated, kept for backward compatibility)
 	isOnline := meta.IsStatusConditionTrue(e.Status.Conditions, string(ExporterConditionTypeOnline))
 
-	return &cpb.Exporter{
+	return &pb.Exporter{
 		Name:          utils.UnparseExporterIdentifier(kclient.ObjectKeyFromObject(e)),
 		Labels:        e.Labels,
 		Online:        isOnline,
@@ -60,12 +59,12 @@ func stringToProtoStatus(state string) pb.ExporterStatus {
 	}
 }
 
-func (l *ExporterList) ToProtobuf() *cpb.ListExportersResponse {
-	var jexporters []*cpb.Exporter
+func (l *ExporterList) ToProtobuf() *pb.ExporterListResponse {
+	var jexporters []*pb.Exporter
 	for _, jexporter := range l.Items {
 		jexporters = append(jexporters, jexporter.ToProtobuf())
 	}
-	return &cpb.ListExportersResponse{
+	return &pb.ExporterListResponse{
 		Exporters:     jexporters,
 		NextPageToken: l.Continue,
 	}

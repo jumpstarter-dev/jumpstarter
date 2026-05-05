@@ -1,0 +1,155 @@
+// Copyright 2026 The Jumpstarter Authors
+// (-- api-linter: core::0215::foreign-type-reference=disabled
+// (-- api-linter: core::0192::has-comments=disabled
+// (-- api-linter: core::0191::java-package=disabled
+// (-- api-linter: core::0191::java-outer-classname=disabled
+// (-- api-linter: core::0191::java-multiple-files=disabled
+
+// Canonical Jumpstarter domain types (Lease, Exporter, Client) and their
+// shared helper messages. These messages are referenced by every Jumpstarter
+// API surface — the legacy jumpstarter.client.v1 service used by the jmp
+// CLI, the new admin.v1 services, and any future surfaces — so there is one
+// definitive shape per resource.
+//
+// Field numbers follow the original jumpstarter.client.v1 layout to keep
+// deployed jmp CLI binaries wire-compatible after the resource was hoisted
+// out of client.v1. New fields reserved for the admin surface take numbers
+// >= 14; older clients ignore them transparently.
+syntax = "proto3";
+
+package jumpstarter.v1;
+
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "jumpstarter/v1/common.proto";
+import "jumpstarter/v1/kubernetes.proto";
+
+// ResourceMetadata bundles the identity-attribution and concurrency-control
+// fields the controller stamps onto every Jumpstarter resource. Each domain
+// resource embeds this as a field named "metadata" so admin clients see a
+// uniform shape across resources.
+message ResourceMetadata {
+  // Display-only username of the OIDC caller that last mutated this
+  // resource (mirrored from the jumpstarter.dev/created-by annotation).
+  // Optional because resources created by GitOps / kubectl may not carry it.
+  optional string created_by = 1 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // OIDC issuer URL of the owner (jumpstarter.dev/owner-issuer annotation).
+  optional string owner_issuer = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Kubernetes resourceVersion. Used by clients for optimistic concurrency
+  // and by Watch* RPCs as a resume cursor.
+  string resource_version = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Lease is the canonical Jumpstarter Lease resource shape. It mirrors the
+// Lease CRD (controller/api/v1alpha1/lease_types.go).
+message Lease {
+  option (google.api.resource) = {
+    type: "jumpstarter.dev/Lease"
+    pattern: "namespaces/{namespace}/leases/{lease}"
+    singular: "lease"
+    plural: "leases"
+  };
+
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Either selector or exporter_name must be set. The combination is
+  // intentionally not enforced as REQUIRED here so the message can also
+  // carry an empty selector when exporter_name is the chosen pin.
+  string selector = 2 [(google.api.field_behavior) = IMMUTABLE];
+
+  optional google.protobuf.Duration duration = 3;
+  google.protobuf.Duration effective_duration = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  optional google.protobuf.Timestamp begin_time = 5;
+  optional google.protobuf.Timestamp effective_begin_time = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  optional google.protobuf.Timestamp end_time = 7;
+  optional google.protobuf.Timestamp effective_end_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  optional string client = 9 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {type: "jumpstarter.dev/Client"}
+  ];
+  optional string exporter = 10 [
+    (google.api.field_behavior) = OUTPUT_ONLY,
+    (google.api.resource_reference) = {type: "jumpstarter.dev/Exporter"}
+  ];
+
+  repeated Condition conditions = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  optional string exporter_name = 12 [(google.api.field_behavior) = IMMUTABLE];
+  map<string, string> tags = 13 [(google.api.field_behavior) = IMMUTABLE];
+
+  // Admin-surface extensions. Numbered >= 14 so client.v1 wire format is
+  // unchanged for deployed jmp CLI binaries; older clients ignore them.
+  bool ended = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
+  map<string, string> labels = 15;
+  // metadata is populated only by the admin surface; client.v1 callers
+  // observe an absent field, which is why it is optional.
+  optional ResourceMetadata metadata = 16 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Exporter is the canonical Jumpstarter Exporter resource shape.
+message Exporter {
+  option (google.api.resource) = {
+    type: "jumpstarter.dev/Exporter"
+    pattern: "namespaces/{namespace}/exporters/{exporter}"
+    singular: "exporter"
+    plural: "exporters"
+  };
+
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  map<string, string> labels = 2;
+
+  // Deprecated boolean liveness signal kept for client.v1 wire compatibility.
+  // Use status instead.
+  bool online = 3 [(google.api.field_behavior) = OUTPUT_ONLY, deprecated = true];
+
+  ExporterStatus status = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  string status_message = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Admin-surface extensions (>= 6 so legacy client.v1 callers don't
+  // collide with these new fields). All are optional because the legacy
+  // client.v1 surface never populates them and admin Get/List/Watch may
+  // also legitimately omit token after the bootstrap secret is rotated.
+  optional string username = 6;
+  optional string endpoint = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // token is populated only on CreateExporter responses (the bootstrap
+  // credential the controller mints inline) and is never echoed on
+  // Get/List/Update/Watch.
+  optional string token = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  optional ResourceMetadata metadata = 9 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Client is the canonical Jumpstarter Client resource shape. The Client
+// resource was previously not represented in client.v1 — it is added here
+// fresh, so field numbering is unconstrained.
+message Client {
+  option (google.api.resource) = {
+    type: "jumpstarter.dev/Client"
+    pattern: "namespaces/{namespace}/clients/{client}"
+    singular: "client"
+    plural: "clients"
+  };
+
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  optional string username = 2;
+  map<string, string> labels = 3;
+
+  // All three below are admin-surface only. Optional so a client.v1
+  // consumer (or any caller through a path that doesn't populate them)
+  // sees them absent rather than as empty strings.
+  optional string endpoint = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // token is populated only on CreateClient responses (the bootstrap
+  // credential the controller mints inline) and is never echoed on
+  // Get/List/Update/Watch.
+  optional string token = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  optional ResourceMetadata metadata = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+}

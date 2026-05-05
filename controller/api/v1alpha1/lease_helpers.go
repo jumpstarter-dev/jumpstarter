@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/utils"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -195,7 +194,7 @@ func ValidateLeaseTags(tags map[string]string, maxTags int) error {
 }
 
 func LeaseFromProtobuf(
-	req *cpb.Lease,
+	req *pb.Lease,
 	key types.NamespacedName,
 	clientRef corev1.LocalObjectReference,
 ) (*Lease, error) {
@@ -264,7 +263,7 @@ func LeaseFromProtobuf(
 	}, nil
 }
 
-func (l *Lease) ToProtobuf() *cpb.Lease {
+func (l *Lease) ToProtobuf() *pb.Lease {
 	var conditions []*pb.Condition
 	for _, condition := range l.Status.Conditions {
 		conditions = append(conditions, &pb.Condition{
@@ -280,7 +279,7 @@ func (l *Lease) ToProtobuf() *cpb.Lease {
 		})
 	}
 
-	lease := cpb.Lease{
+	lease := pb.Lease{
 		Name:       fmt.Sprintf("namespaces/%s/leases/%s", l.Namespace, l.Name),
 		Selector:   metav1.FormatLabelSelector(&l.Spec.Selector),
 		Client:     ptr.To(fmt.Sprintf("namespaces/%s/clients/%s", l.Namespace, l.Spec.ClientRef.Name)),
@@ -324,12 +323,12 @@ func (l *Lease) ToProtobuf() *cpb.Lease {
 	return &lease
 }
 
-func (l *LeaseList) ToProtobuf() *cpb.ListLeasesResponse {
-	var jleases []*cpb.Lease
+func (l *LeaseList) ToProtobuf() *pb.LeaseListResponse {
+	var jleases []*pb.Lease
 	for _, jlease := range l.Items {
 		jleases = append(jleases, jlease.ToProtobuf())
 	}
-	return &cpb.ListLeasesResponse{
+	return &pb.LeaseListResponse{
 		Leases:        jleases,
 		NextPageToken: l.Continue,
 	}

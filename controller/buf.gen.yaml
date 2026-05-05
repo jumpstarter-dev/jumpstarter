@@ -17,7 +17,10 @@ plugins:
   - remote: buf.build/grpc-ecosystem/gateway
     out: internal/protocol
     opt: paths=source_relative
+  - remote: buf.build/grpc-ecosystem/openapiv2
+    out: internal/protocol
+    opt:
+      - logtostderr=true
+      - generate_unbound_methods=true
 inputs:
-  - git_repo: https://github.com/jumpstarter-dev/jumpstarter-protocol.git
-    branch: main
-    subdir: proto
+  - directory: ../protocol/proto

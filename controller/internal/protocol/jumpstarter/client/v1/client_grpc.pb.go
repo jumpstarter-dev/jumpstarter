@@ -15,6 +15,7 @@ package clientv1
 
 import (
 	context "context"
+	v1 "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -39,14 +40,20 @@ const (
 // ClientServiceClient is the client API for ClientService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// ClientService is the namespace-scoped Client-actor API used by the
+// `jmp` CLI and any browser-based "thin client". It deliberately reuses
+// every request/response message from jumpstarter.v1 (including their
+// historical client.v1 field tag layout) so deployed CLI binaries keep
+// wire-compatible after the type definitions were hoisted.
 type ClientServiceClient interface {
-	GetExporter(ctx context.Context, in *GetExporterRequest, opts ...grpc.CallOption) (*Exporter, error)
-	ListExporters(ctx context.Context, in *ListExportersRequest, opts ...grpc.CallOption) (*ListExportersResponse, error)
-	GetLease(ctx context.Context, in *GetLeaseRequest, opts ...grpc.CallOption) (*Lease, error)
-	ListLeases(ctx context.Context, in *ListLeasesRequest, opts ...grpc.CallOption) (*ListLeasesResponse, error)
-	CreateLease(ctx context.Context, in *CreateLeaseRequest, opts ...grpc.CallOption) (*Lease, error)
-	UpdateLease(ctx context.Context, in *UpdateLeaseRequest, opts ...grpc.CallOption) (*Lease, error)
-	DeleteLease(ctx context.Context, in *DeleteLeaseRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	GetExporter(ctx context.Context, in *v1.GetRequest, opts ...grpc.CallOption) (*v1.Exporter, error)
+	ListExporters(ctx context.Context, in *v1.ExporterListRequest, opts ...grpc.CallOption) (*v1.ExporterListResponse, error)
+	GetLease(ctx context.Context, in *v1.GetRequest, opts ...grpc.CallOption) (*v1.Lease, error)
+	ListLeases(ctx context.Context, in *v1.LeaseListRequest, opts ...grpc.CallOption) (*v1.LeaseListResponse, error)
+	CreateLease(ctx context.Context, in *v1.LeaseCreateRequest, opts ...grpc.CallOption) (*v1.Lease, error)
+	UpdateLease(ctx context.Context, in *v1.LeaseUpdateRequest, opts ...grpc.CallOption) (*v1.Lease, error)
+	DeleteLease(ctx context.Context, in *v1.DeleteRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type clientServiceClient struct {
@@ -57,9 +64,9 @@ func NewClientServiceClient(cc grpc.ClientConnInterface) ClientServiceClient {
 	return &clientServiceClient{cc}
 }
 
-func (c *clientServiceClient) GetExporter(ctx context.Context, in *GetExporterRequest, opts ...grpc.CallOption) (*Exporter, error) {
+func (c *clientServiceClient) GetExporter(ctx context.Context, in *v1.GetRequest, opts ...grpc.CallOption) (*v1.Exporter, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Exporter)
+	out := new(v1.Exporter)
 	err := c.cc.Invoke(ctx, ClientService_GetExporter_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -67,9 +74,9 @@ func (c *clientServiceClient) GetExporter(ctx context.Context, in *GetExporterRe
 	return out, nil
 }
 
-func (c *clientServiceClient) ListExporters(ctx context.Context, in *ListExportersRequest, opts ...grpc.CallOption) (*ListExportersResponse, error) {
+func (c *clientServiceClient) ListExporters(ctx context.Context, in *v1.ExporterListRequest, opts ...grpc.CallOption) (*v1.ExporterListResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListExportersResponse)
+	out := new(v1.ExporterListResponse)
 	err := c.cc.Invoke(ctx, ClientService_ListExporters_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -77,9 +84,9 @@ func (c *clientServiceClient) ListExporters(ctx context.Context, in *ListExporte
 	return out, nil
 }
 
-func (c *clientServiceClient) GetLease(ctx context.Context, in *GetLeaseRequest, opts ...grpc.CallOption) (*Lease, error) {
+func (c *clientServiceClient) GetLease(ctx context.Context, in *v1.GetRequest, opts ...grpc.CallOption) (*v1.Lease, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Lease)
+	out := new(v1.Lease)
 	err := c.cc.Invoke(ctx, ClientService_GetLease_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -87,9 +94,9 @@ func (c *clientServiceClient) GetLease(ctx context.Context, in *GetLeaseRequest,
 	return out, nil
 }
 
-func (c *clientServiceClient) ListLeases(ctx context.Context, in *ListLeasesRequest, opts ...grpc.CallOption) (*ListLeasesResponse, error) {
+func (c *clientServiceClient) ListLeases(ctx context.Context, in *v1.LeaseListRequest, opts ...grpc.CallOption) (*v1.LeaseListResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListLeasesResponse)
+	out := new(v1.LeaseListResponse)
 	err := c.cc.Invoke(ctx, ClientService_ListLeases_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -97,9 +104,9 @@ func (c *clientServiceClient) ListLeases(ctx context.Context, in *ListLeasesRequ
 	return out, nil
 }
 
-func (c *clientServiceClient) CreateLease(ctx context.Context, in *CreateLeaseRequest, opts ...grpc.CallOption) (*Lease, error) {
+func (c *clientServiceClient) CreateLease(ctx context.Context, in *v1.LeaseCreateRequest, opts ...grpc.CallOption) (*v1.Lease, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Lease)
+	out := new(v1.Lease)
 	err := c.cc.Invoke(ctx, ClientService_CreateLease_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -107,9 +114,9 @@ func (c *clientServiceClient) CreateLease(ctx context.Context, in *CreateLeaseRe
 	return out, nil
 }
 
-func (c *clientServiceClient) UpdateLease(ctx context.Context, in *UpdateLeaseRequest, opts ...grpc.CallOption) (*Lease, error) {
+func (c *clientServiceClient) UpdateLease(ctx context.Context, in *v1.LeaseUpdateRequest, opts ...grpc.CallOption) (*v1.Lease, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Lease)
+	out := new(v1.Lease)
 	err := c.cc.Invoke(ctx, ClientService_UpdateLease_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -117,7 +124,7 @@ func (c *clientServiceClient) UpdateLease(ctx context.Context, in *UpdateLeaseRe
 	return out, nil
 }
 
-func (c *clientServiceClient) DeleteLease(ctx context.Context, in *DeleteLeaseRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *clientServiceClient) DeleteLease(ctx context.Context, in *v1.DeleteRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, ClientService_DeleteLease_FullMethodName, in, out, cOpts...)
@@ -130,14 +137,20 @@ func (c *clientServiceClient) DeleteLease(ctx context.Context, in *DeleteLeaseRe
 // ClientServiceServer is the server API for ClientService service.
 // All implementations must embed UnimplementedClientServiceServer
 // for forward compatibility.
+//
+// ClientService is the namespace-scoped Client-actor API used by the
+// `jmp` CLI and any browser-based "thin client". It deliberately reuses
+// every request/response message from jumpstarter.v1 (including their
+// historical client.v1 field tag layout) so deployed CLI binaries keep
+// wire-compatible after the type definitions were hoisted.
 type ClientServiceServer interface {
-	GetExporter(context.Context, *GetExporterRequest) (*Exporter, error)
-	ListExporters(context.Context, *ListExportersRequest) (*ListExportersResponse, error)
-	GetLease(context.Context, *GetLeaseRequest) (*Lease, error)
-	ListLeases(context.Context, *ListLeasesRequest) (*ListLeasesResponse, error)
-	CreateLease(context.Context, *CreateLeaseRequest) (*Lease, error)
-	UpdateLease(context.Context, *UpdateLeaseRequest) (*Lease, error)
-	DeleteLease(context.Context, *DeleteLeaseRequest) (*emptypb.Empty, error)
+	GetExporter(context.Context, *v1.GetRequest) (*v1.Exporter, error)
+	ListExporters(context.Context, *v1.ExporterListRequest) (*v1.ExporterListResponse, error)
+	GetLease(context.Context, *v1.GetRequest) (*v1.Lease, error)
+	ListLeases(context.Context, *v1.LeaseListRequest) (*v1.LeaseListResponse, error)
+	CreateLease(context.Context, *v1.LeaseCreateRequest) (*v1.Lease, error)
+	UpdateLease(context.Context, *v1.LeaseUpdateRequest) (*v1.Lease, error)
+	DeleteLease(context.Context, *v1.DeleteRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedClientServiceServer()
 }
 
@@ -148,25 +161,25 @@ type ClientServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedClientServiceServer struct{}
 
-func (UnimplementedClientServiceServer) GetExporter(context.Context, *GetExporterRequest) (*Exporter, error) {
+func (UnimplementedClientServiceServer) GetExporter(context.Context, *v1.GetRequest) (*v1.Exporter, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetExporter not implemented")
 }
-func (UnimplementedClientServiceServer) ListExporters(context.Context, *ListExportersRequest) (*ListExportersResponse, error) {
+func (UnimplementedClientServiceServer) ListExporters(context.Context, *v1.ExporterListRequest) (*v1.ExporterListResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListExporters not implemented")
 }
-func (UnimplementedClientServiceServer) GetLease(context.Context, *GetLeaseRequest) (*Lease, error) {
+func (UnimplementedClientServiceServer) GetLease(context.Context, *v1.GetRequest) (*v1.Lease, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetLease not implemented")
 }
-func (UnimplementedClientServiceServer) ListLeases(context.Context, *ListLeasesRequest) (*ListLeasesResponse, error) {
+func (UnimplementedClientServiceServer) ListLeases(context.Context, *v1.LeaseListRequest) (*v1.LeaseListResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListLeases not implemented")
 }
-func (UnimplementedClientServiceServer) CreateLease(context.Context, *CreateLeaseRequest) (*Lease, error) {
+func (UnimplementedClientServiceServer) CreateLease(context.Context, *v1.LeaseCreateRequest) (*v1.Lease, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateLease not implemented")
 }
-func (UnimplementedClientServiceServer) UpdateLease(context.Context, *UpdateLeaseRequest) (*Lease, error) {
+func (UnimplementedClientServiceServer) UpdateLease(context.Context, *v1.LeaseUpdateRequest) (*v1.Lease, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateLease not implemented")
 }
-func (UnimplementedClientServiceServer) DeleteLease(context.Context, *DeleteLeaseRequest) (*emptypb.Empty, error) {
+func (UnimplementedClientServiceServer) DeleteLease(context.Context, *v1.DeleteRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteLease not implemented")
 }
 func (UnimplementedClientServiceServer) mustEmbedUnimplementedClientServiceServer() {}
@@ -191,7 +204,7 @@ func RegisterClientServiceServer(s grpc.ServiceRegistrar, srv ClientServiceServe
 }
 
 func _ClientService_GetExporter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetExporterRequest)
+	in := new(v1.GetRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -203,13 +216,13 @@ func _ClientService_GetExporter_Handler(srv interface{}, ctx context.Context, de
 		FullMethod: ClientService_GetExporter_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ClientServiceServer).GetExporter(ctx, req.(*GetExporterRequest))
+		return srv.(ClientServiceServer).GetExporter(ctx, req.(*v1.GetRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _ClientService_ListExporters_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListExportersRequest)
+	in := new(v1.ExporterListRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -221,13 +234,13 @@ func _ClientService_ListExporters_Handler(srv interface{}, ctx context.Context, 
 		FullMethod: ClientService_ListExporters_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ClientServiceServer).ListExporters(ctx, req.(*ListExportersRequest))
+		return srv.(ClientServiceServer).ListExporters(ctx, req.(*v1.ExporterListRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _ClientService_GetLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetLeaseRequest)
+	in := new(v1.GetRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -239,13 +252,13 @@ func _ClientService_GetLease_Handler(srv interface{}, ctx context.Context, dec f
 		FullMethod: ClientService_GetLease_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ClientServiceServer).GetLease(ctx, req.(*GetLeaseRequest))
+		return srv.(ClientServiceServer).GetLease(ctx, req.(*v1.GetRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _ClientService_ListLeases_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListLeasesRequest)
+	in := new(v1.LeaseListRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -257,13 +270,13 @@ func _ClientService_ListLeases_Handler(srv interface{}, ctx context.Context, dec
 		FullMethod: ClientService_ListLeases_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ClientServiceServer).ListLeases(ctx, req.(*ListLeasesRequest))
+		return srv.(ClientServiceServer).ListLeases(ctx, req.(*v1.LeaseListRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _ClientService_CreateLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateLeaseRequest)
+	in := new(v1.LeaseCreateRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -275,13 +288,13 @@ func _ClientService_CreateLease_Handler(srv interface{}, ctx context.Context, de
 		FullMethod: ClientService_CreateLease_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ClientServiceServer).CreateLease(ctx, req.(*CreateLeaseRequest))
+		return srv.(ClientServiceServer).CreateLease(ctx, req.(*v1.LeaseCreateRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _ClientService_UpdateLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateLeaseRequest)
+	in := new(v1.LeaseUpdateRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -293,13 +306,13 @@ func _ClientService_UpdateLease_Handler(srv interface{}, ctx context.Context, de
 		FullMethod: ClientService_UpdateLease_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ClientServiceServer).UpdateLease(ctx, req.(*UpdateLeaseRequest))
+		return srv.(ClientServiceServer).UpdateLease(ctx, req.(*v1.LeaseUpdateRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _ClientService_DeleteLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteLeaseRequest)
+	in := new(v1.DeleteRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -311,7 +324,7 @@ func _ClientService_DeleteLease_Handler(srv interface{}, ctx context.Context, de
 		FullMethod: ClientService_DeleteLease_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ClientServiceServer).DeleteLease(ctx, req.(*DeleteLeaseRequest))
+		return srv.(ClientServiceServer).DeleteLease(ctx, req.(*v1.DeleteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }

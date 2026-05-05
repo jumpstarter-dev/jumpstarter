@@ -1,0 +1,121 @@
+// Copyright 2026 The Jumpstarter Authors
+// (-- api-linter: core::0215::foreign-type-reference=disabled
+// (-- api-linter: core::0192::has-comments=disabled
+// (-- api-linter: core::0191::java-package=disabled
+// (-- api-linter: core::0191::java-outer-classname=disabled
+// (-- api-linter: core::0191::java-multiple-files=disabled
+
+syntax = "proto3";
+
+package jumpstarter.admin.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/api/resource.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "jumpstarter/v1/requests.proto";
+import "jumpstarter/v1/resources.proto";
+
+// EventClass enumerates the webhook event categories a subscriber can
+// register interest in. Mirrored to/from the Webhook CRD's spec.events
+// list as strings.
+enum EventClass {
+  EVENT_CLASS_UNSPECIFIED = 0;
+  EVENT_CLASS_LEASE_CREATED = 1;
+  EVENT_CLASS_LEASE_ENDED = 2;
+  EVENT_CLASS_EXPORTER_OFFLINE = 3;
+  EVENT_CLASS_EXPORTER_AVAILABLE = 4;
+  EVENT_CLASS_CLIENT_CREATED = 5;
+  EVENT_CLASS_CLIENT_DELETED = 6;
+}
+
+service WebhookService {
+  rpc GetWebhook(jumpstarter.v1.GetRequest) returns (Webhook) {
+    option (google.api.http) = {get: "/admin/v1/{name=namespaces/*/webhooks/*}"};
+    option (google.api.method_signature) = "name";
+  }
+  rpc ListWebhooks(WebhookListRequest) returns (WebhookListResponse) {
+    option (google.api.http) = {get: "/admin/v1/{parent=namespaces/*}/webhooks"};
+    option (google.api.method_signature) = "parent";
+  }
+  rpc CreateWebhook(WebhookCreateRequest) returns (Webhook) {
+    option (google.api.http) = {
+      post: "/admin/v1/{parent=namespaces/*}/webhooks"
+      body: "webhook"
+    };
+    option (google.api.method_signature) = "parent,webhook,webhook_id";
+  }
+  rpc UpdateWebhook(WebhookUpdateRequest) returns (Webhook) {
+    option (google.api.http) = {
+      patch: "/admin/v1/{webhook.name=namespaces/*/webhooks/*}"
+      body: "webhook"
+    };
+    option (google.api.method_signature) = "webhook,update_mask";
+  }
+  rpc DeleteWebhook(jumpstarter.v1.DeleteRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/admin/v1/{name=namespaces/*/webhooks/*}"};
+    option (google.api.method_signature) = "name";
+  }
+}
+
+message Webhook {
+  option (google.api.resource) = {
+    type: "jumpstarter.dev/Webhook"
+    pattern: "namespaces/{namespace}/webhooks/{webhook}"
+    singular: "webhook"
+    plural: "webhooks"
+  };
+
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+
+  // Destination URL the controller POSTs signed event payloads to.
+  string url = 2 [(google.api.field_behavior) = REQUIRED];
+
+  // Reference to a Secret in the same namespace whose value is used as the
+  // HMAC-SHA256 signing key. Format: "<secret-name>/<key>".
+  string secret_ref = 3 [(google.api.field_behavior) = REQUIRED];
+
+  repeated EventClass events = 4 [(google.api.field_behavior) = REQUIRED];
+
+  optional google.protobuf.Timestamp last_success = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  optional google.protobuf.Timestamp last_failure = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  int32 consecutive_failures = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // Identity attribution and concurrency-control metadata.
+  jumpstarter.v1.ResourceMetadata metadata = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// Webhook-specific list/create/update messages stay in admin.v1 because
+// Webhook is a strictly admin-surface resource (no client.v1 counterpart).
+// Naming follows the resource-first convention used by jumpstarter.v1
+// (LeaseListRequest, ExporterCreateRequest, ...) for consistency.
+message WebhookListRequest {
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {child_type: "jumpstarter.dev/Webhook"}
+  ];
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+message WebhookListResponse {
+  repeated Webhook webhooks = 1;
+  string next_page_token = 2;
+}
+
+message WebhookCreateRequest {
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {child_type: "jumpstarter.dev/Webhook"}
+  ];
+  string webhook_id = 2 [(google.api.field_behavior) = OPTIONAL];
+  Webhook webhook = 3 [(google.api.field_behavior) = REQUIRED];
+}
+
+message WebhookUpdateRequest {
+  Webhook webhook = 1 [(google.api.field_behavior) = REQUIRED];
+  google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = OPTIONAL];
+}

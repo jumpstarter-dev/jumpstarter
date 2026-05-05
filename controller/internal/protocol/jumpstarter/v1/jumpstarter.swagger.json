@@ -1,0 +1,1190 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "jumpstarter/v1/jumpstarter.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "ControllerService"
+    },
+    {
+      "name": "ExporterService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/jumpstarter.v1.ControllerService/AuditStream": {
+      "post": {
+        "summary": "Audit events from the exporters\naudit events are used to track the exporter's activity",
+        "operationId": "ControllerService_AuditStream",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": " (streaming inputs)",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1AuditStreamRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ControllerService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ControllerService/Dial": {
+      "post": {
+        "summary": "Client connecting\nReturns stream token for connecting to the desired exporter\nLeases are checked before token issuance",
+        "operationId": "ControllerService_Dial",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DialResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1DialRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ControllerService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ControllerService/GetLease": {
+      "post": {
+        "summary": "Get Lease",
+        "operationId": "ControllerService_GetLease",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetLeaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1GetLeaseRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ControllerService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ControllerService/ListLeases": {
+      "post": {
+        "summary": "List Leases",
+        "operationId": "ControllerService_ListLeases",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListLeasesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ListLeasesRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ControllerService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ControllerService/Listen": {
+      "post": {
+        "summary": "Exporter listening\nReturns stream tokens for accepting incoming client connections",
+        "operationId": "ControllerService_Listen",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1ListenResponse"
+                },
+                "error": {
+                  "$ref": "#/definitions/googleRpcStatus"
+                }
+              },
+              "title": "Stream result of v1ListenResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ListenRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ControllerService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ControllerService/Register": {
+      "post": {
+        "summary": "Exporter registration",
+        "operationId": "ControllerService_Register",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RegisterResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RegisterRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ControllerService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ControllerService/ReleaseLease": {
+      "post": {
+        "summary": "Release Lease",
+        "operationId": "ControllerService_ReleaseLease",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ReleaseLeaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ReleaseLeaseRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ControllerService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ControllerService/ReportStatus": {
+      "post": {
+        "summary": "Exporter status report\nAllows exporters to report their own status to the controller",
+        "operationId": "ControllerService_ReportStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ReportStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ReportStatusRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ControllerService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ControllerService/RequestLease": {
+      "post": {
+        "summary": "Request Lease",
+        "operationId": "ControllerService_RequestLease",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RequestLeaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RequestLeaseRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ControllerService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ControllerService/Status": {
+      "post": {
+        "summary": "Exporter status\nReturns lease status for the exporter",
+        "operationId": "ControllerService_Status",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1StatusResponse"
+                },
+                "error": {
+                  "$ref": "#/definitions/googleRpcStatus"
+                }
+              },
+              "title": "Stream result of v1StatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StatusRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ControllerService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ControllerService/Unregister": {
+      "post": {
+        "summary": "Exporter disconnection\nDisconnecting with bye will invalidate any existing router tokens\nwe will eventually have a mechanism to tell the router this token\nhas been invalidated",
+        "operationId": "ControllerService_Unregister",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UnregisterResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1UnregisterRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ControllerService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ExporterService/DriverCall": {
+      "post": {
+        "operationId": "ExporterService_DriverCall",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DriverCallResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1DriverCallRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ExporterService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ExporterService/EndSession": {
+      "post": {
+        "summary": "End the current session, triggering the afterLease hook\nThe client should keep the connection open to receive hook logs via LogStream\nReturns after the afterLease hook completes",
+        "operationId": "ExporterService_EndSession",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1EndSessionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1EndSessionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ExporterService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ExporterService/GetReport": {
+      "post": {
+        "summary": "Exporter registration",
+        "operationId": "ExporterService_GetReport",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetReportResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          }
+        ],
+        "tags": [
+          "ExporterService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ExporterService/GetStatus": {
+      "post": {
+        "operationId": "ExporterService_GetStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1GetStatusRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ExporterService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ExporterService/LogStream": {
+      "post": {
+        "operationId": "ExporterService_LogStream",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1LogStreamResponse"
+                },
+                "error": {
+                  "$ref": "#/definitions/googleRpcStatus"
+                }
+              },
+              "title": "Stream result of v1LogStreamResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          }
+        ],
+        "tags": [
+          "ExporterService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ExporterService/Reset": {
+      "post": {
+        "operationId": "ExporterService_Reset",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ResetResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ResetRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ExporterService"
+        ]
+      }
+    },
+    "/jumpstarter.v1.ExporterService/StreamingDriverCall": {
+      "post": {
+        "operationId": "ExporterService_StreamingDriverCall",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1StreamingDriverCallResponse"
+                },
+                "error": {
+                  "$ref": "#/definitions/googleRpcStatus"
+                }
+              },
+              "title": "Stream result of v1StreamingDriverCallResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StreamingDriverCallRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ExporterService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "googleRpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "protobufNullValue": {
+      "type": "string",
+      "enum": [
+        "NULL_VALUE"
+      ],
+      "default": "NULL_VALUE",
+      "description": "`NullValue` is a singleton enumeration to represent the null value for the\n`Value` type union.\n\nThe JSON representation for `NullValue` is JSON `null`.\n\n - NULL_VALUE: Null value."
+    },
+    "v1AuditStreamRequest": {
+      "type": "object",
+      "properties": {
+        "exporterUuid": {
+          "type": "string",
+          "title": "additional context:\n- token/authentication mechanism"
+        },
+        "driverInstanceUuid": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Condition": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "observedGeneration": {
+          "type": "string",
+          "format": "int64"
+        },
+        "lastTransitionTime": {
+          "$ref": "#/definitions/v1Time"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "v1DialRequest": {
+      "type": "object",
+      "properties": {
+        "leaseName": {
+          "type": "string"
+        }
+      }
+    },
+    "v1DialResponse": {
+      "type": "object",
+      "properties": {
+        "routerEndpoint": {
+          "type": "string"
+        },
+        "routerToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1DriverCallRequest": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "args": {
+          "type": "array",
+          "items": {}
+        }
+      }
+    },
+    "v1DriverCallResponse": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        },
+        "result": {}
+      }
+    },
+    "v1DriverInstanceReport": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string",
+          "title": "a unique id within the exporter"
+        },
+        "parentUuid": {
+          "type": "string",
+          "title": "optional, if device has a parent device"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "description": {
+          "type": "string",
+          "title": "optional custom driver description for CLI"
+        },
+        "methodsDescription": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "method name -\u003e help text for CLI"
+        }
+      }
+    },
+    "v1EndSessionRequest": {
+      "type": "object"
+    },
+    "v1EndSessionResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Endpoint": {
+      "type": "object",
+      "properties": {
+        "endpoint": {
+          "type": "string"
+        },
+        "certificate": {
+          "type": "string"
+        },
+        "clientCertificate": {
+          "type": "string"
+        },
+        "clientPrivateKey": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ExporterStatus": {
+      "type": "string",
+      "enum": [
+        "EXPORTER_STATUS_UNSPECIFIED",
+        "EXPORTER_STATUS_OFFLINE",
+        "EXPORTER_STATUS_AVAILABLE",
+        "EXPORTER_STATUS_BEFORE_LEASE_HOOK",
+        "EXPORTER_STATUS_LEASE_READY",
+        "EXPORTER_STATUS_AFTER_LEASE_HOOK",
+        "EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED",
+        "EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED"
+      ],
+      "default": "EXPORTER_STATUS_UNSPECIFIED",
+      "description": "- EXPORTER_STATUS_UNSPECIFIED: Unspecified exporter status\n - EXPORTER_STATUS_OFFLINE: Exporter is offline\n - EXPORTER_STATUS_AVAILABLE: Exporter is available to be leased\n - EXPORTER_STATUS_BEFORE_LEASE_HOOK: Exporter is executing before lease hook(s)\n - EXPORTER_STATUS_LEASE_READY: Exporter is leased and ready to accept commands\n - EXPORTER_STATUS_AFTER_LEASE_HOOK: Exporter is executing after lease hook(s)\n - EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED: Exporter before lease hook failed\n - EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED: Exporter after lease hook failed",
+      "title": "Exporter status information"
+    },
+    "v1GetLeaseRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "v1GetLeaseResponse": {
+      "type": "object",
+      "properties": {
+        "duration": {
+          "type": "string"
+        },
+        "selector": {
+          "$ref": "#/definitions/v1LabelSelector"
+        },
+        "beginTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "exporterUuid": {
+          "type": "string"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Condition"
+          }
+        }
+      }
+    },
+    "v1GetReportResponse": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "reports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DriverInstanceReport"
+          },
+          "title": "standard labels:\njumpstarter.dev/hostname=\njumpstarter.dev/name="
+        },
+        "alternativeEndpoints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Endpoint"
+          }
+        }
+      }
+    },
+    "v1GetStatusRequest": {
+      "type": "object"
+    },
+    "v1GetStatusResponse": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/definitions/v1ExporterStatus"
+        },
+        "message": {
+          "type": "string"
+        },
+        "statusVersion": {
+          "type": "string",
+          "format": "uint64",
+          "title": "Monotonic counter, increments on each status change"
+        },
+        "previousStatus": {
+          "$ref": "#/definitions/v1ExporterStatus",
+          "title": "Previous status for transition tracking"
+        }
+      }
+    },
+    "v1LabelSelector": {
+      "type": "object",
+      "properties": {
+        "matchExpressions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1LabelSelectorRequirement"
+          }
+        },
+        "matchLabels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "title": "Reference: https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/label-selector/"
+    },
+    "v1LabelSelectorRequirement": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1ListLeasesRequest": {
+      "type": "object"
+    },
+    "v1ListLeasesResponse": {
+      "type": "object",
+      "properties": {
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1ListenRequest": {
+      "type": "object",
+      "properties": {
+        "leaseName": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ListenResponse": {
+      "type": "object",
+      "properties": {
+        "routerEndpoint": {
+          "type": "string"
+        },
+        "routerToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1LogSource": {
+      "type": "string",
+      "enum": [
+        "LOG_SOURCE_UNSPECIFIED",
+        "LOG_SOURCE_DRIVER",
+        "LOG_SOURCE_BEFORE_LEASE_HOOK",
+        "LOG_SOURCE_AFTER_LEASE_HOOK",
+        "LOG_SOURCE_SYSTEM"
+      ],
+      "default": "LOG_SOURCE_UNSPECIFIED",
+      "description": "- LOG_SOURCE_UNSPECIFIED: Unspecified log source\n - LOG_SOURCE_DRIVER: Driver/device logs\n - LOG_SOURCE_BEFORE_LEASE_HOOK: beforeLease hook execution logs\n - LOG_SOURCE_AFTER_LEASE_HOOK: afterLease hook execution logs\n - LOG_SOURCE_SYSTEM: System/exporter logs",
+      "title": "Source of log stream messages"
+    },
+    "v1LogStreamResponse": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/definitions/v1LogSource",
+          "title": "New optional field"
+        }
+      }
+    },
+    "v1RegisterRequest": {
+      "type": "object",
+      "properties": {
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "additional context:\n- token/authentication mechanism"
+        },
+        "reports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DriverInstanceReport"
+          },
+          "title": "standard labels:\njumpstarter.dev/hostname=\njumpstarter.dev/name="
+        }
+      }
+    },
+    "v1RegisterResponse": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ReleaseLeaseRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ReleaseLeaseResponse": {
+      "type": "object"
+    },
+    "v1ReportStatusRequest": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/definitions/v1ExporterStatus"
+        },
+        "message": {
+          "type": "string",
+          "title": "Optional human-readable status message"
+        },
+        "releaseLease": {
+          "type": "boolean",
+          "title": "When true, controller should release the active lease"
+        }
+      }
+    },
+    "v1ReportStatusResponse": {
+      "type": "object"
+    },
+    "v1RequestLeaseRequest": {
+      "type": "object",
+      "properties": {
+        "duration": {
+          "type": "string"
+        },
+        "selector": {
+          "$ref": "#/definitions/v1LabelSelector"
+        }
+      }
+    },
+    "v1RequestLeaseResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ResetRequest": {
+      "type": "object"
+    },
+    "v1ResetResponse": {
+      "type": "object"
+    },
+    "v1StatusRequest": {
+      "type": "object"
+    },
+    "v1StatusResponse": {
+      "type": "object",
+      "properties": {
+        "leased": {
+          "type": "boolean"
+        },
+        "leaseName": {
+          "type": "string"
+        },
+        "clientName": {
+          "type": "string"
+        }
+      }
+    },
+    "v1StreamingDriverCallRequest": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "args": {
+          "type": "array",
+          "items": {}
+        }
+      }
+    },
+    "v1StreamingDriverCallResponse": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        },
+        "result": {}
+      }
+    },
+    "v1Time": {
+      "type": "object",
+      "properties": {
+        "seconds": {
+          "type": "string",
+          "format": "int64"
+        },
+        "nanos": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "Reference: https://github.com/kubernetes/kubernetes/blob/v1.31.1/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto"
+    },
+    "v1UnregisterRequest": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "v1UnregisterResponse": {
+      "type": "object"
+    }
+  }
+}

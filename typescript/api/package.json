@@ -1,0 +1,60 @@
+{
+  "name": "@jumpstarter/api",
+  "version": "0.0.0",
+  "description": "TypeScript client SDK for the Jumpstarter admin and client APIs.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./admin/lease": {
+      "types": "./dist/admin/lease.d.ts",
+      "import": "./dist/admin/lease.js",
+      "require": "./dist/admin/lease.cjs"
+    },
+    "./admin/exporter": {
+      "types": "./dist/admin/exporter.d.ts",
+      "import": "./dist/admin/exporter.js",
+      "require": "./dist/admin/exporter.cjs"
+    },
+    "./admin/client": {
+      "types": "./dist/admin/client.d.ts",
+      "import": "./dist/admin/client.js",
+      "require": "./dist/admin/client.cjs"
+    },
+    "./admin/webhook": {
+      "types": "./dist/admin/webhook.d.ts",
+      "import": "./dist/admin/webhook.js",
+      "require": "./dist/admin/webhook.cjs"
+    },
+    "./client/lease": {
+      "types": "./dist/client/lease.d.ts",
+      "import": "./dist/client/lease.js",
+      "require": "./dist/client/lease.cjs"
+    },
+    "./client/exporter": {
+      "types": "./dist/client/exporter.d.ts",
+      "import": "./dist/client/exporter.js",
+      "require": "./dist/client/exporter.cjs"
+    }
+  },
+  "scripts": {
+    "generate": "tsx scripts/generate.ts",
+    "build": "npm run generate && tsup",
+    "smoke": "tsc --noEmit -p tsconfig.json",
+    "test": "npm run smoke"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.13.0"
+  },
+  "devDependencies": {
+    "@types/swagger2openapi": "^7.0.4",
+    "openapi-typescript": "^7.4.0",
+    "swagger2openapi": "^7.0.8",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

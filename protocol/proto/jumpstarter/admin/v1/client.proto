@@ -1,0 +1,65 @@
+// Copyright 2026 The Jumpstarter Authors
+// (-- api-linter: core::0215::foreign-type-reference=disabled
+// (-- api-linter: core::0192::has-comments=disabled
+// (-- api-linter: core::0191::java-package=disabled
+// (-- api-linter: core::0191::java-outer-classname=disabled
+// (-- api-linter: core::0191::java-multiple-files=disabled
+
+syntax = "proto3";
+
+package jumpstarter.admin.v1;
+
+import "google/api/annotations.proto";
+import "google/api/client.proto";
+import "google/api/field_behavior.proto";
+import "google/protobuf/empty.proto";
+import "jumpstarter/admin/v1/common.proto";
+import "jumpstarter/v1/requests.proto";
+import "jumpstarter/v1/resources.proto";
+
+// ClientService administers the Client Kubernetes resource.
+//
+// Note the deliberate name overlap with jumpstarter.client.v1.ClientService:
+// this service is named after the resource it operates on (CRUD over the
+// Client CRD), while client.v1.ClientService is named after the actor role
+// (workflows performed by a Client). Both are correct in their respective
+// contexts; the proto package qualifier (admin vs client) and REST path
+// prefix (/admin/v1/clients/... vs /client/v1/leases/...) keep the role
+// unambiguous at every call site.
+service ClientService {
+  rpc GetClient(jumpstarter.v1.GetRequest) returns (jumpstarter.v1.Client) {
+    option (google.api.http) = {get: "/admin/v1/{name=namespaces/*/clients/*}"};
+    option (google.api.method_signature) = "name";
+  }
+  rpc ListClients(jumpstarter.v1.ClientListRequest) returns (jumpstarter.v1.ClientListResponse) {
+    option (google.api.http) = {get: "/admin/v1/{parent=namespaces/*}/clients"};
+    option (google.api.method_signature) = "parent";
+  }
+  rpc CreateClient(jumpstarter.v1.ClientCreateRequest) returns (jumpstarter.v1.Client) {
+    option (google.api.http) = {
+      post: "/admin/v1/{parent=namespaces/*}/clients"
+      body: "client"
+    };
+    option (google.api.method_signature) = "parent,client,client_id";
+  }
+  rpc UpdateClient(jumpstarter.v1.ClientUpdateRequest) returns (jumpstarter.v1.Client) {
+    option (google.api.http) = {
+      patch: "/admin/v1/{client.name=namespaces/*/clients/*}"
+      body: "client"
+    };
+    option (google.api.method_signature) = "client,update_mask";
+  }
+  rpc DeleteClient(jumpstarter.v1.DeleteRequest) returns (google.protobuf.Empty) {
+    option (google.api.http) = {delete: "/admin/v1/{name=namespaces/*/clients/*}"};
+    option (google.api.method_signature) = "name";
+  }
+  rpc WatchClients(jumpstarter.v1.WatchRequest) returns (stream ClientEvent) {
+    option (google.api.http) = {get: "/admin/v1/{parent=namespaces/*}/clients:watch"};
+  }
+}
+
+message ClientEvent {
+  EventType event_type = 1;
+  optional jumpstarter.v1.Client client = 2;
+  string resource_version = 3;
+}

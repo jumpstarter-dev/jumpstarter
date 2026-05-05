@@ -31,3 +31,6 @@ build/
 .specify/
 .envrc
 specs/
+
+# Node.js
+node_modules/

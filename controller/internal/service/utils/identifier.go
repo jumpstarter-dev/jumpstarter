@@ -93,3 +93,15 @@ func UnparseLeaseIdentifier(key kclient.ObjectKey) string {
 func ParseClientIdentifier(identifier string) (key *kclient.ObjectKey, err error) {
 	return ParseObjectIdentifier(identifier, "clients")
 }
+
+func UnparseClientIdentifier(key kclient.ObjectKey) string {
+	return UnparseObjectIdentifier(key, "clients")
+}
+
+func ParseWebhookIdentifier(identifier string) (key *kclient.ObjectKey, err error) {
+	return ParseObjectIdentifier(identifier, "webhooks")
+}
+
+func UnparseWebhookIdentifier(key kclient.ObjectKey) string {
+	return UnparseObjectIdentifier(key, "webhooks")
+}

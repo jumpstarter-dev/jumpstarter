@@ -16,6 +16,7 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/utilities"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/grpclog"
@@ -37,7 +38,7 @@ var (
 
 func request_ClientService_GetExporter_0(ctx context.Context, marshaler runtime.Marshaler, client ClientServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq GetExporterRequest
+		protoReq jumpstarterv1.GetRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -58,7 +59,7 @@ func request_ClientService_GetExporter_0(ctx context.Context, marshaler runtime.
 
 func local_request_ClientService_GetExporter_0(ctx context.Context, marshaler runtime.Marshaler, server ClientServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq GetExporterRequest
+		protoReq jumpstarterv1.GetRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -78,7 +79,7 @@ var filter_ClientService_ListExporters_0 = &utilities.DoubleArray{Encoding: map[
 
 func request_ClientService_ListExporters_0(ctx context.Context, marshaler runtime.Marshaler, client ClientServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq ListExportersRequest
+		protoReq jumpstarterv1.ExporterListRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -105,7 +106,7 @@ func request_ClientService_ListExporters_0(ctx context.Context, marshaler runtim
 
 func local_request_ClientService_ListExporters_0(ctx context.Context, marshaler runtime.Marshaler, server ClientServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq ListExportersRequest
+		protoReq jumpstarterv1.ExporterListRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -129,7 +130,7 @@ func local_request_ClientService_ListExporters_0(ctx context.Context, marshaler 
 
 func request_ClientService_GetLease_0(ctx context.Context, marshaler runtime.Marshaler, client ClientServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq GetLeaseRequest
+		protoReq jumpstarterv1.GetRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -150,7 +151,7 @@ func request_ClientService_GetLease_0(ctx context.Context, marshaler runtime.Mar
 
 func local_request_ClientService_GetLease_0(ctx context.Context, marshaler runtime.Marshaler, server ClientServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq GetLeaseRequest
+		protoReq jumpstarterv1.GetRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -170,7 +171,7 @@ var filter_ClientService_ListLeases_0 = &utilities.DoubleArray{Encoding: map[str
 
 func request_ClientService_ListLeases_0(ctx context.Context, marshaler runtime.Marshaler, client ClientServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq ListLeasesRequest
+		protoReq jumpstarterv1.LeaseListRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -197,7 +198,7 @@ func request_ClientService_ListLeases_0(ctx context.Context, marshaler runtime.M
 
 func local_request_ClientService_ListLeases_0(ctx context.Context, marshaler runtime.Marshaler, server ClientServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq ListLeasesRequest
+		protoReq jumpstarterv1.LeaseListRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -223,7 +224,7 @@ var filter_ClientService_CreateLease_0 = &utilities.DoubleArray{Encoding: map[st
 
 func request_ClientService_CreateLease_0(ctx context.Context, marshaler runtime.Marshaler, client ClientServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq CreateLeaseRequest
+		protoReq jumpstarterv1.LeaseCreateRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -253,7 +254,7 @@ func request_ClientService_CreateLease_0(ctx context.Context, marshaler runtime.
 
 func local_request_ClientService_CreateLease_0(ctx context.Context, marshaler runtime.Marshaler, server ClientServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq CreateLeaseRequest
+		protoReq jumpstarterv1.LeaseCreateRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -282,7 +283,7 @@ var filter_ClientService_UpdateLease_0 = &utilities.DoubleArray{Encoding: map[st
 
 func request_ClientService_UpdateLease_0(ctx context.Context, marshaler runtime.Marshaler, client ClientServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq UpdateLeaseRequest
+		protoReq jumpstarterv1.LeaseUpdateRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -323,7 +324,7 @@ func request_ClientService_UpdateLease_0(ctx context.Context, marshaler runtime.
 
 func local_request_ClientService_UpdateLease_0(ctx context.Context, marshaler runtime.Marshaler, server ClientServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq UpdateLeaseRequest
+		protoReq jumpstarterv1.LeaseUpdateRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -361,7 +362,7 @@ func local_request_ClientService_UpdateLease_0(ctx context.Context, marshaler ru
 
 func request_ClientService_DeleteLease_0(ctx context.Context, marshaler runtime.Marshaler, client ClientServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq DeleteLeaseRequest
+		protoReq jumpstarterv1.DeleteRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -382,7 +383,7 @@ func request_ClientService_DeleteLease_0(ctx context.Context, marshaler runtime.
 
 func local_request_ClientService_DeleteLease_0(ctx context.Context, marshaler runtime.Marshaler, server ClientServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
-		protoReq DeleteLeaseRequest
+		protoReq jumpstarterv1.DeleteRequest
 		metadata runtime.ServerMetadata
 		err      error
 	)
@@ -410,7 +411,7 @@ func RegisterClientServiceHandlerServer(ctx context.Context, mux *runtime.ServeM
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/GetExporter", runtime.WithHTTPPathPattern("/v1/{name=namespaces/*/exporters/*}"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/GetExporter", runtime.WithHTTPPathPattern("/client/v1/{name=namespaces/*/exporters/*}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -430,7 +431,7 @@ func RegisterClientServiceHandlerServer(ctx context.Context, mux *runtime.ServeM
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/ListExporters", runtime.WithHTTPPathPattern("/v1/{parent=namespaces/*}/exporters"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/ListExporters", runtime.WithHTTPPathPattern("/client/v1/{parent=namespaces/*}/exporters"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -450,7 +451,7 @@ func RegisterClientServiceHandlerServer(ctx context.Context, mux *runtime.ServeM
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/GetLease", runtime.WithHTTPPathPattern("/v1/{name=namespaces/*/leases/*}"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/GetLease", runtime.WithHTTPPathPattern("/client/v1/{name=namespaces/*/leases/*}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -470,7 +471,7 @@ func RegisterClientServiceHandlerServer(ctx context.Context, mux *runtime.ServeM
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/ListLeases", runtime.WithHTTPPathPattern("/v1/{parent=namespaces/*}/leases"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/ListLeases", runtime.WithHTTPPathPattern("/client/v1/{parent=namespaces/*}/leases"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -490,7 +491,7 @@ func RegisterClientServiceHandlerServer(ctx context.Context, mux *runtime.ServeM
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/CreateLease", runtime.WithHTTPPathPattern("/v1/{parent=namespaces/*}/leases"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/CreateLease", runtime.WithHTTPPathPattern("/client/v1/{parent=namespaces/*}/leases"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -510,7 +511,7 @@ func RegisterClientServiceHandlerServer(ctx context.Context, mux *runtime.ServeM
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/UpdateLease", runtime.WithHTTPPathPattern("/v1/{lease.name=namespaces/*/leases/*}"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/UpdateLease", runtime.WithHTTPPathPattern("/client/v1/{lease.name=namespaces/*/leases/*}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -530,7 +531,7 @@ func RegisterClientServiceHandlerServer(ctx context.Context, mux *runtime.ServeM
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/DeleteLease", runtime.WithHTTPPathPattern("/v1/{name=namespaces/*/leases/*}"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/DeleteLease", runtime.WithHTTPPathPattern("/client/v1/{name=namespaces/*/leases/*}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -588,7 +589,7 @@ func RegisterClientServiceHandlerClient(ctx context.Context, mux *runtime.ServeM
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/GetExporter", runtime.WithHTTPPathPattern("/v1/{name=namespaces/*/exporters/*}"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/GetExporter", runtime.WithHTTPPathPattern("/client/v1/{name=namespaces/*/exporters/*}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -605,7 +606,7 @@ func RegisterClientServiceHandlerClient(ctx context.Context, mux *runtime.ServeM
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/ListExporters", runtime.WithHTTPPathPattern("/v1/{parent=namespaces/*}/exporters"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/ListExporters", runtime.WithHTTPPathPattern("/client/v1/{parent=namespaces/*}/exporters"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -622,7 +623,7 @@ func RegisterClientServiceHandlerClient(ctx context.Context, mux *runtime.ServeM
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/GetLease", runtime.WithHTTPPathPattern("/v1/{name=namespaces/*/leases/*}"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/GetLease", runtime.WithHTTPPathPattern("/client/v1/{name=namespaces/*/leases/*}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -639,7 +640,7 @@ func RegisterClientServiceHandlerClient(ctx context.Context, mux *runtime.ServeM
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/ListLeases", runtime.WithHTTPPathPattern("/v1/{parent=namespaces/*}/leases"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/ListLeases", runtime.WithHTTPPathPattern("/client/v1/{parent=namespaces/*}/leases"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -656,7 +657,7 @@ func RegisterClientServiceHandlerClient(ctx context.Context, mux *runtime.ServeM
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/CreateLease", runtime.WithHTTPPathPattern("/v1/{parent=namespaces/*}/leases"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/CreateLease", runtime.WithHTTPPathPattern("/client/v1/{parent=namespaces/*}/leases"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -673,7 +674,7 @@ func RegisterClientServiceHandlerClient(ctx context.Context, mux *runtime.ServeM
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/UpdateLease", runtime.WithHTTPPathPattern("/v1/{lease.name=namespaces/*/leases/*}"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/UpdateLease", runtime.WithHTTPPathPattern("/client/v1/{lease.name=namespaces/*/leases/*}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -690,7 +691,7 @@ func RegisterClientServiceHandlerClient(ctx context.Context, mux *runtime.ServeM
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/DeleteLease", runtime.WithHTTPPathPattern("/v1/{name=namespaces/*/leases/*}"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/jumpstarter.client.v1.ClientService/DeleteLease", runtime.WithHTTPPathPattern("/client/v1/{name=namespaces/*/leases/*}"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -707,13 +708,13 @@ func RegisterClientServiceHandlerClient(ctx context.Context, mux *runtime.ServeM
 }
 
 var (
-	pattern_ClientService_GetExporter_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 2, 2, 1, 0, 4, 4, 5, 3}, []string{"v1", "namespaces", "exporters", "name"}, ""))
-	pattern_ClientService_ListExporters_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 2, 5, 2, 2, 3}, []string{"v1", "namespaces", "parent", "exporters"}, ""))
-	pattern_ClientService_GetLease_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 2, 2, 1, 0, 4, 4, 5, 3}, []string{"v1", "namespaces", "leases", "name"}, ""))
-	pattern_ClientService_ListLeases_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 2, 5, 2, 2, 3}, []string{"v1", "namespaces", "parent", "leases"}, ""))
-	pattern_ClientService_CreateLease_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 2, 5, 2, 2, 3}, []string{"v1", "namespaces", "parent", "leases"}, ""))
-	pattern_ClientService_UpdateLease_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 2, 2, 1, 0, 4, 4, 5, 3}, []string{"v1", "namespaces", "leases", "lease.name"}, ""))
-	pattern_ClientService_DeleteLease_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 2, 2, 1, 0, 4, 4, 5, 3}, []string{"v1", "namespaces", "leases", "name"}, ""))
+	pattern_ClientService_GetExporter_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 2, 3, 1, 0, 4, 4, 5, 4}, []string{"client", "v1", "namespaces", "exporters", "name"}, ""))
+	pattern_ClientService_ListExporters_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 2, 5, 3, 2, 4}, []string{"client", "v1", "namespaces", "parent", "exporters"}, ""))
+	pattern_ClientService_GetLease_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 2, 3, 1, 0, 4, 4, 5, 4}, []string{"client", "v1", "namespaces", "leases", "name"}, ""))
+	pattern_ClientService_ListLeases_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 2, 5, 3, 2, 4}, []string{"client", "v1", "namespaces", "parent", "leases"}, ""))
+	pattern_ClientService_CreateLease_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 2, 5, 3, 2, 4}, []string{"client", "v1", "namespaces", "parent", "leases"}, ""))
+	pattern_ClientService_UpdateLease_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 2, 3, 1, 0, 4, 4, 5, 4}, []string{"client", "v1", "namespaces", "leases", "lease.name"}, ""))
+	pattern_ClientService_DeleteLease_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 2, 3, 1, 0, 4, 4, 5, 4}, []string{"client", "v1", "namespaces", "leases", "name"}, ""))
 )
 
 var (

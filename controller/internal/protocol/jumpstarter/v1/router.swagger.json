@@ -1,0 +1,127 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "jumpstarter/v1/router.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "RouterService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/jumpstarter.v1.RouterService/Stream": {
+      "post": {
+        "summary": "Stream connects caller to another caller of the same stream",
+        "operationId": "RouterService_Stream",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1StreamResponse"
+                },
+                "error": {
+                  "$ref": "#/definitions/googleRpcStatus"
+                }
+              },
+              "title": "Stream result of v1StreamResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/googleRpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "description": " (streaming inputs)",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StreamRequest"
+            }
+          }
+        ],
+        "tags": [
+          "RouterService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "googleRpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "v1FrameType": {
+      "type": "string",
+      "enum": [
+        "FRAME_TYPE_DATA",
+        "FRAME_TYPE_RST_STREAM",
+        "FRAME_TYPE_PING",
+        "FRAME_TYPE_GOAWAY"
+      ],
+      "default": "FRAME_TYPE_DATA"
+    },
+    "v1StreamRequest": {
+      "type": "object",
+      "properties": {
+        "payload": {
+          "type": "string",
+          "format": "byte"
+        },
+        "frameType": {
+          "$ref": "#/definitions/v1FrameType"
+        }
+      }
+    },
+    "v1StreamResponse": {
+      "type": "object",
+      "properties": {
+        "payload": {
+          "type": "string",
+          "format": "byte"
+        },
+        "frameType": {
+          "$ref": "#/definitions/v1FrameType"
+        }
+      }
+    }
+  }
+}

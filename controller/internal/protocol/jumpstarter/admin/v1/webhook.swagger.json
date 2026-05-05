@@ -1,0 +1,376 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "jumpstarter/admin/v1/webhook.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "WebhookService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/admin/v1/{name}": {
+      "get": {
+        "operationId": "WebhookService_GetWebhook",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Webhook"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "Resource name in the form \"namespaces/{namespace}/{plural}/{id}\",\ne.g. \"namespaces/lab-foo/leases/abcd1234\".",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+/webhooks/[^/]+"
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      },
+      "delete": {
+        "operationId": "WebhookService_DeleteWebhook",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+/webhooks/[^/]+"
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    },
+    "/admin/v1/{parent}/webhooks": {
+      "get": {
+        "operationId": "WebhookService_ListWebhooks",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1WebhookListResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "parent",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      },
+      "post": {
+        "operationId": "WebhookService_CreateWebhook",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Webhook"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "parent",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+"
+          },
+          {
+            "name": "webhook",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1Webhook"
+            }
+          },
+          {
+            "name": "webhookId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    },
+    "/admin/v1/{webhook.name}": {
+      "patch": {
+        "operationId": "WebhookService_UpdateWebhook",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Webhook"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "webhook.name",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+/webhooks/[^/]+"
+          },
+          {
+            "name": "webhook",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "description": "Destination URL the controller POSTs signed event payloads to."
+                },
+                "secretRef": {
+                  "type": "string",
+                  "description": "Reference to a Secret in the same namespace whose value is used as the\nHMAC-SHA256 signing key. Format: \"\u003csecret-name\u003e/\u003ckey\u003e\"."
+                },
+                "events": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/v1EventClass"
+                  }
+                },
+                "lastSuccess": {
+                  "type": "string",
+                  "format": "date-time",
+                  "readOnly": true
+                },
+                "lastFailure": {
+                  "type": "string",
+                  "format": "date-time",
+                  "readOnly": true
+                },
+                "consecutiveFailures": {
+                  "type": "integer",
+                  "format": "int32",
+                  "readOnly": true
+                },
+                "metadata": {
+                  "$ref": "#/definitions/v1ResourceMetadata",
+                  "description": "Identity attribution and concurrency-control metadata.",
+                  "readOnly": true
+                }
+              },
+              "required": [
+                "url",
+                "secretRef",
+                "events"
+              ]
+            }
+          }
+        ],
+        "tags": [
+          "WebhookService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1EventClass": {
+      "type": "string",
+      "enum": [
+        "EVENT_CLASS_UNSPECIFIED",
+        "EVENT_CLASS_LEASE_CREATED",
+        "EVENT_CLASS_LEASE_ENDED",
+        "EVENT_CLASS_EXPORTER_OFFLINE",
+        "EVENT_CLASS_EXPORTER_AVAILABLE",
+        "EVENT_CLASS_CLIENT_CREATED",
+        "EVENT_CLASS_CLIENT_DELETED"
+      ],
+      "default": "EVENT_CLASS_UNSPECIFIED",
+      "description": "EventClass enumerates the webhook event categories a subscriber can\nregister interest in. Mirrored to/from the Webhook CRD's spec.events\nlist as strings."
+    },
+    "v1ResourceMetadata": {
+      "type": "object",
+      "properties": {
+        "createdBy": {
+          "type": "string",
+          "description": "Display-only username of the OIDC caller that last mutated this\nresource (mirrored from the jumpstarter.dev/created-by annotation).\nOptional because resources created by GitOps / kubectl may not carry it.",
+          "readOnly": true
+        },
+        "ownerIssuer": {
+          "type": "string",
+          "description": "OIDC issuer URL of the owner (jumpstarter.dev/owner-issuer annotation).",
+          "readOnly": true
+        },
+        "resourceVersion": {
+          "type": "string",
+          "description": "Kubernetes resourceVersion. Used by clients for optimistic concurrency\nand by Watch* RPCs as a resume cursor.",
+          "readOnly": true
+        }
+      },
+      "description": "ResourceMetadata bundles the identity-attribution and concurrency-control\nfields the controller stamps onto every Jumpstarter resource. Each domain\nresource embeds this as a field named \"metadata\" so admin clients see a\nuniform shape across resources."
+    },
+    "v1Webhook": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "description": "Destination URL the controller POSTs signed event payloads to."
+        },
+        "secretRef": {
+          "type": "string",
+          "description": "Reference to a Secret in the same namespace whose value is used as the\nHMAC-SHA256 signing key. Format: \"\u003csecret-name\u003e/\u003ckey\u003e\"."
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/v1EventClass"
+          }
+        },
+        "lastSuccess": {
+          "type": "string",
+          "format": "date-time",
+          "readOnly": true
+        },
+        "lastFailure": {
+          "type": "string",
+          "format": "date-time",
+          "readOnly": true
+        },
+        "consecutiveFailures": {
+          "type": "integer",
+          "format": "int32",
+          "readOnly": true
+        },
+        "metadata": {
+          "$ref": "#/definitions/v1ResourceMetadata",
+          "description": "Identity attribution and concurrency-control metadata.",
+          "readOnly": true
+        }
+      },
+      "required": [
+        "url",
+        "secretRef",
+        "events"
+      ]
+    },
+    "v1WebhookListResponse": {
+      "type": "object",
+      "properties": {
+        "webhooks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Webhook"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

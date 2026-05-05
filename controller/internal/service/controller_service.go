@@ -35,13 +35,19 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/admin"
+	adminauth "github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/auth"
+	adminauthz "github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/authz"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/impersonation"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authorization"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/config"
 	jlog "github.com/jumpstarter-dev/jumpstarter-controller/internal/log"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
+	adminv1pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/admin/v1"
 	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/admin/v1"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/auth"
 	clientsvcv1 "github.com/jumpstarter-dev/jumpstarter-controller/internal/service/client/v1"
 	"google.golang.org/grpc"
@@ -69,6 +75,39 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// chainUnary composes multiple grpc.UnaryServerInterceptors into one. This
+// is used in Start() to layer the admin AuthN+AuthZ pipeline on top of the
+// existing logging+recovery pass-through chain. Without it the package
+// router would have to take a slice of interceptors.
+func chainUnary(interceptors ...grpc.UnaryServerInterceptor) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		next := handler
+		for i := len(interceptors) - 1; i >= 0; i-- {
+			ic := interceptors[i]
+			cur := next
+			next = func(c context.Context, r any) (any, error) {
+				return ic(c, r, info, cur)
+			}
+		}
+		return next(ctx, req)
+	}
+}
+
+// chainStream is the streaming counterpart of chainUnary.
+func chainStream(interceptors ...grpc.StreamServerInterceptor) grpc.StreamServerInterceptor {
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		next := handler
+		for i := len(interceptors) - 1; i >= 0; i-- {
+			ic := interceptors[i]
+			cur := next
+			next = func(s any, st grpc.ServerStream) error {
+				return ic(s, st, info, cur)
+			}
+		}
+		return next(srv, ss)
+	}
+}
+
 // ControllerService exposes a gRPC service
 type ControllerService struct {
 	pb.UnimplementedControllerServiceServer
@@ -80,7 +119,17 @@ type ControllerService struct {
 	ServerOptions []grpc.ServerOption
 	Router        config.Router
 	LeasePolicy   *config.LeasePolicy
-	listenQueues  sync.Map
+
+	// Admin pipeline dependencies. ImpersonationFactory builds per-request
+	// kube-clients carrying the caller's OIDC identity as Impersonate-*
+	// headers; AdminAuthN runs the bearer/multi-issuer OIDC verifier;
+	// AdminAuthZ delegates to the kube-apiserver SubjectAccessReview API.
+	// All three are populated by main.go.
+	ImpersonationFactory *impersonation.Factory
+	AdminAuthN           *adminauth.MultiIssuerAuthenticator
+	AdminAuthZ           *adminauthz.Authorizer
+
+	listenQueues sync.Map
 }
 
 const defaultMaxTags int32 = 10
@@ -987,23 +1036,34 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		}
 	}
 
-	opts := append(s.ServerOptions,
-		grpc.ChainUnaryInterceptor(func(
-			gctx context.Context,
-			req any,
-			_ *grpc.UnaryServerInfo,
-			handler grpc.UnaryHandler,
-		) (resp any, err error) {
+	// Pass-through chain: existing logging + recovery, used for runtime
+	// (jumpstarter.v1.*) and legacy (jumpstarter.client.v1.*) RPCs.
+	passUnary := chainUnary(
+		func(gctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
 			return handler(logContext(gctx), req)
-		}, recovery.UnaryServerInterceptor()),
-		grpc.ChainStreamInterceptor(func(
-			srv any,
-			ss grpc.ServerStream,
-			_ *grpc.StreamServerInfo,
-			handler grpc.StreamHandler,
-		) error {
+		},
+		recovery.UnaryServerInterceptor(),
+	)
+	passStream := chainStream(
+		func(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 			return handler(srv, &wrappedStream{ServerStream: ss})
-		}, recovery.StreamServerInterceptor()),
+		},
+		recovery.StreamServerInterceptor(),
+	)
+
+	// Admin chain: pass-through plus multi-issuer OIDC AuthN and SAR
+	// AuthZ. Applied only to /jumpstarter.admin.v1.* RPCs by the package
+	// router below, so legacy/runtime callers are unaffected.
+	var adminUnary grpc.UnaryServerInterceptor = passUnary
+	var adminStream grpc.StreamServerInterceptor = passStream
+	if s.AdminAuthN != nil && s.AdminAuthZ != nil {
+		adminUnary = chainUnary(passUnary, s.AdminAuthN.UnaryServerInterceptor(), s.AdminAuthZ.UnaryServerInterceptor())
+		adminStream = chainStream(passStream, s.AdminAuthN.StreamServerInterceptor(), s.AdminAuthZ.StreamServerInterceptor())
+	}
+
+	opts := append(s.ServerOptions,
+		grpc.UnaryInterceptor(admin.UnaryRouter(adminUnary, passUnary)),
+		grpc.StreamInterceptor(admin.StreamRouter(adminStream, passStream)),
 	)
 	server := grpc.NewServer(opts...)
 
@@ -1013,11 +1073,58 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		clientsvcv1.NewClientService(s.Client, *auth.NewAuth(s.Client, s.Authn, s.Authz, s.Attr), s.effectiveMaxTags()),
 	)
 
+	// Register admin.v1 services. Only when ImpersonationFactory is wired
+	// does the admin pipeline become active; main.go controls this so
+	// existing tests/test fixtures that don't initialize the admin path
+	// can keep working without it.
+	var (
+		adminLeaseSvc    *v1.LeaseService
+		adminExporterSvc *v1.ExporterService
+		adminClientSvc   *v1.ClientService
+		adminWebhookSvc  *v1.WebhookService
+	)
+	if s.ImpersonationFactory != nil {
+		adminLeaseSvc = v1.NewLeaseService(s.ImpersonationFactory, s.Client, s.effectiveMaxTags())
+		adminExporterSvc = v1.NewExporterService(s.ImpersonationFactory, s.Client)
+		adminClientSvc = v1.NewClientService(s.ImpersonationFactory, s.Client)
+		adminWebhookSvc = v1.NewWebhookService(s.ImpersonationFactory)
+		adminv1pb.RegisterLeaseServiceServer(server, adminLeaseSvc)
+		adminv1pb.RegisterExporterServiceServer(server, adminExporterSvc)
+		adminv1pb.RegisterClientServiceServer(server, adminClientSvc)
+		adminv1pb.RegisterWebhookServiceServer(server, adminWebhookSvc)
+	}
+
 	// Register reflection service on gRPC server.
 	reflection.Register(server)
 
-	// Register gRPC gateway
+	// Register gRPC gateway. Both jumpstarter.client.v1 and the admin
+	// services are exposed via REST/JSON; the runtime path is gRPC-only.
+	// We register HandlerServer variants so the gateway calls services
+	// in-process — no extra TCP/bufconn dial is needed, the gRPC server
+	// interceptors still run because the gateway delegates to the
+	// generated service stubs which we wrap with the pipeline above.
 	gwmux := gwruntime.NewServeMux()
+	if err := cpb.RegisterClientServiceHandlerServer(
+		ctx,
+		gwmux,
+		clientsvcv1.NewClientService(s.Client, *auth.NewAuth(s.Client, s.Authn, s.Authz, s.Attr), s.effectiveMaxTags()),
+	); err != nil {
+		return fmt.Errorf("register client.v1 gateway: %w", err)
+	}
+	if adminLeaseSvc != nil {
+		if err := adminv1pb.RegisterLeaseServiceHandlerServer(ctx, gwmux, adminLeaseSvc); err != nil {
+			return fmt.Errorf("register admin lease gateway: %w", err)
+		}
+		if err := adminv1pb.RegisterExporterServiceHandlerServer(ctx, gwmux, adminExporterSvc); err != nil {
+			return fmt.Errorf("register admin exporter gateway: %w", err)
+		}
+		if err := adminv1pb.RegisterClientServiceHandlerServer(ctx, gwmux, adminClientSvc); err != nil {
+			return fmt.Errorf("register admin client gateway: %w", err)
+		}
+		if err := adminv1pb.RegisterWebhookServiceHandlerServer(ctx, gwmux, adminWebhookSvc); err != nil {
+			return fmt.Errorf("register admin webhook gateway: %w", err)
+		}
+	}
 
 	listener, err := tls.Listen("tcp", ":8082", &tls.Config{
 		Certificates: []tls.Certificate{*cert},

@@ -44,6 +44,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	adminauth "github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/auth"
+	adminauthz "github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/authz"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/impersonation"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authorization"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/config"
@@ -51,6 +54,7 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/login"
+	jswebhook "github.com/jumpstarter-dev/jumpstarter-controller/internal/webhook"
 
 	// +kubebuilder:scaffold:imports
 
@@ -271,21 +275,51 @@ func main() {
 		os.Exit(1)
 	}
 
+	bearerAuth := authentication.NewBearerTokenAuthenticator(authenticator)
+	impersonationFactory := impersonation.NewFactory(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme()})
+	adminAuthN := adminauth.NewMultiIssuerAuthenticator(bearerAuth)
+	adminAuthZ := adminauthz.NewAuthorizer(mgr.GetClient(), "jumpstarter.dev", nil)
+
 	if err = (&service.ControllerService{
-		Client: watchClient,
-		Scheme: mgr.GetScheme(),
-		Authn:  authentication.NewBearerTokenAuthenticator(authenticator),
-		Authz:  authorization.NewBasicAuthorizer(watchClient, prefix, provisioning.Enabled),
+		Client:               watchClient,
+		Scheme:               mgr.GetScheme(),
+		Authn:                bearerAuth,
+		Authz:                authorization.NewBasicAuthorizer(watchClient, prefix, provisioning.Enabled),
 		Attr: authorization.NewMetadataAttributesGetter(authorization.MetadataAttributesGetterConfig{
 			NamespaceKey: "jumpstarter-namespace",
 			ResourceKey:  "jumpstarter-kind",
 			NameKey:      "jumpstarter-name",
 		}),
-		Router:        router,
-		ServerOptions: option,
-		LeasePolicy:   leasePolicy,
+		Router:               router,
+		ServerOptions:        option,
+		LeasePolicy:          leasePolicy,
+		ImpersonationFactory: impersonationFactory,
+		AdminAuthN:           adminAuthN,
+		AdminAuthZ:           adminAuthZ,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create service", "service", "Controller")
+		os.Exit(1)
+	}
+
+	// Webhook delivery: dispatcher + lease/exporter watcher reconcilers.
+	// Worker pool sized small (4) since webhook volume is low; queue
+	// 256 absorbs short bursts.
+	webhookDispatcher := jswebhook.NewDispatcher(mgr.GetClient(), ctrl.Log.WithName("webhook-dispatcher"), 4, 256)
+	if err := webhookDispatcher.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create service", "service", "WebhookDispatcher")
+		os.Exit(1)
+	}
+	webhookEmitter := &controller.WebhookEventEmitter{Dispatcher: webhookDispatcher}
+	if err := (&controller.LeaseWebhookReconciler{
+		Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Emitter: webhookEmitter,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "LeaseWebhook")
+		os.Exit(1)
+	}
+	if err := (&controller.ExporterWebhookReconciler{
+		Client: mgr.GetClient(), Scheme: mgr.GetScheme(), Emitter: webhookEmitter,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ExporterWebhook")
 		os.Exit(1)
 	}
 

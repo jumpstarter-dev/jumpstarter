@@ -1,0 +1,566 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "jumpstarter/admin/v1/lease.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "LeaseService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/admin/v1/{lease.name}": {
+      "patch": {
+        "operationId": "LeaseService_UpdateLease",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Lease"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "lease.name",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+/leases/[^/]+"
+          },
+          {
+            "name": "lease",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "object",
+              "properties": {
+                "selector": {
+                  "type": "string",
+                  "description": "Either selector or exporter_name must be set. The combination is\nintentionally not enforced as REQUIRED here so the message can also\ncarry an empty selector when exporter_name is the chosen pin."
+                },
+                "duration": {
+                  "type": "string"
+                },
+                "effectiveDuration": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "beginTime": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "effectiveBeginTime": {
+                  "type": "string",
+                  "format": "date-time",
+                  "readOnly": true
+                },
+                "endTime": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "effectiveEndTime": {
+                  "type": "string",
+                  "format": "date-time",
+                  "readOnly": true
+                },
+                "client": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "exporter": {
+                  "type": "string",
+                  "readOnly": true
+                },
+                "conditions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "$ref": "#/definitions/v1Condition"
+                  },
+                  "readOnly": true
+                },
+                "exporterName": {
+                  "type": "string"
+                },
+                "tags": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "ended": {
+                  "type": "boolean",
+                  "description": "Admin-surface extensions. Numbered \u003e= 14 so client.v1 wire format is\nunchanged for deployed jmp CLI binaries; older clients ignore them.",
+                  "readOnly": true
+                },
+                "labels": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "metadata": {
+                  "$ref": "#/definitions/v1ResourceMetadata",
+                  "description": "metadata is populated only by the admin surface; client.v1 callers\nobserve an absent field, which is why it is optional.",
+                  "readOnly": true
+                }
+              },
+              "description": "Lease is the canonical Jumpstarter Lease resource shape. It mirrors the\nLease CRD (controller/api/v1alpha1/lease_types.go)."
+            }
+          }
+        ],
+        "tags": [
+          "LeaseService"
+        ]
+      }
+    },
+    "/admin/v1/{name}": {
+      "get": {
+        "operationId": "LeaseService_GetLease",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Lease"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "Resource name in the form \"namespaces/{namespace}/{plural}/{id}\",\ne.g. \"namespaces/lab-foo/leases/abcd1234\".",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+/leases/[^/]+"
+          }
+        ],
+        "tags": [
+          "LeaseService"
+        ]
+      },
+      "delete": {
+        "operationId": "LeaseService_DeleteLease",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+/leases/[^/]+"
+          }
+        ],
+        "tags": [
+          "LeaseService"
+        ]
+      }
+    },
+    "/admin/v1/{parent}/leases": {
+      "get": {
+        "operationId": "LeaseService_ListLeases",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1LeaseListResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "parent",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "filter",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "onlyActive",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "name": "tagFilter",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "LeaseService"
+        ]
+      },
+      "post": {
+        "operationId": "LeaseService_CreateLease",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Lease"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "parent",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+"
+          },
+          {
+            "name": "lease",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1Lease"
+            }
+          },
+          {
+            "name": "leaseId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "LeaseService"
+        ]
+      }
+    },
+    "/admin/v1/{parent}/leases:watch": {
+      "get": {
+        "operationId": "LeaseService_WatchLeases",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1LeaseEvent"
+                },
+                "error": {
+                  "$ref": "#/definitions/rpcStatus"
+                }
+              },
+              "title": "Stream result of v1LeaseEvent"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "parent",
+            "description": "Parent collection name, e.g. \"namespaces/lab-foo\".",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "pattern": "namespaces/[^/]+"
+          },
+          {
+            "name": "resourceVersion",
+            "description": "Resume marker. Empty string starts from the current state; otherwise\nresumes after the given resourceVersion. The server returns\nOUT_OF_RANGE if the version is too old to resume from informer cache.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "filter",
+            "description": "Optional Kubernetes label selector applied server-side.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "LeaseService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "protobufAny": {
+      "type": "object",
+      "properties": {
+        "@type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {}
+    },
+    "rpcStatus": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/protobufAny"
+          }
+        }
+      }
+    },
+    "v1Condition": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "observedGeneration": {
+          "type": "string",
+          "format": "int64"
+        },
+        "lastTransitionTime": {
+          "$ref": "#/definitions/v1Time"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "v1EventType": {
+      "type": "string",
+      "enum": [
+        "EVENT_TYPE_UNSPECIFIED",
+        "EVENT_TYPE_ADDED",
+        "EVENT_TYPE_MODIFIED",
+        "EVENT_TYPE_DELETED",
+        "EVENT_TYPE_BOOKMARK"
+      ],
+      "default": "EVENT_TYPE_UNSPECIFIED",
+      "description": "EventType classifies a Watch* stream event. Mirrors Kubernetes\nwatch.Event semantics (ADDED, MODIFIED, DELETED, BOOKMARK).\n\n - EVENT_TYPE_BOOKMARK: BOOKMARK carries no resource payload, only a resource_version\ncheckpoint. Servers emit bookmarks every ~30s on otherwise idle\nstreams to keep HTTP connections alive across idle timeouts and\nto give clients a resumable cursor."
+    },
+    "v1Lease": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "selector": {
+          "type": "string",
+          "description": "Either selector or exporter_name must be set. The combination is\nintentionally not enforced as REQUIRED here so the message can also\ncarry an empty selector when exporter_name is the chosen pin."
+        },
+        "duration": {
+          "type": "string"
+        },
+        "effectiveDuration": {
+          "type": "string",
+          "readOnly": true
+        },
+        "beginTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "effectiveBeginTime": {
+          "type": "string",
+          "format": "date-time",
+          "readOnly": true
+        },
+        "endTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "effectiveEndTime": {
+          "type": "string",
+          "format": "date-time",
+          "readOnly": true
+        },
+        "client": {
+          "type": "string",
+          "readOnly": true
+        },
+        "exporter": {
+          "type": "string",
+          "readOnly": true
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Condition"
+          },
+          "readOnly": true
+        },
+        "exporterName": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "ended": {
+          "type": "boolean",
+          "description": "Admin-surface extensions. Numbered \u003e= 14 so client.v1 wire format is\nunchanged for deployed jmp CLI binaries; older clients ignore them.",
+          "readOnly": true
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "metadata": {
+          "$ref": "#/definitions/v1ResourceMetadata",
+          "description": "metadata is populated only by the admin surface; client.v1 callers\nobserve an absent field, which is why it is optional.",
+          "readOnly": true
+        }
+      },
+      "description": "Lease is the canonical Jumpstarter Lease resource shape. It mirrors the\nLease CRD (controller/api/v1alpha1/lease_types.go)."
+    },
+    "v1LeaseEvent": {
+      "type": "object",
+      "properties": {
+        "eventType": {
+          "$ref": "#/definitions/v1EventType"
+        },
+        "lease": {
+          "$ref": "#/definitions/v1Lease",
+          "description": "Populated for ADDED/MODIFIED/DELETED. Absent for BOOKMARK."
+        },
+        "resourceVersion": {
+          "type": "string",
+          "description": "Always populated; on BOOKMARK this is the only meaningful field."
+        }
+      },
+      "description": "LeaseEvent envelopes the resource payload with EventType + cursor so\nclients can resume after a disconnect. The resource itself is the\nshared jumpstarter.v1.Lease — same wire shape as Get/List."
+    },
+    "v1LeaseListResponse": {
+      "type": "object",
+      "properties": {
+        "leases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Lease"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ResourceMetadata": {
+      "type": "object",
+      "properties": {
+        "createdBy": {
+          "type": "string",
+          "description": "Display-only username of the OIDC caller that last mutated this\nresource (mirrored from the jumpstarter.dev/created-by annotation).\nOptional because resources created by GitOps / kubectl may not carry it.",
+          "readOnly": true
+        },
+        "ownerIssuer": {
+          "type": "string",
+          "description": "OIDC issuer URL of the owner (jumpstarter.dev/owner-issuer annotation).",
+          "readOnly": true
+        },
+        "resourceVersion": {
+          "type": "string",
+          "description": "Kubernetes resourceVersion. Used by clients for optimistic concurrency\nand by Watch* RPCs as a resume cursor.",
+          "readOnly": true
+        }
+      },
+      "description": "ResourceMetadata bundles the identity-attribution and concurrency-control\nfields the controller stamps onto every Jumpstarter resource. Each domain\nresource embeds this as a field named \"metadata\" so admin clients see a\nuniform shape across resources."
+    },
+    "v1Time": {
+      "type": "object",
+      "properties": {
+        "seconds": {
+          "type": "string",
+          "format": "int64"
+        },
+        "nanos": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "Reference: https://github.com/kubernetes/kubernetes/blob/v1.31.1/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto"
+    }
+  }
+}
