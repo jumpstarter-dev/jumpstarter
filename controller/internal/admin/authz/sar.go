@@ -92,15 +92,6 @@ func NewAuthorizer(c client.Client, apiGroup string, namespaceFn NamespaceFromRe
 // nil on allow, or a gRPC status error (Unauthenticated / PermissionDenied)
 // on deny.
 func (a *Authorizer) Authorize(ctx context.Context, fullMethod string, req any) error {
-	id, ok := identity.FromContext(ctx)
-	if !ok {
-		return status.Errorf(codes.Unauthenticated, "no caller identity")
-	}
-	verb, ok := rpcVerbs[fullMethod]
-	if !ok {
-		return status.Errorf(codes.PermissionDenied, "no SAR mapping for %s", fullMethod)
-	}
-
 	var ns string
 	if a.namespace != nil {
 		var err error
@@ -108,6 +99,23 @@ func (a *Authorizer) Authorize(ctx context.Context, fullMethod string, req any) 
 		if err != nil {
 			return status.Errorf(codes.InvalidArgument, "%v", err)
 		}
+	}
+	return a.AuthorizeNamespace(ctx, fullMethod, ns)
+}
+
+// AuthorizeNamespace issues a SubjectAccessReview using a caller-supplied
+// namespace, skipping the request-shape NamespaceFromRequest extractor.
+// HTTP/REST callers (where the proto request is decoded by the gateway,
+// not us) use this directly with the namespace recovered from the URL
+// path template.
+func (a *Authorizer) AuthorizeNamespace(ctx context.Context, fullMethod, ns string) error {
+	id, ok := identity.FromContext(ctx)
+	if !ok {
+		return status.Errorf(codes.Unauthenticated, "no caller identity")
+	}
+	verb, ok := rpcVerbs[fullMethod]
+	if !ok {
+		return status.Errorf(codes.PermissionDenied, "no SAR mapping for %s", fullMethod)
 	}
 
 	extra := map[string]authzv1.ExtraValue{}

@@ -1142,12 +1142,23 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		server.Stop()
 	}()
 
+	// REST gateway auth: the HandlerServer registration variant invokes
+	// admin services in-process, so the gRPC AuthN + AuthZ interceptors
+	// never run for /admin/v1/* requests. Wrap gwmux with the matching
+	// HTTP middleware so REST callers go through the same OIDC + SAR
+	// pipeline. Non-admin REST paths (legacy client.v1) pass through
+	// unchanged.
+	var gwHandler http.Handler = gwmux
+	if s.AdminAuthN != nil && s.AdminAuthZ != nil {
+		gwHandler = adminauth.NewHTTPMiddleware(s.AdminAuthN, s.AdminAuthZ).Wrap(gwmux)
+	}
+
 	return http.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.ProtoMajor == 2 && strings.HasPrefix(
 			r.Header.Get("Content-Type"), "application/grpc") {
 			server.ServeHTTP(w, r)
 		} else {
-			gwmux.ServeHTTP(w, r)
+			gwHandler.ServeHTTP(w, r)
 		}
 	}))
 }

@@ -278,7 +278,7 @@ func main() {
 	bearerAuth := authentication.NewBearerTokenAuthenticator(authenticator)
 	impersonationFactory := impersonation.NewFactory(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme()})
 	adminAuthN := adminauth.NewMultiIssuerAuthenticator(bearerAuth)
-	adminAuthZ := adminauthz.NewAuthorizer(mgr.GetClient(), "jumpstarter.dev", nil)
+	adminAuthZ := adminauthz.NewAuthorizer(mgr.GetClient(), "jumpstarter.dev", adminauthz.NamespaceFromAdminRequest)
 
 	if err = (&service.ControllerService{
 		Client:               watchClient,
