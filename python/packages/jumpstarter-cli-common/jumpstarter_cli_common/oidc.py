@@ -2,6 +2,7 @@ import json
 import os
 import ssl
 import time
+import warnings
 from dataclasses import dataclass
 from functools import wraps
 from typing import ClassVar
@@ -13,7 +14,10 @@ import click
 from aiohttp import web
 from anyio import create_memory_object_stream
 from anyio.to_thread import run_sync
-from authlib.integrations.requests_client import OAuth2Session
+
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", message="authlib.jose module is deprecated")
+    from authlib.integrations.requests_client import OAuth2Session
 from joserfc.jws import extract_compact
 from yarl import URL
 
