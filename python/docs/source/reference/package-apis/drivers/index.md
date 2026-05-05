@@ -39,6 +39,8 @@ Drivers that provide various communication interfaces:
   communication
 * **[HTTP](http.md)** (`jumpstarter-driver-http`) - HTTP communication
 * **[Mitmproxy](mitmproxy.md)** (`jumpstarter-driver-mitmproxy`) - HTTP(S) interception, mocking, and traffic recording
+* **[DUT Network](dut-network.md)** (`jumpstarter-driver-dut-network`) - DUT network
+  isolation with bridge, DHCP, DNS, and NAT
 * **[Network](network.md)** (`jumpstarter-driver-network`) - Network interfaces
   and configuration
 * **[PySerial](pyserial.md)** (`jumpstarter-driver-pyserial`) - Serial port
@@ -123,6 +125,7 @@ ble.md
 can.md
 corellium.md
 doip.md
+dut-network.md
 dutlink.md
 energenie.md
 esp32.md

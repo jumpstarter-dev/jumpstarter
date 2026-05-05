@@ -1,0 +1,26 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: automotive-lab-1
+endpoint: grpc.jumpstarter.example.com:8082
+token: "<token>"
+export:
+  dut-network:
+    type: jumpstarter_driver_dut_network.driver.DutNetwork
+    config:
+      interface: "enx00e04c683af1"
+      subnet: "192.168.100.0/24"
+      gateway_ip: "192.168.100.1"
+      nat_mode: "masquerade"
+      dhcp_enabled: true
+      dhcp_range_start: "192.168.100.100"
+      dhcp_range_end: "192.168.100.200"
+      static_leases:
+        - mac: "8a:12:4e:25:f4:8e"
+          ip: "192.168.100.10"
+          hostname: "sa8775p"
+      dns_servers: ["8.8.8.8", "8.8.4.4"]
+      dns_entries:
+        - hostname: "registry.lab.local"
+          ip: "10.26.28.2"

@@ -1,0 +1,24 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: test-exporter-dut-network
+  namespace: default
+export:
+  dut-network:
+    type: jumpstarter_driver_dut_network.driver.DutNetwork
+    config:
+      interface: "jmp-vhost"
+      bridge_name: "br-jmp-e2e"
+      subnet: "192.168.200.0/24"
+      gateway_ip: "192.168.200.1"
+      upstream_interface: "jmp-vup"
+      nat_mode: "masquerade"
+      dhcp_enabled: true
+      dhcp_range_start: "192.168.200.100"
+      dhcp_range_end: "192.168.200.200"
+      static_leases:
+        - mac: "02:00:00:00:00:01"
+          ip: "192.168.200.10"
+          hostname: "test-dut"
+      dns_servers: ["8.8.8.8"]
+      state_dir: "/tmp/jmp-e2e-dut-network"
