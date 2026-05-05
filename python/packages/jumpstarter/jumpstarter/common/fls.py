@@ -35,11 +35,11 @@ def get_fls_github_url(version: str, arch: str | None = None) -> str:
     else:
         arch = arch.lower()
     if arch in ("aarch64", "arm64"):
-        binary_name = "fls-aarch64-linux"
+        binary_name = "fls-aarch64-linux-musl"
     elif arch in ("x86_64", "amd64"):
         binary_name = "fls-x86_64-linux"
     else:
-        binary_name = "fls-aarch64-linux"  # Default to aarch64
+        binary_name = "fls-aarch64-linux-musl"
 
     return f"https://github.com/{FLS_GITHUB_REPO}/releases/download/{version}/{binary_name}"
 

@@ -45,29 +45,26 @@ def get_exporters(config, selector: str | None, output: OutputType, with_options
 @opt_config(exporter=False)
 @opt_selector
 @opt_output_all
+@click.option("-a", "--all", "show_all", is_flag=True, default=False, help="Include expired leases")
+@click.option("-A", "--all-clients", "all_clients", is_flag=True, default=False, help="Include leases from all clients")
 @click.option(
-    "-a",
-    "--all",
-    "show_all",
-    is_flag=True,
-    default=False,
-    help="Include expired leases"
-)
-@click.option(
-    "-A",
-    "--all-clients",
-    "all_clients",
-    is_flag=True,
-    default=False,
-    help="Include leases from all clients"
+    "--tag-filter",
+    "tag_filter",
+    type=str,
+    default=None,
+    help="Filter leases by tags (label selector syntax, e.g. build=1234)",
 )
 @handle_exceptions_with_reauthentication(relogin_client)
-def get_leases(config, selector: str | None, output: OutputType, show_all: bool, all_clients: bool):
+def get_leases(
+    config, selector: str | None, output: OutputType, show_all: bool, all_clients: bool, tag_filter: str | None
+):
     """
     Display one or many leases
     """
 
-    leases = config.list_leases(filter=selector, only_active=not show_all).filter_by_selector(selector)
+    leases = config.list_leases(filter=selector, only_active=not show_all, tag_filter=tag_filter).filter_by_selector(
+        selector
+    )
 
     if not all_clients:
         leases = leases.filter_by_client(config.metadata.name)

@@ -134,6 +134,7 @@ class Lease(BaseModel):
     name: str
     selector: str
     exporter_name: str | None = None
+    tags: dict[str, str] = Field(default_factory=dict)
     duration: timedelta
     effective_duration: timedelta | None = None
     begin_time: datetime | None = None
@@ -189,6 +190,7 @@ class Lease(BaseModel):
             name=name,
             selector=data.selector,
             exporter_name=data.exporter_name if data.exporter_name else None,
+            tags=dict(data.tags) if data.tags else {},
             duration=data.duration.ToTimedelta(),
             effective_duration=effective_duration,
             begin_time=begin_time,
@@ -207,6 +209,7 @@ class Lease(BaseModel):
         table.add_column("REMAINING")
         table.add_column("CLIENT")
         table.add_column("EXPORTER")
+        table.add_column("TAGS")
 
     def _compute_expires_at(self):
         if self.effective_end_time:
@@ -242,6 +245,8 @@ class Lease(BaseModel):
         expires_at_str = expires_at.strftime("%Y-%m-%d %H:%M:%S") if expires_at else ""
         remaining_str = self._format_remaining(expires_at)
 
+        tags_str = ",".join(f"{k}={v}" for k, v in sorted(self.tags.items()))
+
         table.add_row(
             self.name,
             self.selector,
@@ -249,6 +254,7 @@ class Lease(BaseModel):
             remaining_str,
             self.client,
             self.exporter,
+            tags_str,
         )
 
     def rich_add_names(self, names):
@@ -424,6 +430,7 @@ class ClientService:
         page_token: str | None = None,
         filter: str | None = None,
         only_active: bool = True,
+        tag_filter: str | None = None,
     ):
         with translate_grpc_exceptions():
             leases = await self.stub.ListLeases(
@@ -433,6 +440,7 @@ class ClientService:
                     page_token=page_token,
                     filter=extract_match_labels_filter(filter),
                     only_active=only_active,
+                    tag_filter=tag_filter or "",
                 )
             )
         return LeaseList.from_protobuf(leases)
@@ -445,6 +453,7 @@ class ClientService:
         exporter_name: str | None = None,
         begin_time: datetime | None = None,
         lease_id: str | None = None,
+        tags: dict[str, str] | None = None,
     ):
         duration_pb = duration_pb2.Duration()
         duration_pb.FromTimedelta(duration)
@@ -454,6 +463,10 @@ class ClientService:
             selector=selector or "",
             exporter_name=exporter_name or "",
         )
+
+        if tags:
+            for k, v in tags.items():
+                lease_pb.tags[k] = v
 
         if begin_time:
             timestamp_pb = timestamp_pb2.Timestamp()

@@ -73,6 +73,7 @@ async def create_lease(
     duration_seconds: int = 1800,
     selector: str | None = None,
     exporter_name: str | None = None,
+    tags: dict[str, str] | None = None,
 ) -> dict:
     """Create a new lease."""
     duration = timedelta(seconds=duration_seconds)
@@ -80,6 +81,7 @@ async def create_lease(
         duration=duration,
         selector=selector,
         exporter_name=exporter_name,
+        tags=tags,
     )
     return {
         "name": result.name,
@@ -87,6 +89,7 @@ async def create_lease(
         "duration_seconds": duration_seconds,
         "selector": selector,
         "exporter_name": exporter_name,
+        "tags": tags,
     }
 
 

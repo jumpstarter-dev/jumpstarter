@@ -1,8 +1,28 @@
+import sys
 from contextlib import contextmanager
 
 import click
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_network.adapters import FabricAdapter, NovncAdapter
+from jumpstarter_driver_opendal.client import FlasherClient
+
+
+class QemuFlasherClient(FlasherClient):
+    """Flasher client for QEMU with OCI support via fls."""
+
+    def flash(self, path, *, target=None, operator=None, compression=None):
+        if isinstance(path, str) and path.startswith("oci://"):
+            returncode = 0
+            for stdout, stderr, code in self.streamingcall("flash_oci", path, target):
+                if stdout:
+                    print(stdout, end="", flush=True)
+                if stderr:
+                    print(stderr, end="", file=sys.stderr, flush=True)
+                if code is not None:
+                    returncode = code
+            return returncode
+
+        return super().flash(path, target=target, operator=operator, compression=compression)
 
 
 class QemuClient(CompositeClient):
@@ -25,6 +45,17 @@ class QemuClient(CompositeClient):
     def set_memory_size(self, size: str) -> None:
         """Set the memory size for next boot."""
         self.call("set_memory_size", size)
+
+    def flash_oci(self, oci_url: str, partition: str | None = None):
+        """Flash an OCI image to the specified partition using fls.
+
+        Convenience method that delegates to self.flasher.flash().
+
+        Args:
+            oci_url: OCI image reference (must start with oci://)
+            partition: Target partition name (default: root)
+        """
+        return self.flasher.flash(oci_url, target=partition)
 
     @contextmanager
     def novnc(self):

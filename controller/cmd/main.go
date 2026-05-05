@@ -219,7 +219,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	authenticator, prefix, router, option, provisioning, err := config.LoadConfiguration(
+	authenticator, prefix, router, option, provisioning, leasePolicy, err := config.LoadConfiguration(
 		context.Background(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
@@ -283,6 +283,7 @@ func main() {
 		}),
 		Router:        router,
 		ServerOptions: option,
+		LeasePolicy:   leasePolicy,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create service", "service", "Controller")
 		os.Exit(1)

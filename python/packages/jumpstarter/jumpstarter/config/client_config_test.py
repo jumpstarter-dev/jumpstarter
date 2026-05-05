@@ -442,6 +442,7 @@ async def test_create_lease_passes_exporter_name():
         duration=timedelta(minutes=5),
         begin_time=None,
         lease_id=None,
+        tags=None,
     )
 
 

@@ -179,6 +179,18 @@ type JumpstarterSpec struct {
 	// Authentication configuration for client and exporter authentication.
 	// Supports multiple authentication methods including internal tokens, Kubernetes tokens, and JWT.
 	Authentication AuthenticationConfig `json:"authentication,omitempty"`
+
+	// Lease policy configuration for controlling lease behavior.
+	// +kubebuilder:default={}
+	LeasePolicy LeasePolicyConfig `json:"leasePolicy,omitempty"`
+}
+
+// LeasePolicyConfig defines policy constraints for leases.
+type LeasePolicyConfig struct {
+	// Maximum number of user-defined tags allowed per lease.
+	// +kubebuilder:default=10
+	// +kubebuilder:validation:Minimum=0
+	MaxTags int32 `json:"maxTags,omitempty"`
 }
 
 // RoutersConfig defines the configuration for Jumpstarter router pods.

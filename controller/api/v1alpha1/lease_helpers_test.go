@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -331,5 +333,192 @@ var _ = Describe("LeaseFromProtobuf", func() {
 			Expect(lease.Spec.ExporterRef).NotTo(BeNil())
 			Expect(lease.Spec.ExporterRef.Name).To(Equal(exporterName))
 		})
+
+		It("should store tags in spec and prefix them in ObjectMeta labels", func() {
+			pbLease := &cpb.Lease{
+				Selector: "board=rpi4",
+				Duration: durationpb.New(time.Hour),
+				Tags: map[string]string{
+					"team":   "devops",
+					"ci-job": "12345",
+				},
+			}
+			key := types.NamespacedName{Name: "test-lease", Namespace: "default"}
+			clientRef := corev1.LocalObjectReference{Name: "test-client"}
+
+			lease, err := LeaseFromProtobuf(pbLease, key, clientRef)
+
+			Expect(err).NotTo(HaveOccurred())
+			// Tags in spec (unprefixed)
+			Expect(lease.Spec.Tags).To(HaveKeyWithValue("team", "devops"))
+			Expect(lease.Spec.Tags).To(HaveKeyWithValue("ci-job", "12345"))
+			// Tags in ObjectMeta.Labels (prefixed)
+			Expect(lease.Labels).To(HaveKeyWithValue("metadata.jumpstarter.dev/team", "devops"))
+			Expect(lease.Labels).To(HaveKeyWithValue("metadata.jumpstarter.dev/ci-job", "12345"))
+			// Selector matchLabels still present
+			Expect(lease.Labels).To(HaveKeyWithValue("board", "rpi4"))
+		})
+
+		It("should handle lease with no tags", func() {
+			pbLease := &cpb.Lease{
+				Selector: "board=rpi4",
+				Duration: durationpb.New(time.Hour),
+			}
+			key := types.NamespacedName{Name: "test-lease", Namespace: "default"}
+			clientRef := corev1.LocalObjectReference{Name: "test-client"}
+
+			lease, err := LeaseFromProtobuf(pbLease, key, clientRef)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(lease.Spec.Tags).To(BeNil())
+			// Only selector matchLabels in ObjectMeta
+			Expect(lease.Labels).To(HaveKeyWithValue("board", "rpi4"))
+		})
+	})
+})
+
+var _ = Describe("ValidateLeaseTags", func() {
+	It("should accept empty tags", func() {
+		Expect(ValidateLeaseTags(nil, 10)).To(Succeed())
+		Expect(ValidateLeaseTags(map[string]string{}, 10)).To(Succeed())
+	})
+
+	It("should accept valid tags", func() {
+		tags := map[string]string{
+			"team":   "devops",
+			"ci-job": "12345",
+			"env":    "staging",
+		}
+		Expect(ValidateLeaseTags(tags, 10)).To(Succeed())
+	})
+
+	It("should reject more than 10 tags", func() {
+		tags := make(map[string]string)
+		for i := 0; i < 11; i++ {
+			tags[fmt.Sprintf("key%d", i)] = "value"
+		}
+		err := ValidateLeaseTags(tags, 10)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("too many tags"))
+	})
+
+	It("should reject tag key longer than 63 chars", func() {
+		tags := map[string]string{
+			strings.Repeat("a", 64): "value",
+		}
+		err := ValidateLeaseTags(tags, 10)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("tag key"))
+		Expect(err.Error()).To(ContainSubstring("not a valid label key"))
+	})
+
+	It("should reject tag value longer than 63 chars", func() {
+		tags := map[string]string{
+			"key": strings.Repeat("v", 64),
+		}
+		err := ValidateLeaseTags(tags, 10)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("tag value"))
+		Expect(err.Error()).To(ContainSubstring("not a valid label value"))
+	})
+
+	It("should reject invalid label key characters", func() {
+		tags := map[string]string{
+			"invalid key!": "value",
+		}
+		err := ValidateLeaseTags(tags, 10)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("not a valid label key"))
+	})
+
+	It("should reject invalid label value characters", func() {
+		tags := map[string]string{
+			"key": "invalid value!",
+		}
+		err := ValidateLeaseTags(tags, 10)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("not a valid label value"))
+	})
+
+	It("should reject reserved prefix jumpstarter.dev/", func() {
+		tags := map[string]string{
+			"jumpstarter.dev/custom": "value",
+		}
+		err := ValidateLeaseTags(tags, 10)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("reserved prefix"))
+	})
+
+	It("should reject reserved prefix metadata.jumpstarter.dev/", func() {
+		tags := map[string]string{
+			"metadata.jumpstarter.dev/team": "value",
+		}
+		err := ValidateLeaseTags(tags, 10)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("reserved prefix"))
+	})
+
+	It("should reject tag key containing slash", func() {
+		tags := map[string]string{
+			"team/env": "value",
+		}
+		err := ValidateLeaseTags(tags, 10)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("must not contain '/'"))
+	})
+
+	It("should accept exactly 10 tags", func() {
+		tags := make(map[string]string)
+		for i := 0; i < 10; i++ {
+			tags[fmt.Sprintf("key%d", i)] = "value"
+		}
+		Expect(ValidateLeaseTags(tags, 10)).To(Succeed())
+	})
+
+	It("should accept key and value of exactly 63 chars", func() {
+		tags := map[string]string{
+			strings.Repeat("k", 63): strings.Repeat("v", 63),
+		}
+		Expect(ValidateLeaseTags(tags, 10)).To(Succeed())
+	})
+})
+
+var _ = Describe("Lease.ToProtobuf", func() {
+	It("should include tags in protobuf output", func() {
+		lease := &Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-lease",
+				Namespace: "default",
+			},
+			Spec: LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+				Duration:  &metav1.Duration{Duration: time.Hour},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"board": "rpi4"}},
+				Tags:      map[string]string{"team": "devops", "ci-job": "12345"},
+			},
+		}
+
+		pb := lease.ToProtobuf()
+
+		Expect(pb.Tags).To(HaveKeyWithValue("team", "devops"))
+		Expect(pb.Tags).To(HaveKeyWithValue("ci-job", "12345"))
+	})
+
+	It("should handle nil tags", func() {
+		lease := &Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-lease",
+				Namespace: "default",
+			},
+			Spec: LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+				Duration:  &metav1.Duration{Duration: time.Hour},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"board": "rpi4"}},
+			},
+		}
+
+		pb := lease.ToProtobuf()
+
+		Expect(pb.Tags).To(BeEmpty())
 	})
 })
