@@ -19,11 +19,13 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2" //nolint:revive
@@ -129,9 +131,13 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, func() 
 		teardownNetworkNamespaces()
 
 		Eventually(func() error {
-			_, err := RunCmd("nc", "-z", "127.0.0.1", fmt.Sprintf("%d", listenerPort))
-			return err
-		}, 10*time.Second, 500*time.Millisecond).Should(HaveOccurred(),
+			conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", listenerPort), 500*time.Millisecond)
+			if err != nil {
+				return nil
+			}
+			conn.Close()
+			return fmt.Errorf("port %d is still open", listenerPort)
+		}, 10*time.Second, 500*time.Millisecond).Should(Succeed(),
 			"port %d should be closed after stopping exporter", listenerPort)
 
 		tracker.Cleanup()
@@ -262,9 +268,10 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, func() 
 			fullArgs := []string{"ip", "netns", "exec", extNs, "python3", "-c", serverScript}
 			bin, cmdArgs := sudoArgs(fullArgs...)
 			listener := exec.Command(bin, cmdArgs...) //nolint:gosec
+			listener.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 			Expect(listener.Start()).To(Succeed())
 			defer func() {
-				_ = listener.Process.Kill()
+				_ = syscall.Kill(-listener.Process.Pid, syscall.SIGKILL)
 				_ = listener.Wait()
 			}()
 

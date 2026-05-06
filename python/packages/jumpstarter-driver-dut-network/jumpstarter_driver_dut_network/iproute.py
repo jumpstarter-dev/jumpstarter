@@ -84,17 +84,22 @@ def remove_ip_alias(interface: str, ip: str, prefix_len: int) -> None:
     _run_priv(["ip", "addr", "del", f"{ip}/{prefix_len}", "dev", interface], check=False)
 
 
-def get_ip_forwarding() -> str:
-    """Return the current value of net.ipv4.ip_forward ("0" or "1")."""
-    result = _run(["sysctl", "-n", "net.ipv4.ip_forward"], check=False)
+def get_interface_forwarding(iface: str) -> str:
+    """Return the current per-interface forwarding value ("0" or "1")."""
+    result = _run(["sysctl", "-n", f"net.ipv4.conf.{iface}.forwarding"], check=False)
     return result.stdout.strip() or "0"
 
 
-def set_ip_forwarding(enabled: bool) -> None:
-    """Enable or disable IPv4 forwarding via sysctl."""
+def set_interface_forwarding(iface: str, enabled: bool) -> None:
+    """Enable or disable IPv4 forwarding on a specific interface.
+
+    Uses the per-interface sysctl (net.ipv4.conf.<iface>/forwarding) rather
+    than the global net.ipv4.ip_forward to avoid turning the host into a
+    full router on all interfaces.
+    """
     value = "1" if enabled else "0"
-    logger.info("Setting net.ipv4.ip_forward=%s", value)
-    _run_priv(["sysctl", "-w", f"net.ipv4.ip_forward={value}"])
+    logger.info("Setting net.ipv4.conf.%s.forwarding=%s", iface, value)
+    _run_priv(["sysctl", "-w", f"net.ipv4.conf.{iface}.forwarding={value}"])
 
 
 def detect_upstream_interface() -> str | None:
@@ -146,3 +151,15 @@ def get_interface_addresses(name: str) -> list[str]:
                 addrs.append(parts[i + 1])
                 break
     return addrs
+
+
+def get_interface_prefix_len(name: str) -> int | None:
+    """Return the prefix length of the first IPv4 address on an interface."""
+    addrs = get_interface_addresses(name)
+    if not addrs:
+        return None
+    # addrs are in "IP/prefix" format
+    try:
+        return int(addrs[0].split("/")[1])
+    except (IndexError, ValueError):
+        return None

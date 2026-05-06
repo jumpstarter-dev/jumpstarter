@@ -1,5 +1,7 @@
+import ipaddress
 import logging
 import os
+import re
 import signal
 import subprocess
 import threading
@@ -8,6 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ._privilege import signal_pid, sudo_cmd
+
+_HOSTNAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,253}$")
+_MAC_RE = re.compile(r"^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$")
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +62,10 @@ def write_dns_hosts(state_dir: Path, dns_entries: list[dict[str, str]] | None = 
     dnsmasq drops privileges after startup (keep-in-foreground mode).
     """
     hosts_path = state_dir / "hosts.local"
+    for e in dns_entries or []:
+        ipaddress.ip_address(e["ip"])
+        if not _HOSTNAME_RE.match(e["hostname"]):
+            raise ValueError(f"Invalid hostname: {e['hostname']!r}")
     lines = [f"{e['ip']} {e['hostname']}" for e in (dns_entries or [])]
     hosts_path.write_text("\n".join(lines) + "\n" if lines else "")
     hosts_path.chmod(0o644)
@@ -70,7 +79,12 @@ def write_dhcp_hosts(state_dir: Path, static_leases: list[dict[str, str]]) -> Pa
     for lease in static_leases:
         mac = lease["mac"]
         ip = lease["ip"]
+        if not _MAC_RE.match(mac):
+            raise ValueError(f"Invalid MAC address: {mac!r}")
+        ipaddress.ip_address(ip)
         hostname = lease.get("hostname", "")
+        if hostname and not _HOSTNAME_RE.match(hostname):
+            raise ValueError(f"Invalid hostname: {hostname!r}")
         if hostname:
             lines.append(f"{mac},{ip},{hostname}")
         else:
@@ -164,6 +178,11 @@ def start(state_dir: Path) -> subprocess.Popen:
         stderr = process.stderr.read().decode() if process.stderr else ""
         raise RuntimeError(f"dnsmasq failed to start: {stderr}")
 
+    if not pid_file.exists():
+        process.terminate()
+        process.wait(timeout=5)
+        raise RuntimeError("dnsmasq started but did not create pidfile within timeout")
+
     threading.Thread(
         target=_drain_pipe,
         args=(process.stderr, logger.debug),
@@ -186,37 +205,41 @@ def _read_pid_file(state_dir: Path) -> int | None:
 
 
 def stop(process: subprocess.Popen | None = None, state_dir: Path | None = None) -> None:
-    """Stop a running dnsmasq process, using sudo kill if not root."""
+    """Stop a running dnsmasq process, using sudo kill if not root.
+
+    The pidfile is authoritative because dnsmasq may have been restarted
+    externally, updating the pidfile but not our process handle.
+    """
     pid = _read_pid_file(state_dir) if state_dir else None
+    target_pid = pid or (process.pid if process else None)
+
+    if target_pid is None:
+        return
+
+    logger.info("Stopping dnsmasq PID %d", target_pid)
+    signal_pid(target_pid, signal.SIGTERM)
 
     if process and process.poll() is None:
-        target_pid = pid or process.pid
-        logger.info("Stopping dnsmasq PID %d", target_pid)
-        signal_pid(target_pid, signal.SIGTERM)
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
             signal_pid(target_pid, signal.SIGKILL)
             process.wait()
-        return
-
-    if pid:
-        logger.info("Stopping dnsmasq PID %d from pidfile", pid)
-        signal_pid(pid, signal.SIGTERM)
 
 
 def reload_config(process: subprocess.Popen | None = None, state_dir: Path | None = None) -> None:
-    """Send SIGHUP to dnsmasq to reload configuration (for lease changes)."""
-    pid = _read_pid_file(state_dir) if state_dir else None
+    """Send SIGHUP to dnsmasq to reload configuration (for lease changes).
 
-    if process and process.poll() is None:
-        target_pid = pid or process.pid
-        logger.info("Sending SIGHUP to dnsmasq PID %d", target_pid)
-        signal_pid(target_pid, signal.SIGHUP)
+    The pidfile is authoritative (same rationale as stop()).
+    """
+    pid = _read_pid_file(state_dir) if state_dir else None
+    target_pid = pid or (process.pid if process and process.poll() is None else None)
+
+    if target_pid is None:
         return
 
-    if pid:
-        signal_pid(pid, signal.SIGHUP)
+    logger.info("Sending SIGHUP to dnsmasq PID %d", target_pid)
+    signal_pid(target_pid, signal.SIGHUP)
 
 
 def parse_leases(state_dir: Path) -> list[DhcpLease]:

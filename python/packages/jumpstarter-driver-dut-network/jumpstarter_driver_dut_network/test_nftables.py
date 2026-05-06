@@ -77,6 +77,17 @@ class TestInterfaceNameValidation:
             nftables.apply_masquerade_rules("br-jmp.0", "eth_0", "192.168.0.0/24")
 
 
+class TestSubnetValidation:
+    def test_rejects_invalid_subnet(self):
+        with pytest.raises(ValueError):
+            nftables.apply_masquerade_rules("br0", "eth0", "not-a-subnet")
+
+    def test_rejects_invalid_ip_in_mapping(self):
+        mappings = [{"private_ip": "not-an-ip", "public_ip": "10.0.0.1"}]
+        with pytest.raises(ValueError):
+            nftables.apply_1to1_rules("br0", "eth0", mappings, "192.168.0.0/24")
+
+
 class TestTableNameFor:
     def test_replaces_hyphens(self):
         assert nftables._table_name_for("br-jmp-eth0") == "jumpstarter_br_jmp_eth0"

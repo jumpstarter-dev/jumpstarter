@@ -63,6 +63,8 @@ def _can_nat_between_namespaces() -> bool:
     dst_ns = "jmp-probe-dst"
     bridge = "br-jmp-probe"
     table = "jmp_probe"
+    prev_fwd_br = "0"
+    prev_fwd_up = "0"
     try:
         # namespaces
         _run(f"ip netns add {src_ns}", check=False)
@@ -97,9 +99,11 @@ def _can_nat_between_namespaces() -> bool:
         _run("ip link set lo up", ns=dst_ns)
         _run("ip route add 172.31.0.0/24 via 172.31.1.2", ns=dst_ns)
 
-        # enable forwarding + nft masquerade (restored in finally)
-        prev_fwd = _run("sysctl -n net.ipv4.ip_forward", check=False).stdout.strip() or "0"
-        _run("sysctl -w net.ipv4.ip_forward=1")
+        # enable per-interface forwarding + nft masquerade (restored in finally)
+        prev_fwd_br = _run(f"sysctl -n net.ipv4.conf.{bridge}.forwarding", check=False).stdout.strip() or "0"
+        prev_fwd_up = _run("sysctl -n net.ipv4.conf.jmp-pd0.forwarding", check=False).stdout.strip() or "0"
+        _run(f"sysctl -w net.ipv4.conf.{bridge}.forwarding=1")
+        _run("sysctl -w net.ipv4.conf.jmp-pd0.forwarding=1")
         _run(f"nft add table ip {table}")
         _run(
             f"nft add chain ip {table} postrouting "
@@ -119,7 +123,8 @@ def _can_nat_between_namespaces() -> bool:
     except Exception:
         return False
     finally:
-        _run(f"sysctl -w net.ipv4.ip_forward={prev_fwd}", check=False)
+        _run(f"sysctl -w net.ipv4.conf.{bridge}.forwarding={prev_fwd_br}", check=False)
+        _run(f"sysctl -w net.ipv4.conf.jmp-pd0.forwarding={prev_fwd_up}", check=False)
         _run(f"nft delete table ip {table}", check=False)
         _run(f"ip link del {bridge}", check=False)
         _run("ip link del jmp-ps0", check=False)
@@ -159,31 +164,35 @@ class NetworkTestEnv:
 
     def setup(self) -> None:
         """Create namespaces, veth pairs, and configure external network."""
-        _run(f"ip netns add {self.DUT_NS}", check=False)
-        _run(f"ip netns add {self.EXT_NS}", check=False)
+        try:
+            _run(f"ip netns add {self.DUT_NS}", check=False)
+            _run(f"ip netns add {self.EXT_NS}", check=False)
 
-        # veth pair for DUT: host side <-> DUT namespace
-        _run(f"ip link add {self.VETH_HOST} type veth peer name {self.VETH_DUT}")
-        _run(f"ip link set {self.VETH_DUT} netns {self.DUT_NS}")
-        _run(f"ip link set {self.VETH_HOST} address {self.DUT_MAC}")
+            # veth pair for DUT: host side <-> DUT namespace
+            _run(f"ip link add {self.VETH_HOST} type veth peer name {self.VETH_DUT}")
+            _run(f"ip link set {self.VETH_DUT} netns {self.DUT_NS}")
+            _run(f"ip link set {self.VETH_HOST} address {self.DUT_MAC}")
 
-        # veth pair for upstream: host side <-> external namespace
-        _run(f"ip link add {self.VETH_UPSTREAM} type veth peer name {self.VETH_EXT}")
-        _run(f"ip link set {self.VETH_EXT} netns {self.EXT_NS}")
+            # veth pair for upstream: host side <-> external namespace
+            _run(f"ip link add {self.VETH_UPSTREAM} type veth peer name {self.VETH_EXT}")
+            _run(f"ip link set {self.VETH_EXT} netns {self.EXT_NS}")
 
-        # Configure upstream host side
-        _run(f"ip addr add {self.UPSTREAM_IP}/24 dev {self.VETH_UPSTREAM}")
-        _run(f"ip link set {self.VETH_UPSTREAM} up")
+            # Configure upstream host side
+            _run(f"ip addr add {self.UPSTREAM_IP}/24 dev {self.VETH_UPSTREAM}")
+            _run(f"ip link set {self.VETH_UPSTREAM} up")
 
-        # Configure external namespace
-        _run(f"ip addr add {self.EXT_IP}/24 dev {self.VETH_EXT}", ns=self.EXT_NS)
-        _run(f"ip link set {self.VETH_EXT} up", ns=self.EXT_NS)
-        _run("ip link set lo up", ns=self.EXT_NS)
-        # Route from external back through our upstream
-        _run(f"ip route add {self.SUBNET} via {self.UPSTREAM_IP}", ns=self.EXT_NS)
+            # Configure external namespace
+            _run(f"ip addr add {self.EXT_IP}/24 dev {self.VETH_EXT}", ns=self.EXT_NS)
+            _run(f"ip link set {self.VETH_EXT} up", ns=self.EXT_NS)
+            _run("ip link set lo up", ns=self.EXT_NS)
+            # Route from external back through our upstream
+            _run(f"ip route add {self.SUBNET} via {self.UPSTREAM_IP}", ns=self.EXT_NS)
 
-        # Bring up DUT ns loopback
-        _run("ip link set lo up", ns=self.DUT_NS)
+            # Bring up DUT ns loopback
+            _run("ip link set lo up", ns=self.DUT_NS)
+        except Exception:
+            self.teardown()
+            raise
 
     def teardown(self) -> None:
         """Remove namespaces, veths, and state directory."""
@@ -471,10 +480,12 @@ class TestTeardown:
         result = _run(f"nft list table ip {net_env.NFT_TABLE}", check=False)
         assert result.returncode != 0
 
-    def test_ip_forwarding_set(self, net_env: NetworkTestEnv):
+    def test_per_interface_forwarding_set(self, net_env: NetworkTestEnv):
         driver = net_env.create_driver()
         try:
-            result = _run("sysctl -n net.ipv4.ip_forward")
+            result = _run(f"sysctl -n net.ipv4.conf.{net_env.BRIDGE}.forwarding")
+            assert result.stdout.strip() == "1"
+            result = _run(f"sysctl -n net.ipv4.conf.{net_env.VETH_UPSTREAM}.forwarding")
             assert result.stdout.strip() == "1"
         finally:
             driver.cleanup()
@@ -700,8 +711,14 @@ class TestDisabledNatIsolation:
     """Test that disabled NAT prevents routing while still allowing local bridge access."""
 
     def test_dut_cannot_reach_external_without_nat(self, net_env: NetworkTestEnv):
-        prev_fwd = _run("sysctl -n net.ipv4.ip_forward", check=False).stdout.strip() or "1"
-        _run("sysctl -w net.ipv4.ip_forward=0")
+        prev_fwd_br = (
+            _run(f"sysctl -n net.ipv4.conf.{net_env.BRIDGE}.forwarding", check=False).stdout.strip() or "0"
+        )
+        prev_fwd_up = (
+            _run(f"sysctl -n net.ipv4.conf.{net_env.VETH_UPSTREAM}.forwarding", check=False).stdout.strip() or "0"
+        )
+        _run(f"sysctl -w net.ipv4.conf.{net_env.BRIDGE}.forwarding=0", check=False)
+        _run(f"sysctl -w net.ipv4.conf.{net_env.VETH_UPSTREAM}.forwarding=0", check=False)
         driver = net_env.create_driver(nat_mode="disabled")
         try:
             net_env.configure_dut_static()
@@ -714,7 +731,8 @@ class TestDisabledNatIsolation:
             assert result.returncode != 0, "DUT should NOT reach external with disabled NAT"
         finally:
             driver.cleanup()
-            _run(f"sysctl -w net.ipv4.ip_forward={prev_fwd}", check=False)
+            _run(f"sysctl -w net.ipv4.conf.{net_env.BRIDGE}.forwarding={prev_fwd_br}", check=False)
+            _run(f"sysctl -w net.ipv4.conf.{net_env.VETH_UPSTREAM}.forwarding={prev_fwd_up}", check=False)
 
     def test_dut_can_still_reach_gateway(self, net_env: NetworkTestEnv):
         driver = net_env.create_driver(nat_mode="disabled")

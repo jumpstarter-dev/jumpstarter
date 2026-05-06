@@ -1,3 +1,4 @@
+import ipaddress
 import logging
 import re
 import subprocess
@@ -13,6 +14,14 @@ _IFACE_RE = re.compile(r"^[a-zA-Z0-9._-]{1,15}$")
 def _validate_iface(name: str) -> None:
     if not _IFACE_RE.match(name):
         raise ValueError(f"Invalid interface name: {name!r}")
+
+
+def _validate_subnet(subnet: str) -> None:
+    ipaddress.ip_network(subnet, strict=False)
+
+
+def _validate_ip(ip: str) -> None:
+    ipaddress.ip_address(ip)
 
 
 def _run_nft(args: list[str], check: bool = True) -> subprocess.CompletedProcess:
@@ -46,6 +55,7 @@ def apply_masquerade_rules(
 ) -> None:
     _validate_iface(bridge)
     _validate_iface(upstream)
+    _validate_subnet(subnet)
     table = table_name or _table_name_for(bridge)
     logger.info(
         "Applying masquerade rules: bridge=%s upstream=%s subnet=%s table=%s",
@@ -80,6 +90,10 @@ def apply_1to1_rules(
 ) -> None:
     _validate_iface(bridge)
     _validate_iface(upstream)
+    _validate_subnet(subnet)
+    for m in mappings:
+        _validate_ip(m["private_ip"])
+        _validate_ip(m["public_ip"])
     table = table_name or _table_name_for(bridge)
     logger.info(
         "Applying 1:1 NAT rules: bridge=%s upstream=%s mappings=%d subnet=%s table=%s",

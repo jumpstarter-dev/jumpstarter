@@ -162,6 +162,22 @@ class TestDnsmasqStart:
                 dnsmasq.start(tmp_path)
 
 
+    def test_raises_when_pidfile_not_created(self, tmp_path: Path):
+        from . import dnsmasq
+
+        conf = tmp_path / "dnsmasq.conf"
+        conf.write_text("interface=br0\n")
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = None
+        mock_proc.stderr = MagicMock()
+        with patch(f"{_DNSMASQ_MODULE}.subprocess.Popen", return_value=mock_proc), \
+             patch(f"{_DNSMASQ_MODULE}.time.sleep"), \
+             patch(f"{_DNSMASQ_MODULE}.time.monotonic", side_effect=[0.0, 0.5, 3.0]):
+            with pytest.raises(RuntimeError, match="did not create pidfile"):
+                dnsmasq.start(tmp_path)
+            mock_proc.terminate.assert_called_once()
+
+
 class TestDnsmasqStop:
     def test_stop_via_process_handle(self):
         import signal
@@ -295,6 +311,32 @@ class TestUpdateConfig:
             )
             mock_write.assert_called_once()
             mock_reload.assert_called_once_with(process=mock_proc, state_dir=tmp_path)
+
+
+class TestHostValidation:
+    def test_invalid_ip_in_dns_entry(self, tmp_path: Path):
+        from . import dnsmasq
+
+        with pytest.raises(ValueError):
+            dnsmasq.write_dns_hosts(tmp_path, [{"hostname": "ok.local", "ip": "not-an-ip"}])
+
+    def test_invalid_hostname_in_dns_entry(self, tmp_path: Path):
+        from . import dnsmasq
+
+        with pytest.raises(ValueError, match="Invalid hostname"):
+            dnsmasq.write_dns_hosts(tmp_path, [{"hostname": "bad host\nname", "ip": "10.0.0.1"}])
+
+    def test_invalid_mac_in_dhcp_hosts(self, tmp_path: Path):
+        from . import dnsmasq
+
+        with pytest.raises(ValueError, match="Invalid MAC"):
+            dnsmasq.write_dhcp_hosts(tmp_path, [{"mac": "not-a-mac", "ip": "10.0.0.1"}])
+
+    def test_invalid_ip_in_dhcp_hosts(self, tmp_path: Path):
+        from . import dnsmasq
+
+        with pytest.raises(ValueError):
+            dnsmasq.write_dhcp_hosts(tmp_path, [{"mac": "aa:bb:cc:dd:ee:ff", "ip": "bad"}])
 
 
 class TestWriteDhcpHosts:

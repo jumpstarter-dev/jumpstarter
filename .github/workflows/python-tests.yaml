@@ -90,7 +90,6 @@ jobs:
           for mod in veth bridge nf_nat nf_conntrack nft_masq nft_nat nft_chain_nat; do
             sudo modprobe "$mod" 2>/dev/null || true
           done
-          sudo sysctl -w net.ipv4.ip_forward=1
           # Docker on GitHub Actions runners sets "iptables -P FORWARD DROP"
           # to isolate container networks. This silently blocks ALL forwarded
           # traffic — including our nftables NAT masquerade test packets that
