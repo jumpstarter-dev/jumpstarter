@@ -4,6 +4,7 @@ from contextlib import contextmanager
 import click
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_network.adapters import FabricAdapter, NovncAdapter
+
 from jumpstarter.client import FlasherClient
 
 
