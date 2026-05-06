@@ -14,6 +14,7 @@ import (
 	"context"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	adminauthz "github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/authz"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/identity"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/impersonation"
 	adminv1 "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/admin/v1"
@@ -30,10 +31,15 @@ import (
 type WebhookService struct {
 	adminv1.UnimplementedWebhookServiceServer
 	imp *impersonation.Factory
+	// watcher is the controller's non-impersonated kube client. Used to
+	// load the existing CRD for the ownership pre-check on mutating
+	// verbs and to issue the cluster-scope SAR that admin callers
+	// satisfy for the bypass.
+	watcher kclient.Client
 }
 
-func NewWebhookService(imp *impersonation.Factory) *WebhookService {
-	return &WebhookService{imp: imp}
+func NewWebhookService(imp *impersonation.Factory, watcher kclient.Client) *WebhookService {
+	return &WebhookService{imp: imp, watcher: watcher}
 }
 
 func (s *WebhookService) GetWebhook(ctx context.Context, req *jumpstarterv1.GetRequest) (*adminv1.Webhook, error) {
@@ -131,14 +137,20 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, req *adminv1.Webhook
 	if err != nil {
 		return nil, err
 	}
+	var existing jumpstarterdevv1alpha1.Webhook
+	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
+		return nil, kerr(err)
+	}
+	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
+		"jumpstarter.dev", "webhooks", "update"); err != nil {
+		return nil, err
+	}
+
 	c, err := s.imp.For(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "build impersonation client: %v", err)
 	}
-	var w jumpstarterdevv1alpha1.Webhook
-	if err := c.Get(ctx, *key, &w); err != nil {
-		return nil, kerr(err)
-	}
+	w := *existing.DeepCopy()
 	original := kclient.MergeFrom(w.DeepCopy())
 	if u := req.GetWebhook().GetUrl(); u != "" {
 		w.Spec.URL = u
@@ -161,7 +173,7 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, req *adminv1.Webhook
 		}
 		w.Spec.Events = events
 	}
-	stampOwner(&w.ObjectMeta, identity.MustFromContext(ctx))
+	// Owner annotation is stamped only at creation time (per JEP-0014).
 	if err := c.Patch(ctx, &w, original); err != nil {
 		return nil, kerr(err)
 	}
@@ -173,6 +185,15 @@ func (s *WebhookService) DeleteWebhook(ctx context.Context, req *jumpstarterv1.D
 	if err != nil {
 		return nil, err
 	}
+	var existing jumpstarterdevv1alpha1.Webhook
+	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
+		return nil, kerr(err)
+	}
+	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
+		"jumpstarter.dev", "webhooks", "delete"); err != nil {
+		return nil, err
+	}
+
 	c, err := s.imp.For(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "build impersonation client: %v", err)

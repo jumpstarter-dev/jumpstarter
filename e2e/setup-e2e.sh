@@ -333,6 +333,12 @@ setup_test_environment() {
     log_info "Creating service accounts..."
     kubectl create -n "${JS_NAMESPACE}" sa test-client-sa --dry-run=client -o yaml | kubectl apply -f -
     kubectl create -n "${JS_NAMESPACE}" sa test-exporter-sa --dry-run=client -o yaml | kubectl apply -f -
+
+    # Apply admin API RBAC fixtures: e2e-dev namespace, jumpstarter-admin
+    # ClusterRole/Binding for the cluster-admin persona, and a namespace-scoped
+    # RoleBinding for the self-service developer persona.
+    log_info "Applying admin API RBAC fixtures..."
+    kubectl apply -f "$SCRIPT_DIR/admin-rbac.yaml"
     
     # Create a marker file to indicate setup is complete
     echo "ENDPOINT=$ENDPOINT" > "$REPO_ROOT/.e2e-setup-complete"

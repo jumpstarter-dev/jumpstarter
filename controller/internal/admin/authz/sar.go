@@ -167,16 +167,37 @@ func (a *Authorizer) UnaryServerInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
-// StreamServerInterceptor authorizes every admin stream call. The stream's
-// first message is not yet available, so the SAR runs against an empty
-// namespace if no namespaceFn is configured. For Watch* RPCs the stream
-// handler should perform a second namespace-scoped check after parsing the
-// request.
+// StreamServerInterceptor authorizes every admin streaming RPC. Admin
+// streams are server-streaming (one request, many responses), so we wrap
+// the gRPC stream and intercept its first RecvMsg — by then the request
+// is decoded and the namespaceFn can extract the target namespace for a
+// namespace-scoped SubjectAccessReview. Without this, namespace-bound
+// users (RoleBinding rather than ClusterRoleBinding) can never open a
+// Watch because a cluster-scope SAR with empty namespace denies them.
 func (a *Authorizer) StreamServerInterceptor() grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-		if err := a.Authorize(ss.Context(), info.FullMethod, nil); err != nil {
-			return err
-		}
-		return handler(srv, ss)
+		wrapped := &authzStream{ServerStream: ss, authz: a, fullMethod: info.FullMethod}
+		return handler(srv, wrapped)
 	}
+}
+
+// authzStream wraps grpc.ServerStream and delegates the first
+// RecvMsg to the authorizer for a namespace-scoped SAR. Subsequent
+// RecvMsgs (server-streaming RPCs only ever see one) pass through.
+type authzStream struct {
+	grpc.ServerStream
+	authz      *Authorizer
+	fullMethod string
+	checked    bool
+}
+
+func (s *authzStream) RecvMsg(m any) error {
+	if err := s.ServerStream.RecvMsg(m); err != nil {
+		return err
+	}
+	if s.checked {
+		return nil
+	}
+	s.checked = true
+	return s.authz.Authorize(s.ServerStream.Context(), s.fullMethod, m)
 }

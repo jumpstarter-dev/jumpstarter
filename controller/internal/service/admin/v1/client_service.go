@@ -15,6 +15,7 @@ import (
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	adminauthz "github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/authz"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/identity"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/impersonation"
 	adminv1 "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/admin/v1"
@@ -127,7 +128,12 @@ func (s *ClientService) CreateClient(ctx context.Context, req *jumpstarterv1.Cli
 		return nil, kerr(err)
 	}
 
-	token, err := s.waitForBootstrap(ctx, c, types.NamespacedName{Namespace: ns, Name: name})
+	// Poll the Client's status with the controller's non-impersonated
+	// client and read the bootstrap Secret with it too — self-service
+	// developers (and even cluster admins acting on a foreign-owned
+	// Client) need not have direct `secrets` RBAC; the inline token is
+	// returned in lieu of that, per JEP-0014 §DD-3.
+	token, err := s.waitForBootstrap(ctx, types.NamespacedName{Namespace: ns, Name: name})
 	if err != nil {
 		return nil, err
 	}
@@ -136,15 +142,18 @@ func (s *ClientService) CreateClient(ctx context.Context, req *jumpstarterv1.Cli
 		return nil, kerr(err)
 	}
 	out := clientToProto(&fresh)
-	{ tok := token; out.Token = &tok }
+	{
+		tok := token
+		out.Token = &tok
+	}
 	return out, nil
 }
 
-func (s *ClientService) waitForBootstrap(ctx context.Context, c kclient.Client, key types.NamespacedName) (string, error) {
+func (s *ClientService) waitForBootstrap(ctx context.Context, key types.NamespacedName) (string, error) {
 	var secretName string
 	pollErr := wait.PollUntilContextTimeout(ctx, 200*time.Millisecond, credentialWaitTimeout, true, func(ctx context.Context) (bool, error) {
 		var obj jumpstarterdevv1alpha1.Client
-		if err := c.Get(ctx, key, &obj); err != nil {
+		if err := s.watcher.Get(ctx, key, &obj); err != nil {
 			if k8sIsNotFound(err) {
 				return false, nil
 			}
@@ -160,7 +169,7 @@ func (s *ClientService) waitForBootstrap(ctx context.Context, c kclient.Client, 
 		return "", status.Errorf(codes.DeadlineExceeded, "credential provisioning timed out: %v", pollErr)
 	}
 	var sec corev1.Secret
-	if err := c.Get(ctx, types.NamespacedName{Namespace: key.Namespace, Name: secretName}, &sec); err != nil {
+	if err := s.watcher.Get(ctx, types.NamespacedName{Namespace: key.Namespace, Name: secretName}, &sec); err != nil {
 		return "", kerr(err)
 	}
 	if t, ok := sec.Data["token"]; ok {
@@ -177,14 +186,23 @@ func (s *ClientService) UpdateClient(ctx context.Context, req *jumpstarterv1.Cli
 	if err != nil {
 		return nil, err
 	}
+	// Load via the controller's non-impersonated client so the ownership
+	// check runs even when the impersonated user lacks `get` (e.g. a role
+	// granting only `update`).
+	var existing jumpstarterdevv1alpha1.Client
+	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
+		return nil, kerr(err)
+	}
+	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
+		"jumpstarter.dev", "clients", "update"); err != nil {
+		return nil, err
+	}
+
 	c, err := s.imp.For(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "build impersonation client: %v", err)
 	}
-	var obj jumpstarterdevv1alpha1.Client
-	if err := c.Get(ctx, *key, &obj); err != nil {
-		return nil, kerr(err)
-	}
+	obj := *existing.DeepCopy()
 	original := kclient.MergeFrom(obj.DeepCopy())
 	if labelsIn := req.GetClient().GetLabels(); labelsIn != nil {
 		obj.Labels = labelsIn
@@ -192,7 +210,9 @@ func (s *ClientService) UpdateClient(ctx context.Context, req *jumpstarterv1.Cli
 	if u := req.GetClient().GetUsername(); u != "" {
 		obj.Spec.Username = &u
 	}
-	stampOwner(&obj.ObjectMeta, identity.MustFromContext(ctx))
+	// Owner annotation is stamped only at creation time (per JEP-0014):
+	// preserving it here keeps cluster-admin updates from silently
+	// re-attributing ownership.
 	if err := c.Patch(ctx, &obj, original); err != nil {
 		return nil, kerr(err)
 	}
@@ -204,6 +224,15 @@ func (s *ClientService) DeleteClient(ctx context.Context, req *jumpstarterv1.Del
 	if err != nil {
 		return nil, err
 	}
+	var existing jumpstarterdevv1alpha1.Client
+	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
+		return nil, kerr(err)
+	}
+	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
+		"jumpstarter.dev", "clients", "delete"); err != nil {
+		return nil, err
+	}
+
 	c, err := s.imp.For(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "build impersonation client: %v", err)

@@ -279,7 +279,7 @@ func bringUpServers() {
 	leaseSvc := adminsvcv1.NewLeaseService(impFactory, watchClient, 10)
 	exporterSvc := adminsvcv1.NewExporterService(impFactory, watchClient)
 	clientSvc := adminsvcv1.NewClientService(impFactory, watchClient)
-	webhookSvc := adminsvcv1.NewWebhookService(impFactory)
+	webhookSvc := adminsvcv1.NewWebhookService(impFactory, watchClient)
 
 	grpcServer = grpc.NewServer(
 		grpc.ChainUnaryInterceptor(

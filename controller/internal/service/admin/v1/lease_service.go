@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	adminauthz "github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/authz"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/identity"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/impersonation"
 	adminv1 "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/admin/v1"
@@ -215,14 +216,20 @@ func (s *LeaseService) UpdateLease(ctx context.Context, req *jumpstarterv1.Lease
 	if err != nil {
 		return nil, err
 	}
+	var existing jumpstarterdevv1alpha1.Lease
+	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
+		return nil, kerr(err)
+	}
+	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
+		"jumpstarter.dev", "leases", "update"); err != nil {
+		return nil, err
+	}
+
 	c, err := s.imp.For(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "build impersonation client: %v", err)
 	}
-	var lease jumpstarterdevv1alpha1.Lease
-	if err := c.Get(ctx, *key, &lease); err != nil {
-		return nil, kerr(err)
-	}
+	lease := *existing.DeepCopy()
 
 	original := kclient.MergeFrom(lease.DeepCopy())
 	if t := req.GetLease().GetEndTime(); t != nil {
@@ -238,7 +245,7 @@ func (s *LeaseService) UpdateLease(ctx context.Context, req *jumpstarterv1.Lease
 	if labelsIn := req.GetLease().GetLabels(); labelsIn != nil {
 		lease.Labels = labelsIn
 	}
-	stampOwner(&lease.ObjectMeta, identity.MustFromContext(ctx))
+	// Owner annotation is stamped only at creation time (per JEP-0014).
 	if err := c.Patch(ctx, &lease, original); err != nil {
 		return nil, kerr(err)
 	}
@@ -250,14 +257,20 @@ func (s *LeaseService) DeleteLease(ctx context.Context, req *jumpstarterv1.Delet
 	if err != nil {
 		return nil, err
 	}
+	var existing jumpstarterdevv1alpha1.Lease
+	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
+		return nil, kerr(err)
+	}
+	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
+		"jumpstarter.dev", "leases", "delete"); err != nil {
+		return nil, err
+	}
+
 	c, err := s.imp.For(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "build impersonation client: %v", err)
 	}
-	var lease jumpstarterdevv1alpha1.Lease
-	if err := c.Get(ctx, *key, &lease); err != nil {
-		return nil, kerr(err)
-	}
+	lease := *existing.DeepCopy()
 	original := kclient.MergeFrom(lease.DeepCopy())
 	lease.Spec.Release = true
 	if err := c.Patch(ctx, &lease, original); err != nil {

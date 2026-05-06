@@ -38,6 +38,18 @@ config:
       hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
       username: "test-exporter-hooks"
       userID: "c6ed6f40-6689-6a7e-c64c-55d0a9a5871f"
+    - email: "jumpstarter-admin@example.com"
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
+      username: "jumpstarter-admin"
+      userID: "d7fe7051-7790-7b8f-d75d-66e1b0b6982f"
+    - email: "dev-alice@example.com"
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
+      username: "dev-alice"
+      userID: "e80f8162-8801-8c90-e86e-77f2c1c7a930"
+    - email: "dev-bob@example.com"
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
+      username: "dev-bob"
+      userID: "f9108273-9912-9da1-f97f-8803d2d8ba41"
   connectors:
     - name: kubernetes
       type: oidc

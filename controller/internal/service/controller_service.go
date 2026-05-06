@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"slices"
@@ -52,9 +53,11 @@ import (
 	clientsvcv1 "github.com/jumpstarter-dev/jumpstarter-controller/internal/service/client/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
@@ -1087,7 +1090,7 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		adminLeaseSvc = v1.NewLeaseService(s.ImpersonationFactory, s.Client, s.effectiveMaxTags())
 		adminExporterSvc = v1.NewExporterService(s.ImpersonationFactory, s.Client)
 		adminClientSvc = v1.NewClientService(s.ImpersonationFactory, s.Client)
-		adminWebhookSvc = v1.NewWebhookService(s.ImpersonationFactory)
+		adminWebhookSvc = v1.NewWebhookService(s.ImpersonationFactory, s.Client)
 		adminv1pb.RegisterLeaseServiceServer(server, adminLeaseSvc)
 		adminv1pb.RegisterExporterServiceServer(server, adminExporterSvc)
 		adminv1pb.RegisterClientServiceServer(server, adminClientSvc)
@@ -1097,12 +1100,27 @@ func (s *ControllerService) Start(ctx context.Context) error {
 	// Register reflection service on gRPC server.
 	reflection.Register(server)
 
-	// Register gRPC gateway. Both jumpstarter.client.v1 and the admin
-	// services are exposed via REST/JSON; the runtime path is gRPC-only.
-	// We register HandlerServer variants so the gateway calls services
-	// in-process — no extra TCP/bufconn dial is needed, the gRPC server
-	// interceptors still run because the gateway delegates to the
-	// generated service stubs which we wrap with the pipeline above.
+	// Loopback bufconn so the gRPC gateway can dial back into this same
+	// gRPC server. We need this for the admin services because:
+	//   1. RegisterXHandlerServer (in-process) does NOT support
+	//      server-streaming RPCs — Watch* over REST returns 501.
+	//   2. RegisterXHandler with a real ClientConn DOES support
+	//      streaming, and as a bonus the gRPC AuthN + AuthZ
+	//      interceptors run automatically on the loopback path, so
+	//      the bespoke HTTP middleware that used to wrap gwmux is no
+	//      longer needed (single source of truth for auth).
+	//
+	// The legacy client.v1 path keeps its existing in-process
+	// HandlerServer registration: it has no streaming RPCs and
+	// performs its own auth via auth.NewAuth, independent of the
+	// admin pipeline.
+	loopback := bufconn.Listen(1024 * 1024)
+	go func() {
+		if err := server.Serve(loopback); err != nil {
+			logger.Error(err, "loopback gRPC serve stopped")
+		}
+	}()
+
 	gwmux := gwruntime.NewServeMux()
 	if err := cpb.RegisterClientServiceHandlerServer(
 		ctx,
@@ -1112,16 +1130,32 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		return fmt.Errorf("register client.v1 gateway: %w", err)
 	}
 	if adminLeaseSvc != nil {
-		if err := adminv1pb.RegisterLeaseServiceHandlerServer(ctx, gwmux, adminLeaseSvc); err != nil {
+		// nolint:staticcheck // grpc.NewClient does not yet support
+		// custom dialers; grpc.DialContext is the supported path for
+		// bufconn loopbacks.
+		loopbackConn, err := grpc.DialContext(ctx, "passthrough:///bufnet",
+			grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+				return loopback.DialContext(ctx)
+			}),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		if err != nil {
+			return fmt.Errorf("dial admin gateway loopback: %w", err)
+		}
+		go func() {
+			<-ctx.Done()
+			_ = loopbackConn.Close()
+		}()
+		if err := adminv1pb.RegisterLeaseServiceHandler(ctx, gwmux, loopbackConn); err != nil {
 			return fmt.Errorf("register admin lease gateway: %w", err)
 		}
-		if err := adminv1pb.RegisterExporterServiceHandlerServer(ctx, gwmux, adminExporterSvc); err != nil {
+		if err := adminv1pb.RegisterExporterServiceHandler(ctx, gwmux, loopbackConn); err != nil {
 			return fmt.Errorf("register admin exporter gateway: %w", err)
 		}
-		if err := adminv1pb.RegisterClientServiceHandlerServer(ctx, gwmux, adminClientSvc); err != nil {
+		if err := adminv1pb.RegisterClientServiceHandler(ctx, gwmux, loopbackConn); err != nil {
 			return fmt.Errorf("register admin client gateway: %w", err)
 		}
-		if err := adminv1pb.RegisterWebhookServiceHandlerServer(ctx, gwmux, adminWebhookSvc); err != nil {
+		if err := adminv1pb.RegisterWebhookServiceHandler(ctx, gwmux, loopbackConn); err != nil {
 			return fmt.Errorf("register admin webhook gateway: %w", err)
 		}
 	}
@@ -1142,23 +1176,12 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		server.Stop()
 	}()
 
-	// REST gateway auth: the HandlerServer registration variant invokes
-	// admin services in-process, so the gRPC AuthN + AuthZ interceptors
-	// never run for /admin/v1/* requests. Wrap gwmux with the matching
-	// HTTP middleware so REST callers go through the same OIDC + SAR
-	// pipeline. Non-admin REST paths (legacy client.v1) pass through
-	// unchanged.
-	var gwHandler http.Handler = gwmux
-	if s.AdminAuthN != nil && s.AdminAuthZ != nil {
-		gwHandler = adminauth.NewHTTPMiddleware(s.AdminAuthN, s.AdminAuthZ).Wrap(gwmux)
-	}
-
 	return http.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.ProtoMajor == 2 && strings.HasPrefix(
 			r.Header.Get("Content-Type"), "application/grpc") {
 			server.ServeHTTP(w, r)
 		} else {
-			gwHandler.ServeHTTP(w, r)
+			gwmux.ServeHTTP(w, r)
 		}
 	}))
 }

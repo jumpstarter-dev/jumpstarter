@@ -15,6 +15,7 @@ import (
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	adminauthz "github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/authz"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/identity"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/impersonation"
 	adminv1 "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/admin/v1"
@@ -130,11 +131,12 @@ func (s *ExporterService) CreateExporter(ctx context.Context, req *jumpstarterv1
 		return nil, kerr(err)
 	}
 
-	// Wait for the existing ExporterReconciler to provision the credential
-	// Secret and stamp Status.Credential. This is the JEP's "inline
-	// credential return" contract: clients never poll for a Secret to
-	// appear, the RPC blocks until the token is ready or times out.
-	token, err := s.waitForBootstrap(ctx, c, types.NamespacedName{Namespace: ns, Name: name})
+	// Poll the Exporter's status with the controller's non-impersonated
+	// client and read the bootstrap Secret with it too — self-service
+	// developers (and even cluster admins acting on a foreign-owned
+	// Exporter) need not have direct `secrets` RBAC; the inline token
+	// is returned in lieu of that, per JEP-0014 §DD-3.
+	token, err := s.waitForBootstrap(ctx, types.NamespacedName{Namespace: ns, Name: name})
 	if err != nil {
 		return nil, err
 	}
@@ -145,17 +147,20 @@ func (s *ExporterService) CreateExporter(ctx context.Context, req *jumpstarterv1
 		return nil, kerr(err)
 	}
 	out := exporterToProto(&fresh)
-	{ tok := token; out.Token = &tok }
+	{
+		tok := token
+		out.Token = &tok
+	}
 	return out, nil
 }
 
 // waitForBootstrap polls the Exporter until its Status.Credential is
 // populated, then reads the referenced Secret and returns the token.
-func (s *ExporterService) waitForBootstrap(ctx context.Context, c kclient.Client, key types.NamespacedName) (string, error) {
+func (s *ExporterService) waitForBootstrap(ctx context.Context, key types.NamespacedName) (string, error) {
 	var secretName string
 	pollErr := wait.PollUntilContextTimeout(ctx, 200*time.Millisecond, credentialWaitTimeout, true, func(ctx context.Context) (bool, error) {
 		var e jumpstarterdevv1alpha1.Exporter
-		if err := c.Get(ctx, key, &e); err != nil {
+		if err := s.watcher.Get(ctx, key, &e); err != nil {
 			if k8sIsNotFound(err) {
 				return false, nil
 			}
@@ -171,7 +176,7 @@ func (s *ExporterService) waitForBootstrap(ctx context.Context, c kclient.Client
 		return "", status.Errorf(codes.DeadlineExceeded, "credential provisioning timed out: %v", pollErr)
 	}
 	var sec corev1.Secret
-	if err := c.Get(ctx, types.NamespacedName{Namespace: key.Namespace, Name: secretName}, &sec); err != nil {
+	if err := s.watcher.Get(ctx, types.NamespacedName{Namespace: key.Namespace, Name: secretName}, &sec); err != nil {
 		return "", kerr(err)
 	}
 	if t, ok := sec.Data["token"]; ok {
@@ -188,14 +193,20 @@ func (s *ExporterService) UpdateExporter(ctx context.Context, req *jumpstarterv1
 	if err != nil {
 		return nil, err
 	}
+	var existing jumpstarterdevv1alpha1.Exporter
+	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
+		return nil, kerr(err)
+	}
+	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
+		"jumpstarter.dev", "exporters", "update"); err != nil {
+		return nil, err
+	}
+
 	c, err := s.imp.For(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "build impersonation client: %v", err)
 	}
-	var e jumpstarterdevv1alpha1.Exporter
-	if err := c.Get(ctx, *key, &e); err != nil {
-		return nil, kerr(err)
-	}
+	e := *existing.DeepCopy()
 	original := kclient.MergeFrom(e.DeepCopy())
 	if labelsIn := req.GetExporter().GetLabels(); labelsIn != nil {
 		e.Labels = labelsIn
@@ -203,7 +214,7 @@ func (s *ExporterService) UpdateExporter(ctx context.Context, req *jumpstarterv1
 	if u := req.GetExporter().GetUsername(); u != "" {
 		e.Spec.Username = &u
 	}
-	stampOwner(&e.ObjectMeta, identity.MustFromContext(ctx))
+	// Owner annotation is stamped only at creation time (per JEP-0014).
 	if err := c.Patch(ctx, &e, original); err != nil {
 		return nil, kerr(err)
 	}
@@ -215,6 +226,15 @@ func (s *ExporterService) DeleteExporter(ctx context.Context, req *jumpstarterv1
 	if err != nil {
 		return nil, err
 	}
+	var existing jumpstarterdevv1alpha1.Exporter
+	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
+		return nil, kerr(err)
+	}
+	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
+		"jumpstarter.dev", "exporters", "delete"); err != nil {
+		return nil, err
+	}
+
 	c, err := s.imp.For(ctx)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "build impersonation client: %v", err)

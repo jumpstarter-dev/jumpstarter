@@ -1,0 +1,118 @@
+---
+# e2e-foreign exists purely as a target for "cross-namespace must be
+# denied" negative tests — the developer self-service binding does not
+# extend here, so every admin-API verb against this namespace must
+# return 403. No reconciler runs here, so do not attempt to Create
+# resources that wait on the controller's credential provisioning.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: e2e-foreign
+  labels:
+    e2e.jumpstarter.dev/persona-namespace: foreign
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: jumpstarter-admin
+rules:
+  - apiGroups: ["jumpstarter.dev"]
+    resources: ["clients", "exporters", "leases", "webhooks"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: jumpstarter-admin-dex
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jumpstarter-admin
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: "dex:jumpstarter-admin"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: jumpstarter-self-service
+rules:
+  - apiGroups: ["jumpstarter.dev"]
+    resources: ["clients", "exporters", "leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+# The self-service developers (dev-alice, dev-bob) are bound to
+# jumpstarter-lab — the operator-watched namespace where Client and
+# Exporter reconcilers actually provision bootstrap Secrets. Binding
+# them in any other namespace would let CreateClient go through SAR
+# and ownership checks but then time out waiting on a reconciler that
+# never runs. There is intentionally no second RoleBinding anywhere
+# else: cross-namespace negative tests target e2e-foreign, where SAR
+# denies every verb.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jumpstarter-self-service-dex
+  namespace: jumpstarter-lab
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jumpstarter-self-service
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: "dex:dev-alice"
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: "dex:dev-bob"
+---
+# The admin API pipeline (controller/internal/admin/{authz,impersonation})
+# needs two cluster-level capabilities the operator-installed Role does
+# not grant by default:
+#
+#   - SubjectAccessReview create — the AuthZ interceptor delegates every
+#     admin RPC to the kube-apiserver via SAR, and the cross-owner
+#     bypass in RequireOwnerOrClusterAdmin issues a cluster-scope SAR.
+#   - Impersonate users + groups + userextras — the impersonation
+#     wrapper makes every kube call as the OIDC user so kube-audit logs
+#     attribute mutations to the human caller.
+#
+# Production deployments should fold these into the operator chart.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: jumpstarter-controller-admin-api
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["users", "groups", "serviceaccounts"]
+    verbs: ["impersonate"]
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["userextras/iss", "userextras/sub"]
+    verbs: ["impersonate"]
+  # The webhook dispatcher informer-watches Webhook CRDs and updates
+  # their .status. The operator-installed Role does not yet include
+  # this resource (added in JEP-0014 / commit c77ee622); fold into the
+  # operator chart for production.
+  - apiGroups: ["jumpstarter.dev"]
+    resources: ["webhooks", "webhooks/status"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: jumpstarter-controller-admin-api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jumpstarter-controller-admin-api
+subjects:
+  - kind: ServiceAccount
+    name: jumpstarter-controller-manager
+    namespace: jumpstarter-lab
