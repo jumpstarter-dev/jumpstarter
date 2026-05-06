@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
@@ -51,8 +50,7 @@ class RideSXClient(FlasherClient, CompositeClient):
                 self.storage.write_from_path(filename, path_buf, operator=operator)
             except Exception as e:
                 raise RideSXFlashError(
-                    f"Failed to transfer '{file_path}' to exporter storage as '{filename}' "
-                    f"(scheme={operator_scheme})"
+                    f"Failed to transfer '{file_path}' to exporter storage as '{filename}' (scheme={operator_scheme})"
                 ) from e
         else:
             self.logger.info(f"File {filename} already exists in storage with matching hash, skipping upload")
@@ -78,9 +76,7 @@ class RideSXClient(FlasherClient, CompositeClient):
             try:
                 remote_files[partition] = self._upload_file_if_needed(file_path, operator)
             except Exception as e:
-                raise RideSXFlashError(
-                    f"Failed preparing image for partition '{partition}': {file_path}"
-                ) from e
+                raise RideSXFlashError(f"Failed preparing image for partition '{partition}': {file_path}") from e
 
         self.logger.info("Checking for fastboot devices on Exporter...")
         detection_result = self.call("detect_fastboot_device", 5, 2.0)
@@ -201,8 +197,7 @@ class RideSXClient(FlasherClient, CompositeClient):
                     if "/" in before_colon:
                         # registry/path:tag — likely an OCI ref missing the oci:// prefix
                         raise click.ClickException(
-                            f"OCI URLs must start with oci://, got: {path}\n"
-                            f"Usage: j storage flash oci://{path}"
+                            f"OCI URLs must start with oci://, got: {path}\nUsage: j storage flash oci://{path}"
                         )
                     # partition:something — likely a partition:path mapping
                     raise click.ClickException(
@@ -280,22 +275,14 @@ class RideSXClient(FlasherClient, CompositeClient):
 
         return self._execute_flash_operation(_flash_operation, power_off=power_off)
 
-    def _read_oci_credentials(self):
-        """Read OCI registry credentials from environment variables.
+    def _read_oci_credentials(self, oci_url: str):
+        """Read OCI registry credentials from environment variables or auth files."""
+        from jumpstarter.common.oci import resolve_oci_credentials
 
-        Returns:
-            Tuple of (username, password), both None if not set.
-
-        Raises:
-            click.ClickException: If only one of username/password is set.
-        """
-        username = os.environ.get("OCI_USERNAME")
-        password = os.environ.get("OCI_PASSWORD")
+        username, password = resolve_oci_credentials(oci_url)
 
         if bool(username) != bool(password):
-            raise click.ClickException(
-                "OCI authentication requires both OCI_USERNAME and OCI_PASSWORD environment variables"
-            )
+            raise click.ClickException("OCI authentication requires both username and password")
 
         return username, password
 
@@ -305,7 +292,7 @@ class RideSXClient(FlasherClient, CompositeClient):
         partitions: Dict[str, str] | None = None,
     ):
         """Core implementation of OCI flash without wrapper logic."""
-        oci_username, oci_password = self._read_oci_credentials()
+        oci_username, oci_password = self._read_oci_credentials(oci_url)
 
         self.logger.info("Checking for fastboot devices on Exporter...")
         detection_result = self.call("detect_fastboot_device", 5, 2.0)
@@ -317,8 +304,11 @@ class RideSXClient(FlasherClient, CompositeClient):
         self.logger.info(f"Found fastboot device: {device_id}")
 
         flash_result = self.call(
-            "flash_oci_image", oci_url, partitions,
-            oci_username, oci_password,
+            "flash_oci_image",
+            oci_url,
+            partitions,
+            oci_username,
+            oci_password,
         )
 
         # Display FLS output to user
@@ -346,10 +336,7 @@ class RideSXClient(FlasherClient, CompositeClient):
             power_off: Whether to power off the device after flashing (default: True)
         """
         if not oci_url.startswith("oci://"):
-            raise ValueError(
-                f"OCI URL must start with oci://, got: {oci_url}\n"
-                f"Usage: j storage flash oci://{oci_url}"
-            )
+            raise ValueError(f"OCI URL must start with oci://, got: {oci_url}\nUsage: j storage flash oci://{oci_url}")
 
         if partitions:
             self.logger.info(f"Flashing OCI image with explicit mapping: {list(partitions.keys())}")
