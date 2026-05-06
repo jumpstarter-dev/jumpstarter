@@ -33,6 +33,7 @@ jobs:
               - 'controller/**'
               - 'e2e/**'
               - 'python/**'
+              - 'typescript/**'
               - '.github/workflows/e2e.yaml'
               - 'Makefile'
 
@@ -191,6 +192,13 @@ jobs:
         with:
           go-version: "1.22"
 
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: typescript/api/package-lock.json
+
       - name: Download controller image
         uses: actions/download-artifact@v4
         with:
@@ -230,6 +238,16 @@ jobs:
         env:
           CI: true
           METHOD: operator
+
+      # The TypeScript SDK suite reuses the same KinD cluster + Dex +
+      # controller deployment from `make e2e-setup`. It hits the
+      # admin REST surface via @jumpstarter/api so a regression in the
+      # SDK runtime (envelope unwrap, claim casing, watch streaming,
+      # etc.) shows up alongside the Go REST tests.
+      - name: Run TypeScript SDK e2e tests
+        run: make typescript-e2e-run
+        env:
+          CI: true
 
   # ============================================================================
   # Compatibility tests: cross-version interop between controller and client/exporter

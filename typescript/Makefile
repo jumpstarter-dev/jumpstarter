@@ -54,6 +54,20 @@ test: generate
 		(cd $$pkg && $(NPM) test); \
 	done
 
+# test-e2e runs the live-cluster Vitest suites against the controller
+# stood up by `bash e2e/setup-e2e.sh`. The suites read ENDPOINT,
+# E2E_TEST_NS, etc. from the environment — the wrapping
+# typescript-e2e-run target in the root Makefile sources the
+# .e2e-setup-complete marker first.
+.PHONY: test-e2e
+test-e2e: install
+	@for pkg in $(TS_PKGS); do \
+		if grep -q '"test:e2e"' $$pkg/package.json; then \
+			echo "Running e2e tests in $$pkg..."; \
+			(cd $$pkg && $(NPM) run test:e2e); \
+		fi; \
+	done
+
 # clean removes everything generate / install / build can produce, leaving
 # the source tree pristine.
 .PHONY: clean

@@ -43,12 +43,18 @@ export function createClient<Paths extends {}>(opts: JumpstarterClientOptions): 
 }
 
 /**
- * watchStream POSTs/GETs the given URL and yields one parsed JSON object
- * per `\n`-delimited line of the response body. Works in browsers (fetch
+ * watchStream GETs the given URL and yields one parsed event per
+ * `\n`-delimited line of the response body. Works in browsers (fetch
  * Streams + TextDecoderStream) and Node 20+ (same primitives).
  *
- * Bookmarks (event_type = EVENT_TYPE_BOOKMARK) are surfaced verbatim so
- * callers can persist resource_version checkpoints across reconnects.
+ * The grpc-gateway wraps every server-streaming response in a
+ * `{"result": ...}` envelope (or `{"error": ...}` for terminal stream
+ * errors). watchStream unwraps `result` and yields it as T; encountering
+ * `error` throws so the consuming `for await` loop terminates with a
+ * clear stack instead of silently emitting partial garbage.
+ *
+ * Bookmarks (eventType = EVENT_TYPE_BOOKMARK) flow through verbatim so
+ * callers can persist resourceVersion checkpoints across reconnects.
  */
 export async function* watchStream<T>(
   url: string,
@@ -73,7 +79,15 @@ export async function* watchStream<T>(
       const line = buf.slice(0, nl).trim();
       buf = buf.slice(nl + 1);
       if (!line) continue;
-      yield JSON.parse(line) as T;
+      const env = JSON.parse(line) as { result?: T; error?: { code?: number; message?: string } };
+      if (env.error) {
+        throw new Error(
+          `watch ${url}: server error ${env.error.code ?? ""} ${env.error.message ?? JSON.stringify(env.error)}`,
+        );
+      }
+      if (env.result !== undefined) {
+        yield env.result;
+      }
     }
   }
 }

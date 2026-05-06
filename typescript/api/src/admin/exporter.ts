@@ -4,7 +4,8 @@ import type { paths } from "../_generated/admin/exporter.js";
 import { createClient, type JumpstarterClientOptions, watchStream } from "../_runtime.js";
 
 export type AdminExporter = NonNullable<paths["/admin/v1/{name}"]["get"]["responses"]["200"]["content"]["application/json"]>;
-export type AdminExporterEvent = { event_type: string; exporter?: AdminExporter; resource_version: string };
+// gRPC-gateway emits camelCase JSON; matches proto ExporterEvent shape.
+export type AdminExporterEvent = { eventType: string; exporter?: AdminExporter; resourceVersion: string };
 
 export class AdminExporterService {
   private readonly api: ReturnType<typeof createClient<paths>>;

@@ -9,7 +9,10 @@ import type { paths } from "../_generated/admin/client.js";
 import { createClient, type JumpstarterClientOptions, watchStream } from "../_runtime.js";
 
 export type AdminClient = NonNullable<paths["/admin/v1/{name}"]["get"]["responses"]["200"]["content"]["application/json"]>;
-export type AdminClientEvent = { event_type: string; client?: AdminClient; resource_version: string };
+// gRPC-gateway emits camelCase JSON for streaming responses (and
+// non-streaming, for that matter). The field shapes mirror the proto
+// LeaseEvent / ClientEvent / etc. messages.
+export type AdminClientEvent = { eventType: string; client?: AdminClient; resourceVersion: string };
 
 export class AdminClientService {
   private readonly api: ReturnType<typeof createClient<paths>>;

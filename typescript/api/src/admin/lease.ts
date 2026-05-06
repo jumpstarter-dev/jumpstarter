@@ -8,7 +8,8 @@ import type { paths } from "../_generated/admin/lease.js";
 import { createClient, type JumpstarterClientOptions, watchStream } from "../_runtime.js";
 
 export type AdminLease = NonNullable<paths["/admin/v1/{name}"]["get"]["responses"]["200"]["content"]["application/json"]>;
-export type AdminLeaseEvent = { event_type: string; lease?: AdminLease; resource_version: string };
+// gRPC-gateway emits camelCase JSON; matches proto LeaseEvent shape.
+export type AdminLeaseEvent = { eventType: string; lease?: AdminLease; resourceVersion: string };
 
 export class AdminLeaseService {
   private readonly api: ReturnType<typeof createClient<paths>>;

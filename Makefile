@@ -136,9 +136,23 @@ e2e-run:
 	@echo "Running e2e tests (method: $(METHOD))..."
 	@METHOD=$(METHOD) bash e2e/run-e2e.sh
 
+# Run the TypeScript SDK's live-cluster e2e suites (Vitest) against the
+# controller deployed by `make e2e-setup`. Sources .e2e-setup-complete
+# so ENDPOINT / E2E_TEST_NS / SSL_CERT_FILE / REPO_ROOT are exported
+# the same way `bash e2e/run-e2e.sh` exports them for the Go suite.
+.PHONY: typescript-e2e-run
+typescript-e2e-run:
+	@if [ ! -f .e2e-setup-complete ]; then \
+		echo "Setup not complete: run 'make e2e-setup' first."; \
+		exit 1; \
+	fi
+	@echo "Running TypeScript e2e tests..."
+	@set -a; . ./.e2e-setup-complete; set +a; \
+		$(MAKE) -C typescript test-e2e
+
 # Convenience alias for running e2e tests
 .PHONY: e2e
-e2e: e2e-run
+e2e: e2e-run typescript-e2e-run
 
 # Full e2e setup + run
 .PHONY: e2e-full
