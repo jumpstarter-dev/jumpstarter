@@ -102,6 +102,51 @@ def set_interface_forwarding(iface: str, enabled: bool) -> None:
     _run_priv(["sysctl", "-w", f"net.ipv4.conf.{iface}.forwarding={value}"])
 
 
+def is_iptables_forward_drop() -> bool:
+    """Check if the iptables FORWARD chain default policy is DROP.
+
+    This is commonly set by Docker to isolate container networks.
+    Skips silently if iptables is not installed.
+    """
+    if not shutil.which("iptables"):
+        return False
+    result = _run_priv(["iptables", "-S", "FORWARD"], check=False)
+    if result.returncode != 0:
+        return False
+    return "-P FORWARD DROP" in result.stdout
+
+
+def ensure_iptables_forward(bridge: str, upstream: str) -> list[tuple[str, str]]:
+    """Insert iptables ACCEPT rules for our interfaces if FORWARD policy is DROP.
+
+    Returns a list of (flag, interface) tuples representing the rules that
+    were inserted, so they can be removed on cleanup.
+    """
+    if not is_iptables_forward_drop():
+        return []
+
+    rules: list[tuple[str, str]] = []
+    for iface in (bridge, upstream):
+        for flag in ("-i", "-o"):
+            _run_priv(["iptables", "-I", "FORWARD", flag, iface, "-j", "ACCEPT"], check=False)
+            rules.append((flag, iface))
+
+    logger.info(
+        "Inserted iptables FORWARD ACCEPT rules for %s and %s "
+        "(FORWARD policy was DROP, likely set by Docker)",
+        bridge, upstream,
+    )
+    return rules
+
+
+def remove_iptables_forward(rules: list[tuple[str, str]]) -> None:
+    """Remove iptables FORWARD rules previously inserted by ensure_iptables_forward."""
+    for flag, iface in rules:
+        _run_priv(["iptables", "-D", "FORWARD", flag, iface, "-j", "ACCEPT"], check=False)
+    if rules:
+        logger.info("Removed %d iptables FORWARD rules", len(rules))
+
+
 def detect_upstream_interface() -> str | None:
     """Detect the default upstream interface by parsing the default route."""
     result = _run(["ip", "route", "show", "default"], check=False)

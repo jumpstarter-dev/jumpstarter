@@ -58,6 +58,7 @@ class DutNetwork(Driver):
     _prev_fwd_upstream: str = field(init=False, default="0")
     _upstream_prefix_len: int = field(init=False, default=24)
     _added_aliases: set[str] = field(init=False, default_factory=set)
+    _iptables_rules: list[tuple[str, str]] = field(init=False, default_factory=list)
 
     @classmethod
     def client(cls) -> str:
@@ -151,6 +152,7 @@ class DutNetwork(Driver):
             self._prev_fwd_upstream = iproute.get_interface_forwarding(self._upstream)
             iproute.set_interface_forwarding(self.bridge_name, True)
             iproute.set_interface_forwarding(self._upstream, True)
+            self._iptables_rules = iproute.ensure_iptables_forward(self.bridge_name, self._upstream)
 
         if self.dhcp_enabled:
             dnsmasq.write_config(
@@ -213,6 +215,10 @@ class DutNetwork(Driver):
                 for ip in list(self._added_aliases):
                     iproute.remove_ip_alias(upstream_for_alias, ip, self._upstream_prefix_len)
                 self._added_aliases.clear()
+
+        if self._iptables_rules:
+            iproute.remove_iptables_forward(self._iptables_rules)
+            self._iptables_rules = []
 
         if not self._nat_disabled():
             if self._prev_fwd_bridge == "0":

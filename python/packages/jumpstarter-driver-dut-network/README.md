@@ -219,6 +219,40 @@ The driver uses a dedicated nftables table (`table ip jumpstarter`) that does no
 └──────────────┘                    └──────────────────┘
 ```
 
+## Troubleshooting
+
+### NAT traffic not forwarding (Docker hosts)
+
+On hosts running Docker, the default iptables policy is often set to
+`iptables -P FORWARD DROP` to isolate container networks.  Since modern
+Linux translates iptables rules into nftables under the hood, this creates
+a `table ip filter { chain FORWARD { policy drop } }` base chain that
+**all** forwarded packets must pass — including traffic routed through
+the jumpstarter bridge.
+
+The driver **automatically** detects this situation: when NAT is enabled
+and `iptables` is available, it checks the FORWARD chain policy.  If the
+policy is DROP, targeted ACCEPT rules are inserted for the bridge and
+upstream interfaces on startup, and removed on cleanup.  No manual
+intervention is needed.
+
+If `iptables` is not installed (common on newer distros that ship only
+nftables), the check is skipped entirely — since Docker is not present
+to set the DROP policy, no workaround is required.
+
+### Per-interface IP forwarding
+
+The driver enables IPv4 forwarding only on the bridge and upstream
+interfaces (`net.ipv4.conf.<iface>.forwarding=1`) rather than the global
+`net.ipv4.ip_forward` sysctl.  This avoids turning a multi-homed host
+into a full router on every interface.  If forwarding still does not work,
+verify with:
+
+```shell
+sysctl net.ipv4.conf.<bridge>.forwarding
+sysctl net.ipv4.conf.<upstream>.forwarding
+```
+
 ## Running Tests
 
 Integration tests require root privileges:

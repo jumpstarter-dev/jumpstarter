@@ -90,13 +90,6 @@ jobs:
           for mod in veth bridge nf_nat nf_conntrack nft_masq nft_nat nft_chain_nat; do
             sudo modprobe "$mod" 2>/dev/null || true
           done
-          # Docker on GitHub Actions runners sets "iptables -P FORWARD DROP"
-          # to isolate container networks. This silently blocks ALL forwarded
-          # traffic — including our nftables NAT masquerade test packets that
-          # traverse veth pairs and bridges between network namespaces. Even
-          # though our own nft forward chain has "policy accept", packets must
-          # pass ALL base chains at a given hook, so Docker's DROP wins.
-          sudo iptables -P FORWARD ACCEPT
 
       - name: Install Renode (Linux)
         if: runner.os == 'Linux'
