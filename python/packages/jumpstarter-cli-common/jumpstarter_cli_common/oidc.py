@@ -15,9 +15,14 @@ from aiohttp import web
 from anyio import create_memory_object_stream
 from anyio.to_thread import run_sync
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", message="authlib.jose module is deprecated")
-    from authlib.integrations.requests_client import OAuth2Session
+# Authlib still pulls deprecated authlib.jose on first OAuth2Session use, not only at
+# import time; a transient catch_warnings() around the import does not suppress that.
+warnings.filterwarnings(
+    "ignore",
+    message=r"authlib\.jose module is deprecated.*",
+    module=r"authlib\..*",
+)
+from authlib.integrations.requests_client import OAuth2Session
 from joserfc.jws import extract_compact
 from yarl import URL
 

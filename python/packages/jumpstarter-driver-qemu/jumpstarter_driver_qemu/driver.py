@@ -102,6 +102,7 @@ class QemuFlasher(FlasherInterface, Driver):
             oci_username: Registry username for OCI authentication
             oci_password: Registry password for OCI authentication
         """
+        oci_url = oci_url.strip()
         if not oci_url.startswith("oci://"):
             raise ValueError(f"OCI URL must start with oci://, got: {oci_url}")
 
