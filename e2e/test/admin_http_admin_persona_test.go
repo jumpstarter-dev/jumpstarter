@@ -255,15 +255,21 @@ var _ = Describe("Admin HTTP API: full admin persona", Ordered, Label("admin-htt
 	})
 
 	Context("watch streams", func() {
-		// :watch over REST currently returns 501 because the controller
-		// registers admin services with the gRPC-gateway's
-		// `RegisterXHandlerServer` variant, which does not support
-		// server-streaming responses. Streaming works over the gRPC
-		// transport (covered by controller/internal/admin/e2e/...).
-		// To enable REST streaming, the gateway would need to be
-		// wired via `RegisterXHandlerFromEndpoint` against a real
-		// loopback gRPC dial. Tracking as a follow-up.
-		PIt("admin sees a dev-alice mutation on a cluster-wide watch (skipped: REST streaming pending)", func() {})
+		It("admin sees a dev-alice mutation on a cluster-wide watch", func() {
+			stream, err := admin.Watch(ctx, "clients", devNamespace)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(stream.InitialStatus).To(Equal(http.StatusOK))
+			defer stream.Stop()
+
+			id := uniqueID("watch-alice")
+			Eventually(func() int {
+				c, _, _, _ := alice.Create(ctx, "clients", devNamespace, id, map[string]any{})
+				return c
+			}, 30*time.Second, time.Second).Should(Equal(http.StatusOK))
+			track(ResourceName("clients", devNamespace, id))
+
+			Eventually(stream.Events, 30*time.Second).Should(Receive(matchClientEvent(devNamespace, id)))
+		})
 	})
 
 	// bob is referenced by the developer suite via the shared package;
@@ -468,5 +474,51 @@ func verifyHMACSignature(header string, body, key []byte) bool {
 	mac.Write(body)
 	want := hex.EncodeToString(mac.Sum(nil))
 	return hmac.Equal([]byte(want), []byte(v1))
+}
+
+// matchClientEvent / matchLeaseEvent return Gomega matchers that succeed
+// for any WatchEvent whose embedded resource carries the given fully-
+// qualified name (any EventType — ADDED is most common, MODIFIED also
+// acceptable). Used by both persona suites against the REST :watch
+// streams the controller exposes through the loopback gRPC dial.
+func matchClientEvent(ns, id string) gomegaMatcher {
+	return &resourceEventMatcher{singular: "client", want: ResourceName("clients", ns, id)}
+}
+
+func matchLeaseEvent(ns, id string) gomegaMatcher {
+	return &resourceEventMatcher{singular: "lease", want: ResourceName("leases", ns, id)}
+}
+
+// gomegaMatcher is a structural alias so we don't pull in gomega/types
+// just for the interface.
+type gomegaMatcher interface {
+	Match(actual any) (bool, error)
+	FailureMessage(actual any) string
+	NegatedFailureMessage(actual any) string
+}
+
+type resourceEventMatcher struct {
+	singular string
+	want     string
+}
+
+func (m *resourceEventMatcher) Match(actual any) (bool, error) {
+	ev, ok := actual.(WatchEvent)
+	if !ok {
+		return false, fmt.Errorf("expected WatchEvent, got %T", actual)
+	}
+	if ev.Result == nil {
+		return false, nil
+	}
+	got := ResourceNameInEvent(ev, m.singular)
+	return got == m.want, nil
+}
+
+func (m *resourceEventMatcher) FailureMessage(actual any) string {
+	return fmt.Sprintf("expected watch event to carry %s name %q, got %v", m.singular, m.want, actual)
+}
+
+func (m *resourceEventMatcher) NegatedFailureMessage(actual any) string {
+	return fmt.Sprintf("expected watch event NOT to carry %s name %q, got %v", m.singular, m.want, actual)
 }
 

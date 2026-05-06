@@ -310,16 +310,16 @@ var _ = Describe("Admin HTTP API: developer self-service persona", Ordered, Labe
 	})
 
 	Context("lease lifecycle", func() {
-		It("dev-alice creates → polls → releases a lease end-to-end", func() {
-			// Note: the original spec used a REST `:watch` stream as a
-			// side-channel; the controller's gRPC-gateway wiring
-			// doesn't yet support server-streaming responses (501),
-			// so the test polls Get instead. Streaming is exercised
-			// over the gRPC transport in controller/internal/admin/e2e.
+		It("dev-alice creates → watches → releases a lease end-to-end", func() {
 			ensureClient(ctx, alice, devNamespace, "alice-life-client")
 			track(ResourceName("clients", devNamespace, "alice-life-client"))
 
 			expName := track(seedExporterAs(ctx, alice, devNamespace, "alice-life-exp"))
+
+			stream, err := alice.Watch(ctx, "leases", devNamespace)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(stream.InitialStatus).To(Equal(http.StatusOK))
+			defer stream.Stop()
 
 			leaseID := uniqueID("alice-life-lease")
 			code, _, raw, err := alice.Create(ctx, "leases", devNamespace, leaseID, map[string]any{
@@ -330,11 +330,7 @@ var _ = Describe("Admin HTTP API: developer self-service persona", Ordered, Labe
 			Expect(code).To(Equal(http.StatusOK), JoinErr(code, raw))
 			track(ResourceName("leases", devNamespace, leaseID))
 
-			// Confirm the lease is observable.
-			Eventually(func() int {
-				c, _, _, _ := alice.Get(ctx, "leases", devNamespace, leaseID)
-				return c
-			}, 30*time.Second, time.Second).Should(Equal(http.StatusOK))
+			Eventually(stream.Events, 30*time.Second).Should(Receive(matchLeaseEvent(devNamespace, leaseID)))
 
 			// Release: DeleteLease sets Spec.Release=true.
 			code, _, raw, err = alice.Delete(ctx, "leases", devNamespace, leaseID)
