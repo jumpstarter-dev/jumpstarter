@@ -1291,9 +1291,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         return token
 
-    def _validate_oci_credentials(
-        self, username: str | None, password: str | None
-    ) -> tuple[str | None, str | None]:
+    def _validate_oci_credentials(self, username: str | None, password: str | None) -> tuple[str | None, str | None]:
         if username is not None:
             username = username.strip()
         if password is not None:
@@ -1316,11 +1314,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         self, path: PathBuf, username: str | None, password: str | None
     ) -> tuple[str | None, str | None]:
         if username is None and password is None and path.startswith("oci://"):
-            username = os.environ.get("OCI_USERNAME")
-            password = os.environ.get("OCI_PASSWORD")
+            from jumpstarter.common.oci import resolve_oci_credentials
 
-            if username or password:
-                self.logger.info("Using OCI registry credentials from environment variables")
+            username, password = resolve_oci_credentials(str(path))
 
         return self._validate_oci_credentials(username, password)
 
@@ -1362,8 +1358,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # Write credential file using base64-encoded chunks to avoid serial
         # console line buffer overflow with long tokens (e.g. 1400+ char JWTs).
         creds_content = (
-            f"FLS_REGISTRY_USERNAME={shlex.quote(oci_username)}\n"
-            f"FLS_REGISTRY_PASSWORD={shlex.quote(oci_password)}\n"
+            f"FLS_REGISTRY_USERNAME={shlex.quote(oci_username)}\nFLS_REGISTRY_PASSWORD={shlex.quote(oci_password)}\n"
         )
         encoded = base64.b64encode(creds_content.encode()).decode()
 
@@ -1432,28 +1427,22 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # Mode 3 & 4: Multiple file-partition pairs with optional block device
         elif partitions:
             for spec in partitions:
-                if ':' not in spec:
-                    raise click.UsageError(
-                        f"Invalid flash spec format: '{spec}'. "
-                        "Expected 'partition:filename'"
-                    )
-                partition_label, filename = spec.split(':', 1)
+                if ":" not in spec:
+                    raise click.UsageError(f"Invalid flash spec format: '{spec}'. Expected 'partition:filename'")
+                partition_label, filename = spec.split(":", 1)
                 if not partition_label or not filename:
                     raise click.UsageError(
-                        f"Invalid flash spec format: '{spec}'. "
-                        "Both partition label and filename are required"
+                        f"Invalid flash spec format: '{spec}'. Both partition label and filename are required"
                     )
                 flash_ops.append((filename, partition_label, block_device))
 
         # No input provided
         else:
             raise click.UsageError(
-                "Must provide either FILE argument or -t options. "
-                "Use 'j storage flash --help' for usage examples"
+                "Must provide either FILE argument or -t options. Use 'j storage flash --help' for usage examples"
             )
 
         return flash_ops
-
 
     def cli(self):
         @driver_click_group(self)
@@ -1466,7 +1455,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         @click.option(
             "--target",
             type=str,
-            help="Block device to flash to (e.g., 'usd', 'emmc'). If not provided, uses default target."
+            help="Block device to flash to (e.g., 'usd', 'emmc'). If not provided, uses default target.",
         )
         @click.option(
             "-t",
@@ -1565,9 +1554,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 j storage flash --target emmc -t rootfs:rootfs.img -t boot:boot.img
             """
             # Validate and resolve flash parameters
-            flash_operations = self._resolve_flash_parameters(
-                file, partitions, target
-            )
+            flash_operations = self._resolve_flash_parameters(file, partitions, target)
 
             # Setup common options
             self.set_console_debug(console_debug)

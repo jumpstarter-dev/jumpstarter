@@ -316,14 +316,15 @@ async def test_flash_oci_no_credentials():
     # Ensure OCI env vars are not set so driver doesn't pick them up
     env_clean = {k: v for k, v in os.environ.items() if k not in ("OCI_USERNAME", "OCI_PASSWORD")}
     with patch.dict(os.environ, env_clean, clear=True):
-        with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
-            with patch(
-                "asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process
-            ) as mock_exec:
-                await _collect_flash_oci(flasher, "oci://quay.io/public/image:tag")
+        with patch("jumpstarter.common.oci.read_auth_file_credentials", return_value=(None, None)):
+            with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
+                with patch(
+                    "asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process
+                ) as mock_exec:
+                    await _collect_flash_oci(flasher, "oci://quay.io/public/image:tag")
 
-                env = mock_exec.call_args.kwargs["env"]
-                assert env is None
+                    env = mock_exec.call_args.kwargs["env"]
+                    assert env is None
 
 
 @pytest.mark.anyio
