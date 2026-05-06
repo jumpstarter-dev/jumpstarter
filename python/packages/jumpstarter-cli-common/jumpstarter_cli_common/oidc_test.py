@@ -219,12 +219,11 @@ class TestDeviceCodeGrant:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
-        call_count = 0
+        call_count = {"value": 0}
 
         def fetch_token_side_effect(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count < 3:
+            call_count["value"] += 1
+            if call_count["value"] < 3:
                 raise Exception("authorization_pending")
             return token_response
 
@@ -241,7 +240,7 @@ class TestDeviceCodeGrant:
             result = await config.device_code_grant()
 
         assert result == token_response
-        assert call_count == 3
+        assert call_count["value"] == 3
 
     @pytest.mark.anyio
     async def test_raises_on_access_denied(self) -> None:
