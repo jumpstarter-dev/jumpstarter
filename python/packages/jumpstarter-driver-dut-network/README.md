@@ -230,15 +230,12 @@ a `table ip filter { chain FORWARD { policy drop } }` base chain that
 **all** forwarded packets must pass — including traffic routed through
 the jumpstarter bridge.
 
-The driver **automatically** detects this situation: when NAT is enabled
-and `iptables` is available, it checks the FORWARD chain policy.  If the
-policy is DROP, targeted ACCEPT rules are inserted for the bridge and
-upstream interfaces on startup, and removed on cleanup.  No manual
-intervention is needed.
-
-If `iptables` is not installed (common on newer distros that ship only
-nftables), the check is skipped entirely — since Docker is not present
-to set the DROP policy, no workaround is required.
+The driver **automatically** detects this situation using native nftables:
+when NAT is enabled, it checks if the `ip filter` table's FORWARD chain
+has `policy drop`.  If so, targeted `accept` rules are inserted directly
+into that chain for the bridge and upstream interfaces on startup, and
+removed by handle on cleanup.  No manual intervention or `iptables`
+binary is required.
 
 ### Per-interface IP forwarding
 

@@ -5,6 +5,7 @@ and bridge operations. They are skipped when neither is available.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -65,7 +66,7 @@ def _can_nat_between_namespaces() -> bool:
     table = "jmp_probe"
     prev_fwd_br = "0"
     prev_fwd_up = "0"
-    ipt_rules: list[str] = []
+    fwd_handles: list[str] = []
     try:
         # namespaces
         _run(f"ip netns add {src_ns}", check=False)
@@ -119,21 +120,26 @@ def _can_nat_between_namespaces() -> bool:
             f"'{{ type filter hook forward priority filter; policy accept; }}'"
         )
 
-        if shutil.which("iptables"):
-            ipt_result = _run("iptables -S FORWARD", check=False)
-            if "-P FORWARD DROP" in ipt_result.stdout:
-                for flag in ("-i", "-o"):
-                    for iface in (bridge, "jmp-pd0"):
-                        _run(f"iptables -I FORWARD {flag} {iface} -j ACCEPT", check=False)
-                        ipt_rules.append(f"{flag} {iface}")
+        filter_check = _run("nft list chain ip filter FORWARD", check=False)
+        if filter_check.returncode == 0 and "policy drop" in filter_check.stdout:
+            for direction in ("iifname", "oifname"):
+                for iface in (bridge, "jmp-pd0"):
+                    r = _run(
+                        f"nft -e -a insert rule ip filter FORWARD {direction} {iface} accept",
+                        check=False,
+                    )
+                    if r.returncode == 0:
+                        m = re.search(r"# handle (\d+)", r.stdout)
+                        if m:
+                            fwd_handles.append(m.group(1))
 
         result = _run("ping -c 1 -W 2 172.31.1.1", ns=src_ns, check=False)
         return result.returncode == 0
     except Exception:
         return False
     finally:
-        for rule in ipt_rules:
-            _run(f"iptables -D FORWARD {rule} -j ACCEPT", check=False)
+        for handle in fwd_handles:
+            _run(f"nft delete rule ip filter FORWARD handle {handle}", check=False)
         _run(f"sysctl -w net.ipv4.conf.{bridge}.forwarding={prev_fwd_br}", check=False)
         _run(f"sysctl -w net.ipv4.conf.jmp-pd0.forwarding={prev_fwd_up}", check=False)
         _run(f"nft delete table ip {table}", check=False)

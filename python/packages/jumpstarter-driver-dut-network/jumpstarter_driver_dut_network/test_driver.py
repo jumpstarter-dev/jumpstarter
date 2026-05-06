@@ -41,7 +41,7 @@ def _make_driver(tmp_path, **overrides):
         mock_iproute.get_interface_addresses.return_value = []
         mock_iproute.get_interface_forwarding.return_value = "0"
         mock_iproute.get_interface_prefix_len.return_value = 24
-        mock_iproute.ensure_iptables_forward.return_value = []
+        mock_nftables.ensure_filter_forward.return_value = []
         mock_nftables.list_rules.return_value = ""
         mock_nftables._table_name_for.return_value = "jumpstarter_br_test"
         driver = DutNetwork(**params)  # type: ignore[missing-argument]
@@ -184,9 +184,9 @@ class TestDriverSetupMasquerade:
         driver, mock_ip, _, _ = _make_driver(tmp_path, nat_mode="masquerade")
         assert mock_ip.get_interface_forwarding.call_count == 2
 
-    def test_calls_ensure_iptables_forward(self, tmp_path: Path):
-        _, mock_ip, _, _ = _make_driver(tmp_path, nat_mode="masquerade")
-        mock_ip.ensure_iptables_forward.assert_called_once_with("br-test", "eth-up")
+    def test_calls_ensure_filter_forward(self, tmp_path: Path):
+        _, _, mock_nft, _ = _make_driver(tmp_path, nat_mode="masquerade")
+        mock_nft.ensure_filter_forward.assert_called_once_with("br-test", "eth-up")
 
 
 class TestDriverSetup1to1:
@@ -223,7 +223,7 @@ class TestDriverSetupDisabled:
     def test_skips_forwarding_and_nat(self, tmp_path: Path):
         _, mock_ip, mock_nft, _ = _make_driver(tmp_path, nat_mode="disabled")
         mock_ip.set_interface_forwarding.assert_not_called()
-        mock_ip.ensure_iptables_forward.assert_not_called()
+        mock_nft.ensure_filter_forward.assert_not_called()
         mock_nft.apply_masquerade_rules.assert_not_called()
         mock_nft.apply_1to1_rules.assert_not_called()
 
@@ -281,25 +281,24 @@ class TestDriverCleanup:
             mock_ip2.set_interface_forwarding.assert_any_call("br-test", False)
             mock_ip2.set_interface_forwarding.assert_any_call("eth-up", False)
 
-    def test_cleanup_removes_iptables_rules(self, tmp_path: Path):
+    def test_cleanup_removes_filter_forward_rules(self, tmp_path: Path):
         driver, _, _, _ = _make_driver(tmp_path, nat_mode="masquerade")
-        fake_rules = [("-i", "br-test"), ("-o", "br-test")]
-        driver._iptables_rules = fake_rules
-        with patch(f"{_DRIVER_MODULE}.iproute") as mock_ip2, \
-             patch(f"{_DRIVER_MODULE}.nftables"), \
+        driver._fwd_rule_handles = [42, 43]
+        with patch(f"{_DRIVER_MODULE}.iproute"), \
+             patch(f"{_DRIVER_MODULE}.nftables") as mock_nft2, \
              patch(f"{_DRIVER_MODULE}.dnsmasq"):
             driver.cleanup()
-            mock_ip2.remove_iptables_forward.assert_called_once_with(fake_rules)
-        assert driver._iptables_rules == []
+            mock_nft2.remove_filter_forward.assert_called_once_with([42, 43])
+        assert driver._fwd_rule_handles == []
 
-    def test_cleanup_skips_iptables_when_no_rules(self, tmp_path: Path):
+    def test_cleanup_skips_filter_forward_when_no_handles(self, tmp_path: Path):
         driver, _, _, _ = _make_driver(tmp_path, nat_mode="masquerade")
-        assert driver._iptables_rules == []
-        with patch(f"{_DRIVER_MODULE}.iproute") as mock_ip2, \
-             patch(f"{_DRIVER_MODULE}.nftables"), \
+        assert driver._fwd_rule_handles == []
+        with patch(f"{_DRIVER_MODULE}.iproute"), \
+             patch(f"{_DRIVER_MODULE}.nftables") as mock_nft2, \
              patch(f"{_DRIVER_MODULE}.dnsmasq"):
             driver.cleanup()
-            mock_ip2.remove_iptables_forward.assert_not_called()
+            mock_nft2.remove_filter_forward.assert_not_called()
 
 
 class TestDriverDnsEntries:

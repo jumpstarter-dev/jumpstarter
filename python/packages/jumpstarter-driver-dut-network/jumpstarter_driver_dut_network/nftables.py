@@ -143,6 +143,59 @@ def apply_1to1_rules(
     _load_ruleset(ruleset)
 
 
+def is_filter_forward_drop() -> bool:
+    """Check if the nftables ``ip filter`` table has a FORWARD chain with policy drop.
+
+    Docker (via iptables-nft) creates this to isolate container networks.
+    Returns False when the table or chain does not exist.
+    """
+    result = _run_nft(["list", "chain", "ip", "filter", "FORWARD"], check=False)
+    if result.returncode != 0:
+        return False
+    return "policy drop" in result.stdout
+
+
+def ensure_filter_forward(bridge: str, upstream: str) -> list[int]:
+    """Insert nft ACCEPT rules into ``ip filter FORWARD`` if its policy is drop.
+
+    Returns a list of rule handles so they can be removed on cleanup.
+    """
+    if not is_filter_forward_drop():
+        return []
+
+    handles: list[int] = []
+    for iface in (bridge, upstream):
+        for direction in ("iifname", "oifname"):
+            result = _run_nft(
+                ["-e", "-a", "insert", "rule", "ip", "filter", "FORWARD",
+                 direction, iface, "accept"],
+                check=False,
+            )
+            if result.returncode == 0:
+                match = re.search(r"# handle (\d+)", result.stdout)
+                if match:
+                    handles.append(int(match.group(1)))
+
+    if handles:
+        logger.info(
+            "Inserted %d nft rules into ip filter FORWARD for %s and %s "
+            "(policy was drop, likely set by Docker)",
+            len(handles), bridge, upstream,
+        )
+    return handles
+
+
+def remove_filter_forward(handles: list[int]) -> None:
+    """Remove nft rules previously inserted by ensure_filter_forward."""
+    for handle in handles:
+        _run_nft(
+            ["delete", "rule", "ip", "filter", "FORWARD", "handle", str(handle)],
+            check=False,
+        )
+    if handles:
+        logger.info("Removed %d nft rules from ip filter FORWARD", len(handles))
+
+
 def flush_rules(table_name: str = "jumpstarter") -> None:
     logger.info("Flushing nftables table %s", table_name)
     _run_nft(["delete", "table", "ip", table_name], check=False)
