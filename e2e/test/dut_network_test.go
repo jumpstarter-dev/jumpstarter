@@ -65,7 +65,7 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, func() 
 		vethDut    = "jmp-vdut"
 		vethUp     = "jmp-vup"
 		vethExt    = "jmp-vext"
-		bridgeName = "br-jmp-e2e"
+		nftTable   = "jumpstarter_jmp_vhost"
 		dutIP      = "192.168.200.10"
 		gatewayIP  = "192.168.200.1"
 		extIP      = "10.99.0.1"
@@ -102,10 +102,9 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, func() 
 	teardownNetworkNamespaces := func() {
 		runIgnoreErr("ip", "link", "del", vethHost)
 		runIgnoreErr("ip", "link", "del", vethUp)
-		runIgnoreErr("ip", "link", "del", bridgeName)
 		runIgnoreErr("ip", "netns", "del", dutNs)
 		runIgnoreErr("ip", "netns", "del", extNs)
-		runIgnoreErr("nft", "delete", "table", "ip", "jumpstarter_br_jmp_e2e")
+		runIgnoreErr("nft", "delete", "table", "ip", nftTable)
 		runIgnoreErr("rm", "-rf", "/tmp/jmp-e2e-dut-network")
 	}
 
@@ -172,13 +171,13 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, func() 
 		It("should report network status via CLI", func() {
 			out, err := jmpShell("j", "dut-network", "status")
 			Expect(err).NotTo(HaveOccurred(), out)
-			Expect(out).To(ContainSubstring(bridgeName))
+			Expect(out).To(ContainSubstring(vethHost))
 			Expect(out).To(ContainSubstring("masquerade"))
 
 			var status map[string]interface{}
 			err = json.Unmarshal([]byte(extractJSON(out)), &status)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(status["bridge"]).NotTo(BeNil())
+			Expect(status["interface_status"]).NotTo(BeNil())
 		})
 	})
 
@@ -195,7 +194,7 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, func() 
 			out, err := jmpShell("j", "dut-network", "nat-rules")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring("masquerade"))
-			Expect(out).To(ContainSubstring("jumpstarter_br_jmp_e2e"))
+			Expect(out).To(ContainSubstring(nftTable))
 		})
 	})
 

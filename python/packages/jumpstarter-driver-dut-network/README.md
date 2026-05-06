@@ -1,8 +1,8 @@
 # DutNetwork Driver
 
-`jumpstarter-driver-dut-network` provides network isolation for DUTs (Devices Under Test) by creating a bridged network with NAT, DHCP, and nftables-based firewall rules on the exporter host.
+`jumpstarter-driver-dut-network` provides network isolation for DUTs (Devices Under Test) by configuring a dedicated network interface with NAT, DHCP, and nftables-based firewall rules on the exporter host.
 
-This enables scenarios where multiple DUTs share the same static IP configuration (common in automotive/embedded labs) by isolating each DUT behind its own NAT bridge on the exporter.
+This enables scenarios where multiple DUTs share the same static IP configuration (common in automotive/embedded labs) by isolating each DUT behind its own NAT interface on the exporter.
 
 ## Installation
 
@@ -14,7 +14,7 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 
 The following must be available on the exporter host:
 
-- `ip` (iproute2) - for bridge and interface management
+- `ip` (iproute2) - for interface management
 - `nft` (nftables) - for NAT and firewall rules
 - `dnsmasq` - for DHCP serving
 
@@ -23,15 +23,14 @@ Optional:
 
 ## How It Works
 
-The driver creates an isolated network for the DUT:
+The driver configures an isolated network for the DUT:
 
-1. Creates a Linux bridge and attaches a dedicated Ethernet interface (e.g., USB NIC)
-2. Assigns a gateway IP to the bridge
-3. Runs dnsmasq to provide DHCP to DUTs connected to that interface
-4. Configures nftables rules for NAT (masquerade or 1:1)
-5. Enables IP forwarding so DUT traffic routes through the exporter
+1. Takes over a dedicated Ethernet interface (e.g., USB NIC) and assigns a gateway IP directly to it
+2. Runs dnsmasq to provide DHCP to DUTs connected to that interface
+3. Configures nftables rules for NAT (masquerade or 1:1)
+4. Enables IP forwarding so DUT traffic routes through the exporter
 
-When NetworkManager is detected, the driver marks managed interfaces as `unmanaged` to prevent interference.
+When NetworkManager is detected, the driver marks managed interfaces as `unmanaged` to prevent interference. On cleanup, existing addresses are flushed and the interface is restored to NetworkManager control.
 
 ## Configuration
 
@@ -83,9 +82,9 @@ export:
           public_ip: "10.26.28.85"
 ```
 
-### Disabled NAT (bridge + DHCP only)
+### Disabled NAT (DHCP only)
 
-Bridge and DHCP work normally but no NAT rules or IP forwarding are configured. Useful for pure L2 isolation or when routing is handled externally:
+DHCP works normally but no NAT rules or IP forwarding are configured. Useful for pure L2 isolation or when routing is handled externally:
 
 ```yaml
 export:
@@ -119,12 +118,11 @@ export:
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `interface` | str | *required* | Physical NIC to bridge (e.g., USB NIC name) |
-| `bridge_name` | str | `br-jmp-{interface}` | Name for the bridge interface (auto-derived from `interface`, truncated to 15 chars) |
+| `interface` | str | *required* | Physical NIC for DUT connectivity (e.g., USB NIC name) |
 | `subnet` | str | `192.168.100.0/24` | Private subnet for DUTs |
-| `gateway_ip` | str | `192.168.100.1` | Bridge IP (acts as gateway for DUTs) |
+| `gateway_ip` | str | `192.168.100.1` | IP assigned to the interface (acts as gateway for DUTs) |
 | `upstream_interface` | str | auto-detect | Interface for outbound NAT traffic |
-| `dhcp_enabled` | bool | `true` | Whether to run DHCP on the bridge |
+| `dhcp_enabled` | bool | `true` | Whether to run DHCP on the interface |
 | `dhcp_range_start` | str | `192.168.100.100` | DHCP dynamic range start |
 | `dhcp_range_end` | str | `192.168.100.200` | DHCP dynamic range end |
 | `static_leases` | list | `[]` | Static DHCP leases: `{mac, ip, hostname, public_ip?}` |
@@ -184,7 +182,7 @@ from jumpstarter.common.utils import env
 with env() as client:
     # Get network status
     status = client.dut_network.status()
-    print(status["bridge"]["name"])
+    print(status["interface_status"]["name"])
 
     # Get all DHCP leases
     leases = client.dut_network.get_leases()
@@ -206,7 +204,7 @@ with env() as client:
 
 ## nftables Coexistence
 
-The driver uses a dedicated nftables table (`table ip jumpstarter`) that does not conflict with firewalld or other nftables users. Firewalld manages its own `firewalld` table and does not touch other tables, even during reloads.
+The driver uses a dedicated nftables table (named after the interface, e.g. `table ip jumpstarter_enx00e04c683af1`) that does not conflict with firewalld or other nftables users. Firewalld manages its own `firewalld` table and does not touch other tables, even during reloads.
 
 ## Typical Hardware Setup
 
@@ -214,7 +212,7 @@ The driver uses a dedicated nftables table (`table ip jumpstarter`) that does no
 ┌──────────────┐     Ethernet      ┌──────────────────┐     LAN
 │   DUT        │────────────────────│   Exporter Host  │────────────
 │ (SA8775P)    │   (USB NIC)        │   (Sidekick)     │  (enp2s0)
-│ end0:        │                    │   br-jmp0:       │
+│ end0:        │                    │ enx00e04c683af1: │
 │ 192.168.100.10                    │   192.168.100.1   │
 └──────────────┘                    └──────────────────┘
 ```
@@ -228,25 +226,25 @@ On hosts running Docker, the default iptables policy is often set to
 Linux translates iptables rules into nftables under the hood, this creates
 a `table ip filter { chain FORWARD { policy drop } }` base chain that
 **all** forwarded packets must pass — including traffic routed through
-the jumpstarter bridge.
+the DUT interface.
 
 The driver **automatically** detects this situation using native nftables:
 when NAT is enabled, it checks if the `ip filter` table's FORWARD chain
 has `policy drop`.  If so, targeted `accept` rules are inserted directly
-into that chain for the bridge and upstream interfaces on startup, and
+into that chain for the DUT and upstream interfaces on startup, and
 removed by handle on cleanup.  No manual intervention or `iptables`
 binary is required.
 
 ### Per-interface IP forwarding
 
-The driver enables IPv4 forwarding only on the bridge and upstream
+The driver enables IPv4 forwarding only on the DUT and upstream
 interfaces (`net.ipv4.conf.<iface>.forwarding=1`) rather than the global
 `net.ipv4.ip_forward` sysctl.  This avoids turning a multi-homed host
 into a full router on every interface.  If forwarding still does not work,
 verify with:
 
 ```shell
-sysctl net.ipv4.conf.<bridge>.forwarding
+sysctl net.ipv4.conf.<interface>.forwarding
 sysctl net.ipv4.conf.<upstream>.forwarding
 ```
 

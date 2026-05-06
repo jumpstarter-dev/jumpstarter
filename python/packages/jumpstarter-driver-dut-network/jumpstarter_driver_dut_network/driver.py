@@ -10,15 +10,14 @@ from . import dnsmasq, iproute, nftables
 from jumpstarter.driver import Driver, export
 
 
-class BridgeStatus(TypedDict):
+class InterfaceStatus(TypedDict):
     name: str
     exists: bool
-    slaves: list[str]
     addresses: list[str]
 
 
 class NetworkStatus(TypedDict):
-    bridge: BridgeStatus
+    interface_status: InterfaceStatus
     interface: str
     upstream: str | None
     subnet: str
@@ -32,7 +31,6 @@ class NetworkStatus(TypedDict):
 @dataclass(kw_only=True)
 class DutNetwork(Driver):
     interface: str
-    bridge_name: str | None = None
     subnet: str = "192.168.100.0/24"
     gateway_ip: str = "192.168.100.1"
     upstream_interface: str | None = None
@@ -54,7 +52,7 @@ class DutNetwork(Driver):
     _upstream: str | None = field(init=False, default=None)
     _prefix_len: int = field(init=False, default=0)
     _table_name: str = field(init=False, default="jumpstarter")
-    _prev_fwd_bridge: str = field(init=False, default="0")
+    _prev_fwd_iface: str = field(init=False, default="0")
     _prev_fwd_upstream: str = field(init=False, default="0")
     _upstream_prefix_len: int = field(init=False, default=24)
     _added_aliases: set[str] = field(init=False, default_factory=set)
@@ -67,23 +65,7 @@ class DutNetwork(Driver):
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
-        if self.bridge_name is None:
-            self.bridge_name = f"br-jmp-{self.interface}"[:15]
-        if iproute.interface_exists(self.bridge_name):
-            slaves = iproute.get_bridge_slaves(self.bridge_name)
-            if self.interface in slaves:
-                self.logger.warning(
-                    "Bridge %s already exists with our interface %s attached; "
-                    "tearing down stale setup before reinitializing",
-                    self.bridge_name, self.interface,
-                )
-                self.cleanup()
-            else:
-                raise RuntimeError(
-                    f"Bridge {self.bridge_name!r} already exists with different "
-                    f"slaves {slaves!r}. Set bridge_name explicitly to avoid collisions."
-                )
-        self._table_name = nftables._table_name_for(self.bridge_name)
+        self._table_name = nftables._table_name_for(self.interface)
         self._check_system_requirements()
         self._validate_config()
         try:
@@ -94,7 +76,7 @@ class DutNetwork(Driver):
 
     def _check_system_requirements(self) -> None:
         if sys.platform != "linux":
-            raise RuntimeError("DutNetwork driver requires Linux (network namespaces, bridges, nftables)")
+            raise RuntimeError("DutNetwork driver requires Linux (network namespaces, nftables)")
 
         missing = []
         if not shutil.which("ip"):
@@ -144,20 +126,19 @@ class DutNetwork(Driver):
         dnsmasq.ensure_state_dir(self._state_path)
 
         iproute.nm_set_unmanaged(self.interface)
-        iproute.create_bridge(self.bridge_name, self.gateway_ip, self._prefix_len)
-        iproute.add_slave(self.bridge_name, self.interface)
+        iproute.configure_interface(self.interface, self.gateway_ip, self._prefix_len)
 
         if not self._nat_disabled():
-            self._prev_fwd_bridge = iproute.get_interface_forwarding(self.bridge_name)
+            self._prev_fwd_iface = iproute.get_interface_forwarding(self.interface)
             self._prev_fwd_upstream = iproute.get_interface_forwarding(self._upstream)
-            iproute.set_interface_forwarding(self.bridge_name, True)
+            iproute.set_interface_forwarding(self.interface, True)
             iproute.set_interface_forwarding(self._upstream, True)
-            self._fwd_rule_handles = nftables.ensure_filter_forward(self.bridge_name, self._upstream)
+            self._fwd_rule_handles = nftables.ensure_filter_forward(self.interface, self._upstream)
 
         if self.dhcp_enabled:
             dnsmasq.write_config(
                 state_dir=self._state_path,
-                bridge=self.bridge_name,
+                interface=self.interface,
                 range_start=self.dhcp_range_start,
                 range_end=self.dhcp_range_end,
                 static_leases=self.static_leases,
@@ -170,7 +151,7 @@ class DutNetwork(Driver):
         upstream_for_nat = self._upstream
         if self.nat_mode == "masquerade":
             nftables.apply_masquerade_rules(
-                self.bridge_name, upstream_for_nat, self.subnet,
+                self.interface, upstream_for_nat, self.subnet,
                 table_name=self._table_name,
             )
         elif self.nat_mode == "1to1":
@@ -181,13 +162,12 @@ class DutNetwork(Driver):
                 iproute.add_ip_alias(upstream_for_alias, ip, self._upstream_prefix_len)
                 self._added_aliases.add(ip)
             nftables.apply_1to1_rules(
-                self.bridge_name, upstream_for_alias, mappings, self.subnet,
+                self.interface, upstream_for_alias, mappings, self.subnet,
                 table_name=self._table_name,
             )
 
         self.logger.info(
-            "DUT network configured: bridge=%s interface=%s subnet=%s nat=%s",
-            self.bridge_name,
+            "DUT network configured: interface=%s subnet=%s nat=%s",
             self.interface,
             self.subnet,
             self.nat_mode,
@@ -221,12 +201,12 @@ class DutNetwork(Driver):
             self._fwd_rule_handles = []
 
         if not self._nat_disabled():
-            if self._prev_fwd_bridge == "0":
-                iproute.set_interface_forwarding(self.bridge_name, False)
+            if self._prev_fwd_iface == "0":
+                iproute.set_interface_forwarding(self.interface, False)
             if self._prev_fwd_upstream == "0" and self._upstream:
                 iproute.set_interface_forwarding(self._upstream, False)
 
-        iproute.delete_bridge(self.bridge_name)
+        iproute.deconfigure_interface(self.interface)
         iproute.nm_set_managed(self.interface)
 
     def close(self):
@@ -235,17 +215,15 @@ class DutNetwork(Driver):
 
     @export
     def status(self) -> NetworkStatus:
-        bridge_exists = iproute.interface_exists(self.bridge_name)
-        slaves = iproute.get_bridge_slaves(self.bridge_name) if bridge_exists else []
-        addresses = iproute.get_interface_addresses(self.bridge_name) if bridge_exists else []
+        iface_exists = iproute.interface_exists(self.interface)
+        addresses = iproute.get_interface_addresses(self.interface) if iface_exists else []
         leases = self._get_leases_list()
         nat_rules = nftables.list_rules(self._table_name)
 
         return NetworkStatus(
-            bridge=BridgeStatus(
-                name=self.bridge_name,
-                exists=bridge_exists,
-                slaves=slaves,
+            interface_status=InterfaceStatus(
+                name=self.interface,
+                exists=iface_exists,
                 addresses=addresses,
             ),
             interface=self.interface,
@@ -317,7 +295,7 @@ class DutNetwork(Driver):
 
         nftables.flush_rules(self._table_name)
         nftables.apply_1to1_rules(
-            self.bridge_name, upstream_for_alias, mappings, self.subnet,
+            self.interface, upstream_for_alias, mappings, self.subnet,
             table_name=self._table_name,
         )
 
@@ -346,7 +324,7 @@ class DutNetwork(Driver):
         if self._state_path and self.dhcp_enabled:
             dnsmasq.write_config(
                 state_dir=self._state_path,
-                bridge=self.bridge_name,
+                interface=self.interface,
                 range_start=self.dhcp_range_start,
                 range_end=self.dhcp_range_end,
                 static_leases=self.static_leases,

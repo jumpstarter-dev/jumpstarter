@@ -1,5 +1,4 @@
 import subprocess
-import textwrap
 from unittest.mock import patch
 
 from . import iproute
@@ -24,28 +23,12 @@ class TestDetectUpstreamInterface:
             assert iproute.detect_upstream_interface() is None
 
 
-class TestGetBridgeSlaves:
-    def test_parses_slave_list(self):
-        output = textwrap.dedent("""\
-            4: jmp-vhost@if3: <BROADCAST,MULTICAST,UP> mtu 1500 master br-jmp0 state UP
-            5: eth1@if6: <BROADCAST,MULTICAST,UP> mtu 1500 master br-jmp0 state UP
-        """)
-        fake = subprocess.CompletedProcess(args=[], returncode=0, stdout=output)
-        with patch.object(iproute, "_run", return_value=fake):
-            assert iproute.get_bridge_slaves("br-jmp0") == ["jmp-vhost", "eth1"]
-
-    def test_returns_empty_on_failure(self):
-        fake = subprocess.CompletedProcess(args=[], returncode=1, stdout="")
-        with patch.object(iproute, "_run", return_value=fake):
-            assert iproute.get_bridge_slaves("br-jmp0") == []
-
-
 class TestGetInterfaceAddresses:
     def test_parses_addresses(self):
-        output = "2: br-jmp0    inet 192.168.100.1/24 brd 192.168.100.255 scope global br-jmp0\n"
+        output = "2: eth0    inet 192.168.100.1/24 brd 192.168.100.255 scope global eth0\n"
         fake = subprocess.CompletedProcess(args=[], returncode=0, stdout=output)
         with patch.object(iproute, "_run", return_value=fake):
-            assert iproute.get_interface_addresses("br-jmp0") == ["192.168.100.1/24"]
+            assert iproute.get_interface_addresses("eth0") == ["192.168.100.1/24"]
 
 
 class TestGetInterfacePrefixLen:
@@ -61,14 +44,23 @@ class TestGetInterfacePrefixLen:
             assert iproute.get_interface_prefix_len("eth0") is None
 
 
-class TestCreateBridge:
+class TestConfigureInterface:
     def test_calls_correct_commands(self):
         with patch.object(iproute, "_run_priv") as mock:
-            iproute.create_bridge("br-test", "10.0.0.1", 24)
-            mock.assert_any_call(["ip", "link", "add", "br-test", "type", "bridge"])
-            mock.assert_any_call(["ip", "addr", "add", "10.0.0.1/24", "dev", "br-test"])
-            mock.assert_any_call(["ip", "link", "set", "br-test", "up"])
+            iproute.configure_interface("eth0", "10.0.0.1", 24)
+            mock.assert_any_call(["ip", "addr", "flush", "dev", "eth0"])
+            mock.assert_any_call(["ip", "addr", "add", "10.0.0.1/24", "dev", "eth0"])
+            mock.assert_any_call(["ip", "link", "set", "eth0", "up"])
             assert mock.call_count == 3
+
+
+class TestDeconfigureInterface:
+    def test_calls_correct_commands(self):
+        with patch.object(iproute, "_run_priv") as mock:
+            iproute.deconfigure_interface("eth0")
+            mock.assert_any_call(["ip", "addr", "flush", "dev", "eth0"], check=False)
+            mock.assert_any_call(["ip", "link", "set", "eth0", "down"], check=False)
+            assert mock.call_count == 2
 
 
 class TestNetworkManagerAwareness:
@@ -91,12 +83,12 @@ class TestGetInterfaceForwarding:
     def test_returns_current_value(self):
         fake = subprocess.CompletedProcess(args=[], returncode=0, stdout="1\n")
         with patch.object(iproute, "_run", return_value=fake):
-            assert iproute.get_interface_forwarding("br-jmp0") == "1"
+            assert iproute.get_interface_forwarding("eth0") == "1"
 
     def test_returns_zero_on_failure(self):
         fake = subprocess.CompletedProcess(args=[], returncode=1, stdout="")
         with patch.object(iproute, "_run", return_value=fake):
-            assert iproute.get_interface_forwarding("br-jmp0") == "0"
+            assert iproute.get_interface_forwarding("eth0") == "0"
 
     def test_uses_correct_sysctl_key(self):
         fake = subprocess.CompletedProcess(args=[], returncode=0, stdout="0\n")
@@ -108,7 +100,7 @@ class TestGetInterfaceForwarding:
 
     def test_set_interface_forwarding(self):
         with patch.object(iproute, "_run_priv") as mock:
-            iproute.set_interface_forwarding("br-jmp0", True)
+            iproute.set_interface_forwarding("eth0", True)
             mock.assert_called_once_with(
-                ["sysctl", "-w", "net.ipv4.conf.br-jmp0.forwarding=1"]
+                ["sysctl", "-w", "net.ipv4.conf.eth0.forwarding=1"]
             )

@@ -96,7 +96,7 @@ def write_dhcp_hosts(state_dir: Path, static_leases: list[dict[str, str]]) -> Pa
 
 def write_config(
     state_dir: Path,
-    bridge: str,
+    interface: str,
     range_start: str,
     range_end: str,
     static_leases: list[dict[str, str]],
@@ -114,7 +114,7 @@ def write_config(
     write_dhcp_hosts(state_dir, static_leases)
 
     lines = [
-        f"interface={bridge}",
+        f"interface={interface}",
         "bind-interfaces",
         f"dhcp-range={range_start},{range_end},12h",
         f"dhcp-option=option:router,{gateway_ip}",
@@ -286,7 +286,7 @@ def cleanup_state_dir(state_dir: Path) -> None:
 
 def update_config(
     state_dir: Path,
-    bridge: str,
+    interface: str,
     range_start: str,
     range_end: str,
     static_leases: list[dict[str, str]],
@@ -296,5 +296,5 @@ def update_config(
     process: subprocess.Popen | None = None,
 ) -> None:
     """Rewrite the dnsmasq config and reload the process."""
-    write_config(state_dir, bridge, range_start, range_end, static_leases, dns_servers, gateway_ip, dns_entries)
+    write_config(state_dir, interface, range_start, range_end, static_leases, dns_servers, gateway_ip, dns_entries)
     reload_config(process=process, state_dir=state_dir)

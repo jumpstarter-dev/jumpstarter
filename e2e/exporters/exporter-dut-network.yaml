@@ -8,7 +8,6 @@ export:
     type: jumpstarter_driver_dut_network.driver.DutNetwork
     config:
       interface: "jmp-vhost"
-      bridge_name: "br-jmp-e2e"
       subnet: "192.168.200.0/24"
       gateway_ip: "192.168.200.1"
       upstream_interface: "jmp-vup"

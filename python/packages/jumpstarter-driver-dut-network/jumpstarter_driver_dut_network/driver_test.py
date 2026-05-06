@@ -1,7 +1,7 @@
 """Integration tests for DutNetwork driver using veth pairs and network namespaces.
 
 These tests require root or passwordless sudo for network namespace
-and bridge operations. They are skipped when neither is available.
+and interface operations. They are skipped when neither is available.
 """
 
 import os
@@ -51,9 +51,9 @@ def _popen(cmd: str, ns: str | None = None) -> subprocess.Popen:
 def _can_nat_between_namespaces() -> bool:
     """Probe whether nftables NAT actually forwards packets between namespaces.
 
-    Sets up a bridge, NAT masquerade rules, and routing between two network
-    namespaces — the same topology the real tests use.  Returns False on any
-    failure so tests that need working NAT are cleanly skipped.
+    Sets up a veth pair with gateway IP, NAT masquerade rules, and routing
+    between two network namespaces.  Returns False on any failure so tests
+    that need working NAT are cleanly skipped.
     """
     if sys.platform != "linux" or not has_privileges():
         return False
@@ -62,27 +62,22 @@ def _can_nat_between_namespaces() -> bool:
 
     src_ns = "jmp-probe-src"
     dst_ns = "jmp-probe-dst"
-    bridge = "br-jmp-probe"
     table = "jmp_probe"
-    prev_fwd_br = "0"
+    prev_fwd_host = "0"
     prev_fwd_up = "0"
     fwd_handles: list[str] = []
     try:
-        # namespaces
         _run(f"ip netns add {src_ns}", check=False)
         _run(f"ip netns add {dst_ns}", check=False)
 
-        # veth: src_ns <--veth--> bridge (host) <--veth--> dst_ns
+        # veth: src_ns <--veth--> host <--veth--> dst_ns
         _run("ip link add jmp-ps0 type veth peer name jmp-ps1")
         _run(f"ip link set jmp-ps1 netns {src_ns}")
         _run("ip link add jmp-pd0 type veth peer name jmp-pd1")
         _run(f"ip link set jmp-pd1 netns {dst_ns}")
 
-        # bridge with gateway
-        _run(f"ip link add {bridge} type bridge")
-        _run(f"ip addr add 172.31.0.1/24 dev {bridge}")
-        _run(f"ip link set {bridge} up")
-        _run(f"ip link set jmp-ps0 master {bridge}")
+        # host-side DUT interface with gateway IP (no bridge)
+        _run("ip addr add 172.31.0.1/24 dev jmp-ps0")
         _run("ip link set jmp-ps0 up")
 
         # upstream side
@@ -101,10 +96,10 @@ def _can_nat_between_namespaces() -> bool:
         _run("ip link set lo up", ns=dst_ns)
         _run("ip route add 172.31.0.0/24 via 172.31.1.2", ns=dst_ns)
 
-        # enable per-interface forwarding + nft masquerade (restored in finally)
-        prev_fwd_br = _run(f"sysctl -n net.ipv4.conf.{bridge}.forwarding", check=False).stdout.strip() or "0"
+        # enable per-interface forwarding + nft masquerade
+        prev_fwd_host = _run("sysctl -n net.ipv4.conf.jmp-ps0.forwarding", check=False).stdout.strip() or "0"
         prev_fwd_up = _run("sysctl -n net.ipv4.conf.jmp-pd0.forwarding", check=False).stdout.strip() or "0"
-        _run(f"sysctl -w net.ipv4.conf.{bridge}.forwarding=1")
+        _run("sysctl -w net.ipv4.conf.jmp-ps0.forwarding=1")
         _run("sysctl -w net.ipv4.conf.jmp-pd0.forwarding=1")
         _run(f"nft add table ip {table}")
         _run(
@@ -123,7 +118,7 @@ def _can_nat_between_namespaces() -> bool:
         filter_check = _run("nft list chain ip filter FORWARD", check=False)
         if filter_check.returncode == 0 and "policy drop" in filter_check.stdout:
             for direction in ("iifname", "oifname"):
-                for iface in (bridge, "jmp-pd0"):
+                for iface in ("jmp-ps0", "jmp-pd0"):
                     r = _run(
                         f"nft -e -a insert rule ip filter FORWARD {direction} {iface} accept",
                         check=False,
@@ -140,10 +135,9 @@ def _can_nat_between_namespaces() -> bool:
     finally:
         for handle in fwd_handles:
             _run(f"nft delete rule ip filter FORWARD handle {handle}", check=False)
-        _run(f"sysctl -w net.ipv4.conf.{bridge}.forwarding={prev_fwd_br}", check=False)
+        _run(f"sysctl -w net.ipv4.conf.jmp-ps0.forwarding={prev_fwd_host}", check=False)
         _run(f"sysctl -w net.ipv4.conf.jmp-pd0.forwarding={prev_fwd_up}", check=False)
         _run(f"nft delete table ip {table}", check=False)
-        _run(f"ip link del {bridge}", check=False)
         _run("ip link del jmp-ps0", check=False)
         _run("ip link del jmp-pd0", check=False)
         _run(f"ip netns del {src_ns}", check=False)
@@ -165,8 +159,7 @@ class NetworkTestEnv:
     VETH_DUT = "jmp-vdut"
     VETH_UPSTREAM = "jmp-vup"
     VETH_EXT = "jmp-vext"
-    BRIDGE = "br-jmp-test"
-    NFT_TABLE = "jumpstarter_br_jmp_test"
+    NFT_TABLE = "jumpstarter_jmp_vhost"
     SUBNET = "192.168.200.0/24"
     GATEWAY = "192.168.200.1"
     DUT_IP = "192.168.200.10"
@@ -202,10 +195,8 @@ class NetworkTestEnv:
             _run(f"ip addr add {self.EXT_IP}/24 dev {self.VETH_EXT}", ns=self.EXT_NS)
             _run(f"ip link set {self.VETH_EXT} up", ns=self.EXT_NS)
             _run("ip link set lo up", ns=self.EXT_NS)
-            # Route from external back through our upstream
             _run(f"ip route add {self.SUBNET} via {self.UPSTREAM_IP}", ns=self.EXT_NS)
 
-            # Bring up DUT ns loopback
             _run("ip link set lo up", ns=self.DUT_NS)
         except Exception:
             self.teardown()
@@ -217,9 +208,7 @@ class NetworkTestEnv:
         _run(f"ip link del {self.VETH_UPSTREAM}", check=False)
         _run(f"ip netns del {self.DUT_NS}", check=False)
         _run(f"ip netns del {self.EXT_NS}", check=False)
-        # Bridge is cleaned up by the driver, but ensure removal
-        _run(f"ip link del {self.BRIDGE}", check=False)
-        _run(f"nft delete table ip jumpstarter_{self.BRIDGE.replace('-', '_')}", check=False)
+        _run(f"nft delete table ip {self.NFT_TABLE}", check=False)
         if os.path.isdir(self.state_dir):
             shutil.rmtree(self.state_dir, ignore_errors=True)
 
@@ -233,7 +222,6 @@ class NetworkTestEnv:
         """Create a DutNetwork driver configured for this test environment."""
         params = {
             "interface": self.VETH_HOST,
-            "bridge_name": self.BRIDGE,
             "subnet": self.SUBNET,
             "gateway_ip": self.GATEWAY,
             "upstream_interface": self.VETH_UPSTREAM,
@@ -262,29 +250,23 @@ def net_env():
 @requires_privileges
 @requires_nft
 @requires_dnsmasq
-class TestBridgeCreation:
-    """Test bridge and interface setup."""
+class TestInterfaceSetup:
+    """Test interface configuration (gateway IP assigned directly)."""
 
-    def test_bridge_exists_after_init(self, net_env: NetworkTestEnv):
+    def test_interface_configured_after_init(self, net_env: NetworkTestEnv):
         driver = net_env.create_driver()
         try:
-            result = _run(f"ip link show {net_env.BRIDGE}")
-            assert net_env.BRIDGE in result.stdout
-
-            result = _run(f"ip -o link show master {net_env.BRIDGE}")
-            assert net_env.VETH_HOST in result.stdout
-
-            result = _run(f"ip -o -4 addr show dev {net_env.BRIDGE}")
+            result = _run(f"ip -o -4 addr show dev {net_env.VETH_HOST}")
             assert net_env.GATEWAY in result.stdout
         finally:
             driver.cleanup()
 
-    def test_bridge_removed_after_cleanup(self, net_env: NetworkTestEnv):
+    def test_interface_deconfigured_after_cleanup(self, net_env: NetworkTestEnv):
         driver = net_env.create_driver()
         driver.cleanup()
 
-        result = _run(f"ip link show {net_env.BRIDGE}", check=False)
-        assert result.returncode != 0
+        result = _run(f"ip -o -4 addr show dev {net_env.VETH_HOST}", check=False)
+        assert net_env.GATEWAY not in (result.stdout or "")
 
 
 @requires_linux
@@ -337,7 +319,7 @@ class TestMasqueradeNat:
         try:
             result = _run(f"nft list table ip {net_env.NFT_TABLE}")
             assert "masquerade" in result.stdout
-            assert net_env.BRIDGE in result.stdout
+            assert net_env.VETH_HOST in result.stdout
             assert net_env.VETH_UPSTREAM in result.stdout
         finally:
             driver.cleanup()
@@ -437,8 +419,8 @@ class TestDriverRpc:
             with serve(driver) as client:
                 result = client.status()
                 assert isinstance(result, dict)
-                assert result["bridge"]["name"] == net_env.BRIDGE
-                assert result["bridge"]["exists"] is True
+                assert result["interface_status"]["name"] == net_env.VETH_HOST
+                assert result["interface_status"]["exists"] is True
                 assert result["nat_mode"] == "masquerade"
                 assert result["subnet"] == net_env.SUBNET
         finally:
@@ -489,18 +471,16 @@ class TestTeardown:
         driver = net_env.create_driver()
         driver.cleanup()
 
-        # Bridge should not exist
-        result = _run(f"ip link show {net_env.BRIDGE}", check=False)
-        assert result.returncode != 0
+        result = _run(f"ip -o -4 addr show dev {net_env.VETH_HOST}", check=False)
+        assert net_env.GATEWAY not in (result.stdout or "")
 
-        # nftables table should not exist
         result = _run(f"nft list table ip {net_env.NFT_TABLE}", check=False)
         assert result.returncode != 0
 
     def test_per_interface_forwarding_set(self, net_env: NetworkTestEnv):
         driver = net_env.create_driver()
         try:
-            result = _run(f"sysctl -n net.ipv4.conf.{net_env.BRIDGE}.forwarding")
+            result = _run(f"sysctl -n net.ipv4.conf.{net_env.VETH_HOST}.forwarding")
             assert result.stdout.strip() == "1"
             result = _run(f"sysctl -n net.ipv4.conf.{net_env.VETH_UPSTREAM}.forwarding")
             assert result.stdout.strip() == "1"
@@ -513,7 +493,7 @@ class TestTeardown:
 @requires_nft
 @requires_dnsmasq
 class TestDisabledNat:
-    """Test disabled NAT mode (bridge + DHCP only, no routing)."""
+    """Test disabled NAT mode (DHCP only, no routing)."""
 
     def test_no_nftables_rules_when_disabled(self, net_env: NetworkTestEnv):
         driver = net_env.create_driver(nat_mode="disabled")
@@ -531,11 +511,11 @@ class TestDisabledNat:
         finally:
             driver.cleanup()
 
-    def test_bridge_still_created(self, net_env: NetworkTestEnv):
+    def test_interface_still_configured(self, net_env: NetworkTestEnv):
         driver = net_env.create_driver(nat_mode="disabled")
         try:
-            result = _run(f"ip link show {net_env.BRIDGE}")
-            assert net_env.BRIDGE in result.stdout
+            result = _run(f"ip -o -4 addr show dev {net_env.VETH_HOST}")
+            assert net_env.GATEWAY in result.stdout
         finally:
             driver.cleanup()
 
@@ -606,14 +586,13 @@ class TestMultiDut1to1:
         """A lease without public_ip still gets masquerade in the ruleset."""
         leases = [
             {"mac": net_env.DUT_MAC, "ip": net_env.DUT_IP, "hostname": "dut1", "public_ip": self.PUBLIC_IP_1},
-            {"mac": self.DUT_MAC_2, "ip": self.DUT_IP_2, "hostname": "dut2"},  # no public_ip
+            {"mac": self.DUT_MAC_2, "ip": self.DUT_IP_2, "hostname": "dut2"},
         ]
         driver = net_env.create_driver(nat_mode="1to1", static_leases=leases)
         try:
             result = _run(f"nft list table ip {net_env.NFT_TABLE}")
             assert "masquerade" in result.stdout
             assert self.PUBLIC_IP_1 in result.stdout
-            # dut2 has no dedicated SNAT rule
             assert self.DUT_IP_2 not in result.stdout
         finally:
             driver.cleanup()
@@ -725,16 +704,16 @@ class TestOneToOneNatDataPlane:
 @requires_dnsmasq
 @requires_nat
 class TestDisabledNatIsolation:
-    """Test that disabled NAT prevents routing while still allowing local bridge access."""
+    """Test that disabled NAT prevents routing while still allowing local access."""
 
     def test_dut_cannot_reach_external_without_nat(self, net_env: NetworkTestEnv):
-        prev_fwd_br = (
-            _run(f"sysctl -n net.ipv4.conf.{net_env.BRIDGE}.forwarding", check=False).stdout.strip() or "0"
+        prev_fwd_host = (
+            _run(f"sysctl -n net.ipv4.conf.{net_env.VETH_HOST}.forwarding", check=False).stdout.strip() or "0"
         )
         prev_fwd_up = (
             _run(f"sysctl -n net.ipv4.conf.{net_env.VETH_UPSTREAM}.forwarding", check=False).stdout.strip() or "0"
         )
-        _run(f"sysctl -w net.ipv4.conf.{net_env.BRIDGE}.forwarding=0", check=False)
+        _run(f"sysctl -w net.ipv4.conf.{net_env.VETH_HOST}.forwarding=0", check=False)
         _run(f"sysctl -w net.ipv4.conf.{net_env.VETH_UPSTREAM}.forwarding=0", check=False)
         driver = net_env.create_driver(nat_mode="disabled")
         try:
@@ -748,7 +727,7 @@ class TestDisabledNatIsolation:
             assert result.returncode != 0, "DUT should NOT reach external with disabled NAT"
         finally:
             driver.cleanup()
-            _run(f"sysctl -w net.ipv4.conf.{net_env.BRIDGE}.forwarding={prev_fwd_br}", check=False)
+            _run(f"sysctl -w net.ipv4.conf.{net_env.VETH_HOST}.forwarding={prev_fwd_host}", check=False)
             _run(f"sysctl -w net.ipv4.conf.{net_env.VETH_UPSTREAM}.forwarding={prev_fwd_up}", check=False)
 
     def test_dut_can_still_reach_gateway(self, net_env: NetworkTestEnv):

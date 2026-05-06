@@ -1,7 +1,7 @@
 [project]
 name = "jumpstarter-driver-dut-network"
 dynamic = ["version", "urls"]
-description = "DUT network isolation driver with bridge, NAT, and DHCP management"
+description = "DUT network isolation driver with NAT, DHCP, and nftables management"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [

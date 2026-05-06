@@ -13,7 +13,7 @@ class TestWriteConfig:
 
         dnsmasq.write_config(
             state_dir=tmp_path,
-            bridge="br-jmp0",
+            interface="br-jmp0",
             range_start="192.168.100.100",
             range_end="192.168.100.200",
             static_leases=[{"mac": "aa:bb:cc:dd:ee:ff", "ip": "192.168.100.10", "hostname": "dut1"}],
@@ -33,7 +33,7 @@ class TestWriteConfig:
         from . import dnsmasq
 
         dnsmasq.write_config(
-            state_dir=tmp_path, bridge="br0", range_start="10.0.0.100",
+            state_dir=tmp_path, interface="br0", range_start="10.0.0.100",
             range_end="10.0.0.200", static_leases=[{"mac": "aa:bb:cc:dd:ee:ff", "ip": "10.0.0.10"}],
             dns_servers=[], gateway_ip="10.0.0.1",
         )
@@ -44,7 +44,7 @@ class TestWriteConfig:
         from . import dnsmasq
 
         dnsmasq.write_config(
-            state_dir=tmp_path, bridge="br0", range_start="10.0.0.100",
+            state_dir=tmp_path, interface="br0", range_start="10.0.0.100",
             range_end="10.0.0.200", static_leases=[], dns_servers=[],
             gateway_ip="10.0.0.1",
             dns_entries=[
@@ -62,7 +62,7 @@ class TestWriteConfig:
         from . import dnsmasq
 
         dnsmasq.write_config(
-            state_dir=tmp_path, bridge="br0", range_start="10.0.0.100",
+            state_dir=tmp_path, interface="br0", range_start="10.0.0.100",
             range_end="10.0.0.200", static_leases=[], dns_servers=[],
             gateway_ip="10.0.0.1",
         )
@@ -304,7 +304,7 @@ class TestUpdateConfig:
         with patch(f"{_DNSMASQ_MODULE}.write_config") as mock_write, \
              patch(f"{_DNSMASQ_MODULE}.reload_config") as mock_reload:
             dnsmasq.update_config(
-                state_dir=tmp_path, bridge="br0",
+                state_dir=tmp_path, interface="br0",
                 range_start="10.0.0.100", range_end="10.0.0.200",
                 static_leases=[], dns_servers=["8.8.8.8"],
                 gateway_ip="10.0.0.1", process=mock_proc,

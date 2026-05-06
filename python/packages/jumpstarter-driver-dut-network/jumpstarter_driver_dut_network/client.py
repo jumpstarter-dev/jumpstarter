@@ -16,7 +16,7 @@ class DutNetworkClient(DriverClient):
     """
 
     def status(self) -> dict:
-        """Get network status including bridge state, leases, and NAT info."""
+        """Get network status including interface state, leases, and NAT info."""
         return self.call("status")
 
     def get_dut_ip(self, mac: str) -> str | None:
@@ -59,7 +59,7 @@ class DutNetworkClient(DriverClient):
 
         @base.command()
         def status():
-            """Show network status (bridge, leases, NAT)."""
+            """Show network status (interface, leases, NAT)."""
             result = self.status()
             click.echo(json.dumps(result, indent=2))
 

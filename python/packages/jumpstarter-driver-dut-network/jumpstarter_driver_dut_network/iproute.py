@@ -1,4 +1,4 @@
-"""Bridge and interface management via iproute2 commands with NetworkManager awareness."""
+"""Interface management via iproute2 commands with NetworkManager awareness."""
 
 import logging
 import shutil
@@ -44,32 +44,19 @@ def nm_set_managed(interface: str) -> None:
         _run_priv(["nmcli", "device", "set", interface, "managed", "yes"], check=False)
 
 
-def create_bridge(name: str, gateway_ip: str, prefix_len: int) -> None:
-    """Create a bridge interface and assign an IP address."""
-    logger.info("Creating bridge %s with IP %s/%d", name, gateway_ip, prefix_len)
-    _run_priv(["ip", "link", "add", name, "type", "bridge"])
-    _run_priv(["ip", "addr", "add", f"{gateway_ip}/{prefix_len}", "dev", name])
-    _run_priv(["ip", "link", "set", name, "up"])
-
-
-def delete_bridge(name: str) -> None:
-    """Remove a bridge interface."""
-    logger.info("Deleting bridge %s", name)
-    _run_priv(["ip", "link", "set", name, "down"], check=False)
-    _run_priv(["ip", "link", "del", name], check=False)
-
-
-def add_slave(bridge_name: str, interface: str) -> None:
-    """Add an interface as a slave to a bridge."""
-    logger.info("Adding %s as slave to bridge %s", interface, bridge_name)
-    _run_priv(["ip", "link", "set", interface, "master", bridge_name])
+def configure_interface(interface: str, gateway_ip: str, prefix_len: int) -> None:
+    """Flush existing addresses, assign the gateway IP, and bring the interface up."""
+    logger.info("Configuring %s with IP %s/%d", interface, gateway_ip, prefix_len)
+    _run_priv(["ip", "addr", "flush", "dev", interface])
+    _run_priv(["ip", "addr", "add", f"{gateway_ip}/{prefix_len}", "dev", interface])
     _run_priv(["ip", "link", "set", interface, "up"])
 
 
-def remove_slave(interface: str) -> None:
-    """Remove an interface from its bridge."""
-    logger.info("Removing %s from bridge", interface)
-    _run_priv(["ip", "link", "set", interface, "nomaster"], check=False)
+def deconfigure_interface(interface: str) -> None:
+    """Flush addresses and bring the interface down."""
+    logger.info("Deconfiguring interface %s", interface)
+    _run_priv(["ip", "addr", "flush", "dev", interface], check=False)
+    _run_priv(["ip", "link", "set", interface, "down"], check=False)
 
 
 def add_ip_alias(interface: str, ip: str, prefix_len: int) -> None:
@@ -107,7 +94,6 @@ def detect_upstream_interface() -> str | None:
     result = _run(["ip", "route", "show", "default"], check=False)
     if result.returncode != 0 or not result.stdout.strip():
         return None
-    # Format: "default via <gw> dev <iface> ..."
     parts = result.stdout.strip().split()
     try:
         dev_idx = parts.index("dev")
@@ -122,21 +108,6 @@ def interface_exists(name: str) -> bool:
     return result.returncode == 0
 
 
-def get_bridge_slaves(bridge_name: str) -> list[str]:
-    """List interfaces enslaved to a bridge."""
-    result = _run(["ip", "-o", "link", "show", "master", bridge_name], check=False)
-    if result.returncode != 0:
-        return []
-    slaves = []
-    for line in result.stdout.strip().splitlines():
-        # Format: "4: eth1@if3: <...> master br0 ..."
-        parts = line.split(":")
-        if len(parts) >= 2:
-            iface = parts[1].strip().split("@")[0]
-            slaves.append(iface)
-    return slaves
-
-
 def get_interface_addresses(name: str) -> list[str]:
     """Get IP addresses assigned to an interface."""
     result = _run(["ip", "-o", "-4", "addr", "show", "dev", name], check=False)
@@ -145,7 +116,6 @@ def get_interface_addresses(name: str) -> list[str]:
     addrs = []
     for line in result.stdout.strip().splitlines():
         parts = line.split()
-        # Format: "idx: name inet IP/prefix scope ..."
         for i, part in enumerate(parts):
             if part == "inet" and i + 1 < len(parts):
                 addrs.append(parts[i + 1])
@@ -158,7 +128,6 @@ def get_interface_prefix_len(name: str) -> int | None:
     addrs = get_interface_addresses(name)
     if not addrs:
         return None
-    # addrs are in "IP/prefix" format
     try:
         return int(addrs[0].split("/")[1])
     except (IndexError, ValueError):

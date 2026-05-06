@@ -43,23 +43,23 @@ def _load_ruleset(ruleset: str) -> None:
         raise RuntimeError(f"Failed to load nftables ruleset: {result.stderr}")
 
 
-def _table_name_for(bridge: str) -> str:
-    return f"jumpstarter_{bridge}".replace("-", "_")
+def _table_name_for(interface: str) -> str:
+    return f"jumpstarter_{interface}".replace("-", "_")
 
 
 def apply_masquerade_rules(
-    bridge: str,
+    interface: str,
     upstream: str,
     subnet: str,
     table_name: str | None = None,
 ) -> None:
-    _validate_iface(bridge)
+    _validate_iface(interface)
     _validate_iface(upstream)
     _validate_subnet(subnet)
-    table = table_name or _table_name_for(bridge)
+    table = table_name or _table_name_for(interface)
     logger.info(
-        "Applying masquerade rules: bridge=%s upstream=%s subnet=%s table=%s",
-        bridge,
+        "Applying masquerade rules: interface=%s upstream=%s subnet=%s table=%s",
+        interface,
         upstream,
         subnet,
         table,
@@ -72,8 +72,8 @@ def apply_masquerade_rules(
             }}
             chain forward {{
                 type filter hook forward priority filter; policy accept;
-                iifname "{bridge}" oifname "{upstream}" accept
-                iifname "{upstream}" oifname "{bridge}" ct state related,established accept
+                iifname "{interface}" oifname "{upstream}" accept
+                iifname "{upstream}" oifname "{interface}" ct state related,established accept
             }}
         }}
     """)
@@ -82,22 +82,22 @@ def apply_masquerade_rules(
 
 
 def apply_1to1_rules(
-    bridge: str,
+    interface: str,
     upstream: str,
     mappings: list[dict[str, str]],
     subnet: str,
     table_name: str | None = None,
 ) -> None:
-    _validate_iface(bridge)
+    _validate_iface(interface)
     _validate_iface(upstream)
     _validate_subnet(subnet)
     for m in mappings:
         _validate_ip(m["private_ip"])
         _validate_ip(m["public_ip"])
-    table = table_name or _table_name_for(bridge)
+    table = table_name or _table_name_for(interface)
     logger.info(
-        "Applying 1:1 NAT rules: bridge=%s upstream=%s mappings=%d subnet=%s table=%s",
-        bridge,
+        "Applying 1:1 NAT rules: interface=%s upstream=%s mappings=%d subnet=%s table=%s",
+        interface,
         upstream,
         len(mappings),
         subnet,
@@ -113,7 +113,7 @@ def apply_1to1_rules(
         public_ip = m["public_ip"]
         prerouting_rules.append(f'        iifname "{upstream}" ip daddr {public_ip} dnat to {private_ip}')
         postrouting_rules.append(f'        ip saddr {private_ip} oifname "{upstream}" snat to {public_ip}')
-        forward_rules.append(f'        iifname "{upstream}" oifname "{bridge}" ip daddr {private_ip} accept')
+        forward_rules.append(f'        iifname "{upstream}" oifname "{interface}" ip daddr {private_ip} accept')
 
     prerouting_block = "\n".join(prerouting_rules)
     postrouting_block = "\n".join(postrouting_rules)
@@ -132,8 +132,8 @@ def apply_1to1_rules(
         f"    }}\n"
         f"    chain forward {{\n"
         f"        type filter hook forward priority filter; policy accept;\n"
-        f'        iifname "{bridge}" oifname "{upstream}" accept\n'
-        f'        iifname "{upstream}" oifname "{bridge}" ct state related,established accept\n'
+        f'        iifname "{interface}" oifname "{upstream}" accept\n'
+        f'        iifname "{upstream}" oifname "{interface}" ct state related,established accept\n'
         f"{forward_block}\n"
         f"    }}\n"
         f"}}\n"
@@ -155,7 +155,7 @@ def is_filter_forward_drop() -> bool:
     return "policy drop" in result.stdout
 
 
-def ensure_filter_forward(bridge: str, upstream: str) -> list[int]:
+def ensure_filter_forward(interface: str, upstream: str) -> list[int]:
     """Insert nft ACCEPT rules into ``ip filter FORWARD`` if its policy is drop.
 
     Returns a list of rule handles so they can be removed on cleanup.
@@ -164,7 +164,7 @@ def ensure_filter_forward(bridge: str, upstream: str) -> list[int]:
         return []
 
     handles: list[int] = []
-    for iface in (bridge, upstream):
+    for iface in (interface, upstream):
         for direction in ("iifname", "oifname"):
             result = _run_nft(
                 ["-e", "-a", "insert", "rule", "ip", "filter", "FORWARD",
@@ -180,7 +180,7 @@ def ensure_filter_forward(bridge: str, upstream: str) -> list[int]:
         logger.info(
             "Inserted %d nft rules into ip filter FORWARD for %s and %s "
             "(policy was drop, likely set by Docker)",
-            len(handles), bridge, upstream,
+            len(handles), interface, upstream,
         )
     return handles
 

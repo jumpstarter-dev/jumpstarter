@@ -10,7 +10,6 @@ def _make_driver(tmp_path, **overrides):
     """Create a DutNetwork driver with all system calls mocked."""
     params = {
         "interface": "eth-dut",
-        "bridge_name": "br-test",
         "subnet": "192.168.100.0/24",
         "gateway_ip": "192.168.100.1",
         "upstream_interface": "eth-up",
@@ -37,13 +36,12 @@ def _make_driver(tmp_path, **overrides):
         mock_dnsmasq.start.return_value = MagicMock()
         mock_iproute.detect_upstream_interface.return_value = "eth-up"
         mock_iproute.interface_exists.return_value = False
-        mock_iproute.get_bridge_slaves.return_value = []
         mock_iproute.get_interface_addresses.return_value = []
         mock_iproute.get_interface_forwarding.return_value = "0"
         mock_iproute.get_interface_prefix_len.return_value = 24
         mock_nftables.ensure_filter_forward.return_value = []
         mock_nftables.list_rules.return_value = ""
-        mock_nftables._table_name_for.return_value = "jumpstarter_br_test"
+        mock_nftables._table_name_for.return_value = "jumpstarter_eth_dut"
         driver = DutNetwork(**params)  # type: ignore[missing-argument]
 
     return driver, mock_iproute, mock_nftables, mock_dnsmasq
@@ -75,71 +73,6 @@ class TestDriverValidation:
         assert driver._prefix_len == 24
 
 
-class TestBridgeNameDerivation:
-    def test_auto_derives_from_interface(self, tmp_path: Path):
-        driver, _, _, _ = _make_driver(tmp_path, bridge_name=None, interface="eth0")
-        assert driver.bridge_name == "br-jmp-eth0"
-
-    def test_truncates_to_15_chars(self, tmp_path: Path):
-        driver, _, _, _ = _make_driver(tmp_path, bridge_name=None, interface="enx00e04c683af1")
-        assert len(driver.bridge_name) <= 15
-        assert driver.bridge_name == "br-jmp-enx00e04"
-
-    def test_explicit_bridge_name_preserved(self, tmp_path: Path):
-        driver, _, _, _ = _make_driver(tmp_path, bridge_name="my-bridge")
-        assert driver.bridge_name == "my-bridge"
-
-    def test_collision_with_different_slave_raises(self, tmp_path: Path):
-        with pytest.raises(RuntimeError, match="already exists with different slaves"):
-            with patch(f"{_DRIVER_MODULE}.sys") as mock_sys, \
-                 patch(f"{_DRIVER_MODULE}.shutil") as mock_shutil, \
-                 patch(f"{_DRIVER_MODULE}.iproute") as mock_iproute, \
-                 patch(f"{_DRIVER_MODULE}.nftables"), \
-                 patch(f"{_DRIVER_MODULE}.dnsmasq"):
-                mock_sys.platform = "linux"
-                mock_shutil.which.return_value = "/usr/bin/fake"
-                mock_iproute.interface_exists.return_value = True
-                mock_iproute.get_bridge_slaves.return_value = ["other-iface"]
-                from .driver import DutNetwork
-                DutNetwork(
-                    interface="eth0",
-                    bridge_name=None,
-                    subnet="192.168.100.0/24",
-                    gateway_ip="192.168.100.1",
-                    upstream_interface="eth-up",
-                    state_dir=str(tmp_path),
-                )  # type: ignore[missing-argument]
-
-    def test_restart_with_same_slave_succeeds(self, tmp_path: Path):
-        with patch(f"{_DRIVER_MODULE}.sys") as mock_sys, \
-             patch(f"{_DRIVER_MODULE}.shutil") as mock_shutil, \
-             patch(f"{_DRIVER_MODULE}.iproute") as mock_iproute, \
-             patch(f"{_DRIVER_MODULE}.nftables") as mock_nft, \
-             patch(f"{_DRIVER_MODULE}.dnsmasq") as mock_dns:
-            mock_sys.platform = "linux"
-            mock_shutil.which.return_value = "/usr/bin/fake"
-            mock_iproute.interface_exists.return_value = True
-            mock_iproute.get_bridge_slaves.return_value = ["eth0"]
-            mock_iproute.detect_upstream_interface.return_value = "eth-up"
-            mock_iproute.get_interface_forwarding.return_value = "0"
-            mock_iproute.get_interface_prefix_len.return_value = 24
-            mock_iproute.get_interface_addresses.return_value = []
-            mock_nft._table_name_for.return_value = "jumpstarter_br_jmp_eth0"
-            mock_nft.list_rules.return_value = ""
-            mock_dns.state_dir_for_interface.return_value = tmp_path
-            mock_dns.start.return_value = MagicMock()
-            from .driver import DutNetwork
-            driver = DutNetwork(
-                interface="eth0",
-                bridge_name=None,
-                subnet="192.168.100.0/24",
-                gateway_ip="192.168.100.1",
-                upstream_interface="eth-up",
-                state_dir=str(tmp_path),
-            )  # type: ignore[missing-argument]
-            assert driver.bridge_name == "br-jmp-eth0"
-
-
 class TestTransactionalSetup:
     def test_cleanup_called_on_setup_failure(self, tmp_path: Path):
         with pytest.raises(RuntimeError, match="Cannot detect upstream"):
@@ -152,11 +85,10 @@ class TestTransactionalSetup:
                 mock_shutil.which.return_value = "/usr/bin/fake"
                 mock_iproute.interface_exists.return_value = False
                 mock_iproute.detect_upstream_interface.return_value = None
-                mock_nft._table_name_for.return_value = "jumpstarter_br_test"
+                mock_nft._table_name_for.return_value = "jumpstarter_eth0"
                 from .driver import DutNetwork
                 DutNetwork(
                     interface="eth0",
-                    bridge_name="br-test",
                     subnet="192.168.100.0/24",
                     gateway_ip="192.168.100.1",
                     upstream_interface=None,
@@ -166,16 +98,15 @@ class TestTransactionalSetup:
 
 
 class TestDriverSetupMasquerade:
-    def test_calls_bridge_and_nat(self, tmp_path: Path):
+    def test_calls_configure_and_nat(self, tmp_path: Path):
         _, mock_ip, mock_nft, mock_dns = _make_driver(tmp_path, nat_mode="masquerade")
         mock_ip.nm_set_unmanaged.assert_called_once_with("eth-dut")
-        mock_ip.create_bridge.assert_called_once_with("br-test", "192.168.100.1", 24)
-        mock_ip.add_slave.assert_called_once_with("br-test", "eth-dut")
-        mock_ip.set_interface_forwarding.assert_any_call("br-test", True)
+        mock_ip.configure_interface.assert_called_once_with("eth-dut", "192.168.100.1", 24)
+        mock_ip.set_interface_forwarding.assert_any_call("eth-dut", True)
         mock_ip.set_interface_forwarding.assert_any_call("eth-up", True)
         mock_nft.apply_masquerade_rules.assert_called_once_with(
-            "br-test", "eth-up", "192.168.100.0/24",
-            table_name="jumpstarter_br_test",
+            "eth-dut", "eth-up", "192.168.100.0/24",
+            table_name="jumpstarter_eth_dut",
         )
         mock_dns.write_config.assert_called_once()
         mock_dns.start.assert_called_once()
@@ -186,7 +117,7 @@ class TestDriverSetupMasquerade:
 
     def test_calls_ensure_filter_forward(self, tmp_path: Path):
         _, _, mock_nft, _ = _make_driver(tmp_path, nat_mode="masquerade")
-        mock_nft.ensure_filter_forward.assert_called_once_with("br-test", "eth-up")
+        mock_nft.ensure_filter_forward.assert_called_once_with("eth-dut", "eth-up")
 
 
 class TestDriverSetup1to1:
@@ -204,8 +135,8 @@ class TestDriverSetup1to1:
             {"private_ip": "192.168.100.11", "public_ip": "10.0.0.51"},
         ]
         mock_nft.apply_1to1_rules.assert_called_once_with(
-            "br-test", "eth-up", expected_mappings, "192.168.100.0/24",
-            table_name="jumpstarter_br_test",
+            "eth-dut", "eth-up", expected_mappings, "192.168.100.0/24",
+            table_name="jumpstarter_eth_dut",
         )
 
     def test_skips_lease_without_public_ip(self, tmp_path: Path):
@@ -232,10 +163,9 @@ class TestDriverSetupDisabled:
         mock_ip.set_interface_forwarding.assert_not_called()
         mock_nft.apply_masquerade_rules.assert_not_called()
 
-    def test_bridge_still_created(self, tmp_path: Path):
+    def test_interface_still_configured(self, tmp_path: Path):
         _, mock_ip, _, _ = _make_driver(tmp_path, nat_mode="disabled")
-        mock_ip.create_bridge.assert_called_once()
-        mock_ip.add_slave.assert_called_once()
+        mock_ip.configure_interface.assert_called_once()
 
     def test_upstream_not_required(self, tmp_path: Path):
         driver, mock_ip, _, _ = _make_driver(
@@ -252,7 +182,7 @@ class TestDriverCleanup:
              patch(f"{_DRIVER_MODULE}.dnsmasq") as mock_dns2:
             driver.cleanup()
             mock_nft2.flush_rules.assert_called_once_with(driver._table_name)
-            mock_ip2.delete_bridge.assert_called_once_with("br-test")
+            mock_ip2.deconfigure_interface.assert_called_once_with("eth-dut")
             mock_ip2.nm_set_managed.assert_called_once_with("eth-dut")
             mock_dns2.stop.assert_called_once()
 
@@ -278,7 +208,7 @@ class TestDriverCleanup:
              patch(f"{_DRIVER_MODULE}.nftables"), \
              patch(f"{_DRIVER_MODULE}.dnsmasq"):
             driver.cleanup()
-            mock_ip2.set_interface_forwarding.assert_any_call("br-test", False)
+            mock_ip2.set_interface_forwarding.assert_any_call("eth-dut", False)
             mock_ip2.set_interface_forwarding.assert_any_call("eth-up", False)
 
     def test_cleanup_removes_filter_forward_rules(self, tmp_path: Path):
