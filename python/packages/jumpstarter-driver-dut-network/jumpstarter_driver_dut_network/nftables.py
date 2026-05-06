@@ -107,6 +107,7 @@ def apply_1to1_rules(
     prerouting_rules = []
     postrouting_rules = []
     forward_rules = []
+    output_rules = []
 
     for m in mappings:
         private_ip = m["private_ip"]
@@ -114,16 +115,22 @@ def apply_1to1_rules(
         prerouting_rules.append(f'        iifname "{upstream}" ip daddr {public_ip} dnat to {private_ip}')
         postrouting_rules.append(f'        ip saddr {private_ip} oifname "{upstream}" snat to {public_ip}')
         forward_rules.append(f'        iifname "{upstream}" oifname "{interface}" ip daddr {private_ip} accept')
+        output_rules.append(f"        ip daddr {public_ip} dnat to {private_ip}")
 
     prerouting_block = "\n".join(prerouting_rules)
     postrouting_block = "\n".join(postrouting_rules)
     forward_block = "\n".join(forward_rules)
+    output_block = "\n".join(output_rules)
 
     ruleset = (
         f"table ip {table} {{\n"
         f"    chain prerouting {{\n"
         f"        type nat hook prerouting priority dstnat; policy accept;\n"
         f"{prerouting_block}\n"
+        f"    }}\n"
+        f"    chain output {{\n"
+        f"        type nat hook output priority dstnat; policy accept;\n"
+        f"{output_block}\n"
         f"    }}\n"
         f"    chain postrouting {{\n"
         f"        type nat hook postrouting priority srcnat; policy accept;\n"

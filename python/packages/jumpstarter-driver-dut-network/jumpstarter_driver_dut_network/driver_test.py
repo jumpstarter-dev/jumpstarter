@@ -382,6 +382,7 @@ class TestOneToOneNat:
             assert "snat" in result.stdout
             assert self.PUBLIC_IP in result.stdout
             assert net_env.DUT_IP in result.stdout
+            assert "chain output" in result.stdout
         finally:
             driver.cleanup()
 
@@ -694,6 +695,28 @@ class TestOneToOneNatDataPlane:
                 check=False,
             )
             assert result.returncode == 0, f"DNAT ping failed: {result.stderr}"
+        finally:
+            driver.cleanup()
+
+    def test_exporter_can_reach_dut_via_public_ip(self, net_env: NetworkTestEnv):
+        """Hairpin NAT: the exporter host itself can reach the DUT via its public IP.
+
+        Locally-originated packets hit the nft output chain which DNATs the
+        public_ip to the DUT's private_ip, allowing automation scripts on
+        the exporter to use the same address as external hosts.
+        """
+        driver = net_env.create_driver(
+            nat_mode="1to1",
+            static_leases=self._leases_with_public_ip(net_env),
+        )
+        try:
+            net_env.configure_dut_static()
+            time.sleep(0.5)
+            result = _run(
+                f"ping -c 1 -W 2 {self.PUBLIC_IP}",
+                check=False,
+            )
+            assert result.returncode == 0, f"Hairpin DNAT ping failed: {result.stderr}"
         finally:
             driver.cleanup()
 

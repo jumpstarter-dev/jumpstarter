@@ -51,7 +51,7 @@ class TestOneToOneRuleset:
             assert "dnat to 192.168.100.11" in ruleset
             assert "snat to 10.0.0.50" in ruleset
             assert "snat to 10.0.0.51" in ruleset
-            assert ruleset.count("dnat to") == 2
+            assert ruleset.count("dnat to") == 4  # 2x prerouting + 2x output
             assert ruleset.count("snat to") == 2
 
     def test_empty_mappings(self):
@@ -61,6 +61,17 @@ class TestOneToOneRuleset:
             ruleset = mock_load.call_args[0][0]
             assert "masquerade" in ruleset
             assert "dnat to" not in ruleset
+
+    def test_output_chain_for_hairpin_nat(self):
+        """The output chain enables the exporter host to reach DUTs via public IPs."""
+        mappings = [{"private_ip": "192.168.100.10", "public_ip": "10.0.0.50"}]
+        with patch.object(nftables, "_run_nft"), \
+             patch.object(nftables, "_load_ruleset") as mock_load:
+            nftables.apply_1to1_rules("br-jmp0", "eth0", mappings, "192.168.100.0/24")
+            ruleset = mock_load.call_args[0][0]
+            assert "chain output" in ruleset
+            assert "type nat hook output priority dstnat" in ruleset
+            assert "ip daddr 10.0.0.50 dnat to 192.168.100.10" in ruleset
 
 
 class TestInterfaceNameValidation:
