@@ -146,3 +146,20 @@ def get_interface_addresses(name: str) -> list[str]:
                 addrs.append(parts[i + 1])
                 break
     return addrs
+
+
+def get_interface_prefix_len(name: str) -> int | None:
+    """Return the prefix length of the first IPv4 address on an interface, or None."""
+    result = _run(["ip", "-o", "-4", "addr", "show", "dev", name], check=False)
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+    for line in result.stdout.strip().splitlines():
+        parts = line.split()
+        # Format: "idx: name inet IP/prefix scope ..."
+        for i, part in enumerate(parts):
+            if part == "inet" and i + 1 < len(parts):
+                try:
+                    return int(parts[i + 1].split("/")[1])
+                except (IndexError, ValueError):
+                    pass
+    return None

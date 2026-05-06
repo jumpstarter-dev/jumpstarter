@@ -53,6 +53,7 @@ class DutNetwork(Driver):
     _state_path: Path | None = field(init=False, default=None)
     _upstream: str | None = field(init=False, default=None)
     _prefix_len: int = field(init=False, default=24)
+    _upstream_prefix_len: int = field(init=False, default=24)
     _table_name: str = field(init=False, default="jumpstarter")
     _prev_ip_forward: str = field(init=False, default="0")
 
@@ -123,6 +124,12 @@ class DutNetwork(Driver):
         else:
             self._upstream = self.upstream_interface
 
+        upstream_for_alias = self.public_interface or self._upstream
+        if upstream_for_alias:
+            detected = iproute.get_interface_prefix_len(upstream_for_alias)
+            if detected is not None:
+                self._upstream_prefix_len = detected
+
         self._state_path = Path(self.state_dir) if self.state_dir else dnsmasq.state_dir_for_interface(self.interface)
         dnsmasq.ensure_state_dir(self._state_path)
 
@@ -157,7 +164,7 @@ class DutNetwork(Driver):
             mappings = self._get_1to1_mappings()
             upstream_for_alias = self.public_interface or self._upstream
             for m in mappings:
-                iproute.add_ip_alias(upstream_for_alias, m["public_ip"], self._prefix_len)
+                iproute.add_ip_alias(upstream_for_alias, m["public_ip"], self._upstream_prefix_len)
             nftables.apply_1to1_rules(
                 self.bridge_name, upstream_for_alias, mappings, self.subnet,
                 table_name=self._table_name,
@@ -191,7 +198,7 @@ class DutNetwork(Driver):
             upstream_for_alias = self.public_interface or self._upstream
             if upstream_for_alias:
                 for m in self._get_1to1_mappings():
-                    iproute.remove_ip_alias(upstream_for_alias, m["public_ip"], self._prefix_len)
+                    iproute.remove_ip_alias(upstream_for_alias, m["public_ip"], self._upstream_prefix_len)
 
         if not self._nat_disabled() and self._prev_ip_forward == "0":
             iproute.set_ip_forwarding(False)
@@ -277,7 +284,7 @@ class DutNetwork(Driver):
         nftables.flush_rules(self._table_name)
         mappings = self._get_1to1_mappings()
         for m in mappings:
-            iproute.add_ip_alias(upstream_for_alias, m["public_ip"], self._prefix_len)
+            iproute.add_ip_alias(upstream_for_alias, m["public_ip"], self._upstream_prefix_len)
         nftables.apply_1to1_rules(
             self.bridge_name, upstream_for_alias, mappings, self.subnet,
             table_name=self._table_name,
