@@ -367,18 +367,20 @@ def test_expired_token_triggers_reauth():
             None,
         )
 
-    with pytest.raises(click.ClickException, match="Please try again now"):
+    with pytest.raises(click.ClickException, match="token is expired"):
         run_shell()
 
     login_mock.assert_called_once_with(config)
 
 
-def _make_config(token="tok", refresh_token="rt", path="/tmp/config.yaml"):
+def _make_config(token="tok", refresh_token="rt", path="/tmp/config.yaml", insecure_tls=False):
     """Create a mock config with sensible defaults."""
     config = Mock()
     config.token = token
     config.refresh_token = refresh_token
     config.path = path
+    config.tls = Mock()
+    config.tls.insecure = insecure_tls
     config.channel = AsyncMock(return_value=Mock(name="new_channel"))
     return config
 
@@ -438,6 +440,26 @@ class TestTryRefreshToken:
         assert config.refresh_token == "new_rt"
         lease.refresh_channel.assert_called_once()
         mock_save.save.assert_called_once()
+
+    @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
+    @patch("jumpstarter_cli.shell.Config")
+    @patch("jumpstarter_cli.shell.decode_jwt_issuer", return_value="https://issuer")
+    async def test_passes_insecure_tls_to_oidc_config(self, _mock_issuer, mock_oidc_cls, mock_save):
+        config = _make_config(insecure_tls=True)
+        lease = _make_mock_lease()
+
+        mock_oidc = AsyncMock()
+        mock_oidc.refresh_token_grant.return_value = {"access_token": "new_tok"}
+        mock_oidc_cls.return_value = mock_oidc
+
+        await _try_refresh_token(config, lease)
+
+        mock_oidc_cls.assert_called_once_with(
+            issuer="https://issuer",
+            client_id="jumpstarter-cli",
+            offline_access=True,
+            insecure_tls=True,
+        )
 
     @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
     @patch("jumpstarter_cli.shell.Config")
@@ -649,8 +671,8 @@ class TestMonitorTokenExpiry:
         await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
 
         mock_recovery.assert_awaited_once()
-        # Should print the green success message
-        mock_click.echo.assert_called()
+        # Success is silent — no user-visible output
+        mock_click.echo.assert_not_called()
 
     @patch("jumpstarter_cli.shell.click")
     @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
@@ -683,10 +705,8 @@ class TestMonitorTokenExpiry:
 
         await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
 
-        # Verify warning was echoed
-        mock_click.echo.assert_called()
-        args = mock_click.style.call_args
-        assert "auto-refresh" in args[0][0]
+        # Warning is now debug-level only — no user-visible output
+        mock_click.echo.assert_not_called()
 
     @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds", return_value=500)
