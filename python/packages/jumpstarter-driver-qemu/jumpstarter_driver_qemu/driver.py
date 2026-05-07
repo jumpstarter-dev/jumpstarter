@@ -378,7 +378,7 @@ class QemuPower(PowerInterface, Driver):
         # Create ISO image from cidata directory for cloud-init
         # This is more compatible than vvfat which may not be available in qemu-kvm
         self._cidata_iso = Path(self._cidata.name).parent / "cidata.iso"
-        
+
         # Try different ISO creation tools in order of preference
         iso_tools = ["genisoimage", "mkisofs", "xorriso"]
         iso_cmd = None
@@ -404,12 +404,12 @@ class QemuPower(PowerInterface, Driver):
                 break
             except (CalledProcessError, FileNotFoundError):
                 continue
-        
+
         if iso_cmd is None:
             raise RuntimeError(
                 "No ISO creation tool found. Please install one of: genisoimage, mkisofs, or xorriso"
             )
-        
+
         # Create the ISO image
         await run_process(iso_cmd, stdout=PIPE, stderr=PIPE)
 

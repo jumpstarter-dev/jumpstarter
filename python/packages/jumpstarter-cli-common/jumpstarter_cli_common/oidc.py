@@ -14,6 +14,11 @@ import click
 from aiohttp import web
 from anyio import create_memory_object_stream
 from anyio.to_thread import run_sync
+from authlib.integrations.requests_client import OAuth2Session
+from joserfc.jws import extract_compact
+from yarl import URL
+
+from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT, JMP_OIDC_DEVICE_FLOW
 
 # Authlib still pulls deprecated authlib.jose on first OAuth2Session use, not only at
 # import time; a transient catch_warnings() around the import does not suppress that.
@@ -31,11 +36,6 @@ warnings.filterwarnings(
     message=r"Unverified HTTPS request is being made.*",
     module=r"urllib3\..*",
 )
-from authlib.integrations.requests_client import OAuth2Session
-from joserfc.jws import extract_compact
-from yarl import URL
-
-from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT, JMP_OIDC_DEVICE_FLOW
 
 DEVICE_FLOW_POLL_INTERVAL = 5
 DEVICE_FLOW_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
