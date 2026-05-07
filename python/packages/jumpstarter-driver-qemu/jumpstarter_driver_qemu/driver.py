@@ -6,6 +6,7 @@ import logging
 import os
 import platform
 import shutil
+import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -315,6 +316,17 @@ class QemuPower(PowerInterface, Driver):
         for device in devices:
             cmdline += ["-device", device]
 
+        if self.parent.tpm:
+            cmdline += [
+                "-chardev", f"socket,id=chrtpm,path={self.parent._tpm_socket}",
+                "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
+            ]
+            match self.parent.arch:
+                case "aarch64":
+                    cmdline += ["-device", "tpm-tis-device,tpmdev=tpm0"]
+                case "x86_64":
+                    cmdline += ["-device", "tpm-crb,tpmdev=tpm0"]
+
         if bios.exists():
             cmdline += [
                 "-bios",
@@ -431,6 +443,25 @@ class QemuPower(PowerInterface, Driver):
             "virtio-blk-pci,drive=cidata",
         ]
 
+        if self.parent.tpm:
+            self.parent._tpm_dir.mkdir(parents=True, exist_ok=True)
+            self._swtpm_process = Popen(
+                [
+                    "swtpm", "socket",
+                    "--tpmstate", f"dir={self.parent._tpm_dir}",
+                    "--tpm2",
+                    "--ctrl", f"type=unixio,path={self.parent._tpm_socket}",
+                    "--flags", "not-need-init",
+                ],
+                stdin=PIPE,
+            )
+            for _ in range(50):
+                if Path(self.parent._tpm_socket).exists():
+                    break
+                time.sleep(0.1)
+            else:
+                raise RuntimeError("swtpm failed to start: socket not created within 5 seconds")
+
         self._process = Popen(cmdline, stdin=PIPE)
 
         qmp = QMPClient(self.parent.hostname)
@@ -466,6 +497,14 @@ class QemuPower(PowerInterface, Driver):
         else:
             self.logger.warning("already powered off, ignoring request")
 
+        if hasattr(self, "_swtpm_process"):
+            self._swtpm_process.terminate()
+            try:
+                self._swtpm_process.wait(timeout=5)
+            except TimeoutExpired:
+                self._swtpm_process.kill()
+            del self._swtpm_process
+
         if hasattr(self, "_cidata"):
             del self._cidata
 
@@ -496,6 +535,7 @@ class Qemu(Driver):
     smp: int = 2
     mem: str = "512M"
     disk_size: str | None = None  # e.g., "20G" (resize disk before boot)
+    tpm: bool = False
 
     hostname: str = "demo"
     username: str = "jumpstarter"
@@ -536,6 +576,14 @@ class Qemu(Driver):
             match v.protocol:
                 case "tcp":
                     self.children[k] = TcpNetwork(host=v.hostaddr, port=v.hostport)
+
+    @property
+    def _tpm_dir(self) -> Path:
+        return Path(self._tmp_dir.name) / "tpm"
+
+    @property
+    def _tpm_socket(self) -> str:
+        return str(Path(self._tmp_dir.name) / "tpm.sock")
 
     @property
     def _pty(self) -> str:

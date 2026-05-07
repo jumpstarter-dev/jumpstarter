@@ -93,6 +93,7 @@ async def _try_refresh_token(config, lease) -> bool:
             issuer=issuer,
             client_id="jumpstarter-cli",
             offline_access=True,
+            insecure_tls=getattr(config.tls, "insecure", False),
         )
 
         tokens = await oidc.refresh_token_grant(refresh_token)
@@ -115,7 +116,7 @@ async def _try_refresh_token(config, lease) -> bool:
         # Restore old token so the monitor doesn't think we succeeded
         config.token = old_token
         config.refresh_token = old_refresh_token
-        logger.debug("Token refresh failed: %s", e)
+        logger.info("Token refresh failed: %s", e)
         return False
 
 

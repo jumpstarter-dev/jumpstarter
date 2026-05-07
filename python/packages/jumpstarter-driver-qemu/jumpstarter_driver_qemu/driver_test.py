@@ -12,7 +12,7 @@ import pytest
 import requests
 from opendal import Operator
 
-from jumpstarter_driver_qemu.driver import Qemu, QemuFlasher
+from jumpstarter_driver_qemu.driver import Qemu, QemuFlasher, QemuPower
 
 from jumpstarter.common.utils import serve
 
@@ -628,3 +628,198 @@ async def test_flash_routes_oci_to_flash_oci():
         await flasher.flash("oci://quay.io/org/image:tag", partition="root")
 
         mock.assert_called_once_with("oci://quay.io/org/image:tag", "root")
+
+
+# TPM / swtpm Tests
+
+
+def test_tpm_disabled_by_default():
+    """TPM should be disabled by default."""
+    driver = Qemu()
+    assert driver.tpm is False
+
+
+def test_tpm_properties():
+    """TPM dir and socket paths should be under _tmp_dir."""
+    driver = Qemu(tpm=True)
+    assert driver._tpm_dir == Path(driver._tmp_dir.name) / "tpm"
+    assert driver._tpm_socket == str(Path(driver._tmp_dir.name) / "tpm.sock")
+
+
+async def _mock_run_process_for_iso(cmd, **kwargs):
+    """Mock run_process to simulate ISO tool availability (genisoimage)."""
+    result = AsyncMock()
+    result.returncode = 0
+    result.stdout = b""
+    result.stderr = b""
+    result.check_returncode = lambda: None
+    return result
+
+
+@pytest.mark.anyio
+async def test_tpm_starts_swtpm_process():
+    """When tpm=True, on() should start swtpm before QEMU."""
+    driver = Qemu(tpm=True)
+    power = driver.children["power"]
+    assert isinstance(power, QemuPower)
+
+    popen_calls = []
+
+    def mock_popen(cmd, **kwargs):
+        popen_calls.append(cmd)
+        if cmd[0] == "swtpm":
+            Path(driver._tpm_socket).touch()
+            proc = MagicMock()
+            proc.returncode = None
+            return proc
+        raise RuntimeError("stop before QEMU starts")
+
+    with patch("jumpstarter_driver_qemu.driver.Popen", side_effect=mock_popen):
+        with patch("jumpstarter_driver_qemu.driver.run_process", side_effect=_mock_run_process_for_iso):
+            with pytest.raises(RuntimeError, match="stop before QEMU starts"):
+                await power.on()
+
+    assert len(popen_calls) >= 1
+    swtpm_cmd = popen_calls[0]
+    assert swtpm_cmd[0] == "swtpm"
+    assert "socket" in swtpm_cmd
+    assert "--tpm2" in swtpm_cmd
+    assert f"dir={driver._tpm_dir}" in " ".join(swtpm_cmd)
+    assert driver._tpm_socket in " ".join(swtpm_cmd)
+
+
+@pytest.mark.anyio
+async def test_tpm_qemu_args_aarch64():
+    """aarch64 should use tpm-tis-device."""
+    driver = Qemu(tpm=True, arch="aarch64")
+    power = driver.children["power"]
+
+    popen_calls = []
+
+    def mock_popen(cmd, **kwargs):
+        popen_calls.append(cmd)
+        if cmd[0] == "swtpm":
+            Path(driver._tpm_socket).touch()
+            proc = MagicMock()
+            proc.returncode = None
+            return proc
+        raise RuntimeError("stop before QEMU starts")
+
+    with patch("jumpstarter_driver_qemu.driver.Popen", side_effect=mock_popen):
+        with patch("jumpstarter_driver_qemu.driver.run_process", side_effect=_mock_run_process_for_iso):
+            with pytest.raises(RuntimeError, match="stop before QEMU starts"):
+                await power.on()
+
+    qemu_cmd = popen_calls[1]
+    assert "-chardev" in qemu_cmd
+    chardev_idx = qemu_cmd.index("-chardev")
+    assert qemu_cmd[chardev_idx + 1].startswith("socket,id=chrtpm,path=")
+    assert "-tpmdev" in qemu_cmd
+    assert "tpm-tis-device,tpmdev=tpm0" in qemu_cmd
+
+
+@pytest.mark.anyio
+async def test_tpm_qemu_args_x86_64():
+    """x86_64 should use tpm-crb."""
+    driver = Qemu(tpm=True, arch="x86_64")
+    power = driver.children["power"]
+
+    popen_calls = []
+
+    def mock_popen(cmd, **kwargs):
+        popen_calls.append(cmd)
+        if cmd[0] == "swtpm":
+            Path(driver._tpm_socket).touch()
+            proc = MagicMock()
+            proc.returncode = None
+            return proc
+        raise RuntimeError("stop before QEMU starts")
+
+    with patch("jumpstarter_driver_qemu.driver.Popen", side_effect=mock_popen):
+        with patch("jumpstarter_driver_qemu.driver.run_process", side_effect=_mock_run_process_for_iso):
+            with pytest.raises(RuntimeError, match="stop before QEMU starts"):
+                await power.on()
+
+    qemu_cmd = popen_calls[1]
+    assert "tpm-crb,tpmdev=tpm0" in qemu_cmd
+
+
+@pytest.mark.anyio
+async def test_tpm_not_started_when_disabled():
+    """When tpm=False, swtpm should not be started."""
+    driver = Qemu(tpm=False)
+    power = driver.children["power"]
+
+    popen_calls = []
+
+    def mock_popen(cmd, **kwargs):
+        popen_calls.append(cmd)
+        raise RuntimeError("stop")
+
+    with patch("jumpstarter_driver_qemu.driver.Popen", side_effect=mock_popen):
+        with patch("jumpstarter_driver_qemu.driver.run_process", side_effect=_mock_run_process_for_iso):
+            with pytest.raises(RuntimeError, match="stop"):
+                await power.on()
+
+    assert len(popen_calls) == 1
+    assert popen_calls[0][0] != "swtpm"
+
+
+def test_tpm_cleanup_on_off():
+    """off() should terminate swtpm process."""
+    driver = Qemu(tpm=True)
+    power = driver.children["power"]
+
+    mock_swtpm = MagicMock()
+    mock_swtpm.wait = MagicMock(return_value=0)
+    power._swtpm_process = mock_swtpm
+
+    mock_qemu = MagicMock()
+    mock_qemu.wait = MagicMock(return_value=0)
+    power._process = mock_qemu
+
+    power.off()
+
+    mock_swtpm.terminate.assert_called_once()
+    assert not hasattr(power, "_swtpm_process")
+
+
+def test_tpm_cleanup_force_kill_on_timeout():
+    """off() should kill swtpm if it doesn't terminate within timeout."""
+    from subprocess import TimeoutExpired
+
+    driver = Qemu(tpm=True)
+    power = driver.children["power"]
+
+    mock_swtpm = MagicMock()
+    mock_swtpm.wait = MagicMock(side_effect=TimeoutExpired("swtpm", 5))
+    power._swtpm_process = mock_swtpm
+
+    mock_qemu = MagicMock()
+    mock_qemu.wait = MagicMock(return_value=0)
+    power._process = mock_qemu
+
+    power.off()
+
+    mock_swtpm.terminate.assert_called_once()
+    mock_swtpm.kill.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_tpm_socket_timeout():
+    """Should raise RuntimeError if swtpm socket doesn't appear."""
+    driver = Qemu(tpm=True)
+    power = driver.children["power"]
+
+    def mock_popen(cmd, **kwargs):
+        if cmd[0] == "swtpm":
+            proc = MagicMock()
+            proc.returncode = None
+            return proc
+        raise RuntimeError("should not reach QEMU")
+
+    with patch("jumpstarter_driver_qemu.driver.Popen", side_effect=mock_popen):
+        with patch("jumpstarter_driver_qemu.driver.run_process", side_effect=_mock_run_process_for_iso):
+            with patch("jumpstarter_driver_qemu.driver.time.sleep"):
+                with pytest.raises(RuntimeError, match="swtpm failed to start"):
+                    await power.on()
