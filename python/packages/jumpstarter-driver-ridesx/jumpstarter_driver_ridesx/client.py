@@ -1,6 +1,11 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional
+
+if TYPE_CHECKING:
+    from jumpstarter.common.oci import OciCredentials
 
 import click
 from jumpstarter_driver_composite.client import CompositeClient
@@ -275,16 +280,11 @@ class RideSXClient(FlasherClient, CompositeClient):
 
         return self._execute_flash_operation(_flash_operation, power_off=power_off)
 
-    def _read_oci_credentials(self, oci_url: str):
+    def _read_oci_credentials(self, oci_url: str) -> OciCredentials:
         """Read OCI registry credentials from environment variables or auth files."""
         from jumpstarter.common.oci import resolve_oci_credentials
 
-        username, password = resolve_oci_credentials(oci_url)
-
-        if bool(username) != bool(password):
-            raise click.ClickException("OCI authentication requires both username and password")
-
-        return username, password
+        return resolve_oci_credentials(oci_url)
 
     def _flash_oci_auto_impl(
         self,
@@ -292,7 +292,7 @@ class RideSXClient(FlasherClient, CompositeClient):
         partitions: Dict[str, str] | None = None,
     ):
         """Core implementation of OCI flash without wrapper logic."""
-        oci_username, oci_password = self._read_oci_credentials(oci_url)
+        creds = self._read_oci_credentials(oci_url)
 
         self.logger.info("Checking for fastboot devices on Exporter...")
         detection_result = self.call("detect_fastboot_device", 5, 2.0)
@@ -307,8 +307,8 @@ class RideSXClient(FlasherClient, CompositeClient):
             "flash_oci_image",
             oci_url,
             partitions,
-            oci_username,
-            oci_password,
+            creds.username,
+            creds.plain_password,
         )
 
         # Display FLS output to user
