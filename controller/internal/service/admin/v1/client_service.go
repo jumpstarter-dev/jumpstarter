@@ -193,6 +193,9 @@ func (s *ClientService) UpdateClient(ctx context.Context, req *jumpstarterv1.Cli
 	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
 		return nil, kerr(err)
 	}
+	if err := adminauthz.RequireNotExternallyManaged(&existing, "clients"); err != nil {
+		return nil, err
+	}
 	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
 		"jumpstarter.dev", "clients", "update"); err != nil {
 		return nil, err
@@ -227,6 +230,9 @@ func (s *ClientService) DeleteClient(ctx context.Context, req *jumpstarterv1.Del
 	var existing jumpstarterdevv1alpha1.Client
 	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
 		return nil, kerr(err)
+	}
+	if err := adminauthz.RequireNotExternallyManaged(&existing, "clients"); err != nil {
+		return nil, err
 	}
 	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
 		"jumpstarter.dev", "clients", "delete"); err != nil {

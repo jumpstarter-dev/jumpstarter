@@ -57,8 +57,14 @@ type ResourceMetadata struct {
 	// Kubernetes resourceVersion. Used by clients for optimistic concurrency
 	// and by Watch* RPCs as a resume cursor.
 	ResourceVersion string `protobuf:"bytes,3,opt,name=resource_version,json=resourceVersion,proto3" json:"resource_version,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// True when the resource is tracked by an external tool (ArgoCD,
+	// Flux, Helm, kustomize-controller, …). The controller refuses
+	// mutations on these via admin.v1 because edits would be reverted
+	// on the next reconciliation; cluster admins can still kubectl-edit.
+	// Derived from labels/annotations on every read.
+	ExternallyManaged bool `protobuf:"varint,4,opt,name=externally_managed,json=externallyManaged,proto3" json:"externally_managed,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ResourceMetadata) Reset() {
@@ -110,6 +116,13 @@ func (x *ResourceMetadata) GetResourceVersion() string {
 		return x.ResourceVersion
 	}
 	return ""
+}
+
+func (x *ResourceMetadata) GetExternallyManaged() bool {
+	if x != nil {
+		return x.ExternallyManaged
+	}
+	return false
 }
 
 // Lease is the canonical Jumpstarter Lease resource shape. It mirrors the
@@ -421,8 +434,14 @@ type Client struct {
 	// token is populated only on CreateClient responses (the bootstrap
 	// credential the controller mints inline) and is never echoed on
 	// Get/List/Update/Watch.
-	Token         *string           `protobuf:"bytes,5,opt,name=token,proto3,oneof" json:"token,omitempty"`
-	Metadata      *ResourceMetadata `protobuf:"bytes,6,opt,name=metadata,proto3,oneof" json:"metadata,omitempty"`
+	Token    *string           `protobuf:"bytes,5,opt,name=token,proto3,oneof" json:"token,omitempty"`
+	Metadata *ResourceMetadata `protobuf:"bytes,6,opt,name=metadata,proto3,oneof" json:"metadata,omitempty"`
+	// type reflects the authentication mechanism this Client uses:
+	// OIDC for auto-provisioned identity Clients (bearer is the OIDC
+	// token directly), TOKEN for everything else (admin.v1-created bots,
+	// kubectl-applied, legacy). Derived on read from spec.username and
+	// the jumpstarter.dev/owner annotation.
+	Type          *ClientType `protobuf:"varint,7,opt,name=type,proto3,enum=jumpstarter.v1.ClientType,oneof" json:"type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -499,16 +518,24 @@ func (x *Client) GetMetadata() *ResourceMetadata {
 	return nil
 }
 
+func (x *Client) GetType() ClientType {
+	if x != nil && x.Type != nil {
+		return *x.Type
+	}
+	return ClientType_CLIENT_TYPE_UNSPECIFIED
+}
+
 var File_jumpstarter_v1_resources_proto protoreflect.FileDescriptor
 
 const file_jumpstarter_v1_resources_proto_rawDesc = "" +
 	"\n" +
-	"\x1ejumpstarter/v1/resources.proto\x12\x0ejumpstarter.v1\x1a\x1fgoogle/api/field_behavior.proto\x1a\x19google/api/resource.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1bjumpstarter/v1/common.proto\x1a\x1fjumpstarter/v1/kubernetes.proto\"\xb8\x01\n" +
+	"\x1ejumpstarter/v1/resources.proto\x12\x0ejumpstarter.v1\x1a\x1fgoogle/api/field_behavior.proto\x1a\x19google/api/resource.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1bjumpstarter/v1/common.proto\x1a\x1fjumpstarter/v1/kubernetes.proto\"\xec\x01\n" +
 	"\x10ResourceMetadata\x12'\n" +
 	"\n" +
 	"created_by\x18\x01 \x01(\tB\x03\xe0A\x03H\x00R\tcreatedBy\x88\x01\x01\x12+\n" +
 	"\fowner_issuer\x18\x02 \x01(\tB\x03\xe0A\x03H\x01R\vownerIssuer\x88\x01\x01\x12.\n" +
-	"\x10resource_version\x18\x03 \x01(\tB\x03\xe0A\x03R\x0fresourceVersionB\r\n" +
+	"\x10resource_version\x18\x03 \x01(\tB\x03\xe0A\x03R\x0fresourceVersion\x122\n" +
+	"\x12externally_managed\x18\x04 \x01(\bB\x03\xe0A\x03R\x11externallyManagedB\r\n" +
 	"\v_created_byB\x0f\n" +
 	"\r_owner_issuer\"\x91\n" +
 	"\n" +
@@ -568,14 +595,15 @@ const file_jumpstarter_v1_resources_proto_rawDesc = "" +
 	"\t_usernameB\v\n" +
 	"\t_endpointB\b\n" +
 	"\x06_tokenB\v\n" +
-	"\t_metadata\"\xcf\x03\n" +
+	"\t_metadata\"\x92\x04\n" +
 	"\x06Client\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tB\x03\xe0A\bR\x04name\x12\x1f\n" +
 	"\busername\x18\x02 \x01(\tH\x00R\busername\x88\x01\x01\x12:\n" +
 	"\x06labels\x18\x03 \x03(\v2\".jumpstarter.v1.Client.LabelsEntryR\x06labels\x12$\n" +
 	"\bendpoint\x18\x04 \x01(\tB\x03\xe0A\x03H\x01R\bendpoint\x88\x01\x01\x12\x1e\n" +
 	"\x05token\x18\x05 \x01(\tB\x03\xe0A\x03H\x02R\x05token\x88\x01\x01\x12F\n" +
-	"\bmetadata\x18\x06 \x01(\v2 .jumpstarter.v1.ResourceMetadataB\x03\xe0A\x03H\x03R\bmetadata\x88\x01\x01\x1a9\n" +
+	"\bmetadata\x18\x06 \x01(\v2 .jumpstarter.v1.ResourceMetadataB\x03\xe0A\x03H\x03R\bmetadata\x88\x01\x01\x128\n" +
+	"\x04type\x18\a \x01(\x0e2\x1a.jumpstarter.v1.ClientTypeB\x03\xe0A\x03H\x04R\x04type\x88\x01\x01\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:U\xeaAR\n" +
@@ -583,7 +611,8 @@ const file_jumpstarter_v1_resources_proto_rawDesc = "" +
 	"\t_usernameB\v\n" +
 	"\t_endpointB\b\n" +
 	"\x06_tokenB\v\n" +
-	"\t_metadataB\xdf\x01\n" +
+	"\t_metadataB\a\n" +
+	"\x05_typeB\xdf\x01\n" +
 	"\x12com.jumpstarter.v1B\x0eResourcesProtoP\x01Z`github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3"
 
 var (
@@ -612,6 +641,7 @@ var file_jumpstarter_v1_resources_proto_goTypes = []any{
 	(*timestamppb.Timestamp)(nil), // 9: google.protobuf.Timestamp
 	(*Condition)(nil),             // 10: jumpstarter.v1.Condition
 	(ExporterStatus)(0),           // 11: jumpstarter.v1.ExporterStatus
+	(ClientType)(0),               // 12: jumpstarter.v1.ClientType
 }
 var file_jumpstarter_v1_resources_proto_depIdxs = []int32{
 	8,  // 0: jumpstarter.v1.Lease.duration:type_name -> google.protobuf.Duration
@@ -629,11 +659,12 @@ var file_jumpstarter_v1_resources_proto_depIdxs = []int32{
 	0,  // 12: jumpstarter.v1.Exporter.metadata:type_name -> jumpstarter.v1.ResourceMetadata
 	7,  // 13: jumpstarter.v1.Client.labels:type_name -> jumpstarter.v1.Client.LabelsEntry
 	0,  // 14: jumpstarter.v1.Client.metadata:type_name -> jumpstarter.v1.ResourceMetadata
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	12, // 15: jumpstarter.v1.Client.type:type_name -> jumpstarter.v1.ClientType
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_jumpstarter_v1_resources_proto_init() }

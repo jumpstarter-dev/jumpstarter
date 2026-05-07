@@ -5,6 +5,8 @@
 // Validates the JEP-0014 self-service shape from the consumer side
 // (Backstage / OpenShift Console / standalone web UI).
 
+import { execSync } from "node:child_process";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { AdminClientService, type AdminClient } from "../../src/admin/client.js";
@@ -90,6 +92,20 @@ describe("Admin HTTP API: developer self-service persona (TypeScript SDK)", () =
 
       const claims = decodeJwtClaims(token!);
       expect(claims.iss).toBe("https://localhost:8085");
+    });
+
+    it("admin.v1-created Clients carry type=CLIENT_TYPE_TOKEN", async () => {
+      const id = uniqueId("ts-alice-token-type");
+      const created = await alice.clients.create(nsParent(ns), {} as AdminClient, id);
+      fixtures.push({ kind: "clients", ns, id });
+
+      // Bot Clients minted via admin.v1 hold a static bootstrap token.
+      expect(created?.type).toBe("CLIENT_TYPE_TOKEN");
+
+      // Get returns the same classification (sanity — type is derived
+      // on every read, not just at Create time).
+      const got = await alice.clients.get(clientName(ns, id));
+      expect(got?.type).toBe("CLIENT_TYPE_TOKEN");
     });
   });
 
@@ -211,6 +227,34 @@ describe("Admin HTTP API: developer self-service persona (TypeScript SDK)", () =
       expect(updated?.labels).toMatchObject({ "updated-by": "alice" });
 
       await alice.clients.delete(clientName(ns, id));
+    });
+  });
+
+  describe("Client type classification (OIDC vs TOKEN)", () => {
+    // Seeds a Client whose shape mirrors the auto-provisioned identity
+    // Client the legacy client.v1 reconciler creates on first OIDC
+    // contact: spec.username set, no admin owner annotation.
+    const oidcShapedID = "ts-oidc-shaped";
+
+    beforeAll(() => {
+      // Apply via kubectl to bypass the admin Create handler (which
+      // would unconditionally stamp the owner annotation and put it
+      // into the SERVICE bucket).
+      const manifest = `apiVersion: jumpstarter.dev/v1alpha1
+kind: Client
+metadata:
+  name: ${oidcShapedID}
+  namespace: ${ns}
+spec:
+  username: dex:dev-alice
+`;
+      execSync(`kubectl apply -f -`, { input: manifest, encoding: "utf8" });
+      fixtures.push({ kind: "clients", ns, id: oidcShapedID });
+    });
+
+    it("an auto-provisioned-shaped Client is classified as CLIENT_TYPE_OIDC", async () => {
+      const got = await alice.clients.get(clientName(ns, oidcShapedID));
+      expect(got?.type).toBe("CLIENT_TYPE_OIDC");
     });
   });
 

@@ -220,6 +220,9 @@ func (s *LeaseService) UpdateLease(ctx context.Context, req *jumpstarterv1.Lease
 	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
 		return nil, kerr(err)
 	}
+	if err := adminauthz.RequireNotExternallyManaged(&existing, "leases"); err != nil {
+		return nil, err
+	}
 	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
 		"jumpstarter.dev", "leases", "update"); err != nil {
 		return nil, err
@@ -260,6 +263,9 @@ func (s *LeaseService) DeleteLease(ctx context.Context, req *jumpstarterv1.Delet
 	var existing jumpstarterdevv1alpha1.Lease
 	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
 		return nil, kerr(err)
+	}
+	if err := adminauthz.RequireNotExternallyManaged(&existing, "leases"); err != nil {
+		return nil, err
 	}
 	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
 		"jumpstarter.dev", "leases", "delete"); err != nil {

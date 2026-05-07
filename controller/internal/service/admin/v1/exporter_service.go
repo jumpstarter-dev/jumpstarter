@@ -197,6 +197,9 @@ func (s *ExporterService) UpdateExporter(ctx context.Context, req *jumpstarterv1
 	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
 		return nil, kerr(err)
 	}
+	if err := adminauthz.RequireNotExternallyManaged(&existing, "exporters"); err != nil {
+		return nil, err
+	}
 	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
 		"jumpstarter.dev", "exporters", "update"); err != nil {
 		return nil, err
@@ -229,6 +232,9 @@ func (s *ExporterService) DeleteExporter(ctx context.Context, req *jumpstarterv1
 	var existing jumpstarterdevv1alpha1.Exporter
 	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
 		return nil, kerr(err)
+	}
+	if err := adminauthz.RequireNotExternallyManaged(&existing, "exporters"); err != nil {
+		return nil, err
 	}
 	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
 		"jumpstarter.dev", "exporters", "delete"); err != nil {

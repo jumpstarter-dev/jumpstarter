@@ -103,6 +103,7 @@ export interface components {
              */
             readonly token?: string;
             metadata?: components["schemas"]["v1ResourceMetadata"];
+            type?: components["schemas"]["v1ClientType"];
         };
         v1ClientEvent: {
             eventType?: components["schemas"]["v1EventType"];
@@ -113,6 +114,22 @@ export interface components {
             clients?: components["schemas"]["v1Client"][];
             nextPageToken?: string;
         };
+        /**
+         * @description ClientType reflects how a Client authenticates to the controller.
+         *
+         *     OIDC clients are auto-provisioned for the OIDC user (or SA principal)
+         *     on their first contact via client.v1; they use the OIDC bearer token
+         *     directly to call into the controller, with no static credential.
+         *
+         *     TOKEN clients hold a static bootstrap credential — admin.v1.CreateClient
+         *     mints these inline; legacy and kubectl-applied Clients fall here too.
+         *
+         *     Derived at conversion time from spec.username and the
+         *     jumpstarter.dev/owner annotation; never persisted to the CRD.
+         * @default CLIENT_TYPE_UNSPECIFIED
+         * @enum {string}
+         */
+        v1ClientType: "CLIENT_TYPE_UNSPECIFIED" | "CLIENT_TYPE_OIDC" | "CLIENT_TYPE_TOKEN";
         /**
          * @description EventType classifies a Watch* stream event. Mirrors Kubernetes
          *     watch.Event semantics (ADDED, MODIFIED, DELETED, BOOKMARK).
@@ -145,6 +162,14 @@ export interface components {
              *     and by Watch* RPCs as a resume cursor.
              */
             readonly resourceVersion?: string;
+            /**
+             * @description True when the resource is tracked by an external tool (ArgoCD,
+             *     Flux, Helm, kustomize-controller, …). The controller refuses
+             *     mutations on these via admin.v1 because edits would be reverted
+             *     on the next reconciliation; cluster admins can still kubectl-edit.
+             *     Derived from labels/annotations on every read.
+             */
+            readonly externallyManaged?: boolean;
         };
     };
     responses: never;
@@ -184,6 +209,7 @@ export interface operations {
                      */
                     readonly token?: string;
                     metadata?: components["schemas"]["v1ResourceMetadata"];
+                    type?: components["schemas"]["v1ClientType"];
                 };
             };
         };

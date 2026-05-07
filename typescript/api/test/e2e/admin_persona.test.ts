@@ -5,6 +5,8 @@
 // than raw fetch. Validates that a web-portal-style consumer can speak
 // the same wire format with full type safety.
 
+import { execSync } from "node:child_process";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { AdminClientService, type AdminClient } from "../../src/admin/client.js";
@@ -155,4 +157,88 @@ describe("Admin HTTP API: full admin persona (TypeScript SDK)", () => {
     const eventType = await seen;
     expect(eventType).toMatch(/EVENT_TYPE_(ADDED|MODIFIED)/);
   }, 60_000);
+
+  describe("externally-managed resources are read-only via admin.v1", () => {
+    // GitOps-tracked resources should not be mutated through the
+    // admin API — any change would be reverted on the next
+    // reconciliation. The controller refuses Update/Delete on any
+    // resource carrying app.kubernetes.io/managed-by; the SDK
+    // surfaces the signal as `metadata.externallyManaged`.
+
+    const argoClientID = "ts-argo-client";
+    const argoExpID = "ts-argo-exp";
+
+    beforeAll(() => {
+      execSync(
+        "kubectl apply -f -",
+        {
+          input: `apiVersion: jumpstarter.dev/v1alpha1
+kind: Client
+metadata:
+  name: ${argoClientID}
+  namespace: ${ns}
+  labels:
+    app.kubernetes.io/managed-by: argocd
+---
+apiVersion: jumpstarter.dev/v1alpha1
+kind: Exporter
+metadata:
+  name: ${argoExpID}
+  namespace: ${ns}
+  labels:
+    app.kubernetes.io/managed-by: argocd
+`,
+          encoding: "utf8",
+        },
+      );
+    });
+
+    afterAll(() => {
+      execSync(
+        `kubectl delete client ${argoClientID} -n ${ns} --ignore-not-found && ` +
+          `kubectl delete exporter ${argoExpID} -n ${ns} --ignore-not-found`,
+        { encoding: "utf8" },
+      );
+    });
+
+    it("Get returns externallyManaged=true", async () => {
+      const c = await admin.clients.get(clientName(ns, argoClientID));
+      expect(c?.metadata?.externallyManaged).toBe(true);
+
+      const e = await admin.exporters.get(exporterName(ns, argoExpID));
+      expect(e?.metadata?.externallyManaged).toBe(true);
+    });
+
+    it("Update on Client is refused with FailedPrecondition", async () => {
+      const r = await captureRpc(() =>
+        admin.clients.update({
+          name: clientName(ns, argoClientID),
+          labels: { x: "y" },
+        }),
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.status.code).toBe(GRPC.FAILED_PRECONDITION);
+    });
+
+    it("Delete on Client is refused with FailedPrecondition", async () => {
+      const r = await captureRpc(() => admin.clients.delete(clientName(ns, argoClientID)));
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.status.code).toBe(GRPC.FAILED_PRECONDITION);
+    });
+
+    it("Update + Delete on Exporter are refused", async () => {
+      const upd = await captureRpc(() =>
+        admin.exporters.update({
+          name: exporterName(ns, argoExpID),
+          labels: { x: "y" },
+        }),
+      );
+      expect(upd.ok).toBe(false);
+      if (!upd.ok) expect(upd.status.code).toBe(GRPC.FAILED_PRECONDITION);
+
+      const del = await captureRpc(() => admin.exporters.delete(exporterName(ns, argoExpID)));
+      expect(del.ok).toBe(false);
+      if (!del.ok) expect(del.status.code).toBe(GRPC.FAILED_PRECONDITION);
+    });
+  });
 });

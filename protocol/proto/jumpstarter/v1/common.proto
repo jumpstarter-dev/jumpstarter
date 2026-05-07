@@ -18,6 +18,23 @@ enum ExporterStatus {
   EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED = 7;  // Exporter after lease hook failed
 }
 
+// ClientType reflects how a Client authenticates to the controller.
+//
+// OIDC clients are auto-provisioned for the OIDC user (or SA principal)
+// on their first contact via client.v1; they use the OIDC bearer token
+// directly to call into the controller, with no static credential.
+//
+// TOKEN clients hold a static bootstrap credential — admin.v1.CreateClient
+// mints these inline; legacy and kubectl-applied Clients fall here too.
+//
+// Derived at conversion time from spec.username and the
+// jumpstarter.dev/owner annotation; never persisted to the CRD.
+enum ClientType {
+  CLIENT_TYPE_UNSPECIFIED = 0;
+  CLIENT_TYPE_OIDC = 1;
+  CLIENT_TYPE_TOKEN = 2;
+}
+
 // Source of log stream messages
 enum LogSource {
   LOG_SOURCE_UNSPECIFIED = 0;       // Unspecified log source

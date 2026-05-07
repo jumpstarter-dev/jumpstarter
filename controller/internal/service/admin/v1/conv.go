@@ -13,6 +13,7 @@ package v1
 import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/identity"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/admin/managedby"
 	adminv1 "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/admin/v1"
 	jumpstarterv1 "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/utils"
@@ -43,9 +44,14 @@ func stampOwner(m *metav1.ObjectMeta, id identity.Identity) {
 
 // resourceMetadata builds an admin.v1.ResourceMetadata from a CRD's
 // ObjectMeta. created_by and owner_issuer come from annotations; the
-// resource_version is the kube-apiserver's optimistic-concurrency cursor.
+// resource_version is the kube-apiserver's optimistic-concurrency
+// cursor; externally_managed is derived from the well-known
+// `app.kubernetes.io/managed-by` label and ArgoCD/Helm fingerprints.
 func resourceMetadata(m metav1.ObjectMeta) *jumpstarterv1.ResourceMetadata {
-	out := &jumpstarterv1.ResourceMetadata{ResourceVersion: m.ResourceVersion}
+	out := &jumpstarterv1.ResourceMetadata{
+		ResourceVersion:    m.ResourceVersion,
+		ExternallyManaged:  managedby.IsExternal(&m),
+	}
 	if v, ok := m.Annotations[identity.CreatedByAnnotation]; ok {
 		s := v
 		out.CreatedBy = &s
@@ -150,6 +156,27 @@ func exporterStatusValue(s string) jumpstarterv1.ExporterStatus {
 
 // --- Client conversions ---------------------------------------------------
 
+// clientTypeOf classifies a Client by its authentication mechanism.
+//
+//   - OIDC: auto-provisioned by the legacy client.v1 reconciler on first
+//     OIDC contact. The reconciler stamps spec.username from the OIDC
+//     subject but does NOT stamp the admin-only owner annotation.
+//   - TOKEN: any Client that uses a static bootstrap credential —
+//     admin.v1.CreateClient mints these (and stamps the owner
+//     annotation in the process); kubectl-applied and pre-admin.v1
+//     bots fall here too.
+//
+// The owner annotation is the disambiguator: admin.v1 always stamps it
+// when admin.v1 created the Client, the legacy reconciler never does.
+func clientTypeOf(c *jumpstarterdevv1alpha1.Client) jumpstarterv1.ClientType {
+	if c.Spec.Username != nil && *c.Spec.Username != "" {
+		if _, owned := c.Annotations[identity.OwnerAnnotation]; !owned {
+			return jumpstarterv1.ClientType_CLIENT_TYPE_OIDC
+		}
+	}
+	return jumpstarterv1.ClientType_CLIENT_TYPE_TOKEN
+}
+
 func clientToProto(c *jumpstarterdevv1alpha1.Client) *jumpstarterv1.Client {
 	if c == nil {
 		return nil
@@ -158,6 +185,7 @@ func clientToProto(c *jumpstarterdevv1alpha1.Client) *jumpstarterv1.Client {
 		Name:     utils.UnparseClientIdentifier(kclient.ObjectKey{Namespace: c.Namespace, Name: c.Name}),
 		Labels:   c.Labels,
 		Metadata: resourceMetadata(c.ObjectMeta),
+		Type:     clientTypeOf(c).Enum(),
 	}
 	if ep := c.Status.Endpoint; ep != "" {
 		out.Endpoint = &ep

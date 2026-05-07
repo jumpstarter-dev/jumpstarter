@@ -42,6 +42,13 @@ message ResourceMetadata {
   // Kubernetes resourceVersion. Used by clients for optimistic concurrency
   // and by Watch* RPCs as a resume cursor.
   string resource_version = 3 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // True when the resource is tracked by an external tool (ArgoCD,
+  // Flux, Helm, kustomize-controller, …). The controller refuses
+  // mutations on these via admin.v1 because edits would be reverted
+  // on the next reconciliation; cluster admins can still kubectl-edit.
+  // Derived from labels/annotations on every read.
+  bool externally_managed = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Lease is the canonical Jumpstarter Lease resource shape. It mirrors the
@@ -152,4 +159,11 @@ message Client {
   optional string token = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
 
   optional ResourceMetadata metadata = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+
+  // type reflects the authentication mechanism this Client uses:
+  // OIDC for auto-provisioned identity Clients (bearer is the OIDC
+  // token directly), TOKEN for everything else (admin.v1-created bots,
+  // kubectl-applied, legacy). Derived on read from spec.username and
+  // the jumpstarter.dev/owner annotation.
+  optional ClientType type = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
 }

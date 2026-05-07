@@ -42,10 +42,9 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // ClientService is the namespace-scoped Client-actor API used by the
-// `jmp` CLI and any browser-based "thin client". It deliberately reuses
-// every request/response message from jumpstarter.v1 (including their
-// historical client.v1 field tag layout) so deployed CLI binaries keep
-// wire-compatible after the type definitions were hoisted.
+// `jmp` CLI. It deliberately reuses every request/response message
+// from jumpstarter.v1 (including their historical client.v1 field tag layout)
+// so deployed CLI binaries keep wire-compatible after the type definitions were hoisted.
 type ClientServiceClient interface {
 	GetExporter(ctx context.Context, in *v1.GetRequest, opts ...grpc.CallOption) (*v1.Exporter, error)
 	ListExporters(ctx context.Context, in *v1.ExporterListRequest, opts ...grpc.CallOption) (*v1.ExporterListResponse, error)
@@ -139,10 +138,9 @@ func (c *clientServiceClient) DeleteLease(ctx context.Context, in *v1.DeleteRequ
 // for forward compatibility.
 //
 // ClientService is the namespace-scoped Client-actor API used by the
-// `jmp` CLI and any browser-based "thin client". It deliberately reuses
-// every request/response message from jumpstarter.v1 (including their
-// historical client.v1 field tag layout) so deployed CLI binaries keep
-// wire-compatible after the type definitions were hoisted.
+// `jmp` CLI. It deliberately reuses every request/response message
+// from jumpstarter.v1 (including their historical client.v1 field tag layout)
+// so deployed CLI binaries keep wire-compatible after the type definitions were hoisted.
 type ClientServiceServer interface {
 	GetExporter(context.Context, *v1.GetRequest) (*v1.Exporter, error)
 	ListExporters(context.Context, *v1.ExporterListRequest) (*v1.ExporterListResponse, error)

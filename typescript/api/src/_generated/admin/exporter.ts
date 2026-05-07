@@ -163,6 +163,14 @@ export interface components {
              *     and by Watch* RPCs as a resume cursor.
              */
             readonly resourceVersion?: string;
+            /**
+             * @description True when the resource is tracked by an external tool (ArgoCD,
+             *     Flux, Helm, kustomize-controller, …). The controller refuses
+             *     mutations on these via admin.v1 because edits would be reverted
+             *     on the next reconciliation; cluster admins can still kubectl-edit.
+             *     Derived from labels/annotations on every read.
+             */
+            readonly externallyManaged?: boolean;
         };
     };
     responses: never;

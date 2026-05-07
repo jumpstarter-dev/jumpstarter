@@ -453,6 +453,11 @@
           "type": "string",
           "description": "Kubernetes resourceVersion. Used by clients for optimistic concurrency\nand by Watch* RPCs as a resume cursor.",
           "readOnly": true
+        },
+        "externallyManaged": {
+          "type": "boolean",
+          "description": "True when the resource is tracked by an external tool (ArgoCD,\nFlux, Helm, kustomize-controller, …). The controller refuses\nmutations on these via admin.v1 because edits would be reverted\non the next reconciliation; cluster admins can still kubectl-edit.\nDerived from labels/annotations on every read.",
+          "readOnly": true
         }
       },
       "description": "ResourceMetadata bundles the identity-attribution and concurrency-control\nfields the controller stamps onto every Jumpstarter resource. Each domain\nresource embeds this as a field named \"metadata\" so admin clients see a\nuniform shape across resources."

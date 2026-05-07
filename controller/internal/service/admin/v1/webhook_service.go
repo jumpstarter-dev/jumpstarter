@@ -141,6 +141,9 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, req *adminv1.Webhook
 	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
 		return nil, kerr(err)
 	}
+	if err := adminauthz.RequireNotExternallyManaged(&existing, "webhooks"); err != nil {
+		return nil, err
+	}
 	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
 		"jumpstarter.dev", "webhooks", "update"); err != nil {
 		return nil, err
@@ -188,6 +191,9 @@ func (s *WebhookService) DeleteWebhook(ctx context.Context, req *jumpstarterv1.D
 	var existing jumpstarterdevv1alpha1.Webhook
 	if err := s.watcher.Get(ctx, *key, &existing); err != nil {
 		return nil, kerr(err)
+	}
+	if err := adminauthz.RequireNotExternallyManaged(&existing, "webhooks"); err != nil {
+		return nil, err
 	}
 	if err := adminauthz.RequireOwnerOrClusterAdmin(ctx, s.watcher, &existing,
 		"jumpstarter.dev", "webhooks", "delete"); err != nil {

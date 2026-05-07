@@ -88,6 +88,66 @@ func (ExporterStatus) EnumDescriptor() ([]byte, []int) {
 	return file_jumpstarter_v1_common_proto_rawDescGZIP(), []int{0}
 }
 
+// ClientType reflects how a Client authenticates to the controller.
+//
+// OIDC clients are auto-provisioned for the OIDC user (or SA principal)
+// on their first contact via client.v1; they use the OIDC bearer token
+// directly to call into the controller, with no static credential.
+//
+// TOKEN clients hold a static bootstrap credential — admin.v1.CreateClient
+// mints these inline; legacy and kubectl-applied Clients fall here too.
+//
+// Derived at conversion time from spec.username and the
+// jumpstarter.dev/owner annotation; never persisted to the CRD.
+type ClientType int32
+
+const (
+	ClientType_CLIENT_TYPE_UNSPECIFIED ClientType = 0
+	ClientType_CLIENT_TYPE_OIDC        ClientType = 1
+	ClientType_CLIENT_TYPE_TOKEN       ClientType = 2
+)
+
+// Enum value maps for ClientType.
+var (
+	ClientType_name = map[int32]string{
+		0: "CLIENT_TYPE_UNSPECIFIED",
+		1: "CLIENT_TYPE_OIDC",
+		2: "CLIENT_TYPE_TOKEN",
+	}
+	ClientType_value = map[string]int32{
+		"CLIENT_TYPE_UNSPECIFIED": 0,
+		"CLIENT_TYPE_OIDC":        1,
+		"CLIENT_TYPE_TOKEN":       2,
+	}
+)
+
+func (x ClientType) Enum() *ClientType {
+	p := new(ClientType)
+	*p = x
+	return p
+}
+
+func (x ClientType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ClientType) Descriptor() protoreflect.EnumDescriptor {
+	return file_jumpstarter_v1_common_proto_enumTypes[1].Descriptor()
+}
+
+func (ClientType) Type() protoreflect.EnumType {
+	return &file_jumpstarter_v1_common_proto_enumTypes[1]
+}
+
+func (x ClientType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ClientType.Descriptor instead.
+func (ClientType) EnumDescriptor() ([]byte, []int) {
+	return file_jumpstarter_v1_common_proto_rawDescGZIP(), []int{1}
+}
+
 // Source of log stream messages
 type LogSource int32
 
@@ -128,11 +188,11 @@ func (x LogSource) String() string {
 }
 
 func (LogSource) Descriptor() protoreflect.EnumDescriptor {
-	return file_jumpstarter_v1_common_proto_enumTypes[1].Descriptor()
+	return file_jumpstarter_v1_common_proto_enumTypes[2].Descriptor()
 }
 
 func (LogSource) Type() protoreflect.EnumType {
-	return &file_jumpstarter_v1_common_proto_enumTypes[1]
+	return &file_jumpstarter_v1_common_proto_enumTypes[2]
 }
 
 func (x LogSource) Number() protoreflect.EnumNumber {
@@ -141,7 +201,7 @@ func (x LogSource) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LogSource.Descriptor instead.
 func (LogSource) EnumDescriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_common_proto_rawDescGZIP(), []int{1}
+	return file_jumpstarter_v1_common_proto_rawDescGZIP(), []int{2}
 }
 
 var File_jumpstarter_v1_common_proto protoreflect.FileDescriptor
@@ -157,7 +217,12 @@ const file_jumpstarter_v1_common_proto_rawDesc = "" +
 	"\x1bEXPORTER_STATUS_LEASE_READY\x10\x04\x12$\n" +
 	" EXPORTER_STATUS_AFTER_LEASE_HOOK\x10\x05\x12,\n" +
 	"(EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED\x10\x06\x12+\n" +
-	"'EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED\x10\a*\x98\x01\n" +
+	"'EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED\x10\a*V\n" +
+	"\n" +
+	"ClientType\x12\x1b\n" +
+	"\x17CLIENT_TYPE_UNSPECIFIED\x10\x00\x12\x14\n" +
+	"\x10CLIENT_TYPE_OIDC\x10\x01\x12\x15\n" +
+	"\x11CLIENT_TYPE_TOKEN\x10\x02*\x98\x01\n" +
 	"\tLogSource\x12\x1a\n" +
 	"\x16LOG_SOURCE_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11LOG_SOURCE_DRIVER\x10\x01\x12 \n" +
@@ -178,10 +243,11 @@ func file_jumpstarter_v1_common_proto_rawDescGZIP() []byte {
 	return file_jumpstarter_v1_common_proto_rawDescData
 }
 
-var file_jumpstarter_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_jumpstarter_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
 var file_jumpstarter_v1_common_proto_goTypes = []any{
 	(ExporterStatus)(0), // 0: jumpstarter.v1.ExporterStatus
-	(LogSource)(0),      // 1: jumpstarter.v1.LogSource
+	(ClientType)(0),     // 1: jumpstarter.v1.ClientType
+	(LogSource)(0),      // 2: jumpstarter.v1.LogSource
 }
 var file_jumpstarter_v1_common_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
@@ -201,7 +267,7 @@ func file_jumpstarter_v1_common_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpstarter_v1_common_proto_rawDesc), len(file_jumpstarter_v1_common_proto_rawDesc)),
-			NumEnums:      2,
+			NumEnums:      3,
 			NumMessages:   0,
 			NumExtensions: 0,
 			NumServices:   0,

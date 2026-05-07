@@ -70,6 +70,11 @@
                 "metadata": {
                   "$ref": "#/definitions/v1ResourceMetadata",
                   "readOnly": true
+                },
+                "type": {
+                  "$ref": "#/definitions/v1ClientType",
+                  "description": "type reflects the authentication mechanism this Client uses:\nOIDC for auto-provisioned identity Clients (bearer is the OIDC\ntoken directly), TOKEN for everything else (admin.v1-created bots,\nkubectl-applied, legacy). Derived on read from spec.username and\nthe jumpstarter.dev/owner annotation.",
+                  "readOnly": true
                 }
               },
               "description": "Client is the canonical Jumpstarter Client resource shape. The Client\nresource was previously not represented in client.v1 — it is added here\nfresh, so field numbering is unconstrained."
@@ -349,6 +354,11 @@
         "metadata": {
           "$ref": "#/definitions/v1ResourceMetadata",
           "readOnly": true
+        },
+        "type": {
+          "$ref": "#/definitions/v1ClientType",
+          "description": "type reflects the authentication mechanism this Client uses:\nOIDC for auto-provisioned identity Clients (bearer is the OIDC\ntoken directly), TOKEN for everything else (admin.v1-created bots,\nkubectl-applied, legacy). Derived on read from spec.username and\nthe jumpstarter.dev/owner annotation.",
+          "readOnly": true
         }
       },
       "description": "Client is the canonical Jumpstarter Client resource shape. The Client\nresource was previously not represented in client.v1 — it is added here\nfresh, so field numbering is unconstrained."
@@ -382,6 +392,16 @@
         }
       }
     },
+    "v1ClientType": {
+      "type": "string",
+      "enum": [
+        "CLIENT_TYPE_UNSPECIFIED",
+        "CLIENT_TYPE_OIDC",
+        "CLIENT_TYPE_TOKEN"
+      ],
+      "default": "CLIENT_TYPE_UNSPECIFIED",
+      "description": "ClientType reflects how a Client authenticates to the controller.\n\nOIDC clients are auto-provisioned for the OIDC user (or SA principal)\non their first contact via client.v1; they use the OIDC bearer token\ndirectly to call into the controller, with no static credential.\n\nTOKEN clients hold a static bootstrap credential — admin.v1.CreateClient\nmints these inline; legacy and kubectl-applied Clients fall here too.\n\nDerived at conversion time from spec.username and the\njumpstarter.dev/owner annotation; never persisted to the CRD."
+    },
     "v1EventType": {
       "type": "string",
       "enum": [
@@ -410,6 +430,11 @@
         "resourceVersion": {
           "type": "string",
           "description": "Kubernetes resourceVersion. Used by clients for optimistic concurrency\nand by Watch* RPCs as a resume cursor.",
+          "readOnly": true
+        },
+        "externallyManaged": {
+          "type": "boolean",
+          "description": "True when the resource is tracked by an external tool (ArgoCD,\nFlux, Helm, kustomize-controller, …). The controller refuses\nmutations on these via admin.v1 because edits would be reverted\non the next reconciliation; cluster admins can still kubectl-edit.\nDerived from labels/annotations on every read.",
           "readOnly": true
         }
       },
