@@ -305,18 +305,21 @@ class QemuPower(PowerInterface, Driver):
             ),
         ]
 
+        suffix = self.parent._virtio_suffix
         devices = [
-            "virtio-net-pci,netdev=eth0",
-            "virtio-gpu-pci",
+            f"virtio-net{suffix},netdev=eth0",
+            f"virtio-gpu{suffix}",
         ]
 
         if _vsock_available():
-            devices.append("vhost-vsock-pci,guest-cid={}".format(self.parent._cid))
+            devices.append(f"vhost-vsock{suffix},guest-cid={self.parent._cid}")
 
         for device in devices:
             cmdline += ["-device", device]
 
+        self.logger.info("TPM config: tpm=%s (type=%s)", self.parent.tpm, type(self.parent.tpm).__name__)
         if self.parent.tpm:
+            self.logger.info("Adding TPM device args for arch=%s, socket=%s", self.parent.arch, self.parent._tpm_socket)
             cmdline += [
                 "-chardev", f"socket,id=chrtpm,path={self.parent._tpm_socket}",
                 "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
@@ -393,7 +396,7 @@ class QemuPower(PowerInterface, Driver):
                 "-blockdev",
                 f"driver={image_driver},node-name=rootfs,file.driver=file,file.filename={root}",
                 "-device",
-                "virtio-blk-pci,drive=rootfs,bootindex=1",
+                f"virtio-blk{suffix},drive=rootfs,bootindex=1",
             ]
 
         self._cidata = self.parent.cidata()
@@ -440,10 +443,11 @@ class QemuPower(PowerInterface, Driver):
             "-blockdev",
             f"driver=raw,node-name=cidata,file.driver=file,file.filename={self._cidata_iso}",
             "-device",
-            "virtio-blk-pci,drive=cidata",
+            f"virtio-blk{suffix},drive=cidata",
         ]
 
         if self.parent.tpm:
+            self.logger.info("Starting swtpm: dir=%s, socket=%s", self.parent._tpm_dir, self.parent._tpm_socket)
             self.parent._tpm_dir.mkdir(parents=True, exist_ok=True)
             self._swtpm_process = Popen(
                 [
@@ -454,14 +458,25 @@ class QemuPower(PowerInterface, Driver):
                     "--flags", "not-need-init",
                 ],
                 stdin=PIPE,
+                stderr=PIPE,
             )
             for _ in range(50):
                 if Path(self.parent._tpm_socket).exists():
                     break
+                rc = self._swtpm_process.poll()
+                if rc is not None:
+                    stderr = self._swtpm_process.stderr.read().decode() if self._swtpm_process.stderr else ""
+                    raise RuntimeError(f"swtpm exited prematurely with code {rc}: {stderr}")
                 time.sleep(0.1)
             else:
-                raise RuntimeError("swtpm failed to start: socket not created within 5 seconds")
+                rc = self._swtpm_process.poll()
+                stderr = ""
+                if rc is not None and self._swtpm_process.stderr:
+                    stderr = self._swtpm_process.stderr.read().decode()
+                raise RuntimeError(f"swtpm failed to start: socket not created within 5 seconds (rc={rc}, stderr={stderr})")
+            self.logger.info("swtpm started successfully (pid=%d)", self._swtpm_process.pid)
 
+        self.logger.info("QEMU cmdline: %s", " ".join(str(a) for a in cmdline))
         self._process = Popen(cmdline, stdin=PIPE)
 
         qmp = QMPClient(self.parent.hostname)
@@ -536,6 +551,7 @@ class Qemu(Driver):
     mem: str = "512M"
     disk_size: str | None = None  # e.g., "20G" (resize disk before boot)
     tpm: bool = False
+    virtio_transport: Literal["mmio", "pci"] = "mmio"
 
     hostname: str = "demo"
     username: str = "jumpstarter"
@@ -576,6 +592,14 @@ class Qemu(Driver):
             match v.protocol:
                 case "tcp":
                     self.children[k] = TcpNetwork(host=v.hostaddr, port=v.hostport)
+
+    @property
+    def _virtio_suffix(self) -> str:
+        match self.virtio_transport:
+            case "pci":
+                return "-pci"
+            case "mmio":
+                return "-device"
 
     @property
     def _tpm_dir(self) -> Path:

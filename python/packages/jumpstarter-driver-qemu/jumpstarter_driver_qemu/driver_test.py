@@ -630,6 +630,112 @@ async def test_flash_routes_oci_to_flash_oci():
         mock.assert_called_once_with("oci://quay.io/org/image:tag", "root")
 
 
+# Virtio Transport Tests
+
+
+def test_virtio_transport_default_is_mmio():
+    """Default virtio transport should be mmio."""
+    driver = Qemu()
+    assert driver.virtio_transport == "mmio"
+
+
+def test_virtio_suffix_pci():
+    """PCI transport should produce -pci suffix."""
+    driver = Qemu(virtio_transport="pci")
+    assert driver._virtio_suffix == "-pci"
+
+
+def test_virtio_suffix_mmio():
+    """MMIO transport should produce -device suffix."""
+    driver = Qemu(virtio_transport="mmio")
+    assert driver._virtio_suffix == "-device"
+
+
+@pytest.mark.anyio
+async def test_virtio_transport_mmio_devices():
+    """MMIO transport should use virtio-*-device names in QEMU cmdline."""
+    driver = Qemu(virtio_transport="mmio")
+    power = driver.children["power"]
+
+    popen_calls = []
+
+    def mock_popen(cmd, **kwargs):
+        popen_calls.append(cmd)
+        raise RuntimeError("stop")
+
+    with patch("jumpstarter_driver_qemu.driver.Popen", side_effect=mock_popen):
+        with patch("jumpstarter_driver_qemu.driver.run_process", side_effect=_mock_run_process_for_iso):
+            with pytest.raises(RuntimeError, match="stop"):
+                await power.on()
+
+    qemu_cmd = popen_calls[0]
+    cmdline = " ".join(str(a) for a in qemu_cmd)
+    assert "virtio-net-device" in cmdline
+    assert "virtio-gpu-device" in cmdline
+    assert "virtio-net-pci" not in cmdline
+    assert "virtio-gpu-pci" not in cmdline
+
+
+@pytest.mark.anyio
+async def test_virtio_transport_pci_devices():
+    """PCI transport should use virtio-*-pci names in QEMU cmdline."""
+    driver = Qemu(virtio_transport="pci")
+    power = driver.children["power"]
+
+    popen_calls = []
+
+    def mock_popen(cmd, **kwargs):
+        popen_calls.append(cmd)
+        raise RuntimeError("stop")
+
+    with patch("jumpstarter_driver_qemu.driver.Popen", side_effect=mock_popen):
+        with patch("jumpstarter_driver_qemu.driver.run_process", side_effect=_mock_run_process_for_iso):
+            with pytest.raises(RuntimeError, match="stop"):
+                await power.on()
+
+    qemu_cmd = popen_calls[0]
+    cmdline = " ".join(str(a) for a in qemu_cmd)
+    assert "virtio-net-pci" in cmdline
+    assert "virtio-gpu-pci" in cmdline
+    assert "virtio-net-device" not in cmdline
+    assert "virtio-gpu-device" not in cmdline
+
+
+@pytest.mark.anyio
+async def test_virtio_transport_mmio_disk_devices():
+    """MMIO transport should use virtio-blk-device for disk drives."""
+    driver = Qemu(virtio_transport="mmio")
+    power = driver.children["power"]
+
+    root = Path(driver._tmp_dir.name) / "root"
+    root.write_bytes(b"\x00" * 512)
+
+    popen_calls = []
+
+    def mock_popen(cmd, **kwargs):
+        popen_calls.append(cmd)
+        raise RuntimeError("stop")
+
+    async def mock_run(cmd, **kwargs):
+        result = AsyncMock()
+        result.returncode = 0
+        result.stdout = json.dumps({"format": "raw", "virtual-size": 512}).encode()
+        result.stderr = b""
+        result.check_returncode = lambda: None
+        return result
+
+    with patch("jumpstarter_driver_qemu.driver.Popen", side_effect=mock_popen):
+        with patch("jumpstarter_driver_qemu.driver.run_process", side_effect=mock_run):
+            with pytest.raises(RuntimeError, match="stop"):
+                await power.on()
+
+    qemu_cmd = popen_calls[0]
+    cmdline = " ".join(str(a) for a in qemu_cmd)
+    assert "virtio-blk-device,drive=rootfs" in cmdline
+    assert "virtio-blk-device,drive=cidata" in cmdline
+    assert "virtio-blk-pci" not in cmdline
+
+
 # TPM / swtpm Tests
 
 
@@ -815,6 +921,7 @@ async def test_tpm_socket_timeout():
         if cmd[0] == "swtpm":
             proc = MagicMock()
             proc.returncode = None
+            proc.poll.return_value = None
             return proc
         raise RuntimeError("should not reach QEMU")
 
