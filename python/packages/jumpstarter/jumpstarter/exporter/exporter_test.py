@@ -443,39 +443,6 @@ def _make_exporter_for_report_status():
 
 
 class TestBeforeLeaseHookRaceGuard:
-    async def test_before_lease_hook_race_does_not_set_lease_ready(self):
-        """When the lease has already ended (lease_ended is set) by the
-        time the beforeLease hook completes, LEASE_READY must never appear
-        in the status history. This prevents the exporter from being stuck
-        in LEASE_READY permanently after a premature lease expiry."""
-        from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
-        from jumpstarter.exporter.hooks import HookExecutor
-
-        hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
-        )
-        hook_executor = HookExecutor(config=hook_config)
-
-        lease_ctx = make_lease_context()
-        lease_ctx.lease_ended.set()
-
-        statuses = []
-
-        async def track_status(status, message=""):
-            statuses.append(status)
-
-        exporter = make_exporter(lease_ctx, hook_executor)
-        exporter._report_status = AsyncMock(side_effect=track_status)
-
-        await hook_executor.run_before_lease_hook(
-            lease_ctx, exporter._report_status, exporter.stop, exporter._request_lease_release
-        )
-
-        assert ExporterStatus.LEASE_READY not in statuses, (
-            f"LEASE_READY must not appear when lease has already ended. Statuses: {statuses}"
-        )
-        assert lease_ctx.before_lease_hook.is_set()
-
     async def test_new_lease_after_before_hook_race_recovery(self):
         """After recovering from the beforeLease hook race condition
         (lease expired during hook), a new lease must be accepted and
@@ -503,7 +470,7 @@ class TestBeforeLeaseHookRaceGuard:
             lease_ctx_1, exporter._report_status, exporter.stop, exporter._request_lease_release
         )
 
-        lease_ctx_1.before_lease_hook.set()
+        assert lease_ctx_1.before_lease_hook.is_set()
         await exporter._cleanup_after_lease(lease_ctx_1)
         assert ExporterStatus.AVAILABLE in statuses
 
