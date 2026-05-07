@@ -84,7 +84,7 @@ class QemuFlasher(FlasherInterface, Driver):
                     await stream.send(chunk)
 
     @export
-    async def flash_oci(
+    async def flash_oci(  # noqa: C901
         self,
         oci_url: str,
         partition: str | None = None,
@@ -109,16 +109,16 @@ class QemuFlasher(FlasherInterface, Driver):
 
         # If explicit credentials were provided, validate immediately
         if oci_username or oci_password:
-        # Support OCI_PASSWORD_FILE for token rotation (e.g. projected SA tokens)
-        if not oci_password:
-            password_file = os.environ.get("OCI_PASSWORD_FILE")
-            if password_file:
-                try:
-                    with open(password_file) as f:
-                        oci_password = f.read().strip()
-                    self.logger.info("Read OCI password from OCI_PASSWORD_FILE")
-                except OSError as e:
-                    self.logger.warning(f"Failed to read OCI_PASSWORD_FILE ({password_file}): {e}")
+            # Support OCI_PASSWORD_FILE for token rotation (e.g. projected SA tokens)
+            if not oci_password:
+                password_file = os.environ.get("OCI_PASSWORD_FILE")
+                if password_file:
+                    try:
+                        with open(password_file) as f:
+                            oci_password = f.read().strip()
+                        self.logger.info("Read OCI password from OCI_PASSWORD_FILE")
+                    except OSError as e:
+                        self.logger.warning(f"Failed to read OCI_PASSWORD_FILE ({password_file}): {e}")
 
             if bool(oci_username) != bool(oci_password):
                 raise ValueError("OCI authentication requires both username and password")
@@ -404,7 +404,7 @@ class QemuPower(PowerInterface, Driver):
         # Create ISO image from cidata directory for cloud-init
         # This is more compatible than vvfat which may not be available in qemu-kvm
         self._cidata_iso = Path(self._cidata.name).parent / "cidata.iso"
-        
+
         # Try different ISO creation tools in order of preference
         iso_tools = ["genisoimage", "mkisofs", "xorriso"]
         iso_cmd = None
@@ -430,12 +430,12 @@ class QemuPower(PowerInterface, Driver):
                 break
             except (CalledProcessError, FileNotFoundError):
                 continue
-        
+
         if iso_cmd is None:
             raise RuntimeError(
                 "No ISO creation tool found. Please install one of: genisoimage, mkisofs, or xorriso"
             )
-        
+
         # Create the ISO image
         await run_process(iso_cmd, stdout=PIPE, stderr=PIPE)
 
@@ -473,7 +473,9 @@ class QemuPower(PowerInterface, Driver):
                 stderr = ""
                 if rc is not None and self._swtpm_process.stderr:
                     stderr = self._swtpm_process.stderr.read().decode()
-                raise RuntimeError(f"swtpm failed to start: socket not created within 5 seconds (rc={rc}, stderr={stderr})")
+                raise RuntimeError(
+                    f"swtpm failed to start: socket not created within 5 seconds (rc={rc}, stderr={stderr})"
+                )
             self.logger.info("swtpm started successfully (pid=%d)", self._swtpm_process.pid)
 
         self.logger.info("QEMU cmdline: %s", " ".join(str(a) for a in cmdline))
@@ -600,6 +602,8 @@ class Qemu(Driver):
                 return "-pci"
             case "mmio":
                 return "-device"
+            case _:
+                raise ValueError(f"Unknown virtio transport: {self.virtio_transport}")
 
     @property
     def _tpm_dir(self) -> Path:

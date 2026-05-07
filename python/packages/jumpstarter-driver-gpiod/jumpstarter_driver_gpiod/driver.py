@@ -3,11 +3,15 @@ from __future__ import annotations
 import time
 from collections.abc import Generator
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-try:
-    import gpiod
-except ImportError:
-    gpiod = None  # ty: ignore[invalid-assignment]
+if TYPE_CHECKING:
+    import gpiod  # ty: ignore[unresolved-import]
+else:
+    try:
+        import gpiod
+    except ImportError:
+        gpiod = None
 
 from jumpstarter_driver_power.common import PowerReading
 from jumpstarter_driver_power.driver import PowerInterface

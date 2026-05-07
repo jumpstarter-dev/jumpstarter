@@ -23,6 +23,7 @@ members = [
     "jumpstarter-driver-composite",
     "jumpstarter-driver-corellium",
     "jumpstarter-driver-doip",
+    "jumpstarter-driver-dut-network",
     "jumpstarter-driver-dutlink",
     "jumpstarter-driver-energenie",
     "jumpstarter-driver-esp32",
@@ -1999,6 +2000,7 @@ dependencies = [
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-corellium" },
     { name = "jumpstarter-driver-doip" },
+    { name = "jumpstarter-driver-dut-network" },
     { name = "jumpstarter-driver-dutlink" },
     { name = "jumpstarter-driver-esp32" },
     { name = "jumpstarter-driver-flashers" },
@@ -2045,6 +2047,7 @@ requires-dist = [
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-corellium", editable = "packages/jumpstarter-driver-corellium" },
     { name = "jumpstarter-driver-doip", editable = "packages/jumpstarter-driver-doip" },
+    { name = "jumpstarter-driver-dut-network", editable = "packages/jumpstarter-driver-dut-network" },
     { name = "jumpstarter-driver-dutlink", editable = "packages/jumpstarter-driver-dutlink" },
     { name = "jumpstarter-driver-esp32", editable = "packages/jumpstarter-driver-esp32" },
     { name = "jumpstarter-driver-flashers", editable = "packages/jumpstarter-driver-flashers" },
@@ -2443,6 +2446,34 @@ requires-dist = [
 dev = [
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-dut-network"
+source = { editable = "packages/jumpstarter-driver-dut-network" }
+dependencies = [
+    { name = "click" },
+    { name = "jumpstarter" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.1.7" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-asyncio", specifier = ">=0.26.0" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
 [[package]]

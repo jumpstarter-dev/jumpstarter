@@ -149,7 +149,7 @@ def test_handle_exceptions_with_reauth_retries_on_expired_token() -> None:
     @handle_exceptions_with_reauthentication(login_func)
     def command_fn(config=None):
         nonlocal call_count
-        call_count += 1
+        call_count += 1  # ty: ignore[unresolved-reference]
         if call_count == 1:
             exc = ConnectionError("token is expired")
             exc.set_config(config)
@@ -171,7 +171,7 @@ def test_handle_exceptions_with_reauth_does_not_retry_twice() -> None:
 
     def login_func(config):
         nonlocal login_calls
-        login_calls += 1
+        login_calls += 1  # ty: ignore[unresolved-reference]
 
     @handle_exceptions_with_reauthentication(login_func)
     def always_expired_fn(config=None):

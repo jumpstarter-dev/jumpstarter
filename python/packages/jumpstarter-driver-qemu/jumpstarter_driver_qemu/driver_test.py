@@ -656,6 +656,7 @@ async def test_virtio_transport_mmio_devices():
     """MMIO transport should use virtio-*-device names in QEMU cmdline."""
     driver = Qemu(virtio_transport="mmio")
     power = driver.children["power"]
+    assert isinstance(power, QemuPower)
 
     popen_calls = []
 
@@ -681,6 +682,7 @@ async def test_virtio_transport_pci_devices():
     """PCI transport should use virtio-*-pci names in QEMU cmdline."""
     driver = Qemu(virtio_transport="pci")
     power = driver.children["power"]
+    assert isinstance(power, QemuPower)
 
     popen_calls = []
 
@@ -706,6 +708,7 @@ async def test_virtio_transport_mmio_disk_devices():
     """MMIO transport should use virtio-blk-device for disk drives."""
     driver = Qemu(virtio_transport="mmio")
     power = driver.children["power"]
+    assert isinstance(power, QemuPower)
 
     root = Path(driver._tmp_dir.name) / "root"
     root.write_bytes(b"\x00" * 512)
@@ -799,6 +802,7 @@ async def test_tpm_qemu_args_aarch64():
     """aarch64 should use tpm-tis-device."""
     driver = Qemu(tpm=True, arch="aarch64")
     power = driver.children["power"]
+    assert isinstance(power, QemuPower)
 
     popen_calls = []
 
@@ -829,6 +833,7 @@ async def test_tpm_qemu_args_x86_64():
     """x86_64 should use tpm-crb."""
     driver = Qemu(tpm=True, arch="x86_64")
     power = driver.children["power"]
+    assert isinstance(power, QemuPower)
 
     popen_calls = []
 
@@ -855,6 +860,7 @@ async def test_tpm_not_started_when_disabled():
     """When tpm=False, swtpm should not be started."""
     driver = Qemu(tpm=False)
     power = driver.children["power"]
+    assert isinstance(power, QemuPower)
 
     popen_calls = []
 
@@ -875,10 +881,11 @@ def test_tpm_cleanup_on_off():
     """off() should terminate swtpm process."""
     driver = Qemu(tpm=True)
     power = driver.children["power"]
+    assert isinstance(power, QemuPower)
 
     mock_swtpm = MagicMock()
     mock_swtpm.wait = MagicMock(return_value=0)
-    power._swtpm_process = mock_swtpm
+    power._swtpm_process = mock_swtpm  # ty: ignore[possibly-unbound-attribute]
 
     mock_qemu = MagicMock()
     mock_qemu.wait = MagicMock(return_value=0)
@@ -896,10 +903,11 @@ def test_tpm_cleanup_force_kill_on_timeout():
 
     driver = Qemu(tpm=True)
     power = driver.children["power"]
+    assert isinstance(power, QemuPower)
 
     mock_swtpm = MagicMock()
     mock_swtpm.wait = MagicMock(side_effect=TimeoutExpired("swtpm", 5))
-    power._swtpm_process = mock_swtpm
+    power._swtpm_process = mock_swtpm  # ty: ignore[possibly-unbound-attribute]
 
     mock_qemu = MagicMock()
     mock_qemu.wait = MagicMock(return_value=0)
@@ -916,6 +924,7 @@ async def test_tpm_socket_timeout():
     """Should raise RuntimeError if swtpm socket doesn't appear."""
     driver = Qemu(tpm=True)
     power = driver.children["power"]
+    assert isinstance(power, QemuPower)
 
     def mock_popen(cmd, **kwargs):
         if cmd[0] == "swtpm":

@@ -241,16 +241,16 @@ def _handle_exception_group_with_reauth(eg, login_func):
     raise eg
 
 
-def handle_exceptions_with_reauthentication(login_func):
+def handle_exceptions_with_reauthentication(login_func):  # noqa: C901
     """Decorator to handle exceptions in blocking functions, including those wrapped in BaseExceptionGroup.
 
     When the wrapped function raises a token-expired error, the decorator re-authenticates
     via login_func and retries the function exactly once.
     """
 
-    def decorator(func):
+    def decorator(func):  # noqa: C901
         @wraps(func)
-        def wrapped(*args, **kwargs):
+        def wrapped(*args, **kwargs):  # noqa: C901
             retry = False
             try:
                 return func(*args, **kwargs)
