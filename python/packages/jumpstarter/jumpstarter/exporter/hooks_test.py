@@ -1214,6 +1214,11 @@ class TestBeforeLeaseHookLeaseEndedGuard:
             f"LEASE_READY must NOT be set when lease has already ended, got: {status_calls}"
         )
 
+        hook_started_calls = [s for s, _ in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK]
+        assert len(hook_started_calls) == 1, (
+            f"BEFORE_LEASE_HOOK must be reported (hook must run) even when lease has ended, got: {status_calls}"
+        )
+
     async def test_run_before_lease_hook_sets_event_even_when_lease_ended(self, lease_scope) -> None:
         """The before_lease_hook event must always be set (via the finally block)
         even when the lease has ended, to unblock downstream waiters."""
@@ -1263,4 +1268,9 @@ class TestBeforeLeaseHookLeaseEndedGuard:
         lease_ready_calls = [s for s, _ in status_calls if s == ExporterStatus.LEASE_READY]
         assert len(lease_ready_calls) == 0, (
             f"LEASE_READY must NOT be set when lease has ended (even with warn), got: {status_calls}"
+        )
+
+        hook_started_calls = [s for s, _ in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK]
+        assert len(hook_started_calls) == 1, (
+            f"BEFORE_LEASE_HOOK must be reported (hook must run) even when lease has ended, got: {status_calls}"
         )
