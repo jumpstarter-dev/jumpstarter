@@ -300,13 +300,14 @@ class QemuPower(PowerInterface, Driver):
             ),
         ]
 
+        suffix = self.parent._virtio_suffix
         devices = [
-            "virtio-net-pci,netdev=eth0",
-            "virtio-gpu-pci",
+            f"virtio-net{suffix},netdev=eth0",
+            f"virtio-gpu{suffix}",
         ]
 
         if _vsock_available():
-            devices.append("vhost-vsock-pci,guest-cid={}".format(self.parent._cid))
+            devices.append(f"vhost-vsock{suffix},guest-cid={self.parent._cid}")
 
         for device in devices:
             cmdline += ["-device", device]
@@ -390,7 +391,7 @@ class QemuPower(PowerInterface, Driver):
                 "-blockdev",
                 f"driver={image_driver},node-name=rootfs,file.driver=file,file.filename={root}",
                 "-device",
-                "virtio-blk-pci,drive=rootfs,bootindex=1",
+                f"virtio-blk{suffix},drive=rootfs,bootindex=1",
             ]
 
         self._cidata = self.parent.cidata()
@@ -437,7 +438,7 @@ class QemuPower(PowerInterface, Driver):
             "-blockdev",
             f"driver=raw,node-name=cidata,file.driver=file,file.filename={self._cidata_iso}",
             "-device",
-            "virtio-blk-pci,drive=cidata",
+            f"virtio-blk{suffix},drive=cidata",
         ]
 
         if self.parent.tpm:
@@ -545,6 +546,7 @@ class Qemu(Driver):
     mem: str = "512M"
     disk_size: str | None = None  # e.g., "20G" (resize disk before boot)
     tpm: bool = False
+    virtio_transport: Literal["mmio", "pci"] = "mmio"
 
     hostname: str = "demo"
     username: str = "jumpstarter"
@@ -585,6 +587,14 @@ class Qemu(Driver):
             match v.protocol:
                 case "tcp":
                     self.children[k] = TcpNetwork(host=v.hostaddr, port=v.hostport)
+
+    @property
+    def _virtio_suffix(self) -> str:
+        match self.virtio_transport:
+            case "pci":
+                return "-pci"
+            case "mmio":
+                return "-device"
 
     @property
     def _tpm_dir(self) -> Path:
