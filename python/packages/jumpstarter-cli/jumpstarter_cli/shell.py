@@ -199,7 +199,7 @@ async def _handle_token_refresh(config, lease, remaining, warn_state, token_stat
     """Try to recover the token and update warning state accordingly."""
     recovery_msg = await _attempt_token_recovery(config, lease)
     if recovery_msg:
-        click.echo(click.style(f"\n{recovery_msg}", fg="green"))
+        logger.debug(recovery_msg)
         warn_state["expiry"] = False
         warn_state["refresh_failed"] = False
         warn_state["token_expired"] = False
@@ -240,14 +240,7 @@ async def _monitor_token_expiry(config, lease, cancel_scope, token_state=None) -
             if remaining <= _TOKEN_REFRESH_THRESHOLD_SECONDS:
                 await _handle_token_refresh(config, lease, remaining, warn_state, token_state)
             elif remaining <= TOKEN_EXPIRY_WARNING_SECONDS and not warn_state["expiry"]:
-                duration = format_duration(remaining)
-                click.echo(
-                    click.style(
-                        f"\nToken expires in {duration}. Will attempt auto-refresh.",
-                        fg="yellow",
-                        bold=True,
-                    )
-                )
+                logger.debug("Token expires in %s, will attempt auto-refresh", format_duration(remaining))
                 warn_state["expiry"] = True
 
             # Check more frequently as we approach expiry

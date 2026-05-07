@@ -108,6 +108,17 @@ class QemuFlasher(FlasherInterface, Driver):
 
         # If explicit credentials were provided, validate immediately
         if oci_username or oci_password:
+        # Support OCI_PASSWORD_FILE for token rotation (e.g. projected SA tokens)
+        if not oci_password:
+            password_file = os.environ.get("OCI_PASSWORD_FILE")
+            if password_file:
+                try:
+                    with open(password_file) as f:
+                        oci_password = f.read().strip()
+                    self.logger.info("Read OCI password from OCI_PASSWORD_FILE")
+                except OSError as e:
+                    self.logger.warning(f"Failed to read OCI_PASSWORD_FILE ({password_file}): {e}")
+
             if bool(oci_username) != bool(oci_password):
                 raise ValueError("OCI authentication requires both username and password")
         else:

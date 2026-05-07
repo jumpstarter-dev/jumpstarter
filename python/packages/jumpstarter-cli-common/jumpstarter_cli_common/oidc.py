@@ -22,6 +22,15 @@ warnings.filterwarnings(
     message=r"authlib\.jose module is deprecated.*",
     module=r"authlib\..*",
 )
+
+# When the user opts into --insecure-tls, we set verify=False on the requests session.
+# urllib3 emits InsecureRequestWarning for every such request; suppress it since the
+# user has already acknowledged the risk.
+warnings.filterwarnings(
+    "ignore",
+    message=r"Unverified HTTPS request is being made.*",
+    module=r"urllib3\..*",
+)
 from authlib.integrations.requests_client import OAuth2Session
 from joserfc.jws import extract_compact
 from yarl import URL
