@@ -241,7 +241,26 @@ def _handle_exception_group_with_reauth(eg, login_func):
     raise eg
 
 
-def handle_exceptions_with_reauthentication(login_func):  # noqa: C901
+def _try_reauth(exc: BaseException, login_func) -> bool:
+    if isinstance(exc, BaseExceptionGroup):
+        return _handle_exception_group_with_reauth(exc, login_func)
+    return _handle_single_exception_with_reauth(exc, login_func)
+
+
+def _invoke_with_mapped_exceptions(func, *args, **kwargs):
+    try:
+        return func(*args, **kwargs)
+    except Exception as e:
+        if cli_exc := _map_cli_exception(e):
+            raise cli_exc from None
+        raise
+    except KeyboardInterrupt as e:
+        if cli_exc := _map_cli_exception(e):
+            raise cli_exc from None
+        raise
+
+
+def handle_exceptions_with_reauthentication(login_func):
     """Decorator to handle exceptions in blocking functions, including those wrapped in BaseExceptionGroup.
 
     When the wrapped function raises a token-expired error, the decorator re-authenticates
