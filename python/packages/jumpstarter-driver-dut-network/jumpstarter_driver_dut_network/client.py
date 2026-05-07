@@ -1,0 +1,141 @@
+"""Client interface for the DUT Network isolation driver."""
+
+import json
+
+import click
+
+from jumpstarter.client import DriverClient
+from jumpstarter.client.decorators import driver_click_group
+
+
+class DutNetworkClient(DriverClient):
+    """Client for the DutNetwork driver.
+
+    Provides methods to query network status, manage DHCP leases,
+    and inspect NAT rules.
+    """
+
+    def status(self) -> dict:
+        """Get network status including interface state, leases, and NAT info."""
+        return self.call("status")
+
+    def get_dut_ip(self, mac: str) -> str | None:
+        """Look up the assigned IP for a DUT by MAC address."""
+        return self.call("get_dut_ip", mac)
+
+    def get_leases(self) -> list[dict]:
+        """List all current DHCP leases (dynamic + static)."""
+        return self.call("get_leases")
+
+    def add_static_lease(self, mac: str, ip: str, hostname: str = "", public_ip: str | None = None) -> None:
+        """Add a DHCP static lease at runtime."""
+        self.call("add_static_lease", mac, ip, hostname, public_ip)
+
+    def remove_static_lease(self, mac: str) -> None:
+        """Remove a DHCP static lease."""
+        self.call("remove_static_lease", mac)
+
+    def get_nat_rules(self) -> str:
+        """List active nftables rules."""
+        return self.call("get_nat_rules")
+
+    def get_dns_entries(self) -> list[dict[str, str]]:
+        """List configured DNS entries."""
+        return self.call("get_dns_entries")
+
+    def add_dns_entry(self, hostname: str, ip: str) -> None:
+        """Add a custom DNS entry."""
+        self.call("add_dns_entry", hostname, ip)
+
+    def remove_dns_entry(self, hostname: str) -> None:
+        """Remove a custom DNS entry."""
+        self.call("remove_dns_entry", hostname)
+
+    def cli(self):  # noqa: C901
+        @driver_click_group(self)
+        def base():
+            """DUT Network Isolation"""
+            pass
+
+        @base.command()
+        def status():
+            """Show network status (interface, leases, NAT)."""
+            result = self.status()
+            click.echo(json.dumps(result, indent=2))
+
+        @base.command()
+        def leases():
+            """Show all current DHCP leases."""
+            result = self.get_leases()
+            if not result:
+                click.echo("No active DHCP leases.")
+                return
+            click.echo(f"{'MAC':<20} {'IP':<16} {'Hostname':<20} {'Expiry'}")
+            click.echo("-" * 70)
+            for lease in result:
+                click.echo(f"{lease['mac']:<20} {lease['ip']:<16} {lease.get('hostname', ''):<20} {lease['expiry']}")
+
+        @base.command("get-ip")
+        @click.argument("mac")
+        def get_ip(mac: str):
+            """Look up assigned IP for a DUT by MAC address."""
+            ip = self.get_dut_ip(mac)
+            if ip:
+                click.echo(ip)
+            else:
+                raise click.ClickException(f"No lease found for MAC {mac}")
+
+        @base.command("add-lease")
+        @click.argument("mac")
+        @click.argument("ip")
+        @click.option("--hostname", "-n", default="", help="Hostname for the lease")
+        @click.option("--public-ip", default=None, help="Public IP for 1:1 NAT mapping")
+        def add_lease(mac: str, ip: str, hostname: str, public_ip: str | None):
+            """Add a static DHCP lease."""
+            self.add_static_lease(mac, ip, hostname, public_ip)
+            click.echo(f"Added static lease: {mac} -> {ip}")
+
+        @base.command("remove-lease")
+        @click.argument("mac")
+        def remove_lease(mac: str):
+            """Remove a static DHCP lease."""
+            self.remove_static_lease(mac)
+            click.echo(f"Removed static lease for {mac}")
+
+        @base.command("nat-rules")
+        def nat_rules():
+            """Show active nftables NAT rules."""
+            rules = self.get_nat_rules()
+            if rules:
+                click.echo(rules)
+            else:
+                click.echo("No active NAT rules.")
+
+        @base.command("dns-entries")
+        def dns_entries():
+            """Show configured DNS entries."""
+            entries = self.get_dns_entries()
+            if not entries:
+                click.echo("No DNS entries configured.")
+                return
+            click.echo(f"{'Hostname':<40} {'IP'}")
+            click.echo("-" * 56)
+            for entry in entries:
+                click.echo(f"{entry['hostname']:<40} {entry['ip']}")
+
+        @base.command("add-dns")
+        @click.argument("hostname")
+        @click.argument("ip")
+        def add_dns(hostname: str, ip: str):
+            """Add a custom DNS entry."""
+            self.add_dns_entry(hostname, ip)
+            click.echo(f"Added DNS entry: {hostname} -> {ip}")
+
+        @base.command("remove-dns")
+        @click.argument("hostname")
+        def remove_dns(hostname: str):
+            """Remove a custom DNS entry."""
+            self.remove_dns_entry(hostname)
+            click.echo(f"Removed DNS entry: {hostname}")
+
+        return base

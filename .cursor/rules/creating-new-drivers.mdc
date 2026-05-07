@@ -40,11 +40,21 @@ Always try to obtain the Author Name and Email from git, by checking the git con
 ## 5. After Creation
 Once the driver is created:
 1. Navigate to the new driver directory: `python/packages/jumpstarter-driver-<driver_package>/`
-2. Review the generated files and customize as needed
-3. Implement the driver logic in `driver.py`
-4. Add tests in `driver_test.py`
-5. Update the README.md with specific documentation
-6. Test the driver: `make pkg-test-<driver_package>`
+2. **Register the package in the workspace** by adding an entry to `python/pyproject.toml` under `[tool.uv.sources]`:
+   ```toml
+   jumpstarter-driver-<driver_package> = { workspace = true }
+   ```
+   Insert it alphabetically among the other `jumpstarter-driver-*` entries.
+3. **Add the package to `jumpstarter-all`** by adding it to the `dependencies` list in `python/packages/jumpstarter-all/pyproject.toml`:
+   ```toml
+   "jumpstarter-driver-<driver_package>",
+   ```
+   Insert it alphabetically among the other `jumpstarter-driver-*` entries.
+4. Review the generated files and customize as needed
+5. Implement the driver logic in `driver.py`
+6. Add tests in `driver_test.py`
+7. Update the README.md with specific documentation
+8. Test the driver: `make pkg-test-<driver_package>`
 
 ## 6. Driver Naming Conventions
 - **Package names**: lowercase with hyphens (e.g., `my-driver`)

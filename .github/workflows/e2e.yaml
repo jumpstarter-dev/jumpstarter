@@ -216,6 +216,17 @@ jobs:
           mkdir -p controller/deploy/operator/dist
           cp /tmp/artifacts/operator-install.yaml controller/deploy/operator/dist/install.yaml
 
+      - name: Install nftables and dnsmasq for dut-network E2E
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables dnsmasq-base
+
+      - name: Load kernel modules for DUT network tests
+        run: |
+          for mod in veth bridge nf_nat nf_conntrack nft_masq nft_nat nft_chain_nat; do
+            sudo modprobe "$mod" 2>/dev/null || true
+          done
+
       - name: Setup e2e test environment
         run: make e2e-setup
         env:

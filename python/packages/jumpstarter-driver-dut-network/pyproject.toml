@@ -1,0 +1,46 @@
+[project]
+name = "jumpstarter-driver-dut-network"
+dynamic = ["version", "urls"]
+description = "DUT network isolation driver with NAT, DHCP, and nftables management"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "Miguel Angel Ajo Pelayo", email = "miguelangel@ajo.es" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "jumpstarter",
+    "click>=8.1.7",
+]
+
+[project.entry-points."jumpstarter.drivers"]
+DutNetwork = "jumpstarter_driver_dut_network.driver:DutNetwork"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../../'}
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/jumpstarter/archive/{commit_hash}.zip"
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=html --cov-report=xml -rs"
+log_cli = true
+log_cli_level = "INFO"
+testpaths = ["jumpstarter_driver_dut_network"]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest>=8.3.3",
+    "pytest-asyncio>=0.26.0",
+]

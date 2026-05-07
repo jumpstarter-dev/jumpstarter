@@ -78,6 +78,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgpiod-dev liblgpio-dev
 
+      - name: Install nftables and dnsmasq (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables dnsmasq-base isc-dhcp-client dnsutils
+
+      - name: Load kernel modules for DUT network tests (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          for mod in veth bridge nf_nat nf_conntrack nft_masq nft_nat nft_chain_nat; do
+            sudo modprobe "$mod" 2>/dev/null || true
+          done
+
       - name: Install Renode (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -122,8 +135,13 @@ jobs:
         run: |
           make test
 
+      # Diff-coverage is only checked on Linux. Several packages (e.g.
+      # jumpstarter-driver-dut-network) are Linux-only, so their tests are
+      # entirely skipped on macOS, making all changed lines appear uncovered
+      # and dragging diff-coverage below the threshold. Linux runners already
+      # enforce the 80% gate, so nothing is lost.
       - name: Check coverage on changed lines
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && runner.os == 'Linux'
         working-directory: python
         run: |
           coverage_files=$(find packages -name coverage.xml 2>/dev/null | sort)
