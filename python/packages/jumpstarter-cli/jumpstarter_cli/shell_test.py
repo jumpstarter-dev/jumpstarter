@@ -367,7 +367,7 @@ def test_expired_token_triggers_reauth():
             None,
         )
 
-    with pytest.raises(click.ClickException, match="Please try again now"):
+    with pytest.raises(click.ClickException, match="token is expired"):
         run_shell()
 
     login_mock.assert_called_once_with(config)
@@ -649,8 +649,8 @@ class TestMonitorTokenExpiry:
         await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
 
         mock_recovery.assert_awaited_once()
-        # Should print the green success message
-        mock_click.echo.assert_called()
+        # Success is silent — no user-visible output
+        mock_click.echo.assert_not_called()
 
     @patch("jumpstarter_cli.shell.click")
     @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
@@ -683,10 +683,8 @@ class TestMonitorTokenExpiry:
 
         await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
 
-        # Verify warning was echoed
-        mock_click.echo.assert_called()
-        args = mock_click.style.call_args
-        assert "auto-refresh" in args[0][0]
+        # Warning is now debug-level only — no user-visible output
+        mock_click.echo.assert_not_called()
 
     @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds", return_value=500)
