@@ -311,7 +311,9 @@ class QemuPower(PowerInterface, Driver):
         for device in devices:
             cmdline += ["-device", device]
 
+        self.logger.info("TPM config: tpm=%s (type=%s)", self.parent.tpm, type(self.parent.tpm).__name__)
         if self.parent.tpm:
+            self.logger.info("Adding TPM device args for arch=%s, socket=%s", self.parent.arch, self.parent._tpm_socket)
             cmdline += [
                 "-chardev", f"socket,id=chrtpm,path={self.parent._tpm_socket}",
                 "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
@@ -439,6 +441,7 @@ class QemuPower(PowerInterface, Driver):
         ]
 
         if self.parent.tpm:
+            self.logger.info("Starting swtpm: dir=%s, socket=%s", self.parent._tpm_dir, self.parent._tpm_socket)
             self.parent._tpm_dir.mkdir(parents=True, exist_ok=True)
             self._swtpm_process = Popen(
                 [
@@ -449,14 +452,25 @@ class QemuPower(PowerInterface, Driver):
                     "--flags", "not-need-init",
                 ],
                 stdin=PIPE,
+                stderr=PIPE,
             )
             for _ in range(50):
                 if Path(self.parent._tpm_socket).exists():
                     break
+                rc = self._swtpm_process.poll()
+                if rc is not None:
+                    stderr = self._swtpm_process.stderr.read().decode() if self._swtpm_process.stderr else ""
+                    raise RuntimeError(f"swtpm exited prematurely with code {rc}: {stderr}")
                 time.sleep(0.1)
             else:
-                raise RuntimeError("swtpm failed to start: socket not created within 5 seconds")
+                rc = self._swtpm_process.poll()
+                stderr = ""
+                if rc is not None and self._swtpm_process.stderr:
+                    stderr = self._swtpm_process.stderr.read().decode()
+                raise RuntimeError(f"swtpm failed to start: socket not created within 5 seconds (rc={rc}, stderr={stderr})")
+            self.logger.info("swtpm started successfully (pid=%d)", self._swtpm_process.pid)
 
+        self.logger.info("QEMU cmdline: %s", " ".join(str(a) for a in cmdline))
         self._process = Popen(cmdline, stdin=PIPE)
 
         qmp = QMPClient(self.parent.hostname)

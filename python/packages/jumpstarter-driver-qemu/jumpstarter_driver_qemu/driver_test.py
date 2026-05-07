@@ -814,6 +814,7 @@ async def test_tpm_socket_timeout():
         if cmd[0] == "swtpm":
             proc = MagicMock()
             proc.returncode = None
+            proc.poll.return_value = None
             return proc
         raise RuntimeError("should not reach QEMU")
 
