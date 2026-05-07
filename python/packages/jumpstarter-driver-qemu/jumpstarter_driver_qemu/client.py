@@ -1,3 +1,4 @@
+import os
 import sys
 from contextlib import contextmanager
 
@@ -7,13 +8,33 @@ from jumpstarter_driver_network.adapters import FabricAdapter, NovncAdapter
 from jumpstarter_driver_opendal.client import FlasherClient
 
 
+def _resolve_oci_password() -> str | None:
+    """Read OCI password from environment, with OCI_PASSWORD_FILE fallback."""
+    password = os.environ.get("OCI_PASSWORD")
+    if password:
+        return password
+    password_file = os.environ.get("OCI_PASSWORD_FILE")
+    if password_file:
+        try:
+            with open(password_file) as f:
+                return f.read().strip()
+        except OSError:
+            pass
+    return None
+
+
 class QemuFlasherClient(FlasherClient):
     """Flasher client for QEMU with OCI support via fls."""
 
     def flash(self, path, *, target=None, operator=None, compression=None):
         if isinstance(path, str) and path.startswith("oci://"):
+            oci_username = os.environ.get("OCI_USERNAME")
+            oci_password = _resolve_oci_password()
+
             returncode = 0
-            for stdout, stderr, code in self.streamingcall("flash_oci", path, target):
+            for stdout, stderr, code in self.streamingcall(
+                "flash_oci", path, target, oci_username, oci_password
+            ):
                 if stdout:
                     print(stdout, end="", flush=True)
                 if stderr:
