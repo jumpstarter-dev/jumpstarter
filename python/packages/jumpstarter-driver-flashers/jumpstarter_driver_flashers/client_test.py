@@ -47,24 +47,24 @@ def test_validate_bearer_token_fails_invalid():
         client._validate_bearer_token('token"with"quotes')
 
 
-def test_validate_oci_credentials_fails_when_partial():
-    """Test OCI credential validation fails when only one value is provided"""
+def test_resolve_oci_credentials_fails_when_partial():
+    """Test OCI credential resolution fails when only one value is provided"""
     client = MockFlasherClient()
 
     with pytest.raises(click.ClickException, match="OCI authentication requires both"):
-        client._validate_oci_credentials("myuser", None)
+        client._resolve_oci_credentials("oci://quay.io/org/image:tag", "myuser", None)
 
     with pytest.raises(click.ClickException, match="OCI authentication requires both"):
-        client._validate_oci_credentials(None, "mypassword")
+        client._resolve_oci_credentials("oci://quay.io/org/image:tag", None, "mypassword")
 
 
-def test_validate_oci_credentials_accepts_pair_and_strips_whitespace():
-    """Test OCI credential validation accepts full username/password pair"""
+def test_resolve_oci_credentials_accepts_pair_and_strips_whitespace():
+    """Test OCI credential resolution accepts full username/password pair and strips whitespace"""
     client = MockFlasherClient()
 
-    username, password = client._validate_oci_credentials(" myuser ", " mypassword ")
-    assert username == "myuser"
-    assert password == "mypassword"
+    creds = client._resolve_oci_credentials("oci://quay.io/org/image:tag", " myuser ", " mypassword ")
+    assert creds.username == "myuser"
+    assert creds.plain_password == "mypassword"
 
 
 def test_resolve_oci_credentials_reads_env_for_oci_path(monkeypatch):
@@ -73,9 +73,9 @@ def test_resolve_oci_credentials_reads_env_for_oci_path(monkeypatch):
     monkeypatch.setenv("OCI_USERNAME", "env-user")
     monkeypatch.setenv("OCI_PASSWORD", "env-pass")
 
-    username, password = client._resolve_oci_credentials("oci://quay.io/org/image:tag", None, None)
-    assert username == "env-user"
-    assert password == "env-pass"
+    creds = client._resolve_oci_credentials("oci://quay.io/org/image:tag", None, None)
+    assert creds.username == "env-user"
+    assert creds.plain_password == "env-pass"
 
 
 def test_resolve_oci_credentials_ignores_env_for_non_oci_path(monkeypatch):
@@ -84,30 +84,54 @@ def test_resolve_oci_credentials_ignores_env_for_non_oci_path(monkeypatch):
     monkeypatch.setenv("OCI_USERNAME", "env-user")
     monkeypatch.setenv("OCI_PASSWORD", "env-pass")
 
-    username, password = client._resolve_oci_credentials("https://example.com/image.raw.xz", None, None)
-    assert username is None
-    assert password is None
+    creds = client._resolve_oci_credentials("https://example.com/image.raw.xz", None, None)
+    assert creds.username is None
+    assert creds.password is None
 
 
 def test_resolve_oci_credentials_partial_env_falls_through_to_auth_file(monkeypatch):
     """Partial env vars should fall through to auth file lookup, not error."""
     from unittest.mock import patch
 
+    from pydantic import SecretStr
+
+    from jumpstarter.common.oci import OciCredentials
+
     client = MockFlasherClient()
     monkeypatch.setenv("OCI_USERNAME", "env-user")
     monkeypatch.delenv("OCI_PASSWORD", raising=False)
 
-    # When auth file has no match, result is (None, None) — no error
-    with patch("jumpstarter.common.oci.read_auth_file_credentials", return_value=(None, None)):
-        username, password = client._resolve_oci_credentials("oci://quay.io/org/image:tag", None, None)
-        assert username is None
-        assert password is None
+    # When auth file has no match, result is unauthenticated — no error
+    with patch("jumpstarter.common.oci.read_auth_file_credentials", return_value=OciCredentials()):
+        creds = client._resolve_oci_credentials("oci://quay.io/org/image:tag", None, None)
+        assert creds.username is None
+        assert creds.password is None
 
     # When auth file has a match, those credentials are used
-    with patch("jumpstarter.common.oci.read_auth_file_credentials", return_value=("fileuser", "filepass")):
-        username, password = client._resolve_oci_credentials("oci://quay.io/org/image:tag", None, None)
-        assert username == "fileuser"
-        assert password == "filepass"
+    with patch(
+        "jumpstarter.common.oci.read_auth_file_credentials",
+        return_value=OciCredentials(username="fileuser", password=SecretStr("filepass")),
+    ):
+        creds = client._resolve_oci_credentials("oci://quay.io/org/image:tag", None, None)
+        assert creds.username == "fileuser"
+        assert creds.plain_password == "filepass"
+
+
+def test_resolve_oci_credentials_normalizes_empty_strings(monkeypatch):
+    """Empty-string username/password should be treated as absent and fall through."""
+    from unittest.mock import patch
+
+    from jumpstarter.common.oci import OciCredentials
+
+    client = MockFlasherClient()
+    monkeypatch.delenv("OCI_USERNAME", raising=False)
+    monkeypatch.delenv("OCI_PASSWORD", raising=False)
+
+    with patch("jumpstarter.common.oci.read_auth_file_credentials", return_value=OciCredentials()) as mock_auth:
+        creds = client._resolve_oci_credentials("oci://quay.io/org/image:tag", "", "")
+        assert creds.username is None
+        assert creds.password is None
+        mock_auth.assert_called_once()
 
 
 def test_fls_oci_auth_env_sources_credentials_file():
