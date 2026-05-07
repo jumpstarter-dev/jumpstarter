@@ -1178,3 +1178,89 @@ class TestHookExecutorPRRegressions:
         assert msg.startswith(HOOK_WARNING_PREFIX), (
             f"Expected AVAILABLE message to start with '{HOOK_WARNING_PREFIX}', got: '{msg}'"
         )
+
+
+class TestBeforeLeaseHookLeaseEndedGuard:
+    """Tests for the race condition where beforeLease hook completes after
+    the lease has already expired. When lease_ended is set, the hook must
+    NOT set status to LEASE_READY, preventing the exporter from being
+    stuck in LEASE_READY permanently."""
+
+    async def test_run_before_lease_hook_skips_lease_ready_when_lease_ended(self, lease_scope) -> None:
+        """When the lease has already ended by the time the beforeLease hook
+        completes, status must NOT be set to LEASE_READY."""
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        lease_scope.lease_ended.set()
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        lease_ready_calls = [s for s, _ in status_calls if s == ExporterStatus.LEASE_READY]
+        assert len(lease_ready_calls) == 0, (
+            f"LEASE_READY must NOT be set when lease has already ended, got: {status_calls}"
+        )
+
+    async def test_run_before_lease_hook_sets_event_even_when_lease_ended(self, lease_scope) -> None:
+        """The before_lease_hook event must always be set (via the finally block)
+        even when the lease has ended, to unblock downstream waiters."""
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        lease_scope.lease_ended.set()
+
+        mock_report_status = AsyncMock()
+        mock_shutdown = MagicMock()
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        assert lease_scope.before_lease_hook.is_set(), (
+            "before_lease_hook event must be set even when lease has ended"
+        )
+
+    async def test_run_before_lease_hook_warn_skips_lease_ready_when_lease_ended(self, lease_scope) -> None:
+        """When hook fails with on_failure=warn and the lease has already ended,
+        LEASE_READY must still be skipped."""
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="warn"),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        lease_scope.lease_ended.set()
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        lease_ready_calls = [s for s, _ in status_calls if s == ExporterStatus.LEASE_READY]
+        assert len(lease_ready_calls) == 0, (
+            f"LEASE_READY must NOT be set when lease has ended (even with warn), got: {status_calls}"
+        )
