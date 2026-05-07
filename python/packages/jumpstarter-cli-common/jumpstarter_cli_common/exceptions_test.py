@@ -141,16 +141,15 @@ def test_handle_exceptions_with_reauth_retries_on_expired_token() -> None:
     """After successful re-auth, the command is retried automatically."""
     from jumpstarter.common.exceptions import ConnectionError
 
-    call_count = 0
+    call_count = [0]
 
     def login_func(config):
         config.token = "new_token"
 
     @handle_exceptions_with_reauthentication(login_func)
     def command_fn(config=None):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
+        call_count[0] += 1
+        if call_count[0] == 1:
             exc = ConnectionError("token is expired")
             exc.set_config(config)
             raise exc
@@ -160,18 +159,17 @@ def test_handle_exceptions_with_reauth_retries_on_expired_token() -> None:
     result = command_fn(config=config)
 
     assert result == "result"
-    assert call_count == 2
+    assert call_count[0] == 2
 
 
 def test_handle_exceptions_with_reauth_does_not_retry_twice() -> None:
     """If retry also fails with expired token, the error propagates."""
     from jumpstarter.common.exceptions import ConnectionError
 
-    login_calls = 0
+    login_calls = [0]
 
     def login_func(config):
-        nonlocal login_calls
-        login_calls += 1
+        login_calls[0] += 1
 
     @handle_exceptions_with_reauthentication(login_func)
     def always_expired_fn(config=None):
@@ -183,7 +181,7 @@ def test_handle_exceptions_with_reauth_does_not_retry_twice() -> None:
     with pytest.raises(click.ClickException):
         always_expired_fn(config=config)
 
-    assert login_calls == 1
+    assert login_calls[0] == 1
 
 
 def test_handle_exceptions_maps_grpc_invalid_argument() -> None:
