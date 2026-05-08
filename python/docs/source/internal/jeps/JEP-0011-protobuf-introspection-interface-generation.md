@@ -1478,6 +1478,7 @@ Native client ────> │  On(Empty) + UUID metadata  │ ──┘
 
 1. **This JEP:** Generate `FileDescriptorProto` and `.proto` files. Wire protocol unchanged. Polyglot clients can use `DynamicMessage` with `DriverCall` and the descriptor.
 2. **Future JEP — dual path:** Exporter registers native gRPC services alongside `DriverCall`. Compile `.proto` files to stubs. New clients choose native path. Old clients unchanged.
+To be decided based on the discoveries during implementation of this JEP and the dual-path JEP
 3. **Deprecation:** Mark `DriverCall` as deprecated. Migration guide published.
 4. **Removal:** Remove `DriverCall` in a major version bump. All clients use native gRPC.
 
