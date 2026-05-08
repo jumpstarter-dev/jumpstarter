@@ -547,3 +547,63 @@ class TestLogStreamFiltering:
         system_records = captures["exporter:system"].records
         assert len(system_records) == 1
         assert system_records[0].getMessage() == "no source message"
+
+    async def test_driver_log_routes_to_driver_logger(self) -> None:
+        responses = [
+            create_log_stream_response(
+                "driver output line",
+                severity="INFO",
+                source=LogSource.DRIVER,
+            ),
+        ]
+
+        client, captures, delivered = setup_log_stream_client(responses)
+
+        async with client.log_stream_async(show_all_logs=True):
+            with anyio.fail_after(2):
+                await delivered.wait()
+
+        driver_records = captures["exporter:driver"].records
+        assert len(driver_records) == 1
+        assert driver_records[0].getMessage() == "driver output line"
+        assert driver_records[0].name == "exporter:driver"
+
+
+class TestLogStreamSeverityMapping:
+    async def test_warning_severity_maps_to_warning_level(self) -> None:
+        responses = [
+            create_log_stream_response(
+                "a warning message",
+                severity="WARNING",
+                source=LogSource.BEFORE_LEASE_HOOK,
+            ),
+        ]
+
+        client, captures, delivered = setup_log_stream_client(responses)
+
+        async with client.log_stream_async(show_all_logs=True):
+            with anyio.fail_after(2):
+                await delivered.wait()
+
+        records = captures["exporter:beforeLease"].records
+        assert len(records) == 1
+        assert records[0].levelno == logging.WARNING
+
+    async def test_error_severity_maps_to_error_level(self) -> None:
+        responses = [
+            create_log_stream_response(
+                "an error message",
+                severity="ERROR",
+                source=LogSource.AFTER_LEASE_HOOK,
+            ),
+        ]
+
+        client, captures, delivered = setup_log_stream_client(responses)
+
+        async with client.log_stream_async(show_all_logs=True):
+            with anyio.fail_after(2):
+                await delivered.wait()
+
+        records = captures["exporter:afterLease"].records
+        assert len(records) == 1
+        assert records[0].levelno == logging.ERROR
