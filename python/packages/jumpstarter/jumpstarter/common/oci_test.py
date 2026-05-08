@@ -8,6 +8,7 @@ import pytest
 
 from .oci import (
     _normalize_registry,
+    _read_password_file,
     parse_oci_registry,
     read_auth_file_credentials,
     resolve_oci_credentials,
@@ -244,10 +245,78 @@ class TestResolveOciCredentials:
                 assert username == "fileuser"
                 assert password == "filepass"
 
+    def test_password_file_with_username_env(self, tmp_path):
+        """OCI_USERNAME + OCI_PASSWORD_FILE should resolve credentials successfully."""
+        pw_file = tmp_path / "token"
+        pw_file.write_text("file-token\n")
+
+        env = {k: v for k, v in os.environ.items() if k not in ("OCI_USERNAME", "OCI_PASSWORD", "OCI_PASSWORD_FILE")}
+        env["OCI_USERNAME"] = "sa-user"
+        env["OCI_PASSWORD_FILE"] = str(pw_file)
+        with patch.dict(os.environ, env, clear=True):
+            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[]):
+                username, password = resolve_oci_credentials("oci://quay.io/org/image:latest")
+                assert username == "sa-user"
+                assert password == "file-token"
+
+    def test_password_file_not_found(self, tmp_path):
+        """Missing OCI_PASSWORD_FILE should fall through to auth files."""
+        auth_path = tmp_path / "auth.json"
+        auth_path.write_text(_make_auth_json({"quay.io": {"auth": _encode_auth("fileuser", "filepass")}}))
+
+        env = {k: v for k, v in os.environ.items() if k not in ("OCI_USERNAME", "OCI_PASSWORD", "OCI_PASSWORD_FILE")}
+        env["OCI_USERNAME"] = "sa-user"
+        env["OCI_PASSWORD_FILE"] = str(tmp_path / "nonexistent")
+        with patch.dict(os.environ, env, clear=True):
+            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]):
+                username, password = resolve_oci_credentials("oci://quay.io/org/image:latest")
+                assert username == "fileuser"
+                assert password == "filepass"
+
+    def test_password_env_takes_priority_over_file(self, tmp_path):
+        """OCI_PASSWORD env var should take priority over OCI_PASSWORD_FILE."""
+        pw_file = tmp_path / "token"
+        pw_file.write_text("file-token\n")
+
+        env = {k: v for k, v in os.environ.items() if k not in ("OCI_USERNAME", "OCI_PASSWORD", "OCI_PASSWORD_FILE")}
+        env["OCI_USERNAME"] = "user"
+        env["OCI_PASSWORD"] = "env-pass"
+        env["OCI_PASSWORD_FILE"] = str(pw_file)
+        with patch.dict(os.environ, env, clear=True):
+            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[]):
+                username, password = resolve_oci_credentials("oci://quay.io/org/image:latest")
+                assert username == "user"
+                assert password == "env-pass"
+
     def test_returns_none_when_no_source(self):
-        env_clean = {k: v for k, v in os.environ.items() if k not in ("OCI_USERNAME", "OCI_PASSWORD")}
+        env_clean = {k: v for k, v in os.environ.items() if k not in ("OCI_USERNAME", "OCI_PASSWORD", "OCI_PASSWORD_FILE")}
         with patch.dict(os.environ, env_clean, clear=True):
             with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[]):
                 username, password = resolve_oci_credentials("oci://quay.io/org/image:latest")
                 assert username is None
                 assert password is None
+
+
+class TestReadPasswordFile:
+    def test_reads_token_and_strips(self, tmp_path):
+        pw_file = tmp_path / "token"
+        pw_file.write_text("  my-token  \n")
+
+        with patch.dict(os.environ, {"OCI_PASSWORD_FILE": str(pw_file)}):
+            assert _read_password_file() == "my-token"
+
+    def test_returns_none_when_unset(self):
+        env = {k: v for k, v in os.environ.items() if k != "OCI_PASSWORD_FILE"}
+        with patch.dict(os.environ, env, clear=True):
+            assert _read_password_file() is None
+
+    def test_returns_none_on_missing_file(self, tmp_path):
+        with patch.dict(os.environ, {"OCI_PASSWORD_FILE": str(tmp_path / "missing")}):
+            assert _read_password_file() is None
+
+    def test_returns_none_on_empty_file(self, tmp_path):
+        pw_file = tmp_path / "empty"
+        pw_file.write_text("  \n")
+
+        with patch.dict(os.environ, {"OCI_PASSWORD_FILE": str(pw_file)}):
+            assert _read_password_file() is None

@@ -193,11 +193,33 @@ def read_auth_file_credentials(
     return None, None
 
 
+def _read_password_file() -> str | None:
+    """Read OCI password from OCI_PASSWORD_FILE if set.
+
+    Supports projected service-account tokens on OpenShift / Kubernetes
+    where the kubelet rotates the token file periodically.
+    """
+    password_file = os.environ.get("OCI_PASSWORD_FILE")
+    if not password_file:
+        return None
+    try:
+        with open(password_file) as f:
+            password = f.read().strip()
+        if password:
+            logger.info("Read OCI password from OCI_PASSWORD_FILE")
+            return password
+    except OSError as e:
+        logger.warning(f"Failed to read OCI_PASSWORD_FILE ({password_file}): {e}")
+    return None
+
+
 def resolve_oci_credentials(oci_url: str) -> tuple[str | None, str | None]:
     """Resolve OCI registry credentials from environment or auth files.
 
-    Checks OCI_USERNAME/OCI_PASSWORD environment variables first,
-    then falls back to container auth files (auth.json / Docker config.json).
+    Resolution order:
+    1. OCI_USERNAME + OCI_PASSWORD environment variables
+    2. OCI_USERNAME + OCI_PASSWORD_FILE (for projected SA tokens)
+    3. Container auth files (auth.json / Docker config.json)
 
     Args:
         oci_url: OCI image reference (e.g. ``oci://quay.io/org/image:tag``).
@@ -208,6 +230,9 @@ def resolve_oci_credentials(oci_url: str) -> tuple[str | None, str | None]:
     """
     username = os.environ.get("OCI_USERNAME")
     password = os.environ.get("OCI_PASSWORD")
+
+    if not password:
+        password = _read_password_file()
 
     if username and password:
         logger.info("Using OCI registry credentials from environment variables")

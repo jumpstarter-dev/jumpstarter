@@ -107,30 +107,14 @@ class QemuFlasher(FlasherInterface, Driver):
         if not oci_url.startswith("oci://"):
             raise ValueError(f"OCI URL must start with oci://, got: {oci_url}")
 
-        # If explicit credentials were provided, validate immediately
-        if oci_username or oci_password:
-            # Support OCI_PASSWORD_FILE for token rotation (e.g. projected SA tokens)
-            if not oci_password:
-                password_file = os.environ.get("OCI_PASSWORD_FILE")
-                if password_file:
-                    try:
-                        with open(password_file) as f:
-                            oci_password = f.read().strip()
-                        self.logger.info("Read OCI password from OCI_PASSWORD_FILE")
-                    except OSError as e:
-                        self.logger.warning(f"Failed to read OCI_PASSWORD_FILE ({password_file}): {e}")
-
-            if bool(oci_username) != bool(oci_password):
-                raise ValueError("OCI authentication requires both username and password")
+        if oci_username and oci_password:
+            self.logger.info("Using OCI registry credentials forwarded from client")
         else:
-            # Fall back to env vars, then container auth files
             from jumpstarter.common.oci import resolve_oci_credentials
 
             oci_username, oci_password = resolve_oci_credentials(oci_url)
             if oci_username and oci_password:
                 self.logger.info("Using OCI registry credentials from environment or auth file")
-            elif oci_username or oci_password:
-                raise ValueError("OCI authentication requires both username and password")
 
         target_path = str(self.parent.validate_partition(partition))
 
