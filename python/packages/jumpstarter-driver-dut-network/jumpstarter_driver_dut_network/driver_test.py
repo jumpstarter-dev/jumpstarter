@@ -6,6 +6,7 @@ and interface operations. They are skipped when neither is available.
 
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -27,25 +28,27 @@ requires_dnsmasq = pytest.mark.skipif(not shutil.which("dnsmasq"), reason="dnsma
 requires_dig = pytest.mark.skipif(not shutil.which("dig"), reason="dig not found")
 requires_dhclient = pytest.mark.skipif(not shutil.which("dhclient"), reason="dhclient not found")
 
-_SUDO_PREFIX = "" if os.getuid() == 0 else "sudo "
+_SUDO_CMD: list[str] = ["sudo"] if os.getuid() != 0 else []
 
 
 def _run(cmd: str, check: bool = True, ns: str | None = None) -> subprocess.CompletedProcess:
-    """Run a shell command with sudo when not root, optionally inside a network namespace."""
+    """Run a command with sudo when not root, optionally inside a network namespace."""
+    args = shlex.split(cmd)
     if ns:
-        cmd = f"{_SUDO_PREFIX}ip netns exec {ns} {cmd}"
+        args = [*_SUDO_CMD, "ip", "netns", "exec", ns, *args]
     else:
-        cmd = f"{_SUDO_PREFIX}{cmd}"
-    return subprocess.run(cmd, shell=True, capture_output=True, text=True, check=check)
+        args = [*_SUDO_CMD, *args]
+    return subprocess.run(args, capture_output=True, text=True, check=check)
 
 
 def _popen(cmd: str, ns: str | None = None) -> subprocess.Popen:
     """Start a background process, optionally inside a network namespace."""
+    args = shlex.split(cmd)
     if ns:
-        cmd = f"{_SUDO_PREFIX}ip netns exec {ns} {cmd}"
+        args = [*_SUDO_CMD, "ip", "netns", "exec", ns, *args]
     else:
-        cmd = f"{_SUDO_PREFIX}{cmd}"
-    return subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        args = [*_SUDO_CMD, *args]
+    return subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
 def _can_nat_between_namespaces() -> bool:
@@ -144,10 +147,21 @@ def _can_nat_between_namespaces() -> bool:
         _run(f"ip netns del {dst_ns}", check=False)
 
 
-_nat_works = _can_nat_between_namespaces()
-requires_nat = pytest.mark.skipif(
-    not _nat_works, reason="nftables NAT between namespaces not available"
-)
+_nat_works: bool | None = None
+
+
+def _nat_probe() -> bool:
+    global _nat_works
+    if _nat_works is None:
+        _nat_works = _can_nat_between_namespaces()
+    return bool(_nat_works)
+
+
+@pytest.fixture(scope="session")
+def nat_available() -> None:
+    """Run the NAT probe once per session (at test time, not import time)."""
+    if not _nat_probe():
+        pytest.skip("nftables NAT between namespaces not available")  # type: ignore[misc]
 
 
 class NetworkTestEnv:
@@ -310,7 +324,7 @@ class TestDhcp:
 @requires_privileges
 @requires_nft
 @requires_dnsmasq
-@requires_nat
+@pytest.mark.usefixtures("nat_available")
 class TestMasqueradeNat:
     """Test masquerade NAT rules."""
 
@@ -653,7 +667,7 @@ class TestDnsEntries:
 @requires_privileges
 @requires_nft
 @requires_dnsmasq
-@requires_nat
+@pytest.mark.usefixtures("nat_available")
 class TestOneToOneNatDataPlane:
     """Test actual data-plane connectivity through 1:1 NAT (not just rule presence)."""
 
@@ -725,7 +739,7 @@ class TestOneToOneNatDataPlane:
 @requires_privileges
 @requires_nft
 @requires_dnsmasq
-@requires_nat
+@pytest.mark.usefixtures("nat_available")
 class TestDisabledNatIsolation:
     """Test that disabled NAT prevents routing while still allowing local access."""
 
@@ -772,7 +786,7 @@ class TestDisabledNatIsolation:
 @requires_privileges
 @requires_nft
 @requires_dnsmasq
-@requires_nat
+@pytest.mark.usefixtures("nat_available")
 class TestTcpConnectivity:
     """Test TCP connectivity through masquerade NAT (not just ICMP ping)."""
 

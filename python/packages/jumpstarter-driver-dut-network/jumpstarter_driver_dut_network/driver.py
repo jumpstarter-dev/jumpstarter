@@ -184,7 +184,7 @@ class DutNetwork(Driver):
         self.logger.info("Cleaning up DUT network configuration")
 
         if self._dnsmasq_process:
-            dnsmasq.stop(process=self._dnsmasq_process)
+            dnsmasq.stop(process=self._dnsmasq_process, state_dir=self._state_path)
             self._dnsmasq_process = None
 
         nftables.flush_rules(self._table_name)

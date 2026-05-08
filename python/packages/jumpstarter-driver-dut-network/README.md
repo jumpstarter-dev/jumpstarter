@@ -43,7 +43,7 @@ export:
   dut-network:
     type: jumpstarter_driver_dut_network.driver.DutNetwork
     config:
-      interface: "enx00e04c683af1"
+      interface: "eth2"
       subnet: "192.168.100.0/24"
       gateway_ip: "192.168.100.1"
       nat_mode: "masquerade"
@@ -66,7 +66,7 @@ export:
   dut-network:
     type: jumpstarter_driver_dut_network.driver.DutNetwork
     config:
-      interface: "enx00e04c683af1"
+      interface: "eth2"
       subnet: "192.168.100.0/24"
       gateway_ip: "192.168.100.1"
       upstream_interface: "enp2s0"
@@ -105,7 +105,7 @@ export:
   dut-network:
     type: jumpstarter_driver_dut_network.driver.DutNetwork
     config:
-      interface: "enx00e04c683af1"
+      interface: "eth2"
       nat_mode: "masquerade"
       dns_entries:
         - hostname: "controller.lab.local"
@@ -206,15 +206,47 @@ with env() as client:
 
 The driver uses a dedicated nftables table (named after the interface, e.g. `table ip jumpstarter_enx00e04c683af1`) that does not conflict with firewalld or other nftables users. Firewalld manages its own `firewalld` table and does not touch other tables, even during reloads.
 
-## Typical Hardware Setup
+## Architecture
 
 ```text
-┌──────────────┐     Ethernet      ┌──────────────────┐     LAN
-│   DUT        │────────────────────│   Exporter Host  │────────────
-│ (SA8775P)    │   (USB NIC)        │   (Sidekick)     │  (enp2s0)
-│ end0:        │                    │ enx00e04c683af1: │
-│ 192.168.100.10                    │   192.168.100.1   │
-└──────────────┘                    └──────────────────┘
+                     Exporter Host
+ ┌─────────┐        ┌──────────────────────────────────────┐          ┌─────────┐
+ │   DUT   │        │                                      │          │   LAN   │
+ │         │  eth   │  eth2               ┌──────────┐     │          │         │
+ │  DHCP   │◄──────►│  192.168.100.1/24   │ dnsmasq  │     │          │         │
+ │  client │        │  (gateway)          │ DHCP+DNS │     │          │         │
+ │         │        │       │             └──────────┘     │          │         │
+ │ 192.168.│        │       │  forwarding                  │  eth     │         │
+ │ 100.10  │        │       ▼             ┌──────────┐     │          │         │
+ │         │        │  ┌─────────┐        │ nftables │     │ enp2s0   │ 10.26.  │
+ └─────────┘        │  │ ip_fwd  │───────►│ NAT      │────►│◄──────►  │ 28.0/24 │
+                    │  └─────────┘        │          │     │(upstream)│         │
+                    │                     │masq/1:1  │     │          └─────────┘
+                    │                     └──────────┘     │
+                    └──────────────────────────────────────┘
+
+  ─── Masquerade: DUT traffic appears as exporter's upstream IP
+  ─── 1:1 NAT:    DUT gets a dedicated public IP on the upstream interface
+```
+
+### Disabled NAT (DHCP-only isolation)
+
+```text
+                     Exporter Host
+ ┌─────────┐        ┌──────────────────────────────┐
+ │   DUT   │        │                              │
+ │         │  eth   │  eth2          ┌──────────┐  │
+ │  DHCP   │◄──────►│  192.168.100.1 │ dnsmasq  │  │
+ │  client │        │  (gateway)     │ DHCP+DNS │  │
+ │         │        │                └──────────┘  │
+ │ 192.168.│        │                              │
+ │ 100.10  │        │  No forwarding, no NAT.      │
+ │         │        │  L2-isolated network only.   │
+ └─────────┘        └──────────────────────────────┘
+
+  The DUT can reach the exporter on 192.168.100.1 but has
+  no route to the LAN or internet. Useful for pure L2
+  isolation or when routing is handled externally.
 ```
 
 ## Troubleshooting
@@ -250,10 +282,10 @@ sysctl net.ipv4.conf.<upstream>.forwarding
 
 ## Running Tests
 
-Integration tests require root privileges:
+Integration tests require root privileges through passwordless sudo, or direct root access:
 
 ```shell
-sudo make pkg-test-dut-network
+make pkg-test-dut-network
 ```
 
 Tests use veth pairs and network namespaces to simulate the DUT without real hardware.
