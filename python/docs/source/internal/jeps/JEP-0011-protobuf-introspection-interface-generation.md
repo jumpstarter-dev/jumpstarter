@@ -995,7 +995,7 @@ This pattern affects: `FlasherInterface`, `StorageMuxInterface`, `StorageMuxFlas
 
 ### Security Implications
 
-gRPC Server Reflection exposes the full interface schema to any client that can reach the exporter's gRPC port. In Jumpstarter's architecture, the exporter is already behind the operator's authentication and lease system — only clients with a valid lease can dial the exporter. Reflection does not bypass this; it's registered on the same `grpc.Server` that serves `ExporterService` and inherits its transport security (mTLS via cert-manager).
+gRPC Server Reflection exposes the full interface schema to any client that can reach the exporter's gRPC port. In Jumpstarter's architecture, the exporter is already behind the controller's authentication and lease system — only clients with a valid lease can dial the exporter. Reflection does not bypass this; it's registered on the same `grpc.Server` that serves `ExporterService` and inherits its transport security (mTLS via cert-manager).
 
 The `file_descriptor_proto` bytes in the report are served through the authenticated `GetReport` RPC and carry no additional security concern.
 
