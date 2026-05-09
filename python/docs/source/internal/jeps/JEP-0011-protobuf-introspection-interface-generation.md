@@ -1252,6 +1252,8 @@ The following are **not** part of this JEP but are natural extensions enabled by
 
 - **Polyglot client code generation:** The `.proto` files produced by the codegen CLI feed directly into `protoc` for Kotlin, TypeScript, Rust, and other language stubs. A `jmp codegen` tool could wrap this pipeline.
 
+- **Typed composite children:** Composite drivers today wire children dynamically (`self.children["power"] = DutlinkPower(...)`) with no enforceable contract — consumers cast manually (e.g., `tcp_driver: TcpNetwork = self.children["tcp"]`), and there is no static handle on a composite's shape on either the driver or client side. A follow-up JEP can introduce a `child()` field-style sentinel on `DriverInterface` subclasses (e.g., `power: PowerInterface = child()`), with `DriverInterfaceMeta` collecting the declarations once and the `Driver` and `CompositeClient` base classes enforcing them symmetrically — types validated at exporter startup against `self.children`, and at client construction against the `DriverInstanceReport` tree. The mechanism is purely Python-side (no `.proto` changes) and opt-in: composites that don't declare `child()` fields keep today's untyped behavior. Composition is already discoverable polyglot-side via the report tree plus each child's `file_descriptor_proto` (this JEP), so no proto annotation is needed.
+
 - **Driver registry:** A controller-level registry that catalogs available drivers, interfaces, and DeviceClasses — serving `FileDescriptorProto` artifacts for codegen and reflection.
 
 - **Interface versioning and compatibility checking:** Using `buf breaking` against committed `.proto` files to enforce backward-compatible interface evolution across releases.
