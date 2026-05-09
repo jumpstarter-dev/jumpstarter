@@ -74,7 +74,7 @@ A future JEP will propose migrating to native protobuf service implementations �
 
 #### gRPC reflection is advisory in this JEP
 
-gRPC reflection will advertise services described by the committed `.proto` files — for example, `jumpstarter.interfaces.power.v1.PowerInterface.On(Empty)`. Because the wire protocol is unchanged, **those services are not backed by native gRPC handlers in this JEP**. A client that discovers the service through reflection and attempts to invoke it directly (e.g., `grpcurl -d '{}' host:port jumpstarter.interfaces.power.v1.PowerInterface/On`) will receive `UNIMPLEMENTED`.
+gRPC reflection will advertise services described by the committed `.proto` files — for example, `dev.jumpstarter.interfaces.power.v1.PowerInterface.On(Empty)`. Because the wire protocol is unchanged, **those services are not backed by native gRPC handlers in this JEP**. A client that discovers the service through reflection and attempts to invoke it directly (e.g., `grpcurl -d '{}' host:port dev.jumpstarter.interfaces.power.v1.PowerInterface/On`) will receive `UNIMPLEMENTED`.
 
 Reflection here is deliberately **advisory** — it exposes the schema so polyglot clients, codegen pipelines, and documentation tooling can discover the driver API and generate typed stubs that drive the existing `DriverCall` transport. The follow-up native-gRPC JEP will add handlers so reflected services become directly invocable without changing the proto schema produced by this JEP.
 
@@ -169,14 +169,20 @@ from google.protobuf.descriptor_pb2 import (
     FieldDescriptorProto,
 )
 
-def build_file_descriptor(interface_class, version="v1"):
+def build_file_descriptor(interface_class, version="v1", package=None):
     """Build a FileDescriptorProto from a Python interface class.
 
     Introspects @export-decorated methods, maps Python type annotations
     to protobuf field/message/service descriptors, and returns a
     self-contained FileDescriptorProto that fully describes the interface.
+
+    If `package` is omitted, the first-party Jumpstarter convention applies:
+    `dev.jumpstarter.interfaces.{interface_lower}.{version}`. Out-of-tree
+    drivers pass an explicit `package` (e.g., `com.example.interfaces.foo.v1`)
+    to use their own organization's reverse-domain namespace.
     """
-    package = f"jumpstarter.interfaces.{interface_class.__name__.lower()}.{version}"
+    if package is None:
+        package = f"dev.jumpstarter.interfaces.{interface_class.__name__.lower()}.{version}"
     fd = FileDescriptorProto(
         name=f"{interface_class.__name__.lower()}.proto",
         package=package,
@@ -220,7 +226,7 @@ Protobuf service and message definitions carry structure — method names, param
 
 #### Interface Versioning
 
-Interface versioning follows standard protobuf package-level versioning conventions. The version is encoded in the package name (e.g., `jumpstarter.interfaces.power.v1`) and the `--version` flag on the codegen CLI. Breaking changes to an interface require a new package version (`v1` → `v2`), and `buf breaking` enforces backward compatibility within a version.
+Interface versioning follows standard protobuf package-level versioning conventions. The version is encoded in the package name (e.g., `dev.jumpstarter.interfaces.power.v1`) and the `--version` flag on the codegen CLI. Breaking changes to an interface require a new package version (`v1` → `v2`), and `buf breaking` enforces backward compatibility within a version. Third-party (out-of-tree) interfaces encode versioning the same way within their own reverse-domain namespace (e.g., `com.example.interfaces.foo.v1` → `com.example.interfaces.foo.v2`); `buf breaking` works identically regardless of the package prefix.
 
 This approach was chosen over a custom `interface_version` service option because:
 
@@ -235,7 +241,7 @@ A shared `jumpstarter/annotations/annotations.proto` file defines custom options
 
 ```protobuf
 syntax = "proto3";
-package jumpstarter.annotations;
+package dev.jumpstarter.annotations;
 
 import "google/protobuf/descriptor.proto";
 
@@ -313,7 +319,7 @@ When the codegen CLI processes the class above, the resulting `.proto` file carr
 
 ```protobuf
 syntax = "proto3";
-package jumpstarter.interfaces.power.v1;
+package dev.jumpstarter.interfaces.power.v1;
 
 import "google/protobuf/empty.proto";
 
@@ -391,6 +397,8 @@ The codegen CLI introspects a Python interface class and produces a canonical `.
 
 The `.proto` file is co-located with the driver package that defines the interface — not in the central `protocol/` directory, which is reserved for Jumpstarter's own wire protocol (`ExporterService`, `RouterService`, etc.). This keeps interface schemas alongside their implementations and avoids confusion between the Jumpstarter protocol and driver interface contracts.
 
+**Proto package selection.** When `--proto-package` is omitted, the CLI uses the first-party convention `dev.jumpstarter.interfaces.{interface_lower}.{version}` — required for in-tree interfaces. Out-of-tree authors override with `--proto-package`, e.g. `--proto-package com.example.interfaces.foo.v1`, to publish under their own organization's reverse-domain namespace (the same flexibility their driver Python packages already enjoy). The `--version` flag still controls the trailing version segment when the default is in use; when `--proto-package` is set explicitly, the author embeds the version in the package string directly.
+
 Implementation: loads the interface class via `importlib`, calls `build_file_descriptor()` to produce the `FileDescriptorProto`, then renders it as human-readable `.proto` source text. Python snake_case method names are converted to PascalCase RPC names (e.g., `read_data_by_identifier` → `rpc ReadDataByIdentifier`), following standard proto conventions.
 
 For batch processing of all in-tree drivers, the codegen CLI's batch mode:
@@ -404,6 +412,8 @@ walks `DriverInterfaceMeta._registry` (populated at import time) to discover all
 ### Out-of-tree drivers
 
 Out-of-tree driver packages — drivers maintained outside this repository — participate in the same `.proto` workflow as in-tree drivers. The supported path is build-time codegen: the maintainer runs the codegen CLI against their `DriverInterface` subclasses, commits the resulting `.proto` files into their package's `proto/` directory, and bundles a pre-compiled descriptor set produced by `protoc --descriptor_set_out` at the package's build time. Their `DriverInterface` subclasses register with `DriverInterfaceMeta._registry` automatically at import time, so the codegen CLI's batch mode picks them up once the package is installed in the development environment, and the interface check CLI can run against any importable interface module — out-of-tree packages are not a special case.
+
+Out-of-tree maintainers choose their own proto package namespace — typically a reverse-domain string matching their organization (e.g., `com.example.interfaces.foo.v1`) — by passing `--proto-package` to the codegen CLI. This mirrors the existing freedom out-of-tree authors have over their driver Python package names, and keeps the `dev.jumpstarter.interfaces.*` namespace reserved for first-party interfaces.
 
 If an out-of-tree driver ships neither a committed `.proto` nor a bundled descriptor, the exporter logs a warning naming the driver and continues to load it. The driver still serves `DriverCall` traffic normally, so existing Python clients keep working. Three things degrade in that case:
 
@@ -1016,7 +1026,7 @@ class FlasherInterface(DriverInterface):
 
 On the driver side, `source` is a resource UUID received via `DriverCall`. On the client side, the actual `flash()` method creates an `OpendalAdapter` context manager, negotiates a stream handle, and passes it to `self.call("flash", handle, target)`. This orchestration involves file hashing, compression negotiation, and operator selection — none of which can be expressed in protobuf.
 
-On the wire, resource handles are UUIDs (strings) — they are passed as `string` parameters through `DriverCall`. The generated `.proto` represents these as `string` with a custom annotation `jumpstarter.annotations.resource_handle = true` on the field, signaling to codegen tools that this parameter is a resource reference, not a plain string.
+On the wire, resource handles are UUIDs (strings) — they are passed as `string` parameters through `DriverCall`. The generated `.proto` represents these as `string` with a custom annotation `dev.jumpstarter.annotations.resource_handle = true` on the field, signaling to codegen tools that this parameter is a resource reference, not a plain string.
 
 The hand-written `FlasherClient` with its `OpendalAdapter` orchestration (file hashing, compression negotiation, stream setup) remains the supported Python client pattern. The proto-level `resource_handle` annotation is a hint for future non-Python codegen; the polyglot resource handle protocol (how Java / Kotlin clients negotiate a stream and obtain a UUID to pass) will be specified in a follow-up JEP alongside non-Python codegen.
 
@@ -1055,7 +1065,7 @@ The `file_descriptor_proto` bytes in the report are served through the authentic
 - **Round-trip consistency:** Generate a `FileDescriptorProto` from a Python interface, render it as `.proto` source, parse the source back, and verify the descriptors are semantically identical.
 - **Edge cases:** Incompletely annotated methods (tool refuses to generate), `Optional` fields, recursive dataclasses, empty interfaces (`CompositeInterface`).
 - **Doc comment extraction:** Verify that class, method, and field docstrings are captured in the `FileDescriptorProto`'s `source_code_info` and rendered as proto comments by the codegen CLI.
-- **Package versioning:** Verify that the `--version` flag produces the correct package name suffix (e.g., `jumpstarter.interfaces.power.v1` vs `v2`).
+- **Package versioning:** Verify that the `--version` flag produces the correct package name suffix (e.g., `dev.jumpstarter.interfaces.power.v1` vs `v2`).
 - **`@exportstream` detection:** Verify that methods decorated with `@exportstream` are detected by `build_file_descriptor()` and emitted as bidi streaming methods with `StreamData` request/response types, distinct from `@export` methods.
 - **Mixed `@export` / `@exportstream` interfaces:** Verify that an interface class containing both `@export` and `@exportstream` methods (like `TcpNetwork` with `address` + `connect`) produces a single `ServiceDescriptorProto` with correctly differentiated method types.
 - **Opt-in strict mode:** Verify that `@export` in default mode emits `DeprecationWarning` for missing annotations, and in `strict=True` mode raises `TypeError`.
@@ -1210,31 +1220,19 @@ Runtime introspection remains available for development-time tooling (the codege
 
 ## Unresolved Questions
 
-### Must resolve before acceptance
+The following questions can be deferred until implementation. They do not block acceptance of this JEP — each has a reasonable default that can be refined as the codegen and check CLIs are built out.
 
-1. **Field number assignment for `file_descriptor_proto`:** ~~Field number 6 is proposed. Need to confirm no in-flight PRs are using field 6 in `DriverInstanceReport`.~~ **Resolved:** Field 6 is already defined in `protocol/proto/jumpstarter/v1/jumpstarter.proto` as `optional bytes file_descriptor_proto = 6`.
+1. **`Union` type mapping:** How should `Union[str, int]` map to protobuf? `oneof` is the natural choice but adds complexity. Deferring to a future JEP is acceptable since `Union` is rarely used in current driver interfaces.
 
-2. **`grpcio-reflection` as required vs. optional dependency:** ~~Hard dependency or optional extra?~~ **Resolved:** Optional extra (`pip install jumpstarter[reflection]`). The exporter loads the bundled descriptor set regardless; reflection is advisory for tooling, not required for `DriverCall` dispatch. Keeping it optional reduces install size on constrained exporters.
+2. **Bidirectional streaming mapping:** The `@export` decorator supports `STREAM` (bidirectional) in addition to `UNARY` and `SERVER_STREAMING` — the TCP driver already uses bidirectional streaming. The proto mapping for bidirectional streaming (`stream → stream`) needs finalizing in `build_file_descriptor()`. This is required for completeness but can be added after unary and server-streaming support is stable.
 
-3. **Proto package naming convention:** The proposed convention is `jumpstarter.interfaces.{name}.{version}` (e.g., `jumpstarter.interfaces.power.v1`). Should this be formalized as a requirement for all interfaces, or should driver authors have flexibility?
+3. **Proto style guide:** Should generated `.proto` files follow Google's style guide, Buf's style guide, or a Jumpstarter-specific convention? This affects field naming (snake_case vs. camelCase) and file organization.
 
-4. **`UdsInterface` refactoring:** ~~The `UdsInterface` concrete mixin pattern (where `@export` is on the interface itself) must be refactored to use `DriverInterface` + `@abstractmethod`. Should this refactoring be a prerequisite for JEP-0011, or tracked as a separate cleanup?~~ **Resolved:** Deferred to a follow-up task. `UdsInterface` is excluded from Phase 1b migration. The builder will handle non-`DriverInterface` classes via a legacy fallback path during the transition. See "Deferred: `UdsInterface` concrete mixin" in Design Details.
+4. **Docstring format for proto comments:** Should the builder strip reStructuredText or Google-style docstring directives (`:param:`, `Args:`, `Returns:`) before emitting proto comments, or pass them through verbatim? Stripping produces cleaner proto but loses structured parameter documentation.
 
-5. **Migration timeline for `DriverInterfaceMeta`:** ~~Should all existing interfaces migrate to the new `DriverInterface` base class in Phase 1, or can migration be gradual?~~ **Resolved:** All standard interfaces (PowerInterface, VirtualPowerInterface, NetworkInterface, FlasherInterface, StorageMuxInterface, StorageMuxFlasherInterface, CompositeInterface) migrate in Phase 1b. UdsInterface is deferred. FlasherClientInterface (a client-side ABC) is explicitly out of scope.
+5. **Resource handle annotation in Phase 1:** The `dev.jumpstarter.annotations.resource_handle = true` field option is specified by this JEP, but its consumer (non-Python codegen that understands how to negotiate resource streams) lands in a follow-up. Should the annotation ship in Phase 5 anyway so committed `.proto` files already carry it, or wait until the polyglot resource protocol is designed?
 
-### Can wait until implementation
-
-6. **`Union` type mapping:** How should `Union[str, int]` map to protobuf? `oneof` is the natural choice but adds complexity. Deferring to a future JEP is acceptable since `Union` is rarely used in current driver interfaces.
-
-7. **Bidirectional streaming mapping:** The `@export` decorator supports `STREAM` (bidirectional) in addition to `UNARY` and `SERVER_STREAMING` — the TCP driver already uses bidirectional streaming. The proto mapping for bidirectional streaming (`stream → stream`) needs finalizing in `build_file_descriptor()`. This is required for completeness but can be added after unary and server-streaming support is stable.
-
-8. **Proto style guide:** Should generated `.proto` files follow Google's style guide, Buf's style guide, or a Jumpstarter-specific convention? This affects field naming (snake_case vs. camelCase) and file organization.
-
-9. **Docstring format for proto comments:** Should the builder strip reStructuredText or Google-style docstring directives (`:param:`, `Args:`, `Returns:`) before emitting proto comments, or pass them through verbatim? Stripping produces cleaner proto but loses structured parameter documentation.
-
-10. **Resource handle annotation in Phase 1:** The `jumpstarter.annotations.resource_handle = true` field option is specified by this JEP, but its consumer (non-Python codegen that understands how to negotiate resource streams) lands in a follow-up. Should the annotation ship in Phase 5 anyway so committed `.proto` files already carry it, or wait until the polyglot resource protocol is designed?
-
-11. **Pydantic model features beyond simple fields:** Pydantic models can have validators, computed properties (`apparent_power` on `PowerReading`), model config, and custom serialization. The builder introspects `model_fields` only — validators and computed properties are not represented in the proto. Is this acceptable, or should computed properties be surfaced as read-only fields?
+6. **Pydantic model features beyond simple fields:** Pydantic models can have validators, computed properties (`apparent_power` on `PowerReading`), model config, and custom serialization. The builder introspects `model_fields` only — validators and computed properties are not represented in the proto. Is this acceptable, or should computed properties be surfaced as read-only fields?
 
 ## Future Possibilities
 
@@ -1298,7 +1296,7 @@ Client                              Exporter
 ```
 
 The key differences:
-- **No string dispatch:** gRPC resolves the method from the service/method path (`/jumpstarter.interfaces.power.v1.PowerInterface/On`)
+- **No string dispatch:** gRPC resolves the method from the service/method path (`/dev.jumpstarter.interfaces.power.v1.PowerInterface/On`)
 - **No Value round-trip:** Arguments are compiled protobuf messages, not JSON-via-`google.protobuf.Value`
 - **Standard per-method observability:** gRPC interceptors, tracing, and metrics work at the method level
 - **UUID routing via metadata:** The `x-jumpstarter-driver-uuid` header replaces the UUID field in `DriverCallRequest`
@@ -1309,7 +1307,7 @@ The `.proto` files from the codegen CLI (this JEP) are compiled by `protoc` to p
 
 ```protobuf
 syntax = "proto3";
-package jumpstarter.interfaces.power.v1;
+package dev.jumpstarter.interfaces.power.v1;
 
 import "google/protobuf/empty.proto";
 
@@ -1337,7 +1335,7 @@ Today, `Driver` implements `ExporterServiceServicer` and dispatches via `__looku
 
 ```python
 # Auto-generated by a proto-first codegen companion (or hand-written)
-from jumpstarter.interfaces.power.v1 import power_pb2, power_pb2_grpc
+from dev.jumpstarter.interfaces.power.v1 import power_pb2, power_pb2_grpc
 
 class PowerServicer(power_pb2_grpc.PowerInterfaceServicer):
     """Bridges a PowerInterface driver to its native gRPC servicer."""
