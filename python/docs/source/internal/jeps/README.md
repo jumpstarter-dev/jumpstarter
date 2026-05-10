@@ -35,7 +35,7 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 | JEP  | Title                                                                              | Status      | Author(s)            |
 | ---- | ---------------------------------------------------------------------------------- | ----------- | -------------------- |
 | 0010 | [Renode Integration](JEP-0010-renode-integration.md)                               | Implemented | @vtz (Vinicius Zein) |
-| 0014 | [Admin API, Identity Federation, and Typed Web SDK](JEP-0014-admin-api.md) | Draft       | @kirkbrauer (Kirk Brauer) |
+| 0014 | [Admin API and Identity Federation](JEP-0014-admin-api.md)                         | Draft       | @kirkbrauer (Kirk Brauer) |
 
 ### Informational JEPs
 

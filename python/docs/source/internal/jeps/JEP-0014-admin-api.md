@@ -1,15 +1,15 @@
-# JEP-0014: Admin API, Identity Federation, and Typed Web SDK
+# JEP-0014: Admin API and Identity Federation
 
-| Field          | Value                                             |
-| -------------- | ------------------------------------------------- |
-| **JEP**        | 0014                                              |
-| **Title**      | Admin API, Identity Federation, and Typed Web SDK |
-| **Author(s)**  | @kirkbrauer                                       |
-| **Status**     | Draft                                             |
-| **Type**       | Standards Track                                   |
-| **Created**    | 2026-05-04                                        |
-| **Updated**    | 2026-05-04 (grpc-gateway; new `admin.v1` package) |
-| **Discussion** | *TBD — link added when PR is opened*              |
+| Field          | Value                                |
+| -------------- | ------------------------------------ |
+| **JEP**        | 0014                                 |
+| **Title**      | Admin API and Identity Federation    |
+| **Author(s)**  | @kirkbrauer                          |
+| **Status**     | Draft                                |
+| **Type**       | Standards Track                      |
+| **Created**    | 2026-05-10                           |
+| **Updated**    | 2026-05-10                           |
+| **Discussion** | *TBD — link added when PR is opened* |
 
 ---
 
@@ -42,13 +42,14 @@ propagates the human user's identity to the kube-apiserver via
 `Impersonate-*` headers so audit logs reflect the originating actor.
 The admin services are served as gRPC for new tooling and as
 REST/JSON via [`grpc-gateway`](https://github.com/grpc-ecosystem/grpc-gateway)
-for browsers, Backstage, and OpenShift Console plug-ins. A single generated
-TypeScript SDK (`@jumpstarter/api`), built from the OpenAPI v2
-spec emitted by `protoc-gen-openapiv2`, covers **both** the new
-admin API and the existing `client.v1` API so web authors can build
-admin portals and browser-based "thin clients" (lease + interact
-UIs targeting a user's auto-provisioned OIDC Client) from the same
-package with end-to-end type safety. Outbound webhooks complete the
+for browsers, Backstage, and OpenShift Console plug-ins; an
+OpenAPI v2 spec emitted by `protoc-gen-openapiv2` documents the
+REST surface for both the new admin API and the existing `client.v1`
+API, so web authors can build admin portals and browser-based
+"thin clients" (lease + interact UIs targeting a user's
+auto-provisioned OIDC Client) directly against the documented wire
+contract. A generated typed Web SDK is out of scope for this JEP
+and deferred to follow-up work. Outbound webhooks complete the
 surface for event-driven integrations.
 
 ## Motivation
@@ -211,16 +212,12 @@ who can do what; the wire surface is the same.
 - **As an** OpenShift Console plug-in author, **I want to** embed a
   Jumpstarter dashboard that reuses the user's existing console
   session token, **so that** I do not have to re-prompt for login.
-- **As a** Web UI developer, **I want to** `import { LeaseService }
-  from "@jumpstarter/api"` and get end-to-end type safety from
-  the proto file to the browser, **so that** schema drift breaks
-  the build instead of breaking production.
 - **As a** Web UI developer, **I want to** build a minimal
-  browser-based "thin client" that lets a developer find an
-  exporter, lease it, and interact with it as their auto-provisioned
-  Client, using only `@jumpstarter/api/client/...` over
-  `/client/v1/...`, **so that** I do not have to implement or
-  expose any admin functionality in the thin-client surface.
+  browser-based "thin client" against the documented REST/JSON
+  surface that lets a developer find an exporter, lease it, and
+  interact with it as their auto-provisioned Client over
+  `/client/v1/...`, **so that** I can ship a browser workflow
+  without depending on the admin surface.
 
 The split is **not** "admins on `admin.v1`, end users on
 `client.v1`." Every authenticated user typically uses *both*: the
@@ -356,11 +353,21 @@ admin surface or any gRPC sidecar. The wire-level proto contract is
 not modified, so existing gRPC consumers (the deployed `jmp` CLI)
 continue to work; the REST surface is purely additive.
 
-The two transports share a single port via `cmux`: HTTP/2 +
-`content-type: application/grpc` is dispatched to the gRPC server,
-everything else flows through the REST gateway. Both honour the same
+The two transports share a single port via the same pattern the
+controller already uses today
+(`controller/internal/service/controller_service.go:1038-1046`):
+a TLS listener with ALPN advertising `h2` and `http/1.1`, fronted
+by an `http.Handler` that dispatches per request — anything with
+`Content-Type: application/grpc` over HTTP/2 is forwarded to the
+gRPC server's `ServeHTTP` method, everything else routes to the
+`grpc-gateway` mux. (For deployments that terminate TLS upstream
+the same handler can be wrapped in
+[`h2c.NewHandler`](https://pkg.go.dev/golang.org/x/net/http2/h2c)
+to accept cleartext HTTP/2.) Both transports honour the same
 underlying service implementation, so there is one source of truth
-for handler logic and authorization.
+for handler logic and authorization. Routing per request rather than
+per connection lets a single keep-alive carry both gRPC and REST
+calls and avoids depending on the dormant `cmux` library.
 
 `Watch*` server-streaming RPCs are exposed by `grpc-gateway` as
 **newline-delimited JSON streams** over HTTP/1.1 chunked transfer.
@@ -476,8 +483,8 @@ Kubernetes resource called `Client` and an actor role also called
 The proto package qualifier (`admin` vs `client`) and the REST path
 prefix (`/admin/v1/clients/...` vs `/client/v1/leases/...`) together
 make the role unambiguous at every call site, the wire, and the
-URL. Generated Go and TypeScript code resolves them to fully-distinct
-types (`adminv1.ClientServiceClient` vs `clientv1.ClientServiceClient`)
+URL. Generated Go code resolves them to fully-distinct types
+(`adminv1.ClientServiceClient` vs `clientv1.ClientServiceClient`)
 that cannot be confused in source.
 
 New messages added in `jumpstarter.admin.v1`: `Client`,
@@ -549,8 +556,9 @@ rpc DeleteClient(DeleteClientRequest) returns (google.protobuf.Empty) {
 ```
 
 The OpenAPI v2 spec is generated by `protoc-gen-openapiv2` and
-published alongside the binaries so the same document drives the TS
-SDK, a Swagger UI page, and any third-party client.
+published alongside the binaries so the same document drives a
+Swagger UI page, any third-party HTTP client, and (in a follow-up
+JEP) per-language SDKs.
 
 ### Hardware Considerations
 
@@ -566,9 +574,12 @@ in-process authorizer. Hardware is unaffected.
 
 1. **gRPC + `grpc-gateway`** — Define services in proto, annotate
    each RPC with `google.api.http`, run the existing gRPC server plus
-   a generated REST/JSON reverse proxy on the same port via `cmux`.
-   OpenAPI v2 emitted by `protoc-gen-openapiv2` documents the REST
-   surface.
+   a generated REST/JSON reverse proxy behind a single `http.Handler`
+   that dispatches by `Content-Type` (`application/grpc` over HTTP/2
+   to the gRPC server's `ServeHTTP`, everything else to the gateway
+   mux). This is the pattern the controller already uses for its
+   single port today. OpenAPI v2 emitted by `protoc-gen-openapiv2`
+   documents the REST surface.
 2. **[Connect-RPC](https://connectrpc.com/)** — Dual-mount every
    service as both gRPC and Connect-RPC on a single Go server, with
    browser clients via `@connectrpc/connect-web`.
@@ -599,19 +610,18 @@ advantages:
   `/client/v1/`) makes audience-specific ingress policy trivial.
   Connect-RPC tunnels everything as POST.
 - **OpenAPI v2 for free.** A single `protoc-gen-openapiv2` run
-  produces the spec that drives the TS SDK, a Swagger UI page for
-  documentation, and any third-party HTTP client. With Connect-RPC
-  the canonical schema is the proto; OpenAPI tooling needs a
-  separate codegen step.
+  produces the spec that drives a Swagger UI page for documentation
+  and any third-party HTTP client. With Connect-RPC the canonical
+  schema is the proto; OpenAPI tooling needs a separate codegen step.
 
-Connect-RPC's TS DX is genuinely good and its bidi-streaming over
-HTTP/2 is more capable than `grpc-gateway`'s NDJSON server-streaming.
-But the admin API only needs server streaming (`Watch*`), not
-bidi, so that capability is unused; and matching the ArgoCD/Tekton
-shape gives reviewers familiar with those projects an immediate
-mental model. Hand-rolled REST loses the proto contract and
-inevitably drifts from gRPC. Envoy/gRPC-Web adds an in-cluster
-component without solving the OpenAPI question.
+Connect-RPC's bidi-streaming over HTTP/2 is more capable than
+`grpc-gateway`'s NDJSON server-streaming, but the admin API only
+needs server streaming (`Watch*`), not bidi, so that capability is
+unused; and matching the ArgoCD/Tekton shape gives reviewers
+familiar with those projects an immediate mental model.
+Hand-rolled REST loses the proto contract and inevitably drifts
+from gRPC. Envoy/gRPC-Web adds an in-cluster component without
+solving the OpenAPI question.
 
 ### DD-2: Authorization via SubjectAccessReview, not in-process authorizer or claim-based
 
@@ -698,9 +708,7 @@ AIP-122 (one service per resource), giving crisp SAR scoping:
 `{verb=get,resource=leases.jumpstarter.dev}` without parsing method
 names. Path-prefix scoping (`/admin/v1/...` vs `/client/v1/...`)
 makes the audience boundary visible all the way out to the URL,
-where ingress can enforce it. Generated TypeScript modules can be
-tree-shaken per resource, which matters for browser bundle size.
-The `ClientService` name overlap with the legacy
+where ingress can enforce it. The `ClientService` name overlap with the legacy
 `client.v1.ClientService` is intentional and follows from the
 mirroring rule: see *API / Protocol Changes — Why the `ClientService`
 name overlap is intentional* for the full justification.
@@ -771,27 +779,7 @@ ingestion. Audit annotations would create a second source of truth
 that might drift from kube-audit and require custom tooling to
 correlate.
 
-### DD-7: TypeScript package home — `typescript/api/` in monorepo
-
-**Alternatives considered:**
-
-1. **`typescript/api/` in this monorepo** — Generate, build, and
-   publish from the same repo as the proto.
-2. **Separate `jumpstarter-protocol-ts` repo** — Mirror the layout of a
-   future split protocol repository.
-
-**Decision:** `typescript/api/` in monorepo, under a
-`typescript/` directory reserved for future TS artifacts (Web UI,
-Backstage plug-in).
-
-**Rationale:** Keeping the generated code beside the source means
-proto changes and generated bindings ship in the same PR — no
-repo-spanning coordination, no version-skew window. A
-tag-gated GitHub Action publishes `@jumpstarter/api` to npm. If
-the protocol is later split into its own repo, the `typescript/`
-directory moves with it.
-
-### DD-8: Webhook delivery in-controller with a worker pool, not a separate dispatcher
+### DD-7: Webhook delivery in-controller with a worker pool, not a separate dispatcher
 
 **Alternatives considered:**
 
@@ -809,7 +797,7 @@ benefit. CRD-status-as-queue gives admins observable retry behavior
 via `kubectl describe webhook`. If volume justifies it later, a
 dispatcher Deployment can be carved out without changing the API.
 
-### DD-9: OpenShift Console reuses the user's bearer token
+### DD-8: OpenShift Console reuses the user's bearer token
 
 **Alternatives considered:**
 
@@ -835,9 +823,9 @@ flowchart LR
   Browser[Web UI / Backstage / Console plug-in]
   CLI[jmp CLI]
   Exporter[exporter agent]
-  Listener[Single Port<br/>cmux dispatch]
-  REST[grpc-gateway<br/>REST/JSON proxy]
-  Grpc[gRPC server]
+  Listener[Single Port<br/>TLS + ALPN h2/http1.1<br/>Content-Type dispatch]
+  REST[grpc-gateway<br/>REST/JSON mux]
+  Grpc[gRPC server<br/>ServeHTTP]
   MgmtAuth[Admin Pipeline<br/>multi-issuer OIDC + SAR]
   RuntimeAuth[Legacy + Runtime Pipeline<br/>OIDC object-token + in-process authz]
   Mgmt[admin.v1 Services<br/>Lease/Exporter/Client]
@@ -849,8 +837,8 @@ flowchart LR
   Browser -- HTTP/JSON --> Listener
   CLI -- gRPC --> Listener
   Exporter -- gRPC --> Listener
-  Listener -- HTTP/1.x --> REST
-  Listener -- HTTP/2 + application/grpc --> Grpc
+  Listener -- "HTTP/2 + Content-Type: application/grpc" --> Grpc
+  Listener -- "everything else" --> REST
   REST -- in-process gRPC --> Grpc
   Grpc -- /jumpstarter.admin.v1.* --> MgmtAuth
   Grpc -- /jumpstarter.client.v1.* --> RuntimeAuth
@@ -863,12 +851,24 @@ flowchart LR
   WH -- HMAC-SHA256 --> Ext
 ```
 
-`cmux` inspects each incoming connection: HTTP/2 with
-`content-type: application/grpc` goes to the gRPC server, everything
-else flows through the `grpc-gateway` REST proxy which then makes an
-in-process gRPC call into the same server. This lets one port serve
-the `jmp` CLI (gRPC), the exporter agents (gRPC, runtime path only),
-and browser/REST clients without any sidecar.
+A single `http.Handler` on a TLS listener with ALPN advertising `h2`
+and `http/1.1` inspects every request: HTTP/2 requests with
+`Content-Type: application/grpc` are forwarded to
+`grpc.Server.ServeHTTP`; everything else routes through the
+`grpc-gateway` REST mux, which then makes an in-process gRPC call
+into the same server. This is the pattern the controller already
+uses today
+(`controller/internal/service/controller_service.go:1038-1046`),
+so adopting it for the admin services is continuity rather than
+new infrastructure. Per-request dispatch lets one port serve the
+`jmp` CLI (gRPC), the exporter agents (gRPC, runtime path only),
+and browser/REST clients without any sidecar — and without
+depending on the dormant `cmux` library.
+
+When TLS is terminated upstream (e.g. by an OpenShift route or
+ingress controller) the same handler can be served via
+[`h2c.NewHandler`](https://pkg.go.dev/golang.org/x/net/http2/h2c)
+to accept cleartext HTTP/2; the dispatch logic is unchanged.
 
 ### Authentication Flow
 
@@ -960,61 +960,25 @@ Delivery semantics:
 - **Idempotency:** every event has an `event_id`; consumers
   deduplicate.
 
-### TypeScript SDK Build
+### OpenAPI Publication
 
-The TS SDK is generated from the **OpenAPI v2 spec** that
-`grpc-gateway`'s `protoc-gen-openapiv2` plugin produces from the same
-proto sources used by Go codegen. **Both proto packages are
-included**: `jumpstarter.admin.v1` (the new admin surface) and
-`jumpstarter.client.v1` (the existing namespace-scoped Client-actor
-surface). Including both lets a single `@jumpstarter/api`
-package back two distinct kinds of web app:
-
-- **Admin / management portals** that drive cross-namespace
-  operations and self-service registration, importing from
-  `@jumpstarter/api/admin/...`.
-- **Browser-based "thin clients"** — minimal web UIs whose only job
-  is letting a developer find an exporter, lease it, and interact
-  with it as their auto-provisioned `Client` actor — importing from
-  `@jumpstarter/api/client/...` and never touching the admin
-  surface.
-
-The pipeline:
-
-1. Add `protoc-gen-openapiv2` to `controller/buf.gen.yaml` so every
-   `buf generate` run emits
-   `internal/protocol/jumpstarter/{client,admin}/v1/*.swagger.json`
-   for both packages.
-2. A new `typescript/api/` package runs
-   [`openapi-typescript`](https://github.com/openapi-ts/openapi-typescript)
-   over each Swagger document to produce typed schemas under
-   `src/admin/` and `src/client/`, plus a thin `openapi-fetch`-based
-   wrapper per package that handles bearer-token injection and
-   NDJSON `Watch*` decoding.
-3. `tsup` builds CJS+ESM+`.d.ts`. `package.json` declares
-   `@jumpstarter/api` and exports per-package, per-resource
-   entry points so consumers can tree-shake aggressively:
-   - `@jumpstarter/api/admin/lease`
-   - `@jumpstarter/api/admin/exporter`
-   - `@jumpstarter/api/admin/client`
-   - `@jumpstarter/api/client/lease`
-   - `@jumpstarter/api/client/exporter`
-
-   A GitHub Action gated on `v*` tags publishes to npm.
-
-Both OpenAPI documents are also published as static artifacts on
-each release so third parties (Backstage scaffolding, custom
-dashboards, Postman collections) can generate clients in any
-language without needing the `.proto` files.
+`protoc-gen-openapiv2` is added to `controller/buf.gen.yaml` so every
+`buf generate` run emits `*.swagger.json` for both
+`jumpstarter.admin.v1` and `jumpstarter.client.v1`. The resulting
+OpenAPI v2 documents are published as static artifacts on each
+release and back a Swagger UI page served by the controller, so
+third parties (Backstage scaffolding, custom dashboards, Postman
+collections, future generated SDKs in any language) can integrate
+without needing the `.proto` files.
 
 ### Compatibility Matrix
 
-| Integration        | What it provides            | Typical caller mix                                                                                                                  | Cluster-admin setup                                                                                                       |
-| ------------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| OpenShift Console  | User's console bearer token | Platform admins (cluster-wide views) and developers (scoped self-service in their own namespace)                                    | Console plug-in registration                                                                                              |
-| Standalone Web UI  | Dex-issued OIDC token       | Same dual audience; cluster admins and self-service users separated by RBAC                                                         | Add Dex `JWTAuthenticator` to `AuthenticationConfiguration`; Dex client_id                                                |
-| Backstage / RHDH   | Backstage IdP OIDC token    | Mostly developers using `client.v1` for their auto-provisioned Client; `admin.v1` for self-service (CI Clients, personal exporters) | Add Backstage `JWTAuthenticator`; install `@jumpstarter/backstage-plugin` (future); auto-provision Clients on first login |
-| Keycloak / generic | Generic OIDC token          | Mixed; depends on deployment                                                                                                        | Add `JWTAuthenticator`; standard `RoleBinding`s for tenants                                                               |
+| Integration        | What it provides            | Typical caller mix                                                                                                                  | Cluster-admin setup                                                        |
+| ------------------ | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| OpenShift Console  | User's console bearer token | Platform admins (cluster-wide views) and developers (scoped self-service in their own namespace)                                    | Console plug-in registration                                               |
+| Standalone Web UI  | Dex-issued OIDC token       | Same dual audience; cluster admins and self-service users separated by RBAC                                                         | Add Dex `JWTAuthenticator` to `AuthenticationConfiguration`; Dex client_id |
+| Backstage / RHDH   | Backstage IdP OIDC token    | Mostly developers using `client.v1` for their auto-provisioned Client; `admin.v1` for self-service (CI Clients, personal exporters) | Add Backstage `JWTAuthenticator`; auto-provision Clients on first login    |
+| Keycloak / generic | Generic OIDC token          | Mixed; depends on deployment                                                                                                        | Add `JWTAuthenticator`; standard `RoleBinding`s for tenants                |
 
 ## Test Plan
 
@@ -1057,17 +1021,9 @@ exporter path; HiL coverage is unchanged.
   user gets `PERMISSION_DENIED`; SAR-allowed user lists their leases.
 - Repeat against a `crc` (CodeReady Containers) OpenShift instance
   using a console-plug-in stub; verify bearer-token passthrough.
-- Stub Backstage plug-in: confirm `@jumpstarter/api` resolves
-  types under `tsc --strict` and round-trips `Lease` over the REST
-  gateway.
-
-### TS Package Smoke Test
-
-CI step: regenerate the OpenAPI spec from the current proto, build
-`@jumpstarter/api`, run `tsc --strict` over a small consumer
-that imports the typed `Lease` and `Exporter` clients, and exercise
-a `WatchLeases` NDJSON stream against a live controller. The build
-fails CI on type errors, OpenAPI/proto drift, or wire mismatch.
+- `curl` against the REST gateway: round-trip a `Lease` over
+  `/admin/v1/...` and `/client/v1/...`, including a `WatchLeases`
+  NDJSON stream.
 
 ## Acceptance Criteria
 
@@ -1094,13 +1050,9 @@ fails CI on type errors, OpenAPI/proto drift, or wire mismatch.
 - [ ] `WatchLeases` correctly resumes from `resource_version` after a
       forced disconnect (NDJSON stream), with no missed events under
       the test workload.
-- [ ] `@jumpstarter/api` builds from the OpenAPI specs of
-      **both** `jumpstarter.admin.v1` and `jumpstarter.client.v1`,
-      type-checks under `--strict`, and publishes on a tagged release.
-- [ ] A reference browser "thin client" (under `typescript/` or in
-      tests) round-trips a lease + driver-call workflow against
-      `client.v1` over the REST gateway using only
-      `@jumpstarter/api/client/...`.
+- [ ] OpenAPI v2 specs for **both** `jumpstarter.admin.v1` and
+      `jumpstarter.client.v1` are emitted by `buf generate` and
+      published as release artifacts.
 - [ ] Webhook delivery is verified at-least-once with HMAC signing
       against a test consumer.
 - [ ] **Legacy compatibility:** the existing
@@ -1166,8 +1118,8 @@ until they are reconciled.
 - Cluster admins manage admin-API permissions through standard
   Kubernetes RBAC.
 - kube-audit reflects human users, not the controller SA.
-- TypeScript consumers get end-to-end type safety, eliminating an
-  entire class of integration bugs.
+- A documented OpenAPI v2 surface unblocks future per-language SDKs
+  (TypeScript, Rust, others) without further proto changes.
 - Outbound webhooks unblock event-driven CI integrations.
 
 ### Negative
@@ -1193,9 +1145,6 @@ until they are reconciled.
   short-lived authorization cache keyed by `(user, verb, resource)`.
 - **Webhook signing-key rotation** — operators must rotate
   `secretRef` periodically; we will document a rotation playbook.
-- **npm release skew** — `@jumpstarter/api` could drift from the
-  Go protocol module. Mitigated by tag-gated CI that builds and
-  publishes both from the same commit.
 
 ## Rejected Alternatives
 
@@ -1230,11 +1179,14 @@ following higher-level approaches were considered and rejected:
 ## Prior Art
 
 - **ArgoCD `argocd-server`** — the closest architectural parallel to
-  this proposal. Single Go binary, `cmux` to share a port between
-  gRPC and HTTP, `grpc-gateway` for REST/JSON, OIDC + Dex for
-  authentication, RBAC mapped to Kubernetes roles. The
+  this proposal. Single Go binary sharing a port between gRPC and
+  HTTP, `grpc-gateway` for REST/JSON, OIDC + Dex for authentication,
+  RBAC mapped to Kubernetes roles. The
   ["how to eat the gRPC cake"](https://blog.argoproj.io/how-to-eat-the-grpc-cake-and-have-it-too-77bc4ed555f6)
-  blog post documents the pattern in detail.
+  blog post documents the original `cmux`-based pattern; this JEP
+  uses the modern `Server.ServeHTTP` + Content-Type dispatch
+  variant (no `cmux` dependency) that the Jumpstarter controller
+  already runs.
 - **Tekton Results** — also `gRPC + grpc-gateway`, with the REST
   gateway as an opt-in component. Their TEP-0021 covers many of the
   same trade-offs we land on.
@@ -1257,9 +1209,6 @@ following higher-level approaches were considered and rejected:
   v1, selectors as a follow-up.
 - Webhook resource definition: dedicated `Webhook` CRD vs configmap
   with structured keys? Lean: CRD for status-subresource visibility.
-- TS package versioning: pin to the protocol git tag or independent
-  semver? Lean: independent semver with the protocol version in
-  `peerDependencies` metadata.
 - Should `Impersonate-Group` come from the OIDC `groups` claim, from
   a configurable group prefix, or both? Decide before implementation.
 
@@ -1270,8 +1219,13 @@ following higher-level approaches were considered and rejected:
 - **gRPC-Federation gateway** for multi-cluster Jumpstarter, where a
   single admin endpoint federates leases across federated
   clusters.
-- **`@jumpstarter/backstage-plugin`** built on `@jumpstarter/api`
-  and shipped from a `typescript/backstage-plugin/` directory.
+- **Typed Web SDK (`@jumpstarter/api`)** generated from the
+  published OpenAPI v2 spec — covering both `jumpstarter.admin.v1`
+  and `jumpstarter.client.v1` — plus a downstream
+  `@jumpstarter/backstage-plugin` built on top. Split into its own
+  follow-up JEP so this proposal can focus on the wire surface;
+  the OpenAPI spec landing here is the foundation that future
+  per-language SDK work builds on.
 - **Rate-limiting and quota** at the admin interceptor layer,
   driven by an annotation on the `Client` resource.
 - **CloudEvents-shaped webhook payloads** as an alternative envelope.
@@ -1289,7 +1243,6 @@ following higher-level approaches were considered and rejected:
 
 - [grpc-ecosystem/grpc-gateway](https://github.com/grpc-ecosystem/grpc-gateway)
 - [`protoc-gen-openapiv2`](https://github.com/grpc-ecosystem/grpc-gateway/tree/main/protoc-gen-openapiv2)
-- [`openapi-typescript`](https://github.com/openapi-ts/openapi-typescript)
 - [How to eat the gRPC cake and have it too — Argo Project blog](https://blog.argoproj.io/how-to-eat-the-grpc-cake-and-have-it-too-77bc4ed555f6)
 - [Tekton Results API](https://tekton.dev/docs/results/api/) and [TEP-0021](https://github.com/tektoncd/community/blob/main/teps/0021-results-api.md)
 - [Kubernetes SubjectAccessReview](https://kubernetes.io/docs/reference/access-authn-authz/authorization/)
