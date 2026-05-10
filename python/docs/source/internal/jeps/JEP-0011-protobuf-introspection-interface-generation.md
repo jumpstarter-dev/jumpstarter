@@ -70,7 +70,7 @@ In concrete terms:
 - **What the proto IS used for:** introspection (`GetReport`, gRPC reflection), compatibility checking (the interface check CLI, `buf breaking`), documentation, and polyglot codegen.
 - **What the proto is NOT used for:** actual RPC transport. The `DriverCall(uuid="...", method="on", args=[])` message continues to be the wire format.
 
-A future JEP will propose migrating to native protobuf service implementations — where `protoc`-generated stubs handle serialization directly and `DriverCall` is retired — but that is a separate, breaking change with its own migration path. A design sketch for this future work is included at the end of this JEP for context.
+A future JEP will propose adding native protobuf service implementations alongside `DriverCall` — where `protoc`-generated stubs handle serialization directly. Whether the legacy transport is eventually retired is a separate question, contingent on field experience with the dual-path implementation; this JEP does not commit to that outcome. A design sketch for this future work is included at the end of this JEP for context.
 
 #### gRPC reflection is advisory in this JEP
 
@@ -1424,7 +1424,7 @@ During the dual-path transition period, driver methods retain their `@export` de
 
 ```python
 class MockPower(PowerInterface, Driver):
-    @export  # Still needed for legacy DriverCall dispatch
+    @export  # Required for DriverCall dispatch
     async def on(self) -> None:
         self.logger.info("power on")
 
@@ -1433,7 +1433,7 @@ class MockPower(PowerInterface, Driver):
         self.logger.info("power off")
 ```
 
-Once `DriverCall` is removed (migration phase 4), the `@export` decorators become unnecessary for dispatch — but they continue to serve as the type introspection mechanism for `build_file_descriptor()` and `ExportedMethodInfo` capture.
+If `DriverCall` is eventually retired (see Migration phases below), the `@export` decorators would become unnecessary for dispatch — but they would continue to serve as the type introspection mechanism for `build_file_descriptor()` and `ExportedMethodInfo` capture.
 
 #### Client side: `DriverClient` auto-generates native stubs
 
@@ -1522,11 +1522,22 @@ Native client ────> │  On(Empty) + UUID metadata  │ ──┘
 
 #### Migration phases
 
+The first two phases are concrete proposals; what follows them is intentionally
+left open until the dual-path implementation has been validated in the field.
+
 1. **This JEP:** Generate `FileDescriptorProto` and `.proto` files. Wire protocol unchanged. Polyglot clients can use `DynamicMessage` with `DriverCall` and the descriptor.
-2. **Future JEP — dual path:** Exporter registers native gRPC services alongside `DriverCall`. Compile `.proto` files to stubs. New clients choose native path. Old clients unchanged.
-To be decided based on the discoveries during implementation of this JEP and the dual-path JEP
-3. **Deprecation:** Mark `DriverCall` as deprecated. Migration guide published.
-4. **Removal:** Remove `DriverCall` in a major version bump. All clients use native gRPC.
+2. **Future JEP — dual path:** Exporter registers native gRPC services alongside `DriverCall`. Compile `.proto` files to stubs. New clients can opt into the native path; existing clients are unchanged.
+
+**Possible future outcomes (not committed by this JEP):**
+
+After the dual-path implementation has been built, exercised in real
+deployments, and shown to be a complete substitute for `DriverCall`, the
+community may choose to take additional steps. Whether any of these steps
+are taken — and on what timeline — is intentionally deferred. They are
+listed here only to make the design space explicit:
+
+- **Deprecation (possible):** Mark `DriverCall` as deprecated and publish a migration guide, once the native path is known to cover every use case currently served by `DriverCall` (including resource-handle streaming, bidirectional drivers, and out-of-tree drivers).
+- **Removal (possible, much later):** Consider removing `DriverCall` in a major version bump. This would require a long deprecation window, broad ecosystem migration (including out-of-tree drivers), and explicit community consensus through a dedicated JEP. This JEP does not commit to this outcome.
 
 ## Implementation Phases
 
