@@ -49,7 +49,7 @@ This JEP addresses three concrete gaps:
 
 This proposal adds three capabilities to Jumpstarter, all centered on committed `.proto` files as the canonical schema artifact:
 
-1. **Codegen CLI (Python → `.proto`)** — a developer-invoked command that introspects a `DriverInterface` class and emits a `.proto` source file. The `.proto` file is committed alongside the driver package that defines the interface.
+1. **Proto Codegen CLI (Python → `.proto`)** — a developer-invoked command that introspects a `DriverInterface` class and emits a `.proto` source file. The `.proto` file is committed alongside the driver package that defines the interface.
 2. **Interface check CLI (drift detection)** — runs in CI to verify the committed `.proto` file still matches the Python interface. Reports any method, parameter, return-type, or streaming-semantics mismatch as a test failure.
 3. **Runtime descriptor exposure** — the exporter loads the pre-compiled descriptor set (produced by `protoc --descriptor_set_out` from the committed `.proto` files), registers the services with gRPC Server Reflection, and embeds the raw bytes in `DriverInstanceReport.file_descriptor_proto`.
 
@@ -74,7 +74,7 @@ A future JEP will propose adding native protobuf service implementations alongsi
 
 #### gRPC reflection is advisory in this JEP
 
-gRPC reflection will advertise services described by the committed `.proto` files — for example, `dev.jumpstarter.interfaces.power.v1.PowerInterface.On(Empty)`. Because the wire protocol is unchanged, **those services are not backed by native gRPC handlers in this JEP**. A client that discovers the service through reflection and attempts to invoke it directly (e.g., `grpcurl -d '{}' host:port dev.jumpstarter.interfaces.power.v1.PowerInterface/On`) will receive `UNIMPLEMENTED`.
+gRPC reflection will advertise services described by the committed `.proto` files — for example, `jumpstarter.driver.power.v1.PowerInterface.On(Empty)`. Because the wire protocol is unchanged, **those services are not backed by native gRPC handlers in this JEP**. A client that discovers the service through reflection and attempts to invoke it directly (e.g., `grpcurl -d '{}' host:port jumpstarter.driver.power.v1.PowerInterface/On`) will receive `UNIMPLEMENTED`.
 
 Reflection here is deliberately **advisory** — it exposes the schema so polyglot clients, codegen pipelines, and documentation tooling can discover the driver API and generate typed stubs that drive the existing `DriverCall` transport. The follow-up native-gRPC JEP will add handlers so reflected services become directly invocable without changing the proto schema produced by this JEP.
 
@@ -177,12 +177,12 @@ def build_file_descriptor(interface_class, version="v1", package=None):
     self-contained FileDescriptorProto that fully describes the interface.
 
     If `package` is omitted, the first-party Jumpstarter convention applies:
-    `dev.jumpstarter.interfaces.{interface_lower}.{version}`. Out-of-tree
+    `jumpstarter.driver.{interface_lower}.{version}`. Out-of-tree
     drivers pass an explicit `package` (e.g., `com.example.interfaces.foo.v1`)
     to use their own organization's reverse-domain namespace.
     """
     if package is None:
-        package = f"dev.jumpstarter.interfaces.{interface_class.__name__.lower()}.{version}"
+        package = f"jumpstarter.driver.{interface_class.__name__.lower()}.{version}"
     fd = FileDescriptorProto(
         name=f"{interface_class.__name__.lower()}.proto",
         package=package,
@@ -226,7 +226,7 @@ Protobuf service and message definitions carry structure — method names, param
 
 #### Interface Versioning
 
-Interface versioning follows standard protobuf package-level versioning conventions. The version is encoded in the package name (e.g., `dev.jumpstarter.interfaces.power.v1`) and the `--version` flag on the codegen CLI. Breaking changes to an interface require a new package version (`v1` → `v2`), and `buf breaking` enforces backward compatibility within a version. Third-party (out-of-tree) interfaces encode versioning the same way within their own reverse-domain namespace (e.g., `com.example.interfaces.foo.v1` → `com.example.interfaces.foo.v2`); `buf breaking` works identically regardless of the package prefix.
+Interface versioning follows standard protobuf package-level versioning conventions. The version is encoded in the package name (e.g., `jumpstarter.driver.power.v1`) and the `--version` flag on the codegen CLI. Breaking changes to an interface require a new package version (`v1` → `v2`), and `buf breaking` enforces backward compatibility within a version. Third-party (out-of-tree) interfaces encode versioning the same way within their own reverse-domain namespace (e.g., `com.example.interfaces.foo.v1` → `com.example.interfaces.foo.v2`); `buf breaking` works identically regardless of the package prefix.
 
 This approach was chosen over a custom `interface_version` service option because:
 
@@ -241,7 +241,7 @@ A shared `jumpstarter/annotations/annotations.proto` file defines custom options
 
 ```protobuf
 syntax = "proto3";
-package dev.jumpstarter.annotations;
+package jumpstarter.annotations;
 
 import "google/protobuf/descriptor.proto";
 
@@ -319,7 +319,7 @@ When the codegen CLI processes the class above, the resulting `.proto` file carr
 
 ```protobuf
 syntax = "proto3";
-package dev.jumpstarter.interfaces.power.v1;
+package jumpstarter.driver.power.v1;
 
 import "google/protobuf/empty.proto";
 
@@ -389,15 +389,30 @@ The codegen CLI introspects a Python interface class and produces a canonical `.
 
 ```bash
 <codegen> \
-  --package jumpstarter-driver-power \
   --interface PowerInterface \
   --version v1 \
-  --output python/packages/jumpstarter-driver-power/proto/power/v1/power.proto
+  --output interfaces/proto/jumpstarter/driver/power/v1/power.proto
 ```
 
-The `.proto` file is co-located with the driver package that defines the interface — not in the central `protocol/` directory, which is reserved for Jumpstarter's own wire protocol (`ExporterService`, `RouterService`, etc.). This keeps interface schemas alongside their implementations and avoids confusion between the Jumpstarter protocol and driver interface contracts.
+#### Repository layout for committed schemas
 
-**Proto package selection.** When `--proto-package` is omitted, the CLI uses the first-party convention `dev.jumpstarter.interfaces.{interface_lower}.{version}` — required for in-tree interfaces. Out-of-tree authors override with `--proto-package`, e.g. `--proto-package com.example.interfaces.foo.v1`, to publish under their own organization's reverse-domain namespace (the same flexibility their driver Python packages already enjoy). The `--version` flag still controls the trailing version segment when the default is in use; when `--proto-package` is set explicitly, the author embeds the version in the package string directly.
+Driver interface `.proto` files live under a language-neutral `interfaces/proto/` directory at the repository root, mirroring the project's existing `protocol/proto/` convention for the Jumpstarter wire protocol but kept distinct from it: `protocol/proto/` is reserved for the platform's own wire protocol (`ExporterService`, `RouterService`, etc.); `interfaces/proto/` holds the contracts individual hardware drivers implement.
+
+The directory tree under `interfaces/proto/` mirrors the proto package namespace exactly, the same way `protocol/proto/jumpstarter/v1/jumpstarter.proto` mirrors `package jumpstarter.v1;`. First-party driver interfaces use the `jumpstarter.driver.<name>.<version>` namespace:
+
+```text
+interfaces/
+  proto/
+    jumpstarter/
+      driver/
+        power/v1/power.proto         # package jumpstarter.driver.power.v1;
+        storage/v1/storage.proto     # package jumpstarter.driver.storage.v1;
+        network/v1/network.proto     # package jumpstarter.driver.network.v1;
+```
+
+This shape unblocks multi-language driver implementations of the same interface — every language's build tooling consumes the same `interfaces/proto/...` source, just as every language can already consume `protocol/proto/jumpstarter/v1/...` for the wire protocol — and lets standard `protoc -I interfaces/proto` import resolution work without configuration.
+
+**Proto package selection.** When `--proto-package` is omitted, the CLI uses the first-party convention `jumpstarter.driver.{name}.{version}` — required for in-tree interfaces. Out-of-tree authors override with `--proto-package`, e.g. `--proto-package com.example.jumpstarter.driver.abc.v1`, to publish under their own organization's reverse-domain namespace. The directory path under `interfaces/proto/` mirrors whatever namespace the author chooses, segment-for-segment.
 
 Implementation: loads the interface class via `importlib`, calls `build_file_descriptor()` to produce the `FileDescriptorProto`, then renders it as human-readable `.proto` source text. Python snake_case method names are converted to PascalCase RPC names (e.g., `read_data_by_identifier` → `rpc ReadDataByIdentifier`), following standard proto conventions.
 
@@ -407,13 +422,53 @@ For batch processing of all in-tree drivers, the codegen CLI's batch mode:
 <codegen> --all
 ```
 
-walks `DriverInterfaceMeta._registry` (populated at import time) to discover all defined interfaces and generates `.proto` files into each driver package's `proto/` directory.
+walks `DriverInterfaceMeta._registry` (populated at import time) to discover all defined interfaces and generates `.proto` files into the `interfaces/proto/` tree at the repository root.
 
 ### Out-of-tree drivers
 
-Out-of-tree driver packages — drivers maintained outside this repository — participate in the same `.proto` workflow as in-tree drivers. The supported path is build-time codegen: the maintainer runs the codegen CLI against their `DriverInterface` subclasses, commits the resulting `.proto` files into their package's `proto/` directory, and bundles a pre-compiled descriptor set produced by `protoc --descriptor_set_out` at the package's build time. Their `DriverInterface` subclasses register with `DriverInterfaceMeta._registry` automatically at import time, so the codegen CLI's batch mode picks them up once the package is installed in the development environment, and the interface check CLI can run against any importable interface module — out-of-tree packages are not a special case.
+Out-of-tree driver packages — drivers maintained outside this repository — participate in the same `.proto` workflow as in-tree drivers. The maintainer runs the codegen CLI against their `DriverInterface` subclasses, **vendors** the resulting `.proto` files into their own package's `interfaces/proto/` directory (mirroring the in-tree shape), and bundles a pre-compiled descriptor set produced by `protoc --descriptor_set_out` at the package's build time. The author chooses their own reverse-domain proto namespace (e.g., `com.example.jumpstarter.driver.abc.v1`) via `--proto-package`; the directory path under `interfaces/proto/` mirrors that namespace segment-for-segment.
 
-Out-of-tree maintainers choose their own proto package namespace — typically a reverse-domain string matching their organization (e.g., `com.example.interfaces.foo.v1`) — by passing `--proto-package` to the codegen CLI. This mirrors the existing freedom out-of-tree authors have over their driver Python package names, and keeps the `dev.jumpstarter.interfaces.*` namespace reserved for first-party interfaces.
+```text
+my-jumpstarter-drivers/                                       # package root
+├── pyproject.toml
+├── interfaces/
+│   └── proto/
+│       └── com/example/jumpstarter/driver/abc/v1/abc.proto   # package com.example.jumpstarter.driver.abc.v1;
+└── jumpstarter_driver_abc/
+    ├── __init__.py
+    └── driver.py
+```
+
+For multi-driver or multi-language packages, the same `interfaces/proto/` shape extends naturally — multiple interfaces under one `interfaces/proto/` tree, with sibling language directories (`python/`, `rust/`, `cpp/`) consuming the same schemas. An "interface-only" package may publish only `interfaces/proto/<ns>/...` with no implementation; an "implementation-only" package omits `interfaces/` entirely and pulls the schema from a declared dependency (the same way `tonic-build` and related gRPC tooling already resolves cross-package proto imports).
+
+```bash
+<codegen> \
+  --interface AbcInterface \
+  --version v1 \
+  --proto-package com.example.jumpstarter.driver.abc.v1 \
+  --output interfaces/proto/com/example/jumpstarter/driver/abc/v1/abc.proto
+```
+
+The `jumpstarter.driver.*` namespace is reserved for first-party interfaces; out-of-tree authors must supply `--proto-package` with their own reverse-domain namespace. The CLI refuses to write to a path that overlaps the first-party namespace when an out-of-tree namespace is requested, and vice versa.
+
+`DriverInterface` subclasses register with `DriverInterfaceMeta._registry` automatically at import time, so the codegen CLI's batch mode picks them up once the package is installed in the development environment, and the interface check CLI can run against any importable interface module — out-of-tree packages are not a special case.
+
+#### Build-time automation for out-of-tree drivers
+
+Running the codegen CLI by hand and committing the result is the explicit, manual path. Out-of-tree authors who prefer not to maintain that step can hook the codegen step into their package build alongside descriptor compilation (see DD-6: *"Same hook can also handle `.proto` generation"*). With a Python build plugin wired up:
+
+```toml
+# pyproject.toml — build plugin runs codegen + protoc as part of `uv build`
+[build-system]
+requires = ["hatchling", "jumpstarter-codegen-build>=1.0"]
+build-backend = "hatchling.build"
+
+[tool.jumpstarter.codegen]
+interfaces = ["jumpstarter_driver_abc.AbcInterface"]
+proto-package = "com.example.jumpstarter.driver.abc.v1"
+```
+
+`uv build` then introspects the listed interface(s), writes `.proto` source to `interfaces/proto/com/example/jumpstarter/driver/abc/v1/abc.proto`, runs `protoc --descriptor_set_out` against it, and bundles the descriptor set into the wheel — all in one step. The author writes only the `@export`-decorated Python class. They can either commit the generated `.proto` (recommended for review, `buf breaking`, and polyglot consumption) or treat it as a build artifact that lives only in the wheel; the build plugin works the same way either direction. Equivalent plugins for other build systems (`build.rs` for Rust, Gradle plugin for Kotlin/JVM, CMake module for C/C++) follow the same shape and are tracked as follow-up work alongside non-Python authoring support.
 
 If an out-of-tree driver ships neither a committed `.proto` nor a bundled descriptor, the exporter logs a warning naming the driver and continues to load it. The driver still serves `DriverCall` traffic normally, so existing Python clients keep working. Three things degrade in that case:
 
@@ -463,7 +518,7 @@ Because the `.proto` files are committed and reviewed, CI needs a way to detect 
 
 ```bash
 <interface-check> \
-  --proto python/packages/jumpstarter-driver-power/proto/power/v1/power.proto \
+  --proto interfaces/proto/jumpstarter/driver/power/v1/power.proto \
   --interface jumpstarter_driver_power.interface.PowerInterface
 ```
 
@@ -494,7 +549,7 @@ message DriverInstanceReport {
 
 This embeds the descriptor directly in the report, making `GetReport` self-describing. A Java client parses the bytes as `FileDescriptorProto`, feeds it to a `DescriptorPool`, and has full type information for every driver — method names, parameter types, return types, streaming semantics — without needing a separate gRPC reflection call.
 
-**Source of the bytes.** The descriptors are loaded from a **pre-compiled descriptor set** produced by `protoc --descriptor_set_out` from the committed `.proto` files. The exporter reads this file once at startup and indexes the `FileDescriptorProto` by driver interface class. It does **not** run introspection at startup — that work is done at development time by the codegen CLI, and the output is committed as part of the driver package.
+**Source of the bytes.** The descriptors are loaded from a **pre-compiled descriptor set** produced by `protoc --descriptor_set_out` from the committed `.proto` files. Only the `.proto` source is committed to the repository — the compiled descriptor set is a **build artifact** generated during the package build (e.g., as a `hatchling` / `setuptools` step for Python wheels) and bundled into the distribution alongside the rest of the package's payload, the same way generated language bindings are. The exporter reads this file once at startup and indexes the `FileDescriptorProto` by driver interface class. It does **not** run introspection at startup — that work is done at development time by the codegen CLI; only the `.proto` source is committed and reviewed.
 
 The field is `optional bytes` (not a nested message) because `FileDescriptorProto` is a well-known protobuf type that clients parse with their own language's descriptor library. Keeping it as raw bytes avoids adding `google/protobuf/descriptor.proto` as a direct dependency of the Jumpstarter protocol.
 
@@ -588,6 +643,22 @@ This JEP is a purely software-layer change. No hardware is required or affected.
 
 **Rationale:** Native gRPC handlers require a substantial design for UUID routing, dual-path dispatch during transition, and backward compatibility with legacy `DriverCall` clients. That design exists as a sketch (see "Native gRPC Transport — Design Sketch") but belongs in its own JEP. In the meantime, reflection is still valuable for codegen, documentation, and typed-stub generation — clients use reflected schemas to drive the existing `DriverCall` transport. The `UNIMPLEMENTED` behavior is documented explicitly in the Proposal and integration test suite.
 
+### DD-6: Commit `.proto` source only; descriptor sets are build artifacts
+
+**Alternatives considered:**
+
+1. **Commit both `.proto` source and the compiled descriptor set** (`protoc --descriptor_set_out` output) — the exporter loads the committed `.bin` directly; no build step required.
+2. **Commit `.proto` source only; compile the descriptor set at package build time** — `hatchling` / `setuptools` (and equivalent backends in other languages) invoke `protoc` during `uv build` / `pip install`, bundling the compiled descriptor as part of the wheel payload.
+3. **Commit `.proto` source only; compile the descriptor set at exporter startup** — the exporter invokes `protoc` (or an in-process equivalent) on every startup.
+
+**Decision:** Option 2 — commit source, build artifacts at package build time.
+
+**Rationale:** This matches the project's existing convention for the wire protocol (`protocol/proto/*.proto` is committed; no `.bin` artifacts are checked in) and standard practice across the protobuf ecosystem (gRPC, Buf, `tonic-build`, Bazel). Committing binary descriptors (Option 1) creates source-tree bloat, generates noisy diffs on every regeneration, and risks drift when a `.proto` change is committed without recompiling the descriptor. Compiling at startup (Option 3) adds `protoc` as a runtime dependency on the exporter, slows boot, and turns descriptor-generation failures into runtime errors instead of build-time errors. Option 2 keeps the source tree text-only and reviewable, ships compiled descriptors as part of the package distribution (the same way generated language bindings ship), and ensures the exporter only ever consumes already-validated artifacts.
+
+**Consequences:** The package build must invoke `protoc --descriptor_set_out`. JEP-0011's codegen story already proposes this as a build step; the project's `.gitignore` should exclude `*.bin` / descriptor output paths from the `interfaces/` tree to prevent accidental commits.
+
+**Same hook can also handle `.proto` generation.** Once the build is invoking `protoc` to produce the descriptor set, it can also invoke the codegen CLI immediately upstream — extracting `.proto` source from `@export`-decorated `DriverInterface` classes — so the entire pipeline (Python interface → `.proto` → descriptor set) runs as a single build step. Out-of-tree authors who set up the build plugin then never have to run the codegen CLI by hand: their normal `uv build` / `pip install` produces a wheel containing the `.proto` (committed in the source tree if the author chooses, or bundled only inside the wheel if not) and the compiled descriptor set. The `.proto` itself remains a normal source artifact: authors are encouraged to commit it for review, `buf breaking`, and polyglot consumption, but the *generation* of it is automated end-to-end. In-tree drivers use the same plugin against the in-repo `interfaces/` tree.
+
 ## Design Details
 
 ### Architecture
@@ -608,7 +679,7 @@ This JEP is a purely software-layer change. No hardware is required or affected.
   │                │  renders                                         │
   │                ▼                                                  │
   │  ┌────────────────────────────┐                                   │
-  │  │  committed .proto file     │  (in driver package proto/ dir)   │
+  │  │  committed .proto file     │  (in interfaces/proto/<ns>/...)   │
   │  └─────────────┬──────────────┘                                   │
   │                │  protoc --descriptor_set_out                     │
   │                ▼                                                  │
@@ -635,7 +706,7 @@ This JEP is a purely software-layer change. No hardware is required or affected.
 
 ### Data Flow
 
-1. **At development time:** The interface author runs the codegen CLI against a `DriverInterface` class. The tool calls `inspect.signature()` on each `@export` method, maps Python types to protobuf types, produces a `FileDescriptorProto`, and writes it out as a `.proto` source file under the driver package's `proto/` directory. The author reviews and commits the file. A build step runs `protoc --descriptor_set_out` to produce a binary descriptor set bundled with the package.
+1. **At development time:** The interface author runs the codegen CLI against a `DriverInterface` class. The tool calls `inspect.signature()` on each `@export` method, maps Python types to protobuf types, produces a `FileDescriptorProto`, and writes it out as a `.proto` source file under `interfaces/proto/<namespace-as-path>/<name>.proto` (in-tree, at the repository root; out-of-tree, inside the package's own root). The author reviews and commits the file. A build step runs `protoc --descriptor_set_out` to produce a binary descriptor set bundled with the package.
 
 2. **In CI:** the interface check CLI runs on every change. It regenerates the descriptor from the current Python interface and compares it against the committed `.proto` file, failing if they diverge. `buf breaking` also runs to catch backward-incompatible changes.
 
@@ -1026,7 +1097,7 @@ class FlasherInterface(DriverInterface):
 
 On the driver side, `source` is a resource UUID received via `DriverCall`. On the client side, the actual `flash()` method creates an `OpendalAdapter` context manager, negotiates a stream handle, and passes it to `self.call("flash", handle, target)`. This orchestration involves file hashing, compression negotiation, and operator selection — none of which can be expressed in protobuf.
 
-On the wire, resource handles are UUIDs (strings) — they are passed as `string` parameters through `DriverCall`. The generated `.proto` represents these as `string` with a custom annotation `dev.jumpstarter.annotations.resource_handle = true` on the field, signaling to codegen tools that this parameter is a resource reference, not a plain string.
+On the wire, resource handles are UUIDs (strings) — they are passed as `string` parameters through `DriverCall`. The generated `.proto` represents these as `string` with a custom annotation `jumpstarter.annotations.resource_handle = true` on the field, signaling to codegen tools that this parameter is a resource reference, not a plain string.
 
 The hand-written `FlasherClient` with its `OpendalAdapter` orchestration (file hashing, compression negotiation, stream setup) remains the supported Python client pattern. The proto-level `resource_handle` annotation is a hint for future non-Python codegen; the polyglot resource handle protocol (how Java / Kotlin clients negotiate a stream and obtain a UUID to pass) will be specified in a follow-up JEP alongside non-Python codegen.
 
@@ -1065,7 +1136,7 @@ The `file_descriptor_proto` bytes in the report are served through the authentic
 - **Round-trip consistency:** Generate a `FileDescriptorProto` from a Python interface, render it as `.proto` source, parse the source back, and verify the descriptors are semantically identical.
 - **Edge cases:** Incompletely annotated methods (tool refuses to generate), `Optional` fields, recursive dataclasses, empty interfaces (`CompositeInterface`).
 - **Doc comment extraction:** Verify that class, method, and field docstrings are captured in the `FileDescriptorProto`'s `source_code_info` and rendered as proto comments by the codegen CLI.
-- **Package versioning:** Verify that the `--version` flag produces the correct package name suffix (e.g., `dev.jumpstarter.interfaces.power.v1` vs `v2`).
+- **Package versioning:** Verify that the `--version` flag produces the correct package name suffix (e.g., `jumpstarter.driver.power.v1` vs `v2`).
 - **`@exportstream` detection:** Verify that methods decorated with `@exportstream` are detected by `build_file_descriptor()` and emitted as bidi streaming methods with `StreamData` request/response types, distinct from `@export` methods.
 - **Mixed `@export` / `@exportstream` interfaces:** Verify that an interface class containing both `@export` and `@exportstream` methods (like `TcpNetwork` with `address` + `connect`) produces a single `ServiceDescriptorProto` with correctly differentiated method types.
 - **Opt-in strict mode:** Verify that `@export` in default mode emits `DeprecationWarning` for missing annotations, and in `strict=True` mode raises `TypeError`.
@@ -1230,7 +1301,7 @@ The following questions can be deferred until implementation. They do not block 
 
 4. **Docstring format for proto comments:** Should the builder strip reStructuredText or Google-style docstring directives (`:param:`, `Args:`, `Returns:`) before emitting proto comments, or pass them through verbatim? Stripping produces cleaner proto but loses structured parameter documentation.
 
-5. **Resource handle annotation in Phase 1:** The `dev.jumpstarter.annotations.resource_handle = true` field option is specified by this JEP, but its consumer (non-Python codegen that understands how to negotiate resource streams) lands in a follow-up. Should the annotation ship in Phase 5 anyway so committed `.proto` files already carry it, or wait until the polyglot resource protocol is designed?
+5. **Resource handle annotation in Phase 1:** The `jumpstarter.annotations.resource_handle = true` field option is specified by this JEP, but its consumer (non-Python codegen that understands how to negotiate resource streams) lands in a follow-up. Should the annotation ship in Phase 5 anyway so committed `.proto` files already carry it, or wait until the polyglot resource protocol is designed?
 
 6. **Pydantic model features beyond simple fields:** Pydantic models can have validators, computed properties (`apparent_power` on `PowerReading`), model config, and custom serialization. The builder introspects `model_fields` only — validators and computed properties are not represented in the proto. Is this acceptable, or should computed properties be surfaced as read-only fields?
 
@@ -1298,7 +1369,8 @@ Client                              Exporter
 ```
 
 The key differences:
-- **No string dispatch:** gRPC resolves the method from the service/method path (`/dev.jumpstarter.interfaces.power.v1.PowerInterface/On`)
+
+- **No string dispatch:** gRPC resolves the method from the service/method path (`/jumpstarter.driver.power.v1.PowerInterface/On`)
 - **No Value round-trip:** Arguments are compiled protobuf messages, not JSON-via-`google.protobuf.Value`
 - **Standard per-method observability:** gRPC interceptors, tracing, and metrics work at the method level
 - **UUID routing via metadata:** The `x-jumpstarter-driver-uuid` header replaces the UUID field in `DriverCallRequest`
@@ -1309,7 +1381,7 @@ The `.proto` files from the codegen CLI (this JEP) are compiled by `protoc` to p
 
 ```protobuf
 syntax = "proto3";
-package dev.jumpstarter.interfaces.power.v1;
+package jumpstarter.driver.power.v1;
 
 import "google/protobuf/empty.proto";
 
@@ -1337,7 +1409,7 @@ Today, `Driver` implements `ExporterServiceServicer` and dispatches via `__looku
 
 ```python
 # Auto-generated by a proto-first codegen companion (or hand-written)
-from dev.jumpstarter.interfaces.power.v1 import power_pb2, power_pb2_grpc
+from jumpstarter.driver.power.v1 import power_pb2, power_pb2_grpc
 
 class PowerServicer(power_pb2_grpc.PowerInterfaceServicer):
     """Bridges a PowerInterface driver to its native gRPC servicer."""
