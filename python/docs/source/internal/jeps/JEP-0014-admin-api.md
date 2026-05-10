@@ -1,15 +1,15 @@
 # JEP-0014: Admin API and Identity Federation
 
-| Field          | Value                                |
-| -------------- | ------------------------------------ |
-| **JEP**        | 0014                                 |
-| **Title**      | Admin API and Identity Federation    |
-| **Author(s)**  | @kirkbrauer                          |
-| **Status**     | Draft                                |
-| **Type**       | Standards Track                      |
-| **Created**    | 2026-05-10                           |
-| **Updated**    | 2026-05-10                           |
-| **Discussion** | *TBD — link added when PR is opened* |
+| Field          | Value                                                              |
+| -------------- | ------------------------------------------------------------------ |
+| **JEP**        | 0014                                                               |
+| **Title**      | Admin API and Identity Federation                                  |
+| **Author(s)**  | @kirkbrauer                                                        |
+| **Status**     | Draft                                                              |
+| **Type**       | Standards Track                                                    |
+| **Created**    | 2026-05-10                                                         |
+| **Updated**    | 2026-05-10                                                         |
+| **Discussion** | [PR #658](https://github.com/jumpstarter-dev/jumpstarter/pull/658) |
 
 ---
 
@@ -818,7 +818,7 @@ plug-in.
 
 ### Architecture
 
-```mermaid
+```{mermaid}
 flowchart LR
   Browser[Web UI / Backstage / Console plug-in]
   CLI[jmp CLI]
