@@ -682,7 +682,8 @@ def test_mount_sshfs_not_mounted_after_startup():
         mock_proc.poll.return_value = None  # Still running
         mock_proc.wait.side_effect = [
             subprocess.TimeoutExpired("sshfs", 1),  # Startup check - still running
-            None,  # Cleanup wait after terminate
+            None,  # _terminate_proc cleanup after polling loop timeout
+            None,  # _terminate_proc in except BaseException handler
         ]
         mock_proc.returncode = 0
 

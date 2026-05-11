@@ -141,13 +141,8 @@ class SSHMountClient(CompositeClient):
                 click.echo("Type 'exit' to unmount and return.")
                 self._run_subshell(mountpoint, remote_path)
         finally:
-            if sshfs_proc is not None and sshfs_proc.poll() is None:
-                sshfs_proc.terminate()
-                try:
-                    sshfs_proc.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    sshfs_proc.kill()
-                    sshfs_proc.wait()
+            if sshfs_proc is not None:
+                self._terminate_proc(sshfs_proc)
 
             self._force_umount(mountpoint)
             if os.path.ismount(mountpoint):
@@ -155,6 +150,18 @@ class SSHMountClient(CompositeClient):
             else:
                 click.echo(f"Unmounted {mountpoint}")
             self._cleanup_identity_file(identity_file)
+
+    @staticmethod
+    def _terminate_proc(proc: subprocess.Popen[bytes]) -> None:
+        """Terminate a subprocess, escalating to kill if needed."""
+        if proc.poll() is not None:
+            return
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
 
     def _start_sshfs_with_fallback(
         self, sshfs_args: list[str], mountpoint: str,
@@ -203,23 +210,12 @@ class SSHMountClient(CompositeClient):
                     return proc
                 time.sleep(MOUNT_POLL_INTERVAL)
 
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
+            self._terminate_proc(proc)
             raise click.ClickException(
                 f"sshfs started but {mountpoint} is not mounted after {MOUNT_POLL_TIMEOUT}s"
             )
         except BaseException:
-            if proc.poll() is None:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
+            self._terminate_proc(proc)
             raise
 
     def _remove_allow_other(self, sshfs_args: list[str]) -> list[str]:
