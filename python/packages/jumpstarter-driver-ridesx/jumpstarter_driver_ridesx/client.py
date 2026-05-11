@@ -47,7 +47,7 @@ class RideSXClient(FlasherClient, CompositeClient):
                 self.logger.info(f"Uploading {file_path} to storage as {filename}")
 
             try:
-                self.storage.write_from_path(filename, path_buf, operator=operator)
+                self.storage.write_from_path(filename, file_path, operator=operator)
             except Exception as e:
                 raise RideSXFlashError(
                     f"Failed to transfer '{file_path}' to exporter storage as '{filename}' (scheme={operator_scheme})"

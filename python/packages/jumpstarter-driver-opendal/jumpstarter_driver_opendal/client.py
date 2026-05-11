@@ -51,7 +51,7 @@ def operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator, str]:
         - the operator for the given path
         - the scheme of the operator.
     """
-    if type(path) is str and path.startswith(("http://", "https://")):
+    if isinstance(path, str) and path.startswith(("http://", "https://")):
         parsed_url = urlparse(path)
         operator = Operator("http", root="/", endpoint=f"{parsed_url.scheme}://{parsed_url.netloc}")
         return Path(parsed_url.path), operator, "http"
@@ -79,10 +79,13 @@ class OpendalFile:
         """
         Write into remote file with content from local file
         """
+        original_url = None
         if operator is None:
+            if isinstance(path, str) and path.startswith(("http://", "https://")):
+                original_url = path
             path, operator, _ = operator_for_path(path)
 
-        with OpendalAdapter(client=self.client, operator=operator, path=path) as handle:
+        with OpendalAdapter(client=self.client, operator=operator, path=path, original_url=original_url) as handle:
             return self.__write(handle)
 
     @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
@@ -630,10 +633,15 @@ class FlasherClient(FlasherClientInterface, DriverClient):
         compression: Compression | None,
     ):
         """Flash image to DUT"""
+        original_url = None
         if operator is None:
+            if isinstance(image, str) and image.startswith(("http://", "https://")):
+                original_url = image
             image, operator, _ = operator_for_path(image)
 
-        with OpendalAdapter(client=self, operator=operator, path=image, mode="rb", compression=compression) as handle:
+        with OpendalAdapter(
+            client=self, operator=operator, path=image, mode="rb", compression=compression, original_url=original_url
+        ) as handle:
             return self.call("flash", handle, target)
 
     def flash(
@@ -763,10 +771,15 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
 
         self.host()
 
+        original_url = None
         if operator is None:
+            if isinstance(path, str) and path.startswith(("http://", "https://")):
+                original_url = path
             path, operator, _ = operator_for_path(path)
 
-        with OpendalAdapter(client=self, operator=operator, path=path, mode="rb", compression=compression) as handle:
+        with OpendalAdapter(
+            client=self, operator=operator, path=path, mode="rb", compression=compression, original_url=original_url
+        ) as handle:
             try:
                 return self.write(handle)
             finally:

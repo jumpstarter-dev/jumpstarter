@@ -64,9 +64,19 @@ async def OpendalAdapter(
     path: str,  # file path in storage backend relative to the storage root
     mode: Literal["rb", "wb"] = "rb",  # binary read or binary write mode
     compression: Compression | None = None,  # compression algorithm
+    original_url: str | None = None,  # original HTTP URL, bypasses OpenDAL presign to avoid path re-encoding
 ):
+    if original_url is not None and compression is not None:
+        raise ValueError("compression is not supported with direct HTTP URLs (original_url)")
+    if mode == "wb" and original_url is not None:
+        raise ValueError("original_url is not supported in write mode")
+    if mode == "rb" and compression is None and original_url is not None:
+        yield PresignedRequestResource(
+            headers={}, url=original_url, method="GET"
+        ).model_dump(mode="json")
+        return
     # if the access mode is binary read, and the storage backend supports presigned read requests
-    if mode == "rb" and operator.capability().presign_read and compression is None:
+    elif mode == "rb" and operator.capability().presign_read and compression is None:
         # create presigned url for the specified file with a 60 second expiration
         presigned = await operator.to_async_operator().presign_read(path, expire_second=60)
         yield PresignedRequestResource(
