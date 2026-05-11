@@ -291,7 +291,10 @@ def test_mount_foreground_mode():
                     mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
                     with patch('os.makedirs'):
-                        with patch('os.path.ismount', return_value=True):
+                        # First call: post-unmount check in _start_sshfs_with_fallback (must be False)
+                        # Second call: mount readiness poll (must be True to proceed)
+                        # Third call: cleanup check in _run_sshfs finally block
+                        with patch('os.path.ismount', side_effect=[False, True, False]):
                             with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
                                 mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
                                 mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
@@ -328,7 +331,10 @@ def test_mount_subshell_mode():
                     mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
                     with patch('os.makedirs'):
-                        with patch('os.path.ismount', return_value=True):
+                        # First call: post-unmount check in _start_sshfs_with_fallback (must be False)
+                        # Second call: mount readiness poll (must be True to proceed)
+                        # Third call: cleanup check in _run_sshfs finally block
+                        with patch('os.path.ismount', side_effect=[False, True, False]):
                             with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
                                 mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
                                 mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
@@ -526,7 +532,10 @@ def test_mount_foreground_keyboard_interrupt():
                     mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
                     with patch('os.makedirs'):
-                        with patch('os.path.ismount', return_value=True):
+                        # First call: post-unmount check in _start_sshfs_with_fallback (must be False)
+                        # Second call: mount readiness poll (must be True to proceed)
+                        # Third call: cleanup check in _run_sshfs finally block
+                        with patch('os.path.ismount', side_effect=[False, True, False]):
                             with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
                                 mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
                                 mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
@@ -688,9 +697,12 @@ def test_mount_sshfs_not_mounted_after_startup():
 
                     with patch('os.makedirs'):
                         with patch('os.path.ismount', return_value=False):
-                            with patch('jumpstarter_driver_ssh_mount.client.time.monotonic', side_effect=fake_monotonic):
-                                with patch('jumpstarter_driver_ssh_mount.client.time.sleep'):
-                                    with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
+                            monotonic_path = 'jumpstarter_driver_ssh_mount.client.time.monotonic'
+                            sleep_path = 'jumpstarter_driver_ssh_mount.client.time.sleep'
+                            adapter_path = 'jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter'
+                            with patch(monotonic_path, side_effect=fake_monotonic):
+                                with patch(sleep_path):
+                                    with patch(adapter_path) as mock_adapter:
                                         mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
                                         mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
 
