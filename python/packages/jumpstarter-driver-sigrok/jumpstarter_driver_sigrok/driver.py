@@ -106,8 +106,8 @@ class Sigrok(Driver):
 
         self.logger.debug("streaming sigrok-cli: %s", " ".join(cmd))
         process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
+            cmd[0], *cmd[1:],
+            stdout=subprocess.PIPE,
             stderr=None,
         )
 
