@@ -309,7 +309,7 @@ def test_decode_ascii_format(demo_client):
 
 @pytest.mark.skipif(which("sigrok-cli") is None, reason="sigrok-cli not installed")
 def test_decode_bits_format(demo_client):
-    """Test decoding bits format to channel→bit sequences.
+    """Test decoding bits format to channel->bit sequences.
 
     Verifies:
     - Bits format decoding works
