@@ -210,6 +210,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             self._deferred_unregister = should_unregister
             logger.info("Exporter marked for stop upon lease exit")
 
+    def _has_before_lease_hook(self) -> bool:
+        """Return whether a real beforeLease hook is configured."""
+        return bool(self.hook_executor and self.hook_executor.config.before_lease)
+
     @property
     def exit_code(self) -> int | None:
         """Get the exit code for the exporter.
@@ -599,26 +603,20 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         running the afterLease hook if appropriate, and transitioning to AVAILABLE.
         """
         with CancelScope(shield=True):
-            # Wait for beforeLease hook to complete before running afterLease.
-            # When a lease ends during hook execution, the hook must finish
-            # (subject to its configured timeout) before cleanup proceeds.
-            # Safety timeout: prevent permanent deadlock if before_lease_hook
-            # was never set due to a race (e.g. conn_tg cancelled early).
-            # Use the configured hook timeout (+ margin) when available so we
-            # never interrupt a legitimately-running beforeLease hook.
-            safety_timeout = 15  # generous default for no-hook / unknown cases
-            if (
-                self.hook_executor
-                and self.hook_executor.config.before_lease
-            ):
+            if self._has_before_lease_hook():
+                # Wait for beforeLease hook to complete before running afterLease.
+                # When a lease ends during hook execution, the hook must finish
+                # (subject to its configured timeout) before cleanup proceeds.
+                # Safety timeout: prevent permanent deadlock if before_lease_hook
+                # was never set due to a race.
                 safety_timeout = self.hook_executor.config.before_lease.timeout + 30
-            with move_on_after(safety_timeout) as timeout_scope:
-                await lease_scope.before_lease_hook.wait()
-            if timeout_scope.cancelled_caught:
-                logger.warning(
-                    "Timed out waiting for before_lease_hook; forcing it set to avoid deadlock"
-                )
-                lease_scope.before_lease_hook.set()
+                with move_on_after(safety_timeout) as timeout_scope:
+                    await lease_scope.before_lease_hook.wait()
+                if timeout_scope.cancelled_caught:
+                    logger.warning(
+                        "Timed out waiting for before_lease_hook; forcing it set to avoid deadlock"
+                    )
+                    lease_scope.before_lease_hook.set()
 
             if not lease_scope.after_lease_hook_started.is_set():
                 lease_scope.after_lease_hook_started.set()
@@ -675,6 +673,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             ends or the exporter stops.
         """
         logger.info("Listening for incoming connection requests on lease %s", lease_name)
+        has_before_lease_hook = self._has_before_lease_hook()
 
         # Buffer Listen responses to avoid blocking when responses arrive before
         # process_connections starts iterating. This prevents a race condition where
@@ -756,16 +755,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     # Report LEASE_READY if no beforeLease hook is configured.
                     # This MUST happen after Listen stream is started so the
                     # controller can forward client Dial requests.
-                    if not self.hook_executor:
+                    if not has_before_lease_hook:
                         await self._report_status(ExporterStatus.LEASE_READY, "Ready for commands")
                         lease_scope.before_lease_hook.set()
             finally:
-                # Ensure before_lease_hook is set so _cleanup_after_lease never
-                # blocks forever.  When conn_tg is cancelled before the no-hook
-                # path reaches lease_scope.before_lease_hook.set(), this flag
-                # remains unset and _cleanup_after_lease (shielded) deadlocks.
-                if not lease_scope.before_lease_hook.is_set():
-                    lease_scope.before_lease_hook.set()
                 # Close the listen stream to signal termination to listen_rx
                 await listen_tx.aclose()
                 # Run afterLease hook before closing the session
@@ -823,7 +816,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
                     # Before-lease hook when transitioning from unleased to leased
                     if not previous_leased:
-                        if self.hook_executor and self._lease_context:
+                        if self._has_before_lease_hook() and self._lease_context:
                             tg.start_soon(
                                 self.hook_executor.run_before_lease_hook,
                                 self._lease_context,
@@ -902,7 +895,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                             self._tg = tg
                             tg.start_soon(self._handle_end_session, lease_scope)
 
-                            if self.hook_executor:
+                            if self._has_before_lease_hook():
                                 await self.hook_executor.run_before_lease_hook(
                                     lease_scope,
                                     self._report_status,
