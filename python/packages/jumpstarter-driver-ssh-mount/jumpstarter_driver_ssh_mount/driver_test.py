@@ -675,6 +675,12 @@ def test_mount_sshfs_not_mounted_after_startup():
         ]
         mock_proc.returncode = 0
 
+        # Make polling loop exit quickly by advancing monotonic time
+        call_count = [0]
+        def fake_monotonic():
+            call_count[0] += 1
+            return call_count[0] * 100.0  # Jump far ahead to exceed deadline
+
         with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
             with patch('subprocess.run') as mock_run:
                 with patch('subprocess.Popen', return_value=mock_proc):
@@ -682,15 +688,16 @@ def test_mount_sshfs_not_mounted_after_startup():
 
                     with patch('os.makedirs'):
                         with patch('os.path.ismount', return_value=False):
-                            with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
-                                mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
-                                mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
+                            with patch('jumpstarter_driver_ssh_mount.client.time.monotonic', side_effect=fake_monotonic):
+                                with patch('jumpstarter_driver_ssh_mount.client.time.sleep'):
+                                    with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
+                                        mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
+                                        mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
 
-                                with pytest.raises(Exception, match="is not mounted"):
-                                    client.mount("/tmp/test-mount", foreground=True)
+                                        with pytest.raises(Exception, match="is not mounted"):
+                                            client.mount("/tmp/test-mount", foreground=True)
 
-                                # sshfs should have been terminated
-                                mock_proc.terminate.assert_called()
+                                        mock_proc.terminate.assert_called()
 
 
 def test_subshell_bad_shell_raises_click_exception():
@@ -761,3 +768,65 @@ def test_subshell_bash_fallback_prefix():
 
                 env_passed = mock_run.call_args[1].get("env", {})
                 assert env_passed.get("PS1", "").startswith("[sshfs:/home/user]")
+
+
+def test_subshell_zsh_inserts_mount_tag():
+    """Test that zsh prompt inserts (mount) before the arrow when jmp shell prompt is present"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        jmp_ps1 = "%~ ⚡exporter ➤ "
+        with patch.dict(os.environ, {"SHELL": "/bin/zsh", "PS1": jmp_ps1}):
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                client._run_subshell("/tmp/test-mount", "/")
+
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args[0][0]
+                assert call_args[0] == "/bin/zsh"
+                assert "-i" in call_args
+                env_passed = mock_run.call_args[1].get("env", {})
+                assert "(mount)➤" in env_passed.get("PS1", "")
+
+
+def test_create_temp_identity_file_failure():
+    """Test that _create_temp_identity_file cleans up on write failure"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child(ssh_identity=TEST_SSH_KEY)},
+    )
+
+    with serve(instance) as client:
+        with patch('os.write', side_effect=OSError("disk full")):
+            with patch('os.close') as mock_close:
+                with patch('os.unlink') as mock_unlink:
+                    with pytest.raises(OSError, match="disk full"):
+                        client._create_temp_identity_file()
+
+                    # fd and temp file should be cleaned up
+                    assert mock_close.called
+                    assert mock_unlink.called
+
+
+def test_allow_other_comma_separated_removal():
+    """Test that allow_other is removed from comma-separated -o values"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        args = ["sshfs", "user@host:/", "/mnt", "-o", "allow_other,reconnect", "-f"]
+        result = client._remove_allow_other(args)
+        assert "-o" in result
+        idx = result.index("-o")
+        assert result[idx + 1] == "reconnect"
+        assert "allow_other" not in result[idx + 1]
+
+        # When allow_other is the only option, the entire -o pair is removed
+        args2 = ["sshfs", "user@host:/", "/mnt", "-o", "allow_other", "-f"]
+        result2 = client._remove_allow_other(args2)
+        # No -o flag should remain for that option
+        for i, a in enumerate(result2):
+            if a == "-o":
+                assert result2[i + 1] != "allow_other"

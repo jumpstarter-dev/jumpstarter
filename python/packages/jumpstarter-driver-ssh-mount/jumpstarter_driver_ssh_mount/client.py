@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -15,8 +16,9 @@ from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_command
 
-# Timeout in seconds for subprocess calls (mount test run, umount)
 SUBPROCESS_TIMEOUT = 120
+MOUNT_POLL_INTERVAL = 0.5
+MOUNT_POLL_TIMEOUT = 10
 
 
 @dataclass(kw_only=True)
@@ -54,22 +56,40 @@ class SSHMountClient(CompositeClient):
     def username(self) -> str:
         return self.ssh.username
 
-    def mount(self, mountpoint, *, remote_path="/", direct=False, foreground=False, extra_args=None):
-        """Mount remote filesystem locally via sshfs.
+    def _resolve_host_port(self, direct: bool) -> tuple[str, int, bool]:
+        """Resolve (host, port) for sshfs, trying direct first if requested.
 
-        Runs sshfs in foreground mode (-f) and spawns a subshell so that
-        the mount stays alive while the user works. When the subshell exits,
-        sshfs is terminated and all resources are cleaned up automatically.
-
-        Args:
-            mountpoint: Local directory to mount the remote filesystem on.
-            remote_path: Remote path to mount (default: /).
-            direct: If True, connect directly to the host's TCP address.
-            foreground: If True, block on sshfs without spawning a subshell.
-            extra_args: Extra arguments to pass to sshfs.
+        Returns:
+            Tuple of (host, port, use_portforward) where use_portforward
+            indicates whether TcpPortforwardAdapter should be used.
         """
-        sshfs_path = self._find_executable("sshfs")
-        if not sshfs_path:
+        if direct:
+            try:
+                address = self.ssh.tcp.address()
+                parsed = urlparse(address)
+                host = parsed.hostname
+                port = parsed.port
+                if not host or not port:
+                    raise ValueError(f"Invalid address format: {address}")
+                self.logger.debug("Using direct TCP connection - host: %s, port: %s", host, port)
+                return host, port, False
+            except (DriverMethodNotImplemented, ValueError) as e:
+                self.logger.error(
+                    "Direct address connection failed (%s), falling back to port forwarding", e
+                )
+        return "", 0, True
+
+    def mount(
+        self,
+        mountpoint: str,
+        *,
+        remote_path: str = "/",
+        direct: bool = False,
+        foreground: bool = False,
+        extra_args: list[str] | None = None,
+    ) -> None:
+        """Mount remote filesystem locally via sshfs."""
+        if not self._find_executable("sshfs"):
             raise click.ClickException(
                 "sshfs is not installed. Please install it:\n"
                 "  Fedora/RHEL: sudo dnf install fuse-sshfs\n"
@@ -82,31 +102,26 @@ class SSHMountClient(CompositeClient):
         mountpoint = os.path.realpath(mountpoint)
         os.makedirs(mountpoint, exist_ok=True)
 
-        if direct:
-            try:
-                address = self.ssh.tcp.address()
-                parsed = urlparse(address)
-                host = parsed.hostname
-                port = parsed.port
-                if not host or not port:
-                    raise ValueError(f"Invalid address format: {address}")
-                self.logger.debug("Using direct TCP connection for sshfs - host: %s, port: %s", host, port)
-                self._run_sshfs(host, port, mountpoint, remote_path, extra_args,
-                                foreground=foreground)
-            except (DriverMethodNotImplemented, ValueError) as e:
-                self.logger.error(
-                    "Direct address connection failed (%s), falling back to port forwarding", e
-                )
-                self.mount(mountpoint, remote_path=remote_path, direct=False,
-                           foreground=foreground, extra_args=extra_args)
-        else:
-            self.logger.debug("Using SSH port forwarding for sshfs connection")
-            with TcpPortforwardAdapter(client=self.ssh.tcp) as (host, port):
-                self.logger.debug("SSH port forward established - host: %s, port: %s", host, port)
-                self._run_sshfs(host, port, mountpoint, remote_path, extra_args,
-                                foreground=foreground)
+        host, port, use_portforward = self._resolve_host_port(direct)
 
-    def _run_sshfs(self, host, port, mountpoint, remote_path, extra_args, *, foreground):
+        if use_portforward:
+            with TcpPortforwardAdapter(client=self.ssh.tcp) as (host, port):
+                self._run_sshfs(host, port, mountpoint, remote_path, extra_args,
+                                foreground=foreground)
+        else:
+            self._run_sshfs(host, port, mountpoint, remote_path, extra_args,
+                            foreground=foreground)
+
+    def _run_sshfs(
+        self,
+        host: str,
+        port: int,
+        mountpoint: str,
+        remote_path: str,
+        extra_args: list[str] | None,
+        *,
+        foreground: bool,
+    ) -> None:
         identity_file = self._create_temp_identity_file()
         sshfs_proc = None
 
@@ -114,12 +129,9 @@ class SSHMountClient(CompositeClient):
             sshfs_args = self._build_sshfs_args(host, port, mountpoint, remote_path, identity_file, extra_args)
             sshfs_args.append("-f")
 
-            self.logger.debug("Running sshfs command: %s", sshfs_args)
-
             sshfs_proc = self._start_sshfs_with_fallback(sshfs_args, mountpoint)
 
-            default_username = self.username
-            user_prefix = f"{default_username}@" if default_username else ""
+            user_prefix = f"{self.username}@" if self.username else ""
             remote_spec = f"{user_prefix}{host}:{remote_path}"
             click.echo(f"Mounted {remote_spec} on {mountpoint}")
 
@@ -148,12 +160,10 @@ class SSHMountClient(CompositeClient):
                 click.echo(f"Unmounted {mountpoint}")
             self._cleanup_identity_file(identity_file)
 
-    def _start_sshfs_with_fallback(self, sshfs_args, mountpoint):
-        """Start sshfs, retrying without allow_other if it fails on that option.
-
-        We do a quick test run (without -f) to check if sshfs can mount
-        successfully, then start the real foreground process.
-        """
+    def _start_sshfs_with_fallback(
+        self, sshfs_args: list[str], mountpoint: str,
+    ) -> subprocess.Popen:
+        """Start sshfs, retrying without allow_other if it fails on that option."""
         test_args = [a for a in sshfs_args if a != "-f"]
         result = subprocess.run(test_args, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
 
@@ -169,65 +179,64 @@ class SSHMountClient(CompositeClient):
                 f"sshfs mount failed (exit code {result.returncode}): {stderr}"
             )
 
+        # Tear down the test mount before starting the real foreground process
         self._force_umount(mountpoint)
+        if os.path.ismount(mountpoint):
+            raise click.ClickException(
+                f"Failed to unmount test mount at {mountpoint}; cannot proceed"
+            )
 
-        # Use DEVNULL for stderr to avoid SIGPIPE: if we used PIPE and
-        # closed the parent end after the startup check, sshfs would
-        # receive SIGPIPE on its next stderr write and terminate.
+        # Use DEVNULL for stderr to avoid SIGPIPE if sshfs writes after startup
         proc = subprocess.Popen(
             sshfs_args,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
 
-        # Give sshfs a moment to start and check it hasn't failed immediately
         try:
             proc.wait(timeout=1)
-            # If it exited within 1s, something went wrong
             raise click.ClickException(
                 f"sshfs mount failed immediately (exit code {proc.returncode})"
             )
         except subprocess.TimeoutExpired:
-            # Good -- sshfs is still running after 1s.
-            # Verify the mount is actually active.
-            if not os.path.ismount(mountpoint):
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
-                raise click.ClickException(
-                    f"sshfs started but {mountpoint} is not mounted"
-                ) from None
+            pass
 
-        return proc
+        # Poll for mount readiness instead of a single check
+        deadline = time.monotonic() + MOUNT_POLL_TIMEOUT
+        while time.monotonic() < deadline:
+            if os.path.ismount(mountpoint):
+                return proc
+            time.sleep(MOUNT_POLL_INTERVAL)
 
-    def _remove_allow_other(self, sshfs_args):
-        filtered = []
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        raise click.ClickException(
+            f"sshfs started but {mountpoint} is not mounted after {MOUNT_POLL_TIMEOUT}s"
+        )
+
+    def _remove_allow_other(self, sshfs_args: list[str]) -> list[str]:
+        """Remove allow_other from sshfs args, handling comma-separated -o values."""
+        filtered: list[str] = []
         skip_next = False
         for i, arg in enumerate(sshfs_args):
             if skip_next:
                 skip_next = False
                 continue
-            if arg == "-o" and i + 1 < len(sshfs_args) and sshfs_args[i + 1] == "allow_other":
+            if arg == "-o" and i + 1 < len(sshfs_args):
+                parts = [p for p in sshfs_args[i + 1].split(",") if p != "allow_other"]
+                if parts:
+                    filtered.append("-o")
+                    filtered.append(",".join(parts))
                 skip_next = True
                 continue
             filtered.append(arg)
         return filtered
 
-    def _run_subshell(self, mountpoint, remote_path):
-        """Spawn an interactive subshell with a modified prompt.
-
-        Inserts a ``(mount)`` indicator into the existing shell prompt so
-        that the user can tell they are inside a mount subshell.  When
-        running inside a ``jmp shell`` session the prompt already contains
-        the ``⚡exporter ➤`` pattern; we insert ``(mount)`` just before
-        the arrow so the result looks like ``⚡exporter (mount)➤``.
-
-        Supports bash, zsh, and fish shells, matching the shell detection
-        logic used by ``jmp shell`` in ``jumpstarter.common.utils``.
-        """
+    def _run_subshell(self, mountpoint: str, remote_path: str) -> None:
         shell = os.environ.get("SHELL", "/bin/sh")
         shell_name = os.path.basename(shell)
         env = os.environ.copy()
@@ -236,7 +245,6 @@ class SSHMountClient(CompositeClient):
         try:
             if shell_name.endswith("bash"):
                 ps1 = env.get("PS1", r"\$ ")
-                # If prompt has the jmp shell arrow, insert (mount) before it
                 if "➤" in ps1:
                     ps1 = ps1.replace("➤", f"{mount_tag}➤")
                 else:
@@ -278,7 +286,15 @@ class SSHMountClient(CompositeClient):
                 f"Shell '{shell}' not found. Set the SHELL environment variable to a valid shell."
             ) from err
 
-    def _build_sshfs_args(self, host, port, mountpoint, remote_path, identity_file, extra_args):
+    def _build_sshfs_args(
+        self,
+        host: str,
+        port: int,
+        mountpoint: str,
+        remote_path: str,
+        identity_file: str | None,
+        extra_args: list[str] | None,
+    ) -> list[str]:
         default_username = self.username
         user_prefix = f"{default_username}@" if default_username else ""
         remote_spec = f"{user_prefix}{host}:{remote_path}"
@@ -306,7 +322,7 @@ class SSHMountClient(CompositeClient):
 
         return sshfs_args
 
-    def _create_temp_identity_file(self):
+    def _create_temp_identity_file(self) -> str | None:
         ssh_identity = self.identity
         if not ssh_identity:
             return None
@@ -314,13 +330,10 @@ class SSHMountClient(CompositeClient):
         fd = None
         temp_path = None
         try:
-            # mkstemp creates the file with 0o600 permissions atomically,
-            # avoiding the TOCTOU window of NamedTemporaryFile + chmod.
             fd, temp_path = tempfile.mkstemp(suffix='_ssh_key')
             os.write(fd, ssh_identity.encode())
             os.close(fd)
             fd = None
-            self.logger.debug("Created temporary identity file: %s", temp_path)
             return temp_path
         except Exception as e:
             self.logger.error("Failed to create temporary identity file: %s", e)
@@ -336,15 +349,14 @@ class SSHMountClient(CompositeClient):
                     pass
             raise
 
-    def _cleanup_identity_file(self, identity_file):
+    def _cleanup_identity_file(self, identity_file: str | None) -> None:
         if identity_file:
             try:
                 os.unlink(identity_file)
-                self.logger.debug("Cleaned up temporary identity file: %s", identity_file)
             except Exception as e:
                 self.logger.warning("Failed to clean up identity file %s: %s", identity_file, e)
 
-    def umount(self, mountpoint, *, lazy=False):
+    def umount(self, mountpoint: str, *, lazy: bool = False) -> None:
         """Unmount an sshfs filesystem (fallback for orphaned mounts)."""
         mountpoint = os.path.realpath(mountpoint)
         cmd = self._build_umount_cmd(mountpoint, lazy=lazy)
@@ -358,15 +370,14 @@ class SSHMountClient(CompositeClient):
 
         click.echo(f"Unmounted {mountpoint}")
 
-    def _force_umount(self, mountpoint):
-        """Best-effort unmount, logging errors at debug level (used during cleanup)."""
+    def _force_umount(self, mountpoint: str) -> None:
         cmd = self._build_umount_cmd(mountpoint, lazy=False)
         try:
             subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
         except Exception as e:
             self.logger.debug("Force umount of %s failed: %s", mountpoint, e)
 
-    def _build_umount_cmd(self, mountpoint, *, lazy=False):
+    def _build_umount_cmd(self, mountpoint: str, *, lazy: bool = False) -> list[str]:
         fusermount = self._find_executable("fusermount3") or self._find_executable("fusermount")
         if fusermount:
             cmd = [fusermount, "-u"]
@@ -384,5 +395,5 @@ class SSHMountClient(CompositeClient):
         return cmd
 
     @staticmethod
-    def _find_executable(name):
+    def _find_executable(name: str) -> str | None:
         return shutil.which(name)
