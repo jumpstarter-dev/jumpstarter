@@ -24,7 +24,7 @@ MOUNT_POLL_TIMEOUT = 10
 @dataclass(kw_only=True)
 class SSHMountClient(CompositeClient):
 
-    def cli(self):
+    def cli(self) -> click.Command:
         @driver_click_command(self)
         @click.argument("mountpoint", type=click.Path())
         @click.option("--umount", "-u", is_flag=True, help="Unmount instead of mount")
@@ -127,7 +127,8 @@ class SSHMountClient(CompositeClient):
             sshfs_proc = self._start_sshfs_with_fallback(sshfs_args, mountpoint)
 
             user_prefix = f"{self.username}@" if self.username else ""
-            remote_spec = f"{user_prefix}{host}:{remote_path}"
+            host_spec = f"[{host}]" if ":" in host else host
+            remote_spec = f"{user_prefix}{host_spec}:{remote_path}"
             click.echo(f"Mounted {remote_spec} on {mountpoint}")
 
             if foreground:
@@ -188,28 +189,38 @@ class SSHMountClient(CompositeClient):
         )
 
         try:
-            proc.wait(timeout=1)
+            try:
+                proc.wait(timeout=1)
+                raise click.ClickException(
+                    f"sshfs mount failed immediately (exit code {proc.returncode})"
+                )
+            except subprocess.TimeoutExpired:
+                pass
+
+            deadline = time.monotonic() + MOUNT_POLL_TIMEOUT
+            while time.monotonic() < deadline:
+                if os.path.ismount(mountpoint):
+                    return proc
+                time.sleep(MOUNT_POLL_INTERVAL)
+
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
             raise click.ClickException(
-                f"sshfs mount failed immediately (exit code {proc.returncode})"
+                f"sshfs started but {mountpoint} is not mounted after {MOUNT_POLL_TIMEOUT}s"
             )
-        except subprocess.TimeoutExpired:
-            pass
-
-        deadline = time.monotonic() + MOUNT_POLL_TIMEOUT
-        while time.monotonic() < deadline:
-            if os.path.ismount(mountpoint):
-                return proc
-            time.sleep(MOUNT_POLL_INTERVAL)
-
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-        raise click.ClickException(
-            f"sshfs started but {mountpoint} is not mounted after {MOUNT_POLL_TIMEOUT}s"
-        )
+        except BaseException:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+            raise
 
     def _remove_allow_other(self, sshfs_args: list[str]) -> list[str]:
         filtered: list[str] = []
@@ -269,7 +280,7 @@ class SSHMountClient(CompositeClient):
                 else:
                     ps1 = f"[sshfs:{remote_path}] {ps1}"
                 env["PS1"] = ps1
-                subprocess.run([shell, "-i"], env=env)
+                subprocess.run([shell, "--no-rcs", "-i"], env=env)
             else:
                 subprocess.run([shell, "-i"], env=env)
         except FileNotFoundError as err:
@@ -288,9 +299,18 @@ class SSHMountClient(CompositeClient):
     ) -> list[str]:
         default_username = self.username
         user_prefix = f"{default_username}@" if default_username else ""
-        remote_spec = f"{user_prefix}{host}:{remote_path}"
+        host_spec = f"[{host}]" if ":" in host else host
+        remote_spec = f"{user_prefix}{host_spec}:{remote_path}"
 
         sshfs_args = ["sshfs", remote_spec, mountpoint]
+
+        if port and port != 22:
+            sshfs_args.extend(["-p", str(port)])
+
+        # User-supplied options first so they take precedence (OpenSSH uses first-match-wins)
+        if extra_args:
+            for arg in extra_args:
+                sshfs_args.extend(["-o", arg])
 
         ssh_opts = [
             "StrictHostKeyChecking=no",
@@ -298,18 +318,11 @@ class SSHMountClient(CompositeClient):
             "LogLevel=ERROR",
         ]
 
-        if port and port != 22:
-            sshfs_args.extend(["-p", str(port)])
-
         if identity_file:
             ssh_opts.append(f"IdentityFile={identity_file}")
 
         for opt in ssh_opts:
             sshfs_args.extend(["-o", opt])
-
-        if extra_args:
-            for arg in extra_args:
-                sshfs_args.extend(["-o", arg])
 
         return sshfs_args
 
@@ -322,6 +335,7 @@ class SSHMountClient(CompositeClient):
         temp_path = None
         try:
             fd, temp_path = tempfile.mkstemp(suffix='_ssh_key')
+            os.fchmod(fd, 0o600)
             os.write(fd, ssh_identity.encode())
             os.close(fd)
             fd = None
