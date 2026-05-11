@@ -5,7 +5,7 @@
 | **JEP**        | 0014                                                               |
 | **Title**      | Admin API and Identity Federation                                  |
 | **Author(s)**  | @kirkbrauer                                                        |
-| **Status**     | Draft                                                              |
+| **Status**     | Discussion                                                         |
 | **Type**       | Standards Track                                                    |
 | **Created**    | 2026-05-10                                                         |
 | **Updated**    | 2026-05-10                                                         |
@@ -240,8 +240,13 @@ differently for each based on standard `RoleBinding`s.
   `ExporterService` wire format.
 - Must work against OpenShift OAuth, Dex, and Keycloak as OIDC
   issuers, and must be reusable from a Backstage plug-in.
-- Must produce kube-audit entries that attribute mutations to the
-  human user, not the controller's `ServiceAccount`.
+- Must produce an audit trail that attributes mutations to the
+  human user — captured via on-resource annotations and a
+  controller-emitted structured audit record that joins to
+  kube-audit on the apiserver `auditID`. kube-audit's
+  `user.username` will show the controller `ServiceAccount` for
+  Jumpstarter mutations (see *DD-6*); operators query the joined
+  view, not `user.username` alone.
 - Must be reachable from a browser as plain HTTP/JSON, without an
   Envoy, grpc-web, or other sidecar.
 
@@ -573,19 +578,19 @@ expanded `Exporter`, `Watch*Request`, `*Event` (`event_type` +
 `resource_version` + `bookmark`). The `Webhook` resource is also
 defined here.
 
-A new annotation contract on the underlying CRDs:
+A new metadata contract on the underlying CRDs:
 
-| Annotation                              | Value                                          | Set by     |
-| --------------------------------------- | ---------------------------------------------- | ---------- |
-| `jumpstarter.dev/owner`                 | `sha256(iss + "#" + sub)[:16]`                 | Controller |
-| `jumpstarter.dev/created-by`            | OIDC username (display only)                   | Controller |
-| `jumpstarter.dev/owner-issuer`          | OIDC issuer URL                                | Controller |
-| `jumpstarter.dev/last-mutated-by`       | OIDC username of the most recent mutator       | Controller |
-| `jumpstarter.dev/last-mutated-by-hash`  | `sha256(iss + "#" + sub)[:16]` of that mutator | Controller |
-| `jumpstarter.dev/last-mutated-at`       | RFC3339 timestamp                              | Controller |
-| `jumpstarter.dev/legacy-resource`       | `"true"` (only on pre-admin-API resources)     | Controller |
+| Key                                     | Kind       | Value                                          | Set by     |
+| --------------------------------------- | ---------- | ---------------------------------------------- | ---------- |
+| `jumpstarter.dev/owner`                 | Annotation | `sha256(iss + "#" + sub)[:16]`                 | Controller |
+| `jumpstarter.dev/created-by`            | Annotation | OIDC username (display only)                   | Controller |
+| `jumpstarter.dev/owner-issuer`          | Annotation | OIDC issuer URL                                | Controller |
+| `jumpstarter.dev/last-mutated-by`       | Annotation | OIDC username of the most recent mutator       | Controller |
+| `jumpstarter.dev/last-mutated-by-hash`  | Annotation | `sha256(iss + "#" + sub)[:16]` of that mutator | Controller |
+| `jumpstarter.dev/last-mutated-at`       | Annotation | RFC3339 timestamp                              | Controller |
+| `jumpstarter.dev/legacy-resource`       | **Label**  | `"true"` (only on pre-admin-API resources)     | Controller |
 
-CRD schemas are unchanged; annotations are namespaced metadata only.
+`legacy-resource` is a **label** because it is a boolean selector used both by the controller's AuthZ short-circuit and by operator cookbooks (`kubectl get -l ...`); annotations are not selectable. All other entries are annotations (free-form structured metadata). CRD schemas are unchanged; the metadata is added via standard label/annotation patches.
 
 Pre-existing resources, which the controller cannot retroactively
 match to an authenticated identity, are admin-only and require
@@ -606,20 +611,20 @@ user who happens to land in the same namespace.
 
 **Backfill.** On controller startup (and on a reconcile-loop
 sweep), the controller lists every `Lease` / `Exporter` / `Client`
-that lacks `jumpstarter.dev/owner` and writes a sentinel set of
-annotations:
+that lacks `jumpstarter.dev/owner` and writes a sentinel set:
 
-| Annotation                       | Value                |
-| -------------------------------- | -------------------- |
-| `jumpstarter.dev/owner`          | `legacy`             |
-| `jumpstarter.dev/owner-issuer`   | `legacy`             |
-| `jumpstarter.dev/created-by`     | `pre-admin-api`      |
-| `jumpstarter.dev/legacy-resource`| `"true"`             |
+| Key                              | Kind       | Value           |
+| -------------------------------- | ---------- | --------------- |
+| `jumpstarter.dev/owner`          | Annotation | `legacy`        |
+| `jumpstarter.dev/owner-issuer`   | Annotation | `legacy`        |
+| `jumpstarter.dev/created-by`     | Annotation | `pre-admin-api` |
+| `jumpstarter.dev/legacy-resource`| Label      | `"true"`        |
 
 The literal string `legacy` is not a hex digest, so it cannot
 collide with a real `sha256(iss#sub)[:16]`. Backfill is idempotent:
-the controller skips any resource already carrying
-`jumpstarter.dev/legacy-resource` or a real `owner` annotation. The
+the controller skips any resource already carrying the
+`jumpstarter.dev/legacy-resource` label or a real `owner`
+annotation. The
 backfill is safe to re-run on every restart and is the only way the
 sentinel ever gets written — there is no admin-API verb that
 creates a legacy resource.
@@ -627,10 +632,10 @@ creates a legacy resource.
 **Authorization semantics for legacy resources** —
 uniformly admin-gated, regardless of RPC:
 
-- The AuthZ interceptor checks
-  `jumpstarter.dev/legacy-resource: "true"` **before** the
-  per-resource ownership comparison and **before** returning the
-  resource on read paths.
+- The AuthZ interceptor checks the
+  `jumpstarter.dev/legacy-resource` **label** (value `"true"`)
+  **before** the per-resource ownership comparison and **before**
+  returning the resource on read paths.
 - For *every* verb (`get`, `list`, `watch`, `update`, `delete`,
   `adopt`), the interceptor posts a second `SubjectAccessReview`
   against a dedicated virtual resource on the
@@ -668,25 +673,24 @@ uniformly admin-gated, regardless of RPC:
 <name> --owner <iss>#<sub>` (REST: `POST
 /admin/v1/{name=namespaces/*/leases/*}:adopt`) writes the canonical
 hashed `owner`, the real `owner-issuer`, the `created-by` /
-`last-mutated-by` of the *adopting* admin, and **removes**
-`jumpstarter.dev/legacy-resource`. Adoption is RBAC-gated by the
+`last-mutated-by` of the *adopting* admin, and **removes** the
+`jumpstarter.dev/legacy-resource` label. Adoption is RBAC-gated by the
 same SAR check above with `verb=adopt`. After adoption, the
 resource behaves like any normally-created resource — the
 per-resource ownership rule from the regular AuthZ flow takes
 over.
 
 **No CRD schema change** is required — backfill writes only
-annotations, consistent with the "annotations are namespaced
-metadata only" line above.
+standard label and annotation patches.
 
 **Audit & operator visibility.** The structured controller audit
 log (see *DD-6*) emits `legacy_resource=true` on every RPC that
-touches a sentinel-annotated resource, so cluster operators can
-spot the adoption queue. A `kubectl get` cookbook in the operator's
-docs (e.g. `kubectl get leases -A -l '!jumpstarter.dev/owner' -o
-custom-columns=...` or the equivalent on the
-`jumpstarter.dev/legacy-resource=true` selector) lists the
-candidates explicitly.
+touches a sentinel-labeled resource, so cluster operators can
+spot the adoption queue. Because `legacy-resource` is a label,
+the standard `kubectl` selector works directly — e.g.
+`kubectl get leases -A -l 'jumpstarter.dev/legacy-resource=true' \
+-o custom-columns=NS:.metadata.namespace,NAME:.metadata.name,AT:.metadata.annotations.jumpstarter\.dev/created-by`
+lists the candidates explicitly.
 
 The legacy `jumpstarter.client.v1.ClientService` and the runtime
 `jumpstarter.v1` services gain **no proto changes** and no new
@@ -1197,7 +1201,7 @@ to accept cleartext HTTP/2; the dispatch logic is unchanged.
 
 ### Authorization Flow
 
-```
+```text
 AdminRPC(ctx, req)
   ├── identity := IdentityFrom(ctx)                      # set by AuthN
   ├── verb, resource := MapRPC(req)                      # static table
@@ -1221,7 +1225,7 @@ AdminRPC(ctx, req)
 
 ### Watch State Machine
 
-```
+```text
 client          server
   │
   │  Watch(resource_version="")
@@ -1317,11 +1321,12 @@ without needing the `.proto` files.
   (the cache miss falls back to a fresh apiserver call without
   leaking a stale allow); concurrent `Update` on the same resource
   produces exactly one `ABORTED` (the loser) and exactly one
-  success; non-admin attempts to write `jumpstarter.dev/owner` or
-  `jumpstarter.dev/legacy-resource` directly via `Update` are
-  rejected with `PERMISSION_DENIED` (the AuthZ interceptor strips
-  caller-supplied jumpstarter.dev-prefixed annotations from
-  mutating payloads); legacy-resource short-circuit returns
+  success; non-admin attempts to write the `jumpstarter.dev/owner`
+  annotation or the `jumpstarter.dev/legacy-resource` label directly
+  via `Update` are rejected with `PERMISSION_DENIED` (the AuthZ
+  interceptor strips caller-supplied `jumpstarter.dev/*` labels
+  **and** annotations from mutating payloads, so the marker cannot
+  be smuggled in); legacy-resource short-circuit returns
   `NOT_FOUND` (not `PERMISSION_DENIED`) for unprivileged callers
   so legacy resources cannot be enumerated through the status-code
   diff.
@@ -1415,8 +1420,15 @@ exporter path; HiL coverage is unchanged.
       Keycloak fixtures.
 - [ ] An RBAC-denied user gets `PERMISSION_DENIED`; an allowed user
       can CRUD their resources.
-- [ ] kube-audit logs attribute mutations to the human user, not the
-      controller `ServiceAccount`.
+- [ ] For every mutating RPC, the controller emits a structured
+      audit record carrying the caller's OIDC identity
+      (`iss`, `sub`, hashed owner) and the kube-apiserver `auditID`
+      of the resulting mutation; the resource itself carries
+      `jumpstarter.dev/last-mutated-by` / `-by-hash` / `-at`.
+      kube-audit's `user.username` shows the controller
+      `ServiceAccount` (see *DD-6*), and an operator can join the
+      two streams on `auditID` to attribute any mutation to the
+      human user.
 - [ ] `WatchLeases` correctly resumes from `resource_version` after a
       forced disconnect (NDJSON stream), with no missed events under
       the test workload.
@@ -1487,7 +1499,9 @@ until they are reconciled.
   documented, browser-reachable API.
 - Cluster admins manage admin-API permissions through standard
   Kubernetes RBAC.
-- kube-audit reflects human users, not the controller SA.
+- Mutations are attributable to the human user via on-resource
+  annotations and the controller's structured audit log, joinable
+  to kube-audit on `auditID` (see *DD-6*).
 - A documented OpenAPI v2 surface unblocks future per-language SDKs
   (TypeScript, Rust, others) without further proto changes.
 - Outbound webhooks unblock event-driven CI integrations.
