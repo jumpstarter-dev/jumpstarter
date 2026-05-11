@@ -30,7 +30,17 @@ class Esp32Flasher(FlasherInterface, Driver):
     def client(cls) -> str:
         return "jumpstarter_driver_esp32.client.Esp32FlasherClient"
 
+    def _release_serial_port(self):
+        """Force-close any active serial stream on the child serial driver.
+
+        This ensures the serial port is not locked by an ongoing stream
+        (e.g. from ``j serial pipe``) before esptool tries to open it.
+        """
+        self.logger.debug("Releasing serial port before esptool operation...")
+        self._serial.close_serial()
+
     def _connect_esp(self):
+        self._release_serial_port()
         port = self._serial.url
         self.logger.debug("Connecting to ESP32 on %s...", port)
         esp = esptool.cmds.detect_chip(

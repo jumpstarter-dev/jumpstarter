@@ -99,6 +99,7 @@ class PySerial(Driver):
     check_present: bool = field(default=True)
     cps: Optional[float] = field(default=None)  # characters per second throttling
     disable_hupcl: bool = field(default=False)
+    _active_writer: Any = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -146,6 +147,19 @@ class PySerial(Driver):
         finally:
             s.close()
 
+    @export
+    def close_serial(self):
+        """Force-close any active serial connection.
+
+        This is used to release a locked serial port, e.g. before flashing
+        via esptool which needs exclusive port access.
+        """
+        writer = self._active_writer
+        if writer is not None:
+            self.logger.info("Force-closing active serial connection on %s", self.url)
+            writer.close()
+            self._active_writer = None
+
     @exportstream
     @asynccontextmanager
     async def connect(self):
@@ -153,15 +167,19 @@ class PySerial(Driver):
         self.logger.info("Connecting to %s, baudrate: %d%s", self.url, self.baudrate, cps_info)
         if self.url != LOOP:
             reader, writer = await open_serial_connection(url=self.url, baudrate=self.baudrate)
-            writer.transport.set_write_buffer_limits(high=4096, low=0)
-            self._maybe_disable_hupcl(getattr(writer.transport, "serial", None))
-            async with AsyncSerial(
-                reader=StreamReaderWrapper(reader),
-                writer=StreamWriterWrapper(writer),
-                cps=self.cps,
-            ) as stream:
-                yield stream
-            self.logger.info("Disconnected from %s", self.url)
+            self._active_writer = writer
+            try:
+                writer.transport.set_write_buffer_limits(high=4096, low=0)
+                self._maybe_disable_hupcl(getattr(writer.transport, "serial", None))
+                async with AsyncSerial(
+                    reader=StreamReaderWrapper(reader),
+                    writer=StreamWriterWrapper(writer),
+                    cps=self.cps,
+                ) as stream:
+                    yield stream
+                self.logger.info("Disconnected from %s", self.url)
+            finally:
+                self._active_writer = None
         else:
             tx, rx = create_memory_object_stream[bytes](32)  # type: ignore[call-overload]
             stapled_stream = StapledObjectStream(tx, rx)
