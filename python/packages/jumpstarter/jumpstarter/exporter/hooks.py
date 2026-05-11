@@ -615,6 +615,13 @@ class HookExecutor:
                 LogSource.BEFORE_LEASE_HOOK,
             )
 
+            if lease_scope.lease_ended.is_set():
+                logger.info(
+                    "Lease %s ended during beforeLease hook, skipping LEASE_READY transition",
+                    lease_scope.lease_name,
+                )
+                return
+
             if warning:
                 msg = f"{HOOK_WARNING_PREFIX}beforeLease hook warning: {warning}"
             else:

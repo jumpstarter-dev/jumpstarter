@@ -442,6 +442,51 @@ def _make_exporter_for_report_status():
     return exporter
 
 
+class TestBeforeLeaseHookRaceGuard:
+    async def test_new_lease_after_before_hook_race_recovery(self):
+        """After recovering from the beforeLease hook race condition
+        (lease expired during hook), a new lease must be accepted and
+        processed normally."""
+        from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
+        from jumpstarter.exporter.hooks import HookExecutor
+
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
+        )
+        hook_executor = HookExecutor(config=hook_config)
+
+        lease_ctx_1 = make_lease_context(lease_name="expired-lease")
+        lease_ctx_1.lease_ended.set()
+
+        statuses = []
+
+        async def track_status(status, message=""):
+            statuses.append(status)
+
+        exporter = make_exporter(lease_ctx_1, hook_executor)
+        exporter._report_status = AsyncMock(side_effect=track_status)
+
+        await hook_executor.run_before_lease_hook(
+            lease_ctx_1, exporter._report_status, exporter.stop, exporter._request_lease_release
+        )
+
+        assert lease_ctx_1.before_lease_hook.is_set()
+        await exporter._cleanup_after_lease(lease_ctx_1)
+        assert ExporterStatus.AVAILABLE in statuses
+
+        lease_ctx_2 = make_lease_context(lease_name="new-lease")
+        exporter._lease_context = lease_ctx_2
+
+        statuses.clear()
+        await hook_executor.run_before_lease_hook(
+            lease_ctx_2, exporter._report_status, exporter.stop, exporter._request_lease_release
+        )
+
+        assert ExporterStatus.LEASE_READY in statuses, (
+            f"New lease must reach LEASE_READY when lease is still active. Statuses: {statuses}"
+        )
+
+
 class TestReportStatusGrpcErrorHandling:
     async def test_unimplemented_grpc_error_logs_warning(self, caplog):
         """When ReportStatus returns UNIMPLEMENTED, a warning is logged
