@@ -642,11 +642,23 @@ uniformly admin-gated, regardless of RPC:
   `:adopt` return `NOT_FOUND` (never `PERMISSION_DENIED` — that
   would let an unprivileged caller enumerate legacy resources by
   the difference between the two status codes).
-- Cluster admins get this capability via a
-  `jumpstarter:legacy-resource-admin` `ClusterRole` that the
-  operator ships; the cluster `cluster-admin` role aggregates it by
-  default. Admins can grant it to specific identities or groups via
-  standard `RoleBinding` / `ClusterRoleBinding`.
+- **Existing cluster admins already have the capability** — there is
+  no install-time migration step on their end. The operator ships
+  a `jumpstarter:legacy-resource-admin` `ClusterRole` covering
+  `legacyresources.jumpstarter.dev` verbs (`get`/`list`/`watch`/
+  `update`/`delete`/`adopt`) labeled with
+  `rbac.authorization.k8s.io/aggregate-to-admin: "true"` so the
+  kube-apiserver's
+  [RBAC aggregation controller](https://kubernetes.io/docs/reference/access-authn-authz/rbac/#aggregated-clusterroles)
+  automatically folds the new verbs into the built-in `admin`
+  ClusterRole. Anyone who currently has `admin` in a namespace can
+  therefore `:adopt` legacy resources in that namespace as soon as
+  the operator is installed, without any explicit binding.
+  `cluster-admin` is already `*` on `*/*` and so covers the new GVR
+  inherently. Deployments that grant admin rights to identities
+  *outside* the built-in `admin` / `cluster-admin` roles can bind
+  `jumpstarter:legacy-resource-admin` explicitly with a standard
+  `RoleBinding` / `ClusterRoleBinding`.
 - The exporter runtime path (`jumpstarter.v1.*`) is **untouched**:
   exporter agents continue to talk to legacy `Exporter` resources
   via their existing object-token flow. The data path keeps
