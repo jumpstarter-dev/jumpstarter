@@ -51,8 +51,8 @@ def test_mount_sshfs_not_installed():
                 client.mount("/tmp/test-mount")
 
 
-def test_mount_sshfs_success():
-    """Test successful sshfs mount via port forwarding with subshell"""
+def test_mount_sshfs_constructs_correct_args():
+    """Test sshfs mount constructs correct command-line arguments"""
     instance = SSHMount(
         children={"ssh": _make_ssh_child()},
     )
@@ -198,8 +198,8 @@ def test_mount_sshfs_generic_failure():
                         assert first_call_args[0] == "sshfs"
 
 
-def test_mount_sshfs_direct_success():
-    """Test sshfs mount using direct TCP address"""
+def test_mount_sshfs_direct_constructs_correct_args():
+    """Test sshfs mount using direct TCP constructs correct command-line arguments"""
     instance = SSHMount(
         children={"ssh": _make_ssh_child(host="10.0.0.1", port=2222)},
     )
@@ -345,6 +345,8 @@ def test_mount_subshell_mode():
                                     # Subshell should have been called
                                     resolved = os.path.realpath("/tmp/test-mount")
                                     mock_subshell.assert_called_once_with(resolved, "/")
+                                    # sshfs process should be terminated after subshell exits
+                                    mock_proc.terminate.assert_called_once()
 
 
 def test_mount_cleanup_on_failure():
@@ -798,6 +800,7 @@ def test_subshell_zsh_inserts_mount_tag():
                 mock_run.assert_called_once()
                 call_args = mock_run.call_args[0][0]
                 assert call_args[0] == "/bin/zsh"
+                assert "--no-rcs" in call_args
                 assert "-i" in call_args
                 env_passed = mock_run.call_args[1].get("env", {})
                 assert "(mount)➤" in env_passed.get("PS1", "")
@@ -842,3 +845,20 @@ def test_allow_other_comma_separated_removal():
         for i, a in enumerate(result2):
             if a == "-o":
                 assert result2[i + 1] != "allow_other"
+
+
+def test_subshell_unknown_shell_fallback():
+    """Test that an unknown shell (e.g. /bin/dash) is invoked with just -i"""
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        with patch.dict(os.environ, {"SHELL": "/bin/dash"}):
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                client._run_subshell("/tmp/test-mount", "/")
+
+                mock_run.assert_called_once()
+                call_args = mock_run.call_args[0][0]
+                assert call_args == ["/bin/dash", "-i"]
