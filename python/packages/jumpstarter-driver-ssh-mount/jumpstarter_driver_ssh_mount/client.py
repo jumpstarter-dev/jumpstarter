@@ -57,12 +57,7 @@ class SSHMountClient(CompositeClient):
         return self.ssh.username
 
     def _resolve_host_port(self, direct: bool) -> tuple[str, int, bool]:
-        """Resolve (host, port) for sshfs, trying direct first if requested.
-
-        Returns:
-            Tuple of (host, port, use_portforward) where use_portforward
-            indicates whether TcpPortforwardAdapter should be used.
-        """
+        """Try direct TCP first if requested, falling back to port forwarding."""
         if direct:
             try:
                 address = self.ssh.tcp.address()
@@ -162,8 +157,8 @@ class SSHMountClient(CompositeClient):
 
     def _start_sshfs_with_fallback(
         self, sshfs_args: list[str], mountpoint: str,
-    ) -> subprocess.Popen:
-        """Start sshfs, retrying without allow_other if it fails on that option."""
+    ) -> subprocess.Popen[bytes]:
+        """Start sshfs, retrying without allow_other if it fails."""
         test_args = [a for a in sshfs_args if a != "-f"]
         result = subprocess.run(test_args, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
 
@@ -179,7 +174,6 @@ class SSHMountClient(CompositeClient):
                 f"sshfs mount failed (exit code {result.returncode}): {stderr}"
             )
 
-        # Tear down the test mount before starting the real foreground process
         self._force_umount(mountpoint)
         if os.path.ismount(mountpoint):
             raise click.ClickException(
@@ -201,7 +195,6 @@ class SSHMountClient(CompositeClient):
         except subprocess.TimeoutExpired:
             pass
 
-        # Poll for mount readiness instead of a single check
         deadline = time.monotonic() + MOUNT_POLL_TIMEOUT
         while time.monotonic() < deadline:
             if os.path.ismount(mountpoint):
@@ -219,7 +212,6 @@ class SSHMountClient(CompositeClient):
         )
 
     def _remove_allow_other(self, sshfs_args: list[str]) -> list[str]:
-        """Remove allow_other from sshfs args, handling comma-separated -o values."""
         filtered: list[str] = []
         skip_next = False
         for i, arg in enumerate(sshfs_args):
@@ -237,6 +229,7 @@ class SSHMountClient(CompositeClient):
         return filtered
 
     def _run_subshell(self, mountpoint: str, remote_path: str) -> None:
+        """Spawn an interactive subshell with a (mount) prompt indicator."""
         shell = os.environ.get("SHELL", "/bin/sh")
         shell_name = os.path.basename(shell)
         env = os.environ.copy()
@@ -255,8 +248,6 @@ class SSHMountClient(CompositeClient):
                     env=env,
                 )
             elif shell_name == "fish":
-                # Build a fish_prompt function that inserts (mount) before
-                # the arrow, mirroring the jmp shell fish prompt style.
                 fish_fn = (
                     "function fish_prompt; "
                     "set_color grey; "
