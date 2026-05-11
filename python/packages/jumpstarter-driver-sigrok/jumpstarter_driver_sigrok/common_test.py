@@ -2,8 +2,6 @@
 
 from base64 import b64encode
 
-import pytest
-
 from .common import CaptureResult, OutputFormat, Sample
 
 

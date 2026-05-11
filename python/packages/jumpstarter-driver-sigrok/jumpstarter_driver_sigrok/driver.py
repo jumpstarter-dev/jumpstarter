@@ -90,7 +90,7 @@ class Sigrok(Driver):
             # Return as dict with base64-encoded data (reliable for JSON transport)
             return {
                 "data_b64": b64encode(data).decode("ascii"),
-                "output_format": cfg.output_format.value if hasattr(cfg.output_format, 'value') else cfg.output_format,
+                "output_format": cfg.output_format.value,
                 "sample_rate": cfg.sample_rate,
                 "channel_map": self.channels,
                 "triggers": cfg.triggers,
@@ -131,14 +131,14 @@ class Sigrok(Driver):
     # --- Command builders -----------------------------------------------
 
     def _build_capture_command(self, cfg: CaptureConfig, tmpdir_path: str) -> tuple[list[str], Path]:
-        outfile = Path(tmpdir_path) / f"capture.{cfg.output_format.value if hasattr(cfg.output_format, 'value') else cfg.output_format}"
+        fmt = cfg.output_format.value
+        outfile = Path(tmpdir_path) / f"capture.{fmt}"
 
         cmd: list[str] = self._base_driver_args()
         cmd += self._channel_args(cfg.channels)
         cmd += self._config_args(cfg)
         cmd += self._trigger_args(cfg)
         cmd += self._decoder_args(cfg)
-        fmt = cfg.output_format.value if hasattr(cfg.output_format, 'value') else cfg.output_format
         cmd += ["-O", fmt, "-o", str(outfile)]
 
         return cmd, outfile
@@ -149,8 +149,7 @@ class Sigrok(Driver):
         cmd += self._config_args(cfg, continuous=True)
         cmd += self._trigger_args(cfg)
         cmd += self._decoder_args(cfg)
-        fmt = cfg.output_format.value if hasattr(cfg.output_format, 'value') else cfg.output_format
-        cmd += ["-O", fmt, "-o", "-"]
+        cmd += ["-O", cfg.output_format.value, "-o", "-"]
         return cmd
 
     def _base_driver_args(self) -> list[str]:

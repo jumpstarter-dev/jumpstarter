@@ -1,14 +1,12 @@
 """Tests for CSV format parser."""
 
-from base64 import b64encode
 from shutil import which
 
 import pytest
 
 from .client import SigrokClient
-from .common import CaptureConfig, CaptureResult, OutputFormat, Sample
+from .common import CaptureConfig, CaptureResult, OutputFormat
 from .csv import parse_csv
-
 
 # ---------------------------------------------------------------------------
 # Unit tests for parse_csv (no sigrok-cli required)

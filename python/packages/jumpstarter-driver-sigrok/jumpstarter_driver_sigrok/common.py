@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from enum import Enum
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -79,7 +80,7 @@ class DecoderConfig(BaseModel):
 
     @field_validator("options")
     @classmethod
-    def validate_options(cls, v: dict[str, str | int | float | bool] | None) -> dict[str, str | int | float | bool] | None:
+    def validate_options(cls, v: dict[str, str | int | float | bool] | None) -> dict[str, str | int | float | bool] | None:  # noqa: E501
         if v is None:
             return v
         for key, value in v.items():
