@@ -1,14 +1,14 @@
 # JEP-0014: Admin API and Identity Federation
 
-| Field          | Value                                                              |
-| -------------- | ------------------------------------------------------------------ |
-| **JEP**        | 0014                                                               |
-| **Title**      | Admin API and Identity Federation                                  |
-| **Author(s)**  | @kirkbrauer                                                        |
-| **Status**     | Discussion                                                         |
-| **Type**       | Standards Track                                                    |
-| **Created**    | 2026-05-10                                                         |
-| **Updated**    | 2026-05-10                                                         |
+| Field          | Value                                                                |
+| -------------- | -------------------------------------------------------------------- |
+| **JEP**        | 0014                                                                 |
+| **Title**      | Admin API and Identity Federation                                    |
+| **Author(s)**  | @kirkbrauer                                                          |
+| **Status**     | Accepted                                                             |
+| **Type**       | Standards Track                                                      |
+| **Created**    | 2026-05-10                                                           |
+| **Updated**    | 2026-05-10                                                           |
 | **Discussion** | [PR #658](https://github.com/jumpstarter-dev/jumpstarter/pull/658) |
 
 ---
