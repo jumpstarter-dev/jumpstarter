@@ -99,6 +99,7 @@ class PySerial(Driver):
     check_present: bool = field(default=True)
     cps: Optional[float] = field(default=None)  # characters per second throttling
     disable_hupcl: bool = field(default=False)
+    _transport: Any = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -129,6 +130,24 @@ class PySerial(Driver):
             self.logger.warning("Failed to disable HUPCL on %s", self.url)
 
     @export
+    def close(self):
+        """Force-close any active serial connection by closing the underlying transport.
+
+        The asyncio stream reader/writer will naturally receive errors or EOF
+        when the fd is closed, causing the stream to tear down without needing
+        explicit signalling.
+
+        Safe to call when no stream is active (no-op).
+        """
+        transport = self._transport
+        if transport is None:
+            self.logger.debug("close() called but no active connection (no-op)")
+            return
+
+        self.logger.debug("close() closing transport for %s", self.url)
+        transport.close()
+
+    @export
     def set_dtr(self, value: bool):
         """Set the DTR control signal."""
         s = serial_for_url(self.url, baudrate=self.baudrate)
@@ -151,19 +170,26 @@ class PySerial(Driver):
     async def connect(self):
         cps_info = f", cps: {self.cps}" if self.cps is not None else ""
         self.logger.info("Connecting to %s, baudrate: %d%s", self.url, self.baudrate, cps_info)
-        if self.url != LOOP:
-            reader, writer = await open_serial_connection(url=self.url, baudrate=self.baudrate)
-            writer.transport.set_write_buffer_limits(high=4096, low=0)
-            self._maybe_disable_hupcl(getattr(writer.transport, "serial", None))
+
+        if self.url == LOOP:
+            tx, rx = create_memory_object_stream[bytes](32)  # type: ignore[call-overload]
+            stapled_stream = StapledObjectStream(tx, rx)
+            async with ThrottledStream(stream=stapled_stream, cps=self.cps) as stream:
+                yield stream
+            return
+
+        reader, writer = await open_serial_connection(url=self.url, baudrate=self.baudrate)
+        writer.transport.set_write_buffer_limits(high=4096, low=0)
+        self._maybe_disable_hupcl(getattr(writer.transport, "serial", None))
+        self._transport = writer.transport
+
+        try:
             async with AsyncSerial(
                 reader=StreamReaderWrapper(reader),
                 writer=StreamWriterWrapper(writer),
                 cps=self.cps,
             ) as stream:
                 yield stream
-            self.logger.info("Disconnected from %s", self.url)
-        else:
-            tx, rx = create_memory_object_stream[bytes](32)  # type: ignore[call-overload]
-            stapled_stream = StapledObjectStream(tx, rx)
-            async with ThrottledStream(stream=stapled_stream, cps=self.cps) as stream:
-                yield stream
+        finally:
+            self._transport = None
+        self.logger.info("Disconnected from %s", self.url)

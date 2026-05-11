@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from typing import Optional
 
 import click
-from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file, sleep
+from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file
 from anyio.streams.file import FileReadStream
 from jumpstarter_driver_network.adapters import PexpectAdapter
 from pexpect.fdpexpect import fdspawn
@@ -68,17 +68,13 @@ class PySerialClient(DriverClient):
                 return
 
             async with create_task_group() as tg:
-                # Output task: serial -> file/stdout
-                tg.start_soon(self._serial_to_output, stream, output_file, append)
-
                 # Input task: stdin -> serial (optional)
                 if input_enabled:
                     tg.start_soon(self._stdin_to_serial, stream)
 
-                # Keep running until interrupted (Ctrl+C)
-                # When input is enabled, this continues even after stdin EOF
-                while True:
-                    await sleep(1)
+                # Output runs inline - when the stream ends, we cancel and exit
+                await self._serial_to_output(stream, output_file, append)
+                tg.cancel_scope.cancel()
 
     async def _serial_to_output(self, stream, output_file: Optional[str], append: bool):
         """Read from serial and write to file or stdout."""
