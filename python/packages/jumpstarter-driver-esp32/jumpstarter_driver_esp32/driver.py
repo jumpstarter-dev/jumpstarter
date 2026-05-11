@@ -1,3 +1,4 @@
+import gc
 import os
 import tempfile
 import time
@@ -32,23 +33,63 @@ class Esp32Flasher(FlasherInterface, Driver):
 
     def _connect_esp(self):
         port = self._serial.url
-        self.logger.debug("Connecting to ESP32 on %s...", port)
-        esp = esptool.cmds.detect_chip(
-            port=port,
-            baud=self.baudrate,
-            connect_mode="default_reset",
-            trace_enabled=False,
-            connect_attempts=7,
-        )
-        self.logger.debug("Connected to %s", esp.get_chip_description())  # type: ignore[attr-defined]
+        self.logger.info("_connect_esp: releasing serial port %s via close()...", port)
+        self._serial.close()
+        self.logger.debug("_connect_esp: serial port released, calling esptool.detect_chip on %s", port)
+        try:
+            esp = esptool.cmds.detect_chip(
+                port=port,
+                baud=self.baudrate,
+                connect_mode="default_reset",
+                trace_enabled=False,
+                connect_attempts=7,
+            )
+        except Exception as e:
+            self.logger.debug("_connect_esp: detect_chip failed on %s", port)
+            e.__traceback__ = None
+            self._force_release_port(port)
+            raise
+        self.logger.debug("_connect_esp: connected to %s", esp.get_chip_description())  # type: ignore[attr-defined]
         return esp
 
     def _close_esp(self, esp):
+        port_path = None
         try:
             if hasattr(esp, "_port") and esp._port:
+                port_path = getattr(esp._port, "portstr", None) or getattr(esp._port, "name", None)
                 esp._port.close()
+                esp._port = None
         except Exception:
             pass
+        if port_path:
+            self._force_release_port(port_path)
+
+    def _force_release_port(self, port: str):
+        """Force-close any leaked file descriptors pointing to the serial port.
+
+        Scans /proc/self/fd/ for symlinks resolving to the port device and
+        closes them. This handles cases where esptool's internal objects
+        (ESPLoader, slip_reader generator, exception chains) keep the fd alive.
+        """
+        gc.collect()
+        try:
+            real_port = os.path.realpath(port)
+        except (OSError, ValueError):
+            return
+        fd_dir = "/proc/self/fd"
+        try:
+            fds = os.listdir(fd_dir)
+        except OSError:
+            return
+        for fd_name in fds:
+            try:
+                fd_path = os.path.realpath(os.path.join(fd_dir, fd_name))
+                if fd_path == real_port:
+                    fd_num = int(fd_name)
+                    os.close(fd_num)
+                    self.logger.debug("_force_release_port: closed leaked fd %d for %s", fd_num, port)
+            except (OSError, ValueError):
+                continue
 
     @export
     async def flash(self, source, target: str | None = None):

@@ -47,6 +47,18 @@ class Proxy(Driver):
     def enumerate(self, *, root=None, parent=None, name=None):
         return self._resolve_proxy_target(root or self, name).enumerate(root=root or self, parent=parent, name=name)
 
+    def close(self):
+        if self._proxy_target:
+            self._proxy_target.close()
+        else:
+            super().close()
+
+    def reset(self):
+        if self._proxy_target:
+            self._proxy_target.reset()
+        else:
+            super().reset()
+
     def __getattr__(self, name):
         if not self._proxy_target:
             raise RuntimeError(f"Proxy target not resolved. Call enumerate() before accessing '{name}'")
