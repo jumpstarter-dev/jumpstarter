@@ -30,7 +30,7 @@ def test_capture_with_demo_driver(demo_client):
     cfg = CaptureConfig(
         sample_rate="100kHz",
         samples=100,
-        output_format="srzip",
+        output_format=OutputFormat.SRZIP,
     )
 
     result = demo_client.capture(cfg)
@@ -91,7 +91,7 @@ def test_capture_csv_format(demo_client):
     cfg = CaptureConfig(
         sample_rate="50kHz",
         samples=50,
-        output_format="csv",
+        output_format=OutputFormat.CSV,
     )
 
     result = demo_client.capture(cfg)
@@ -129,7 +129,7 @@ def test_capture_analog_channels():
             sample_rate="100kHz",
             samples=20,
             channels=["voltage_in", "sine_wave"],  # Select specific analog channels
-            output_format="csv",
+            output_format=OutputFormat.CSV,
         )
 
         result = client.capture(cfg)
@@ -181,7 +181,7 @@ def test_capture_stream_with_demo(demo_client):
     cfg = CaptureConfig(
         sample_rate="100kHz",
         samples=1000,
-        output_format="binary",
+        output_format=OutputFormat.BINARY,
     )
 
     received_bytes = 0
