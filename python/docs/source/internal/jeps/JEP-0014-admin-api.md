@@ -278,17 +278,19 @@ the RPC response, replacing today's racy "create the CRD, then poll
 for the credential `Secret` to appear" flow:
 
 - `CreateExporter` / `CreateClient` — Writes the corresponding CRD
-  (annotated with the caller's owner hash), drives the controller to
-  generate credentials synchronously, and returns the issued token
-  in the response message (`Exporter.bootstrap_token` /
-  `Client.bootstrap_token`). The caller does not need kube-apiserver
-  access, does not need to watch a `Secret`, and does not race with
-  the reconciler. This replaces both the current
-  "kubectl apply + manual secret" workflow for non-cluster-admins
-  and the existing `jmp admin` flow that creates the CRD and then
-  polls for the controller-generated `Secret` to appear (which is
-  unreliable when the controller is slow, the apiserver is paged
-  out, or RBAC denies the user a `watch` verb on `Secrets`).
+  (annotated with the caller's owner hash) and returns the issued
+  bootstrap token inline in the response message
+  (`Exporter.bootstrap_token` / `Client.bootstrap_token`). The
+  handler signs the JWT and creates the credential `Secret` in the
+  same RPC — no watch, no poll, no race with the reconciler. See
+  *Synchronous Credential Provisioning* below for the mechanism,
+  failure modes, and idempotency guarantees. This replaces both the
+  current "kubectl apply + manual secret" workflow for
+  non-cluster-admins and the existing `jmp admin` flow that creates
+  the CRD and then polls for the controller-generated `Secret` to
+  appear (which is unreliable when the controller is slow, the
+  apiserver is paged out, or RBAC denies the user a `watch` verb on
+  `Secrets`).
 - `UpdateExporter` / `UpdateClient` — Patches mutable fields
   (labels, annotations, display metadata). The wire identity of an
   already-registered exporter agent is unaffected; only the CRD's
@@ -384,6 +386,24 @@ Browsers consume them via the standard `fetch` Streams API — no
 gRPC-Web framing, no extra runtime — and a `Content-Type:
 application/x-ndjson` response with `BOOKMARK` records every 30
 seconds keeps the connection live across HTTP idle timeouts.
+
+Browser callers from a different origin (Backstage, the OpenShift
+Console plug-in, standalone web UIs) require CORS preflight support
+or their `fetch` requests are blocked by the user agent. The REST
+gateway wraps its `http.Handler` in a configurable CORS middleware
+that, on `OPTIONS` preflight and on every response, echoes
+allowlisted `Origin` values, advertises the gRPC-gateway methods
+(`GET`/`POST`/`PUT`/`PATCH`/`DELETE`), accepts the `Authorization`
+and `Content-Type` request headers, and exposes the response headers
+needed for NDJSON `Watch*` streams. Allowed origins are configured
+per deployment (controller flag, mirrored as a Helm value); the
+default is an empty allowlist (no cross-origin access), so the
+controller is **safe-by-default** and operators opt in to specific
+UIs as they ship them. `Access-Control-Allow-Credentials` is left
+*off* — admin callers send a bearer `Authorization` header, not
+cookies, which is compatible with a `*` origin echo for callers that
+don't need credentialed CORS and avoids the wildcard-with-credentials
+browser rejection for callers that do.
 
 ### Interceptor pipeline
 
@@ -534,6 +554,92 @@ familiar HTTP semantics without the JEP inventing its own table.
 The bundled `jumpstarter.client.v1.ClientService` is preserved
 verbatim; deployed `jmp` CLI binaries continue to call it over gRPC
 without any change.
+
+#### Synchronous Credential Provisioning
+
+`CreateClient` and `CreateExporter` return the bootstrap token inline,
+replacing today's "create the CRD, then poll for a credential `Secret`
+to appear" flow in
+`jumpstarter-kubernetes/jumpstarter_kubernetes/clients.py:96-129`
+(and the matching exporter helper) which retries up to ten times at
+one-second intervals and fails if the reconciler is slower than the
+budget. The mechanism is:
+
+1. **Authorize.** The interceptor pipeline (multi-issuer OIDC + SAR)
+   establishes the caller's identity and verifies they can `create`
+   the resource in the target namespace.
+2. **Create the CRD.** The handler `Create`s the `Client` /
+   `Exporter` via the controller's kube-client (under the controller
+   `ServiceAccount`, with the caller's owner-hash annotation set in
+   the create payload). The returned object carries the kube-assigned
+   `uid` and `resourceVersion`.
+3. **Issue the credential.** The handler immediately calls the
+   shared `ensureCredential(ctx, kclient, signer, cr)` helper — the
+   same code path the reconciler already invokes today
+   (`controller/internal/controller/secret_helpers.go:18-85`, called
+   from `client_controller.go:83-98` and `exporter_controller.go:129-144`).
+   This helper signs an ES256 JWT for `cr.InternalSubject()`
+   (`controller/internal/oidc/op.go:99-109`) and creates the Secret
+   with `SetControllerReference(cr, secret)` so kube GC tears the
+   Secret down when the CR is deleted. The helper is already
+   *idempotent and deterministic*: subject is derived from the CR
+   `uid`, and an existing Secret is returned as-is rather than
+   re-signed.
+4. **Patch status.** The handler `Patch`es
+   `status.credential.name = secret.Name` on the CR's status
+   subresource so the CR is self-consistent on return; the reconciler
+   would have done the same on its next pass, but doing it here means
+   `GetClient` immediately after `CreateClient` returns a fully
+   populated object without an intervening watch.
+5. **Return.** The response carries the freshly signed `bootstrap_token`
+   from step 3.
+
+See *DD-10* for why the handler issues the credential directly rather
+than driving the reconciler or polling internally.
+
+**Atomicity.** Kubernetes has no multi-object transactions, so each
+partial-failure outcome is handled explicitly:
+
+| After CRD `Create` | After `ensureCredential` | After status `Patch` | Handler returns | Recovery |
+| --- | --- | --- | --- | --- |
+| Fails | — | — | gRPC error, no resources created | Caller retries; nothing to clean up |
+| OK | Fails | — | gRPC error, CR exists without `status.credential` | Reconciler creates the Secret on its next pass; idempotent retry of `CreateClient` succeeds (see *Idempotency*) |
+| OK | OK | Fails | gRPC error (caller may retry) | Reconciler patches `status.credential`; idempotent retry returns the existing token |
+| OK | OK | OK | Success with `bootstrap_token` | — |
+
+**Idempotency.** A retry of `CreateClient` / `CreateExporter` with
+the same `(namespace, name)` is safe. The handler treats `Create`'s
+`ALREADY_EXISTS` as "read the existing CR, run `ensureCredential`
+against it (read-or-create), return the resulting token." Because
+`ensureCredential` is deterministic in the CR `uid` and idempotent on
+the Secret, the retry returns the same token it would have returned
+on a fresh call.
+
+**Race with the reconciler.** Both the reconciler's
+`reconcileStatusCredential` and the admin handler call the same
+`ensureCredential` helper. Whichever side runs first creates the
+Secret; the other reads it and returns. There is no token-divergence
+risk because the helper signs only when no Secret exists.
+
+**Code reuse.** `ensureSecret` is lifted out of
+`controller/internal/controller/` into a small shared package
+(`controller/internal/credential/`) importable by both the existing
+reconcilers and the new admin gRPC service. The reconcilers continue
+to wrap it as `reconcileStatusCredential`; the admin service calls
+it directly. No new signing path is introduced.
+
+**Performance budget.** Per `CreateClient`/`CreateExporter`: two
+writes (CR, Secret) + one status patch + one ES256 sign. On a
+healthy cluster p50 is well under 100 ms and there is no client-side
+polling. `Update*` and `Delete*` are single-write operations and not
+affected by this flow.
+
+**What does *not* change.** JWT claims, the ES256 signer
+(`golang-jwt/jwt/v5`), Secret naming
+(`<name>-client` / `<name>-exporter`), the `status.credential`
+field shape on the CR, and the reconciler's existing behaviour.
+The legacy `jmp admin` polling flow keeps working until the CLI is
+migrated to `admin.v1` in a follow-up.
 
 #### Why the `ClientService` name overlap is intentional
 
@@ -1118,6 +1224,127 @@ constrained-impersonation verbs scoped to the Jumpstarter GVRs only,
 gated by feature detection at controller startup, rather than the
 cluster-wide grant the earlier draft required.
 
+### DD-10: Credential issuance inline in the `Create*` RPC, via a shared helper
+
+**Alternatives considered:**
+
+1. **In-handler `Create` + shared `ensureCredential` helper** — The
+   RPC handler creates the CRD via the kube-apiserver, then directly
+   invokes the same `ensureCredential` helper the reconciler already
+   calls today (`controller/internal/controller/secret_helpers.go:18-85`,
+   wrapped by `reconcileStatusCredential` in `client_controller.go:83-98`
+   and `exporter_controller.go:129-144`). The handler patches
+   `status.credential.name` and returns the signed JWT inline.
+2. **Reconciler-drive** — Handler creates the CRD, then synchronously
+   triggers the reconciler's `Reconcile` for that key (workqueue
+   nudge or direct method call) and waits for `status.credential` to
+   appear.
+3. **In-handler poll / watch** — Handler creates the CRD, then polls
+   or watches `status.credential` inside the controller process until
+   the reconciler populates it.
+
+**Decision:** In-handler `Create` + shared `ensureCredential` helper.
+
+**Rationale:** Option 3 is precisely the race the existing
+`jumpstarter-kubernetes` CLI hits (`clients.py:96-129`,
+`exporters.py:150-183`): it retries ten times at one-second intervals
+and fails when the reconciler is slow or paged out. Relocating that
+poll loop from the CLI to the controller does not fix the race; it
+moves the failure mode from "CLI times out" to "RPC times out." Option
+2 couples RPC latency to the controller workqueue depth and either
+reaches into private reconciler state (calling `Reconcile` directly,
+which bypasses the workqueue's rate-limit + retry contract) or
+requires a new "nudge-and-wait" code path the reconciler does not have
+today. Option 1 has none of those costs: it reuses the *same*
+deterministic, idempotent helper the reconciler uses, so the signing
+path is unchanged and the reconciler remains a harmless idempotent
+no-op when it runs against an already-credentialed CR. The mechanism
+is specified in *Synchronous Credential Provisioning* above.
+
+**Residual risk:** Partial failure between CRD `Create` and Secret
+`Create` is possible (Kubernetes has no multi-object transactions).
+This is bounded by two safeguards: (a) `ensureCredential` is
+idempotent, so a retry of `CreateClient` with the same name reads
+through to the existing CR and produces the same token; (b) the
+reconciler still runs on every CR change and will close any gap
+asynchronously. The partial-failure table in *Synchronous Credential
+Provisioning* enumerates each case.
+
+### DD-11: CORS allowlist with safe-by-default empty default
+
+**Alternatives considered:**
+
+1. **Explicit allowlist, default empty** — Operators configure a list
+   of trusted origins on the controller; CORS preflight succeeds only
+   for matched origins; no cross-origin access without explicit
+   configuration.
+2. **Permissive default `*`** — Echo `Access-Control-Allow-Origin: *`
+   for all preflight requests and never set
+   `Access-Control-Allow-Credentials`, relying on the absence of
+   cookies in the bearer-token model to keep `*` safe.
+3. **No CORS in the controller, reverse-proxy responsibility** —
+   Recommend operators front the controller with an ingress / route /
+   gateway that adds CORS where needed; controller emits no CORS
+   headers.
+
+**Decision:** Explicit allowlist, default empty.
+
+**Rationale:** Option 2 (permissive `*`) is technically safe under
+the bearer-token / no-credentials constraint, but it is "safe because
+of a property of the auth model" rather than "safe because the
+controller said no." Operators reading audit reports would have to
+re-derive that argument from first principles every time. Option 3
+pushes the problem out of the JEP, but the controller is the
+component that knows which methods and response headers the NDJSON
+streams need; a downstream proxy without that knowledge is the wrong
+layer for the allowlist. Option 1 keeps the policy on the component
+that owns the surface, makes the on-by-default state "no
+cross-origin access" (least-surprise for new deployments), and
+matches the precedent set by the
+[ArgoCD `--enable-cors`](https://argo-cd.readthedocs.io/en/stable/operator-manual/argocd-cmd-params-cm-yaml/)
++ origin-list pattern. The mechanism — middleware wrapper, method
+list, exposed headers for NDJSON streams — is specified in the REST
+gateway subsection above.
+
+### DD-12: Watch resource limits via three operator-tunable bounds
+
+**Alternatives considered:**
+
+1. **Three bounds — per-stream buffer, per-caller concurrency, server-side
+   stream age** — Modeled on the kube-apiserver's
+   [`--watch-cache-sizes`](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-apiserver/)
+   and `--max-mutating-requests-inflight` patterns. Each bound
+   addresses a distinct failure mode (slow consumer, account-level
+   stream-count abuse, unbounded steady-state memory).
+2. **Single global concurrency cap** — One number (e.g. "max 1024
+   open streams cluster-wide"); slowest stream evicted past the cap.
+3. **No explicit limits** — Rely on the Go scheduler + OS to
+   backpressure under load; assume operators will discover and tune
+   any pathology as it appears.
+
+**Decision:** Three bounds — per-stream buffer, per-caller concurrency,
+server-side stream age.
+
+**Rationale:** Option 3 is the status quo and is exactly what the
+review flagged: BOOKMARK + resume handle disconnect, but they do not
+prevent the controller from exhausting memory before the first
+disconnect happens. Option 2's single cap is simpler but conflates
+three different failure modes — a slow consumer (per-stream
+backpressure), a buggy/hostile caller (per-identity throttle), and
+steady-state memory creep (age cap) — and the recovery in each case
+is different. Option 1 mirrors the apiserver's own playbook, which
+operators reading this JEP will already understand, and lets each
+bound be tuned independently per deployment. The defaults and the
+mechanism — including reuse of the existing BOOKMARK resume path on
+both backpressure eviction and age-cap recycle — are specified in
+the *Watch State Machine* subsection above.
+
+**Residual risk:** Mis-tuned bounds (too low) cause spurious
+`RESOURCE_EXHAUSTED` for legitimate callers; well-behaved clients
+recover via the bookmark-resume path but the disruption is real.
+Defaults (1000 / 32 / 30 min) are chosen to be permissive enough
+that mis-tuning is visible in metrics before it impacts users.
+
 ## Design Details
 
 ### Architecture
@@ -1249,6 +1476,42 @@ The server uses a shared Kubernetes informer (already wired via
 `client.NewWithWatch()` in `controller/cmd/main.go`) and translates
 informer events into `*Event` messages, filtering by the caller's
 identity-derived owner hash for per-tenant streams.
+
+**Watch resource limits.** Long-lived NDJSON / gRPC streams at high
+fan-out (many tenants × many resources × many subscribers) create
+memory pressure analogous to kube-apiserver's watch cache. The
+controller imposes three operator-tunable bounds, modeled on
+kube-apiserver's
+[`--watch-cache-sizes`](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-apiserver/)
+and `--max-mutating-requests-inflight` patterns:
+
+- **Per-stream event buffer cap** (default 1000 events). When the
+  in-process channel between the shared informer and a stream
+  saturates because the consumer can't keep up, the slowest stream
+  is closed with `error.code=RESOURCE_EXHAUSTED` and a final
+  `BOOKMARK` carrying the last delivered `resource_version`. This
+  mirrors the apiserver's "client too slow" disconnect and lets the
+  client resume cleanly via the state machine above. Fast consumers
+  are unaffected.
+- **Per-caller concurrent watch cap** (default 32 streams per
+  OIDC subject across all resources). Additional `Watch*` calls
+  from the same identity return `RESOURCE_EXHAUSTED` immediately
+  rather than tying up server resources. This prevents a single
+  account — buggy SDK, runaway script, hostile token — from holding
+  open thousands of streams.
+- **Server-side stream age cap** (default 30 minutes) after which
+  the server sends a final `BOOKMARK` and closes the stream
+  gracefully. Clients reconnect with the bookmark
+  `resource_version` and resume; the resume path is already
+  specified above, so this is transparent to a well-behaved client.
+  Bounding stream age bounds steady-state memory irrespective of
+  client behavior and gives the controller a natural moment to
+  recycle goroutines and reset informer-cursor state.
+
+All three values are configurable per deployment (controller flag /
+Helm value). The shared informer cache itself is sized by the
+existing controller-runtime defaults and is shared across streams,
+so it is not multiplied by stream count.
 
 ### Webhook Delivery
 
