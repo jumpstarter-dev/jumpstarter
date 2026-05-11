@@ -36,10 +36,14 @@ gRPC clients (the `jmp` CLI using a developer's auto-provisioned
 Client, in-cluster Go consumers, and exporter agents).
 
 The new API federates identity across multiple OIDC issuers
-(OpenShift OAuth, Dex, Keycloak, Backstage's IdP), delegates
-authorization to the Kubernetes `SubjectAccessReview` API, and
-propagates the human user's identity to the kube-apiserver via
-`Impersonate-*` headers so audit logs reflect the originating actor.
+(OpenShift OAuth, Dex, Keycloak, Backstage's IdP) and delegates
+authorization to the Kubernetes `SubjectAccessReview` API with the
+caller's OIDC identity in the SAR body — the
+[Tekton Results pattern](https://tekton.dev/docs/results/api/), which
+authorizes *as the user* without granting the controller itself any
+impersonation rights against the kube-apiserver. User identity is
+captured for audit via on-resource annotations and a structured
+controller audit log that operators can ingest alongside kube-audit.
 The admin services are served as gRPC for new tooling and as
 REST/JSON via [`grpc-gateway`](https://github.com/grpc-ecosystem/grpc-gateway)
 for browsers, Backstage, and OpenShift Console plug-ins; an
@@ -382,7 +386,10 @@ Three pipelines coexist on the same gRPC server, dispatched by proto
 package:
 
 - `jumpstarter.admin.v1.*` — new pipeline (multi-issuer OIDC +
-  SAR + Impersonate-`*`). Serves both gRPC and REST/JSON.
+  `SubjectAccessReview` with the caller's identity in the SAR body;
+  the mutation itself runs under the controller's own ServiceAccount,
+  so the controller holds no `impersonate` rights — see *DD-6* and
+  *DD-9*). Serves both gRPC and REST/JSON.
 - `jumpstarter.client.v1.*` (existing bundled `ClientService`) — kept
   on its current object-token authentication path. Served as both
   gRPC (existing wire) and REST/JSON (new, additive — for
@@ -417,20 +424,54 @@ interceptors:
    verifies the resource's `jumpstarter.dev/owner` annotation matches
    a hash derived from the caller's `iss` + `sub`.
 
-When a mutation reaches the kube-apiserver, the controller's
-kube-client sets:
+**Authorization runs as the caller; mutations run as the
+controller.** The AuthZ interceptor posts a `SubjectAccessReview`
+populated from the OIDC identity:
 
-```text
-Impersonate-User: <oidc-username>
-Impersonate-Group: <oidc-group>...
-Impersonate-Extra-iss: <issuer-url>
-Impersonate-Extra-sub: <subject>
+```yaml
+apiVersion: authorization.k8s.io/v1
+kind: SubjectAccessReview
+spec:
+  user: <oidc-username>
+  groups: [<oidc-group>, ...]
+  extra:
+    iss: [<issuer-url>]
+    sub: [<subject>]
+  resourceAttributes:
+    verb: <mapped-from-rpc>
+    group: jumpstarter.dev
+    resource: <leases|exporters|clients>
+    namespace: <from-request>
 ```
 
-so the kube-audit log records the human user as the actor. The
-controller's `ServiceAccount` only needs the
-`system:auth-delegator` ClusterRole plus impersonation rights; it
-does not need broad CRUD permissions on Jumpstarter CRDs.
+The kube-apiserver evaluates RBAC *as the user* — exactly as it
+would for `kubectl auth can-i --as=<user>` — so cluster admins
+manage Jumpstarter access with standard `Role` / `ClusterRole` /
+`RoleBinding` objects. If `allowed=false`, the interceptor returns
+`PERMISSION_DENIED` without ever calling the apiserver's mutating
+endpoint.
+
+Once authorization succeeds, the mutation itself is performed by
+the controller's kube-client under its own `ServiceAccount`. The
+controller does **not** set `Impersonate-*` headers and is
+**not** granted any `impersonate` verbs in RBAC, which removes the
+controller from the impersonation-escalation threat model entirely.
+The controller's `ServiceAccount` needs:
+
+- `system:auth-delegator` (for `TokenReview` /
+  `SubjectAccessReview` — read-only, no mutating capability).
+- A namespaced `Role` granting CRUD on `leases.jumpstarter.dev`,
+  `exporters.jumpstarter.dev`, and `clients.jumpstarter.dev` in the
+  namespaces the controller manages.
+
+User identity is captured for audit through two complementary
+records — on-resource annotations (`jumpstarter.dev/last-mutated-by`,
+`-by-hash`, `-at`, extending the table below) and a structured
+controller audit log keyed to the apiserver's `auditID`. See *DD-6*
+for the rationale and the trade-off this makes against native
+kube-audit `user.username` attribution, and *DD-9* for why the
+controller does not hold impersonation rights even where the
+platform supports them.
 
 ### API / Protocol Changes
 
@@ -444,6 +485,46 @@ A new `jumpstarter.admin.v1` proto package is added under
 | `LeaseService`    | `GetLease`, `ListLeases`, `CreateLease`, `UpdateLease`, `DeleteLease`, `WatchLeases`                   |
 | `ExporterService` | `GetExporter`, `ListExporters`, `CreateExporter`, `UpdateExporter`, `DeleteExporter`, `WatchExporters` |
 | `ClientService`   | `GetClient`, `ListClients`, `CreateClient`, `UpdateClient`, `DeleteClient`, `WatchClients`             |
+
+Every `List*` request follows [AIP-158](https://google.aip.dev/158)
+with `page_size` (int32) and `page_token` (string) fields, and every
+`List*` response carries `next_page_token` plus the matching slice
+of resources. Default `page_size` is **50**, maximum is **500**; a
+request with `page_size = 0` uses the default, and a request with
+`page_size > 500` is clamped to the maximum (callers can detect the
+clamp from the truncated response and continue with the returned
+`next_page_token`). `page_token` is opaque to clients — the server
+encodes the underlying `resource_version` plus the continue-from key
+and verifies a short MAC at decode time, so a tampered token is
+rejected with `INVALID_ARGUMENT` rather than skipping or duplicating
+resources. `Watch*` is not paginated; it streams the full set under
+the existing watch-event semantics.
+
+#### Error handling
+
+Every RPC returns either the success message or a
+`google.rpc.Status` populated with a gRPC status code, a
+human-readable `message`, and optionally typed `details` (e.g.
+`BadRequest` for `INVALID_ARGUMENT`, `ResourceInfo` for
+`NOT_FOUND` / `ALREADY_EXISTS`). The REST gateway maps gRPC status
+to HTTP status using `grpc-gateway`'s standard table — the same
+mapping ArgoCD and Tekton Results expose — so REST callers see
+familiar HTTP semantics without the JEP inventing its own table.
+
+| Failure mode | gRPC status | HTTP |
+| --- | --- | --- |
+| Token missing, malformed, expired, or signature-invalid | `UNAUTHENTICATED` | 401 |
+| AuthN OK; SAR denies, or owner-annotation mismatch | `PERMISSION_DENIED` | 403 |
+| Resource does not exist on `Get` / `Update` / `Delete` / `:adopt`, or caller cannot see a legacy resource (see *Migration of pre-existing resources*) | `NOT_FOUND` | 404 |
+| `Create` with a name that already exists | `ALREADY_EXISTS` | 409 |
+| Optimistic-concurrency loss (`resource_version` mismatch on `Update`) | `ABORTED` | 409 |
+| Request payload fails proto / CEL validation; `page_size` over max; tampered or malformed `page_token`; semantically invalid field combinations | `INVALID_ARGUMENT` | 400 |
+| `Watch*` `resource_version` too old for the informer cache (matches the [`410 Gone`](https://kubernetes.io/docs/reference/using-api/api-concepts/#410-gone-responses) semantics on the `List`/`Watch` side of the kube-apiserver) | `OUT_OF_RANGE` | 410 |
+| Rate-limit (per-deployment policy) | `RESOURCE_EXHAUSTED` | 429 |
+| Caller cancels the RPC, or `Watch*` server hits its idle-deadline before sending `BOOKMARK` | `CANCELED` / `DEADLINE_EXCEEDED` | 499 / 504 |
+| Transient kube-apiserver error, informer cache miss, webhook-dispatcher overload, or other server-side fault | `UNAVAILABLE` (retriable) | 503 |
+| Unhandled server error (programming bug; never returned to the client with internal detail) | `INTERNAL` | 500 |
+| Webhook delivery failure after retry budget exhausts | not an RPC return — surfaced on the `Webhook` CRD's status subresource as `phase=Failed` with reason `UNAVAILABLE` |  |
 
 The bundled `jumpstarter.client.v1.ClientService` is preserved
 verbatim; deployed `jmp` CLI binaries continue to call it over gRPC
@@ -494,13 +575,106 @@ defined here.
 
 A new annotation contract on the underlying CRDs:
 
-| Annotation                     | Value                          | Set by     |
-| ------------------------------ | ------------------------------ | ---------- |
-| `jumpstarter.dev/owner`        | `sha256(iss + "#" + sub)[:16]` | Controller |
-| `jumpstarter.dev/created-by`   | OIDC username (display only)   | Controller |
-| `jumpstarter.dev/owner-issuer` | OIDC issuer URL                | Controller |
+| Annotation                              | Value                                          | Set by     |
+| --------------------------------------- | ---------------------------------------------- | ---------- |
+| `jumpstarter.dev/owner`                 | `sha256(iss + "#" + sub)[:16]`                 | Controller |
+| `jumpstarter.dev/created-by`            | OIDC username (display only)                   | Controller |
+| `jumpstarter.dev/owner-issuer`          | OIDC issuer URL                                | Controller |
+| `jumpstarter.dev/last-mutated-by`       | OIDC username of the most recent mutator       | Controller |
+| `jumpstarter.dev/last-mutated-by-hash`  | `sha256(iss + "#" + sub)[:16]` of that mutator | Controller |
+| `jumpstarter.dev/last-mutated-at`       | RFC3339 timestamp                              | Controller |
+| `jumpstarter.dev/legacy-resource`       | `"true"` (only on pre-admin-API resources)     | Controller |
 
 CRD schemas are unchanged; annotations are namespaced metadata only.
+
+Pre-existing resources, which the controller cannot retroactively
+match to an authenticated identity, are admin-only and require
+explicit adoption — see *Migration of pre-existing resources* below.
+
+#### Migration of pre-existing resources
+
+Resources that exist in the cluster before the admin API is rolled
+out carry no `jumpstarter.dev/owner` annotation. The admin API
+treats them as **admin-only / cluster-only** on every verb —
+invisible and unactionable to regular users on `Get`, `List`,
+`Watch`, `Update`, `Delete`, and `:adopt` alike — until a cluster
+administrator promotes them out of the legacy state with `:adopt`.
+This is stricter than the per-resource ownership rule applied to
+new resources and is the explicit default-deny posture: a resource
+with no provable owner is never silently mutable by an unrelated
+user who happens to land in the same namespace.
+
+**Backfill.** On controller startup (and on a reconcile-loop
+sweep), the controller lists every `Lease` / `Exporter` / `Client`
+that lacks `jumpstarter.dev/owner` and writes a sentinel set of
+annotations:
+
+| Annotation                       | Value                |
+| -------------------------------- | -------------------- |
+| `jumpstarter.dev/owner`          | `legacy`             |
+| `jumpstarter.dev/owner-issuer`   | `legacy`             |
+| `jumpstarter.dev/created-by`     | `pre-admin-api`      |
+| `jumpstarter.dev/legacy-resource`| `"true"`             |
+
+The literal string `legacy` is not a hex digest, so it cannot
+collide with a real `sha256(iss#sub)[:16]`. Backfill is idempotent:
+the controller skips any resource already carrying
+`jumpstarter.dev/legacy-resource` or a real `owner` annotation. The
+backfill is safe to re-run on every restart and is the only way the
+sentinel ever gets written — there is no admin-API verb that
+creates a legacy resource.
+
+**Authorization semantics for legacy resources** —
+uniformly admin-gated, regardless of RPC:
+
+- The AuthZ interceptor checks
+  `jumpstarter.dev/legacy-resource: "true"` **before** the
+  per-resource ownership comparison and **before** returning the
+  resource on read paths.
+- For *every* verb (`get`, `list`, `watch`, `update`, `delete`,
+  `adopt`), the interceptor posts a second `SubjectAccessReview`
+  against a dedicated virtual resource on the
+  `jumpstarter.dev` API group:
+  `resource = legacyresources`, `verb = <the original verb>`. If
+  that SAR is `allowed=false`, the resource is **treated as if it
+  does not exist**: `Get` returns `NOT_FOUND`, `List` and `Watch`
+  filter it out of the response stream, and `Update` / `Delete` /
+  `:adopt` return `NOT_FOUND` (never `PERMISSION_DENIED` — that
+  would let an unprivileged caller enumerate legacy resources by
+  the difference between the two status codes).
+- Cluster admins get this capability via a
+  `jumpstarter:legacy-resource-admin` `ClusterRole` that the
+  operator ships; the cluster `cluster-admin` role aggregates it by
+  default. Admins can grant it to specific identities or groups via
+  standard `RoleBinding` / `ClusterRoleBinding`.
+- The exporter runtime path (`jumpstarter.v1.*`) is **untouched**:
+  exporter agents continue to talk to legacy `Exporter` resources
+  via their existing object-token flow. The data path keeps
+  working; only the admin-API surface gates them.
+
+**Admin-driven adoption.** `jmp admin {lease,exporter,client} adopt
+<name> --owner <iss>#<sub>` (REST: `POST
+/admin/v1/{name=namespaces/*/leases/*}:adopt`) writes the canonical
+hashed `owner`, the real `owner-issuer`, the `created-by` /
+`last-mutated-by` of the *adopting* admin, and **removes**
+`jumpstarter.dev/legacy-resource`. Adoption is RBAC-gated by the
+same SAR check above with `verb=adopt`. After adoption, the
+resource behaves like any normally-created resource — the
+per-resource ownership rule from the regular AuthZ flow takes
+over.
+
+**No CRD schema change** is required — backfill writes only
+annotations, consistent with the "annotations are namespaced
+metadata only" line above.
+
+**Audit & operator visibility.** The structured controller audit
+log (see *DD-6*) emits `legacy_resource=true` on every RPC that
+touches a sentinel-annotated resource, so cluster operators can
+spot the adoption queue. A `kubectl get` cookbook in the operator's
+docs (e.g. `kubectl get leases -A -l '!jumpstarter.dev/owner' -o
+custom-columns=...` or the equivalent on the
+`jumpstarter.dev/legacy-resource=true` selector) lists the
+candidates explicitly.
 
 The legacy `jumpstarter.client.v1.ClientService` and the runtime
 `jumpstarter.v1` services gain **no proto changes** and no new
@@ -531,8 +705,27 @@ rpc GetLease(GetLeaseRequest) returns (Lease) {
 rpc CreateLease(CreateLeaseRequest) returns (Lease) {
   option (google.api.http) = {post: "/admin/v1/{parent=namespaces/*}/leases" body: "lease"};
 }
+rpc ListLeases(ListLeasesRequest) returns (ListLeasesResponse) {
+  // page_size and page_token map to query-string parameters; the
+  // others map by field name. See AIP-158.
+  option (google.api.http) = {get: "/admin/v1/{parent=namespaces/*}/leases"};
+}
 rpc WatchLeases(WatchLeasesRequest) returns (stream LeaseEvent) {
   option (google.api.http) = {get: "/admin/v1/{parent=namespaces/*}/leases:watch"};
+}
+
+message ListLeasesRequest {
+  // The parent resource (namespace) to list leases under.
+  string parent = 1;
+  // Server clamps to max 500; 0 means default (50).
+  int32  page_size  = 2;
+  // Opaque continuation token from a prior response.
+  string page_token = 3;
+}
+message ListLeasesResponse {
+  repeated Lease leases = 1;
+  // Empty when there are no more pages.
+  string next_page_token = 2;
 }
 
 // Exporter
@@ -684,12 +877,13 @@ boundary**, not packaging convenience. Verification of the existing
 is **namespace-scoped**: a Client actor authenticated by
 object-token reads everything in its namespace and can only mutate
 its own leases. The admin API operates at a fundamentally different
-boundary — *user identity verified by OIDC, authorized by SAR,
-acting across namespaces, with audit propagation via
-`Impersonate-*` headers*. Co-locating these on the same proto
-service would risk a tenant's object-token reaching an admin RPC by
-a permissions-mapping bug, and would force one auth model on RPCs
-designed for the other.
+boundary — *user identity verified by OIDC, authorized by
+`SubjectAccessReview` with the caller in the SAR body, acting across
+namespaces, with audit captured via on-resource annotations and a
+structured controller audit log*. Co-locating these on the same
+proto service would risk a tenant's object-token reaching an admin
+RPC by a permissions-mapping bug, and would force one auth model on
+RPCs designed for the other.
 
 A separate package gives every admin RPC a different
 `fully.qualified.Service.Method` from anything the existing CLI
@@ -760,24 +954,75 @@ configured for the same identity, and reveals nothing on its own. The
 display-only `jumpstarter.dev/created-by` annotation can carry the
 human-readable username for UI rendering.
 
-### DD-6: On-behalf-of via `Impersonate-*` headers, not audit annotations
+### DD-6: SubjectAccessReview-as-user, controller acts as itself, audit via annotations + structured log
 
 **Alternatives considered:**
 
 1. **`Impersonate-*` headers** — Controller's kube-client sets
    `Impersonate-User`, `Impersonate-Group`, `Impersonate-Extra-*` so
    the kube-apiserver records the human as the actor.
-2. **Controller-as-self + audit annotation** — Controller acts as its
-   own SA and writes `jumpstarter.dev/audit-user` to the resource.
+2. **ArgoCD-style per-tenant `ServiceAccount` impersonation** —
+   Controller impersonates a per-tenant SA chosen by an admin CR
+   field (as `argocd-server` does for app sync since 2.13).
+3. **Capsule-style user-token proxy** — A separate proxy component
+   carries the user's own OIDC token through to the kube-apiserver
+   so the controller never holds impersonation rights.
+4. **SAR-as-user + controller-as-self + structured audit log** —
+   Authorize via `SubjectAccessReview` with `spec.user` /
+   `spec.groups` / `spec.extra` populated from the OIDC identity;
+   perform the mutation under the controller's own SA; capture user
+   identity through on-resource annotations
+   (`jumpstarter.dev/last-mutated-by`, `-by-hash`, `-at`) and a
+   single-line JSON audit record per RPC, keyed to the
+   kube-apiserver `auditID` of the underlying mutation. This is the
+   pattern Tekton Results runs in production behind
+   `AUTH_IMPERSONATE=true`.
 
-**Decision:** `Impersonate-*` headers.
+**Decision:** SAR-as-user + controller-as-self + structured audit
+log.
 
-**Rationale:** Cluster operators already have kube-audit pipelines
-(Loki, Splunk, OpenShift Audit Forwarder). Impersonation puts the
-correct user identity in the audit record without any custom
-ingestion. Audit annotations would create a second source of truth
-that might drift from kube-audit and require custom tooling to
-correlate.
+**Rationale:** The earlier version of this JEP chose `Impersonate-*`
+on the strength of native kube-audit attribution. Review surfaced
+the corresponding cost: granting the controller cluster-wide
+`impersonate` on `users` / `groups` / `userextras/*` puts the
+controller one compromise away from acting as any cluster user,
+including cluster-admins. KEP-5284 ("Constrained Impersonation") is
+the upstream fix and reaches Beta in Kubernetes 1.36, but the
+deployment target (OpenShift 4.20 = Kubernetes 1.33) does not ship
+those verbs yet, so the available mitigations on 1.33 are
+`resourceNames` allow-lists (incomplete for `users`) or removing
+the impersonation grant entirely.
+
+We remove it entirely. SAR-as-user is the load-bearing
+authorization check — the kube-apiserver evaluates RBAC as the
+caller, so a compromised controller cannot grant itself permissions
+it did not already have via its SA. Because the controller is no
+longer in the impersonation business at all, the only post-AuthZ
+capability a compromise grants is the controller's own SA scope
+(CRUD on three Jumpstarter CRDs in the operator's configured
+namespaces).
+
+The original DD-6 concern (operators already have kube-audit
+pipelines; a second audit source can drift) is resolved by two
+mechanisms: (a) every mutating RPC emits a single-line JSON record
+that includes the apiserver's `auditID` for the resulting mutation,
+so the controller and kube-audit streams can be joined in the
+existing Loki / Splunk / OpenShift Audit Forwarder pipeline; (b)
+the canonical at-rest record is the resource itself —
+`jumpstarter.dev/last-mutated-by` / `-by-hash` / `-at` survive
+`kubectl describe` and cannot drift from the resource state they
+annotate. The honest trade-off: kube-audit's `user.username` field
+will show the controller SA for Jumpstarter mutations, not the
+human; cluster operators querying "who deleted lease X?" must join
+on `auditID` rather than reading `user.username` directly.
+
+The ArgoCD pattern (impersonate a per-tenant SA) was rejected
+because it loses per-user attribution at the audit layer entirely —
+both the apiserver and the JEP would record only the SA, which is
+strictly worse than the chosen approach. The Capsule proxy
+approach was rejected because Jumpstarter already needs an
+in-controller gRPC layer for the runtime path; adding a separate
+user-token proxy doubles operational surface for marginal benefit.
 
 ### DD-7: Webhook delivery in-controller with a worker pool, not a separate dispatcher
 
@@ -814,6 +1059,49 @@ kube-apiserver, so SAR works directly. Forcing a second login would
 double-prompt the user and complicate session management in the
 plug-in.
 
+### DD-9: The controller does not hold impersonation rights
+
+**Alternatives considered:**
+
+1. **Unscoped `impersonate` on `users` / `groups` / `userextras/*`** —
+   what the earlier draft of this JEP required to make `Impersonate-*`
+   headers work, and what the review correctly flagged as a critical
+   escalation vector.
+2. **`resourceNames` allow-list on `groups` and `userextras/iss`** —
+   the portable mitigation documented in the
+   [Kubernetes user-impersonation reference](https://kubernetes.io/docs/reference/access-authn-authz/user-impersonation/),
+   shaped to allow only configured `JWTAuthenticator` issuer URLs
+   and a known set of group names.
+3. **[KEP-5284 "Constrained Impersonation"](https://github.com/kubernetes/enhancements/tree/master/keps/sig-auth/5284-constrained-impersonation)** — Beta in Kubernetes 1.36; binds
+   `impersonate-on:user-info:<verb>` to specific GVRs/namespaces.
+4. **No `impersonate` grant at all** (the choice of DD-6).
+
+**Decision:** No `impersonate` grant at all.
+
+**Rationale:** Once DD-6 selects SAR-as-user + controller-as-self,
+impersonation rights are not just unnecessary — they are a liability
+with no offsetting benefit. The controller has no code path that
+would set `Impersonate-*` headers, so granting the verb anyway
+would only widen the blast radius of a compromise. KEP-5284 would
+tighten that radius substantially on K8s 1.36+ deployments, but
+"not granted at all" is strictly safer and works today on K8s 1.33
+(OpenShift 4.20).
+
+**Residual risk:** A compromised controller has the controller SA's
+own permissions — CRUD on `leases.jumpstarter.dev`,
+`exporters.jumpstarter.dev`, `clients.jumpstarter.dev` within the
+operator's configured namespaces, plus `create` on
+`subjectaccessreviews.authorization.k8s.io` (read-only by nature).
+This is enumerable, reviewable in operator RBAC, and far smaller
+than "act as any user in the cluster."
+
+**Forward path:** If a future JEP reintroduces a need to perform
+mutations *as the caller* (for example, to push the audit-attribution
+trade-off back onto the kube-apiserver), it should adopt KEP-5284's
+constrained-impersonation verbs scoped to the Jumpstarter GVRs only,
+gated by feature detection at controller startup, rather than the
+cluster-wide grant the earlier draft required.
+
 ## Design Details
 
 ### Architecture
@@ -845,7 +1133,7 @@ flowchart LR
   Grpc -- /jumpstarter.v1.* --> RuntimeAuth
   MgmtAuth --> Mgmt
   RuntimeAuth --> Runtime
-  Mgmt -- Impersonate-* --> KAS
+  Mgmt -- "kube-client as controller SA<br/>(SAR with caller identity)" --> KAS
   Runtime --> KAS
   Mgmt -.events.-> WH
   WH -- HMAC-SHA256 --> Ext
@@ -881,7 +1169,19 @@ to accept cleartext HTTP/2; the dispatch logic is unchanged.
    on the request context for downstream interceptors.
 5. The internal-token short-circuit
    (`AuthenticationConfiguration.Internal.Prefix`) is preserved for
-   exporter-controller chatter.
+   exporter↔controller chatter, but it is **only consulted when the
+   bearer token is not a parseable JWT whose `iss` matches a
+   configured `JWTAuthenticator`**. External OIDC tokens always take
+   the JWT path, even when their `aud` claim happens to match the
+   internal prefix — the prefix is a property of the *raw token
+   format*, not of any JWT claim, so it cannot be reached by audience
+   value. As a belt-and-braces defense, the controller's config
+   loader rejects any `audiences` entry on any `JWTAuthenticator`
+   that collides with `AuthenticationConfiguration.Internal.Prefix`
+   (or shares its leading namespace); a misconfigured deployment
+   fails closed at startup rather than at runtime. Internal tokens
+   skip SAR only because they carry a controller-minted MAC, never
+   because of a string-prefix match on caller-supplied data.
 
 ### Authorization Flow
 
@@ -897,10 +1197,14 @@ AdminRPC(ctx, req)
   │                             Resource: resource, Namespace: req.Namespace },
   │     }
   ├── if !kubeapi.PostSAR(sar).Allowed: PERMISSION_DENIED
+  ├── if isLegacy(annotations):                          # see Migration
+  │     if !kubeapi.PostSAR(adminSAR(verb)).Allowed: NOT_FOUND
   ├── if requiresOwnership(verb):
   │     owner := annotations["jumpstarter.dev/owner"]
   │     if owner != Hash(identity): PERMISSION_DENIED
-  └── invokeWithImpersonation(identity, req)
+  ├── stampMutationAnnotations(req, identity)            # last-mutated-by/-at
+  ├── emitAuditRecord(rpc, identity, req, sarResult)     # structured JSON log
+  └── invokeAsControllerSA(req)                          # no Impersonate-* headers
 ```
 
 ### Watch State Machine
@@ -986,14 +1290,42 @@ without needing the `.proto` files.
 
 - `auth_interceptor_test.go` — multi-issuer JWKS resolution, audience
   validation, expired-token rejection, internal-token short-circuit.
+  Adversarial cases: mid-stream token expiry (server emits
+  `UNAUTHENTICATED` and closes the RPC cleanly); JWKS rotation race
+  (two concurrent requests fire while the key set rolls; both
+  succeed against the new key without a thundering herd against the
+  discovery document); malformed JWT and tampered-signature
+  rejections; `iss`-spoofing attempts that try to reach the
+  internal-token short-circuit by audience or claim manipulation;
+  config-loader rejection of `audiences` entries that collide with
+  `AuthenticationConfiguration.Internal.Prefix`.
 - `authz_interceptor_test.go` — RPC-to-verb mapping, SAR allow/deny
   with mocked `SubjectAccessReview` API, ownership annotation
-  enforcement.
-- `impersonation_test.go` — `Impersonate-*` headers populated for all
-  mutating RPCs; redacted from logs.
+  enforcement. Adversarial cases: SAR-cache eviction under load
+  (the cache miss falls back to a fresh apiserver call without
+  leaking a stale allow); concurrent `Update` on the same resource
+  produces exactly one `ABORTED` (the loser) and exactly one
+  success; non-admin attempts to write `jumpstarter.dev/owner` or
+  `jumpstarter.dev/legacy-resource` directly via `Update` are
+  rejected with `PERMISSION_DENIED` (the AuthZ interceptor strips
+  caller-supplied jumpstarter.dev-prefixed annotations from
+  mutating payloads); legacy-resource short-circuit returns
+  `NOT_FOUND` (not `PERMISSION_DENIED`) for unprivileged callers
+  so legacy resources cannot be enumerated through the status-code
+  diff.
+- `audit_emit_test.go` — verifies the structured audit-record schema
+  on every mutating RPC, the on-resource
+  `jumpstarter.dev/last-mutated-by` / `-by-hash` / `-at` annotations,
+  the `auditID` join key between controller log and kube-audit, and
+  that the kube-client never sets `Impersonate-*` headers (negative
+  assertion: a compromised codepath that tried to would fail this
+  test).
 - `owner_hash_test.go` — same `iss+sub` produces same hash; different
   issuers yield different hashes; raw email/username never appear in
   output.
+- `pagination_test.go` — `page_token` is opaque, MAC-verified, and
+  rejected with `INVALID_ARGUMENT` if tampered; `page_size > 500` is
+  clamped; `page_size = 0` defaults to 50.
 - `webhook_signer_test.go` — known-vector HMAC test; tampering
   detection.
 
@@ -1006,6 +1338,32 @@ without needing the `.proto` files.
 - `WatchLeases` resilience: kill the apiserver connection mid-stream;
   client receives `BOOKMARK` then resumes from `resource_version`
   without missing an `ADDED` event.
+- **Token-expiry mid-stream**: long-running `WatchLeases` survives a
+  JWKS roll but terminates cleanly with `UNAUTHENTICATED` when the
+  caller's token actually expires; the client's reconnect with a
+  fresh token resumes from the last-seen `resource_version` without
+  loss or duplicate.
+- **`Watch*` under cache eviction**: drive enough churn that the
+  informer cache rolls past the caller's last-seen
+  `resource_version`; verify the server emits `OUT_OF_RANGE` and the
+  client re-lists rather than silently dropping events.
+- **Pagination invariants**: full traversal across pages yields each
+  matching resource exactly once even when concurrent `Create`s
+  happen mid-pagination (no duplicates, no missed records that
+  predated the first call); a tampered `page_token` is rejected
+  with `INVALID_ARGUMENT`.
+- **Concurrent mutations**: two clients `Update` the same resource
+  with the same `resource_version`; one succeeds, the other
+  receives `ABORTED` and the retry resolves cleanly.
+- **Migration backfill end-to-end**: install the controller against
+  a pre-populated namespace; verify all pre-existing resources gain
+  the legacy sentinel annotation set on first reconcile; a
+  non-admin caller's `List` / `Get` / `Watch` / `Update` / `Delete`
+  uniformly returns `NOT_FOUND` for those resources; the
+  `jumpstarter:legacy-resource-admin`-bound admin's `:adopt`
+  succeeds, the `legacy-resource` annotation is removed, and the
+  resource thereafter behaves like any normally-created resource
+  for the new owner.
 - Webhook delivery: spin up a test HTTP server, validate
   at-least-once delivery, signature verification, and CRD status
   updates after retries.
@@ -1191,9 +1549,15 @@ following higher-level approaches were considered and rejected:
   gateway as an opt-in component. Their TEP-0021 covers many of the
   same trade-offs we land on.
 - **Kubernetes API Server** — the reference for SAR-based
-  authorization, `Impersonate-*` headers, watch with `resourceVersion`,
-  and informer-driven event delivery. Most of this JEP's design is
-  intentionally Kubernetes-native.
+  authorization, watch with `resourceVersion`, and informer-driven
+  event delivery. Most of this JEP's design is intentionally
+  Kubernetes-native.
+- **Tekton Results' `AUTH_IMPERSONATE=true`** — production reference
+  for the SAR-as-user pattern this JEP adopts: identity from the
+  caller's bearer token is placed in the `SubjectAccessReview` body,
+  the controller acts under its own SA, and user attribution is
+  surfaced through controller-emitted records rather than
+  apiserver-level impersonation.
 - **Stripe Webhooks** — the `t=<unix>,v1=<hmac>` signature format and
   the at-least-once delivery model are direct adaptations.
 - **OpenShift Console plug-in framework** — the bearer-token
@@ -1209,8 +1573,13 @@ following higher-level approaches were considered and rejected:
   v1, selectors as a follow-up.
 - Webhook resource definition: dedicated `Webhook` CRD vs configmap
   with structured keys? Lean: CRD for status-subresource visibility.
-- Should `Impersonate-Group` come from the OIDC `groups` claim, from
-  a configurable group prefix, or both? Decide before implementation.
+- Should the `SubjectAccessReview` body's `spec.groups` come straight
+  from the OIDC `groups` claim, or should the controller map them
+  through a configurable prefix (e.g. `oidc:<group>`) so cluster
+  admins can write `RoleBinding`s that are unambiguously bound to
+  OIDC-sourced groups rather than colliding with built-in
+  `system:*` groups? Lean: configurable prefix with a sensible
+  default. Decide before implementation.
 
 ## Future Possibilities
 
@@ -1246,9 +1615,13 @@ following higher-level approaches were considered and rejected:
 - [How to eat the gRPC cake and have it too — Argo Project blog](https://blog.argoproj.io/how-to-eat-the-grpc-cake-and-have-it-too-77bc4ed555f6)
 - [Tekton Results API](https://tekton.dev/docs/results/api/) and [TEP-0021](https://github.com/tektoncd/community/blob/main/teps/0021-results-api.md)
 - [Kubernetes SubjectAccessReview](https://kubernetes.io/docs/reference/access-authn-authz/authorization/)
-- [Kubernetes Impersonation](https://kubernetes.io/docs/reference/access-authn-authz/authentication/#user-impersonation)
+- [Kubernetes Impersonation](https://kubernetes.io/docs/reference/access-authn-authz/authentication/#user-impersonation) — background on what this JEP intentionally avoids granting to the controller (see *DD-9*).
+- [Kubernetes User Impersonation reference (RBAC `resourceNames` allow-listing)](https://kubernetes.io/docs/reference/access-authn-authz/user-impersonation/)
+- [KEP-5284: Constrained Impersonation](https://github.com/kubernetes/enhancements/tree/master/keps/sig-auth/5284-constrained-impersonation) — upstream Beta in Kubernetes 1.36; the forward path if a future change reintroduces the need for the controller to act as the caller.
+- [Tekton Results `AUTH_IMPERSONATE` design](https://github.com/tektoncd/results/issues/309) — production reference for the SAR-as-user pattern.
 - [AIP-122: Resource names](https://google.aip.dev/122)
 - [AIP-127: HTTP and gRPC transcoding](https://google.aip.dev/127)
+- [AIP-158: Pagination](https://google.aip.dev/158)
 - [AIP-160: Filtering](https://google.aip.dev/160)
 - [JEP-0000: JEP Process](JEP-0000-jep-process.md)
 
