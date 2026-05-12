@@ -19,9 +19,8 @@ pytestmark = pytest.mark.anyio
 
 
 def _wait_for_mock_logger_output(mock_logger, expected: str, timeout: float = 2.0) -> None:
-    """Poll mock_logger.info call list until expected string appears or timeout elapses.
+    """On macOS, PTY output may still be draining when the hook function returns.
 
-    On macOS, PTY output may still be draining when the hook function returns.
     This helper avoids flaky assertions by retrying for up to `timeout` seconds.
     """
     deadline = time.monotonic() + timeout
