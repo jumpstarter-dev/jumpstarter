@@ -47,6 +47,7 @@ from .kind import (
 
 # Kubectl operations
 from .kubectl import (
+    KubectlContext,
     check_jumpstarter_installation,
     check_kubernetes_access,
     get_cluster_info,
@@ -82,6 +83,7 @@ from .operator import install_jumpstarter_operator
 __all__ = [
     # Types
     "ClusterType",
+    "KubectlContext",
     # Common utilities
     "extract_host_from_ssh",
     "validate_cluster_name",

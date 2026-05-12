@@ -198,7 +198,7 @@ async def get_cluster_info(
     """Get comprehensive cluster information."""
     try:
         contexts = await get_kubectl_contexts(kubectl)
-        context_info = None
+        context_info: KubectlContext | None = None
 
         for ctx in contexts:
             if ctx["name"] == context:
