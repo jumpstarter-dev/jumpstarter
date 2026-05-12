@@ -1,6 +1,7 @@
 """Client interface for the DUT Network isolation driver."""
 
 import json
+from typing import Generator
 
 import click
 
@@ -54,6 +55,20 @@ class DutNetworkClient(DriverClient):
     def remove_dns_entry(self, hostname: str) -> None:
         """Remove a custom DNS entry."""
         self.call("remove_dns_entry", hostname)
+
+    def tcpdump(self, args: list[str] | None = None) -> Generator[str, None, None]:
+        """Stream tcpdump output from the configured interface.
+
+        Requires ``enable_tcpdump: true`` in the driver config.
+
+        Args:
+            args: Optional list of additional tcpdump arguments.
+
+        Yields:
+            Lines of tcpdump text output.
+        """
+        for line in self.streamingcall("tcpdump", args):
+            yield line
 
     def cli(self):  # noqa: C901
         @driver_click_group(self)
@@ -153,5 +168,20 @@ class DutNetworkClient(DriverClient):
             """Remove a custom DNS entry."""
             self.remove_dns_entry(hostname)
             click.echo(f"Removed DNS entry: {hostname}")
+
+        @base.command("tcpdump", context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False})
+        @click.argument("args", nargs=-1, type=click.UNPROCESSED)
+        def tcpdump_cmd(args: tuple[str, ...]):
+            """Run tcpdump on the DUT network interface (Ctrl+C to stop).
+
+            Additional tcpdump arguments can be passed after the command.
+            The interface is always enforced to the configured DUT interface.
+            """
+            arg_list = list(args) if args else None
+            try:
+                for line in self.tcpdump(arg_list):
+                    click.echo(line)
+            except KeyboardInterrupt:
+                pass
 
         return base
