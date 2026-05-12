@@ -97,9 +97,9 @@ deploy_old_controller() {
     # Compute networking variables
     local IP
     IP=$(get_external_ip)
-    BASEDOMAIN="jumpstarter.${IP}.nip.io"
-    GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
-    GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
+    local BASEDOMAIN="jumpstarter.${IP}.nip.io"
+    local GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
+    local GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
 
     kubectl config use-context kind-jumpstarter
 
