@@ -153,9 +153,8 @@ class TestHookExecutor:
 
         with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
             await executor.execute_before_lease_hook(lease_scope)
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("LEASE_NAME=test-lease-123" in call for call in info_calls)
-            assert any("CLIENT_NAME=test-client" in call for call in info_calls)
+            _wait_for_mock_logger_output(mock_logger, "LEASE_NAME=test-lease-123")
+            _wait_for_mock_logger_output(mock_logger, "CLIENT_NAME=test-client")
 
     async def test_real_time_output_logging(self, lease_scope) -> None:
         """Test that hook output is logged in real-time at INFO level."""
@@ -169,10 +168,9 @@ class TestHookExecutor:
 
             assert result is None
 
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("Line 1" in call for call in info_calls)
-            assert any("Line 2" in call for call in info_calls)
-            assert any("Line 3" in call for call in info_calls)
+            _wait_for_mock_logger_output(mock_logger, "Line 1")
+            _wait_for_mock_logger_output(mock_logger, "Line 2")
+            _wait_for_mock_logger_output(mock_logger, "Line 3")
 
     async def test_post_lease_hook_execution_on_completion(self, lease_scope) -> None:
         """Test that post-lease hook executes when called directly."""
@@ -186,8 +184,7 @@ class TestHookExecutor:
 
             assert result is None
 
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("Post-lease cleanup completed" in call for call in info_calls)
+            _wait_for_mock_logger_output(mock_logger, "Post-lease cleanup completed")
 
     async def test_hook_timeout_with_warn(self, lease_scope) -> None:
         """Test that hook returns warning string when timeout occurs and on_failure='warn'."""
@@ -342,8 +339,7 @@ class TestHookExecutor:
         with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
             result = await executor.execute_before_lease_hook(lease_scope)
             assert result is None
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("SHFILE_OK" in call for call in info_calls)
+            _wait_for_mock_logger_output(mock_logger, "SHFILE_OK")
             debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
             assert any("Executing script file" in call for call in debug_calls)
 
@@ -365,12 +361,9 @@ class TestHookExecutor:
         with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
             result = await executor.execute_before_lease_hook(lease_scope)
             assert result is None
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("PYFILE_OK" in call for call in info_calls)
-            # Verify it auto-detected Python (now logged at DEBUG level)
+            _wait_for_mock_logger_output(mock_logger, "PYFILE_OK")
             debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
             assert any("Auto-detected Python script" in call for call in debug_calls)
-            # Verify it used the exporter's own Python interpreter
             assert any(sys.executable in call for call in debug_calls)
 
     async def test_script_file_py_exec_override(self, lease_scope, tmp_path) -> None:
@@ -390,9 +383,7 @@ class TestHookExecutor:
         with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
             result = await executor.execute_before_lease_hook(lease_scope)
             assert result is None
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("OVERRIDE_OK" in call for call in info_calls)
-            # Should NOT say "Auto-detected" since exec was explicitly set
+            _wait_for_mock_logger_output(mock_logger, "OVERRIDE_OK")
             debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
             assert not any("Auto-detected" in call for call in debug_calls)
 
@@ -425,10 +416,9 @@ class TestHookExecutor:
 
         with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
             await executor.execute_before_lease_hook(lease_scope)
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("TERM=dumb" in call for call in info_calls)
-            assert any("DEBIAN_FRONTEND=noninteractive" in call for call in info_calls)
-            assert any("GIT_TERMINAL_PROMPT=0" in call for call in info_calls)
+            _wait_for_mock_logger_output(mock_logger, "TERM=dumb")
+            _wait_for_mock_logger_output(mock_logger, "DEBIAN_FRONTEND=noninteractive")
+            _wait_for_mock_logger_output(mock_logger, "GIT_TERMINAL_PROMPT=0")
 
     async def test_before_lease_hook_exit_sets_skip_flag(self, lease_scope) -> None:
         """Test that beforeLease hook failure with on_failure=exit sets skip_after_lease_hook flag."""
@@ -642,8 +632,7 @@ class TestHookExecutor:
         with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
             result = await executor.execute_before_lease_hook(lease_scope)
             assert result is None
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("NO_NEWLINE_OUTPUT" in call for call in info_calls)
+            _wait_for_mock_logger_output(mock_logger, "NO_NEWLINE_OUTPUT")
 
     async def test_drain_reads_data_remaining_in_pty_buffer(self, lease_scope) -> None:
         """Verify the drain loop inside read_pty_output reads data left in the
