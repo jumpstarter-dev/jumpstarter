@@ -80,9 +80,9 @@ class OpendalFile:
         Write into remote file with content from local file
         """
         original_url = None
+        if isinstance(path, str) and path.startswith(("http://", "https://")):
+            original_url = path
         if operator is None:
-            if isinstance(path, str) and path.startswith(("http://", "https://")):
-                original_url = path
             path, operator, _ = operator_for_path(path)
 
         with OpendalAdapter(client=self.client, operator=operator, path=path, original_url=original_url) as handle:
@@ -634,9 +634,9 @@ class FlasherClient(FlasherClientInterface, DriverClient):
     ):
         """Flash image to DUT"""
         original_url = None
+        if isinstance(image, str) and image.startswith(("http://", "https://")):
+            original_url = image
         if operator is None:
-            if isinstance(image, str) and image.startswith(("http://", "https://")):
-                original_url = image
             image, operator, _ = operator_for_path(image)
 
         with OpendalAdapter(
@@ -772,9 +772,9 @@ class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
         self.host()
 
         original_url = None
+        if isinstance(path, str) and path.startswith(("http://", "https://")):
+            original_url = path
         if operator is None:
-            if isinstance(path, str) and path.startswith(("http://", "https://")):
-                original_url = path
             path, operator, _ = operator_for_path(path)
 
         with OpendalAdapter(
