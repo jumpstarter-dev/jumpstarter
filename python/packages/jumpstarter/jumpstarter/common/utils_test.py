@@ -2,7 +2,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -13,6 +13,8 @@ from .utils import (
     ANSI_YELLOW,
     PROMPT_CWD,
     _generate_shell_init,
+    _launch_bash,
+    _launch_fish,
     _validate_j_commands,
     launch_shell,
 )
@@ -615,3 +617,60 @@ def test_bash_prompt_survives_user_profile_override():
             os.unlink(rcfile)
     finally:
         shutil.rmtree(home_dir, ignore_errors=True)
+
+
+def test_launch_bash_cleans_up_temp_file_when_write_fails(tmp_path):
+    real_ntf = tempfile.NamedTemporaryFile
+    created_path = []
+
+    def failing_ntf(*args, **kwargs):
+        f = real_ntf(*args, **kwargs)
+        created_path.append(f.name)
+        original_write = f.write
+        def exploding_write(data):
+            original_write("")
+            raise OSError("disk full")
+        f.write = exploding_write
+        return f
+
+    with patch("jumpstarter.common.utils.tempfile.NamedTemporaryFile", failing_ntf):
+        with pytest.raises(OSError, match="disk full"):
+            _launch_bash(
+                shell="/bin/true",
+                init_content="some content",
+                use_profiles=False,
+                common_env=os.environ.copy(),
+                context="test",
+                lease=None,
+            )
+
+    assert len(created_path) == 1
+    assert not os.path.exists(created_path[0]), "temp file must be cleaned up even when write fails"
+
+
+def test_launch_fish_cleans_up_temp_file_when_write_fails(tmp_path):
+    real_ntf = tempfile.NamedTemporaryFile
+    created_path = []
+
+    def failing_ntf(*args, **kwargs):
+        f = real_ntf(*args, **kwargs)
+        created_path.append(f.name)
+        original_write = f.write
+        def exploding_write(data):
+            original_write("")
+            raise OSError("disk full")
+        f.write = exploding_write
+        return f
+
+    with patch("jumpstarter.common.utils.tempfile.NamedTemporaryFile", failing_ntf):
+        with pytest.raises(OSError, match="disk full"):
+            _launch_fish(
+                shell="/bin/true",
+                init_content="some content",
+                common_env=os.environ.copy(),
+                context="test",
+                lease=None,
+            )
+
+    assert len(created_path) == 1
+    assert not os.path.exists(created_path[0]), "temp file must be cleaned up even when write fails"

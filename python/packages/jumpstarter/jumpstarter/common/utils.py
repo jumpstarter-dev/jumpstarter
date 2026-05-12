@@ -163,27 +163,27 @@ def _launch_bash(shell, init_content, use_profiles, common_env, context, lease):
         "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
     }
     cmd = [shell]
-    init_file = None
-    if init_content:
-        init_content += (
-            f'PS1="{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}'
-            '$_JMP_SHELL_CONTEXT'
-            f' {ANSI_YELLOW}➤{ANSI_RESET} "\n'
-        )
-        init_file = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False)
+    if not init_content:
+        if not use_profiles:
+            cmd.extend(["--norc", "--noprofile"])
+        return _run_process(cmd, env, lease)
+
+    init_content += (
+        f'PS1="{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}'
+        '$_JMP_SHELL_CONTEXT'
+        f' {ANSI_YELLOW}➤{ANSI_RESET} "\n'
+    )
+    init_file = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False)
+    try:
         init_file.write(init_content)
         init_file.close()
         cmd.extend(["--rcfile", init_file.name])
-    elif not use_profiles:
-        cmd.extend(["--norc", "--noprofile"])
-    try:
         return _run_process(cmd, env, lease)
     finally:
-        if init_file:
-            try:
-                os.unlink(init_file.name)
-            except OSError:
-                pass
+        try:
+            os.unlink(init_file.name)
+        except OSError:
+            pass
 
 
 def _launch_fish(shell, init_content, common_env, context, lease):
@@ -203,21 +203,21 @@ def _launch_fish(shell, init_content, common_env, context, lease):
         "end"
     )
     init_cmd = fish_fn
-    init_file = None
-    if init_content:
-        init_file = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False)
+    if not init_content:
+        return _run_process([shell, "--init-command", init_cmd], fish_env, lease)
+
+    init_file = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False)
+    try:
         init_file.write(init_content)
         init_file.close()
         fish_env["_JMP_SHELL_INIT"] = init_file.name
         init_cmd += '; source "$_JMP_SHELL_INIT"'
-    try:
         return _run_process([shell, "--init-command", init_cmd], fish_env, lease)
     finally:
-        if init_file:
-            try:
-                os.unlink(init_file.name)
-            except OSError:
-                pass
+        try:
+            os.unlink(init_file.name)
+        except OSError:
+            pass
 
 
 def _launch_zsh(shell, init_content, common_env, context, lease, use_profiles):
