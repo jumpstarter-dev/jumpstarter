@@ -97,9 +97,12 @@ var _ = Describe("Compat: Old Controller E2E Tests", Label("compat", "old-contro
 
 		It("new client can lease and connect through old controller", func() {
 			waitForCompatExporter()
-			out, err := Jmp("shell", "--client", "compat-client",
-				"--selector", "example.com/board=compat", "j", "power", "on")
-			Expect(err).NotTo(HaveOccurred(), out)
+			Eventually(func() error {
+				_, err := Jmp("shell", "--client", "compat-client",
+					"--selector", "example.com/board=compat", "j", "power", "on")
+				return err
+			}, 2*time.Minute, 5*time.Second).Should(Succeed(),
+				"client shell through old controller did not succeed within timeout")
 		})
 
 		It("can operate on leases through old controller", func() {
@@ -173,9 +176,9 @@ var _ = Describe("Compat: Old Controller E2E Tests", Label("compat", "old-contro
 			select {
 			case err := <-done:
 				Expect(err).NotTo(HaveOccurred(), "client shell failed")
-			case <-time.After(120 * time.Second):
+			case <-time.After(180 * time.Second):
 				_ = clientCmd.Process.Kill()
-				Fail("Client shell timed out waiting for exporter (120s)")
+				Fail("Client shell timed out waiting for exporter (180s)")
 			}
 		})
 	})

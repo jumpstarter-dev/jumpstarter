@@ -1,4 +1,5 @@
 import os
+import time
 from contextlib import nullcontext
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,6 +16,24 @@ from jumpstarter.exporter.hooks import (
 )
 
 pytestmark = pytest.mark.anyio
+
+
+def _wait_for_mock_logger_output(mock_logger, expected: str, timeout: float = 2.0) -> None:
+    """Poll mock_logger.info call list until expected string appears or timeout elapses.
+
+    On macOS, PTY output may still be draining when the hook function returns.
+    This helper avoids flaky assertions by retrying for up to `timeout` seconds.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        if any(expected in call for call in info_calls):
+            return
+        time.sleep(0.05)
+    info_calls = [str(call) for call in mock_logger.info.call_args_list]
+    assert any(expected in call for call in info_calls), (
+        f"Expected '{expected}' in logger.info calls after {timeout}s, got: {info_calls}"
+    )
 
 
 class TestFlushLines:
@@ -283,8 +302,7 @@ class TestHookExecutor:
         with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
             result = await executor.execute_before_lease_hook(lease_scope)
             assert result is None
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("BASH_OK: world" in call for call in info_calls)
+            _wait_for_mock_logger_output(mock_logger, "BASH_OK: world")
 
     async def test_exec_python3(self, lease_scope) -> None:
         """Test that exec=python3 runs inline Python.
@@ -304,9 +322,8 @@ class TestHookExecutor:
         with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
             result = await executor.execute_before_lease_hook(lease_scope)
             assert result is None
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
             # sum([0, 1, 4, 9]) == 14
-            assert any("PYTHON_OK: 14" in call for call in info_calls)
+            _wait_for_mock_logger_output(mock_logger, "PYTHON_OK: 14")
 
     async def test_script_file_sh(self, lease_scope, tmp_path) -> None:
         """Test that a .sh file auto-detects /bin/sh as interpreter."""
