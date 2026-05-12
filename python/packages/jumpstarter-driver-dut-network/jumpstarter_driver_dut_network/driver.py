@@ -1,7 +1,10 @@
+import asyncio
+import asyncio.subprocess
 import ipaddress
 import shutil
 import subprocess
 import sys
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, TypedDict
@@ -46,6 +49,8 @@ class DutNetwork(Driver):
 
     local_ntp: bool = False
 
+    enable_tcpdump: bool = False
+
     state_dir: str | None = None
     nat_mode: Literal["masquerade", "1to1", "disabled", "none"] = "masquerade"
     public_interface: str | None = None
@@ -61,6 +66,7 @@ class DutNetwork(Driver):
     _added_aliases: set[str] = field(init=False, default_factory=set)
     _fwd_rule_handles: list[int] = field(init=False, default_factory=list)
     _ntp_server: NtpServer | None = field(init=False, default=None)
+    _tcpdump_process: asyncio.subprocess.Process | None = field(init=False, default=None)
 
     @classmethod
     def client(cls) -> str:
@@ -91,6 +97,8 @@ class DutNetwork(Driver):
             missing.append("dnsmasq")
         if not shutil.which("sysctl") and not self._nat_disabled():
             missing.append("sysctl")
+        if not shutil.which("tcpdump") and self.enable_tcpdump:
+            missing.append("tcpdump")
 
         if missing:
             raise RuntimeError(
@@ -190,6 +198,14 @@ class DutNetwork(Driver):
             if entry.get("public_ip")
         ]
 
+    def _stop_tcpdump(self) -> None:
+        if self._tcpdump_process is not None:
+            try:
+                self._tcpdump_process.terminate()
+            except ProcessLookupError:
+                pass
+            self._tcpdump_process = None
+
     def cleanup(self) -> None:
         self.logger.info("Cleaning up DUT network configuration")
 
@@ -197,6 +213,8 @@ class DutNetwork(Driver):
             self._ntp_server.stop()
             self._ntp_server = None
             nftables.remove_ntp_redirect(self._table_name)
+
+        self._stop_tcpdump()
 
         if self._dnsmasq_process:
             dnsmasq.stop(process=self._dnsmasq_process, state_dir=self._state_path)
@@ -358,3 +376,84 @@ class DutNetwork(Driver):
                 dns_entries=self.dns_entries,
             )
             dnsmasq.reload_config(process=self._dnsmasq_process, state_dir=self._state_path)
+
+    @staticmethod
+    def _sanitize_tcpdump_args(args: list[str]) -> list[str]:
+        """Filter out disallowed tcpdump flags from user-supplied arguments.
+
+        Prevents the caller from overriding the interface (``-i``) or writing
+        to files (``-w``), which could conflict with the driver's own
+        interface enforcement or expose the host filesystem.
+        """
+        blocked = {"-i", "--interface", "-w"}
+        sanitized: list[str] = []
+        skip_next = False
+        for arg in args:
+            if skip_next:
+                skip_next = False
+                continue
+            if arg in blocked:
+                skip_next = True
+                continue
+            # Handle --flag=value form
+            if any(arg.startswith(f"{b}=") for b in blocked):
+                continue
+            sanitized.append(arg)
+        return sanitized
+
+    @export
+    async def tcpdump(self, args: list[str] | None = None) -> AsyncGenerator[str, None]:
+        """Run tcpdump on the configured interface and stream output lines.
+
+        The interface is always enforced to ``self.interface``; callers
+        cannot override it. The ``-w`` flag is also blocked to prevent
+        writing to the host filesystem. Additional tcpdump arguments can
+        be passed via *args*.
+
+        Requires ``enable_tcpdump: true`` in the driver config.
+
+        Note on pcap streaming: tcpdump supports ``-w -`` to write pcap
+        data to stdout, but this produces binary output that is not
+        suitable for the text-based streaming transport used here. For
+        pcap capture, consider running tcpdump directly on the exporter
+        host and transferring the file via a separate mechanism.
+
+        Args:
+            args: Optional list of additional tcpdump arguments.
+
+        Yields:
+            Lines of tcpdump text output.
+        """
+        if not self.enable_tcpdump:
+            raise RuntimeError(
+                "tcpdump is not enabled. Set 'enable_tcpdump: true' in the driver config."
+            )
+
+        cmd = ["tcpdump", "-i", self.interface, "-l", "--packet-buffered"]
+        if args:
+            cmd.extend(self._sanitize_tcpdump_args(args))
+
+        self.logger.info("Starting tcpdump: %s", " ".join(cmd))
+
+        proc = await asyncio.subprocess.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        self._tcpdump_process = proc
+
+        try:
+            assert proc.stdout is not None
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                yield line.decode("utf-8", errors="replace").rstrip("\n")
+        finally:
+            if proc.returncode is None:
+                try:
+                    proc.terminate()
+                    await proc.wait()
+                except ProcessLookupError:
+                    pass
+            self._tcpdump_process = None
