@@ -365,7 +365,7 @@ class TestDnsNameIn1to1:
         ]
         with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", return_value=fake_result) as mock_gai:
             driver, mock_ip, mock_nft, _ = _make_driver(
-                tmp_path, nat_mode="1to1", static_leases=leases,
+                tmp_path, nat_mode="1to1", addresses=leases,
             )
             mock_gai.assert_called_once_with("myhost.example.com", None, socket.AF_INET, socket.SOCK_STREAM)
             mock_ip.add_ip_alias.assert_called_once_with("eth-up", "10.0.0.99", 24)
@@ -384,7 +384,7 @@ class TestDnsNameIn1to1:
         ]
         with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", return_value=fake_result):
             driver, mock_ip, mock_nft, _ = _make_driver(
-                tmp_path, nat_mode="1to1", static_leases=leases,
+                tmp_path, nat_mode="1to1", addresses=leases,
             )
             assert mock_ip.add_ip_alias.call_count == 2
             mock_ip.add_ip_alias.assert_any_call("eth-up", "10.0.0.50", 24)
@@ -396,4 +396,4 @@ class TestDnsNameIn1to1:
         ]
         with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", side_effect=socket.gaierror("fail")):
             with pytest.raises(ValueError, match="Cannot resolve hostname"):
-                _make_driver(tmp_path, nat_mode="1to1", static_leases=leases)
+                _make_driver(tmp_path, nat_mode="1to1", addresses=leases)
