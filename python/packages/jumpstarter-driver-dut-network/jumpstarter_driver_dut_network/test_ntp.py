@@ -167,7 +167,7 @@ def _make_driver(tmp_path, **overrides):
         "dhcp_enabled": True,
         "dhcp_range_start": "192.168.100.100",
         "dhcp_range_end": "192.168.100.200",
-        "static_leases": [],
+        "addresses": [],
         "dns_servers": ["8.8.8.8"],
         "state_dir": str(tmp_path),
     }
