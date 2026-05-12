@@ -212,6 +212,14 @@ class TestGetKubectlContexts:
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_get_kubectl_contexts_propagates_programming_errors(self, mock_run_command):
+        mock_run_command.return_value = (0, '{"contexts": [], "clusters": []}', "")
+        with patch("jumpstarter_kubernetes.cluster.kubectl.json.loads", side_effect=TypeError("unexpected type")):
+            with pytest.raises(TypeError, match="unexpected type"):
+                await get_kubectl_contexts()
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
     async def test_get_kubectl_contexts_has_all_typed_keys(self, mock_run_command):
         kubectl_config = {
             "current-context": "ctx",
@@ -277,7 +285,7 @@ class TestCheckCrInstances:
 
         result = await _check_cr_instances("kubectl", "test-context", None)
 
-        assert result == {"installed": False}
+        assert result == {"installed": False, "status": "no-cr-instance"}
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")

@@ -77,7 +77,7 @@ async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[KubectlContext]
     except json.JSONDecodeError as e:
         from ..exceptions import KubeconfigError
         raise KubeconfigError(f"Failed to parse kubectl config: {e}") from e
-    except Exception as e:
+    except (RuntimeError, JumpstarterKubernetesError) as e:
         from ..exceptions import KubeconfigError
         raise KubeconfigError(f"Error listing kubectl contexts: {e}") from e
 
@@ -113,7 +113,7 @@ async def _check_cr_instances(
             }
     except (json.JSONDecodeError, RuntimeError) as e:
         return {"installed": False, "error": f"CR instance check failed: {e}"}
-    return {"installed": False}
+    return {"installed": False, "status": "no-cr-instance"}
 
 
 async def check_jumpstarter_installation(
