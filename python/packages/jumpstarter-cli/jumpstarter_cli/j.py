@@ -42,7 +42,7 @@ async def _j_shell_complete():
                                 pass
 
                         await to_thread.run_sync(_run_completion, abandon_on_cancel=True)
-    except TimeoutError:
+    except Exception:
         pass
 
 
