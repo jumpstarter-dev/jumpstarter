@@ -273,6 +273,7 @@ def launch_shell(
     passphrase: str | None = None,
     j_commands: list[str] | None = None,
 ) -> int:
+    """Launch an interactive shell with Jumpstarter environment and completions."""
     shell = os.environ.get("SHELL", "bash")
     shell_name = os.path.basename(shell)
     common_env = os.environ | {
