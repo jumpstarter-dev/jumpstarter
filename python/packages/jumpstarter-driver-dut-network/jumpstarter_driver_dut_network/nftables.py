@@ -203,6 +203,39 @@ def remove_filter_forward(handles: list[int]) -> None:
         logger.info("Removed %d nft rules from ip filter FORWARD", len(handles))
 
 
+def apply_ntp_redirect(interface: str, gateway_ip: str, table_name: str) -> None:
+    """Redirect all NTP traffic (UDP 123) on *interface* to *gateway_ip*.
+
+    Adds a DNAT rule in a dedicated prerouting chain so that any NTP
+    client request arriving on the DUT-facing interface is redirected
+    to the local NTP server listening on the gateway address.
+    """
+    _validate_iface(interface)
+    _validate_ip(gateway_ip)
+    ntp_table = f"{table_name}_ntp"
+    logger.info(
+        "Applying NTP redirect: interface=%s gateway=%s table=%s",
+        interface, gateway_ip, ntp_table,
+    )
+    ruleset = textwrap.dedent(f"""\
+        table ip {ntp_table} {{
+            chain prerouting {{
+                type nat hook prerouting priority dstnat; policy accept;
+                iifname "{interface}" udp dport 123 dnat to {gateway_ip}:123
+            }}
+        }}
+    """)
+    flush_rules(ntp_table)
+    _load_ruleset(ruleset)
+
+
+def remove_ntp_redirect(table_name: str) -> None:
+    """Remove the NTP redirect rules created by :func:`apply_ntp_redirect`."""
+    ntp_table = f"{table_name}_ntp"
+    logger.info("Removing NTP redirect table %s", ntp_table)
+    flush_rules(ntp_table)
+
+
 def flush_rules(table_name: str = "jumpstarter") -> None:
     logger.info("Flushing nftables table %s", table_name)
     _run_nft(["delete", "table", "ip", table_name], check=False)

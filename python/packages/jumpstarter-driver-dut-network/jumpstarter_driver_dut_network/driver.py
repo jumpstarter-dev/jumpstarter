@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal, TypedDict
 
 from . import dnsmasq, iproute, nftables
+from .ntp_server import NtpServer
 from jumpstarter.driver import Driver, export
 
 
@@ -43,6 +44,8 @@ class DutNetwork(Driver):
 
     dns_entries: list[dict[str, str]] = field(default_factory=list)
 
+    local_ntp: bool = False
+
     state_dir: str | None = None
     nat_mode: Literal["masquerade", "1to1", "disabled", "none"] = "masquerade"
     public_interface: str | None = None
@@ -57,6 +60,7 @@ class DutNetwork(Driver):
     _upstream_prefix_len: int = field(init=False, default=24)
     _added_aliases: set[str] = field(init=False, default_factory=set)
     _fwd_rule_handles: list[int] = field(init=False, default_factory=list)
+    _ntp_server: NtpServer | None = field(init=False, default=None)
 
     @classmethod
     def client(cls) -> str:
@@ -166,11 +170,17 @@ class DutNetwork(Driver):
                 table_name=self._table_name,
             )
 
+        if self.local_ntp:
+            self._ntp_server = NtpServer(self.gateway_ip)
+            self._ntp_server.start()
+            nftables.apply_ntp_redirect(self.interface, self.gateway_ip, self._table_name)
+
         self.logger.info(
-            "DUT network configured: interface=%s subnet=%s nat=%s",
+            "DUT network configured: interface=%s subnet=%s nat=%s local_ntp=%s",
             self.interface,
             self.subnet,
             self.nat_mode,
+            self.local_ntp,
         )
 
     def _get_1to1_mappings(self) -> list[dict[str, str]]:
@@ -182,6 +192,11 @@ class DutNetwork(Driver):
 
     def cleanup(self) -> None:
         self.logger.info("Cleaning up DUT network configuration")
+
+        if self._ntp_server is not None:
+            self._ntp_server.stop()
+            self._ntp_server = None
+            nftables.remove_ntp_redirect(self._table_name)
 
         if self._dnsmasq_process:
             dnsmasq.stop(process=self._dnsmasq_process, state_dir=self._state_path)
@@ -235,6 +250,14 @@ class DutNetwork(Driver):
             dns_entries=self.dns_entries,
             nat_rules=nat_rules,
         )
+
+    @export
+    def ntp_status(self) -> dict:
+        """Return the status of the local NTP server."""
+        return {
+            "enabled": self.local_ntp,
+            "running": self._ntp_server is not None and self._ntp_server.running,
+        }
 
     @export
     def get_dut_ip(self, mac: str) -> str | None:
