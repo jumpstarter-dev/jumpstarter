@@ -243,7 +243,7 @@ class NetworkTestEnv:
             "dhcp_enabled": True,
             "dhcp_range_start": "192.168.200.100",
             "dhcp_range_end": "192.168.200.200",
-            "static_leases": [{"mac": self.DUT_MAC, "ip": self.DUT_IP, "hostname": "test-dut"}],
+            "addresses": [{"mac": self.DUT_MAC, "ip": self.DUT_IP, "hostname": "test-dut"}],
             "dns_servers": ["8.8.8.8"],
             "state_dir": self.state_dir,
         }
@@ -388,7 +388,7 @@ class TestOneToOneNat:
     def test_1to1_nftables_rules(self, net_env: NetworkTestEnv):
         driver = net_env.create_driver(
             nat_mode="1to1",
-            static_leases=self._leases_with_public_ip(net_env),
+            addresses=self._leases_with_public_ip(net_env),
         )
         try:
             result = _run(f"nft list table ip {net_env.NFT_TABLE}")
@@ -403,7 +403,7 @@ class TestOneToOneNat:
     def test_ip_alias_added(self, net_env: NetworkTestEnv):
         driver = net_env.create_driver(
             nat_mode="1to1",
-            static_leases=self._leases_with_public_ip(net_env),
+            addresses=self._leases_with_public_ip(net_env),
         )
         try:
             result = _run(f"ip -o -4 addr show dev {net_env.VETH_UPSTREAM}")
@@ -414,7 +414,7 @@ class TestOneToOneNat:
     def test_ip_alias_removed_on_cleanup(self, net_env: NetworkTestEnv):
         driver = net_env.create_driver(
             nat_mode="1to1",
-            static_leases=self._leases_with_public_ip(net_env),
+            addresses=self._leases_with_public_ip(net_env),
         )
         driver.cleanup()
         result = _run(f"ip -o -4 addr show dev {net_env.VETH_UPSTREAM}", check=False)
@@ -450,17 +450,17 @@ class TestDriverRpc:
         finally:
             driver.cleanup()
 
-    def test_add_and_remove_static_lease(self, net_env: NetworkTestEnv):
+    def test_add_and_remove_address(self, net_env: NetworkTestEnv):
         driver = net_env.create_driver()
         try:
             with serve(driver) as client:
-                client.add_static_lease("02:00:00:00:00:99", "192.168.200.99", "new-dut")
+                client.add_address("192.168.200.99", mac="02:00:00:00:00:99", hostname="new-dut")
                 from pathlib import Path
 
                 hosts = Path(net_env.state_dir) / "dhcp-hosts"
                 assert "02:00:00:00:00:99" in hosts.read_text()
 
-                client.remove_static_lease("02:00:00:00:00:99")
+                client.remove_address("192.168.200.99")
                 assert "02:00:00:00:00:99" not in hosts.read_text()
         finally:
             driver.cleanup()
@@ -564,7 +564,7 @@ class TestMultiDut1to1:
     def test_both_dnat_snat_rules(self, net_env: NetworkTestEnv):
         driver = net_env.create_driver(
             nat_mode="1to1",
-            static_leases=self._multi_leases(net_env),
+            addresses=self._multi_leases(net_env),
         )
         try:
             result = _run(f"nft list table ip {net_env.NFT_TABLE}")
@@ -578,7 +578,7 @@ class TestMultiDut1to1:
     def test_both_ip_aliases_added(self, net_env: NetworkTestEnv):
         driver = net_env.create_driver(
             nat_mode="1to1",
-            static_leases=self._multi_leases(net_env),
+            addresses=self._multi_leases(net_env),
         )
         try:
             result = _run(f"ip -o -4 addr show dev {net_env.VETH_UPSTREAM}")
@@ -590,7 +590,7 @@ class TestMultiDut1to1:
     def test_both_aliases_removed_on_cleanup(self, net_env: NetworkTestEnv):
         driver = net_env.create_driver(
             nat_mode="1to1",
-            static_leases=self._multi_leases(net_env),
+            addresses=self._multi_leases(net_env),
         )
         driver.cleanup()
         result = _run(f"ip -o -4 addr show dev {net_env.VETH_UPSTREAM}", check=False)
@@ -603,7 +603,7 @@ class TestMultiDut1to1:
             {"mac": net_env.DUT_MAC, "ip": net_env.DUT_IP, "hostname": "dut1", "public_ip": self.PUBLIC_IP_1},
             {"mac": self.DUT_MAC_2, "ip": self.DUT_IP_2, "hostname": "dut2"},
         ]
-        driver = net_env.create_driver(nat_mode="1to1", static_leases=leases)
+        driver = net_env.create_driver(nat_mode="1to1", addresses=leases)
         try:
             result = _run(f"nft list table ip {net_env.NFT_TABLE}")
             assert "masquerade" in result.stdout
@@ -680,7 +680,7 @@ class TestOneToOneNatDataPlane:
         """SNAT path: DUT -> external, source is rewritten to public_ip."""
         driver = net_env.create_driver(
             nat_mode="1to1",
-            static_leases=self._leases_with_public_ip(net_env),
+            addresses=self._leases_with_public_ip(net_env),
         )
         try:
             net_env.configure_dut_static()
@@ -698,7 +698,7 @@ class TestOneToOneNatDataPlane:
         """DNAT path: external -> public_ip is translated to DUT private_ip."""
         driver = net_env.create_driver(
             nat_mode="1to1",
-            static_leases=self._leases_with_public_ip(net_env),
+            addresses=self._leases_with_public_ip(net_env),
         )
         try:
             net_env.configure_dut_static()
@@ -721,7 +721,7 @@ class TestOneToOneNatDataPlane:
         """
         driver = net_env.create_driver(
             nat_mode="1to1",
-            static_leases=self._leases_with_public_ip(net_env),
+            addresses=self._leases_with_public_ip(net_env),
         )
         try:
             net_env.configure_dut_static()

@@ -38,7 +38,7 @@ class DutNetwork(Driver):
     dhcp_enabled: bool = True
     dhcp_range_start: str = "192.168.100.100"
     dhcp_range_end: str = "192.168.100.200"
-    static_leases: list[dict[str, str]] = field(default_factory=list)
+    addresses: list[dict[str, str]] = field(default_factory=list)
     dns_servers: list[str] = field(default_factory=lambda: ["8.8.8.8", "8.8.4.4"])
 
     dns_entries: list[dict[str, str]] = field(default_factory=list)
@@ -106,9 +106,9 @@ class DutNetwork(Driver):
             raise ValueError(f"Gateway {self.gateway_ip} is not within subnet {self.subnet}")
 
         if self.nat_mode == "1to1":
-            has_public = any(lease.get("public_ip") for lease in self.static_leases)
+            has_public = any(entry.get("public_ip") for entry in self.addresses)
             if not has_public:
-                raise ValueError("At least one static_lease must have public_ip for 1:1 NAT mode")
+                raise ValueError("At least one address entry must have public_ip for 1:1 NAT mode")
 
     def _setup_network(self) -> None:
         if not self._nat_disabled():
@@ -141,7 +141,7 @@ class DutNetwork(Driver):
                 interface=self.interface,
                 range_start=self.dhcp_range_start,
                 range_end=self.dhcp_range_end,
-                static_leases=self.static_leases,
+                static_leases=[e for e in self.addresses if e.get("mac")],
                 dns_servers=self.dns_servers,
                 gateway_ip=self.gateway_ip,
                 dns_entries=self.dns_entries,
@@ -175,9 +175,9 @@ class DutNetwork(Driver):
 
     def _get_1to1_mappings(self) -> list[dict[str, str]]:
         return [
-            {"private_ip": lease["ip"], "public_ip": lease["public_ip"]}
-            for lease in self.static_leases
-            if lease.get("public_ip")
+            {"private_ip": entry["ip"], "public_ip": entry["public_ip"]}
+            for entry in self.addresses
+            if entry.get("public_ip")
         ]
 
     def cleanup(self) -> None:
@@ -256,27 +256,29 @@ class DutNetwork(Driver):
         ]
 
     @export
-    def add_static_lease(self, mac: str, ip: str, hostname: str = "", public_ip: str | None = None) -> None:
-        new_lease: dict[str, str] = {"mac": mac, "ip": ip}
+    def add_address(self, ip: str, mac: str | None = None, hostname: str = "", public_ip: str | None = None) -> None:
+        new_entry: dict[str, str] = {"ip": ip}
+        if mac:
+            new_entry["mac"] = mac
         if hostname:
-            new_lease["hostname"] = hostname
+            new_entry["hostname"] = hostname
         if public_ip:
-            new_lease["public_ip"] = public_ip
+            new_entry["public_ip"] = public_ip
 
-        self.static_leases = [entry for entry in self.static_leases if entry["mac"].lower() != mac.lower()]
-        self.static_leases.append(new_lease)
+        self.addresses = [entry for entry in self.addresses if entry["ip"] != ip]
+        self.addresses.append(new_entry)
         self._reload_dnsmasq_config()
         if self.nat_mode == "1to1":
             self._sync_1to1_nat()
-        self.logger.info("Added static lease: mac=%s ip=%s hostname=%s", mac, ip, hostname)
+        self.logger.info("Added address: ip=%s mac=%s hostname=%s", ip, mac, hostname)
 
     @export
-    def remove_static_lease(self, mac: str) -> None:
-        self.static_leases = [entry for entry in self.static_leases if entry["mac"].lower() != mac.lower()]
+    def remove_address(self, ip: str) -> None:
+        self.addresses = [entry for entry in self.addresses if entry["ip"] != ip]
         self._reload_dnsmasq_config()
         if self.nat_mode == "1to1":
             self._sync_1to1_nat()
-        self.logger.info("Removed static lease for mac=%s", mac)
+        self.logger.info("Removed address for ip=%s", ip)
 
     def _sync_1to1_nat(self) -> None:
         upstream_for_alias = self.public_interface or self._upstream
@@ -327,7 +329,7 @@ class DutNetwork(Driver):
                 interface=self.interface,
                 range_start=self.dhcp_range_start,
                 range_end=self.dhcp_range_end,
-                static_leases=self.static_leases,
+                static_leases=[e for e in self.addresses if e.get("mac")],
                 dns_servers=self.dns_servers,
                 gateway_ip=self.gateway_ip,
                 dns_entries=self.dns_entries,

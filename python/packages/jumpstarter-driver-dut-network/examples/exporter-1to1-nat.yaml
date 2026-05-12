@@ -17,7 +17,7 @@ export:
       dhcp_enabled: true
       dhcp_range_start: "192.168.100.100"
       dhcp_range_end: "192.168.100.200"
-      static_leases:
+      addresses:
         - mac: "8a:12:4e:25:f4:8e"
           ip: "192.168.100.10"
           hostname: "sa8775p-1"
@@ -26,6 +26,10 @@ export:
           ip: "192.168.100.11"
           hostname: "sa8775p-2"
           public_ip: "10.26.28.85"
+        # Entry without MAC: 1:1 NAT mapping only, no DHCP static lease
+        - ip: "192.168.100.12"
+          hostname: "nxp-board-03"
+          public_ip: "10.26.28.86"
       dns_servers: ["8.8.8.8", "8.8.4.4"]
       dns_entries:
         - hostname: "controller.lab.local"
