@@ -17,7 +17,7 @@ def _make_driver(tmp_path, **overrides):
         "dhcp_enabled": True,
         "dhcp_range_start": "192.168.100.100",
         "dhcp_range_end": "192.168.100.200",
-        "static_leases": [],
+        "addresses": [],
         "dns_servers": ["8.8.8.8"],
         "state_dir": str(tmp_path),
     }
@@ -57,14 +57,14 @@ class TestDriverValidation:
             _make_driver(
                 tmp_path,
                 nat_mode="1to1",
-                static_leases=[{"mac": "aa:bb:cc:dd:ee:ff", "ip": "192.168.100.10"}],
+                addresses=[{"mac": "aa:bb:cc:dd:ee:ff", "ip": "192.168.100.10"}],
             )
 
     def test_1to1_with_public_ip_ok(self, tmp_path: Path):
         driver, _, _, _ = _make_driver(
             tmp_path,
             nat_mode="1to1",
-            static_leases=[{"mac": "aa:bb:cc:dd:ee:ff", "ip": "192.168.100.10", "public_ip": "10.0.0.50"}],
+            addresses=[{"mac": "aa:bb:cc:dd:ee:ff", "ip": "192.168.100.10", "public_ip": "10.0.0.50"}],
         )
         assert driver.nat_mode == "1to1"
 
@@ -126,7 +126,7 @@ class TestDriverSetup1to1:
             {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.100.10", "public_ip": "10.0.0.50"},
             {"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.100.11", "public_ip": "10.0.0.51"},
         ]
-        _, mock_ip, mock_nft, _ = _make_driver(tmp_path, nat_mode="1to1", static_leases=leases)
+        _, mock_ip, mock_nft, _ = _make_driver(tmp_path, nat_mode="1to1", addresses=leases)
         mock_ip.add_ip_alias.assert_any_call("eth-up", "10.0.0.50", 24)
         mock_ip.add_ip_alias.assert_any_call("eth-up", "10.0.0.51", 24)
         assert mock_ip.add_ip_alias.call_count == 2
@@ -144,7 +144,7 @@ class TestDriverSetup1to1:
             {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.100.10", "public_ip": "10.0.0.50"},
             {"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.100.11"},
         ]
-        _, mock_ip, mock_nft, _ = _make_driver(tmp_path, nat_mode="1to1", static_leases=leases)
+        _, mock_ip, mock_nft, _ = _make_driver(tmp_path, nat_mode="1to1", addresses=leases)
         assert mock_ip.add_ip_alias.call_count == 1
         mappings = mock_nft.apply_1to1_rules.call_args[0][2]
         assert len(mappings) == 1
@@ -191,7 +191,7 @@ class TestDriverCleanup:
             {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.100.10", "public_ip": "10.0.0.50"},
             {"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.100.11", "public_ip": "10.0.0.51"},
         ]
-        driver, _, _, _ = _make_driver(tmp_path, nat_mode="1to1", static_leases=leases)
+        driver, _, _, _ = _make_driver(tmp_path, nat_mode="1to1", addresses=leases)
         assert driver._added_aliases == {"10.0.0.50", "10.0.0.51"}
         with patch(f"{_DRIVER_MODULE}.iproute") as mock_ip2, \
              patch(f"{_DRIVER_MODULE}.nftables"), \
@@ -268,34 +268,42 @@ class TestDriverDnsEntries:
             assert driver.dns_entries == []
 
 
-class TestDriverStaticLeases:
-    def test_add_static_lease(self, tmp_path: Path):
+class TestDriverAddresses:
+    def test_add_address_with_mac(self, tmp_path: Path):
         driver, _, _, _ = _make_driver(tmp_path)
         with patch(f"{_DRIVER_MODULE}.dnsmasq"):
-            driver.add_static_lease("aa:bb:cc:dd:ee:ff", "192.168.100.50", "new-dut")
-            assert any(lease["mac"] == "aa:bb:cc:dd:ee:ff" for lease in driver.static_leases)
+            driver.add_address("192.168.100.50", mac="aa:bb:cc:dd:ee:ff", hostname="new-dut")
+            assert any(entry["mac"] == "aa:bb:cc:dd:ee:ff" for entry in driver.addresses)
 
-    def test_add_lease_with_public_ip(self, tmp_path: Path):
+    def test_add_address_without_mac(self, tmp_path: Path):
         driver, _, _, _ = _make_driver(tmp_path)
         with patch(f"{_DRIVER_MODULE}.dnsmasq"):
-            driver.add_static_lease("aa:bb:cc:dd:ee:ff", "192.168.100.50", "dut", "10.0.0.50")
-            lease = driver.static_leases[0]
-            assert lease["public_ip"] == "10.0.0.50"
+            driver.add_address("192.168.100.50", hostname="nat-only", public_ip="10.0.0.50")
+            entry = driver.addresses[0]
+            assert "mac" not in entry
+            assert entry["public_ip"] == "10.0.0.50"
 
-    def test_add_replaces_existing_mac(self, tmp_path: Path):
-        leases = [{"mac": "AA:BB:CC:DD:EE:FF", "ip": "192.168.100.10"}]
-        driver, _, _, _ = _make_driver(tmp_path, static_leases=leases)
+    def test_add_address_with_public_ip(self, tmp_path: Path):
+        driver, _, _, _ = _make_driver(tmp_path)
         with patch(f"{_DRIVER_MODULE}.dnsmasq"):
-            driver.add_static_lease("aa:bb:cc:dd:ee:ff", "192.168.100.50")
-            assert len(driver.static_leases) == 1
-            assert driver.static_leases[0]["ip"] == "192.168.100.50"
+            driver.add_address("192.168.100.50", mac="aa:bb:cc:dd:ee:ff", hostname="dut", public_ip="10.0.0.50")
+            entry = driver.addresses[0]
+            assert entry["public_ip"] == "10.0.0.50"
 
-    def test_remove_static_lease(self, tmp_path: Path):
-        leases = [{"mac": "aa:bb:cc:dd:ee:ff", "ip": "192.168.100.10"}]
-        driver, _, _, _ = _make_driver(tmp_path, static_leases=leases)
+    def test_add_replaces_existing_ip(self, tmp_path: Path):
+        addrs = [{"mac": "AA:BB:CC:DD:EE:FF", "ip": "192.168.100.10"}]
+        driver, _, _, _ = _make_driver(tmp_path, addresses=addrs)
         with patch(f"{_DRIVER_MODULE}.dnsmasq"):
-            driver.remove_static_lease("aa:bb:cc:dd:ee:ff")
-            assert driver.static_leases == []
+            driver.add_address("192.168.100.10", mac="11:22:33:44:55:66")
+            assert len(driver.addresses) == 1
+            assert driver.addresses[0]["mac"] == "11:22:33:44:55:66"
+
+    def test_remove_address(self, tmp_path: Path):
+        addrs = [{"mac": "aa:bb:cc:dd:ee:ff", "ip": "192.168.100.10"}]
+        driver, _, _, _ = _make_driver(tmp_path, addresses=addrs)
+        with patch(f"{_DRIVER_MODULE}.dnsmasq"):
+            driver.remove_address("192.168.100.10")
+            assert driver.addresses == []
 
 
 class TestGet1to1Mappings:
@@ -306,7 +314,7 @@ class TestGet1to1Mappings:
             {"mac": "aa:bb:cc:dd:ee:03", "ip": "192.168.100.12", "public_ip": "10.0.0.52"},
         ]
         driver, _, _, _ = _make_driver(
-            tmp_path, nat_mode="1to1", static_leases=leases,
+            tmp_path, nat_mode="1to1", addresses=leases,
         )
         mappings = driver._get_1to1_mappings()
         assert len(mappings) == 2

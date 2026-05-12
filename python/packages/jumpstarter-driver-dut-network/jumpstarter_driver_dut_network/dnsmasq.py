@@ -73,11 +73,17 @@ def write_dns_hosts(state_dir: Path, dns_entries: list[dict[str, str]] | None = 
 
 
 def write_dhcp_hosts(state_dir: Path, static_leases: list[dict[str, str]]) -> Path:
-    """Write static leases to a dhcp-hostsfile that dnsmasq re-reads on SIGHUP."""
+    """Write static leases to a dhcp-hostsfile that dnsmasq re-reads on SIGHUP.
+
+    Entries without a ``mac`` key are silently skipped because they represent
+    address reservations used only for 1:1 NAT mappings, not DHCP bindings.
+    """
     hosts_path = state_dir / "dhcp-hosts"
     lines = []
     for lease in static_leases:
-        mac = lease["mac"]
+        mac = lease.get("mac")
+        if not mac:
+            continue
         ip = lease["ip"]
         if not _MAC_RE.match(mac):
             raise ValueError(f"Invalid MAC address: {mac!r}")

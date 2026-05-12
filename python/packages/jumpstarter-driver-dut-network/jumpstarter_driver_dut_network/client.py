@@ -27,13 +27,13 @@ class DutNetworkClient(DriverClient):
         """List all current DHCP leases (dynamic + static)."""
         return self.call("get_leases")
 
-    def add_static_lease(self, mac: str, ip: str, hostname: str = "", public_ip: str | None = None) -> None:
-        """Add a DHCP static lease at runtime."""
-        self.call("add_static_lease", mac, ip, hostname, public_ip)
+    def add_address(self, ip: str, mac: str | None = None, hostname: str = "", public_ip: str | None = None) -> None:
+        """Add an address entry (with optional MAC for DHCP static lease)."""
+        self.call("add_address", ip, mac, hostname, public_ip)
 
-    def remove_static_lease(self, mac: str) -> None:
-        """Remove a DHCP static lease."""
-        self.call("remove_static_lease", mac)
+    def remove_address(self, ip: str) -> None:
+        """Remove an address entry by IP."""
+        self.call("remove_address", ip)
 
     def get_nat_rules(self) -> str:
         """List active nftables rules."""
@@ -85,22 +85,25 @@ class DutNetworkClient(DriverClient):
             else:
                 raise click.ClickException(f"No lease found for MAC {mac}")
 
-        @base.command("add-lease")
-        @click.argument("mac")
+        @base.command("add-address")
         @click.argument("ip")
-        @click.option("--hostname", "-n", default="", help="Hostname for the lease")
+        @click.option("--mac", "-m", default=None, help="MAC address for DHCP static lease")
+        @click.option("--hostname", "-n", default="", help="Hostname for the entry")
         @click.option("--public-ip", default=None, help="Public IP for 1:1 NAT mapping")
-        def add_lease(mac: str, ip: str, hostname: str, public_ip: str | None):
-            """Add a static DHCP lease."""
-            self.add_static_lease(mac, ip, hostname, public_ip)
-            click.echo(f"Added static lease: {mac} -> {ip}")
+        def add_address(ip: str, mac: str | None, hostname: str, public_ip: str | None):
+            """Add an address entry (with optional MAC for DHCP static lease)."""
+            self.add_address(ip, mac, hostname, public_ip)
+            msg = f"Added address: {ip}"
+            if mac:
+                msg += f" (mac={mac})"
+            click.echo(msg)
 
-        @base.command("remove-lease")
-        @click.argument("mac")
-        def remove_lease(mac: str):
-            """Remove a static DHCP lease."""
-            self.remove_static_lease(mac)
-            click.echo(f"Removed static lease for {mac}")
+        @base.command("remove-address")
+        @click.argument("ip")
+        def remove_address(ip: str):
+            """Remove an address entry by IP."""
+            self.remove_address(ip)
+            click.echo(f"Removed address for {ip}")
 
         @base.command("nat-rules")
         def nat_rules():

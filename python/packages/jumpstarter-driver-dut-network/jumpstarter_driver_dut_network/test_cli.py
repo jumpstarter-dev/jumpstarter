@@ -28,7 +28,7 @@ def _make_driver(tmp_path, **overrides):
         "dhcp_enabled": True,
         "dhcp_range_start": "192.168.100.100",
         "dhcp_range_end": "192.168.100.200",
-        "static_leases": [],
+        "addresses": [],
         "dns_servers": ["8.8.8.8"],
         "state_dir": str(tmp_path),
     }
@@ -79,7 +79,7 @@ class TestCliHelp:
     def test_all_commands_listed(self, tmp_path: Path, runner: CliRunner):
         with _make_client(tmp_path) as client:
             result = runner.invoke(client.cli(), ["--help"])
-            for cmd in ("status", "leases", "get-ip", "add-lease", "remove-lease",
+            for cmd in ("status", "leases", "get-ip", "add-address", "remove-address",
                          "nat-rules", "dns-entries", "add-dns", "remove-dns"):
                 assert cmd in result.output, f"Command {cmd!r} not in help output"
 
@@ -165,64 +165,62 @@ class TestGetIpCommand:
             assert result.exit_code != 0
 
 
-class TestAddLeaseCommand:
-    def test_add_lease_output(self, tmp_path: Path, runner: CliRunner):
+class TestAddAddressCommand:
+    def test_add_address_output(self, tmp_path: Path, runner: CliRunner):
         with _make_client(tmp_path) as client:
-            with patch.object(client, "add_static_lease"):
-                result = runner.invoke(client.cli(), ["add-lease", "aa:bb:cc:dd:ee:ff", "192.168.100.50"])
+            with patch.object(client, "add_address"):
+                result = runner.invoke(client.cli(), ["add-address", "192.168.100.50", "-m", "aa:bb:cc:dd:ee:ff"])
                 assert result.exit_code == 0
-                assert "Added static lease" in result.output
-                assert "aa:bb:cc:dd:ee:ff" in result.output
+                assert "Added address" in result.output
                 assert "192.168.100.50" in result.output
 
-    def test_add_lease_with_hostname(self, tmp_path: Path, runner: CliRunner):
+    def test_add_address_without_mac(self, tmp_path: Path, runner: CliRunner):
         with _make_client(tmp_path) as client:
-            with patch.object(client, "add_static_lease") as mock_add:
-                result = runner.invoke(
-                    client.cli(),
-                    ["add-lease", "aa:bb:cc:dd:ee:ff", "192.168.100.50", "-n", "my-dut"],
-                )
-                assert result.exit_code == 0
-                mock_add.assert_called_once_with(
-                    "aa:bb:cc:dd:ee:ff", "192.168.100.50", "my-dut", None,
-                )
-
-    def test_add_lease_with_public_ip(self, tmp_path: Path, runner: CliRunner):
-        with _make_client(tmp_path) as client:
-            with patch.object(client, "add_static_lease") as mock_add:
+            with patch.object(client, "add_address") as mock_add:
                 result = runner.invoke(client.cli(), [
-                    "add-lease", "aa:bb:cc:dd:ee:ff", "192.168.100.50",
-                    "--public-ip", "10.0.0.50",
+                    "add-address", "192.168.100.50", "--public-ip", "10.0.0.50",
                 ])
                 assert result.exit_code == 0
                 mock_add.assert_called_once_with(
-                    "aa:bb:cc:dd:ee:ff", "192.168.100.50", "", "10.0.0.50",
+                    "192.168.100.50", None, "", "10.0.0.50",
                 )
 
-    def test_requires_mac_and_ip(self, tmp_path: Path, runner: CliRunner):
+    def test_add_address_with_hostname(self, tmp_path: Path, runner: CliRunner):
         with _make_client(tmp_path) as client:
-            result = runner.invoke(client.cli(), ["add-lease", "aa:bb:cc:dd:ee:ff"])
+            with patch.object(client, "add_address") as mock_add:
+                result = runner.invoke(
+                    client.cli(),
+                    ["add-address", "192.168.100.50", "-m", "aa:bb:cc:dd:ee:ff", "-n", "my-dut"],
+                )
+                assert result.exit_code == 0
+                mock_add.assert_called_once_with(
+                    "192.168.100.50", "aa:bb:cc:dd:ee:ff", "my-dut", None,
+                )
+
+    def test_requires_ip_argument(self, tmp_path: Path, runner: CliRunner):
+        with _make_client(tmp_path) as client:
+            result = runner.invoke(client.cli(), ["add-address"])
             assert result.exit_code != 0
 
 
-class TestRemoveLeaseCommand:
-    def test_remove_lease_output(self, tmp_path: Path, runner: CliRunner):
+class TestRemoveAddressCommand:
+    def test_remove_address_output(self, tmp_path: Path, runner: CliRunner):
         with _make_client(tmp_path) as client:
-            with patch.object(client, "remove_static_lease"):
-                result = runner.invoke(client.cli(), ["remove-lease", "aa:bb:cc:dd:ee:ff"])
+            with patch.object(client, "remove_address"):
+                result = runner.invoke(client.cli(), ["remove-address", "192.168.100.50"])
                 assert result.exit_code == 0
-                assert "Removed static lease" in result.output
-                assert "aa:bb:cc:dd:ee:ff" in result.output
+                assert "Removed address" in result.output
+                assert "192.168.100.50" in result.output
 
     def test_calls_client_method(self, tmp_path: Path, runner: CliRunner):
         with _make_client(tmp_path) as client:
-            with patch.object(client, "remove_static_lease") as mock_rm:
-                runner.invoke(client.cli(), ["remove-lease", "aa:bb:cc:dd:ee:ff"])
-                mock_rm.assert_called_once_with("aa:bb:cc:dd:ee:ff")
+            with patch.object(client, "remove_address") as mock_rm:
+                runner.invoke(client.cli(), ["remove-address", "192.168.100.50"])
+                mock_rm.assert_called_once_with("192.168.100.50")
 
-    def test_requires_mac_argument(self, tmp_path: Path, runner: CliRunner):
+    def test_requires_ip_argument(self, tmp_path: Path, runner: CliRunner):
         with _make_client(tmp_path) as client:
-            result = runner.invoke(client.cli(), ["remove-lease"])
+            result = runner.invoke(client.cli(), ["remove-address"])
             assert result.exit_code != 0
 
 
