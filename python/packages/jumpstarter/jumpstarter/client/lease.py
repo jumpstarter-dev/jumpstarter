@@ -352,7 +352,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                         )
                         raise
                     delay = min(base_delay * (2 ** attempt), max_delay, remaining)
-                    logger.debug(
+                    logger.warning(
                         "Exporter unavailable, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
                         delay, attempt + 1, remaining
                     )
