@@ -239,7 +239,7 @@ setup_test_environment() {
     # Get the controller endpoint from Jumpstarter CR
     export ENDPOINT
     local BASEDOMAIN
-    BASEDOMAIN=$(kubectl get jumpstarter -n "${JS_NAMESPACE}" jumpstarter -o jsonpath='{.spec.baseDomain}' 2>/dev/null) || true
+    BASEDOMAIN=$(kubectl get jumpstarter -n "${JS_NAMESPACE}" jumpstarter -o jsonpath='{.spec.baseDomain}')
     if [ -z "${BASEDOMAIN}" ]; then
         log_error "Failed to get baseDomain from Jumpstarter CR in namespace ${JS_NAMESPACE}. Is the controller deployed with a Jumpstarter CR?"
         exit 1
