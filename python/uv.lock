@@ -1945,6 +1945,7 @@ dependencies = [
     { name = "rich" },
     { name = "tenacity" },
     { name = "xdg-base-dirs" },
+    { name = "yarl" },
 ]
 
 [package.dev-dependencies]
@@ -1972,6 +1973,7 @@ requires-dist = [
     { name = "rich", specifier = ">=14.0.0" },
     { name = "tenacity", specifier = ">=8.2.0" },
     { name = "xdg-base-dirs", specifier = ">=6.0.2" },
+    { name = "yarl", specifier = ">=1.6.0" },
 ]
 
 [package.metadata.requires-dev]
