@@ -60,9 +60,17 @@ def deconfigure_interface(interface: str) -> None:
 
 
 def add_ip_alias(interface: str, ip: str, prefix_len: int) -> None:
-    """Add a secondary IP address to an interface."""
-    logger.info("Adding IP alias %s/%d to %s", ip, prefix_len, interface)
-    _run_priv(["ip", "addr", "add", f"{ip}/{prefix_len}", "dev", interface])
+    """Add a secondary IP address to an interface.
+
+    This operation is idempotent: if the address is already present on the
+    interface, the call is silently skipped.
+    """
+    addr = f"{ip}/{prefix_len}"
+    if addr in get_interface_addresses(interface):
+        logger.info("IP alias %s already present on %s, skipping", addr, interface)
+        return
+    logger.info("Adding IP alias %s to %s", addr, interface)
+    _run_priv(["ip", "addr", "add", addr, "dev", interface])
 
 
 def remove_ip_alias(interface: str, ip: str, prefix_len: int) -> None:
