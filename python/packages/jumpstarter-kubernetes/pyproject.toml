@@ -26,6 +26,7 @@ dev = [
 
 [tool.coverage.run]
 source = ["."]
+branch = true
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"

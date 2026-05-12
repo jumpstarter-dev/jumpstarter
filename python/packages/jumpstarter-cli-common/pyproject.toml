@@ -27,6 +27,7 @@ dev = [
 
 [tool.coverage.run]
 source = ["."]
+branch = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["jumpstarter_cli_common"]
