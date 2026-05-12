@@ -8,7 +8,7 @@ COPY --from=uv /uv /uvx /bin/
 
 FROM fedora:43 AS product
 RUN dnf install -y python3 ustreamer libusb1 android-tools python3-libgpiod curl \
-    nftables dnsmasq iproute procps-ng && \
+    nftables dnsmasq iproute procps-ng tcpdump && \
     dnf clean all && \
     rm -rf /var/cache/dnf
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/

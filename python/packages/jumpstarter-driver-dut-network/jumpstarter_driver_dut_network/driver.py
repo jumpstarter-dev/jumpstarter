@@ -436,7 +436,8 @@ class DutNetwork(Driver):
         self.logger.info("Starting tcpdump: %s", " ".join(cmd))
 
         proc = await asyncio.subprocess.create_subprocess_exec(
-            *cmd,
+            cmd[0],
+            *cmd[1:],
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )

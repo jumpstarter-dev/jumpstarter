@@ -178,13 +178,12 @@ class TestTcpdumpMethod:
             b"12:00:00.001000 IP 8.8.8.8 > 192.168.100.10: ICMP echo reply\n",
             b"",  # EOF
         ]
-        call_count = 0
+        state = {"call_count": 0}
 
         async def mock_readline():
-            nonlocal call_count
-            if call_count < len(lines):
-                result = lines[call_count]
-                call_count += 1
+            if state["call_count"] < len(lines):
+                result = lines[state["call_count"]]
+                state["call_count"] += 1
                 return result
             return b""
 
