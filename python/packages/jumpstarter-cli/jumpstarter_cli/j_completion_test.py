@@ -69,5 +69,18 @@ def test_j_shell_complete_returns_empty_on_timeout():
         assert result is None
 
 
+def test_j_shell_complete_returns_none_on_connection_error():
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def failing_env(*args, **kwargs):
+        raise ConnectionRefusedError("connection refused")
+        yield  # noqa: RUF027 -- unreachable but required for async generator syntax
+
+    with patch("jumpstarter_cli.j.env_async", failing_env):
+        result = run(_j_shell_complete)
+        assert result is None
+
+
 def test_completion_timeout_is_positive():
     assert _COMPLETION_TIMEOUT_SECONDS > 0
