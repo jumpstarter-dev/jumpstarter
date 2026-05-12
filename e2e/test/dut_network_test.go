@@ -216,14 +216,14 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, func() 
 		})
 	})
 
-	Context("Lease management", func() {
-		It("should add and remove a static lease via CLI", func() {
-			out, err := jmpShell("j", "dut-network", "add-lease",
-				"02:00:00:00:00:99", "192.168.200.99", "-n", "e2e-test")
+	Context("Address management", func() {
+		It("should add and remove an address entry via CLI", func() {
+			out, err := jmpShell("j", "dut-network", "add-address",
+				"192.168.200.99", "--mac", "02:00:00:00:00:99", "-n", "e2e-test")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring("Added"))
 
-			out, err = jmpShell("j", "dut-network", "remove-lease", "02:00:00:00:00:99")
+			out, err = jmpShell("j", "dut-network", "remove-address", "192.168.200.99")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring("Removed"))
 		})
