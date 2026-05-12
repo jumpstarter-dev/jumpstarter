@@ -93,7 +93,7 @@ async def _check_cr_instances(
             return {"error": f"CR instance check failed (exit {cr_returncode}): {cr_stderr or cr_stdout}"}
     except (json.JSONDecodeError, RuntimeError) as e:
         return {"error": f"CR instance check failed: {e}"}
-    return {}
+    return {"installed": False}
 
 
 async def check_jumpstarter_installation(
