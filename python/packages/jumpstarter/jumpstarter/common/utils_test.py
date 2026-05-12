@@ -2,7 +2,7 @@ import os
 import shutil
 import subprocess
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
