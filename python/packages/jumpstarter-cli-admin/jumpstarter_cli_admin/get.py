@@ -139,7 +139,7 @@ async def get_cluster(
             model_print(cluster_info, output)
         else:
             # List all clusters if no name provided
-            cluster_list = await list_clusters(type, kubectl, kind, minikube)
+            cluster_list = await list_clusters(type, kubectl, minikube)
             model_print(cluster_list, output)
     except click.ClickException:
         raise
@@ -159,7 +159,7 @@ async def get_cluster(
 async def get_clusters(type: str, kubectl: str, kind: str, minikube: str, output: OutputType):
     """List all Kubernetes clusters with Jumpstarter status"""
     try:
-        cluster_list = await list_clusters(type, kubectl, kind, minikube)
+        cluster_list = await list_clusters(type, kubectl, minikube)
 
         # Use model_print for all output formats
         model_print(cluster_list, output)

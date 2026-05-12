@@ -256,7 +256,6 @@ async def get_cluster_info(
 async def list_clusters(
     cluster_type_filter: str = "all",
     kubectl: str = "kubectl",
-    kind: str = "kind",
     minikube: str = "minikube",
 ) -> V1Alpha1ClusterList:
     """List all Kubernetes clusters with Jumpstarter status."""
