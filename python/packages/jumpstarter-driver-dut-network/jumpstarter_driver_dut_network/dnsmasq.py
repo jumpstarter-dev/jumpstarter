@@ -128,6 +128,7 @@ def write_config(
         f"pid-file={pid_file}",
         f"addn-hosts={hosts_path}",
         f"dhcp-hostsfile={dhcp_hosts_path}",
+        "dhcp-sequential-ip",
         "log-dhcp",
         "no-resolv",
         "no-hosts",
