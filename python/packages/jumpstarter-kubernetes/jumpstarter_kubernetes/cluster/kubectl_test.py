@@ -613,12 +613,28 @@ class TestListClusters:
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
-    async def test_list_clusters_custom_parameters(self, mock_get_contexts):
-        mock_get_contexts.return_value = []
+    @patch("jumpstarter_kubernetes.cluster.kubectl.get_cluster_info")
+    async def test_list_clusters_custom_parameters(self, mock_get_cluster_info, mock_get_contexts):
+        mock_get_contexts.return_value = [
+            {
+                "name": "ctx",
+                "cluster": "cluster",
+                "server": "https://server",
+                "user": "u",
+                "current": True,
+            },
+        ]
+        mock_get_cluster_info.return_value = V1Alpha1ClusterInfo(
+            name="ctx", cluster="cluster", server="https://server", user="u",
+            namespace="default", is_current=True, type="kind", accessible=True,
+            jumpstarter=V1Alpha1JumpstarterInstance(installed=False),
+        )
 
-        await list_clusters(kubectl="custom-kubectl", minikube="custom-minikube")
+        result = await list_clusters(kubectl="custom-kubectl", minikube="custom-minikube")
 
+        assert len(result.items) == 1
         mock_get_contexts.assert_called_once_with("custom-kubectl")
+        mock_get_cluster_info.assert_called_once_with("ctx", "custom-kubectl", "custom-minikube")
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.get_kubectl_contexts")
