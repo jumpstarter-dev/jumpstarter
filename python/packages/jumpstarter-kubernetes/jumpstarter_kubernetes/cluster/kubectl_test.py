@@ -394,6 +394,25 @@ class TestCheckJumpstarterInstallation:
         assert result.has_crds is True
         assert result.installed is False
 
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_check_jumpstarter_installation_cr_check_error(self, mock_run_command):
+        crds_response = {"items": [
+            {"metadata": {"name": "jumpstarters.operator.jumpstarter.dev"}},
+        ]}
+
+        mock_run_command.side_effect = [
+            (0, json.dumps(crds_response), ""),
+            (1, "", "forbidden: User cannot list resource"),
+        ]
+
+        result = await check_jumpstarter_installation("test-context")
+
+        assert result.has_crds is True
+        assert result.installed is False
+        assert result.error is not None
+        assert "forbidden" in result.error
+
 
 class TestGetClusterInfo:
     """Test cluster info retrieval."""
