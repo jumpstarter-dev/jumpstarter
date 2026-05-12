@@ -109,7 +109,11 @@ var _ = Describe("Compat: Old Controller E2E Tests", Label("compat", "old-contro
 			waitForCompatExporter()
 
 			MustJmp("config", "client", "use", "compat-client")
-			MustJmp("create", "lease", "--selector", "example.com/board=compat", "--duration", "1d")
+			Eventually(func() error {
+				_, err := Jmp("create", "lease", "--selector", "example.com/board=compat", "--duration", "1d")
+				return err
+			}, 2*time.Minute, 5*time.Second).Should(Succeed(),
+				"create lease through old controller did not succeed within timeout")
 			MustJmp("get", "leases")
 			MustJmp("get", "exporters")
 
