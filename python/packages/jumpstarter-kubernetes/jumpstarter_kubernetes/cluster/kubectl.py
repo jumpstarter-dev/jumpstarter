@@ -100,9 +100,10 @@ async def _check_cr_instances(
         if cr_returncode == 0:
             cr_data = json.loads(cr_stdout)
             if cr_data.get("items"):
+                cr_namespace = cr_data["items"][0].get("metadata", {}).get("namespace")
                 return {
                     "installed": True,
-                    "namespace": namespace or "unknown",
+                    "namespace": cr_namespace or namespace or "unknown",
                     "status": "installed",
                 }
         else:

@@ -241,7 +241,27 @@ class TestCheckCrInstances:
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
-    async def test_cr_instances_found_without_namespace(self, mock_run_command):
+    async def test_cr_instances_extracts_namespace_from_metadata(self, mock_run_command):
+        cr_response = {"items": [{"metadata": {"name": "jumpstarter", "namespace": "from-cr"}}]}
+        mock_run_command.return_value = (0, json.dumps(cr_response), "")
+
+        result = await _check_cr_instances("kubectl", "test-context", None)
+
+        assert result == {"installed": True, "namespace": "from-cr", "status": "installed"}
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_cr_instances_falls_back_to_parameter_namespace(self, mock_run_command):
+        cr_response = {"items": [{"metadata": {"name": "jumpstarter"}}]}
+        mock_run_command.return_value = (0, json.dumps(cr_response), "")
+
+        result = await _check_cr_instances("kubectl", "test-context", "param-ns")
+
+        assert result == {"installed": True, "namespace": "param-ns", "status": "installed"}
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_cr_instances_unknown_when_no_namespace_available(self, mock_run_command):
         cr_response = {"items": [{"metadata": {"name": "jumpstarter"}}]}
         mock_run_command.return_value = (0, json.dumps(cr_response), "")
 
