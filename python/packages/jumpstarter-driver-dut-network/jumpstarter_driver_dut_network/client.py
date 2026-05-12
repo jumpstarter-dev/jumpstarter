@@ -39,6 +39,10 @@ class DutNetworkClient(DriverClient):
         """List active nftables rules."""
         return self.call("get_nat_rules")
 
+    def ntp_status(self) -> dict:
+        """Get the status of the local NTP server."""
+        return self.call("ntp_status")
+
     def get_dns_entries(self) -> list[dict[str, str]]:
         """List configured DNS entries."""
         return self.call("get_dns_entries")
@@ -113,6 +117,15 @@ class DutNetworkClient(DriverClient):
                 click.echo(rules)
             else:
                 click.echo("No active NAT rules.")
+
+        @base.command("ntp-status")
+        def ntp_status():
+            """Show status of the local NTP server."""
+            result = self.ntp_status()
+            enabled = result.get("enabled", False)
+            running = result.get("running", False)
+            click.echo(f"NTP enabled: {enabled}")
+            click.echo(f"NTP running: {running}")
 
         @base.command("dns-entries")
         def dns_entries():
