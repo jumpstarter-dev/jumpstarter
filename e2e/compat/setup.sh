@@ -8,7 +8,7 @@
 # Environment variables:
 #   COMPAT_SCENARIO      - "old-controller" or "old-client" (required)
 #   COMPAT_CONTROLLER_TAG - Controller release tag for old-controller scenario (default: v0.8.1)
-#   COMPAT_CLIENT_VERSION - PyPI version for old-client scenario (default: 0.8.1)
+#   COMPAT_CLIENT_VERSION - PyPI version for old-client scenario (default: 0.7.4)
 
 set -euo pipefail
 
