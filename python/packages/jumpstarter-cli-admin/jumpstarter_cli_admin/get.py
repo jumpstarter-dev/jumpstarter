@@ -119,12 +119,11 @@ async def get_lease(
     "--type", type=click.Choice(["kind", "minikube", "remote", "all"]), default="all", help="Filter clusters by type"
 )
 @click.option("--kubectl", type=str, help="Path or name of kubectl executable", default="kubectl")
-@click.option("--kind", type=str, help="Path or name of kind executable", default="kind")
 @click.option("--minikube", type=str, help="Path or name of minikube executable", default="minikube")
 @opt_output_all
 @blocking
 async def get_cluster(
-    name: Optional[str], type: str, kubectl: str, kind: str, minikube: str, output: OutputType
+    name: Optional[str], type: str, kubectl: str, minikube: str, output: OutputType
 ):
     """Get information about a specific cluster or list all clusters"""
     try:
@@ -152,11 +151,10 @@ async def get_cluster(
     "--type", type=click.Choice(["kind", "minikube", "remote", "all"]), default="all", help="Filter clusters by type"
 )
 @click.option("--kubectl", type=str, help="Path or name of kubectl executable", default="kubectl")
-@click.option("--kind", type=str, help="Path or name of kind executable", default="kind")
 @click.option("--minikube", type=str, help="Path or name of minikube executable", default="minikube")
 @opt_output_all
 @blocking
-async def get_clusters(type: str, kubectl: str, kind: str, minikube: str, output: OutputType):
+async def get_clusters(type: str, kubectl: str, minikube: str, output: OutputType):
     """List all Kubernetes clusters with Jumpstarter status"""
     try:
         cluster_list = await list_clusters(type, kubectl, minikube)
