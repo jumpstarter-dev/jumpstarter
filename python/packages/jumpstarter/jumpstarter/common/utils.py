@@ -1,6 +1,10 @@
 import os
+import re
+import shlex
+import shutil
 import signal
 import sys
+import tempfile
 from contextlib import ExitStack, asynccontextmanager, contextmanager
 from datetime import timedelta
 from functools import partial
@@ -84,6 +88,172 @@ def _run_process(
     return process.wait()
 
 
+_SAFE_COMMAND_NAME = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def _validate_j_commands(j_commands: list[str] | None) -> list[str] | None:
+    if j_commands is None:
+        return None
+    return [cmd for cmd in j_commands if _SAFE_COMMAND_NAME.match(cmd)]
+
+
+def _resolve_cli_paths() -> tuple[str, str, str]:
+    jmp = shutil.which("jmp") or "jmp"
+    jmp_admin = shutil.which("jmp-admin") or "jmp-admin"
+    j = shutil.which("j") or "j"
+    return jmp, jmp_admin, j
+
+
+def _generate_shell_init(shell_name: str, use_profiles: bool, j_commands: list[str] | None = None) -> str:
+    j_commands = _validate_j_commands(j_commands)
+    jmp, jmp_admin, j = _resolve_cli_paths()
+    if shell_name.endswith("bash"):
+        lines = []
+        if use_profiles:
+            lines.append('[ -f ~/.bashrc ] && source ~/.bashrc')
+        lines.append(f'eval "$({jmp} completion bash 2>/dev/null)"')
+        lines.append(f'eval "$({jmp_admin} completion bash 2>/dev/null)"')
+        if j_commands:
+            cmds = " ".join(j_commands)
+            completion_fn = (
+                f'_j_completion() {{ [[ ${{COMP_CWORD}} -eq 1 ]]'
+                f' && COMPREPLY=($(compgen -W "{cmds}" -- "${{COMP_WORDS[COMP_CWORD]}}")); }}'
+            )
+            lines.append(completion_fn)
+            lines.append("complete -o default -F _j_completion j")
+        else:
+            lines.append(f'eval "$({j} completion bash 2>/dev/null)"')
+        return "\n".join(lines) + "\n"
+
+    elif shell_name.endswith("zsh"):
+        lines = []
+        if use_profiles:
+            lines.append('[ -f ~/.zshrc ] && source ~/.zshrc')
+        lines.append("autoload -Uz compinit && compinit")
+        lines.append(f'eval "$({jmp} completion zsh 2>/dev/null)"')
+        lines.append(f'eval "$({jmp_admin} completion zsh 2>/dev/null)"')
+        if j_commands:
+            cmds = " ".join(j_commands)
+            lines.append(f"compdef '_arguments \"1:subcommand:({cmds})\"' j")
+        else:
+            lines.append(f'eval "$({j} completion zsh 2>/dev/null)"')
+        return "\n".join(lines) + "\n"
+
+    elif shell_name.endswith("fish"):
+        lines = []
+        lines.append(f"{jmp} completion fish 2>/dev/null | source")
+        lines.append(f"{jmp_admin} completion fish 2>/dev/null | source")
+        if j_commands:
+            for cmd in j_commands:
+                lines.append(f"complete -c j -f -n '__fish_use_subcommand' -a '{cmd}'")
+        else:
+            lines.append(f"{j} completion fish 2>/dev/null | source")
+        return "\n".join(lines) + "\n"
+
+    return ""
+
+
+def _launch_bash(shell, init_content, use_profiles, common_env, context, lease):
+    env = common_env | {
+        "_JMP_SHELL_CONTEXT": context,
+        "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
+    }
+    cmd = [shell]
+    if not init_content:
+        if not use_profiles:
+            cmd.extend(["--norc", "--noprofile"])
+        return _run_process(cmd, env, lease)
+
+    init_content += (
+        f'PS1="{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}'
+        '$_JMP_SHELL_CONTEXT'
+        f' {ANSI_YELLOW}➤{ANSI_RESET} "\n'
+    )
+    init_file = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False)
+    try:
+        init_file.write(init_content)
+        init_file.close()
+        cmd.extend(["--rcfile", init_file.name])
+        return _run_process(cmd, env, lease)
+    finally:
+        try:
+            os.unlink(init_file.name)
+        except OSError:
+            pass
+
+
+def _launch_fish(shell, init_content, common_env, context, lease):
+    fish_env = common_env | {"_JMP_SHELL_CONTEXT": context}
+    fish_fn = (
+        "function fish_prompt; "
+        "set_color grey; "
+        'printf "%s" (basename $PWD); '
+        "set_color yellow; "
+        'printf "⚡"; '
+        "set_color white; "
+        'printf "%s" "$_JMP_SHELL_CONTEXT"; '
+        "set_color yellow; "
+        'printf "➤ "; '
+        "set_color normal; "
+        "end"
+    )
+    init_cmd = fish_fn
+    if not init_content:
+        return _run_process([shell, "--init-command", init_cmd], fish_env, lease)
+
+    init_file = tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False)
+    try:
+        init_file.write(init_content)
+        init_file.close()
+        fish_env["_JMP_SHELL_INIT"] = init_file.name
+        init_cmd += '; source "$_JMP_SHELL_INIT"'
+        return _run_process([shell, "--init-command", init_cmd], fish_env, lease)
+    finally:
+        try:
+            os.unlink(init_file.name)
+        except OSError:
+            pass
+
+
+def _launch_zsh(shell, init_content, common_env, context, lease, use_profiles):
+    env = common_env | {
+        "_JMP_SHELL_CONTEXT": context,
+        "PS1": f"%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f ",
+    }
+    if "HISTFILE" not in env:
+        env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
+    cmd = [shell]
+    tmpdir = None
+    if init_content:
+        init_content += (
+            'PROMPT="%F{8}%1~ %F{yellow}⚡%F{white}'
+            '${_JMP_SHELL_CONTEXT} %F{yellow}➤%f "\n'
+        )
+        tmpdir = tempfile.mkdtemp()
+        original_zdotdir = env.get("ZDOTDIR", os.path.expanduser("~"))
+        original_zshenv = os.path.join(original_zdotdir, ".zshenv")
+        zshenv_path = os.path.join(tmpdir, ".zshenv")
+        with open(zshenv_path, "w") as f:
+            f.write(f"[ -f {shlex.quote(original_zshenv)} ] && source {shlex.quote(original_zshenv)}\n")
+        zshrc_path = os.path.join(tmpdir, ".zshrc")
+        with open(zshrc_path, "w") as f:
+            f.write(f"ZDOTDIR={shlex.quote(original_zdotdir)}\n")
+            f.write(init_content)
+        cmd.extend(["--rcs", "-o", "inc_append_history", "-o", "share_history"])
+        env["ZDOTDIR"] = tmpdir
+    else:
+        if not use_profiles:
+            cmd.append("--no-rcs")
+        cmd.extend(["-o", "inc_append_history", "-o", "share_history"])
+    try:
+        return _run_process(cmd, env, lease)
+    finally:
+        if tmpdir:
+            import shutil
+
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 def launch_shell(
     host: str,
     context: str,
@@ -95,29 +265,20 @@ def launch_shell(
     lease=None,
     insecure: bool = False,
     passphrase: str | None = None,
+    j_commands: list[str] | None = None,
 ) -> int:
-    """Launch a shell with a custom prompt indicating the exporter type.
+    """Launch an interactive shell with Jumpstarter environment and completions.
 
     Args:
-        host: The jumpstarter host path
-        context: The context of the shell (e.g. "local" or exporter name)
-        allow: List of allowed drivers
-        unsafe: Whether to allow drivers outside of the allow list
-        use_profiles: Whether to load shell profile files
-        command: Optional command to run instead of launching an interactive shell
-        lease: Optional Lease object to set up lease ending callback
-
-    Returns:
-        The exit code of the shell or command process
+        j_commands: Subcommand names available for ``j`` shell completion.
+            When None, completion falls back to the ``j`` CLI's own completion.
     """
-
     shell = os.environ.get("SHELL", "bash")
     shell_name = os.path.basename(shell)
-
     common_env = os.environ | {
         JUMPSTARTER_HOST: host,
         JMP_DRIVERS_ALLOW: "UNSAFE" if unsafe else ",".join(allow),
-        "_JMP_SUPPRESS_DRIVER_WARNINGS": "1",  # Already warned during client initialization
+        "_JMP_SUPPRESS_DRIVER_WARNINGS": "1",
     }
     if insecure:
         common_env = common_env | {JMP_GRPC_INSECURE: "1"}
@@ -127,44 +288,15 @@ def launch_shell(
     if command:
         return _run_process(list(command), common_env, lease)
 
+    init_content = _generate_shell_init(shell_name, use_profiles, j_commands)
+
+    if shell_name.endswith("zsh"):
+        return _launch_zsh(shell, init_content, common_env, context, lease, use_profiles)
+
     if shell_name.endswith("bash"):
-        env = common_env | {
-            "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
-        }
-        cmd = [shell]
-        if not use_profiles:
-            cmd.extend(["--norc", "--noprofile"])
-        return _run_process(cmd, env, lease)
+        return _launch_bash(shell, init_content, use_profiles, common_env, context, lease)
 
-    elif shell_name == "fish":
-        fish_fn = (
-            "function fish_prompt; "
-            "set_color grey; "
-            'printf "%s" (basename $PWD); '
-            "set_color yellow; "
-            'printf "⚡"; '
-            "set_color white; "
-            f'printf "{context}"; '
-            "set_color yellow; "
-            'printf "➤ "; '
-            "set_color normal; "
-            "end"
-        )
-        cmd = [shell, "--init-command", fish_fn]
-        return _run_process(cmd, common_env, lease)
+    if shell_name.endswith("fish"):
+        return _launch_fish(shell, init_content, common_env, context, lease)
 
-    elif shell_name == "zsh":
-        env = common_env | {
-            "PS1": f"%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f ",
-        }
-        if "HISTFILE" not in env:
-            env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")
-
-        cmd = [shell]
-        if not use_profiles:
-            cmd.append("--no-rcs")
-        cmd.extend(["-o", "inc_append_history", "-o", "share_history"])
-        return _run_process(cmd, env, lease)
-
-    else:
-        return _run_process([shell], common_env, lease)
+    return _run_process([shell], common_env, lease)

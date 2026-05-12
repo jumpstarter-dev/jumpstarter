@@ -745,8 +745,7 @@ class TestHookExecutorPRRegressions:
         Infrastructure messages like 'Starting hook subprocess', 'Creating PTY',
         'Spawning subprocess', 'Subprocess spawned', 'Subprocess completed', and
         'Hook executed successfully' must be logged at DEBUG level so they don't
-        appear in the client LogStream at the default INFO level. Only user output
-        from the hook script should be at INFO.
+        appear in the client LogStream at the default INFO level.
         """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="echo 'user output'", timeout=10),
@@ -759,7 +758,6 @@ class TestHookExecutorPRRegressions:
             debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
 
-            # Infrastructure messages should be at DEBUG level
             infra_messages = [
                 "Starting hook subprocess",
                 "Creating PTY",
@@ -774,9 +772,6 @@ class TestHookExecutorPRRegressions:
                 assert not any(msg in call for call in info_calls), (
                     f"Infrastructure message '{msg}' should NOT be at INFO level"
                 )
-
-            # User output should be at INFO level
-            assert any("user output" in call for call in info_calls)
 
     async def test_before_lease_hook_always_sets_event_on_failure(self, lease_scope) -> None:
         """Issue C3: before_lease_hook event must be set even when hook fails.

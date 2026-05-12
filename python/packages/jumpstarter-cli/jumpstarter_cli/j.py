@@ -1,12 +1,15 @@
 import concurrent.futures._base
+import os
 import sys
 from contextlib import ExitStack
 from typing import cast
 
+import anyio
 import click
 from anyio import create_task_group, get_cancelled_exc_class, run, to_thread
 from anyio.from_thread import BlockingPortal
 from click.exceptions import Exit as ClickExit
+from jumpstarter_cli_common.completion import make_completion_command
 from jumpstarter_cli_common.exceptions import (
     ClickExceptionRed,
     async_handle_exceptions,
@@ -18,6 +21,29 @@ from rich import traceback
 
 from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
 from jumpstarter.utils.env import env_async
+
+j_completion = make_completion_command(lambda: click.Group("j"), "j", "_J_COMPLETE")
+
+
+_COMPLETION_TIMEOUT_SECONDS = 5
+
+
+async def _j_shell_complete():
+    try:
+        with anyio.fail_after(_COMPLETION_TIMEOUT_SECONDS):
+            async with BlockingPortal() as portal:
+                with ExitStack() as stack:
+                    async with env_async(portal, stack) as client:
+
+                        def _run_completion():
+                            try:
+                                client.cli()(standalone_mode=False)
+                            except SystemExit:
+                                pass
+
+                        await to_thread.run_sync(_run_completion, abandon_on_cancel=True)
+    except Exception:
+        pass
 
 
 async def j_async():
@@ -60,6 +86,12 @@ async def j_async():
 
 def j():
     traceback.install()
+    if len(sys.argv) >= 2 and sys.argv[1] == "completion":
+        j_completion(args=sys.argv[2:])
+        return
+    if "_J_COMPLETE" in os.environ:
+        run(_j_shell_complete)
+        return
     run(j_async)
 
 
