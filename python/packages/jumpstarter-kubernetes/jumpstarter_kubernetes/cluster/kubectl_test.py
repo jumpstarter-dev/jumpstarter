@@ -10,6 +10,7 @@ from jumpstarter_kubernetes.cluster.kubectl import (
     CrInstanceNotFound,
     CrInstanceSuccess,
     KubectlContext,
+    _apply_cr_result,
     _check_cr_instances,
     check_jumpstarter_installation,
     check_kubernetes_access,
@@ -340,6 +341,47 @@ class TestCheckCrInstances:
         assert "CR instance check failed" in result["error"]
         assert "kubectl not found" in result["error"]
         assert result["installed"] is False
+
+
+class TestApplyCrResult:
+    """Test _apply_cr_result uses type-narrowed key access."""
+
+    def test_apply_cr_result_success_uses_direct_key_access(self):
+        result_data = {"installed": False, "namespace": None, "status": None, "error": None}
+        cr_result = CrInstanceSuccess(installed=True, namespace="test-ns", status="installed")
+
+        _apply_cr_result(result_data, cr_result)
+
+        assert result_data["installed"] is True
+        assert result_data["namespace"] == "test-ns"
+        assert result_data["status"] == "installed"
+
+    def test_apply_cr_result_rejects_malformed_success_missing_namespace(self):
+        result_data = {"installed": False, "namespace": None, "status": None, "error": None}
+        malformed = {"installed": True}
+
+        with pytest.raises(KeyError):
+            _apply_cr_result(result_data, malformed)
+
+    def test_apply_cr_result_error_sets_error_field(self):
+        result_data = {"installed": False, "namespace": None, "status": None, "error": None}
+        cr_result = CrInstanceError(installed=False, error="something went wrong")
+
+        _apply_cr_result(result_data, cr_result)
+
+        assert result_data["error"] == "something went wrong"
+        assert result_data["installed"] is False
+
+    def test_apply_cr_result_not_found_leaves_data_unchanged(self):
+        result_data = {"installed": False, "namespace": None, "status": None, "error": None}
+        cr_result = CrInstanceNotFound(installed=False)
+
+        _apply_cr_result(result_data, cr_result)
+
+        assert result_data["installed"] is False
+        assert result_data["namespace"] is None
+        assert result_data["status"] is None
+        assert result_data["error"] is None
 
 
 class TestCheckJumpstarterInstallation:
