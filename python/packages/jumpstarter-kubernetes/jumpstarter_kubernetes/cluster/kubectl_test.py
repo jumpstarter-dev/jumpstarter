@@ -181,6 +181,26 @@ class TestGetKubectlContexts:
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_get_kubectl_contexts_current_field_is_bool(self, mock_run_command):
+        kubectl_config = {
+            "current-context": "ctx-a",
+            "contexts": [
+                {"name": "ctx-a", "context": {"cluster": "c", "user": "u"}},
+                {"name": "ctx-b", "context": {"cluster": "c", "user": "u"}},
+            ],
+            "clusters": [{"name": "c", "cluster": {"server": "https://s"}}],
+        }
+        mock_run_command.return_value = (0, json.dumps(kubectl_config), "")
+
+        result = await get_kubectl_contexts()
+
+        assert isinstance(result[0]["current"], bool)
+        assert result[0]["current"] is True
+        assert isinstance(result[1]["current"], bool)
+        assert result[1]["current"] is False
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
     async def test_get_kubectl_contexts_custom_kubectl(self, mock_run_command):
         kubectl_config = {"contexts": [], "clusters": []}
         mock_run_command.return_value = (0, json.dumps(kubectl_config), "")

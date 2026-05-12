@@ -1,7 +1,7 @@
 """Kubectl operations for cluster management."""
 
 import json
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from ..clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
 from ..exceptions import JumpstarterKubernetesError
@@ -22,7 +22,7 @@ async def check_kubernetes_access(context: Optional[str] = None, kubectl: str = 
         return False
 
 
-async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, str]]:
+async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, Any]]:
     """Get all kubectl contexts."""
     contexts = []
 
