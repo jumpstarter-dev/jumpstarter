@@ -51,7 +51,10 @@ def validate_cluster_type_selection(
 
 
 async def delete_cluster_by_name(  # noqa: C901
-    cluster_name: str, cluster_type: Optional[str] = None, force: bool = False, callback: Optional[OutputCallback] = None
+    cluster_name: str,
+    cluster_type: Optional[str] = None,
+    force: bool = False,
+    callback: Optional[OutputCallback] = None,
 ) -> None:
     """Delete a cluster by name, with auto-detection if type not specified."""
     if callback is None:

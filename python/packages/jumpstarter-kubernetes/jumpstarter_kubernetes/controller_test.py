@@ -1,6 +1,5 @@
 """Tests for controller version resolution."""
 
-import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
