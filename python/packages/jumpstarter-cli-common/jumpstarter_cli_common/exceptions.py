@@ -4,7 +4,6 @@ import ssl
 import types
 from functools import wraps
 from types import TracebackType
-from typing import NoReturn
 
 import click
 
@@ -205,53 +204,87 @@ def handle_exceptions(func):
 
 
 def _handle_connection_error_with_reauth(exc, login_func):
-    """Handle ConnectionError with reauthentication logic."""
+    """Handle ConnectionError with reauthentication logic.
+
+    Returns True if re-auth succeeded and the caller should retry.
+    Raises if re-auth is not applicable or fails.
+    """
     if "expired" in str(exc).lower():
-        click.echo(click.style("Token is expired, triggering re-authentication", fg="red"))
         config = exc.get_config()
         login_func(config)
-        raise ClickExceptionRed("Please try again now") from None
+        return True
     else:
         raise ClickExceptionRed(str(exc)) from None
 
 
 def _handle_single_exception_with_reauth(exc, login_func):
-    """Handle a single exception (may raise)."""
+    """Handle a single exception (may raise).
+
+    Returns True if re-auth succeeded and the caller should retry.
+    """
     if isinstance(exc, ConnectionError):
-        _handle_connection_error_with_reauth(exc, login_func)
+        return _handle_connection_error_with_reauth(exc, login_func)
     elif cli_exc := _map_cli_exception(exc):
         raise cli_exc from None
-    # Not handled: fall through
+    return False
 
 
-def _handle_exception_group_with_reauth(eg, login_func) -> NoReturn:
-    """Handle exceptions wrapped in BaseExceptionGroup."""
+def _handle_exception_group_with_reauth(eg, login_func):
+    """Handle exceptions wrapped in BaseExceptionGroup.
+
+    Returns True if re-auth succeeded and the caller should retry.
+    """
     for exc in leaf_exceptions(eg, fix_tracebacks=False):
-        _handle_single_exception_with_reauth(exc, login_func)
+        if _handle_single_exception_with_reauth(exc, login_func):
+            return True
     # If no handled exceptions, re-raise the original group
     raise eg
 
 
+def _invoke_with_mapped_exceptions(func, *args, **kwargs):
+    """Call func and translate any exception through _map_cli_exception."""
+    try:
+        return func(*args, **kwargs)
+    except Exception as e:
+        if cli_exc := _map_cli_exception(e):
+            raise cli_exc from None
+        raise
+    except KeyboardInterrupt as e:
+        if cli_exc := _map_cli_exception(e):
+            raise cli_exc from None
+        raise
+
+
+def _try_reauth(exc, login_func):
+    """Attempt re-authentication if *exc* is a token-expired error.
+
+    Returns True if re-auth succeeded and the caller should retry.
+    Raises a mapped CLI exception or re-raises *exc* otherwise.
+    """
+    if isinstance(exc, BaseExceptionGroup):
+        return _handle_exception_group_with_reauth(exc, login_func)
+    if isinstance(exc, (ConnectionError, JumpstarterException, click.ClickException)):
+        return _handle_single_exception_with_reauth(exc, login_func)
+    if cli_exc := _map_cli_exception(exc):
+        raise cli_exc from None
+    raise exc
+
+
 def handle_exceptions_with_reauthentication(login_func):
-    """Decorator to handle exceptions in blocking functions, including those wrapped in BaseExceptionGroup."""
+    """Decorator to handle exceptions in blocking functions, including those wrapped in BaseExceptionGroup.
+
+    When the wrapped function raises a token-expired error, the decorator re-authenticates
+    via login_func and retries the function exactly once.
+    """
 
     def decorator(func):
         @wraps(func)
         def wrapped(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
-            except BaseExceptionGroup as eg:
-                _handle_exception_group_with_reauth(eg, login_func)
-            except (ConnectionError, JumpstarterException, click.ClickException) as e:
-                _handle_single_exception_with_reauth(e, login_func)
-            except Exception as e:
-                if cli_exc := _map_cli_exception(e):
-                    raise cli_exc from None
-                raise
-            except KeyboardInterrupt as e:
-                if cli_exc := _map_cli_exception(e):
-                    raise cli_exc from None
-                raise
+            except BaseException as exc:
+                if _try_reauth(exc, login_func):
+                    return _invoke_with_mapped_exceptions(func, *args, **kwargs)
 
         return wrapped
 
