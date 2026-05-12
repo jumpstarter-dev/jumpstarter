@@ -238,7 +238,7 @@ async def get_cluster_info(
             jumpstarter=jumpstarter_info,
         )
 
-    except (RuntimeError, json.JSONDecodeError, JumpstarterKubernetesError) as e:
+    except (RuntimeError, JumpstarterKubernetesError) as e:
         return V1Alpha1ClusterInfo(
             name=context,
             cluster="unknown",
@@ -275,7 +275,7 @@ async def list_clusters(
 
         return V1Alpha1ClusterList(items=cluster_infos)
 
-    except (RuntimeError, json.JSONDecodeError, JumpstarterKubernetesError) as e:
+    except (RuntimeError, JumpstarterKubernetesError) as e:
         error_cluster = V1Alpha1ClusterInfo(
             name="error",
             cluster="error",
