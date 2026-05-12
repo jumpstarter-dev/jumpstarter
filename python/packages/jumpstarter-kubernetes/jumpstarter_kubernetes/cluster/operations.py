@@ -51,7 +51,7 @@ def validate_cluster_type_selection(
 
 
 async def delete_cluster_by_name(  # noqa: C901
-    cluster_name: str, cluster_type: Optional[str] = None, force: bool = False, callback: OutputCallback = None
+    cluster_name: str, cluster_type: Optional[str] = None, force: bool = False, callback: Optional[OutputCallback] = None
 ) -> None:
     """Delete a cluster by name, with auto-detection if type not specified."""
     if callback is None:
@@ -125,7 +125,7 @@ async def create_cluster_and_install(  # noqa: C901
     basedomain: Optional[str] = None,
     grpc_endpoint: Optional[str] = None,
     router_endpoint: Optional[str] = None,
-    callback: OutputCallback = None,
+    callback: Optional[OutputCallback] = None,
     k3s_ssh_host: Optional[str] = None,
     operator_installer: Optional[str] = None,
 ) -> None:
@@ -217,7 +217,7 @@ async def create_cluster_only(
     kind: str,
     minikube: str,
     custom_certs: Optional[str] = None,
-    callback: OutputCallback = None,
+    callback: Optional[OutputCallback] = None,
 ) -> None:
     """Create a cluster without installing Jumpstarter."""
     await create_cluster_and_install(
