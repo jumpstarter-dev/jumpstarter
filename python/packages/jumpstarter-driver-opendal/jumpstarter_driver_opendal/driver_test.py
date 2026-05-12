@@ -1,5 +1,6 @@
 import hashlib
 import os
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from random import randbytes
@@ -323,6 +324,73 @@ def test_copy_and_rename_tracking(tmp_path):
     assert "copied_dir" in created_paths
     assert "renamed_dir" in created_paths
     assert len(created_paths) == 4
+
+
+@contextmanager
+def _http_path_recording_server():
+    """Start an HTTP server that records request paths and serves minimal responses."""
+    received_paths = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("content-length", "4")
+            self.end_headers()
+
+        def do_GET(self):
+            received_paths.append(self.path)
+            self.send_response(200)
+            self.send_header("content-length", "4")
+            self.end_headers()
+            self.wfile.write(b"data")
+
+        def log_message(self, format, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield port, received_paths
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def _assert_encoding_preserved(received_paths):
+    assert len(received_paths) >= 1
+    assert "%40" in received_paths[-1], (
+        f"Server received decoded path {received_paths[-1]!r} — "
+        f"original_url bypass did not activate with explicit operator"
+    )
+
+
+def test_write_from_path_http_with_explicit_operator(tmp_path):
+    """write_from_path must use original_url bypass even when operator is passed explicitly.
+
+    Callers like RideSX resolve the operator themselves via operator_for_path() and
+    pass it in. The original_url detection must happen before the `if operator is None`
+    guard, otherwise the HTTP URL goes through OpenDAL presign_read which mangles it
+    into a double-host path like endpoint/https%3A/host/path.
+    """
+    with serve(Opendal(scheme="fs", kwargs={"root": str(tmp_path)})) as client:
+        with _http_path_recording_server() as (port, received_paths):
+            url = f"http://127.0.0.1:{port}/path%40encoded/file.bin"
+            explicit_operator = Operator("http", endpoint=f"http://127.0.0.1:{port}")
+            client.write_from_path("dest.bin", url, operator=explicit_operator)
+            _assert_encoding_preserved(received_paths)
+
+
+def test_flash_http_with_explicit_operator():
+    """FlasherClient.flash must use original_url bypass even when operator is passed explicitly."""
+    with serve(MockFlasher()) as flasher:
+        with _http_path_recording_server() as (port, received_paths):
+            url = f"http://127.0.0.1:{port}/path%40encoded/file.bin"
+            explicit_operator = Operator("http", endpoint=f"http://127.0.0.1:{port}")
+            flasher.flash(url, operator=explicit_operator)
+            _assert_encoding_preserved(received_paths)
 
 
 def test_flash_http_url_preserves_percent_encoding():
