@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from jumpstarter_kubernetes.cluster.kubectl import (
+    KubectlContext,
     _check_cr_instances,
     check_jumpstarter_installation,
     check_kubernetes_access,
@@ -208,6 +209,21 @@ class TestGetKubectlContexts:
         await get_kubectl_contexts(kubectl="custom-kubectl")
 
         mock_run_command.assert_called_once_with(["custom-kubectl", "config", "view", "-o", "json"])
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_get_kubectl_contexts_has_all_typed_keys(self, mock_run_command):
+        kubectl_config = {
+            "current-context": "ctx",
+            "contexts": [{"name": "ctx", "context": {"cluster": "c", "user": "u"}}],
+            "clusters": [{"name": "c", "cluster": {"server": "https://s"}}],
+        }
+        mock_run_command.return_value = (0, json.dumps(kubectl_config), "")
+
+        result = await get_kubectl_contexts()
+
+        expected_keys = set(KubectlContext.__annotations__.keys())
+        assert set(result[0].keys()) == expected_keys
 
 
 class TestCheckCrInstances:
