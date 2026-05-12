@@ -6,6 +6,9 @@ from unittest.mock import patch
 import pytest
 
 from jumpstarter_kubernetes.cluster.kubectl import (
+    CrInstanceError,
+    CrInstanceNotFound,
+    CrInstanceSuccess,
     KubectlContext,
     _check_cr_instances,
     check_jumpstarter_installation,
@@ -246,6 +249,7 @@ class TestCheckCrInstances:
         result = await _check_cr_instances("kubectl", "test-context", "custom-ns")
 
         assert result == {"installed": True, "namespace": "custom-ns", "status": "installed"}
+        assert set(result.keys()) == set(CrInstanceSuccess.__annotations__.keys())
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
@@ -285,7 +289,19 @@ class TestCheckCrInstances:
 
         result = await _check_cr_instances("kubectl", "test-context", None)
 
-        assert result == {"installed": False, "status": "no-cr-instance"}
+        assert result == {"installed": False}
+        assert set(result.keys()) == set(CrInstanceNotFound.__annotations__.keys())
+
+    @pytest.mark.asyncio
+    @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
+    async def test_cr_instances_missing_items_key(self, mock_run_command):
+        cr_response = {"kind": "JumpstarterList"}
+        mock_run_command.return_value = (0, json.dumps(cr_response), "")
+
+        result = await _check_cr_instances("kubectl", "test-context", None)
+
+        assert result == {"installed": False}
+        assert set(result.keys()) == set(CrInstanceNotFound.__annotations__.keys())
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
@@ -294,6 +310,7 @@ class TestCheckCrInstances:
 
         result = await _check_cr_instances("kubectl", "test-context", None)
 
+        assert set(result.keys()) == set(CrInstanceError.__annotations__.keys())
         assert "error" in result
         assert "exit 1" in result["error"]
         assert "forbidden" in result["error"]
@@ -306,6 +323,7 @@ class TestCheckCrInstances:
 
         result = await _check_cr_instances("kubectl", "test-context", None)
 
+        assert set(result.keys()) == set(CrInstanceError.__annotations__.keys())
         assert "error" in result
         assert "CR instance check failed" in result["error"]
         assert result["installed"] is False
@@ -317,6 +335,7 @@ class TestCheckCrInstances:
 
         result = await _check_cr_instances("kubectl", "test-context", None)
 
+        assert set(result.keys()) == set(CrInstanceError.__annotations__.keys())
         assert "error" in result
         assert "CR instance check failed" in result["error"]
         assert "kubectl not found" in result["error"]
@@ -460,6 +479,7 @@ class TestCheckJumpstarterInstallation:
 
         assert result.has_crds is True
         assert result.installed is False
+        assert result.error is None
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")

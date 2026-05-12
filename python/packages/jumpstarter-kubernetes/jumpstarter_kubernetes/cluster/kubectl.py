@@ -1,7 +1,7 @@
 """Kubectl operations for cluster management."""
 
 import json
-from typing import List, Optional, TypedDict
+from typing import List, Literal, Optional, TypedDict, Union
 
 from ..clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
 from ..exceptions import JumpstarterKubernetesError
@@ -82,11 +82,22 @@ async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[KubectlContext]
         raise KubeconfigError(f"Error listing kubectl contexts: {e}") from e
 
 
-class CrInstanceResult(TypedDict, total=False):
-    installed: bool
+class CrInstanceSuccess(TypedDict):
+    installed: Literal[True]
     namespace: str
     status: str
+
+
+class CrInstanceError(TypedDict):
+    installed: Literal[False]
     error: str
+
+
+class CrInstanceNotFound(TypedDict):
+    installed: Literal[False]
+
+
+CrInstanceResult = Union[CrInstanceSuccess, CrInstanceError, CrInstanceNotFound]
 
 
 async def _check_cr_instances(
@@ -101,19 +112,36 @@ async def _check_cr_instances(
             cr_data = json.loads(cr_stdout)
             if cr_data.get("items"):
                 cr_namespace = cr_data["items"][0].get("metadata", {}).get("namespace")
-                return {
-                    "installed": True,
-                    "namespace": cr_namespace or namespace or "unknown",
-                    "status": "installed",
-                }
+                return CrInstanceSuccess(
+                    installed=True,
+                    namespace=cr_namespace or namespace or "unknown",
+                    status="installed",
+                )
+            else:
+                return CrInstanceNotFound(installed=False)
         else:
-            return {
-                "installed": False,
-                "error": f"CR instance check failed (exit {cr_returncode}): {cr_stderr or cr_stdout}",
-            }
+            return CrInstanceError(
+                installed=False,
+                error=f"CR instance check failed (exit {cr_returncode}): {cr_stderr or cr_stdout}",
+            )
     except (json.JSONDecodeError, RuntimeError) as e:
-        return {"installed": False, "error": f"CR instance check failed: {e}"}
-    return {"installed": False, "status": "no-cr-instance"}
+        return CrInstanceError(installed=False, error=f"CR instance check failed: {e}")
+
+
+def _parse_json_with_prefix(stdout: str) -> dict:
+    json_start = stdout.find("{")
+    if json_start >= 0:
+        return json.loads(stdout[json_start:])
+    return json.loads(stdout)
+
+
+def _apply_cr_result(result_data: dict, cr_result: CrInstanceResult) -> None:
+    if cr_result.get("installed"):
+        result_data["installed"] = True
+        result_data["namespace"] = cr_result.get("namespace")
+        result_data["status"] = cr_result.get("status")
+    elif "error" in cr_result:
+        result_data["error"] = cr_result["error"]
 
 
 async def check_jumpstarter_installation(
@@ -140,25 +168,19 @@ async def check_jumpstarter_installation(
             result_data["error"] = f"Command failed: {stderr or stdout}"
             return V1Alpha1JumpstarterInstance(**result_data)
 
-        json_start = stdout.find("{")
-        if json_start >= 0:
-            json_output = stdout[json_start:]
-            crds = json.loads(json_output)
-        else:
-            crds = json.loads(stdout)
-        jumpstarter_crds = []
-        for item in crds.get("items", []):
-            name = item.get("metadata", {}).get("name", "")
-            if "jumpstarter.dev" in name:
-                jumpstarter_crds.append(name)
+        crds = _parse_json_with_prefix(stdout)
+        jumpstarter_crds = [
+            item.get("metadata", {}).get("name", "")
+            for item in crds.get("items", [])
+            if "jumpstarter.dev" in item.get("metadata", {}).get("name", "")
+        ]
 
         if jumpstarter_crds:
             result_data["has_crds"] = True
 
             if "jumpstarters.operator.jumpstarter.dev" in jumpstarter_crds:
-                result_data.update(
-                    await _check_cr_instances(kubectl, context, namespace)
-                )
+                cr_result = await _check_cr_instances(kubectl, context, namespace)
+                _apply_cr_result(result_data, cr_result)
 
     except json.JSONDecodeError as e:
         result_data["error"] = f"Failed to parse output: {e}"
