@@ -273,7 +273,12 @@ def launch_shell(
     passphrase: str | None = None,
     j_commands: list[str] | None = None,
 ) -> int:
-    """Launch an interactive shell with Jumpstarter environment and completions."""
+    """Launch an interactive shell with Jumpstarter environment and completions.
+
+    Args:
+        j_commands: Subcommand names available for ``j`` shell completion.
+            When None, completion falls back to the ``j`` CLI's own completion.
+    """
     shell = os.environ.get("SHELL", "bash")
     shell_name = os.path.basename(shell)
     common_env = os.environ | {
