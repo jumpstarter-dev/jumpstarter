@@ -50,7 +50,7 @@ export:
       dhcp_enabled: true
       dhcp_range_start: "192.168.100.100"
       dhcp_range_end: "192.168.100.200"
-      static_leases:
+      addresses:
         - mac: "8a:12:4e:25:f4:8e"
           ip: "192.168.100.10"
           hostname: "sa8775p"
@@ -59,7 +59,7 @@ export:
 
 ### 1:1 NAT
 
-Each DUT gets a dedicated public IP alias via a per-lease `public_ip` field, enabling inbound connections from the LAN. DUTs without a `public_ip` fall back to masquerade for outbound traffic.
+Each DUT gets a dedicated public IP alias via a per-entry `public_ip` field, enabling inbound connections from the LAN. Entries without a `public_ip` fall back to masquerade for outbound traffic. Entries without a `mac` are used for 1:1 NAT mappings only and are excluded from DHCP static lease generation.
 
 ```yaml
 export:
@@ -71,7 +71,7 @@ export:
       gateway_ip: "192.168.100.1"
       upstream_interface: "enp2s0"
       nat_mode: "1to1"
-      static_leases:
+      addresses:
         - mac: "8a:12:4e:25:f4:8e"
           ip: "192.168.100.10"
           hostname: "sa8775p-1"
@@ -80,6 +80,10 @@ export:
           ip: "192.168.100.11"
           hostname: "sa8775p-2"
           public_ip: "10.26.28.85"
+        # Entry without MAC: 1:1 NAT mapping only, no DHCP static lease
+        - ip: "192.168.100.12"
+          hostname: "nxp-board-03"
+          public_ip: "10.26.28.86"
 ```
 
 ### Disabled NAT (DHCP only)
@@ -125,21 +129,21 @@ export:
 | `dhcp_enabled` | bool | `true` | Whether to run DHCP on the interface |
 | `dhcp_range_start` | str | `192.168.100.100` | DHCP dynamic range start |
 | `dhcp_range_end` | str | `192.168.100.200` | DHCP dynamic range end |
-| `static_leases` | list | `[]` | Static DHCP leases: `{mac, ip, hostname, public_ip?}` |
+| `addresses` | list | `[]` | Address entries: `{ip, mac?, hostname?, public_ip?}`. Entries with `mac` generate DHCP static leases; entries without `mac` are used for 1:1 NAT only. |
 | `dns_servers` | list | `[8.8.8.8, 8.8.4.4]` | DNS servers for DHCP clients |
 | `dns_entries` | list | `[]` | Custom DNS records: `{hostname, ip}` |
 | `state_dir` | str | `/var/lib/jumpstarter/dut-network-{interface}/` | Directory for dnsmasq state files |
 | `nat_mode` | str | `masquerade` | NAT mode: `masquerade`, `1to1`, `disabled`, or `none` |
 | `public_interface` | str | None | Interface for IP alias (defaults to upstream) |
 
-### Static Lease Fields
+### Address Entry Fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `mac` | yes | MAC address of the DUT |
 | `ip` | yes | Private IP to assign |
+| `mac` | no | MAC address of the DUT. Required for DHCP static lease; omit for 1:1 NAT-only entries |
 | `hostname` | no | Hostname for DHCP |
-| `public_ip` | no | Public IP for 1:1 NAT (per-DUT). At least one lease must have `public_ip` when `nat_mode=1to1` |
+| `public_ip` | no | Public IP for 1:1 NAT (per-entry). At least one entry must have `public_ip` when `nat_mode=1to1` |
 
 ## Client CLI
 
@@ -155,11 +159,14 @@ j dut-network leases
 # Look up DUT IP by MAC
 j dut-network get-ip 8a:12:4e:25:f4:8e
 
-# Add a static DHCP lease
-j dut-network add-lease 02:00:00:aa:bb:cc 192.168.100.50 --hostname my-dut
+# Add an address entry with a MAC (creates a DHCP static lease)
+j dut-network add-address 192.168.100.50 --mac 02:00:00:aa:bb:cc --hostname my-dut
 
-# Remove a static lease
-j dut-network remove-lease 02:00:00:aa:bb:cc
+# Add an address entry without MAC (1:1 NAT mapping only, no DHCP lease)
+j dut-network add-address 192.168.100.51 --public-ip 10.26.28.90
+
+# Remove an address entry by IP
+j dut-network remove-address 192.168.100.50
 
 # Show nftables NAT rules
 j dut-network nat-rules
@@ -192,9 +199,12 @@ with env() as client:
     # Look up DUT IP
     ip = client.dut_network.get_dut_ip("8a:12:4e:25:f4:8e")
 
-    # Manage static leases at runtime
-    client.dut_network.add_static_lease("02:00:00:aa:bb:cc", "192.168.100.50", "new-dut")
-    client.dut_network.remove_static_lease("02:00:00:aa:bb:cc")
+    # Manage address entries at runtime
+    # With MAC: creates a DHCP static lease + optional 1:1 NAT mapping
+    client.dut_network.add_address("192.168.100.50", mac="02:00:00:aa:bb:cc", hostname="new-dut")
+    # Without MAC: 1:1 NAT mapping only (no DHCP lease)
+    client.dut_network.add_address("192.168.100.51", public_ip="10.26.28.90")
+    client.dut_network.remove_address("192.168.100.50")
 
     # Manage DNS entries at runtime
     client.dut_network.add_dns_entry("myhost.lab.local", "10.0.0.99")
