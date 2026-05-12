@@ -63,6 +63,20 @@ class TestDeconfigureInterface:
             assert mock.call_count == 2
 
 
+class TestAddIpAlias:
+    def test_adds_ip_when_not_present(self):
+        with patch.object(iproute, "get_interface_addresses", return_value=[]), \
+             patch.object(iproute, "_run_priv") as mock:
+            iproute.add_ip_alias("eth0", "10.0.0.2", 24)
+            mock.assert_called_once_with(["ip", "addr", "add", "10.0.0.2/24", "dev", "eth0"])
+
+    def test_skips_add_when_already_present(self):
+        with patch.object(iproute, "get_interface_addresses", return_value=["10.0.0.2/24"]), \
+             patch.object(iproute, "_run_priv") as mock:
+            iproute.add_ip_alias("eth0", "10.0.0.2", 24)
+            mock.assert_not_called()
+
+
 class TestNetworkManagerAwareness:
     def test_nm_set_unmanaged_skips_when_nm_absent(self):
         with patch.object(iproute, "is_nm_running", return_value=False), \
