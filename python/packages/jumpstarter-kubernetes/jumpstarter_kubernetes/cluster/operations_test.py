@@ -141,7 +141,18 @@ class TestCreateClusterAndInstall:
 
         mock_create.assert_called_once()
         mock_configure.assert_called_once()
-        mock_install.assert_called_once()
+        mock_install.assert_called_once_with(
+            version="1.0.0",
+            namespace="jumpstarter-lab",
+            basedomain="test.domain",
+            grpc_endpoint="grpc.test:8082",
+            router_endpoint="router.test:8083",
+            mode="nodeport",
+            kubeconfig=None,
+            context=None,
+            operator_installer=None,
+            callback=ANY,
+        )
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.operations.create_kind_cluster_with_options")
