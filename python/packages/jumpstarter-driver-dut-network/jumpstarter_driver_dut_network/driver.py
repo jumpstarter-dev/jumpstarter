@@ -1,5 +1,6 @@
 import ipaddress
 import shutil
+import socket
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -101,6 +102,37 @@ class DutNetwork(Driver):
     def _nat_disabled(self) -> bool:
         return self.nat_mode in ("disabled", "none")
 
+    @staticmethod
+    def _resolve_ip(value: str) -> str:
+        """Resolve *value* to an IPv4 address string.
+
+        If *value* is already a valid IP address it is returned unchanged.
+        Otherwise it is treated as a DNS hostname and resolved via
+        :func:`socket.getaddrinfo`.  Only the first IPv4 result is used.
+
+        Raises :class:`ValueError` when the hostname cannot be resolved.
+        """
+        try:
+            ipaddress.ip_address(value)
+            return value
+        except ValueError:
+            pass
+
+        try:
+            results = socket.getaddrinfo(value, None, socket.AF_INET, socket.SOCK_STREAM)
+        except socket.gaierror:
+            results = []
+
+        if not results:
+            raise ValueError(
+                f"Cannot resolve hostname '{value}' to an IPv4 address. "
+                "Provide a valid IP address or a resolvable DNS name."
+            )
+
+        # results[0] is (family, type, proto, canonname, sockaddr)
+        # sockaddr for AF_INET is (address, port)
+        return results[0][4][0]
+
     def _validate_config(self) -> None:
         network = ipaddress.ip_network(self.subnet, strict=False)
         self._prefix_len = network.prefixlen
@@ -185,7 +217,7 @@ class DutNetwork(Driver):
 
     def _get_1to1_mappings(self) -> list[dict[str, str]]:
         return [
-            {"private_ip": entry["ip"], "public_ip": entry["public_ip"]}
+            {"private_ip": entry["ip"], "public_ip": self._resolve_ip(entry["public_ip"])}
             for entry in self.addresses
             if entry.get("public_ip")
         ]
@@ -286,7 +318,7 @@ class DutNetwork(Driver):
         if hostname:
             new_entry["hostname"] = hostname
         if public_ip:
-            new_entry["public_ip"] = public_ip
+            new_entry["public_ip"] = self._resolve_ip(public_ip)
 
         self.addresses = [entry for entry in self.addresses if entry["ip"] != ip]
         self.addresses.append(new_entry)

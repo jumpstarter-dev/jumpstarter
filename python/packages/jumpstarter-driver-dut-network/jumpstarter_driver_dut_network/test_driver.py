@@ -1,3 +1,4 @@
+import socket
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -320,3 +321,79 @@ class TestGet1to1Mappings:
         assert len(mappings) == 2
         assert {"private_ip": "192.168.100.10", "public_ip": "10.0.0.50"} in mappings
         assert {"private_ip": "192.168.100.12", "public_ip": "10.0.0.52"} in mappings
+
+
+class TestResolveIp:
+    """Tests for DutNetwork._resolve_ip() DNS resolution helper."""
+
+    def test_valid_ipv4_returned_unchanged(self):
+        from .driver import DutNetwork
+
+        assert DutNetwork._resolve_ip("10.0.0.50") == "10.0.0.50"
+        assert DutNetwork._resolve_ip("192.168.1.1") == "192.168.1.1"
+        assert DutNetwork._resolve_ip("255.255.255.255") == "255.255.255.255"
+
+    def test_hostname_resolved_to_ip(self):
+        from .driver import DutNetwork
+
+        fake_result = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.99", 0))]
+        with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", return_value=fake_result):
+            assert DutNetwork._resolve_ip("myhost.example.com") == "10.0.0.99"
+
+    def test_unresolvable_hostname_raises(self):
+        from .driver import DutNetwork
+
+        with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", side_effect=socket.gaierror("Name or service not known")):
+            with pytest.raises(ValueError, match="Cannot resolve hostname"):
+                DutNetwork._resolve_ip("no-such-host.invalid")
+
+    def test_empty_getaddrinfo_result_raises(self):
+        from .driver import DutNetwork
+
+        with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", return_value=[]):
+            with pytest.raises(ValueError, match="Cannot resolve hostname"):
+                DutNetwork._resolve_ip("empty-result.invalid")
+
+
+class TestDnsNameIn1to1:
+    """Integration tests: DNS hostnames in public_ip with 1:1 NAT setup."""
+
+    def test_hostname_public_ip_resolved_during_setup(self, tmp_path: Path):
+        fake_result = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.99", 0))]
+        leases = [
+            {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.100.10", "public_ip": "myhost.example.com"},
+        ]
+        with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", return_value=fake_result) as mock_gai:
+            driver, mock_ip, mock_nft, _ = _make_driver(
+                tmp_path, nat_mode="1to1", addresses=leases,
+            )
+            mock_gai.assert_called_once_with("myhost.example.com", None, socket.AF_INET, socket.SOCK_STREAM)
+            mock_ip.add_ip_alias.assert_called_once_with("eth-up", "10.0.0.99", 24)
+            expected_mappings = [{"private_ip": "192.168.100.10", "public_ip": "10.0.0.99"}]
+            mock_nft.apply_1to1_rules.assert_called_once_with(
+                "eth-dut", "eth-up", expected_mappings, "192.168.100.0/24",
+                table_name="jumpstarter_eth_dut",
+            )
+            assert "10.0.0.99" in driver._added_aliases
+
+    def test_mixed_ip_and_hostname(self, tmp_path: Path):
+        fake_result = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.99", 0))]
+        leases = [
+            {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.100.10", "public_ip": "10.0.0.50"},
+            {"mac": "aa:bb:cc:dd:ee:02", "ip": "192.168.100.11", "public_ip": "myhost.example.com"},
+        ]
+        with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", return_value=fake_result):
+            driver, mock_ip, mock_nft, _ = _make_driver(
+                tmp_path, nat_mode="1to1", addresses=leases,
+            )
+            assert mock_ip.add_ip_alias.call_count == 2
+            mock_ip.add_ip_alias.assert_any_call("eth-up", "10.0.0.50", 24)
+            mock_ip.add_ip_alias.assert_any_call("eth-up", "10.0.0.99", 24)
+
+    def test_unresolvable_hostname_raises_during_setup(self, tmp_path: Path):
+        leases = [
+            {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.100.10", "public_ip": "bad-host.invalid"},
+        ]
+        with patch(f"{_DRIVER_MODULE}.socket.getaddrinfo", side_effect=socket.gaierror("fail")):
+            with pytest.raises(ValueError, match="Cannot resolve hostname"):
+                _make_driver(tmp_path, nat_mode="1to1", addresses=leases)
