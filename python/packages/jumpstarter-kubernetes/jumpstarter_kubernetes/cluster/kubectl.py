@@ -1,7 +1,7 @@
 """Kubectl operations for cluster management."""
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TypedDict
 
 from ..clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
 from ..exceptions import JumpstarterKubernetesError
@@ -73,9 +73,16 @@ async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, Any]]
         raise KubeconfigError(f"Error listing kubectl contexts: {e}") from e
 
 
+class CrInstanceResult(TypedDict, total=False):
+    installed: bool
+    namespace: str
+    status: str
+    error: str
+
+
 async def _check_cr_instances(
     kubectl: str, context: str, namespace: Optional[str]
-) -> dict:
+) -> CrInstanceResult:
     """Query for Jumpstarter CR instances to confirm full installation."""
     cr_resource = "jumpstarters.operator.jumpstarter.dev"
     try:
@@ -89,10 +96,13 @@ async def _check_cr_instances(
                     "namespace": namespace or "unknown",
                     "status": "installed",
                 }
-        elif cr_returncode != 0:
-            return {"error": f"CR instance check failed (exit {cr_returncode}): {cr_stderr or cr_stdout}"}
+        else:
+            return {
+                "installed": False,
+                "error": f"CR instance check failed (exit {cr_returncode}): {cr_stderr or cr_stdout}",
+            }
     except (json.JSONDecodeError, RuntimeError) as e:
-        return {"error": f"CR instance check failed: {e}"}
+        return {"installed": False, "error": f"CR instance check failed: {e}"}
     return {"installed": False}
 
 

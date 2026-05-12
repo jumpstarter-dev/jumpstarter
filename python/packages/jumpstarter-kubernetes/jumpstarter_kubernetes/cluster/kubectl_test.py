@@ -253,6 +253,7 @@ class TestCheckCrInstances:
         assert "error" in result
         assert "exit 1" in result["error"]
         assert "forbidden" in result["error"]
+        assert result["installed"] is False
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
@@ -263,6 +264,7 @@ class TestCheckCrInstances:
 
         assert "error" in result
         assert "CR instance check failed" in result["error"]
+        assert result["installed"] is False
 
     @pytest.mark.asyncio
     @patch("jumpstarter_kubernetes.cluster.kubectl.run_command")
@@ -274,6 +276,7 @@ class TestCheckCrInstances:
         assert "error" in result
         assert "CR instance check failed" in result["error"]
         assert "kubectl not found" in result["error"]
+        assert result["installed"] is False
 
 
 class TestCheckJumpstarterInstallation:
