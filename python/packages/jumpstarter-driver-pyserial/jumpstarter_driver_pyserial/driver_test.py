@@ -220,7 +220,14 @@ def test_close_noop_when_no_stream():
 
 
 def test_close_closes_transport(monkeypatch):
-    """close() should close the underlying transport."""
+    """close() should close the underlying transport.
+
+    These tests intentionally use asyncio.StreamReader/StreamWriter because the
+    serial_asyncio library is built on asyncio transports and protocols. This is
+    a known exception to the anyio migration -- serial_asyncio has no anyio
+    equivalent, so the bridge layer between serial I/O and anyio streams relies
+    on asyncio internals.
+    """
     import asyncio
     from unittest.mock import MagicMock
 
