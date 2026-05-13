@@ -14,6 +14,11 @@ async def echo_handler(stream):
 
 
 @pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.fixture
 def tcp_echo_server():
     with start_blocking_portal() as portal:
         with portal.wrap_async_context_manager(TemporaryTcpListener(echo_handler, local_host="127.0.0.1")) as addr:

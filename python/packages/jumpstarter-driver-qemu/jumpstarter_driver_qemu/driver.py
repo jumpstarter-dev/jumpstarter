@@ -167,7 +167,7 @@ class QemuFlasher(FlasherInterface, Driver):
         """Run a subprocess and yield (stdout, stderr, returncode) tuples as output arrives."""
         process = await anyio.open_process(cmd, stdout=PIPE, stderr=PIPE, env=env)
 
-        send_stream, receive_stream = create_memory_object_stream[tuple[str, str | None]](32)
+        send_stream, receive_stream = create_memory_object_stream[tuple[str, str | None]](32)  # ty: ignore[call-non-callable]
         deferred_error: RuntimeError | None = None
 
         async with send_stream, receive_stream:
