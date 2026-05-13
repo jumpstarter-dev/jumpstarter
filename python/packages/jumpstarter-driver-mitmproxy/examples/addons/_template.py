@@ -98,12 +98,6 @@ class Handler:
                 f"WS client message: {last_msg.content!r}"
             )
 
-            # Example: echo back to client with modification
-            # ctx.master.commands.call(
-            #     "inject.websocket", flow, True,
-            #     b'{"type": "echo", "data": ...}',
-            # )
-
     def cleanup(self) -> None:
         """Called when the addon is unloaded.
 

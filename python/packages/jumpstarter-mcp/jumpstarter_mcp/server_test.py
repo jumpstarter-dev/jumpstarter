@@ -166,8 +166,7 @@ class TestWalkClickTree:
         assert "secret" not in names
 
 
-# ---------------------------------------------------------------------------
-# Introspection: _get_public_method_names / list_drivers / get_driver_methods
+# Introspection tests
 # ---------------------------------------------------------------------------
 
 

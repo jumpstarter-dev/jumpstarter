@@ -132,7 +132,6 @@ class BleWriteNotifyStream(Driver):
                             address=self.address,
                             service_uuid=self.service_uuid,
                             write_char_uuid=self.write_char_uuid,
-                            # read_char_uuid=self.read_char_uuid,
                             notify_char_uuid=self.notify_char_uuid,
                         ),
                     ) as stream:

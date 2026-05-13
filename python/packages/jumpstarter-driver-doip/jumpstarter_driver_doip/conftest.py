@@ -69,7 +69,7 @@ def _handle_vehicle_identification() -> bytes:
 
 
 def _handle_entity_status() -> bytes:
-    # node_type(B=0), max_sockets(B=16), open_sockets(B=1), max_data_size(L=4096)
+    # Fields: node_type 0, max_sockets 16, open_sockets 1, max_data_size 4096
     resp = struct.pack("!BBBL", 0x00, 16, 1, 4096)
     return _pack_doip(ENTITY_STATUS_RESPONSE, resp)
 

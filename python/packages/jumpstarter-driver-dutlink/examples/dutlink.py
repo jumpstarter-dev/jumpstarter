@@ -7,13 +7,7 @@ from jumpstarter_driver_network.adapters import PexpectAdapter
 
 from jumpstarter.common.utils import env
 
-# initialize client from exporter config
-# from jumpstarter.config.client import ClientConfigV1Alpha1
-# with ClientConfigV1Alpha1.load("default").lease(selector="example.com/board=dutlink") as lease:
-#     with lease.connect() as client:
-
-# initialize client from environment
-# e.g. `jmp-exporter shell dutlink`
+# initialize client from environment, e.g. `jmp-exporter shell dutlink`
 if __name__ == "__main__":
     with env() as client:
         dutlink = client.dutlink
