@@ -17,6 +17,9 @@ from typing import Literal
 import anyio
 import yaml
 from anyio import create_memory_object_stream, create_task_group, fail_after, move_on_after, run_process, sleep
+from anyio.abc import ByteReceiveStream
+from anyio.streams.buffered import BufferedByteReceiveStream
+from anyio.streams.memory import MemoryObjectSendStream
 from anyio.streams.file import FileReadStream, FileWriteStream
 from jumpstarter_driver_network.driver import TcpNetwork, UnixNetwork, VsockNetwork
 from jumpstarter_driver_opendal.driver import FlasherInterface
@@ -46,12 +49,18 @@ class QmpLogFilter(logging.Filter):
         return False
 
 
-async def _read_pipe(stream, name: str, send_stream):
-    while True:
-        line = await stream.readline()
-        if not line:
-            break
-        await send_stream.send((name, line.decode("utf-8", errors="replace")))
+async def _read_pipe(
+    stream: ByteReceiveStream,
+    name: str,
+    send_stream: MemoryObjectSendStream[tuple[str, str | None]],
+) -> None:
+    buffered = BufferedByteReceiveStream(stream)
+    try:
+        while True:
+            line = await buffered.receive_until(b"\n", 1048576)
+            await send_stream.send((name, (line + b"\n").decode("utf-8", errors="replace")))
+    except (anyio.EndOfStream, anyio.ClosedResourceError):
+        pass
     await send_stream.send((name, None))
 
 
@@ -148,50 +157,51 @@ class QemuFlasher(FlasherInterface, Driver):
 
         send_stream, receive_stream = create_memory_object_stream[tuple[str, str | None]](32)
 
-        async with create_task_group() as tg:
-            tg.start_soon(_read_pipe, process.stdout, "stdout", send_stream)
-            tg.start_soon(_read_pipe, process.stderr, "stderr", send_stream)
+        async with send_stream, receive_stream:
+            async with create_task_group() as tg:
+                tg.start_soon(_read_pipe, process.stdout, "stdout", send_stream.clone())
+                tg.start_soon(_read_pipe, process.stderr, "stderr", send_stream.clone())
 
-            finished_streams = 0
-            start_time = anyio.current_time()
+                finished_streams = 0
+                start_time = anyio.current_time()
 
-            try:
-                while finished_streams < 2:
-                    elapsed = anyio.current_time() - start_time
-                    if elapsed >= self.parent.flash_timeout:
+                try:
+                    while finished_streams < 2:
+                        elapsed = anyio.current_time() - start_time
+                        if elapsed >= self.parent.flash_timeout:
+                            process.kill()
+                            await process.wait()
+                            raise RuntimeError(f"fls flash timed out after {self.parent.flash_timeout}s")
+
+                        remaining = self.parent.flash_timeout - elapsed
+                        with move_on_after(min(remaining, 30)) as scope:
+                            name, text = await receive_stream.receive()
+
+                        if scope.cancelled_caught:
+                            continue
+
+                        if text is None:
+                            finished_streams += 1
+                            continue
+
+                        stdout_chunk = text if name == "stdout" else ""
+                        stderr_chunk = text if name == "stderr" else ""
+                        yield stdout_chunk, stderr_chunk, None
+
+                    await process.wait()
+                    returncode = process.returncode
+
+                    if returncode != 0:
+                        self.logger.error(f"fls failed - return code: {returncode}")
+                        raise RuntimeError(f"fls flash failed (return code {returncode})")
+
+                    self.logger.info("OCI flash completed successfully")
+                    yield "", "", returncode
+                finally:
+                    tg.cancel_scope.cancel()
+                    if process.returncode is None:
                         process.kill()
                         await process.wait()
-                        raise RuntimeError(f"fls flash timed out after {self.parent.flash_timeout}s")
-
-                    remaining = self.parent.flash_timeout - elapsed
-                    with move_on_after(min(remaining, 30)) as scope:
-                        name, text = await receive_stream.receive()
-
-                    if scope.cancelled_caught:
-                        continue
-
-                    if text is None:
-                        finished_streams += 1
-                        continue
-
-                    stdout_chunk = text if name == "stdout" else ""
-                    stderr_chunk = text if name == "stderr" else ""
-                    yield stdout_chunk, stderr_chunk, None
-
-                await process.wait()
-                returncode = process.returncode
-
-                if returncode != 0:
-                    self.logger.error(f"fls failed - return code: {returncode}")
-                    raise RuntimeError(f"fls flash failed (return code {returncode})")
-
-                self.logger.info("OCI flash completed successfully")
-                yield "", "", returncode
-            finally:
-                tg.cancel_scope.cancel()
-                if process.returncode is None:
-                    process.kill()
-                    await process.wait()
 
     @export
     async def dump(self, target, partition: str | None = None):
