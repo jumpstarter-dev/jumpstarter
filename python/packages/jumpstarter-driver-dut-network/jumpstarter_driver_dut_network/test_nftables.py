@@ -104,7 +104,7 @@ class TestBuildForwardChain:
         assert egress_drop < egress_catchall < ingress_rule < ingress_catchall
 
     def test_filter_with_extra_forward_rules(self):
-        """Extra forward rules (1:1 NAT) are placed between egress and ingress catch-alls."""
+        """Extra forward rules (1:1 NAT) are placed between egress and ingress catch-all rules."""
         fc = {
             "egress": {"policy": "accept"},
             "ingress": {"policy": "drop"},
