@@ -134,27 +134,39 @@ class Shell(Driver):
         if process.stdout:
             try:
                 if read_all:
-                    chunk = await process.stdout.receive()
+                    chunks = []
+                    try:
+                        while True:
+                            chunks.append(await process.stdout.receive())
+                    except anyio.EndOfStream:
+                        pass
+                    chunk = b"".join(chunks)
                 else:
                     chunk = None
                     with move_on_after(0.01):
                         chunk = await process.stdout.receive(1024)
                 if chunk:
                     stdout_data = chunk.decode('utf-8', errors='replace')
-            except Exception:
+            except (anyio.EndOfStream, anyio.ClosedResourceError):
                 pass
 
         if process.stderr:
             try:
                 if read_all:
-                    chunk = await process.stderr.receive()
+                    chunks = []
+                    try:
+                        while True:
+                            chunks.append(await process.stderr.receive())
+                    except anyio.EndOfStream:
+                        pass
+                    chunk = b"".join(chunks)
                 else:
                     chunk = None
                     with move_on_after(0.01):
                         chunk = await process.stderr.receive(1024)
                 if chunk:
                     stderr_data = chunk.decode('utf-8', errors='replace')
-            except Exception:
+            except (anyio.EndOfStream, anyio.ClosedResourceError):
                 pass
 
         return stdout_data, stderr_data
