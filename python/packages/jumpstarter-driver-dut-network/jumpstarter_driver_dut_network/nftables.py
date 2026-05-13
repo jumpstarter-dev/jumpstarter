@@ -47,11 +47,78 @@ def _table_name_for(interface: str) -> str:
     return f"jumpstarter_{interface}".replace("-", "_")
 
 
+def _build_forward_chain(
+    interface: str,
+    upstream: str,
+    filter_config: dict | None = None,
+    extra_rules: list[str] | None = None,
+) -> str:
+    """Build the nftables forward chain with optional egress/ingress filtering.
+
+    Args:
+        interface: The DUT-facing interface name.
+        upstream: The upstream (external) interface name.
+        filter_config: Optional filter configuration dict with ``egress``
+            and/or ``ingress`` sub-dicts, each containing ``policy`` and
+            ``rules``.
+        extra_rules: Optional list of additional nftables rule strings to
+            include in the forward chain (e.g. per-IP accept rules for
+            1:1 NAT).
+
+    Returns:
+        A string containing the full ``chain forward { ... }`` block.
+    """
+    lines: list[str] = [
+        "    chain forward {",
+        "        type filter hook forward priority filter; policy accept;",
+        "        ct state related,established accept",
+    ]
+
+    egress_cfg = (filter_config or {}).get("egress", {})
+    ingress_cfg = (filter_config or {}).get("ingress", {})
+
+    egress_policy = egress_cfg.get("policy", "accept")
+    ingress_policy = ingress_cfg.get("policy", "accept")
+
+    # --- Egress rules (DUT -> upstream) ---
+    for rule in egress_cfg.get("rules", []):
+        parts = [f'iifname "{interface}" oifname "{upstream}"']
+        parts.append(f"ip daddr {rule['destination']}")
+        if "port" in rule:
+            parts.append(f"{rule['protocol']} dport {rule['port']}")
+        parts.append(rule["action"])
+        lines.append(f"        {' '.join(parts)}")
+
+    # Egress catch-all
+    lines.append(f'        iifname "{interface}" oifname "{upstream}" {egress_policy}')
+
+    # --- Ingress rules (upstream -> DUT) ---
+    for rule in ingress_cfg.get("rules", []):
+        parts = [f'iifname "{upstream}" oifname "{interface}"']
+        parts.append(f"ip saddr {rule['source']}")
+        if "port" in rule:
+            parts.append(f"{rule['protocol']} dport {rule['port']}")
+        parts.append(rule["action"])
+        lines.append(f"        {' '.join(parts)}")
+
+    # Extra per-IP rules (e.g. 1:1 NAT DNAT accept rules)
+    if extra_rules:
+        for r in extra_rules:
+            lines.append(r)
+
+    # Ingress catch-all
+    lines.append(f'        iifname "{upstream}" oifname "{interface}" {ingress_policy}')
+
+    lines.append("    }")
+    return "\n".join(lines)
+
+
 def apply_masquerade_rules(
     interface: str,
     upstream: str,
     subnet: str,
     table_name: str | None = None,
+    filter_config: dict | None = None,
 ) -> None:
     _validate_iface(interface)
     _validate_iface(upstream)
@@ -64,17 +131,14 @@ def apply_masquerade_rules(
         subnet,
         table,
     )
+    forward_chain = _build_forward_chain(interface, upstream, filter_config)
     ruleset = textwrap.dedent(f"""\
         table ip {table} {{
             chain postrouting {{
                 type nat hook postrouting priority srcnat; policy accept;
                 oifname "{upstream}" ip saddr {subnet} masquerade
             }}
-            chain forward {{
-                type filter hook forward priority filter; policy accept;
-                iifname "{interface}" oifname "{upstream}" accept
-                iifname "{upstream}" oifname "{interface}" ct state related,established accept
-            }}
+        {forward_chain}
         }}
     """)
     flush_rules(table)
@@ -87,6 +151,7 @@ def apply_1to1_rules(
     mappings: list[dict[str, str]],
     subnet: str,
     table_name: str | None = None,
+    filter_config: dict | None = None,
 ) -> None:
     _validate_iface(interface)
     _validate_iface(upstream)
@@ -106,7 +171,7 @@ def apply_1to1_rules(
 
     prerouting_rules = []
     postrouting_rules = []
-    forward_rules = []
+    extra_forward_rules = []
     output_rules = []
 
     for m in mappings:
@@ -114,13 +179,18 @@ def apply_1to1_rules(
         public_ip = m["public_ip"]
         prerouting_rules.append(f'        iifname "{upstream}" ip daddr {public_ip} dnat to {private_ip}')
         postrouting_rules.append(f'        ip saddr {private_ip} oifname "{upstream}" snat to {public_ip}')
-        forward_rules.append(f'        iifname "{upstream}" oifname "{interface}" ip daddr {private_ip} accept')
+        extra_forward_rules.append(
+            f'        iifname "{upstream}" oifname "{interface}" ip daddr {private_ip} accept'
+        )
         output_rules.append(f"        ip daddr {public_ip} dnat to {private_ip}")
 
     prerouting_block = "\n".join(prerouting_rules)
     postrouting_block = "\n".join(postrouting_rules)
-    forward_block = "\n".join(forward_rules)
     output_block = "\n".join(output_rules)
+
+    forward_chain = _build_forward_chain(
+        interface, upstream, filter_config, extra_rules=extra_forward_rules or None,
+    )
 
     ruleset = (
         f"table ip {table} {{\n"
@@ -137,12 +207,7 @@ def apply_1to1_rules(
         f"{postrouting_block}\n"
         f'        oifname "{upstream}" ip saddr {subnet} masquerade\n'
         f"    }}\n"
-        f"    chain forward {{\n"
-        f"        type filter hook forward priority filter; policy accept;\n"
-        f'        iifname "{interface}" oifname "{upstream}" accept\n'
-        f'        iifname "{upstream}" oifname "{interface}" ct state related,established accept\n'
-        f"{forward_block}\n"
-        f"    }}\n"
+        f"{forward_chain}\n"
         f"}}\n"
     )
 

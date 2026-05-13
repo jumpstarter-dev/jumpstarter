@@ -985,3 +985,188 @@ class TestDnsResolution:
                 assert "10.0.0.77" not in result.stdout
         finally:
             driver.cleanup()
+
+
+@requires_linux
+@requires_privileges
+@requires_nft
+@requires_dnsmasq
+class TestFilterRulesApplied:
+    """Test that filter config produces correct nftables rules."""
+
+    def test_egress_filter_rules_in_nftables(self, net_env: NetworkTestEnv):
+        filt = {
+            "egress": {
+                "policy": "accept",
+                "rules": [{"action": "drop", "destination": "10.0.0.0/8"}],
+            },
+        }
+        driver = net_env.create_driver(nat_mode="masquerade", filter=filt)
+        try:
+            result = _run(f"nft list table ip {net_env.NFT_TABLE}")
+            assert "ip daddr 10.0.0.0/8 drop" in result.stdout
+            assert "ct state related,established accept" in result.stdout
+        finally:
+            driver.cleanup()
+
+    def test_ingress_filter_rules_in_nftables(self, net_env: NetworkTestEnv):
+        filt = {
+            "ingress": {
+                "policy": "drop",
+                "rules": [
+                    {"action": "accept", "source": "10.26.28.0/24", "port": 22, "protocol": "tcp"},
+                ],
+            },
+        }
+        driver = net_env.create_driver(nat_mode="masquerade", filter=filt)
+        try:
+            result = _run(f"nft list table ip {net_env.NFT_TABLE}")
+            assert "ip saddr 10.26.28.0/24 tcp dport 22 accept" in result.stdout
+        finally:
+            driver.cleanup()
+
+    def test_no_filter_backward_compatible(self, net_env: NetworkTestEnv):
+        """Without filter config, nftables rules should still work as before."""
+        driver = net_env.create_driver(nat_mode="masquerade")
+        try:
+            result = _run(f"nft list table ip {net_env.NFT_TABLE}")
+            assert "masquerade" in result.stdout
+            assert "ct state related,established accept" in result.stdout
+            assert net_env.VETH_HOST in result.stdout
+        finally:
+            driver.cleanup()
+
+    def test_filter_rules_flushed_on_cleanup(self, net_env: NetworkTestEnv):
+        filt = {
+            "egress": {
+                "policy": "drop",
+                "rules": [{"action": "accept", "destination": "8.8.8.8/32"}],
+            },
+        }
+        driver = net_env.create_driver(nat_mode="masquerade", filter=filt)
+        driver.cleanup()
+        result = _run(f"nft list table ip {net_env.NFT_TABLE}", check=False)
+        assert result.returncode != 0
+
+    def test_1to1_with_filter(self, net_env: NetworkTestEnv):
+        """1:1 NAT with filter config should include both NAT and filter rules."""
+        filt = {
+            "egress": {
+                "policy": "accept",
+                "rules": [{"action": "drop", "destination": "172.16.0.0/12"}],
+            },
+        }
+        public_ip = "10.99.0.50"
+        leases = [
+            {"mac": net_env.DUT_MAC, "ip": net_env.DUT_IP, "hostname": "test-dut", "public_ip": public_ip},
+        ]
+        driver = net_env.create_driver(nat_mode="1to1", addresses=leases, filter=filt)
+        try:
+            result = _run(f"nft list table ip {net_env.NFT_TABLE}")
+            assert "ip daddr 172.16.0.0/12 drop" in result.stdout
+            assert "dnat" in result.stdout
+            assert "snat" in result.stdout
+            assert "ct state related,established accept" in result.stdout
+        finally:
+            driver.cleanup()
+
+
+@requires_linux
+@requires_privileges
+@requires_nft
+@requires_dnsmasq
+@pytest.mark.usefixtures("nat_available")
+class TestFilterDataPlane:
+    """Test actual data-plane filtering through nftables (requires working NAT)."""
+
+    def test_egress_drop_blocks_traffic(self, net_env: NetworkTestEnv):
+        """An egress drop rule for the external IP should block DUT -> external pings."""
+        filt = {
+            "egress": {
+                "policy": "accept",
+                "rules": [{"action": "drop", "destination": f"{net_env.EXT_IP}/32"}],
+            },
+        }
+        driver = net_env.create_driver(nat_mode="masquerade", filter=filt)
+        try:
+            net_env.configure_dut_static()
+            time.sleep(0.5)
+            result = _run(
+                f"ping -c 1 -W 2 {net_env.EXT_IP}",
+                ns=net_env.DUT_NS,
+                check=False,
+            )
+            assert result.returncode != 0, "DUT should NOT reach external with egress drop rule"
+        finally:
+            driver.cleanup()
+
+    def test_egress_policy_drop_blocks_all(self, net_env: NetworkTestEnv):
+        """Egress policy drop with no allow rules should block all DUT -> external traffic."""
+        filt = {
+            "egress": {
+                "policy": "drop",
+                "rules": [],
+            },
+        }
+        driver = net_env.create_driver(nat_mode="masquerade", filter=filt)
+        try:
+            net_env.configure_dut_static()
+            time.sleep(0.5)
+            result = _run(
+                f"ping -c 1 -W 2 {net_env.EXT_IP}",
+                ns=net_env.DUT_NS,
+                check=False,
+            )
+            assert result.returncode != 0, "DUT should NOT reach external with egress policy drop"
+        finally:
+            driver.cleanup()
+
+    def test_egress_accept_allows_traffic(self, net_env: NetworkTestEnv):
+        """Egress policy accept (default) should allow DUT -> external traffic."""
+        filt = {
+            "egress": {
+                "policy": "accept",
+                "rules": [],
+            },
+        }
+        driver = net_env.create_driver(nat_mode="masquerade", filter=filt)
+        try:
+            net_env.configure_dut_static()
+            time.sleep(0.5)
+            result = _run(
+                f"ping -c 1 -W 2 {net_env.EXT_IP}",
+                ns=net_env.DUT_NS,
+                check=False,
+            )
+            assert result.returncode == 0, f"Ping should succeed: {result.stderr}"
+        finally:
+            driver.cleanup()
+
+    def test_ingress_policy_drop_blocks_external(self, net_env: NetworkTestEnv):
+        """Ingress policy drop should block external -> DUT new connections."""
+        filt = {
+            "ingress": {
+                "policy": "drop",
+                "rules": [],
+            },
+        }
+        driver = net_env.create_driver(nat_mode="masquerade", filter=filt)
+        try:
+            net_env.configure_dut_static()
+            time.sleep(0.5)
+            # DUT-initiated traffic should still work (conntrack)
+            result = _run(
+                f"ping -c 1 -W 2 {net_env.EXT_IP}",
+                ns=net_env.DUT_NS,
+                check=False,
+            )
+            assert result.returncode == 0, f"Egress ping should succeed: {result.stderr}"
+            # External-initiated traffic should be blocked
+            result = _run(
+                f"ping -c 1 -W 2 {net_env.DUT_IP}",
+                ns=net_env.EXT_NS,
+                check=False,
+            )
+            assert result.returncode != 0, "External should NOT reach DUT with ingress policy drop"
+        finally:
+            driver.cleanup()

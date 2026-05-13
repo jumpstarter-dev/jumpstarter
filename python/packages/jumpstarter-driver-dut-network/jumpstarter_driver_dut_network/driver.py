@@ -52,6 +52,8 @@ class DutNetwork(Driver):
 
     enable_tcpdump: bool = False
 
+    filter: dict = field(default_factory=dict)
+
     state_dir: str | None = None
     nat_mode: Literal["masquerade", "1to1", "disabled", "none"] = "masquerade"
     public_interface: str | None = None
@@ -154,6 +156,62 @@ class DutNetwork(Driver):
             if not has_public:
                 raise ValueError("At least one address entry must have public_ip for 1:1 NAT mode")
 
+        self._validate_filter_config()
+
+    def _validate_filter_config(self) -> None:
+        """Validate the ``filter`` configuration dict.
+
+        Ensures policies are ``"accept"`` or ``"drop"``, egress rules
+        have ``action`` + ``destination``, ingress rules have ``action``
+        + ``source``, and that ``protocol`` is present when ``port`` is
+        specified.
+        """
+        if not self.filter:
+            return
+
+        for direction in ("egress", "ingress"):
+            section = self.filter.get(direction)
+            if section is None:
+                continue
+
+            policy = section.get("policy", "accept")
+            if policy not in ("accept", "drop"):
+                raise ValueError(
+                    f"filter.{direction}.policy must be 'accept' or 'drop', got {policy!r}"
+                )
+
+            for i, rule in enumerate(section.get("rules", [])):
+                self._validate_filter_rule(direction, i, rule)
+
+    @staticmethod
+    def _validate_filter_rule(direction: str, index: int, rule: dict) -> None:
+        """Validate a single filter rule entry."""
+        prefix = f"filter.{direction}.rules[{index}]"
+
+        action = rule.get("action")
+        if action is None:
+            raise ValueError(f"{prefix}: 'action' is required")
+        if action not in ("accept", "drop"):
+            raise ValueError(f"{prefix}: action must be 'accept' or 'drop', got {action!r}")
+
+        if direction == "egress":
+            dest = rule.get("destination")
+            if dest is None:
+                raise ValueError(f"filter.egress.rules[{index}]: 'destination' is required")
+            ipaddress.ip_network(dest, strict=False)
+        else:
+            src = rule.get("source")
+            if src is None:
+                raise ValueError(f"filter.ingress.rules[{index}]: 'source' is required")
+            ipaddress.ip_network(src, strict=False)
+
+        if "port" in rule:
+            proto = rule.get("protocol")
+            if proto is None:
+                raise ValueError(f"{prefix}: 'protocol' is required when 'port' is set")
+            if proto not in ("tcp", "udp"):
+                raise ValueError(f"{prefix}: protocol must be 'tcp' or 'udp', got {proto!r}")
+
     def _setup_network(self) -> None:
         if not self._nat_disabled():
             self._upstream = self.upstream_interface or iproute.detect_upstream_interface()
@@ -192,11 +250,13 @@ class DutNetwork(Driver):
             )
             self._dnsmasq_process = dnsmasq.start(self._state_path)
 
+        filter_cfg = self.filter if self.filter else None
         upstream_for_nat = self._upstream
         if self.nat_mode == "masquerade":
             nftables.apply_masquerade_rules(
                 self.interface, upstream_for_nat, self.subnet,
                 table_name=self._table_name,
+                filter_config=filter_cfg,
             )
         elif self.nat_mode == "1to1":
             mappings = self._get_1to1_mappings()
@@ -208,6 +268,7 @@ class DutNetwork(Driver):
             nftables.apply_1to1_rules(
                 self.interface, upstream_for_alias, mappings, self.subnet,
                 table_name=self._table_name,
+                filter_config=filter_cfg,
             )
 
         if self.local_ntp:
@@ -369,9 +430,11 @@ class DutNetwork(Driver):
         self._added_aliases = wanted
 
         nftables.flush_rules(self._table_name)
+        filter_cfg = self.filter if self.filter else None
         nftables.apply_1to1_rules(
             self.interface, upstream_for_alias, mappings, self.subnet,
             table_name=self._table_name,
+            filter_config=filter_cfg,
         )
 
     @export
