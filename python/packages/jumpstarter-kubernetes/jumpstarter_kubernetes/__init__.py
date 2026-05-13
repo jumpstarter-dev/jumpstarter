@@ -26,11 +26,6 @@ from .exporters import (
     V1Alpha1ExporterList,
     V1Alpha1ExporterStatus,
 )
-from .install import (
-    helm_installed,
-    install_helm_chart,
-    uninstall_helm_chart,
-)
 from .leases import (
     LeasesV1Alpha1Api,
     V1Alpha1Lease,
@@ -61,9 +56,6 @@ __all__ = [
     "V1Alpha1LeaseSelector",
     "V1Alpha1LeaseSpec",
     "V1Alpha1List",
-    "helm_installed",
-    "install_helm_chart",
-    "uninstall_helm_chart",
     "minikube_installed",
     "kind_installed",
     "create_minikube_cluster",

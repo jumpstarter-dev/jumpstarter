@@ -14,7 +14,6 @@ class V1Alpha1JumpstarterInstance(JsonBaseModel):
     installed: bool
     version: Optional[str] = None
     namespace: Optional[str] = None
-    chart_name: Optional[str] = Field(alias="chartName", default=None)
     status: Optional[str] = None
     has_crds: bool = Field(alias="hasCrds", default=False)
     error: Optional[str] = None

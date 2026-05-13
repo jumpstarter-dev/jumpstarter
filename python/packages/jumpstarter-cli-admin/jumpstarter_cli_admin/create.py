@@ -224,30 +224,11 @@ async def create_exporter(
     help="Skip installing Jumpstarter after creating the cluster",
 )
 @click.option(
-    "--install-method",
-    type=click.Choice(["operator", "helm"]),
-    default=None,
-    help="Method to install Jumpstarter (default: helm for kind/minikube, operator for k3s)",
-)
-@click.option(
     "--operator-installer",
     type=str,
     default=None,
     help="Path or URL to the operator installer YAML (auto-detected from version if not specified)",
 )
-@click.option(
-    "--helm",
-    type=str,
-    help="Path or name of a helm executable (only used with --install-method helm)",
-    default="helm",
-)
-@click.option(
-    "--chart",
-    type=str,
-    help="The URL of a Jumpstarter helm chart to install",
-    default="oci://quay.io/jumpstarter-dev/helm/jumpstarter",
-)
-@click.option("--chart-name", type=str, help="The name of the chart installation", default="jumpstarter")
 @click.option(
     "-n", "--namespace", type=str, help="Namespace to install Jumpstarter components in", default="jumpstarter-lab"
 )
@@ -256,14 +237,6 @@ async def create_exporter(
 @click.option("-g", "--grpc-endpoint", type=str, help="The gRPC endpoint to use for the Jumpstarter API", default=None)
 @click.option("-r", "--router-endpoint", type=str, help="The gRPC endpoint to use for the router", default=None)
 @click.option("-v", "--version", help="The version of the service to install", default=None)
-@click.option(
-    "-f",
-    "--values-file",
-    "values_files",
-    type=click.Path(exists=True, readable=True, dir_okay=False, resolve_path=True),
-    multiple=True,
-    help="Path to custom helm values file (can be specified multiple times)",
-)
 @opt_kubeconfig
 @opt_context
 @opt_nointeractive
@@ -279,18 +252,13 @@ async def create_cluster(
     minikube_extra_args: str,
     extra_certs: Optional[str],
     skip_install: bool,
-    install_method: str,
     operator_installer: Optional[str],
-    helm: str,
-    chart: str,
-    chart_name: str,
     namespace: str,
     ip: Optional[str],
     basedomain: Optional[str],
     grpc_endpoint: Optional[str],
     router_endpoint: Optional[str],
     version: Optional[str],
-    values_files: tuple[str, ...],
     kubeconfig: Optional[str],
     context: Optional[str],
     nointeractive: bool,
@@ -329,9 +297,6 @@ async def create_cluster(
             minikube or "minikube",
             extra_certs,
             install_jumpstarter=not skip_install,
-            helm=helm,
-            chart=chart,
-            chart_name=chart_name,
             namespace=namespace,
             version=version,
             kubeconfig=kubeconfig,
@@ -341,9 +306,7 @@ async def create_cluster(
             grpc_endpoint=grpc_endpoint,
             router_endpoint=router_endpoint,
             callback=callback,
-            values_files=list(values_files) if values_files else None,
             k3s_ssh_host=k3s,
-            install_method=install_method,
             operator_installer=operator_installer,
         )
     except JumpstarterKubernetesError as e:

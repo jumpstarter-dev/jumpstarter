@@ -29,7 +29,7 @@ async def get_latest_compatible_controller_version(client_version: Optional[str]
     ) as session:
         try:
             async with session.get(
-                "https://quay.io/api/v1/repository/jumpstarter-dev/helm/jumpstarter/tag/",
+                "https://quay.io/api/v1/repository/jumpstarter-dev/jumpstarter-operator/tag/",
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as resp:
                 resp = await resp.json()

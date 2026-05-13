@@ -2,7 +2,6 @@
 
 This module provides comprehensive cluster management functionality including:
 - Kind and Minikube cluster operations
-- Helm chart management
 - Kubectl operations
 - Cluster detection and endpoint configuration
 - High-level orchestration operations
@@ -15,7 +14,6 @@ For backward compatibility, all functions from the original cluster.py are re-ex
 # Common utilities and types
 from .common import (
     ClusterType,
-    InstallMethod,
     extract_host_from_ssh,
     format_cluster_name,
     get_extra_certs_path,
@@ -28,9 +26,6 @@ from .common import (
 # Detection and endpoints
 from .detection import auto_detect_cluster_type, detect_cluster_type, detect_existing_cluster_type
 from .endpoints import configure_endpoints, get_ip_generic
-
-# Helm operations
-from .helm import install_jumpstarter_helm_chart
 
 # k3s cluster operations
 from .k3s import (
@@ -52,6 +47,7 @@ from .kind import (
 
 # Kubectl operations
 from .kubectl import (
+    KubectlContext,
     check_jumpstarter_installation,
     check_kubernetes_access,
     get_cluster_info,
@@ -87,7 +83,7 @@ from .operator import install_jumpstarter_operator
 __all__ = [
     # Types
     "ClusterType",
-    "InstallMethod",
+    "KubectlContext",
     # Common utilities
     "extract_host_from_ssh",
     "validate_cluster_name",
@@ -113,8 +109,6 @@ __all__ = [
     "delete_minikube_cluster",
     "list_minikube_clusters",
     "get_minikube_cluster_ip",
-    # Helm operations
-    "install_jumpstarter_helm_chart",
     # Operator operations
     "install_jumpstarter_operator",
     # Kubectl operations

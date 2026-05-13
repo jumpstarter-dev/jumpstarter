@@ -1,10 +1,20 @@
 """Kubectl operations for cluster management."""
 
 import json
-from typing import Dict, List, Optional
+from typing import List, Literal, Optional, TypedDict, Union
 
 from ..clusters import V1Alpha1ClusterInfo, V1Alpha1ClusterList, V1Alpha1JumpstarterInstance
+from ..exceptions import JumpstarterKubernetesError
 from .common import run_command
+
+
+class KubectlContext(TypedDict):
+    name: str
+    cluster: str
+    server: str
+    user: str
+    namespace: str
+    current: bool
 
 
 async def check_kubernetes_access(context: Optional[str] = None, kubectl: str = "kubectl") -> bool:
@@ -21,7 +31,7 @@ async def check_kubernetes_access(context: Optional[str] = None, kubectl: str = 
         return False
 
 
-async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, str]]:
+async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[KubectlContext]:
     """Get all kubectl contexts."""
     contexts = []
 
@@ -67,20 +77,81 @@ async def get_kubectl_contexts(kubectl: str = "kubectl") -> List[Dict[str, str]]
     except json.JSONDecodeError as e:
         from ..exceptions import KubeconfigError
         raise KubeconfigError(f"Failed to parse kubectl config: {e}") from e
-    except Exception as e:
+    except (RuntimeError, JumpstarterKubernetesError) as e:
         from ..exceptions import KubeconfigError
         raise KubeconfigError(f"Error listing kubectl contexts: {e}") from e
 
 
-async def check_jumpstarter_installation(  # noqa: C901
-    context: str, namespace: Optional[str] = None, helm: str = "helm", kubectl: str = "kubectl"
+class CrInstanceSuccess(TypedDict):
+    installed: Literal[True]
+    namespace: str
+    status: str
+
+
+class CrInstanceError(TypedDict):
+    installed: Literal[False]
+    error: str
+
+
+class CrInstanceNotFound(TypedDict):
+    installed: Literal[False]
+
+
+CrInstanceResult = Union[CrInstanceSuccess, CrInstanceError, CrInstanceNotFound]
+
+
+async def _check_cr_instances(
+    kubectl: str, context: str, namespace: Optional[str]
+) -> CrInstanceResult:
+    """Query for Jumpstarter CR instances to confirm full installation."""
+    cr_resource = "jumpstarters.operator.jumpstarter.dev"
+    try:
+        cr_cmd = [kubectl, "--context", context, "get", cr_resource, "-A", "-o", "json"]
+        cr_returncode, cr_stdout, cr_stderr = await run_command(cr_cmd)
+        if cr_returncode == 0:
+            cr_data = json.loads(cr_stdout)
+            if cr_data.get("items"):
+                cr_namespace = cr_data["items"][0].get("metadata", {}).get("namespace")
+                return CrInstanceSuccess(
+                    installed=True,
+                    namespace=cr_namespace or namespace or "unknown",
+                    status="installed",
+                )
+            else:
+                return CrInstanceNotFound(installed=False)
+        else:
+            return CrInstanceError(
+                installed=False,
+                error=f"CR instance check failed (exit {cr_returncode}): {cr_stderr or cr_stdout}",
+            )
+    except (json.JSONDecodeError, RuntimeError) as e:
+        return CrInstanceError(installed=False, error=f"CR instance check failed: {e}")
+
+
+def _parse_json_with_prefix(stdout: str) -> dict:
+    json_start = stdout.find("{")
+    if json_start >= 0:
+        return json.loads(stdout[json_start:])
+    return json.loads(stdout)
+
+
+def _apply_cr_result(result_data: dict, cr_result: CrInstanceResult) -> None:
+    if cr_result["installed"] is True:
+        result_data["installed"] = True
+        result_data["namespace"] = cr_result["namespace"]
+        result_data["status"] = cr_result["status"]
+    elif "error" in cr_result:
+        result_data["error"] = cr_result["error"]
+
+
+async def check_jumpstarter_installation(
+    context: str, namespace: Optional[str] = None, kubectl: str = "kubectl"
 ) -> V1Alpha1JumpstarterInstance:
-    """Check if Jumpstarter is installed in the cluster."""
+    """Check if Jumpstarter is installed in the cluster using CRD detection."""
     result_data = {
         "installed": False,
         "version": None,
         "namespace": None,
-        "chart_name": None,
         "status": None,
         "has_crds": False,
         "error": None,
@@ -90,105 +161,29 @@ async def check_jumpstarter_installation(  # noqa: C901
     }
 
     try:
-        # Check for Helm installation first
-        helm_cmd = [helm, "list", "--all-namespaces", "-o", "json", "--kube-context", context]
-        returncode, stdout, _ = await run_command(helm_cmd)
+        crd_cmd = [kubectl, "--context", context, "get", "crd", "-o", "json"]
+        returncode, stdout, stderr = await run_command(crd_cmd)
 
-        if returncode == 0:
-            # Extract JSON from output (handle case where warnings are printed before JSON)
-            json_start = stdout.find("[")
-            if json_start >= 0:
-                json_output = stdout[json_start:]
-                releases = json.loads(json_output)
-            else:
-                releases = json.loads(stdout)  # Fallback to original parsing
-            for release in releases:
-                # Look for Jumpstarter chart
-                if "jumpstarter" in release.get("chart", "").lower():
-                    result_data["installed"] = True
-                    result_data["version"] = release.get("app_version") or release.get("chart", "").split("-")[-1]
-                    result_data["namespace"] = release.get("namespace")
-                    result_data["chart_name"] = release.get("name")
-                    result_data["status"] = release.get("status")
+        if returncode != 0:
+            result_data["error"] = f"Command failed: {stderr or stdout}"
+            return V1Alpha1JumpstarterInstance(**result_data)
 
-                    # Try to get Helm values to extract basedomain and endpoints
-                    try:
-                        values_cmd = [
-                            helm,
-                            "get",
-                            "values",
-                            release.get("name"),
-                            "-n",
-                            release.get("namespace"),
-                            "-o",
-                            "json",
-                            "--kube-context",
-                            context,
-                        ]
-                        values_returncode, values_stdout, _ = await run_command(values_cmd)
+        crds = _parse_json_with_prefix(stdout)
+        jumpstarter_crds = [
+            item.get("metadata", {}).get("name", "")
+            for item in crds.get("items", [])
+            if "jumpstarter.dev" in item.get("metadata", {}).get("name", "")
+        ]
 
-                        if values_returncode == 0:
-                            # Extract JSON from values output (handle warnings)
-                            json_start = values_stdout.find("{")
-                            if json_start >= 0:
-                                json_output = values_stdout[json_start:]
-                                values = json.loads(json_output)
-                            else:
-                                values = json.loads(values_stdout)  # Fallback
+        if jumpstarter_crds:
+            result_data["has_crds"] = True
 
-                            # Extract basedomain
-                            basedomain = values.get("global", {}).get("baseDomain")
-                            if basedomain:
-                                result_data["basedomain"] = basedomain
-                                # Construct default endpoints from basedomain
-                                result_data["controller_endpoint"] = f"grpc.{basedomain}:8082"
-                                result_data["router_endpoint"] = f"router.{basedomain}:8083"
-
-                            # Check for explicit endpoints in values
-                            controller_config = values.get("jumpstarter-controller", {}).get("grpc", {})
-                            if controller_config.get("endpoint"):
-                                result_data["controller_endpoint"] = controller_config["endpoint"]
-                            if controller_config.get("routerEndpoint"):
-                                result_data["router_endpoint"] = controller_config["routerEndpoint"]
-
-                    except (json.JSONDecodeError, RuntimeError):
-                        # Failed to get Helm values, but we still have basic info
-                        pass
-
-                    break
-
-        # Check for Jumpstarter CRDs as secondary verification
-        try:
-            crd_cmd = [kubectl, "--context", context, "get", "crd", "-o", "json"]
-            returncode, stdout, _ = await run_command(crd_cmd)
-
-            if returncode == 0:
-                # Extract JSON from CRD output (handle warnings)
-                json_start = stdout.find("{")
-                if json_start >= 0:
-                    json_output = stdout[json_start:]
-                    crds = json.loads(json_output)
-                else:
-                    crds = json.loads(stdout)  # Fallback
-                jumpstarter_crds = []
-                for item in crds.get("items", []):
-                    name = item.get("metadata", {}).get("name", "")
-                    if "jumpstarter.dev" in name:
-                        jumpstarter_crds.append(name)
-
-                if jumpstarter_crds:
-                    result_data["has_crds"] = True
-                    if not result_data["installed"]:
-                        # CRDs exist but no Helm release found - manual installation?
-                        result_data["installed"] = True
-                        result_data["version"] = "unknown"
-                        result_data["namespace"] = namespace or "unknown"
-                        result_data["status"] = "manual-install"
-        except RuntimeError:
-            pass  # CRD check failed, continue with Helm results
+            if "jumpstarters.operator.jumpstarter.dev" in jumpstarter_crds:
+                cr_result = await _check_cr_instances(kubectl, context, namespace)
+                _apply_cr_result(result_data, cr_result)
 
     except json.JSONDecodeError as e:
-        result_data["error"] = f"Failed to parse Helm output: {e}"
+        result_data["error"] = f"Failed to parse output: {e}"
     except RuntimeError as e:
         result_data["error"] = f"Command failed: {e}"
 
@@ -198,13 +193,12 @@ async def check_jumpstarter_installation(  # noqa: C901
 async def get_cluster_info(
     context: str,
     kubectl: str = "kubectl",
-    helm: str = "helm",
     minikube: str = "minikube",
 ) -> V1Alpha1ClusterInfo:
     """Get comprehensive cluster information."""
     try:
         contexts = await get_kubectl_contexts(kubectl)
-        context_info = None
+        context_info: KubectlContext | None = None
 
         for ctx in contexts:
             if ctx["name"] == context:
@@ -249,7 +243,7 @@ async def get_cluster_info(
 
         # Check Jumpstarter installation
         if cluster_accessible:
-            jumpstarter_info = await check_jumpstarter_installation(context, None, helm, kubectl)
+            jumpstarter_info = await check_jumpstarter_installation(context, None, kubectl)
         else:
             jumpstarter_info = V1Alpha1JumpstarterInstance(installed=False, error="Cluster not accessible")
 
@@ -266,7 +260,7 @@ async def get_cluster_info(
             jumpstarter=jumpstarter_info,
         )
 
-    except Exception as e:
+    except (RuntimeError, JumpstarterKubernetesError) as e:
         return V1Alpha1ClusterInfo(
             name=context,
             cluster="unknown",
@@ -284,8 +278,6 @@ async def get_cluster_info(
 async def list_clusters(
     cluster_type_filter: str = "all",
     kubectl: str = "kubectl",
-    helm: str = "helm",
-    kind: str = "kind",
     minikube: str = "minikube",
 ) -> V1Alpha1ClusterList:
     """List all Kubernetes clusters with Jumpstarter status."""
@@ -294,7 +286,7 @@ async def list_clusters(
         cluster_infos = []
 
         for context in contexts:
-            cluster_info = await get_cluster_info(context["name"], kubectl, helm, minikube)
+            cluster_info = await get_cluster_info(context["name"], kubectl, minikube)
 
             # Filter by type if specified
             if cluster_type_filter != "all" and cluster_info.type != cluster_type_filter:
@@ -304,8 +296,7 @@ async def list_clusters(
 
         return V1Alpha1ClusterList(items=cluster_infos)
 
-    except Exception as e:
-        # Return empty list with error in the first cluster
+    except (RuntimeError, JumpstarterKubernetesError) as e:
         error_cluster = V1Alpha1ClusterInfo(
             name="error",
             cluster="error",
