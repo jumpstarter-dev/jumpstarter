@@ -85,6 +85,14 @@ class Handler:
             self._task_group = anyio.create_task_group()
             await self._task_group.__aenter__()
 
+    async def done(self):
+        if self._task_group is not None:
+            for scope in self._cancel_scopes.values():
+                scope.cancel()
+            self._cancel_scopes.clear()
+            await self._task_group.__aexit__(None, None, None)
+            self._task_group = None
+
     def handle(self, flow: http.HTTPFlow, config: dict) -> bool:
         """Handle the initial WebSocket upgrade request.
 
