@@ -532,7 +532,7 @@ class TestLeaseRichDisplay:
         assert "TAGS" in columns
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_create_lease_sets_tags_on_protobuf():
     from jumpstarter_protocol import client_pb2
 

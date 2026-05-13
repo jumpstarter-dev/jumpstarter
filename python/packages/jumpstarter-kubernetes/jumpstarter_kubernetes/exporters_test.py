@@ -275,7 +275,7 @@ def test_exporter_list_rich_add_names():
 # Tests for get_exporter_config with CA bundle
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_exporter_config_includes_ca_bundle():
     """Test get_exporter_config includes CA bundle from ConfigMap"""
     api = ExportersV1Alpha1Api(namespace="test-namespace")
@@ -321,7 +321,7 @@ async def test_get_exporter_config_includes_ca_bundle():
     assert config.token == token
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_exporter_config_without_ca_bundle():
     """Test get_exporter_config works when CA ConfigMap doesn't exist"""
     api = ExportersV1Alpha1Api(namespace="test-namespace")

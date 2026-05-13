@@ -38,7 +38,7 @@ class TestKindInstalled:
 class TestKindClusterExists:
     """Test Kind cluster existence checking."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.kind.run_command")
     async def test_kind_cluster_exists_true(self, mock_run_command, mock_kind_installed):
@@ -50,7 +50,7 @@ class TestKindClusterExists:
         assert result is True
         mock_run_command.assert_called_once_with(["kind", "get", "kubeconfig", "--name", "test-cluster"])
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.kind.run_command")
     async def test_kind_cluster_exists_false(self, mock_run_command, mock_kind_installed):
@@ -61,7 +61,7 @@ class TestKindClusterExists:
 
         assert result is False
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     async def test_kind_cluster_exists_kind_not_installed(self, mock_kind_installed):
         mock_kind_installed.return_value = False
@@ -70,7 +70,7 @@ class TestKindClusterExists:
 
         assert result is False
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.kind.run_command")
     async def test_kind_cluster_exists_runtime_error(self, mock_run_command, mock_kind_installed):
@@ -81,7 +81,7 @@ class TestKindClusterExists:
 
         assert result is False
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.kind.run_command")
     async def test_kind_cluster_exists_custom_binary(self, mock_run_command, mock_kind_installed):
@@ -97,7 +97,7 @@ class TestKindClusterExists:
 class TestCreateKindCluster:
     """Test Kind cluster creation."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.kind.kind_cluster_exists")
     @patch("jumpstarter_kubernetes.cluster.kind.run_command_with_output")
@@ -117,7 +117,7 @@ class TestCreateKindCluster:
         assert "--name" in args
         assert "test-cluster" in args
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     async def test_create_kind_cluster_not_installed(self, mock_kind_installed):
         mock_kind_installed.return_value = False
@@ -125,7 +125,7 @@ class TestCreateKindCluster:
         with pytest.raises(RuntimeError, match="kind is not installed"):
             await create_kind_cluster("kind", "test-cluster")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.kind.kind_cluster_exists")
     async def test_create_kind_cluster_already_exists(self, mock_cluster_exists, mock_kind_installed):
@@ -138,7 +138,7 @@ class TestCreateKindCluster:
         assert exc_info.value.cluster_name == "test-cluster"
         assert exc_info.value.cluster_type == "kind"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.kind.kind_cluster_exists")
     @patch("jumpstarter_kubernetes.cluster.kind.delete_kind_cluster")
@@ -156,7 +156,7 @@ class TestCreateKindCluster:
         assert result is True
         mock_delete.assert_called_once_with("kind", "test-cluster")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.kind.kind_cluster_exists")
     @patch("jumpstarter_kubernetes.cluster.kind.run_command_with_output")
@@ -174,7 +174,7 @@ class TestCreateKindCluster:
         assert "--verbosity=1" in args
 
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.kind.kind_cluster_exists")
     @patch("jumpstarter_kubernetes.cluster.kind.run_command_with_output")
@@ -188,7 +188,7 @@ class TestCreateKindCluster:
         with pytest.raises(RuntimeError, match="Failed to create Kind cluster 'test-cluster'"):
             await create_kind_cluster("kind", "test-cluster")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.kind.kind_cluster_exists")
     @patch("jumpstarter_kubernetes.cluster.kind.run_command_with_output")
@@ -209,7 +209,7 @@ class TestCreateKindCluster:
 class TestDeleteKindCluster:
     """Test Kind cluster deletion."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.kind.kind_cluster_exists")
     @patch("jumpstarter_kubernetes.cluster.kind.run_command_with_output")
@@ -223,7 +223,7 @@ class TestDeleteKindCluster:
         assert result is True
         mock_run_command.assert_called_once_with(["kind", "delete", "cluster", "--name", "test-cluster"])
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     async def test_delete_kind_cluster_not_installed(self, mock_kind_installed):
         mock_kind_installed.return_value = False
@@ -231,7 +231,7 @@ class TestDeleteKindCluster:
         with pytest.raises(RuntimeError, match="kind is not installed"):
             await delete_kind_cluster("kind", "test-cluster")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.kind.kind_cluster_exists")
     async def test_delete_kind_cluster_already_deleted(self, mock_cluster_exists, mock_kind_installed):
@@ -242,7 +242,7 @@ class TestDeleteKindCluster:
 
         assert result is True  # Already deleted, consider successful
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.kind.kind_cluster_exists")
     @patch("jumpstarter_kubernetes.cluster.kind.run_command_with_output")
@@ -256,7 +256,7 @@ class TestDeleteKindCluster:
         with pytest.raises(RuntimeError, match="Failed to delete Kind cluster 'test-cluster'"):
             await delete_kind_cluster("kind", "test-cluster")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.kind.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.kind.kind_cluster_exists")
     @patch("jumpstarter_kubernetes.cluster.kind.run_command_with_output")

@@ -56,7 +56,7 @@ class TestDetectContainerRuntime:
 class TestDetectKindProvider:
     """Test Kind provider detection."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.detect_container_runtime")
     @patch("jumpstarter_kubernetes.cluster.detection.run_command")
     async def test_detect_kind_provider_control_plane(self, mock_run_command, mock_detect_runtime):
@@ -69,7 +69,7 @@ class TestDetectKindProvider:
         assert node_name == "test-cluster-control-plane"
         mock_run_command.assert_called_once_with(["docker", "inspect", "test-cluster-control-plane"])
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.detect_container_runtime")
     @patch("jumpstarter_kubernetes.cluster.detection.run_command")
     async def test_detect_kind_provider_kind_prefix(self, mock_run_command, mock_detect_runtime):
@@ -83,7 +83,7 @@ class TestDetectKindProvider:
         assert node_name == "kind-test-cluster-control-plane"
         assert mock_run_command.call_count == 2
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.detect_container_runtime")
     @patch("jumpstarter_kubernetes.cluster.detection.run_command")
     async def test_detect_kind_provider_default_cluster(self, mock_run_command, mock_detect_runtime):
@@ -96,7 +96,7 @@ class TestDetectKindProvider:
         assert node_name == "kind-control-plane"
         mock_run_command.assert_called_once_with(["docker", "inspect", "kind-control-plane"])
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.detect_container_runtime")
     @patch("jumpstarter_kubernetes.cluster.detection.run_command")
     async def test_detect_kind_provider_fallback(self, mock_run_command, mock_detect_runtime):
@@ -108,7 +108,7 @@ class TestDetectKindProvider:
         assert runtime == "podman"
         assert node_name == "test-cluster-control-plane"  # Fallback
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.detect_container_runtime")
     @patch("jumpstarter_kubernetes.cluster.detection.run_command")
     async def test_detect_kind_provider_runtime_error(self, mock_run_command, mock_detect_runtime):
@@ -124,7 +124,7 @@ class TestDetectKindProvider:
 class TestDetectExistingClusterType:
     """Test detection of existing cluster types."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.detection.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.detection.kind_cluster_exists")
@@ -141,7 +141,7 @@ class TestDetectExistingClusterType:
 
         assert result == "kind"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.detection.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.detection.kind_cluster_exists")
@@ -158,7 +158,7 @@ class TestDetectExistingClusterType:
 
         assert result == "minikube"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.detection.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.detection.kind_cluster_exists")
@@ -179,7 +179,7 @@ class TestDetectExistingClusterType:
         ):
             await detect_existing_cluster_type("test-cluster")
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.detection.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.detection.kind_cluster_exists")
@@ -196,7 +196,7 @@ class TestDetectExistingClusterType:
 
         assert result is None
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.detection.minikube_installed")
     async def test_detect_existing_cluster_type_kind_not_installed(self, mock_minikube_installed, mock_kind_installed):
@@ -207,7 +207,7 @@ class TestDetectExistingClusterType:
 
         assert result is None
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.kind_installed")
     @patch("jumpstarter_kubernetes.cluster.detection.minikube_installed")
     @patch("jumpstarter_kubernetes.cluster.detection.kind_cluster_exists")
@@ -274,37 +274,37 @@ class TestAutoDetectClusterType:
 class TestDetectClusterType:
     """Test cluster type detection from context and server URL."""
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_detect_cluster_type_kind_context_prefix(self):
         result = await detect_cluster_type("kind-test-cluster", "https://127.0.0.1:6443")
         assert result == "kind"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_detect_cluster_type_kind_context_name(self):
         result = await detect_cluster_type("kind", "https://127.0.0.1:6443")
         assert result == "kind"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_detect_cluster_type_minikube_context(self):
         result = await detect_cluster_type("minikube", "https://192.168.49.2:8443")
         assert result == "minikube"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_detect_cluster_type_localhost(self):
         result = await detect_cluster_type("local-cluster", "https://localhost:6443")
         assert result == "kind"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_detect_cluster_type_127_0_0_1(self):
         result = await detect_cluster_type("local-cluster", "https://127.0.0.1:6443")
         assert result == "kind"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_detect_cluster_type_0_0_0_0(self):
         result = await detect_cluster_type("local-cluster", "https://0.0.0.0:6443")
         assert result == "kind"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.run_command")
     async def test_detect_cluster_type_minikube_ip_range_192(self, mock_run_command):
         mock_run_command.return_value = (0, '{"valid": [{"Name": "test"}]}', "")
@@ -313,7 +313,7 @@ class TestDetectClusterType:
 
         assert result == "minikube"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.run_command")
     async def test_detect_cluster_type_minikube_ip_range_172(self, mock_run_command):
         mock_run_command.return_value = (0, '{"valid": [{"Name": "test"}]}', "")
@@ -322,7 +322,7 @@ class TestDetectClusterType:
 
         assert result == "minikube"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.run_command")
     async def test_detect_cluster_type_minikube_ip_no_profiles(self, mock_run_command):
         mock_run_command.return_value = (1, "", "error")
@@ -331,7 +331,7 @@ class TestDetectClusterType:
 
         assert result == "remote"  # Falls back to remote if no minikube profiles
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.run_command")
     async def test_detect_cluster_type_minikube_invalid_json(self, mock_run_command):
         mock_run_command.return_value = (0, "invalid json", "")
@@ -340,7 +340,7 @@ class TestDetectClusterType:
 
         assert result == "remote"  # Falls back to remote if JSON parsing fails
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @patch("jumpstarter_kubernetes.cluster.detection.run_command")
     async def test_detect_cluster_type_minikube_runtime_error(self, mock_run_command):
         mock_run_command.side_effect = RuntimeError("Command failed")
@@ -349,12 +349,12 @@ class TestDetectClusterType:
 
         assert result == "remote"  # Falls back to remote if command fails
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_detect_cluster_type_remote(self):
         result = await detect_cluster_type("production-cluster", "https://k8s.example.com:443")
         assert result == "remote"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_detect_cluster_type_custom_minikube_binary(self):
         result = await detect_cluster_type("test-cluster", "https://example.com", minikube="custom-minikube")
         assert result == "remote"

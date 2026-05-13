@@ -169,7 +169,7 @@ def test_dbus_network_session(monkeypatch):
         assert oldvar == os.getenv("DBUS_SESSION_BUS_ADDRESS")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_websocket_network_connect():
     ws = AsyncMock()
     ws.__aenter__.return_value = ws
