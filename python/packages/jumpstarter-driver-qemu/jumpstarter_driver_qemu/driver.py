@@ -16,12 +16,19 @@ from typing import Literal
 
 import anyio
 import yaml
-from anyio import create_memory_object_stream, create_task_group, fail_after, move_on_after, run_process, sleep
-from anyio import IncompleteRead
+from anyio import (
+    IncompleteRead,
+    create_memory_object_stream,
+    create_task_group,
+    fail_after,
+    move_on_after,
+    run_process,
+    sleep,
+)
 from anyio.abc import ByteReceiveStream
 from anyio.streams.buffered import BufferedByteReceiveStream
-from anyio.streams.memory import MemoryObjectSendStream
 from anyio.streams.file import FileReadStream, FileWriteStream
+from anyio.streams.memory import MemoryObjectSendStream
 from jumpstarter_driver_network.driver import TcpNetwork, UnixNetwork, VsockNetwork
 from jumpstarter_driver_opendal.driver import FlasherInterface
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading

@@ -121,6 +121,30 @@ class Shell(Driver):
 
         return combined_env
 
+    @staticmethod
+    async def _read_stream(stream, read_all: bool) -> str:
+        """Read from a single byte stream and return decoded text."""
+        if stream is None:
+            return ""
+        try:
+            if read_all:
+                chunks = []
+                try:
+                    while True:
+                        chunks.append(await stream.receive())
+                except anyio.EndOfStream:
+                    pass
+                chunk = b"".join(chunks)
+            else:
+                chunk = None
+                with move_on_after(0.01):
+                    chunk = await stream.receive(1024)
+            if chunk:
+                return chunk.decode('utf-8', errors='replace')
+        except (anyio.EndOfStream, anyio.ClosedResourceError):
+            pass
+        return ""
+
     async def _read_process_output(self, process, read_all=False):
         """Read data from stdout and stderr streams.
 
@@ -128,47 +152,8 @@ class Shell(Driver):
         :param read_all: If True, read all remaining data. If False, read with timeout.
         :return: Tuple of (stdout_data, stderr_data)
         """
-        stdout_data = ""
-        stderr_data = ""
-
-        if process.stdout:
-            try:
-                if read_all:
-                    chunks = []
-                    try:
-                        while True:
-                            chunks.append(await process.stdout.receive())
-                    except anyio.EndOfStream:
-                        pass
-                    chunk = b"".join(chunks)
-                else:
-                    chunk = None
-                    with move_on_after(0.01):
-                        chunk = await process.stdout.receive(1024)
-                if chunk:
-                    stdout_data = chunk.decode('utf-8', errors='replace')
-            except (anyio.EndOfStream, anyio.ClosedResourceError):
-                pass
-
-        if process.stderr:
-            try:
-                if read_all:
-                    chunks = []
-                    try:
-                        while True:
-                            chunks.append(await process.stderr.receive())
-                    except anyio.EndOfStream:
-                        pass
-                    chunk = b"".join(chunks)
-                else:
-                    chunk = None
-                    with move_on_after(0.01):
-                        chunk = await process.stderr.receive(1024)
-                if chunk:
-                    stderr_data = chunk.decode('utf-8', errors='replace')
-            except (anyio.EndOfStream, anyio.ClosedResourceError):
-                pass
-
+        stdout_data = await self._read_stream(process.stdout, read_all)
+        stderr_data = await self._read_stream(process.stderr, read_all)
         return stdout_data, stderr_data
 
     async def _run_inline_shell_script(
