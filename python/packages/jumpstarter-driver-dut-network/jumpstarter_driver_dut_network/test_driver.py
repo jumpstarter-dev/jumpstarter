@@ -231,6 +231,14 @@ class TestDriverCleanup:
             driver.cleanup()
             mock_nft2.remove_filter_forward.assert_not_called()
 
+    def test_cleanup_removes_state_directory(self, tmp_path: Path):
+        driver, _, _, _ = _make_driver(tmp_path, nat_mode="masquerade")
+        with patch(f"{_DRIVER_MODULE}.iproute"), \
+             patch(f"{_DRIVER_MODULE}.nftables"), \
+             patch(f"{_DRIVER_MODULE}.dnsmasq") as mock_dns2:
+            driver.cleanup()
+            mock_dns2.cleanup_state_dir.assert_called_once_with(tmp_path)
+
 
 class TestDriverDnsEntries:
     def test_dns_entries_passed_to_dnsmasq(self, tmp_path: Path):

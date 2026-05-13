@@ -238,19 +238,24 @@ class DutNetwork(Driver):
                 pass
             self._tcpdump_process = None
 
-    def cleanup(self) -> None:
-        self.logger.info("Cleaning up DUT network configuration")
-
+    def _stop_ntp(self) -> None:
         if self._ntp_server is not None:
             self._ntp_server.stop()
             self._ntp_server = None
             nftables.remove_ntp_redirect(self._table_name)
 
+    def cleanup(self) -> None:
+        self.logger.info("Cleaning up DUT network configuration")
+
+        self._stop_ntp()
         self._stop_tcpdump()
 
         if self._dnsmasq_process:
             dnsmasq.stop(process=self._dnsmasq_process, state_dir=self._state_path)
             self._dnsmasq_process = None
+
+        if self._state_path:
+            dnsmasq.cleanup_state_dir(self._state_path)
 
         nftables.flush_rules(self._table_name)
 
