@@ -135,6 +135,13 @@ def _map_grpc_exception(exc: BaseException) -> click.ClickException | None:
                 details,
             )
         )
+    if code == "FAILED_PRECONDITION":
+        return ClickExceptionRed(
+            _append_details(
+                "A precondition for the requested operation was not met. Check resource state and retry.",
+                details,
+            )
+        )
     return None
 
 

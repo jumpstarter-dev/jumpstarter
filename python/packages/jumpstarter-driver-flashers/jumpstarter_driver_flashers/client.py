@@ -85,7 +85,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def set_console_debug(self, debug: bool):
         """Set console debug mode"""
         self._console_debug = debug
-        # TODO: also set console debug on uboot client
 
     @contextmanager
     def busybox_shell(self):

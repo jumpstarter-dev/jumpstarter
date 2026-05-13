@@ -19,7 +19,7 @@ class UbootConsoleClient(CompositeClient):
         return self.call("get_prompt")
 
     @contextmanager
-    def reboot_to_console(self, *, debug=False) -> Generator[None]:
+    def reboot_to_console(self, *, debug: bool = False, retries: int = 100) -> Generator[None]:
         """
         Reboot to U-Boot console
 
@@ -43,11 +43,9 @@ class UbootConsoleClient(CompositeClient):
             if debug:
                 p.logfile_read = sys.stdout.buffer
 
-            for _ in range(100):  # TODO: configurable retries
+            for _ in range(retries):
                 try:
                     p.send(ESC)
-                    # in case of "bootmenu" there are all sort of escape sequences in the output so try to
-                    # catch prompt without any leading newlines, hoping it's not in the menu text somewhere
                     p.expect_exact(self.prompt.lstrip("\n"), timeout=0.1)
                 except pexpect.TIMEOUT:
                     continue
