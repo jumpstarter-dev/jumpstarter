@@ -17,17 +17,19 @@ logger = logging.getLogger(__name__)
 
 
 async def _try_connect_and_extract_cert(
-    ip_address: str, port: int, ssl_context: ssl.SSLContext, hostname: str, timeout: float
+    ip_address: str, port: int, ssl_context: ssl.SSLContext, hostname: str
 ) -> bytes:
     """
     Try to connect to a single IP and extract its certificate chain.
 
     Returns the certificate chain in PEM format as bytes.
     Raises exception on failure.
+
+    The caller is expected to enforce the overall timeout via an outer
+    fail_after scope so that a slow IP does not consume the entire budget.
     """
-    logger.debug(f"Attempting TLS connection to {ip_address}:{port} (timeout={timeout}s)")
-    with fail_after(timeout):
-        stream = await connect_tcp(ip_address, port, tls=True, ssl_context=ssl_context, tls_hostname=hostname)
+    logger.debug(f"Attempting TLS connection to {ip_address}:{port}")
+    stream = await connect_tcp(ip_address, port, tls=True, ssl_context=ssl_context, tls_hostname=hostname)
     logger.debug(f"Successfully connected to {ip_address}:{port}")
     try:
         ssl_object = stream.extra(anyio.abc.TLSAttribute.ssl_object)
@@ -77,7 +79,7 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
             async def try_with_ip(ip_address: str):
                 try:
                     result = await _try_connect_and_extract_cert(
-                        ip_address, port, ssl_context, parsed.hostname, timeout
+                        ip_address, port, ssl_context, parsed.hostname
                     )
                     await send_stream.send((ip_address, result, None))
                 except Exception as e:
