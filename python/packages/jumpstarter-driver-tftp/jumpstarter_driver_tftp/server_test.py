@@ -1,5 +1,15 @@
-import asyncio
 import tempfile
+from asyncio import (
+    CancelledError,
+    DatagramProtocol,
+    all_tasks,
+    create_task,
+    current_task,
+    get_running_loop,
+)
+from asyncio import (
+    sleep as asyncio_sleep,
+)
 from pathlib import Path
 
 import pytest
@@ -15,12 +25,12 @@ async def tftp_server():
         test_file_path.write_text("Hello, TFTP!")
 
         server = TftpServer(host="127.0.0.1", port=0, operator=AsyncOperator("fs", root=str(temp_dir)))
-        server_task = asyncio.create_task(server.start())
+        server_task = create_task(server.start())
 
         for _ in range(10):
             if server.address is not None:
                 break
-            await asyncio.sleep(0.1)
+            await asyncio_sleep(0.1)
         else:
             await server.shutdown()
             server_task.cancel()
@@ -31,29 +41,29 @@ async def tftp_server():
         await server.shutdown()
         await server_task
 
-        for task in asyncio.all_tasks():
-            if not task.done() and task != asyncio.current_task():
+        for task in all_tasks():
+            if not task.done() and task != current_task():
                 task.cancel()
                 try:
                     await task
-                except asyncio.CancelledError:
+                except CancelledError:
                     pass
 
 
 async def create_test_client(server_port):
-    loop = asyncio.get_running_loop()
+    loop = get_running_loop()
     transport, protocol = await loop.create_datagram_endpoint(
-        asyncio.DatagramProtocol, remote_addr=("127.0.0.1", server_port)
+        DatagramProtocol, remote_addr=("127.0.0.1", server_port)
     )
     return transport, protocol
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_server_startup_and_shutdown(tftp_server):
     """Test that server starts up and shuts down cleanly."""
     server, temp_dir, server_port = tftp_server
 
-    server_task = asyncio.create_task(server.start())
+    server_task = create_task(server.start())
     await server.ready_event.wait()
 
     await server.shutdown()
@@ -63,12 +73,12 @@ async def test_server_startup_and_shutdown(tftp_server):
     assert True
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_read_request_for_existing_file(tftp_server):
     """Test reading an existing file from the server."""
     server, temp_dir, server_port = tftp_server
 
-    server_task = asyncio.create_task(server.start())
+    server_task = create_task(server.start())
     await server.ready_event.wait()
 
     try:
@@ -91,12 +101,12 @@ async def test_read_request_for_existing_file(tftp_server):
         await server_task
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_read_request_for_nonexistent_file(tftp_server):
     """Test reading a non-existent file returns appropriate error."""
     server, temp_dir, server_port = tftp_server
 
-    server_task = asyncio.create_task(server.start())
+    server_task = create_task(server.start())
 
     try:
         transport, protocol = await create_test_client(server_port)
@@ -112,11 +122,11 @@ async def test_read_request_for_nonexistent_file(tftp_server):
         await server_task
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_write_request_rejection(tftp_server):
     """Test that write requests are properly rejected (server is read-only)."""
     server, temp_dir, server_port = tftp_server
-    server_task = asyncio.create_task(server.start())
+    server_task = create_task(server.start())
 
     try:
         transport, _ = await create_test_client(server_port)
@@ -132,10 +142,10 @@ async def test_write_request_rejection(tftp_server):
         await server_task
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_invalid_packet_handling(tftp_server):
     server, temp_dir, server_port = tftp_server
-    server_task = asyncio.create_task(server.start())
+    server_task = create_task(server.start())
     await server.ready_event.wait()
 
     try:
@@ -150,12 +160,12 @@ async def test_invalid_packet_handling(tftp_server):
         await server_task
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_path_traversal_prevention(tftp_server):
     """Test that path traversal attempts are blocked."""
     server, temp_dir, server_port = tftp_server
 
-    server_task = asyncio.create_task(server.start())
+    server_task = create_task(server.start())
     await server.ready_event.wait()
 
     try:
@@ -173,11 +183,11 @@ async def test_path_traversal_prevention(tftp_server):
         await server_task
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_options_negotiation(tftp_server):
     """Test that options (blksize, timeout) are properly negotiated."""
     server, temp_dir, server_port = tftp_server
-    server_task = asyncio.create_task(server.start())
+    server_task = create_task(server.start())
     await server.ready_event.wait()
 
     try:
@@ -204,7 +214,7 @@ async def test_options_negotiation(tftp_server):
         await server_task
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_retry_mechanism(tftp_server):
     server, _, server_port = tftp_server
 
@@ -213,7 +223,7 @@ async def test_retry_mechanism(tftp_server):
 
     transport = None
 
-    class TestProtocol(asyncio.DatagramProtocol):
+    class TestProtocol(DatagramProtocol):
         def __init__(self):
             self.received_packets = []
             self.transport = None
@@ -225,7 +235,7 @@ async def test_retry_mechanism(tftp_server):
             self.received_packets.append(data)
 
     try:
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
         transport, protocol = await loop.create_datagram_endpoint(lambda: TestProtocol(), local_addr=("127.0.0.1", 0))
 
         assert transport is not None, "Failed to create transport"
@@ -234,7 +244,7 @@ async def test_retry_mechanism(tftp_server):
 
         transport.sendto(rrq_packet, ("127.0.0.1", server_port))
 
-        await asyncio.sleep(server.timeout * 2)
+        await asyncio_sleep(server.timeout * 2)
 
         data_packets = [p for p in protocol.received_packets if p[0:2] == Opcode.DATA.to_bytes(2, "big")]
 
@@ -252,10 +262,10 @@ async def test_retry_mechanism(tftp_server):
             transport.close()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_invalid_options_handling(tftp_server):
     server, temp_dir, server_port = tftp_server
-    server_task = asyncio.create_task(server.start())
+    server_task = create_task(server.start())
     await server.ready_event.wait()
 
     try:

@@ -1,5 +1,3 @@
-import asyncio
-import asyncio.subprocess
 import ipaddress
 import shutil
 import socket
@@ -8,7 +6,13 @@ import sys
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from pathlib import Path
+from subprocess import PIPE
 from typing import Literal, TypedDict
+
+import anyio
+from anyio import IncompleteRead
+from anyio.abc import Process
+from anyio.streams.buffered import BufferedByteReceiveStream
 
 from . import dnsmasq, iproute, nftables
 from .ntp_server import NtpServer
@@ -67,7 +71,7 @@ class DutNetwork(Driver):
     _added_aliases: set[str] = field(init=False, default_factory=set)
     _fwd_rule_handles: list[int] = field(init=False, default_factory=list)
     _ntp_server: NtpServer | None = field(init=False, default=None)
-    _tcpdump_process: asyncio.subprocess.Process | None = field(init=False, default=None)
+    _tcpdump_process: Process | None = field(init=False, default=None)
 
     @classmethod
     def client(cls) -> str:
@@ -467,21 +471,18 @@ class DutNetwork(Driver):
 
         self.logger.info("Starting tcpdump: %s", " ".join(cmd))
 
-        proc = await asyncio.subprocess.create_subprocess_exec(
-            cmd[0],
-            *cmd[1:],
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
+        proc = await anyio.open_process(cmd, stdout=PIPE, stderr=PIPE)
         self._tcpdump_process = proc
 
         try:
             assert proc.stdout is not None
+            buffered = BufferedByteReceiveStream(proc.stdout)
             while True:
-                line = await proc.stdout.readline()
-                if not line:
+                try:
+                    line = await buffered.receive_until(b"\n", 1048576)
+                except (anyio.EndOfStream, anyio.ClosedResourceError, IncompleteRead):
                     break
-                yield line.decode("utf-8", errors="replace").rstrip("\n")
+                yield line.decode("utf-8", errors="replace")
         finally:
             if proc.returncode is None:
                 try:

@@ -1,8 +1,8 @@
-import asyncio
 import base64
 import logging
 from typing import Literal, Optional
 
+import anyio
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 from pydantic import Field
 
@@ -125,7 +125,7 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
                 if "credential" in updated_client["status"]:
                     return V1Alpha1Client.from_dict(updated_client)
             count += 1
-            await asyncio.sleep(CREATE_CLIENT_DELAY)
+            await anyio.sleep(CREATE_CLIENT_DELAY)
         raise Exception("Timeout waiting for client credentials")
 
     async def list_clients(self) -> V1Alpha1List[V1Alpha1Client]:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -15,9 +14,21 @@ from subprocess import PIPE, CalledProcessError, Popen, TimeoutExpired
 from tempfile import TemporaryDirectory
 from typing import Literal
 
+import anyio
 import yaml
-from anyio import fail_after, run_process, sleep
+from anyio import (
+    IncompleteRead,
+    create_memory_object_stream,
+    create_task_group,
+    fail_after,
+    move_on_after,
+    run_process,
+    sleep,
+)
+from anyio.abc import ByteReceiveStream
+from anyio.streams.buffered import BufferedByteReceiveStream
 from anyio.streams.file import FileReadStream, FileWriteStream
+from anyio.streams.memory import MemoryObjectSendStream
 from jumpstarter_driver_network.driver import TcpNetwork, UnixNetwork, VsockNetwork
 from jumpstarter_driver_opendal.driver import FlasherInterface
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
@@ -46,13 +57,23 @@ class QmpLogFilter(logging.Filter):
         return False
 
 
-async def _read_pipe(stream: asyncio.StreamReader, name: str, queue: asyncio.Queue):
-    while True:
-        line = await stream.readline()
-        if not line:
-            break
-        await queue.put((name, line.decode("utf-8", errors="replace")))
-    await queue.put((name, None))
+async def _read_pipe(
+    stream: ByteReceiveStream,
+    name: str,
+    send_stream: MemoryObjectSendStream[tuple[str, str | None]],
+) -> None:
+    buffered = BufferedByteReceiveStream(stream)
+    try:
+        while True:
+            line = await buffered.receive_until(b"\n", 1048576)
+            await send_stream.send((name, (line + b"\n").decode("utf-8", errors="replace")))
+    except IncompleteRead:
+        remaining = buffered.buffer
+        if remaining:
+            await send_stream.send((name, remaining.decode("utf-8", errors="replace")))
+    except (anyio.EndOfStream, anyio.ClosedResourceError):
+        pass
+    await send_stream.send((name, None))
 
 
 @dataclass(kw_only=True)
@@ -78,7 +99,6 @@ class QemuFlasher(FlasherInterface, Driver):
 
         async with await FileWriteStream.from_path(self.parent.validate_partition(partition)) as stream:
             async with self.resource(source) as res:
-                # Wrap with auto-decompression to handle .gz, .xz, .bz2, .zstd files
                 async for chunk in AutoDecompressIterator(source=res):
                     await stream.send(chunk)
 
@@ -105,12 +125,10 @@ class QemuFlasher(FlasherInterface, Driver):
         if not oci_url.startswith("oci://"):
             raise ValueError(f"OCI URL must start with oci://, got: {oci_url}")
 
-        # If explicit credentials were provided, validate immediately
         if oci_username or oci_password:
             if bool(oci_username) != bool(oci_password):
                 raise ValueError("OCI authentication requires both username and password")
         else:
-            # Fall back to env vars, then container auth files
             from jumpstarter.common.oci import resolve_oci_credentials
 
             oci_username, oci_password = resolve_oci_credentials(oci_url)
@@ -147,61 +165,65 @@ class QemuFlasher(FlasherInterface, Driver):
         self, cmd: list[str], env: dict[str, str] | None
     ) -> AsyncGenerator[tuple[str, str, int | None], None]:
         """Run a subprocess and yield (stdout, stderr, returncode) tuples as output arrives."""
-        process = await asyncio.create_subprocess_exec(  # ty: ignore[missing-argument]
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,  # ty: ignore[unresolved-attribute]
-            stderr=asyncio.subprocess.PIPE,  # ty: ignore[unresolved-attribute]
-            env=env,
-        )
+        process = await anyio.open_process(cmd, stdout=PIPE, stderr=PIPE, env=env)
 
-        output_queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
+        send_stream, receive_stream = create_memory_object_stream[tuple[str, str | None]](32)  # ty: ignore[call-non-callable]
+        deferred_error: RuntimeError | None = None
 
-        tasks = [
-            asyncio.create_task(_read_pipe(process.stdout, "stdout", output_queue)),
-            asyncio.create_task(_read_pipe(process.stderr, "stderr", output_queue)),
-        ]
+        async with send_stream, receive_stream:
+            async with create_task_group() as tg:
+                tg.start_soon(_read_pipe, process.stdout, "stdout", send_stream.clone())
+                tg.start_soon(_read_pipe, process.stderr, "stderr", send_stream.clone())
 
-        finished_streams = 0
-        start_time = asyncio.get_running_loop().time()
+                finished_streams = 0
+                start_time = anyio.current_time()
 
-        try:
-            while finished_streams < 2:
-                elapsed = asyncio.get_running_loop().time() - start_time
-                if elapsed >= self.parent.flash_timeout:
-                    process.kill()
-                    await process.wait()
-                    raise RuntimeError(f"fls flash timed out after {self.parent.flash_timeout}s")
-
-                remaining = self.parent.flash_timeout - elapsed
                 try:
-                    name, text = await asyncio.wait_for(output_queue.get(), timeout=min(remaining, 30))
-                except asyncio.TimeoutError:
-                    continue
+                    while finished_streams < 2:
+                        elapsed = anyio.current_time() - start_time
+                        if elapsed >= self.parent.flash_timeout:
+                            process.kill()
+                            await process.wait()
+                            deferred_error = RuntimeError(
+                                f"fls flash timed out after {self.parent.flash_timeout}s"
+                            )
+                            break
 
-                if text is None:
-                    finished_streams += 1
-                    continue
+                        remaining = self.parent.flash_timeout - elapsed
+                        with move_on_after(min(remaining, 30)) as scope:
+                            name, text = await receive_stream.receive()
 
-                stdout_chunk = text if name == "stdout" else ""
-                stderr_chunk = text if name == "stderr" else ""
-                yield stdout_chunk, stderr_chunk, None
+                        if scope.cancelled_caught:
+                            continue
 
-            await process.wait()
-            returncode = process.returncode
+                        if text is None:
+                            finished_streams += 1
+                            continue
 
-            if returncode != 0:
-                self.logger.error(f"fls failed - return code: {returncode}")
-                raise RuntimeError(f"fls flash failed (return code {returncode})")
+                        stdout_chunk = text if name == "stdout" else ""
+                        stderr_chunk = text if name == "stderr" else ""
+                        yield stdout_chunk, stderr_chunk, None
 
-            self.logger.info("OCI flash completed successfully")
-            yield "", "", returncode
-        finally:
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            if process.returncode is None:
-                process.kill()
-                await process.wait()
+                    if deferred_error is None:
+                        await process.wait()
+                        returncode = process.returncode
+
+                        if returncode != 0:
+                            self.logger.error(f"fls failed - return code: {returncode}")
+                            deferred_error = RuntimeError(
+                                f"fls flash failed (return code {returncode})"
+                            )
+                        else:
+                            self.logger.info("OCI flash completed successfully")
+                            yield "", "", returncode
+                finally:
+                    tg.cancel_scope.cancel()
+                    if process.returncode is None:
+                        process.kill()
+                        await process.wait()
+
+        if deferred_error is not None:
+            raise deferred_error
 
     @export
     async def dump(self, target, partition: str | None = None):
@@ -329,7 +351,6 @@ class QemuPower(PowerInterface, Driver):
                 image_driver = "raw"
                 current_virtual_size = root.stat().st_size
 
-            # Resize disk if configured
             if self.parent.disk_size:
                 requested = self.parent._parse_size(self.parent.disk_size)
 
@@ -432,7 +453,7 @@ class Qemu(Driver):
 
     smp: int = 2
     mem: str = "512M"
-    disk_size: str | None = None  # e.g., "20G" (resize disk before boot)
+    disk_size: str | None = None
 
     hostname: str = "demo"
     username: str = "jumpstarter"
@@ -442,11 +463,10 @@ class Qemu(Driver):
 
     hostfwd: dict[str, Hostfwd] = field(default_factory=dict)
 
-    # FLS configuration for OCI flashing
     fls_version: str | None = field(default=None)
     fls_allow_custom_binaries: bool = field(default=False)
     fls_custom_binary_url: str | None = field(default=None)
-    flash_timeout: int = field(default=30 * 60)  # 30 minutes
+    flash_timeout: int = field(default=30 * 60)
 
     _tmp_dir: TemporaryDirectory = field(init=False, default_factory=TemporaryDirectory)
 
@@ -569,12 +589,12 @@ class Qemu(Driver):
     @validate_call(validate_return=True)
     def set_disk_size(self, size: str) -> None:
         """Set the disk size for resizing before boot."""
-        self._parse_size(size)  # Validate
+        self._parse_size(size)
         self.disk_size = size
 
     @export
     @validate_call(validate_return=True)
     def set_memory_size(self, size: str) -> None:
         """Set the memory size for next boot."""
-        self._parse_size(size)  # Validate
+        self._parse_size(size)
         self.mem = size

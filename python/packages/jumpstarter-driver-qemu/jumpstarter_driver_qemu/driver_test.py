@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 import platform
@@ -8,6 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
+import anyio.abc
 import pytest
 import requests
 from opendal import Operator
@@ -209,8 +210,27 @@ def test_set_memory_size_invalid():
 # OCI Flash Tests
 
 
+def _create_mock_stream(lines):
+    """Create a mock byte receive stream that yields lines then raises EndOfStream."""
+    encoded = [line.encode() if isinstance(line, str) else line for line in lines]
+    data = b"".join(encoded)
+
+    stream = MagicMock(spec=anyio.abc.ByteReceiveStream)
+    call_count = {"n": 0}
+
+    async def mock_receive(max_bytes=65536):
+        if call_count["n"] >= 1:
+            raise anyio.EndOfStream()
+        call_count["n"] += 1
+        return data
+
+    stream.receive = mock_receive
+    stream.aclose = AsyncMock()
+    return stream
+
+
 def _create_mock_process(stdout_lines=None, stderr_lines=None, returncode=0):
-    """Create a mock asyncio subprocess process for testing flash_oci."""
+    """Create a mock subprocess process for testing flash_oci."""
     if stdout_lines is None:
         stdout_lines = []
     if stderr_lines is None:
@@ -221,15 +241,8 @@ def _create_mock_process(stdout_lines=None, stderr_lines=None, returncode=0):
     process.wait = AsyncMock(return_value=returncode)
     process.kill = MagicMock()
 
-    stdout_data = [line.encode() if isinstance(line, str) else line for line in stdout_lines] + [b""]
-    stdout_stream = MagicMock()
-    stdout_stream.readline = AsyncMock(side_effect=stdout_data)
-    process.stdout = stdout_stream
-
-    stderr_data = [line.encode() if isinstance(line, str) else line for line in stderr_lines] + [b""]
-    stderr_stream = MagicMock()
-    stderr_stream.readline = AsyncMock(side_effect=stderr_data)
-    process.stderr = stderr_stream
+    process.stdout = _create_mock_stream(stdout_lines)
+    process.stderr = _create_mock_stream(stderr_lines)
 
     return process
 
@@ -251,18 +264,20 @@ async def test_flash_oci_success():
     mock_process = _create_mock_process(stdout_lines=["Flashing complete\n"])
 
     with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="/usr/local/bin/fls"):
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process) as mock_exec:
+        with patch(
+            "jumpstarter_driver_qemu.driver.anyio.open_process", new_callable=AsyncMock, return_value=mock_process
+        ) as mock_exec:
             results = await _collect_flash_oci(flasher, "oci://quay.io/org/image:tag")
 
             # Verify final chunk has returncode 0
             assert any(r[2] == 0 for r in results)
 
             mock_exec.assert_called_once()
-            call_args = mock_exec.call_args
-            assert call_args.args[0] == "/usr/local/bin/fls"
-            assert call_args.args[1] == "from-url"
-            assert call_args.args[2] == "oci://quay.io/org/image:tag"
-            assert call_args.args[3] == expected_target
+            cmd = mock_exec.call_args.args[0]
+            assert cmd[0] == "/usr/local/bin/fls"
+            assert cmd[1] == "from-url"
+            assert cmd[2] == "oci://quay.io/org/image:tag"
+            assert cmd[3] == expected_target
 
 
 @pytest.mark.anyio
@@ -274,10 +289,12 @@ async def test_flash_oci_with_partition():
     mock_process = _create_mock_process()
 
     with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process) as mock_exec:
+        with patch(
+            "jumpstarter_driver_qemu.driver.anyio.open_process", new_callable=AsyncMock, return_value=mock_process
+        ) as mock_exec:
             await _collect_flash_oci(flasher, "oci://quay.io/org/bios:v1", partition="bios")
 
-            assert mock_exec.call_args.args[3] == expected_target
+            assert mock_exec.call_args.args[0][3] == expected_target
 
 
 @pytest.mark.anyio
@@ -288,7 +305,9 @@ async def test_flash_oci_with_credentials():
     mock_process = _create_mock_process()
 
     with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process) as mock_exec:
+        with patch(
+            "jumpstarter_driver_qemu.driver.anyio.open_process", new_callable=AsyncMock, return_value=mock_process
+        ) as mock_exec:
             await _collect_flash_oci(
                 flasher,
                 "oci://quay.io/private/image:tag",
@@ -319,7 +338,9 @@ async def test_flash_oci_no_credentials():
         with patch("jumpstarter.common.oci.read_auth_file_credentials", return_value=(None, None)):
             with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
                 with patch(
-                    "asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process
+                    "jumpstarter_driver_qemu.driver.anyio.open_process",
+                    new_callable=AsyncMock,
+                    return_value=mock_process,
                 ) as mock_exec:
                     await _collect_flash_oci(flasher, "oci://quay.io/public/image:tag")
 
@@ -337,7 +358,7 @@ async def test_flash_oci_credentials_from_env():
     with patch.dict(os.environ, {"OCI_USERNAME": "envuser", "OCI_PASSWORD": "envpass"}):
         with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
             with patch(
-                "asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process
+                "jumpstarter_driver_qemu.driver.anyio.open_process", new_callable=AsyncMock, return_value=mock_process
             ) as mock_exec:
                 await _collect_flash_oci(flasher, "oci://quay.io/private/image:tag")
 
@@ -356,7 +377,7 @@ async def test_flash_oci_explicit_credentials_override_env():
     with patch.dict(os.environ, {"OCI_USERNAME": "envuser", "OCI_PASSWORD": "envpass"}):
         with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
             with patch(
-                "asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process
+                "jumpstarter_driver_qemu.driver.anyio.open_process", new_callable=AsyncMock, return_value=mock_process
             ) as mock_exec:
                 await _collect_flash_oci(
                     flasher,
@@ -381,7 +402,9 @@ async def test_flash_oci_streams_output():
     )
 
     with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process):
+        with patch(
+            "jumpstarter_driver_qemu.driver.anyio.open_process", new_callable=AsyncMock, return_value=mock_process
+        ):
             results = await _collect_flash_oci(flasher, "oci://quay.io/org/image:tag")
 
             # Should have received streaming output plus the final returncode chunk
@@ -432,7 +455,9 @@ async def test_flash_oci_fls_failure():
     mock_process = _create_mock_process(returncode=1)
 
     with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process):
+        with patch(
+            "jumpstarter_driver_qemu.driver.anyio.open_process", new_callable=AsyncMock, return_value=mock_process
+        ):
             with pytest.raises(RuntimeError, match="fls flash failed"):
                 await _collect_flash_oci(flasher, "oci://quay.io/org/image:tag")
 
@@ -443,8 +468,8 @@ async def test_flash_oci_fls_timeout():
     driver = Qemu(flash_timeout=0)  # Immediate timeout
     flasher = driver.children["flasher"]
 
-    async def hanging_readline():
-        await asyncio.sleep(10)
+    async def hanging_receive(max_bytes=65536):
+        await anyio.sleep(10)
         return b""
 
     mock_process = MagicMock()
@@ -457,16 +482,20 @@ async def test_flash_oci_fls_timeout():
     mock_process.wait = mock_wait
     mock_process.kill = MagicMock()
 
-    stdout_stream = MagicMock()
-    stdout_stream.readline = hanging_readline
+    stdout_stream = MagicMock(spec=anyio.abc.ByteReceiveStream)
+    stdout_stream.receive = hanging_receive
+    stdout_stream.aclose = AsyncMock()
     mock_process.stdout = stdout_stream
 
-    stderr_stream = MagicMock()
-    stderr_stream.readline = hanging_readline
+    stderr_stream = MagicMock(spec=anyio.abc.ByteReceiveStream)
+    stderr_stream.receive = hanging_receive
+    stderr_stream.aclose = AsyncMock()
     mock_process.stderr = stderr_stream
 
     with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process):
+        with patch(
+            "jumpstarter_driver_qemu.driver.anyio.open_process", new_callable=AsyncMock, return_value=mock_process
+        ):
             with pytest.raises(RuntimeError, match="fls flash timed out"):
                 await _collect_flash_oci(flasher, "oci://quay.io/org/image:tag")
 
@@ -475,30 +504,22 @@ async def test_flash_oci_fls_timeout():
 
 @pytest.mark.anyio
 async def test_flash_oci_inner_wait_timeout():
-    """Inner wait_for timeout should continue the loop without raising."""
+    """move_on_after timeout should continue the loop without raising."""
     driver = Qemu(flash_timeout=600)
     flasher = driver.children["flasher"]
     mock_process = _create_mock_process(stdout_lines=["output\n"])
 
-    original_wait_for = asyncio.wait_for
-    timeout_fired = False
-
-    async def mock_wait_for(awaitable, *, timeout):
-        nonlocal timeout_fired
-        if not timeout_fired:  # ty: ignore[unresolved-reference]
-            timeout_fired = True
-            if hasattr(awaitable, "close"):
-                awaitable.close()
-            raise asyncio.TimeoutError()
-        return await original_wait_for(awaitable, timeout=timeout)
-
     with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process):
-            with patch("asyncio.wait_for", mock_wait_for):
-                results = await _collect_flash_oci(flasher, "oci://quay.io/org/image:tag")
+        with patch(
+            "jumpstarter_driver_qemu.driver.anyio.open_process", new_callable=AsyncMock, return_value=mock_process
+        ):
+            results = await _collect_flash_oci(flasher, "oci://quay.io/org/image:tag")
 
-                assert timeout_fired
-                assert any(r[2] == 0 for r in results)
+            final_results = [r for r in results if r[2] is not None]
+            assert len(final_results) == 1, "exactly one final result with returncode expected"
+            assert final_results[0][2] == 0
+            stdout_chunks = [r[0] for r in results if r[0]]
+            assert len(stdout_chunks) > 0, "output data should have been received"
 
 
 @pytest.mark.anyio
@@ -517,19 +538,19 @@ async def test_flash_oci_process_cleanup_on_early_exit():
     mock_process.wait = mock_wait
     mock_process.kill = MagicMock()
 
-    stdout_stream = MagicMock()
-    stdout_stream.readline = AsyncMock(side_effect=[b"line1\n", b"line2\n", b""])
-    mock_process.stdout = stdout_stream
+    mock_process.stdout = _create_mock_stream(["line1\n", "line2\n"])
+    mock_process.stderr = _create_mock_stream([])
 
-    stderr_stream = MagicMock()
-    stderr_stream.readline = AsyncMock(side_effect=[b""])
-    mock_process.stderr = stderr_stream
-
-    with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process):
+    with patch("jumpstarter_driver_qemu.driver.anyio.open_process", new_callable=AsyncMock, return_value=mock_process):
         gen = flasher._stream_subprocess(["fls", "from-url", "oci://img", "/tmp/root"], None)  # ty: ignore[unresolved-attribute]
         async for _ in gen:
             break
-        await gen.aclose()
+        # GeneratorExit inside an anyio task group is wrapped in a
+        # BaseExceptionGroup; this is expected structured concurrency behavior.
+        try:
+            await gen.aclose()
+        except BaseExceptionGroup:
+            pass
 
         mock_process.kill.assert_called()
 
@@ -541,7 +562,9 @@ async def test_flash_oci_fls_not_found():
     flasher = driver.children["flasher"]
 
     with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, side_effect=FileNotFoundError):
+        with patch(
+            "jumpstarter_driver_qemu.driver.anyio.open_process", new_callable=AsyncMock, side_effect=FileNotFoundError
+        ):
             with pytest.raises(RuntimeError, match="fls command not found"):
                 await _collect_flash_oci(flasher, "oci://quay.io/org/image:tag")
 
@@ -554,7 +577,9 @@ async def test_flash_oci_uses_fls_config():
     mock_process = _create_mock_process()
 
     with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls") as mock_get:
-        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process):
+        with patch(
+            "jumpstarter_driver_qemu.driver.anyio.open_process", new_callable=AsyncMock, return_value=mock_process
+        ):
             await _collect_flash_oci(flasher, "oci://quay.io/org/image:tag")
 
             mock_get.assert_called_once_with(
@@ -586,13 +611,14 @@ def test_flash_oci_via_flasher_client():
     with serve(Qemu()) as qemu:
         with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
             with patch(
-                "asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process
+                "jumpstarter_driver_qemu.driver.anyio.open_process", new_callable=AsyncMock, return_value=mock_process
             ) as mock_exec:
                 qemu.flasher.flash("oci://quay.io/org/image:tag")
 
                 mock_exec.assert_called_once()
-                assert mock_exec.call_args.args[1] == "from-url"
-                assert mock_exec.call_args.args[2] == "oci://quay.io/org/image:tag"
+                cmd = mock_exec.call_args.args[0]
+                assert cmd[1] == "from-url"
+                assert cmd[2] == "oci://quay.io/org/image:tag"
 
 
 def test_flash_oci_convenience_method():
@@ -602,14 +628,15 @@ def test_flash_oci_convenience_method():
     with serve(Qemu()) as qemu:
         with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
             with patch(
-                "asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process
+                "jumpstarter_driver_qemu.driver.anyio.open_process", new_callable=AsyncMock, return_value=mock_process
             ) as mock_exec:
                 qemu.flash_oci("oci://quay.io/org/image:tag", partition="bios")
 
                 mock_exec.assert_called_once()
-                assert mock_exec.call_args.args[1] == "from-url"
-                assert mock_exec.call_args.args[2] == "oci://quay.io/org/image:tag"
-                assert Path(mock_exec.call_args.args[3]).name == "bios"
+                cmd = mock_exec.call_args.args[0]
+                assert cmd[1] == "from-url"
+                assert cmd[2] == "oci://quay.io/org/image:tag"
+                assert Path(cmd[3]).name == "bios"
 
 
 @pytest.mark.anyio

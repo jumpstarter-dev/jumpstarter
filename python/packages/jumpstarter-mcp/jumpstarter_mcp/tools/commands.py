@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
-import asyncio.subprocess
 import logging
 import shutil
+from subprocess import DEVNULL, PIPE
 
 import anyio
 import anyio.to_thread
@@ -45,30 +44,28 @@ async def run_command(
 
     logger.info("Running command: j %s (timeout=%ds)", " ".join(command), timeout_seconds)
     try:
-        proc = await asyncio.create_subprocess_exec(
-            j_path,
-            *command,
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=full_env,
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
-        logger.info("Command finished: j %s -> exit_code=%s", " ".join(command), proc.returncode)
+        with anyio.fail_after(timeout_seconds):
+            result = await anyio.run_process(
+                [j_path, *command],
+                stdin=DEVNULL,
+                stdout=PIPE,
+                stderr=PIPE,
+                env=full_env,
+                check=False,
+            )
+        logger.info("Command finished: j %s -> exit_code=%s", " ".join(command), result.returncode)
         return {
-            "exit_code": proc.returncode,
-            "stdout": stdout.decode(errors="replace"),
-            "stderr": stderr.decode(errors="replace"),
+            "exit_code": result.returncode,
+            "stdout": result.stdout.decode(errors="replace"),
+            "stderr": result.stderr.decode(errors="replace"),
             "command": [j_path, *command],
         }
     except TimeoutError:
-        proc.kill()
-        stdout, stderr = await proc.communicate()
         logger.warning("Command timed out after %ds: j %s", timeout_seconds, " ".join(command))
         return {
-            "exit_code": proc.returncode,
-            "stdout": stdout.decode(errors="replace"),
-            "stderr": stderr.decode(errors="replace"),
+            "exit_code": -1,
+            "stdout": "",
+            "stderr": "",
             "timed_out": True,
             "timeout_seconds": timeout_seconds,
             "command": [j_path, *command],

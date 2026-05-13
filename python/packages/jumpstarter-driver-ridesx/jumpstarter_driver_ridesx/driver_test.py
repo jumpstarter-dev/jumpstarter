@@ -433,12 +433,12 @@ def test_power_off_exported(ridesx_power_driver):
         assert inspect.iscoroutinefunction(ridesx_power_driver.off)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_power_cycle(ridesx_power_driver):
     """Test power cycle calls off, waits, then on"""
     with patch.object(ridesx_power_driver, "off", new_callable=AsyncMock) as mock_off:
         with patch.object(ridesx_power_driver, "on", new_callable=AsyncMock) as mock_on:
-            with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            with patch("jumpstarter_driver_ridesx.driver.anyio.sleep", new_callable=AsyncMock) as mock_sleep:
                 await ridesx_power_driver.cycle(delay=0.1)
 
                 mock_off.assert_called_once()

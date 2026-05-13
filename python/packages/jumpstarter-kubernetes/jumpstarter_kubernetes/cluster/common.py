@@ -1,8 +1,10 @@
 """Common utilities and types for cluster operations."""
 
-import asyncio
 import os
+from subprocess import PIPE
 from typing import Literal, Optional
+
+import anyio
 
 from ..exceptions import ClusterTypeValidationError
 
@@ -72,16 +74,12 @@ async def run_command(cmd: list[str]) -> tuple[int, str, str]:
         raise ValueError("Command list cannot be empty")
 
     try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
+        result = await anyio.run_process(cmd, stdout=PIPE, stderr=PIPE, check=False)
 
-        # Use safe decoding to avoid UnicodeDecodeError
-        stdout_str = stdout.decode(errors="replace").strip()
-        stderr_str = stderr.decode(errors="replace").strip()
+        stdout_str = result.stdout.decode(errors="replace").strip()
+        stderr_str = result.stderr.decode(errors="replace").strip()
 
-        return process.returncode, stdout_str, stderr_str
+        return result.returncode, stdout_str, stderr_str
     except builtins.FileNotFoundError as e:
         raise RuntimeError(f"Command not found: {cmd[0]}") from e
     except PermissionError as e:
@@ -99,7 +97,7 @@ async def run_command_with_output(cmd: list[str]) -> int:
         raise ValueError("Command list cannot be empty")
 
     try:
-        process = await asyncio.create_subprocess_exec(*cmd)
+        process = await anyio.open_process(cmd)
         return await process.wait()
     except builtins.FileNotFoundError as e:
         raise RuntimeError(f"Command not found: {cmd[0]}") from e

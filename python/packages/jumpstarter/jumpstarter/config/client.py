@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import errno
 import os
 import tempfile
@@ -10,7 +9,9 @@ from functools import wraps
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal, Optional, Self
 
+import anyio
 import grpc
+import sniffio
 import yaml
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 from pydantic import (
@@ -41,9 +42,11 @@ def _blocking_compat(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
         try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(f(*args, **kwargs))
+            sniffio.current_async_library()
+        except sniffio.AsyncLibraryNotFoundError:
+            async def _run():
+                return await f(*args, **kwargs)
+            return anyio.run(_run)
         else:
             return f(*args, **kwargs)
 

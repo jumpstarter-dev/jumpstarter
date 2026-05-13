@@ -1,9 +1,9 @@
-import asyncio
 import logging
 import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock, patch
 
+import anyio
 import pytest
 from rich.console import Console
 
@@ -174,7 +174,7 @@ class TestLeaseAcquisitionSpinner:
             assert "[dim](" in call_args
             assert "[/dim]" in call_args
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_integration_with_async_context(self):
         """Test integration with async context manager."""
         with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
@@ -187,7 +187,7 @@ class TestLeaseAcquisitionSpinner:
                 async def test_async_usage():
                     with spinner as ctx_spinner:
                         ctx_spinner.update_status("Initial message")
-                        await asyncio.sleep(0.1)  # Small delay
+                        await anyio.sleep(0.1)
                         ctx_spinner.tick()
                         ctx_spinner.update_status("Updated message")
 
@@ -547,7 +547,7 @@ class TestMonitorAsyncError:
                 # Keep the body alive long enough for the monitor to loop
                 # through the first get(), sleep, second get() (fails), and
                 # error handler using the cached end time.
-                await asyncio.sleep(0.2)
+                await anyio.sleep(0.2)
 
         # Should have gone through the error handler using cached end time
         assert call_count >= 2
