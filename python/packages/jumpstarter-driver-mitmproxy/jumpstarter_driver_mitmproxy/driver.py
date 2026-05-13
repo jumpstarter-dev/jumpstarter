@@ -28,11 +28,12 @@ debugging, or headless via mitmdump for CI/CD pipelines.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import fnmatch
 import json
 import logging
+
+import anyio
 import os
 import secrets
 import signal
@@ -1480,7 +1481,7 @@ class MitmproxyDriver(Driver):
                 yield json.dumps(req)
 
         while True:
-            await asyncio.sleep(0.3)
+            await anyio.sleep(0.3)
             with self._capture_lock:
                 new_count = len(self._captured_requests)
                 if new_count > last_index:

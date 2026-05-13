@@ -1,9 +1,10 @@
-import asyncio
 import os
 import threading
+from asyncio import AbstractEventLoop, CancelledError, create_task, gather, new_event_loop, set_event_loop
 from dataclasses import dataclass, field
 from typing import Optional
 
+import anyio
 from jumpstarter_driver_opendal.driver import Opendal
 
 from jumpstarter_driver_tftp.server import TftpServer
@@ -39,12 +40,12 @@ class Tftp(Driver):
     root_dir: str = "/var/lib/tftpboot"
     host: str = field(default="")
     port: int = 69
-    remove_created_on_close: bool = True  # Clean up temporary boot files by default
+    remove_created_on_close: bool = True
     server: Optional["TftpServer"] = field(init=False, default=None)
     server_thread: Optional[threading.Thread] = field(init=False, default=None)
     _shutdown_event: threading.Event = field(init=False, default_factory=threading.Event)
     _loop_ready: threading.Event = field(init=False, default_factory=threading.Event)
-    _loop: Optional[asyncio.AbstractEventLoop] = field(init=False, default=None)
+    _loop: Optional[AbstractEventLoop] = field(init=False, default=None)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -67,8 +68,8 @@ class Tftp(Driver):
         return "jumpstarter_driver_tftp.client.TftpServerClient"
 
     def _start_server(self):
-        self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
+        self._loop = new_event_loop()
+        set_event_loop(self._loop)
         self.server = TftpServer(
             host=self.host,
             port=self.port,
@@ -91,15 +92,15 @@ class Tftp(Driver):
 
     async def _run_server(self):
         try:
-            server_task = asyncio.create_task(self.server.start())
-            await asyncio.gather(server_task, self._wait_for_shutdown())
-        except asyncio.CancelledError:
+            server_task = create_task(self.server.start())
+            await gather(server_task, self._wait_for_shutdown())
+        except CancelledError:
             self.logger.info("Server task cancelled")
             raise
 
     async def _wait_for_shutdown(self):
         while not self._shutdown_event.is_set():
-            await asyncio.sleep(0.1)
+            await anyio.sleep(0.1)
         self.logger.info("Shutdown event detected")
         if self.server is not None:
             await self.server.shutdown()

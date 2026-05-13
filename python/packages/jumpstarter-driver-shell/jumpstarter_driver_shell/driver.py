@@ -1,16 +1,15 @@
-import asyncio
-import asyncio.subprocess
 import os
 import signal
 import subprocess
 from dataclasses import dataclass, field
+from subprocess import PIPE
 from typing import AsyncGenerator
+
+import anyio
+from anyio import fail_after, move_on_after
 
 from jumpstarter.driver import Driver, export
 
-# Environment variables that are blocked because they allow privilege escalation.
-# A client that can set these can hijack the subprocess (e.g. LD_PRELOAD to load
-# arbitrary shared libraries, PATH to redirect commands to attacker binaries).
 BLOCKED_ENV_VARS: set[str] = {
     "LD_PRELOAD",
     "LD_LIBRARY_PATH",
@@ -21,7 +20,6 @@ BLOCKED_ENV_VARS: set[str] = {
     "HOME",
 }
 
-# Prefixes that are also blocked (matched with str.startswith).
 BLOCKED_ENV_PREFIXES: tuple[str, ...] = (
     "LD_",
     "BASH_FUNC_",
@@ -32,10 +30,6 @@ BLOCKED_ENV_PREFIXES: tuple[str, ...] = (
 class Shell(Driver):
     """shell driver for Jumpstarter"""
 
-    # methods field defines the methods exported and their shell scripts
-    # Supports two formats:
-    # 1. Simple string: method_name: "command"
-    # 2. Dict with description: method_name: {command: "...", description: "...", timeout: ...}
     methods: dict[str, str | dict[str, str | int]]
     shell: list[str] = field(default_factory=lambda: ["bash", "-c"])
     timeout: int = 300
@@ -43,7 +37,6 @@ class Shell(Driver):
 
     def __post_init__(self):
         super().__post_init__()
-        # Extract descriptions from methods configuration and populate methods_description
         for method_name, method_config in self.methods.items():
             if isinstance(method_config, dict) and "description" in method_config:
                 self.methods_description[method_name] = method_config["description"]
@@ -105,10 +98,8 @@ class Shell(Driver):
 
     def _validate_script_params(self, script, args, env_vars):
         """Validate script parameters and return combined environment."""
-        # Merge parent environment with the user-supplied env_vars
         combined_env = os.environ.copy()
         if env_vars:
-            # Validate environment variable names
             for key in env_vars:
                 if not isinstance(key, str) or not key.isidentifier():
                     raise ValueError(f"Invalid environment variable name: {key}")
@@ -121,12 +112,10 @@ class Shell(Driver):
         if not isinstance(script, str) or not script.strip():
             raise ValueError("Shell script must be a non-empty string")
 
-        # Validate arguments
         for arg in args:
             if not isinstance(arg, str):
                 raise ValueError(f"All arguments must be strings, got {type(arg)}")
 
-        # Validate working directory if set
         if self.cwd and not os.path.isdir(self.cwd):
             raise ValueError(f"Working directory does not exist: {self.cwd}")
 
@@ -142,28 +131,30 @@ class Shell(Driver):
         stdout_data = ""
         stderr_data = ""
 
-        # Read from stdout
         if process.stdout:
             try:
                 if read_all:
-                    chunk = await process.stdout.read()
+                    chunk = await process.stdout.receive()
                 else:
-                    chunk = await asyncio.wait_for(process.stdout.read(1024), timeout=0.01)
+                    chunk = None
+                    with move_on_after(0.01):
+                        chunk = await process.stdout.receive(1024)
                 if chunk:
                     stdout_data = chunk.decode('utf-8', errors='replace')
-            except (asyncio.TimeoutError, Exception):
+            except Exception:
                 pass
 
-        # Read from stderr
         if process.stderr:
             try:
                 if read_all:
-                    chunk = await process.stderr.read()
+                    chunk = await process.stderr.receive()
                 else:
-                    chunk = await asyncio.wait_for(process.stderr.read(1024), timeout=0.01)
+                    chunk = None
+                    with move_on_after(0.01):
+                        chunk = await process.stderr.receive(1024)
                 if chunk:
                     stderr_data = chunk.decode('utf-8', errors='replace')
-            except (asyncio.TimeoutError, Exception):
+            except Exception:
                 pass
 
         return stdout_data, stderr_data
@@ -186,35 +177,30 @@ class Shell(Driver):
         combined_env = self._validate_script_params(script, args, env_vars)
         cmd = self.shell + [script, method] + list(args)
 
-        # Start the process with pipes for streaming and new process group
-        self.logger.debug( f"running {method} with cmd: {cmd} and env: {combined_env} " f"and args: {args}")
-        process = await asyncio.create_subprocess_exec(  # ty: ignore[missing-argument]
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        self.logger.debug(f"running {method} with cmd: {cmd} and env: {combined_env} and args: {args}")
+        process = await anyio.open_process(
+            cmd,
+            stdout=PIPE,
+            stderr=PIPE,
             env=combined_env,
             cwd=self.cwd,
-            start_new_session=True,  # Create new process group
+            start_new_session=True,
         )
 
-        # Create a task to monitor the process timeout
-        start_time = asyncio.get_event_loop().time()
+        start_time = anyio.current_time()
 
         if timeout is None:
             timeout = self.timeout
 
-        # Read output in real-time
         while process.returncode is None:
-            if asyncio.get_event_loop().time() - start_time > timeout:
-                # Send SIGTERM to entire process group for graceful termination
+            if anyio.current_time() - start_time > timeout:
                 try:
                     os.killpg(process.pid, signal.SIGTERM)
                 except (ProcessLookupError, OSError):
-                    # Process group might already be gone
                     pass
-                try:
-                    await asyncio.wait_for(process.wait(), timeout=5.0)
-                except asyncio.TimeoutError:
+                with move_on_after(5.0):
+                    await process.wait()
+                if process.returncode is None:
                     try:
                         os.killpg(process.pid, signal.SIGKILL)
                         self.logger.warning(f"SIGTERM failed to terminate {process.pid}, sending SIGKILL")
@@ -225,17 +211,14 @@ class Shell(Driver):
             try:
                 stdout_data, stderr_data = await self._read_process_output(process, read_all=False)
 
-                # Yield any data we got
                 if stdout_data or stderr_data:
                     yield stdout_data, stderr_data, None
 
-                # Small delay to prevent busy waiting
-                await asyncio.sleep(0.1)
+                await anyio.sleep(0.1)
 
             except Exception:
                 break
 
-        # Process completed, get return code and final output
         returncode = process.returncode
         remaining_stdout, remaining_stderr = await self._read_process_output(process, read_all=True)
         yield remaining_stdout, remaining_stderr, returncode

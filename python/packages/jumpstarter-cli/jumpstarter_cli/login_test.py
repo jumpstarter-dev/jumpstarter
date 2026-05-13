@@ -1,8 +1,8 @@
-import asyncio
 import json
 import ssl
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
 import click
 import pytest
 from click.testing import CliRunner
@@ -84,7 +84,9 @@ def test_fetch_auth_config_maps_timeout_to_click_exception(monkeypatch) -> None:
     monkeypatch.setattr("jumpstarter_cli.login.aiohttp.ClientSession", FakeClientSession)
 
     with pytest.raises(click.ClickException, match="Timed out while connecting"):
-        asyncio.run(fetch_auth_config("login.example.com"))
+        async def _run():
+            return await fetch_auth_config("login.example.com")
+        anyio.run(_run)
 
 
 def test_fetch_auth_config_maps_json_decode_error(monkeypatch) -> None:
@@ -116,7 +118,9 @@ def test_fetch_auth_config_maps_json_decode_error(monkeypatch) -> None:
     monkeypatch.setattr("jumpstarter_cli.login.aiohttp.ClientSession", FakeClientSession)
 
     with pytest.raises(click.ClickException, match="Invalid JSON response received"):
-        asyncio.run(fetch_auth_config("login.example.com"))
+        async def _run():
+            return await fetch_auth_config("login.example.com")
+        anyio.run(_run)
 
 
 def test_login_cli_shows_timeout_message(monkeypatch) -> None:
@@ -151,13 +155,13 @@ def test_login_cli_shows_certificate_message(monkeypatch) -> None:
     assert "TLS certificate verification failed" in result.output
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_fetch_auth_config_rejects_http_without_insecure_tls():
     with pytest.raises(click.UsageError, match="--insecure-tls"):
         await fetch_auth_config("http://login.example.com", insecure_tls=False)
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_fetch_auth_config_allows_explicit_http_with_insecure_tls():
     mock_response = MagicMock()
     mock_response.status = 200
@@ -183,7 +187,7 @@ async def test_fetch_auth_config_allows_explicit_http_with_insecure_tls():
     assert result["grpcEndpoint"] == "grpc.example.com"
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_fetch_auth_config_defaults_to_https_with_insecure_tls():
     mock_response = MagicMock()
     mock_response.status = 200

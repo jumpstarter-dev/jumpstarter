@@ -6,10 +6,10 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-import asyncio
 import os
 import sys
 
+import anyio
 from jumpstarter_kubernetes.controller import get_latest_compatible_controller_version
 
 os.environ["TERM"] = "dumb"
@@ -64,7 +64,9 @@ def get_controller_version():
     else:
         version = None
 
-    return asyncio.run(get_latest_compatible_controller_version(client_version=version))
+    async def _run():
+        return await get_latest_compatible_controller_version(client_version=version)
+    return anyio.run(_run)
 
 
 def get_index_url():

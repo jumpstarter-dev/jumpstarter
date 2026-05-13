@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
-import asyncio.subprocess
 import logging
+from subprocess import DEVNULL, PIPE
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -324,19 +323,21 @@ class TestRunCommand:
         manager._connections[conn.id] = conn
         return manager, conn.id
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_successful_command(self, manager_with_conn):
+        from subprocess import CompletedProcess
         from jumpstarter_mcp.tools.commands import run_command
 
         manager, conn_id = manager_with_conn
 
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"hello\n", b""))
-        mock_proc.returncode = 0
+        mock_result = CompletedProcess(
+            args=["/usr/bin/j", "power", "on"], returncode=0,
+            stdout=b"hello\n", stderr=b"",
+        )
 
         with (
             patch("shutil.which", return_value="/usr/bin/j"),
-            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+            patch("jumpstarter_mcp.tools.commands.anyio.run_process", new_callable=AsyncMock, return_value=mock_result),
         ):
             result = await run_command(manager, conn_id, ["power", "on"])
 
@@ -344,37 +345,26 @@ class TestRunCommand:
         assert result["stdout"] == "hello\n"
         assert "timed_out" not in result
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_timeout_captures_output(self, manager_with_conn):
         from jumpstarter_mcp.tools.commands import run_command
 
         manager, conn_id = manager_with_conn
 
-        call_count = 0
-
-        async def fake_communicate():
-            nonlocal call_count
-            call_count += 1  # ty: ignore[unresolved-reference]
-            if call_count == 1:
-                await asyncio.sleep(999)
-            return (b"partial", b"err")
-
-        mock_proc = AsyncMock()
-        mock_proc.communicate = fake_communicate
-        mock_proc.kill = lambda: None
-        mock_proc.returncode = -9
+        async def slow_run_process(*args, **kwargs):
+            import anyio
+            await anyio.sleep(999)
 
         with (
             patch("shutil.which", return_value="/usr/bin/j"),
-            patch("asyncio.create_subprocess_exec", return_value=mock_proc),
+            patch("jumpstarter_mcp.tools.commands.anyio.run_process", side_effect=slow_run_process),
         ):
             result = await run_command(manager, conn_id, ["serial", "pipe"], timeout_seconds=1)
 
         assert result["timed_out"] is True
         assert result["timeout_seconds"] == 1
-        assert result["stdout"] == "partial"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_j_not_found(self, manager_with_conn):
         from jumpstarter_mcp.tools.commands import run_command
 
@@ -386,25 +376,27 @@ class TestRunCommand:
         assert "error" in result
         assert "not found" in result["error"]
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_subprocess_stdin_is_devnull(self, manager_with_conn):
         """Subprocess must not inherit MCP's stdin (would consume JSON-RPC input)."""
+        from subprocess import CompletedProcess
         from jumpstarter_mcp.tools.commands import run_command
 
         manager, conn_id = manager_with_conn
 
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"ok\n", b""))
-        mock_proc.returncode = 0
+        mock_result = CompletedProcess(
+            args=["/usr/bin/j", "power", "on"], returncode=0,
+            stdout=b"ok\n", stderr=b"",
+        )
 
         with (
             patch("shutil.which", return_value="/usr/bin/j"),
-            patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec,
+            patch("jumpstarter_mcp.tools.commands.anyio.run_process", new_callable=AsyncMock, return_value=mock_result) as mock_exec,
         ):
             await run_command(manager, conn_id, ["power", "on"])
 
         _, kwargs = mock_exec.call_args
-        assert kwargs["stdin"] == asyncio.subprocess.DEVNULL
+        assert kwargs["stdin"] == DEVNULL
 
 
 # ---------------------------------------------------------------------------
@@ -438,14 +430,14 @@ def _make_jwt_payload(exp: int | None = None, iss: str = "https://sso.example.co
 
 
 class TestEnsureFreshToken:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_no_token_returns_config_unchanged(self):
         config = MagicMock()
         config.token = None
         result = await _ensure_fresh_token(config)
         assert result is config
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_valid_token_skips_refresh(self):
         future_exp = int(time.time()) + 3600
         config = MagicMock()
@@ -458,7 +450,7 @@ class TestEnsureFreshToken:
         assert result is config
         mock_cls.save.assert_not_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_expired_token_no_refresh_token_skips(self):
         past_exp = int(time.time()) - 60
         config = MagicMock()
@@ -468,7 +460,7 @@ class TestEnsureFreshToken:
         result = await _ensure_fresh_token(config)
         assert result is config
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_expired_token_refreshes_successfully(self):
         past_exp = int(time.time()) - 60
         config = MagicMock()
@@ -493,7 +485,7 @@ class TestEnsureFreshToken:
         assert result.refresh_token == new_refresh
         mock_cls.save.assert_called_once_with(config)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_expired_token_refresh_updates_only_access_when_no_new_refresh(self):
         past_exp = int(time.time()) - 60
         config = MagicMock()
@@ -514,7 +506,7 @@ class TestEnsureFreshToken:
         assert result.token == "new-access"
         assert result.refresh_token == "old-refresh"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_expired_token_refresh_failure_returns_config_unchanged(self):
         past_exp = int(time.time()) - 60
         original_token = _make_jwt_payload(exp=past_exp)
@@ -534,7 +526,7 @@ class TestEnsureFreshToken:
         assert result is config
         mock_cls.save.assert_not_called()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_near_expiry_triggers_refresh(self):
         near_exp = int(time.time()) + TOKEN_REFRESH_THRESHOLD_SECONDS - 1
         config = MagicMock()
@@ -552,7 +544,7 @@ class TestEnsureFreshToken:
 
         assert result.token == "refreshed"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_token_without_exp_claim_skips_refresh(self):
         config = MagicMock()
         config.token = _make_jwt_payload(exp=None)

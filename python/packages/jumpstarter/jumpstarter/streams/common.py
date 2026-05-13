@@ -1,5 +1,5 @@
-import asyncio
 import logging
+from asyncio import InvalidStateError
 from contextlib import asynccontextmanager, suppress
 
 from anyio import (
@@ -26,7 +26,7 @@ async def copy_stream(dst: AnyByteStream, src: AnyByteStream):
             OSError,
         ):
             await dst.send_eof()
-    except (BrokenResourceError, ClosedResourceError, asyncio.InvalidStateError) as e:
+    except (BrokenResourceError, ClosedResourceError, InvalidStateError) as e:
         if isinstance(e.__cause__, BrokenPipeError):
             # BrokenPipeError (EPIPE) = writing to a closed pipe during normal teardown
             logger.debug("stream copy interrupted (%s): %s", type(e).__name__, e)

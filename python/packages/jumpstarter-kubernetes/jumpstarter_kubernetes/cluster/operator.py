@@ -1,7 +1,9 @@
 """Operator-based Jumpstarter installation."""
 
-import asyncio
+from subprocess import PIPE
 from typing import Literal, Optional
+
+import anyio
 
 from ..callbacks import OutputCallback, SilentCallback
 from ..exceptions import ClusterOperationError
@@ -231,11 +233,7 @@ async def apply_jumpstarter_cr(
     returncode, ns_yaml, _ = await run_command(cmd)
     if returncode == 0:
         apply_cmd = _kubectl_base(kubeconfig, context) + ["apply", "-f", "-"]
-        process = await asyncio.create_subprocess_exec(
-            *apply_cmd, stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        process = await anyio.open_process(apply_cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
         _, ns_stderr = await process.communicate(input=ns_yaml.encode())
         if process.returncode != 0:
             raise ClusterOperationError(
@@ -248,12 +246,7 @@ async def apply_jumpstarter_cr(
     callback.progress("Applying Jumpstarter CR...")
 
     apply_cmd = _kubectl_base(kubeconfig, context) + ["apply", "-f", "-"]
-    process = await asyncio.create_subprocess_exec(
-        *apply_cmd,
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+    process = await anyio.open_process(apply_cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
     stdout, stderr = await process.communicate(input=cr_yaml.encode())
 
     if process.returncode != 0:
@@ -291,7 +284,7 @@ async def wait_for_jumpstarter_ready(
             returncode, _, _ = await run_command(cmd)
             if returncode == 0:
                 break
-            await asyncio.sleep(poll_interval)
+            await anyio.sleep(poll_interval)
         else:
             raise ClusterOperationError(
                 "install", "jumpstarter", "operator",

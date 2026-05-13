@@ -1,5 +1,16 @@
-import asyncio
 import logging
+from asyncio import (
+    CancelledError,
+    DatagramProtocol,
+    DatagramTransport,
+    Event,
+    Task,
+    TimeoutError,
+    create_task,
+    gather,
+    get_running_loop,
+    wait_for,
+)
 import pathlib
 from enum import IntEnum
 from typing import Optional, Set, Tuple
@@ -49,8 +60,8 @@ class TftpServer:
         self.timeout = timeout
         self.retries = retries
         self.active_transfers: Set["TftpTransfer"] = set()
-        self.shutdown_event = asyncio.Event()
-        self.transport: Optional[asyncio.DatagramTransport] = None
+        self.shutdown_event = Event()
+        self.transport: Optional[DatagramTransport] = None
         self.protocol: Optional["TftpServerProtocol"] = None
 
         if logger is not None:
@@ -58,7 +69,7 @@ class TftpServer:
         else:
             self.logger = logging.getLogger(self.__class__.__name__)
 
-        self.ready_event = asyncio.Event()
+        self.ready_event = Event()
 
     @property
     def address(self) -> Optional[Tuple[str, int]]:
@@ -69,7 +80,7 @@ class TftpServer:
 
     async def start(self):
         self.logger.info(f"Starting TFTP server on {self.host}:{self.port}")
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
 
         self.ready_event.set()
         self.transport, self.protocol = await loop.create_datagram_endpoint(
@@ -78,7 +89,7 @@ class TftpServer:
 
         try:
             await self.shutdown_event.wait()
-        except asyncio.CancelledError:
+        except CancelledError:
             pass
         finally:
             self.logger.info("TFTP server shutting down")
@@ -90,7 +101,7 @@ class TftpServer:
         # Cancel all active transfers
         cleanup_tasks = [transfer.cleanup() for transfer in self.active_transfers.copy()]
         if cleanup_tasks:
-            await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+            await gather(*cleanup_tasks, return_exceptions=True)
 
         # Close the main transport
         if self.transport:
@@ -112,17 +123,17 @@ class TftpServer:
         self.logger.debug(f"Unregistered transfer: {transfer}")
 
 
-class TftpServerProtocol(asyncio.DatagramProtocol):
+class TftpServerProtocol(DatagramProtocol):
     """
     Protocol for handling incoming TFTP requests.
     """
 
     def __init__(self, server: TftpServer):
         self.server = server
-        self.transport: Optional[asyncio.DatagramTransport] = None
+        self.transport: Optional[DatagramTransport] = None
         self.logger = server.logger.getChild(self.__class__.__name__)
 
-    def connection_made(self, transport: asyncio.DatagramTransport):
+    def connection_made(self, transport: DatagramTransport):
         self.transport = transport
         self.logger.debug("Server protocol connection established")
 
@@ -150,7 +161,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
         self.logger.debug(f"Received opcode {opcode.name} from {addr}")
 
         if opcode == Opcode.RRQ:
-            asyncio.create_task(self._handle_read_request(data, addr))
+            create_task(self._handle_read_request(data, addr))
         else:
             self.logger.warning(f"Unsupported opcode {opcode} from {addr}")
             self._send_error(addr, TftpErrorCode.ILLEGAL_OPERATION, "Unsupported operation")
@@ -316,7 +327,7 @@ class TftpServerProtocol(asyncio.DatagramProtocol):
             negotiated_options=negotiated_options,
         )
         self.server.register_transfer(transfer)
-        asyncio.create_task(transfer.start())
+        create_task(transfer.start())
 
 
 
@@ -340,9 +351,9 @@ class TftpTransfer:
         self.block_size = block_size
         self.timeout = timeout
         self.retries = retries
-        self.transport: Optional[asyncio.DatagramTransport] = None
+        self.transport: Optional[DatagramTransport] = None
         self.protocol: Optional["TftpTransferProtocol"] = None
-        self.cleanup_task: Optional[asyncio.Task] = None
+        self.cleanup_task: Optional[Task] = None
         self.logger = server.logger.getChild(self.__class__.__name__)
 
     async def start(self):
@@ -378,7 +389,7 @@ class TftpReadTransfer(TftpTransfer):
             retries=retries,
         )
         self.block_num = 0
-        self.ack_received = asyncio.Event()
+        self.ack_received = Event()
         self.last_ack = 0
         self.oack_confirmed = False
         self.negotiated_options = negotiated_options
@@ -402,7 +413,7 @@ class TftpReadTransfer(TftpTransfer):
             await self.cleanup()
 
     async def _initialize_transfer(self) -> bool:
-        loop = asyncio.get_running_loop()
+        loop = get_running_loop()
 
         self.transport, self.protocol = await loop.create_datagram_endpoint(
             lambda: TftpTransferProtocol(self), local_addr=("0.0.0.0", 0), remote_addr=self.client_addr
@@ -507,7 +518,7 @@ class TftpReadTransfer(TftpTransfer):
                     f"Sent {'OACK' if is_oack else 'DATA'} block {expected_block}, waiting for ACK (Attempt {attempt})"
                 )
                 self.ack_received.clear()
-                await asyncio.wait_for(self.ack_received.wait(), timeout=self.timeout)
+                await wait_for(self.ack_received.wait(), timeout=self.timeout)
 
                 if self.last_ack == expected_block:
                     self.logger.debug(f"ACK received for block {expected_block}")
@@ -515,7 +526,7 @@ class TftpReadTransfer(TftpTransfer):
                 else:
                     self.logger.warning(f"Received wrong ACK: expected {expected_block}, got {self.last_ack}")
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self.logger.warning(f"Timeout waiting for ACK of block {expected_block} (Attempt {attempt})")
 
         return False
@@ -540,7 +551,7 @@ class TftpReadTransfer(TftpTransfer):
             self.logger.warning(f"Out of sequence ACK: expected {self.block_num}, got {block_num}")
 
 
-class TftpTransferProtocol(asyncio.DatagramProtocol):
+class TftpTransferProtocol(DatagramProtocol):
     """
     Protocol for handling ACKs during a TFTP transfer.
     """
@@ -549,7 +560,7 @@ class TftpTransferProtocol(asyncio.DatagramProtocol):
         self.transfer = transfer
         self.logger = transfer.logger.getChild(self.__class__.__name__)
 
-    def connection_made(self, transport: asyncio.DatagramTransport):
+    def connection_made(self, transport: DatagramTransport):
         self.transfer.transport = transport
         local_addr = transport.get_extra_info("sockname")
         self.logger.debug(f"Transfer protocol connection established on {local_addr} for {self.transfer.client_addr}")
