@@ -19,6 +19,10 @@ mosquitto = "mosquitto"
 # ser is short for "serialize" in variable names like ser_json_timedelta
 ser = "ser"
 
+# iif/oif are standard nftables keywords (input/output interface)
+iif = "iif"
+oif = "oif"
+
 # AKS is Azure Kubernetes Service
 AKS = "AKS"
 

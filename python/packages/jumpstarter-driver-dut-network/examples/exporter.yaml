@@ -24,3 +24,22 @@ export:
       dns_entries:
         - hostname: "registry.lab.local"
           ip: "10.26.28.2"
+      # Optional: egress/ingress traffic filtering (exporter-enforced, not
+      # exposed to remote clients).  When omitted, no filtering is applied.
+      filter:
+        egress:
+          policy: "accept"            # default verdict for outbound traffic
+          rules:
+            - action: "drop"          # block DUT access to RFC-1918 ranges
+              destination: "10.0.0.0/8"
+            - action: "drop"
+              destination: "172.16.0.0/12"
+            - action: "drop"
+              destination: "192.168.0.0/16"
+        ingress:
+          policy: "drop"              # default verdict for inbound traffic
+          rules:
+            - action: "accept"        # allow SSH from the lab network
+              source: "10.26.28.0/24"
+              port: 22
+              protocol: "tcp"
