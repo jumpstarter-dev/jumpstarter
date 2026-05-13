@@ -273,11 +273,11 @@ async def test_flash_oci_success():
             assert any(r[2] == 0 for r in results)
 
             mock_exec.assert_called_once()
-            call_args = mock_exec.call_args
-            assert call_args.args[0] == "/usr/local/bin/fls"
-            assert call_args.args[1] == "from-url"
-            assert call_args.args[2] == "oci://quay.io/org/image:tag"
-            assert call_args.args[3] == expected_target
+            cmd = mock_exec.call_args.args[0]
+            assert cmd[0] == "/usr/local/bin/fls"
+            assert cmd[1] == "from-url"
+            assert cmd[2] == "oci://quay.io/org/image:tag"
+            assert cmd[3] == expected_target
 
 
 @pytest.mark.anyio
@@ -294,7 +294,7 @@ async def test_flash_oci_with_partition():
         ) as mock_exec:
             await _collect_flash_oci(flasher, "oci://quay.io/org/bios:v1", partition="bios")
 
-            assert mock_exec.call_args.args[3] == expected_target
+            assert mock_exec.call_args.args[0][3] == expected_target
 
 
 @pytest.mark.anyio
@@ -545,7 +545,12 @@ async def test_flash_oci_process_cleanup_on_early_exit():
         gen = flasher._stream_subprocess(["fls", "from-url", "oci://img", "/tmp/root"], None)  # ty: ignore[unresolved-attribute]
         async for _ in gen:
             break
-        await gen.aclose()
+        # GeneratorExit inside an anyio task group is wrapped in a
+        # BaseExceptionGroup; this is expected structured concurrency behavior.
+        try:
+            await gen.aclose()
+        except BaseExceptionGroup:
+            pass
 
         mock_process.kill.assert_called()
 
@@ -611,8 +616,9 @@ def test_flash_oci_via_flasher_client():
                 qemu.flasher.flash("oci://quay.io/org/image:tag")
 
                 mock_exec.assert_called_once()
-                assert mock_exec.call_args.args[1] == "from-url"
-                assert mock_exec.call_args.args[2] == "oci://quay.io/org/image:tag"
+                cmd = mock_exec.call_args.args[0]
+                assert cmd[1] == "from-url"
+                assert cmd[2] == "oci://quay.io/org/image:tag"
 
 
 def test_flash_oci_convenience_method():
@@ -627,9 +633,10 @@ def test_flash_oci_convenience_method():
                 qemu.flash_oci("oci://quay.io/org/image:tag", partition="bios")
 
                 mock_exec.assert_called_once()
-                assert mock_exec.call_args.args[1] == "from-url"
-                assert mock_exec.call_args.args[2] == "oci://quay.io/org/image:tag"
-                assert Path(mock_exec.call_args.args[3]).name == "bios"
+                cmd = mock_exec.call_args.args[0]
+                assert cmd[1] == "from-url"
+                assert cmd[2] == "oci://quay.io/org/image:tag"
+                assert Path(cmd[3]).name == "bios"
 
 
 @pytest.mark.anyio

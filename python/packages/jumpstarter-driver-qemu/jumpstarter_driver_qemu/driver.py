@@ -161,6 +161,7 @@ class QemuFlasher(FlasherInterface, Driver):
         process = await anyio.open_process(cmd, stdout=PIPE, stderr=PIPE, env=env)
 
         send_stream, receive_stream = create_memory_object_stream[tuple[str, str | None]](32)
+        deferred_error: RuntimeError | None = None
 
         async with send_stream, receive_stream:
             async with create_task_group() as tg:
@@ -176,7 +177,10 @@ class QemuFlasher(FlasherInterface, Driver):
                         if elapsed >= self.parent.flash_timeout:
                             process.kill()
                             await process.wait()
-                            raise RuntimeError(f"fls flash timed out after {self.parent.flash_timeout}s")
+                            deferred_error = RuntimeError(
+                                f"fls flash timed out after {self.parent.flash_timeout}s"
+                            )
+                            break
 
                         remaining = self.parent.flash_timeout - elapsed
                         with move_on_after(min(remaining, 30)) as scope:
@@ -193,20 +197,26 @@ class QemuFlasher(FlasherInterface, Driver):
                         stderr_chunk = text if name == "stderr" else ""
                         yield stdout_chunk, stderr_chunk, None
 
-                    await process.wait()
-                    returncode = process.returncode
+                    if deferred_error is None:
+                        await process.wait()
+                        returncode = process.returncode
 
-                    if returncode != 0:
-                        self.logger.error(f"fls failed - return code: {returncode}")
-                        raise RuntimeError(f"fls flash failed (return code {returncode})")
-
-                    self.logger.info("OCI flash completed successfully")
-                    yield "", "", returncode
+                        if returncode != 0:
+                            self.logger.error(f"fls failed - return code: {returncode}")
+                            deferred_error = RuntimeError(
+                                f"fls flash failed (return code {returncode})"
+                            )
+                        else:
+                            self.logger.info("OCI flash completed successfully")
+                            yield "", "", returncode
                 finally:
                     tg.cancel_scope.cancel()
                     if process.returncode is None:
                         process.kill()
                         await process.wait()
+
+        if deferred_error is not None:
+            raise deferred_error
 
     @export
     async def dump(self, target, partition: str | None = None):
