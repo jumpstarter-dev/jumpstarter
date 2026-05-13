@@ -10,6 +10,7 @@ from subprocess import PIPE
 from typing import Literal, TypedDict
 
 import anyio
+from anyio import IncompleteRead
 from anyio.abc import Process
 from anyio.streams.buffered import BufferedByteReceiveStream
 
@@ -479,7 +480,7 @@ class DutNetwork(Driver):
             while True:
                 try:
                     line = await buffered.receive_until(b"\n", 1048576)
-                except (anyio.EndOfStream, anyio.ClosedResourceError):
+                except (anyio.EndOfStream, anyio.ClosedResourceError, IncompleteRead):
                     break
                 yield line.decode("utf-8", errors="replace")
         finally:

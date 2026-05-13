@@ -17,6 +17,7 @@ from typing import Literal
 import anyio
 import yaml
 from anyio import create_memory_object_stream, create_task_group, fail_after, move_on_after, run_process, sleep
+from anyio import IncompleteRead
 from anyio.abc import ByteReceiveStream
 from anyio.streams.buffered import BufferedByteReceiveStream
 from anyio.streams.memory import MemoryObjectSendStream
@@ -59,6 +60,10 @@ async def _read_pipe(
         while True:
             line = await buffered.receive_until(b"\n", 1048576)
             await send_stream.send((name, (line + b"\n").decode("utf-8", errors="replace")))
+    except IncompleteRead:
+        remaining = buffered.buffer
+        if remaining:
+            await send_stream.send((name, remaining.decode("utf-8", errors="replace")))
     except (anyio.EndOfStream, anyio.ClosedResourceError):
         pass
     await send_stream.send((name, None))
