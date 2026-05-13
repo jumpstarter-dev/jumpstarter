@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import anyio
+import anyio.abc
 import pytest
 import requests
 from opendal import Operator
@@ -209,8 +210,27 @@ def test_set_memory_size_invalid():
 # OCI Flash Tests
 
 
+def _create_mock_stream(lines):
+    """Create a mock byte receive stream that yields lines then raises EndOfStream."""
+    encoded = [line.encode() if isinstance(line, str) else line for line in lines]
+    data = b"".join(encoded)
+
+    stream = MagicMock(spec=anyio.abc.ByteReceiveStream)
+    call_count = {"n": 0}
+
+    async def mock_receive(max_bytes=65536):
+        if call_count["n"] >= 1:
+            raise anyio.EndOfStream()
+        call_count["n"] += 1
+        return data
+
+    stream.receive = mock_receive
+    stream.aclose = AsyncMock()
+    return stream
+
+
 def _create_mock_process(stdout_lines=None, stderr_lines=None, returncode=0):
-    """Create a mock asyncio subprocess process for testing flash_oci."""
+    """Create a mock subprocess process for testing flash_oci."""
     if stdout_lines is None:
         stdout_lines = []
     if stderr_lines is None:
@@ -221,15 +241,8 @@ def _create_mock_process(stdout_lines=None, stderr_lines=None, returncode=0):
     process.wait = AsyncMock(return_value=returncode)
     process.kill = MagicMock()
 
-    stdout_data = [line.encode() if isinstance(line, str) else line for line in stdout_lines] + [b""]
-    stdout_stream = MagicMock()
-    stdout_stream.readline = AsyncMock(side_effect=stdout_data)
-    process.stdout = stdout_stream
-
-    stderr_data = [line.encode() if isinstance(line, str) else line for line in stderr_lines] + [b""]
-    stderr_stream = MagicMock()
-    stderr_stream.readline = AsyncMock(side_effect=stderr_data)
-    process.stderr = stderr_stream
+    process.stdout = _create_mock_stream(stdout_lines)
+    process.stderr = _create_mock_stream(stderr_lines)
 
     return process
 
@@ -455,7 +468,7 @@ async def test_flash_oci_fls_timeout():
     driver = Qemu(flash_timeout=0)  # Immediate timeout
     flasher = driver.children["flasher"]
 
-    async def hanging_readline():
+    async def hanging_receive(max_bytes=65536):
         await anyio.sleep(10)
         return b""
 
@@ -469,12 +482,14 @@ async def test_flash_oci_fls_timeout():
     mock_process.wait = mock_wait
     mock_process.kill = MagicMock()
 
-    stdout_stream = MagicMock()
-    stdout_stream.readline = hanging_readline
+    stdout_stream = MagicMock(spec=anyio.abc.ByteReceiveStream)
+    stdout_stream.receive = hanging_receive
+    stdout_stream.aclose = AsyncMock()
     mock_process.stdout = stdout_stream
 
-    stderr_stream = MagicMock()
-    stderr_stream.readline = hanging_readline
+    stderr_stream = MagicMock(spec=anyio.abc.ByteReceiveStream)
+    stderr_stream.receive = hanging_receive
+    stderr_stream.aclose = AsyncMock()
     mock_process.stderr = stderr_stream
 
     with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
@@ -519,13 +534,8 @@ async def test_flash_oci_process_cleanup_on_early_exit():
     mock_process.wait = mock_wait
     mock_process.kill = MagicMock()
 
-    stdout_stream = MagicMock()
-    stdout_stream.readline = AsyncMock(side_effect=[b"line1\n", b"line2\n", b""])
-    mock_process.stdout = stdout_stream
-
-    stderr_stream = MagicMock()
-    stderr_stream.readline = AsyncMock(side_effect=[b""])
-    mock_process.stderr = stderr_stream
+    mock_process.stdout = _create_mock_stream(["line1\n", "line2\n"])
+    mock_process.stderr = _create_mock_stream([])
 
     with patch("jumpstarter_driver_qemu.driver.anyio.open_process", new_callable=AsyncMock, return_value=mock_process):
         gen = flasher._stream_subprocess(["fls", "from-url", "oci://img", "/tmp/root"], None)  # ty: ignore[unresolved-attribute]
