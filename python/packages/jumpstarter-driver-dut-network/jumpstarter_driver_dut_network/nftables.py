@@ -1,10 +1,16 @@
+from __future__ import annotations
+
 import ipaddress
 import logging
 import re
 import subprocess
 import textwrap
+from typing import TYPE_CHECKING
 
 from ._privilege import sudo_cmd
+
+if TYPE_CHECKING:
+    from .driver import FilterConfig, FilterRule
 
 logger = logging.getLogger(__name__)
 
@@ -47,15 +53,35 @@ def _table_name_for(interface: str) -> str:
     return f"jumpstarter_{interface}".replace("-", "_")
 
 
+def _render_filter_rule(
+    rule: FilterRule,
+    iif: str,
+    oif: str,
+    addr_field: str,
+) -> str:
+    """Render a single :class:`FilterRule` as an nftables rule line."""
+    parts = [f'        iifname "{iif}" oifname "{oif}"']
+    addr_value = getattr(rule, addr_field, None)
+    if addr_value is not None:
+        prefix = "ip daddr" if addr_field == "destination" else "ip saddr"
+        parts.append(f"{prefix} {addr_value}")
+    if rule.protocol is not None:
+        parts.append(rule.protocol)
+    if rule.port is not None:
+        parts.append(f"dport {rule.port}")
+    parts.append(rule.action)
+    return " ".join(parts)
+
+
 def _build_forward_chain(
     interface: str,
     upstream: str,
-    filter_config: dict | None = None,
+    filter_config: FilterConfig | None = None,
     extra_forward_rules: list[str] | None = None,
 ) -> str:
     """Build nftables forward chain rules with optional traffic filtering.
 
-    When *filter_config* is ``None`` or empty the generated chain is identical
+    When *filter_config* is ``None`` the generated chain is identical
     to the legacy (pre-filter) behaviour so that existing setups are not
     affected.
 
@@ -83,7 +109,7 @@ def _build_forward_chain(
 
     extras = extra_forward_rules or []
 
-    if not filter_config:
+    if filter_config is None:
         # Legacy behaviour — no filtering.
         lines.append(f'        iifname "{interface}" oifname "{upstream}" accept')
         lines.append(
@@ -94,44 +120,28 @@ def _build_forward_chain(
         return "\n".join(lines)
 
     # --- Filtered mode -------------------------------------------------
-    # Conntrack at the top: let established/related traffic through
-    # regardless of direction.
     lines.append("        ct state related,established accept")
 
-    egress = filter_config.get("egress", {})
-    ingress = filter_config.get("ingress", {})
+    egress = filter_config.egress
+    ingress = filter_config.ingress
 
     # -- Egress (DUT -> upstream) ----------------------------------------
-    for rule in egress.get("rules", []):
-        parts = [f'        iifname "{interface}" oifname "{upstream}"']
-        if "destination" in rule:
-            parts.append(f"ip daddr {rule['destination']}")
-        if "protocol" in rule:
-            parts.append(rule["protocol"])
-        if "port" in rule:
-            parts.append(f"dport {rule['port']}")
-        parts.append(rule["action"])
-        lines.append(" ".join(parts))
+    if egress:
+        for rule in egress.rules:
+            lines.append(_render_filter_rule(rule, interface, upstream, "destination"))
 
-    egress_policy = egress.get("policy", "accept")
+    egress_policy = egress.policy if egress else "accept"
     lines.append(f'        iifname "{interface}" oifname "{upstream}" {egress_policy}')
 
     # -- Extra forward rules (e.g. 1:1 NAT per-mapping accepts) ---------
     lines.extend(extras)
 
     # -- Ingress (upstream -> DUT) — new connections only ----------------
-    for rule in ingress.get("rules", []):
-        parts = [f'        iifname "{upstream}" oifname "{interface}"']
-        if "source" in rule:
-            parts.append(f"ip saddr {rule['source']}")
-        if "protocol" in rule:
-            parts.append(rule["protocol"])
-        if "port" in rule:
-            parts.append(f"dport {rule['port']}")
-        parts.append(rule["action"])
-        lines.append(" ".join(parts))
+    if ingress:
+        for rule in ingress.rules:
+            lines.append(_render_filter_rule(rule, upstream, interface, "source"))
 
-    ingress_policy = ingress.get("policy", "accept")
+    ingress_policy = ingress.policy if ingress else "accept"
     lines.append(f'        iifname "{upstream}" oifname "{interface}" {ingress_policy}')
 
     lines.append("    }")
@@ -143,7 +153,7 @@ def apply_masquerade_rules(
     upstream: str,
     subnet: str,
     table_name: str | None = None,
-    filter_config: dict | None = None,
+    filter_config: FilterConfig | None = None,
 ) -> None:
     _validate_iface(interface)
     _validate_iface(upstream)
@@ -176,7 +186,7 @@ def apply_1to1_rules(
     mappings: list[dict[str, str]],
     subnet: str,
     table_name: str | None = None,
-    filter_config: dict | None = None,
+    filter_config: FilterConfig | None = None,
 ) -> None:
     _validate_iface(interface)
     _validate_iface(upstream)

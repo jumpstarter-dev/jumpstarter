@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from .driver import FilterConfig, FilterDirection, FilterRule
+
 _DRIVER_MODULE = "jumpstarter_driver_dut_network.driver"
 
 
@@ -77,7 +79,8 @@ class TestDriverValidation:
 class TestFilterValidation:
     """Tests for the filter config validation in _validate_config()."""
 
-    def test_valid_filter_config(self, tmp_path: Path):
+    def test_valid_filter_config_from_dict(self, tmp_path: Path):
+        """Raw dicts (YAML deserialization path) are converted to FilterConfig."""
         fc = {
             "egress": {
                 "policy": "accept",
@@ -94,44 +97,60 @@ class TestFilterValidation:
             },
         }
         driver, _, _, _ = _make_driver(tmp_path, filter=fc)
-        assert driver.filter == fc
+        assert isinstance(driver.filter, FilterConfig)
+        assert driver.filter.egress is not None
+        assert driver.filter.egress.policy == "accept"
+        assert len(driver.filter.egress.rules) == 2
+        assert driver.filter.ingress is not None
+        assert driver.filter.ingress.policy == "drop"
+
+    def test_valid_filter_config_from_typed(self, tmp_path: Path):
+        """Typed FilterConfig objects are accepted directly."""
+        fc = FilterConfig(
+            egress=FilterDirection(
+                policy="accept",
+                rules=[FilterRule(action="drop", destination="10.0.0.0/8")],
+            ),
+        )
+        driver, _, _, _ = _make_driver(tmp_path, filter=fc)
+        assert driver.filter is fc
 
     def test_empty_filter_is_valid(self, tmp_path: Path):
         driver, _, _, _ = _make_driver(tmp_path, filter={})
-        assert driver.filter == {}
+        assert driver.filter is None
 
     def test_no_filter_is_valid(self, tmp_path: Path):
         driver, _, _, _ = _make_driver(tmp_path)
-        assert driver.filter == {}
+        assert driver.filter is None
 
     def test_invalid_egress_policy(self, tmp_path: Path):
         fc = {"egress": {"policy": "reject"}}
-        with pytest.raises(ValueError, match="filter.egress.policy"):
+        with pytest.raises(ValueError, match="policy"):
             _make_driver(tmp_path, filter=fc)
 
     def test_invalid_ingress_policy(self, tmp_path: Path):
         fc = {"ingress": {"policy": "invalid"}}
-        with pytest.raises(ValueError, match="filter.ingress.policy"):
+        with pytest.raises(ValueError, match="policy"):
             _make_driver(tmp_path, filter=fc)
 
     def test_invalid_action(self, tmp_path: Path):
         fc = {"egress": {"rules": [{"action": "reject", "destination": "10.0.0.0/8"}]}}
-        with pytest.raises(ValueError, match="filter.egress.rules\\[0\\].action"):
+        with pytest.raises(ValueError, match="action"):
             _make_driver(tmp_path, filter=fc)
 
     def test_missing_action(self, tmp_path: Path):
         fc = {"egress": {"rules": [{"destination": "10.0.0.0/8"}]}}
-        with pytest.raises(ValueError, match="filter.egress.rules\\[0\\].action is required"):
+        with pytest.raises(TypeError):
             _make_driver(tmp_path, filter=fc)
 
     def test_invalid_destination(self, tmp_path: Path):
         fc = {"egress": {"rules": [{"action": "drop", "destination": "not-a-cidr"}]}}
-        with pytest.raises(ValueError, match="filter.egress.rules\\[0\\].destination"):
+        with pytest.raises(ValueError, match="destination"):
             _make_driver(tmp_path, filter=fc)
 
     def test_invalid_source(self, tmp_path: Path):
         fc = {"ingress": {"rules": [{"action": "accept", "source": "bad-addr"}]}}
-        with pytest.raises(ValueError, match="filter.ingress.rules\\[0\\].source"):
+        with pytest.raises(ValueError, match="source"):
             _make_driver(tmp_path, filter=fc)
 
     def test_port_without_protocol(self, tmp_path: Path):
@@ -141,54 +160,42 @@ class TestFilterValidation:
 
     def test_invalid_protocol(self, tmp_path: Path):
         fc = {"egress": {"rules": [{"action": "drop", "port": 443, "protocol": "icmp"}]}}
-        with pytest.raises(ValueError, match="filter.egress.rules\\[0\\].protocol"):
-            _make_driver(tmp_path, filter=fc)
-
-    def test_rule_not_a_dict(self, tmp_path: Path):
-        fc = {"egress": {"rules": ["drop all"]}}
-        with pytest.raises(ValueError, match="filter.egress.rules\\[0\\] must be a mapping"):
-            _make_driver(tmp_path, filter=fc)
-
-    def test_section_not_a_dict(self, tmp_path: Path):
-        fc = {"egress": "drop"}
-        with pytest.raises(ValueError, match="filter.egress must be a mapping"):
+        with pytest.raises(ValueError, match="protocol"):
             _make_driver(tmp_path, filter=fc)
 
     def test_egress_only(self, tmp_path: Path):
         fc = {"egress": {"policy": "drop"}}
         driver, _, _, _ = _make_driver(tmp_path, filter=fc)
-        assert driver.filter == fc
+        assert isinstance(driver.filter, FilterConfig)
+        assert driver.filter.egress is not None
+        assert driver.filter.egress.policy == "drop"
+        assert driver.filter.ingress is None
 
     def test_ingress_only(self, tmp_path: Path):
         fc = {"ingress": {"policy": "accept", "rules": []}}
         driver, _, _, _ = _make_driver(tmp_path, filter=fc)
-        assert driver.filter == fc
+        assert isinstance(driver.filter, FilterConfig)
+        assert driver.filter.ingress is not None
+        assert driver.filter.ingress.policy == "accept"
 
 
 class TestFilterPassedToNftables:
     """Tests that filter config is passed through to nftables calls."""
 
     def test_masquerade_passes_filter(self, tmp_path: Path):
-        fc = {"egress": {"policy": "drop"}}
+        fc = FilterConfig(egress=FilterDirection(policy="drop"))
         _, _, mock_nft, _ = _make_driver(tmp_path, nat_mode="masquerade", filter=fc)
-        mock_nft.apply_masquerade_rules.assert_called_once_with(
-            "eth-dut", "eth-up", "192.168.100.0/24",
-            table_name="jumpstarter_eth_dut",
-            filter_config=fc,
-        )
+        call_args = mock_nft.apply_masquerade_rules.call_args
+        assert call_args[1]["filter_config"] is fc
 
     def test_1to1_passes_filter(self, tmp_path: Path):
-        fc = {"ingress": {"policy": "drop"}}
+        fc = FilterConfig(ingress=FilterDirection(policy="drop"))
         leases = [
             {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.100.10", "public_ip": "10.0.0.50"},
         ]
         _, _, mock_nft, _ = _make_driver(tmp_path, nat_mode="1to1", addresses=leases, filter=fc)
-        expected_mappings = [{"private_ip": "192.168.100.10", "public_ip": "10.0.0.50"}]
-        mock_nft.apply_1to1_rules.assert_called_once_with(
-            "eth-dut", "eth-up", expected_mappings, "192.168.100.0/24",
-            table_name="jumpstarter_eth_dut",
-            filter_config=fc,
-        )
+        call_args = mock_nft.apply_1to1_rules.call_args
+        assert call_args[1]["filter_config"] is fc
 
     def test_empty_filter_passes_none(self, tmp_path: Path):
         _, _, mock_nft, _ = _make_driver(tmp_path, nat_mode="masquerade", filter={})

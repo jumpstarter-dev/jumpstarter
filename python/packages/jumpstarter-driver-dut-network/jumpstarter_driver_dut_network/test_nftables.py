@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 
 from . import nftables
+from .driver import FilterConfig, FilterDirection, FilterRule
 
 
 class TestBuildForwardChain:
@@ -27,21 +28,16 @@ class TestBuildForwardChain:
         extra_idx = next(i for i, ln in enumerate(lines) if "192.168.100.10" in ln)
         assert extra_idx > ct_idx
 
-    def test_empty_filter_produces_legacy_rules(self):
-        result = nftables._build_forward_chain("br-jmp0", "eth0", filter_config={})
-        assert 'iifname "br-jmp0" oifname "eth0" accept' in result
-        assert "ct state related,established accept" in result
-
     def test_egress_only_drop_rfc1918(self):
-        fc = {
-            "egress": {
-                "policy": "accept",
-                "rules": [
-                    {"action": "drop", "destination": "10.0.0.0/8"},
-                    {"action": "drop", "destination": "172.16.0.0/12"},
+        fc = FilterConfig(
+            egress=FilterDirection(
+                policy="accept",
+                rules=[
+                    FilterRule(action="drop", destination="10.0.0.0/8"),
+                    FilterRule(action="drop", destination="172.16.0.0/12"),
                 ],
-            },
-        }
+            ),
+        )
         result = nftables._build_forward_chain("br-jmp0", "eth0", filter_config=fc)
         # Conntrack at the top
         lines = result.strip().splitlines()
@@ -56,14 +52,14 @@ class TestBuildForwardChain:
         assert 'iifname "eth0" oifname "br-jmp0" accept' in result
 
     def test_ingress_only_with_port_protocol(self):
-        fc = {
-            "ingress": {
-                "policy": "drop",
-                "rules": [
-                    {"action": "accept", "source": "10.26.28.0/24", "port": 22, "protocol": "tcp"},
+        fc = FilterConfig(
+            ingress=FilterDirection(
+                policy="drop",
+                rules=[
+                    FilterRule(action="accept", source="10.26.28.0/24", port=22, protocol="tcp"),
                 ],
-            },
-        }
+            ),
+        )
         result = nftables._build_forward_chain("br-jmp0", "eth0", filter_config=fc)
         assert "ip saddr 10.26.28.0/24 tcp dport 22 accept" in result
         # Ingress catch-all should be drop
@@ -73,20 +69,16 @@ class TestBuildForwardChain:
         assert any("drop" in ln for ln in ingress_catchall)
 
     def test_combined_egress_ingress(self):
-        fc = {
-            "egress": {
-                "policy": "accept",
-                "rules": [
-                    {"action": "drop", "destination": "10.0.0.0/8"},
-                ],
-            },
-            "ingress": {
-                "policy": "drop",
-                "rules": [
-                    {"action": "accept", "source": "10.26.28.0/24", "port": 22, "protocol": "tcp"},
-                ],
-            },
-        }
+        fc = FilterConfig(
+            egress=FilterDirection(
+                policy="accept",
+                rules=[FilterRule(action="drop", destination="10.0.0.0/8")],
+            ),
+            ingress=FilterDirection(
+                policy="drop",
+                rules=[FilterRule(action="accept", source="10.26.28.0/24", port=22, protocol="tcp")],
+            ),
+        )
         result = nftables._build_forward_chain("br-jmp0", "eth0", filter_config=fc)
         lines = result.strip().splitlines()
         # Find positions of key lines
@@ -105,10 +97,10 @@ class TestBuildForwardChain:
 
     def test_filter_with_extra_forward_rules(self):
         """Extra forward rules (1:1 NAT) are placed between egress and ingress catch-all rules."""
-        fc = {
-            "egress": {"policy": "accept"},
-            "ingress": {"policy": "drop"},
-        }
+        fc = FilterConfig(
+            egress=FilterDirection(policy="accept"),
+            ingress=FilterDirection(policy="drop"),
+        )
         extras = ['        iifname "eth0" oifname "br-jmp0" ip daddr 192.168.100.10 accept']
         result = nftables._build_forward_chain("br-jmp0", "eth0", filter_config=fc, extra_forward_rules=extras)
         lines = result.strip().splitlines()
@@ -125,33 +117,29 @@ class TestBuildForwardChain:
 
     def test_egress_rule_without_destination(self):
         """An egress rule without destination matches all destinations."""
-        fc = {
-            "egress": {
-                "policy": "drop",
-                "rules": [
-                    {"action": "accept", "protocol": "tcp", "port": 443},
-                ],
-            },
-        }
+        fc = FilterConfig(
+            egress=FilterDirection(
+                policy="drop",
+                rules=[FilterRule(action="accept", protocol="tcp", port=443)],
+            ),
+        )
         result = nftables._build_forward_chain("br-jmp0", "eth0", filter_config=fc)
         assert 'iifname "br-jmp0" oifname "eth0" tcp dport 443 accept' in result
 
     def test_ingress_rule_without_source(self):
         """An ingress rule without source matches all sources."""
-        fc = {
-            "ingress": {
-                "policy": "drop",
-                "rules": [
-                    {"action": "accept", "protocol": "udp", "port": 53},
-                ],
-            },
-        }
+        fc = FilterConfig(
+            ingress=FilterDirection(
+                policy="drop",
+                rules=[FilterRule(action="accept", protocol="udp", port=53)],
+            ),
+        )
         result = nftables._build_forward_chain("br-jmp0", "eth0", filter_config=fc)
         assert 'iifname "eth0" oifname "br-jmp0" udp dport 53 accept' in result
 
     def test_default_policies_are_accept(self):
         """When policies are omitted, they default to accept."""
-        fc = {"egress": {}, "ingress": {}}
+        fc = FilterConfig(egress=FilterDirection(), ingress=FilterDirection())
         result = nftables._build_forward_chain("br-jmp0", "eth0", filter_config=fc)
         lines = result.strip().splitlines()
         # Both catch-all lines should be accept
@@ -180,13 +168,13 @@ class TestMasqueradeRuleset:
             assert "table ip my_table" in ruleset
 
     def test_with_filter_config(self):
-        fc = {
-            "egress": {
-                "policy": "accept",
-                "rules": [{"action": "drop", "destination": "10.0.0.0/8"}],
-            },
-            "ingress": {"policy": "drop"},
-        }
+        fc = FilterConfig(
+            egress=FilterDirection(
+                policy="accept",
+                rules=[FilterRule(action="drop", destination="10.0.0.0/8")],
+            ),
+            ingress=FilterDirection(policy="drop"),
+        )
         with patch.object(nftables, "_run_nft"), \
              patch.object(nftables, "_load_ruleset") as mock_load:
             nftables.apply_masquerade_rules(
@@ -255,10 +243,10 @@ class TestOneToOneRuleset:
 
     def test_with_filter_config(self):
         mappings = [{"private_ip": "192.168.100.10", "public_ip": "10.0.0.50"}]
-        fc = {
-            "egress": {"policy": "accept"},
-            "ingress": {"policy": "drop"},
-        }
+        fc = FilterConfig(
+            egress=FilterDirection(policy="accept"),
+            ingress=FilterDirection(policy="drop"),
+        )
         with patch.object(nftables, "_run_nft"), \
              patch.object(nftables, "_load_ruleset") as mock_load:
             nftables.apply_1to1_rules(

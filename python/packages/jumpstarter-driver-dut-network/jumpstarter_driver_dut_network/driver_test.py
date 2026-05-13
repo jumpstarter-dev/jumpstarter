@@ -985,3 +985,144 @@ class TestDnsResolution:
                 assert "10.0.0.77" not in result.stdout
         finally:
             driver.cleanup()
+
+
+@requires_linux
+@requires_privileges
+@requires_nft
+@requires_dnsmasq
+@pytest.mark.usefixtures("nat_available")
+class TestFilterDataPlane:
+    """Data-plane tests for egress/ingress traffic filtering via nftables.
+
+    These tests verify that filter rules actually affect packet forwarding
+    by using veth pairs and network namespaces.
+    """
+
+    def test_egress_drop_blocks_traffic(self, net_env: NetworkTestEnv):
+        """An egress drop-all policy prevents the DUT from reaching external."""
+        fc = {
+            "egress": {"policy": "drop"},
+        }
+        driver = net_env.create_driver(nat_mode="masquerade", filter=fc)
+        try:
+            net_env.configure_dut_static()
+            time.sleep(0.5)
+            result = _run(
+                f"ping -c 1 -W 2 {net_env.EXT_IP}",
+                ns=net_env.DUT_NS,
+                check=False,
+            )
+            assert result.returncode != 0, "DUT should NOT reach external with egress drop policy"
+        finally:
+            driver.cleanup()
+
+    def test_egress_accept_allows_traffic(self, net_env: NetworkTestEnv):
+        """An egress accept policy allows the DUT to reach external (baseline)."""
+        fc = {
+            "egress": {"policy": "accept"},
+        }
+        driver = net_env.create_driver(nat_mode="masquerade", filter=fc)
+        try:
+            net_env.configure_dut_static()
+            time.sleep(0.5)
+            result = _run(
+                f"ping -c 1 -W 2 {net_env.EXT_IP}",
+                ns=net_env.DUT_NS,
+                check=False,
+            )
+            assert result.returncode == 0, f"Egress accept should allow traffic: {result.stderr}"
+        finally:
+            driver.cleanup()
+
+    def test_egress_drop_with_destination_exception(self, net_env: NetworkTestEnv):
+        """Egress drop policy with an accept rule for the target destination still allows it."""
+        fc = {
+            "egress": {
+                "policy": "drop",
+                "rules": [
+                    {"action": "accept", "destination": net_env.EXT_SUBNET},
+                ],
+            },
+        }
+        driver = net_env.create_driver(nat_mode="masquerade", filter=fc)
+        try:
+            net_env.configure_dut_static()
+            time.sleep(0.5)
+            result = _run(
+                f"ping -c 1 -W 2 {net_env.EXT_IP}",
+                ns=net_env.DUT_NS,
+                check=False,
+            )
+            assert result.returncode == 0, (
+                f"Egress drop with accept exception should allow traffic: {result.stderr}"
+            )
+        finally:
+            driver.cleanup()
+
+    def test_egress_accept_with_destination_drop(self, net_env: NetworkTestEnv):
+        """Egress accept policy with a drop rule for the target destination blocks it."""
+        fc = {
+            "egress": {
+                "policy": "accept",
+                "rules": [
+                    {"action": "drop", "destination": net_env.EXT_SUBNET},
+                ],
+            },
+        }
+        driver = net_env.create_driver(nat_mode="masquerade", filter=fc)
+        try:
+            net_env.configure_dut_static()
+            time.sleep(0.5)
+            result = _run(
+                f"ping -c 1 -W 2 {net_env.EXT_IP}",
+                ns=net_env.DUT_NS,
+                check=False,
+            )
+            assert result.returncode != 0, "Egress drop rule should block traffic to target subnet"
+        finally:
+            driver.cleanup()
+
+    def test_ingress_drop_blocks_external_to_dut(self, net_env: NetworkTestEnv):
+        """Ingress drop policy blocks new connections from external to DUT."""
+        fc = {
+            "egress": {"policy": "accept"},
+            "ingress": {"policy": "drop"},
+        }
+        driver = net_env.create_driver(nat_mode="masquerade", filter=fc)
+        try:
+            net_env.configure_dut_static()
+            time.sleep(0.5)
+            # DUT egress should still work (established return traffic is allowed by conntrack)
+            result = _run(
+                f"ping -c 1 -W 2 {net_env.EXT_IP}",
+                ns=net_env.DUT_NS,
+                check=False,
+            )
+            assert result.returncode == 0, (
+                f"DUT egress should work even with ingress drop: {result.stderr}"
+            )
+            # But new connections from external to DUT should fail
+            result = _run(
+                f"ping -c 1 -W 2 {net_env.DUT_IP}",
+                ns=net_env.EXT_NS,
+                check=False,
+            )
+            assert result.returncode != 0, "External should NOT reach DUT with ingress drop"
+        finally:
+            driver.cleanup()
+
+    def test_no_filter_allows_all_traffic(self, net_env: NetworkTestEnv):
+        """Without any filter, all traffic flows freely (backward compatibility)."""
+        driver = net_env.create_driver(nat_mode="masquerade")
+        try:
+            net_env.configure_dut_static()
+            time.sleep(0.5)
+            result = _run(
+                f"ping -c 1 -W 2 {net_env.EXT_IP}",
+                ns=net_env.DUT_NS,
+                check=False,
+            )
+            assert result.returncode == 0, f"No-filter should allow all traffic: {result.stderr}"
+        finally:
+            driver.cleanup()

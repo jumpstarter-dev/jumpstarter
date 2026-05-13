@@ -33,6 +33,86 @@ class NetworkStatus(TypedDict):
     nat_rules: str
 
 
+_VALID_ACTIONS = ("accept", "drop")
+_VALID_POLICIES = ("accept", "drop")
+_VALID_PROTOCOLS = ("tcp", "udp")
+
+
+@dataclass
+class FilterRule:
+    """A single filter rule for traffic matching."""
+
+    action: str
+    destination: str | None = None
+    source: str | None = None
+    port: int | None = None
+    protocol: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.action not in _VALID_ACTIONS:
+            raise ValueError(
+                f"action must be one of {_VALID_ACTIONS}, got {self.action!r}"
+            )
+        if self.destination is not None:
+            try:
+                ipaddress.ip_network(self.destination, strict=False)
+            except ValueError as exc:
+                raise ValueError(
+                    f"destination is not a valid network address: {self.destination!r}"
+                ) from exc
+        if self.source is not None:
+            try:
+                ipaddress.ip_network(self.source, strict=False)
+            except ValueError as exc:
+                raise ValueError(
+                    f"source is not a valid network address: {self.source!r}"
+                ) from exc
+        if self.port is not None and self.protocol is None:
+            raise ValueError("port requires protocol to be set")
+        if self.protocol is not None and self.protocol not in _VALID_PROTOCOLS:
+            raise ValueError(
+                f"protocol must be one of {_VALID_PROTOCOLS}, got {self.protocol!r}"
+            )
+
+
+@dataclass
+class FilterDirection:
+    """Egress or ingress filter configuration."""
+
+    policy: str = "accept"
+    rules: list[FilterRule] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.policy not in _VALID_POLICIES:
+            raise ValueError(
+                f"policy must be one of {_VALID_POLICIES}, got {self.policy!r}"
+            )
+        # Convert raw dicts to FilterRule instances (for YAML deserialization).
+        self.rules = [
+            FilterRule(**r) if isinstance(r, dict) else r for r in self.rules
+        ]
+
+
+@dataclass
+class FilterConfig:
+    """Top-level traffic filter configuration."""
+
+    egress: FilterDirection | None = None
+    ingress: FilterDirection | None = None
+
+    def __post_init__(self) -> None:
+        # Convert raw dicts to FilterDirection instances (for YAML deserialization).
+        if isinstance(self.egress, dict):
+            self.egress = FilterDirection(**self.egress)
+        if isinstance(self.ingress, dict):
+            self.ingress = FilterDirection(**self.ingress)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "FilterConfig":
+        """Create a FilterConfig from a plain dictionary."""
+        return cls(**{k: v for k, v in data.items() if k in ("egress", "ingress")})
+
+
 @dataclass(kw_only=True)
 class DutNetwork(Driver):
     interface: str
@@ -52,7 +132,7 @@ class DutNetwork(Driver):
 
     enable_tcpdump: bool = False
 
-    filter: dict = field(default_factory=dict)
+    filter: FilterConfig | None = None
 
     state_dir: str | None = None
     nat_mode: Literal["masquerade", "1to1", "disabled", "none"] = "masquerade"
@@ -156,72 +236,12 @@ class DutNetwork(Driver):
             if not has_public:
                 raise ValueError("At least one address entry must have public_ip for 1:1 NAT mode")
 
-        if self.filter:
-            self._validate_filter(self.filter)
-
-    @staticmethod
-    def _validate_filter(filter_config: dict) -> None:
-        """Validate the filter configuration structure.
-
-        Raises :class:`ValueError` on any invalid field.
-        """
-        _VALID_POLICIES = ("accept", "drop")
-
-        for direction in ("egress", "ingress"):
-            section = filter_config.get(direction)
-            if section is None:
-                continue
-            if not isinstance(section, dict):
-                raise ValueError(f"filter.{direction} must be a mapping")
-
-            policy = section.get("policy", "accept")
-            if policy not in _VALID_POLICIES:
-                raise ValueError(
-                    f"filter.{direction}.policy must be one of {_VALID_POLICIES}, got {policy!r}"
-                )
-
-            addr_field = "destination" if direction == "egress" else "source"
-
-            for idx, rule in enumerate(section.get("rules", [])):
-                DutNetwork._validate_filter_rule(rule, direction, idx, addr_field)
-
-    @staticmethod
-    def _validate_filter_rule(rule: object, direction: str, idx: int, addr_field: str) -> None:
-        """Validate a single filter rule entry."""
-        _VALID_ACTIONS = ("accept", "drop")
-        _VALID_PROTOCOLS = ("tcp", "udp")
-
-        if not isinstance(rule, dict):
-            raise ValueError(f"filter.{direction}.rules[{idx}] must be a mapping")
-
-        action = rule.get("action")
-        if action is None:
-            raise ValueError(f"filter.{direction}.rules[{idx}].action is required")
-        if action not in _VALID_ACTIONS:
-            raise ValueError(
-                f"filter.{direction}.rules[{idx}].action must be one of "
-                f"{_VALID_ACTIONS}, got {action!r}"
-            )
-
-        if addr_field in rule:
-            try:
-                ipaddress.ip_network(rule[addr_field], strict=False)
-            except ValueError as exc:
-                raise ValueError(
-                    f"filter.{direction}.rules[{idx}].{addr_field} is not a valid "
-                    f"network address: {rule[addr_field]!r}"
-                ) from exc
-
-        if "port" in rule and "protocol" not in rule:
-            raise ValueError(
-                f"filter.{direction}.rules[{idx}].port requires protocol to be set"
-            )
-
-        if "protocol" in rule and rule["protocol"] not in _VALID_PROTOCOLS:
-            raise ValueError(
-                f"filter.{direction}.rules[{idx}].protocol must be one of "
-                f"{_VALID_PROTOCOLS}, got {rule['protocol']!r}"
-            )
+        # Convert raw dict to FilterConfig (YAML deserialization produces dicts).
+        if isinstance(self.filter, dict):
+            if self.filter:
+                self.filter = FilterConfig.from_dict(self.filter)
+            else:
+                self.filter = None
 
     def _setup_network(self) -> None:
         if not self._nat_disabled():
@@ -262,12 +282,11 @@ class DutNetwork(Driver):
             self._dnsmasq_process = dnsmasq.start(self._state_path)
 
         upstream_for_nat = self._upstream
-        filter_cfg = self.filter or None
         if self.nat_mode == "masquerade":
             nftables.apply_masquerade_rules(
                 self.interface, upstream_for_nat, self.subnet,
                 table_name=self._table_name,
-                filter_config=filter_cfg,
+                filter_config=self.filter,
             )
         elif self.nat_mode == "1to1":
             mappings = self._get_1to1_mappings()
@@ -279,7 +298,7 @@ class DutNetwork(Driver):
             nftables.apply_1to1_rules(
                 self.interface, upstream_for_alias, mappings, self.subnet,
                 table_name=self._table_name,
-                filter_config=filter_cfg,
+                filter_config=self.filter,
             )
 
         if self.local_ntp:
@@ -444,7 +463,7 @@ class DutNetwork(Driver):
         nftables.apply_1to1_rules(
             self.interface, upstream_for_alias, mappings, self.subnet,
             table_name=self._table_name,
-            filter_config=self.filter or None,
+            filter_config=self.filter,
         )
 
     @export
