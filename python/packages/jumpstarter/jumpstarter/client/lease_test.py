@@ -582,12 +582,12 @@ def _make_lease_for_handle():
     return lease
 
 
-class TestHandleAsyncTransientDialRetry:
-    """Tests for transient gRPC error retry in handle_async Dial phase."""
+class TestHandleAsyncTransientRetry:
+    """Tests for transient gRPC error retry in handle_async (unified Dial + router loop)."""
 
     @pytest.mark.anyio
-    async def test_dial_retries_on_unavailable_then_succeeds(self):
-        """Dial should retry on UNAVAILABLE and succeed on the next attempt."""
+    async def test_retries_on_dial_unavailable_then_succeeds(self):
+        """Should retry on UNAVAILABLE from Dial and succeed on the next attempt."""
         lease = _make_lease_for_handle()
 
         dial_response = Mock(router_endpoint="ep", router_token="tok")
@@ -615,8 +615,8 @@ class TestHandleAsyncTransientDialRetry:
         assert call_count == 2
 
     @pytest.mark.anyio
-    async def test_dial_transient_error_returns_after_timeout(self):
-        """Dial should give up and return when dial_timeout is exceeded."""
+    async def test_transient_error_returns_after_timeout(self):
+        """Should give up and return when dial_timeout is exceeded."""
         lease = _make_lease_for_handle()
         lease.dial_timeout = 0.0  # already expired
 
@@ -636,8 +636,8 @@ class TestHandleAsyncTransientDialRetry:
         [grpc.StatusCode.RESOURCE_EXHAUSTED, grpc.StatusCode.ABORTED, grpc.StatusCode.INTERNAL],
         ids=["RESOURCE_EXHAUSTED", "ABORTED", "INTERNAL"],
     )
-    async def test_dial_retries_multiple_transient_codes(self, status_code):
-        """Dial should retry on RESOURCE_EXHAUSTED, ABORTED, INTERNAL."""
+    async def test_retries_multiple_transient_codes(self, status_code):
+        """Should retry on RESOURCE_EXHAUSTED, ABORTED, INTERNAL."""
         lease = _make_lease_for_handle()
         dial_response = Mock(router_endpoint="ep", router_token="tok")
         call_count = 0
@@ -663,13 +663,9 @@ class TestHandleAsyncTransientDialRetry:
 
         assert call_count == 2, f"Expected 2 calls for {status_code}, got {call_count}"
 
-
-class TestHandleAsyncRouterRetry:
-    """Tests for router connection retry in handle_async."""
-
     @pytest.mark.anyio
-    async def test_router_retries_on_transient_error_then_succeeds(self):
-        """Router connection should retry on transient error, re-dial, then succeed."""
+    async def test_router_transient_error_retries_full_dial_and_connect(self):
+        """Router transient error should retry the full Dial + connect cycle."""
         lease = _make_lease_for_handle()
         dial_response = Mock(router_endpoint="ep", router_token="tok")
         lease.controller.Dial = AsyncMock(return_value=dial_response)
@@ -689,30 +685,30 @@ class TestHandleAsyncRouterRetry:
                 await lease.handle_async(Mock())
 
         assert connect_count == 2
-        # Dial called once for initial + once for re-dial
+        # Dial is called fresh each attempt (unified loop)
         assert lease.controller.Dial.call_count == 2
 
     @pytest.mark.anyio
-    async def test_router_non_transient_error_returns_immediately(self):
-        """Router connection should not retry on non-transient errors."""
+    async def test_non_transient_error_returns_immediately(self):
+        """Non-transient errors should not be retried."""
         lease = _make_lease_for_handle()
         dial_response = Mock(router_endpoint="ep", router_token="tok")
         lease.controller.Dial = AsyncMock(return_value=dial_response)
 
         @asynccontextmanager
         async def fail_router(*args, **kwargs):
-            raise _make_aio_rpc_error(grpc.StatusCode.PERMISSION_DENIED, "no access")
+            raise _make_aio_rpc_error(grpc.StatusCode.NOT_FOUND, "not found")
             yield  # pragma: no cover
 
         with patch("jumpstarter.client.lease.connect_router_stream", side_effect=fail_router):
             await lease.handle_async(Mock())
 
-        # Only the initial Dial, no re-dial
+        # Only one Dial attempt, no retry
         assert lease.controller.Dial.call_count == 1
 
     @pytest.mark.anyio
-    async def test_router_transient_error_returns_after_timeout(self):
-        """Router should give up when dial_timeout is exceeded."""
+    async def test_transient_router_error_returns_after_timeout(self):
+        """Should give up when dial_timeout is exceeded during router retries."""
         lease = _make_lease_for_handle()
         lease.dial_timeout = 0.0  # already expired
         dial_response = Mock(router_endpoint="ep", router_token="tok")
@@ -730,8 +726,8 @@ class TestHandleAsyncRouterRetry:
         assert lease.controller.Dial.call_count == 1
 
     @pytest.mark.anyio
-    async def test_router_redial_failure_is_swallowed(self):
-        """When re-dial fails during router retry, the error is logged and retry continues."""
+    async def test_dial_failure_on_retry_is_retried_again(self):
+        """When Dial fails with a transient error during retry, it should keep retrying."""
         lease = _make_lease_for_handle()
         dial_response = Mock(router_endpoint="ep", router_token="tok")
 
@@ -741,11 +737,10 @@ class TestHandleAsyncRouterRetry:
             nonlocal dial_count
             dial_count += 1
             if dial_count == 1:
-                return dial_response
+                return dial_response  # first Dial succeeds, router will fail
             if dial_count == 2:
-                # Re-dial fails
                 raise _make_aio_rpc_error(grpc.StatusCode.UNAVAILABLE, "re-dial failed")
-            return dial_response
+            return dial_response  # third Dial succeeds
 
         lease.controller.Dial = AsyncMock(side_effect=dial_side_effect)
 
@@ -755,7 +750,7 @@ class TestHandleAsyncRouterRetry:
         async def fake_router(*args, **kwargs):
             nonlocal connect_count
             connect_count += 1
-            if connect_count <= 2:
+            if connect_count == 1:
                 raise _make_aio_rpc_error(grpc.StatusCode.UNAVAILABLE, "router fail")
             yield
 
@@ -763,14 +758,15 @@ class TestHandleAsyncRouterRetry:
             with patch("jumpstarter.client.lease.connect_router_stream", side_effect=fake_router):
                 await lease.handle_async(Mock())
 
-        # Should have retried: connect fails, re-dial fails, connect fails again,
-        # re-dial succeeds, third connect succeeds
-        assert connect_count == 3
+        # Attempt 1: Dial OK -> router fails (UNAVAILABLE)
+        # Attempt 2: Dial fails (UNAVAILABLE) -> retried
+        # Attempt 3: Dial OK -> router OK
         assert dial_count == 3
+        assert connect_count == 2
 
     @pytest.mark.anyio
-    async def test_router_oserror_retries_then_succeeds(self):
-        """Router connection should retry on OSError, then succeed."""
+    async def test_oserror_retries_then_succeeds(self):
+        """OSError from router should retry the full Dial + connect cycle."""
         lease = _make_lease_for_handle()
         dial_response = Mock(router_endpoint="ep", router_token="tok")
         lease.controller.Dial = AsyncMock(return_value=dial_response)
@@ -790,10 +786,12 @@ class TestHandleAsyncRouterRetry:
                 await lease.handle_async(Mock())
 
         assert connect_count == 2
+        # Dial called fresh each attempt
+        assert lease.controller.Dial.call_count == 2
 
     @pytest.mark.anyio
-    async def test_router_oserror_returns_after_timeout(self):
-        """Router should give up on OSError when dial_timeout is exceeded."""
+    async def test_oserror_returns_after_timeout(self):
+        """Should give up on OSError when dial_timeout is exceeded."""
         lease = _make_lease_for_handle()
         lease.dial_timeout = 0.0  # already expired
         dial_response = Mock(router_endpoint="ep", router_token="tok")

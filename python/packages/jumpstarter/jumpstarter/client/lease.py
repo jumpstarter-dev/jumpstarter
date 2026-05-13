@@ -320,9 +320,21 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         grpc.StatusCode.INTERNAL,
     })
 
-    async def handle_async(self, stream):  # noqa: C901
+    async def _dial_and_connect(self, stream):
+        """Dial the controller and connect to the router stream.
+
+        Performs a single Dial + router connection attempt. Raises on failure
+        so the caller can decide whether to retry.
+        """
+        response = await self.controller.Dial(jumpstarter_pb2.DialRequest(lease_name=self.name))
+        async with connect_router_stream(
+            response.router_endpoint, response.router_token, stream, self.tls_config, self.grpc_options
+        ):
+            pass
+
+    async def handle_async(self, stream):
         logger.debug("Connecting to Lease with name %s", self.name)
-        # Retry Dial and router connection with exponential backoff for transient
+        # Retry Dial + router connection with exponential backoff for transient
         # errors. This handles:
         # 1. The race condition where the client acquires a lease before the
         #    exporter has transitioned to LEASE_READY status (FAILED_PRECONDITION).
@@ -335,8 +347,8 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         attempt = 0
         while True:
             try:
-                response = await self.controller.Dial(jumpstarter_pb2.DialRequest(lease_name=self.name))
-                break
+                await self._dial_and_connect(stream)
+                return
             except AioRpcError as e:
                 remaining = deadline - time.monotonic()
                 if e.code() == grpc.StatusCode.FAILED_PRECONDITION and "not ready" in str(e.details()):
@@ -349,7 +361,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                         raise
                     delay = min(base_delay * (2**attempt), max_delay, remaining)
                     logger.debug(
-                        "Exporter not ready, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
+                        "Exporter not ready, retrying in %.1fs (attempt %d, %.1fs remaining)",
                         delay,
                         attempt + 1,
                         remaining,
@@ -361,7 +373,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 if e.code() in self._TRANSIENT_GRPC_CODES:
                     if remaining <= 0:
                         logger.warning(
-                            "Dial failed with transient error after %d attempts (%.1fs elapsed): %s",
+                            "Connection failed with transient error after %d attempts (%.1fs elapsed): %s",
                             attempt + 1,
                             self.dial_timeout,
                             e.details(),
@@ -369,7 +381,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                         return
                     delay = min(base_delay * (2**attempt), max_delay, remaining)
                     logger.info(
-                        "Dial failed with %s, retrying in %.1fs (attempt %d, %.1fs remaining): %s",
+                        "Connection failed with %s, retrying in %.1fs (attempt %d, %.1fs remaining): %s",
                         e.code().name,
                         delay,
                         attempt + 1,
@@ -389,60 +401,22 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 else:
                     logger.warning("Connection to exporter lost: %s", e.details())
                 return
-
-        # Connect to the router with retry for transient failures.
-        # After a successful Dial, the router endpoint may still be temporarily
-        # unreachable (e.g. after a tunnel drop). Retry the connection to give
-        # the network time to recover.
-        remaining = deadline - time.monotonic()
-        router_attempt = 0
-        while True:
-            try:
-                async with connect_router_stream(
-                    response.router_endpoint, response.router_token, stream, self.tls_config, self.grpc_options
-                ):
-                    return
-            except AioRpcError as e:
-                remaining = deadline - time.monotonic()
-                if e.code() in self._TRANSIENT_GRPC_CODES and remaining > 0:
-                    delay = min(base_delay * (2**router_attempt), max_delay, remaining)
-                    logger.info(
-                        "Router connection failed with %s, retrying in %.1fs (attempt %d, %.1fs remaining): %s",
-                        e.code().name,
-                        delay,
-                        router_attempt + 1,
-                        remaining,
-                        e.details(),
-                    )
-                    await sleep(delay)
-                    router_attempt += 1
-                    # Re-dial to get a fresh router token since the old one may
-                    # have expired during the retry window
-                    try:
-                        response = await self.controller.Dial(
-                            jumpstarter_pb2.DialRequest(lease_name=self.name)
-                        )
-                    except AioRpcError:
-                        logger.debug("Re-dial failed during router retry, will retry from Dial")
-                    continue
-                logger.warning("Router connection failed: %s (code=%s)", e.details(), e.code().name)
-                return
             except OSError as e:
                 # OSError can occur when the router endpoint is unreachable
                 remaining = deadline - time.monotonic()
                 if remaining > 0:
-                    delay = min(base_delay * (2**router_attempt), max_delay, remaining)
+                    delay = min(base_delay * (2**attempt), max_delay, remaining)
                     logger.info(
-                        "Router connection failed with OSError, retrying in %.1fs (attempt %d, %.1fs remaining): %s",
+                        "Connection failed with OSError, retrying in %.1fs (attempt %d, %.1fs remaining): %s",
                         delay,
-                        router_attempt + 1,
+                        attempt + 1,
                         remaining,
                         e,
                     )
                     await sleep(delay)
-                    router_attempt += 1
+                    attempt += 1
                     continue
-                logger.warning("Router connection failed: %s", e)
+                logger.warning("Connection failed: %s", e)
                 return
 
     @asynccontextmanager
