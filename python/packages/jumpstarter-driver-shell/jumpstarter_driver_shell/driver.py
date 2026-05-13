@@ -189,33 +189,38 @@ class Shell(Driver):
         if timeout is None:
             timeout = self.timeout
 
-        while process.returncode is None:
-            if anyio.current_time() - start_time > timeout:
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except (ProcessLookupError, OSError):
-                    pass
-                with move_on_after(5.0):
-                    await process.wait()
-                if process.returncode is None:
+        try:
+            while process.returncode is None:
+                if anyio.current_time() - start_time > timeout:
                     try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                        self.logger.warning(f"SIGTERM failed to terminate {process.pid}, sending SIGKILL")
+                        os.killpg(process.pid, signal.SIGTERM)
                     except (ProcessLookupError, OSError):
                         pass
-                raise subprocess.TimeoutExpired(cmd, timeout) from None
+                    with move_on_after(5.0):
+                        await process.wait()
+                    if process.returncode is None:
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                            self.logger.warning(f"SIGTERM failed to terminate {process.pid}, sending SIGKILL")
+                        except (ProcessLookupError, OSError):
+                            pass
+                    raise subprocess.TimeoutExpired(cmd, timeout) from None
 
-            try:
-                stdout_data, stderr_data = await self._read_process_output(process, read_all=False)
+                try:
+                    stdout_data, stderr_data = await self._read_process_output(process, read_all=False)
 
-                if stdout_data or stderr_data:
-                    yield stdout_data, stderr_data, None
+                    if stdout_data or stderr_data:
+                        yield stdout_data, stderr_data, None
 
-                await anyio.sleep(0.1)
+                    await anyio.sleep(0.1)
 
-            except Exception:
-                break
+                except (anyio.EndOfStream, anyio.ClosedResourceError):
+                    break
 
-        returncode = process.returncode
-        remaining_stdout, remaining_stderr = await self._read_process_output(process, read_all=True)
-        yield remaining_stdout, remaining_stderr, returncode
+            returncode = process.returncode
+            remaining_stdout, remaining_stderr = await self._read_process_output(process, read_all=True)
+            yield remaining_stdout, remaining_stderr, returncode
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()

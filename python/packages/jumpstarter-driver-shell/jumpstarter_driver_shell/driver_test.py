@@ -1,4 +1,7 @@
 
+from unittest.mock import patch
+
+import anyio
 import pytest
 
 from .driver import Shell
@@ -279,3 +282,62 @@ def test_mixed_format_methods():
         assert cli.commands['simple'].help == "Execute the simple shell method"
         assert cli.commands['detailed'].help == "A detailed command with description"
         assert cli.commands['default_cmd'].help == "Method using default command"
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.mark.anyio
+async def test_unexpected_exception_propagates_from_streaming_loop():
+    """Verify that non-stream exceptions propagate instead of being silently swallowed.
+
+    The streaming loop in _run_inline_shell_script should only catch
+    anyio.EndOfStream and anyio.ClosedResourceError. Other exceptions
+    like RuntimeError must propagate to the caller.
+    """
+    shell = Shell(methods={"sleeper": "sleep 10"})
+
+    call_count = 0
+
+    original_read = shell._read_process_output
+
+    async def failing_read(process, read_all=False):
+        nonlocal call_count
+        if read_all:
+            return await original_read(process, read_all)
+        call_count += 1
+        if call_count >= 2:
+            raise RuntimeError("simulated unexpected failure")
+        return await original_read(process, read_all)
+
+    with patch.object(shell, "_read_process_output", side_effect=failing_read):
+        with pytest.raises(RuntimeError, match="simulated unexpected failure"):
+            async for _ in shell._run_inline_shell_script("sleeper", "sleep 10"):
+                pass
+
+
+@pytest.mark.anyio
+async def test_stream_exceptions_cause_clean_exit():
+    """Verify that anyio.EndOfStream causes a clean loop exit, not an error."""
+    shell = Shell(methods={"sleeper": "echo done"})
+
+    call_count = 0
+
+    original_read = shell._read_process_output
+
+    async def eos_read(process, read_all=False):
+        nonlocal call_count
+        if read_all:
+            return await original_read(process, read_all)
+        call_count += 1
+        if call_count >= 2:
+            raise anyio.EndOfStream()
+        return await original_read(process, read_all)
+
+    with patch.object(shell, "_read_process_output", side_effect=eos_read):
+        results = []
+        async for chunk in shell._run_inline_shell_script("sleeper", "echo done"):
+            results.append(chunk)
+        assert len(results) >= 1
