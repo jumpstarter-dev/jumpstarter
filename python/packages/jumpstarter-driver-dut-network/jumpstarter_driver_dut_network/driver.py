@@ -89,7 +89,7 @@ class FilterDirection:
             )
         # Convert raw dicts to FilterRule instances (for YAML deserialization).
         self.rules = [
-            FilterRule(**r) if isinstance(r, dict) else r for r in self.rules
+            FilterRule(**r) if isinstance(r, dict) else r for r in self.rules  # ty: ignore[missing-argument]
         ]
 
 
