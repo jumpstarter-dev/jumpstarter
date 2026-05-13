@@ -19,7 +19,7 @@ class UbootConsoleClient(CompositeClient):
         return self.call("get_prompt")
 
     @contextmanager
-    def reboot_to_console(self, *, debug=False, retries: int = 100) -> Generator[None]:
+    def reboot_to_console(self, *, debug: bool = False, retries: int = 100) -> Generator[None]:
         """
         Reboot to U-Boot console
 

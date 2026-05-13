@@ -13,7 +13,6 @@ from jumpstarter_cli.login import (
     _validate_login_endpoint_url,
     _warn_exporter_client_only_flags,
     fetch_auth_config,
-    login,
     parse_login_argument,
 )
 
