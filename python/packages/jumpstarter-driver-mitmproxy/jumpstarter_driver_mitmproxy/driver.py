@@ -32,8 +32,6 @@ import base64
 import fnmatch
 import json
 import logging
-
-import anyio
 import os
 import secrets
 import signal
@@ -48,6 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
+import anyio
 import yaml
 from pydantic import BaseModel, model_validator
 

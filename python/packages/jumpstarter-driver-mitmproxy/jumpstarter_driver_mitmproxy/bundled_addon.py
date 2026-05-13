@@ -27,8 +27,6 @@ import importlib
 import importlib.util
 import json
 import os
-
-import anyio
 import random
 import re
 import socket as _socket
@@ -39,6 +37,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+import anyio
 from mitmproxy import ctx, http
 
 # ── Helpers ──────────────────────────────────────────────────

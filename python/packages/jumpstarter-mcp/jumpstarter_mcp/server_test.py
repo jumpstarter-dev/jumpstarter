@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-from subprocess import DEVNULL, PIPE
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from subprocess import DEVNULL
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import click
@@ -325,13 +325,16 @@ class TestRunCommand:
     @pytest.mark.anyio
     async def test_successful_command(self, manager_with_conn):
         from subprocess import CompletedProcess
+
         from jumpstarter_mcp.tools.commands import run_command
 
         manager, conn_id = manager_with_conn
 
         mock_result = CompletedProcess(
-            args=["/usr/bin/j", "power", "on"], returncode=0,
-            stdout=b"hello\n", stderr=b"",
+            args=["/usr/bin/j", "power", "on"],
+            returncode=0,
+            stdout=b"hello\n",
+            stderr=b"",
         )
 
         with (
@@ -352,6 +355,7 @@ class TestRunCommand:
 
         async def slow_run_process(*args, **kwargs):
             import anyio
+
             await anyio.sleep(999)
 
         with (
@@ -379,18 +383,23 @@ class TestRunCommand:
     async def test_subprocess_stdin_is_devnull(self, manager_with_conn):
         """Subprocess must not inherit MCP's stdin (would consume JSON-RPC input)."""
         from subprocess import CompletedProcess
+
         from jumpstarter_mcp.tools.commands import run_command
 
         manager, conn_id = manager_with_conn
 
         mock_result = CompletedProcess(
-            args=["/usr/bin/j", "power", "on"], returncode=0,
-            stdout=b"ok\n", stderr=b"",
+            args=["/usr/bin/j", "power", "on"],
+            returncode=0,
+            stdout=b"ok\n",
+            stderr=b"",
         )
 
         with (
             patch("shutil.which", return_value="/usr/bin/j"),
-            patch("jumpstarter_mcp.tools.commands.anyio.run_process", new_callable=AsyncMock, return_value=mock_result) as mock_exec,
+            patch(
+                "jumpstarter_mcp.tools.commands.anyio.run_process", new_callable=AsyncMock, return_value=mock_result
+            ) as mock_exec,
         ):
             await run_command(manager, conn_id, ["power", "on"])
 
@@ -571,9 +580,7 @@ class TestSetupLogging:
                 _setup_logging()
 
             new_file_handlers = [
-                h
-                for h in root.handlers
-                if isinstance(h, logging.FileHandler) and h not in handlers_before
+                h for h in root.handlers if isinstance(h, logging.FileHandler) and h not in handlers_before
             ]
             assert len(new_file_handlers) == 1
             assert "mcp-server.log" in new_file_handlers[0].baseFilename
@@ -647,7 +654,7 @@ class TestStdoutIsolation:
 
             # Apply the same redirect pattern as run_server():
             sys.stdout.flush()
-            mcp_fd = os.dup(sys.stdout.fileno())   # save "real stdout" (pipe)
+            mcp_fd = os.dup(sys.stdout.fileno())  # save "real stdout" (pipe)
             os.dup2(sys.stderr.fileno(), sys.stdout.fileno())  # fd 1 -> stderr
             sys.stdout = sys.stderr
 

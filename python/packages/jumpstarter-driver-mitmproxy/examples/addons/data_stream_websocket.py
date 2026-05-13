@@ -50,6 +50,7 @@ import random
 import time
 
 import anyio
+import anyio.abc
 from anyio import CancelScope
 from mitmproxy import ctx, http
 

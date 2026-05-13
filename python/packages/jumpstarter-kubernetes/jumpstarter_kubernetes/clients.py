@@ -1,9 +1,8 @@
 import base64
 import logging
-
-import anyio
 from typing import Literal, Optional
 
+import anyio
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 from pydantic import Field
@@ -182,7 +181,7 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
                 if e.status != 404:
                     raise
             count += 1
-            await asyncio.sleep(CREATE_CLIENT_DELAY)
+            await anyio.sleep(CREATE_CLIENT_DELAY)
         raise Exception("Timeout waiting for token regeneration")
 
     async def delete_client(self, name: str):

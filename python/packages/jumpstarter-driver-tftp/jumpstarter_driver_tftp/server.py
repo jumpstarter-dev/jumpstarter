@@ -1,4 +1,5 @@
 import logging
+import pathlib
 from asyncio import (
     CancelledError,
     DatagramProtocol,
@@ -11,7 +12,6 @@ from asyncio import (
     get_running_loop,
     wait_for,
 )
-import pathlib
 from enum import IntEnum
 from typing import Optional, Set, Tuple
 

@@ -2,9 +2,9 @@
 
 import os
 from subprocess import PIPE
+from typing import Literal, Optional
 
 import anyio
-from typing import Literal, Optional
 
 from ..exceptions import ClusterTypeValidationError
 
