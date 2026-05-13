@@ -27,7 +27,7 @@ def get_ip_address(logger: logging.Logger | None = None) -> str:
     return address
 
 
-async def get_minikube_ip(profile: str = None, minikube: str = "minikube"):
+async def get_minikube_ip(profile: str | None = None, minikube: str = "minikube"):
     cmd = [minikube, "ip"]
     if profile:
         cmd.extend(["-p", profile])
