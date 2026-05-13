@@ -74,6 +74,139 @@ class TestDriverValidation:
         assert driver._prefix_len == 24
 
 
+class TestFilterValidation:
+    """Tests for the filter config validation in _validate_config()."""
+
+    def test_valid_filter_config(self, tmp_path: Path):
+        fc = {
+            "egress": {
+                "policy": "accept",
+                "rules": [
+                    {"action": "drop", "destination": "10.0.0.0/8"},
+                    {"action": "drop", "destination": "172.16.0.0/12"},
+                ],
+            },
+            "ingress": {
+                "policy": "drop",
+                "rules": [
+                    {"action": "accept", "source": "10.26.28.0/24", "port": 22, "protocol": "tcp"},
+                ],
+            },
+        }
+        driver, _, _, _ = _make_driver(tmp_path, filter=fc)
+        assert driver.filter == fc
+
+    def test_empty_filter_is_valid(self, tmp_path: Path):
+        driver, _, _, _ = _make_driver(tmp_path, filter={})
+        assert driver.filter == {}
+
+    def test_no_filter_is_valid(self, tmp_path: Path):
+        driver, _, _, _ = _make_driver(tmp_path)
+        assert driver.filter == {}
+
+    def test_invalid_egress_policy(self, tmp_path: Path):
+        fc = {"egress": {"policy": "reject"}}
+        with pytest.raises(ValueError, match="filter.egress.policy"):
+            _make_driver(tmp_path, filter=fc)
+
+    def test_invalid_ingress_policy(self, tmp_path: Path):
+        fc = {"ingress": {"policy": "invalid"}}
+        with pytest.raises(ValueError, match="filter.ingress.policy"):
+            _make_driver(tmp_path, filter=fc)
+
+    def test_invalid_action(self, tmp_path: Path):
+        fc = {"egress": {"rules": [{"action": "reject", "destination": "10.0.0.0/8"}]}}
+        with pytest.raises(ValueError, match="filter.egress.rules\\[0\\].action"):
+            _make_driver(tmp_path, filter=fc)
+
+    def test_missing_action(self, tmp_path: Path):
+        fc = {"egress": {"rules": [{"destination": "10.0.0.0/8"}]}}
+        with pytest.raises(ValueError, match="filter.egress.rules\\[0\\].action is required"):
+            _make_driver(tmp_path, filter=fc)
+
+    def test_invalid_destination(self, tmp_path: Path):
+        fc = {"egress": {"rules": [{"action": "drop", "destination": "not-a-cidr"}]}}
+        with pytest.raises(ValueError, match="filter.egress.rules\\[0\\].destination"):
+            _make_driver(tmp_path, filter=fc)
+
+    def test_invalid_source(self, tmp_path: Path):
+        fc = {"ingress": {"rules": [{"action": "accept", "source": "bad-addr"}]}}
+        with pytest.raises(ValueError, match="filter.ingress.rules\\[0\\].source"):
+            _make_driver(tmp_path, filter=fc)
+
+    def test_port_without_protocol(self, tmp_path: Path):
+        fc = {"egress": {"rules": [{"action": "drop", "port": 443}]}}
+        with pytest.raises(ValueError, match="port requires protocol"):
+            _make_driver(tmp_path, filter=fc)
+
+    def test_invalid_protocol(self, tmp_path: Path):
+        fc = {"egress": {"rules": [{"action": "drop", "port": 443, "protocol": "icmp"}]}}
+        with pytest.raises(ValueError, match="filter.egress.rules\\[0\\].protocol"):
+            _make_driver(tmp_path, filter=fc)
+
+    def test_rule_not_a_dict(self, tmp_path: Path):
+        fc = {"egress": {"rules": ["drop all"]}}
+        with pytest.raises(ValueError, match="filter.egress.rules\\[0\\] must be a mapping"):
+            _make_driver(tmp_path, filter=fc)
+
+    def test_section_not_a_dict(self, tmp_path: Path):
+        fc = {"egress": "drop"}
+        with pytest.raises(ValueError, match="filter.egress must be a mapping"):
+            _make_driver(tmp_path, filter=fc)
+
+    def test_egress_only(self, tmp_path: Path):
+        fc = {"egress": {"policy": "drop"}}
+        driver, _, _, _ = _make_driver(tmp_path, filter=fc)
+        assert driver.filter == fc
+
+    def test_ingress_only(self, tmp_path: Path):
+        fc = {"ingress": {"policy": "accept", "rules": []}}
+        driver, _, _, _ = _make_driver(tmp_path, filter=fc)
+        assert driver.filter == fc
+
+
+class TestFilterPassedToNftables:
+    """Tests that filter config is passed through to nftables calls."""
+
+    def test_masquerade_passes_filter(self, tmp_path: Path):
+        fc = {"egress": {"policy": "drop"}}
+        _, _, mock_nft, _ = _make_driver(tmp_path, nat_mode="masquerade", filter=fc)
+        mock_nft.apply_masquerade_rules.assert_called_once_with(
+            "eth-dut", "eth-up", "192.168.100.0/24",
+            table_name="jumpstarter_eth_dut",
+            filter_config=fc,
+        )
+
+    def test_1to1_passes_filter(self, tmp_path: Path):
+        fc = {"ingress": {"policy": "drop"}}
+        leases = [
+            {"mac": "aa:bb:cc:dd:ee:01", "ip": "192.168.100.10", "public_ip": "10.0.0.50"},
+        ]
+        _, _, mock_nft, _ = _make_driver(tmp_path, nat_mode="1to1", addresses=leases, filter=fc)
+        expected_mappings = [{"private_ip": "192.168.100.10", "public_ip": "10.0.0.50"}]
+        mock_nft.apply_1to1_rules.assert_called_once_with(
+            "eth-dut", "eth-up", expected_mappings, "192.168.100.0/24",
+            table_name="jumpstarter_eth_dut",
+            filter_config=fc,
+        )
+
+    def test_empty_filter_passes_none(self, tmp_path: Path):
+        _, _, mock_nft, _ = _make_driver(tmp_path, nat_mode="masquerade", filter={})
+        mock_nft.apply_masquerade_rules.assert_called_once_with(
+            "eth-dut", "eth-up", "192.168.100.0/24",
+            table_name="jumpstarter_eth_dut",
+            filter_config=None,
+        )
+
+    def test_no_filter_passes_none(self, tmp_path: Path):
+        _, _, mock_nft, _ = _make_driver(tmp_path, nat_mode="masquerade")
+        mock_nft.apply_masquerade_rules.assert_called_once_with(
+            "eth-dut", "eth-up", "192.168.100.0/24",
+            table_name="jumpstarter_eth_dut",
+            filter_config=None,
+        )
+
+
 class TestTransactionalSetup:
     def test_cleanup_called_on_setup_failure(self, tmp_path: Path):
         with pytest.raises(RuntimeError, match="Cannot detect upstream"):
@@ -108,6 +241,7 @@ class TestDriverSetupMasquerade:
         mock_nft.apply_masquerade_rules.assert_called_once_with(
             "eth-dut", "eth-up", "192.168.100.0/24",
             table_name="jumpstarter_eth_dut",
+            filter_config=None,
         )
         mock_dns.write_config.assert_called_once()
         mock_dns.start.assert_called_once()
@@ -138,6 +272,7 @@ class TestDriverSetup1to1:
         mock_nft.apply_1to1_rules.assert_called_once_with(
             "eth-dut", "eth-up", expected_mappings, "192.168.100.0/24",
             table_name="jumpstarter_eth_dut",
+            filter_config=None,
         )
 
     def test_skips_lease_without_public_ip(self, tmp_path: Path):
@@ -373,6 +508,7 @@ class TestDnsNameIn1to1:
             mock_nft.apply_1to1_rules.assert_called_once_with(
                 "eth-dut", "eth-up", expected_mappings, "192.168.100.0/24",
                 table_name="jumpstarter_eth_dut",
+                filter_config=None,
             )
             assert "10.0.0.99" in driver._added_aliases
 
