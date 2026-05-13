@@ -233,12 +233,11 @@ async def apply_jumpstarter_cr(
     returncode, ns_yaml, _ = await run_command(cmd)
     if returncode == 0:
         apply_cmd = _kubectl_base(kubeconfig, context) + ["apply", "-f", "-"]
-        process = await anyio.open_process(apply_cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-        _, ns_stderr = await process.communicate(input=ns_yaml.encode())
-        if process.returncode != 0:
+        result = await anyio.run_process(apply_cmd, input=ns_yaml.encode(), stdout=PIPE, stderr=PIPE)
+        if result.returncode != 0:
             raise ClusterOperationError(
                 "install", "jumpstarter", "operator",
-                Exception(f"Failed to create namespace {namespace}: {ns_stderr.decode(errors='replace')}"),
+                Exception(f"Failed to create namespace {namespace}: {result.stderr.decode(errors='replace')}"),
             )
 
     # Build and apply the CR
@@ -246,13 +245,12 @@ async def apply_jumpstarter_cr(
     callback.progress("Applying Jumpstarter CR...")
 
     apply_cmd = _kubectl_base(kubeconfig, context) + ["apply", "-f", "-"]
-    process = await anyio.open_process(apply_cmd, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-    stdout, stderr = await process.communicate(input=cr_yaml.encode())
+    result = await anyio.run_process(apply_cmd, input=cr_yaml.encode(), stdout=PIPE, stderr=PIPE, check=False)
 
-    if process.returncode != 0:
+    if result.returncode != 0:
         raise ClusterOperationError(
             "install", "jumpstarter", "operator",
-            Exception(f"Failed to apply Jumpstarter CR: {stderr.decode(errors='replace')}"),
+            Exception(f"Failed to apply Jumpstarter CR: {result.stderr.decode(errors='replace')}"),
         )
 
     callback.success("Jumpstarter CR applied")
