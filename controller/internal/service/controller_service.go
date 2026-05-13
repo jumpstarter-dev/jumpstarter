@@ -26,6 +26,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/exp/maps"
@@ -81,6 +82,90 @@ type ControllerService struct {
 	Router        config.Router
 	LeasePolicy   *config.LeasePolicy
 	listenQueues  sync.Map
+	leaseLocks    sync.Map
+}
+
+type listenQueue struct {
+	ch        chan *pb.ListenResponse
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+func (q *listenQueue) closeDone() {
+	q.closeOnce.Do(func() { close(q.done) })
+}
+
+type leaseLock struct {
+	mu   sync.Mutex
+	refs int32
+}
+
+func (s *ControllerService) acquireLeaseLock(leaseName string) *sync.Mutex {
+	for {
+		v, loaded := s.leaseLocks.LoadOrStore(leaseName, &leaseLock{refs: 1})
+		ll := v.(*leaseLock)
+		if !loaded {
+			return &ll.mu
+		}
+		newRefs := atomic.AddInt32(&ll.refs, 1)
+		if newRefs <= 1 {
+			atomic.AddInt32(&ll.refs, -1)
+			continue
+		}
+		return &ll.mu
+	}
+}
+
+func (s *ControllerService) releaseLeaseLock(leaseName string) {
+	v, ok := s.leaseLocks.Load(leaseName)
+	if !ok {
+		return
+	}
+	ll := v.(*leaseLock)
+	if atomic.AddInt32(&ll.refs, -1) == 0 {
+		s.leaseLocks.CompareAndDelete(leaseName, ll)
+	}
+}
+
+// swapListenQueue atomically replaces the listen queue for a lease and signals
+// the previous queue to stop. The per-lease lock serializes this with
+// sendToListener so that Dial never sends a token to a superseded queue.
+func (s *ControllerService) swapListenQueue(leaseName string, newQueue *listenQueue) {
+	mu := s.acquireLeaseLock(leaseName)
+	mu.Lock()
+	old, loaded := s.listenQueues.Swap(leaseName, newQueue)
+	if loaded {
+		old.(*listenQueue).closeDone()
+	}
+	mu.Unlock()
+	s.releaseLeaseLock(leaseName)
+}
+
+// sendToListener delivers a response to the active listener for a lease. The
+// per-lease lock guarantees that the queue loaded here cannot be superseded
+// between the load and the send, eliminating the TOCTOU race between Dial and
+// a reconnecting Listen.
+func (s *ControllerService) sendToListener(_ context.Context, leaseName string, response *pb.ListenResponse) error {
+	mu := s.acquireLeaseLock(leaseName)
+	defer s.releaseLeaseLock(leaseName)
+	mu.Lock()
+	defer mu.Unlock()
+	v, ok := s.listenQueues.Load(leaseName)
+	if !ok {
+		return status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
+	}
+	q := v.(*listenQueue)
+	select {
+	case <-q.done:
+		return status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
+	default:
+	}
+	select {
+	case q.ch <- response:
+		return nil
+	default:
+		return status.Errorf(codes.ResourceExhausted, "listener buffer full on lease %s", leaseName)
+	}
 }
 
 const defaultMaxTags int32 = 10
@@ -449,12 +534,35 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return err
 	}
 
-	queue, _ := s.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
+	wrapper := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	listenMu := s.acquireLeaseLock(leaseName)
+	s.swapListenQueue(leaseName, wrapper)
+	defer func() {
+		listenMu.Lock()
+		wrapper.closeDone()
+		listenMu.Unlock()
+		s.listenQueues.CompareAndDelete(leaseName, wrapper)
+		s.releaseLeaseLock(leaseName)
+	}()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case msg := <-queue.(chan *pb.ListenResponse):
+		case <-wrapper.done:
+			for {
+				select {
+				case msg := <-wrapper.ch:
+					if err := stream.Send(msg); err != nil {
+						return err
+					}
+				default:
+					return nil
+				}
+			}
+		case msg := <-wrapper.ch:
 			if err := stream.Send(msg); err != nil {
 				return err
 			}
@@ -742,11 +850,8 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		RouterToken:    token,
 	}
 
-	queue, _ := s.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case queue.(chan *pb.ListenResponse) <- response:
+	if err := s.sendToListener(ctx, leaseName, response); err != nil {
+		return nil, err
 	}
 
 	logger.Info("Client dial assigned stream", "stream", stream)
