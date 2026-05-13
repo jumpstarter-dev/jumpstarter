@@ -35,7 +35,7 @@ def setup_mock_snmp_engine():
             "auth_key": None,
             "priv_protocol": PrivProtocol.NONE,
             "priv_key": None,
-            "expected_args_len": 2,  # only user and engine args for noAuth
+            "expected_args_len": 2,
         },
         {
             "user": "usr-md5-none",
@@ -43,7 +43,7 @@ def setup_mock_snmp_engine():
             "auth_key": "authkey1",
             "priv_protocol": PrivProtocol.NONE,
             "priv_key": None,
-            "expected_args_len": 4,  # engine, user, auth_protocol, auth_key
+            "expected_args_len": 4,
         },
         {
             "user": "usr-sha-des",
@@ -51,7 +51,7 @@ def setup_mock_snmp_engine():
             "auth_key": "authkey1",
             "priv_protocol": PrivProtocol.DES,
             "priv_key": "privkey1",
-            "expected_args_len": 6,  # engine, user, auth_protocol, auth_key, priv_protocol, priv_key
+            "expected_args_len": 6,
         },
     ],
 )
@@ -109,9 +109,9 @@ def test_power_on_command(mock_engine, mock_add_user):
 
     with (
         patch("pysnmp.entity.rfc3413.cmdgen.SetCommandGenerator.send_varbinds") as mock_send,
-        patch("asyncio.get_running_loop", side_effect=RuntimeError),
-        patch("asyncio.new_event_loop"),
-        patch("asyncio.set_event_loop"),
+        patch("jumpstarter_driver_snmp.driver.get_running_loop", side_effect=RuntimeError),
+        patch("jumpstarter_driver_snmp.driver.new_event_loop"),
+        patch("jumpstarter_driver_snmp.driver.set_event_loop"),
         patch("pysnmp.entity.config.add_target_parameters"),
         patch("pysnmp.entity.config.add_target_address"),
         patch("pysnmp.entity.config.add_transport"),
@@ -137,9 +137,9 @@ def test_power_off_command(mock_engine, mock_add_user):
 
     with (
         patch("pysnmp.entity.rfc3413.cmdgen.SetCommandGenerator.send_varbinds") as mock_send,
-        patch("asyncio.get_running_loop", side_effect=RuntimeError),
-        patch("asyncio.new_event_loop"),
-        patch("asyncio.set_event_loop"),
+        patch("jumpstarter_driver_snmp.driver.get_running_loop", side_effect=RuntimeError),
+        patch("jumpstarter_driver_snmp.driver.new_event_loop"),
+        patch("jumpstarter_driver_snmp.driver.set_event_loop"),
         patch("pysnmp.entity.config.add_target_parameters"),
         patch("pysnmp.entity.config.add_target_address"),
         patch("pysnmp.entity.config.add_transport"),

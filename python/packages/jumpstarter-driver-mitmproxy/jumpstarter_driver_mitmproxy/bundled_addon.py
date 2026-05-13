@@ -22,12 +22,13 @@ The addon hot-reloads config when the file changes on disk.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import importlib
 import importlib.util
 import json
 import os
+
+import anyio
 import random
 import re
 import socket as _socket
@@ -831,7 +832,7 @@ class MitmproxyMockAddon:
             self.config.get("default_latency_ms", 0),
         )
         if latency_ms > 0:
-            await asyncio.sleep(latency_ms / 1000.0)
+            await anyio.sleep(latency_ms / 1000.0)
 
         # Build response headers
         resp_headers = {"Content-Type": content_type}

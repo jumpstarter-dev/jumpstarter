@@ -52,8 +52,12 @@ def test_get_report_includes_descriptions():
         )
 
         # Call GetReport
-        import asyncio
-        response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
+        import anyio
+
+        async def _get_report():
+            return await session.GetReport(empty_pb2.Empty(), None)
+
+        response = anyio.run(_get_report)
 
         # Build a map of uuid -> report for easy lookup
         reports_by_uuid = {r.uuid: r for r in response.reports}
@@ -133,8 +137,12 @@ def test_empty_description_not_included():
             root_device=driver,
         )
 
-        import asyncio
-        response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
+        import anyio
+
+        async def _get_report():
+            return await session.GetReport(empty_pb2.Empty(), None)
+
+        response = anyio.run(_get_report)
 
         # Empty string should not be included in the report
         reports_by_uuid = {r.uuid: r for r in response.reports}
@@ -241,8 +249,12 @@ def test_methods_description_included_in_getreport():
             root_device=driver,
         )
 
-        import asyncio
-        response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
+        import anyio
+
+        async def _get_report():
+            return await session.GetReport(empty_pb2.Empty(), None)
+
+        response = anyio.run(_get_report)
 
         # Find the driver's report
         reports_by_uuid = {r.uuid: r for r in response.reports}

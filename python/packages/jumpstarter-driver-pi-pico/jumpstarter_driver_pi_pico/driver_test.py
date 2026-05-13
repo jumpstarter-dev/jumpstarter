@@ -1,7 +1,7 @@
-import asyncio
 from dataclasses import dataclass, field
 from unittest.mock import MagicMock
 
+import anyio
 import pytest
 from jumpstarter_driver_pyserial.driver import PySerial
 
@@ -167,7 +167,9 @@ def test_drivers_pi_pico_dump_not_implemented(monkeypatch, tmp_path):
     )
 
     with pytest.raises(NotImplementedError, match="not supported"):
-        asyncio.run(driver.dump(None, None))
+        async def _run():
+            await driver.dump(None, None)
+        anyio.run(_run)
 
 
 def test_drivers_pi_pico_enter_bootloader_via_gpio(monkeypatch, tmp_path):

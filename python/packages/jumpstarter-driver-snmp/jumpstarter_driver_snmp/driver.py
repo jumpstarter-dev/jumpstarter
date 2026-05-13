@@ -1,5 +1,5 @@
-import asyncio
 import socket
+from asyncio import AbstractEventLoop, Event, TimeoutError, get_running_loop, new_event_loop, set_event_loop, wait_for
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from typing import Any, Dict, Tuple
@@ -117,7 +117,7 @@ class SNMPServer(Driver):
     def client(cls) -> str:
         return "jumpstarter_driver_snmp.client.SNMPServerClient"
 
-    def _create_snmp_callback(self, result: Dict[str, Any], response_received: asyncio.Event):
+    def _create_snmp_callback(self, result: Dict[str, Any], response_received: Event):
         def callback(snmpEngine, sendRequestHandle, errorIndication, errorStatus, errorIndex, varBinds, cbCtx):
             self.logger.debug(f"Callback {errorIndication} {errorStatus} {errorIndex} {varBinds}")
             if errorIndication:
@@ -138,23 +138,23 @@ class SNMPServer(Driver):
 
         return callback
 
-    def _setup_event_loop(self) -> Tuple[asyncio.AbstractEventLoop, bool]:
+    def _setup_event_loop(self) -> Tuple[AbstractEventLoop, bool]:
         try:
-            loop = asyncio.get_running_loop()
+            loop = get_running_loop()
             return loop, False
         except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            loop = new_event_loop()
+            set_event_loop(loop)
             return loop, True
 
-    async def _run_snmp_dispatcher(self, snmp_engine: engine.SnmpEngine, response_received: asyncio.Event):
+    async def _run_snmp_dispatcher(self, snmp_engine: engine.SnmpEngine, response_received: Event):
         snmp_engine.open_dispatcher()
         await response_received.wait()
         snmp_engine.close_dispatcher()
 
     def _snmp_set(self, state: PowerState):
         result = {"success": False, "error": None}
-        response_received = asyncio.Event()
+        response_received = Event()
         loop = None
         created_loop = False
 
@@ -174,8 +174,8 @@ class SNMPServer(Driver):
 
             dispatcher_task = loop.create_task(self._run_snmp_dispatcher(snmp_engine, response_received))
             try:
-                loop.run_until_complete(asyncio.wait_for(dispatcher_task, self.timeout))
-            except asyncio.TimeoutError:
+                loop.run_until_complete(wait_for(dispatcher_task, self.timeout))
+            except TimeoutError:
                 self.logger.warning(f"SNMP operation timed out after {self.timeout} seconds")
                 result["error"] = "SNMP operation timed out"
 

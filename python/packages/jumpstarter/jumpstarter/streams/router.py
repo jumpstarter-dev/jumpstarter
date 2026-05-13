@@ -1,6 +1,6 @@
-import asyncio
 import contextlib
 import logging
+from asyncio import InvalidStateError
 from dataclasses import dataclass, field
 
 import grpc
@@ -57,13 +57,13 @@ class RouterStream(ObjectStream[bytes]):
         return b""
 
     async def send_eof(self):
-        with contextlib.suppress(grpc.aio.AioRpcError, asyncio.exceptions.InvalidStateError):
+        with contextlib.suppress(grpc.aio.AioRpcError, InvalidStateError):
             await self.context.write(self.cls(frame_type=router_pb2.FRAME_TYPE_GOAWAY))
             if isinstance(self.context, grpc.aio.StreamStreamCall):
                 await self.context.done_writing()
 
     async def aclose(self):
-        with contextlib.suppress(grpc.aio.AioRpcError, asyncio.exceptions.InvalidStateError):
+        with contextlib.suppress(grpc.aio.AioRpcError, InvalidStateError):
             await self.send_eof()
             if isinstance(self.context, grpc._cython.cygrpc._ServicerContext):
                 await self.context.abort(grpc.StatusCode.ABORTED, "RouterStream: aclose")
