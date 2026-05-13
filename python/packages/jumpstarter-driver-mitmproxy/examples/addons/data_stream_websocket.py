@@ -82,6 +82,10 @@ class Handler:
         self._task_group: anyio.abc.TaskGroup | None = None
 
     async def _ensure_task_group(self):
+        # The mitmproxy addon lifecycle (websocket_message/done) does not
+        # support wrapping the entire handler in an async with block, so
+        # we manage __aenter__/__aexit__ manually here. This is a known
+        # deviation from anyio structured concurrency conventions.
         if self._task_group is None:
             self._task_group = anyio.create_task_group()
             await self._task_group.__aenter__()
@@ -91,7 +95,11 @@ class Handler:
             for scope in self._cancel_scopes.values():
                 scope.cancel()
             self._cancel_scopes.clear()
-            await self._task_group.__aexit__(None, None, None)
+            try:
+                await self._task_group.__aexit__(None, None, None)
+            except BaseExceptionGroup as eg:
+                for exc in eg.exceptions:
+                    ctx.log.error(f"Task group exception during shutdown: {exc}")
             self._task_group = None
 
     def handle(self, flow: http.HTTPFlow, config: dict) -> bool:
