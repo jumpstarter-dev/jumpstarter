@@ -4,10 +4,11 @@ Tests config validation (enable_tcpdump gating), argument sanitization,
 and the streaming driver method using mocked subprocesses.
 """
 
-import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
+import anyio.abc
 import pytest
 
 from .driver import DutNetwork
@@ -161,44 +162,50 @@ class TestSanitizeTcpdumpArgs:
         assert DutNetwork._sanitize_tcpdump_args(args) == ["-c", "5"]
 
 
+def _create_mock_byte_stream(data: bytes):
+    """Create a mock ByteReceiveStream that returns data then raises EndOfStream."""
+    stream = MagicMock(spec=anyio.abc.ByteReceiveStream)
+    call_count = {"n": 0}
+
+    async def mock_receive(max_bytes=65536):
+        if call_count["n"] >= 1:
+            raise anyio.EndOfStream()
+        call_count["n"] += 1
+        return data
+
+    stream.receive = mock_receive
+    stream.aclose = AsyncMock()
+    return stream
+
+
 class TestTcpdumpMethod:
     def test_tcpdump_raises_when_disabled(self, tmp_path: Path):
         driver = _make_driver(tmp_path, enable_tcpdump=False)
         with pytest.raises(RuntimeError, match="tcpdump is not enabled"):
-            asyncio.run(
-                _consume_async_gen(driver.tcpdump())
+            anyio.run(
+                _consume_async_gen, driver.tcpdump()
             )
 
     def test_tcpdump_streams_output(self, tmp_path: Path):
         driver = _make_driver(tmp_path, enable_tcpdump=True)
 
-        mock_stdout = AsyncMock()
-        lines = [
-            b"12:00:00.000000 IP 192.168.100.10 > 8.8.8.8: ICMP echo request\n",
-            b"12:00:00.001000 IP 8.8.8.8 > 192.168.100.10: ICMP echo reply\n",
-            b"",  # EOF
-        ]
-        state = {"call_count": 0}
-
-        async def mock_readline():
-            if state["call_count"] < len(lines):
-                result = lines[state["call_count"]]
-                state["call_count"] += 1
-                return result
-            return b""
-
-        mock_stdout.readline = mock_readline
+        data = (
+            b"12:00:00.000000 IP 192.168.100.10 > 8.8.8.8: ICMP echo request\n"
+            b"12:00:00.001000 IP 8.8.8.8 > 192.168.100.10: ICMP echo reply\n"
+        )
+        mock_stdout = _create_mock_byte_stream(data)
 
         mock_proc = AsyncMock()
         mock_proc.stdout = mock_stdout
+        mock_proc.stderr = _create_mock_byte_stream(b"")
         mock_proc.returncode = None
         mock_proc.terminate = MagicMock()
         mock_proc.wait = AsyncMock()
 
-        with patch(f"{_DRIVER_MODULE}.asyncio.subprocess.create_subprocess_exec",
-                   return_value=mock_proc):
-            output = asyncio.run(
-                _consume_async_gen(driver.tcpdump())
+        with patch(f"{_DRIVER_MODULE}.anyio.open_process",
+                   new_callable=AsyncMock, return_value=mock_proc):
+            output = anyio.run(
+                _consume_async_gen, driver.tcpdump()
             )
 
         assert len(output) == 2
@@ -208,81 +215,54 @@ class TestTcpdumpMethod:
     def test_tcpdump_enforces_interface(self, tmp_path: Path):
         driver = _make_driver(tmp_path, enable_tcpdump=True)
 
-        mock_stdout = AsyncMock()
-        mock_stdout.readline = AsyncMock(return_value=b"")
+        mock_stdout = _create_mock_byte_stream(b"")
 
         mock_proc = AsyncMock()
         mock_proc.stdout = mock_stdout
+        mock_proc.stderr = _create_mock_byte_stream(b"")
         mock_proc.returncode = 0
         mock_proc.terminate = MagicMock()
         mock_proc.wait = AsyncMock()
 
-        with patch(f"{_DRIVER_MODULE}.asyncio.subprocess.create_subprocess_exec",
-                   return_value=mock_proc) as mock_exec:
-            asyncio.run(
-                _consume_async_gen(driver.tcpdump(args=["-i", "evil-iface", "-c", "1"]))
+        with patch(f"{_DRIVER_MODULE}.anyio.open_process",
+                   new_callable=AsyncMock, return_value=mock_proc) as mock_exec:
+            anyio.run(
+                _consume_async_gen, driver.tcpdump(args=["-i", "evil-iface", "-c", "1"])
             )
 
-        # Verify the command was called with the correct interface
         call_args = mock_exec.call_args[0]
-        cmd = list(call_args)
+        cmd = list(call_args[0])
         assert cmd[0] == "tcpdump"
         assert "-i" in cmd
         iface_idx = cmd.index("-i")
         assert cmd[iface_idx + 1] == "eth-dut"
-        # The user-specified -i should have been removed by sanitization
         assert cmd.count("-i") == 1
 
     def test_tcpdump_passes_extra_args(self, tmp_path: Path):
         driver = _make_driver(tmp_path, enable_tcpdump=True)
 
-        mock_stdout = AsyncMock()
-        mock_stdout.readline = AsyncMock(return_value=b"")
+        mock_stdout = _create_mock_byte_stream(b"")
 
         mock_proc = AsyncMock()
         mock_proc.stdout = mock_stdout
+        mock_proc.stderr = _create_mock_byte_stream(b"")
         mock_proc.returncode = 0
         mock_proc.terminate = MagicMock()
         mock_proc.wait = AsyncMock()
 
-        with patch(f"{_DRIVER_MODULE}.asyncio.subprocess.create_subprocess_exec",
-                   return_value=mock_proc) as mock_exec:
-            asyncio.run(
-                _consume_async_gen(driver.tcpdump(args=["-c", "10", "-n", "port", "80"]))
+        with patch(f"{_DRIVER_MODULE}.anyio.open_process",
+                   new_callable=AsyncMock, return_value=mock_proc) as mock_exec:
+            anyio.run(
+                _consume_async_gen, driver.tcpdump(args=["-c", "10", "-n", "port", "80"])
             )
 
         call_args = mock_exec.call_args[0]
-        cmd = list(call_args)
+        cmd = list(call_args[0])
         assert "-c" in cmd
         assert "10" in cmd
         assert "-n" in cmd
         assert "port" in cmd
         assert "80" in cmd
-
-    def test_tcpdump_cleanup_on_cancel(self, tmp_path: Path):
-        driver = _make_driver(tmp_path, enable_tcpdump=True)
-
-        mock_stdout = AsyncMock()
-        # Simulate a stream that never ends
-        mock_stdout.readline = AsyncMock(
-            side_effect=[b"line 1\n", b"line 2\n", asyncio.CancelledError()]
-        )
-
-        mock_proc = AsyncMock()
-        mock_proc.stdout = mock_stdout
-        mock_proc.returncode = None
-        mock_proc.terminate = MagicMock()
-        mock_proc.wait = AsyncMock()
-
-        with patch(f"{_DRIVER_MODULE}.asyncio.subprocess.create_subprocess_exec",
-                   return_value=mock_proc):
-            with pytest.raises(asyncio.CancelledError):
-                asyncio.run(
-                    _consume_async_gen(driver.tcpdump())
-                )
-
-        # Verify the process was terminated
-        mock_proc.terminate.assert_called_once()
 
 
 class TestTcpdumpCleanup:
