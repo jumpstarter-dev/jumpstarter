@@ -151,3 +151,35 @@ def test_handle_exceptions_maps_grpc_invalid_argument() -> None:
 
     with pytest.raises(click.ClickException, match="Invalid request arguments"):
         grpc_invalid_arg_fn()
+
+
+def test_handle_exceptions_maps_grpc_failed_precondition() -> None:
+    class MockGrpcError(Exception):
+        def code(self):
+            return type("Code", (), {"name": "FAILED_PRECONDITION"})()
+
+        def details(self):
+            return "exporter is not ready"
+
+    @handle_exceptions
+    def grpc_precondition_fn():
+        raise MockGrpcError()
+
+    with pytest.raises(click.ClickException, match="precondition"):
+        grpc_precondition_fn()
+
+
+def test_handle_exceptions_maps_grpc_failed_precondition_without_details() -> None:
+    class MockGrpcError(Exception):
+        def code(self):
+            return type("Code", (), {"name": "FAILED_PRECONDITION"})()
+
+        def details(self):
+            return ""
+
+    @handle_exceptions
+    def grpc_precondition_no_details_fn():
+        raise MockGrpcError()
+
+    with pytest.raises(click.ClickException, match="precondition"):
+        grpc_precondition_no_details_fn()
