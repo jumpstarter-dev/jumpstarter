@@ -133,8 +133,6 @@ spec:
     autoProvisioning:
       enabled: true
   controller:
-    image: quay.io/jumpstarter-dev/jumpstarter-controller
-    imagePullPolicy: IfNotPresent
     replicas: 1
     grpc:
       endpoints:
