@@ -495,7 +495,7 @@ async def run_server():
                     write_stream,
                     mcp._mcp_server.create_initialization_options(),
                 )
-    except CancelledError:
+    except anyio.get_cancelled_exc_class():
         logger.info("MCP stdio session ended (cancelled)")
     except BaseException as exc:
         if isinstance(exc, ClosedResourceError):

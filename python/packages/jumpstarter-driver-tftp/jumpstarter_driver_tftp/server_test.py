@@ -6,9 +6,10 @@ from asyncio import (
     create_task,
     current_task,
     get_running_loop,
+)
+from asyncio import (
     sleep as asyncio_sleep,
 )
-
 from pathlib import Path
 
 import pytest

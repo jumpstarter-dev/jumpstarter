@@ -6,7 +6,7 @@ from subprocess import PIPE
 from typing import AsyncGenerator
 
 import anyio
-from anyio import fail_after, move_on_after
+from anyio import move_on_after
 
 from jumpstarter.driver import Driver, export
 

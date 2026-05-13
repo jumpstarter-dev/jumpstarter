@@ -1,8 +1,7 @@
 import base64
-
-import anyio
 from typing import Literal
 
+import anyio
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 from pydantic import Field
 

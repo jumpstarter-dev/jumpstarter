@@ -1,8 +1,8 @@
 """Tests for common cluster utilities and types."""
 
 import os
-from subprocess import PIPE
 import tempfile
+from subprocess import PIPE
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -188,9 +188,13 @@ class TestRunCommand:
     @pytest.mark.anyio
     async def test_run_command_success(self):
         from subprocess import CompletedProcess
+
         with patch("jumpstarter_kubernetes.cluster.common.anyio.run_process", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = CompletedProcess(
-                args=["echo", "test"], returncode=0, stdout=b"output\n", stderr=b"",
+                args=["echo", "test"],
+                returncode=0,
+                stdout=b"output\n",
+                stderr=b"",
             )
 
             returncode, stdout, stderr = await run_command(["echo", "test"])
@@ -203,9 +207,13 @@ class TestRunCommand:
     @pytest.mark.anyio
     async def test_run_command_failure(self):
         from subprocess import CompletedProcess
+
         with patch("jumpstarter_kubernetes.cluster.common.anyio.run_process", new_callable=AsyncMock) as mock_run:
             mock_run.return_value = CompletedProcess(
-                args=["false"], returncode=1, stdout=b"", stderr=b"error message\n",
+                args=["false"],
+                returncode=1,
+                stdout=b"",
+                stderr=b"error message\n",
             )
 
             returncode, stdout, stderr = await run_command(["false"])
@@ -216,13 +224,19 @@ class TestRunCommand:
 
     @pytest.mark.anyio
     async def test_run_command_not_found(self):
-        with patch("jumpstarter_kubernetes.cluster.common.anyio.run_process", new_callable=AsyncMock, side_effect=FileNotFoundError("command not found")):
+        with patch(
+            "jumpstarter_kubernetes.cluster.common.anyio.run_process",
+            new_callable=AsyncMock,
+            side_effect=FileNotFoundError("command not found"),
+        ):
             with pytest.raises(RuntimeError, match="Command not found: nonexistent"):
                 await run_command(["nonexistent"])
 
     @pytest.mark.anyio
     async def test_run_command_with_output_success(self):
-        with patch("jumpstarter_kubernetes.cluster.common.anyio.open_process", new_callable=AsyncMock) as mock_subprocess:
+        with patch(
+            "jumpstarter_kubernetes.cluster.common.anyio.open_process", new_callable=AsyncMock
+        ) as mock_subprocess:
             mock_process = AsyncMock()
             mock_process.wait.return_value = 0
             mock_subprocess.return_value = mock_process
@@ -234,13 +248,18 @@ class TestRunCommand:
 
     @pytest.mark.anyio
     async def test_run_command_with_output_not_found(self):
-        with patch("jumpstarter_kubernetes.cluster.common.anyio.open_process", side_effect=FileNotFoundError("command not found")):
+        with patch(
+            "jumpstarter_kubernetes.cluster.common.anyio.open_process",
+            side_effect=FileNotFoundError("command not found"),
+        ):
             with pytest.raises(RuntimeError, match="Command not found: nonexistent"):
                 await run_command_with_output(["nonexistent"])
 
     @pytest.mark.anyio
     async def test_run_command_with_output_failure(self):
-        with patch("jumpstarter_kubernetes.cluster.common.anyio.open_process", new_callable=AsyncMock) as mock_subprocess:
+        with patch(
+            "jumpstarter_kubernetes.cluster.common.anyio.open_process", new_callable=AsyncMock
+        ) as mock_subprocess:
             mock_process = AsyncMock()
             mock_process.wait.return_value = 1
             mock_subprocess.return_value = mock_process
