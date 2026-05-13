@@ -349,7 +349,14 @@ class TestRunCommand:
         assert "timed_out" not in result
 
     @pytest.mark.anyio
-    async def test_timeout_captures_output(self, manager_with_conn):
+    async def test_timeout_discards_output(self, manager_with_conn):
+        """On timeout, output is discarded and timed_out flag is set.
+
+        anyio.run_process is cancelled on timeout, so partial stdout/stderr
+        is not available. This is a design trade-off of using run_process
+        (which collects output atomically) vs open_process (which would
+        require manual stream management for partial capture).
+        """
         from jumpstarter_mcp.tools.commands import run_command
 
         manager, conn_id = manager_with_conn
