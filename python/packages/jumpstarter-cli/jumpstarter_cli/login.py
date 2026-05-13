@@ -118,14 +118,20 @@ def parse_login_argument(login_arg: str) -> tuple[str | None, str]:
     return None, login_arg
 
 
+def _warn_exporter_client_only_flags(config_kind: str | None, allow: str, unsafe: bool | None) -> None:
+    if config_kind is not None and config_kind.startswith("exporter"):
+        if allow:
+            click.echo("Warning: --allow is ignored for exporter configs (only applies to client configs).")
+        if unsafe:
+            click.echo("Warning: --unsafe is ignored for exporter configs (only applies to client configs).")
+
+
 @click.command("login", short_help="Login")
 @click.argument("login_target", required=False, default=None)
 @click.option("-e", "--endpoint", type=str, help="Enter the Jumpstarter service endpoint.", default=None)
 @click.option("--namespace", type=str, help="Enter the Jumpstarter exporter namespace.", default=None)
 @click.option("--name", type=str, help="Enter the Jumpstarter exporter name.", default=None)
 @opt_oidc
-# client specific
-# TODO: warn if used with exporter
 @click.option(
     "--allow",
     type=str,
@@ -135,7 +141,6 @@ def parse_login_argument(login_arg: str) -> tuple[str | None, str]:
 @click.option(
     "--unsafe", is_flag=True, help="Should all driver client packages be allowed to load (UNSAFE!).", default=None
 )
-# end client specific
 @opt_insecure_tls
 @opt_nointeractive
 @opt_config(allow_missing=True)
@@ -289,6 +294,8 @@ async def login(  # noqa: C901
                     endpoint=endpoint,
                     token="",
                 )
+
+    _warn_exporter_client_only_flags(config_kind, allow, unsafe)
 
     if issuer is None:
         if nointeractive:
