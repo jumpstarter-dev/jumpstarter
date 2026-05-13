@@ -58,7 +58,6 @@ class V1Alpha1Client(JsonBaseModel):
     def rich_add_columns(cls, table):
         table.add_column("NAME", no_wrap=True)
         table.add_column("ENDPOINT")
-        # table.add_column("AGE")
 
     def rich_add_rows(self, table):
         table.add_row(

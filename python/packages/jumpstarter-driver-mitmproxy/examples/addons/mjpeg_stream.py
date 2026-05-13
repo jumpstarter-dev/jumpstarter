@@ -164,7 +164,7 @@ class Handler:
         # e.g. ("streaming", "video", "camera", "rear", "snapshot.jpg")
         parts = flow.request.path_components
 
-        # Expected: streaming/video/camera/{camera_id}/{resource}
+        # Expect at least 5 segments: streaming/video/camera/<camera_id>/<resource>
         if len(parts) < 5:
             return False
 

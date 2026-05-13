@@ -305,7 +305,7 @@ class TestHookExecutor:
             result = await executor.execute_before_lease_hook(lease_scope)
             assert result is None
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            # sum([0, 1, 4, 9]) == 14
+            # Expected total: 0 + 1 + 4 + 9 == 14
             assert any("PYTHON_OK: 14" in call for call in info_calls)
 
     async def test_script_file_sh(self, lease_scope, tmp_path) -> None:
