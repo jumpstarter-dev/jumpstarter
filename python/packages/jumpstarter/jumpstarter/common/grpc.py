@@ -33,6 +33,10 @@ async def _try_connect_and_extract_cert(
     logger.debug(f"Successfully connected to {ip_address}:{port}")
     try:
         ssl_object = stream.extra(anyio.abc.TLSAttribute.ssl_object)
+        # CPython internal: _sslobj.get_unverified_chain() is not part of the
+        # public ssl module API. There is no public alternative for extracting
+        # the full certificate chain including untrusted intermediates. This
+        # will break on non-CPython implementations (PyPy, GraalPy).
         cert_chain = ssl_object._sslobj.get_unverified_chain()
         root_certificates = ""
         for cert in cert_chain:
