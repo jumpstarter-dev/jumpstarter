@@ -137,9 +137,9 @@ class DutNetwork(Driver):
                 "Provide a valid IP address or a resolvable DNS name."
             )
 
-        # results[0] is (family, type, proto, canonname, sockaddr)
-        # sockaddr for AF_INET is (address, port)
-        return results[0][4][0]
+        _family, _type, _proto, _canonname, sockaddr = results[0]
+        address, _port = sockaddr
+        return address
 
     def _validate_config(self) -> None:
         network = ipaddress.ip_network(self.subnet, strict=False)
