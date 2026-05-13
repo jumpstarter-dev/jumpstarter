@@ -515,7 +515,11 @@ async def test_flash_oci_inner_wait_timeout():
         ):
             results = await _collect_flash_oci(flasher, "oci://quay.io/org/image:tag")
 
-            assert any(r[2] == 0 for r in results)
+            final_results = [r for r in results if r[2] is not None]
+            assert len(final_results) == 1, "exactly one final result with returncode expected"
+            assert final_results[0][2] == 0
+            stdout_chunks = [r[0] for r in results if r[0]]
+            assert len(stdout_chunks) > 0, "output data should have been received"
 
 
 @pytest.mark.anyio
