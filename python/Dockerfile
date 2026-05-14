@@ -7,15 +7,18 @@ RUN dnf install -y make git && \
 COPY --from=uv /uv /uvx /bin/
 
 FROM fedora:43 AS product
-RUN dnf install -y python3 ustreamer libusb1 android-tools python3-libgpiod curl && \
+RUN dnf install -y python3 ustreamer libusb1 android-tools python3-libgpiod curl \
+    nftables dnsmasq iproute procps-ng tcpdump && \
     dnf clean all && \
     rm -rf /var/cache/dnf
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 ARG FLS_VERSION=0.2.0
 RUN ARCH=$(uname -m) && \
-    URL="https://github.com/jumpstarter-dev/fls/releases/download/${FLS_VERSION}/fls-${ARCH}-linux" && \
-    TEMP_FILE="/tmp/fls-${ARCH}-linux.tmp" && \
+    SUFFIX="linux" && \
+    if [ "$ARCH" = "aarch64" ]; then SUFFIX="linux-musl"; fi && \
+    URL="https://github.com/jumpstarter-dev/fls/releases/download/${FLS_VERSION}/fls-${ARCH}-${SUFFIX}" && \
+    TEMP_FILE="/tmp/fls-${ARCH}-${SUFFIX}.tmp" && \
     curl -fsSL "${URL}" -o "${TEMP_FILE}" && \
     mv "${TEMP_FILE}" /usr/local/bin/fls && \
     chmod +x /usr/local/bin/fls

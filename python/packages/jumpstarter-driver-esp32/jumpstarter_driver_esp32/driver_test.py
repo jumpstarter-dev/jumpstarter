@@ -158,3 +158,55 @@ def test_parse_region_address_and_size():
 
 def test_parse_region_decimal():
     assert _parse_region("4096:8192") == (4096, 8192)
+
+
+def test_connect_esp_calls_close_before_detect_chip(mock_esptool):
+    """_connect_esp() must call serial.close() before esptool.detect_chip()
+    to release any active serial stream that would lock the port.
+    """
+    call_order = []
+
+    serial = PySerial(url="loop://", check_present=False)
+    original_close = serial.close
+
+    def tracking_close():
+        call_order.append("close")
+        original_close()
+
+    serial.close = tracking_close
+
+    def tracking_detect_chip(**kwargs):
+        call_order.append("detect_chip")
+        return _MockEsp()
+
+    mock_esptool["detect_chip"].side_effect = tracking_detect_chip
+
+    driver = Esp32Flasher(children={"serial": serial})
+    driver._connect_esp()
+
+    assert call_order == ["close", "detect_chip"]
+
+
+def test_connect_esp_clears_traceback_on_failure(mock_esptool):
+    """If detect_chip fails, the exception traceback is cleared so esptool's
+    internal serial port references are freed.
+    """
+    import pytest
+
+    mock_esptool["detect_chip"].side_effect = RuntimeError("connection failed")
+
+    serial = PySerial(url="loop://", check_present=False)
+    driver = Esp32Flasher(children={"serial": serial})
+
+    with pytest.raises(RuntimeError, match="connection failed") as exc_info:
+        driver._connect_esp()
+
+    assert exc_info.value.__traceback__ is not None
+    # The original deep frames from detect_chip are not in the traceback -
+    # only the re-raise site and above
+    tb = exc_info.value.__traceback__
+    frame_names = []
+    while tb is not None:
+        frame_names.append(tb.tb_frame.f_code.co_name)
+        tb = tb.tb_next
+    assert "detect_chip" not in frame_names

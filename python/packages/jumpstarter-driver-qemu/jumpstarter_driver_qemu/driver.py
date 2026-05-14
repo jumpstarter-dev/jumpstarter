@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -25,6 +26,7 @@ from pydantic import BaseModel, ByteSize, Field, TypeAdapter, ValidationError, v
 from qemu.qmp import QMPClient
 from qemu.qmp.protocol import ConnectError, Runstate
 
+from jumpstarter.common.fls import get_fls_binary
 from jumpstarter.driver import Driver, export
 from jumpstarter.streams.encoding import AutoDecompressIterator
 
@@ -44,22 +46,162 @@ class QmpLogFilter(logging.Filter):
         return False
 
 
+async def _read_pipe(stream: asyncio.StreamReader, name: str, queue: asyncio.Queue):
+    while True:
+        line = await stream.readline()
+        if not line:
+            break
+        await queue.put((name, line.decode("utf-8", errors="replace")))
+    await queue.put((name, None))
+
+
 @dataclass(kw_only=True)
 class QemuFlasher(FlasherInterface, Driver):
     parent: Qemu
+
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_qemu.client.QemuFlasherClient"
 
     @export
     async def flash(self, source, partition: str | None = None):
         """Flash an image to the specified partition.
 
+        Accepts OCI image references (oci://...) or streamed image data.
         Supports transparent decompression of gzip, xz, bz2, and zstd compressed images.
         Compression format is auto-detected from file signature.
         """
+        if isinstance(source, str) and source.startswith("oci://"):
+            async for _ in self.flash_oci(source, partition):
+                pass
+            return
+
         async with await FileWriteStream.from_path(self.parent.validate_partition(partition)) as stream:
             async with self.resource(source) as res:
                 # Wrap with auto-decompression to handle .gz, .xz, .bz2, .zstd files
                 async for chunk in AutoDecompressIterator(source=res):
                     await stream.send(chunk)
+
+    @export
+    async def flash_oci(
+        self,
+        oci_url: str,
+        partition: str | None = None,
+        oci_username: str | None = None,
+        oci_password: str | None = None,
+    ) -> AsyncGenerator[tuple[str, str, int | None], None]:
+        """Flash an OCI image to the specified partition using fls.
+
+        Streams subprocess output back to the caller as it arrives.
+        Yields (stdout_chunk, stderr_chunk, returncode) tuples.
+        returncode is None until the process completes.
+
+        Args:
+            oci_url: OCI image reference (must start with oci://)
+            partition: Target partition name (default: root)
+            oci_username: Registry username for OCI authentication
+            oci_password: Registry password for OCI authentication
+        """
+        if not oci_url.startswith("oci://"):
+            raise ValueError(f"OCI URL must start with oci://, got: {oci_url}")
+
+        # If explicit credentials were provided, validate immediately
+        if oci_username or oci_password:
+            if bool(oci_username) != bool(oci_password):
+                raise ValueError("OCI authentication requires both username and password")
+        else:
+            # Fall back to env vars, then container auth files
+            from jumpstarter.common.oci import resolve_oci_credentials
+
+            oci_username, oci_password = resolve_oci_credentials(oci_url)
+            if oci_username and oci_password:
+                self.logger.info("Using OCI registry credentials from environment or auth file")
+            elif oci_username or oci_password:
+                raise ValueError("OCI authentication requires both username and password")
+
+        target_path = str(self.parent.validate_partition(partition))
+
+        fls_binary = get_fls_binary(
+            fls_version=self.parent.fls_version,
+            fls_binary_url=self.parent.fls_custom_binary_url,
+            allow_custom_binaries=self.parent.fls_allow_custom_binaries,
+        )
+
+        fls_cmd = [fls_binary, "from-url", oci_url, target_path]
+
+        fls_env = None
+        if oci_username and oci_password:
+            fls_env = os.environ.copy()
+            fls_env["FLS_REGISTRY_USERNAME"] = oci_username
+            fls_env["FLS_REGISTRY_PASSWORD"] = oci_password
+
+        self.logger.info(f"Running fls: {' '.join(fls_cmd)}")
+
+        try:
+            async for chunk in self._stream_subprocess(fls_cmd, fls_env):
+                yield chunk
+        except FileNotFoundError:
+            raise RuntimeError("fls command not found. Install fls or configure fls_version in the driver.") from None
+
+    async def _stream_subprocess(
+        self, cmd: list[str], env: dict[str, str] | None
+    ) -> AsyncGenerator[tuple[str, str, int | None], None]:
+        """Run a subprocess and yield (stdout, stderr, returncode) tuples as output arrives."""
+        process = await asyncio.create_subprocess_exec(  # ty: ignore[missing-argument]
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,  # ty: ignore[unresolved-attribute]
+            stderr=asyncio.subprocess.PIPE,  # ty: ignore[unresolved-attribute]
+            env=env,
+        )
+
+        output_queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
+
+        tasks = [
+            asyncio.create_task(_read_pipe(process.stdout, "stdout", output_queue)),
+            asyncio.create_task(_read_pipe(process.stderr, "stderr", output_queue)),
+        ]
+
+        finished_streams = 0
+        start_time = asyncio.get_running_loop().time()
+
+        try:
+            while finished_streams < 2:
+                elapsed = asyncio.get_running_loop().time() - start_time
+                if elapsed >= self.parent.flash_timeout:
+                    process.kill()
+                    await process.wait()
+                    raise RuntimeError(f"fls flash timed out after {self.parent.flash_timeout}s")
+
+                remaining = self.parent.flash_timeout - elapsed
+                try:
+                    name, text = await asyncio.wait_for(output_queue.get(), timeout=min(remaining, 30))
+                except asyncio.TimeoutError:
+                    continue
+
+                if text is None:
+                    finished_streams += 1
+                    continue
+
+                stdout_chunk = text if name == "stdout" else ""
+                stderr_chunk = text if name == "stderr" else ""
+                yield stdout_chunk, stderr_chunk, None
+
+            await process.wait()
+            returncode = process.returncode
+
+            if returncode != 0:
+                self.logger.error(f"fls failed - return code: {returncode}")
+                raise RuntimeError(f"fls flash failed (return code {returncode})")
+
+            self.logger.info("OCI flash completed successfully")
+            yield "", "", returncode
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
 
     @export
     async def dump(self, target, partition: str | None = None):
@@ -300,6 +442,12 @@ class Qemu(Driver):
 
     hostfwd: dict[str, Hostfwd] = field(default_factory=dict)
 
+    # FLS configuration for OCI flashing
+    fls_version: str | None = field(default=None)
+    fls_allow_custom_binaries: bool = field(default=False)
+    fls_custom_binary_url: str | None = field(default=None)
+    flash_timeout: int = field(default=30 * 60)  # 30 minutes
+
     _tmp_dir: TemporaryDirectory = field(init=False, default_factory=TemporaryDirectory)
 
     @classmethod
@@ -357,7 +505,7 @@ class Qemu(Driver):
             case "bios":
                 path = Path(self._tmp_dir.name) / "bios"
             case _:
-                raise ValueError(f"invalida partition name: {partition}")
+                raise ValueError(f"invalid partition name: {partition}")
 
         if not path.exists() and partition in self.default_partitions and use_default_partitions:
             return self.default_partitions[partition]

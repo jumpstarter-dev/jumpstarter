@@ -2,7 +2,6 @@ import os
 
 import pytest
 
-# import websockets
 from .api import ApiClient
 from .exceptions import CorelliumApiException
 from .types import Device, Instance, Project

@@ -16,6 +16,7 @@ from jumpstarter_cli.shell import (
     _attempt_token_recovery,
     _monitor_token_expiry,
     _resolve_lease_from_active_async,
+    _run_shell_with_lease_async,
     _shell_with_signal_handling,
     _try_refresh_token,
     _try_reload_token_from_disk,
@@ -25,6 +26,8 @@ from jumpstarter_cli.shell import (
 )
 
 from jumpstarter.client.grpc import Lease, LeaseList
+from jumpstarter.common import ExporterStatus
+from jumpstarter.common.exceptions import ExporterOfflineError
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
 
@@ -321,6 +324,7 @@ def test_shell_allows_env_lease_without_selector_or_name():
 
     mock_exit.assert_called_once_with(0)
 
+
 def test_resolve_lease_handles_async_list_leases():
     config = Mock(spec=ClientConfigV1Alpha1)
     config.metadata = type("Metadata", (), {"name": "test-client"})()
@@ -333,6 +337,7 @@ def test_resolve_lease_handles_async_list_leases():
 
 def _make_expired_jwt() -> str:
     """Create a JWT with an exp claim in the past (no signature verification needed)."""
+
     def b64url(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
@@ -437,9 +442,7 @@ class TestTryRefreshToken:
     @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
     @patch("jumpstarter_cli.shell.Config")
     @patch("jumpstarter_cli.shell.decode_jwt_issuer", return_value="https://issuer")
-    async def test_successful_refresh_without_new_refresh_token(
-        self, _mock_issuer, mock_oidc_cls, _mock_save
-    ):
+    async def test_successful_refresh_without_new_refresh_token(self, _mock_issuer, mock_oidc_cls, _mock_save):
         config = _make_config()
         lease = _make_mock_lease()
 
@@ -471,9 +474,7 @@ class TestTryRefreshToken:
     @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
     @patch("jumpstarter_cli.shell.Config")
     @patch("jumpstarter_cli.shell.decode_jwt_issuer", return_value="https://issuer")
-    async def test_save_failure_does_not_fail_refresh(
-        self, _mock_issuer, mock_oidc_cls, mock_save, caplog
-    ):
+    async def test_save_failure_does_not_fail_refresh(self, _mock_issuer, mock_oidc_cls, mock_save, caplog):
         """Disk save is best-effort; refresh should still succeed."""
         config = _make_config()
         lease = _make_mock_lease()
@@ -547,9 +548,7 @@ class TestTryReloadTokenFromDisk:
 
     @patch("jumpstarter_cli.shell.ClientConfigV1Alpha1")
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds", return_value=-10)
-    async def test_returns_false_when_disk_token_is_expired(
-        self, _mock_remaining, mock_client_cfg
-    ):
+    async def test_returns_false_when_disk_token_is_expired(self, _mock_remaining, mock_client_cfg):
         config = _make_config(token="old_tok")
         disk_config = Mock()
         disk_config.token = "disk_tok"
@@ -640,9 +639,7 @@ class TestMonitorTokenExpiry:
     @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell._attempt_token_recovery", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
-    async def test_refreshes_when_below_threshold(
-        self, mock_remaining, mock_recovery, mock_sleep, mock_click
-    ):
+    async def test_refreshes_when_below_threshold(self, mock_remaining, mock_recovery, mock_sleep, mock_click):
         # First call: below threshold; second call: raise to exit
         mock_remaining.side_effect = [60, Exception("done")]
         mock_recovery.return_value = "Token refreshed automatically."
@@ -659,9 +656,7 @@ class TestMonitorTokenExpiry:
     @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell._attempt_token_recovery", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
-    async def test_warns_when_refresh_fails(
-        self, mock_remaining, mock_recovery, mock_sleep, mock_click
-    ):
+    async def test_warns_when_refresh_fails(self, mock_remaining, mock_recovery, mock_sleep, mock_click):
         mock_remaining.side_effect = [60, Exception("done")]
         mock_recovery.return_value = None  # all recovery failed
         config = _make_config()
@@ -674,9 +669,7 @@ class TestMonitorTokenExpiry:
     @patch("jumpstarter_cli.shell.click")
     @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
-    async def test_warns_within_expiry_window(
-        self, mock_remaining, mock_sleep, mock_click
-    ):
+    async def test_warns_within_expiry_window(self, mock_remaining, mock_sleep, mock_click):
         from jumpstarter_cli_common.oidc import TOKEN_EXPIRY_WARNING_SECONDS
 
         # First iteration: within warning window but above refresh threshold
@@ -703,7 +696,7 @@ class TestMonitorTokenExpiry:
 
         def check_cancelled():
             nonlocal call_count
-            call_count += 1
+            call_count += 1  # ty: ignore[unresolved-reference]
             return call_count > 1
 
         config = _make_config()
@@ -721,9 +714,7 @@ class TestMonitorTokenExpiry:
     @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell._attempt_token_recovery", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
-    async def test_sleeps_5s_when_below_threshold(
-        self, mock_remaining, mock_recovery, mock_sleep, _mock_click
-    ):
+    async def test_sleeps_5s_when_below_threshold(self, mock_remaining, mock_recovery, mock_sleep, _mock_click):
         mock_remaining.side_effect = [60, Exception("done")]
         mock_recovery.return_value = None
         config = _make_config()
@@ -737,9 +728,7 @@ class TestMonitorTokenExpiry:
     @patch("jumpstarter_cli.shell.anyio.sleep", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell._attempt_token_recovery", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
-    async def test_does_not_cancel_scope_on_expiry(
-        self, mock_remaining, mock_recovery, mock_sleep, _mock_click
-    ):
+    async def test_does_not_cancel_scope_on_expiry(self, mock_remaining, mock_recovery, mock_sleep, _mock_click):
         """The monitor must never cancel the scope — the shell stays alive."""
         mock_remaining.side_effect = [60, Exception("done")]
         mock_recovery.return_value = None
@@ -776,3 +765,215 @@ class TestMonitorTokenExpiry:
         assert len(yellow_calls) >= 1, "Expected yellow warning for near-expiry"
         assert len(red_calls) >= 1, "Expected red warning for actual expiry"
         assert token_state["expired_unrecovered"] is True
+
+
+class _FakeStatusMonitor:
+    """Minimal stand-in for StatusMonitor in shell tests."""
+
+    def __init__(self, statuses=None, connection_lost=False):
+        self._statuses = list(statuses or [ExporterStatus.LEASE_READY])
+        self._connection_lost = connection_lost
+        self._get_status_unsupported = False
+        self.end_session_called = False
+
+    @property
+    def current_status(self):
+        return self._statuses[0] if self._statuses else None
+
+    @property
+    def status_message(self):
+        return ""
+
+    @property
+    def connection_lost(self):
+        return self._connection_lost
+
+    async def wait_for_any_of(self, targets, timeout=None):
+        for s in self._statuses:
+            if s in targets:
+                return s
+        return None
+
+
+def _make_shell_lease(*, release=True, lease_ended=False, name="test-lease"):
+    """Build a mock lease suitable for _run_shell_with_lease_async tests."""
+    lease = Mock()
+    lease.release = release
+    lease.name = name
+    lease.lease_ended = lease_ended
+    lease.lease_transferred = False
+    lease.portal = Mock()
+    lease.allow = []
+    lease.unsafe = False
+    lease.exporter_name = "test-exporter"
+
+    @asynccontextmanager
+    async def serve_unix_async():
+        yield "/tmp/fake.sock"
+
+    @asynccontextmanager
+    async def monitor_async():
+        yield
+
+    lease.serve_unix_async = serve_unix_async
+    lease.monitor_async = monitor_async
+    return lease
+
+
+def _build_fake_client(monitor, get_status_return=None, end_session_return=True):
+    """Build a mock client wired to *monitor*."""
+    client = AsyncMock()
+    client.get_status_async.return_value = get_status_return
+    client.end_session_async.return_value = end_session_return
+
+    @asynccontextmanager
+    async def log_stream_async(show_all_logs=False):
+        yield
+
+    @asynccontextmanager
+    async def status_monitor_async(poll_interval=0.3):
+        yield monitor
+
+    client.log_stream_async = log_stream_async
+    client.status_monitor_async = status_monitor_async
+    return client
+
+
+@asynccontextmanager
+async def _fake_client_from_path_ctx(client):
+    """Wraps a pre-built client in an async context manager for patching client_from_path."""
+    yield client
+
+
+class TestRunShellWithLeaseAsync:
+    async def test_skips_after_lease_hook_when_lease_ended(self):
+        monitor = _FakeStatusMonitor()
+        client = _build_fake_client(monitor, get_status_return=ExporterStatus.LEASE_READY)
+        lease = _make_shell_lease(release=True, lease_ended=True)
+        cancel_scope = Mock(cancel_called=False)
+
+        @asynccontextmanager
+        async def fake_client_from_path(*_a, **_kw):
+            yield client
+
+        with (
+            patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
+            patch("jumpstarter_cli.shell._run_shell_only", return_value=42),
+        ):
+            exit_code = await _run_shell_with_lease_async(lease, False, None, (), cancel_scope)
+
+        assert exit_code == 42
+        client.end_session_async.assert_not_called()
+
+    async def test_calls_end_session_when_lease_not_ended(self):
+        monitor = _FakeStatusMonitor(statuses=[ExporterStatus.LEASE_READY, ExporterStatus.AVAILABLE])
+        client = _build_fake_client(
+            monitor,
+            get_status_return=ExporterStatus.LEASE_READY,
+            end_session_return=True,
+        )
+        lease = _make_shell_lease(release=True, lease_ended=False)
+        cancel_scope = Mock(cancel_called=False)
+
+        @asynccontextmanager
+        async def fake_client_from_path(*_a, **_kw):
+            yield client
+
+        with (
+            patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
+            patch("jumpstarter_cli.shell._run_shell_only", return_value=0),
+        ):
+            exit_code = await _run_shell_with_lease_async(lease, False, None, (), cancel_scope)
+
+        assert exit_code == 0
+        client.end_session_async.assert_called_once()
+
+    async def test_available_status_probe_with_lease_ended_race(self):
+        """When lease expires during the probe (race condition), AVAILABLE
+        should not be treated as connection loss."""
+        monitor = _FakeStatusMonitor()
+        lease = _make_shell_lease(release=True, lease_ended=False)
+        cancel_scope = Mock(cancel_called=False)
+
+        call_count = 0
+
+        async def get_status_race():
+            nonlocal call_count
+            call_count += 1  # ty: ignore[unresolved-reference]
+            if call_count == 1:
+                return ExporterStatus.LEASE_READY
+            lease.lease_ended = True
+            return ExporterStatus.AVAILABLE
+
+        client = _build_fake_client(monitor, get_status_return=ExporterStatus.LEASE_READY)
+        client.get_status_async = get_status_race
+
+        @asynccontextmanager
+        async def fake_client_from_path(*_a, **_kw):
+            yield client
+
+        with (
+            patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
+            patch("jumpstarter_cli.shell._run_shell_only", return_value=0),
+        ):
+            exit_code = await _run_shell_with_lease_async(lease, False, None, (), cancel_scope)
+
+        assert exit_code == 0
+        assert not monitor._connection_lost
+
+
+class TestShellWithSignalHandlingLeaseTimeout:
+    async def test_exits_gracefully_when_lease_ended_and_exception_group(self):
+        """BaseExceptionGroup with lease_ended=True should produce exit code 0."""
+        lease = Mock()
+        lease.release = True
+        lease.name = "timeout-lease"
+        lease.lease_ended = True
+        lease.lease_transferred = False
+
+        config = _DummyConfig()
+
+        @asynccontextmanager
+        async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+            yield lease
+
+        config.lease_async = lease_async
+
+        async def fake_run_shell(*_args):
+            raise BaseExceptionGroup("test", [RuntimeError("simulated cancellation")])
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run_shell),
+        ):
+            exit_code = await _shell_with_signal_handling(
+                config, None, None, None, timedelta(minutes=1), False, (), None
+            )
+
+        assert exit_code == 0
+
+    async def test_raises_offline_error_when_lease_not_ended_and_exception_group(self):
+        """BaseExceptionGroup with lease_ended=False should raise ExporterOfflineError."""
+        lease = Mock()
+        lease.release = True
+        lease.name = "active-lease"
+        lease.lease_ended = False
+        lease.lease_transferred = False
+
+        config = _DummyConfig()
+
+        @asynccontextmanager
+        async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+            yield lease
+
+        config.lease_async = lease_async
+
+        async def fake_run_shell(*_args):
+            raise BaseExceptionGroup("test", [RuntimeError("connection broken")])
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run_shell),
+        ):
+            with pytest.raises((ExporterOfflineError, BaseExceptionGroup)):
+                await _shell_with_signal_handling(config, None, None, None, timedelta(minutes=1), False, (), None)

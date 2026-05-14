@@ -1325,9 +1325,8 @@ class MitmproxyClient(DriverClient):
 # ── CLI helpers ────────────────────────────────────────────────
 
 
-# Fixed column widths (characters):
-#   2 (indent) + 8 (timestamp) + 1 + 7 (method) + 1 + PATH + 1 + 3 (status)
-#   + 1 + 7 (duration) + 1 + 8 (size) + 1 + 13 (tag) = 54 + PATH
+# Fixed column widths (characters), totalling 54 plus the variable-width PATH:
+# indent 2, timestamp 8, method 7, status 3, duration 7, size 8, tag 13, separators 6
 _FIXED_COLS_WIDTH = 54
 _MIN_PATH_WIDTH = 20
 
@@ -1447,11 +1446,12 @@ def _mock_summary(defn: dict) -> str:
 
 def _human_size(nbytes: int) -> str:
     """Format a byte count as a human-readable string."""
+    nbytes_float = float(nbytes)
     for unit in ("B", "KB", "MB", "GB"):
-        if nbytes < 1024:
-            return f"{nbytes:.0f} {unit}" if unit == "B" else f"{nbytes:.1f} {unit}"
-        nbytes /= 1024
-    return f"{nbytes:.1f} TB"
+        if nbytes_float < 1024:
+            return f"{nbytes_float:.0f} {unit}" if unit == "B" else f"{nbytes_float:.1f} {unit}"
+        nbytes_float /= 1024
+    return f"{nbytes_float:.1f} TB"
 
 
 def _collect_entries_from_item(item: dict) -> list[dict]:

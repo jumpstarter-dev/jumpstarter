@@ -33,10 +33,7 @@ var _ = Describe("Compat: Old Controller E2E Tests", Label("compat", "old-contro
 	)
 
 	waitForCompatExporter := func() {
-		time.Sleep(exporterPostDelay)
-		MustKubectl("-n", ns, "wait", "--timeout", "5m",
-			"--for=condition=Online", "--for=condition=Registered",
-			"exporters.jumpstarter.dev/compat-exporter")
+		WaitForExporter("compat-exporter")
 	}
 
 	BeforeAll(func() {

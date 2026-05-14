@@ -1,5 +1,6 @@
 import hashlib
 import os
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from random import randbytes
@@ -12,6 +13,7 @@ from opendal import Operator
 
 from .common import PresignedRequest
 from .driver import MockFlasher, MockStorageMux, MockStorageMuxFlasher, Opendal
+from jumpstarter.client.core import DriverError
 from jumpstarter.common.utils import serve
 
 
@@ -385,3 +387,357 @@ def test_operator_for_path_preserves_query_params():
     path, operator, scheme = operator_for_path("/tmp/image.raw.xz")
     assert scheme == "fs"
     assert path == Path("/tmp/image.raw.xz").resolve()
+
+
+@contextmanager
+def _http_path_recording_server():
+    """Start an HTTP server that records request paths and serves minimal responses."""
+    received_paths = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("content-length", "4")
+            self.end_headers()
+
+        def do_GET(self):
+            received_paths.append(self.path)
+            self.send_response(200)
+            self.send_header("content-length", "4")
+            self.end_headers()
+            self.wfile.write(b"data")
+
+        def log_message(self, format, *args):
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield port, received_paths
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def _assert_encoding_preserved(received_paths):
+    assert len(received_paths) >= 1
+    assert "%40" in received_paths[-1], (
+        f"Server received decoded path {received_paths[-1]!r} — "
+        f"original_url bypass did not activate with explicit operator"
+    )
+
+
+def test_write_from_path_http_with_explicit_operator(tmp_path):
+    """write_from_path must use original_url bypass even when operator is passed explicitly.
+
+    Callers like RideSX resolve the operator themselves via operator_for_path() and
+    pass it in. The original_url detection must happen before the `if operator is None`
+    guard, otherwise the HTTP URL goes through OpenDAL presign_read which mangles it
+    into a double-host path like endpoint/https%3A/host/path.
+    """
+    with serve(Opendal(scheme="fs", kwargs={"root": str(tmp_path)})) as client:
+        with _http_path_recording_server() as (port, received_paths):
+            url = f"http://127.0.0.1:{port}/path%40encoded/file.bin"
+            explicit_operator = Operator("http", endpoint=f"http://127.0.0.1:{port}")
+            client.write_from_path("dest.bin", url, operator=explicit_operator)
+            _assert_encoding_preserved(received_paths)
+
+
+def test_flash_http_with_explicit_operator():
+    """FlasherClient.flash must use original_url bypass even when operator is passed explicitly."""
+    with serve(MockFlasher()) as flasher:
+        with _http_path_recording_server() as (port, received_paths):
+            url = f"http://127.0.0.1:{port}/path%40encoded/file.bin"
+            explicit_operator = Operator("http", endpoint=f"http://127.0.0.1:{port}")
+            flasher.flash(url, operator=explicit_operator)
+            _assert_encoding_preserved(received_paths)
+
+
+def test_flash_http_url_preserves_percent_encoding():
+    """Flashing from HTTP URL with percent-encoded path must preserve encoding.
+
+    Without _make_url(encoded=True), yarl.URL decodes %40 to @ in the path,
+    so the HTTP request hits a different URL than intended. Presigned URL
+    signatures (S3, CloudFront) are computed over the encoded form and would
+    be rejected.
+    """
+    received_paths = []
+
+    class EncodingCheckHandler(BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("content-length", "4")
+            self.end_headers()
+
+        def do_GET(self):
+            received_paths.append(self.path)
+            self.send_response(200)
+            self.send_header("content-length", "4")
+            self.end_headers()
+            self.wfile.write(b"test")
+
+        def log_message(self, format, *args):
+            pass
+
+    with serve(MockFlasher()) as flasher:
+        server = HTTPServer(("127.0.0.1", 0), EncodingCheckHandler)
+        port = server.server_address[1]
+        server_thread = Thread(target=server.serve_forever)
+        server_thread.daemon = True
+        server_thread.start()
+
+        try:
+            flasher.flash(f"http://127.0.0.1:{port}/path%40encoded/file.bin")
+
+            assert len(received_paths) >= 1
+            assert "%40" in received_paths[-1], (
+                f"Server received decoded path {received_paths[-1]!r} — "
+                f"_make_url is not preserving percent-encoding"
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            server_thread.join(timeout=2)
+
+
+def test_flash_http_redirect_preserves_percent_encoding():
+    """When a presigned URL returns a redirect, encoding in Location must be preserved.
+
+    aiohttp's automatic redirect following re-parses Location through yarl.URL(),
+    decoding %40 to @. The fix disables auto-redirect and manually follows with
+    _make_url(encoded=True).
+    """
+    received_paths = []
+
+    class RedirectHandler(BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("content-length", "4")
+            self.end_headers()
+
+        def do_GET(self):
+            received_paths.append(self.path)
+            if self.path.startswith("/start"):
+                port = self.server.server_address[1]
+                self.send_response(302)
+                self.send_header(
+                    "Location",
+                    f"http://127.0.0.1:{port}/redirect%40target/file.bin",
+                )
+                self.end_headers()
+            else:
+                self.send_response(200)
+                self.send_header("content-length", "4")
+                self.end_headers()
+                self.wfile.write(b"test")
+
+        def log_message(self, format, *args):
+            pass
+
+    with serve(MockFlasher()) as flasher:
+        server = HTTPServer(("127.0.0.1", 0), RedirectHandler)
+        port = server.server_address[1]
+        server_thread = Thread(target=server.serve_forever)
+        server_thread.daemon = True
+        server_thread.start()
+
+        try:
+            flasher.flash(f"http://127.0.0.1:{port}/start")
+
+            assert len(received_paths) == 2, (
+                f"Expected 2 requests (initial + redirect), got {len(received_paths)}"
+            )
+            assert received_paths[0] == "/start"
+            assert "%40" in received_paths[1], (
+                f"Redirect target received decoded path {received_paths[1]!r} — "
+                f"redirect following is not preserving percent-encoding"
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            server_thread.join(timeout=2)
+
+
+def test_flash_http_chained_redirects_preserve_percent_encoding():
+    """Chained redirects (A->B->C) must all preserve percent-encoding."""
+    received_paths = []
+
+    class ChainedRedirectHandler(BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("content-length", "4")
+            self.end_headers()
+
+        def do_GET(self):
+            received_paths.append(self.path)
+            port = self.server.server_address[1]
+            if self.path.startswith("/hop1"):
+                self.send_response(302)
+                self.send_header(
+                    "Location",
+                    f"http://127.0.0.1:{port}/hop2%40middle/file.bin",
+                )
+                self.end_headers()
+            elif self.path.startswith("/hop2"):
+                self.send_response(302)
+                self.send_header(
+                    "Location",
+                    f"http://127.0.0.1:{port}/hop3%40final/file.bin",
+                )
+                self.end_headers()
+            else:
+                self.send_response(200)
+                self.send_header("content-length", "4")
+                self.end_headers()
+                self.wfile.write(b"test")
+
+        def log_message(self, format, *args):
+            pass
+
+    with serve(MockFlasher()) as flasher:
+        server = HTTPServer(("127.0.0.1", 0), ChainedRedirectHandler)
+        port = server.server_address[1]
+        server_thread = Thread(target=server.serve_forever)
+        server_thread.daemon = True
+        server_thread.start()
+
+        try:
+            flasher.flash(f"http://127.0.0.1:{port}/hop1")
+
+            assert len(received_paths) == 3, (
+                f"Expected 3 requests (hop1 + hop2 + hop3), got {len(received_paths)}"
+            )
+            assert received_paths[0] == "/hop1"
+            assert "%40" in received_paths[1], (
+                f"Hop 2 received decoded path {received_paths[1]!r}"
+            )
+            assert "%40" in received_paths[2], (
+                f"Hop 3 received decoded path {received_paths[2]!r}"
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            server_thread.join(timeout=2)
+
+
+@pytest.mark.parametrize("status_code", [301, 302, 303, 307, 308])
+def test_flash_http_redirect_all_status_codes(status_code):
+    """All redirect status codes (301, 302, 303, 307, 308) must be followed with encoding preserved."""
+    received_paths = []
+
+    class StatusCodeRedirectHandler(BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("content-length", "4")
+            self.end_headers()
+
+        def do_GET(self):
+            received_paths.append(self.path)
+            if self.path.startswith("/start"):
+                port = self.server.server_address[1]
+                self.send_response(status_code)
+                self.send_header(
+                    "Location",
+                    f"http://127.0.0.1:{port}/target%40encoded/file.bin",
+                )
+                self.end_headers()
+            else:
+                self.send_response(200)
+                self.send_header("content-length", "4")
+                self.end_headers()
+                self.wfile.write(b"test")
+
+        def log_message(self, format, *args):
+            pass
+
+    with serve(MockFlasher()) as flasher:
+        server = HTTPServer(("127.0.0.1", 0), StatusCodeRedirectHandler)
+        port = server.server_address[1]
+        server_thread = Thread(target=server.serve_forever)
+        server_thread.daemon = True
+        server_thread.start()
+
+        try:
+            flasher.flash(f"http://127.0.0.1:{port}/start")
+
+            assert len(received_paths) == 2
+            assert received_paths[0] == "/start"
+            assert "%40" in received_paths[1], (
+                f"Status {status_code}: redirect target received decoded path {received_paths[1]!r}"
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            server_thread.join(timeout=2)
+
+
+def test_flash_http_redirect_loop_raises():
+    """Redirect loop must raise RuntimeError after max_redirects."""
+
+    class LoopRedirectHandler(BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("content-length", "4")
+            self.end_headers()
+
+        def do_GET(self):
+            port = self.server.server_address[1]
+            self.send_response(302)
+            self.send_header(
+                "Location",
+                f"http://127.0.0.1:{port}/loop",
+            )
+            self.end_headers()
+
+        def log_message(self, format, *args):
+            pass
+
+    with serve(MockFlasher()) as flasher:
+        server = HTTPServer(("127.0.0.1", 0), LoopRedirectHandler)
+        port = server.server_address[1]
+        server_thread = Thread(target=server.serve_forever)
+        server_thread.daemon = True
+        server_thread.start()
+
+        try:
+            with pytest.raises(DriverError, match="Too many redirects"):
+                flasher.flash(f"http://127.0.0.1:{port}/loop")
+        finally:
+            server.shutdown()
+            server.server_close()
+            server_thread.join(timeout=2)
+
+
+def test_flash_http_redirect_missing_location_raises():
+    """302 without Location header must raise RuntimeError."""
+
+    class NoLocationHandler(BaseHTTPRequestHandler):
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header("content-length", "4")
+            self.end_headers()
+
+        def do_GET(self):
+            self.send_response(302)
+            self.end_headers()
+
+        def log_message(self, format, *args):
+            pass
+
+    with serve(MockFlasher()) as flasher:
+        server = HTTPServer(("127.0.0.1", 0), NoLocationHandler)
+        port = server.server_address[1]
+        server_thread = Thread(target=server.serve_forever)
+        server_thread.daemon = True
+        server_thread.start()
+
+        try:
+            with pytest.raises(DriverError, match="missing Location header"):
+                flasher.flash(f"http://127.0.0.1:{port}/start")
+        finally:
+            server.shutdown()
+            server.server_close()
+            server_thread.join(timeout=2)

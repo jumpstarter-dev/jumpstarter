@@ -119,19 +119,17 @@ async def get_lease(
     "--type", type=click.Choice(["kind", "minikube", "remote", "all"]), default="all", help="Filter clusters by type"
 )
 @click.option("--kubectl", type=str, help="Path or name of kubectl executable", default="kubectl")
-@click.option("--helm", type=str, help="Path or name of helm executable", default="helm")
-@click.option("--kind", type=str, help="Path or name of kind executable", default="kind")
 @click.option("--minikube", type=str, help="Path or name of minikube executable", default="minikube")
 @opt_output_all
 @blocking
 async def get_cluster(
-    name: Optional[str], type: str, kubectl: str, helm: str, kind: str, minikube: str, output: OutputType
+    name: Optional[str], type: str, kubectl: str, minikube: str, output: OutputType
 ):
     """Get information about a specific cluster or list all clusters"""
     try:
         if name is not None:
             # Get specific cluster by context name
-            cluster_info = await get_cluster_info(name, kubectl, helm, minikube)
+            cluster_info = await get_cluster_info(name, kubectl, minikube)
 
             # Check if the cluster context was found
             if cluster_info.error and "not found" in cluster_info.error:
@@ -140,7 +138,7 @@ async def get_cluster(
             model_print(cluster_info, output)
         else:
             # List all clusters if no name provided
-            cluster_list = await list_clusters(type, kubectl, helm, kind, minikube)
+            cluster_list = await list_clusters(type, kubectl, minikube)
             model_print(cluster_list, output)
     except click.ClickException:
         raise
@@ -153,15 +151,13 @@ async def get_cluster(
     "--type", type=click.Choice(["kind", "minikube", "remote", "all"]), default="all", help="Filter clusters by type"
 )
 @click.option("--kubectl", type=str, help="Path or name of kubectl executable", default="kubectl")
-@click.option("--helm", type=str, help="Path or name of helm executable", default="helm")
-@click.option("--kind", type=str, help="Path or name of kind executable", default="kind")
 @click.option("--minikube", type=str, help="Path or name of minikube executable", default="minikube")
 @opt_output_all
 @blocking
-async def get_clusters(type: str, kubectl: str, helm: str, kind: str, minikube: str, output: OutputType):
+async def get_clusters(type: str, kubectl: str, minikube: str, output: OutputType):
     """List all Kubernetes clusters with Jumpstarter status"""
     try:
-        cluster_list = await list_clusters(type, kubectl, helm, kind, minikube)
+        cluster_list = await list_clusters(type, kubectl, minikube)
 
         # Use model_print for all output formats
         model_print(cluster_list, output)

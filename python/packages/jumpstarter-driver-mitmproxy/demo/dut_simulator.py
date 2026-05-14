@@ -21,6 +21,7 @@ import time
 from urllib.parse import urlsplit
 
 import requests
+import requests.exceptions
 
 # ── ANSI colours ──────────────────────────────────────────────
 _GREEN = "\033[92m"
@@ -49,7 +50,7 @@ def _source_colour(source: str) -> str:
 
 def _print_response(method: str, path: str, resp: requests.Response):
     ts = time.strftime("%H:%M:%S")
-    sc = _status_colour(resp.status_code)
+    sc = _status_colour(resp.status_code)  # ty: ignore[invalid-argument-type]
 
     print(f"  {_DIM}{ts}{_RESET}  {sc}{resp.status_code}{_RESET}  {method:4s} {path}")
 

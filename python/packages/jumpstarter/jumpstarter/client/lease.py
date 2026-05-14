@@ -83,12 +83,14 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     portal: BlockingPortal
     namespace: str
     name: str | None = field(default=None)
+    tags: dict[str, str] = field(default_factory=dict)
     allow: list[str]
     unsafe: bool
     release: bool = True  # release on contexts exit
     controller: jumpstarter_pb2_grpc.ControllerServiceStub = field(init=False)
     tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
     grpc_options: dict[str, Any] = field(default_factory=dict)
+    client_name: str | None = None  # Name of the current client, used for ownership validation
     acquisition_timeout: int = field(default=7200)  # Timeout in seconds for lease acquisition, polled in 5s intervals
     dial_timeout: float = field(default=30.0)  # Timeout in seconds for Dial retry loop when exporter not ready
     exporter_name: str = field(default="remote", init=False)  # Populated during acquisition
@@ -124,6 +126,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     exporter_name=self.requested_exporter_name,
                     duration=self.duration,
                     lease_id=self.name,
+                    tags=self.tags or None,
                 )
             ).name
         logger.info("Acquiring lease %s for selector %s for duration %s", self.name, self.selector, self.duration)
@@ -174,6 +177,12 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         if self.name:
             logger.debug("using existing lease via env or flag %s", self.name)
             existing_lease = await self.get()
+            # Verify the lease belongs to the current client
+            if self.client_name and existing_lease.client != self.client_name:
+                raise LeaseError(
+                    f"lease {self.name} belongs to client '{existing_lease.client}', "
+                    f"not the current client '{self.client_name}'"
+                )
             if self.selector is not None and existing_lease.selector != self.selector:
                 logger.warning(
                     "Existing lease from env or flag %s has selector '%s' but requested selector is '%s'. "
@@ -237,9 +246,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                             # Old controllers (pre-918d6341) mark offline-but-matching
                             # exporters as Unsatisfiable with reason "NoExporter".
                             # This is transient — retry with a new lease.
-                            if condition_present_and_equal(
-                                result.conditions, "Unsatisfiable", "True", "NoExporter"
-                            ):
+                            if condition_present_and_equal(result.conditions, "Unsatisfiable", "True", "NoExporter"):
                                 await self._handle_no_exporter_retry(spinner, message)
                                 continue
                             logger.debug("Lease %s cannot be satisfied: %s", self.name, message)
@@ -325,13 +332,16 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     if remaining <= 0:
                         logger.debug(
                             "Exporter not ready and dial timeout (%.1fs) exceeded after %d attempts",
-                            self.dial_timeout, attempt + 1
+                            self.dial_timeout,
+                            attempt + 1,
                         )
                         raise
-                    delay = min(base_delay * (2 ** attempt), max_delay, remaining)
+                    delay = min(base_delay * (2**attempt), max_delay, remaining)
                     logger.debug(
                         "Exporter not ready, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
-                        delay, attempt + 1, remaining
+                        delay,
+                        attempt + 1,
+                        remaining,
                     )
                     await sleep(delay)
                     attempt += 1
@@ -340,8 +350,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 if "permission denied" in str(e.details()).lower():
                     self.lease_transferred = True
                     logger.warning(
-                        "Lease %s has been transferred to another client. "
-                        "Your session is no longer valid.",
+                        "Lease %s has been transferred to another client. Your session is no longer valid.",
                         self.name,
                     )
                 else:

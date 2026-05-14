@@ -1,0 +1,45 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: automotive-lab-1
+endpoint: grpc.jumpstarter.example.com:8082
+token: "<token>"
+export:
+  dut-network:
+    type: jumpstarter_driver_dut_network.driver.DutNetwork
+    config:
+      interface: "enx00e04c683af1"
+      subnet: "192.168.100.0/24"
+      gateway_ip: "192.168.100.1"
+      nat_mode: "masquerade"
+      dhcp_enabled: true
+      dhcp_range_start: "192.168.100.100"
+      dhcp_range_end: "192.168.100.200"
+      addresses:
+        - mac: "8a:12:4e:25:f4:8e"
+          ip: "192.168.100.10"
+          hostname: "sa8775p"
+      dns_servers: ["8.8.8.8", "8.8.4.4"]
+      dns_entries:
+        - hostname: "registry.lab.local"
+          ip: "10.26.28.2"
+      # Optional: egress/ingress traffic filtering (exporter-enforced, not
+      # exposed to remote clients).  When omitted, no filtering is applied.
+      filter:
+        egress:
+          policy: "accept"            # default verdict for outbound traffic
+          rules:
+            - action: "drop"          # block DUT access to RFC-1918 ranges
+              destination: "10.0.0.0/8"
+            - action: "drop"
+              destination: "172.16.0.0/12"
+            - action: "drop"
+              destination: "192.168.0.0/16"
+        ingress:
+          policy: "drop"              # default verdict for inbound traffic
+          rules:
+            - action: "accept"        # allow SSH from the lab network
+              source: "10.26.28.0/24"
+              port: 22
+              protocol: "tcp"

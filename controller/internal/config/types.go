@@ -12,6 +12,12 @@ type Config struct {
 	Authentication Authentication `json:"authentication" yaml:"authentication"`
 	Provisioning   Provisioning   `json:"provisioning" yaml:"provisioning"`
 	Grpc           Grpc           `json:"grpc" yaml:"grpc"`
+	LeasePolicy    LeasePolicy    `json:"leasePolicy,omitempty" yaml:"leasePolicy,omitempty"`
+}
+
+// LeasePolicy defines policy constraints for leases.
+type LeasePolicy struct {
+	MaxTags int32 `json:"maxTags,omitempty" yaml:"maxTags,omitempty"`
 }
 
 // Authentication defines the authentication configuration for the controller.

@@ -25,7 +25,7 @@ fi
 INSTALL_DIR="${HOME}/.local/jumpstarter"
 VENV_DIR="${INSTALL_DIR}/venv"
 SET_SCRIPT="${INSTALL_DIR}/set"
-DEFAULT_SOURCE="release-0.7"
+DEFAULT_SOURCE="release-0.8"
 
 # Function to print colored output
 print_info() {
@@ -52,9 +52,9 @@ Jumpstarter Installer
 Usage: $0 [OPTIONS]
 
 OPTIONS:
-    -s, --source SOURCE    Installation source (default: release-0.7)
+    -s, --source SOURCE    Installation source (default: release-0.8)
                           Available sources:
-                          - release-0.7: Stable release 0.7 (recommended)
+                          - release-0.8: Stable release 0.8 (recommended)
                           - latest: Latest stable release (when available)
                           - rc: Latest release candidate (when available)
                           - main: Latest development version
@@ -62,8 +62,8 @@ OPTIONS:
     -h, --help            Show this help message
 
 EXAMPLES:
-    $0                    # Install stable release 0.7 (recommended)
-    $0 -s release-0.7    # Install stable release 0.7
+    $0                    # Install stable release 0.8 (recommended)
+    $0 -s release-0.8    # Install stable release 0.8
     $0 -s main           # Install latest development version
     $0 -s rc             # Install latest release candidate (when available)
     $0 -d /opt/jumpstarter  # Install to custom directory
@@ -111,7 +111,7 @@ get_latest_version() {
     fi
 
     # Extract the version from the output
-    # Expected format: "jumpstarter-all (0.7.0.dev65+g637d0eb)"
+    # Expected format: "jumpstarter-all (0.8.1.dev65+g637d0eb)"
     local latest_version=$(echo "${output}" | grep "^jumpstarter-all (" | sed 's/jumpstarter-all (\([^)]*\)).*/\1/')
 
     if [ -z "${latest_version}" ]; then

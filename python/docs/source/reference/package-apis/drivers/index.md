@@ -39,6 +39,8 @@ Drivers that provide various communication interfaces:
   communication
 * **[HTTP](http.md)** (`jumpstarter-driver-http`) - HTTP communication
 * **[Mitmproxy](mitmproxy.md)** (`jumpstarter-driver-mitmproxy`) - HTTP(S) interception, mocking, and traffic recording
+* **[DUT Network](dut-network.md)** (`jumpstarter-driver-dut-network`) - DUT network
+  isolation with bridge, DHCP, DNS, and NAT
 * **[Network](network.md)** (`jumpstarter-driver-network`) - Network interfaces
   and configuration
 * **[PySerial](pyserial.md)** (`jumpstarter-driver-pyserial`) - Serial port
@@ -95,9 +97,12 @@ Drivers for debugging and programming devices:
   UF2 flashing via BOOTSEL mass storage
 * **[Probe-RS](probe-rs.md)** (`jumpstarter-driver-probe-rs`) - Debugging probe
   support
+* **[ST-LINK MSD](stlink-msd.md)** (`jumpstarter-driver-stlink-msd`) - ST-LINK
+  mass storage flasher for STM32 Nucleo and Discovery boards
 * **[Android Emulator](androidemulator.md)** (`jumpstarter-driver-androidemulator`) -
   Android emulator lifecycle management with ADB tunneling
 * **[QEMU](qemu.md)** (`jumpstarter-driver-qemu`) - QEMU virtualization platform
+* **[Renode](renode.md)** (`jumpstarter-driver-renode`) - Renode embedded systems emulation
 * **[Corellium](corellium.md)** (`jumpstarter-driver-corellium`) - Corellium
   virtualization platform
 * **[U-Boot](uboot.md)** (`jumpstarter-driver-uboot`) - Universal Bootloader
@@ -120,6 +125,7 @@ ble.md
 can.md
 corellium.md
 doip.md
+dut-network.md
 dutlink.md
 energenie.md
 esp32.md
@@ -136,6 +142,7 @@ power.md
 probe-rs.md
 pyserial.md
 qemu.md
+renode.md
 gpiod.md
 ridesx.md
 sdwire.md
@@ -143,6 +150,7 @@ shell.md
 ssh.md
 snmp.md
 someip.md
+stlink-msd.md
 tasmota.md
 tmt.md
 tftp.md

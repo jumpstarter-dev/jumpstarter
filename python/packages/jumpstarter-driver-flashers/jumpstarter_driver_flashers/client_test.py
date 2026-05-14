@@ -89,14 +89,25 @@ def test_resolve_oci_credentials_ignores_env_for_non_oci_path(monkeypatch):
     assert password is None
 
 
-def test_resolve_oci_credentials_rejects_partial_env_for_oci_path(monkeypatch):
-    """Test partial OCI env credentials are rejected for OCI paths."""
+def test_resolve_oci_credentials_partial_env_falls_through_to_auth_file(monkeypatch):
+    """Partial env vars should fall through to auth file lookup, not error."""
+    from unittest.mock import patch
+
     client = MockFlasherClient()
     monkeypatch.setenv("OCI_USERNAME", "env-user")
     monkeypatch.delenv("OCI_PASSWORD", raising=False)
 
-    with pytest.raises(click.ClickException, match="OCI authentication requires both"):
-        client._resolve_oci_credentials("oci://quay.io/org/image:tag", None, None)
+    # When auth file has no match, result is (None, None) — no error
+    with patch("jumpstarter.common.oci.read_auth_file_credentials", return_value=(None, None)):
+        username, password = client._resolve_oci_credentials("oci://quay.io/org/image:tag", None, None)
+        assert username is None
+        assert password is None
+
+    # When auth file has a match, those credentials are used
+    with patch("jumpstarter.common.oci.read_auth_file_credentials", return_value=("fileuser", "filepass")):
+        username, password = client._resolve_oci_credentials("oci://quay.io/org/image:tag", None, None)
+        assert username == "fileuser"
+        assert password == "filepass"
 
 
 def test_fls_oci_auth_env_sources_credentials_file():
@@ -603,5 +614,3 @@ def test_resolve_flash_parameters():
         client._resolve_flash_parameters(None, None, None)
     with pytest.raises(click.UsageError):
         client._resolve_flash_parameters(None, ("rootfs_no_colon",), None)
-
-

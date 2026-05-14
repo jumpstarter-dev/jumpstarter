@@ -126,6 +126,7 @@ type Lease struct {
 	Exporter           *string                `protobuf:"bytes,10,opt,name=exporter,proto3,oneof" json:"exporter,omitempty"`
 	Conditions         []*v1.Condition        `protobuf:"bytes,11,rep,name=conditions,proto3" json:"conditions,omitempty"`
 	ExporterName       *string                `protobuf:"bytes,12,opt,name=exporter_name,json=exporterName,proto3,oneof" json:"exporter_name,omitempty"`
+	Tags               map[string]string      `protobuf:"bytes,13,rep,name=tags,proto3" json:"tags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -242,6 +243,13 @@ func (x *Lease) GetExporterName() string {
 		return *x.ExporterName
 	}
 	return ""
+}
+
+func (x *Lease) GetTags() map[string]string {
+	if x != nil {
+		return x.Tags
+	}
+	return nil
 }
 
 type GetExporterRequest struct {
@@ -459,6 +467,7 @@ type ListLeasesRequest struct {
 	PageToken     string                 `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	Filter        string                 `protobuf:"bytes,4,opt,name=filter,proto3" json:"filter,omitempty"`
 	OnlyActive    *bool                  `protobuf:"varint,5,opt,name=only_active,json=onlyActive,proto3,oneof" json:"only_active,omitempty"`
+	TagFilter     string                 `protobuf:"bytes,6,opt,name=tag_filter,json=tagFilter,proto3" json:"tag_filter,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -526,6 +535,13 @@ func (x *ListLeasesRequest) GetOnlyActive() bool {
 		return *x.OnlyActive
 	}
 	return false
+}
+
+func (x *ListLeasesRequest) GetTagFilter() string {
+	if x != nil {
+		return x.TagFilter
+	}
+	return ""
 }
 
 type ListLeasesResponse struct {
@@ -750,7 +766,7 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:_\xeaA\\\n" +
-	"\x18jumpstarter.dev/Exporter\x12+namespaces/{namespace}/exporters/{exporter}*\texporters2\bexporter\"\xbb\a\n" +
+	"\x18jumpstarter.dev/Exporter\x12+namespaces/{namespace}/exporters/{exporter}*\texporters2\bexporter\"\xb5\b\n" +
 	"\x05Lease\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tB\x03\xe0A\bR\x04name\x12\"\n" +
 	"\bselector\x18\x02 \x01(\tB\x06\xe0A\x02\xe0A\x05R\bselector\x12:\n" +
@@ -769,7 +785,11 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\n" +
 	"conditions\x18\v \x03(\v2\x19.jumpstarter.v1.ConditionB\x03\xe0A\x03R\n" +
 	"conditions\x12-\n" +
-	"\rexporter_name\x18\f \x01(\tB\x03\xe0A\x05H\aR\fexporterName\x88\x01\x01:P\xeaAM\n" +
+	"\rexporter_name\x18\f \x01(\tB\x03\xe0A\x05H\aR\fexporterName\x88\x01\x01\x12?\n" +
+	"\x04tags\x18\r \x03(\v2&.jumpstarter.client.v1.Lease.TagsEntryB\x03\xe0A\x05R\x04tags\x1a7\n" +
+	"\tTagsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:P\xeaAM\n" +
 	"\x15jumpstarter.dev/Lease\x12%namespaces/{namespace}/leases/{lease}*\x06leases2\x05leaseB\v\n" +
 	"\t_durationB\r\n" +
 	"\v_begin_timeB\x17\n" +
@@ -793,7 +813,7 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"D\n" +
 	"\x0fGetLeaseRequest\x121\n" +
 	"\x04name\x18\x01 \x01(\tB\x1d\xe0A\x02\xfaA\x17\n" +
-	"\x15jumpstarter.dev/LeaseR\x04name\"\xe8\x01\n" +
+	"\x15jumpstarter.dev/LeaseR\x04name\"\x8c\x02\n" +
 	"\x11ListLeasesRequest\x125\n" +
 	"\x06parent\x18\x01 \x01(\tB\x1d\xe0A\x02\xfaA\x17\x12\x15jumpstarter.dev/LeaseR\x06parent\x12 \n" +
 	"\tpage_size\x18\x02 \x01(\x05B\x03\xe0A\x01R\bpageSize\x12\"\n" +
@@ -801,7 +821,9 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"page_token\x18\x03 \x01(\tB\x03\xe0A\x01R\tpageToken\x12\x1b\n" +
 	"\x06filter\x18\x04 \x01(\tB\x03\xe0A\x01R\x06filter\x12)\n" +
 	"\vonly_active\x18\x05 \x01(\bB\x03\xe0A\x01H\x00R\n" +
-	"onlyActive\x88\x01\x01B\x0e\n" +
+	"onlyActive\x88\x01\x01\x12\"\n" +
+	"\n" +
+	"tag_filter\x18\x06 \x01(\tB\x03\xe0A\x01R\ttagFilterB\x0e\n" +
 	"\f_only_active\"r\n" +
 	"\x12ListLeasesResponse\x124\n" +
 	"\x06leases\x18\x01 \x03(\v2\x1c.jumpstarter.client.v1.LeaseR\x06leases\x12&\n" +
@@ -840,7 +862,7 @@ func file_jumpstarter_client_v1_client_proto_rawDescGZIP() []byte {
 	return file_jumpstarter_client_v1_client_proto_rawDescData
 }
 
-var file_jumpstarter_client_v1_client_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_jumpstarter_client_v1_client_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_jumpstarter_client_v1_client_proto_goTypes = []any{
 	(*Exporter)(nil),              // 0: jumpstarter.client.v1.Exporter
 	(*Lease)(nil),                 // 1: jumpstarter.client.v1.Lease
@@ -854,47 +876,49 @@ var file_jumpstarter_client_v1_client_proto_goTypes = []any{
 	(*UpdateLeaseRequest)(nil),    // 9: jumpstarter.client.v1.UpdateLeaseRequest
 	(*DeleteLeaseRequest)(nil),    // 10: jumpstarter.client.v1.DeleteLeaseRequest
 	nil,                           // 11: jumpstarter.client.v1.Exporter.LabelsEntry
-	(v1.ExporterStatus)(0),        // 12: jumpstarter.v1.ExporterStatus
-	(*durationpb.Duration)(nil),   // 13: google.protobuf.Duration
-	(*timestamppb.Timestamp)(nil), // 14: google.protobuf.Timestamp
-	(*v1.Condition)(nil),          // 15: jumpstarter.v1.Condition
-	(*fieldmaskpb.FieldMask)(nil), // 16: google.protobuf.FieldMask
-	(*emptypb.Empty)(nil),         // 17: google.protobuf.Empty
+	nil,                           // 12: jumpstarter.client.v1.Lease.TagsEntry
+	(v1.ExporterStatus)(0),        // 13: jumpstarter.v1.ExporterStatus
+	(*durationpb.Duration)(nil),   // 14: google.protobuf.Duration
+	(*timestamppb.Timestamp)(nil), // 15: google.protobuf.Timestamp
+	(*v1.Condition)(nil),          // 16: jumpstarter.v1.Condition
+	(*fieldmaskpb.FieldMask)(nil), // 17: google.protobuf.FieldMask
+	(*emptypb.Empty)(nil),         // 18: google.protobuf.Empty
 }
 var file_jumpstarter_client_v1_client_proto_depIdxs = []int32{
 	11, // 0: jumpstarter.client.v1.Exporter.labels:type_name -> jumpstarter.client.v1.Exporter.LabelsEntry
-	12, // 1: jumpstarter.client.v1.Exporter.status:type_name -> jumpstarter.v1.ExporterStatus
-	13, // 2: jumpstarter.client.v1.Lease.duration:type_name -> google.protobuf.Duration
-	13, // 3: jumpstarter.client.v1.Lease.effective_duration:type_name -> google.protobuf.Duration
-	14, // 4: jumpstarter.client.v1.Lease.begin_time:type_name -> google.protobuf.Timestamp
-	14, // 5: jumpstarter.client.v1.Lease.effective_begin_time:type_name -> google.protobuf.Timestamp
-	14, // 6: jumpstarter.client.v1.Lease.end_time:type_name -> google.protobuf.Timestamp
-	14, // 7: jumpstarter.client.v1.Lease.effective_end_time:type_name -> google.protobuf.Timestamp
-	15, // 8: jumpstarter.client.v1.Lease.conditions:type_name -> jumpstarter.v1.Condition
-	0,  // 9: jumpstarter.client.v1.ListExportersResponse.exporters:type_name -> jumpstarter.client.v1.Exporter
-	1,  // 10: jumpstarter.client.v1.ListLeasesResponse.leases:type_name -> jumpstarter.client.v1.Lease
-	1,  // 11: jumpstarter.client.v1.CreateLeaseRequest.lease:type_name -> jumpstarter.client.v1.Lease
-	1,  // 12: jumpstarter.client.v1.UpdateLeaseRequest.lease:type_name -> jumpstarter.client.v1.Lease
-	16, // 13: jumpstarter.client.v1.UpdateLeaseRequest.update_mask:type_name -> google.protobuf.FieldMask
-	2,  // 14: jumpstarter.client.v1.ClientService.GetExporter:input_type -> jumpstarter.client.v1.GetExporterRequest
-	3,  // 15: jumpstarter.client.v1.ClientService.ListExporters:input_type -> jumpstarter.client.v1.ListExportersRequest
-	5,  // 16: jumpstarter.client.v1.ClientService.GetLease:input_type -> jumpstarter.client.v1.GetLeaseRequest
-	6,  // 17: jumpstarter.client.v1.ClientService.ListLeases:input_type -> jumpstarter.client.v1.ListLeasesRequest
-	8,  // 18: jumpstarter.client.v1.ClientService.CreateLease:input_type -> jumpstarter.client.v1.CreateLeaseRequest
-	9,  // 19: jumpstarter.client.v1.ClientService.UpdateLease:input_type -> jumpstarter.client.v1.UpdateLeaseRequest
-	10, // 20: jumpstarter.client.v1.ClientService.DeleteLease:input_type -> jumpstarter.client.v1.DeleteLeaseRequest
-	0,  // 21: jumpstarter.client.v1.ClientService.GetExporter:output_type -> jumpstarter.client.v1.Exporter
-	4,  // 22: jumpstarter.client.v1.ClientService.ListExporters:output_type -> jumpstarter.client.v1.ListExportersResponse
-	1,  // 23: jumpstarter.client.v1.ClientService.GetLease:output_type -> jumpstarter.client.v1.Lease
-	7,  // 24: jumpstarter.client.v1.ClientService.ListLeases:output_type -> jumpstarter.client.v1.ListLeasesResponse
-	1,  // 25: jumpstarter.client.v1.ClientService.CreateLease:output_type -> jumpstarter.client.v1.Lease
-	1,  // 26: jumpstarter.client.v1.ClientService.UpdateLease:output_type -> jumpstarter.client.v1.Lease
-	17, // 27: jumpstarter.client.v1.ClientService.DeleteLease:output_type -> google.protobuf.Empty
-	21, // [21:28] is the sub-list for method output_type
-	14, // [14:21] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	13, // 1: jumpstarter.client.v1.Exporter.status:type_name -> jumpstarter.v1.ExporterStatus
+	14, // 2: jumpstarter.client.v1.Lease.duration:type_name -> google.protobuf.Duration
+	14, // 3: jumpstarter.client.v1.Lease.effective_duration:type_name -> google.protobuf.Duration
+	15, // 4: jumpstarter.client.v1.Lease.begin_time:type_name -> google.protobuf.Timestamp
+	15, // 5: jumpstarter.client.v1.Lease.effective_begin_time:type_name -> google.protobuf.Timestamp
+	15, // 6: jumpstarter.client.v1.Lease.end_time:type_name -> google.protobuf.Timestamp
+	15, // 7: jumpstarter.client.v1.Lease.effective_end_time:type_name -> google.protobuf.Timestamp
+	16, // 8: jumpstarter.client.v1.Lease.conditions:type_name -> jumpstarter.v1.Condition
+	12, // 9: jumpstarter.client.v1.Lease.tags:type_name -> jumpstarter.client.v1.Lease.TagsEntry
+	0,  // 10: jumpstarter.client.v1.ListExportersResponse.exporters:type_name -> jumpstarter.client.v1.Exporter
+	1,  // 11: jumpstarter.client.v1.ListLeasesResponse.leases:type_name -> jumpstarter.client.v1.Lease
+	1,  // 12: jumpstarter.client.v1.CreateLeaseRequest.lease:type_name -> jumpstarter.client.v1.Lease
+	1,  // 13: jumpstarter.client.v1.UpdateLeaseRequest.lease:type_name -> jumpstarter.client.v1.Lease
+	17, // 14: jumpstarter.client.v1.UpdateLeaseRequest.update_mask:type_name -> google.protobuf.FieldMask
+	2,  // 15: jumpstarter.client.v1.ClientService.GetExporter:input_type -> jumpstarter.client.v1.GetExporterRequest
+	3,  // 16: jumpstarter.client.v1.ClientService.ListExporters:input_type -> jumpstarter.client.v1.ListExportersRequest
+	5,  // 17: jumpstarter.client.v1.ClientService.GetLease:input_type -> jumpstarter.client.v1.GetLeaseRequest
+	6,  // 18: jumpstarter.client.v1.ClientService.ListLeases:input_type -> jumpstarter.client.v1.ListLeasesRequest
+	8,  // 19: jumpstarter.client.v1.ClientService.CreateLease:input_type -> jumpstarter.client.v1.CreateLeaseRequest
+	9,  // 20: jumpstarter.client.v1.ClientService.UpdateLease:input_type -> jumpstarter.client.v1.UpdateLeaseRequest
+	10, // 21: jumpstarter.client.v1.ClientService.DeleteLease:input_type -> jumpstarter.client.v1.DeleteLeaseRequest
+	0,  // 22: jumpstarter.client.v1.ClientService.GetExporter:output_type -> jumpstarter.client.v1.Exporter
+	4,  // 23: jumpstarter.client.v1.ClientService.ListExporters:output_type -> jumpstarter.client.v1.ListExportersResponse
+	1,  // 24: jumpstarter.client.v1.ClientService.GetLease:output_type -> jumpstarter.client.v1.Lease
+	7,  // 25: jumpstarter.client.v1.ClientService.ListLeases:output_type -> jumpstarter.client.v1.ListLeasesResponse
+	1,  // 26: jumpstarter.client.v1.ClientService.CreateLease:output_type -> jumpstarter.client.v1.Lease
+	1,  // 27: jumpstarter.client.v1.ClientService.UpdateLease:output_type -> jumpstarter.client.v1.Lease
+	18, // 28: jumpstarter.client.v1.ClientService.DeleteLease:output_type -> google.protobuf.Empty
+	22, // [22:29] is the sub-list for method output_type
+	15, // [15:22] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_jumpstarter_client_v1_client_proto_init() }
@@ -910,7 +934,7 @@ func file_jumpstarter_client_v1_client_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpstarter_client_v1_client_proto_rawDesc), len(file_jumpstarter_client_v1_client_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

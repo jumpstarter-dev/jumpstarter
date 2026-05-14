@@ -3,8 +3,9 @@ from dataclasses import dataclass
 from functools import partial
 
 import anyio
+import anyio.streams.memory
 from anyio.abc import ObjectStream
-from anyio.streams.memory import MemoryObjectSendStream
+from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from bleak import BleakClient, BleakGATTCharacteristic
 from bleak.exc import BleakError
 
@@ -38,7 +39,7 @@ class AsyncBleConfig():
 class AsyncBleWrapper(ObjectStream):
     client: BleakClient
     config: AsyncBleConfig
-    receive_stream: anyio.streams.memory.MemoryObjectReceiveStream
+    receive_stream: MemoryObjectReceiveStream
 
     async def send(self, data: bytes):
         await self.client.write_gatt_char(self.config.write_char_uuid, data)
@@ -109,7 +110,7 @@ class BleWriteNotifyStream(Driver):
         async with BleakClient(self.address) as client:
             try:
                 if client.is_connected:
-                    send_stream, receive_stream = anyio.create_memory_object_stream[bytearray](
+                    send_stream, receive_stream = anyio.create_memory_object_stream[bytearray](  # ty: ignore[call-non-callable]
                         max_buffer_size=1000)
                     self.logger.info(
                         "Connected to BLE device at Address: %s", self.address)
@@ -131,7 +132,6 @@ class BleWriteNotifyStream(Driver):
                             address=self.address,
                             service_uuid=self.service_uuid,
                             write_char_uuid=self.write_char_uuid,
-                            # read_char_uuid=self.read_char_uuid,
                             notify_char_uuid=self.notify_char_uuid,
                         ),
                     ) as stream:

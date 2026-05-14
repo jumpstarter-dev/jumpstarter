@@ -1,0 +1,18 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: nucleo-board
+endpoint: grpc.jumpstarter.example.com:443
+token: "<token>"
+export:
+  flasher:
+    type: jumpstarter_driver_stlink_msd.driver.StlinkMsdFlasher
+    config:
+      # volume_name: "NOD_H755ZI"   # optional: auto-detected if only one ST-LINK is connected
+      # objcopy_path: "/opt/zephyr-sdk/arm-zephyr-eabi/bin/arm-zephyr-eabi-objcopy"  # optional: auto-detected
+  console:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      url: "/dev/ttyACM0"
+      baudrate: 115200

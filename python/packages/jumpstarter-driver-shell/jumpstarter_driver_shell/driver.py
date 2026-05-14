@@ -1,4 +1,5 @@
 import asyncio
+import asyncio.subprocess
 import os
 import signal
 import subprocess
@@ -187,7 +188,7 @@ class Shell(Driver):
 
         # Start the process with pipes for streaming and new process group
         self.logger.debug( f"running {method} with cmd: {cmd} and env: {combined_env} " f"and args: {args}")
-        process = await asyncio.create_subprocess_exec(
+        process = await asyncio.create_subprocess_exec(  # ty: ignore[missing-argument]
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

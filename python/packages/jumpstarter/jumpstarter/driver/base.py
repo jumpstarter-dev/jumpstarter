@@ -12,9 +12,11 @@ from dataclasses import field
 from inspect import isasyncgenfunction, iscoroutinefunction
 from itertools import chain
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 from uuid import UUID, uuid4
 
 import aiohttp
+import yarl
 from anyio import BrokenResourceError, to_thread
 from grpc import StatusCode
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
@@ -235,48 +237,112 @@ class Driver(
             finally:
                 del self.resources[resource_uuid]
 
+    @staticmethod
+    def _make_url(url: str) -> yarl.URL:
+        """Construct a yarl.URL preserving percent-encoding in the path.
+
+        yarl.URL() normalizes %XX sequences (e.g. %40 → @), which breaks
+        signed redirect URLs (CloudFront, S3) whose signatures cover the
+        encoded form.  Using encoded=True keeps the raw string intact.
+        """
+        return yarl.URL(url, encoded=True)
+
+    @staticmethod
+    def _redact_url(url: str) -> str:
+        """Redact query parameters from a URL to avoid leaking credentials in logs."""
+        parsed = urlparse(url)
+        if parsed.query:
+            return urlunparse(parsed._replace(query="[REDACTED]"))
+        return url
+
+    _SENSITIVE_HEADER_PREFIXES = ("authorization", "cookie", "proxy-authorization", "x-amz-", "x-ms-", "x-goog-")
+
+    @classmethod
+    def _strip_sensitive_headers(
+        cls, headers: dict[str, str], original_url: str, redirect_url: str
+    ) -> dict[str, str]:
+        """Strip auth headers when a redirect crosses origins."""
+        orig = yarl.URL(original_url)
+        dest = yarl.URL(redirect_url)
+        if (orig.scheme, orig.host, orig.port) == (dest.scheme, dest.host, dest.port):
+            return headers
+        return {
+            k: v for k, v in headers.items()
+            if not k.lower().startswith(cls._SENSITIVE_HEADER_PREFIXES)
+        }
+
+    @asynccontextmanager
+    async def _presigned_get(
+        self, url: str, headers: dict[str, str], timeout: aiohttp.ClientTimeout, max_redirects: int = 10
+    ):
+        """GET with manual redirect following to preserve percent-encoding in URLs."""
+        current_url = url
+        current_headers = headers
+        for _ in range(max_redirects + 1):
+            async with aiohttp.request(
+                "GET", self._make_url(current_url), headers=current_headers, raise_for_status=True,
+                timeout=timeout, allow_redirects=False,
+            ) as resp:
+                if resp.status not in (301, 302, 303, 307, 308):
+                    async with AiohttpStreamReaderStream(reader=resp.content) as stream:
+                        yield ProgressStream(stream=stream, logging=True)
+                        return
+                location = resp.headers.get("Location", "")
+                if not location:
+                    raise RuntimeError(
+                        f"Presigned HTTP GET redirect missing Location header for {self._redact_url(current_url)}"
+                    )
+                current_headers = self._strip_sensitive_headers(current_headers, current_url, location)
+                current_url = location
+        raise RuntimeError(f"Too many redirects ({max_redirects}) for {self._redact_url(url)}")
+
     @asynccontextmanager
     async def _resource_from_presigned(self, headers, url: str, method: str, timeout: int):
         client_timeout = aiohttp.ClientTimeout(total=timeout)
         try:
             match method:
                 case "GET":
-                    async with aiohttp.request(
-                        method, url, headers=headers, raise_for_status=True, timeout=client_timeout
-                    ) as resp:
-                        async with AiohttpStreamReaderStream(reader=resp.content) as stream:
-                            yield ProgressStream(stream=stream, logging=True)
+                    async with self._presigned_get(url, headers, client_timeout) as stream:
+                        yield stream
                 case "PUT":
                     remote, stream = create_memory_stream()
                     async with aiohttp.request(
-                        method, url, headers=headers, raise_for_status=True, data=remote, timeout=client_timeout
-                    ) as resp:
+                        method, self._make_url(url), headers=headers, raise_for_status=True,
+                        data=remote, timeout=client_timeout,
+                    ) as _resp:
                         async with stream:
                             yield ProgressStream(stream=stream, logging=True)
                 case _:
                     # INVARIANT: method is always one of GET or PUT, see PresignedRequestResource
                     raise ValueError("unreachable")
         except aiohttp.ClientResponseError as e:
+            safe_url = self._redact_url(url)
             raise RuntimeError(
-                f"Presigned HTTP {method} request failed: status={e.status}, reason={e.message!r}, url={url}"
+                f"Presigned HTTP {method} request failed: status={e.status}, reason={e.message!r}, url={safe_url}"
             ) from e
         except BrokenResourceError as e:
+            safe_url = self._redact_url(url)
             cause = e.__cause__
             if cause is not None:
                 raise RuntimeError(
-                    f"Presigned HTTP {method} stream interrupted for {url}: {type(cause).__name__}: {cause!s}"
+                    f"Presigned HTTP {method} stream interrupted for {safe_url}: {type(cause).__name__}: {cause!s}"
                 ) from e
-            raise RuntimeError(f"Presigned HTTP {method} stream interrupted for {url}") from e
+            raise RuntimeError(f"Presigned HTTP {method} stream interrupted for {safe_url}") from e
         except (aiohttp.ClientConnectionError, aiohttp.ClientPayloadError, aiohttp.ServerTimeoutError) as e:
+            safe_url = self._redact_url(url)
             raise RuntimeError(
-                f"Presigned HTTP {method} stream failed (connection/read error) for {url}: "
+                f"Presigned HTTP {method} stream failed (connection/read error) for {safe_url}: "
                 f"{type(e).__name__}: {e!s}"
             ) from e
         except TimeoutError as e:
-            raise TimeoutError(f"Presigned HTTP {method} request timed out after {timeout}s for {url}") from e
+            safe_url = self._redact_url(url)
+            raise TimeoutError(
+                f"Presigned HTTP {method} request timed out after {timeout}s for {safe_url}"
+            ) from e
         except OSError as e:
+            safe_url = self._redact_url(url)
             raise RuntimeError(
-                f"Presigned HTTP {method} stream failed with OS error for {url}: {type(e).__name__}: {e!s}"
+                f"Presigned HTTP {method} stream failed with OS error for {safe_url}: {type(e).__name__}: {e!s}"
             ) from e
 
     @asynccontextmanager

@@ -15,7 +15,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from jumpstarter_driver_mitmproxy.driver import MitmproxyDriver
+from jumpstarter_driver_mitmproxy.driver import (
+    DirectoriesConfig,
+    ListenConfig,
+    MitmproxyDriver,
+    WebConfig,
+)
 
 
 @pytest.fixture
@@ -598,6 +603,9 @@ class TestConfigValidation:
             directories={"data": "/tmp/myproxy"},
         )
         try:
+            assert isinstance(d.directories, DirectoriesConfig)
+            assert isinstance(d.listen, ListenConfig)
+            assert isinstance(d.web, WebConfig)
             assert d.directories.data == "/tmp/myproxy"
             assert d.directories.conf == "/tmp/myproxy/conf"
             assert d.directories.flows == "/tmp/myproxy/flows"
@@ -619,6 +627,7 @@ class TestConfigValidation:
             },
         )
         try:
+            assert isinstance(d.directories, DirectoriesConfig)
             assert d.directories.conf == "/etc/mitmproxy"
             assert d.directories.flows == "/tmp/myproxy/flows"
         finally:
@@ -655,7 +664,7 @@ def deep_merge_patch():
             return
         return original_mkdir(self, *args, **kwargs)
 
-    Path.mkdir = safe_mkdir
+    Path.mkdir = safe_mkdir  # ty: ignore[invalid-assignment]
     try:
         if "jumpstarter_driver_mitmproxy.bundled_addon" in sys.modules:
             mod = sys.modules["jumpstarter_driver_mitmproxy.bundled_addon"]
@@ -663,7 +672,7 @@ def deep_merge_patch():
             mod = importlib.import_module(
                 "jumpstarter_driver_mitmproxy.bundled_addon"
             )
-        return mod._deep_merge_patch
+        return mod._deep_merge_patch  # ty: ignore[unresolved-attribute]
     finally:
         Path.mkdir = original_mkdir
 
@@ -673,7 +682,7 @@ def apply_patches(deep_merge_patch):
     """Import _apply_patches lazily."""
     import sys
     mod = sys.modules["jumpstarter_driver_mitmproxy.bundled_addon"]
-    return mod._apply_patches
+    return mod._apply_patches  # ty: ignore[unresolved-attribute]
 
 
 class TestDeepMergePatch:

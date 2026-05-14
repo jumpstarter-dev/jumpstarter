@@ -47,7 +47,7 @@ def digital_output_client():
     """Create a DigitalOutputClient instance with mocked dependencies"""
     # Mock the required attributes
     client = DigitalOutputClient(stub=MagicMock(), portal=MagicMock(), stack=MagicMock())
-    client.uuid = "test-uuid"
+    client.uuid = "test-uuid"  # ty: ignore[invalid-assignment]
     return client
 
 
@@ -56,7 +56,7 @@ def digital_input_client():
     """Create a DigitalInputClient instance with mocked dependencies"""
     # Mock the required attributes
     client = DigitalInputClient(stub=MagicMock(), portal=MagicMock(), stack=MagicMock())
-    client.uuid = "test-uuid"
+    client.uuid = "test-uuid"  # ty: ignore[invalid-assignment]
     return client
 
 
@@ -155,7 +155,7 @@ class TestDriverMethods:
         mock_gpiod.LineSettings.assert_called()
 
         # Verify line was requested
-        driver._chip.request_lines.assert_called_once()
+        driver._chip.request_lines.assert_called_once()  # ty: ignore[unresolved-attribute]
 
         # Verify pin was processed correctly
         assert driver.line == 18
@@ -178,7 +178,7 @@ class TestDriverMethods:
         mock_gpiod.LineSettings.assert_called()
 
         # Verify line was requested
-        driver._chip.request_lines.assert_called_once()
+        driver._chip.request_lines.assert_called_once()  # ty: ignore[unresolved-attribute]
 
         # Verify line was processed correctly
         assert driver.line == 17
@@ -196,19 +196,19 @@ class TestDriverMethods:
 
         # Test on() method
         driver.on()
-        driver._line.set_value.assert_called_with(18, mock_gpiod.line.Value.ACTIVE)
+        driver._line.set_value.assert_called_with(18, mock_gpiod.line.Value.ACTIVE)  # ty: ignore[possibly-unbound-attribute]
 
         # Test off() method
         driver.off()
-        driver._line.set_value.assert_called_with(18, mock_gpiod.line.Value.INACTIVE)
+        driver._line.set_value.assert_called_with(18, mock_gpiod.line.Value.INACTIVE)  # ty: ignore[possibly-unbound-attribute]
 
         # Test read_pin() method
-        driver._line.get_value.return_value = mock_gpiod.line.Value.ACTIVE
+        driver._line.get_value.return_value = mock_gpiod.line.Value.ACTIVE  # ty: ignore[invalid-assignment]
         result = driver.read_pin()
         assert result.value == 1
         assert str(result) == "active"
 
-        driver._line.get_value.return_value = mock_gpiod.line.Value.INACTIVE
+        driver._line.get_value.return_value = mock_gpiod.line.Value.INACTIVE  # ty: ignore[invalid-assignment]
         result = driver.read_pin()
         assert result.value == 0
         assert str(result) == "inactive"
@@ -225,24 +225,24 @@ class TestDriverMethods:
         driver = DigitalInput(line=17)
 
         # Test read_pin() method
-        driver._line.get_value.return_value = mock_gpiod.line.Value.ACTIVE
+        driver._line.get_value.return_value = mock_gpiod.line.Value.ACTIVE  # ty: ignore[invalid-assignment]
         result = driver.read_pin()
         assert result.value == 1
         assert str(result) == "active"
 
-        driver._line.get_value.return_value = mock_gpiod.line.Value.INACTIVE
+        driver._line.get_value.return_value = mock_gpiod.line.Value.INACTIVE  # ty: ignore[invalid-assignment]
         result = driver.read_pin()
         assert result.value == 0
         assert str(result) == "inactive"
 
         # Test wait_for_active() when already active
-        driver._line.get_value.return_value = mock_gpiod.line.Value.ACTIVE
+        driver._line.get_value.return_value = mock_gpiod.line.Value.ACTIVE  # ty: ignore[invalid-assignment]
         driver.wait_for_active()
-        driver._line.wait_edge_events.assert_not_called()
+        driver._line.wait_edge_events.assert_not_called()  # ty: ignore[possibly-unbound-attribute]
 
         # Test wait_for_active() with timeout
-        driver._line.get_value.return_value = mock_gpiod.line.Value.INACTIVE
-        driver._line.wait_edge_events.return_value = False  # Timeout
+        driver._line.get_value.return_value = mock_gpiod.line.Value.INACTIVE  # ty: ignore[invalid-assignment]
+        driver._line.wait_edge_events.return_value = False  # ty: ignore[invalid-assignment]
 
         with pytest.raises(TimeoutError, match="Timed out waiting for line 17 edge event"):
             driver.wait_for_active(timeout=1.0)
@@ -252,12 +252,12 @@ class TestDriverMethods:
         mock_event.line_offset = 17
         mock_event.event_type = mock_gpiod.EdgeEvent.Type.RISING_EDGE
 
-        driver._line.wait_edge_events.return_value = True
-        driver._line.read_edge_events.return_value = [mock_event]
+        driver._line.wait_edge_events.return_value = True  # ty: ignore[invalid-assignment]
+        driver._line.read_edge_events.return_value = [mock_event]  # ty: ignore[invalid-assignment]
 
         driver.wait_for_edge("rising")
-        driver._line.wait_edge_events.assert_called()
-        driver._line.read_edge_events.assert_called()
+        driver._line.wait_edge_events.assert_called()  # ty: ignore[possibly-unbound-attribute]
+        driver._line.read_edge_events.assert_called()  # ty: ignore[possibly-unbound-attribute]
 
         # Test wait_for_edge() with invalid edge type
         with pytest.raises(ValueError, match="Invalid edge type: invalid"):

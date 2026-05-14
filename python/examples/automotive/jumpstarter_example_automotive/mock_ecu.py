@@ -376,16 +376,16 @@ class MockDiagnosticEcu:
         positive_sid = data[0] + 0x40
 
         with self.state._lock:
-            # deAuthenticate (task=0)
+            # deAuthenticate, task 0
             if task == 0x00:
                 self.state.authenticated = False
                 self.state.auth_challenge = b""
                 return bytes([positive_sid, task, AUTH_RETURN_DEAUTHENTICATED])
 
-            # requestChallengeForAuthentication (task=5)
-            # Wire request: [SID, task, commConfig(1b), algorithmIndicator(16b)]
-            # Wire response: [+SID, task, returnValue, algoIndicator(16b),
-            #                  lenPrefixed(challenge), lenPrefixed(neededAdditionalParam)]
+            # requestChallengeForAuthentication, task 5
+            # Wire request: SID, task, commConfig (1 byte), algorithmIndicator (16 bytes)
+            # Wire response: +SID, task, returnValue, algoIndicator (16 bytes),
+            #                  lenPrefixed challenge, lenPrefixed neededAdditionalParam
             if task == 0x05:
                 algo = data[3:19] if len(data) >= 19 else bytes(16)
                 challenge = os.urandom(16)
@@ -396,11 +396,11 @@ class MockDiagnosticEcu:
                 resp += struct.pack(">H", 0)  # no neededAdditionalParameter
                 return resp
 
-            # verifyProofOfOwnershipUnidirectional (task=6)
-            # Wire request: [SID, task, algorithmIndicator(16b),
-            #                lenPrefixed(proof), lenPrefixed(challenge), lenPrefixed(additional)]
-            # Wire response: [+SID, task, returnValue, algoIndicator(16b),
-            #                  lenPrefixed(sessionKeyInfo)]
+            # verifyProofOfOwnershipUnidirectional, task 6
+            # Wire request: SID, task, algorithmIndicator (16 bytes),
+            #                lenPrefixed proof, lenPrefixed challenge, lenPrefixed additional
+            # Wire response: +SID, task, returnValue, algoIndicator (16 bytes),
+            #                  lenPrefixed sessionKeyInfo
             if task == 0x06:
                 if not self.state.auth_challenge:
                     return _nrc(data[0], NRC_CONDITIONS_NOT_CORRECT)

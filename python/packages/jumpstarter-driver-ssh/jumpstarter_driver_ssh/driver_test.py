@@ -647,7 +647,7 @@ def test_ssh_identity_temp_file_creation_error():
                     client.run(SSHCommandRunOptions(direct=False), ["hostname"])
 
                 # Check that the original OSError is in the exception group
-                assert any(isinstance(e, OSError) and "Permission denied" in str(e) for e in exc_info.value.exceptions)
+                assert any(isinstance(e, OSError) and "Permission denied" in str(e) for e in exc_info.value.exceptions)  # ty: ignore[unresolved-attribute]
 
 
 def test_ssh_identity_temp_file_cleanup_error():

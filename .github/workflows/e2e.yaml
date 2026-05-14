@@ -65,7 +65,7 @@ jobs:
 
       - name: Cache controller image
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /tmp/controller-image.tar
           key: controller-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Dockerfile', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/**', 'controller/api/**', 'controller/internal/**') }}
@@ -108,7 +108,7 @@ jobs:
 
       - name: Cache operator artifacts
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             /tmp/operator-image.tar
@@ -147,7 +147,7 @@ jobs:
 
       - name: Cache python wheels
         id: cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: python/dist
           key: python-wheels-${{ hashFiles('python/**/*.py', 'python/**/pyproject.toml', 'python/uv.lock') }}
@@ -216,11 +216,21 @@ jobs:
           mkdir -p controller/deploy/operator/dist
           cp /tmp/artifacts/operator-install.yaml controller/deploy/operator/dist/install.yaml
 
+      - name: Install nftables and dnsmasq for dut-network E2E
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables dnsmasq-base
+
+      - name: Load kernel modules for DUT network tests
+        run: |
+          for mod in veth bridge nf_nat nf_conntrack nft_masq nft_nat nft_chain_nat; do
+            sudo modprobe "$mod" 2>/dev/null || true
+          done
+
       - name: Setup e2e test environment
         run: make e2e-setup
         env:
           CI: true
-          METHOD: operator
           SKIP_BUILD: "true"
           PREBUILT_WHEELS_DIR: /tmp/python-wheels
           OPERATOR_IMG: quay.io/jumpstarter-dev/jumpstarter-operator:latest
@@ -229,15 +239,13 @@ jobs:
         run: make e2e-run
         env:
           CI: true
-          METHOD: operator
 
   # ============================================================================
   # Compatibility tests: cross-version interop between controller and client/exporter
-  # These jobs can be removed once 0.7.x controller support is no longer needed.
   # ============================================================================
 
   e2e-compat-old-controller:
-    needs: [changes, build-python-wheels]
+    needs: changes
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -253,18 +261,11 @@ jobs:
         with:
           go-version: "1.22"
 
-      - name: Download python wheels
-        uses: actions/download-artifact@v4
-        with:
-          name: python-wheels
-          path: /tmp/python-wheels
-
-      - name: Setup compat environment (old controller v0.7.0)
+      - name: Setup compat environment (old controller v0.8.1)
         run: make e2e-compat-setup COMPAT_SCENARIO=old-controller
         env:
           CI: true
-          COMPAT_CONTROLLER_TAG: v0.7.0
-          PREBUILT_WHEELS_DIR: /tmp/python-wheels
+          COMPAT_CONTROLLER_TAG: v0.8.1
 
       - name: Run compat tests (old controller + new client/exporter)
         run: make e2e-compat-run COMPAT_TEST=old-controller
@@ -272,7 +273,7 @@ jobs:
           CI: true
 
   e2e-compat-old-client:
-    needs: [changes, build-controller-image, build-python-wheels]
+    needs: [changes, build-controller-image, build-operator-image, build-python-wheels]
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -294,22 +295,33 @@ jobs:
           name: controller-image-amd64
           path: /tmp/artifacts
 
+      - name: Download operator image
+        uses: actions/download-artifact@v4
+        with:
+          name: operator-image-amd64
+          path: /tmp/artifacts
+
       - name: Download python wheels
         uses: actions/download-artifact@v4
         with:
           name: python-wheels
           path: /tmp/python-wheels
 
-      - name: Load controller image
-        run: docker load < /tmp/artifacts/controller-image.tar
+      - name: Load container images and operator manifest
+        run: |
+          docker load < /tmp/artifacts/controller-image.tar
+          docker load < /tmp/artifacts/operator-image.tar
+          mkdir -p controller/deploy/operator/dist
+          cp /tmp/artifacts/operator-install.yaml controller/deploy/operator/dist/install.yaml
 
-      - name: Setup compat environment (old client v0.7.0)
+      - name: Setup compat environment (old client v0.7.4)
         run: make e2e-compat-setup COMPAT_SCENARIO=old-client
         env:
           CI: true
-          COMPAT_CLIENT_VERSION: "0.7.1"
+          COMPAT_CLIENT_VERSION: "0.7.4"
           SKIP_BUILD: "true"
           PREBUILT_WHEELS_DIR: /tmp/python-wheels
+          OPERATOR_IMG: quay.io/jumpstarter-dev/jumpstarter-operator:latest
 
       - name: Run compat tests (new controller + old client/exporter)
         run: make e2e-compat-run COMPAT_TEST=old-client

@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from click.testing import CliRunner
 
 from .jmp import jmp
@@ -41,3 +43,11 @@ def test_completion_unsupported_shell():
     result = runner.invoke(jmp, ["completion", "powershell"])
     assert result.exit_code == 2
     assert "Invalid value" in result.output or "powershell" in result.output
+
+
+def test_completion_raises_when_get_completion_class_returns_none():
+    with patch("jumpstarter_cli.completion.get_completion_class", return_value=None):
+        runner = CliRunner()
+        result = runner.invoke(jmp, ["completion", "bash"])
+        assert result.exit_code == 1
+        assert "Unsupported shell" in result.output

@@ -19,7 +19,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       controller: ${{ steps.filter.outputs.controller }}
-      helm: ${{ steps.filter.outputs.helm }}
       protocol: ${{ steps.filter.outputs.protocol }}
       python: ${{ steps.filter.outputs.python }}
     steps:
@@ -31,9 +30,6 @@ jobs:
             controller:
               - 'controller/**'
               - '.github/workflows/lint.yaml'
-            helm:
-              - 'controller/deploy/helm/**'
-              - '.github/workflow/lint.yaml'
             protocol:
               - 'protocol/**'
               - '.github/workflows/lint.yaml'
@@ -60,20 +56,6 @@ jobs:
         working-directory: controller
         run: make lint
 
-  lint-helm:
-    needs: changes
-    if: needs.changes.outputs.helm == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Run helm linter
-        working-directory: controller
-        run: make lint-helm
-
   lint-protobuf:
     needs: changes
     if: needs.changes.outputs.protocol == 'true'
@@ -95,10 +77,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run ruff
-        uses: astral-sh/ruff-action@4919ec5cf1f49eff0871dbcea0da843445b837e6 # v3.6.1
+        uses: astral-sh/ruff-action@0ce1b0bf8b818ef400413f810f8a11cdbda0034b # v4.0.0
         with:
           src: './python'
           version-file: python/pyproject.toml
+
+  type-check-python:
+    needs: changes
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@803947b9bd8e9f986429fa0c5a41c367cd732b41 # v7.2.1
+        with:
+          version: latest
+
+      - name: Run ty
+        working-directory: python
+        run: make ty
 
   typos:
     runs-on: ubuntu-latest

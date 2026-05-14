@@ -6,6 +6,7 @@ from typing import cast
 import click
 from anyio import create_task_group, get_cancelled_exc_class, run, to_thread
 from anyio.from_thread import BlockingPortal
+from click.exceptions import Exit as ClickExit
 from jumpstarter_cli_common.exceptions import (
     ClickExceptionRed,
     async_handle_exceptions,
@@ -28,7 +29,7 @@ async def j_async():
                     async with env_async(portal, stack) as client:
                         result = await to_thread.run_sync(lambda: client.cli()(standalone_mode=False))
                         if isinstance(result, int) and result != 0:
-                            raise BaseExceptionGroup("CLI exit", [click.exceptions.Exit(result)])
+                            raise BaseExceptionGroup("CLI exit", [ClickExit(result)])
         except BaseExceptionGroup as eg:
             # Handle exceptions wrapped in ExceptionGroup (e.g., from task groups)
             if exc := find_exception_in_group(eg, EnvironmentVariableNotSetError):
@@ -42,9 +43,9 @@ async def j_async():
                 await cli()
             finally:
                 tg.cancel_scope.cancel()
-    except* click.exceptions.Exit as excgroup:
+    except* ClickExit as excgroup:
         for exc in leaf_exceptions(excgroup):
-            sys.exit(exc.exit_code)
+            sys.exit(cast(ClickExit, exc).exit_code)
     except* click.ClickException as excgroup:
         for exc in leaf_exceptions(excgroup):
             cast(click.ClickException, exc).show()

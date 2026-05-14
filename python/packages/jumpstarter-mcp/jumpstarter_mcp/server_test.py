@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import asyncio.subprocess
 import logging
 import time
 from dataclasses import dataclass
@@ -165,8 +166,7 @@ class TestWalkClickTree:
         assert "secret" not in names
 
 
-# ---------------------------------------------------------------------------
-# Introspection: _get_public_method_names / list_drivers / get_driver_methods
+# Introspection tests
 # ---------------------------------------------------------------------------
 
 
@@ -353,7 +353,7 @@ class TestRunCommand:
 
         async def fake_communicate():
             nonlocal call_count
-            call_count += 1
+            call_count += 1  # ty: ignore[unresolved-reference]
             if call_count == 1:
                 await asyncio.sleep(999)
             return (b"partial", b"err")

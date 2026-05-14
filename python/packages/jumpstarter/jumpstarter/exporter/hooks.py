@@ -18,6 +18,26 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+MAX_DRAIN_BYTES = 256 * 1024
+DRAIN_TIMEOUT_SECONDS = 2.0
+
+
+def _flush_lines(buffer: bytes, output_lines: list[str]) -> bytes:
+    """Extract and log complete lines from a byte buffer.
+
+    Splits the buffer on newline boundaries, decodes each complete line,
+    and appends non-empty lines to output_lines while logging them.
+
+    Returns the remaining bytes after the last newline (incomplete line).
+    """
+    while b"\n" in buffer:
+        line, buffer = buffer.split(b"\n", 1)
+        line_decoded = line.decode(errors="replace").rstrip()
+        if line_decoded:
+            output_lines.append(line_decoded)
+            logger.info("%s", line_decoded)
+    return buffer
+
 
 @dataclass
 class HookExecutionError(Exception):
@@ -346,20 +366,36 @@ class HookExecutor:
                                     break
 
                                 # Process complete lines
-                                while b"\n" in buffer:
-                                    line, buffer = buffer.split(b"\n", 1)
-                                    line_decoded = line.decode(errors="replace").rstrip()
-                                    if line_decoded:
-                                        output_lines.append(line_decoded)
-                                        logger.info("%s", line_decoded)
+                                buffer = _flush_lines(buffer, output_lines)
 
                             except OSError as e:
                                 # PTY closed or read error
                                 logger.debug("read_pty_output: OSError in loop: %s", e)
                                 break
                     finally:
+                        # Drain any remaining data from the PTY buffer.
+                        # On macOS, PTY output may still be in the kernel buffer
+                        # after the subprocess exits and the stop flag is set.
+                        # Bound the drain to prevent spinning indefinitely if a
+                        # grandchild process holds the PTY slave fd open.
+                        try:
+                            drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
+                            drained = 0
+                            while drained < MAX_DRAIN_BYTES and time.monotonic() < drain_deadline:
+                                try:
+                                    chunk = os.read(parent_fd, 4096)
+                                    if not chunk:
+                                        break
+                                    buffer += chunk
+                                    drained += len(chunk)
+                                except (BlockingIOError, OSError):
+                                    break
+
+                            buffer = _flush_lines(buffer, output_lines)
+                        except Exception:
+                            logger.debug("read_pty_output: error during drain", exc_info=True)
+
                         logger.debug("read_pty_output: exiting, processed %d iterations", read_count)
-                        # Handle any remaining data without newline
                         if buffer:
                             line_decoded = buffer.decode(errors="replace").rstrip()
                             if line_decoded:
@@ -578,6 +614,13 @@ class HookExecutor:
                 lease_scope,
                 LogSource.BEFORE_LEASE_HOOK,
             )
+
+            if lease_scope.lease_ended.is_set():
+                logger.info(
+                    "Lease %s ended during beforeLease hook, skipping LEASE_READY transition",
+                    lease_scope.lease_name,
+                )
+                return
 
             if warning:
                 msg = f"{HOOK_WARNING_PREFIX}beforeLease hook warning: {warning}"

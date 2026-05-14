@@ -63,16 +63,16 @@ class HttpPower(PowerInterface, Driver):
         if self.auth and self.auth.basic:
             auth = (self.auth.basic.user, self.auth.basic.password)
         method = endpoint_config.method.upper()
+        url = endpoint_config.url
         kwargs = {
-            'url': endpoint_config.url,
             'auth': auth,
         }
         if endpoint_config.data and method in ['POST', 'PUT', 'PATCH']:
             kwargs['data'] = endpoint_config.data
 
-        self.logger.debug(f"Making {method} request to {endpoint_config.url}")
+        self.logger.debug(f"Making {method} request to {url}")
 
-        response = requests.request(method, **kwargs)
+        response = requests.request(method, url, **kwargs)
         response.raise_for_status()
         return response.text
 

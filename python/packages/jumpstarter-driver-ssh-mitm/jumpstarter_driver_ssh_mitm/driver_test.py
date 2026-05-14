@@ -244,7 +244,7 @@ class TestSSHMITMStream:
         def fake_handle_session(self, transport):
             started.set()
 
-        instance._handle_session = fake_handle_session.__get__(instance, SSHMITM)
+        instance._handle_session = fake_handle_session.__get__(instance, SSHMITM)  # ty: ignore[invalid-assignment]
 
         class DummyTransport:
             def __init__(self, sock):

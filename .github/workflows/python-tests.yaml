@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should_run: ${{ steps.filter.outputs.python }}
+      renode_driver: ${{ steps.filter.outputs.renode_driver }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,6 +32,8 @@ jobs:
             python:
               - 'python/**'
               - '.github/workflows/python-tests.yaml'
+            renode_driver:
+              - 'python/packages/jumpstarter-driver-renode/**'
 
   pytest-matrix:
     needs: changes
@@ -42,6 +45,8 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install the latest version of uv
         uses: astral-sh/setup-uv@803947b9bd8e9f986429fa0c5a41c367cd732b41 # v7.2.1
@@ -73,10 +78,40 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgpiod-dev liblgpio-dev
 
+      - name: Install nftables and dnsmasq (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nftables dnsmasq-base isc-dhcp-client dnsutils
+
+      - name: Load kernel modules for DUT network tests (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          for mod in veth bridge nf_nat nf_conntrack nft_masq nft_nat nft_chain_nat; do
+            sudo modprobe "$mod" 2>/dev/null || true
+          done
+
+      - name: Install Renode (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          wget https://github.com/renode/renode/releases/download/v1.16.1/renode_1.16.1_amd64.deb -O /tmp/renode.deb
+          sudo apt-get install -y /tmp/renode.deb
+
       - name: Install Qemu (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install qemu
+
+      # Homebrew Renode is slow (~5+ minutes per job). Install on macOS only when this run
+      # touches the Renode driver, or on workflow_dispatch (full manual run). Linux still
+      # installs Renode from the .deb in all jobs (fast).
+      - name: Install Renode (macOS)
+        if: >-
+          runner.os == 'macOS'
+          && (needs.changes.outputs.renode_driver == 'true'
+          || github.event_name == 'workflow_dispatch')
+        run: |
+          brew install renode/tap/renode
 
       - name: Cache Fedora Cloud images
         id: cache-fedora-cloud-images
@@ -95,9 +130,26 @@ jobs:
 
       - name: Run pytest
         working-directory: python
+        env:
+          PYTEST_ADDOPTS: "--cov-report=xml"
         run: |
-            make test
+          make test
 
+      # Diff-coverage is only checked on Linux. Several packages (e.g.
+      # jumpstarter-driver-dut-network) are Linux-only, so their tests are
+      # entirely skipped on macOS, making all changed lines appear uncovered
+      # and dragging diff-coverage below the threshold. Linux runners already
+      # enforce the 80% gate, so nothing is lost.
+      - name: Check coverage on changed lines
+        if: github.event_name == 'pull_request' && runner.os == 'Linux'
+        working-directory: python
+        run: |
+          coverage_files=$(find packages -name coverage.xml 2>/dev/null | sort)
+          if [ -z "$coverage_files" ]; then
+            echo "::error::No coverage.xml files found"
+            exit 1
+          fi
+          uv run diff-cover $coverage_files --compare-branch=origin/${{ github.base_ref }} --fail-under=80 --exclude '*_pb2.py' '*_pb2_grpc.py'
 
   # https://github.com/orgs/community/discussions/26822
   pytest:

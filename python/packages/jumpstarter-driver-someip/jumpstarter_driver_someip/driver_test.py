@@ -197,6 +197,8 @@ def test_someip_close_connection(mock_osip_cls):
 
     driver = SomeIp(host="127.0.0.1", port=30490)
     with serve(driver) as client:
+        # Start the client first so close_connection has something to stop
+        client.start()
         client.close_connection()
         mock_client.stop.assert_called()
 
@@ -208,9 +210,11 @@ def test_someip_reconnect(mock_osip_cls):
 
     driver = SomeIp(host="127.0.0.1", port=30490)
     with serve(driver) as client:
+        # Start the client first so reconnect has something to stop/restart
+        client.start()
         client.reconnect()
         assert mock_client.stop.call_count >= 1
-        assert mock_client.start.call_count >= 1
+        assert mock_client.start.call_count >= 2
 
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")
@@ -221,6 +225,8 @@ def test_someip_reconnect_survives_stop_failure(mock_osip_cls):
 
     driver = SomeIp(host="127.0.0.1", port=30490)
     with serve(driver) as client:
+        # Start the client first so reconnect has something to stop
+        client.start()
         client.reconnect()
         assert mock_client.start.call_count >= 2
 
@@ -272,8 +278,56 @@ def test_someip_receive_event_timeout(mock_osip_cls):
 def test_someip_connection_error(mock_osip_cls):
     mock_osip_cls.return_value.start.side_effect = ConnectionRefusedError("Connection refused")
 
-    with pytest.raises(ConnectionRefusedError, match="Connection refused"):
-        SomeIp(host="192.168.1.100", port=30490)
+    driver = SomeIp(host="192.168.1.100", port=30490)
+    with serve(driver) as client:
+        with pytest.raises(DriverError, match="Connection refused"):
+            client.start()
+
+
+# =========================================================================
+# Lazy init tests
+# =========================================================================
+
+
+@patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_lazy_start(mock_osip_cls):
+    """Verify the OsipClient is NOT created during construction but IS created on first use."""
+    mock_client = _make_mock_osip_client()
+    mock_osip_cls.return_value = mock_client
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+
+    # OsipClient constructor should not have been called yet
+    mock_osip_cls.assert_not_called()
+
+    with serve(driver) as client:
+        # Still not called until we actually use it
+        mock_osip_cls.assert_not_called()
+
+        # Trigger first use
+        client.start()
+
+        # Now it should have been created and started
+        mock_osip_cls.assert_called_once()
+        mock_client.start.assert_called_once()
+
+
+@patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_start_method(mock_osip_cls):
+    """Verify the exported start() method creates and starts the client."""
+    mock_client = _make_mock_osip_client()
+    mock_osip_cls.return_value = mock_client
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.start()
+        mock_osip_cls.assert_called_once()
+        mock_client.start.assert_called_once()
+
+        # Calling start() again should not create a second client
+        client.start()
+        mock_osip_cls.assert_called_once()
+        mock_client.start.assert_called_once()
 
 
 # =========================================================================
@@ -283,12 +337,12 @@ def test_someip_connection_error(mock_osip_cls):
 
 def test_someip_missing_required_host():
     with pytest.raises(ValidationError, match="host"):
-        SomeIp(port=30490)
+        SomeIp(port=30490)  # ty: ignore[missing-argument]
 
 
 def test_someip_invalid_port_type():
     with pytest.raises(ValidationError):
-        SomeIp(host="127.0.0.1", port="not_a_port")
+        SomeIp(host="127.0.0.1", port="not_a_port")  # ty: ignore[invalid-argument-type]
 
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")
@@ -303,13 +357,17 @@ def test_someip_custom_config_forwarded(mock_osip_cls):
     """Verify non-default config values are passed to opensomeip."""
     mock_osip_cls.return_value = _make_mock_osip_client()
 
-    SomeIp(
+    driver = SomeIp(
         host="10.0.0.1",
         port=9999,
         transport_mode="TCP",
         multicast_group="239.1.1.1",
         multicast_port=31000,
     )
+
+    # Client is created lazily; trigger first use to instantiate it
+    with serve(driver) as client:
+        client.start()
 
     mock_osip_cls.assert_called_once()
     config = mock_osip_cls.call_args[0][0]
@@ -368,6 +426,8 @@ def test_someip_close_connection_survives_stop_failure(mock_osip_cls):
 
     driver = SomeIp(host="127.0.0.1", port=30490)
     with serve(driver) as client:
+        # Start the client first so close_connection has something to stop
+        client.start()
         client.close_connection()
 
 
@@ -376,11 +436,102 @@ def test_someip_tcp_transport_mode(mock_osip_cls):
     """Verify TCP transport mode is forwarded correctly."""
     mock_osip_cls.return_value = _make_mock_osip_client()
 
-    SomeIp(host="127.0.0.1", transport_mode="TCP")
+    driver = SomeIp(host="127.0.0.1", transport_mode="TCP")
+
+    # Client is created lazily; trigger first use to instantiate it
+    with serve(driver) as client:
+        client.start()
 
     config = mock_osip_cls.call_args[0][0]
     from opensomeip import TransportMode
     assert config.transport_mode == TransportMode.TCP
+
+
+# =========================================================================
+# Static remote endpoint tests
+# =========================================================================
+
+
+@patch("jumpstarter_driver_someip.driver.ClientConfig")
+@patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_remote_endpoint_forwarded(mock_osip_cls, mock_config_cls):
+    """Verify remote_host/remote_port are forwarded to ClientConfig."""
+    mock_osip_cls.return_value = _make_mock_osip_client()
+
+    driver = SomeIp(
+        host="192.168.100.1",
+        port=30490,
+        remote_host="192.168.100.10",
+        remote_port=31000,
+    )
+
+    with serve(driver) as client:
+        client.start()
+
+    kwargs = mock_config_cls.call_args[1]
+    assert kwargs["remote_endpoint"].ip == "192.168.100.10"
+    assert kwargs["remote_endpoint"].port == 31000
+
+
+@patch("jumpstarter_driver_someip.driver.ClientConfig")
+@patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_remote_endpoint_defaults_port(mock_osip_cls, mock_config_cls):
+    """When remote_port is omitted, it defaults to the local port."""
+    mock_osip_cls.return_value = _make_mock_osip_client()
+
+    driver = SomeIp(
+        host="192.168.100.1",
+        port=30490,
+        remote_host="192.168.100.10",
+    )
+
+    with serve(driver) as client:
+        client.start()
+
+    kwargs = mock_config_cls.call_args[1]
+    assert kwargs["remote_endpoint"].ip == "192.168.100.10"
+    assert kwargs["remote_endpoint"].port == 30490
+
+
+@patch("jumpstarter_driver_someip.driver.ClientConfig")
+@patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_no_remote_endpoint_by_default(mock_osip_cls, mock_config_cls):
+    """Without remote_host, remote_endpoint is not passed (SD-based discovery)."""
+    mock_osip_cls.return_value = _make_mock_osip_client()
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+
+    with serve(driver) as client:
+        client.start()
+
+    kwargs = mock_config_cls.call_args[1]
+    assert "remote_endpoint" not in kwargs
+
+
+def test_someip_remote_port_without_remote_host_rejected():
+    """remote_port without remote_host is rejected."""
+    with pytest.raises(ValueError, match="remote_port requires remote_host"):
+        SomeIp(host="127.0.0.1", port=30490, remote_port=31000)
+
+
+@patch("jumpstarter_driver_someip.driver.ClientConfig")
+@patch("jumpstarter_driver_someip.driver.OsipClient")
+def test_someip_rpc_call_with_remote_endpoint(mock_osip_cls, _mock_config_cls):
+    """RPC call works when a static remote endpoint is configured."""
+    mock_client = _make_mock_osip_client()
+    mock_osip_cls.return_value = mock_client
+
+    driver = SomeIp(
+        host="192.168.100.1",
+        port=30490,
+        remote_host="192.168.100.10",
+        remote_port=30490,
+    )
+    with serve(driver) as client:
+        resp = client.rpc_call(0x1234, 0x0001, b"\x01\x02\x03")
+        assert resp.service_id == 0x1234
+        assert resp.method_id == 0x0001
+        assert resp.payload == "010203"
 
 
 # =========================================================================

@@ -543,7 +543,7 @@ func (r *JumpstarterReconciler) reconcileSecrets(ctx context.Context, jumpstarte
 	log := logf.FromContext(ctx)
 
 	// Create controller secret if it doesn't exist
-	// Use fixed name to match Helm chart for migration compatibility
+	// Use fixed name for stable secret references across CR updates
 	controllerSecretName := "jumpstarter-controller-secret"
 	if err := r.ensureSecretExists(ctx, jumpstarter, controllerSecretName); err != nil {
 		log.Error(err, "Failed to ensure controller secret exists", "secret", controllerSecretName)
@@ -551,7 +551,7 @@ func (r *JumpstarterReconciler) reconcileSecrets(ctx context.Context, jumpstarte
 	}
 
 	// Create router secret if it doesn't exist
-	// Use fixed name to match Helm chart for migration compatibility
+	// Use fixed name for stable secret references across CR updates
 	routerSecretName := "jumpstarter-router-secret"
 	if err := r.ensureSecretExists(ctx, jumpstarter, routerSecretName); err != nil {
 		log.Error(err, "Failed to ensure router secret exists", "secret", routerSecretName)
@@ -1144,6 +1144,11 @@ func (r *JumpstarterReconciler) buildConfig(jumpstarter *operatorv1alpha1.Jumpst
 	}
 
 	cfg.Authentication = auth
+
+	// Lease policy configuration
+	cfg.LeasePolicy = config.LeasePolicy{
+		MaxTags: jumpstarter.Spec.LeasePolicy.MaxTags,
+	}
 
 	// gRPC keepalive configuration
 	if jumpstarter.Spec.Controller.GRPC.Keepalive != nil {

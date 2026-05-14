@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
@@ -16,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/utils/ptr"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -169,6 +171,29 @@ func ParseLabelSelector(selectorStr string) (*metav1.LabelSelector, error) {
 	}, nil
 }
 
+// ValidateLeaseTags validates user-defined lease tags against the given maxTags limit.
+func ValidateLeaseTags(tags map[string]string, maxTags int) error {
+	if len(tags) > maxTags {
+		return fmt.Errorf("too many tags: %d (maximum %d)", len(tags), maxTags)
+	}
+	for k, v := range tags {
+		if strings.HasPrefix(k, LeaseTagMetadataPrefix) || strings.HasPrefix(k, "jumpstarter.dev/") {
+			return fmt.Errorf("tag key %q must not use reserved prefix", k)
+		}
+		if strings.Contains(k, "/") {
+			return fmt.Errorf("tag key %q must not contain '/' (use simple names without prefix)", k)
+		}
+		prefixedKey := LeaseTagMetadataPrefix + k
+		if errs := validation.IsQualifiedName(prefixedKey); len(errs) > 0 {
+			return fmt.Errorf("tag key %q is not a valid label key: %s", k, strings.Join(errs, "; "))
+		}
+		if errs := validation.IsValidLabelValue(v); len(errs) > 0 {
+			return fmt.Errorf("tag value for key %q is not a valid label value: %s", k, strings.Join(errs, "; "))
+		}
+	}
+	return nil
+}
+
 func LeaseFromProtobuf(
 	req *cpb.Lease,
 	key types.NamespacedName,
@@ -195,16 +220,38 @@ func LeaseFromProtobuf(
 		return nil, err
 	}
 
+	// Build ObjectMeta labels: start with selector matchLabels (excluding reserved prefix), then add prefixed user tags
+	metaLabels := make(map[string]string)
+	for k, v := range selector.MatchLabels {
+		if strings.HasPrefix(k, LeaseTagMetadataPrefix) {
+			continue
+		}
+		metaLabels[k] = v
+	}
+	for k, v := range req.Tags {
+		metaLabels[LeaseTagMetadataPrefix+k] = v
+	}
+
+	// Store user tags in spec (without prefix)
+	var specTags map[string]string
+	if len(req.Tags) > 0 {
+		specTags = make(map[string]string, len(req.Tags))
+		for k, v := range req.Tags {
+			specTags[k] = v
+		}
+	}
+
 	return &Lease{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: key.Namespace,
 			Name:      key.Name,
-			Labels:    selector.MatchLabels,
+			Labels:    metaLabels,
 		},
 		Spec: LeaseSpec{
 			ClientRef: clientRef,
 			Duration:  duration,
 			Selector:  *selector,
+			Tags:      specTags,
 			ExporterRef: func() *corev1.LocalObjectReference {
 				if req.ExporterName == nil || *req.ExporterName == "" {
 					return nil
@@ -238,6 +285,7 @@ func (l *Lease) ToProtobuf() *cpb.Lease {
 		Selector:   metav1.FormatLabelSelector(&l.Spec.Selector),
 		Client:     ptr.To(fmt.Sprintf("namespaces/%s/clients/%s", l.Namespace, l.Spec.ClientRef.Name)),
 		Conditions: conditions,
+		Tags:       l.Spec.Tags,
 	}
 	if l.Spec.ExporterRef != nil {
 		lease.ExporterName = ptr.To(l.Spec.ExporterRef.Name)

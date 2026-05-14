@@ -88,3 +88,12 @@ class TestDurationParamType:
         with pytest.raises(click.BadParameter, match="is not a valid duration"):
             param_type.convert("not-a-duration", None, None)
 
+    def test_integer_value_as_seconds(self):
+        td = DURATION.convert(42, None, None)
+        assert td == timedelta(seconds=42)
+
+    def test_unsupported_type_raises_click_exception(self):
+        param_type = DurationParamType()
+        with pytest.raises(click.BadParameter, match="is not a valid duration"):
+            param_type.convert(object(), None, None)
+

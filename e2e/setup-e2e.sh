@@ -13,9 +13,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Default namespace for tests
 export JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
 
-# Deployment method: operator (default) or helm
-export METHOD="${METHOD:-operator}"
-
 # Color output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -262,30 +259,12 @@ deploy_dex() {
 
 # Step 4: Deploy jumpstarter controller
 deploy_controller() {
-    log_info "Deploying jumpstarter controller (method: $METHOD)..."
+    log_info "Deploying jumpstarter controller..."
     
     cd "$REPO_ROOT"
     
-    # Validate METHOD
-    if [ "$METHOD" != "operator" ] && [ "$METHOD" != "helm" ]; then
-        log_error "Unknown deployment method: $METHOD (expected 'operator' or 'helm')"
-        exit 1
-    fi
-    
-    # Use parallel make on Linux (GNU Make 4+); macOS ships an old make without --output-sync
-    local make_parallel=""
-    if [ "$(uname -s)" = "Linux" ]; then
-        make_parallel="-j5 --output-sync=target"
-    fi
-
-    log_info "Deploying controller with CA certificate using $METHOD..."
-    if [ "$METHOD" = "operator" ]; then
-        OPERATOR_USE_DEX=true DEX_CA_FILE="$REPO_ROOT/ca.pem" METHOD=$METHOD \
-            make -C controller deploy $make_parallel
-    else
-        EXTRA_VALUES="--values $REPO_ROOT/.e2e/values.kind.yaml" METHOD=$METHOD \
-            make -C controller deploy $make_parallel
-    fi
+    log_info "Deploying controller with CA certificate using operator..."
+    OPERATOR_USE_DEX=true DEX_CA_FILE="$REPO_ROOT/ca.pem" make -C controller deploy
     
     log_info "✓ Controller deployed"
 }
@@ -300,23 +279,17 @@ setup_test_environment() {
     
     cd "$REPO_ROOT"
     
-    # Get the controller endpoint based on deployment method
+    # Get the controller endpoint from the Jumpstarter CR
     # Note: We declare BASEDOMAIN separately from assignment so that command
     # failures propagate under set -e (local VAR=$(...) masks exit codes).
     local BASEDOMAIN
-    if [ "$METHOD" = "operator" ]; then
-        # For operator deployment, construct the endpoint from the Jumpstarter CR
-        # The operator uses nodeport mode by default with port 8082
-        BASEDOMAIN=$(kubectl get jumpstarter -n "${JS_NAMESPACE}" jumpstarter -o jsonpath='{.spec.baseDomain}')
-        export ENDPOINT="grpc.${BASEDOMAIN}:8082"
-        export LOGIN_ENDPOINT="login.${BASEDOMAIN}:8086"
-    else
-        # For helm deployment, get the endpoint from helm values
-        export ENDPOINT=$(helm get values jumpstarter --output json | jq -r '."jumpstarter-controller".grpc.endpoint')
-        # Login endpoint is on nodeport 30014 mapped to host port 8086
-        BASEDOMAIN=$(helm get values jumpstarter --output json | jq -r '.global.baseDomain')
-        export LOGIN_ENDPOINT="login.${BASEDOMAIN}:8086"
+    BASEDOMAIN=$(kubectl get jumpstarter -n "${JS_NAMESPACE}" jumpstarter -o jsonpath='{.spec.baseDomain}')
+    if [ -z "${BASEDOMAIN}" ]; then
+        log_error "Failed to get baseDomain from Jumpstarter CR in namespace ${JS_NAMESPACE}"
+        exit 1
     fi
+    export ENDPOINT="grpc.${BASEDOMAIN}:8082"
+    export LOGIN_ENDPOINT="login.${BASEDOMAIN}:8086"
     log_info "Controller endpoint: $ENDPOINT"
     log_info "Login endpoint: $LOGIN_ENDPOINT"
     
@@ -340,7 +313,6 @@ setup_test_environment() {
     echo "E2E_TEST_NS=$JS_NAMESPACE" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "REPO_ROOT=$REPO_ROOT" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "SCRIPT_DIR=$SCRIPT_DIR" >> "$REPO_ROOT/.e2e-setup-complete"
-    
     # Set SSL certificate paths for Python to use the generated CA
     echo "SSL_CERT_FILE=$REPO_ROOT/ca.pem" >> "$REPO_ROOT/.e2e-setup-complete"
     echo "REQUESTS_CA_BUNDLE=$REPO_ROOT/ca.pem" >> "$REPO_ROOT/.e2e-setup-complete"
@@ -355,7 +327,6 @@ setup_test_environment() {
 main() {
     log_info "=== Jumpstarter E2E Setup ==="
     log_info "Namespace: $JS_NAMESPACE"
-    log_info "Deployment Method: $METHOD"
     log_info "Repository Root: $REPO_ROOT"
     log_info "Script Directory: $SCRIPT_DIR"
     echo ""

@@ -2,6 +2,7 @@ import time
 from types import SimpleNamespace
 from typing import cast
 
+import anyio
 from anyio import create_memory_object_stream
 from anyio.streams.stapled import StapledObjectStream
 
@@ -122,7 +123,7 @@ def test_throttled_stream_async():
         expected_min_time = (len(test_data) - 1) / cps  # Should take at least 11/5 = 2.2 seconds
 
         # Create a memory stream for testing
-        tx, rx = create_memory_object_stream[bytes](32)
+        tx, rx = create_memory_object_stream[bytes](32)  # ty: ignore[call-non-callable]
         stapled_stream = StapledObjectStream(tx, rx)
         # Wrap it with throttling and ensure proper closure
         async with ThrottledStream(stream=stapled_stream, cps=cps) as throttled_stream:
@@ -210,3 +211,106 @@ def test_disable_hupcl_noop_when_disabled(monkeypatch):
     driver._maybe_disable_hupcl(None)
 
     assert called["tcgetattr"] is False
+
+
+def test_close_noop_when_no_stream():
+    """close() should be safe to call when no stream is active."""
+    with serve(PySerial(url="loop://")) as client:
+        client.call("close")
+
+
+def test_close_closes_transport(monkeypatch):
+    """close() should close the underlying transport."""
+    import asyncio
+    from unittest.mock import MagicMock
+
+    async def _run():
+        reader = asyncio.StreamReader()
+        reader.feed_data(b"test-data")
+
+        protocol = asyncio.StreamReaderProtocol(reader)
+        transport = MagicMock()
+        transport.serial = None
+        transport.is_closing.return_value = False
+        transport.get_write_buffer_size.return_value = 0
+        orig_close = transport.close
+
+        def fake_close():
+            orig_close()
+            try:
+                protocol.connection_lost(None)
+            except Exception:
+                pass
+
+        transport.close = fake_close
+
+        loop = asyncio.get_running_loop()
+        writer = asyncio.StreamWriter(transport, protocol, reader, loop)
+
+        async def fake_open(**kw):
+            return reader, writer
+
+        monkeypatch.setattr(driver_module, "open_serial_connection", fake_open)
+
+        driver = PySerial(url="/dev/ttyMOCK", check_present=False)
+
+        async with driver.connect() as stream:
+            assert driver._transport is transport
+            data = await stream.receive()
+            assert data == b"test-data"
+
+        assert driver._transport is None
+
+    anyio.run(_run)
+
+
+def test_close_from_outside_releases_port(monkeypatch):
+    """close() closes the transport, causing the stream to tear down."""
+    import asyncio
+    from unittest.mock import MagicMock
+
+    async def _run():
+        reader = asyncio.StreamReader()
+        reader.feed_data(b"hello")
+
+        protocol = asyncio.StreamReaderProtocol(reader)
+        transport = MagicMock()
+        mock_serial = MagicMock()
+        transport.serial = mock_serial
+        transport.is_closing.return_value = False
+        transport.get_write_buffer_size.return_value = 0
+
+        closed = {"called": False}
+        orig_close = transport.close
+
+        def fake_close():
+            closed["called"] = True
+            orig_close()
+            try:
+                protocol.connection_lost(None)
+            except Exception:
+                pass
+
+        transport.close = fake_close
+
+        loop = asyncio.get_running_loop()
+        writer = asyncio.StreamWriter(transport, protocol, reader, loop)
+
+        async def fake_open(**kw):
+            return reader, writer
+
+        monkeypatch.setattr(driver_module, "open_serial_connection", fake_open)
+
+        driver = PySerial(url="/dev/ttyMOCK", check_present=False)
+
+        try:
+            async with driver.connect() as stream:
+                data = await stream.receive()
+                assert data == b"hello"
+                driver.close()
+        except Exception:
+            pass
+
+        assert closed["called"]
+
+    anyio.run(_run)

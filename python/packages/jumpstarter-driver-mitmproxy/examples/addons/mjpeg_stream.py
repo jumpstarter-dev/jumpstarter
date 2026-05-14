@@ -86,7 +86,7 @@ def _generate_test_pattern_jpeg(
     frame number overlay. Otherwise, returns the minimal JPEG.
     """
     try:
-        from PIL import Image, ImageDraw, ImageFont
+        from PIL import Image, ImageDraw, ImageFont  # ty: ignore[unresolved-import]
 
         img = Image.new("RGB", (width, height), color=(40, 40, 40))
         draw = ImageDraw.Draw(img)
@@ -164,7 +164,7 @@ class Handler:
         # e.g. ("streaming", "video", "camera", "rear", "snapshot.jpg")
         parts = flow.request.path_components
 
-        # Expected: streaming/video/camera/{camera_id}/{resource}
+        # Expect at least 5 segments: streaming/video/camera/<camera_id>/<resource>
         if len(parts) < 5:
             return False
 

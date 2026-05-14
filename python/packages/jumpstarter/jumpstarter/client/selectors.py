@@ -25,7 +25,7 @@ def parse_label_selector(selector: str) -> tuple[dict[str, str], list[tuple[str,
         if not part:
             continue
 
-        # key in (v1, v2, ...)
+        # Match "key in (v1, v2, ...)" syntax
         if m := re.match(r"^([a-zA-Z0-9_./-]+)\s+in\s+\(([^)]*)\)$", part):
             key, values = m.groups()
             match_expressions.append((key, "in", [v.strip() for v in values.split(",")]))
@@ -36,11 +36,11 @@ def parse_label_selector(selector: str) -> tuple[dict[str, str], list[tuple[str,
         # !key (DoesNotExist)
         elif m := re.match(r"^!\s*([a-zA-Z0-9_./-]+)$", part):
             match_expressions.append((m.group(1), "!exists", []))
-        # key!=value (whitespace-tolerant)
+        # Match "key != value" syntax (whitespace-tolerant)
         elif m := re.match(r"^([a-zA-Z0-9_./-]+)\s*!=\s*(.+)$", part):
             key, value = m.groups()
             match_expressions.append((key, "!=", [value.strip()]))
-        # key=value or key==value (whitespace-tolerant)
+        # Match "key=value" or "key==value" syntax (whitespace-tolerant)
         elif m := re.match(r"^([a-zA-Z0-9_./-]+)\s*==?\s*(.+)$", part):
             key, value = m.groups()
             match_labels[key] = value.strip()
