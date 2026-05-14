@@ -59,6 +59,30 @@ class HookConfigV1Alpha1(BaseModel):
     after_lease: HookInstanceConfigV1Alpha1 | None = Field(default=None, alias="afterLease")
 
 
+class FailureDetectionConfigV1Alpha1(BaseModel):
+    """Configuration for rapid failure detection in the exporter restart loop.
+
+    If the child process fails within ``rapid_failure_window`` seconds of
+    starting, it is counted as a "rapid failure".  After
+    ``max_rapid_failures`` consecutive rapid failures the main process exits
+    with code 1 so that systemd / the container orchestrator can recreate the
+    container.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    max_rapid_failures: int = Field(
+        default=5,
+        alias="maxRapidFailures",
+        description="Number of consecutive rapid failures before the exporter exits.",
+    )
+    rapid_failure_window: int = Field(
+        default=60,
+        alias="rapidFailureWindow",
+        description="Seconds – a child that exits faster than this counts as a rapid failure.",
+    )
+
+
 class ExporterConfigV1Alpha1DriverInstanceProxy(BaseModel):
     ref: str
 
@@ -140,6 +164,10 @@ class ExporterConfigV1Alpha1(BaseModel):
     description: str | None = None
     export: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
     hooks: HookConfigV1Alpha1 = Field(default_factory=HookConfigV1Alpha1)
+    failure_detection: FailureDetectionConfigV1Alpha1 = Field(
+        default_factory=FailureDetectionConfigV1Alpha1,
+        alias="failureDetection",
+    )
 
     path: Path | None = Field(default=None)
 
