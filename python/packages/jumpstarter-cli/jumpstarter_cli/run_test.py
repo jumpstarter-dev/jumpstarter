@@ -52,12 +52,13 @@ class TestServeWithExcHandlingRapidFailures:
 
     def test_exits_after_max_rapid_failures(self):
         """When children fail rapidly MAX_RAPID_FAILURES times, the function should exit with code 1."""
-        call_count = 0
+        # Use a mutable container to track call count without nonlocal
+        # (avoids ty pre-release false positive on nonlocal references)
+        counter = [0]
 
         def mock_fork():
-            nonlocal call_count
-            call_count += 1
-            return call_count  # Always return positive (parent path)
+            counter[0] += 1
+            return counter[0]  # Always return positive (parent path)
 
         def mock_handle_parent(pid):
             return None  # Simulate child exit code 0 -> restart
@@ -82,17 +83,16 @@ class TestServeWithExcHandlingRapidFailures:
             exit_code = run_mod._serve_with_exc_handling(config)
 
         assert exit_code == 1
-        assert call_count == run_mod.MAX_RAPID_FAILURES
+        assert counter[0] == run_mod.MAX_RAPID_FAILURES
 
     def test_resets_counter_after_long_running_child(self):
         """A child that runs longer than RAPID_FAILURE_WINDOW resets the rapid failure counter."""
-        call_count = 0
+        counter = [0]
         rapid_before_reset = run_mod.MAX_RAPID_FAILURES - 1
 
         def mock_fork():
-            nonlocal call_count
-            call_count += 1
-            return call_count
+            counter[0] += 1
+            return counter[0]
 
         def mock_handle_parent(pid):
             return None  # Always restart
@@ -131,7 +131,7 @@ class TestServeWithExcHandlingRapidFailures:
         # Total calls: (MAX-1) rapid + 1 long + MAX rapid
         assert exit_code == 1
         expected_calls = rapid_before_reset + 1 + run_mod.MAX_RAPID_FAILURES
-        assert call_count == expected_calls
+        assert counter[0] == expected_calls
 
     def test_normal_exit_code_passed_through(self):
         """When _handle_parent returns a non-None exit code, it should be passed through."""
@@ -155,15 +155,14 @@ class TestServeWithExcHandlingRapidFailures:
 
     def test_single_rapid_failure_does_not_exit(self):
         """A single rapid failure should not cause the main process to exit."""
-        call_count = 0
+        counter = [0]
 
         def mock_fork():
-            nonlocal call_count
-            call_count += 1
-            return call_count
+            counter[0] += 1
+            return counter[0]
 
         def mock_handle_parent(pid):
-            if call_count == 1:
+            if counter[0] == 1:
                 return None  # First child exits with 0 (rapid failure)
             return 0  # Second child exits normally with explicit code
 
@@ -181,4 +180,4 @@ class TestServeWithExcHandlingRapidFailures:
 
         # Should exit with 0 from the second child, not 1 from rapid failure detection
         assert exit_code == 0
-        assert call_count == 2
+        assert counter[0] == 2
