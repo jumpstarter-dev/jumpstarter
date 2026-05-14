@@ -2,6 +2,7 @@ import logging
 import os
 import signal
 import sys
+import time
 
 import anyio
 import click
@@ -11,6 +12,14 @@ from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
 logger = logging.getLogger(__name__)
+
+# Configuration for rapid failure detection.
+# If the child process fails within RAPID_FAILURE_WINDOW seconds of starting,
+# it is counted as a "rapid failure". After MAX_RAPID_FAILURES consecutive
+# rapid failures, the main process exits to let systemd/container orchestrator
+# recreate the container.
+MAX_RAPID_FAILURES = int(os.environ.get("JUMPSTARTER_MAX_RAPID_FAILURES", "5"))
+RAPID_FAILURE_WINDOW = int(os.environ.get("JUMPSTARTER_RAPID_FAILURE_WINDOW", "30"))
 
 
 def _parse_listener_bind(value: str) -> tuple[str, int]:
@@ -205,12 +214,45 @@ def _handle_parent(pid):
 def _serve_with_exc_handling(
     config, parsed_bind=None, tls_insecure=False, tls_cert=None, tls_key=None, passphrase=None
 ):
+    rapid_failure_count = 0
     while True:
+        child_start_time = time.monotonic()
         pid = os.fork()
 
         if pid > 0:
             if (exit_code := _handle_parent(pid)) is not None:
                 return exit_code
+
+            # Child exited with code 0 (restart requested).
+            # Check if it failed too quickly, indicating a persistent error
+            # (e.g., DNS resolution failure) that won't resolve by restarting.
+            elapsed = time.monotonic() - child_start_time
+            if elapsed < RAPID_FAILURE_WINDOW:
+                rapid_failure_count += 1
+                logger.warning(
+                    "Child process exited after %.1fs (<%ds), rapid failure %d/%d",
+                    elapsed,
+                    RAPID_FAILURE_WINDOW,
+                    rapid_failure_count,
+                    MAX_RAPID_FAILURES,
+                )
+                if rapid_failure_count >= MAX_RAPID_FAILURES:
+                    click.echo(
+                        f"Exporter child process failed {rapid_failure_count} times "
+                        f"within {RAPID_FAILURE_WINDOW}s each. Exiting to allow "
+                        f"container/service restart.",
+                        err=True,
+                    )
+                    return 1
+            else:
+                # Child ran long enough; reset the counter
+                if rapid_failure_count > 0:
+                    logger.info(
+                        "Child ran for %.1fs (>=%ds), resetting rapid failure counter",
+                        elapsed,
+                        RAPID_FAILURE_WINDOW,
+                    )
+                rapid_failure_count = 0
         else:
             os.setsid() # Become group leader so all spawned subprocesses are reached by parent's signals
             _handle_child(config, parsed_bind, tls_insecure, tls_cert, tls_key, passphrase)
