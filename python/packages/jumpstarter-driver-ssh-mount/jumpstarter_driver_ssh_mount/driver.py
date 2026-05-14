@@ -6,12 +6,7 @@ from jumpstarter.driver import Driver
 
 @dataclass(kw_only=True)
 class SSHMount(Driver):
-    """SSHFS mount/umount driver for Jumpstarter
-
-    This driver provides remote filesystem mounting via sshfs.
-    It requires an 'ssh' child driver (SSHWrapper) which provides
-    SSH credentials and a 'tcp' sub-child for network connectivity.
-    """
+    """SSHFS mount driver. Requires an 'ssh' child (SSHWrapper) with a 'tcp' sub-child."""
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
