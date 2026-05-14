@@ -13,14 +13,6 @@ from jumpstarter_cli_common.exceptions import handle_exceptions
 
 logger = logging.getLogger(__name__)
 
-# Configuration for rapid failure detection.
-# If the child process fails within RAPID_FAILURE_WINDOW seconds of starting,
-# it is counted as a "rapid failure". After MAX_RAPID_FAILURES consecutive
-# rapid failures, the main process exits to let systemd/container orchestrator
-# recreate the container.
-MAX_RAPID_FAILURES = int(os.environ.get("JUMPSTARTER_MAX_RAPID_FAILURES", "5"))
-RAPID_FAILURE_WINDOW = int(os.environ.get("JUMPSTARTER_RAPID_FAILURE_WINDOW", "30"))
-
 
 def _parse_listener_bind(value: str) -> tuple[str, int]:
     """Parse '[host:]port' into (host, port). Default host is 0.0.0.0."""
@@ -214,6 +206,9 @@ def _handle_parent(pid):
 def _serve_with_exc_handling(
     config, parsed_bind=None, tls_insecure=False, tls_cert=None, tls_key=None, passphrase=None
 ):
+    max_rapid_failures = config.failure_detection.max_rapid_failures
+    rapid_failure_window = config.failure_detection.rapid_failure_window
+
     rapid_failure_count = 0
     while True:
         child_start_time = time.monotonic()
@@ -227,19 +222,19 @@ def _serve_with_exc_handling(
             # Check if it failed too quickly, indicating a persistent error
             # (e.g., DNS resolution failure) that won't resolve by restarting.
             elapsed = time.monotonic() - child_start_time
-            if elapsed < RAPID_FAILURE_WINDOW:
+            if elapsed < rapid_failure_window:
                 rapid_failure_count += 1
                 logger.warning(
                     "Child process exited after %.1fs (<%ds), rapid failure %d/%d",
                     elapsed,
-                    RAPID_FAILURE_WINDOW,
+                    rapid_failure_window,
                     rapid_failure_count,
-                    MAX_RAPID_FAILURES,
+                    max_rapid_failures,
                 )
-                if rapid_failure_count >= MAX_RAPID_FAILURES:
+                if rapid_failure_count >= max_rapid_failures:
                     click.echo(
                         f"Exporter child process failed {rapid_failure_count} times "
-                        f"within {RAPID_FAILURE_WINDOW}s each. Exiting to allow "
+                        f"within {rapid_failure_window}s each. Exiting to allow "
                         f"container/service restart.",
                         err=True,
                     )
@@ -250,7 +245,7 @@ def _serve_with_exc_handling(
                     logger.info(
                         "Child ran for %.1fs (>=%ds), resetting rapid failure counter",
                         elapsed,
-                        RAPID_FAILURE_WINDOW,
+                        rapid_failure_window,
                     )
                 rapid_failure_count = 0
         else:
