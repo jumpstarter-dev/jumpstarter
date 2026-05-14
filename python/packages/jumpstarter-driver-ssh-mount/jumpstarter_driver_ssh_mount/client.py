@@ -57,7 +57,6 @@ class SSHMountClient(CompositeClient):
         return self.ssh.username
 
     def _resolve_host_port(self, direct: bool) -> tuple[str, int, bool]:
-        """Try direct TCP first if requested, falling back to port forwarding."""
         if direct:
             try:
                 address = self.ssh.tcp.address()
@@ -66,12 +65,10 @@ class SSHMountClient(CompositeClient):
                 port = parsed.port
                 if not host or not port:
                     raise ValueError(f"Invalid address format: {address}")
-                self.logger.debug("Using direct TCP connection - host: %s, port: %s", host, port)
+                self.logger.debug("Using direct TCP: %s:%s", host, port)
                 return host, port, False
             except (DriverMethodNotImplemented, ValueError) as e:
-                self.logger.error(
-                    "Direct address connection failed (%s), falling back to port forwarding", e
-                )
+                self.logger.error("Direct connection failed (%s), falling back to port forwarding", e)
         return "", 0, True
 
     def mount(
@@ -118,18 +115,18 @@ class SSHMountClient(CompositeClient):
         foreground: bool,
     ) -> None:
         identity_file = self._create_temp_identity_file()
-        sshfs_proc = None
+        sshfs_proc: subprocess.Popen[bytes] | None = None
 
         try:
-            sshfs_args = self._build_sshfs_args(host, port, mountpoint, remote_path, identity_file, extra_args)
+            sshfs_args = self._build_sshfs_args(
+                host, port, mountpoint, remote_path, identity_file, extra_args,
+            )
             sshfs_args.append("-f")
-
             sshfs_proc = self._start_sshfs_with_fallback(sshfs_args, mountpoint)
 
             user_prefix = f"{self.username}@" if self.username else ""
             host_spec = f"[{host}]" if ":" in host else host
-            remote_spec = f"{user_prefix}{host_spec}:{remote_path}"
-            click.echo(f"Mounted {remote_spec} on {mountpoint}")
+            click.echo(f"Mounted {user_prefix}{host_spec}:{remote_path} on {mountpoint}")
 
             if foreground:
                 click.echo("Press Ctrl+C to unmount and exit.")
@@ -153,7 +150,6 @@ class SSHMountClient(CompositeClient):
 
     @staticmethod
     def _terminate_proc(proc: subprocess.Popen[bytes]) -> None:
-        """Terminate a subprocess, escalating to kill if needed."""
         if proc.poll() is not None:
             return
         proc.terminate()
@@ -166,7 +162,6 @@ class SSHMountClient(CompositeClient):
     def _start_sshfs_with_fallback(
         self, sshfs_args: list[str], mountpoint: str,
     ) -> subprocess.Popen[bytes]:
-        """Start sshfs, retrying without allow_other if it fails."""
         test_args = [a for a in sshfs_args if a != "-f"]
         result = subprocess.run(test_args, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
 
@@ -188,7 +183,6 @@ class SSHMountClient(CompositeClient):
                 f"Failed to unmount test mount at {mountpoint}; cannot proceed"
             )
 
-        # Use DEVNULL for stderr to avoid SIGPIPE if sshfs writes after startup
         proc = subprocess.Popen(
             sshfs_args,
             stdout=subprocess.DEVNULL,
@@ -236,7 +230,6 @@ class SSHMountClient(CompositeClient):
         return filtered
 
     def _run_subshell(self, mountpoint: str, remote_path: str) -> None:
-        """Spawn an interactive subshell with a (mount) prompt indicator."""
         shell = os.environ.get("SHELL", "/bin/sh")
         shell_name = os.path.basename(shell)
         env = os.environ.copy()
@@ -303,7 +296,6 @@ class SSHMountClient(CompositeClient):
         if port and port != 22:
             sshfs_args.extend(["-p", str(port)])
 
-        # User-supplied options first so they take precedence (OpenSSH uses first-match-wins)
         if extra_args:
             for arg in extra_args:
                 sshfs_args.extend(["-o", arg])
@@ -374,7 +366,10 @@ class SSHMountClient(CompositeClient):
     def _force_umount(self, mountpoint: str) -> None:
         cmd = self._build_umount_cmd(mountpoint, lazy=False)
         try:
-            subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
+            if result.returncode != 0:
+                self.logger.debug("Force umount of %s returned %d: %s",
+                                  mountpoint, result.returncode, result.stderr.strip())
         except Exception as e:
             self.logger.debug("Force umount of %s failed: %s", mountpoint, e)
 
@@ -387,7 +382,6 @@ class SSHMountClient(CompositeClient):
         else:
             cmd = ["umount"]
             if lazy:
-                # macOS umount does not support -l; use -f (force) instead
                 if sys.platform == "darwin":
                     cmd.append("-f")
                 else:
