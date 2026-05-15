@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import base64
 import hashlib
 import json
@@ -12,7 +14,11 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PosixPath
 from queue import Queue
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from jumpstarter.common.oci import OciCredentials
 
 import click
 import pexpect
@@ -137,7 +143,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         if headers:
             headers = self._validate_header_dict(headers)
-        oci_username, oci_password = self._resolve_oci_credentials(path, oci_username, oci_password)
+        oci_creds = self._resolve_oci_credentials(path, oci_username, oci_password)
+        oci_username = oci_creds.username
+        oci_password = oci_creds.plain_password
         should_download_to_httpd = True
         image_url = ""
         original_http_url = None
@@ -1291,34 +1299,17 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         return token
 
-    def _validate_oci_credentials(self, username: str | None, password: str | None) -> tuple[str | None, str | None]:
-        if username is not None:
-            username = username.strip()
-        if password is not None:
-            password = password.strip()
-
-        if username == "":
-            username = None
-        if password == "":
-            password = None
-
-        if bool(username) != bool(password):
-            raise click.ClickException(
-                "OCI authentication requires both OCI_USERNAME and OCI_PASSWORD "
-                "environment variables (or both oci_username and oci_password arguments)"
-            )
-
-        return username, password
-
     def _resolve_oci_credentials(
         self, path: PathBuf, username: str | None, password: str | None
-    ) -> tuple[str | None, str | None]:
-        if username is None and password is None and path.startswith("oci://"):
-            from jumpstarter.common.oci import resolve_oci_credentials
+    ) -> "OciCredentials":
+        from jumpstarter.common.oci import OciCredentials, resolve_oci_credentials
 
-            username, password = resolve_oci_credentials(str(path))
-
-        return self._validate_oci_credentials(username, password)
+        if username is not None or password is not None or str(path).startswith("oci://"):
+            try:
+                return resolve_oci_credentials(str(path), username=username, password=password)
+            except ValueError as err:
+                raise click.ClickException(str(err)) from err
+        return OciCredentials()
 
     def _fls_oci_auth_env(self, path: PathBuf, creds_file: str | None) -> str:
         if not str(path).startswith("oci://") or not creds_file:
