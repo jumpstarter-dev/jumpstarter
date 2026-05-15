@@ -1057,7 +1057,7 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
 					},
-					ServiceAccountName:        fmt.Sprintf("%s-controller-manager", jumpstarter.Name),
+					ServiceAccountName:        fmt.Sprintf("%s-router-sa", jumpstarter.Name),
 					TopologySpreadConstraints: jumpstarter.Spec.Routers.TopologySpreadConstraints,
 				},
 			},
