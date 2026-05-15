@@ -15,6 +15,7 @@ def test_update_lease_with_to_client():
     config.update_lease.return_value = lease
 
     with patch("jumpstarter_cli.update.model_print") as model_print:
+        assert update_lease.callback is not None
         inspect.unwrap(update_lease.callback)(
             config=config,
             name="my-lease",
@@ -40,6 +41,7 @@ def test_update_lease_with_duration_and_to_client():
     config.update_lease.return_value = lease
 
     with patch("jumpstarter_cli.update.model_print") as model_print:
+        assert update_lease.callback is not None
         inspect.unwrap(update_lease.callback)(
             config=config,
             name="my-lease",
@@ -64,6 +66,7 @@ def test_update_lease_without_to_client():
     config.update_lease.return_value = lease
 
     with patch("jumpstarter_cli.update.model_print") as model_print:
+        assert update_lease.callback is not None
         inspect.unwrap(update_lease.callback)(
             config=config,
             name="my-lease",
@@ -83,6 +86,7 @@ def test_update_lease_without_to_client():
 
 
 def test_update_lease_requires_at_least_one_option():
+    assert update_lease.callback is not None
     with pytest.raises(click.UsageError, match="At least one of"):
         inspect.unwrap(update_lease.callback)(
             config=Mock(),

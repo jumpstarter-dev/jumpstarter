@@ -34,6 +34,7 @@ def _make_config(leases):
     return config
 
 
+assert delete_leases.callback is not None
 _delete_leases = delete_leases.callback.__wrapped__.__wrapped__
 
 

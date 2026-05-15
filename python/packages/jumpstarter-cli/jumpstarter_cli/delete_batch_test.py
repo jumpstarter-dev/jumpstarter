@@ -9,6 +9,7 @@ from jumpstarter_cli.delete import delete_leases
 class TestBatchDeleteLeases:
     def test_delete_multiple_leases(self):
         config = Mock()
+        assert delete_leases.callback is not None
         delete_leases.callback.__wrapped__.__wrapped__(
             config=config,
             names=("lease1", "lease2", "lease3"),
@@ -24,6 +25,7 @@ class TestBatchDeleteLeases:
 
     def test_delete_zero_names_no_flags_raises_error(self):
         config = Mock()
+        assert delete_leases.callback is not None
         with pytest.raises(click.ClickException, match="must be specified"):
             delete_leases.callback.__wrapped__.__wrapped__(
                 config=config,
@@ -38,6 +40,7 @@ class TestBatchDeleteLeases:
         from jumpstarter_cli_common.opt import OutputMode
 
         config = Mock()
+        assert delete_leases.callback is not None
         delete_leases.callback.__wrapped__.__wrapped__(
             config=config,
             names=("lease1", "lease2"),
