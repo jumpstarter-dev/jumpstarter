@@ -137,6 +137,55 @@ def test_handle_exceptions_maps_grpc_unauthenticated() -> None:
         grpc_auth_fn()
 
 
+def test_handle_exceptions_with_reauth_retries_on_expired_token() -> None:
+    """After successful re-auth, the command is retried automatically."""
+    from jumpstarter.common.exceptions import ConnectionError
+
+    call_count = 0
+
+    def login_func(config):
+        config.token = "new_token"
+
+    @handle_exceptions_with_reauthentication(login_func)
+    def command_fn(config=None):
+        nonlocal call_count
+        call_count += 1  # ty: ignore[unresolved-reference]
+        if call_count == 1:
+            exc = ConnectionError("token is expired")
+            exc.set_config(config)
+            raise exc
+        return "result"
+
+    config = type("Config", (), {"token": "old_token"})()
+    result = command_fn(config=config)
+
+    assert result == "result"
+    assert call_count == 2
+
+
+def test_handle_exceptions_with_reauth_does_not_retry_twice() -> None:
+    """If retry also fails with expired token, the error propagates."""
+    from jumpstarter.common.exceptions import ConnectionError
+
+    login_calls = 0
+
+    def login_func(config):
+        nonlocal login_calls
+        login_calls += 1  # ty: ignore[unresolved-reference]
+
+    @handle_exceptions_with_reauthentication(login_func)
+    def always_expired_fn(config=None):
+        exc = ConnectionError("token is expired")
+        exc.set_config(config)
+        raise exc
+
+    config = type("Config", (), {"token": "tok"})()
+    with pytest.raises(click.ClickException):
+        always_expired_fn(config=config)
+
+    assert login_calls == 1
+
+
 def test_handle_exceptions_maps_grpc_invalid_argument() -> None:
     class MockGrpcError(Exception):
         def code(self):

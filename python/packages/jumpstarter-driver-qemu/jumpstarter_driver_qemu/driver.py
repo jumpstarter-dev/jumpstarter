@@ -6,6 +6,7 @@ import logging
 import os
 import platform
 import shutil
+import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -83,7 +84,7 @@ class QemuFlasher(FlasherInterface, Driver):
                     await stream.send(chunk)
 
     @export
-    async def flash_oci(
+    async def flash_oci(  # noqa: C901
         self,
         oci_url: str,
         partition: str | None = None,
@@ -102,22 +103,18 @@ class QemuFlasher(FlasherInterface, Driver):
             oci_username: Registry username for OCI authentication
             oci_password: Registry password for OCI authentication
         """
+        oci_url = oci_url.strip()
         if not oci_url.startswith("oci://"):
             raise ValueError(f"OCI URL must start with oci://, got: {oci_url}")
 
-        # If explicit credentials were provided, validate immediately
-        if oci_username or oci_password:
-            if bool(oci_username) != bool(oci_password):
-                raise ValueError("OCI authentication requires both username and password")
+        if oci_username and oci_password:
+            self.logger.info("Using OCI registry credentials forwarded from client")
         else:
-            # Fall back to env vars, then container auth files
             from jumpstarter.common.oci import resolve_oci_credentials
 
             oci_username, oci_password = resolve_oci_credentials(oci_url)
             if oci_username and oci_password:
                 self.logger.info("Using OCI registry credentials from environment or auth file")
-            elif oci_username or oci_password:
-                raise ValueError("OCI authentication requires both username and password")
 
         target_path = str(self.parent.validate_partition(partition))
 
@@ -230,8 +227,17 @@ class QemuPower(PowerInterface, Driver):
 
         cpu = self.parent.cpu
 
+        # Determine QEMU binary path
+        if self.parent.arch == platform.machine() and os.access("/dev/kvm", os.R_OK | os.W_OK):
+            # Try common locations for qemu-kvm
+            for qemu_binary in ["/usr/libexec/qemu-kvm", "/usr/bin/qemu-kvm", "qemu-kvm"]:
+                if Path(qemu_binary).exists() or "/" not in qemu_binary:
+                    break
+        else:
+            qemu_binary = f"qemu-system-{self.parent.arch}"
+
         cmdline = [
-            f"qemu-system-{self.parent.arch}",
+            qemu_binary,
             "-nodefaults",
             "-nographic",
         ]
@@ -283,16 +289,30 @@ class QemuPower(PowerInterface, Driver):
             ),
         ]
 
+        suffix = self.parent._virtio_suffix
         devices = [
-            "virtio-net-pci,netdev=eth0",
-            "virtio-gpu-pci",
+            f"virtio-net{suffix},netdev=eth0",
+            f"virtio-gpu{suffix}",
         ]
 
         if _vsock_available():
-            devices.append("vhost-vsock-pci,guest-cid={}".format(self.parent._cid))
+            devices.append(f"vhost-vsock{suffix},guest-cid={self.parent._cid}")
 
         for device in devices:
             cmdline += ["-device", device]
+
+        self.logger.info("TPM config: tpm=%s (type=%s)", self.parent.tpm, type(self.parent.tpm).__name__)
+        if self.parent.tpm:
+            self.logger.info("Adding TPM device args for arch=%s, socket=%s", self.parent.arch, self.parent._tpm_socket)
+            cmdline += [
+                "-chardev", f"socket,id=chrtpm,path={self.parent._tpm_socket}",
+                "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
+            ]
+            match self.parent.arch:
+                case "aarch64":
+                    cmdline += ["-device", "tpm-tis-device,tpmdev=tpm0"]
+                case "x86_64":
+                    cmdline += ["-device", "tpm-crb,tpmdev=tpm0"]
 
         if bios.exists():
             cmdline += [
@@ -360,18 +380,89 @@ class QemuPower(PowerInterface, Driver):
                 "-blockdev",
                 f"driver={image_driver},node-name=rootfs,file.driver=file,file.filename={root}",
                 "-device",
-                "virtio-blk-pci,drive=rootfs,bootindex=1",
+                f"virtio-blk{suffix},drive=rootfs,bootindex=1",
             ]
 
         self._cidata = self.parent.cidata()
 
+        # Create ISO image from cidata directory for cloud-init
+        # This is more compatible than vvfat which may not be available in qemu-kvm
+        self._cidata_iso = Path(self._cidata.name).parent / "cidata.iso"
+
+        # Try different ISO creation tools in order of preference
+        iso_tools = ["genisoimage", "mkisofs", "xorriso"]
+        iso_cmd = None
+        for tool in iso_tools:
+            try:
+                await run_process([tool, "--version"], stdout=PIPE, stderr=PIPE)
+                if tool == "xorriso":
+                    iso_cmd = [
+                        tool, "-as", "mkisofs",
+                        "-output", str(self._cidata_iso),
+                        "-volid", "CIDATA",
+                        "-joliet", "-rock",
+                        self._cidata.name
+                    ]
+                else:
+                    iso_cmd = [
+                        tool,
+                        "-output", str(self._cidata_iso),
+                        "-volid", "CIDATA",
+                        "-joliet", "-rock",
+                        self._cidata.name
+                    ]
+                break
+            except (CalledProcessError, FileNotFoundError):
+                continue
+
+        if iso_cmd is None:
+            raise RuntimeError(
+                "No ISO creation tool found. Please install one of: genisoimage, mkisofs, or xorriso"
+            )
+
+        # Create the ISO image
+        await run_process(iso_cmd, stdout=PIPE, stderr=PIPE)
+
         cmdline += [
             "-blockdev",
-            f"driver=vvfat,node-name=cidata,read-only=on,dir={self._cidata.name},label=CIDATA",
+            f"driver=raw,node-name=cidata,file.driver=file,file.filename={self._cidata_iso}",
             "-device",
-            "virtio-blk-pci,drive=cidata",
+            f"virtio-blk{suffix},drive=cidata",
         ]
 
+        if self.parent.tpm:
+            self.logger.info("Starting swtpm: dir=%s, socket=%s", self.parent._tpm_dir, self.parent._tpm_socket)
+            self.parent._tpm_dir.mkdir(parents=True, exist_ok=True)
+            self._swtpm_process = Popen(
+                [
+                    "swtpm", "socket",
+                    "--tpmstate", f"dir={self.parent._tpm_dir}",
+                    "--tpm2",
+                    "--ctrl", f"type=unixio,path={self.parent._tpm_socket}",
+                    "--flags", "not-need-init",
+                ],
+                stdin=PIPE,
+                stderr=PIPE,
+            )
+            for _ in range(50):
+                if Path(self.parent._tpm_socket).exists():
+                    break
+                rc = self._swtpm_process.poll()
+                if rc is not None:
+                    stderr = self._swtpm_process.stderr.read().decode() if self._swtpm_process.stderr else ""
+                    raise RuntimeError(f"swtpm exited prematurely with code {rc}: {stderr}")
+                time.sleep(0.1)
+            else:
+                rc = self._swtpm_process.poll()
+                stderr = ""
+                if rc is not None and self._swtpm_process.stderr:
+                    stderr = self._swtpm_process.stderr.read().decode()
+                raise RuntimeError(
+                    f"swtpm failed to start: socket not created within 5 seconds (rc={rc}, stderr={stderr})"
+                )
+            self.logger.info("swtpm started successfully (pid=%d)", self._swtpm_process.pid)
+
+        self.logger.info("QEMU cmdline: %s", " ".join(str(a) for a in cmdline))
         self._process = Popen(cmdline, stdin=PIPE)
 
         qmp = QMPClient(self.parent.hostname)
@@ -407,8 +498,20 @@ class QemuPower(PowerInterface, Driver):
         else:
             self.logger.warning("already powered off, ignoring request")
 
+        if hasattr(self, "_swtpm_process"):
+            self._swtpm_process.terminate()
+            try:
+                self._swtpm_process.wait(timeout=5)
+            except TimeoutExpired:
+                self._swtpm_process.kill()
+            del self._swtpm_process
+
         if hasattr(self, "_cidata"):
             del self._cidata
+
+        if hasattr(self, "_cidata_iso"):
+            Path(self._cidata_iso).unlink(missing_ok=True)
+            del self._cidata_iso
 
     @export
     async def read(self) -> AsyncGenerator[PowerReading, None]:
@@ -433,6 +536,8 @@ class Qemu(Driver):
     smp: int = 2
     mem: str = "512M"
     disk_size: str | None = None  # e.g., "20G" (resize disk before boot)
+    tpm: bool = False
+    virtio_transport: Literal["mmio", "pci"] = "mmio"
 
     hostname: str = "demo"
     username: str = "jumpstarter"
@@ -473,6 +578,24 @@ class Qemu(Driver):
             match v.protocol:
                 case "tcp":
                     self.children[k] = TcpNetwork(host=v.hostaddr, port=v.hostport)
+
+    @property
+    def _virtio_suffix(self) -> str:
+        match self.virtio_transport:
+            case "pci":
+                return "-pci"
+            case "mmio":
+                return "-device"
+            case _:
+                raise ValueError(f"Unknown virtio transport: {self.virtio_transport}")
+
+    @property
+    def _tpm_dir(self) -> Path:
+        return Path(self._tmp_dir.name) / "tpm"
+
+    @property
+    def _tpm_socket(self) -> str:
+        return str(Path(self._tmp_dir.name) / "tpm.sock")
 
     @property
     def _pty(self) -> str:
