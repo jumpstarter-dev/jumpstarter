@@ -15,6 +15,7 @@ def test_create_lease_passes_exporter_name_to_config():
 
     with patch("jumpstarter_cli.create.model_print") as model_print:
         # Skip Click config loading wrapper and call the command body directly.
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=config,
             selector=None,
@@ -38,6 +39,7 @@ def test_create_lease_passes_exporter_name_to_config():
 
 
 def test_create_lease_requires_selector_or_name():
+    assert create_lease.callback is not None
     with pytest.raises(click.UsageError, match="one of --selector/-l or --name/-n is required"):
         inspect.unwrap(create_lease.callback)(
             config=Mock(),
@@ -57,6 +59,7 @@ def test_create_lease_passes_tags_to_config():
     config.create_lease.return_value = lease
 
     with patch("jumpstarter_cli.create.model_print"):
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=config,
             selector="board=rpi4",
@@ -84,6 +87,7 @@ def test_create_lease_empty_tags_passes_none():
     config.create_lease.return_value = lease
 
     with patch("jumpstarter_cli.create.model_print"):
+        assert create_lease.callback is not None
         inspect.unwrap(create_lease.callback)(
             config=config,
             selector="board=rpi4",
@@ -106,6 +110,7 @@ def test_create_lease_empty_tags_passes_none():
 
 
 def test_create_lease_invalid_tag_format():
+    assert create_lease.callback is not None
     with pytest.raises(click.UsageError, match="Invalid tag format"):
         inspect.unwrap(create_lease.callback)(
             config=Mock(),
