@@ -146,9 +146,9 @@ ridesx.md
 sdwire.md
 shell.md
 snmp.md
+someip.md
 ssh.md
 ssh-mount.md
-someip.md
 stlink-msd.md
 tasmota.md
 tmt.md
