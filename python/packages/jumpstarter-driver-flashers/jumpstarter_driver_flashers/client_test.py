@@ -259,11 +259,16 @@ def test_flash_http_url_with_oci_credentials_still_uses_direct_http_path():
 
     captured = {}
 
-    def capture_perform(*args):
-        captured["image_url"] = args[3]
-        captured["should_download_to_httpd"] = args[4]
-        captured["oci_username"] = args[14]
-        captured["oci_password"] = args[15]
+    def capture_perform(
+        partition, block_device, path, image_url, should_download_to_httpd,
+        storage_thread, error_queue, cacert_file, insecure_tls, headers,
+        bearer_token, method, fls_version, fls_binary_url,
+        oci_username, oci_password, power_off=True,
+    ):
+        captured["image_url"] = image_url
+        captured["should_download_to_httpd"] = should_download_to_httpd
+        captured["oci_username"] = oci_username
+        captured["oci_password"] = oci_password
 
     client._perform_flash_operation = capture_perform  # ty: ignore[invalid-assignment]
 
@@ -437,6 +442,159 @@ def test_categorize_exception_preserves_cause_for_wrapped_exceptions():
     # IOError is an alias for OSError in Python 3
     assert "OSError" in str(result) or "IOError" in str(result)
     assert "File not found" in str(result)
+
+
+def test_filename_strips_query_params_from_url_path():
+    """Test _filename strips query parameters from paths with signed URL params"""
+    client = MockFlasherClient()
+
+    # Full HTTP URL
+    assert client._filename("https://cdn.example.com/images/image.raw.xz") == "image.raw.xz"
+
+    # Full HTTP URL with query parameters (e.g. CloudFront signed URL)
+    assert (
+        client._filename("https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz")
+        == "image.raw.xz"
+    )
+
+    # Path string with query parameters (as returned by operator_for_path after fix)
+    assert client._filename("/images/image.raw.xz?Expires=123&Signature=abc") == "image.raw.xz"
+
+    # Plain path without query parameters
+    assert client._filename("/images/image.raw.xz") == "image.raw.xz"
+
+    # OCI path
+    assert client._filename("oci://quay.io/org/myimage:latest") == "myimage-latest"
+
+
+def test_decompression_command_with_query_params():
+    """Test _get_decompression_command handles paths with query parameters"""
+    from pathlib import PosixPath
+
+    from .client import _get_decompression_command
+
+    # Standard PosixPath
+    assert _get_decompression_command(PosixPath("/images/image.raw.xz")) == "xzcat |"
+    assert _get_decompression_command(PosixPath("/images/image.raw.gz")) == "zcat |"
+    assert _get_decompression_command(PosixPath("/images/image.raw")) == ""
+
+    # Full HTTP URL
+    assert _get_decompression_command("https://cdn.example.com/images/image.raw.xz") == "xzcat |"
+
+    # Zstandard compression
+    assert _get_decompression_command(PosixPath("/images/image.raw.zst")) == "zstdcat |"
+    assert _get_decompression_command("https://cdn.example.com/images/image.raw.zst") == "zstdcat |"
+
+    # String path with query parameters (as returned by operator_for_path for signed URLs)
+    assert _get_decompression_command("/images/image.raw.xz?Expires=123&Signature=abc") == "xzcat |"
+    assert _get_decompression_command("/images/image.raw.gz?Expires=123") == "zcat |"
+    assert _get_decompression_command("/images/image.raw.zst?Expires=123") == "zstdcat |"
+    assert _get_decompression_command("/images/image.raw?Expires=123") == ""
+
+
+def test_flash_signed_url_preserves_query_params():
+    """Test that flash with a signed HTTP URL preserves query parameters for image_url"""
+    client = MockFlasherClient()
+
+    class DummyService:
+        def __init__(self):
+            self.storage = object()
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def get_url(self):
+            return "http://exporter"
+
+    client.http = DummyService()  # ty: ignore[unresolved-attribute]
+    client.tftp = DummyService()  # ty: ignore[unresolved-attribute]
+    client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
+
+    captured = {}
+
+    def capture_perform(
+        partition, block_device, path, image_url, should_download_to_httpd,
+        storage_thread, error_queue, cacert_file, insecure_tls, headers,
+        bearer_token, method, fls_version, fls_binary_url,
+        oci_username, oci_password, power_off=True,
+    ):
+        captured["image_url"] = image_url
+        captured["should_download_to_httpd"] = should_download_to_httpd
+
+    client._perform_flash_operation = capture_perform  # ty: ignore[invalid-assignment]
+
+    # Direct HTTP URL with query params (no force_exporter_http) should preserve full URL
+    signed_url = "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
+    client.flash(signed_url, method="fls", fls_version="")
+
+    assert captured["image_url"] == signed_url
+    assert captured["should_download_to_httpd"] is False
+
+
+def test_flash_bearer_token_signed_url_preserves_query_params():
+    """Test that flash with force_exporter_http=True and bearer token preserves query params.
+
+    When a signed URL is used with a bearer token, the flash() method enters the
+    bearer token code path (lines 162-174 in client.py) which reconstructs the path
+    from parsed.path + '?' + parsed.query. This test verifies query params are preserved
+    and the path passed to the storage thread is correct.
+    """
+    client = MockFlasherClient()
+
+    class DummyService:
+        def __init__(self):
+            self.storage = object()
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+        def get_url(self):
+            return "http://exporter"
+
+        def get_host(self):
+            return "127.0.0.1"
+
+    client.http = DummyService()  # ty: ignore[unresolved-attribute]
+    client.tftp = DummyService()  # ty: ignore[unresolved-attribute]
+    client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
+
+    captured = {}
+
+    def capture_perform(
+        partition, block_device, path, image_url, should_download_to_httpd,
+        storage_thread, error_queue, cacert_file, insecure_tls, headers,
+        bearer_token, method, fls_version, fls_binary_url,
+        oci_username, oci_password, power_off=True,
+    ):
+        captured["path"] = path
+        captured["image_url"] = image_url
+        captured["should_download_to_httpd"] = should_download_to_httpd
+
+    client._perform_flash_operation = capture_perform  # ty: ignore[invalid-assignment]
+    # Mock the background transfer thread to prevent it from actually running
+    client._transfer_bg_thread = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
+
+    signed_url = "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
+    client.flash(
+        signed_url,
+        force_exporter_http=True,
+        bearer_token="test-token-123",
+        method="fls",
+        fls_version="",
+    )
+
+    # With force_exporter_http=True and bearer_token, should download to httpd
+    assert captured["should_download_to_httpd"] is True
+    # The path should have query params preserved (reconstructed from parsed.path + '?' + parsed.query)
+    assert captured["path"] == "/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
+    # The image_url should point to the exporter with the clean filename (no query params)
+    assert captured["image_url"] == "http://exporter/image.raw.xz"
 
 
 def test_resolve_flash_parameters():

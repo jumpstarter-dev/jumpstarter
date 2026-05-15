@@ -326,6 +326,69 @@ def test_copy_and_rename_tracking(tmp_path):
     assert len(created_paths) == 4
 
 
+def test_clean_filename():
+    """Test clean_filename extracts filenames and strips query parameters"""
+    from pathlib import PosixPath
+
+    from .client import clean_filename
+
+    # Plain filesystem path
+    assert clean_filename("/images/image.raw.xz") == "image.raw.xz"
+    assert clean_filename(PosixPath("/images/image.raw.xz")) == "image.raw.xz"
+
+    # Filesystem path with query params (as returned by operator_for_path for signed URLs)
+    assert clean_filename("/images/image.raw.xz?Expires=123&Signature=abc") == "image.raw.xz"
+
+    # Full HTTP URL without query params
+    assert clean_filename("https://cdn.example.com/images/image.raw.xz") == "image.raw.xz"
+    assert clean_filename("http://cdn.example.com/images/image.raw.xz") == "image.raw.xz"
+
+    # Full HTTP URL with query params (e.g. CloudFront signed URL)
+    assert (
+        clean_filename("https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz")
+        == "image.raw.xz"
+    )
+
+    # Edge case: no directory component
+    assert clean_filename("image.raw.xz") == "image.raw.xz"
+    assert clean_filename("image.raw.xz?Expires=123") == "image.raw.xz"
+
+    # Edge case: compressed extensions
+    assert clean_filename("/path/to/image.raw.gz?token=abc") == "image.raw.gz"
+    assert clean_filename("/path/to/image.raw.gzip?token=abc") == "image.raw.gzip"
+
+    # Edge case: query params with unencoded slashes (e.g. base64 signatures)
+    assert clean_filename("/images/image.raw.xz?Expires=123&Signature=abc/def/ghi") == "image.raw.xz"
+
+
+def test_operator_for_path_preserves_query_params():
+    """Test that operator_for_path preserves query parameters for HTTP URLs"""
+    from .client import operator_for_path
+
+    # HTTP URL without query parameters
+    path, operator, scheme = operator_for_path("https://cdn.example.com/images/image.raw.xz")
+    assert scheme == "http"
+    assert path == "/images/image.raw.xz"
+
+    # HTTP URL with query parameters (e.g. CloudFront signed URL)
+    path, operator, scheme = operator_for_path(
+        "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
+    )
+    assert scheme == "http"
+    assert path == "/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
+    assert "Expires=123" in path
+    assert "Signature=abc" in path
+    assert "Key-Pair-Id=xyz" in path
+
+    # Filesystem path (use resolve() for the expected value since macOS
+    # resolves /tmp to /private/tmp)
+    from pathlib import Path
+
+    path, operator, scheme = operator_for_path("/tmp/image.raw.xz")
+    assert scheme == "fs"
+    assert path == Path("/tmp/image.raw.xz").resolve()
+
+
 @contextmanager
 def _http_path_recording_server():
     """Start an HTTP server that records request paths and serves minimal responses."""
