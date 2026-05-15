@@ -19,6 +19,7 @@ package e2e
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -162,6 +163,63 @@ var _ = Describe("Direct Listener E2E Tests", Label("direct-listener"), Ordered,
 
 		_, err := Jmp("shell", "--tls-grpc", fmt.Sprintf("127.0.0.1:%d", listenerPort),
 			"--tls-grpc-insecure", "--", "j", "power", "on")
+		Expect(err).To(HaveOccurred())
+	})
+
+	// --- Auth by default (auto-generated passphrase) ---
+
+	It("--unsafe-no-auth allows unauthenticated access", func() {
+		config := configPath("exporter-direct-listener.yaml")
+		tracker.StartDirectExporter(config, listenerPort, "", false)
+		WaitForDirectExporterReady(listenerPort, "")
+
+		out, err := Jmp("shell", "--tls-grpc", fmt.Sprintf("127.0.0.1:%d", listenerPort),
+			"--tls-grpc-insecure", "--", "j", "power", "on")
+		Expect(err).NotTo(HaveOccurred(), out)
+	})
+
+	It("auto-generated passphrase is printed to stderr and can be used to connect", func() {
+		config := configPath("exporter-direct-listener.yaml")
+		_, stderrBuf := tracker.StartDirectExporterAutoAuth(config, listenerPort)
+
+		// Wait for the auto-generated passphrase message to appear in stderr
+		Eventually(func() string {
+			return stderrBuf.String()
+		}, 15*time.Second, 500*time.Millisecond).Should(ContainSubstring("Generated random passphrase"))
+
+		// Extract the passphrase from the log message
+		var generatedPassphrase string
+		for _, line := range strings.Split(stderrBuf.String(), "\n") {
+			if strings.Contains(line, "Generated random passphrase") {
+				parts := strings.SplitN(line, ": ", 2)
+				if len(parts) == 2 {
+					generatedPassphrase = strings.TrimSpace(parts[1])
+				}
+				break
+			}
+		}
+		Expect(generatedPassphrase).NotTo(BeEmpty(), "could not extract generated passphrase from stderr")
+
+		// Wait for the port to be ready
+		WaitForDirectExporterPort(listenerPort)
+
+		// Verify that the extracted passphrase allows connection
+		out, err := Jmp("shell", "--tls-grpc", fmt.Sprintf("127.0.0.1:%d", listenerPort),
+			"--tls-grpc-insecure", "--passphrase", generatedPassphrase, "--", "j", "power", "on")
+		Expect(err).NotTo(HaveOccurred(), out)
+
+		// Verify that a wrong passphrase is rejected
+		_, err = Jmp("shell", "--tls-grpc", fmt.Sprintf("127.0.0.1:%d", listenerPort),
+			"--tls-grpc-insecure", "--passphrase", "wrong-passphrase", "--", "j", "power", "on")
+		Expect(err).To(HaveOccurred())
+	})
+
+	It("--passphrase and --unsafe-no-auth are mutually exclusive", func() {
+		_, err := Jmp("run", "--exporter-config", configPath("exporter-direct-listener.yaml"),
+			"--tls-grpc-listener", fmt.Sprintf("%d", listenerPort),
+			"--tls-grpc-insecure",
+			"--passphrase", "my-secret",
+			"--unsafe-no-auth")
 		Expect(err).To(HaveOccurred())
 	})
 })
