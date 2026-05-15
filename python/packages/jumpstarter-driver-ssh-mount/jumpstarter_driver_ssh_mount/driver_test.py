@@ -48,7 +48,8 @@ def test_mount_sshfs_not_installed():
                 client.mount("/tmp/test-mount")
 
 
-def test_mount_sshfs_constructs_correct_args():
+def test_mount_sshfs_constructs_correct_args_and_detects_immediate_exit():
+    """Verify sshfs test-run args are correct and immediate exit is detected as failure."""
     instance = SSHMount(
         children={"ssh": _make_ssh_child()},
     )
@@ -187,7 +188,7 @@ def test_mount_sshfs_generic_failure():
                         assert first_call_args[0] == "sshfs"
 
 
-def test_mount_sshfs_direct_constructs_correct_args():
+def test_mount_sshfs_direct_constructs_correct_args_and_detects_immediate_exit():
     instance = SSHMount(
         children={"ssh": _make_ssh_child(host="10.0.0.1", port=2222)},
     )
