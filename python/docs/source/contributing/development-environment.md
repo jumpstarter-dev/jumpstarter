@@ -3,8 +3,8 @@
 You can use
 [devspaces](https://github.com/jumpstarter-dev/jumpstarter/blob/main/python/.devfile.yaml),
 [devcontainers](https://github.com/jumpstarter-dev/jumpstarter/tree/main/python/.devcontainer),
-or your favorite OS/distro to develop Jumpstarter, however the following
-examples are for Fedora 43.
+or your favorite OS/distro to develop Jumpstarter. The following examples
+are for Fedora.
 
 Jumpstarter is programmed in Python and Go, the Jumpstarter controller is
 written in Go, while the core and drivers are written in Python.
