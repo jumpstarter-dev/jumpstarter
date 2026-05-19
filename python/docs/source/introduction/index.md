@@ -29,27 +29,29 @@ access to physical devices for development.
 
 Jumpstarter architecture is based on the following key components:
 
-- {term}`DUT` - Hardware or virtual device being tested
-- [Drivers](drivers.md) - Interfaces for {term}`DUT` communication
-- [{term}`Adapter`s](adapters.md) - Convert driver connections into various formats
-- [Exporters](exporters.md) - Expose device interfaces over network via {term}`gRPC`
-- [Hooks](hooks.md) - Lifecycle scripts that run at {term}`lease` boundaries
-- [Clients](clients.md) - Libraries and CLI tools for device interaction
-- [Service](service.md) - Kubernetes {term}`controller` for resource management
+- {term}`DUT` - Hardware or virtual {term}`device` being tested
+- [{term}`Driver`s](drivers.md) - Interfaces for {term}`DUT` communication
+- [{term}`Adapter`s](adapters.md) - Convert {term}`driver` connections into various formats
+- [{term}`Exporter`s](exporters.md) - Expose {term}`device` interfaces over network via {term}`gRPC`
+- [{term}`Hook`s](hooks.md) - Lifecycle scripts that run at {term}`lease` boundaries
+- [{term}`Client`s](clients.md) - Libraries and CLI tools for {term}`device` interaction
+- [{term}`Service`](service.md) - Kubernetes {term}`controller` for resource management
 
 Component interactions include:
 
-- **{term}`DUT` and Drivers** - Drivers provide standardized interfaces to {term}`DUT`'s
-  hardware connections
-- **Drivers and {term}`Adapter`s** - {term}`Adapter`s transform driver connections for
+- **{term}`DUT` and {term}`Driver`s** - {term}`Driver`s provide standardized interfaces to
+  {term}`DUT`'s hardware connections
+- **{term}`Driver`s and {term}`Adapter`s** - {term}`Adapter`s transform {term}`driver` connections for
   specialized use cases
-- **Drivers/{term}`Adapter`s and {term}`Exporter`s** - {term}`Exporter`s manage drivers/{term}`adapter`s and
-  expose them via {term}`gRPC`
-- **{term}`hook`s and {term}`Exporter`s** - {term}`hook`s execute shell scripts at {term}`lease` boundaries,
-  running before drivers are available and after the {term}`session` ends
-- **{term}`Exporter`s and Clients** - Clients connect to {term}`exporter`s to control {term}`device`s
-- **Clients/{term}`Exporter`s and {term}`service`** - {term}`service` manages access control and
-  resource allocation in {term}`distributed mode`
+- **{term}`Driver`s/{term}`Adapter`s and {term}`Exporter`s** - {term}`Exporter`s manage
+  {term}`driver`s/{term}`adapter`s and expose them via {term}`gRPC`
+- **{term}`Hook`s and {term}`Exporter`s** - {term}`Hook`s execute shell scripts at {term}`lease`
+  boundaries, running before {term}`driver`s are available and after the
+  {term}`session` ends
+- **{term}`Exporter`s and {term}`Client`s** - {term}`Client`s connect to {term}`exporter`s to control
+  {term}`device`s
+- **{term}`Client`s/{term}`Exporter`s and {term}`Service`** - {term}`Service` manages access control
+  and resource allocation in {term}`distributed mode`
 
 Together, these components form a comprehensive testing framework that bridges
 the gap between development and deployment environments.
