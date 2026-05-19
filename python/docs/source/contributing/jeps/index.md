@@ -1,6 +1,6 @@
 # Jumpstarter Enhancement Proposals
 
-This directory contains the Jumpstarter Enhancement Proposals — design documents
+This directory contains the Jumpstarter Enhancement Proposals -- design documents
 that describe significant changes to the Jumpstarter project.
 
 ## What is a JEP?

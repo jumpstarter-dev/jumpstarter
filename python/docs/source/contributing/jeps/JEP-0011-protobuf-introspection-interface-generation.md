@@ -17,27 +17,27 @@
 
 This JEP makes Jumpstarter driver interfaces discoverable to non-Python clients by introducing `.proto` files as the canonical schema artifact for each driver interface. A new **codegen CLI** introspects Python interface classes at development time and emits `.proto` source files that are committed to each driver package. A companion **interface check CLI** runs in CI to detect drift between Python interfaces and their committed `.proto` files. The existing gRPC Server Reflection service and the `DriverInstanceReport.file_descriptor_proto` field serve the same compiled descriptor set at runtime so that tools like `grpcurl`, Buf, and polyglot codegen can discover the driver API without reading Python source.
 
-This JEP keeps the Jumpstarter wire protocol unchanged — `DriverCall` remains the transport. The `.proto` schemas serve as an advisory description layer that enables polyglot discovery and future native-gRPC migration. Proto-first workflows (defining interfaces as `.proto` files and generating Python scaffolding) are deferred to a follow-up JEP focused on non-Python codegen.
+This JEP keeps the Jumpstarter wire protocol unchanged -- `DriverCall` remains the transport. The `.proto` schemas serve as an advisory description layer that enables polyglot discovery and future native-gRPC migration. Proto-first workflows (defining interfaces as `.proto` files and generating Python scaffolding) are deferred to a follow-up JEP focused on non-Python codegen.
 
 ## Motivation
 
-Today, the `DriverInstanceReport` returned by `GetReport` contains driver UUIDs, labels, parent-child relationships, and human-readable `methods_description` text. It does not include machine-readable method signatures — parameter names, types, return types, or call semantics (unary vs. streaming). This means non-Python clients cannot discover the shape of a driver's API without out-of-band knowledge, limiting Jumpstarter to a single-language ecosystem.
+Today, the `DriverInstanceReport` returned by `GetReport` contains driver UUIDs, labels, parent-child relationships, and human-readable `methods_description` text. It does not include machine-readable method signatures -- parameter names, types, return types, or call semantics (unary vs. streaming). This means non-Python clients cannot discover the shape of a driver's API without out-of-band knowledge, limiting Jumpstarter to a single-language ecosystem.
 
 The `@export` decorator already has access to the full method signature via `inspect.signature()`, and the interface classes already carry type annotations. However, none of this information is surfaced in a structured, interoperable format. A JVM-based test runner, a TypeScript MCP server, or a Rust flash utility all have to reverse-engineer method names, argument types, and streaming semantics from Python source code or informal documentation.
 
-Additionally, teams that want to define interface contracts upfront — before writing any driver implementation — currently have no supported workflow. A proto-first path would let architects define the interface as a `.proto` file and generate the Python scaffolding from it, following the standard gRPC development pattern while remaining fully compatible with Jumpstarter's existing driver model.
+Additionally, teams that want to define interface contracts upfront -- before writing any driver implementation -- currently have no supported workflow. A proto-first path would let architects define the interface as a `.proto` file and generate the Python scaffolding from it, following the standard gRPC development pattern while remaining fully compatible with Jumpstarter's existing driver model.
 
 This JEP addresses three concrete gaps:
 
-1. **Runtime introspection** — non-Python clients have no way to discover driver APIs programmatically.
-2. **Schema portability** — there is no language-neutral description of Jumpstarter driver interfaces that standard protobuf/gRPC tooling can consume.
-3. **Schema stability** — there is no committed, reviewable artifact describing a driver interface. Changes to Python signatures silently change the wire contract, with no diff for reviewers and no CI signal for polyglot consumers.
+1. **Runtime introspection** -- non-Python clients have no way to discover driver APIs programmatically.
+2. **Schema portability** -- there is no language-neutral description of Jumpstarter driver interfaces that standard protobuf/gRPC tooling can consume.
+3. **Schema stability** -- there is no committed, reviewable artifact describing a driver interface. Changes to Python signatures silently change the wire contract, with no diff for reviewers and no CI signal for polyglot consumers.
 
 ### User Stories
 
 - **As a** Python driver developer, **I want** an opt-in linter that flags `@export` methods missing type annotations, **so that** interfaces I choose to expose to polyglot consumers are fully typed before the `.proto` file is generated.
 
-- **As a** Java test engineer writing Android device tests, **I want to** discover all available methods on a leased device's power driver — including parameter types, return types, and streaming semantics — **so that** I can generate type-safe Kotlin stubs instead of hand-writing `DriverCall` invocations with magic string method names.
+- **As a** Java test engineer writing Android device tests, **I want to** discover all available methods on a leased device's power driver -- including parameter types, return types, and streaming semantics -- **so that** I can generate type-safe Kotlin stubs instead of hand-writing `DriverCall` invocations with magic string method names.
 
 - **As a** tools developer building a device management dashboard, **I want to** point standard gRPC tooling (`grpcurl`, Postman, Buf Studio) at an exporter and discover every available driver interface with full type information, **so that** I can prototype interactions without reading Python source code.
 
@@ -49,34 +49,34 @@ This JEP addresses three concrete gaps:
 
 This proposal adds three capabilities to Jumpstarter, all centered on committed `.proto` files as the canonical schema artifact:
 
-1. **Proto Codegen CLI (Python → `.proto`)** — a developer-invoked command that introspects a `DriverInterface` class and emits a `.proto` source file. The `.proto` file is committed alongside the driver package that defines the interface.
-2. **Interface check CLI (drift detection)** — runs in CI to verify the committed `.proto` file still matches the Python interface. Reports any method, parameter, return-type, or streaming-semantics mismatch as a test failure.
-3. **Runtime descriptor exposure** — the exporter loads the pre-compiled descriptor set (produced by `protoc --descriptor_set_out` from the committed `.proto` files), registers the services with gRPC Server Reflection, and embeds the raw bytes in `DriverInstanceReport.file_descriptor_proto`.
+1. **Proto Codegen CLI (Python → `.proto`)** -- a developer-invoked command that introspects a `DriverInterface` class and emits a `.proto` source file. The `.proto` file is committed alongside the driver package that defines the interface.
+2. **Interface check CLI (drift detection)** -- runs in CI to verify the committed `.proto` file still matches the Python interface. Reports any method, parameter, return-type, or streaming-semantics mismatch as a test failure.
+3. **Runtime descriptor exposure** -- the exporter loads the pre-compiled descriptor set (produced by `protoc --descriptor_set_out` from the committed `.proto` files), registers the services with gRPC Server Reflection, and embeds the raw bytes in `DriverInstanceReport.file_descriptor_proto`.
 
 The `.proto` files are the source of truth. Introspection happens once, at development time, when the author runs the codegen CLI; it does **not** happen at exporter startup or at Python import time. This mirrors the standard gRPC development workflow and keeps the exporter's runtime free of schema-construction work.
 
 **CLI naming is intentionally deferred.** This JEP does not commit to a concrete command surface for the codegen and check tools. Whether they ship as `jmp` subcommands, a separate `jmp-devel` binary, standalone executables, or some other shape is a UX decision better made during implementation, when we can weigh how much of the developer toolchain ends up under one umbrella. Throughout this document, "the codegen CLI" and "the interface check CLI" are used as descriptive names; bash code blocks use `<codegen>` and `<interface-check>` as placeholders for whatever the final invocation turns out to be.
 
-Proto-first workflows — authoring `.proto` files and generating Python interface/client/driver scaffolding from them — are **out of scope for this JEP**. They are planned as a follow-up JEP once non-Python codegen is ready to consume the committed `.proto` files.
+Proto-first workflows -- authoring `.proto` files and generating Python interface/client/driver scaffolding from them -- are **out of scope for this JEP**. They are planned as a follow-up JEP once non-Python codegen is ready to consume the committed `.proto` files.
 
 ### Wire Protocol: `DriverCall` Remains Unchanged
 
-An important design constraint: **this JEP does not change the wire protocol.** The existing `DriverCall` and `StreamingDriverCall` RPCs — where the client sends a method name as a string and arguments as `google.protobuf.Value` — remain the actual transport mechanism. The auto-generated client code still calls `self.call("on")` and `self.streamingcall("read")` under the hood. The auto-generated driver adapter still receives dispatch through the existing `@export` decorator and `Driver` base class machinery.
+An important design constraint: **this JEP does not change the wire protocol.** The existing `DriverCall` and `StreamingDriverCall` RPCs -- where the client sends a method name as a string and arguments as `google.protobuf.Value` -- remain the actual transport mechanism. The auto-generated client code still calls `self.call("on")` and `self.streamingcall("read")` under the hood. The auto-generated driver adapter still receives dispatch through the existing `@export` decorator and `Driver` base class machinery.
 
-The `.proto` files and `FileDescriptorProto` descriptors serve as a **description layer** on top of the existing dispatch mechanism — they describe what methods exist, what types they use, and what streaming semantics they have. They do not replace `DriverCall` with actual protobuf-native gRPC service implementations (where `PowerInterface` would be a real gRPC service with compiled request/response message stubs). That migration would be a significant breaking change to the exporter protocol, affecting every existing client and driver, and is explicitly out of scope for this JEP.
+The `.proto` files and `FileDescriptorProto` descriptors serve as a **description layer** on top of the existing dispatch mechanism -- they describe what methods exist, what types they use, and what streaming semantics they have. They do not replace `DriverCall` with actual protobuf-native gRPC service implementations (where `PowerInterface` would be a real gRPC service with compiled request/response message stubs). That migration would be a significant breaking change to the exporter protocol, affecting every existing client and driver, and is explicitly out of scope for this JEP.
 
 In concrete terms:
 
 - **What the proto IS used for:** introspection (`GetReport`, gRPC reflection), compatibility checking (the interface check CLI, `buf breaking`), documentation, and polyglot codegen.
 - **What the proto is NOT used for:** actual RPC transport. The `DriverCall(uuid="...", method="on", args=[])` message continues to be the wire format.
 
-A future JEP will propose adding native protobuf service implementations alongside `DriverCall` — where `protoc`-generated stubs handle serialization directly. Whether the legacy transport is eventually retired is a separate question, contingent on field experience with the dual-path implementation; this JEP does not commit to that outcome. A design sketch for this future work is included at the end of this JEP for context.
+A future JEP will propose adding native protobuf service implementations alongside `DriverCall` -- where `protoc`-generated stubs handle serialization directly. Whether the legacy transport is eventually retired is a separate question, contingent on field experience with the dual-path implementation; this JEP does not commit to that outcome. A design sketch for this future work is included at the end of this JEP for context.
 
 #### gRPC reflection is advisory in this JEP
 
-gRPC reflection will advertise services described by the committed `.proto` files — for example, `jumpstarter.driver.power.v1.PowerInterface.On(Empty)`. Because the wire protocol is unchanged, **those services are not backed by native gRPC handlers in this JEP**. A client that discovers the service through reflection and attempts to invoke it directly (e.g., `grpcurl -d '{}' host:port jumpstarter.driver.power.v1.PowerInterface/On`) will receive `UNIMPLEMENTED`.
+gRPC reflection will advertise services described by the committed `.proto` files -- for example, `jumpstarter.driver.power.v1.PowerInterface.On(Empty)`. Because the wire protocol is unchanged, **those services are not backed by native gRPC handlers in this JEP**. A client that discovers the service through reflection and attempts to invoke it directly (e.g., `grpcurl -d '{}' host:port jumpstarter.driver.power.v1.PowerInterface/On`) will receive `UNIMPLEMENTED`.
 
-Reflection here is deliberately **advisory** — it exposes the schema so polyglot clients, codegen pipelines, and documentation tooling can discover the driver API and generate typed stubs that drive the existing `DriverCall` transport. The follow-up native-gRPC JEP will add handlers so reflected services become directly invocable without changing the proto schema produced by this JEP.
+Reflection here is deliberately **advisory** -- it exposes the schema so polyglot clients, codegen pipelines, and documentation tooling can discover the driver API and generate typed stubs that drive the existing `DriverCall` transport. The follow-up native-gRPC JEP will add handlers so reflected services become directly invocable without changing the proto schema produced by this JEP.
 
 ### `FileDescriptorProto` as the Schema Format
 
@@ -84,11 +84,11 @@ Rather than defining a custom schema message, this proposal uses protobuf's own 
 
 A `FileDescriptorProto` fully describes a `.proto` file in binary form: its package name, message definitions (with field names, types, and numbers), service definitions (with method names, request/response types, and streaming semantics), and import dependencies. This is strictly more expressive than any custom schema format.
 
-Using it means there is one descriptor format throughout the entire system — generation, runtime introspection, registry, and codegen all consume the same artifact.
+Using it means there is one descriptor format throughout the entire system -- generation, runtime introspection, registry, and codegen all consume the same artifact.
 
 ### Build-time introspection of `@export` methods
 
-Introspection runs at codegen CLI invocation time, not at import or exporter startup. The `@export` decorator itself is unchanged — it still stamps markers on the function for `DriverCall` dispatch. Type information is read directly from the live class via `inspect.signature()` when the CLI tool loads the interface module:
+Introspection runs at codegen CLI invocation time, not at import or exporter startup. The `@export` decorator itself is unchanged -- it still stamps markers on the function for `DriverCall` dispatch. Type information is read directly from the live class via `inspect.signature()` when the CLI tool loads the interface module:
 
 ```python
 # inside the codegen CLI
@@ -102,7 +102,7 @@ params = [
 return_type = sig.return_annotation
 ```
 
-The `_infer_call_type()` helper examines both the parameter and return annotations to determine streaming semantics: `AsyncGenerator[T]` or `Generator[T]` as a return type indicates server streaming, an `AsyncGenerator` parameter indicates client streaming, and the combination indicates bidirectional streaming (as used by the TCP driver). All other signatures indicate unary calls. Methods decorated with `@exportstream` (detected via the `MARKER_STREAMCALL` attribute) are handled separately — they are raw byte stream constructors that use a `StreamData { bytes payload }` message for native gRPC bidi streaming (see "Driver Patterns and Introspection Scope" in Design Details).
+The `_infer_call_type()` helper examines both the parameter and return annotations to determine streaming semantics: `AsyncGenerator[T]` or `Generator[T]` as a return type indicates server streaming, an `AsyncGenerator` parameter indicates client streaming, and the combination indicates bidirectional streaming (as used by the TCP driver). All other signatures indicate unary calls. Methods decorated with `@exportstream` (detected via the `MARKER_STREAMCALL` attribute) are handled separately -- they are raw byte stream constructors that use a `StreamData { bytes payload }` message for native gRPC bidi streaming (see "Driver Patterns and Introspection Scope" in Design Details).
 
 Because introspection is build-time only, there is no per-method metadata stored on function objects, no import-time overhead, and no runtime coupling between the dispatch layer and schema description.
 
@@ -138,7 +138,7 @@ Rather than implementing the type mapping table from scratch, the builder levera
 
 - **`TypeAdapter(T).json_schema()`** works on arbitrary types (not just models), enabling introspection of `@export` method parameter types like `list[int]`, `Optional[str]`, or `UUID`.
 
-- **`GenerateJsonSchema`** is Pydantic's extensible schema generator with ~55 type-specific handler methods (`int_schema()`, `str_schema()`, `list_schema()`, `model_schema()`, `enum_schema()`, etc.). By subclassing it, the builder can intercept type resolution and emit protobuf `FieldDescriptorProto` / `DescriptorProto` objects instead of JSON Schema dictionaries — reusing Pydantic's type walking, generic resolution, and forward reference handling.
+- **`GenerateJsonSchema`** is Pydantic's extensible schema generator with ~55 type-specific handler methods (`int_schema()`, `str_schema()`, `list_schema()`, `model_schema()`, `enum_schema()`, etc.). By subclassing it, the builder can intercept type resolution and emit protobuf `FieldDescriptorProto` / `DescriptorProto` objects instead of JSON Schema dictionaries -- reusing Pydantic's type walking, generic resolution, and forward reference handling.
 
 The JSON Schema → protobuf mapping is mechanical:
 
@@ -154,11 +154,11 @@ The JSON Schema → protobuf mapping is mechanical:
 | `"anyOf": [T, null]`            | `optional` field                      |
 | `"enum"`                        | Proto `enum` type                     |
 
-This approach means Pydantic handles ~80-85% of the type mapping automatically. The remaining protobuf-specific concerns — field number assignment, streaming semantics, `@exportstream` detection, `FileDescriptorProto` assembly, and package/import management — are handled by the builder's own logic.
+This approach means Pydantic handles ~80-85% of the type mapping automatically. The remaining protobuf-specific concerns -- field number assignment, streaming semantics, `@exportstream` detection, `FileDescriptorProto` assembly, and package/import management -- are handled by the builder's own logic.
 
 ### Build-time `.proto` generation
 
-The codegen CLI uses a `build_file_descriptor()` library function to construct a `google.protobuf.descriptor_pb2.FileDescriptorProto` from an interface class, then renders it as human-readable `.proto` source. The builder is a pure function — it is **not** called by the exporter at runtime or by any import-time hook.
+The codegen CLI uses a `build_file_descriptor()` library function to construct a `google.protobuf.descriptor_pb2.FileDescriptorProto` from an interface class, then renders it as human-readable `.proto` source. The builder is a pure function -- it is **not** called by the exporter at runtime or by any import-time hook.
 
 ```python
 from google.protobuf.descriptor_pb2 import (
@@ -222,7 +222,7 @@ This produces the same `FileDescriptorProto` that `protoc` would generate from a
 
 ### Custom Options and Doc Comments
 
-Protobuf service and message definitions carry structure — method names, parameter types, streaming semantics — but out of the box they don't carry versioning metadata. Additionally, while the type mapping captures *what* a method does structurally, it doesn't capture *why* or *how* in human terms. This section addresses both gaps: a lightweight custom option for interface versioning, and systematic generation of proto comments from Python docstrings.
+Protobuf service and message definitions carry structure -- method names, parameter types, streaming semantics -- but out of the box they don't carry versioning metadata. Additionally, while the type mapping captures *what* a method does structurally, it doesn't capture *why* or *how* in human terms. This section addresses both gaps: a lightweight custom option for interface versioning, and systematic generation of proto comments from Python docstrings.
 
 #### Interface Versioning
 
@@ -233,7 +233,7 @@ This approach was chosen over a custom `interface_version` service option becaus
 - It follows the standard protobuf/Buf versioning convention that all gRPC tooling already understands
 - It avoids custom annotations and the extraction logic they require
 - `buf breaking` is purpose-built for detecting incompatible proto changes
-- Proto contracts are either compatible or they're a new version — semver within a package version adds complexity without benefit
+- Proto contracts are either compatible or they're a new version -- semver within a package version adds complexity without benefit
 
 #### Custom Annotations
 
@@ -246,7 +246,7 @@ package jumpstarter.annotations;
 import "google/protobuf/descriptor.proto";
 
 extend google.protobuf.FieldOptions {
-  // Marks this field as a resource handle — a UUID string referencing
+  // Marks this field as a resource handle -- a UUID string referencing
   // a client-negotiated stream via the Jumpstarter resource system.
   // See "Resource Handle Pattern" in Design Details.
   optional bool resource_handle = 50000;
@@ -255,11 +255,11 @@ extend google.protobuf.FieldOptions {
 
 Field number 50000 falls within the range reserved by protobuf for organization-internal use (50000-99999), avoiding collision with other projects or future protobuf additions.
 
-Note that `@exportstream` methods (raw byte stream constructors) do not need a custom annotation. They are represented as bidirectional streaming RPCs with a `StreamData { bytes payload }` message type — this pattern is unambiguous and sufficient for codegen tools to infer the correct dispatch mechanism. The `StreamData` message is auto-generated into the proto package when any `@exportstream` method exists, enabling native gRPC bidi streaming for byte transport without relying on `RouterService.Stream`.
+Note that `@exportstream` methods (raw byte stream constructors) do not need a custom annotation. They are represented as bidirectional streaming RPCs with a `StreamData { bytes payload }` message type -- this pattern is unambiguous and sufficient for codegen tools to infer the correct dispatch mechanism. The `StreamData` message is auto-generated into the proto package when any `@exportstream` method exists, enabling native gRPC bidi streaming for byte transport without relying on `RouterService.Stream`.
 
 #### Doc comments from docstrings
 
-Proto comments (lines starting with `//` immediately preceding a service, method, message, or field definition) are a first-class concept in the protobuf ecosystem. They're preserved in `FileDescriptorProto` source info, rendered by `protoc-gen-doc`, displayed by `grpcurl describe`, shown in Buf Schema Registry, and emitted as language-native doc comments by standard codegen plugins (`protoc-gen-java`, `protoc-gen-ts`, etc.). There's no need to duplicate them as custom options — the standard proto comment mechanism already flows through the entire toolchain.
+Proto comments (lines starting with `//` immediately preceding a service, method, message, or field definition) are a first-class concept in the protobuf ecosystem. They're preserved in `FileDescriptorProto` source info, rendered by `protoc-gen-doc`, displayed by `grpcurl describe`, shown in Buf Schema Registry, and emitted as language-native doc comments by standard codegen plugins (`protoc-gen-java`, `protoc-gen-ts`, etc.). There's no need to duplicate them as custom options -- the standard proto comment mechanism already flows through the entire toolchain.
 
 The `build_file_descriptor()` builder and the codegen CLI extract docstrings from Python and emit them as proto comments:
 
@@ -349,7 +349,7 @@ message PowerReading {
 }
 ```
 
-The proto is clean and readable. The comments flow through standard `protoc` codegen plugins to produce language-native documentation — Javadoc for Java/Kotlin, TSDoc for TypeScript, `///` for Rust, docstrings for Python — without any custom options or annotation processing. A developer reading the `.proto` file sees a self-documenting interface contract. The package version (`v1`) provides the compatibility boundary, and `buf breaking` enforces backward-compatible evolution within a version.
+The proto is clean and readable. The comments flow through standard `protoc` codegen plugins to produce language-native documentation -- Javadoc for Java/Kotlin, TSDoc for TypeScript, `///` for Rust, docstrings for Python -- without any custom options or annotation processing. A developer reading the `.proto` file sees a self-documenting interface contract. The package version (`v1`) provides the compatibility boundary, and `buf breaking` enforces backward-compatible evolution within a version.
 
 #### How doc comments improve codegen
 
@@ -372,7 +372,7 @@ And `protoc-gen-ts` produces:
 async off(): Promise<void> { ... }
 ```
 
-This happens for free — no custom options, no custom codegen plugins, no annotation processing. A future Jumpstarter-specific `jmp codegen` wrapper could compose these standard stubs into DeviceClass-typed wrappers, inheriting the documentation from the proto comments.
+This happens for free -- no custom options, no custom codegen plugins, no annotation processing. A future Jumpstarter-specific `jmp codegen` wrapper could compose these standard stubs into DeviceClass-typed wrappers, inheriting the documentation from the proto comments.
 
 #### Doc comment round-trip consistency
 
@@ -410,9 +410,9 @@ interfaces/
         network/v1/network.proto     # package jumpstarter.driver.network.v1;
 ```
 
-This shape unblocks multi-language driver implementations of the same interface — every language's build tooling consumes the same `interfaces/proto/...` source, just as every language can already consume `protocol/proto/jumpstarter/v1/...` for the wire protocol — and lets standard `protoc -I interfaces/proto` import resolution work without configuration.
+This shape unblocks multi-language driver implementations of the same interface -- every language's build tooling consumes the same `interfaces/proto/...` source, just as every language can already consume `protocol/proto/jumpstarter/v1/...` for the wire protocol -- and lets standard `protoc -I interfaces/proto` import resolution work without configuration.
 
-**Proto package selection.** When `--proto-package` is omitted, the CLI uses the first-party convention `jumpstarter.driver.{name}.{version}` — required for in-tree interfaces. Out-of-tree authors override with `--proto-package`, e.g. `--proto-package com.example.jumpstarter.driver.abc.v1`, to publish under their own organization's reverse-domain namespace. The directory path under `interfaces/proto/` mirrors whatever namespace the author chooses, segment-for-segment.
+**Proto package selection.** When `--proto-package` is omitted, the CLI uses the first-party convention `jumpstarter.driver.{name}.{version}` -- required for in-tree interfaces. Out-of-tree authors override with `--proto-package`, e.g. `--proto-package com.example.jumpstarter.driver.abc.v1`, to publish under their own organization's reverse-domain namespace. The directory path under `interfaces/proto/` mirrors whatever namespace the author chooses, segment-for-segment.
 
 Implementation: loads the interface class via `importlib`, calls `build_file_descriptor()` to produce the `FileDescriptorProto`, then renders it as human-readable `.proto` source text. Python snake_case method names are converted to PascalCase RPC names (e.g., `read_data_by_identifier` → `rpc ReadDataByIdentifier`), following standard proto conventions.
 
@@ -426,7 +426,7 @@ walks `DriverInterfaceMeta._registry` (populated at import time) to discover all
 
 ### Out-of-tree drivers
 
-Out-of-tree driver packages — drivers maintained outside this repository — participate in the same `.proto` workflow as in-tree drivers. The maintainer runs the codegen CLI against their `DriverInterface` subclasses, **vendors** the resulting `.proto` files into their own package's `interfaces/proto/` directory (mirroring the in-tree shape), and bundles a pre-compiled descriptor set produced by `protoc --descriptor_set_out` at the package's build time. The author chooses their own reverse-domain proto namespace (e.g., `com.example.jumpstarter.driver.abc.v1`) via `--proto-package`; the directory path under `interfaces/proto/` mirrors that namespace segment-for-segment.
+Out-of-tree driver packages -- drivers maintained outside this repository -- participate in the same `.proto` workflow as in-tree drivers. The maintainer runs the codegen CLI against their `DriverInterface` subclasses, **vendors** the resulting `.proto` files into their own package's `interfaces/proto/` directory (mirroring the in-tree shape), and bundles a pre-compiled descriptor set produced by `protoc --descriptor_set_out` at the package's build time. The author chooses their own reverse-domain proto namespace (e.g., `com.example.jumpstarter.driver.abc.v1`) via `--proto-package`; the directory path under `interfaces/proto/` mirrors that namespace segment-for-segment.
 
 ```text
 my-jumpstarter-drivers/                                       # package root
@@ -439,7 +439,7 @@ my-jumpstarter-drivers/                                       # package root
     └── driver.py
 ```
 
-For multi-driver or multi-language packages, the same `interfaces/proto/` shape extends naturally — multiple interfaces under one `interfaces/proto/` tree, with sibling language directories (`python/`, `rust/`, `cpp/`) consuming the same schemas. An "interface-only" package may publish only `interfaces/proto/<ns>/...` with no implementation; an "implementation-only" package omits `interfaces/` entirely and pulls the schema from a declared dependency (the same way `tonic-build` and related gRPC tooling already resolves cross-package proto imports).
+For multi-driver or multi-language packages, the same `interfaces/proto/` shape extends naturally -- multiple interfaces under one `interfaces/proto/` tree, with sibling language directories (`python/`, `rust/`, `cpp/`) consuming the same schemas. An "interface-only" package may publish only `interfaces/proto/<ns>/...` with no implementation; an "implementation-only" package omits `interfaces/` entirely and pulls the schema from a declared dependency (the same way `tonic-build` and related gRPC tooling already resolves cross-package proto imports).
 
 ```bash
 <codegen> \
@@ -451,14 +451,14 @@ For multi-driver or multi-language packages, the same `interfaces/proto/` shape 
 
 The `jumpstarter.driver.*` namespace is reserved for first-party interfaces; out-of-tree authors must supply `--proto-package` with their own reverse-domain namespace. The CLI refuses to write to a path that overlaps the first-party namespace when an out-of-tree namespace is requested, and vice versa.
 
-`DriverInterface` subclasses register with `DriverInterfaceMeta._registry` automatically at import time, so the codegen CLI's batch mode picks them up once the package is installed in the development environment, and the interface check CLI can run against any importable interface module — out-of-tree packages are not a special case.
+`DriverInterface` subclasses register with `DriverInterfaceMeta._registry` automatically at import time, so the codegen CLI's batch mode picks them up once the package is installed in the development environment, and the interface check CLI can run against any importable interface module -- out-of-tree packages are not a special case.
 
 #### Build-time automation for out-of-tree drivers
 
 Running the codegen CLI by hand and committing the result is the explicit, manual path. Out-of-tree authors who prefer not to maintain that step can hook the codegen step into their package build alongside descriptor compilation (see DD-6: *"Same hook can also handle `.proto` generation"*). With a Python build plugin wired up:
 
 ```toml
-# pyproject.toml — build plugin runs codegen + protoc as part of `uv build`
+# pyproject.toml -- build plugin runs codegen + protoc as part of `uv build`
 [build-system]
 requires = ["hatchling", "jumpstarter-codegen-build>=1.0"]
 build-backend = "hatchling.build"
@@ -468,7 +468,7 @@ interfaces = ["jumpstarter_driver_abc.AbcInterface"]
 proto-package = "com.example.jumpstarter.driver.abc.v1"
 ```
 
-`uv build` then introspects the listed interface(s), writes `.proto` source to `interfaces/proto/com/example/jumpstarter/driver/abc/v1/abc.proto`, runs `protoc --descriptor_set_out` against it, and bundles the descriptor set into the wheel — all in one step. The author writes only the `@export`-decorated Python class. They can either commit the generated `.proto` (recommended for review, `buf breaking`, and polyglot consumption) or treat it as a build artifact that lives only in the wheel; the build plugin works the same way either direction. Equivalent plugins for other build systems (`build.rs` for Rust, Gradle plugin for Kotlin/JVM, CMake module for C/C++) follow the same shape and are tracked as follow-up work alongside non-Python authoring support.
+`uv build` then introspects the listed interface(s), writes `.proto` source to `interfaces/proto/com/example/jumpstarter/driver/abc/v1/abc.proto`, runs `protoc --descriptor_set_out` against it, and bundles the descriptor set into the wheel -- all in one step. The author writes only the `@export`-decorated Python class. They can either commit the generated `.proto` (recommended for review, `buf breaking`, and polyglot consumption) or treat it as a build artifact that lives only in the wheel; the build plugin works the same way either direction. Equivalent plugins for other build systems (`build.rs` for Rust, Gradle plugin for Kotlin/JVM, CMake module for C/C++) follow the same shape and are tracked as follow-up work alongside non-Python authoring support.
 
 If an out-of-tree driver ships neither a committed `.proto` nor a bundled descriptor, the exporter logs a warning naming the driver and continues to load it. The driver still serves `DriverCall` traffic normally, so existing Python clients keep working. Three things degrade in that case:
 
@@ -478,7 +478,7 @@ If an out-of-tree driver ships neither a committed `.proto` nor a bundled descri
 
 The warning text should point to the codegen CLI and recommend adding it to the package's build so polyglot clients can consume the driver. This keeps the existing "easy driver development" property intact: authors can iterate without a `.proto` and add one when they're ready to support polyglot clients.
 
-Auto-generating descriptors for out-of-tree drivers — for example by introspecting Python interfaces at exporter startup, or by compiling shipped `.proto` source on-demand without a pre-built descriptor — is deliberately out of scope for this JEP. This JEP commits to build-time codegen as the only supported path. A future JEP may revisit runtime auto-generation as a convenience for out-of-tree drivers if real-world friction warrants it.
+Auto-generating descriptors for out-of-tree drivers -- for example by introspecting Python interfaces at exporter startup, or by compiling shipped `.proto` source on-demand without a pre-built descriptor -- is deliberately out of scope for this JEP. This JEP commits to build-time codegen as the only supported path. A future JEP may revisit runtime auto-generation as a convenience for out-of-tree drivers if real-world friction warrants it.
 
 ### Client inheritance convention
 
@@ -496,9 +496,9 @@ class PowerClient(PowerInterface, DriverClient):
             yield PowerReading.model_validate(raw, strict=True)
 ```
 
-In the current codebase, client classes inherit only from `DriverClient` (e.g., `class PowerClient(DriverClient)`). Dual inheritance gives type checkers a way to verify that every client method is actually declared on the interface — if a `DriverInterface` method is missing from the client, mypy / pyright will flag the subclass as incomplete. It also makes the client relationship to the interface explicit across languages that don't support multiple inheritance — those languages can fall back to single-inherit-from-interface with a `DriverClient` helper, but the contract is the same.
+In the current codebase, client classes inherit only from `DriverClient` (e.g., `class PowerClient(DriverClient)`). Dual inheritance gives type checkers a way to verify that every client method is actually declared on the interface -- if a `DriverInterface` method is missing from the client, mypy / pyright will flag the subclass as incomplete. It also makes the client relationship to the interface explicit across languages that don't support multiple inheritance -- those languages can fall back to single-inherit-from-interface with a `DriverClient` helper, but the contract is the same.
 
-**Migration:** The standard in-tree clients (PowerClient, NetworkClient, StorageMuxClient, FlasherClient, CompositeClient, and the virtual-power client) are migrated to dual inheritance alongside the `DriverInterface` migration (Phase 1b). Drivers with clients that provide client-side orchestration (e.g., `FlasherClient` with `OpendalAdapter`, `StorageMuxFlasherClient.flash()`) keep their hand-written orchestration — dual inheritance does not change the methods, only the declared bases.
+**Migration:** The standard in-tree clients (PowerClient, NetworkClient, StorageMuxClient, FlasherClient, CompositeClient, and the virtual-power client) are migrated to dual inheritance alongside the `DriverInterface` migration (Phase 1b). Drivers with clients that provide client-side orchestration (e.g., `FlasherClient` with `OpendalAdapter`, `StorageMuxFlasherClient.flash()`) keep their hand-written orchestration -- dual inheritance does not change the methods, only the declared bases.
 
 ### Proto-first workflow (deferred)
 
@@ -507,7 +507,7 @@ An earlier revision of this JEP described a a proto-first codegen companion comm
 Rationale:
 
 - For Python-first drivers (the primary path in this repository), the proto-first adapter adds an extra inheritance layer and `@export`-on-`__method` indirection without reducing the code a driver developer writes. A driver author still writes the hardware logic in abstract methods; the adapter only relocates the `@export` decorator one class up.
-- The main value of proto-first generation is for **non-Python** consumers — Kotlin, Java, TypeScript, Rust — which can already consume the committed `.proto` files via standard `protoc` plugins. A reference prototype for non-Python codegen exists and will be proposed in a follow-up JEP.
+- The main value of proto-first generation is for **non-Python** consumers -- Kotlin, Java, TypeScript, Rust -- which can already consume the committed `.proto` files via standard `protoc` plugins. A reference prototype for non-Python codegen exists and will be proposed in a follow-up JEP.
 - Removing a proto-first codegen companion from this JEP shrinks the scope, unblocks the Python-first path, and avoids committing to an adapter pattern before non-Python codegen design is complete.
 
 The `.proto` schema format defined by this JEP is stable enough that the follow-up JEP can build on it without revisiting the schema.
@@ -522,9 +522,9 @@ Because the `.proto` files are committed and reviewed, CI needs a way to detect 
   --interface jumpstarter_driver_power.interface.PowerInterface
 ```
 
-The tool runs `build_file_descriptor()` against the live Python class, parses the committed `.proto` file, and reports any mismatch in method names, parameter/return types, streaming semantics, or doc comments. It runs in CI alongside `buf breaking` — `buf breaking` detects backward-incompatible changes between old and new proto revisions; the interface check CLI detects drift between the current Python interface and the current proto revision. Together they cover both classes of failure.
+The tool runs `build_file_descriptor()` against the live Python class, parses the committed `.proto` file, and reports any mismatch in method names, parameter/return types, streaming semantics, or doc comments. It runs in CI alongside `buf breaking` -- `buf breaking` detects backward-incompatible changes between old and new proto revisions; the interface check CLI detects drift between the current Python interface and the current proto revision. Together they cover both classes of failure.
 
-**Discovery.** The check CLI accepts `--interface <module.path>` for single-interface use (the form shown above). For "check everything" CI runs, it walks `DriverInterfaceMeta._registry` — the same mechanism the codegen CLI's batch mode uses — so importing the package(s) under check is sufficient discovery. There is no separate yaml manifest of interfaces to keep in sync; the metaclass registry is the single source of truth.
+**Discovery.** The check CLI accepts `--interface <module.path>` for single-interface use (the form shown above). For "check everything" CI runs, it walks `DriverInterfaceMeta._registry` -- the same mechanism the codegen CLI's batch mode uses -- so importing the package(s) under check is sufficient discovery. There is no separate yaml manifest of interfaces to keep in sync; the metaclass registry is the single source of truth.
 
 ### API / Protocol Changes
 
@@ -547,9 +547,9 @@ message DriverInstanceReport {
 }
 ```
 
-This embeds the descriptor directly in the report, making `GetReport` self-describing. A Java client parses the bytes as `FileDescriptorProto`, feeds it to a `DescriptorPool`, and has full type information for every driver — method names, parameter types, return types, streaming semantics — without needing a separate gRPC reflection call.
+This embeds the descriptor directly in the report, making `GetReport` self-describing. A Java client parses the bytes as `FileDescriptorProto`, feeds it to a `DescriptorPool`, and has full type information for every driver -- method names, parameter types, return types, streaming semantics -- without needing a separate gRPC reflection call.
 
-**Source of the bytes.** The descriptors are loaded from a **pre-compiled descriptor set** produced by `protoc --descriptor_set_out` from the committed `.proto` files. Only the `.proto` source is committed to the repository — the compiled descriptor set is a **build artifact** generated during the package build (e.g., as a `hatchling` / `setuptools` step for Python wheels) and bundled into the distribution alongside the rest of the package's payload, the same way generated language bindings are. The exporter reads this file once at startup and indexes the `FileDescriptorProto` by driver interface class. It does **not** run introspection at startup — that work is done at development time by the codegen CLI; only the `.proto` source is committed and reviewed.
+**Source of the bytes.** The descriptors are loaded from a **pre-compiled descriptor set** produced by `protoc --descriptor_set_out` from the committed `.proto` files. Only the `.proto` source is committed to the repository -- the compiled descriptor set is a **build artifact** generated during the package build (e.g., as a `hatchling` / `setuptools` step for Python wheels) and bundled into the distribution alongside the rest of the package's payload, the same way generated language bindings are. The exporter reads this file once at startup and indexes the `FileDescriptorProto` by driver interface class. It does **not** run introspection at startup -- that work is done at development time by the codegen CLI; only the `.proto` source is committed and reviewed.
 
 The field is `optional bytes` (not a nested message) because `FileDescriptorProto` is a well-known protobuf type that clients parse with their own language's descriptor library. Keeping it as raw bytes avoids adding `google/protobuf/descriptor.proto` as a direct dependency of the Jumpstarter protocol.
 
@@ -578,9 +578,9 @@ def register_reflection(server, descriptor_set_path):
 
 This serves the descriptors through the standard `grpc.reflection.v1.ServerReflection` service, enabling standard tools (`grpcurl`, Postman, Java's `ProtoReflectionDescriptorDatabase`) to discover every driver interface on any exporter.
 
-As noted in the Proposal, reflection in this JEP is **advisory**: services discovered via reflection describe the driver API but are not directly invocable — native gRPC handlers are a follow-up JEP. Standard tools can still use the reflected schema to generate typed stubs that drive `DriverCall` under the hood.
+As noted in the Proposal, reflection in this JEP is **advisory**: services discovered via reflection describe the driver API but are not directly invocable -- native gRPC handlers are a follow-up JEP. Standard tools can still use the reflected schema to generate typed stubs that drive `DriverCall` under the hood.
 
-The `file_descriptor_proto` in the report and the gRPC reflection service serve the same data through different channels. The report embeds the descriptor for clients that want it inline with the driver tree. Reflection serves it through the standard gRPC mechanism for tools that expect that protocol. They are the same `FileDescriptorProto` — no duplication of schema definitions.
+The `file_descriptor_proto` in the report and the gRPC reflection service serve the same data through different channels. The report embeds the descriptor for clients that want it inline with the driver tree. Reflection serves it through the standard gRPC mechanism for tools that expect that protocol. They are the same `FileDescriptorProto` -- no duplication of schema definitions.
 
 ### Hardware Considerations
 
@@ -592,10 +592,10 @@ This JEP is a purely software-layer change. No hardware is required or affected.
 
 **Alternatives considered:**
 
-1. **Runtime dynamic `FileDescriptorProto` generation** — the exporter introspects `@export` methods at startup and builds descriptors on demand.
-2. **Committed `.proto` files produced by the codegen CLI** — schemas are authored (via tool-assisted generation), committed to the driver package, compiled with `protoc --descriptor_set_out`, and loaded at startup.
+1. **Runtime dynamic `FileDescriptorProto` generation** -- the exporter introspects `@export` methods at startup and builds descriptors on demand.
+2. **Committed `.proto` files produced by the codegen CLI** -- schemas are authored (via tool-assisted generation), committed to the driver package, compiled with `protoc --descriptor_set_out`, and loaded at startup.
 
-**Decision:** Option 2 — committed `.proto` files.
+**Decision:** Option 2 -- committed `.proto` files.
 
 **Rationale:** Committed schemas give reviewers a visible diff, CI a concrete artifact for `buf breaking`, and polyglot consumers a stable reference. Dynamic generation has no diff, couples dispatch to schema at import time, and shifts the drift-detection problem onto the exporter. An interface-check CI gate against a committed `.proto` is both simpler and more informative than runtime reconstruction.
 
@@ -603,10 +603,10 @@ This JEP is a purely software-layer change. No hardware is required or affected.
 
 **Alternatives considered:**
 
-1. **Mandatory at decoration time** — `@export` raises `TypeError` for any method without complete annotations. Forces the entire codebase (~111 methods across 25 packages) to be fully typed before anything builds.
-2. **Opt-in via `@export(strict=True)` / `JMP_EXPORT_STRICT=1`** — `@export` in default mode emits `DeprecationWarning`. Teams enable strict mode per package. The codegen CLI always requires full annotations — enforcement moves to the tool.
+1. **Mandatory at decoration time** -- `@export` raises `TypeError` for any method without complete annotations. Forces the entire codebase (~111 methods across 25 packages) to be fully typed before anything builds.
+2. **Opt-in via `@export(strict=True)` / `JMP_EXPORT_STRICT=1`** -- `@export` in default mode emits `DeprecationWarning`. Teams enable strict mode per package. The codegen CLI always requires full annotations -- enforcement moves to the tool.
 
-**Decision:** Option 2 — opt-in.
+**Decision:** Option 2 -- opt-in.
 
 **Rationale:** Mandatory enforcement blocks packages that don't need polyglot exposure and couples this JEP to a 111-method mechanical fix. Opt-in lets the ecosystem migrate incrementally while still guaranteeing annotation coverage for any interface that actually publishes a `.proto`.
 
@@ -614,50 +614,50 @@ This JEP is a purely software-layer change. No hardware is required or affected.
 
 **Alternatives considered:**
 
-1. **Bidirectional tooling in Phase 1** — ship both the codegen CLI (Python → `.proto`) and a proto-first companion (`.proto` → Python interface + client + driver adapter).
-2. **Python-first only** — ship only the codegen CLI and the interface check CLI. Proto-first is deferred to a follow-up JEP focused on non-Python codegen.
+1. **Bidirectional tooling in Phase 1** -- ship both the codegen CLI (Python → `.proto`) and a proto-first companion (`.proto` → Python interface + client + driver adapter).
+2. **Python-first only** -- ship only the codegen CLI and the interface check CLI. Proto-first is deferred to a follow-up JEP focused on non-Python codegen.
 
-**Decision:** Option 2 — Python-first only.
+**Decision:** Option 2 -- Python-first only.
 
-**Rationale:** For Python drivers, the proto-first adapter pattern adds an inheritance layer and an underscore-prefixed abstract-method indirection without materially reducing the code the author writes. Its main value is producing clients and servicers for **non-Python** languages — that design is orthogonal to the Python introspection work and benefits from a dedicated JEP. Shrinking scope unblocks Phase 1 and avoids committing to a Python adapter pattern before non-Python codegen design is complete. A reference prototype for non-Python codegen already exists and will be the basis for the follow-up JEP.
+**Rationale:** For Python drivers, the proto-first adapter pattern adds an inheritance layer and an underscore-prefixed abstract-method indirection without materially reducing the code the author writes. Its main value is producing clients and servicers for **non-Python** languages -- that design is orthogonal to the Python introspection work and benefits from a dedicated JEP. Shrinking scope unblocks Phase 1 and avoids committing to a Python adapter pattern before non-Python codegen design is complete. A reference prototype for non-Python codegen already exists and will be the basis for the follow-up JEP.
 
 ### DD-4: Dual inheritance for generated and migrated clients
 
 **Alternatives considered:**
 
-1. **Keep single inheritance** — `class PowerClient(DriverClient)` — clients implement the interface by convention, not by declaration.
-2. **Adopt dual inheritance** — `class PowerClient(PowerInterface, DriverClient)` — clients explicitly implement the interface; type checkers verify method coverage.
+1. **Keep single inheritance** -- `class PowerClient(DriverClient)` -- clients implement the interface by convention, not by declaration.
+2. **Adopt dual inheritance** -- `class PowerClient(PowerInterface, DriverClient)` -- clients explicitly implement the interface; type checkers verify method coverage.
 
-**Decision:** Option 2 — dual inheritance.
+**Decision:** Option 2 -- dual inheritance.
 
-**Rationale:** Dual inheritance makes the client-to-interface relationship structural, not nominal. Type checkers flag missing interface methods on the client at analysis time; new clients inherit a typed contract by construction. This also firms up the semantics across languages — for languages without multiple inheritance, the equivalent is single-inherit-from-interface with a `DriverClient` helper.
+**Rationale:** Dual inheritance makes the client-to-interface relationship structural, not nominal. Type checkers flag missing interface methods on the client at analysis time; new clients inherit a typed contract by construction. This also firms up the semantics across languages -- for languages without multiple inheritance, the equivalent is single-inherit-from-interface with a `DriverClient` helper.
 
 ### DD-5: Reflection is advisory in this JEP
 
 **Alternatives considered:**
 
-1. **Reflect and invoke** — register native gRPC handlers alongside reflection so that reflected services are directly invocable (e.g., via `grpcurl`).
-2. **Reflect only** — register services for schema discovery, leave invocation on the native gRPC path as `UNIMPLEMENTED` until a follow-up JEP designs the native transport.
+1. **Reflect and invoke** -- register native gRPC handlers alongside reflection so that reflected services are directly invocable (e.g., via `grpcurl`).
+2. **Reflect only** -- register services for schema discovery, leave invocation on the native gRPC path as `UNIMPLEMENTED` until a follow-up JEP designs the native transport.
 
-**Decision:** Option 2 — reflect only.
+**Decision:** Option 2 -- reflect only.
 
-**Rationale:** Native gRPC handlers require a substantial design for UUID routing, dual-path dispatch during transition, and backward compatibility with legacy `DriverCall` clients. That design exists as a sketch (see "Native gRPC Transport — Design Sketch") but belongs in its own JEP. In the meantime, reflection is still valuable for codegen, documentation, and typed-stub generation — clients use reflected schemas to drive the existing `DriverCall` transport. The `UNIMPLEMENTED` behavior is documented explicitly in the Proposal and integration test suite.
+**Rationale:** Native gRPC handlers require a substantial design for UUID routing, dual-path dispatch during transition, and backward compatibility with legacy `DriverCall` clients. That design exists as a sketch (see "Native gRPC Transport -- Design Sketch") but belongs in its own JEP. In the meantime, reflection is still valuable for codegen, documentation, and typed-stub generation -- clients use reflected schemas to drive the existing `DriverCall` transport. The `UNIMPLEMENTED` behavior is documented explicitly in the Proposal and integration test suite.
 
 ### DD-6: Commit `.proto` source only; descriptor sets are build artifacts
 
 **Alternatives considered:**
 
-1. **Commit both `.proto` source and the compiled descriptor set** (`protoc --descriptor_set_out` output) — the exporter loads the committed `.bin` directly; no build step required.
-2. **Commit `.proto` source only; compile the descriptor set at package build time** — `hatchling` / `setuptools` (and equivalent backends in other languages) invoke `protoc` during `uv build` / `pip install`, bundling the compiled descriptor as part of the wheel payload.
-3. **Commit `.proto` source only; compile the descriptor set at exporter startup** — the exporter invokes `protoc` (or an in-process equivalent) on every startup.
+1. **Commit both `.proto` source and the compiled descriptor set** (`protoc --descriptor_set_out` output) -- the exporter loads the committed `.bin` directly; no build step required.
+2. **Commit `.proto` source only; compile the descriptor set at package build time** -- `hatchling` / `setuptools` (and equivalent backends in other languages) invoke `protoc` during `uv build` / `pip install`, bundling the compiled descriptor as part of the wheel payload.
+3. **Commit `.proto` source only; compile the descriptor set at exporter startup** -- the exporter invokes `protoc` (or an in-process equivalent) on every startup.
 
-**Decision:** Option 2 — commit source, build artifacts at package build time.
+**Decision:** Option 2 -- commit source, build artifacts at package build time.
 
 **Rationale:** This matches the project's existing convention for the wire protocol (`protocol/proto/*.proto` is committed; no `.bin` artifacts are checked in) and standard practice across the protobuf ecosystem (gRPC, Buf, `tonic-build`, Bazel). Committing binary descriptors (Option 1) creates source-tree bloat, generates noisy diffs on every regeneration, and risks drift when a `.proto` change is committed without recompiling the descriptor. Compiling at startup (Option 3) adds `protoc` as a runtime dependency on the exporter, slows boot, and turns descriptor-generation failures into runtime errors instead of build-time errors. Option 2 keeps the source tree text-only and reviewable, ships compiled descriptors as part of the package distribution (the same way generated language bindings ship), and ensures the exporter only ever consumes already-validated artifacts.
 
 **Consequences:** The package build must invoke `protoc --descriptor_set_out`. JEP-0011's codegen story already proposes this as a build step; the project's `.gitignore` should exclude `*.bin` / descriptor output paths from the `interfaces/` tree to prevent accidental commits.
 
-**Same hook can also handle `.proto` generation.** Once the build is invoking `protoc` to produce the descriptor set, it can also invoke the codegen CLI immediately upstream — extracting `.proto` source from `@export`-decorated `DriverInterface` classes — so the entire pipeline (Python interface → `.proto` → descriptor set) runs as a single build step. Out-of-tree authors who set up the build plugin then never have to run the codegen CLI by hand: their normal `uv build` / `pip install` produces a wheel containing the `.proto` (committed in the source tree if the author chooses, or bundled only inside the wheel if not) and the compiled descriptor set. The `.proto` itself remains a normal source artifact: authors are encouraged to commit it for review, `buf breaking`, and polyglot consumption, but the *generation* of it is automated end-to-end. In-tree drivers use the same plugin against the in-repo `interfaces/` tree.
+**Same hook can also handle `.proto` generation.** Once the build is invoking `protoc` to produce the descriptor set, it can also invoke the codegen CLI immediately upstream -- extracting `.proto` source from `@export`-decorated `DriverInterface` classes -- so the entire pipeline (Python interface → `.proto` → descriptor set) runs as a single build step. Out-of-tree authors who set up the build plugin then never have to run the codegen CLI by hand: their normal `uv build` / `pip install` produces a wheel containing the `.proto` (committed in the source tree if the author chooses, or bundled only inside the wheel if not) and the compiled descriptor set. The `.proto` itself remains a normal source artifact: authors are encouraged to commit it for review, `buf breaking`, and polyglot consumption, but the *generation* of it is automated end-to-end. In-tree drivers use the same plugin against the in-repo `interfaces/` tree.
 
 ## Design Details
 
@@ -714,7 +714,7 @@ This JEP is a purely software-layer change. No hardware is required or affected.
 
 4. **At `GetReport` time:** Each `DriverInstanceReport` carries the `file_descriptor_proto` bytes for its interface. Clients parse them with their language's protobuf library to discover the full schema.
 
-### `DriverInterfaceMeta` and `DriverInterface` — Type-Safe Interface Definitions
+### `DriverInterfaceMeta` and `DriverInterface` -- Type-Safe Interface Definitions
 
 This JEP introduces a new metaclass + base class pair that provides type-safe, validated interface definitions, replacing the current convention of bare `ABCMeta`:
 
@@ -846,17 +846,17 @@ class StorageMuxFlasherInterface(StorageMuxInterface):
 - Missing `client()` → `TypeError` at class definition time
 - Type checkers (mypy, pyright) see `client()` as required abstract classmethod
 
-**Empty interfaces** (like `CompositeInterface`) work naturally — they inherit `DriverInterface`, define `client()`, and have no abstract methods. The builder produces an empty `ServiceDescriptorProto`. Note that `CompositeInterface` currently has no metaclass at all (it's a plain class, not even `ABCMeta`), so migration adds both the metaclass and `DriverInterface` base in one step.
+**Empty interfaces** (like `CompositeInterface`) work naturally -- they inherit `DriverInterface`, define `client()`, and have no abstract methods. The builder produces an empty `ServiceDescriptorProto`. Note that `CompositeInterface` currently has no metaclass at all (it's a plain class, not even `ABCMeta`), so migration adds both the metaclass and `DriverInterface` base in one step.
 
-**Deferred: `UdsInterface` concrete mixin.** The `UdsInterface` pattern — where `@export` is placed directly on the interface class without `ABCMeta` — is an anti-pattern that conflates the interface contract with the dispatch implementation. `UdsInterface` should eventually be refactored to use `DriverInterface` with `@abstractmethod`, with the shared `@export` implementations moved to a separate mixin class (e.g., `UdsDriverMixin`). However, this refactoring involves ~18 methods shared between `UdsCan` and `UdsDoip` via multiple inheritance, making it a non-trivial migration with code duplication risk. **This refactoring is deferred to a follow-up task** and is not a prerequisite for Phase 1b. The `build_file_descriptor()` builder can detect `@export` on non-`DriverInterface` classes and handle them via a legacy fallback path during the transition period.
+**Deferred: `UdsInterface` concrete mixin.** The `UdsInterface` pattern -- where `@export` is placed directly on the interface class without `ABCMeta` -- is an anti-pattern that conflates the interface contract with the dispatch implementation. `UdsInterface` should eventually be refactored to use `DriverInterface` with `@abstractmethod`, with the shared `@export` implementations moved to a separate mixin class (e.g., `UdsDriverMixin`). However, this refactoring involves ~18 methods shared between `UdsCan` and `UdsDoip` via multiple inheritance, making it a non-trivial migration with code duplication risk. **This refactoring is deferred to a follow-up task** and is not a prerequisite for Phase 1b. The `build_file_descriptor()` builder can detect `@export` on non-`DriverInterface` classes and handle them via a legacy fallback path during the transition period.
 
 **Discovery and registry:**
 
 - `DriverInterfaceMeta._registry` automatically tracks all defined interfaces
 - `build_file_descriptor()` checks `isinstance(cls.__class__, DriverInterfaceMeta)` for unambiguous discovery
-- The codegen CLI's batch mode iterates the registry — no package entry-point scanning needed
+- The codegen CLI's batch mode iterates the registry -- no package entry-point scanning needed
 
-**Migration:** Each interface changes from `metaclass=ABCMeta` to inheriting `DriverInterface`. Drivers that inherit from both the interface and `Driver` continue to work since `DriverInterfaceMeta` extends `ABCMeta`. The migration also requires adding full type annotations to all abstract methods — this is the forcing function for making the entire interface ecosystem type-safe.
+**Migration:** Each interface changes from `metaclass=ABCMeta` to inheriting `DriverInterface`. Drivers that inherit from both the interface and `Driver` continue to work since `DriverInterfaceMeta` extends `ABCMeta`. The migration also requires adding full type annotations to all abstract methods -- this is the forcing function for making the entire interface ecosystem type-safe.
 
 ### Opt-in type annotation enforcement for `@export`
 
@@ -874,7 +874,7 @@ def export(func=None, *, strict=False):
 
     Otherwise, missing annotations emit a DeprecationWarning but do not
     block import. The codegen and interface check CLIs will still refuse
-    to produce a proto for an incompletely-typed interface — that is
+    to produce a proto for an incompletely-typed interface -- that is
     where the contract is enforced for polyglot consumption.
     """
     ...
@@ -884,11 +884,11 @@ Three enforcement tiers exist:
 
 - **Permissive (default):** `@export` logs a `DeprecationWarning` for missing annotations. Existing drivers continue to import unchanged.
 - **Strict (`@export(strict=True)` or `JMP_EXPORT_STRICT=1`):** `TypeError` at decoration time. Opt in per package when the team is ready.
-- **Tool-level (non-negotiable):** The codegen CLI fails with a clear error if the interface has incompletely annotated methods — there is no way to emit a proto with unknown types. The interface check CLI inherits the same requirement.
+- **Tool-level (non-negotiable):** The codegen CLI fails with a clear error if the interface has incompletely annotated methods -- there is no way to emit a proto with unknown types. The interface check CLI inherits the same requirement.
 
 Type enforcement is opt-in so it doesn't affect drivers that aren't yet consumed by polyglot clients. Teams that want the tighter contract enable strict mode package by package as they publish proto schemas.
 
-**Annotation coverage in the current codebase.** An audit identified ~111 `@export` / `@exportstream` methods across 25 packages missing one or more annotations (mostly `-> None` return types on void methods, plus a handful of resource-handle `source` / `target` parameters). These fixes remain good practice and are recommended alongside Phase 1b, but they are **not blocking** for this JEP — packages migrate to fully-typed `@export` and emit proto schemas on their own schedule.
+**Annotation coverage in the current codebase.** An audit identified ~111 `@export` / `@exportstream` methods across 25 packages missing one or more annotations (mostly `-> None` return types on void methods, plus a handful of resource-handle `source` / `target` parameters). These fixes remain good practice and are recommended alongside Phase 1b, but they are **not blocking** for this JEP -- packages migrate to fully-typed `@export` and emit proto schemas on their own schedule.
 
 ### Driver Patterns and Introspection Scope
 
@@ -908,7 +908,7 @@ PowerInterface (abstract)      → PowerClient (DriverClient)
   └── SNMPPower (Driver)
 ```
 
-Every standard in-tree interface follows this pattern: `PowerInterface`, `NetworkInterface`, `FlasherInterface`, `StorageMuxInterface`, `StorageMuxFlasherInterface`, `CompositeInterface`. The interface class is the introspection target — `build_file_descriptor()` reads its abstract methods and type annotations to produce the `FileDescriptorProto`. This is the path the JEP is primarily designed for.
+Every standard in-tree interface follows this pattern: `PowerInterface`, `NetworkInterface`, `FlasherInterface`, `StorageMuxInterface`, `StorageMuxFlasherInterface`, `CompositeInterface`. The interface class is the introspection target -- `build_file_descriptor()` reads its abstract methods and type annotations to produce the `FileDescriptorProto`. This is the path the JEP is primarily designed for.
 
 When a driver implements an explicit interface, the `@export`-decorated methods on the driver class must match the abstract methods on the interface (same names, compatible signatures). The introspection reads from the interface, not the driver, so the proto describes the *contract*, not the *implementation*. Multiple driver implementations (MockPower, DutlinkPower, TasmotaPower) all produce the same proto because they implement the same interface.
 
@@ -916,10 +916,10 @@ Interface inheritance also works naturally. `StorageMuxFlasherInterface` extends
 
 #### Pattern 2: `@exportstream` methods (raw byte channels)
 
-Some drivers use the `@exportstream` decorator instead of (or in addition to) `@export`. This creates a fundamentally different kind of interaction — a raw bidirectional byte stream tunneled through the `RouterService`, not a structured `DriverCall` RPC:
+Some drivers use the `@exportstream` decorator instead of (or in addition to) `@export`. This creates a fundamentally different kind of interaction -- a raw bidirectional byte stream tunneled through the `RouterService`, not a structured `DriverCall` RPC:
 
 ```python
-# TcpNetwork driver — @exportstream for the byte channel
+# TcpNetwork driver -- @exportstream for the byte channel
 class TcpNetwork(NetworkInterface, Driver):
     @exportstream
     @asynccontextmanager
@@ -933,7 +933,7 @@ class TcpNetwork(NetworkInterface, Driver):
 ```
 
 ```python
-# PySerial driver — @exportstream for the serial connection
+# PySerial driver -- @exportstream for the serial connection
 class PySerial(Driver):
     @exportstream
     @asynccontextmanager
@@ -945,7 +945,7 @@ class PySerial(Driver):
 
 The `@exportstream` methods are async context managers that yield raw byte streams. They are represented as native gRPC bidirectional streaming RPCs using a `StreamData { bytes payload }` message type that carries raw bytes. On the exporter, the generated servicer bridges between the gRPC bidi stream and the driver's byte stream. On the client side, non-Python clients call the native gRPC bidi endpoint directly and bridge it to local TCP/UDP sockets for port forwarding.
 
-**Proto mapping for `@exportstream`:** The descriptor builder detects the `MARKER_STREAMCALL` attribute set by `@exportstream` and emits a bidi streaming RPC with `StreamData` — a simple message containing a `bytes payload` field. The `StreamData` message is auto-generated into the proto package:
+**Proto mapping for `@exportstream`:** The descriptor builder detects the `MARKER_STREAMCALL` attribute set by `@exportstream` and emits a bidi streaming RPC with `StreamData` -- a simple message containing a `bytes payload` field. The `StreamData` message is auto-generated into the proto package:
 
 ```protobuf
 service NetworkInterface {
@@ -961,7 +961,7 @@ message StreamData {
 
 Note that the `NetworkInterface` in the current codebase only defines `connect()` as an abstract method. The `address()` method that exists on some implementations (e.g., `TcpNetwork`, `WebsocketNetwork`) is a driver-level extension, not part of the interface contract, and is therefore not included in the proto.
 
-Codegen tools (including the deferred non-Python codegen) infer the dispatch mechanism from the proto structure: a bidirectional streaming RPC with `StreamData` request and response is a raw byte stream constructor (`@exportstream`). The `StreamData` pattern is unambiguous — no custom annotation is needed.
+Codegen tools (including the deferred non-Python codegen) infer the dispatch mechanism from the proto structure: a bidirectional streaming RPC with `StreamData` request and response is a raw byte stream constructor (`@exportstream`). The `StreamData` pattern is unambiguous -- no custom annotation is needed.
 
 For Python clients, the hand-written pattern under this JEP is:
 
@@ -978,7 +978,7 @@ The `resource_handle` field option is defined in `jumpstarter/annotations/annota
 
 #### Pattern 3: Composite and nested drivers
 
-Jumpstarter drivers form trees. A `Dutlink` board exposes a composite root with named children — `power` (PowerInterface), `storage` (StorageMuxFlasherInterface), `console` (serial) — each with its own UUID, interface, and client. The `GetReport` RPC returns this tree as a flat list of `DriverInstanceReport` entries linked by `parent_uuid`:
+Jumpstarter drivers form trees. A `Dutlink` board exposes a composite root with named children -- `power` (PowerInterface), `storage` (StorageMuxFlasherInterface), `console` (serial) -- each with its own UUID, interface, and client. The `GetReport` RPC returns this tree as a flat list of `DriverInstanceReport` entries linked by `parent_uuid`:
 
 ```
 Dutlink (CompositeInterface, uuid=root)
@@ -998,7 +998,7 @@ Each driver in the tree produces its own `FileDescriptorProto` based on its inte
 
 The tree structure is already encoded in the existing `uuid` / `parent_uuid` fields. The `file_descriptor_proto` field adds *what each node can do* alongside *where it sits in the tree*.
 
-**CompositeInterface** defines no abstract methods — it's a pure container:
+**CompositeInterface** defines no abstract methods -- it's a pure container:
 
 ```python
 class CompositeInterface(DriverInterface):
@@ -1016,11 +1016,11 @@ class CompositeClient(CompositeInterface, DriverClient):
         return self.children[name]
 ```
 
-**Proxy drivers** (`Proxy` class) are transparent to introspection — they delegate `report()` and `enumerate()` to their target, so the proto describes the target driver's interface, not the proxy itself.
+**Proxy drivers** (`Proxy` class) are transparent to introspection -- they delegate `report()` and `enumerate()` to their target, so the proto describes the target driver's interface, not the proxy itself.
 
 **Client tree reconstruction** works the same as today: `client_from_channel()` calls `GetReport()`, topologically sorts by `parent_uuid`, and instantiates client classes in dependency order. The `file_descriptor_proto` on each report is available for polyglot clients to discover the full typed API of every node in the tree.
 
-**For native gRPC (future):** Each child driver registers its own native gRPC service on the exporter's server. The UUID routing interceptor dispatches to the correct instance. A Kotlin client leasing a Dutlink board would get three typed stubs — one for `PowerInterface`, one for `StorageMuxFlasherInterface`, one for `NetworkInterface` — each bound to the correct child UUID:
+**For native gRPC (future):** Each child driver registers its own native gRPC service on the exporter's server. The UUID routing interceptor dispatches to the correct instance. A Kotlin client leasing a Dutlink board would get three typed stubs -- one for `PowerInterface`, one for `StorageMuxFlasherInterface`, one for `NetworkInterface` -- each bound to the correct child UUID:
 
 ```kotlin
 val report = stub.getReport(Empty.getDefaultInstance())
@@ -1039,13 +1039,13 @@ storage.host()
 Historically, some client classes added methods that aren't in the interface contract. The canonical example is `PowerClient.cycle()`:
 
 ```python
-# Legacy pattern — client-side composition (avoid going forward)
+# Legacy pattern -- client-side composition (avoid going forward)
 class PowerClient(DriverClient):
     def on(self) -> None:        # in PowerInterface
         self.call("on")
     def off(self) -> None:       # in PowerInterface
         self.call("off")
-    def cycle(self, wait=2):     # NOT in PowerInterface — pure client-side logic
+    def cycle(self, wait=2):     # NOT in PowerInterface -- pure client-side logic
         self.off()
         time.sleep(wait)
         self.on()
@@ -1058,7 +1058,7 @@ class PowerClient(DriverClient):
 **Move convenience methods to the driver side.** Going forward, simple convenience methods like `cycle()` should be promoted to first-class `@export` methods on the driver and declared on the interface. The recommended shape:
 
 ```python
-# Recommended pattern — convenience method on the driver
+# Recommended pattern -- convenience method on the driver
 class PowerInterface(DriverInterface):
     @abstractmethod
     def on(self) -> None: ...
@@ -1083,11 +1083,11 @@ class PowerClient(PowerInterface, DriverClient):
 
 Putting `cycle()` on the wire gives it a proto entry, makes it reachable from every generated client, lets the driver implement it atomically (guarding against torn power transitions if the client crashes mid-cycle), and removes a class of subtle behavioral drift between Python and polyglot consumers. Reducing client-side logic is an explicit goal: the client should be a thin typed transport over the proto contract, not a layer with its own undeclared behavior. As part of the Phase 1b interface migration, simple composites like `cycle()` are migrated server-side.
 
-**Keep on the client only when orchestration genuinely requires it.** A small set of drivers — primarily `NetworkInterface` and `FlasherInterface` / `StorageMuxFlasherInterface` — need real client-side orchestration that cannot be expressed across the wire: file hashing, compression negotiation, `OpendalAdapter` resource handle setup, byte-stream tunneling. Those clients keep their hand-written orchestration methods (`FlasherClient.flash()`, `StorageMuxFlasherClient.flash()`/`dump()`, console connect helpers, etc.). They are the exception, not the rule. When in doubt, push the composite to the driver.
+**Keep on the client only when orchestration genuinely requires it.** A small set of drivers -- primarily `NetworkInterface` and `FlasherInterface` / `StorageMuxFlasherInterface` -- need real client-side orchestration that cannot be expressed across the wire: file hashing, compression negotiation, `OpendalAdapter` resource handle setup, byte-stream tunneling. Those clients keep their hand-written orchestration methods (`FlasherClient.flash()`, `StorageMuxFlasherClient.flash()`/`dump()`, console connect helpers, etc.). They are the exception, not the rule. When in doubt, push the composite to the driver.
 
 #### Pattern 5: Resource handle methods
 
-Some interfaces use resource handles — opaque identifiers representing client-side streams negotiated through the Jumpstarter resource system. The `FlasherInterface` and `StorageMuxInterface` are the primary examples:
+Some interfaces use resource handles -- opaque identifiers representing client-side streams negotiated through the Jumpstarter resource system. The `FlasherInterface` and `StorageMuxInterface` are the primary examples:
 
 ```python
 class FlasherInterface(DriverInterface):
@@ -1095,9 +1095,9 @@ class FlasherInterface(DriverInterface):
     def flash(self, source: str, target: str | None = None) -> None: ...
 ```
 
-On the driver side, `source` is a resource UUID received via `DriverCall`. On the client side, the actual `flash()` method creates an `OpendalAdapter` context manager, negotiates a stream handle, and passes it to `self.call("flash", handle, target)`. This orchestration involves file hashing, compression negotiation, and operator selection — none of which can be expressed in protobuf.
+On the driver side, `source` is a resource UUID received via `DriverCall`. On the client side, the actual `flash()` method creates an `OpendalAdapter` context manager, negotiates a stream handle, and passes it to `self.call("flash", handle, target)`. This orchestration involves file hashing, compression negotiation, and operator selection -- none of which can be expressed in protobuf.
 
-On the wire, resource handles are UUIDs (strings) — they are passed as `string` parameters through `DriverCall`. The generated `.proto` represents these as `string` with a custom annotation `jumpstarter.annotations.resource_handle = true` on the field, signaling to codegen tools that this parameter is a resource reference, not a plain string.
+On the wire, resource handles are UUIDs (strings) -- they are passed as `string` parameters through `DriverCall`. The generated `.proto` represents these as `string` with a custom annotation `jumpstarter.annotations.resource_handle = true` on the field, signaling to codegen tools that this parameter is a resource reference, not a plain string.
 
 The hand-written `FlasherClient` with its `OpendalAdapter` orchestration (file hashing, compression negotiation, stream setup) remains the supported Python client pattern. The proto-level `resource_handle` annotation is a hint for future non-Python codegen; the polyglot resource handle protocol (how Java / Kotlin clients negotiate a stream and obtain a UUID to pass) will be specified in a follow-up JEP alongside non-Python codegen.
 
@@ -1105,7 +1105,7 @@ This pattern affects: `FlasherInterface`, `StorageMuxInterface`, `StorageMuxFlas
 
 ### Error Handling and Failure Modes
 
-- **Missing type annotations:** In the default `@export` mode, a missing annotation emits a `DeprecationWarning` but does not block import. In strict mode (`@export(strict=True)` or `JMP_EXPORT_STRICT=1`), a missing annotation raises `TypeError` at decoration time. The codegen and interface check CLIs refuse to produce a proto for an incompletely annotated interface regardless of mode — see "Opt-in type annotation enforcement for `@export`" above.
+- **Missing type annotations:** In the default `@export` mode, a missing annotation emits a `DeprecationWarning` but does not block import. In strict mode (`@export(strict=True)` or `JMP_EXPORT_STRICT=1`), a missing annotation raises `TypeError` at decoration time. The codegen and interface check CLIs refuse to produce a proto for an incompletely annotated interface regardless of mode -- see "Opt-in type annotation enforcement for `@export`" above.
 
 - **Unsupported types:** Complex Python types that don't have a clean protobuf mapping (e.g., `Union[str, int]`, custom metaclasses) cause the codegen CLI to warn and fall back to `google.protobuf.Value`. A future JEP may introduce `oneof` support for `Union` types.
 
@@ -1113,17 +1113,17 @@ This pattern affects: `FlasherInterface`, `StorageMuxInterface`, `StorageMuxFlas
 
 - **Reflection registration failure:** If `grpcio-reflection` is not installed (it is an optional dependency), the exporter logs a warning and continues without reflection. The `file_descriptor_proto` field in the report is still populated.
 
-- **Missing descriptor set at startup:** If the exporter cannot find the pre-compiled descriptor set bundled with the driver package, it logs a warning, skips reflection registration for that driver, and leaves `file_descriptor_proto` empty in the report. The driver still loads and serves `DriverCall` traffic normally — descriptor exposure is best-effort.
+- **Missing descriptor set at startup:** If the exporter cannot find the pre-compiled descriptor set bundled with the driver package, it logs a warning, skips reflection registration for that driver, and leaves `file_descriptor_proto` empty in the report. The driver still loads and serves `DriverCall` traffic normally -- descriptor exposure is best-effort.
 
 - **Proto parse failure in the interface check CLI:** If the committed `.proto` file is malformed, `protoc` (invoked as a subprocess) produces a standard error message. The check CLI surfaces this with context about which file failed, and CI fails the build.
 
 ### Concurrency and Thread-Safety
 
-`build_file_descriptor()` is a pure function (no side effects, no mutation of inputs) and safe to call from any thread — but it is only called at codegen CLI invocation time, so concurrency is not relevant at runtime. The exporter's descriptor-set load is a single file read during startup before the gRPC server begins accepting connections. The gRPC reflection service is thread-safe by design (`grpcio-reflection` handles concurrent requests internally).
+`build_file_descriptor()` is a pure function (no side effects, no mutation of inputs) and safe to call from any thread -- but it is only called at codegen CLI invocation time, so concurrency is not relevant at runtime. The exporter's descriptor-set load is a single file read during startup before the gRPC server begins accepting connections. The gRPC reflection service is thread-safe by design (`grpcio-reflection` handles concurrent requests internally).
 
 ### Security Implications
 
-gRPC Server Reflection exposes the full interface schema to any client that can reach the exporter's gRPC port. In Jumpstarter's architecture, the exporter is already behind the controller's authentication and lease system — only clients with a valid lease can dial the exporter. Reflection does not bypass this; it's registered on the same `grpc.Server` that serves `ExporterService` and inherits its transport security (mTLS via cert-manager).
+gRPC Server Reflection exposes the full interface schema to any client that can reach the exporter's gRPC port. In Jumpstarter's architecture, the exporter is already behind the controller's authentication and lease system -- only clients with a valid lease can dial the exporter. Reflection does not bypass this; it's registered on the same `grpc.Server` that serves `ExporterService` and inherits its transport security (mTLS via cert-manager).
 
 The `file_descriptor_proto` bytes in the report are served through the authenticated `GetReport` RPC and carry no additional security concern.
 
@@ -1170,7 +1170,7 @@ No HiL tests are required for this JEP. The introspection layer operates entirel
 - [ ] Exporter loads the bundled descriptor set at startup, registers reflection, and populates `DriverInstanceReport.file_descriptor_proto`.
 - [ ] `grpcurl list` and `grpcurl describe` return the expected service names and method signatures against a running exporter; invoking a reflected method returns `UNIMPLEMENTED` as documented.
 - [ ] `jumpstarter/annotations/annotations.proto` is published and importable by external `.proto` files.
-- [ ] `DriverCall` / `StreamingDriverCall` wire protocol is byte-for-byte unchanged — a client from before this JEP connects to an exporter that includes this JEP without modification.
+- [ ] `DriverCall` / `StreamingDriverCall` wire protocol is byte-for-byte unchanged -- a client from before this JEP connects to an exporter that includes this JEP without modification.
 
 ## Graduation Criteria
 
@@ -1187,7 +1187,7 @@ No HiL tests are required for this JEP. The introspection layer operates entirel
 ### Stable
 
 - The type mapping table is finalized and documented.
-- The interface check CLI runs in CI for all in-tree drivers, catching any drift between `.proto` files and Python interfaces — including doc comment and version drift.
+- The interface check CLI runs in CI for all in-tree drivers, catching any drift between `.proto` files and Python interfaces -- including doc comment and version drift.
 - At least one downstream JEP (DeviceClass, non-Python codegen, or Registry) has been implemented using the `.proto` artifacts from this JEP.
 - No breaking changes to `jumpstarter/annotations.proto` for at least one release cycle.
 
@@ -1195,9 +1195,9 @@ No HiL tests are required for this JEP. The introspection layer operates entirel
 
 This JEP is **fully backward compatible.** All changes are additive:
 
-- The `file_descriptor_proto` field (field number 6) is added to `DriverInstanceReport` as `optional bytes`. Old clients using generated stubs from the current `.proto` definition will simply ignore the unknown field — this is standard protobuf behavior. Old exporters will not populate the field, and clients must handle its absence.
+- The `file_descriptor_proto` field (field number 6) is added to `DriverInstanceReport` as `optional bytes`. Old clients using generated stubs from the current `.proto` definition will simply ignore the unknown field -- this is standard protobuf behavior. Old exporters will not populate the field, and clients must handle its absence.
 
-- gRPC Server Reflection is a separate service (`grpc.reflection.v1.ServerReflection`) registered alongside `ExporterService`. It is invisible to clients that don't query it. No existing RPCs are modified. Reflected services return `UNIMPLEMENTED` when invoked directly — a known limitation scheduled for removal in the native-gRPC follow-up JEP.
+- gRPC Server Reflection is a separate service (`grpc.reflection.v1.ServerReflection`) registered alongside `ExporterService`. It is invisible to clients that don't query it. No existing RPCs are modified. Reflected services return `UNIMPLEMENTED` when invoked directly -- a known limitation scheduled for removal in the native-gRPC follow-up JEP.
 
 - The `@export` decorator is unchanged in its dispatch behavior. Existing markers, dispatch logic, and call semantics are untouched. The only addition is opt-in annotation validation (`strict=True` or `JMP_EXPORT_STRICT=1`), which is off by default.
 
@@ -1227,7 +1227,7 @@ This JEP is **fully backward compatible.** All changes are additive:
 
 ### Risks
 
-- **Scope creep.** "Proto-first for Python" is a tempting extension — a contributor might add a small code generator later that re-enters the territory this JEP explicitly left out. The follow-up non-Python codegen JEP needs to land first and set the pattern.
+- **Scope creep.** "Proto-first for Python" is a tempting extension -- a contributor might add a small code generator later that re-enters the territory this JEP explicitly left out. The follow-up non-Python codegen JEP needs to land first and set the pattern.
 - **Annotation migration stalls.** Opt-in enforcement is safer but means a package can live indefinitely in a half-annotated state. Mitigation: the codegen CLI refuses incomplete interfaces, so publishing a proto forces completion.
 - **Native-gRPC follow-up slips.** If the follow-up JEP takes longer than expected, the `UNIMPLEMENTED` reflection footgun persists. Mitigation: include a clear note in the exporter logs and in any `grpcurl` documentation.
 
@@ -1268,34 +1268,34 @@ Encoding type information into the existing `methods_description` map (e.g., as 
 
 ### Runtime dynamic `FileDescriptorProto` generation at exporter startup
 
-An earlier revision of this JEP (seen in the initial PR discussion) had the exporter construct `FileDescriptorProto` objects dynamically at startup by introspecting `@export` method signatures — with type metadata captured on each function at import time (`MARKER_TYPE_INFO`, `ExportedMethodInfo`). This was rejected in favor of committed `.proto` files produced by the codegen CLI because:
+An earlier revision of this JEP (seen in the initial PR discussion) had the exporter construct `FileDescriptorProto` objects dynamically at startup by introspecting `@export` method signatures -- with type metadata captured on each function at import time (`MARKER_TYPE_INFO`, `ExportedMethodInfo`). This was rejected in favor of committed `.proto` files produced by the codegen CLI because:
 
 - **No reviewable artifact.** Dynamic generation produces no diff at review time. A signature change silently alters the wire schema; polyglot consumers get no CI signal until something breaks.
 - **Import-time cost and coupling.** Storing `ExportedMethodInfo` on every `@export` function couples dispatch to schema, lengthens import, and bloats memory for drivers that don't need polyglot exposure.
-- **Drift detection is simpler without it.** The interface check CLI diffs the live Python class against the committed `.proto`, catching drift directly and deterministically. A dynamic approach would have to diff against a previous run — requiring a lockfile that is effectively the committed `.proto` by another name.
+- **Drift detection is simpler without it.** The interface check CLI diffs the live Python class against the committed `.proto`, catching drift directly and deterministically. A dynamic approach would have to diff against a previous run -- requiring a lockfile that is effectively the committed `.proto` by another name.
 - **Committed `.proto` files are the standard protobuf workflow.** `protoc`, `buf`, `grpcurl`, `buf breaking`, and every language's polyglot codegen pipeline expect a committed `.proto` source. Taking the standard path keeps the exporter free of schema-construction work and lets every existing tool participate.
 
 Runtime introspection remains available for development-time tooling (the codegen CLI), but it is no longer part of the exporter's runtime path.
 
 ## Prior Art
 
-- **gRPC Server Reflection** ([grpc.io/docs/guides/reflection](https://grpc.io/docs/guides/reflection/)) — the standard mechanism for runtime service discovery in gRPC. This JEP uses the exact same `FileDescriptorProto` format and `ServerReflection` service definition.
+- **gRPC Server Reflection** ([grpc.io/docs/guides/reflection](https://grpc.io/docs/guides/reflection/)) -- the standard mechanism for runtime service discovery in gRPC. This JEP uses the exact same `FileDescriptorProto` format and `ServerReflection` service definition.
 
-- **Buf Schema Registry** ([buf.build](https://buf.build/)) — a hosted registry for protobuf schemas. Jumpstarter's codegen CLI produces `.proto` files that are compatible with Buf's lint, breaking-change detection, and registry tooling.
+- **Buf Schema Registry** ([buf.build](https://buf.build/)) -- a hosted registry for protobuf schemas. Jumpstarter's codegen CLI produces `.proto` files that are compatible with Buf's lint, breaking-change detection, and registry tooling.
 
-- **Kubernetes Custom Resource Definitions (CRDs)** — Kubernetes uses OpenAPI v3 schemas embedded in CRDs for the same purpose: making API resources self-describing. Jumpstarter's approach is analogous but uses protobuf's native self-description mechanism instead of OpenAPI.
+- **Kubernetes Custom Resource Definitions (CRDs)** -- Kubernetes uses OpenAPI v3 schemas embedded in CRDs for the same purpose: making API resources self-describing. Jumpstarter's approach is analogous but uses protobuf's native self-description mechanism instead of OpenAPI.
 
-- **LAVA (Linaro Automated Validation Architecture)** — LAVA uses device type definitions and Jinja2 templates to describe hardware capabilities. Jumpstarter's approach is more strongly typed (protobuf vs. YAML templates) but serves the same goal of making device capabilities machine-discoverable.
+- **LAVA (Linaro Automated Validation Architecture)** -- LAVA uses device type definitions and Jinja2 templates to describe hardware capabilities. Jumpstarter's approach is more strongly typed (protobuf vs. YAML templates) but serves the same goal of making device capabilities machine-discoverable.
 
-- **Robot Framework Remote Library Interface** — Robot Framework's remote library protocol uses XML-RPC with `get_keyword_names` and `get_keyword_arguments` introspection. This JEP serves a similar purpose but uses a modern, strongly-typed, multi-language format.
+- **Robot Framework Remote Library Interface** -- Robot Framework's remote library protocol uses XML-RPC with `get_keyword_names` and `get_keyword_arguments` introspection. This JEP serves a similar purpose but uses a modern, strongly-typed, multi-language format.
 
 ## Unresolved Questions
 
-The following questions can be deferred until implementation. They do not block acceptance of this JEP — each has a reasonable default that can be refined as the codegen and check CLIs are built out.
+The following questions can be deferred until implementation. They do not block acceptance of this JEP -- each has a reasonable default that can be refined as the codegen and check CLIs are built out.
 
 1. **`Union` type mapping:** How should `Union[str, int]` map to protobuf? `oneof` is the natural choice but adds complexity. Deferring to a future JEP is acceptable since `Union` is rarely used in current driver interfaces.
 
-2. **Bidirectional streaming mapping:** The `@export` decorator supports `STREAM` (bidirectional) in addition to `UNARY` and `SERVER_STREAMING` — the TCP driver already uses bidirectional streaming. The proto mapping for bidirectional streaming (`stream → stream`) needs finalizing in `build_file_descriptor()`. This is required for completeness but can be added after unary and server-streaming support is stable.
+2. **Bidirectional streaming mapping:** The `@export` decorator supports `STREAM` (bidirectional) in addition to `UNARY` and `SERVER_STREAMING` -- the TCP driver already uses bidirectional streaming. The proto mapping for bidirectional streaming (`stream → stream`) needs finalizing in `build_file_descriptor()`. This is required for completeness but can be added after unary and server-streaming support is stable.
 
 3. **Proto style guide:** Should generated `.proto` files follow Google's style guide, Buf's style guide, or a Jumpstarter-specific convention? This affects field naming (snake_case vs. camelCase) and file organization.
 
@@ -1303,19 +1303,19 @@ The following questions can be deferred until implementation. They do not block 
 
 5. **Resource handle annotation in Phase 1:** The `jumpstarter.annotations.resource_handle = true` field option is specified by this JEP, but its consumer (non-Python codegen that understands how to negotiate resource streams) lands in a follow-up. Should the annotation ship in Phase 5 anyway so committed `.proto` files already carry it, or wait until the polyglot resource protocol is designed?
 
-6. **Pydantic model features beyond simple fields:** Pydantic models can have validators, computed properties (`apparent_power` on `PowerReading`), model config, and custom serialization. The builder introspects `model_fields` only — validators and computed properties are not represented in the proto. Is this acceptable, or should computed properties be surfaced as read-only fields?
+6. **Pydantic model features beyond simple fields:** Pydantic models can have validators, computed properties (`apparent_power` on `PowerReading`), model config, and custom serialization. The builder introspects `model_fields` only -- validators and computed properties are not represented in the proto. Is this acceptable, or should computed properties be surfaced as read-only fields?
 
 ## Future Possibilities
 
 The following are **not** part of this JEP but are natural extensions enabled by it:
 
-- **DeviceClass contracts and structural enforcement:** With machine-readable interface schemas, a `DeviceClass` CRD can reference specific interfaces and the controller can validate exporters against the contract — not just by checking labels, but by comparing actual `FileDescriptorProto` descriptors. Today, a driver declares that it implements `PowerInterface` by inheriting from the class, but there is no runtime or registration-time verification that the driver's `@export` methods actually match the interface contract. A typo in a method name, a missing parameter, or a wrong return type silently breaks clients at call time. The `FileDescriptorProto` from this JEP enables structural enforcement at every level of the DeviceClass mechanism:
+- **DeviceClass contracts and structural enforcement:** With machine-readable interface schemas, a `DeviceClass` CRD can reference specific interfaces and the controller can validate exporters against the contract -- not just by checking labels, but by comparing actual `FileDescriptorProto` descriptors. Today, a driver declares that it implements `PowerInterface` by inheriting from the class, but there is no runtime or registration-time verification that the driver's `@export` methods actually match the interface contract. A typo in a method name, a missing parameter, or a wrong return type silently breaks clients at call time. The `FileDescriptorProto` from this JEP enables structural enforcement at every level of the DeviceClass mechanism:
 
-  *At build time:* The interface check CLI verifies that a Python interface matches its `.proto` definition. This extends to verifying that a driver implementation's `@export` methods match the interface proto — catching signature mismatches before code is shipped.
+  *At build time:* The interface check CLI verifies that a Python interface matches its `.proto` definition. This extends to verifying that a driver implementation's `@export` methods match the interface proto -- catching signature mismatches before code is shipped.
 
-  *At exporter registration time:* The controller receives `FileDescriptorProto` descriptors in each driver's `DriverInstanceReport`. It compares these against the canonical `FileDescriptorProto` stored in a DeviceClass or InterfaceClass CRD to perform structural validation — comparing actual method signatures, parameter types, return types, and streaming semantics. A driver that claims to implement `power-v1` but is missing the `read()` streaming method would be flagged at registration, not discovered at test time.
+  *At exporter registration time:* The controller receives `FileDescriptorProto` descriptors in each driver's `DriverInstanceReport`. It compares these against the canonical `FileDescriptorProto` stored in a DeviceClass or InterfaceClass CRD to perform structural validation -- comparing actual method signatures, parameter types, return types, and streaming semantics. A driver that claims to implement `power-v1` but is missing the `read()` streaming method would be flagged at registration, not discovered at test time.
 
-  *At lease time:* A lease requesting a specific DeviceClass resolves to a set of required interface references, each with a canonical proto. The controller validates that every matched exporter's drivers produce compatible descriptors — ensuring that the leased device actually satisfies the contract the test code was generated against.
+  *At lease time:* A lease requesting a specific DeviceClass resolves to a set of required interface references, each with a canonical proto. The controller validates that every matched exporter's drivers produce compatible descriptors -- ensuring that the leased device actually satisfies the contract the test code was generated against.
 
   *For driver certification:* A DeviceClass could declare compliance requirements: "this device provides `power-v1` at version `1.0.0` with these exact method signatures." A future registry could track which driver packages are certified against which interface versions, and `jmp validate` could verify local exporter configurations against the published DeviceClass contract before deployment.
 
@@ -1323,21 +1323,21 @@ The following are **not** part of this JEP but are natural extensions enabled by
 
 - **Polyglot client code generation:** The `.proto` files produced by the codegen CLI feed directly into `protoc` for Kotlin, TypeScript, Rust, and other language stubs. A `jmp codegen` tool could wrap this pipeline.
 
-- **Typed composite children:** Composite drivers today wire children dynamically (`self.children["power"] = DutlinkPower(...)`) with no enforceable contract — consumers cast manually (e.g., `tcp_driver: TcpNetwork = self.children["tcp"]`), and there is no static handle on a composite's shape on either the driver or client side. A follow-up JEP can introduce a `child()` field-style sentinel on `DriverInterface` subclasses (e.g., `power: PowerInterface = child()`), with `DriverInterfaceMeta` collecting the declarations once and the `Driver` and `CompositeClient` base classes enforcing them symmetrically — types validated at exporter startup against `self.children`, and at client construction against the `DriverInstanceReport` tree. The mechanism is purely Python-side (no `.proto` changes) and opt-in: composites that don't declare `child()` fields keep today's untyped behavior. Composition is already discoverable polyglot-side via the report tree plus each child's `file_descriptor_proto` (this JEP), so no proto annotation is needed.
+- **Typed composite children:** Composite drivers today wire children dynamically (`self.children["power"] = DutlinkPower(...)`) with no enforceable contract -- consumers cast manually (e.g., `tcp_driver: TcpNetwork = self.children["tcp"]`), and there is no static handle on a composite's shape on either the driver or client side. A follow-up JEP can introduce a `child()` field-style sentinel on `DriverInterface` subclasses (e.g., `power: PowerInterface = child()`), with `DriverInterfaceMeta` collecting the declarations once and the `Driver` and `CompositeClient` base classes enforcing them symmetrically -- types validated at exporter startup against `self.children`, and at client construction against the `DriverInstanceReport` tree. The mechanism is purely Python-side (no `.proto` changes) and opt-in: composites that don't declare `child()` fields keep today's untyped behavior. Composition is already discoverable polyglot-side via the report tree plus each child's `file_descriptor_proto` (this JEP), so no proto annotation is needed.
 
-- **Driver registry:** A controller-level registry that catalogs available drivers, interfaces, and DeviceClasses — serving `FileDescriptorProto` artifacts for codegen and reflection.
+- **Driver registry:** A controller-level registry that catalogs available drivers, interfaces, and DeviceClasses -- serving `FileDescriptorProto` artifacts for codegen and reflection.
 
 - **Interface versioning and compatibility checking:** Using `buf breaking` against committed `.proto` files to enforce backward-compatible interface evolution across releases.
 
-- **Dynamic client construction:** A "generic driver client" that uses `FileDescriptorProto` and `DynamicMessage` to invoke any driver method without pre-generated stubs — useful for debugging, REPL exploration, and ad-hoc tooling.
+- **Dynamic client construction:** A "generic driver client" that uses `FileDescriptorProto` and `DynamicMessage` to invoke any driver method without pre-generated stubs -- useful for debugging, REPL exploration, and ad-hoc tooling.
 
 - **Additional custom options:** If the community identifies metadata that genuinely needs to be machine-readable beyond what proto comments provide (e.g., units of measurement, timing constraints, safety classifications), new options can be added to `jumpstarter/annotations.proto` via a follow-up JEP without changing the core introspection mechanism.
 
-- **Interactive API documentation:** A web UI (served by the controller or Buf Schema Registry) that renders the `.proto` files as browsable, searchable API docs — similar to Swagger/OpenAPI but for gRPC driver interfaces, with proto comments displayed inline.
+- **Interactive API documentation:** A web UI (served by the controller or Buf Schema Registry) that renders the `.proto` files as browsable, searchable API docs -- similar to Swagger/OpenAPI but for gRPC driver interfaces, with proto comments displayed inline.
 
 - **Native protobuf wire protocol (future JEP):** The `.proto` files produced by this JEP are the foundation for migrating from string-based `DriverCall` dispatch to native gRPC services. A detailed design sketch follows.
 
-### Native gRPC Transport — Design Sketch
+### Native gRPC Transport -- Design Sketch
 
 #### What changes
 
@@ -1433,11 +1433,11 @@ class PowerServicer(power_pb2_grpc.PowerInterfaceServicer):
             )
 ```
 
-The servicer is a thin adapter — it deserializes the compiled protobuf request, calls the driver method, and serializes the response. No `encode_value` / `decode_value`, no string lookup.
+The servicer is a thin adapter -- it deserializes the compiled protobuf request, calls the driver method, and serializes the response. No `encode_value` / `decode_value`, no string lookup.
 
 #### Duplicate instances: UUID routing interceptor
 
-A single exporter can host multiple drivers implementing the same interface (e.g., `main_power` and `aux_power` both implementing `PowerInterface`). gRPC services are singletons — you can't register two `PowerInterfaceServicer` instances.
+A single exporter can host multiple drivers implementing the same interface (e.g., `main_power` and `aux_power` both implementing `PowerInterface`). gRPC services are singletons -- you can't register two `PowerInterfaceServicer` instances.
 
 The solution is a server interceptor that reads the driver UUID from gRPC metadata and dispatches to the correct instance:
 
@@ -1458,7 +1458,7 @@ class DriverRoutingInterceptor(grpc.aio.ServerInterceptor):
         metadata = dict(handler_call_details.invocation_metadata)
         uuid_str = metadata.get("x-jumpstarter-driver-uuid")
         if uuid_str is None:
-            # No UUID header — fall through to legacy DriverCall
+            # No UUID header -- fall through to legacy DriverCall
             return await continuation(handler_call_details)
 
         # Route to the correct driver's servicer
@@ -1492,7 +1492,7 @@ async def serve_async(self, server):
 
 #### Server side: `@export` during transition
 
-During the dual-path transition period, driver methods retain their `@export` decorators. The legacy `DriverCall` path still needs them for string-based dispatch. The native `PowerServicer` adapter calls the same underlying methods — both paths converge on the same driver implementation:
+During the dual-path transition period, driver methods retain their `@export` decorators. The legacy `DriverCall` path still needs them for string-based dispatch. The native `PowerServicer` adapter calls the same underlying methods -- both paths converge on the same driver implementation:
 
 ```python
 class MockPower(PowerInterface, Driver):
@@ -1505,15 +1505,15 @@ class MockPower(PowerInterface, Driver):
         self.logger.info("power off")
 ```
 
-If `DriverCall` is eventually retired (see Migration phases below), the `@export` decorators would become unnecessary for dispatch — but they would continue to serve as the type introspection mechanism for `build_file_descriptor()` and `ExportedMethodInfo` capture.
+If `DriverCall` is eventually retired (see Migration phases below), the `@export` decorators would become unnecessary for dispatch -- but they would continue to serve as the type introspection mechanism for `build_file_descriptor()` and `ExportedMethodInfo` capture.
 
 #### Client side: `DriverClient` auto-generates native stubs
 
-The `DriverClient` base class handles native stub creation automatically. When a driver's `DriverInstanceReport` includes a `file_descriptor_proto` and the exporter supports native gRPC, `DriverClient` creates the compiled stub internally — individual client classes don't need manual wiring:
+The `DriverClient` base class handles native stub creation automatically. When a driver's `DriverInstanceReport` includes a `file_descriptor_proto` and the exporter supports native gRPC, `DriverClient` creates the compiled stub internally -- individual client classes don't need manual wiring:
 
 ```python
 class AsyncDriverClient(Metadata):
-    """Base class — auto-creates native stub when available."""
+    """Base class -- auto-creates native stub when available."""
 
     async def _init_native_stub(self):
         """Called during client setup if FileDescriptorProto is present."""
@@ -1540,10 +1540,10 @@ class AsyncDriverClient(Metadata):
         return decode_value(response.result)
 ```
 
-The generated client code stays clean — it calls `self.call("on")` as before, and the base class routes to the native stub transparently:
+The generated client code stays clean -- it calls `self.call("on")` as before, and the base class routes to the native stub transparently:
 
 ```python
-# Generated client — unchanged from DriverCall era
+# Generated client -- unchanged from DriverCall era
 class PowerClient(PowerInterface, DriverClient):
     def on(self) -> None:
         self.call("on")  # DriverClient routes to native stub if available
@@ -1559,7 +1559,7 @@ class PowerClient(PowerInterface, DriverClient):
 For non-Python clients, the compiled stubs are used directly with standard gRPC patterns:
 
 ```kotlin
-// Kotlin — standard gRPC stub with metadata
+// Kotlin -- standard gRPC stub with metadata
 val channel = ManagedChannelBuilder.forAddress(host, port).build()
 val interceptor = UuidMetadataInterceptor("abc-123")
 val stub = PowerInterfaceGrpcKt.PowerInterfaceCoroutineStub(channel)
@@ -1575,10 +1575,10 @@ stub.read(Empty.getDefaultInstance()).collect { reading ->
 
 During the transition, the exporter serves both protocols simultaneously:
 
-- **Legacy path:** `ExporterService.DriverCall(uuid, "on", [])` — string dispatch with `Value` serialization. Existing Python clients continue to work.
-- **Native path:** `PowerInterface.On(Empty)` + `x-jumpstarter-driver-uuid` metadata — compiled protobuf. New and polyglot clients use this.
+- **Legacy path:** `ExporterService.DriverCall(uuid, "on", [])` -- string dispatch with `Value` serialization. Existing Python clients continue to work.
+- **Native path:** `PowerInterface.On(Empty)` + `x-jumpstarter-driver-uuid` metadata -- compiled protobuf. New and polyglot clients use this.
 
-Both paths call the same underlying driver methods. The driver implementation is unchanged — it's the dispatch and serialization layers that differ.
+Both paths call the same underlying driver methods. The driver implementation is unchanged -- it's the dispatch and serialization layers that differ.
 
 ```
                     ┌─────────────────────────────┐
@@ -1598,14 +1598,14 @@ The first two phases are concrete proposals; what follows them is intentionally
 left open until the dual-path implementation has been validated in the field.
 
 1. **This JEP:** Generate `FileDescriptorProto` and `.proto` files. Wire protocol unchanged. Polyglot clients can use `DynamicMessage` with `DriverCall` and the descriptor.
-2. **Future JEP — dual path:** Exporter registers native gRPC services alongside `DriverCall`. Compile `.proto` files to stubs. New clients can opt into the native path; existing clients are unchanged.
+2. **Future JEP -- dual path:** Exporter registers native gRPC services alongside `DriverCall`. Compile `.proto` files to stubs. New clients can opt into the native path; existing clients are unchanged.
 
 **Possible future outcomes (not committed by this JEP):**
 
 After the dual-path implementation has been built, exercised in real
 deployments, and shown to be a complete substitute for `DriverCall`, the
 community may choose to take additional steps. Whether any of these steps
-are taken — and on what timeline — is intentionally deferred. They are
+are taken -- and on what timeline -- is intentionally deferred. They are
 listed here only to make the design space explicit:
 
 - **Deprecation (possible):** Mark `DriverCall` as deprecated and publish a migration guide, once the native path is known to cover every use case currently served by `DriverCall` (including resource-handle streaming, bidirectional drivers, and out-of-tree drivers).
@@ -1615,18 +1615,18 @@ listed here only to make the design space explicit:
 
 | Phase | Deliverable                                                                                                           | Depends On    |
 | ----- | --------------------------------------------------------------------------------------------------------------------- | ------------- |
-| 1a    | `DriverInterfaceMeta` + `DriverInterface` base class — type-safe interface marking with registry and validation       | —             |
+| 1a    | `DriverInterfaceMeta` + `DriverInterface` base class -- type-safe interface marking with registry and validation       | --             |
 | 1b    | Migrate standard in-tree interfaces to `DriverInterface` and dual-inheritance clients (type annotations recommended)  | Phase 1a      |
-| 2     | Opt-in `@export` annotation validation — warn by default, `@export(strict=True)` / `JMP_EXPORT_STRICT=1`              | —             |
-| 3     | Type mapping module — Python types to protobuf field types, handling BaseModel, list, enum, UUID                      | —             |
+| 2     | Opt-in `@export` annotation validation -- warn by default, `@export(strict=True)` / `JMP_EXPORT_STRICT=1`              | --             |
+| 3     | Type mapping module -- Python types to protobuf field types, handling BaseModel, list, enum, UUID                      | --             |
 | 4     | `build_file_descriptor()` library function for build-time use                                                         | Phase 1a, 3   |
-| 5     | `jumpstarter/annotations/annotations.proto` — `resource_handle` field option                                          | —             |
-| 6     | Doc comment extraction — docstrings to proto comments in builder                                                      | Phase 4       |
-| 7     | Codegen CLI — Python → `.proto` source files                                                                          | Phase 4, 5, 6 |
+| 5     | `jumpstarter/annotations/annotations.proto` -- `resource_handle` field option                                          | --             |
+| 6     | Doc comment extraction -- docstrings to proto comments in builder                                                      | Phase 4       |
+| 7     | Codegen CLI -- Python → `.proto` source files                                                                          | Phase 4, 5, 6 |
 | 8     | Commit `.proto` files and `protoc --descriptor_set_out` artifacts for standard in-tree interfaces                     | Phase 7       |
 | 9     | `DriverInstanceReport.file_descriptor_proto` populated from bundled descriptor set at exporter startup                | Phase 8       |
 | 10    | gRPC Server Reflection registration from bundled descriptor set (advisory; services return `UNIMPLEMENTED` if called) | Phase 8       |
-| 11    | Interface check CLI — CI drift detection between committed `.proto` and live Python interface                         | Phase 7       |
+| 11    | Interface check CLI -- CI drift detection between committed `.proto` and live Python interface                         | Phase 7       |
 
 Phases 1a-1b establish the type-safe interface foundation and the dual-inheritance client convention. Phase 2 delivers opt-in annotation validation. Phases 3-4 build the build-time introspection core. Phases 5-7 deliver the developer-facing tooling. Phases 8-10 deliver runtime schema exposure from the committed artifacts. Phase 11 closes the loop with CI drift detection.
 
@@ -1635,8 +1635,8 @@ Proto-first codegen and native gRPC transport are **out of scope** for this JEP 
 ## Implementation History
 
 - 2026-04-06: JEP drafted
-- 2026-04-07: JEP refined — added `DriverInterface` metaclass, type enforcement on `@export`, resource handle pattern, native gRPC migration sketch; fixed Pydantic BaseModel usage, NetworkInterface proto, driver adapter scope; expanded type mapping table and unresolved questions
-- 2026-04-30: Simplified — pivoted to build-time generation of committed `.proto` files, dropped proto-first adapter and dynamic runtime introspection, made type enforcement opt-in, added grpcurl `UNIMPLEMENTED` note
+- 2026-04-07: JEP refined -- added `DriverInterface` metaclass, type enforcement on `@export`, resource handle pattern, native gRPC migration sketch; fixed Pydantic BaseModel usage, NetworkInterface proto, driver adapter scope; expanded type mapping table and unresolved questions
+- 2026-04-30: Simplified -- pivoted to build-time generation of committed `.proto` files, dropped proto-first adapter and dynamic runtime introspection, made type enforcement opt-in, added grpcurl `UNIMPLEMENTED` note
 - 2026-05-09: Deferred concrete CLI command names (now referred to as the codegen CLI and the interface check CLI); fixed spelling typos flagged by `typos`; added out-of-tree drivers section with no-proto fallback behavior; clarified interface check CLI discovery via `DriverInterfaceMeta._registry`; expanded Pattern 4 to recommend promoting most client-side composites to server-side `@export` methods, keeping client-side orchestration only for complex drivers like network and flasher
 
 ## References

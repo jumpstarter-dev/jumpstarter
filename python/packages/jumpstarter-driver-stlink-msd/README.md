@@ -50,5 +50,5 @@ j flasher info                     # show ST-LINK volume details
 
 ## API
 
-- **`flash(source, target=None)`** — Flash firmware to the board. Accepts `.bin` or `.hex` files.
-- **`info()`** — Read `DETAILS.TXT` from the ST-LINK volume and return board metadata.
+- **`flash(source, target=None)`** -- Flash firmware to the board. Accepts `.bin` or `.hex` files.
+- **`info()`** -- Read `DETAILS.TXT` from the ST-LINK volume and return board metadata.

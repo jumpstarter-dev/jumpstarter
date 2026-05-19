@@ -81,10 +81,10 @@ The `jumpstarter-driver-renode` package provides a composite driver
 (`Renode`) that manages a Renode simulation instance with three child
 drivers:
 
-- **`RenodePower`** — controls the Renode process lifecycle (on/off)
-- **`RenodeFlasher`** — handles firmware loading (`sysbus LoadELF` /
+- **`RenodePower`** -- controls the Renode process lifecycle (on/off)
+- **`RenodeFlasher`** -- handles firmware loading (`sysbus LoadELF` /
   `sysbus LoadBinary`)
-- **`PySerial` (console)** — serial access over a PTY terminal
+- **`PySerial` (console)** -- serial access over a PTY terminal
 
 Users configure targets entirely through exporter YAML:
 
@@ -115,9 +115,9 @@ A `RenodeMonitor` async client handles the telnet protocol:
 No gRPC protocol changes. The driver exposes standard Jumpstarter
 interfaces (`PowerInterface`, `FlasherInterface`) plus:
 
-- `get_platform()`, `get_uart()`, `get_machine_name()` — read-only
+- `get_platform()`, `get_uart()`, `get_machine_name()` -- read-only
   config accessors
-- `monitor_cmd(command)` — raw monitor access, gated behind
+- `monitor_cmd(command)` -- raw monitor access, gated behind
   `allow_raw_monitor: true` (default: `false`)
 
 ### Hardware Considerations
@@ -129,14 +129,14 @@ system (Linux or macOS). The Renode process is managed via
 
 ## Design Decisions
 
-### DD-1: Control Interface — Telnet Monitor
+### DD-1: Control Interface -- Telnet Monitor
 
 **Alternatives considered:**
 
-1. **Telnet monitor** — Renode's built-in TCP monitor interface.
+1. **Telnet monitor** -- Renode's built-in TCP monitor interface.
    Simple socket connection, send text commands, read responses.
    Lightweight, no extra runtime needed.
-2. **pyrenode3** — Python.NET bridge to Renode's C# internals. More
+2. **pyrenode3** -- Python.NET bridge to Renode's C# internals. More
    powerful but requires .NET runtime or Mono, heavy dependency, less
    stable API surface.
 
@@ -150,14 +150,14 @@ control. The monitor client uses `anyio.connect_tcp` with
 `anyio.fail_after` for timeouts, consistent with `TcpNetwork` and
 `grpc.py` in the project.
 
-### DD-2: UART Exposure — PTY Terminal
+### DD-2: UART Exposure -- PTY Terminal
 
 **Alternatives considered:**
 
-1. **PTY** (`emulation CreateUartPtyTerminal`) — Creates a
+1. **PTY** (`emulation CreateUartPtyTerminal`) -- Creates a
    pseudo-terminal file on the host. Reuses the existing `PySerial`
    child driver exactly as QEMU does. Linux/macOS only.
-2. **Socket** (`emulation CreateServerSocketTerminal`) — Exposes UART
+2. **Socket** (`emulation CreateServerSocketTerminal`) -- Exposes UART
    as a TCP socket. Cross-platform. Maps to `TcpNetwork` driver. Has
    telnet IAC negotiation bytes to handle.
 
@@ -169,15 +169,15 @@ This reuses the same serial/pexpect/console tooling without any
 adaptation. Socket terminal support can be added later as a fallback
 for platforms without PTY support.
 
-### DD-3: Configuration Model — Managed Mode
+### DD-3: Configuration Model -- Managed Mode
 
 **Alternatives considered:**
 
-1. **Managed mode** — The driver constructs all Renode monitor
+1. **Managed mode** -- The driver constructs all Renode monitor
    commands from YAML config parameters (`platform`, `uart`, firmware
    path). The driver handles platform loading, UART wiring, and
    firmware loading programmatically.
-2. **Script mode** — User provides a complete `.resc` script. The
+2. **Script mode** -- User provides a complete `.resc` script. The
    driver runs it but still manages UART terminal setup.
 
 **Decision:** Managed mode as primary, with an `extra_commands` list
@@ -190,7 +190,7 @@ The `extra_commands` list covers target-specific needs like register
 pokes (e.g., `sysbus WriteDoubleWord 0x40090030 0x0301` for S32K388
 PL011 UART enablement) and Ethernet switch setup.
 
-### DD-4: Firmware Loading — Deferred to Flash
+### DD-4: Firmware Loading -- Deferred to Flash
 
 **Alternatives considered:**
 
@@ -198,7 +198,7 @@ PL011 UART enablement) and Ethernet switch setup.
    simulation and starts
 2. `on()` starts the simulation, `flash()` loads firmware and resets
 
-**Decision:** Option 1 — `flash()` stores the path, `on()` loads and
+**Decision:** Option 1 -- `flash()` stores the path, `on()` loads and
 starts.
 
 **Rationale:** This matches the QEMU driver's semantic where you flash
@@ -207,12 +207,12 @@ power cycles without restarting the Renode process. The `RenodeFlasher`
 additionally supports hot-loading: if the simulation is already running,
 `flash()` sends the load command and resets the machine.
 
-### DD-5: Security — Restricted Monitor Access
+### DD-5: Security -- Restricted Monitor Access
 
 **Alternatives considered:**
 
-1. **Open access** — Expose `monitor_cmd` to all authenticated clients
-2. **Opt-in access** — Gate behind `allow_raw_monitor` config flag
+1. **Open access** -- Expose `monitor_cmd` to all authenticated clients
+2. **Opt-in access** -- Gate behind `allow_raw_monitor` config flag
 
 **Decision:** Opt-in with `allow_raw_monitor: false` by default.
 
@@ -243,7 +243,7 @@ communicates via line-oriented text:
 1. **Connection**: retry loop with `fail_after(timeout)`, closing
    leaked streams on retry
 2. **Prompt detection**: matches `(monitor)` or registered machine
-   names only — no false positives from output like `(enabled)`
+   names only -- no false positives from output like `(enabled)`
 3. **Error detection**: per-line check against markers (`Could not
    find`, `Error`, `Invalid`, `Failed`, `Unknown`)
 4. **Timeout**: `execute()` wraps reads in `fail_after(30)` to prevent
@@ -261,27 +261,27 @@ bytes of the firmware file. If they match the ELF magic (`\x7fELF`),
 
 ### Unit Tests
 
-- `TestRenodeMonitor` — connection retry, command execution, error
+- `TestRenodeMonitor` -- connection retry, command execution, error
   detection (per-line), disconnect, newline rejection, stream cleanup
   on retry, prompt matching against expected prompts only
-- `TestRenodePower` — command sequence verification, extra commands
+- `TestRenodePower` -- command sequence verification, extra commands
   ordering, firmware-less boot, idempotent on/off, process termination
   and cleanup
-- `TestRenodeFlasher` — firmware path storage, hot-load with reset,
+- `TestRenodeFlasher` -- firmware path storage, hot-load with reset,
   custom load command, invalid load command rejection, ELF magic
   detection, dump not-implemented
-- `TestRenodeConfig` — default values, children wiring, custom config,
+- `TestRenodeConfig` -- default values, children wiring, custom config,
   PTY path construction, lifecycle
 
 ### Integration Tests
 
-- `TestRenodeClient` — round-trip properties via `serve()`, children
+- `TestRenodeClient` -- round-trip properties via `serve()`, children
   accessibility, `monitor_cmd` disabled by default, `monitor_cmd` not
   running error, CLI rendering
 
 ### E2E Tests
 
-- `test_driver_renode_e2e` — full power on/off cycle with real Renode
+- `test_driver_renode_e2e` -- full power on/off cycle with real Renode
   process, skipped when Renode is not installed
 
 ### CI
@@ -314,7 +314,7 @@ meta-package includes the new driver as an optional dependency.
 - PTY-only UART exposure limits to Linux/macOS (acceptable since Renode
   itself primarily targets these platforms)
 - The telnet monitor protocol is text-based and less structured than
-  QMP's JSON — error detection requires string matching
+  QMP's JSON -- error detection requires string matching
 - Full `.resc` script support is deferred; users with complex Renode
   setups must express their configuration as managed-mode parameters
   plus `extra_commands`
@@ -338,13 +338,13 @@ SoCs while Renode fills the MCU gap.
 
 ## Prior Art
 
-- **jumpstarter-driver-qemu** — The existing Jumpstarter QEMU driver
+- **jumpstarter-driver-qemu** -- The existing Jumpstarter QEMU driver
   established the composite driver pattern, `Popen`-based process
   management, and side-channel control protocol (QMP) that this JEP
   follows.
-- **Renode documentation** — [Renode docs](https://renode.readthedocs.io/)
+- **Renode documentation** -- [Renode docs](https://renode.readthedocs.io/)
   for monitor commands, platform descriptions, and UART terminal types.
-- **opensomeip** — [github.com/vtz/opensomeip](https://github.com/vtz/opensomeip)
+- **opensomeip** -- [github.com/vtz/opensomeip](https://github.com/vtz/opensomeip)
   provides the reference Renode targets (STM32F407, S32K388) used for
   validation.
 

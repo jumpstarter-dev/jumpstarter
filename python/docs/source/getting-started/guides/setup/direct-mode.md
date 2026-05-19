@@ -1,7 +1,7 @@
 # Direct Mode
 
 This guide shows you how to run a Jumpstarter exporter that clients connect to
-directly over TCP — no controller or Kubernetes cluster required.
+directly over TCP -- no controller or Kubernetes cluster required.
 
 Direct mode is useful when you want to expose hardware on one machine to clients
 on another, without setting up a controller.
@@ -16,7 +16,7 @@ connect at a time. For shared, multi-user environments use
 
 ### Create an Exporter Configuration
 
-Unlike distributed mode, you don't need `endpoint` or `token` fields — there
+Unlike distributed mode, you don't need `endpoint` or `token` fields -- there
 is no controller to register with.
 
 Create `example-direct.yaml`:

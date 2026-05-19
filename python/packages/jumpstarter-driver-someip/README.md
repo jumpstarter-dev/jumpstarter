@@ -72,27 +72,27 @@ export:
 
 ### RPC
 
-- `rpc_call(service_id, method_id, payload, timeout=5.0)` — Make a SOME/IP RPC call and return the response
+- `rpc_call(service_id, method_id, payload, timeout=5.0)` -- Make a SOME/IP RPC call and return the response
 
 ### Raw Messaging
 
-- `send_message(service_id, method_id, payload)` — Send a raw SOME/IP message
-- `receive_message(timeout=2.0)` — Receive a raw SOME/IP message
+- `send_message(service_id, method_id, payload)` -- Send a raw SOME/IP message
+- `receive_message(timeout=2.0)` -- Receive a raw SOME/IP message
 
 ### Service Discovery
 
-- `find_service(service_id, instance_id=0xFFFF, timeout=5.0)` — Find services via SOME/IP-SD; use `instance_id=0xFFFF` (default) to match any instance
+- `find_service(service_id, instance_id=0xFFFF, timeout=5.0)` -- Find services via SOME/IP-SD; use `instance_id=0xFFFF` (default) to match any instance
 
 ### Events
 
-- `subscribe_eventgroup(eventgroup_id)` — Subscribe to a SOME/IP event group
-- `unsubscribe_eventgroup(eventgroup_id)` — Unsubscribe from a SOME/IP event group
-- `receive_event(timeout=5.0)` — Receive next event notification
+- `subscribe_eventgroup(eventgroup_id)` -- Subscribe to a SOME/IP event group
+- `unsubscribe_eventgroup(eventgroup_id)` -- Unsubscribe from a SOME/IP event group
+- `receive_event(timeout=5.0)` -- Receive next event notification
 
 ### Connection Management
 
-- `close_connection()` — Close the SOME/IP connection
-- `reconnect()` — Reconnect to the SOME/IP endpoint
+- `close_connection()` -- Close the SOME/IP connection
+- `reconnect()` -- Reconnect to the SOME/IP endpoint
 
 ## Example Usage
 
