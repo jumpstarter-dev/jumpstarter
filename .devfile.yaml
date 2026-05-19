@@ -22,17 +22,21 @@ commands:
   - id: serve-docs
     exec:
       component: runtime
+      workingDir: ${PROJECT_SOURCE}/python
       commandLine: make docs-serve DOC_LISTEN="--host 0.0.0.0"
   - id: sync
     exec:
       component: runtime
+      workingDir: ${PROJECT_SOURCE}/python
       commandLine: make sync
   - id: clean
     exec:
       component: runtime
+      workingDir: ${PROJECT_SOURCE}/python
       commandLine: make clean
   - id: test
     exec:
       component: runtime
+      workingDir: ${PROJECT_SOURCE}/python
       commandLine: make test
 
