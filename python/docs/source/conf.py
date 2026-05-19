@@ -33,6 +33,7 @@ extensions = [
     "sphinx_substitution_extensions",
     "sphinx_copybutton",
     "sphinx_inline_tabs",
+    "sphinx-jsonschema",
 ]
 
 templates_path = ["_templates"]
@@ -41,8 +42,7 @@ exclude_patterns = []
 mermaid_version = "10.9.1"
 
 suppress_warnings = [
-    "ref.class",  # suppress unresolved Python class references (external references
-    # are warnings otherwise)
+    "ref.class",
 ]
 
 # -- Options for HTML output -------------------------------------------------
