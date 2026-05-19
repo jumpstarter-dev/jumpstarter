@@ -1,6 +1,6 @@
 # CRDs
 
-This section provides the CRD field reference for all Jumpstarter custom
+This section provides the {term}`CRD` field reference for all Jumpstarter custom
 resources. The documentation covers:
 
 - [Client](client.md): Client identity and credentials

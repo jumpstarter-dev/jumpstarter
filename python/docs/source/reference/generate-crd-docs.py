@@ -12,6 +12,14 @@ CRD_DIR = os.path.join(
 )
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "crds")
 
+SKIP_EXPAND = {
+    "topologySpreadConstraints",
+    "resources",
+    "labelSelector",
+    "matchExpressions",
+    "claims",
+}
+
 
 def flatten_properties(properties, prefix="", depth=0):
     rows = []
@@ -32,6 +40,9 @@ def flatten_properties(properties, prefix="", depth=0):
             desc = desc[:117] + "..."
 
         rows.append((f"`{path}`", type_str, desc))
+
+        if name in SKIP_EXPAND:
+            continue
 
         if typ == "object" and "properties" in prop and depth < 2:
             rows.extend(

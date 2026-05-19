@@ -18,9 +18,6 @@ Lease is the Schema for the exporters API
 | `spec.release` | boolean | The release flag requests the controller to end the lease now |
 | `spec.selector` | object (default: `{}`) | The selector for the exporter to be used |
 | `spec.selector.matchExpressions` | array | matchExpressions is a list of label selector requirements. The requirements are ANDed. |
-| `spec.selector.matchExpressions[].key` | string | key is the label key that the selector applies to. |
-| `spec.selector.matchExpressions[].operator` | string | operator represents a key's relationship to a set of values. |
-| `spec.selector.matchExpressions[].values` | array | values is an array of string values. If the operator is In or NotIn, |
 | `spec.selector.matchLabels` | object | matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels |
 | `spec.tags` | object | User-defined tags for the lease. Immutable after creation. |
 

@@ -42,9 +42,6 @@ Jumpstarter is the Schema for the jumpstarters API.
 | `spec.controller.login.tls` | object | TLS configuration for the login endpoint. |
 | `spec.controller.replicas` | integer (default: `2`) | Number of controller replicas to run. |
 | `spec.controller.resources` | object | Resource requirements for controller pods. |
-| `spec.controller.resources.claims` | array | Claims lists the names of resources, defined in spec.resourceClaims, |
-| `spec.controller.resources.limits` | object | Limits describes the maximum amount of compute resources allowed. |
-| `spec.controller.resources.requests` | object | Requests describes the minimum amount of compute resources required. |
 | `spec.controller.restApi` | object | REST API configuration for HTTP-based clients. |
 | `spec.controller.restApi.endpoints` | array | List of REST API endpoints to expose. |
 | `spec.controller.restApi.tls` | object | TLS configuration for secure HTTP communication. |
@@ -59,18 +56,7 @@ Jumpstarter is the Schema for the jumpstarters API.
 | `spec.routers.imagePullPolicy` | `Always` | `IfNotPresent` | `Never` (default: `IfNotPresent`) | Image pull policy for the router container. |
 | `spec.routers.replicas` | integer (default: `3`) | Number of router replicas to run. |
 | `spec.routers.resources` | object | Resource requirements for router pods. |
-| `spec.routers.resources.claims` | array | Claims lists the names of resources, defined in spec.resourceClaims, |
-| `spec.routers.resources.limits` | object | Limits describes the maximum amount of compute resources allowed. |
-| `spec.routers.resources.requests` | object | Requests describes the minimum amount of compute resources required. |
 | `spec.routers.topologySpreadConstraints` | array | Topology spread constraints for router pod distribution. |
-| `spec.routers.topologySpreadConstraints[].labelSelector` | object | LabelSelector is used to find matching pods. |
-| `spec.routers.topologySpreadConstraints[].matchLabelKeys` | array | MatchLabelKeys is a set of pod label keys to select the pods over which |
-| `spec.routers.topologySpreadConstraints[].maxSkew` | integer | MaxSkew describes the degree to which pods may be unevenly distributed. |
-| `spec.routers.topologySpreadConstraints[].minDomains` | integer | MinDomains indicates a minimum number of eligible domains. |
-| `spec.routers.topologySpreadConstraints[].nodeAffinityPolicy` | string | NodeAffinityPolicy indicates how we will treat Pod's nodeAffinity/nodeSelector |
-| `spec.routers.topologySpreadConstraints[].nodeTaintsPolicy` | string | NodeTaintsPolicy indicates how we will treat node taints when calculating |
-| `spec.routers.topologySpreadConstraints[].topologyKey` | string | TopologyKey is the key of node labels. Nodes that have a label with this key |
-| `spec.routers.topologySpreadConstraints[].whenUnsatisfiable` | string | WhenUnsatisfiable indicates how to deal with a pod if it doesn't satisfy |
 
 ## Status
 
