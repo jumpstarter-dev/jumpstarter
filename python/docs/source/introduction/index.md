@@ -32,7 +32,7 @@ agent cannot replicate. This means:
 - A **pytest script** calling driver methods in a test suite
 - A **CI pipeline** leasing hardware and flashing firmware
 - An **AI agent** issuing the same commands through the
-  [MCP server](../getting-started/guides/ai-agent-integration.md)
+  [MCP server](../getting-started/guides/integration-patterns/ai-agent-integration.md)
 
 all use the exact same interfaces, authentication, and access controls. There is
 no separate "AI mode" -- an agent is just another client. This uniformity is a
@@ -68,6 +68,44 @@ Component interactions include:
 
 Together, these components form a comprehensive testing framework that bridges
 the gap between development and deployment environments.
+
+```{mermaid}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
+flowchart TB
+    subgraph "Kubernetes Cluster"
+        Controller["Controller\nInventory / Lease / Access Control"]
+        Router["Router\nNAT Traversal Rendezvous"]
+        CRDs["CRDs\nExporter, Client, Lease"]
+        Controller --- CRDs
+    end
+
+    subgraph "Exporter Host"
+        Exporter["Exporter"]
+        subgraph "Drivers"
+            GPIO["GPIO"]
+            HDMI["HDMI"]
+            Serial["Serial"]
+            Storage["Storage"]
+        end
+        Exporter --- GPIO
+        Exporter --- HDMI
+        Exporter --- Serial
+        Exporter --- Storage
+    end
+
+    DUT["Device Under Test"]
+    GPIO --> DUT
+    HDMI --> DUT
+    Serial --> DUT
+    Storage --> DUT
+
+    Client["Client\n(CLI / Python API)"]
+
+    Client -- "Remote Access\n(gRPC)" --> Router
+    Router <--> Exporter
+    Client -. "Local Dev\n(direct)" .-> Exporter
+    Controller <--> Router
+```
 
 ## Operation Modes
 
@@ -210,6 +248,63 @@ requesting a lease on an exporter that matches specific criteria (using selector
 labels), and finally running tests against the acquired DUT. The lease system
 ensures exclusive access to the requested resources for the duration of testing,
 preventing conflicts with other users or pipelines in the shared environment.
+
+## RPC
+
+Jumpstarter is an RPC framework for Clients to call methods provided by Drivers.
+Drivers can expose three styles of RPCs, each mapped to its gRPC counterpart
+(see [RPC life cycle](https://grpc.io/docs/what-is-grpc/core-concepts/#rpc-life-cycle)
+for details).
+
+```{mermaid}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
+flowchart LR
+    subgraph "Unary RPC"
+        direction TB
+        C1["Client"] -- "DriverCall\n(desired state)" --> D1["Driver"]
+        D1 -- "Result" --> C1
+        E1["Example: power on/off"]
+    end
+
+    subgraph "Server Streaming RPC"
+        direction TB
+        C2["Client"] -- "StreamingDriverCall\n(interval)" --> D2["Driver"]
+        D2 -- "Result Stream" --> C2
+        E2["Example: power readings"]
+    end
+
+    subgraph "Bidirectional Streaming RPC"
+        direction TB
+        C3["Client"] <-- "DriverStream\n(Byte Stream)" --> D3["Driver"]
+        E3["Example: video capture"]
+    end
+```
+
+On top of bidirectional streaming RPC, Jumpstarter implements a generic byte
+stream interface, similar to TCP, for tunneling existing protocols (such as SSH)
+over Jumpstarter.
+
+## Router
+
+The Router works like ngrok or Cloudflare Tunnel -- it allows Clients to connect
+to Exporters without public IP addresses or behind NATs/firewalls by tunneling
+byte streams over bidirectional gRPC.
+
+```{mermaid}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
+flowchart LR
+    Client["Client\n(CLI / Python API)"]
+    Router["Router"]
+    subgraph "Exporter Host"
+        Exporter["Exporter"]
+        Drivers["Drivers"]
+        Exporter --- Drivers
+    end
+
+    Client <-- "gRPC Tunnel\n(bidirectional)" --> Router
+    Router <-- "gRPC Tunnel\n(bidirectional)" --> Exporter
+    Client -. "Exporter API\n(direct path)" .-> Exporter
+```
 
 ```{toctree}
 :maxdepth: 1
