@@ -60,22 +60,22 @@ Reference](../reference/package-apis/drivers/index.md).
 
 Some categories of drivers include:
 
-- [System
-  Control](../reference/package-apis/drivers/index.md#system-control-drivers):
+- [System Control](../reference/package-apis/drivers/index.md#system-control):
   Control power to devices, or general control.
-- [Communication](../reference/package-apis/drivers/index.md#communication-drivers):
+- [Communication](../reference/package-apis/drivers/index.md#communication):
   Provide protocols for network communication, such as TCP/IP, Serial, CAN bus,
   etc.
-- [Data and
-  Storage](../reference/package-apis/drivers/index.md#storage-and-data-drivers):
+- [Storage and Data](../reference/package-apis/drivers/index.md#storage-and-data):
   Control storage devices, such as SD cards or USB drives, and data.
-- [Media](../reference/package-apis/drivers/index.md#media-drivers): Provide
+- [Media](../reference/package-apis/drivers/index.md#media): Provide
   interfaces for media capture and playback, such as video or audio.
-- [Debug and
-  Programming](../reference/package-apis/drivers/index.md#debug-and-programming-drivers):
-  Provide interfaces for debugging and programming devices, such as JTAG or SWD,
-  remote flashing, emulation, etc.
-- [Utility](../reference/package-apis/drivers/index.md#utility-drivers): Provide
+- [Automotive Diagnostics](../reference/package-apis/drivers/index.md#automotive-diagnostics):
+  Provide automotive diagnostic protocol interfaces.
+- [Flashing and Programming](../reference/package-apis/drivers/index.md#flashing-and-programming):
+  Provide interfaces for flashing firmware and programming devices.
+- [Emulation](../reference/package-apis/drivers/index.md#emulation):
+  Manage virtual and emulated targets.
+- [Utility](../reference/package-apis/drivers/index.md#utility): Provide
   utility functions, such as shell driver commands on an {term}`exporter`.
 
 ### Composite Drivers
