@@ -123,17 +123,6 @@ def main():
         toctree_entries.append(filename)
         index_entries.append(f"- [{kind}]({filename})")
 
-    index = "# CRDs\n\n"
-    for entry in index_entries:
-        index += entry + "\n"
-    index += "\n```{toctree}\n:maxdepth: 1\n:hidden:\n\n"
-    for entry in toctree_entries:
-        index += entry + "\n"
-    index += "```\n"
-
-    with open(os.path.join(OUTPUT_DIR, "index.md"), "w") as f:
-        f.write(index)
-
     print(f"Generated {len(toctree_entries)} CRD docs in {OUTPUT_DIR}/")
 
 
