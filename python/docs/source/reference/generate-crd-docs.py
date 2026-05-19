@@ -10,7 +10,7 @@ CRD_DIR = os.path.join(
     os.path.dirname(__file__),
     "../../../../controller/deploy/operator/config/crd/bases",
 )
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "kubernetes-api")
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "kubernetes-api-extensions")
 
 
 def flatten_properties(properties, prefix="", depth=0):
