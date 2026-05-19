@@ -1637,7 +1637,7 @@ all subsequent phases have E2E coverage from the start.
 - [Prometheus](https://prometheus.io/) and [Alertmanager](https://prometheus.io/docs/alerting/latest/alertmanager/)
   — time-series metrics and alerting; [Prometheus naming and labels](https://prometheus.io/docs/practices/naming/)
   on cardinality and naming; remote write for non-scrape topologies;
-  [Exemplars](https://prometheus.io/docs/instrumenting/exposition_formats/#exemplars)
+  [Exemplars](https://prometheus.io/docs/instrumenting/exposition_formats/#exemplars-experimental)
   for attaching high-cardinality context to individual samples.
 - [Grafana exemplar support](https://grafana.com/docs/grafana/latest/fundamentals/exemplars/)
   — visualizing exemplars in metric panels and linking to traces or logs.

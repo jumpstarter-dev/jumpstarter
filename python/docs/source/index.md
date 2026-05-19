@@ -40,7 +40,7 @@ One tool, any target. Jumpstarter decouples devices from test runners, letting
 you use identical automation scripts everywhere - your *Makefile* for device
 testing.
 
-```{include} ../../README.md
+```{include} ../../../README.md
 :start-after: "## Highlights"
 :end-before: "##"
 ```
