@@ -10,7 +10,7 @@ CRD_DIR = os.path.join(
     os.path.dirname(__file__),
     "../../../../controller/deploy/operator/config/crd/bases",
 )
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "kubernetes-api-extensions")
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "crds")
 
 
 def flatten_properties(properties, prefix="", depth=0):
@@ -112,7 +112,7 @@ def main():
         toctree_entries.append(filename)
         index_entries.append(f"- [{kind}]({filename})")
 
-    index = "# Kubernetes API Extensions\n\n"
+    index = "# CRDs\n\n"
     for entry in index_entries:
         index += entry + "\n"
     index += "\n```{toctree}\n:maxdepth: 1\n:hidden:\n\n"

@@ -1,4 +1,4 @@
-# Kubernetes API Extensions
+# CRDs
 
 This section provides the CRD field reference for all Jumpstarter custom
 resources. The documentation covers:

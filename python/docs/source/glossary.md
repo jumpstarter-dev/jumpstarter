@@ -5,6 +5,11 @@
 ```{glossary}
 :sorted:
 
+CRD
+  Custom Resource Definition, a Kubernetes extension mechanism used by
+  Jumpstarter to define and manage resources such as clients, exporters, leases,
+  and the operator configuration.
+
 DUT
   Device Under Test.
 
