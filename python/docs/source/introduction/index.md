@@ -21,6 +21,25 @@ typical CI/CD systems. Beyond testing, it can function as a virtual KVM
 (Keyboard, Video, Mouse) switch, enabling remote access to physical devices for
 development.
 
+## Agentic by Design
+
+Jumpstarter's architecture makes no assumption about who or what is on the other
+end of a connection. The CLI, Python client libraries, gRPC protocol, and driver
+interfaces are all programmatic -- there is no GUI-only workflow that a script or
+agent cannot replicate. This means:
+
+- A **human developer** running `jmp shell` in a terminal
+- A **pytest script** calling driver methods in a test suite
+- A **CI pipeline** leasing hardware and flashing firmware
+- An **AI agent** issuing the same commands through the
+  [MCP server](../getting-started/guides/ai-agent-integration.md)
+
+all use the exact same interfaces, authentication, and access controls. There is
+no separate "AI mode" -- an agent is just another client. This uniformity is a
+direct consequence of Jumpstarter's design: hardware is exposed as a
+programmatic API, and any consumer that speaks gRPC (or calls the CLI, or
+imports the Python library) gets the same capabilities.
+
 ## Core Components
 
 Jumpstarter architecture is based on the following key components:

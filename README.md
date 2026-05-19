@@ -9,7 +9,9 @@
 
 A free, open source tool for automated testing on real and virtual hardware with
 CI/CD integration. Simplify device automation with consistent rules across local
-and distributed environments.
+and distributed environments. Every interface is programmatic -- there is no GUI
+wall -- so human developers, test scripts, CI pipelines, and AI agents interact
+with hardware through the same APIs.
 
 ## Highlights
 
@@ -19,6 +21,8 @@ and distributed environments.
 - 🌐 **Collaborative** - Share test hardware globally
 - ⚙️ **CI/CD Ready** - Works with cloud native developer environments and pipelines
 - 💻 **Cross-Platform** - Supports Linux and macOS
+- 🤖 **Agentic by Design** - Every interface is programmatic; humans, scripts,
+  CI pipelines, and AI agents all use the same APIs
 
 ## Repository Structure
 

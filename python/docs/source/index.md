@@ -38,7 +38,8 @@ using cloud native principles. See Jumpstarter in action:
 
 One tool, any target. Jumpstarter decouples devices from test runners, letting
 you use identical automation scripts everywhere - your *Makefile* for device
-testing.
+testing. Every interface is programmatic, so human developers, test scripts, CI
+pipelines, and AI agents all interact with hardware through the same APIs.
 
 ```{include} ../../../README.md
 :start-after: "## Highlights"
