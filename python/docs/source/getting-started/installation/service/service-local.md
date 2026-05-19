@@ -210,7 +210,7 @@ $ minikube start --extra-config=apiserver.service-node-port-range=8000-9000
 
 ### Install Local Jumpstarter with Operator
 
-For manual installation after creating the local cluster, follow [Install with Operator](service-operator.md). Use a `baseDomain` and endpoint addresses appropriate for your local environment (for example, `nip.io` based hostnames), then apply your `Jumpstarter` CR.
+For manual installation after creating the local cluster, follow [Production Deployment](service-production.md). Use a `baseDomain` and endpoint addresses appropriate for your local environment (for example, `nip.io` based hostnames), then apply your `Jumpstarter` CR.
 
 To check the status of the installation, run:
 

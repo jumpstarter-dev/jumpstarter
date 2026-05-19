@@ -1,23 +1,17 @@
 # Service
 
-This section explains how to install and configure the Jumpstarter service in your Kubernetes cluster. The service enables centralized management of your Jumpstarter environment.
+This section explains how to install the Jumpstarter service in your Kubernetes
+cluster.
 
-## Getting Started
-
-For most users, we recommend starting with a **local installation** to get familiar with Jumpstarter before moving to production deployments.
+- [Local Installation](service-local.md): Get up and running quickly on your
+  development machine
+- [Production Deployment](service-production.md): Deploy on Kubernetes or
+  OpenShift clusters with the Jumpstarter operator
 
 ```{toctree}
 :maxdepth: 2
+:hidden:
 
 service-local.md
 service-production.md
-service-operator.md
 ```
-
-## Quick Start
-
-**New to Jumpstarter?** Start with the [Local Installation](service-local.md) guide to get up and running quickly on your development machine.
-
-**Ready for production?** See the [Production Deployment](service-production.md) guide for Kubernetes and OpenShift clusters with proper security, monitoring, and ingress configurations.
-
-**Installing with the Kubernetes operator?** Use [Install with Operator](service-operator.md) for `Jumpstarter` CR examples using Kubernetes Ingress or OpenShift Routes.

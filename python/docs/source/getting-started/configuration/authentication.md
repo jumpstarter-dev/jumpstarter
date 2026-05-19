@@ -8,7 +8,7 @@ When installing with the operator, authentication is configured directly on the
 `Jumpstarter` custom resource, under `spec.authentication`. 
 
 For operator installation context, see
-[Install with Operator](../installation/service/service-operator.md).
+[Production Deployment](../installation/service/service-production.md).
 
 To use OIDC with your Jumpstarter installation:
 
