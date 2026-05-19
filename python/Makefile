@@ -50,7 +50,7 @@ docs-generate-crds:
 docs: docs-generate-crds
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs html SPHINXOPTS="-W --keep-going -n"
 
-docs-all:
+docs-all: docs-generate-crds
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs multiversion
 
 docs-serve: clean-docs
