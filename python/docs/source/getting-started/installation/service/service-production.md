@@ -1,16 +1,16 @@
 # Operator
 
-For production deployments, install Jumpstarter on Kubernetes or OKD
+For production deployments, install Jumpstarter on Kubernetes or OpenShift
 clusters using the Jumpstarter {term}`operator`.
 
 ## Prerequisites
 
-- A Kubernetes, OpenShift, or OKD cluster
+- A Kubernetes or OpenShift cluster
 - `kubectl` (or `oc`) configured for your cluster
 - Cluster-admin permissions (required to install CRDs and {term}`operator` RBAC)
 - A DNS domain for Jumpstarter {term}`service` endpoints (for example,
   `jumpstarter.example.com`)
-- An ingress controller on Kubernetes, or Routes on OpenShift/OKD
+- An ingress controller on Kubernetes, or Routes on OpenShift
 
 ```{note}
 `spec.baseDomain` creates these {term}`service` hostnames with
@@ -34,8 +34,8 @@ This assumes OLM is already installed and configured in your cluster.
 ```
 ````
 
-````{tab} OpenShift / OKD (OperatorHub)
-1. Log in to the OpenShift/OKD web console with cluster-admin permissions.
+````{tab} OpenShift (OperatorHub)
+1. Log in to the OpenShift web console with cluster-admin permissions.
 2. Go to **Operators -> OperatorHub**.
 3. Search for **Jumpstarter Operator** and install it.
 4. Wait until the installed {term}`operator` status is `Succeeded`.
@@ -45,7 +45,7 @@ $ oc get csv -n openshift-operators | grep jumpstarter
 ```
 ````
 
-````{tab} OpenShift / OKD (CLI subscription)
+````{tab} OpenShift (CLI subscription)
 ```yaml
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
@@ -127,7 +127,7 @@ spec:
 ```
 ````
 
-````{tab} OpenShift / OKD (Route)
+````{tab} OpenShift (Route)
 ```yaml
 apiVersion: operator.jumpstarter.dev/v1alpha1
 kind: Jumpstarter
@@ -173,11 +173,11 @@ $ kubectl apply -f jumpstarter.yaml
 ```{code-block} console
 $ kubectl get jumpstarter -n jumpstarter-lab
 $ kubectl get deploy,svc,ingress -n jumpstarter-lab   # Kubernetes
-$ kubectl get deploy,svc,route -n jumpstarter-lab     # OpenShift/OKD
+$ kubectl get deploy,svc,route -n jumpstarter-lab     # OpenShift
 ```
 
 ```{note}
-For OpenShift/OKD, ensure DNS is configured so route hostnames resolve correctly.
+For OpenShift, ensure DNS is configured so route hostnames resolve correctly.
 ```
 
 ## Configuration
@@ -253,7 +253,7 @@ declaratively in GitOps flows.
 
 ### Operator Behavior Notes
 
-- If `spec.baseDomain` is empty on OKD, the {term}`operator` auto-detects
+- If `spec.baseDomain` is empty on OpenShift, the {term}`operator` auto-detects
   the cluster domain.
 - If no endpoint service type is enabled, the {term}`operator` auto-selects:
   route, then ingress, then clusterIP.
