@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # JEP-0010: Renode Integration for Microcontroller Targets
 
 | Field          | Value                                                              |

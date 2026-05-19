@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # JEP-0013: Metrics, Tracing, and Log Observability
 
 | Field             | Value                                                                 |

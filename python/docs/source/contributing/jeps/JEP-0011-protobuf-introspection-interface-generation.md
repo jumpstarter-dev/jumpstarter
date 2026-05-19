@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # JEP-0011: Protobuf Introspection and Interface Generation
 
 | Field          | Value                                                              |

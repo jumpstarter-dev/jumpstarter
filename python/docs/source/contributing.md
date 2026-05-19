@@ -21,7 +21,7 @@ community and we welcome contributions.
 - **Etherpad**: [Docs](https://etherpad.jumpstarter.dev/pad-lister)
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 1
 :hidden:
 
 contributing/getting-started.md

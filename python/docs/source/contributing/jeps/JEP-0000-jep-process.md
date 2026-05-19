@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # JEP-0000: Jumpstarter Enhancement Proposal Process
 
 | Field          | Value                                                 |
