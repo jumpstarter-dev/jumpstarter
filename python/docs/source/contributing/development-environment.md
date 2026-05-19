@@ -26,20 +26,21 @@ Then you can clone the project and build the virtual environment with:
 
 ```console
 $ git clone https://github.com/jumpstarter-dev/jumpstarter.git
-$ cd jumpstarter/python
-$ make sync
+$ cd jumpstarter
+$ make build-python
 ```
 
 At this point you can run any of the jumpstarter commands prefixing them with
-`uv run`:
+`uv run` from the `python/` directory:
 
 ```console
+$ cd python
 $ uv run jmp
 ```
 
 ### Running the Tests
 
-To run the tests, you can use the `make` command from the `python/` directory:
+To run the tests, you can use `make` from the repository root:
 ```console
 $ make test
 ```
