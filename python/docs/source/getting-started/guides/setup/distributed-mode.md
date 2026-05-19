@@ -13,7 +13,7 @@ Alternatively, you can configure the ingress/route in reencrypt mode with your o
 
 ## Prerequisites
 
-Install [the following packages](../installation/packages.md) in your Python
+Install [the following packages](../../installation/packages.md) in your Python
 environment:
 
 - `jumpstarter-cli` - The core Jumpstarter CLI
@@ -23,9 +23,9 @@ environment:
 These driver packages include mock implementations, enabling you to test the
 connection between an exporter and client without physical hardware.
 
-You need the [service](../../introduction/service.md) running in a Kubernetes
+You need the [service](../../../introduction/service.md) running in a Kubernetes
 cluster with admin access. For installation instructions, refer to the
-[installation guide](../installation/service/index.md).
+[installation guide](../../installation/service/index.md).
 
 ## Instructions
 
@@ -112,4 +112,4 @@ $ exit
 
 Once you have your exporter shell running, you can start using Jumpstarter
 commands to interact with your hardware. To learn more about common workflow
-patterns and implementation examples, see [Examples](./examples/index.md).
+patterns and implementation examples, see [Examples](../examples/index.md).

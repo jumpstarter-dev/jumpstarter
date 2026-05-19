@@ -5,7 +5,7 @@ on the same host.
 
 ## Prerequisites
 
-Install [the following packages](../installation/packages.md) in your Python
+Install [the following packages](../../installation/packages.md) in your Python
 environment:
 
 - `jumpstarter-cli` - The Jumpstarter CLI for interacting with exporters
@@ -61,4 +61,4 @@ $ exit
 
 Once you have your exporter shell running, you can start using Jumpstarter
 commands to interact with your hardware. To learn more about common workflow
-patterns and implementation examples, see [Examples](./examples/index.md).
+patterns and implementation examples, see [Examples](../examples/index.md).

@@ -9,7 +9,7 @@ on another, without setting up a controller.
 ```{note}
 Direct mode skips the controller's lease management. Only one client should
 connect at a time. For shared, multi-user environments use
-[distributed mode](setup-distributed-mode.md) instead.
+[distributed mode](distributed-mode.md) instead.
 ```
 
 ## Instructions
