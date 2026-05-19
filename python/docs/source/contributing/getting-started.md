@@ -13,7 +13,7 @@ If you have questions, reach out in our Matrix chat or open an issue on GitHub.
 - Focus on a single issue
 - Follow code style (validate with `make lint`, fix with `make lint-fix`)
 - Perform static type checking with (`make pkg-ty-${package_name}`)
-- Add tests and update documentation. New drivers/features need tests and docs.
+- Add tests and update documentation
 - Verify all tests pass (`make pkg-test-${package_name}` or `make test`)
 
 ## Commit Messages
