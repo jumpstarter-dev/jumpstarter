@@ -284,28 +284,6 @@ On top of bidirectional streaming RPC, Jumpstarter implements a generic byte
 stream interface, similar to TCP, for tunneling existing protocols (such as SSH)
 over Jumpstarter.
 
-## Router
-
-The Router works like ngrok or Cloudflare Tunnel -- it allows Clients to connect
-to Exporters without public IP addresses or behind NATs/firewalls by tunneling
-byte streams over bidirectional gRPC.
-
-```{mermaid}
-:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
-flowchart LR
-    Client["Client\n(CLI / Python API)"]
-    Router["Router"]
-    subgraph "Exporter Host"
-        Exporter["Exporter"]
-        Drivers["Drivers"]
-        Exporter --- Drivers
-    end
-
-    Client <-- "gRPC Tunnel\n(bidirectional)" --> Router
-    Router <-- "gRPC Tunnel\n(bidirectional)" --> Exporter
-    Client -. "Exporter API\n(direct path)" .-> Exporter
-```
-
 ```{toctree}
 :maxdepth: 1
 :hidden:
