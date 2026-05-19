@@ -109,4 +109,5 @@ Documentation recommended practices:
 :hidden:
 
 contributing/development-environment.md
+internal/jeps/README.md
 ```
