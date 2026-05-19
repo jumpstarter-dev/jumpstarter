@@ -10,7 +10,7 @@ If you have questions, reach out in our Matrix chat or open an issue on GitHub.
 
 ## Making Changes
 
-- Focus on a single issue.
+- Focus on a single issue
 - Follow code style (validate with `make lint`, fix with `make lint-fix`)
 - Perform static type checking with (`make pkg-ty-${package_name}`)
 - Add tests and update documentation. New drivers/features need tests and docs.
