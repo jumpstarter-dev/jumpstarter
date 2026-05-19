@@ -16,7 +16,7 @@ This is a **community-supported** deployment. For production, use the
 - Root/sudo access required for privileged operations
 - At least 4GB RAM and 20GB disk space recommended
 
-## Build and Run
+## Install
 
 ### Build the Image
 
@@ -33,27 +33,7 @@ make bootc-run
 This creates a 1GB LVM disk image, starts MicroShift in a privileged container,
 sets up LVM volume groups for TopoLVM, and waits for MicroShift to be ready.
 
-### Access the Services
-
-- **Configuration Web UI**: `http://localhost:8880` (login: `root` / `jumpstarter`,
-  password change required on first use)
-- **MicroShift API**: `https://jumpstarter.<your-ip>.nip.io:6443`
-- **Pod Monitoring**: `http://localhost:8880/pods`
-
-## Container Management
-
-```bash
-sudo podman exec -it jumpstarter-microshift-okd oc get pods -A
-make bootc-sh
-make bootc-stop
-make bootc-rm
-make bootc-rm bootc-build bootc-run
-```
-
-`make bootc-rm` stops the container, cleans up LVM volume groups, and detaches
-loop devices. The LVM disk image is preserved. Use `make clean` to remove it.
-
-## Creating a Bootable QCOW2 Image
+### Create a Bootable QCOW2 Image
 
 For bare-metal or VM deployments:
 
@@ -66,27 +46,24 @@ If the container is running, stop it first with `make bootc-rm` to avoid LVM
 conflicts.
 ```
 
-The QCOW2 image is configured via `config.toml` (LVM partitioning with 20GB
-minimum, XFS root filesystem, default password `root:jumpstarter`).
+## Verify
 
-### Using the QCOW2 Image
+Access the services:
 
-```bash
-qemu-system-x86_64 \
-    -m 4096 \
-    -smp 2 \
-    -drive file=output/qcow2/disk.qcow2,format=qcow2 \
-    -net nic -net user,hostfwd=tcp::8880-:8880,hostfwd=tcp::443-:443
-```
+- **Configuration Web UI**: `http://localhost:8880` (login: `root` / `jumpstarter`,
+  password change required on first use)
+- **MicroShift API**: `https://jumpstarter.<your-ip>.nip.io:6443`
+- **Pod Monitoring**: `http://localhost:8880/pods`
 
-Convert to other formats:
+Check running pods:
 
 ```bash
-qemu-img convert -f qcow2 -O raw output/qcow2/disk.qcow2 output/disk.raw
-qemu-img convert -f qcow2 -O vdi output/qcow2/disk.qcow2 output/disk.vdi
+sudo podman exec -it jumpstarter-microshift-okd oc get pods -A
 ```
 
-## Customization
+## Configuration
+
+### Customization
 
 ```bash
 BOOTC_IMG=quay.io/your-org/microshift-bootc:v1.0 make bootc-build
@@ -98,6 +75,39 @@ editing `kustomization.yaml`. For live config service changes without rebuild:
 ```bash
 make bootc-reload-app
 ```
+
+### QCOW2 Image
+
+The QCOW2 image is configured via `config.toml` (LVM partitioning with 20GB
+minimum, XFS root filesystem, default password `root:jumpstarter`).
+
+```bash
+qemu-system-x86_64 \
+    -m 4096 \
+    -smp 2 \
+    -drive file=output/qcow2/disk.qcow2,format=qcow2 \
+    -net nic -net user,hostfwd=tcp::8880-:8880,hostfwd=tcp::443-:443
+```
+
+### Network
+
+The system uses `nip.io` for automatic DNS resolution (e.g.
+`jumpstarter.10.0.2.2.nip.io`).
+
+| Port | Service | Description |
+|------|---------|-------------|
+| 80 | HTTP | MicroShift ingress |
+| 443 | HTTPS | MicroShift API and ingress |
+| 8880 | Config UI | Web configuration interface |
+| 6443 | API Server | Kubernetes API (internal) |
+
+### Security
+
+1. **Default Password:** `root:jumpstarter`. Console login forces a change. Web
+   UI requires a change before access.
+2. **TLS Certificates:** MicroShift uses self-signed certs by default.
+3. **Privileged Container:** Required for systemd, LVM, and networking.
+4. **Authentication:** Web UI uses PAM authentication with root credentials.
 
 ## Troubleshooting
 
@@ -123,9 +133,16 @@ sudo podman exec jumpstarter-microshift-okd systemctl status config-svc
 sudo podman exec jumpstarter-microshift-okd journalctl -u config-svc -f
 ```
 
-### Port Conflicts
+## Uninstall
 
-If ports 80, 443, or 8880 are in use, modify `run-microshift.sh`.
+```bash
+make bootc-stop
+make bootc-rm
+make clean
+```
+
+`make bootc-rm` stops the container, cleans up LVM volume groups, and detaches
+loop devices. `make clean` removes the LVM disk image.
 
 ## Makefile Targets
 
@@ -140,23 +157,3 @@ If ports 80, 443, or 8880 are in use, modify `run-microshift.sh`.
 | `make build-image` | Create bootable QCOW2 image |
 | `make bootc-push` | Push image to registry |
 | `make clean` | Clean up images, artifacts, and LVM disk |
-
-## Network Configuration
-
-The system uses `nip.io` for automatic DNS resolution (e.g.
-`jumpstarter.10.0.2.2.nip.io`).
-
-| Port | Service | Description |
-|------|---------|-------------|
-| 80 | HTTP | MicroShift ingress |
-| 443 | HTTPS | MicroShift API and ingress |
-| 8880 | Config UI | Web configuration interface |
-| 6443 | API Server | Kubernetes API (internal) |
-
-## Security Notes
-
-1. **Default Password:** `root:jumpstarter`. Console login forces a change. Web
-   UI requires a change before access.
-2. **TLS Certificates:** MicroShift uses self-signed certs by default.
-3. **Privileged Container:** Required for systemd, LVM, and networking.
-4. **Authentication:** Web UI uses PAM authentication with root credentials.

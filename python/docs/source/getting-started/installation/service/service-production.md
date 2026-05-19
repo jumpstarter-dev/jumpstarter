@@ -7,64 +7,45 @@ clusters using the Jumpstarter {term}`operator`.
 
 - A Kubernetes, OpenShift, or OKD cluster
 - `kubectl` (or `oc`) configured for your cluster
-- Cluster-admin permissions (required to install CRDs and operator RBAC)
+- Cluster-admin permissions (required to install CRDs and {term}`operator` RBAC)
 - A DNS domain for Jumpstarter {term}`service` endpoints (for example,
   `jumpstarter.example.com`)
 - An ingress controller on Kubernetes, or Routes on OpenShift/OKD
 
 ```{note}
-`spec.baseDomain` creates these service hostnames with `jumpstarter.example.com`:
+`spec.baseDomain` creates these {term}`service` hostnames with
+`jumpstarter.example.com`:
 - `grpc.jumpstarter.example.com`
 - `router.jumpstarter.example.com`
 - `login.jumpstarter.example.com`
 ```
 
-## TLS and gRPC Configuration
+## Install
 
-Jumpstarter uses {term}`gRPC` for communication, which requires HTTP/2 support on the
-path from clients to the {term}`service`. The {term}`operator` installs {term}`gRPC` with **TLS
-passthrough** at the ingress or route: encrypted traffic is forwarded to the
-{term}`controller` and {term}`router` pods, which terminate TLS. HTTP login endpoints use edge
-TLS termination instead.
-
-```{note}
-When using ingress-nginx, you must enable the
-[`--enable-ssl-passthrough`](https://kubernetes.github.io/ingress-nginx/user-guide/cli-arguments/)
-flag on the ingress controller, as SSL passthrough is disabled by default. See
-the [ingress-nginx TLS documentation](https://kubernetes.github.io/ingress-nginx/user-guide/tls/#ssl-passthrough)
-for more details.
-```
-
-## Install the operator
+### Install the Operator
 
 ````{tab} Kubernetes (OLM installed)
-If your Kubernetes cluster already has OLM, install the {term}`operator` from OperatorHub and then continue with the `Jumpstarter` custom resource below.
-
-OperatorHub package page:
+Install the {term}`operator` from OperatorHub:
 
 - [Jumpstarter Operator on OperatorHub](https://operatorhub.io/operator/jumpstarter-operator)
 
 ```{note}
-On vanilla Kubernetes, this OperatorHub path assumes OLM is already installed and configured in your cluster.
+This assumes OLM is already installed and configured in your cluster.
 ```
 ````
 
-````{tab} OpenShift / OKD (OperatorHub recommended)
+````{tab} OpenShift / OKD (OperatorHub)
 1. Log in to the OpenShift/OKD web console with cluster-admin permissions.
 2. Go to **Operators -> OperatorHub**.
 3. Search for **Jumpstarter Operator** and install it.
 4. Wait until the installed {term}`operator` status is `Succeeded`.
-
-Verify from CLI:
 
 ```{code-block} console
 $ oc get csv -n openshift-operators | grep jumpstarter
 ```
 ````
 
-````{tab} OpenShift / OKD (CLI OLM subscription)
-Create a `Subscription` (example: `subscription.yaml`):
-
+````{tab} OpenShift / OKD (CLI subscription)
 ```yaml
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
@@ -79,8 +60,6 @@ spec:
   installPlanApproval: Automatic
 ```
 
-Apply and verify:
-
 ```{code-block} console
 $ oc apply -f subscription.yaml
 $ oc get csv -n openshift-operators | grep jumpstarter
@@ -88,37 +67,24 @@ $ oc get csv -n openshift-operators | grep jumpstarter
 ````
 
 ````{tab} Manual installer YAML (any cluster)
-Apply the {term}`operator` installer from a release asset:
-
-```{code-block} console
-$ kubectl apply -f https://github.com/jumpstarter-dev/jumpstarter/releases/download/<release-tag>/operator-installer.yaml
-```
-
-For example:
-
 ```{code-block} console
 $ kubectl apply -f https://github.com/jumpstarter-dev/jumpstarter/releases/download/v0.8.1/operator-installer.yaml
-```
-
-Wait for the {term}`operator` deployment:
-
-```{code-block} console
 $ kubectl wait --namespace jumpstarter-operator-system \
     --for=condition=available deployment/jumpstarter-operator-controller-manager \
     --timeout=120s
 ```
 ````
 
-## Create a namespace for Jumpstarter
+### Create a Namespace
 
 ```{code-block} console
 $ kubectl create namespace jumpstarter-lab
 ```
 
-## Create a `Jumpstarter` custom resource
+### Create a Jumpstarter Custom Resource
 
-The {term}`operator` reconciles the `Jumpstarter` CR and creates Deployments, Services,
-and networking resources (Ingresses or Routes) for {term}`controller`/{term}`router`/login
+The {term}`operator` reconciles the `Jumpstarter` CR and creates Deployments,
+Services, and networking resources for {term}`controller`/{term}`router`/login
 endpoints.
 
 ````{tab} Kubernetes (Ingress)
@@ -198,15 +164,11 @@ spec:
 ```
 ````
 
-Save as `jumpstarter.yaml`, then apply:
-
 ```{code-block} console
 $ kubectl apply -f jumpstarter.yaml
 ```
 
-## Verify deployment
-
-Check CR status and workloads:
+## Verify
 
 ```{code-block} console
 $ kubectl get jumpstarter -n jumpstarter-lab
@@ -215,118 +177,63 @@ $ kubectl get deploy,svc,route -n jumpstarter-lab     # OpenShift/OKD
 ```
 
 ```{note}
-For OpenShift/OKD, set `spec.baseDomain` to a domain that resolves to your
-route hosts. Ensure DNS is configured so these route hostnames resolve correctly.
+For OpenShift/OKD, ensure DNS is configured so route hostnames resolve correctly.
 ```
 
-## OAuth and cert-manager integration
+## Configuration
 
-- **OAuth / OIDC**: Configure through `spec.authentication.jwt` in the
-  `Jumpstarter` CR (issuer URL, audiences, and claim mappings). The {term}`operator`
-  applies this to {term}`controller` runtime settings, but does not install or configure
-  your identity provider.
-- **cert-manager**: Set `spec.certManager.enabled: true` to let the {term}`operator`
-  manage server certificates. You can use {term}`operator`-managed self-signed
-  certificates or reference an existing `Issuer`/`ClusterIssuer` with
-  `spec.certManager.server.issuerRef`. Installing and configuring cert-manager
-  itself remains an external prerequisite.
+### TLS and gRPC
 
-For detailed authentication examples, see
-[Authentication](../../configuration/authentication.md).
+Jumpstarter uses {term}`gRPC` for communication, which requires HTTP/2 support.
+The {term}`operator` configures TLS passthrough at the ingress or route for
+{term}`gRPC` endpoints and edge TLS termination for login endpoints.
 
-## cert-manager configuration examples
+```{note}
+When using ingress-nginx, enable
+[`--enable-ssl-passthrough`](https://kubernetes.github.io/ingress-nginx/user-guide/cli-arguments/)
+on the ingress controller.
+```
 
-### Self-signed cert-manager mode
+### OAuth and OIDC
 
+Configure through `spec.authentication.jwt` in the `Jumpstarter` CR. The
+{term}`operator` applies this to {term}`controller` runtime settings but does
+not install your identity provider. See
+[Authentication](../../configuration/authentication.md) for examples.
+
+### cert-manager
+
+Set `spec.certManager.enabled: true` for {term}`operator`-managed certificates.
+
+````{tab} Self-signed
 ```yaml
-apiVersion: operator.jumpstarter.dev/v1alpha1
-kind: Jumpstarter
-metadata:
-  name: jumpstarter
-  namespace: jumpstarter-lab
 spec:
-  baseDomain: jumpstarter.example.com
   certManager:
     enabled: true
     server:
       selfSigned:
         enabled: true
-  controller:
-    grpc:
-      endpoints:
-        - address: grpc.jumpstarter.example.com:443
-          ingress:
-            enabled: true
-            class: nginx
-  routers:
-    grpc:
-      endpoints:
-        - address: router.jumpstarter.example.com:443
-          ingress:
-            enabled: true
-            class: nginx
 ```
 
-The {term}`operator` creates and uses:
+Creates: `<name>-selfsigned-issuer`, `<name>-ca`, `<name>-ca-issuer`,
+`<name>-controller-tls`, `<name>-router-<replica>-tls`.
+````
 
-- `<name>-selfsigned-issuer`
-- `<name>-ca`
-- `<name>-ca-issuer`
-- `<name>-controller-tls`
-- `<name>-router-<replica>-tls`
-
-### External issuer reference (ClusterIssuer)
-
+````{tab} External issuer
 ```yaml
-apiVersion: operator.jumpstarter.dev/v1alpha1
-kind: Jumpstarter
-metadata:
-  name: jumpstarter
-  namespace: jumpstarter-lab
 spec:
-  baseDomain: jumpstarter.example.com
   certManager:
     enabled: true
     server:
       issuerRef:
         name: my-cluster-issuer
         kind: ClusterIssuer
-  controller:
-    grpc:
-      endpoints:
-        - address: grpc.jumpstarter.example.com:443
-          route:
-            enabled: true
-  routers:
-    grpc:
-      endpoints:
-        - address: router.jumpstarter.example.com:443
-          route:
-            enabled: true
 ```
+````
 
-### Login endpoint with cert-manager
-
-When cert-manager is enabled and `controller.login.tls.secretName` is not set,
-the generated login Ingress uses the default TLS secret name `login-tls`.
-
-For Ingress-based login endpoints, you can use
-`controller.login.endpoints[].ingress.annotations` to integrate with ACME
-issuers (for example Let's Encrypt) managed by cert-manager.
-
+````{tab} Login with ACME
 ```yaml
-apiVersion: operator.jumpstarter.dev/v1alpha1
-kind: Jumpstarter
-metadata:
-  name: jumpstarter
-  namespace: jumpstarter-lab
 spec:
-  baseDomain: jumpstarter.example.com
-  certManager:
-    enabled: true
-    server:
-      selfSigned:
-        enabled: true
   controller:
     login:
       endpoints:
@@ -337,56 +244,29 @@ spec:
             annotations:
               cert-manager.io/cluster-issuer: letsencrypt-prod
 ```
+````
 
-### Login endpoint with explicit TLS secret
+### GitOps
 
-```yaml
-apiVersion: operator.jumpstarter.dev/v1alpha1
-kind: Jumpstarter
-metadata:
-  name: jumpstarter
-  namespace: jumpstarter-lab
-spec:
-  baseDomain: jumpstarter.example.com
-  certManager:
-    enabled: true
-    server:
-      selfSigned:
-        enabled: true
-  controller:
-    login:
-      tls:
-        secretName: login-custom-tls
-      endpoints:
-        - address: login.jumpstarter.example.com:443
-          ingress:
-            enabled: true
-            class: nginx
-```
-
-## GitOps and ArgoCD
-
-Use the {term}`operator` installer and manage your `Jumpstarter` custom resource
+Use the {term}`operator` installer and manage your `Jumpstarter` CR
 declaratively in GitOps flows.
 
-## Operator behavior
+### Operator Behavior Notes
 
-- If `spec.baseDomain` is empty and the cluster exposes OpenShift Route APIs,
-  the {term}`operator` auto-detects the cluster domain.
-- If an endpoint has no enabled service type, the {term}`operator` auto-selects one:
-  `route` (if available), then `ingress`, then `clusterIP`.
-- {term}`gRPC` endpoints use TLS passthrough; login endpoints use edge TLS termination.
-- {term}`Controller` and {term}`router` auth secrets persist across CR deletion/recreation.
-- {term}`Router` replicas are one Deployment per replica; `$(replica)` placeholders in
-  endpoint addresses are substituted per replica.
-- When cert-manager is disabled, the {term}`operator` still creates
-  `jumpstarter-service-ca-cert` (with empty `ca.crt`) for CLI discoverability.
+- If `spec.baseDomain` is empty on OpenShift, the {term}`operator` auto-detects
+  the cluster domain.
+- If no endpoint service type is enabled, the {term}`operator` auto-selects:
+  route, then ingress, then clusterIP.
+- {term}`Controller` and {term}`router` auth secrets persist across CR
+  deletion/recreation.
+- {term}`Router` replicas are one Deployment per replica; `$(replica)`
+  placeholders are substituted per replica.
 
-## API field reference
+## API Reference
 
 The `Jumpstarter` CRD is `operator.jumpstarter.dev/v1alpha1`.
 
-### Top-level spec fields
+### Top-level Spec
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -396,7 +276,7 @@ The `Jumpstarter` CRD is `operator.jumpstarter.dev/v1alpha1`.
 | `spec.routers` | `object` | {term}`Router` deployment scale, resources, and endpoint settings. |
 | `spec.authentication` | `object` | Authentication settings (internal, Kubernetes, JWT, auto-provisioning). |
 
-### Controller and router fields
+### Controller and Router
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -404,22 +284,22 @@ The `Jumpstarter` CRD is `operator.jumpstarter.dev/v1alpha1`.
 | `spec.controller.imagePullPolicy` | `string` | Pull policy (`Always`, `IfNotPresent`, `Never`). |
 | `spec.controller.resources` | `object` | Controller resource requests/limits. |
 | `spec.controller.replicas` | `integer` | Number of controller pods. |
-| `spec.controller.exporterOptions.offlineTimeout` | `duration` | Timeout before exporter is considered offline. |
+| `spec.controller.exporterOptions.offlineTimeout` | `duration` | Timeout before {term}`exporter` is considered offline. |
 | `spec.controller.grpc.tls.certSecret` | `string` | Manual TLS secret name when cert-manager is disabled. |
-| `spec.controller.grpc.endpoints[]` | `array` | Controller gRPC endpoint definitions. |
-| `spec.controller.grpc.keepalive.*` | `object` | gRPC keepalive tuning options. |
+| `spec.controller.grpc.endpoints[]` | `array` | Controller {term}`gRPC` endpoint definitions. |
+| `spec.controller.grpc.keepalive.*` | `object` | {term}`gRPC` keepalive tuning options. |
 | `spec.controller.login.tls.secretName` | `string` | Optional TLS secret for login edge-termination. |
 | `spec.controller.login.endpoints[]` | `array` | Login endpoint definitions. |
 | `spec.routers.image` | `string` | Router container image. |
 | `spec.routers.imagePullPolicy` | `string` | Pull policy. |
 | `spec.routers.resources` | `object` | Router resource requests/limits. |
 | `spec.routers.replicas` | `integer` | Router replica count (one deployment per replica). |
-| `spec.routers.topologySpreadConstraints[]` | `array` | Pod spread constraints for router deployments. |
+| `spec.routers.topologySpreadConstraints[]` | `array` | Pod spread constraints for {term}`router` deployments. |
 | `spec.routers.grpc.tls.certSecret` | `string` | Manual TLS secret name when cert-manager is disabled. |
 | `spec.routers.grpc.endpoints[]` | `array` | Router endpoint definitions; supports `$(replica)` placeholder. |
-| `spec.routers.grpc.keepalive.*` | `object` | Router gRPC keepalive tuning options. |
+| `spec.routers.grpc.keepalive.*` | `object` | Router {term}`gRPC` keepalive tuning options. |
 
-### Authentication fields
+### Authentication
 
 | Field | Type | Description |
 | --- | --- | --- |
@@ -430,12 +310,12 @@ The `Jumpstarter` CRD is `operator.jumpstarter.dev/v1alpha1`.
 | `spec.authentication.jwt[]` | `array` | JWT authenticators (issuer, audiences, claim mappings). |
 | `spec.authentication.autoProvisioning.enabled` | `boolean` | Auto-create users authenticated by external providers. |
 
-### cert-manager fields
+### cert-manager
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `spec.certManager.enabled` | `boolean` | Enables operator cert-manager integration. |
-| `spec.certManager.server.selfSigned.enabled` | `boolean` | Enables operator-managed self-signed CA mode. |
+| `spec.certManager.enabled` | `boolean` | Enables {term}`operator` cert-manager integration. |
+| `spec.certManager.server.selfSigned.enabled` | `boolean` | Enables self-signed CA mode. |
 | `spec.certManager.server.selfSigned.caDuration` | `duration` | Self-signed CA certificate duration. |
 | `spec.certManager.server.selfSigned.certDuration` | `duration` | Issued server certificate duration. |
 | `spec.certManager.server.selfSigned.renewBefore` | `duration` | Renewal lead time before expiration. |
@@ -444,32 +324,29 @@ The `Jumpstarter` CRD is `operator.jumpstarter.dev/v1alpha1`.
 | `spec.certManager.server.issuerRef.group` | `string` | Issuer API group (default `cert-manager.io`). |
 | `spec.certManager.server.issuerRef.caBundle` | `bytes` | Optional PEM CA bundle published for clients. |
 
-### Endpoint schema
+### Endpoints
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `address` | `string` | Host/address, optional port, supports `$(replica)` for router endpoints. |
-| `route.enabled` | `boolean` | Create OpenShift Route for endpoint. |
+| `address` | `string` | Host/address, optional port, supports `$(replica)` for {term}`router` endpoints. |
+| `route.enabled` | `boolean` | Create OpenShift Route. |
 | `route.annotations` / `route.labels` | `map` | Route metadata overrides. |
-| `ingress.enabled` | `boolean` | Create Kubernetes Ingress for endpoint. |
+| `ingress.enabled` | `boolean` | Create Kubernetes Ingress. |
 | `ingress.class` | `string` | Ingress class name. |
 | `ingress.annotations` / `ingress.labels` | `map` | Ingress metadata overrides. |
-| `nodeport.enabled` | `boolean` | Create NodePort service for endpoint. |
+| `nodeport.enabled` | `boolean` | Create NodePort service. |
 | `nodeport.port` | `integer` | Requested NodePort value. |
-| `nodeport.annotations` / `nodeport.labels` | `map` | NodePort service metadata overrides. |
-| `loadBalancer.enabled` | `boolean` | Create LoadBalancer service for endpoint. |
-| `loadBalancer.port` | `integer` | Service port for LoadBalancer exposure. |
-| `loadBalancer.annotations` / `loadBalancer.labels` | `map` | LoadBalancer service metadata overrides. |
-| `clusterIP.enabled` | `boolean` | Create ClusterIP service for endpoint. |
-| `clusterIP.annotations` / `clusterIP.labels` | `map` | ClusterIP service metadata overrides. |
+| `loadBalancer.enabled` | `boolean` | Create LoadBalancer service. |
+| `loadBalancer.port` | `integer` | Service port. |
+| `clusterIP.enabled` | `boolean` | Create ClusterIP service. |
 
-### Status conditions
+### Status Conditions
 
-| Condition type | Meaning |
+| Condition | Meaning |
 | --- | --- |
-| `Ready` | Overall operator-managed deployment readiness. |
+| `Ready` | Overall deployment readiness. |
 | `ControllerDeploymentReady` | Controller deployment is available. |
-| `RouterDeploymentsReady` | All router deployments are available. |
+| `RouterDeploymentsReady` | All {term}`router` deployments are available. |
 | `CertManagerAvailable` | cert-manager CRDs are present (when enabled). |
 | `IssuerReady` | Configured issuer is ready (when enabled). |
 | `ControllerCertificateReady` | Controller TLS secret is ready (when enabled). |

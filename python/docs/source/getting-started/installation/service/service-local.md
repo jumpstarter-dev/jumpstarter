@@ -1,64 +1,41 @@
 # CLI
 
-For local development and testing, you can install Jumpstarter on local Kubernetes clusters using tools like kind or minikube. This is ideal for learning about the distributed {term}`service` quickly or for creating CI/CD pipelines to validate your own Jumpstarter drivers.
+For local development and testing, install Jumpstarter on local Kubernetes
+clusters using kind or minikube. Ideal for learning about the {term}`service`
+quickly or for validating Jumpstarter drivers in CI/CD pipelines.
 
 ## Prerequisites
 
-Before installing locally, ensure you have:
-
-- Docker or Podman installed (for kind)
-- `kubectl` installed and configured to access your cluster
+- Docker or Podman installed
+- `kubectl` installed and configured
 - Administrator access to your cluster (required for CRD installation)
 
-## Install with Jumpstarter CLI
+## Install
 
-The Jumpstarter CLI provides convenient commands for local demo/test cluster management and Jumpstarter installation:
-
-- `jmp admin create cluster` - Creates a local cluster and installs Jumpstarter (recommended for getting started quickly)
-- `jmp admin delete cluster` - Deletes a local cluster completely
-- `jmp admin get clusters` - Get local clusters from a Kubeconfig
-- `jmp admin install` - Installs Jumpstarter on an existing cluster
-- `jmp admin uninstall` - Removes Jumpstarter from a cluster (but keeps the cluster)
-
-```{warning}
-Sometimes the automatic IP address detection for will not work correctly, to check if Jumpstarter can determine your IP address, run `jmp admin ip`. If the IP address cannot be determined, use the `--ip` argument to manually set your IP address.
-```
-
-### Create a Local Cluster and Install Jumpstarter
-
-If you want to test Jumpstarter locally with more control over the setup, you can create a local cluster using tools such as [minikube](https://minikube.sigs.k8s.io/docs/start/) and [kind](https://kind.sigs.k8s.io/docs/user/quick-start/).
-
-[**kind**](https://kind.sigs.k8s.io/docs/user/quick-start/) (Kubernetes in Docker) is a tool for running local Kubernetes clusters using Docker or Podman containerized "nodes". It's lightweight and fast to start, making it excellent for CI/CD pipelines and quick local testing.
-
-[**minikube**](https://minikube.sigs.k8s.io/docs/start/) runs local Kubernetes clusters using VMs or container "nodes". It works across several platforms and supports different hypervisors, making it ideal for local development and testing. Minikube works better if you don't have a local Docker/Podman installation.
-
-The admin CLI can automatically create a local cluster and install Jumpstarter with a single command:
-
-By default, Jumpstarter will try to detect which local cluster tools are installed:
-
-```{tip}
-By default, Jumpstarter will use `kind` if available, use the `--minikube` argument to force Jumpstarter to use minikube instead.
-```
+The {term}`jmp admin` CLI can create a local cluster and install Jumpstarter in
+a single command:
 
 ```{code-block} console
 $ jmp admin create cluster
 ```
 
-However, you can also explicitly specify a local cluster tool:
+```{warning}
+If automatic IP detection fails, check with `jmp admin ip` and use `--ip` to
+set your address manually.
+```
+
+```{tip}
+By default, Jumpstarter uses kind if available. Use `--minikube` to force
+minikube instead.
+```
 
 ````{tab} kind
 ```{code-block} console
 $ jmp admin create cluster --kind
 ```
 
-Additional options for cluster creation:
-
-- Custom cluster name: Specify as the first argument (default: `jumpstarter-lab`)
-- `--kind <PATH>`: Path to the kind binary to use for cluster management
-- `--force-recreate`: Force recreate the cluster if it already exists (destroys all data)
-- `--kind-extra-args`: Pass additional arguments to kind cluster creation
-- `--skip-install`: Create the cluster without installing Jumpstarter
-- `--extra-certs <PATH>`: Path to custom CA certificate bundle file to inject into the cluster
+Options: `--force-recreate`, `--skip-install`, `--extra-certs <PATH>`,
+`--kind-extra-args`, custom cluster name as first argument.
 ````
 
 ````{tab} minikube
@@ -66,37 +43,16 @@ Additional options for cluster creation:
 $ jmp admin create cluster --minikube
 ```
 
-Additional options for cluster creation:
-
-- Custom cluster name: Specify as the first argument (default: `jumpstarter-lab`)
-- `--minikube <PATH>`: Path to the minikube binary to use for cluster management
-- `--force-recreate`: Force recreate the cluster if it already exists (destroys all data)
-- `--minikube-extra-args`: Pass additional arguments to minikube cluster creation
-- `--skip-install`: Create the cluster without installing Jumpstarter
-- `--extra-certs <PATH>`: Path to custom CA certificate bundle file to inject into the cluster
+Options: `--force-recreate`, `--skip-install`, `--extra-certs <PATH>`,
+`--minikube-extra-args`, custom cluster name as first argument.
 ````
 
-To set a custom cluster name:
-
-````{tab} kind
-```{code-block} console
-$ jmp admin create cluster my-jumpstarter-cluster --kind
-```
-````
-
-````{tab} minikube
-```{code-block} console
-$ jmp admin create cluster my-jumpstarter-cluster --minikube
-```
-````
-
-### Install Jumpstarter in an Existing Local Cluster
+### Install on an Existing Cluster
 
 ```{warning}
-Jumpstarter requires specific `NodePort` configurations, it is recommended to create a new cluster for Jumpstarter or use the automatic creation above.
+Jumpstarter requires specific NodePort configurations. It is recommended to
+create a new cluster or use the automatic creation above.
 ```
-
-If you already have a local cluster, install Jumpstarter with default options for your local cluster tool:
 
 ````{tab} kind
 ```{code-block} console
@@ -110,55 +66,20 @@ $ jmp admin install --minikube
 ```
 ````
 
-### Uninstall Jumpstarter
-
-Uninstall Jumpstarter from the cluster with the CLI:
+## Verify
 
 ```{code-block} console
-$ jmp admin uninstall
+$ kubectl get pods -n jumpstarter-lab --watch
 ```
 
-To delete the local cluster completely, use the cluster delete command:
+## Configuration
+
+### Manual Cluster Setup
+
+For more control, create the cluster yourself before installing:
 
 ````{tab} kind
-```{code-block} console
-$ jmp admin delete cluster --kind
-```
-````
-
-````{tab} minikube
-```{code-block} console
-$ jmp admin delete cluster --minikube
-```
-````
-
-To delete a cluster with a custom name:
-
-````{tab} kind
-```{code-block} console
-$ jmp admin delete cluster my-jumpstarter-cluster --kind
-```
-````
-
-````{tab} minikube
-```{code-block} console
-$ jmp admin delete cluster my-jumpstarter-cluster --minikube
-```
-````
-
-For complete documentation of the `jmp admin create cluster`, `jmp admin delete cluster`, `jmp admin get clusters`, and `jmp admin install` commands and all available options, see the [MAN pages](../../../reference/man-pages/jmp.md).
-
-## Manual Local Cluster Install
-
-If you want to customize the local cluster further, you can create the cluster yourself.
-
-### Create a Local Cluster
-
-````{tab} kind
-#### Create a kind cluster
-
-First, create a kind cluster config that enables nodeports to host the Services.
-Save this as `kind_config.yaml`:
+Create a kind cluster config that enables NodePorts. Save as `kind_config.yaml`:
 
 ```{code-block} yaml
 kind: Cluster
@@ -191,29 +112,39 @@ nodes:
     protocol: TCP
 ```
 
-Next, create a kind cluster using the config you created:
-
 ```{code-block} console
 $ kind create cluster --config kind_config.yaml
 ```
 ````
 
 ````{tab} minikube
-#### Create a minikube cluster
-
-Expand the default NodePort range to include the Jumpstarter ports:
-
 ```{code-block} console
 $ minikube start --extra-config=apiserver.service-node-port-range=8000-9000
 ```
 ````
 
-### Install Local Jumpstarter with Operator
+Then follow the [Operator](service-production.md) guide using a `baseDomain`
+appropriate for your local environment (for example, `nip.io` based hostnames).
 
-For manual installation after creating the local cluster, follow [Operator](service-production.md). Use a `baseDomain` and endpoint addresses appropriate for your local environment (for example, `nip.io` based hostnames), then apply your `Jumpstarter` CR.
-
-To check the status of the installation, run:
+## Uninstall
 
 ```{code-block} console
-$ kubectl get pods -n jumpstarter-lab --watch
+$ jmp admin uninstall
 ```
+
+To delete the local cluster completely:
+
+````{tab} kind
+```{code-block} console
+$ jmp admin delete cluster --kind
+```
+````
+
+````{tab} minikube
+```{code-block} console
+$ jmp admin delete cluster --minikube
+```
+````
+
+For complete documentation of all {term}`jmp admin` options, see the
+[MAN pages](../../../reference/man-pages/jmp.md).
