@@ -20,7 +20,7 @@ guide that use console interaction with {term}`PexpectAdapter` require
 ## The JumpstarterTest base class
 
 {term}`JumpstarterTest` is a pytest class that provides a `client` fixture scoped to
-the test class. It connects to a Jumpstarter exporter in one of two ways:
+the test class. It connects to a Jumpstarter {term}`exporter` in one of two ways:
 
 1. **Shell mode**: when the `JUMPSTARTER_HOST` environment variable is set (for
    example, inside a {term}`jmp shell` session), it connects to the exporter from that
@@ -43,7 +43,7 @@ class TestPowerCycle(JumpstarterTest):
 ```
 
 The `selector` class variable is a comma-separated list of {term}`label selector`s that
-identify which exporter to lease. It is only used when running outside a shell
+identify which {term}`exporter` to {term}`lease`. It is only used when running outside a shell
 {term}`session`.
 
 The `client` object exposes driver interfaces as nested attributes. In the
@@ -67,8 +67,8 @@ active {term}`exporter`. The `selector` class variable is ignored.
 
 ### With automatic lease acquisition
 
-Run pytest directly without a shell session. `JumpstarterTest` loads the default
-client configuration and acquires a lease matching your `selector`:
+Run pytest directly without a shell {term}`session`. {term}`JumpstarterTest` loads the default
+client configuration and acquires a {term}`lease` matching your `selector`:
 
 ```console
 $ pytest test_my_device.py
@@ -80,7 +80,7 @@ This requires a configured client (see
 ## Writing custom fixtures
 
 Create additional pytest fixtures that build on the `client` fixture provided by
-`JumpstarterTest`. This is useful for setting up device state or wrapping driver
+{term}`JumpstarterTest`. This is useful for setting up {term}`device` state or wrapping driver
 interfaces.
 
 ```python
@@ -206,7 +206,7 @@ class TestWithFirmware(JumpstarterTest):
 
 ## CI integration
 
-`JumpstarterTest` works in CI pipelines. Use either shell mode or lease mode
+{term}`JumpstarterTest` works in CI pipelines. Use either shell mode or {term}`lease` mode
 depending on your setup.
 
 ### Shell mode in CI
@@ -275,8 +275,8 @@ hardware-test:
   client configured with `jmp config client use <name>`.
 
 **Lease acquisition times out**
-: Verify that an exporter matching your `selector` labels is running and
-  registered with the {term}`controller`. Check available exporters with
+: Verify that an {term}`exporter` matching your `selector` labels is running and
+  registered with the {term}`controller`. Check available {term}`exporter`s with
   `jmp get exporters`.
 
 **`client` fixture setup fails**

@@ -4,18 +4,18 @@ Jumpstarter uses a modular driver model to build abstractions around the
 interfaces used to interact with target devices, both physical hardware and
 virtual systems.
 
-An [Exporter](exporters.md) uses Drivers to "export" these interfaces from a
-{term}`host` machine to the clients via [gRPC](https://grpc.io/). Drivers can be thought
+An [{term}`Exporter`](exporters.md) uses Drivers to "export" these interfaces from a
+{term}`host` machine to the clients via {term}`gRPC`. Drivers can be thought
 of as a simplified API for an interface or device type.
 
 ## Architecture
 
 Drivers in Jumpstarter follow a client/server architecture where:
 
-- Driver implementations run on the exporter side and interact directly with
-  hardware or virtual devices
-- Driver clients run on the client side and communicate with drivers via gRPC
-- Interface classes define the contract between implementations and clients
+- Driver implementations run on the {term}`exporter` side and interact directly with
+  hardware or virtual {term}`device`s
+- Driver clients run on the client side and communicate with drivers via {term}`gRPC`
+- {term}`Interface class`es define the contract between implementations and clients
 
 The architecture follows a pattern with these key components:
 
@@ -33,14 +33,14 @@ The architecture follows a pattern with these key components:
   clients to interact with the driver either locally or remotely over the
   network.
 
-When a client requests a {term}`lease` and connects to an exporter, a {term}`session` is created
-for all tests the client needs to execute. Within this session, the specified
+When a client requests a {term}`lease` and connects to an {term}`exporter`, a {term}`session` is created
+for all tests the client needs to execute. Within this {term}`session`, the specified
 `Driver` subclass is instantiated for each configured interface. These driver
-instances live throughout the session's duration, maintaining state and
+instances live throughout the {term}`session`'s duration, maintaining state and
 executing setup/teardown logic.
 
 On the client side, a `DriverClient` subclass is instantiated for each exported
-interface. Since clients may run on different machines than exporters,
+interface. Since clients may run on different machines than {term}`exporter`s,
 `DriverClient` classes are loaded dynamically when specified in the allowed
 packages list.
 
@@ -49,7 +49,7 @@ methods when needed but preserve existing signatures. If breaking changes are
 required, create new interface, client, and driver versions within the same
 module.
 
-Drivers are often used with [Adapters](adapters.md), which transform driver
+Drivers are often used with [{term}`adapter`s](adapters.md), which transform driver
 connections into different forms or interfaces for specific use cases.
 
 ## Types
@@ -76,12 +76,12 @@ Some categories of drivers include:
   Provide interfaces for debugging and programming devices, such as JTAG or SWD,
   remote flashing, emulation, etc.
 - [Utility](../reference/package-apis/drivers/index.md#utility-drivers): Provide
-  utility functions, such as shell driver commands on a exporter.
+  utility functions, such as shell driver commands on an {term}`exporter`.
 
 ### Composite Drivers
 
 {term}`Composite driver`s combine multiple lower-level drivers to create higher-level
-abstractions or specialized workflows. For example, a composite driver might
+abstractions or specialized workflows. For example, a {term}`composite driver` might
 coordinate power cycling, storage re-flashing, and serial communication to
 automate a device initialization process.
 
@@ -89,7 +89,7 @@ In Jumpstarter, drivers are organized in a {term}`driver tree` structure which a
 representation of complex device configurations that may be found in your
 environment.
 
-Here's an example of a composite driver tree:
+Here's an example of a {term}`composite driver` tree:
 
 ```
 MyHarness         # Custom composite driver for the entire target device harness
@@ -107,7 +107,7 @@ Drivers are configured using a YAML {term}`exporter config` file, which specifie
 drivers to load and the parameters for each. Drivers are distributed as Python
 packages making it easy to develop and install your own drivers.
 
-Here is an example exporter config that loads drivers for both physical and
+Here is an example {term}`exporter config` that loads drivers for both physical and
 virtual devices:
 
 ```yaml
@@ -143,7 +143,7 @@ export:
 
 ## Communication
 
-Drivers expose their methods over gRPC using three {term}`RPC styles` (see
+Drivers expose their methods over {term}`gRPC` using three {term}`RPC styles` (see
 [RPC life cycle](https://grpc.io/docs/what-is-grpc/core-concepts/#rpc-life-cycle)
 for details on gRPC counterparts):
 
@@ -196,24 +196,24 @@ same user context.
 
 In {term}`distributed mode`, authentication is handled through JWT tokens:
 
-- **Client Authentication**: Clients authenticate to the controller using JWT
+- **Client Authentication**: Clients authenticate to the {term}`controller` using JWT
   tokens, which establishes their identity and permissions
-- **Exporter Authentication**: Similarly, exporters authenticate to the
-  controller with their own tokens
-- **Driver Access Control**: The controller enforces access control by only
-  allowing authorized clients to acquire leases on exporters and their drivers
+- **Exporter Authentication**: Similarly, {term}`exporter`s authenticate to the
+  {term}`controller` with their own tokens
+- **Driver Access Control**: The {term}`controller` enforces access control by only
+  allowing authorized clients to acquire {term}`lease`s on {term}`exporter`s and their drivers
 - **{term}`Driver allowlist`**: Client configurations can specify which driver packages
   are allowed to be loaded, preventing unintended execution of untrusted code
 
 ### Driver Package Security
 
-When using distributed mode, driver security considerations include:
+When using {term}`distributed mode`, driver security considerations include:
 
 - **Package Verification**: Clients can verify that only trusted driver packages
   are loaded by configuring allowlists
 - **Capability Restrictions**: Access to specific driver functionality can be
   restricted based on client permissions
-- **Session Isolation**: Each client session operates with its own driver
+- **{term}`Session` Isolation**: Each client {term}`session` operates with its own driver
   instances to prevent interference between users
 
 ## Custom Drivers
@@ -222,7 +222,7 @@ While Jumpstarter comes with drivers for many basic interfaces, {term}`custom dr
 can be developed for specialized hardware interfaces, emulated environments, or
 to provide domain-specific abstractions for your use case. Custom drivers follow
 the same architecture pattern as built-in drivers and can be integrated into the
-system through the exporter configuration.
+system through the {term}`exporter config`uration.
 
 ## Example Implementation
 

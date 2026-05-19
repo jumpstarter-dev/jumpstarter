@@ -95,7 +95,7 @@ Documentation recommended practices:
 
 For significant changes that affect multiple components, change public APIs, or
 require community consensus, follow the
-[JEP process](contributing/jeps/index.md).
+[{term}`JEP` process](contributing/jeps/index.md).
 
 ## AI Assistants
 
@@ -123,7 +123,7 @@ This project also includes Claude Code configuration in the `.claude/`
 directory. When working with Claude Code:
 
 - **Project Rules**: The `.claude/rules/` directory contains rules for project
-  structure, driver creation, operator releases, and the JEP process. Claude
+  structure, driver creation, {term}`operator` releases, and the {term}`JEP` process. Claude
   Code loads these automatically.
 - **CLAUDE.md**: The root `CLAUDE.md` provides project-level instructions
   including key commands for testing (`make pkg-test-<package_name>`), linting

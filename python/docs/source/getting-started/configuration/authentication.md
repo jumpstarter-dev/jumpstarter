@@ -1,13 +1,13 @@
 # Authentication
 
 Jumpstarter uses internally issued JWT tokens to authenticate clients and
-exporters by default. You can also configure Jumpstarter to use external OpenID
+{term}`exporter`s by default. You can also configure Jumpstarter to use external OpenID
 Connect (OIDC) providers.
 
 When installing with the {term}`operator`, authentication is configured directly on the
 `Jumpstarter` custom resource, under `spec.authentication`. 
 
-For operator installation context, see
+For {term}`operator` installation context, see
 [Production Deployment](../installation/service/service-production.md).
 
 To use OIDC with your Jumpstarter installation:
@@ -70,7 +70,7 @@ Note, the HTTPS URL is mandatory, and you only need to include
 certificateAuthority when using a self-signed certificate. The username will be
 prefixed with "keycloak:" (e.g., keycloak:example-user).
 
-3. Create clients and exporters with the `jmp admin create` commands. Be sure to
+3. Create clients and {term}`exporter`s with the {term}`jmp admin` create commands. Be sure to
    prefix usernames with `keycloak:` as configured in the claim mappings:
 
 ```console
@@ -102,7 +102,7 @@ For machine-to-machine authentication (useful in CI environments), use a token:
 $ jmp login --client <client alias> [other parameters] --token <token>
 ```
 
-For exporters, use similar login command but with the `--exporter` flag:
+For {term}`exporter`s, use similar login command but with the `--exporter` flag:
 
 ```console
 $ jmp login --exporter <exporter alias> \
@@ -214,7 +214,7 @@ spec:
           prefix: "dex:"
 ```
 
-4. Create clients and exporters with appropriate OIDC usernames. Prefix the full
+4. Create clients and {term}`exporter`s with appropriate OIDC usernames. Prefix the full
    service account name with "dex:" as configured in the claim mappings.:
 
 ```console
@@ -237,7 +237,7 @@ $ jmp login --client <client alias> \
     --token $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
 ```
 
-For exporters:
+For {term}`exporter`s:
 
 ```console
 $ jmp login --exporter <exporter alias> \

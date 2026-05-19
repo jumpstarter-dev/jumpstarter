@@ -10,7 +10,7 @@ devices.
 At its core, Jumpstarter uses a client/server architecture where a single client
 can control multiple devices under test. Its modular design supports both local
 development (devices connected directly to your machine) and {term}`distributed mode`
-testing environments (devices accessed remotely through a central controller). All
+testing environments (devices accessed remotely through a central {term}`controller`). All
 communication happens over {term}`gRPC`, providing a consistent interface regardless of
 deployment model. Every interface is programmatic -- there is no GUI-only
 workflow that a script or agent cannot replicate. A human developer running
@@ -29,27 +29,27 @@ access to physical devices for development.
 
 Jumpstarter architecture is based on the following key components:
 
-- Device Under Test ({term}`DUT`) - Hardware or virtual device being tested
-- [Drivers](drivers.md) - Interfaces for DUT communication
-- [Adapters](adapters.md) - Convert driver connections into various formats
-- [Exporters](exporters.md) - Expose device interfaces over network via gRPC
+- {term}`DUT` - Hardware or virtual device being tested
+- [Drivers](drivers.md) - Interfaces for {term}`DUT` communication
+- [{term}`Adapter`s](adapters.md) - Convert driver connections into various formats
+- [Exporters](exporters.md) - Expose device interfaces over network via {term}`gRPC`
 - [Hooks](hooks.md) - Lifecycle scripts that run at {term}`lease` boundaries
 - [Clients](clients.md) - Libraries and CLI tools for device interaction
 - [Service](service.md) - Kubernetes {term}`controller` for resource management
 
 Component interactions include:
 
-- **DUT and Drivers** - Drivers provide standardized interfaces to DUT's
+- **{term}`DUT` and Drivers** - Drivers provide standardized interfaces to {term}`DUT`'s
   hardware connections
-- **Drivers and Adapters** - Adapters transform driver connections for
+- **Drivers and {term}`Adapter`s** - {term}`Adapter`s transform driver connections for
   specialized use cases
-- **Drivers/Adapters and Exporters** - Exporters manage drivers/adapters and
-  expose them via gRPC
-- **Hooks and Exporters** - Hooks execute shell scripts at lease boundaries,
+- **Drivers/{term}`Adapter`s and {term}`Exporter`s** - {term}`Exporter`s manage drivers/{term}`adapter`s and
+  expose them via {term}`gRPC`
+- **{term}`hook`s and {term}`Exporter`s** - {term}`hook`s execute shell scripts at {term}`lease` boundaries,
   running before drivers are available and after the {term}`session` ends
-- **Exporters and Clients** - Clients connect to exporters to control devices
-- **Clients/Exporters and Service** - Service manages access control and
-  resource allocation in distributed mode
+- **{term}`Exporter`s and Clients** - Clients connect to {term}`exporter`s to control {term}`device`s
+- **Clients/{term}`Exporter`s and {term}`service`** - {term}`service` manages access control and
+  resource allocation in {term}`distributed mode`
 
 Together, these components form a comprehensive testing framework that bridges
 the gap between development and deployment environments.
@@ -95,11 +95,11 @@ flowchart TB
 ## Operation Modes
 
 Building on these components, Jumpstarter implements two operation modes that
-provide flexibility for different scenarios: {term}`local mode` and distributed modes.
+provide flexibility for different scenarios: {term}`local mode` and {term}`distributed mode`.
 
 ### Local Mode
 
-In local mode, clients communicate directly with exporters running on the same
+In {term}`local mode`, clients communicate directly with {term}`exporter`s running on the same
 machine or through direct network connections.
 
 ```{mermaid}
@@ -128,7 +128,7 @@ flowchart TB
 
 This mode is ideal for individual developers working directly with accessible
 hardware or virtual devices. When no client configuration or environment
-variables are present, Jumpstarter runs in local mode and communicates with a
+variables are present, Jumpstarter runs in {term}`local mode` and communicates with a
 built-in {term}`exporter` service via a local socket connection, requiring no Kubernetes
 or other infrastructure. Developers can work with devices on their desk, develop
 drivers, create automation scripts, and test with QEMU or other virtualization
@@ -139,19 +139,19 @@ $ jmp shell --exporter my-exporter
 $ pytest test_device.py
 ```
 
-The example above shows typical local mode usage: first connecting to an
-exporter (which manages the device interfaces) using the `jmp shell` command,
+The example above shows typical {term}`local mode` usage: first connecting to an
+{term}`exporter` (which manages the {term}`device` interfaces) using the {term}`jmp shell` command,
 and then running tests against the device with pytest. The `--exporter` flag
-specifies which exporter configuration to use, allowing you to easily switch
-between different hardware or virtual device setups.
+specifies which {term}`exporter config`uration to use, allowing you to easily switch
+between different hardware or virtual {term}`device` setups.
 
 ### Distributed Mode
 
-Distributed mode enables multiple teams to securely share hardware resources
-across a network. It uses a Kubernetes-based controller to coordinate access to
-exporters, managing leases that grant exclusive access to DUT resources, while
+{term}`Distributed mode` enables multiple teams to securely share hardware resources
+across a network. It uses a Kubernetes-based {term}`controller` to coordinate access to
+{term}`exporter`s, managing {term}`lease`s that grant exclusive access to {term}`DUT` resources, while
 JWT token-based authentication secures all connections between clients and
-exporters.
+{term}`exporter`s.
 
 ```{mermaid}
 :config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
@@ -193,33 +193,33 @@ flowchart TB
     Exporter2 --> DUT3
 ```
 
-Distributed mode is ideal for environments where teams need to share hardware
+{term}`Distributed mode` is ideal for environments where teams need to share hardware
 resources, especially in CI/CD pipelines requiring scheduled device testing. It
 excels in geographically distributed test environments where devices are spread
 across multiple locations, and in any scenario requiring centralized management
 of testing resources. All these scenarios require a robust security model to
 manage access rights and prevent resource conflicts.
 
-To address these security needs, the distributed mode implements a comprehensive
+To address these security needs, the {term}`distributed mode` implements a comprehensive
 authentication system that secures access through:
 
 - **Client Registration** - Clients register in the Kubernetes cluster with
    unique identities
-- **Token Issuance** - Controller issues JWT tokens to authenticated clients and
-   exporters
-- **Secure Communication** - All gRPC communication between components uses
+- **Token Issuance** - {term}`Controller` issues JWT tokens to authenticated clients and
+   {term}`exporter`s
+- **Secure Communication** - All {term}`gRPC` communication between components uses
    token authentication
-- **Access Control** - Controller enforces permissions based on token identity:
-   - Which exporters a client can lease
+- **Access Control** - {term}`Controller` enforces permissions based on token identity:
+   - Which {term}`exporter`s a client can {term}`lease`
    - What actions a client can perform
    - Which driver packages can be loaded
 
-This security model enables dynamic registration of clients and exporters,
+This security model enables dynamic registration of clients and {term}`exporter`s,
 allowing fine-grained access control in multi-user environments. For example, CI
-pipelines can be granted access only to specific exporters based on their
+pipelines can be granted access only to specific {term}`exporter`s based on their
 credentials, ensuring proper resource isolation in shared testing environments.
 
-The following example shows how to run tests in distributed mode:
+The following example shows how to run tests in {term}`distributed mode`:
 
 ```console
 $ jmp config client use my-client
@@ -227,10 +227,10 @@ $ jmp create lease --selector vendor=acme,model=widget-v2
 $ pytest test_device.py
 ```
 
-The example above demonstrates the distributed mode workflow: first configuring
-the client with connection information for the central controller, then
-requesting a lease on an exporter that matches specific criteria (using
-{term}`label selector`s), and finally running tests against the acquired DUT. The lease system
+The example above demonstrates the {term}`distributed mode` workflow: first configuring
+the client with connection information for the central {term}`controller`, then
+requesting a {term}`lease` on an {term}`exporter` that matches specific criteria (using
+{term}`label selector`s), and finally running tests against the acquired {term}`DUT`. The {term}`lease` system
 ensures exclusive access to the requested resources for the duration of testing,
 preventing conflicts with other users or pipelines in the shared environment.
 

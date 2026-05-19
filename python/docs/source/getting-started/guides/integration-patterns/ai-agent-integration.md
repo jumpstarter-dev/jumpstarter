@@ -1,7 +1,7 @@
 # AI Agent Integration
 
-Jumpstarter provides an [MCP (Model Context Protocol)](https://modelcontextprotocol.io/)
-server that exposes hardware control as structured tools accessible by AI coding
+Jumpstarter provides an {term}`MCP`
+[server](https://modelcontextprotocol.io/) that exposes hardware control as structured tools accessible by AI coding
 agents. This enables natural-language-driven hardware interaction from IDEs and
 AI assistants.
 
@@ -27,8 +27,8 @@ flowchart TB
 ## Prerequisites
 
 - Jumpstarter CLI (`jmp`) installed and configured with a client identity
-- An MCP-compatible AI tool (Cursor, Claude Code, Claude Desktop, or any
-  MCP client)
+- An {term}`MCP`-compatible AI tool (Cursor, Claude Code, Claude Desktop, or any
+  {term}`MCP` client)
 
 The {term}`MCP server` package, which is normally provided when you perform a full install
 through the `jumpstarter-mcp` package which provides the {term}`jmp mcp serve` subcommand on the CLI.
@@ -55,7 +55,7 @@ Jumpstarter tools will be available to the AI agent in Composer.
 
 ### Claude Code
 
-Register the MCP server with a single command:
+Register the {term}`MCP server` with a single command:
 
 ```bash
 claude mcp add jumpstarter -- jmp mcp serve
@@ -102,8 +102,8 @@ Restart Claude Desktop and the Jumpstarter tools will appear in the tools menu.
 
 ### Other MCP Clients
 
-Any MCP-compatible client can use the Jumpstarter server. The server
-communicates over stdio using the standard MCP protocol. Launch it with:
+Any {term}`MCP`-compatible client can use the Jumpstarter {term}`MCP server`. The server
+communicates over stdio using the standard {term}`MCP` protocol. Launch it with:
 
 ```bash
 jmp mcp serve
@@ -111,7 +111,7 @@ jmp mcp serve
 
 ## Available Tools
 
-The MCP server exposes the following tools:
+The {term}`MCP server` exposes the following tools:
 
 ### Lease & Exporter Management
 
@@ -255,7 +255,7 @@ sequenceDiagram
 
 ## Logging and Debugging
 
-The MCP server logs to `~/.jumpstarter/logs/mcp-server.log`. Monitor it with:
+The {term}`MCP server` logs to `~/.jumpstarter/logs/mcp-server.log`. Monitor it with:
 
 ```bash
 tail -f ~/.jumpstarter/logs/mcp-server.log
@@ -263,8 +263,8 @@ tail -f ~/.jumpstarter/logs/mcp-server.log
 
 ## Writing Python with AI Assistance
 
-The MCP server is especially useful when writing Python code that interacts with
-hardware. While connected to a device, the agent can introspect the live
+The {term}`MCP server` is especially useful when writing Python code that interacts with
+hardware. While connected to a {term}`device`, the agent can introspect the live
 connection to discover available drivers, methods, and their signatures -- then
 use that knowledge to help you write correct code.
 

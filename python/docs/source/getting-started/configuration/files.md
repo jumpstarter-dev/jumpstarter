@@ -26,9 +26,9 @@ config:
 
 ## Client Configuration
 
-**File**: All valid client configuration files with a `.yaml` extension.  
+**File**: All valid {term}`client config`uration files with a `.yaml` extension.  
 **Location**: `/home/<user>/.config/jumpstarter/clients/*.yaml`  
-**Description**: Stores client configurations including endpoints, access
+**Description**: Stores {term}`client config`urations including endpoints, access
 tokens, and driver settings.
 
 **Format**:
@@ -72,7 +72,7 @@ $ jmp config client delete <alias>  # Remove a client config locally
 
 **File**: All valid {term}`exporter` configuration files with a `.yaml` extension  
 **Location**: `/etc/jumpstarter/exporters/*.yaml`  
-**Description**: Defines exporter settings including connection details and
+**Description**: Defines {term}`exporter` settings including connection details and
 driver configurations.  
 
 **Format**:
@@ -114,14 +114,14 @@ hooks: # Optional lifecycle hooks that run at lease boundaries
 ```
 
 The optional `hooks` section configures lifecycle scripts that run at {term}`lease`
-boundaries. See [Hooks](../../introduction/hooks.md) for full details on
-hook configuration, environment variables, and failure handling.
+boundaries. See [{term}`Hook`s](../../introduction/hooks.md) for full details on
+{term}`hook` configuration, environment variables, and failure handling.
 
 **Environment Variables**:
 - `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification
-- `JMP_ENDPOINT` - gRPC endpoint (overrides config file)
+- `JMP_ENDPOINT` - {term}`gRPC` endpoint (overrides config file)
 - `JMP_TOKEN` - Auth token (overrides config file)
-- `JMP_NAMESPACE` - Namespace in the controller
+- `JMP_NAMESPACE` - Namespace in the {term}`controller`
 - `JMP_NAME` - Exporter name
 
 **CLI Commands**:
@@ -148,7 +148,7 @@ $ jmp run --exporter-config /etc/jumpstarter/exporters/my-exporter.yaml
 
 ### Running as a Service
 
-For production deployments, it is recommended to use a service manager such as [`systemd`](https://systemd.io/) to keep the exporter process alive and restart it after a lease ends or something goes wrong.
+For production deployments, it is recommended to use a service manager such as [`systemd`](https://systemd.io/) to keep the {term}`exporter` process alive and restart it after a {term}`lease` ends or something goes wrong.
 
 Containerized exporters can be installed as [`systemd`](https://systemd.io/) services using [`podman-systemd`](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html).
 

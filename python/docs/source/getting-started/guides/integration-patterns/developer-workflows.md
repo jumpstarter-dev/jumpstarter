@@ -93,11 +93,11 @@ maintaining flexibility to work with both local and remote systems:
 3. For quick iterations with locally connected systems:
    - Port forwarding enables the cloud workspace to communicate with systems
      connected to the developer's machine
-   - The local Jumpstarter {term}`exporter` manages the device directly
+   - The local Jumpstarter {term}`exporter` manages the {term}`device` directly
 4. For access to shared lab resources:
-   - The same test code can request access to remote devices through the
-     controller
-   - The controller manages {term}`lease`s and routes connections through the standard
+   - The same test code can request access to remote {term}`device`s through the
+     {term}`controller`
+   - The {term}`controller` manages {term}`lease`s and routes connections through the standard
      infrastructure
 
 Key benefits of this approach:

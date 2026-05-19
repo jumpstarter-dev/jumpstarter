@@ -19,7 +19,7 @@ automatically use any drivers that are registered without the need for an
 
 When using Jumpstarter in {term}`distributed mode`, the client must be configured to
 connect to an instance of the {term}`service` that can authenticate and route requests
-to the appropriate exporter instance.
+to the appropriate {term}`exporter` instance.
 
 The following parameters are required to set up a remote client:
 

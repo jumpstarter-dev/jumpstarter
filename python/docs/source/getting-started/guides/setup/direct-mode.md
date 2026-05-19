@@ -4,10 +4,10 @@ This guide shows you how to run a Jumpstarter {term}`exporter` that clients conn
 directly over TCP -- no {term}`controller` or Kubernetes cluster required.
 
 {term}`Direct mode <direct mode>` is useful when you want to expose hardware on one machine to clients
-on another, without setting up a controller.
+on another, without setting up a {term}`controller`.
 
 ```{note}
-Direct mode skips the controller's {term}`lease` management. Only one client should
+{term}`Direct mode` skips the {term}`controller`'s {term}`lease` management. Only one client should
 connect at a time. For shared, multi-user environments use
 [distributed mode](distributed-mode.md) instead.
 ```
@@ -17,7 +17,7 @@ connect at a time. For shared, multi-user environments use
 ### Create an Exporter Configuration
 
 Unlike {term}`distributed mode`, you don't need `endpoint` or `token` fields -- there
-is no controller to register with.
+is no {term}`controller` to register with.
 
 Create `example-direct.yaml`:
 
@@ -42,13 +42,13 @@ hooks:
     timeout: 30
 ```
 
-The {term}`hook`s section is optional. {term}`beforeLease hook` runs once when the exporter
-starts (before any client connects), and {term}`afterLease hook` runs on shutdown. Hook
+The {term}`hook`s section is optional. {term}`beforeLease hook` runs once when the {term}`exporter`
+starts (before any client connects), and {term}`afterLease hook` runs on shutdown. {term}`Hook`
 scripts can use {term}`j` commands to interact with the drivers.
 
 ### Start the Exporter
 
-Run the exporter and tell it to listen on a TCP port with `--tls-grpc-listener`:
+Run the {term}`exporter` and tell it to listen on a TCP port with `--tls-grpc-listener`:
 
 ```console
 $ jmp run --exporter-config example-direct.yaml \
@@ -74,14 +74,14 @@ $ jmp run --exporter-config example-direct.yaml \
 $ jmp shell --tls-grpc <HOST>:19090 --tls-grpc-insecure
 ```
 
-If the exporter requires a passphrase:
+If the {term}`exporter` requires a passphrase:
 
 ```console
 $ jmp shell --tls-grpc <HOST>:19090 --tls-grpc-insecure --passphrase my-secret
 ```
 
-Replace `<HOST>` with the exporter machine's IP address or hostname. Once
-connected, interact with the exporter using `j` commands:
+Replace `<HOST>` with the {term}`exporter` machine's IP address or hostname. Once
+connected, interact with the {term}`exporter` using `j` commands:
 
 ```console
 $ j power on

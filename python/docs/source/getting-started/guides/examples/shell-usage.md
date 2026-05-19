@@ -2,12 +2,12 @@
 
 ## Starting and Exiting a Session
 
-Start a {term}`local mode` exporter {term}`session`:
+Start a {term}`local mode` {term}`exporter` {term}`session`:
 ```console
 $ jmp shell --exporter example-local
 ```
 
-Start a {term}`distributed mode` exporter session:
+Start a {term}`distributed mode` {term}`exporter` {term}`session`:
 ```console
 $ jmp shell --client hello --selector example.com/board=foo
 ```
@@ -42,8 +42,8 @@ ok
 $ exit
 ```
 
-When you run the `j` command in the exporter shell, you're accessing the CLI
-interfaces exposed by the drivers configured in your exporter. In this example:
+When you run the `j` command in the {term}`exporter shell`, you're accessing the CLI
+interfaces exposed by the drivers configured in your {term}`exporter`. In this example:
 
 - `j power` - Would access the power interface from the MockPower driver
 - `j storage` - Would access the storage interface from the MockStorageMux

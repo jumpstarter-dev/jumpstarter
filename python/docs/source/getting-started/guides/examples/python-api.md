@@ -9,7 +9,7 @@ doesn't provide a CLI.
 
 ### Using Python with Jumpstarter
 
-Create a Python file for interacting with your exporter. This example
+Create a Python file for interacting with your {term}`exporter`. This example
 (`example.py`) demonstrates a complete power cycle workflow:
 
 ```python
@@ -27,13 +27,13 @@ $ python ./example.py
 $ exit
 ```
 
-This example demonstrates how Python interacts with the exporter:
+This example demonstrates how Python interacts with the {term}`exporter`:
 
 1. The {term}`env()` function from `jumpstarter.common.utils` automatically connects
-   to the exporter configured in your shell environment.
+   to the {term}`exporter` configured in your shell environment.
 
 2. The `with env() as client:` statement creates a client connected to your
-   local exporter and handles connection setup and cleanup.
+   local {term}`exporter` and handles connection setup and cleanup.
 
 3. `client.power.on()` directly calls the power driver's "on" method--the same
    action that `j power on` performs in the CLI.
