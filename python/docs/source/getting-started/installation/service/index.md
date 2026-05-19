@@ -15,4 +15,5 @@ This section explains how to install the Jumpstarter {term}`service`.
 
 service-local.md
 service-production.md
+Bootc Image <https://github.com/jumpstarter-dev/jumpstarter/tree/main/controller/deploy/microshift-bootc>
 ```
