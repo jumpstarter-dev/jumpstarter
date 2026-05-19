@@ -1,4 +1,4 @@
-# Testing with pytest
+# Testing
 
 This guide explains how to write and run hardware tests using
 [pytest](https://docs.pytest.org/) with Jumpstarter. The `jumpstarter-testing`

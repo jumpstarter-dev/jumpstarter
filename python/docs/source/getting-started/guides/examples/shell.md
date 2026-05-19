@@ -1,4 +1,4 @@
-# Shell Usage
+# Shell
 
 ## Starting and Exiting a Session
 
