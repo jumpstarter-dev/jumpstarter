@@ -48,3 +48,24 @@ Once a lease is established, all traffic between the client and the exporter
 flows through a router instance. While there may only be one controller, the
 router can be scaled with multiple instances to handle traffic between many
 clients and exporters simultaneously.
+
+The Router works like ngrok or Cloudflare Tunnel -- it allows clients to connect
+to exporters without public IP addresses or behind NATs/firewalls by tunneling
+byte streams over bidirectional gRPC. Clients can also connect directly to an
+exporter when both are on the same network.
+
+```{mermaid}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
+flowchart LR
+    Client["Client\n(CLI / Python API)"]
+    Router["Router"]
+    subgraph "Exporter Host"
+        Exporter["Exporter"]
+        Drivers["Drivers"]
+        Exporter --- Drivers
+    end
+
+    Client <-- "gRPC Tunnel\n(bidirectional)" --> Router
+    Router <-- "gRPC Tunnel\n(bidirectional)" --> Exporter
+    Client -. "Direct path\n(same network)" .-> Exporter
+```
