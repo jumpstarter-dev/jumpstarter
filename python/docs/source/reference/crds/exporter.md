@@ -22,7 +22,7 @@ Exporter is the Schema for the exporters API
 | `status.conditions[].status` | `True` | `False` | `Unknown` | status of the condition, one of True, False, Unknown. |
 | `status.conditions[].type` | string | type of condition in CamelCase or in foo.example.com/CamelCase. |
 | `status.credential` | object | LocalObjectReference contains enough information to let you locate the |
-| `status.credential.name` | string (default: ``) | Name of the referent. |
+| `status.credential.name` | string | Name of the referent. (default: ``) |
 | `status.devices` | array |  |
 | `status.devices[].labels` | object |  |
 | `status.devices[].parent_uuid` | string |  |
@@ -31,5 +31,5 @@ Exporter is the Schema for the exporters API
 | `status.exporterStatus` | `Unspecified` | `Offline` | `Available` | `BeforeLeaseHook` | `LeaseReady` | `AfterLeaseHook` | `BeforeLeaseHookFailed` | `AfterLeaseHookFailed` | ExporterStatusValue is the current operational status reported by the exporter |
 | `status.lastSeen` | string |  |
 | `status.leaseRef` | object | LocalObjectReference contains enough information to let you locate the |
-| `status.leaseRef.name` | string (default: ``) | Name of the referent. |
+| `status.leaseRef.name` | string | Name of the referent. (default: ``) |
 | `status.statusMessage` | string | StatusMessage is an optional human-readable message describing the current state |

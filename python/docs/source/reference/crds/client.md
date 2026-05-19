@@ -15,5 +15,5 @@ Client is the Schema for the identities API
 | Field | Type | Description |
 | --- | --- | --- |
 | `status.credential` | object | Status field for the clients |
-| `status.credential.name` | string (default: ``) | Name of the referent. |
+| `status.credential.name` | string | Name of the referent. (default: ``) |
 | `status.endpoint` | string |  |

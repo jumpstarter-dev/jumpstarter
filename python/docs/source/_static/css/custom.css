@@ -20,9 +20,23 @@
     text-overflow: ellipsis;
 }
 
-table td:first-child,
-table th:first-child {
-    width: 40%;
-    min-width: 250px;
+table {
+    table-layout: fixed !important;
+    width: 100% !important;
+}
+
+table th:nth-child(1),
+table td:nth-child(1) {
+    width: 35% !important;
+}
+
+table th:nth-child(2),
+table td:nth-child(2) {
+    width: 10% !important;
+}
+
+table td:first-child code {
+    white-space: normal !important;
+    word-break: break-all !important;
 }
 

@@ -33,11 +33,11 @@ def flatten_properties(properties, prefix="", depth=0):
         type_str = typ
         if enum:
             type_str = " | ".join(f"`{e}`" for e in enum)
-        if default is not None:
-            type_str += f" (default: `{default}`)"
-
         if len(desc) > 120:
             desc = desc[:117] + "..."
+
+        if default is not None:
+            desc += f" (default: `{default}`)"
 
         rows.append((f"`{path}`", type_str, desc))
 

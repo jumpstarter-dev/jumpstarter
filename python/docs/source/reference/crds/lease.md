@@ -10,13 +10,13 @@ Lease is the Schema for the exporters API
 | --- | --- | --- |
 | `spec.beginTime` | string | Requested start time. If omitted, lease starts when exporter is acquired. |
 | `spec.clientRef` | object | The client that is requesting the lease |
-| `spec.clientRef.name` | string (default: ``) | Name of the referent. |
+| `spec.clientRef.name` | string | Name of the referent. (default: ``) |
 | `spec.duration` | string | Duration of the lease. Must be positive when provided. |
 | `spec.endTime` | string | Requested end time. If specified with BeginTime, Duration is calculated. |
 | `spec.exporterRef` | object | Optionally pin this lease to a specific exporter name. |
-| `spec.exporterRef.name` | string (default: ``) | Name of the referent. |
+| `spec.exporterRef.name` | string | Name of the referent. (default: ``) |
 | `spec.release` | boolean | The release flag requests the controller to end the lease now |
-| `spec.selector` | object (default: `{}`) | The selector for the exporter to be used |
+| `spec.selector` | object | The selector for the exporter to be used (default: `{}`) |
 | `spec.selector.matchExpressions` | array | matchExpressions is a list of label selector requirements. The requirements are ANDed. |
 | `spec.selector.matchLabels` | object | matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels |
 | `spec.tags` | object | User-defined tags for the lease. Immutable after creation. |
@@ -36,6 +36,6 @@ Lease is the Schema for the exporters API
 | `status.endTime` | string |  |
 | `status.ended` | boolean |  |
 | `status.exporterRef` | object | LocalObjectReference contains enough information to let you locate the |
-| `status.exporterRef.name` | string (default: ``) | Name of the referent. |
+| `status.exporterRef.name` | string | Name of the referent. (default: ``) |
 | `status.priority` | integer |  |
 | `status.spotAccess` | boolean |  |

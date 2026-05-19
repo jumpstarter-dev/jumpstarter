@@ -21,15 +21,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
-// ClientSpec defines the desired state of Identity
+// ClientSpec defines the desired state of Client
 type ClientSpec struct {
 	Username *string `json:"username,omitempty"`
 }
 
-// ClientStatus defines the observed state of Identity
+// ClientStatus defines the observed state of Client
 type ClientStatus struct {
 	// Status field for the clients
 	Credential *corev1.LocalObjectReference `json:"credential,omitempty"`
@@ -39,11 +36,11 @@ type ClientStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// Client is the Schema for the identities API
+// Client is the Schema for the clients API
 type Client struct {
 	// The Client in the Jumpstarter controller represents a user that can access the Jumpstarter Controller.
 	// Clients can be associated to external identity OIDC providers by providing Username, i.e.
-	// Spec.Username: "kc:user-name-in-keycloak"
+	// Spec.Username: "oidc:user@example.com"
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
@@ -53,7 +50,7 @@ type Client struct {
 
 // +kubebuilder:object:root=true
 
-// ClientList contains a list of Identity
+// ClientList contains a list of Client
 type ClientList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

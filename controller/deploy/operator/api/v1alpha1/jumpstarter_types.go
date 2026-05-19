@@ -320,7 +320,7 @@ type GRPCKeepaliveConfig struct {
 
 	// Timeout for keepalive ping acknowledgment.
 	// If a ping is not acknowledged within this time, the connection is considered broken.
-	// The default is high to avoid issues when the network on a exporter is overloaded, i.e.
+	// The default is high to avoid issues when the network on an exporter is overloaded, i.e.
 	// during flashing.
 	// +kubebuilder:default="180s"
 	Timeout *metav1.Duration `json:"timeout,omitempty"`
@@ -411,7 +411,7 @@ type K8sAuthConfig struct {
 type TLSConfig struct {
 	// Name of the Kubernetes secret containing the TLS certificate and private key.
 	// The secret must contain 'tls.crt' and 'tls.key' keys.
-	// If useCertManager is enabled, this secret will be automatically managed and
+	// If spec.certManager.enabled is true, this secret will be automatically managed and
 	// configured by cert-manager.
 	// +kubebuilder:validation:Pattern=^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
 	CertSecret string `json:"certSecret,omitempty"`
@@ -540,7 +540,7 @@ type NodePortConfig struct {
 	Enabled bool `json:"enabled,omitempty"`
 
 	// NodePort port number to expose on each node.
-	// Must be in the range 30000-32767 for most Kubernetes clusters.
+	// Must be a valid port number (1-65535). Kubernetes typically allocates NodePorts in the range 30000-32767 by default.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
 	Port int32 `json:"port,omitempty"`
@@ -617,7 +617,7 @@ type ServerCertConfig struct {
 
 	// Reference an existing cert-manager Issuer or ClusterIssuer.
 	// Use this to integrate with existing PKI infrastructure (ACME, Vault, etc.).
-	// This overrides SelfSigned.Enabled = true which is the default setting
+	// This overrides the default selfSigned.enabled=true setting.
 	IssuerRef *IssuerReference `json:"issuerRef,omitempty"`
 }
 

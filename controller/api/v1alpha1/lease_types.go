@@ -86,7 +86,7 @@ const (
 // +kubebuilder:printcolumn:JSONPath=".spec.clientRef.name",name=Client,type=string
 // +kubebuilder:printcolumn:JSONPath=".status.exporterRef.name",name=Exporter,type=string
 
-// Lease is the Schema for the exporters API
+// Lease is the Schema for the leases API
 type Lease struct {
 	// Lease is the schema for the Leases API. Leases represent a
 	// request for a specific exporter by a client. The lease is
