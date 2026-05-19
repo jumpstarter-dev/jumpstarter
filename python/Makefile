@@ -44,7 +44,10 @@ default: help
 docs-singlehtml:
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs singlehtml
 
-docs:
+docs-generate-crds:
+	uv run --isolated --all-packages --group docs python3 docs/source/reference/generate-crd-docs.py
+
+docs: docs-generate-crds
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs html SPHINXOPTS="-W --keep-going -n"
 
 docs-all:

@@ -70,6 +70,7 @@ docs = [
     "sphinxcontrib-programoutput>=0.19",
     "sphinx-copybutton>=0.5.2",
     "sphinx-inline-tabs>=2023.4.21",
+    "pyyaml>=6.0",
 ]
 dev = [
     "ruff==0.15.10",
