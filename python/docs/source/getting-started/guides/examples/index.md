@@ -1,6 +1,6 @@
 # Examples
 
-Practical examples for using Jumpstarter in both {term}`local mode` and {term}`distributed mode`.
+Practical examples for using Jumpstarter in {term}`local mode`, {term}`direct mode`, and {term}`distributed mode`.
 
 - [Shell Usage](shell-usage.md): Starting {term}`session`s and interacting with
   {term}`device`s through the {term}`exporter shell`
