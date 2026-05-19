@@ -143,20 +143,42 @@ export:
 
 ## Communication
 
-Drivers use two primary methods to communicate between client and exporter:
+Drivers expose their methods over gRPC using three RPC styles (see
+[RPC life cycle](https://grpc.io/docs/what-is-grpc/core-concepts/#rpc-life-cycle)
+for details on gRPC counterparts):
 
-### Messages
+```{mermaid}
+:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
+flowchart LR
+    subgraph "Unary RPC"
+        direction TB
+        C1["Client"] -- "DriverCall\n(desired state)" --> D1["Driver"]
+        D1 -- "Result" --> C1
+        E1["Example: power on/off"]
+    end
 
-Commands are sent as messages from driver clients to driver implementations,
-allowing the client to trigger actions or retrieve information from the device.
-Methods marked with the `@export` decorator are made available over the network.
+    subgraph "Server Streaming RPC"
+        direction TB
+        C2["Client"] -- "StreamingDriverCall\n(interval)" --> D2["Driver"]
+        D2 -- "Result Stream" --> C2
+        E2["Example: power readings"]
+    end
 
-### Streams
+    subgraph "Bidirectional Streaming RPC"
+        direction TB
+        C3["Client"] <-- "DriverStream\n(Byte Stream)" --> D3["Driver"]
+        E3["Example: video capture"]
+    end
+```
 
-Drivers can establish streams for continuous data exchange, such as for serial
-communication or video streaming. This enables real-time interaction with both
-physical and virtual interfaces across the network. Methods marked with the
-`@exportstream` decorator create streams for bidirectional communication.
+- **Unary** -- Methods marked with `@export` send a single request and receive a
+  single response. Used for commands like power on/off or querying device state.
+- **Server Streaming** -- Methods marked with `@export` that return a generator
+  produce a stream of responses from a single request. Used for continuous data
+  like sensor readings.
+- **Bidirectional Streaming** -- Methods marked with `@exportstream` open a
+  full-duplex byte stream. Used for serial communication, video capture, or
+  tunneling existing protocols (such as SSH) over Jumpstarter.
 
 
 ## Authentication and Security

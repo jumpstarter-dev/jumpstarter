@@ -249,41 +249,6 @@ labels), and finally running tests against the acquired DUT. The lease system
 ensures exclusive access to the requested resources for the duration of testing,
 preventing conflicts with other users or pipelines in the shared environment.
 
-## RPC
-
-Jumpstarter is an RPC framework for Clients to call methods provided by Drivers.
-Drivers can expose three styles of RPCs, each mapped to its gRPC counterpart
-(see [RPC life cycle](https://grpc.io/docs/what-is-grpc/core-concepts/#rpc-life-cycle)
-for details).
-
-```{mermaid}
-:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
-flowchart LR
-    subgraph "Unary RPC"
-        direction TB
-        C1["Client"] -- "DriverCall\n(desired state)" --> D1["Driver"]
-        D1 -- "Result" --> C1
-        E1["Example: power on/off"]
-    end
-
-    subgraph "Server Streaming RPC"
-        direction TB
-        C2["Client"] -- "StreamingDriverCall\n(interval)" --> D2["Driver"]
-        D2 -- "Result Stream" --> C2
-        E2["Example: power readings"]
-    end
-
-    subgraph "Bidirectional Streaming RPC"
-        direction TB
-        C3["Client"] <-- "DriverStream\n(Byte Stream)" --> D3["Driver"]
-        E3["Example: video capture"]
-    end
-```
-
-On top of bidirectional streaming RPC, Jumpstarter implements a generic byte
-stream interface, similar to TCP, for tunneling existing protocols (such as SSH)
-over Jumpstarter.
-
 ```{toctree}
 :maxdepth: 1
 :hidden:

@@ -40,32 +40,15 @@ resources are limited.
 
 ## Router
 
-The Router service is used by the controller to route messages between clients
-and exporters through a gRPC tunnel. This enables remote access to exported
-interfaces via the client.
+The Router routes traffic between clients and exporters through a gRPC tunnel.
+This allows clients to reach exporters without public IP addresses or behind
+NATs/firewalls. Clients on the same network can also connect directly to an
+exporter, bypassing the Router.
 
-Once a lease is established, all traffic between the client and the exporter
-flows through a router instance. While there may only be one controller, the
-router can be scaled with multiple instances to handle traffic between many
-clients and exporters simultaneously.
+Once a lease is established, all traffic flows through a router instance. While
+there may only be one controller, the router can be scaled with multiple
+instances to handle many clients and exporters simultaneously.
 
-The Router works like ngrok or Cloudflare Tunnel -- it allows clients to connect
-to exporters without public IP addresses or behind NATs/firewalls by tunneling
-byte streams over bidirectional gRPC. Clients can also connect directly to an
-exporter when both are on the same network.
-
-```{mermaid}
-:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
-flowchart LR
-    Client["Client\n(CLI / Python API)"]
-    Router["Router"]
-    subgraph "Exporter Host"
-        Exporter["Exporter"]
-        Drivers["Drivers"]
-        Exporter --- Drivers
-    end
-
-    Client <-- "gRPC Tunnel\n(bidirectional)" --> Router
-    Router <-- "gRPC Tunnel\n(bidirectional)" --> Exporter
-    Client -. "Direct path\n(same network)" .-> Exporter
-```
+All communication between clients and drivers uses gRPC with three RPC styles
+(unary, server streaming, and bidirectional streaming). See
+[Driver Communication](drivers.md#communication) for details.
