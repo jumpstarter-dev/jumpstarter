@@ -9,8 +9,8 @@ workflows.
   development setups for hardware testing
 - [Testing Frameworks](testing-frameworks.md): Integrating with pytest, Robot
   Framework, and other test runners
-- [AI Agent Integration](ai-agent-integration.md): Using AI coding agents to
-  interact with hardware via {term}`MCP`
+- [Agentic Integration](agentic.md): Using AI coding agents to interact with
+  hardware via {term}`MCP`
 - [Cost Management](cost-management.md): Usage-based billing and chargeback
   for shared hardware resources
 - [Best Practices](best-practices.md): Labeling strategies, resource management,
@@ -22,7 +22,7 @@ workflows.
 ci-integration.md
 developer-workflows.md
 testing-frameworks.md
-ai-agent-integration.md
+agentic.md
 cost-management.md
 best-practices.md
 ```
