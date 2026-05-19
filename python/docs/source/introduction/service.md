@@ -20,11 +20,10 @@ The core of the {term}`service` is the {term}`controller`, which manages access 
 authenticates clients/{term}`exporter`s, and maintains a set of {term}`label selector`s to easily
 identify specific {term}`device`s.
 
-The {term}`Controller` is implemented as a Kubernetes
-[controller](https://github.com/jumpstarter-dev/jumpstarter/tree/main/controller) using
-[Custom Resource Definitions
-(CRDs)](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/)
-to store information about clients, {term}`exporter`s, {term}`lease`s, and other resources.
+The {term}`Controller` is implemented as a Kubernetes controller using
+{term}`CRD`s to store information about clients, {term}`exporter`s,
+{term}`lease`s, and other resources. See the
+[CRDs reference](../reference/crds/index.md) for the full field definitions.
 
 ### Leases
 
