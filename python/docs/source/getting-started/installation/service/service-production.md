@@ -263,4 +263,4 @@ declaratively in GitOps flows.
   placeholders are substituted per replica.
 
 For the full `Jumpstarter` CRD field reference, see the
-[Operator API](../../../reference/operator-api.md).
+[Kubernetes API Extensions](../../../reference/kubernetes-api.md).

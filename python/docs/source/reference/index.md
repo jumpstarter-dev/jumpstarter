@@ -6,8 +6,8 @@ covers:
 - [MAN Pages](man-pages/index.md): Command-line tools and utilities
 - [Package APIs](package-apis/index.md): API documentation for Jumpstarter
   packages and components
-- [Operator API](operator-api.md): `Jumpstarter` CRD field reference for the
-  Kubernetes {term}`operator`
+- [Kubernetes API Extensions](kubernetes-api.md): CRD field reference for all
+  Jumpstarter custom resources
 
 ```{toctree}
 :maxdepth: 1
@@ -15,5 +15,5 @@ covers:
 
 man-pages/index.md
 package-apis/index.md
-operator-api.md
+kubernetes-api.md
 ```
