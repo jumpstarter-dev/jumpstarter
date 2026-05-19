@@ -26,7 +26,7 @@ flowchart TB
 
 ## Prerequisites
 
-- Jumpstarter CLI (`jmp`) installed and configured with a client identity
+- Jumpstarter CLI ({term}`jmp`) installed and configured with a client identity
 - An {term}`MCP`-compatible AI tool (Cursor, Claude Code, Claude Desktop, or any
   {term}`MCP` client)
 
@@ -37,7 +37,7 @@ through the `jumpstarter-mcp` package which provides the {term}`jmp mcp serve` s
 
 ### Cursor
 
-Add to your Cursor MCP configuration (`~/.cursor/mcp.json`):
+Add to your Cursor {term}`MCP` configuration (`~/.cursor/mcp.json`):
 
 ```json
 {
@@ -117,16 +117,16 @@ The {term}`MCP server` exposes the following tools:
 
 | Tool | Description |
 |---|---|
-| `jmp_list_exporters` | List exporters with online status and lease info |
-| `jmp_list_leases` | List active leases |
-| `jmp_create_lease` | Create a new lease by selector or exporter name |
-| `jmp_delete_lease` | Release a lease |
+| `jmp_list_exporters` | List {term}`exporter`s with online status and {term}`lease` info |
+| `jmp_list_leases` | List active {term}`lease`s |
+| `jmp_create_lease` | Create a new {term}`lease` by selector or {term}`exporter` name |
+| `jmp_delete_lease` | Release a {term}`lease` |
 
 ### Connection Management
 
 | Tool | Description |
 |---|---|
-| `jmp_connect` | Connect to a device (by lease, selector, or exporter) |
+| `jmp_connect` | Connect to a {term}`device` (by {term}`lease`, selector, or {term}`exporter`) |
 | `jmp_disconnect` | Disconnect from a device |
 | `jmp_list_connections` | List active connections |
 
@@ -149,7 +149,7 @@ The {term}`MCP server` exposes the following tools:
 
 ### Example: Interactive Hardware Exploration
 
-Once the MCP server is configured, you can interact with hardware using natural
+Once the {term}`MCP server` is configured, you can interact with hardware using natural
 language from your AI assistant:
 
 > **You**: What devices are available on the cluster?

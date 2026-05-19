@@ -10,7 +10,7 @@ precedence (highest to lowest):
 
 1. **Command-line arguments** - Highest priority, override all other settings
 2. **Environment variables** - Override file-based configurations
-3. **User configuration files** - Located in `${HOME}/.config/jumpstarter/`
+3. **{term}`User config`uration files** - Located in `${HOME}/.config/jumpstarter/`
 4. **System configuration files** - Located in `/etc/jumpstarter/`
 
 ## Client Configuration Hierarchy
@@ -30,13 +30,13 @@ For {term}`exporter` operations, Jumpstarter processes configurations in this or
 1. **Command-line options** such as `--exporter` or `--exporter-config`
 2. **Environment variables** such as `JMP_ENDPOINT`, `JMP_TOKEN`, or
    `JMP_NAMESPACE`
-3. **Specific exporter file** in `/etc/jumpstarter/exporters/<n>.yaml`
+3. **Specific {term}`exporter` file** in `/etc/jumpstarter/exporters/<n>.yaml`
 
 ## Example
 
 Here's a practical example of how configuration overrides work:
 
-1. You create a client configuration file at
+1. You create a {term}`client config`uration file at
    `${HOME}/.config/jumpstarter/clients/default.yaml`:
 
    ```yaml

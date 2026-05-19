@@ -23,9 +23,9 @@ guide that use console interaction with {term}`PexpectAdapter` require
 the test class. It connects to a Jumpstarter {term}`exporter` in one of two ways:
 
 1. **Shell mode**: when the `JUMPSTARTER_HOST` environment variable is set (for
-   example, inside a {term}`jmp shell` session), it connects to the exporter from that
+   example, inside a {term}`jmp shell` session), it connects to the {term}`exporter` from that
    environment.
-2. **Lease mode**: when `JUMPSTARTER_HOST` is not set, it loads the default
+2. **{term}`Lease` mode**: when `JUMPSTARTER_HOST` is not set, it loads the default
    {term}`client config` and acquires a {term}`lease` using the `selector` class variable.
 
 ```python
@@ -62,13 +62,13 @@ $ pytest test_my_device.py
 $ exit
 ```
 
-In this mode, `JumpstarterTest` detects `JUMPSTARTER_HOST` and connects to the
+In this mode, {term}`JumpstarterTest` detects `JUMPSTARTER_HOST` and connects to the
 active {term}`exporter`. The `selector` class variable is ignored.
 
 ### With automatic lease acquisition
 
 Run pytest directly without a shell {term}`session`. {term}`JumpstarterTest` loads the default
-client configuration and acquires a {term}`lease` matching your `selector`:
+{term}`client config`uration and acquires a {term}`lease` matching your `selector`:
 
 ```console
 $ pytest test_my_device.py
@@ -113,7 +113,7 @@ class TestBoot(JumpstarterTest):
 The `client` fixture has class scope, so it is shared across all test methods in
 a class. Custom fixtures can have any scope up to `class`.
 
-Serial console interaction uses `PexpectAdapter` from `jumpstarter-driver-network`,
+Serial console interaction uses {term}`PexpectAdapter` from `jumpstarter-driver-network`,
 which wraps a {term}`driver client class` into a [pexpect](https://pexpect.readthedocs.io/)
 `fdspawn` object. Use `expect()` and `sendline()` instead of `read_until()`.
 
@@ -271,7 +271,7 @@ hardware-test:
 ## Troubleshooting
 
 **Tests fail with `RuntimeError` about missing environment**
-: Ensure you are either running inside a `jmp shell` session or have a default
+: Ensure you are either running inside a {term}`jmp shell` session or have a default
   client configured with `jmp config client use <name>`.
 
 **Lease acquisition times out**
@@ -282,4 +282,4 @@ hardware-test:
 **`client` fixture setup fails**
 : Confirm that `jumpstarter-testing` is installed, and either: `JUMPSTARTER_HOST`
   is set correctly in shell mode, or a valid default client is configured for
-  lease mode.
+  {term}`lease` mode.

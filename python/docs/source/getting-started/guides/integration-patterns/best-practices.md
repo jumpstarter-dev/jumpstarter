@@ -14,7 +14,7 @@ selection straightforward:
 
 Implement these practices to ensure efficient use of shared systems:
 
-- Set appropriate lease timeouts to prevent orphaned resources
+- Set appropriate {term}`lease` timeouts to prevent orphaned resources
 - Use CI systems' concurrency controls to manage test parallelism
 - Implement monitoring and alerting for device availability
 - Create "pools" of identical devices to improve scalability

@@ -1,8 +1,8 @@
 # Exporters
 
-Jumpstarter uses a program called an Exporter to enable remote access to your
-hardware. The Exporter typically runs on a {term}`host` system directly connected to
-your hardware. It is called an Exporter because it "exports" the interfaces
+Jumpstarter uses a program called an {term}`exporter` to enable remote access to your
+hardware. The {term}`exporter` typically runs on a {term}`host` system directly connected to
+your hardware. It is called an {term}`exporter` because it "exports" the interfaces
 connected to the target device for client access.
 
 ## Hosts

@@ -4,10 +4,10 @@
 
 Jumpstarter includes the following installable Python packages:
 
-- `jumpstarter`: Core package for exporter interaction and service hosting
+- `jumpstarter`: Core package for {term}`exporter` interaction and {term}`service` hosting
 - `jumpstarter-cli`: CLI components metapackage including admin and user
   interfaces
-- `jumpstarter-cli-admin`: Admin CLI for controller management and lease control
+- `jumpstarter-cli-admin`: Admin CLI for {term}`controller` management and {term}`lease` control
 - `jumpstarter-driver-*`: Drivers for device connectivity
 - `jumpstarter-imagehash`: Image checking library for video inputs
 - `jumpstarter-testing`: Tools for Jumpstarter-powered pytest integration
@@ -237,12 +237,12 @@ $ docker run --rm -it \
 ````
 
 ```{tip}
-If you need Kubernetes access (e.g. for `jmp admin` commands), also mount your kubeconfig:
+If you need Kubernetes access (e.g. for {term}`jmp admin` commands), also mount your kubeconfig:
 `-v "${HOME}/.kube/config:/root/.kube/config":z`
 ```
 
 To interact with Jumpstarter without local Python package installation,
-create an alias to run the `jmp` client in a container.
+create an alias to run the {term}`jmp` client in a container.
 
 We recommend adding this alias to your shell profile (`~/.bashrc` or `~/.zshrc`) for persistent use:
 
@@ -266,13 +266,13 @@ $ alias jmp='docker run --rm -it -w /home \
 ```
 ````
 
-If you've configured a `jmp` alias you can undefine it with:
+If you've configured a {term}`jmp` alias you can undefine it with:
 
 ```console
 $ unalias jmp
 ```
 
-When you need hardware access for running the `jmp` command or following the
+When you need hardware access for running the {term}`jmp` command or following the
 [local-only workflow](../../introduction/index.md#local-mode), configure the
 container with device access, host networking, and privileged mode. This
 typically requires `root` privileges:

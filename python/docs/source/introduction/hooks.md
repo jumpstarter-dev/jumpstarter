@@ -55,7 +55,7 @@ The {term}`exporter` transitions through these states during a {term}`lease`:
    drivers.
 4. **Client {term}`session`** -- The client uses drivers normally.
 5. **{term}`Session` ends** -- The client disconnects or the {term}`lease` is released.
-6. **`AFTER_LEASE_HOOK`** -- The `afterLease` script runs. The session remains
+6. **`AFTER_LEASE_HOOK`** -- The `afterLease` script runs. The {term}`session` remains
    open so `j` commands can still interact with drivers.
 7. **`AVAILABLE`** -- The {term}`hook` completed and the {term}`lease` is released. The
    {term}`exporter` is ready for the next {term}`lease`.
@@ -101,8 +101,8 @@ hooks:
 
 | Field                    | Type    | Default      | Description                                                                                                                                                                                |
 | ------------------------ | ------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `hooks.beforeLease`      | object  | *(none)*     | Hook that runs after lease assignment, before drivers are available                                                                                                                        |
-| `hooks.afterLease`       | object  | *(none)*     | Hook that runs after the session ends, before the lease is released                                                                                                                        |
+| `hooks.beforeLease`      | object  | *(none)*     | {term}`Hook` that runs after {term}`lease` assignment, before drivers are available                                                                                                                        |
+| `hooks.afterLease`       | object  | *(none)*     | {term}`Hook` that runs after the {term}`session` ends, before the {term}`lease` is released                                                                                                                        |
 | `hooks.<hook>.exec`      | string  | *(auto)*     | Interpreter used to execute the script. Auto-detected from file extension when not set (`.py` uses the exporter's Python, `.sh` uses `/bin/sh`). Defaults to `/bin/sh` for inline scripts. |
 | `hooks.<hook>.script`    | string  | *(required)* | Inline script or path to a script file (auto-detected)                                                                                                                                     |
 | `hooks.<hook>.timeout`   | integer | `120`        | Maximum execution time in seconds                                                                                                                                                          |
@@ -123,7 +123,7 @@ auto-detected from the file extension:
 
 | Extension | Interpreter                          | Notes                                                                         |
 | --------- | ------------------------------------ | ----------------------------------------------------------------------------- |
-| `.py`     | Exporter's Python (`sys.executable`) | Has access to all installed packages including the Jumpstarter client library |
+| `.py`     | {term}`Exporter`'s Python (`sys.executable`) | Has access to all installed packages including the Jumpstarter client library |
 | `.sh`     | `/bin/sh`                            | POSIX shell                                                                   |
 | *(other)* | `/bin/sh`                            | Fallback for unrecognized extensions                                          |
 
@@ -137,10 +137,10 @@ communicate with the {term}`exporter` {term}`session`:
 
 | Variable            | Description                                                                         |
 | ------------------- | ----------------------------------------------------------------------------------- |
-| `JUMPSTARTER_HOST`  | Unix socket path for `j` CLI access to the exporter session                         |
-| `LEASE_NAME`        | Name of the current lease assigned by the controller                                |
-| `CLIENT_NAME`       | Name of the client holding the lease                                                |
-| `JMP_DRIVERS_ALLOW` | Set to `UNSAFE` to enable access to all drivers (hooks run locally on the exporter) |
+| `JUMPSTARTER_HOST`  | Unix socket path for `j` CLI access to the {term}`exporter` {term}`session`                         |
+| `LEASE_NAME`        | Name of the current {term}`lease` assigned by the {term}`controller`                                |
+| `CLIENT_NAME`       | Name of the client holding the {term}`lease`                                                |
+| `JMP_DRIVERS_ALLOW` | Set to `UNSAFE` to enable access to all drivers ({term}`hook`s run locally on the {term}`exporter`) |
 
 These variables are set automatically. The {term}`hook` uses a dedicated Unix socket
 separate from the client connection to avoid protocol interference.
@@ -239,7 +239,7 @@ reserve `exit` for critical failures.
 
 When a {term}`hook` exceeds its `timeout`, the process is terminated with `SIGTERM`
 followed by `SIGKILL` if the process does not exit within a few seconds. The
-resulting failure is then handled according to the `onFailure` setting, exactly
+resulting failure is then handled according to the {term}`onFailure` setting, exactly
 as if the script had exited with a non-zero exit code.
 
 ## Use Cases
@@ -358,7 +358,7 @@ with env() as client:
 The {term}`env()` context manager returns a `DriverClient` whose attributes
 correspond to the exported drivers (e.g. `client.power`, `client.storage`).
 This is the same API used by the `j` CLI and by test scripts connecting to
-an exporter.
+an {term}`exporter`.
 
 ### Using a Script File
 

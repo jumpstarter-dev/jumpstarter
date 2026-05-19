@@ -202,7 +202,7 @@ In {term}`distributed mode`, authentication is handled through JWT tokens:
   {term}`controller` with their own tokens
 - **Driver Access Control**: The {term}`controller` enforces access control by only
   allowing authorized clients to acquire {term}`lease`s on {term}`exporter`s and their drivers
-- **{term}`Driver allowlist`**: Client configurations can specify which driver packages
+- **{term}`Driver allowlist`**: {term}`Client config`urations can specify which driver packages
   are allowed to be loaded, preventing unintended execution of untrusted code
 
 ### Driver Package Security
@@ -220,7 +220,7 @@ When using {term}`distributed mode`, driver security considerations include:
 
 While Jumpstarter comes with drivers for many basic interfaces, {term}`custom driver`s
 can be developed for specialized hardware interfaces, emulated environments, or
-to provide domain-specific abstractions for your use case. Custom drivers follow
+to provide domain-specific abstractions for your use case. {term}`Custom driver`s follow
 the same architecture pattern as built-in drivers and can be integrated into the
 system through the {term}`exporter config`uration.
 

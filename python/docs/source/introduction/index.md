@@ -128,7 +128,7 @@ flowchart TB
 ```
 
 This mode is ideal for individual developers working directly with accessible
-hardware or virtual devices. When no client configuration or environment
+hardware or virtual devices. When no {term}`client config`uration or environment
 variables are present, Jumpstarter runs in {term}`local mode` and communicates with a
 built-in {term}`exporter` service via a local socket connection, requiring no Kubernetes
 or other infrastructure. Developers can work with devices on their desk, develop

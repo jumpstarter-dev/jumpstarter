@@ -36,7 +36,7 @@ To avoid collisions:
 1. Use a single OIDC provider per Jumpstarter installation, or
 2. Ensure usernames are unique across all configured OIDC providers, or
 3. Use different username claim mappings that include provider-specific prefixes, or
-4. Pre-create the resource (Client/Exporter) with explicit username mappings when conflicts exist
+4. Pre-create the resource (Client/{term}`Exporter`) with explicit username mappings when conflicts exist
 
 ## Examples
 

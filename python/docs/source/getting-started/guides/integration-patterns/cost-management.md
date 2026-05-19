@@ -57,8 +57,8 @@ This architecture implements a cost chargeback model for infrastructure
 resources:
 
 1. Prometheus collects and stores all resource utilization metrics
-2. Teams request resources through the controller, which records team
-   identifiers with each lease
+2. Teams request resources through the {term}`controller`, which records team
+   identifiers with each {term}`lease`
 3. System resources export detailed utilization metrics to Prometheus:
    - Resource uptime and availability
    - Utilization metrics (CPU, memory, I/O)

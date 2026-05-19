@@ -1,14 +1,14 @@
 # Operator
 
 For production deployments, install Jumpstarter on Kubernetes or OpenShift
-clusters using the Jumpstarter operator.
+clusters using the Jumpstarter {term}`operator`.
 
 ## Prerequisites
 
 - A Kubernetes, OpenShift, or OKD cluster
 - `kubectl` (or `oc`) configured for your cluster
 - Cluster-admin permissions (required to install CRDs and operator RBAC)
-- A DNS domain for Jumpstarter service endpoints (for example,
+- A DNS domain for Jumpstarter {term}`service` endpoints (for example,
   `jumpstarter.example.com`)
 - An ingress controller on Kubernetes, or Routes on OpenShift/OKD
 
@@ -21,10 +21,10 @@ clusters using the Jumpstarter operator.
 
 ## TLS and gRPC Configuration
 
-Jumpstarter uses gRPC for communication, which requires HTTP/2 support on the
-path from clients to the service. The operator installs gRPC with **TLS
+Jumpstarter uses {term}`gRPC` for communication, which requires HTTP/2 support on the
+path from clients to the {term}`service`. The {term}`operator` installs {term}`gRPC` with **TLS
 passthrough** at the ingress or route: encrypted traffic is forwarded to the
-controller and router pods, which terminate TLS. HTTP login endpoints use edge
+{term}`controller` and {term}`router` pods, which terminate TLS. HTTP login endpoints use edge
 TLS termination instead.
 
 ```{note}
@@ -38,7 +38,7 @@ for more details.
 ## Install the operator
 
 ````{tab} Kubernetes (OLM installed)
-If your Kubernetes cluster already has OLM, install the operator from OperatorHub and then continue with the `Jumpstarter` custom resource below.
+If your Kubernetes cluster already has OLM, install the {term}`operator` from OperatorHub and then continue with the `Jumpstarter` custom resource below.
 
 OperatorHub package page:
 
@@ -53,7 +53,7 @@ On vanilla Kubernetes, this OperatorHub path assumes OLM is already installed an
 1. Log in to the OpenShift/OKD web console with cluster-admin permissions.
 2. Go to **Operators -> OperatorHub**.
 3. Search for **Jumpstarter Operator** and install it.
-4. Wait until the installed operator status is `Succeeded`.
+4. Wait until the installed {term}`operator` status is `Succeeded`.
 
 Verify from CLI:
 
@@ -88,7 +88,7 @@ $ oc get csv -n openshift-operators | grep jumpstarter
 ````
 
 ````{tab} Manual installer YAML (any cluster)
-Apply the operator installer from a release asset:
+Apply the {term}`operator` installer from a release asset:
 
 ```{code-block} console
 $ kubectl apply -f https://github.com/jumpstarter-dev/jumpstarter/releases/download/<release-tag>/operator-installer.yaml
@@ -100,7 +100,7 @@ For example:
 $ kubectl apply -f https://github.com/jumpstarter-dev/jumpstarter/releases/download/v0.8.1/operator-installer.yaml
 ```
 
-Wait for the operator deployment:
+Wait for the {term}`operator` deployment:
 
 ```{code-block} console
 $ kubectl wait --namespace jumpstarter-operator-system \
@@ -117,8 +117,8 @@ $ kubectl create namespace jumpstarter-lab
 
 ## Create a `Jumpstarter` custom resource
 
-The operator reconciles the `Jumpstarter` CR and creates Deployments, Services,
-and networking resources (Ingresses or Routes) for controller/router/login
+The {term}`operator` reconciles the `Jumpstarter` CR and creates Deployments, Services,
+and networking resources (Ingresses or Routes) for {term}`controller`/{term}`router`/login
 endpoints.
 
 ````{tab} Kubernetes (Ingress)
@@ -222,11 +222,11 @@ route hosts. Ensure DNS is configured so these route hostnames resolve correctly
 ## OAuth and cert-manager integration
 
 - **OAuth / OIDC**: Configure through `spec.authentication.jwt` in the
-  `Jumpstarter` CR (issuer URL, audiences, and claim mappings). The operator
-  applies this to controller runtime settings, but does not install or configure
+  `Jumpstarter` CR (issuer URL, audiences, and claim mappings). The {term}`operator`
+  applies this to {term}`controller` runtime settings, but does not install or configure
   your identity provider.
-- **cert-manager**: Set `spec.certManager.enabled: true` to let the operator
-  manage server certificates. You can use operator-managed self-signed
+- **cert-manager**: Set `spec.certManager.enabled: true` to let the {term}`operator`
+  manage server certificates. You can use {term}`operator`-managed self-signed
   certificates or reference an existing `Issuer`/`ClusterIssuer` with
   `spec.certManager.server.issuerRef`. Installing and configuring cert-manager
   itself remains an external prerequisite.
@@ -267,7 +267,7 @@ spec:
             class: nginx
 ```
 
-The operator creates and uses:
+The {term}`operator` creates and uses:
 
 - `<name>-selfsigned-issuer`
 - `<name>-ca`
@@ -366,20 +366,20 @@ spec:
 
 ## GitOps and ArgoCD
 
-Use the operator installer and manage your `Jumpstarter` custom resource
+Use the {term}`operator` installer and manage your `Jumpstarter` custom resource
 declaratively in GitOps flows.
 
 ## Operator behavior
 
 - If `spec.baseDomain` is empty and the cluster exposes OpenShift Route APIs,
-  the operator auto-detects the cluster domain.
-- If an endpoint has no enabled service type, the operator auto-selects one:
+  the {term}`operator` auto-detects the cluster domain.
+- If an endpoint has no enabled service type, the {term}`operator` auto-selects one:
   `route` (if available), then `ingress`, then `clusterIP`.
-- gRPC endpoints use TLS passthrough; login endpoints use edge TLS termination.
-- Controller and router auth secrets persist across CR deletion/recreation.
-- Router replicas are one Deployment per replica; `$(replica)` placeholders in
+- {term}`gRPC` endpoints use TLS passthrough; login endpoints use edge TLS termination.
+- {term}`Controller` and {term}`router` auth secrets persist across CR deletion/recreation.
+- {term}`Router` replicas are one Deployment per replica; `$(replica)` placeholders in
   endpoint addresses are substituted per replica.
-- When cert-manager is disabled, the operator still creates
+- When cert-manager is disabled, the {term}`operator` still creates
   `jumpstarter-service-ca-cert` (with empty `ca.crt`) for CLI discoverability.
 
 ## API field reference
@@ -392,8 +392,8 @@ The `Jumpstarter` CRD is `operator.jumpstarter.dev/v1alpha1`.
 | --- | --- | --- |
 | `spec.baseDomain` | `string` | Base DNS domain for generated endpoint hostnames. |
 | `spec.certManager` | `object` | Certificate management settings. |
-| `spec.controller` | `object` | Controller deployment, endpoint, and runtime settings. |
-| `spec.routers` | `object` | Router deployment scale, resources, and endpoint settings. |
+| `spec.controller` | `object` | {term}`Controller` deployment, endpoint, and runtime settings. |
+| `spec.routers` | `object` | {term}`Router` deployment scale, resources, and endpoint settings. |
 | `spec.authentication` | `object` | Authentication settings (internal, Kubernetes, JWT, auto-provisioning). |
 
 ### Controller and router fields

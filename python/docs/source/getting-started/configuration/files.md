@@ -51,7 +51,7 @@ drivers:
 **Environment Variables**:
 
 - `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification globally
-- `JMP_CLIENT_CONFIG` - Path to a client configuration file
+- `JMP_CLIENT_CONFIG` - Path to a {term}`client config`uration file
 - `JMP_CLIENT` - Name of a registered client config
 - `JMP_NAMESPACE` - Namespace in the {term}`controller`
 - `JMP_NAME` - Client name
@@ -122,7 +122,7 @@ boundaries. See [{term}`Hook`s](../../introduction/hooks.md) for full details on
 - `JMP_ENDPOINT` - {term}`gRPC` endpoint (overrides config file)
 - `JMP_TOKEN` - Auth token (overrides config file)
 - `JMP_NAMESPACE` - Namespace in the {term}`controller`
-- `JMP_NAME` - Exporter name
+- `JMP_NAME` - {term}`Exporter` name
 
 **CLI Commands**:
 ```{code-block}  console
@@ -150,7 +150,7 @@ $ jmp run --exporter-config /etc/jumpstarter/exporters/my-exporter.yaml
 
 For production deployments, it is recommended to use a service manager such as [`systemd`](https://systemd.io/) to keep the {term}`exporter` process alive and restart it after a {term}`lease` ends or something goes wrong.
 
-Containerized exporters can be installed as [`systemd`](https://systemd.io/) services using [`podman-systemd`](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html).
+Containerized {term}`exporter`s can be installed as [`systemd`](https://systemd.io/) services using [`podman-systemd`](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html).
 
 Create a systemd service file at `/etc/containers/systemd/my-exporter.container` with the following content:
 
