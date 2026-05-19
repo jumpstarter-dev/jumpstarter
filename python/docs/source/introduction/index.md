@@ -94,8 +94,9 @@ flowchart TB
 
 ## Operation Modes
 
-Building on these components, Jumpstarter implements two operation modes that
-provide flexibility for different scenarios: {term}`local mode` and {term}`distributed mode`.
+Building on these components, Jumpstarter implements three operation modes that
+provide flexibility for different scenarios: {term}`local mode`,
+{term}`direct mode`, and {term}`distributed mode`.
 
 ### Local Mode
 
@@ -144,6 +145,20 @@ The example above shows typical {term}`local mode` usage: first connecting to an
 and then running tests against the device with pytest. The `--exporter` flag
 specifies which {term}`exporter config`uration to use, allowing you to easily switch
 between different hardware or virtual {term}`device` setups.
+
+### Direct Mode
+
+{term}`Direct mode` connects a client to an {term}`exporter` over TCP without a
+{term}`controller` or Kubernetes cluster. This is useful when hardware is on one
+machine and the client is on another, but you don't need multi-user
+{term}`lease` management.
+
+```console
+$ jmp shell --exporter example-direct
+```
+
+Only one client should connect at a time. For shared, multi-user environments
+use {term}`distributed mode` instead.
 
 ### Distributed Mode
 
