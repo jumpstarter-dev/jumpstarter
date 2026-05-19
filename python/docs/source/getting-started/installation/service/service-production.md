@@ -1,4 +1,4 @@
-# Production Deployment
+# Operator
 
 For production deployments, install Jumpstarter on Kubernetes or OpenShift
 clusters using the Jumpstarter operator.

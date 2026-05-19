@@ -1,4 +1,4 @@
-# Local Installation
+# CLI
 
 For local development and testing, you can install Jumpstarter on local Kubernetes clusters using tools like kind or minikube. This is ideal for learning about the distributed service quickly or for creating CI/CD pipelines to validate your own Jumpstarter drivers.
 
@@ -210,7 +210,7 @@ $ minikube start --extra-config=apiserver.service-node-port-range=8000-9000
 
 ### Install Local Jumpstarter with Operator
 
-For manual installation after creating the local cluster, follow [Production Deployment](service-production.md). Use a `baseDomain` and endpoint addresses appropriate for your local environment (for example, `nip.io` based hostnames), then apply your `Jumpstarter` CR.
+For manual installation after creating the local cluster, follow [Operator](service-production.md). Use a `baseDomain` and endpoint addresses appropriate for your local environment (for example, `nip.io` based hostnames), then apply your `Jumpstarter` CR.
 
 To check the status of the installation, run:
 
