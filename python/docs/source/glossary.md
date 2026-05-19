@@ -1,5 +1,7 @@
 # Glossary
 
+## Acronyms
+
 ```{glossary}
 :sorted:
 
@@ -24,6 +26,12 @@ MCP
   Model Context Protocol, a standard protocol that enables AI coding
   agents and assistants to interact with external tools and services through
   structured tool definitions.
+```
+
+## Entities
+
+```{glossary}
+:sorted:
 
 client
   A developer or a CI/CD pipeline that connects to the Jumpstarter
@@ -66,6 +74,12 @@ service
   The Kubernetes-based backend that provides the controller, router,
   and authentication components for managing clients, exporters, and leases in
   distributed mode.
+```
+
+## Concepts
+
+```{glossary}
+:sorted:
 
 @export decorator
   A Python decorator that marks a driver method to be
@@ -233,6 +247,12 @@ user config
   A YAML configuration file at `~/.config/jumpstarter/config.yaml`
   that defines global user settings including the currently selected client
   configuration.
+```
+
+## Tools and Commands
+
+```{glossary}
+:sorted:
 
 env()
   A context manager from `jumpstarter.common.utils` that creates a
