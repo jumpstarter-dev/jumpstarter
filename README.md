@@ -21,8 +21,7 @@ with hardware through the same APIs.
 - 🌐 **Collaborative** - Share test hardware globally
 - ⚙️ **CI/CD Ready** - Works with cloud native developer environments and pipelines
 - 💻 **Cross-Platform** - Supports Linux and macOS
-- 🤖 **Agentic by Design** - Every interface is programmatic; humans, scripts,
-  CI pipelines, and AI agents all use the same APIs
+- 🤖 **Agentic by Design** - Same APIs for humans, scripts, and AI agents
 
 ## Repository Structure
 

@@ -17,7 +17,7 @@ os.environ["TERM"] = "dumb"
 sys.path.insert(0, os.path.abspath("../.."))
 
 project = "jumpstarter"
-copyright = "2025, Jumpstarter Contributors"
+copyright = "2026, Jumpstarter Contributors"
 author = "Jumpstarter Contributors"
 
 # -- General configuration ---------------------------------------------------
