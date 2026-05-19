@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""Generate markdown API reference from Kubernetes CRD YAML files.
-
-Extracts the OpenAPI v3 schema from each CRD and produces compact
-markdown tables. Run this script to regenerate the docs when CRD
-types change.
-
-Usage:
-    python generate-crd-docs.py
-"""
+"""Generate markdown API reference from Kubernetes CRD YAML files."""
 
 import glob
 import os
@@ -18,15 +10,7 @@ CRD_DIR = os.path.join(
     os.path.dirname(__file__),
     "../../../../controller/deploy/operator/config/crd/bases",
 )
-OUTPUT = os.path.join(os.path.dirname(__file__), "kubernetes-api.md")
-
-HEADER = """# Kubernetes API Extensions
-
-Auto-generated from CRD definitions. Do not edit manually -- run
-`python docs/source/reference/generate-crd-docs.py` from the `python/`
-directory to regenerate.
-
-"""
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "kubernetes-api")
 
 
 def flatten_properties(properties, prefix="", depth=0):
@@ -83,7 +67,7 @@ def process_crd(filepath):
     schema = version["schema"]["openAPIV3Schema"]
 
     sections = []
-    sections.append(f"## {kind}\n")
+    sections.append(f"# {kind}\n")
     sections.append(f"`{group}/{ver}`\n")
 
     desc = schema.get("description", "")
@@ -92,17 +76,17 @@ def process_crd(filepath):
 
     spec = schema.get("properties", {}).get("spec", {})
     if spec.get("properties"):
-        sections.append("### Spec\n")
+        sections.append("## Spec\n")
         rows = flatten_properties(spec["properties"], "spec.")
         sections.append(render_table(rows))
 
     status = schema.get("properties", {}).get("status", {})
     if status.get("properties"):
-        sections.append("### Status\n")
+        sections.append("## Status\n")
         rows = flatten_properties(status["properties"], "status.")
         sections.append(render_table(rows))
 
-    return "\n".join(sections)
+    return kind, "\n".join(sections)
 
 
 def main():
@@ -111,15 +95,35 @@ def main():
         print(f"No CRD files found in {CRD_DIR}")
         return
 
-    parts = [HEADER]
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    toctree_entries = []
+    index_entries = []
+
     for crd_file in crds:
         print(f"Processing {os.path.basename(crd_file)}")
-        parts.append(process_crd(crd_file))
+        kind, content = process_crd(crd_file)
+        slug = kind.lower()
+        filename = f"{slug}.md"
 
-    with open(OUTPUT, "w") as f:
-        f.write("\n".join(parts))
+        with open(os.path.join(OUTPUT_DIR, filename), "w") as f:
+            f.write(content)
 
-    print(f"Generated {OUTPUT}")
+        toctree_entries.append(filename)
+        index_entries.append(f"- [{kind}]({filename})")
+
+    index = "# Kubernetes API Extensions\n\n"
+    for entry in index_entries:
+        index += entry + "\n"
+    index += "\n```{toctree}\n:maxdepth: 1\n:hidden:\n\n"
+    for entry in toctree_entries:
+        index += entry + "\n"
+    index += "```\n"
+
+    with open(os.path.join(OUTPUT_DIR, "index.md"), "w") as f:
+        f.write(index)
+
+    print(f"Generated {len(toctree_entries)} CRD docs in {OUTPUT_DIR}/")
 
 
 if __name__ == "__main__":
