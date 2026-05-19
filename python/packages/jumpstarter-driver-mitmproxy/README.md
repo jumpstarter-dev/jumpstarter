@@ -398,7 +398,3 @@ podman run --rm -it --privileged \
   jumpstarter-mitmproxy:latest \
   jmp exporter start my-bench
 ```
-
-## License
-
-Apache-2.0

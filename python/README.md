@@ -62,8 +62,3 @@ Additionally, the command line reference documentation can be viewed with `jmp
 Jumpstarter welcomes contributors of all levels of experience and would love to
 see you involved in the project. See the [contributing
 guide](https://jumpstarter.dev/main/contributing.html) to get started.
-
-## License
-
-Jumpstarter is licensed under the Apache 2.0 License ([LICENSE](LICENSE) or
-[https://www.apache.org/licenses/LICENSE-2.0](https://www.apache.org/licenses/LICENSE-2.0)).
