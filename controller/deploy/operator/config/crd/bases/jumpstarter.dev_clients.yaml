@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.18.0
+    controller-gen.kubebuilder.io/version: v0.17.3
   name: clients.jumpstarter.dev
 spec:
   group: jumpstarter.dev
@@ -17,7 +17,7 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Client is the Schema for the identities API
+        description: Client is the Schema for the clients API
         properties:
           apiVersion:
             description: |-
@@ -37,13 +37,13 @@ spec:
           metadata:
             type: object
           spec:
-            description: ClientSpec defines the desired state of Identity
+            description: ClientSpec defines the desired state of Client
             properties:
               username:
                 type: string
             type: object
           status:
-            description: ClientStatus defines the observed state of Identity
+            description: ClientStatus defines the observed state of Client
             properties:
               credential:
                 description: Status field for the clients
