@@ -1,4 +1,4 @@
-# SSH MITM
+# SSH MITM Driver
 
 `jumpstarter-driver-ssh-mitm` provides a secure SSH proxy layer where private keys
 are stored on the exporter and never transmitted to clients. It is designed to be
