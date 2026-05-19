@@ -19,8 +19,8 @@ Thanks to gRPC’s support for HTTP/2, streaming, and tunneling, the protocol wo
 
 ## Related Projects
 
-- [**Jumpstarter Python:**](https://github.com/jumpstarter-dev/jumpstarter) The Python implementation of this protocol for clients and exporters.
-- [**Jumpstarter Service:**](https://github.com/jumpstarter-dev/jumpstarter-controller) The Go implementation of this protocol as a Kubernetes controller.
+- [**Jumpstarter Python:**](https://github.com/jumpstarter-dev/jumpstarter/tree/main/python) The Python implementation of this protocol for clients and exporters.
+- [**Jumpstarter Service:**](https://github.com/jumpstarter-dev/jumpstarter/tree/main/controller) The Go implementation of this protocol as a Kubernetes controller.
 
 
 ## Documentation
@@ -32,7 +32,7 @@ Jumpstarter's documentation is available at
 
 Jumpstarter welcomes contributors of all levels of experience and would love to
 see you involved in the project. See the [contributing
-guide](https://jumpstarter.dev/contributing/) to get started.
+guide](https://jumpstarter.dev/main/contributing.html) to get started.
 
 ## License
 

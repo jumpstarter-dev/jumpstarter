@@ -1,8 +1,18 @@
 # jumpstarter-operator
-// TODO(user): Add simple overview of use/purpose
+
+The Jumpstarter operator manages the lifecycle of Jumpstarter controller
+components on Kubernetes using the Operator Lifecycle Manager (OLM). It
+packages the controller, router, and associated resources into a single
+installable unit.
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+
+This operator provides an OLM-compatible deployment mechanism for the
+Jumpstarter Service. It handles CRD installation, RBAC configuration, and
+controller deployment through a single Custom Resource. For detailed
+installation instructions, see the
+[Service Installation](https://jumpstarter.dev/main/getting-started/installation/index.html)
+documentation.
 
 ## Getting Started
 
@@ -21,7 +31,7 @@ make docker-build docker-push IMG=<some-registry>/jumpstarter-operator:tag
 
 **NOTE:** This image ought to be published in the personal registry you specified.
 And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+Make sure you have the proper permission to the registry if the above commands don't work.
 
 **Install the CRDs into the cluster:**
 
@@ -89,11 +99,13 @@ Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
 the project, i.e.:
 
 ```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/jumpstarter-operator/<tag or branch>/dist/install.yaml
+kubectl apply -f https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/<tag or branch>/dist/install.yaml
 ```
 
 ## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
+
+See the [contributing guide](https://jumpstarter.dev/main/contributing.html) to
+get started with Jumpstarter development.
 
 **NOTE:** Run `make help` for more information on all potential `make` targets
 
@@ -101,7 +113,7 @@ More information can be found via the [Kubebuilder Documentation](https://book.k
 
 ## License
 
-Copyright 2025.
+Copyright 2026.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -114,4 +126,3 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-

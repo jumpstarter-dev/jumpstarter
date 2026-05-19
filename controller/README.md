@@ -1,14 +1,17 @@
 # jumpstarter-controller
 
-[![Build and push container image](https://github.com/jumpstarter-dev/jumpstarter-controller/actions/workflows/build.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter-controller/actions/workflows/build.yaml)
-![GitHub Release](https://img.shields.io/github/v/release/jumpstarter-dev/jumpstarter-controller)
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/jumpstarter-dev/jumpstarter-controller/total)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jumpstarter-dev/jumpstarter-controller)
-
-// TODO(user): Add simple overview of use/purpose
+The Jumpstarter controller is the Kubernetes-native service component of
+[Jumpstarter](https://jumpstarter.dev). It manages hardware resources, routes
+connections between clients and exporters, and provides multi-tenant
+authentication and authorization.
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+
+The controller implements the server-side gRPC services defined by the
+[Jumpstarter Protocol](../protocol/). It runs as a Kubernetes operator and
+manages Custom Resources for clients, exporters, and leases. The controller
+enables distributed hardware sharing by routing traffic between clients and
+exporters, handling lease negotiation, and enforcing access policies.
 
 ## Getting Started
 
@@ -26,7 +29,7 @@ make docker-push IMG=<some-registry>/jumpstarter-controller:tag
 
 **NOTE:** This image ought to be published in the personal registry you specified.
 And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+Make sure you have the proper permission to the registry if the above commands don't work.
 
 **Install the CRDs into the cluster:**
 
@@ -37,7 +40,7 @@ make install
 **Deploy the Manager to the cluster with the image specified by `IMG`:**
 
 ```sh
-make deploy IMG=<some-registry>/jumpstarter-router:tag
+make deploy IMG=<some-registry>/jumpstarter-controller:tag
 ```
 
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
@@ -78,7 +81,7 @@ Following are the steps to build the installer and distribute this project to us
 1. Build the installer for the image built and published in the registry:
 
 ```sh
-make build-installer IMG=<some-registry>/jumpstarter-router:tag
+make build-installer IMG=<some-registry>/jumpstarter-controller:tag
 ```
 
 NOTE: The makefile target mentioned above generates an 'install.yaml'
@@ -91,11 +94,13 @@ its dependencies.
 Users can just run kubectl apply -f <URL for YAML BUNDLE> to install the project, i.e.:
 
 ```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/jumpstarter-router/<tag or branch>/dist/install.yaml
+kubectl apply -f https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/<tag or branch>/dist/install.yaml
 ```
 
 ## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
+
+See the [contributing guide](https://jumpstarter.dev/main/contributing.html) to
+get started with Jumpstarter development.
 
 **NOTE:** Run `make help` for more information on all potential `make` targets
 
@@ -103,7 +108,7 @@ More information can be found via the [Kubebuilder Documentation](https://book.k
 
 ## License
 
-Copyright 2024.
+Copyright 2026.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -116,4 +121,3 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-

@@ -9,11 +9,10 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jumpstarter-dev/jumpstarter)
 
 [![E2E Tests](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/e2e.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/e2e.yaml)
-[![Tests](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/pytest.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/pytest.yaml)
+[![Tests](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/python-tests.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/python-tests.yaml)
 [![documentation](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/documentation.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/documentation.yaml)<br>
-[![Wheels](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/publish.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/publish.yaml)
-[![Flashing bundles](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build_oci_bundle.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build_oci_bundle.yaml)
-[![Containers](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build.yaml)
+[![Flashing bundles](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build-oci-bundle.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build-oci-bundle.yaml)
+[![Containers](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build-images.yaml/badge.svg)](https://github.com/jumpstarter-dev/jumpstarter/actions/workflows/build-images.yaml)
 
 A free, open source tool for automated testing on real and virtual hardware with
 CI/CD integration. Simplify device automation with consistent rules across local

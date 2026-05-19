@@ -52,9 +52,8 @@ $ make pkg-test-${package_name}
 
 ## Go Environment
 
-The Jumpstarter controller lives in the
-[jumpstarter-controller](https://github.com/jumpstarter-dev/jumpstarter-controller)
-repository.
+The Jumpstarter controller lives in the `controller/` directory within the
+[jumpstarter](https://github.com/jumpstarter-dev/jumpstarter) monorepo.
 
 To install the basic set of dependencies, run the following commands:
 
@@ -62,11 +61,10 @@ To install the basic set of dependencies, run the following commands:
 $ sudo dnf install -y git make golang kubectl
 ```
 
-Then you can clone the project and build the project with:
+Then you can build the controller from the repository root:
 
 ```console
-$ git clone https://github.com/jumpstarter-dev/jumpstarter-controller.git
-$ cd jumpstarter-controller
+$ cd controller
 $ make build
 ```
 
