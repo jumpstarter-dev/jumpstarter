@@ -21,7 +21,7 @@ authenticates clients/exporters, and maintains a set of labels to easily
 identify specific devices.
 
 The Controller is implemented as a Kubernetes
-[controller](https://github.com/jumpstarter-dev/jumpstarter-controller) using
+[controller](https://github.com/jumpstarter-dev/jumpstarter/tree/main/controller) using
 [Custom Resource Definitions
 (CRDs)](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/)
 to store information about clients, exporters, leases, and other resources.
