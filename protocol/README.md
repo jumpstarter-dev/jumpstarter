@@ -30,6 +30,5 @@ Jumpstarter's documentation is available at
 
 ## Contributing
 
-Jumpstarter welcomes contributors of all levels of experience and would love to
-see you involved in the project. See the [contributing
-guide](https://jumpstarter.dev/main/contributing.html) to get started.
+See the top-level [contributing guide](https://jumpstarter.dev/main/contributing.html)
+for development guidelines.

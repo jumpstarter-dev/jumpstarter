@@ -104,9 +104,5 @@ kubectl apply -f https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/<
 
 ## Contributing
 
-See the [contributing guide](https://jumpstarter.dev/main/contributing.html) to
-get started with Jumpstarter development.
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+See the top-level [contributing guide](https://jumpstarter.dev/main/contributing.html)
+for development guidelines. Run `make help` for available targets.
