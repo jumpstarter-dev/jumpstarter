@@ -35,7 +35,7 @@ lab resources:
 1. Developers write and test code in their IDE
 2. For quick tests, they use the test code to access a system on their desk
 3. For more complex tests, they connect to remote lab systems through the
-   controller
+   {term}`controller`
 4. The same test code works in both environments
 
 See [Setup Local Mode](../setup/local-mode.md) for more information on configuring
@@ -93,11 +93,11 @@ maintaining flexibility to work with both local and remote systems:
 3. For quick iterations with locally connected systems:
    - Port forwarding enables the cloud workspace to communicate with systems
      connected to the developer's machine
-   - The local Jumpstarter exporter manages the device directly
+   - The local Jumpstarter {term}`exporter` manages the device directly
 4. For access to shared lab resources:
    - The same test code can request access to remote devices through the
      controller
-   - The controller manages leases and routes connections through the standard
+   - The controller manages {term}`lease`s and routes connections through the standard
      infrastructure
 
 Key benefits of this approach:

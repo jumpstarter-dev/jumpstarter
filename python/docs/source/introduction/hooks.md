@@ -48,7 +48,7 @@ sequenceDiagram
 
 The exporter transitions through these states during a lease:
 
-1. **Lease assigned** -- The controller assigns a lease to the exporter.
+1. **Lease assigned** -- The {term}`controller` assigns a lease to the exporter.
 2. **`BEFORE_LEASE_HOOK`** -- The `beforeLease` script runs. Driver access is
    blocked until the hook completes successfully.
 3. **`LEASE_READY`** -- The hook succeeded and the client can now access
@@ -190,7 +190,7 @@ The default mode. The failure is logged as a warning and the lease lifecycle
 continues as if the hook succeeded:
 
 - **`beforeLease`**: Drivers are unblocked and the client can connect normally.
-  The exporter status transitions to `LEASE_READY`.
+  The {term}`exporter status` transitions to `LEASE_READY`.
 - **`afterLease`**: The exporter returns to `AVAILABLE` and the lease is
   released normally.
 

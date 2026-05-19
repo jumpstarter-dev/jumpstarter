@@ -6,7 +6,7 @@ routine maintenance such as batch updates.
 
 Jumpstarter provides a service that can be installed in any
 [Kubernetes](https://kubernetes.io/) cluster to manage connected clients and
-exporters.
+{term}`exporter`s.
 
 If you're already using a Kubernetes-native CI tool such as
 [Tekton](https://tekton.dev/), [Jenkins X](https://jenkins-x.io/),

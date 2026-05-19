@@ -1,6 +1,6 @@
 # Distributed Mode
 
-This guide walks you through the process of creating an exporter using the
+This guide walks you through the process of creating an {term}`exporter` using the
 {term}`controller` {term}`service`, configuring drivers, and running the exporter.
 
 ```{warning}

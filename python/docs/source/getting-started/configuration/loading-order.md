@@ -62,7 +62,7 @@ argument has the highest priority.
 
 Choose the appropriate configuration method based on your needs:
 
-- **Development**: Use user config files for personal settings
+- **Development**: Use {term}`user config` files for personal settings
 - **CI/CD Pipelines**: Use environment variables for automation
 - **One-off Tasks**: Use command-line arguments for temporary changes
 - **System Defaults**: Use system config files for shared settings across users

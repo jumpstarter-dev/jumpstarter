@@ -30,8 +30,8 @@ flowchart TB
 - An MCP-compatible AI tool (Cursor, Claude Code, Claude Desktop, or any
   MCP client)
 
-The MCP server package, which is normally provided when you perform a full install
-through the `jumpstarter-mcp` package which provides the `jmp mcp serve` subcommand on the CLI.
+The {term}`MCP server` package, which is normally provided when you perform a full install
+through the `jumpstarter-mcp` package which provides the {term}`jmp mcp serve` subcommand on the CLI.
 
 ## Setup
 
@@ -168,7 +168,7 @@ language from your AI assistant:
 >
 > **You**: Give me a Python example to automate this.
 >
-> *Agent calls `jmp_get_env` and generates a script using the `env()` helper.*
+> *Agent calls `jmp_get_env` and generates a script using the {term}`env()` helper.*
 
 ### Example: Claude Code Session
 
@@ -248,7 +248,7 @@ sequenceDiagram
   block indefinitely. Use a short `timeout_seconds` (e.g., 10-15) so the
   command is killed after capturing available output.
 - **Use `jmp_drivers` for Python access**: When you need programmatic control
-  beyond CLI commands, inspect the Python driver tree to discover available
+  beyond CLI commands, inspect the Python {term}`driver tree` to discover available
   methods and their signatures.
 - **Connections are persistent**: Create once, run many commands. No need to
   reconnect between commands.

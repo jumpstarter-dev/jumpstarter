@@ -53,9 +53,9 @@ drivers:
 - `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification globally
 - `JMP_CLIENT_CONFIG` - Path to a client configuration file
 - `JMP_CLIENT` - Name of a registered client config
-- `JMP_NAMESPACE` - Namespace in the controller
+- `JMP_NAMESPACE` - Namespace in the {term}`controller`
 - `JMP_NAME` - Client name
-- `JMP_ENDPOINT` - gRPC endpoint (overrides config file)
+- `JMP_ENDPOINT` - {term}`gRPC` endpoint (overrides config file)
 - `JMP_TOKEN` - Auth token (overrides config file)
 - `JMP_DRIVERS_ALLOW` - Comma-separated list of allowed driver namespaces
 - `JUMPSTARTER_FORCE_SYSTEM_CERTS` - Set to `1` to force system CA certificates
@@ -70,7 +70,7 @@ $ jmp config client delete <alias>  # Remove a client config locally
 
 ## Exporter Configuration
 
-**File**: All valid exporter configuration files with a `.yaml` extension  
+**File**: All valid {term}`exporter` configuration files with a `.yaml` extension  
 **Location**: `/etc/jumpstarter/exporters/*.yaml`  
 **Description**: Defines exporter settings including connection details and
 driver configurations.  
@@ -113,7 +113,7 @@ hooks: # Optional lifecycle hooks that run at lease boundaries
     onFailure: warn
 ```
 
-The optional `hooks` section configures lifecycle scripts that run at lease
+The optional `hooks` section configures lifecycle scripts that run at {term}`lease`
 boundaries. See [Hooks](../../introduction/hooks.md) for full details on
 hook configuration, environment variables, and failure handling.
 

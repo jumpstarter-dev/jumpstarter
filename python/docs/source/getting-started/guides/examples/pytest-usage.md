@@ -54,7 +54,7 @@ example above, `dutlink` is a {term}`composite driver` that provides child drive
 
 ### Inside a shell session
 
-Start an exporter shell first, then run pytest inside it:
+Start an {term}`exporter shell` first, then run pytest inside it:
 
 ```console
 $ jmp shell --exporter my-exporter

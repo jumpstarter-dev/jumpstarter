@@ -54,8 +54,8 @@ connections into different forms or interfaces for specific use cases.
 
 ## Types
 
-The API reference of the documentation provides a complete list of all standard
-drivers, you can find it here: [Driver API
+The API reference of the documentation provides a complete list of all
+{term}`standard driver`s, you can find it here: [Driver API
 Reference](../reference/package-apis/drivers/index.md).
 
 Some categories of drivers include:
@@ -187,7 +187,7 @@ Driver access is controlled through Jumpstarter's authentication mechanisms:
 
 ### Local Mode Authentication
 
-In local mode, drivers are accessible to any process that can connect to the
+In {term}`local mode`, drivers are accessible to any process that can connect to the
 local Unix socket. This is typically restricted by file system permissions. When
 running tests locally, authentication is simplified since everything runs in the
 same user context.

@@ -4,7 +4,7 @@ Jumpstarter uses internally issued JWT tokens to authenticate clients and
 exporters by default. You can also configure Jumpstarter to use external OpenID
 Connect (OIDC) providers.
 
-When installing with the operator, authentication is configured directly on the
+When installing with the {term}`operator`, authentication is configured directly on the
 `Jumpstarter` custom resource, under `spec.authentication`. 
 
 For operator installation context, see

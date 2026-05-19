@@ -2,7 +2,7 @@
 
 ## Use the Python API in a Shell
 
-The {term}`exporter shell` exposes the local exporter via environment variables,
+The {term}`exporter shell` exposes the local {term}`exporter` via environment variables,
 enabling you to run any Python code that interacts with the client/exporter.
 This approach works especially well for complex operations or when a driver
 doesn't provide a CLI.

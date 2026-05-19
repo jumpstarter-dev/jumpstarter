@@ -84,5 +84,5 @@ the client can access drivers, and an {term}`afterLease hook` runs after the
 {term}`session` ends but before the lease is released.
 
 Hooks are configured in the `hooks` section of the exporter config file and
-use the `j` CLI to interact with exported devices. For full details, see
+use the {term}`j` CLI to interact with exported devices. For full details, see
 [Hooks](hooks.md).

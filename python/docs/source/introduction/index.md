@@ -14,7 +14,7 @@ testing environments (devices accessed remotely through a central controller). A
 communication happens over {term}`gRPC`, providing a consistent interface regardless of
 deployment model. Every interface is programmatic -- there is no GUI-only
 workflow that a script or agent cannot replicate. A human developer running
-`jmp shell`, a [pytest](https://docs.pytest.org/en/stable/) script, a CI
+{term}`jmp shell`, a [pytest](https://docs.pytest.org/en/stable/) script, a CI
 pipeline, and an
 [AI agent](../getting-started/guides/integration-patterns/ai-agent-integration.md)
 all use the exact same APIs, authentication, and access controls.

@@ -1,6 +1,6 @@
 # Direct Mode
 
-This guide shows you how to run a Jumpstarter exporter that clients connect to
+This guide shows you how to run a Jumpstarter {term}`exporter` that clients connect to
 directly over TCP -- no {term}`controller` or Kubernetes cluster required.
 
 {term}`Direct mode <direct mode>` is useful when you want to expose hardware on one machine to clients
