@@ -76,7 +76,7 @@ $ pytest test_my_device.py
 ```
 
 This requires a configured client (see
-[Setup Distributed Mode](setup-distributed-mode.md)).
+[Setup Distributed Mode](../setup-distributed-mode.md)).
 
 ## Writing custom fixtures
 

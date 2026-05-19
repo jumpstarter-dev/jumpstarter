@@ -61,4 +61,4 @@ $ exit
 
 Once you have your exporter shell running, you can start using Jumpstarter
 commands to interact with your hardware. To learn more about common workflow
-patterns and implementation examples, see [Examples](./examples.md).
+patterns and implementation examples, see [Examples](./examples/index.md).
