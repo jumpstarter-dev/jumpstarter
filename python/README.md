@@ -48,11 +48,3 @@ Service](https://jumpstarter.dev/main/introduction/service.html) in your Kuberne
 cluster, see the [Service
 Installation](https://jumpstarter.dev/main/getting-started/installation/index.html)
 documentation.
-
-## Documentation
-
-Jumpstarter's documentation is available at
-[jumpstarter.dev](https://jumpstarter.dev).
-
-Additionally, the command line reference documentation can be viewed with `jmp
---help`.
