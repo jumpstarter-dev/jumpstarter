@@ -1,18 +1,26 @@
 # Jumpstarter Protocol
 
-The Jumpstarter Protocol defines the gRPC-based communication layer for the [Jumpstarter](https://jumpstarter.dev) Hardware-in-the-Loop (HiL) ecosystem. It enables seamless, secure, and scalable interaction between clients, the Jumpstarter Service, and exporters—whether they are interfacing with physical or virtual hardware, locally or remotely.
+The Jumpstarter Protocol defines the gRPC-based communication layer for the
+[Jumpstarter](https://jumpstarter.dev) Hardware-in-the-Loop (HiL) ecosystem. It
+enables seamless, secure, and scalable interaction between clients, the
+Jumpstarter Service, and exporters -- whether they are interfacing with physical
+or virtual hardware, locally or remotely.
 
-## Overview
-Jumpstarter Protocol provides a unified gRPC interface for:
+The protocol provides a unified gRPC interface for clients to control and monitor
+hardware, exporters to expose hardware interfaces, and the Jumpstarter Service to
+route and manage connections. Thanks to gRPC's support for HTTP/2, streaming, and
+tunneling, the protocol works efficiently across enterprise networks, VPNs, and
+cloud environments.
 
-- **Clients** to control and monitor remote/local hardware
-- **Exporters** to expose hardware interfaces over gRPC
-- **Jumpstarter Service** to route and manage connections
+## Code Generation
 
-Thanks to gRPC’s support for HTTP/2, streaming, and tunneling, the protocol works efficiently across enterprise networks, VPNs, and cloud environments. It appears as standard HTTPS traffic, making it compatible with existing security infrastructure.
+The protobuf definitions live under `proto/`. Downstream consumers generate
+language-specific bindings using [Buf](https://buf.build/). Both the controller
+(Go) and the Python packages maintain their own `buf.gen.yaml` to generate stubs
+from these definitions.
 
-## Features
-- 🔌 **Unified Interface:** Interact with virtual or physical hardware through a consistent API.
-- 🔐 **Secure by Design:** Leverages gRPC over HTTPS for encrypted communication.
-- 🌐 **Flexible Topology:** Supports direct or routed connections via the Jumpstarter Router.
-- 📡 **Tunneling Support:** Can tunnel Unix sockets, TCP, and UDP connections over gRPC streams.
+## Development
+
+```sh
+make lint
+```
