@@ -20,3 +20,9 @@
     text-overflow: ellipsis;
 }
 
+table td:first-child,
+table th:first-child {
+    width: 40%;
+    min-width: 250px;
+}
+
