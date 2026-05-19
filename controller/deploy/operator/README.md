@@ -101,8 +101,3 @@ the project, i.e.:
 ```sh
 kubectl apply -f https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/<tag or branch>/dist/install.yaml
 ```
-
-## Contributing
-
-See the top-level [contributing guide](https://jumpstarter.dev/main/contributing.html)
-for development guidelines. Run `make help` for available targets.

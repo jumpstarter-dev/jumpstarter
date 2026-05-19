@@ -96,8 +96,3 @@ Users can just run kubectl apply -f <URL for YAML BUNDLE> to install the project
 ```sh
 kubectl apply -f https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/<tag or branch>/dist/install.yaml
 ```
-
-## Contributing
-
-See the top-level [contributing guide](https://jumpstarter.dev/main/contributing.html)
-for development guidelines. Run `make help` for available targets.

@@ -27,8 +27,3 @@ Thanks to gRPC’s support for HTTP/2, streaming, and tunneling, the protocol wo
 
 Jumpstarter's documentation is available at
 [jumpstarter.dev](https://jumpstarter.dev).
-
-## Contributing
-
-See the top-level [contributing guide](https://jumpstarter.dev/main/contributing.html)
-for development guidelines.

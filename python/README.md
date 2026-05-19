@@ -56,8 +56,3 @@ Jumpstarter's documentation is available at
 
 Additionally, the command line reference documentation can be viewed with `jmp
 --help`.
-
-## Contributing
-
-See the top-level [contributing guide](https://jumpstarter.dev/main/contributing.html)
-for development guidelines.
