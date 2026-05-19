@@ -1,15 +1,9 @@
 # Guides
 
-## Setup
-
-Step-by-step instructions for each operation mode.
-
 ```{toctree}
 :maxdepth: 1
 
-setup/local-mode.md
-setup/direct-mode.md
-setup/distributed-mode.md
+setup/index.md
 ```
 
 ## Examples
