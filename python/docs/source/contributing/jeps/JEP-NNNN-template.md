@@ -7,7 +7,7 @@ orphan: true
 <!--
   Use this template to create your JEP. Copy it to a new file named
   JEP-NNNN-short-title.md (where NNNN is the next available incrementing
-  integer) and place it in the python/docs/source/internal/jeps/ directory. Open a pull
+  integer) and place it in the python/docs/source/contributing/jeps/ directory. Open a pull
   request against the main branch.
 
   Guidance:

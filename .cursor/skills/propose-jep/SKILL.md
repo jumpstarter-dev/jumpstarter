@@ -18,7 +18,7 @@ JEP topic: $ARGUMENTS
 
 ### 1. Determine the next JEP number
 
-List existing files in `python/docs/source/internal/jeps/` and pick the next available incrementing integer. JEP-0000 through JEP-0009 are reserved for process/meta-JEPs, so start from JEP-0010 for regular proposals.
+List existing files in `python/docs/source/contributing/jeps/` and pick the next available incrementing integer. JEP-0000 through JEP-0009 are reserved for process/meta-JEPs, so start from JEP-0010 for regular proposals.
 
 ### 2. Gather information
 
@@ -33,7 +33,7 @@ If the user provided a description in `$ARGUMENTS`, use it as a starting point b
 
 ### 3. Create the JEP file
 
-Copy the template from `python/docs/source/internal/jeps/JEP-NNNN-template.md` and create a new file at `python/docs/source/internal/jeps/JEP-NNNN-short-title.md` where:
+Copy the template from `python/docs/source/contributing/jeps/JEP-NNNN-template.md` and create a new file at `python/docs/source/contributing/jeps/JEP-NNNN-short-title.md` where:
 
 - `NNNN` is the zero-padded next number
 - `short-title` is a descriptive slug derived from the proposal title
@@ -46,9 +46,9 @@ Fill in:
 
 ### 4. Update the JEP index
 
-Add the new JEP to the appropriate table in `python/docs/source/internal/jeps/README.md` (Process, Standards Track, or Informational).
+Add the new JEP to the appropriate table in `python/docs/source/contributing/jeps/index.md` (Process, Standards Track, or Informational).
 
-Add the new JEP file to the `{toctree}` directive at the bottom of `python/docs/source/internal/jeps/README.md`.
+Add the new JEP file to the `{toctree}` directive at the bottom of `python/docs/source/contributing/jeps/index.md`.
 
 ### 5. Present the result
 

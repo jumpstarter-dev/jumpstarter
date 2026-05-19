@@ -5,7 +5,7 @@ community and we welcome contributions.
 
 - [Development Environment](contributing/development-environment.md): Setting up
   your local environment for Python and Go development
-- [Enhancement Proposals (JEPs)](internal/jeps/README.md): Process for proposing
+- [Enhancement Proposals (JEPs)](contributing/jeps/index.md): Process for proposing
   significant changes to the project
 
 ## Getting Help
@@ -87,7 +87,7 @@ Documentation recommended practices:
 
 For significant changes that affect multiple components, change public APIs, or
 require community consensus, follow the
-[JEP process](internal/jeps/README.md).
+[JEP process](contributing/jeps/index.md).
 
 ## AI Assistants
 
@@ -130,5 +130,5 @@ directory. When working with Claude Code:
 :hidden:
 
 contributing/development-environment.md
-internal/jeps/README.md
+contributing/jeps/index.md
 ```
