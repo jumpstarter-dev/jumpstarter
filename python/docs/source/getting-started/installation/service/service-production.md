@@ -1,6 +1,6 @@
 # Operator
 
-For production deployments, install Jumpstarter on Kubernetes or OpenShift
+For production deployments, install Jumpstarter on Kubernetes or OKD
 clusters using the Jumpstarter {term}`operator`.
 
 ## Prerequisites
@@ -253,7 +253,7 @@ declaratively in GitOps flows.
 
 ### Operator Behavior Notes
 
-- If `spec.baseDomain` is empty on OpenShift, the {term}`operator` auto-detects
+- If `spec.baseDomain` is empty on OKD, the {term}`operator` auto-detects
   the cluster domain.
 - If no endpoint service type is enabled, the {term}`operator` auto-selects:
   route, then ingress, then clusterIP.

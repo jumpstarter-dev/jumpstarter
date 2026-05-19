@@ -66,7 +66,7 @@ resource (`operator.jumpstarter.dev/v1alpha1`).
 | Field | Type | Description |
 | --- | --- | --- |
 | `address` | `string` | Host/address, optional port, supports `$(replica)` for {term}`router` endpoints. |
-| `route.enabled` | `boolean` | Create OpenShift Route. |
+| `route.enabled` | `boolean` | Create OKD/OpenShift Route. |
 | `route.annotations` / `route.labels` | `map` | Route metadata overrides. |
 | `ingress.enabled` | `boolean` | Create Kubernetes Ingress. |
 | `ingress.class` | `string` | Ingress class name. |

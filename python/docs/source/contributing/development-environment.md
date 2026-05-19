@@ -1,7 +1,7 @@
 # Development Environment
 
 You can use
-[devspaces](https://github.com/jumpstarter-dev/jumpstarter/blob/main/.devfile.yaml),
+[Eclipse Che](https://github.com/jumpstarter-dev/jumpstarter/blob/main/.devfile.yaml),
 [devcontainers](https://github.com/jumpstarter-dev/jumpstarter/tree/main/.devcontainer),
 or your favorite OS/distro to develop Jumpstarter. The following examples
 are for Fedora.
