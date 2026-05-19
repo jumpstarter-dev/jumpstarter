@@ -3,7 +3,7 @@
 Thank you for your interest in contributing to Jumpstarter, we are an open
 community and we welcome contributions.
 
-- [Getting Started](contributing/getting-started.md): How to set up, make
+- [How to Contribute](contributing/how-to-contribute.md): How to set up, make
   changes, and submit a pull request
 - [Development Environment](contributing/development-environment.md): Setting up
   your local environment for Python and Go development
@@ -24,7 +24,7 @@ community and we welcome contributions.
 :maxdepth: 1
 :hidden:
 
-contributing/getting-started.md
+contributing/how-to-contribute.md
 contributing/development-environment.md
 contributing/guidelines.md
 contributing/jeps/index.md

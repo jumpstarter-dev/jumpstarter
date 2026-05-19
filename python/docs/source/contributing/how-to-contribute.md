@@ -1,4 +1,4 @@
-# Getting Started
+# How to Contribute
 
 0. Get familiar with the [Introduction](../introduction/index.md)
 1. Follow the [development environment](development-environment.md) setup
