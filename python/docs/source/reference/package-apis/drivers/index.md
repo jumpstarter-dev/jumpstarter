@@ -1,4 +1,4 @@
-# Driver Packages
+# Drivers
 
 This section documents the drivers from the Jumpstarter packages directory. Each
 driver is contained in a separate package in the form of

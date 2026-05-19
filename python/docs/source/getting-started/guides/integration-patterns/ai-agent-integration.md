@@ -306,5 +306,5 @@ use that knowledge to help you write correct code.
 > *The agent uses `jmp_get_env` to get the shell environment, executes your
 > script, and reports back with the actual device output.*
 
-See the [jumpstarter-mcp package reference](../../../reference/package-apis/mcp.md)
-for the full list of tools and their parameters.
+See the [{term}`MCP` reference](mcp.md) for the full list of tools and their
+parameters.

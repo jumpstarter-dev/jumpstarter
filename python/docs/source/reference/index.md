@@ -3,7 +3,7 @@
 This section provides reference documentation for Jumpstarter. The documentation
 covers:
 
-- [MAN Pages](man-pages/index.md): Command-line tools and utilities
+- [Man Pages](man-pages/index.md): Command-line tools and utilities
 - [Package APIs](package-apis/index.md): API documentation for Jumpstarter
   packages and components
 - [CRDs](crds/index.md): Field reference for all Jumpstarter custom resources
