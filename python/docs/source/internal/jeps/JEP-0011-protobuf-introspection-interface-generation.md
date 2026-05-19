@@ -253,7 +253,7 @@ extend google.protobuf.FieldOptions {
 }
 ```
 
-Field number 50000 falls within the range reserved by protobuf for organization-internal use (50000–99999), avoiding collision with other projects or future protobuf additions.
+Field number 50000 falls within the range reserved by protobuf for organization-internal use (50000-99999), avoiding collision with other projects or future protobuf additions.
 
 Note that `@exportstream` methods (raw byte stream constructors) do not need a custom annotation. They are represented as bidirectional streaming RPCs with a `StreamData { bytes payload }` message type — this pattern is unambiguous and sufficient for codegen tools to infer the correct dispatch mechanism. The `StreamData` message is auto-generated into the proto package when any `@exportstream` method exists, enabling native gRPC bidi streaming for byte transport without relying on `RouterService.Stream`.
 
@@ -584,7 +584,7 @@ The `file_descriptor_proto` in the report and the gRPC reflection service serve 
 
 ### Hardware Considerations
 
-This JEP is a purely software-layer change. No hardware is required or affected. Introspection runs at development time inside the codegen CLI; the exporter itself reads a pre-compiled descriptor set once at startup. The `FileDescriptorProto` for a typical driver interface with 5–10 methods is approximately 1–3 KB serialized. Exporters running on resource-constrained SBCs (e.g., Raspberry Pi 4) should see no measurable runtime impact beyond one file read at startup.
+This JEP is a purely software-layer change. No hardware is required or affected. Introspection runs at development time inside the codegen CLI; the exporter itself reads a pre-compiled descriptor set once at startup. The `FileDescriptorProto` for a typical driver interface with 5-10 methods is approximately 1-3 KB serialized. Exporters running on resource-constrained SBCs (e.g., Raspberry Pi 4) should see no measurable runtime impact beyond one file read at startup.
 
 ## Design Decisions
 
@@ -1628,7 +1628,7 @@ listed here only to make the design space explicit:
 | 10    | gRPC Server Reflection registration from bundled descriptor set (advisory; services return `UNIMPLEMENTED` if called) | Phase 8       |
 | 11    | Interface check CLI — CI drift detection between committed `.proto` and live Python interface                         | Phase 7       |
 
-Phases 1a–1b establish the type-safe interface foundation and the dual-inheritance client convention. Phase 2 delivers opt-in annotation validation. Phases 3–4 build the build-time introspection core. Phases 5–7 deliver the developer-facing tooling. Phases 8–10 deliver runtime schema exposure from the committed artifacts. Phase 11 closes the loop with CI drift detection.
+Phases 1a-1b establish the type-safe interface foundation and the dual-inheritance client convention. Phase 2 delivers opt-in annotation validation. Phases 3-4 build the build-time introspection core. Phases 5-7 deliver the developer-facing tooling. Phases 8-10 deliver runtime schema exposure from the committed artifacts. Phase 11 closes the loop with CI drift detection.
 
 Proto-first codegen and native gRPC transport are **out of scope** for this JEP and are planned as follow-up JEPs.
 

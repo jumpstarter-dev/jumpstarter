@@ -788,8 +788,8 @@ supporting detail, not an independent responsibility.
   temporarily holds metric snapshots from responding exporters until the
   merged response is written to Prometheus. With 200 exporters each
   producing ~50 series (bounded by `{operation, result, driver_type}`
-  label combinations), the peak is ~10 000 series at ~200–300 bytes
-  each, costing ~2–3 MB. Snapshots are discarded as soon as the
+  label combinations), the peak is ~10 000 series at ~200-300 bytes
+  each, costing ~2-3 MB. Snapshots are discarded as soon as the
   `/metrics` response is flushed — no metric data is retained between
   scrapes.
 
@@ -1000,8 +1000,8 @@ of how many distinct values appear.
 
 **Exemplar size budget:** The OpenMetrics 1.0 limit is 128 UTF-8
 characters for the combined key-value pairs in a single exemplar.
-The two default keys (`client`, `lease_id`) consume roughly 30–50
-characters, leaving ~80–100 characters for `spec.context` entries
+The two default keys (`client`, `lease_id`) consume roughly 30-50
+characters, leaving ~80-100 characters for `spec.context` entries
 (or more when `trace_id` is absent). To stay within budget:
 
 1. Keys are added in the order specified by the operator's
