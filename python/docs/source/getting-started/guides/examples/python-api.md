@@ -53,5 +53,5 @@ Using a Python with Jumpstarter allows you to:
 
 For structured test suites, Jumpstarter provides a JumpstarterTest base class
 that handles connection management automatically. See the
-[Testing with pytest](pytest-usage.md) guide for full details on writing tests,
+[Testing with pytest](testing-with-pytest.md) guide for full details on writing tests,
 custom fixtures, markers, and CI integration.

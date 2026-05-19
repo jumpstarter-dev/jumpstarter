@@ -1,4 +1,4 @@
-# jumpstarter-mcp
+# MCP
 
 MCP (Model Context Protocol) server for AI agent interaction with Jumpstarter
 hardware devices.

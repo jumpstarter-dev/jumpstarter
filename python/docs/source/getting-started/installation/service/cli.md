@@ -123,7 +123,7 @@ $ minikube start --extra-config=apiserver.service-node-port-range=8000-9000
 ```
 ````
 
-Then follow the [Operator](service-production.md) guide using a `baseDomain`
+Then follow the [Operator](operator.md) guide using a `baseDomain`
 appropriate for your local environment (for example, `nip.io` based hostnames).
 
 ## Uninstall

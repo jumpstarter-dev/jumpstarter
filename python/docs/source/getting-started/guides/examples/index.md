@@ -6,7 +6,7 @@ Practical examples for using Jumpstarter in {term}`local mode`, {term}`direct mo
   {term}`device`s through the {term}`exporter shell`
 - [Python API](python-api.md): Writing Python scripts that interact with
   hardware through the client API
-- [Testing with pytest](pytest-usage.md): Writing and running hardware tests
+- [Testing with pytest](testing-with-pytest.md): Writing and running hardware tests
   using pytest with Jumpstarter
 
 ```{toctree}
@@ -14,5 +14,5 @@ Practical examples for using Jumpstarter in {term}`local mode`, {term}`direct mo
 :hidden:
 shell-usage.md
 python-api.md
-pytest-usage.md
+testing-with-pytest.md
 ```

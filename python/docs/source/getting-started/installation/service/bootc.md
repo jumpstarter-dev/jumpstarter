@@ -6,7 +6,7 @@ devices, development environments, and small labs. Maintained by the community.
 
 ```{note}
 This is a **community-supported** deployment. For production, use the
-[Operator](service-production.md) installation on Kubernetes or OpenShift.
+[Operator](operator.md) installation on Kubernetes or OpenShift.
 ```
 
 ## Prerequisites
