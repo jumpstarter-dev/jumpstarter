@@ -168,6 +168,6 @@ mypy app.py auth.py system.py api.py routes.py
 ## Links
 
 - Homepage: https://jumpstarter.dev
-- Documentation: https://docs.jumpstarter.dev
-- Repository: https://github.com/jumpstarter-dev/jumpstarter-controller
+- Documentation: https://jumpstarter.dev
+- Repository: https://github.com/jumpstarter-dev/jumpstarter/tree/main/controller
 

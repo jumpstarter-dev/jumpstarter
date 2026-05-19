@@ -152,7 +152,7 @@ Jumpstarter's documentation is available at [jumpstarter.dev](https://jumpstarte
 
 - [Getting Started](https://jumpstarter.dev/main/getting-started/)
 - [User Guide](https://jumpstarter.dev/main/introduction/)
-- [API Reference](https://jumpstarter.dev/main/api/)
+- [API Reference](https://jumpstarter.dev/main/reference/)
 - [Contributing Guide](https://jumpstarter.dev/main/contributing.html)
 
 ## Contributing

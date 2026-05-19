@@ -1646,8 +1646,8 @@ Proto-first codegen and native gRPC transport are **out of scope** for this JEP 
 - [google.protobuf.FileDescriptorProto](https://github.com/protocolbuffers/protobuf/blob/main/src/google/protobuf/descriptor.proto)
 - [Buf Schema Registry](https://buf.build/docs/bsr/introduction)
 - [grpcurl](https://github.com/fullstorydev/grpcurl)
-- [Jumpstarter Driver Architecture](https://docs.jumpstarter.dev/introduction/key-concepts.html)
-- [Jumpstarter `@export` Decorator Source](https://github.com/jumpstarter-dev/jumpstarter/blob/main/packages/jumpstarter/jumpstarter/driver/decorators.py)
+- [Jumpstarter Driver Architecture](https://jumpstarter.dev/main/introduction/)
+- [Jumpstarter `@export` Decorator Source](https://github.com/jumpstarter-dev/jumpstarter/blob/main/python/packages/jumpstarter/jumpstarter/driver/decorators.py)
 - [Python `inspect.signature()`](https://docs.python.org/3/library/inspect.html#inspect.signature)
 
 ---

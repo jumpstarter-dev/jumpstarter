@@ -408,7 +408,7 @@ make bootc-rm bootc-build bootc-run
 
 ### Technology Stack
 - [MicroShift Documentation](https://microshift.io/)
-- [Bootc Documentation](https://containers.github.io/bootc/)
+- [Bootc Documentation](https://bootc-dev.github.io/bootc/)
 - [TopoLVM Documentation](https://github.com/topolvm/topolvm)
 
 ## Support
