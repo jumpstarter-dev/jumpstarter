@@ -16,7 +16,7 @@ exporters, handling lease negotiation, and enforcing access policies.
 ## Getting Started
 
 ### Prerequisites
-- go version v1.22.0+
+- go version v1.24.0+
 - kubectl version v1.11.3+.
 - Access to a Kubernetes v1.11.3+ cluster.
 

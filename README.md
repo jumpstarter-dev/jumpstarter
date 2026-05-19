@@ -115,7 +115,7 @@ make e2e-clean
 ### Prerequisites
 
 - Python 3.11+ (for Python components)
-- Go 1.22+ (for controller)
+- Go 1.24+ (for controller)
 - Docker/Podman (for container builds)
 - kubectl (for Kubernetes deployment)
 
@@ -123,12 +123,12 @@ make e2e-clean
 
 ```shell
 # Build all components
-make all
+make build
 
 # Build specific components
-make python      # Python packages
-make controller  # Controller binary
-make protocol    # Generate protocol code
+make build-python      # Python packages
+make build-controller  # Controller binary
+make build-protocol    # Generate protocol code
 
 # Run tests
 make test
@@ -137,13 +137,6 @@ make test
 make e2e-setup  # First time only
 make e2e        # Run tests
 make e2e-clean  # Clean up
-```
-
-### Running Locally
-
-```shell
-# Start a local development environment
-make dev
 ```
 
 ## Documentation

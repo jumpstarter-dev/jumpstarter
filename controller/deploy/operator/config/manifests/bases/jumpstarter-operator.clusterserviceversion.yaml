@@ -61,7 +61,7 @@ metadata:
     description: Jumpstarter is a cloud-native framework for Hardware-in-the-Loop
       (HIL) testing and development
     operators.operatorframework.io/internal-objects: '["clients.jumpstarter.dev","exporters.jumpstarter.dev","leases.jumpstarter.dev","exporteraccesspolicies.jumpstarter.dev"]'
-    repository: https://github.com/jumpstarter-dev/jumpstarter-controller
+    repository: https://github.com/jumpstarter-dev/jumpstarter
     support: The Jumpstarter Community
   labels:
     operatorframework.io/arch.amd64: supported
