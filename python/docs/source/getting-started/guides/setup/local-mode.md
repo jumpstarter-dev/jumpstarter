@@ -1,4 +1,4 @@
-# Setup Local Mode
+# Local Mode
 
 This guide shows you how to use Jumpstarter with a client and exporter running
 on the same host.

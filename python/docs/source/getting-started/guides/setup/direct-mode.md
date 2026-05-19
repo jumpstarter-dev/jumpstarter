@@ -1,4 +1,4 @@
-# Setup Direct Mode
+# Direct Mode
 
 This guide shows you how to run a Jumpstarter exporter that clients connect to
 directly over TCP — no controller or Kubernetes cluster required.

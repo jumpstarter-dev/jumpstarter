@@ -1,4 +1,4 @@
-# Setup Distributed Mode
+# Distributed Mode
 
 This guide walks you through the process of creating an exporter using the
 controller service, configuring drivers, and running the exporter.
