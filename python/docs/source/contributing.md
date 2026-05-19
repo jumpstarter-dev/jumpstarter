@@ -5,7 +5,7 @@ community and we welcome contributions.
 
 - [Development Environment](contributing/development-environment.md): Setting up
   your local environment for Python and Go development
-- [Enhancement Proposals (JEPs)](contributing/jeps/index.md): Process for proposing
+- [Enhancement Proposals](contributing/jeps/index.md): Process for proposing
   significant changes to the project
 
 ## Getting Help

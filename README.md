@@ -19,9 +19,8 @@ with hardware through the same APIs.
 - 🐍 **Python-Powered** - Leverage Python's testing ecosystem
 - 🔌 **Hardware Abstraction** - Simplify complex hardware interfaces with drivers
 - 🌐 **Collaborative** - Share test hardware globally
-- ⚙️ **CI/CD Ready** - Works with cloud native developer environments and pipelines
+- ⚙️ **Automation Ready** - Same APIs for humans, test scripts, CI pipelines, and AI agents
 - 💻 **Cross-Platform** - Supports Linux and macOS
-- 🤖 **Agentic by Design** - Same APIs for humans, scripts, and AI agents
 
 ## Repository Structure
 
