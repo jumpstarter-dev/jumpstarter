@@ -5,7 +5,7 @@ community and we welcome contributions.
 
 - [Development Environment](contributing/development-environment.md): Setting up
   your local environment for Python and Go development
-- [Enhancement Proposals](contributing/jeps/index.md): Process for proposing
+- [Jumpstarter Enhancement Proposals](contributing/jeps/index.md): Process for proposing
   significant changes to the project
 
 ## Getting Help
@@ -91,7 +91,7 @@ Documentation recommended practices:
   third-party project names to it
 - Use ASCII dashes (`--`) instead of en-dash or em-dash characters
 
-### Enhancement Proposals
+### Jumpstarter Enhancement Proposals
 
 For significant changes that affect multiple components, change public APIs, or
 require community consensus, follow the
