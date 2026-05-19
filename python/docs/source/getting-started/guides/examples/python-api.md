@@ -29,7 +29,7 @@ $ exit
 
 This example demonstrates how Python interacts with the {term}`exporter`:
 
-1. The {term}`env()` function from `jumpstarter.common.utils` automatically connects
+1. The `env()` function from `jumpstarter.common.utils` automatically connects
    to the {term}`exporter` configured in your shell environment.
 
 2. The `with env() as client:` statement creates a client connected to your
@@ -51,7 +51,7 @@ Using a Python with Jumpstarter allows you to:
 
 ### Running `pytest` in the Shell
 
-For structured test suites, Jumpstarter provides a {term}`JumpstarterTest` base class
+For structured test suites, Jumpstarter provides a JumpstarterTest base class
 that handles connection management automatically. See the
 [Testing with pytest](pytest-usage.md) guide for full details on writing tests,
 custom fixtures, markers, and CI integration.

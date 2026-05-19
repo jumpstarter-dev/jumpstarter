@@ -6,7 +6,7 @@ either as a library or as a [CLI tool](../reference/man-pages/index.md).
 
 ## Types of Clients
 
-Jumpstarter supports two types of {term}`client config`urations: *local* and *remote*.
+Jumpstarter supports two types of client configurations: *local* and *remote*.
 
 ### Local Clients
 

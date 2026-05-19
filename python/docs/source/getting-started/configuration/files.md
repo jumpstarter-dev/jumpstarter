@@ -26,9 +26,9 @@ config:
 
 ## Client Configuration
 
-**File**: All valid {term}`client config`uration files with a `.yaml` extension.  
+**File**: All valid client configuration files with a `.yaml` extension.  
 **Location**: `/home/<user>/.config/jumpstarter/clients/*.yaml`  
-**Description**: Stores {term}`client config`urations including endpoints, access
+**Description**: Stores client configurations including endpoints, access
 tokens, and driver settings.
 
 **Format**:
@@ -51,7 +51,7 @@ drivers:
 **Environment Variables**:
 
 - `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification globally
-- `JMP_CLIENT_CONFIG` - Path to a {term}`client config`uration file
+- `JMP_CLIENT_CONFIG` - Path to a client configuration file
 - `JMP_CLIENT` - Name of a registered client config
 - `JMP_NAMESPACE` - Namespace in the {term}`controller`
 - `JMP_NAME` - Client name

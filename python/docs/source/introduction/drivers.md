@@ -15,21 +15,21 @@ Drivers in Jumpstarter follow a client/server architecture where:
 - Driver implementations run on the {term}`exporter` side and interact directly with
   hardware or virtual {term}`device`s
 - Driver clients run on the client side and communicate with drivers via {term}`gRPC`
-- {term}`Interface class`es define the contract between implementations and clients
+- Interface classes define the contract between implementations and clients
 
 The architecture follows a pattern with these key components:
 
-- **{term}`Interface class`** - An abstract base class using Python's ABCMeta to define
+- **Interface class** - An abstract base class using Python's ABCMeta to define
   the contract (methods and their signatures) that driver implementations must
   fulfill. The interface also specifies the client class through the `client()`
   class method.
 
-- **{term}`Driver class`** - Inherits from both the Interface and the base `Driver`
+- **Driver class** - Inherits from both the Interface and the base `Driver`
   class, implementing the logic to configure and use hardware interfaces. Driver
-  methods are marked with the {term}`@export decorator` to expose them over the
+  methods are marked with the @export decorator to expose them over the
   network.
 
-- **{term}`Driver client class`** - Provides a user-friendly interface that can be used by
+- **Driver client class** - Provides a user-friendly interface that can be used by
   clients to interact with the driver either locally or remotely over the
   network.
 
@@ -55,7 +55,7 @@ connections into different forms or interfaces for specific use cases.
 ## Types
 
 The API reference of the documentation provides a complete list of all
-{term}`standard driver`s, you can find it here: [Driver API
+standard drivers, you can find it here: [Driver API
 Reference](../reference/package-apis/drivers/index.md).
 
 Some categories of drivers include:
@@ -80,16 +80,16 @@ Some categories of drivers include:
 
 ### Composite Drivers
 
-{term}`Composite driver`s combine multiple lower-level drivers to create higher-level
-abstractions or specialized workflows. For example, a {term}`composite driver` might
+Composite drivers combine multiple lower-level drivers to create higher-level
+abstractions or specialized workflows. For example, a composite driver might
 coordinate power cycling, storage re-flashing, and serial communication to
 automate a device initialization process.
 
-In Jumpstarter, drivers are organized in a {term}`driver tree` structure which allows for the
+In Jumpstarter, drivers are organized in a driver tree structure which allows for the
 representation of complex device configurations that may be found in your
 environment.
 
-Here's an example of a {term}`composite driver` tree:
+Here's an example of a composite driver tree:
 
 ```
 MyHarness         # Custom composite driver for the entire target device harness
@@ -103,11 +103,11 @@ MyHarness         # Custom composite driver for the entire target device harness
 
 ## Configuration
 
-Drivers are configured using a YAML {term}`exporter config` file, which specifies the
+Drivers are configured using a YAML exporter config file, which specifies the
 drivers to load and the parameters for each. Drivers are distributed as Python
 packages making it easy to develop and install your own drivers.
 
-Here is an example {term}`exporter config` that loads drivers for both physical and
+Here is an example exporter config that loads drivers for both physical and
 virtual devices:
 
 ```yaml
@@ -143,7 +143,7 @@ export:
 
 ## Communication
 
-Drivers expose their methods over {term}`gRPC` using three {term}`RPC styles` (see
+Drivers expose their methods over {term}`gRPC` using three RPC styles (see
 [RPC life cycle](https://grpc.io/docs/what-is-grpc/core-concepts/#rpc-life-cycle)
 for details on gRPC counterparts):
 
@@ -176,8 +176,8 @@ flowchart LR
 - **Server Streaming** -- Methods marked with `@export` that return a generator
   produce a stream of responses from a single request. Used for continuous data
   like sensor readings.
-- **Bidirectional Streaming** -- Methods marked with the {term}`@exportstream decorator` open a
-  full-duplex byte {term}`stream`. Used for serial communication, video capture, or
+- **Bidirectional Streaming** -- Methods marked with the @exportstream decorator open a
+  full-duplex byte stream. Used for serial communication, video capture, or
   tunneling existing protocols (such as SSH) over Jumpstarter.
 
 
@@ -202,7 +202,7 @@ In {term}`distributed mode`, authentication is handled through JWT tokens:
   {term}`controller` with their own tokens
 - **Driver Access Control**: The {term}`controller` enforces access control by only
   allowing authorized clients to acquire {term}`lease`s on {term}`exporter`s and their drivers
-- **{term}`Driver allowlist`**: {term}`Client config`urations can specify which driver packages
+- **Driver allowlist**: Client configurations can specify which driver packages
   are allowed to be loaded, preventing unintended execution of untrusted code
 
 ### Driver Package Security
@@ -218,11 +218,11 @@ When using {term}`distributed mode`, driver security considerations include:
 
 ## Custom Drivers
 
-While Jumpstarter comes with drivers for many basic interfaces, {term}`custom driver`s
+While Jumpstarter comes with drivers for many basic interfaces, custom drivers
 can be developed for specialized hardware interfaces, emulated environments, or
-to provide domain-specific abstractions for your use case. {term}`Custom driver`s follow
+to provide domain-specific abstractions for your use case. Custom drivers follow
 the same architecture pattern as built-in drivers and can be integrated into the
-system through the {term}`exporter config`uration.
+system through the exporter configuration.
 
 ## Example Implementation
 

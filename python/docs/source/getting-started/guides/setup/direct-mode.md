@@ -42,8 +42,8 @@ hooks:
     timeout: 30
 ```
 
-The {term}`hook`s section is optional. {term}`beforeLease hook` runs once when the {term}`exporter`
-starts (before any client connects), and {term}`afterLease hook` runs on shutdown. {term}`Hook`
+The {term}`hook`s section is optional. beforeLease hook runs once when the {term}`exporter`
+starts (before any client connects), and afterLease hook runs on shutdown. {term}`Hook`
 scripts can use {term}`j` commands to interact with the drivers.
 
 ### Start the Exporter

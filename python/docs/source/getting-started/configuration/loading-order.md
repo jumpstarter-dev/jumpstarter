@@ -10,7 +10,7 @@ precedence (highest to lowest):
 
 1. **Command-line arguments** - Highest priority, override all other settings
 2. **Environment variables** - Override file-based configurations
-3. **{term}`User config`uration files** - Located in `${HOME}/.config/jumpstarter/`
+3. **User configuration files** - Located in `${HOME}/.config/jumpstarter/`
 4. **System configuration files** - Located in `/etc/jumpstarter/`
 
 ## Client Configuration Hierarchy
@@ -36,7 +36,7 @@ For {term}`exporter` operations, Jumpstarter processes configurations in this or
 
 Here's a practical example of how configuration overrides work:
 
-1. You create a {term}`client config`uration file at
+1. You create a client configuration file at
    `${HOME}/.config/jumpstarter/clients/default.yaml`:
 
    ```yaml
@@ -62,7 +62,7 @@ argument has the highest priority.
 
 Choose the appropriate configuration method based on your needs:
 
-- **Development**: Use {term}`user config` files for personal settings
+- **Development**: Use user config files for personal settings
 - **CI/CD Pipelines**: Use environment variables for automation
 - **One-off Tasks**: Use command-line arguments for temporary changes
 - **System Defaults**: Use system config files for shared settings across users

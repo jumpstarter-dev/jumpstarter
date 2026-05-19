@@ -14,7 +14,7 @@ testing environments (devices accessed remotely through a central {term}`control
 communication happens over {term}`gRPC`, providing a consistent interface regardless of
 deployment model. Every interface is programmatic -- there is no GUI-only
 workflow that a script or agent cannot replicate. A human developer running
-{term}`jmp shell`, a [pytest](https://docs.pytest.org/en/stable/) script, a CI
+jmp shell, a [pytest](https://docs.pytest.org/en/stable/) script, a CI
 pipeline, and an
 [AI agent](../getting-started/guides/integration-patterns/ai-agent-integration.md)
 all use the exact same APIs, authentication, and access controls.
@@ -128,7 +128,7 @@ flowchart TB
 ```
 
 This mode is ideal for individual developers working directly with accessible
-hardware or virtual devices. When no {term}`client config`uration or environment
+hardware or virtual devices. When no client configuration or environment
 variables are present, Jumpstarter runs in {term}`local mode` and communicates with a
 built-in {term}`exporter` service via a local socket connection, requiring no Kubernetes
 or other infrastructure. Developers can work with devices on their desk, develop
@@ -141,9 +141,9 @@ $ pytest test_device.py
 ```
 
 The example above shows typical {term}`local mode` usage: first connecting to an
-{term}`exporter` (which manages the {term}`device` interfaces) using the {term}`jmp shell` command,
+{term}`exporter` (which manages the {term}`device` interfaces) using the jmp shell command,
 and then running tests against the device with pytest. The `--exporter` flag
-specifies which {term}`exporter config`uration to use, allowing you to easily switch
+specifies which exporter configuration to use, allowing you to easily switch
 between different hardware or virtual {term}`device` setups.
 
 ### Direct Mode

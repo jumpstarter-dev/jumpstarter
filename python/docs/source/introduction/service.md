@@ -49,6 +49,6 @@ Once a {term}`lease` is established, all traffic flows through a {term}`router` 
 there may only be one {term}`controller`, the {term}`router` can be scaled with multiple
 instances to handle many clients and {term}`exporter`s simultaneously.
 
-All communication between clients and drivers uses {term}`gRPC` with three {term}`RPC styles`
+All communication between clients and drivers uses {term}`gRPC` with three RPC styles
 (unary, server streaming, and bidirectional streaming). See
 [Driver Communication](drivers.md#communication) for details.

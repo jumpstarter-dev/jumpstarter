@@ -31,7 +31,7 @@ cluster with admin access. For installation instructions, refer to the
 
 ### Create an Exporter Configuration
 
-Create an exporter using the controller service API. The {term}`jmp admin` CLI
+Create an exporter using the controller service API. The jmp admin CLI
 provides commands to interact with the {term}`controller` directly.
 
 Run this command to create an {term}`exporter` named `example-distributed` and save the
@@ -41,7 +41,7 @@ configuration locally:
 $ jmp admin create exporter example-distributed --label foo=bar --save --insecure-tls
 ```
 
-After creating the exporter, find the new {term}`exporter config` file at
+After creating the exporter, find the new exporter config file at
 `/etc/jumpstarter/exporters/example-distributed.yaml`. Edit the configuration
 using your default text editor with:
 
@@ -79,7 +79,7 @@ The {term}`exporter` runs until you terminate the process with or close the shel
 
 ### Create a Client
 
-Create a client to connect to your new {term}`exporter` using the {term}`jmp admin` CLI:
+Create a client to connect to your new {term}`exporter` using the jmp admin CLI:
 
 The following command creates a client named "hello", enables unsafe drivers for
 development purposes, and saves the configuration locally in

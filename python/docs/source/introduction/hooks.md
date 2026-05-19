@@ -2,10 +2,10 @@
 
 Jumpstarter supports lifecycle hooks that execute shell scripts automatically before or after a {term}`lease`.
 
-A {term}`beforeLease hook` runs after a lease is assigned but
-before drivers are available to the client, and an {term}`afterLease hook` runs after
+A beforeLease hook runs after a lease is assigned but
+before drivers are available to the client, and an afterLease hook runs after
 the {term}`session` ends but before the lease is released. Hooks are optional and
-configured in the [Exporter](exporters.md) YAML configuration file ({term}`exporter config`).
+configured in the [Exporter](exporters.md) YAML configuration file (exporter config).
 
 Hooks execute on the exporter {term}`host` using a configurable interpreter (defaulting
 to `/bin/sh`) and can use the {term}`j` CLI to interact with drivers locally on the
@@ -67,7 +67,7 @@ assignment to `LEASE_READY` and from {term}`session` end to `AVAILABLE`.
 
 ## Configuration
 
-{term}`Hook`s are configured in the `hooks` section of the {term}`exporter config` file:
+{term}`Hook`s are configured in the `hooks` section of the exporter config file:
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
@@ -163,7 +163,7 @@ emit a prompt.
 
 {term}`Hook` output is streamed to the client in real time. Every line written to
 stdout or stderr by the {term}`hook` script is captured and forwarded to the client
-through the {term}`exporter`'s log {term}`stream`. The `beforeLease` {term}`hook` output is tagged
+through the {term}`exporter`'s log stream. The `beforeLease` {term}`hook` output is tagged
 with the `BEFORE_LEASE_HOOK` log source, and `afterLease` output is tagged
 with `AFTER_LEASE_HOOK`.
 
@@ -179,7 +179,7 @@ Because {term}`hook`s use a PTY, programs that detect terminal mode (such as
 
 ## Failure Handling
 
-The {term}`onFailure` field controls what happens when a hook script exits with a
+The onFailure field controls what happens when a hook script exits with a
 non-zero exit code or exceeds its timeout. A {term}`hook` is considered failed when the
 shell process returns a non-zero exit code or when execution exceeds the
 configured `timeout`.
@@ -190,7 +190,7 @@ The default mode. The failure is logged as a warning and the {term}`lease` lifec
 continues as if the {term}`hook` succeeded:
 
 - **`beforeLease`**: Drivers are unblocked and the client can connect normally.
-  The {term}`exporter status` transitions to `LEASE_READY`.
+  The exporter status transitions to `LEASE_READY`.
 - **`afterLease`**: The {term}`exporter` returns to `AVAILABLE` and the {term}`lease` is
   released normally.
 
@@ -201,10 +201,10 @@ not disrupt the workflow.
 
 The {term}`lease` is ended and the client is notified of the failure:
 
-- **`beforeLease`**: The {term}`exporter status` transitions to
+- **`beforeLease`**: The exporter status transitions to
   `BEFORE_LEASE_HOOK_FAILED`. The client discovers the failure through status
   polling and the {term}`lease` is released. The interactive shell is skipped.
-- **`afterLease`**: The {term}`exporter status` transitions to
+- **`afterLease`**: The exporter status transitions to
   `AFTER_LEASE_HOOK_FAILED`. Since the {term}`session` has already ended, this
   primarily serves as a signal to the client that cleanup did not complete
   successfully. The {term}`exporter` remains available for new {term}`lease`s.
@@ -216,11 +216,11 @@ the client to know immediately that the {term}`device` is not ready.
 
 The {term}`exporter` shuts down entirely with exit code `1` (Failure):
 
-- **`beforeLease`**: The {term}`exporter status` transitions to
+- **`beforeLease`**: The exporter status transitions to
   `BEFORE_LEASE_HOOK_FAILED`. The {term}`exporter` then shuts down, going offline. The
   shutdown is deferred until the client has had a chance to observe the failure
   status.
-- **`afterLease`**: The {term}`exporter status` transitions to
+- **`afterLease`**: The exporter status transitions to
   `AFTER_LEASE_HOOK_FAILED` and the {term}`exporter` shuts down immediately.
 
 The exit code `1` signals to service managers such as `systemd` that the shutdown
@@ -239,7 +239,7 @@ reserve `exit` for critical failures.
 
 When a {term}`hook` exceeds its `timeout`, the process is terminated with `SIGTERM`
 followed by `SIGKILL` if the process does not exit within a few seconds. The
-resulting failure is then handled according to the {term}`onFailure` setting, exactly
+resulting failure is then handled according to the onFailure setting, exactly
 as if the script had exited with a non-zero exit code.
 
 ## Use Cases
@@ -331,7 +331,7 @@ Python {term}`hook`s can use the driver client APIs directly by importing
 `jumpstarter.utils.env.env`, which connects to the local {term}`exporter` {term}`session`
 via the `JUMPSTARTER_HOST` socket automatically.
 
-{term}`Exporter config`:
+Exporter config:
 
 ```yaml
 hooks:
@@ -355,7 +355,7 @@ with env() as client:
     print("Power on complete")
 ```
 
-The {term}`env()` context manager returns a `DriverClient` whose attributes
+The `env()` context manager returns a `DriverClient` whose attributes
 correspond to the exported drivers (e.g. `client.power`, `client.storage`).
 This is the same API used by the `j` CLI and by test scripts connecting to
 an {term}`exporter`.

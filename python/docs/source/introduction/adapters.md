@@ -8,7 +8,7 @@ specific use cases.
 
 {term}`Adapter`s in Jumpstarter follow a transformation pattern where:
 
-- {term}`Adapter`s take a {term}`driver client class` as input
+- {term}`Adapter`s take a driver client class as input
 - They transform the connection into a different interface format
 - The transformed interface is exposed to the user in a way that's tailored for
   specific scenarios

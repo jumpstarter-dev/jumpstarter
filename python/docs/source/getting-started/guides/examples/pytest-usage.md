@@ -14,19 +14,19 @@ Install the following packages in your Python environment:
 
 Install any driver packages your tests require (for example,
 `jumpstarter-driver-power` or `jumpstarter-driver-opendal`). The examples in this
-guide that use console interaction with {term}`PexpectAdapter` require
+guide that use console interaction with PexpectAdapter require
 `jumpstarter-driver-network`.
 
 ## The JumpstarterTest base class
 
-{term}`JumpstarterTest` is a pytest class that provides a `client` fixture scoped to
+JumpstarterTest is a pytest class that provides a `client` fixture scoped to
 the test class. It connects to a Jumpstarter {term}`exporter` in one of two ways:
 
 1. **Shell mode**: when the `JUMPSTARTER_HOST` environment variable is set (for
-   example, inside a {term}`jmp shell` session), it connects to the {term}`exporter` from that
+   example, inside a jmp shell session), it connects to the {term}`exporter` from that
    environment.
 2. **{term}`Lease` mode**: when `JUMPSTARTER_HOST` is not set, it loads the default
-   {term}`client config` and acquires a {term}`lease` using the `selector` class variable.
+   client config and acquires a {term}`lease` using the `selector` class variable.
 
 ```python
 from jumpstarter_testing.pytest import JumpstarterTest
@@ -47,8 +47,8 @@ identify which {term}`exporter` to {term}`lease`. It is only used when running o
 {term}`session`.
 
 The `client` object exposes driver interfaces as nested attributes. In the
-example above, `dutlink` is a {term}`composite driver` that provides child drivers like
-`power` and `storage`. The exact attribute names depend on your {term}`exporter config`.
+example above, `dutlink` is a composite driver that provides child drivers like
+`power` and `storage`. The exact attribute names depend on your exporter config.
 
 ## Running tests
 
@@ -62,13 +62,13 @@ $ pytest test_my_device.py
 $ exit
 ```
 
-In this mode, {term}`JumpstarterTest` detects `JUMPSTARTER_HOST` and connects to the
+In this mode, JumpstarterTest detects `JUMPSTARTER_HOST` and connects to the
 active {term}`exporter`. The `selector` class variable is ignored.
 
 ### With automatic lease acquisition
 
-Run pytest directly without a shell {term}`session`. {term}`JumpstarterTest` loads the default
-{term}`client config`uration and acquires a {term}`lease` matching your `selector`:
+Run pytest directly without a shell {term}`session`. JumpstarterTest loads the default
+client configuration and acquires a {term}`lease` matching your `selector`:
 
 ```console
 $ pytest test_my_device.py
@@ -80,7 +80,7 @@ This requires a configured client (see
 ## Writing custom fixtures
 
 Create additional pytest fixtures that build on the `client` fixture provided by
-{term}`JumpstarterTest`. This is useful for setting up {term}`device` state or wrapping driver
+JumpstarterTest. This is useful for setting up {term}`device` state or wrapping driver
 interfaces.
 
 ```python
@@ -113,8 +113,8 @@ class TestBoot(JumpstarterTest):
 The `client` fixture has class scope, so it is shared across all test methods in
 a class. Custom fixtures can have any scope up to `class`.
 
-Serial console interaction uses {term}`PexpectAdapter` from `jumpstarter-driver-network`,
-which wraps a {term}`driver client class` into a [pexpect](https://pexpect.readthedocs.io/)
+Serial console interaction uses PexpectAdapter from `jumpstarter-driver-network`,
+which wraps a driver client class into a [pexpect](https://pexpect.readthedocs.io/)
 `fdspawn` object. Use `expect()` and `sendline()` instead of `read_until()`.
 
 ## Combining with pytest features
@@ -206,7 +206,7 @@ class TestWithFirmware(JumpstarterTest):
 
 ## CI integration
 
-{term}`JumpstarterTest` works in CI pipelines. Use either shell mode or {term}`lease` mode
+JumpstarterTest works in CI pipelines. Use either shell mode or {term}`lease` mode
 depending on your setup.
 
 ### Shell mode in CI
@@ -271,7 +271,7 @@ hardware-test:
 ## Troubleshooting
 
 **Tests fail with `RuntimeError` about missing environment**
-: Ensure you are either running inside a {term}`jmp shell` session or have a default
+: Ensure you are either running inside a jmp shell session or have a default
   client configured with `jmp config client use <name>`.
 
 **Lease acquisition times out**

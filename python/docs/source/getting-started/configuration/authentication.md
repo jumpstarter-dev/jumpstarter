@@ -70,7 +70,7 @@ Note, the HTTPS URL is mandatory, and you only need to include
 certificateAuthority when using a self-signed certificate. The username will be
 prefixed with "keycloak:" (e.g., keycloak:example-user).
 
-3. Create clients and {term}`exporter`s with the {term}`jmp admin` create commands. Be sure to
+3. Create clients and {term}`exporter`s with the jmp admin create commands. Be sure to
    prefix usernames with `keycloak:` as configured in the claim mappings:
 
 ```console

@@ -16,10 +16,10 @@ interact with several different devices at the same time.
 
 ## Exporter Configuration
 
-Exporters use a YAML configuration file ({term}`exporter config`) to define which Drivers must be loaded
+Exporters use a YAML configuration file (exporter config) to define which Drivers must be loaded
 and the configuration required.
 
-Here is an example {term}`exporter config` file which would typically be saved at
+Here is an example exporter config file which would typically be saved at
 `/etc/jumpstarter/exporters/demo.yaml`:
 
 ```yaml
@@ -79,10 +79,10 @@ capabilities in case something goes wrong and it needs to be restarted.
 ## Lifecycle Hooks
 
 {term}`Exporter`s support lifecycle {term}`hook`s that execute shell scripts at {term}`lease`
-boundaries. A {term}`beforeLease hook` runs after a {term}`lease` is assigned but before
-the client can access drivers, and an {term}`afterLease hook` runs after the
+boundaries. A beforeLease hook runs after a {term}`lease` is assigned but before
+the client can access drivers, and an afterLease hook runs after the
 {term}`session` ends but before the {term}`lease` is released.
 
-{term}`Hook`s are configured in the `hooks` section of the {term}`exporter config` file and
+{term}`Hook`s are configured in the `hooks` section of the exporter config file and
 use the {term}`j` CLI to interact with exported devices. For full details, see
 [Hooks](hooks.md).

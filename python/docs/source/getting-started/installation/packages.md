@@ -237,7 +237,7 @@ $ docker run --rm -it \
 ````
 
 ```{tip}
-If you need Kubernetes access (e.g. for {term}`jmp admin` commands), also mount your kubeconfig:
+If you need Kubernetes access (e.g. for jmp admin commands), also mount your kubeconfig:
 `-v "${HOME}/.kube/config:/root/.kube/config":z`
 ```
 

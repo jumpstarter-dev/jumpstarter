@@ -12,7 +12,7 @@ quickly or for validating Jumpstarter drivers in CI/CD pipelines.
 
 ## Install
 
-The {term}`jmp admin` CLI can create a local cluster and install Jumpstarter in
+The jmp admin CLI can create a local cluster and install Jumpstarter in
 a single command:
 
 ```{code-block} console
@@ -146,5 +146,5 @@ $ jmp admin delete cluster --minikube
 ```
 ````
 
-For complete documentation of all {term}`jmp admin` options, see the
+For complete documentation of all jmp admin options, see the
 [MAN pages](../../../reference/man-pages/jmp.md).

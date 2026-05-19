@@ -19,9 +19,9 @@ connection between an exporter and client without physical hardware.
 
 ### Create an Exporter Configuration
 
-Create an {term}`exporter config` named `example-local` to define the
+Create an exporter config named `example-local` to define the
 capabilities of your local test {term}`exporter`. This configuration mirrors a regular
-{term}`exporter config` but without the `endpoint` and `token` fields since you
+exporter config but without the `endpoint` and `token` fields since you
 don't need to connect to the {term}`controller` {term}`service`.
 
 Create `example-local.yaml` in `/etc/jumpstarter/exporters` with this content:

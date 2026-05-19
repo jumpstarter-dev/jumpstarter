@@ -30,8 +30,8 @@ flowchart TB
 - An {term}`MCP`-compatible AI tool (Cursor, Claude Code, Claude Desktop, or any
   {term}`MCP` client)
 
-The {term}`MCP server` package, which is normally provided when you perform a full install
-through the `jumpstarter-mcp` package which provides the {term}`jmp mcp serve` subcommand on the CLI.
+The MCP server package, which is normally provided when you perform a full install
+through the `jumpstarter-mcp` package which provides the jmp mcp serve subcommand on the CLI.
 
 ## Setup
 
@@ -55,7 +55,7 @@ Jumpstarter tools will be available to the AI agent in Composer.
 
 ### Claude Code
 
-Register the {term}`MCP server` with a single command:
+Register the MCP server with a single command:
 
 ```bash
 claude mcp add jumpstarter -- jmp mcp serve
@@ -102,7 +102,7 @@ Restart Claude Desktop and the Jumpstarter tools will appear in the tools menu.
 
 ### Other MCP Clients
 
-Any {term}`MCP`-compatible client can use the Jumpstarter {term}`MCP server`. The server
+Any {term}`MCP`-compatible client can use the Jumpstarter MCP server. The server
 communicates over stdio using the standard {term}`MCP` protocol. Launch it with:
 
 ```bash
@@ -111,7 +111,7 @@ jmp mcp serve
 
 ## Available Tools
 
-The {term}`MCP server` exposes the following tools:
+The MCP server exposes the following tools:
 
 ### Lease & Exporter Management
 
@@ -149,7 +149,7 @@ The {term}`MCP server` exposes the following tools:
 
 ### Example: Interactive Hardware Exploration
 
-Once the {term}`MCP server` is configured, you can interact with hardware using natural
+Once the MCP server is configured, you can interact with hardware using natural
 language from your AI assistant:
 
 > **You**: What devices are available on the cluster?
@@ -168,7 +168,7 @@ language from your AI assistant:
 >
 > **You**: Give me a Python example to automate this.
 >
-> *Agent calls `jmp_get_env` and generates a script using the {term}`env()` helper.*
+> *Agent calls `jmp_get_env` and generates a script using the `env()` helper.*
 
 ### Example: Claude Code Session
 
@@ -248,14 +248,14 @@ sequenceDiagram
   block indefinitely. Use a short `timeout_seconds` (e.g., 10-15) so the
   command is killed after capturing available output.
 - **Use `jmp_drivers` for Python access**: When you need programmatic control
-  beyond CLI commands, inspect the Python {term}`driver tree` to discover available
+  beyond CLI commands, inspect the Python driver tree to discover available
   methods and their signatures.
 - **Connections are persistent**: Create once, run many commands. No need to
   reconnect between commands.
 
 ## Logging and Debugging
 
-The {term}`MCP server` logs to `~/.jumpstarter/logs/mcp-server.log`. Monitor it with:
+The MCP server logs to `~/.jumpstarter/logs/mcp-server.log`. Monitor it with:
 
 ```bash
 tail -f ~/.jumpstarter/logs/mcp-server.log
@@ -263,7 +263,7 @@ tail -f ~/.jumpstarter/logs/mcp-server.log
 
 ## Writing Python with AI Assistance
 
-The {term}`MCP server` is especially useful when writing Python code that interacts with
+The MCP server is especially useful when writing Python code that interacts with
 hardware. While connected to a {term}`device`, the agent can introspect the live
 connection to discover available drivers, methods, and their signatures -- then
 use that knowledge to help you write correct code.
