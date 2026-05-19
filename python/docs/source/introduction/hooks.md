@@ -1,14 +1,14 @@
 # Hooks
 
-Jumpstarter supports lifecycle hooks that execute shell scripts automatically before or after a lease.
+Jumpstarter supports lifecycle hooks that execute shell scripts automatically before or after a {term}`lease`.
 
-A `beforeLease` hook runs after a lease is assigned but
-before drivers are available to the client, and an `afterLease` hook runs after
-the session ends but before the lease is released. Hooks are optional and
-configured in the [Exporter](exporters.md) YAML configuration file.
+A {term}`beforeLease hook` runs after a lease is assigned but
+before drivers are available to the client, and an {term}`afterLease hook` runs after
+the {term}`session` ends but before the lease is released. Hooks are optional and
+configured in the [Exporter](exporters.md) YAML configuration file ({term}`exporter config`).
 
-Hooks execute on the exporter host using a configurable interpreter (defaulting
-to `/bin/sh`) and can use the `j` CLI to interact with drivers locally on the
+Hooks execute on the exporter {term}`host` using a configurable interpreter (defaulting
+to `/bin/sh`) and can use the {term}`j` CLI to interact with drivers locally on the
 exporter. The `exec` field lets you choose a different interpreter such as
 `/bin/bash` or `python3`. The `script` field accepts either an inline script
 or a path to a script file on disk. Common use cases include powering on
@@ -179,7 +179,7 @@ Because hooks use a PTY, programs that detect terminal mode (such as
 
 ## Failure Handling
 
-The `onFailure` field controls what happens when a hook script exits with a
+The {term}`onFailure` field controls what happens when a hook script exits with a
 non-zero exit code or exceeds its timeout. A hook is considered failed when the
 shell process returns a non-zero exit code or when execution exceeds the
 configured `timeout`.
@@ -355,7 +355,7 @@ with env() as client:
     print("Power on complete")
 ```
 
-The `env()` context manager returns a `DriverClient` whose attributes
+The {term}`env()` context manager returns a `DriverClient` whose attributes
 correspond to the exported drivers (e.g. `client.power`, `client.storage`).
 This is the same API used by the `j` CLI and by test scripts connecting to
 an exporter.
@@ -381,7 +381,7 @@ hooks:
 - Set an appropriate `timeout` for each hook. The default of 120 seconds may be
   too generous for simple scripts and too short for firmware flashing.
 - Use `onFailure: endLease` for `beforeLease` validation so clients get
-  immediate feedback when a device is not ready.
+  immediate feedback when a {term}`device` is not ready.
 - Use `onFailure: warn` for `afterLease` cleanup unless leaving the device in a
   bad state poses a safety risk.
 - Reserve `onFailure: exit` for critical failures that require manual

@@ -5,7 +5,7 @@ interfaces used to interact with target devices, both physical hardware and
 virtual systems.
 
 An [Exporter](exporters.md) uses Drivers to "export" these interfaces from a
-host machine to the clients via [gRPC](https://grpc.io/). Drivers can be thought
+{term}`host` machine to the clients via [gRPC](https://grpc.io/). Drivers can be thought
 of as a simplified API for an interface or device type.
 
 ## Architecture
@@ -19,21 +19,21 @@ Drivers in Jumpstarter follow a client/server architecture where:
 
 The architecture follows a pattern with these key components:
 
-- **Interface Class** - An abstract base class using Python's ABCMeta to define
+- **{term}`Interface class`** - An abstract base class using Python's ABCMeta to define
   the contract (methods and their signatures) that driver implementations must
   fulfill. The interface also specifies the client class through the `client()`
   class method.
 
-- **Driver Class** - Inherits from both the Interface and the base `Driver`
+- **{term}`Driver class`** - Inherits from both the Interface and the base `Driver`
   class, implementing the logic to configure and use hardware interfaces. Driver
-  methods are marked with the `@export` decorator to expose them over the
+  methods are marked with the {term}`@export decorator` to expose them over the
   network.
 
-- **Driver Client** - Provides a user-friendly interface that can be used by
+- **{term}`Driver client class`** - Provides a user-friendly interface that can be used by
   clients to interact with the driver either locally or remotely over the
   network.
 
-When a client requests a lease and connects to an exporter, a session is created
+When a client requests a {term}`lease` and connects to an exporter, a {term}`session` is created
 for all tests the client needs to execute. Within this session, the specified
 `Driver` subclass is instantiated for each configured interface. These driver
 instances live throughout the session's duration, maintaining state and
@@ -80,12 +80,12 @@ Some categories of drivers include:
 
 ### Composite Drivers
 
-Composite drivers combine multiple lower-level drivers to create higher-level
+{term}`Composite driver`s combine multiple lower-level drivers to create higher-level
 abstractions or specialized workflows. For example, a composite driver might
 coordinate power cycling, storage re-flashing, and serial communication to
 automate a device initialization process.
 
-In Jumpstarter, drivers are organized in a tree structure which allows for the
+In Jumpstarter, drivers are organized in a {term}`driver tree` structure which allows for the
 representation of complex device configurations that may be found in your
 environment.
 
@@ -103,7 +103,7 @@ MyHarness         # Custom composite driver for the entire target device harness
 
 ## Configuration
 
-Drivers are configured using a YAML Exporter config file, which specifies the
+Drivers are configured using a YAML {term}`exporter config` file, which specifies the
 drivers to load and the parameters for each. Drivers are distributed as Python
 packages making it easy to develop and install your own drivers.
 
@@ -143,7 +143,7 @@ export:
 
 ## Communication
 
-Drivers expose their methods over gRPC using three RPC styles (see
+Drivers expose their methods over gRPC using three {term}`RPC styles` (see
 [RPC life cycle](https://grpc.io/docs/what-is-grpc/core-concepts/#rpc-life-cycle)
 for details on gRPC counterparts):
 
@@ -176,8 +176,8 @@ flowchart LR
 - **Server Streaming** -- Methods marked with `@export` that return a generator
   produce a stream of responses from a single request. Used for continuous data
   like sensor readings.
-- **Bidirectional Streaming** -- Methods marked with `@exportstream` open a
-  full-duplex byte stream. Used for serial communication, video capture, or
+- **Bidirectional Streaming** -- Methods marked with the {term}`@exportstream decorator` open a
+  full-duplex byte {term}`stream`. Used for serial communication, video capture, or
   tunneling existing protocols (such as SSH) over Jumpstarter.
 
 
@@ -194,7 +194,7 @@ same user context.
 
 ### Distributed Mode Authentication
 
-In distributed mode, authentication is handled through JWT tokens:
+In {term}`distributed mode`, authentication is handled through JWT tokens:
 
 - **Client Authentication**: Clients authenticate to the controller using JWT
   tokens, which establishes their identity and permissions
@@ -202,7 +202,7 @@ In distributed mode, authentication is handled through JWT tokens:
   controller with their own tokens
 - **Driver Access Control**: The controller enforces access control by only
   allowing authorized clients to acquire leases on exporters and their drivers
-- **Driver Allowlist**: Client configurations can specify which driver packages
+- **{term}`Driver allowlist`**: Client configurations can specify which driver packages
   are allowed to be loaded, preventing unintended execution of untrusted code
 
 ### Driver Package Security
@@ -218,7 +218,7 @@ When using distributed mode, driver security considerations include:
 
 ## Custom Drivers
 
-While Jumpstarter comes with drivers for many basic interfaces, custom drivers
+While Jumpstarter comes with drivers for many basic interfaces, {term}`custom driver`s
 can be developed for specialized hardware interfaces, emulated environments, or
 to provide domain-specific abstractions for your use case. Custom drivers follow
 the same architecture pattern as built-in drivers and can be integrated into the

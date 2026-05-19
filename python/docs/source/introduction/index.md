@@ -2,16 +2,16 @@
 
 Jumpstarter is an open source framework that brings enterprise-grade testing
 capabilities to everyone. While established industries like automotive and
-manufacturing have long used HiL testing, these tools have typically been
+manufacturing have long used {term}`HiL` testing, these tools have typically been
 expensive proprietary systems. Jumpstarter democratizes this technology through
 a free, cloud native approach that works with both physical hardware and virtual
 devices.
 
 At its core, Jumpstarter uses a client/server architecture where a single client
 can control multiple devices under test. Its modular design supports both local
-development (devices connected directly to your machine) and distributed testing
-environments (devices accessed remotely through a central controller). All
-communication happens over gRPC, providing a consistent interface regardless of
+development (devices connected directly to your machine) and {term}`distributed mode`
+testing environments (devices accessed remotely through a central controller). All
+communication happens over {term}`gRPC`, providing a consistent interface regardless of
 deployment model. Every interface is programmatic -- there is no GUI-only
 workflow that a script or agent cannot replicate. A human developer running
 `jmp shell`, a [pytest](https://docs.pytest.org/en/stable/) script, a CI
@@ -29,13 +29,13 @@ access to physical devices for development.
 
 Jumpstarter architecture is based on the following key components:
 
-- Device Under Test (DUT) - Hardware or virtual device being tested
+- Device Under Test ({term}`DUT`) - Hardware or virtual device being tested
 - [Drivers](drivers.md) - Interfaces for DUT communication
 - [Adapters](adapters.md) - Convert driver connections into various formats
 - [Exporters](exporters.md) - Expose device interfaces over network via gRPC
-- [Hooks](hooks.md) - Lifecycle scripts that run at lease boundaries
+- [Hooks](hooks.md) - Lifecycle scripts that run at {term}`lease` boundaries
 - [Clients](clients.md) - Libraries and CLI tools for device interaction
-- [Service](service.md) - Kubernetes controller for resource management
+- [Service](service.md) - Kubernetes {term}`controller` for resource management
 
 Component interactions include:
 
@@ -46,7 +46,7 @@ Component interactions include:
 - **Drivers/Adapters and Exporters** - Exporters manage drivers/adapters and
   expose them via gRPC
 - **Hooks and Exporters** - Hooks execute shell scripts at lease boundaries,
-  running before drivers are available and after the session ends
+  running before drivers are available and after the {term}`session` ends
 - **Exporters and Clients** - Clients connect to exporters to control devices
 - **Clients/Exporters and Service** - Service manages access control and
   resource allocation in distributed mode
@@ -95,7 +95,7 @@ flowchart TB
 ## Operation Modes
 
 Building on these components, Jumpstarter implements two operation modes that
-provide flexibility for different scenarios: *local* and *distributed* modes.
+provide flexibility for different scenarios: {term}`local mode` and distributed modes.
 
 ### Local Mode
 
@@ -129,7 +129,7 @@ flowchart TB
 This mode is ideal for individual developers working directly with accessible
 hardware or virtual devices. When no client configuration or environment
 variables are present, Jumpstarter runs in local mode and communicates with a
-built-in exporter service via a local socket connection, requiring no Kubernetes
+built-in {term}`exporter` service via a local socket connection, requiring no Kubernetes
 or other infrastructure. Developers can work with devices on their desk, develop
 drivers, create automation scripts, and test with QEMU or other virtualization
 tools.
@@ -229,8 +229,8 @@ $ pytest test_device.py
 
 The example above demonstrates the distributed mode workflow: first configuring
 the client with connection information for the central controller, then
-requesting a lease on an exporter that matches specific criteria (using selector
-labels), and finally running tests against the acquired DUT. The lease system
+requesting a lease on an exporter that matches specific criteria (using
+{term}`label selector`s), and finally running tests against the acquired DUT. The lease system
 ensures exclusive access to the requested resources for the duration of testing,
 preventing conflicts with other users or pipelines in the shared environment.
 

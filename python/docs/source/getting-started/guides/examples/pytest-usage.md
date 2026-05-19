@@ -14,19 +14,19 @@ Install the following packages in your Python environment:
 
 Install any driver packages your tests require (for example,
 `jumpstarter-driver-power` or `jumpstarter-driver-opendal`). The examples in this
-guide that use console interaction with `PexpectAdapter` require
+guide that use console interaction with {term}`PexpectAdapter` require
 `jumpstarter-driver-network`.
 
 ## The JumpstarterTest base class
 
-`JumpstarterTest` is a pytest class that provides a `client` fixture scoped to
+{term}`JumpstarterTest` is a pytest class that provides a `client` fixture scoped to
 the test class. It connects to a Jumpstarter exporter in one of two ways:
 
 1. **Shell mode**: when the `JUMPSTARTER_HOST` environment variable is set (for
-   example, inside a `jmp shell` session), it connects to the exporter from that
+   example, inside a {term}`jmp shell` session), it connects to the exporter from that
    environment.
 2. **Lease mode**: when `JUMPSTARTER_HOST` is not set, it loads the default
-   client configuration and acquires a lease using the `selector` class variable.
+   {term}`client config` and acquires a {term}`lease` using the `selector` class variable.
 
 ```python
 from jumpstarter_testing.pytest import JumpstarterTest
@@ -42,14 +42,13 @@ class TestPowerCycle(JumpstarterTest):
         client.dutlink.power.off()
 ```
 
-The `selector` class variable is a comma-separated list of label selectors that
+The `selector` class variable is a comma-separated list of {term}`label selector`s that
 identify which exporter to lease. It is only used when running outside a shell
-session.
+{term}`session`.
 
 The `client` object exposes driver interfaces as nested attributes. In the
-example above, `dutlink` is a composite driver that provides child drivers like
-`power` and `storage`. The exact attribute names depend on your exporter
-configuration.
+example above, `dutlink` is a {term}`composite driver` that provides child drivers like
+`power` and `storage`. The exact attribute names depend on your {term}`exporter config`.
 
 ## Running tests
 
@@ -64,7 +63,7 @@ $ exit
 ```
 
 In this mode, `JumpstarterTest` detects `JUMPSTARTER_HOST` and connects to the
-active exporter. The `selector` class variable is ignored.
+active {term}`exporter`. The `selector` class variable is ignored.
 
 ### With automatic lease acquisition
 
@@ -115,7 +114,7 @@ The `client` fixture has class scope, so it is shared across all test methods in
 a class. Custom fixtures can have any scope up to `class`.
 
 Serial console interaction uses `PexpectAdapter` from `jumpstarter-driver-network`,
-which wraps a driver client into a [pexpect](https://pexpect.readthedocs.io/)
+which wraps a {term}`driver client class` into a [pexpect](https://pexpect.readthedocs.io/)
 `fdspawn` object. Use `expect()` and `sendline()` instead of `read_until()`.
 
 ## Combining with pytest features
@@ -277,7 +276,7 @@ hardware-test:
 
 **Lease acquisition times out**
 : Verify that an exporter matching your `selector` labels is running and
-  registered with the controller. Check available exporters with
+  registered with the {term}`controller`. Check available exporters with
   `jmp get exporters`.
 
 **`client` fixture setup fails**

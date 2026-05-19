@@ -1,13 +1,13 @@
 # Direct Mode
 
 This guide shows you how to run a Jumpstarter exporter that clients connect to
-directly over TCP -- no controller or Kubernetes cluster required.
+directly over TCP -- no {term}`controller` or Kubernetes cluster required.
 
-Direct mode is useful when you want to expose hardware on one machine to clients
+{term}`Direct mode <direct mode>` is useful when you want to expose hardware on one machine to clients
 on another, without setting up a controller.
 
 ```{note}
-Direct mode skips the controller's lease management. Only one client should
+Direct mode skips the controller's {term}`lease` management. Only one client should
 connect at a time. For shared, multi-user environments use
 [distributed mode](distributed-mode.md) instead.
 ```
@@ -16,7 +16,7 @@ connect at a time. For shared, multi-user environments use
 
 ### Create an Exporter Configuration
 
-Unlike distributed mode, you don't need `endpoint` or `token` fields -- there
+Unlike {term}`distributed mode`, you don't need `endpoint` or `token` fields -- there
 is no controller to register with.
 
 Create `example-direct.yaml`:
@@ -42,9 +42,9 @@ hooks:
     timeout: 30
 ```
 
-The `hooks` section is optional. `beforeLease` runs once when the exporter
-starts (before any client connects), and `afterLease` runs on shutdown. Hook
-scripts can use `j` commands to interact with the drivers.
+The {term}`hook`s section is optional. {term}`beforeLease hook` runs once when the exporter
+starts (before any client connects), and {term}`afterLease hook` runs on shutdown. Hook
+scripts can use {term}`j` commands to interact with the drivers.
 
 ### Start the Exporter
 

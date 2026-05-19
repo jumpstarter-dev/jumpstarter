@@ -1,7 +1,7 @@
 # Exporters
 
 Jumpstarter uses a program called an Exporter to enable remote access to your
-hardware. The Exporter typically runs on a "host" system directly connected to
+hardware. The Exporter typically runs on a {term}`host` system directly connected to
 your hardware. It is called an Exporter because it "exports" the interfaces
 connected to the target device for client access.
 
@@ -16,7 +16,7 @@ interact with several different devices at the same time.
 
 ## Exporter Configuration
 
-Exporters use a YAML configuration file to define which Drivers must be loaded
+Exporters use a YAML configuration file ({term}`exporter config`) to define which Drivers must be loaded
 and the configuration required.
 
 Here is an example Exporter config file which would typically be saved at
@@ -78,10 +78,10 @@ capabilities in case something goes wrong and it needs to be restarted.
 
 ## Lifecycle Hooks
 
-Exporters support lifecycle hooks that execute shell scripts at lease
-boundaries. A `beforeLease` hook runs after a lease is assigned but before
-the client can access drivers, and an `afterLease` hook runs after the
-session ends but before the lease is released.
+Exporters support lifecycle {term}`hook`s that execute shell scripts at {term}`lease`
+boundaries. A {term}`beforeLease hook` runs after a lease is assigned but before
+the client can access drivers, and an {term}`afterLease hook` runs after the
+{term}`session` ends but before the lease is released.
 
 Hooks are configured in the `hooks` section of the exporter config file and
 use the `j` CLI to interact with exported devices. For full details, see

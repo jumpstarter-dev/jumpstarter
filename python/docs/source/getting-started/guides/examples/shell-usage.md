@@ -2,12 +2,12 @@
 
 ## Starting and Exiting a Session
 
-Start a local exporter session:
+Start a {term}`local mode` exporter {term}`session`:
 ```console
 $ jmp shell --exporter example-local
 ```
 
-Start a distributed exporter session:
+Start a {term}`distributed mode` exporter session:
 ```console
 $ jmp shell --client hello --selector example.com/board=foo
 ```
@@ -19,8 +19,8 @@ $ exit
 
 ## Interact with the Exporter Shell
 
-The exporter shell provides access to driver CLI interfaces through the magic
-`j` command:
+The {term}`exporter shell` provides access to driver CLI interfaces through the magic
+{term}`j` command:
 
 ```console
 $ jmp shell # Use appropriate --exporter or --client parameters

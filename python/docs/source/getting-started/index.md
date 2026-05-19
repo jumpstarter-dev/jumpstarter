@@ -10,8 +10,8 @@ environment. The guides cover:
 - [Guides](guides/index.md): Running your first tests and integrating with your
   development workflow
 
-These guides support both local-mode for individual development and
-distributed-mode for team environments with shared hardware resources.
+These guides support both {term}`local mode` for individual development and
+{term}`distributed mode` for team environments with shared hardware resources.
 
 ```{toctree}
 :maxdepth: 1

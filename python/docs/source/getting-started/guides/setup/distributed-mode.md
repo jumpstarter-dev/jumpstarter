@@ -1,7 +1,7 @@
 # Distributed Mode
 
 This guide walks you through the process of creating an exporter using the
-controller service, configuring drivers, and running the exporter.
+{term}`controller` {term}`service`, configuring drivers, and running the exporter.
 
 ```{warning}
 The jumpstarter-controller endpoints are secured by TLS. However, in release 0.7.x,
@@ -31,7 +31,7 @@ cluster with admin access. For installation instructions, refer to the
 
 ### Create an Exporter Configuration
 
-Create an exporter using the controller service API. The `jmp admin` CLI
+Create an exporter using the controller service API. The {term}`jmp admin` CLI
 provides commands to interact with the controller directly.
 
 Run this command to create an exporter named `example-distributed` and save the
@@ -41,7 +41,7 @@ configuration locally:
 $ jmp admin create exporter example-distributed --label foo=bar --save --insecure-tls
 ```
 
-After creating the exporter, find the new configuration file at
+After creating the exporter, find the new {term}`exporter config` file at
 `/etc/jumpstarter/exporters/example-distributed.yaml`. Edit the configuration
 using your default text editor with:
 
@@ -91,10 +91,10 @@ $ jmp admin create client hello --save --unsafe --insecure-tls
 
 ### Spawn an Exporter Shell
 
-Interact with your distributed exporter using the "client shell" functionality
-in the `jmp` CLI. When you spawn a shell, the client attempts to acquire a lease
+Interact with your distributed exporter using the {term}`exporter shell` functionality
+in the {term}`jmp` CLI. When you spawn a shell, the client attempts to acquire a {term}`lease`
 on an exporter. Once the lease is acquired, you can interact with the exporter
-through your shell session.
+through your shell {term}`session`.
 
 ```console
 $ jmp shell --client hello --selector example.com/board=foo

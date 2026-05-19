@@ -10,15 +10,15 @@ Jumpstarter supports two types of client configurations: *local* and *remote*.
 
 ### Local Clients
 
-When using Jumpstarter in *local-only* mode, you can use the local client
+When using Jumpstarter in {term}`local mode`, you can use the local client
 functionality to directly access your hardware. The local client will
 automatically use any drivers that are registered without the need for an
-exporter instance running in the background.
+{term}`exporter` instance running in the background.
 
 ### Remote Clients
 
-When using Jumpstarter in *distributed* mode, the client must be configured to
-connect to an instance of the Service that can authenticate and route requests
+When using Jumpstarter in {term}`distributed mode`, the client must be configured to
+connect to an instance of the {term}`service` that can authenticate and route requests
 to the appropriate exporter instance.
 
 The following parameters are required to set up a remote client:

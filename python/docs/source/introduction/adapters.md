@@ -1,6 +1,6 @@
 # Adapters
 
-Jumpstarter uses adapters to transform network connections established by
+Jumpstarter uses {term}`adapter`s to transform network connections established by
 drivers into different forms or interfaces that are more appropriate for
 specific use cases.
 
@@ -8,7 +8,7 @@ specific use cases.
 
 Adapters in Jumpstarter follow a transformation pattern where:
 
-- Adapters take a driver client as input
+- Adapters take a {term}`driver client class` as input
 - They transform the connection into a different interface format
 - The transformed interface is exposed to the user in a way that's tailored for
   specific scenarios

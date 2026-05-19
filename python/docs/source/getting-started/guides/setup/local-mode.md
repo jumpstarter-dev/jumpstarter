@@ -19,10 +19,10 @@ connection between an exporter and client without physical hardware.
 
 ### Create an Exporter Configuration
 
-Create an exporter configuration named `example-local` to define the
+Create an {term}`exporter config` named `example-local` to define the
 capabilities of your local test exporter. This configuration mirrors a regular
 exporter config but without the `endpoint` and `token` fields since you
-don't need to connect to the controller service.
+don't need to connect to the controller {term}`service`.
 
 Create `example-local.yaml` in `/etc/jumpstarter/exporters` with this content:
 
@@ -41,9 +41,9 @@ export:
 
 ### Spawn an Exporter Shell
 
-Interact with your local exporter using the "exporter shell" functionality in
-the `jmp` CLI. When you spawn a shell, Jumpstarter runs a local exporter
-instance in the background for the duration of your shell session.
+Interact with your local exporter using the {term}`exporter shell` functionality in
+the {term}`jmp` CLI. When you spawn a shell, Jumpstarter runs a local exporter
+instance in the background for the duration of your shell {term}`session`.
 
 ```console
 $ jmp shell --exporter example-local

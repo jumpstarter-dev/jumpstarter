@@ -2,7 +2,7 @@
 
 ## Use the Python API in a Shell
 
-The exporter shell exposes the local exporter via environment variables,
+The {term}`exporter shell` exposes the local exporter via environment variables,
 enabling you to run any Python code that interacts with the client/exporter.
 This approach works especially well for complex operations or when a driver
 doesn't provide a CLI.
@@ -29,7 +29,7 @@ $ exit
 
 This example demonstrates how Python interacts with the exporter:
 
-1. The `env()` function from `jumpstarter.common.utils` automatically connects
+1. The {term}`env()` function from `jumpstarter.common.utils` automatically connects
    to the exporter configured in your shell environment.
 
 2. The `with env() as client:` statement creates a client connected to your
@@ -51,7 +51,7 @@ Using a Python with Jumpstarter allows you to:
 
 ### Running `pytest` in the Shell
 
-For structured test suites, Jumpstarter provides a `JumpstarterTest` base class
+For structured test suites, Jumpstarter provides a {term}`JumpstarterTest` base class
 that handles connection management automatically. See the
 [Testing with pytest](pytest-usage.md) guide for full details on writing tests,
 custom fixtures, markers, and CI integration.
