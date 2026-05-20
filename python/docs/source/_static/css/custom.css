@@ -7,6 +7,11 @@
     display: none !important;
 }
 
+/* Align sidebar logo with content heading */
+.sidebar-drawer {
+    padding-top: 1.5rem;
+}
+
 /* Fix version name overflow in sidebar */
 .sidebar-brand .sidebar-brand-text {
     white-space: normal;
