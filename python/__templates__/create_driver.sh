@@ -73,9 +73,17 @@ export:
       # Add required config parameters here
 ```
 
+<!-- Optional: uncomment if this driver has usage examples or CLI commands
 ## Usage
 
 Add usage examples, CLI commands, and common workflows here.
+-->
+
+<!-- Optional: uncomment for complex drivers with non-trivial internals
+## Architecture
+
+Describe the internal design and component interactions here.
+-->
 
 ## API Reference
 
