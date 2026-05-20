@@ -24,7 +24,7 @@ clusters using the Jumpstarter {term}`operator`.
 
 ### Install the Operator
 
-````{tab} Kubernetes (OLM installed)
+````{tab} Kubernetes (OLM)
 Install the {term}`operator` from OperatorHub:
 
 - [Jumpstarter Operator on OperatorHub](https://operatorhub.io/operator/jumpstarter-operator)
@@ -34,7 +34,7 @@ This assumes OLM is already installed and configured in your cluster.
 ```
 ````
 
-````{tab} OpenShift (OperatorHub)
+````{tab} OpenShift (UI)
 1. Log in to the OpenShift web console with cluster-admin permissions.
 2. Go to **Operators -> OperatorHub**.
 3. Search for **Jumpstarter Operator** and install it.
@@ -45,7 +45,7 @@ $ oc get csv -n openshift-operators | grep jumpstarter
 ```
 ````
 
-````{tab} OpenShift (CLI subscription)
+````{tab} OpenShift (CLI)
 ```yaml
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
@@ -66,7 +66,7 @@ $ oc get csv -n openshift-operators | grep jumpstarter
 ```
 ````
 
-````{tab} Manual installer YAML (any cluster)
+````{tab} Manual (YAML)
 ```{code-block} console
 $ kubectl apply -f https://github.com/jumpstarter-dev/jumpstarter/releases/download/v0.8.1/operator-installer.yaml
 $ kubectl wait --namespace jumpstarter-operator-system \
@@ -87,7 +87,7 @@ The {term}`operator` reconciles the `Jumpstarter` CR and creates Deployments,
 Services, and networking resources for {term}`controller`/{term}`router`/login
 endpoints.
 
-````{tab} Kubernetes (Ingress)
+````{tab} Kubernetes
 ```yaml
 apiVersion: operator.jumpstarter.dev/v1alpha1
 kind: Jumpstarter
@@ -127,7 +127,7 @@ spec:
 ```
 ````
 
-````{tab} OpenShift (Route)
+````{tab} OpenShift
 ```yaml
 apiVersion: operator.jumpstarter.dev/v1alpha1
 kind: Jumpstarter
