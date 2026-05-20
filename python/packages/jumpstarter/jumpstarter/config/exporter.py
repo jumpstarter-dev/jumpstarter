@@ -79,7 +79,7 @@ class FailureDetectionConfigV1Alpha1(BaseModel):
     rapid_failure_window: int = Field(
         default=60,
         alias="rapidFailureWindow",
-        description="Seconds – a child that exits faster than this counts as a rapid failure.",
+        description="Seconds - a child that exits faster than this counts as a rapid failure.",
     )
 
 

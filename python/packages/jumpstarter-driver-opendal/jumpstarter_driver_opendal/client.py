@@ -121,11 +121,11 @@ class OpendalFile:
         Offset is interpreted relative to the position indicated by whence.
         The default value for whence is SEEK_SET. Values for whence are:
 
-            SEEK_SET or 0 – start of the file (the default); offset should be zero or positive
+            SEEK_SET or 0 - start of the file (the default); offset should be zero or positive
 
-            SEEK_CUR or 1 – current cursor position; offset may be negative
+            SEEK_CUR or 1 - current cursor position; offset may be negative
 
-            SEEK_END or 2 – end of the file; offset is usually negative
+            SEEK_END or 2 - end of the file; offset is usually negative
 
         Return the new cursor position
         """

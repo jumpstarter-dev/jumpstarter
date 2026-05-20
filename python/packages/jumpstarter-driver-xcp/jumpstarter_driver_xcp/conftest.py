@@ -351,7 +351,7 @@ class StatefulXcpMaster:
 
     def _require_connected(self):
         if not self._connected:
-            raise XcpNotConnected("Not connected – call connect() first")
+            raise XcpNotConnected("Not connected - call connect() first")
 
     # -- session --------------------------------------------------------
 

@@ -106,7 +106,7 @@ def test_cps_zero_disables_throttling():
             end_time = time.perf_counter()
 
             elapsed_time = end_time - start_time
-            # With CPS=0, should be fast (no throttling) – allow headroom
+            # With CPS=0, should be fast (no throttling) - allow headroom
             assert elapsed_time < 0.5, f"Expected fast transmission with cps=0, got {elapsed_time}s"
 
             received = stream.receive()
