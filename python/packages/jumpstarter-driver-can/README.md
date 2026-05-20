@@ -11,13 +11,13 @@ library.
 $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-can
 ```
 
-## `jumpstarter_driver_can.Can`
+## Configuration
+
+### Can
 
 A generic CAN bus driver.
 
 Available on any platform, supports many different CAN interfaces through the `python-can` library.
-
-### Configuration
 
 Example configuration:
 
@@ -35,21 +35,12 @@ export:
 | interface     | Refer to the [python-can](https://python-can.readthedocs.io/en/stable/interfaces.html) list of interfaces | str  | yes      |         |
 | channel       | channel to be used, refer to the interface documentation | int or str | yes |     |
 
-### API Reference
+### IsoTpPython
 
-```{eval-rst}
-.. autoclass:: jumpstarter_driver_can.client.CanClient()
-    :members:
-```
-
-## `jumpstarter_driver_can.IsoTpPython`
- 
 A Pure python ISO-TP socket driver
 
 Available on any platform (does not require Linux ISO-TP kernel module), moderate
 performance and reliability, wide support for non-standard hardware interfaces
-
-### Configuration
 
 Example configuration:
 
@@ -78,19 +69,11 @@ export:
 | params        | IsoTp parameters, refer to the [IsoTpParams](#isotpparams) section table | `IsoTpParams` | no | see table |
 | read_timeout  | Read timeout for the bus in seconds | `float` | no | 0.05 |
 
-### API Reference
-```{eval-rst}
-.. autoclass:: jumpstarter_driver_can.client.IsoTpClient()
-    :members:
-```
+### IsoTpSocket
 
-## `jumpstarter_driver_can.IsoTpSocket`
-
-Pure python ISO-TP socket driver
+Linux kernel ISO-TP socket driver
 
 Available on any platform, moderate performance and reliability, wide support for non-standard hardware interfaces
-
-### Configuration
 
 Example configuration:
 
@@ -116,14 +99,7 @@ export:
 | address       | Refer to the [isotp.Address](https://can-isotp.readthedocs.io/en/latest/isotp/addressing.html#isotp.Address) documentation | isotp.Address | yes | |
 | params        | IsoTp parameters, refer to the [IsoTpParams](#isotpparams) section table | `IsoTpParams` | no | see table |
 
-### API Reference
-```{eval-rst}
-.. autoclass:: jumpstarter_driver_can.client.IsoTpClient()
-    :noindex:
-    :members:
-```
-
-## IsoTpParams
+### IsoTpParams
 | Parameter                   | Description                                                                                           | Type             | Required | Default    |
 |-----------------------------|-------------------------------------------------------------------------------------------------------|------------------|----------|------------|
 | `stmin`                     | Minimum Separation Time minimum in milliseconds between consecutive frames.                           | `int`            | No       | `0`        |
@@ -144,3 +120,22 @@ export:
 | `rate_limit_window_size`    | Time window in seconds over which the rate limit is calculated.                                       | `float`          | No       | `0.2`      |
 | `listen_mode`               | If `True`, the stack operates in listen-only mode (does not send any frames).                         | `bool`           | No       | `False`    |
 | `blocking_send`             | If `True`, send operations will block until the message is fully transmitted or an error occurs.      | `bool`           | No       | `False`    |
+
+## API Reference
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_can.driver.Can()
+    :members:
+
+.. autoclass:: jumpstarter_driver_can.client.CanClient()
+    :members:
+
+.. autoclass:: jumpstarter_driver_can.driver.IsoTpPython()
+    :members:
+
+.. autoclass:: jumpstarter_driver_can.driver.IsoTpSocket()
+    :members:
+
+.. autoclass:: jumpstarter_driver_can.client.IsoTpClient()
+    :members:
+```

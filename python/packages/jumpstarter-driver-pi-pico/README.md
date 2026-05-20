@@ -10,6 +10,13 @@ The driver supports two methods for entering BOOTSEL mode programmatically:
    the running firmware implements the convention (Pico SDK `pico_stdio_usb`,
    CircuitPython, Arduino).
 
+## Installation
+
+```{code-block} console
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-pi-pico
+```
+
 ## Configuration
 
 ### Serial-based BOOTSEL entry
