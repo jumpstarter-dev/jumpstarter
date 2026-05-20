@@ -16,7 +16,7 @@ To use OIDC with your Jumpstarter installation:
 2. Configure your OIDC provider to work with Jumpstarter
 3. Create users with appropriate OIDC usernames
 
-## Important: Username Collision Risk
+## Username Collisions
 
 When using OIDC auto provisioning, Jumpstarter derives resource names directly from
 the OIDC username by stripping the provider prefix (e.g., "dex:", "keycloak:")
