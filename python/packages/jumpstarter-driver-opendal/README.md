@@ -1,4 +1,4 @@
-# OpenDAL driver
+# OpenDAL Driver
 
 `jumpstarter-driver-opendal` provides functionality for interacting with
 storages attached to the exporter.

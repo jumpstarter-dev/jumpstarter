@@ -1,4 +1,4 @@
-# HTTP driver
+# HTTP Driver
 
 `jumpstarter-driver-http` provides functionality for HTTP communication.
 

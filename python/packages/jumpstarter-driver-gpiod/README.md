@@ -1,4 +1,4 @@
-# gpiod driver
+# gpiod Driver
 
 `jumpstarter-driver-gpiod` provides functionality for interacting with
 gpiod GPIO pins for digital input/output operations.

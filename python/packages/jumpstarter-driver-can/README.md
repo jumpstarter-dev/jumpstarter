@@ -1,4 +1,4 @@
-# CAN driver
+# CAN Driver
 
 `jumpstarter-driver-can` provides functionality for interacting with CAN bus
 connections based on the [python-can](https://python-can.readthedocs.io/en/stable/index.html)

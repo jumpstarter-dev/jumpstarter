@@ -1,4 +1,4 @@
-# PySerial driver
+# PySerial Driver
 
 `jumpstarter-driver-pyserial` provides functionality for serial port
 communication.

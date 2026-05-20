@@ -1,4 +1,4 @@
-# RideSX driver
+# RideSX Driver
 
 `jumpstarter-driver-ridesx` provides functionality for Qualcomm RideSX devices,
 supporting fastboot flashing operations and power control through serial communication.

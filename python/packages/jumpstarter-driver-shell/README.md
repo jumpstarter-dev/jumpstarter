@@ -1,4 +1,4 @@
-# Shell driver
+# Shell Driver
 
 `jumpstarter-driver-shell` provides functionality for shell command execution.
 

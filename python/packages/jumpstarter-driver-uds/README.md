@@ -1,4 +1,4 @@
-# UDS Driver (Shared Interface)
+# UDS Driver
 
 `jumpstarter-driver-uds` provides shared UDS (Unified Diagnostic Services, ISO-14229)
 models, client, and abstract interface for Jumpstarter UDS transport drivers.

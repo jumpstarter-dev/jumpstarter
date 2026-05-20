@@ -1,4 +1,4 @@
-# U-Boot driver
+# U-Boot Driver
 
 `jumpstarter-driver-uboot` provides functionality for interacting with the
 U-Boot bootloader. This driver does not interact with the DUT directly, instead

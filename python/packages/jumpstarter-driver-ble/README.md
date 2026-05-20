@@ -1,4 +1,4 @@
-# Bluetooth Low Energy (BLE) driver
+# BLE Driver
 
 `jumpstarter-driver-ble` provides communication functionality via ble with the DUT.
 The driver expects a ble service with a write and notify characteristic to send and receive data respectively.

@@ -1,4 +1,4 @@
-# jumpstarter-driver-mitmproxy
+# mitmproxy Driver
 
 A [Jumpstarter](https://jumpstarter.dev) driver for [mitmproxy](https://mitmproxy.org) -- bringing HTTP(S) interception, backend mocking, and traffic recording to Hardware-in-the-Loop testing.
 

@@ -1,4 +1,4 @@
-# Renode driver
+# Renode Driver
 
 `jumpstarter-driver-renode` provides a Jumpstarter driver for the
 [Renode](https://renode.io/) embedded systems emulation framework. It

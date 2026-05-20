@@ -1,4 +1,4 @@
-# DutNetwork Driver
+# DUT Network Driver
 
 `jumpstarter-driver-dut-network` provides network isolation for DUTs (Devices Under Test) by configuring a dedicated network interface with NAT, DHCP, and nftables-based firewall rules on the exporter host.
 

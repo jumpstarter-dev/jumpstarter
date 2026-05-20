@@ -1,4 +1,4 @@
-# Power driver
+# Power Driver
 
 `jumpstarter-driver-power` provides functionality for interacting with power
 control devices.

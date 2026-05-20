@@ -1,4 +1,4 @@
-# iSCSI server driver
+# iSCSI Driver
 
 `jumpstarter-driver-iscsi` provides a lightweight iSCSI **target** implementation powered by the Linux
 [RFC-tgt](https://github.com/open-iscsi/tcmu-runner/) framework via the

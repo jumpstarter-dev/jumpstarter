@@ -1,4 +1,4 @@
-# EnerGenie
+# Energenie PDU Driver
 
 Drivers for EnerGenie products.
 

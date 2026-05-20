@@ -1,4 +1,4 @@
-# NoyitoPowerSerial / NoyitoPowerHID Driver
+# Noyito Relay Driver
 
 `jumpstarter-driver-noyito-relay` provides Jumpstarter power drivers for NOYITO
 USB relay boards in 1, 2, 4, and 8-channel variants.

@@ -1,4 +1,4 @@
-# ST-LINK Mass Storage Flasher
+# ST-LINK MSD Driver
 
 `jumpstarter-driver-stlink-msd` flashes STM32 **Nucleo** and **Discovery** boards by copying
 firmware to the **ST-LINK USB mass storage volume**.

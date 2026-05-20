@@ -1,4 +1,4 @@
-# ESP32 driver
+# ESP32 Driver
 
 `jumpstarter-driver-esp32` provides functionality for flashing and managing
 ESP32 devices using [esptool](https://github.com/espressif/esptool) as a

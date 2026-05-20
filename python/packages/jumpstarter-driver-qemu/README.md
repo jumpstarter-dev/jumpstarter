@@ -1,4 +1,4 @@
-# QEMU driver
+# QEMU Driver
 
 `jumpstarter-driver-qemu` provides functionality for interacting with QEMU
 virtualization platform.

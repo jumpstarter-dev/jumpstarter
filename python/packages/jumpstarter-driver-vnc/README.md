@@ -1,4 +1,4 @@
-# Vnc Driver
+# VNC Driver
 
 `jumpstarter-driver-vnc` provides functionality for interacting with VNC servers. It allows you to create a secure, tunneled VNC session in your browser.
 

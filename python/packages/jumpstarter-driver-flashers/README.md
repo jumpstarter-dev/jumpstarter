@@ -1,4 +1,4 @@
-# Flashers
+# Flashers Driver
 
 The flasher drivers are used to flash images to DUTs via network, typically
 using TFTP and HTTP. It is designed to interact with the target bootloader and

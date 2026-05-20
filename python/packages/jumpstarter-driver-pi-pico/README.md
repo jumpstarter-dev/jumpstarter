@@ -1,4 +1,4 @@
-# PiPicoFlasher Driver
+# Pi Pico Driver
 
 `jumpstarter-driver-pi-pico` flashes Raspberry Pi **Pico** (RP2040), **Pico W**, and **Pico 2** (RP2350) by copying a UF2 file onto the **BOOTSEL** USB mass-storage volume.
 

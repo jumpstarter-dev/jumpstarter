@@ -1,4 +1,4 @@
-# SSHWrapper Driver
+# SSH Driver
 
 `jumpstarter-driver-ssh` provides SSH CLI functionality for Jumpstarter, allowing you to run SSH commands with configurable defaults and pass-through arguments.
 

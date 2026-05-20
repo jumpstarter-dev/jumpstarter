@@ -1,4 +1,4 @@
-# Network drivers
+# Network Driver
 
 `jumpstarter-driver-network` provides functionality for interacting with network
 servers and connections, redirecting DUT network services to the client handling

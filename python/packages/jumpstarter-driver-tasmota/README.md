@@ -1,4 +1,4 @@
-# Tasmota driver
+# Tasmota Driver
 
 `jumpstarter-driver-tasmota` provides functionality for interacting with tasmota compatible devices.
 
