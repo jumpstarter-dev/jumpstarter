@@ -24,56 +24,41 @@ clusters using the Jumpstarter {term}`operator`.
 
 ### Install the Operator
 
-````{tab} Kubernetes (OLM)
-Install the {term}`operator` from OperatorHub:
+Apply the {term}`operator` installer from a release asset:
 
-- [Jumpstarter Operator on OperatorHub](https://operatorhub.io/operator/jumpstarter-operator)
-
-```{note}
-This assumes OLM is already installed and configured in your cluster.
-```
-````
-
-````{tab} OpenShift (UI)
-1. Log in to the OpenShift web console with cluster-admin permissions.
-2. Go to **Operators -> OperatorHub**.
-3. Search for **Jumpstarter Operator** and install it.
-4. Wait until the installed {term}`operator` status is `Succeeded`.
-
-```{code-block} console
-$ oc get csv -n openshift-operators | grep jumpstarter
-```
-````
-
-````{tab} OpenShift (CLI)
-```yaml
-apiVersion: operators.coreos.com/v1alpha1
-kind: Subscription
-metadata:
-  name: jumpstarter-operator
-  namespace: openshift-operators
-spec:
-  channel: alpha
-  name: jumpstarter-operator
-  source: community-operators
-  sourceNamespace: openshift-marketplace
-  installPlanApproval: Automatic
-```
-
-```{code-block} console
-$ oc apply -f subscription.yaml
-$ oc get csv -n openshift-operators | grep jumpstarter
-```
-````
-
-````{tab} Manual (YAML)
 ```{code-block} console
 $ kubectl apply -f https://github.com/jumpstarter-dev/jumpstarter/releases/download/v0.8.1/operator-installer.yaml
 $ kubectl wait --namespace jumpstarter-operator-system \
     --for=condition=available deployment/jumpstarter-operator-controller-manager \
     --timeout=120s
 ```
-````
+
+Alternatively, install via OLM or OperatorHub:
+
+```{tab} Kubernetes
+Install from [OperatorHub](https://operatorhub.io/operator/jumpstarter-operator).
+Requires OLM to be installed in your cluster.
+```
+
+```{tab} OpenShift
+1. Go to **Operators -> OperatorHub** in the web console.
+2. Search for **Jumpstarter Operator** and install it.
+3. Verify: `oc get csv -n openshift-operators | grep jumpstarter`
+
+Or via CLI subscription:
+
+    apiVersion: operators.coreos.com/v1alpha1
+    kind: Subscription
+    metadata:
+      name: jumpstarter-operator
+      namespace: openshift-operators
+    spec:
+      channel: alpha
+      name: jumpstarter-operator
+      source: community-operators
+      sourceNamespace: openshift-marketplace
+      installPlanApproval: Automatic
+```
 
 ### Create a Namespace
 
@@ -87,8 +72,8 @@ The {term}`operator` reconciles the `Jumpstarter` CR and creates Deployments,
 Services, and networking resources for {term}`controller`/{term}`router`/login
 endpoints.
 
-````{tab} Kubernetes
-```yaml
+```{tab} Kubernetes
+```{code-block} yaml
 apiVersion: operator.jumpstarter.dev/v1alpha1
 kind: Jumpstarter
 metadata:
@@ -125,10 +110,10 @@ spec:
             enabled: true
             class: nginx
 ```
-````
+```
 
-````{tab} OpenShift
-```yaml
+```{tab} OpenShift
+```{code-block} yaml
 apiVersion: operator.jumpstarter.dev/v1alpha1
 kind: Jumpstarter
 metadata:
@@ -162,7 +147,7 @@ spec:
           route:
             enabled: true
 ```
-````
+```
 
 ```{code-block} console
 $ kubectl apply -f jumpstarter.yaml
@@ -170,14 +155,20 @@ $ kubectl apply -f jumpstarter.yaml
 
 ## Verify
 
+```{tab} Kubernetes
 ```{code-block} console
 $ kubectl get jumpstarter -n jumpstarter-lab
-$ kubectl get deploy,svc,ingress -n jumpstarter-lab   # Kubernetes
-$ kubectl get deploy,svc,route -n jumpstarter-lab     # OpenShift
+$ kubectl get deploy,svc,ingress -n jumpstarter-lab
+```
 ```
 
-```{note}
-For OpenShift, ensure DNS is configured so route hostnames resolve correctly.
+```{tab} OpenShift
+```{code-block} console
+$ kubectl get jumpstarter -n jumpstarter-lab
+$ kubectl get deploy,svc,route -n jumpstarter-lab
+```
+
+Ensure DNS is configured so route hostnames resolve correctly.
 ```
 
 ## Configuration
@@ -205,8 +196,8 @@ not install your identity provider. See
 
 Set `spec.certManager.enabled: true` for {term}`operator`-managed certificates.
 
-````{tab} Self-signed
-```yaml
+```{tab} Self-signed
+```{code-block} yaml
 spec:
   certManager:
     enabled: true
@@ -217,10 +208,10 @@ spec:
 
 Creates: `<name>-selfsigned-issuer`, `<name>-ca`, `<name>-ca-issuer`,
 `<name>-controller-tls`, `<name>-router-<replica>-tls`.
-````
+```
 
-````{tab} External issuer
-```yaml
+```{tab} External issuer
+```{code-block} yaml
 spec:
   certManager:
     enabled: true
@@ -229,10 +220,10 @@ spec:
         name: my-cluster-issuer
         kind: ClusterIssuer
 ```
-````
+```
 
-````{tab} Login with ACME
-```yaml
+```{tab} ACME
+```{code-block} yaml
 spec:
   controller:
     login:
@@ -244,14 +235,14 @@ spec:
             annotations:
               cert-manager.io/cluster-issuer: letsencrypt-prod
 ```
-````
+```
 
 ### GitOps
 
 Use the {term}`operator` installer and manage your `Jumpstarter` CR
 declaratively in GitOps flows.
 
-### Operator Behavior Notes
+### Operator Behavior
 
 - If `spec.baseDomain` is empty on OpenShift, the {term}`operator` auto-detects
   the cluster domain.
