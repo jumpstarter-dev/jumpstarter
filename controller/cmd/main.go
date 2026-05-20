@@ -253,7 +253,7 @@ func main() {
 		Signer:   oidcSigner,
 		Recorder: mgr.GetEventRecorderFor("client-controller"),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Identity")
+		setupLog.Error(err, "unable to create controller", "controller", "Client")
 		os.Exit(1)
 	}
 	if err = (&controller.LeaseReconciler{
