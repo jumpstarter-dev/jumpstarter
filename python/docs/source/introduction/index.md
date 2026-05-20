@@ -58,9 +58,10 @@ the gap between development and deployment environments.
 flowchart TB
     subgraph "Kubernetes Cluster"
         Controller["Controller\nInventory / Lease / Access Control"]
-        Router["Router\nNAT Traversal Rendezvous"]
+        Router["Router\nNAT Traversal"]
         CRDs["CRDs\nExporter, Client, Lease"]
         Controller --- CRDs
+        Controller <--> Router
     end
 
     subgraph "Exporter Host"
@@ -85,10 +86,10 @@ flowchart TB
 
     Client["Client\n(CLI / Python API)"]
 
-    Client -- "Remote Access\n(gRPC)" --> Router
+    Client -- "Distributed\n(gRPC via Router)" --> Router
     Router <--> Exporter
-    Client -. "Local Dev\n(direct)" .-> Exporter
-    Controller <--> Router
+    Client -. "Direct\n(gRPC via TCP)" .-> Exporter
+    Client -. "Local\n(gRPC via Socket)" .-> Exporter
 ```
 
 ## Operation Modes
