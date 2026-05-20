@@ -29,12 +29,12 @@ access to physical devices for development.
 
 Jumpstarter architecture is based on the following key components:
 
-- {term}`DUT` - Hardware or virtual device being tested
+- {term}`DUT` - Hardware or virtual {term}`device` being tested
 - [Drivers](drivers.md) - Interfaces for {term}`DUT` communication
-- [{term}`Adapter`s](adapters.md) - Convert driver connections into various formats
-- [Exporters](exporters.md) - Expose device interfaces over network via {term}`gRPC`
+- [Adapters](adapters.md) - Convert {term}`driver` connections into various formats
+- [Exporters](exporters.md) - Expose {term}`device` interfaces over network via {term}`gRPC`
 - [Hooks](hooks.md) - Lifecycle scripts that run at {term}`lease` boundaries
-- [Clients](clients.md) - Libraries and CLI tools for device interaction
+- [Clients](clients.md) - Libraries and CLI tools for {term}`device` interaction
 - [Service](service.md) - Kubernetes {term}`controller` for resource management
 
 Component interactions include:
