@@ -1,4 +1,4 @@
-# Agentic Integration
+# Agentic
 
 Jumpstarter exposes hardware control as structured {term}`MCP` tools, enabling
 AI coding agents to interact with {term}`device`s using natural language from

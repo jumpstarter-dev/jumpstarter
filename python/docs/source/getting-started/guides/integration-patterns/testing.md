@@ -1,4 +1,4 @@
-# Testing Frameworks
+# Testing
 
 ## pytest Integration
 

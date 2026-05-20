@@ -1,4 +1,4 @@
-# CI Integration
+# CI/CD
 
 ## Continuous Integration with System Testing
 
