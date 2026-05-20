@@ -39,6 +39,7 @@ templates_path = ["_templates"]
 exclude_patterns = []
 
 mermaid_version = "10.9.1"
+mermaid_init_js = ""
 
 suppress_warnings = [
     "ref.class",
@@ -87,7 +88,7 @@ myst_substitutions = {
 
 doctest_test_doctest_blocks = ""
 
-html_js_files = ["js/theme-toggle.js"]
+html_js_files = ["js/theme-toggle.js", "js/mermaid-theme.js"]
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css"]
 html_sidebars = {

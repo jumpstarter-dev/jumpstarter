@@ -5,7 +5,6 @@ AI coding agents to interact with {term}`device`s using natural language from
 IDEs and AI assistants.
 
 ```{mermaid}
-:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
 flowchart TB
     subgraph "Developer"
         IDE["IDE / AI Assistant"]
@@ -141,7 +140,6 @@ alongside your code:
 ## Typical Workflow
 
 ```{mermaid}
-:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff","signalColor":"#3d94ff","signalTextColor":"#3d94ff","actorBkg":"#f8f8f8","actorBorder":"#e5e5e5","actorTextColor":"#3d94ff","noteBkgColor":"#f8f8f8","noteTextColor":"#3d94ff","noteBorderColor":"#e5e5e5","activationBkgColor":"#f8f8f8","activationBorderColor":"#3d94ff","loopTextColor":"#3d94ff"}}
 sequenceDiagram
     participant User
     participant Agent as AI Agent

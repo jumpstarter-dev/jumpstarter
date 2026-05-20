@@ -55,7 +55,6 @@ Together, these components form a comprehensive testing framework that bridges
 the gap between development and deployment environments.
 
 ```{mermaid}
-:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
 flowchart TB
     subgraph "Kubernetes Cluster"
         Controller["Controller\nInventory / Lease / Access Control"]
@@ -104,7 +103,6 @@ In {term}`local mode`, clients communicate directly with {term}`exporter`s runni
 machine or through direct network connections.
 
 ```{mermaid}
-:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
 flowchart TB
     subgraph "Developer Machine"
         Client["Client\n(Python Library/CLI)"]
@@ -169,7 +167,6 @@ JWT token-based authentication secures all connections between clients and
 {term}`exporter`s.
 
 ```{mermaid}
-:config: {"theme":"base","themeVariables":{"primaryColor":"#f8f8f8","primaryTextColor":"#000","primaryBorderColor":"#e5e5e5","lineColor":"#3d94ff","secondaryColor":"#f8f8f8","tertiaryColor":"#fff"}}
 flowchart TB
     subgraph "Kubernetes Cluster"
         Controller["Controller\nResource Management"]
