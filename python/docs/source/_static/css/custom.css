@@ -40,3 +40,8 @@ table td:first-child code {
     word-break: break-all !important;
 }
 
+.glossary-term {
+    border-bottom: 1px dotted var(--color-foreground-muted);
+    cursor: help;
+}
+

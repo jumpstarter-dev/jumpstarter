@@ -88,7 +88,7 @@ myst_substitutions = {
 
 doctest_test_doctest_blocks = ""
 
-html_js_files = ["js/theme-toggle.js", "js/mermaid-theme.js"]
+html_js_files = ["js/theme-toggle.js", "js/mermaid-theme.js", "js/glossary-tooltips.js"]
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css"]
 html_sidebars = {
