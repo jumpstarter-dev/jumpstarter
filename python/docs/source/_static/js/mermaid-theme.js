@@ -18,7 +18,7 @@
             var code = el.getAttribute("data-original") || el.textContent;
             el.setAttribute("data-original", code);
             el.removeAttribute("data-processed");
-            el.innerHTML = code;
+            el.textContent = code;
         });
         mermaid.run({ querySelector: "pre.mermaid" });
     }
