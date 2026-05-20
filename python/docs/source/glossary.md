@@ -69,7 +69,7 @@ direct mode
   Client connects to an exporter over TCP without a controller.
 
 distributed mode
-  Shared hardware access across teams via a Kubernetes controller.
+  Shared hardware access across teams via a jumpstarter-controller.
 
 driver
   Modular component providing a standardized interface to a device type.
