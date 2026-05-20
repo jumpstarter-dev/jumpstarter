@@ -39,11 +39,11 @@ class PiPicoFlasher(FlasherInterface, Driver):
 
     BOOTSEL entry methods (tried in priority order by ``enter_bootloader``):
 
-    1. **GPIO reset** — ``bootsel`` + ``run`` children (DigitalOutput).
+    1. **GPIO reset** - ``bootsel`` + ``run`` children (DigitalOutput).
        Assert BOOTSEL low, pulse RUN low, release. Works regardless of
        firmware. Requires two GPIO lines wired to the Pico BOOTSEL pad and
        RUN pin.
-    2. **1200-baud serial touch** — ``serial`` child. Opens the USB CDC port
+    2. **1200-baud serial touch** - ``serial`` child. Opens the USB CDC port
        at 1200 baud and toggles DTR. Only works when the running firmware
        implements the convention (Pico SDK ``pico_stdio_usb``, CircuitPython,
        MicroPython, Arduino).

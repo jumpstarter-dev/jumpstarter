@@ -311,7 +311,7 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                 raise ExporterOfflineError(reason)
                             elif result is None:
                                 if monitor.connection_lost:
-                                    # Connection lost while waiting for hook — lease expired
+                                    # Connection lost while waiting for hook - lease expired
                                     logger.info("Lease expired while waiting for beforeLease hook to complete")
                                     return 0
                                 else:
@@ -409,7 +409,7 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                                     )
                                                     raise ExporterOfflineError(reason)
                                                 # Connection lost but hook wasn't running. This is expected when
-                                                # the lease times out — exporter handles its own cleanup.
+                                                # the lease times out - exporter handles its own cleanup.
                                                 logger.info("Connection lost, skipping afterLease hook wait")
                                             elif result is None:
                                                 logger.warning("Timeout waiting for afterLease hook to complete")
@@ -470,7 +470,7 @@ async def _shell_with_signal_handling(  # noqa: C901
                 if lease_used is not None:
                     if lease_used.lease_ended:
                         # Lease expired naturally (e.g. during beforeLease hook)
-                        # — exit gracefully instead of showing a scary error
+                        # - exit gracefully instead of showing a scary error
                         pass
                     elif lease_used.lease_transferred:
                         raise ExporterOfflineError(

@@ -32,7 +32,7 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 )
 
-var _ = Describe("Client Controller", func() {
+var _ = Describe("Identity Controller", func() {
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
 
@@ -65,7 +65,7 @@ var _ = Describe("Client Controller", func() {
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Cleanup the specific resource instance Client")
+			By("Cleanup the specific resource instance Identity")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 
 			// the cascade delete of secrets does not work on test env

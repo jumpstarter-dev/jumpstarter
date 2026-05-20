@@ -195,11 +195,11 @@ class RideSXClient(FlasherClient, CompositeClient):
                 if isinstance(path, str) and ":" in path:
                     before_colon, after_colon = path.split(":", 1)
                     if "/" in before_colon:
-                        # registry/path:tag — likely an OCI ref missing the oci:// prefix
+                        # registry/path:tag - likely an OCI ref missing the oci:// prefix
                         raise click.ClickException(
                             f"OCI URLs must start with oci://, got: {path}\nUsage: j storage flash oci://{path}"
                         )
-                    # partition:something — likely a partition:path mapping
+                    # partition:something - likely a partition:path mapping
                     raise click.ClickException(
                         f"'{path}' looks like a partition:path mapping.\n"
                         f"Use the -t flag: j storage flash -t {path}\n"

@@ -110,7 +110,7 @@ def _build_forward_chain(
     extras = extra_forward_rules or []
 
     if filter_config is None:
-        # Legacy behaviour — no filtering.
+        # Legacy behaviour - no filtering.
         lines.append(f'        iifname "{interface}" oifname "{upstream}" accept')
         lines.append(
             f'        iifname "{upstream}" oifname "{interface}" ct state related,established accept'
@@ -136,7 +136,7 @@ def _build_forward_chain(
     # -- Extra forward rules (e.g. 1:1 NAT per-mapping accepts) ---------
     lines.extend(extras)
 
-    # -- Ingress (upstream -> DUT) — new connections only ----------------
+    # -- Ingress (upstream -> DUT) - new connections only ----------------
     if ingress:
         for rule in ingress.rules:
             lines.append(_render_filter_rule(rule, upstream, interface, "source"))

@@ -87,7 +87,7 @@ class StlinkMsdFlasher(FlasherInterface, Driver):
     async def flash(self, source, target: str | None = None):
         """Flash firmware to the STM32 board via ST-LINK mass storage.
 
-        Accepts .bin or .hex files only. ELF files are rejected — convert
+        Accepts .bin or .hex files only. ELF files are rejected - convert
         them externally before flashing.
 
         :param source: Firmware resource (local path or storage handle).
@@ -118,7 +118,7 @@ class StlinkMsdFlasher(FlasherInterface, Driver):
 
             await to_thread.run_sync(_copy)
 
-        self.logger.info("Flash complete — ST-LINK will program the target MCU")
+        self.logger.info("Flash complete - ST-LINK will program the target MCU")
 
     @export
     async def dump(self, target, partition: str | None = None):

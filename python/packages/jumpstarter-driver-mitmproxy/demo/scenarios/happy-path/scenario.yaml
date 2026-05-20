@@ -1,12 +1,12 @@
 # Happy-path scenario: all endpoints return mock success data.
 #
-# Demonstrates per-entry match conditions — entries are evaluated in
+# Demonstrates per-entry match conditions - entries are evaluated in
 # order and the first matching one wins.  An entry with no "match" key
 # is an unconditional default.
 #
-#   match.query      — require specific query parameters
-#   match.body_json  — match on JSON fields in the request body
-#   match.headers    — require specific request headers
+#   match.query      - require specific query parameters
+#   match.body_json  - match on JSON fields in the request body
+#   match.headers    - require specific request headers
 
 endpoints:
   http://127.0.0.1:9000/api/v1/status:

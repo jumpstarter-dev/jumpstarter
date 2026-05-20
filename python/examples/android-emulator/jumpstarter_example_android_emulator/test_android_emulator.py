@@ -2,7 +2,7 @@
 
 These tests demonstrate interacting with an Android device through
 the Jumpstarter ADB tunnel using the adbutils Python API. No APK
-is required — all tests use built-in Android capabilities.
+is required - all tests use built-in Android capabilities.
 """
 
 import os

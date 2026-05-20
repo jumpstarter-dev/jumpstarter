@@ -44,7 +44,7 @@ def _detect_load_command(firmware_path: str) -> str:
 
 
 def _find_free_port() -> int:
-    # NOTE: TOCTOU race — the port is released before Renode binds it,
+    # NOTE: TOCTOU race - the port is released before Renode binds it,
     # so another process could grab it first.  Switching to Unix domain
     # sockets would eliminate this, but Renode does not yet support them.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -200,7 +200,7 @@ class RenodePower(PowerInterface, Driver):
 
     @export
     async def read(self) -> AsyncGenerator[PowerReading, None]:
-        """Not supported — Renode does not provide power readings."""
+        """Not supported - Renode does not provide power readings."""
         raise NotImplementedError
 
     def close(self):

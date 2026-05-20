@@ -679,7 +679,7 @@ class MitmproxyClient(DriverClient):
             sequence: List of response steps. Each step has:
                 - status (int)
                 - body (dict)
-                - repeat (int, optional — last entry repeats forever)
+                - repeat (int, optional - last entry repeats forever)
 
         Example::
 
@@ -1380,7 +1380,7 @@ def _format_capture_entry(entry: dict) -> str:
     else:
         ts_str = click.style("--:--:--", fg="bright_black")
 
-    # Color-code HTTP method (padded to 7 chars — length of "OPTIONS")
+    # Color-code HTTP method (padded to 7 chars - length of "OPTIONS")
     styled_method = click.style(
         method.ljust(7), fg=_METHOD_COLORS.get(method, "white"), bold=True,
     )
@@ -1412,7 +1412,7 @@ def _format_capture_entry(entry: dict) -> str:
     # Format response size (fixed 8-char column)
     size_str = click.style(_human_size(response_size).rjust(8), fg="bright_black")
 
-    # Mock/patched/passthrough tag (fixed 13-char column — length of "[passthrough]")
+    # Mock/patched/passthrough tag (fixed 13-char column - length of "[passthrough]")
     was_patched = entry.get("was_patched", False)
     if was_patched:
         tag = click.style("[patched]".ljust(13), fg="yellow")

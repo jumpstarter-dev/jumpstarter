@@ -1,5 +1,5 @@
 # Pico-only exporter (UF2 over BOOTSEL mass storage). Use this file when the host
-# should export only the Pi Pico flasher—no other drivers on the same exporter.
+# should export only the Pi Pico flasher - no other drivers on the same exporter.
 #
 # Register with a Jumpstarter controller (set endpoint and token from your environment):
 apiVersion: jumpstarter.dev/v1alpha1

@@ -485,7 +485,7 @@ def test_stateful_unlock_clears_protection(stateful_client):
 
 
 def test_stateful_download_then_upload(stateful_client):
-    """Write data to an address and read it back — verifies memory state."""
+    """Write data to an address and read it back - verifies memory state."""
     stateful_client.connect()
     stateful_client.download(0x1000, b"\x0C\x0A", 0)
 
@@ -502,7 +502,7 @@ def test_stateful_upload_unwritten_address_returns_zeros(stateful_client):
 
 
 def test_stateful_overwrite_memory(stateful_client):
-    """Download twice to the same address — second write wins."""
+    """Download twice to the same address - second write wins."""
     stateful_client.connect()
     stateful_client.download(0x2000, b"\x11\x22", 0)
     stateful_client.download(0x2000, b"\x33\x44", 0)

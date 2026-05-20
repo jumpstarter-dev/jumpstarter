@@ -134,7 +134,7 @@ async def _ensure_fresh_token(config: ClientConfigV1Alpha1) -> ClientConfigV1Alp
 
     refresh_token = config.refresh_token
     if not refresh_token:
-        logger.warning("Token is expired but no refresh_token stored — run 'jmp login --offline-access'")
+        logger.warning("Token is expired but no refresh_token stored - run 'jmp login --offline-access'")
         return config
 
     try:
@@ -158,7 +158,7 @@ async def _ensure_fresh_token(config: ClientConfigV1Alpha1) -> ClientConfigV1Alp
         ClientConfigV1Alpha1.save(config)
         logger.info("Access token refreshed successfully")
     except Exception:
-        logger.warning("Token refresh failed — downstream call will likely fail", exc_info=True)
+        logger.warning("Token refresh failed - downstream call will likely fail", exc_info=True)
 
     return config
 

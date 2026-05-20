@@ -362,7 +362,7 @@ def _http_path_recording_server():
 def _assert_encoding_preserved(received_paths):
     assert len(received_paths) >= 1
     assert "%40" in received_paths[-1], (
-        f"Server received decoded path {received_paths[-1]!r} — "
+        f"Server received decoded path {received_paths[-1]!r} - "
         f"original_url bypass did not activate with explicit operator"
     )
 
@@ -431,7 +431,7 @@ def test_flash_http_url_preserves_percent_encoding():
 
             assert len(received_paths) >= 1
             assert "%40" in received_paths[-1], (
-                f"Server received decoded path {received_paths[-1]!r} — "
+                f"Server received decoded path {received_paths[-1]!r} - "
                 f"_make_url is not preserving percent-encoding"
             )
         finally:
@@ -489,7 +489,7 @@ def test_flash_http_redirect_preserves_percent_encoding():
             )
             assert received_paths[0] == "/start"
             assert "%40" in received_paths[1], (
-                f"Redirect target received decoded path {received_paths[1]!r} — "
+                f"Redirect target received decoded path {received_paths[1]!r} - "
                 f"redirect following is not preserving percent-encoding"
             )
         finally:

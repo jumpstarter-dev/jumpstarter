@@ -39,7 +39,6 @@ def flatten_properties(properties, prefix="", depth=0):
         if default is not None:
             desc += f" (default: `{default}`)"
 
-        desc = desc.replace("|", "\\|")
         rows.append((f"`{path}`", type_str, desc))
 
         if name in SKIP_EXPAND:
@@ -109,24 +108,22 @@ def main():
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    count = 0
+    toctree_entries = []
+    index_entries = []
 
     for crd_file in crds:
         print(f"Processing {os.path.basename(crd_file)}")
-        try:
-            kind, content = process_crd(crd_file)
-        except KeyError as e:
-            print(f"Skipping {os.path.basename(crd_file)}: missing {e}")
-            continue
+        kind, content = process_crd(crd_file)
         slug = kind.lower()
         filename = f"{slug}.md"
 
         with open(os.path.join(OUTPUT_DIR, filename), "w") as f:
             f.write(content)
 
-        count += 1
+        toctree_entries.append(filename)
+        index_entries.append(f"- [{kind}]({filename})")
 
-    print(f"Generated {count} CRD docs in {OUTPUT_DIR}/")
+    print(f"Generated {len(toctree_entries)} CRD docs in {OUTPUT_DIR}/")
 
 
 if __name__ == "__main__":

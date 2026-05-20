@@ -47,7 +47,7 @@ def parse_oci_registry(oci_url: str) -> str:
 
     # Remove tag/digest if someone passed just "registry:tag" with no path
     if "/" not in url and ":" in registry:
-        # Could be registry:port or image:tag — if the part after : is numeric
+        # Could be registry:port or image:tag - if the part after : is numeric
         # it's a port, otherwise it's a tag on a Docker Hub image
         host_port = registry.split(":", 1)
         if host_port[1].isdigit():
@@ -133,7 +133,7 @@ def _lookup_credentials_in_auth_data(auth_data: dict, registry: str) -> tuple[st
     if not auths:
         return None, None
 
-    # Try to find a matching entry — normalize all keys for comparison
+    # Try to find a matching entry - normalize all keys for comparison
     for key, value in auths.items():
         if _normalize_registry(key) == registry:
             # The "auth" field is base64(username:password)

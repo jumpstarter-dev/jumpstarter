@@ -530,7 +530,7 @@ class MitmproxyMockAddon:
     Also supports the v1 flat format (just endpoints, no wrapper).
     """
 
-    # Default config directory — overridden by env var or config
+    # Default config directory - overridden by env var or config
     MOCK_DIR = os.environ.get(
         "MITMPROXY_MOCK_DIR", "/opt/jumpstarter/mitmproxy/mock-responses"
     )
@@ -988,7 +988,7 @@ class MitmproxyMockAddon:
                     await self._send_response(flow, rule)
                 return
 
-        # No rule matched — passthrough
+        # No rule matched - passthrough
         ctx.log.info(
             f"No conditional rule matched for {key}, passing through"
         )

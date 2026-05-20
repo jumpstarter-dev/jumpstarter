@@ -729,7 +729,7 @@ class TestMonitorTokenExpiry:
     @patch("jumpstarter_cli.shell._attempt_token_recovery", new_callable=AsyncMock)
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds")
     async def test_does_not_cancel_scope_on_expiry(self, mock_remaining, mock_recovery, mock_sleep, _mock_click):
-        """The monitor must never cancel the scope — the shell stays alive."""
+        """The monitor must never cancel the scope - the shell stays alive."""
         mock_remaining.side_effect = [60, Exception("done")]
         mock_recovery.return_value = None
         config = _make_config()

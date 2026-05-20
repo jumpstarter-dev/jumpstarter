@@ -25,7 +25,7 @@ BACKEND_URL = "http://127.0.0.1:9000"
 
 
 class TestPassthrough:
-    """No mocks configured — requests flow through the proxy to the real backend."""
+    """No mocks configured - requests flow through the proxy to the real backend."""
 
     def test_status_from_real_backend(
         self, backend_server, proxy_client, http_session,

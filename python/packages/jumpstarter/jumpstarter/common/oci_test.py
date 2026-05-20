@@ -32,7 +32,7 @@ class TestParseOciRegistry:
         assert parse_oci_registry(oci_url) == expected
 
     def test_bare_image_name_defaults_to_docker_hub(self):
-        # "ubuntu:latest" has no slash — it's a Docker Hub shorthand
+        # "ubuntu:latest" has no slash - it's a Docker Hub shorthand
         assert parse_oci_registry("oci://ubuntu:latest") == "docker.io"
 
 

@@ -54,7 +54,7 @@ def iter_bootloader_mount_candidates() -> list[Path]:
 
     Unlike picotool (USB protocol), UF2 flashing needs a host path to the mounted FAT
     volume. We discover it by finding mount points whose root contains ``INFO_UF2.TXT``
-    or ``INDEX.HTM`` — no volume *name* configuration required.
+    or ``INDEX.HTM`` - no volume *name* configuration required.
     """
     if sys.platform == "linux":
         return _mount_points_linux()

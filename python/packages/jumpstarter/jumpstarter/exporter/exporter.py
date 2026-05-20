@@ -831,7 +831,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                                 self.stop,  # Pass shutdown callback
                                 self._request_lease_release,  # Pass lease release callback
                             )
-                        # else: No hook configured — LEASE_READY is set inside handle_lease()
+                        # else: No hook configured - LEASE_READY is set inside handle_lease()
                         # after session and Listen stream are established
                 else:
                     logger.info("Currently not leased")
