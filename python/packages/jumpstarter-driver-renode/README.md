@@ -110,7 +110,7 @@ The driver follows the composite driver pattern:
 - **`RenodeFlasher`** -- loads firmware (ELF/BIN/HEX) into the simulated MCU
 - **`console`** -- UART output via PTY terminal, reusing the `PySerial` driver
 
-## Design Decisions
+### Design Decisions
 
 Key decisions:
 

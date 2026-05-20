@@ -394,7 +394,7 @@ proxy.clear_state()
 .. autoclass:: jumpstarter_driver_mitmproxy.driver.MitmproxyDriver()
 ```
 
-## Container Deployment
+### Container Deployment
 
 ```bash
 podman build -t jumpstarter-mitmproxy:latest .

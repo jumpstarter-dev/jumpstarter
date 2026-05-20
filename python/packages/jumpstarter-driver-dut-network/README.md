@@ -107,7 +107,7 @@ export:
           ip: "10.26.28.2"
 ```
 
-## Configuration Reference
+### Reference
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -125,7 +125,7 @@ export:
 | `nat_mode` | str | `masquerade` | NAT mode: `masquerade`, `1to1`, `disabled`, or `none` |
 | `public_interface` | str | None | Interface for IP alias (defaults to upstream) |
 
-### Address Entry Fields
+#### Address Entry Fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -261,9 +261,10 @@ When NetworkManager is detected, the driver marks managed interfaces as `unmanag
 .. autoclass:: jumpstarter_driver_dut_network.driver.DutNetwork()
 ```
 
-## nftables Coexistence
-
-The driver uses a dedicated nftables table (named after the interface, e.g. `table ip jumpstarter_enx00e04c683af1`) that does not conflict with firewalld or other nftables users. Firewalld manages its own `firewalld` table and does not touch other tables, even during reloads.
+```{note}
+The driver uses a dedicated nftables table (named after the interface) that
+does not conflict with firewalld or other nftables users.
+```
 
 ## Troubleshooting
 
@@ -296,12 +297,3 @@ sysctl net.ipv4.conf.<interface>.forwarding
 sysctl net.ipv4.conf.<upstream>.forwarding
 ```
 
-## Running Tests
-
-Integration tests require root privileges through passwordless sudo, or direct root access:
-
-```shell
-make pkg-test-dut-network
-```
-
-Tests use veth pairs and network namespaces to simulate the DUT without real hardware.

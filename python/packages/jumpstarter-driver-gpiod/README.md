@@ -136,27 +136,27 @@ state = power_switch.read()
 print(f"Power state: {state}")
 ```
 
-## Pin Configuration Details
+### Pin Configuration Details
 
-### Drive Modes
+#### Drive Modes
 
 - **push_pull**: Standard push-pull output (default)
 - **open_drain**: Open-drain output (useful for I2C, etc.)
 - **open_source**: Open-source output
 
-### Bias Configuration
+#### Bias Configuration
 
 - **as_is**: No bias (default)
 - **pull_up**: Internal pull-up resistor
 - **pull_down**: Internal pull-down resistor
 - **disabled**: Disable bias
 
-### Active Low vs Active High
+#### Active Low vs Active High
 
 - **active_low: false** (default): Pin is active when HIGH
 - **active_low: true**: Pin is active when LOW
 
-### Initial Values
+#### Initial Values
 
 For output pins, you can set the initial state:
 - **"inactive"** or **"off"** or **False**: Start with pin LOW
@@ -178,10 +178,4 @@ For output pins, you can set the initial state:
     :members: wait_for_active, wait_for_inactive, wait_for_edge, read
 ```
 
-## Error Handling
-
-The driver includes comprehensive error handling for:
-- Invalid pin numbers
-- Invalid drive/bias configurations
-- Hardware access errors
 - Timeout conditions for input operations
