@@ -6,31 +6,22 @@
 :sorted:
 
 CRD
-  Custom Resource Definition, a Kubernetes extension mechanism used by
-  Jumpstarter to define and manage resources such as clients, exporters, leases,
-  and the operator configuration.
+  Custom Resource Definition -- Kubernetes extension for Jumpstarter resources.
 
 DUT
   Device Under Test.
 
 gRPC
-  Google Remote Procedure Call, the communication framework used by
-  Jumpstarter for all client-exporter and service communication.
+  Google Remote Procedure Call -- Jumpstarter's communication framework.
 
 HiL
-  Hardware-in-the-Loop, a testing methodology where real hardware
-  components are integrated into a simulation loop to validate software against
-  physical devices.
+  Hardware-in-the-Loop -- testing with real hardware in the loop.
 
 JEP
-  Jumpstarter Enhancement Proposal, a design document that proposes a
-  significant new feature, process change, or architectural decision for the
-  Jumpstarter project.
+  Jumpstarter Enhancement Proposal -- design document for significant changes.
 
 MCP
-  Model Context Protocol, a standard protocol that enables AI coding
-  agents and assistants to interact with external tools and services. Jumpstarter
-  exposes hardware control via MCP through the `jmp mcp serve` command.
+  Model Context Protocol -- enables AI agents to interact with hardware.
 ```
 
 ## Entities
@@ -39,37 +30,25 @@ MCP
 :sorted:
 
 client
-  A developer or a CI/CD pipeline that connects to the Jumpstarter
-  service and leases exporters. The client can run tests on the leased resources.
+  A user or CI pipeline that connects to the service and leases exporters.
 
 controller
-  The central service that authenticates and connects the
-  exporters and clients, manages leases, and provides an inventory of available
-  exporters and clients.
+  Central service for authentication, lease management, and inventory.
 
 exporter
-  A Linux service that exports the interfaces to the DUTs. An
-  exporter connects directly to a Jumpstarter server or directly to a client.
+  Service that exposes hardware interfaces to clients over gRPC.
 
 host
-  A system running the exporter service, typically a low-cost test
-  system such as a single board computer with sufficient interfaces to connect
-  to hardware.
+  Machine running the exporter, typically a single board computer.
 
 operator
-  A Kubernetes operator that installs and manages the Jumpstarter
-  controller, router, and related infrastructure resources via a `Jumpstarter`
-  custom resource.
+  Kubernetes operator that deploys the controller, router, and CRDs.
 
 router
-  A service used by the controller to route messages between clients
-  and exporters through a gRPC tunnel, enabling remote access to exported
-  interfaces.
+  Routes traffic between clients and exporters through a gRPC tunnel.
 
 service
-  The Kubernetes-based backend that provides the controller, router,
-  and authentication components for managing clients, exporters, and leases in
-  distributed mode.
+  Kubernetes backend providing controller, router, and authentication.
 ```
 
 ## Concepts
@@ -78,55 +57,37 @@ service
 :sorted:
 
 adapter
-  A component that transforms connections exposed by drivers into
-  different forms or interfaces, such as port forwarding, VNC access, or
-  terminal emulation.
+  Transforms driver connections into other forms (port forwarding, VNC, etc).
 
 device
-  A hardware or virtual resource exposed on an exporter. Examples include
-  network interfaces, serial ports, GPIO pins, storage devices, and CAN bus
-  interfaces.
+  Hardware or virtual resource exposed on an exporter.
 
 direct mode
-  An operation mode where a client connects directly to an
-  exporter over TCP without a controller or Kubernetes cluster, useful for
-  single-user remote access to hardware on another machine.
+  Client connects to an exporter over TCP without a controller.
 
 distributed mode
-  An operation mode that enables multiple teams to securely
-  share hardware resources across a network using a Kubernetes-based controller
-  to coordinate access to exporters and manage leases.
+  Shared hardware access across teams via a Kubernetes controller.
 
 driver
-  A modular component that provides a standardized interface to a
-  specific hardware or virtual device type. Drivers run on the exporter and
-  expose methods over gRPC that clients can call remotely.
+  Modular component providing a standardized interface to a device type.
 
 exporter shell
-  An interactive shell environment spawned by `jmp shell` that
-  provides access to an exporter's driver CLI interfaces via the `j` command.
+  Interactive shell spawned by `jmp shell` for driver CLI access.
 
 hook
-  A shell script configured on an exporter that runs automatically at
-  lease boundaries -- before drivers are available to the client, or after the
-  session ends but before the lease is released.
+  Shell script that runs automatically at lease boundaries.
 
 label selector
-  Key-value metadata attached to exporters that clients use to
-  select specific devices for leasing, similar to Kubernetes label selectors.
+  Key-value metadata for selecting exporters when leasing.
 
 lease
-  A time-limited reservation of an exporter that ensures exclusive access
-  to specific devices for the duration of testing.
+  Time-limited reservation of an exporter with exclusive access.
 
 local mode
-  An operation mode where clients communicate directly with
-  exporters running on the same machine, ideal for individual developers
-  working with accessible hardware or virtual devices.
+  Client and exporter on the same machine, no Kubernetes required.
 
 session
-  A connection context created when a client connects to an exporter,
-  during which driver instances are maintained and tests are executed.
+  Connection context between client and exporter during testing.
 ```
 
 ## Tools
@@ -135,11 +96,8 @@ session
 :sorted:
 
 j
-  A shorthand CLI command available within the exporter shell
-  that provides access to driver CLI interfaces for the current session.
+  Shorthand CLI for driver access within the exporter shell.
 
 jmp
-  The primary Jumpstarter CLI tool used for managing clients, exporters,
-  leases, configuration, and shell sessions. Subcommands include `jmp admin`,
-  `jmp shell`, `jmp login`, and `jmp mcp serve`.
+  Primary Jumpstarter CLI for managing clients, exporters, and leases.
 ```
