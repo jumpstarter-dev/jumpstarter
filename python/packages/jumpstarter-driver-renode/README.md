@@ -120,3 +120,9 @@ Key decisions:
 - **Configuration model**: Managed mode with `extra_commands` for
   target-specific customization
 - **Firmware loading**: `flash()` stores path, `on()` loads into simulation
+
+## API Reference
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_renode.driver.Renode()
+```

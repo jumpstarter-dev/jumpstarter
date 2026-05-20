@@ -107,3 +107,9 @@ j tmt run --name /my/test/plan provision -h connect -g 192.168.1.100 -P 22
 # Automatically transformed to use SSH connection
 # TMT receives: run --name /my/test/plan provision -h connect -g <forwarded_host> -P <forwarded_port> -u root -p password
 ```
+
+## API Reference
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_tmt.driver.TMT()
+```

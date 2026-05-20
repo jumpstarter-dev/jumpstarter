@@ -398,3 +398,9 @@ podman run --rm -it --privileged \
   jumpstarter-mitmproxy:latest \
   jmp exporter start my-bench
 ```
+
+## API Reference
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_mitmproxy.driver.MitmproxyDriver()
+```

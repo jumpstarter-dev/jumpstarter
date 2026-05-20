@@ -299,3 +299,9 @@ make pkg-test-dut-network
 ```
 
 Tests use veth pairs and network namespaces to simulate the DUT without real hardware.
+
+## API Reference
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_dut_network.driver.DutNetwork()
+```

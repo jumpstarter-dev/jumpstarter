@@ -41,4 +41,6 @@ The internal HTTP server driver automatically tracks files and directories creat
 
 ## API Reference
 
-Add API documentation here.
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_http.driver.HttpServer()
+```
