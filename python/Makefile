@@ -41,7 +41,7 @@ help:
 
 default: help
 
-docs-singlehtml:
+docs-singlehtml: docs-generate-crds
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs singlehtml
 
 docs-generate-crds:
@@ -53,16 +53,16 @@ docs: docs-generate-crds
 docs-all: docs-generate-crds
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs multiversion
 
-docs-serve: clean-docs
+docs-serve: clean-docs docs-generate-crds
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve
 
 docs-serve-all: clean-docs docs-all
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve-multiversion
 
-docs-test:
+docs-test: docs-generate-crds
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs doctest
 
-docs-linkcheck:
+docs-linkcheck: docs-generate-crds
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs linkcheck
 
 pkg-test-%: packages/%
