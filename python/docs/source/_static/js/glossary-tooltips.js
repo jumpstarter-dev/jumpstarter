@@ -1,5 +1,6 @@
 (function () {
     var definitions = {};
+    var isTouch = !window.matchMedia("(pointer: fine)").matches;
 
     function fetchGlossary() {
         var links = document.querySelectorAll('a.reference.internal[href*="glossary.html#term-"]');
@@ -41,8 +42,31 @@
                 span.setAttribute("data-tooltip", def);
                 span.innerHTML = a.innerHTML;
                 a.parentNode.replaceChild(span, a);
+
+                if (isTouch) {
+                    span.addEventListener("click", function (e) {
+                        e.preventDefault();
+                        var wasActive = span.classList.contains("tooltip-active");
+                        document.querySelectorAll(".glossary-term.tooltip-active").forEach(function (el) {
+                            el.classList.remove("tooltip-active");
+                        });
+                        if (!wasActive) {
+                            span.classList.add("tooltip-active");
+                        }
+                    });
+                }
             }
         });
+
+        if (isTouch) {
+            document.addEventListener("click", function (e) {
+                if (!e.target.closest(".glossary-term")) {
+                    document.querySelectorAll(".glossary-term.tooltip-active").forEach(function (el) {
+                        el.classList.remove("tooltip-active");
+                    });
+                }
+            });
+        }
     }
 
     document.addEventListener("DOMContentLoaded", fetchGlossary);
