@@ -11,7 +11,7 @@
 - The [glossary](../glossary.md) is reserved for Jumpstarter-specific terms only
   (entities, concepts, CLI commands). Do not add well-known industry terms or
   third-party project names to it
-- Use ASCII dashes (`--`) instead of en-dash or em-dash characters
+- Use ASCII hyphens (`-`) instead of en-dash or em-dash characters
 
 ## AI Assistants
 
