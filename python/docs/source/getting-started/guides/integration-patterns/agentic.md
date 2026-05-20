@@ -48,7 +48,7 @@ Add to your Cursor {term}`MCP` configuration (`~/.cursor/mcp.json`):
 
 ### Claude Code
 
-```bash
+```console
 claude mcp add jumpstarter -- jmp mcp serve
 ```
 
@@ -75,7 +75,7 @@ Add to your Claude Desktop configuration:
 Any {term}`MCP`-compatible client can use the Jumpstarter server. It
 communicates over stdio:
 
-```bash
+```console
 jmp mcp serve
 ```
 
@@ -182,6 +182,6 @@ sequenceDiagram
 
 The {term}`MCP` server logs to `~/.jumpstarter/logs/mcp-server.log`:
 
-```bash
+```console
 tail -f ~/.jumpstarter/logs/mcp-server.log
 ```

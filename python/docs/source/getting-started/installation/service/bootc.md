@@ -20,13 +20,13 @@ This is a **community-supported** deployment. For production, use the
 
 ### Build the Image
 
-```bash
+```console
 make bootc-build
 ```
 
 ### Run as Container
 
-```bash
+```console
 make bootc-run
 ```
 
@@ -37,7 +37,7 @@ sets up LVM volume groups for TopoLVM, and waits for MicroShift to be ready.
 
 For bare-metal or VM deployments:
 
-```bash
+```console
 make build-image
 ```
 
@@ -57,7 +57,7 @@ Access the services:
 
 Check running pods:
 
-```bash
+```console
 sudo podman exec -it jumpstarter-microshift-okd oc get pods -A
 ```
 
@@ -65,14 +65,14 @@ sudo podman exec -it jumpstarter-microshift-okd oc get pods -A
 
 ### Customization
 
-```bash
+```console
 BOOTC_IMG=quay.io/your-org/microshift-bootc:v1.0 make bootc-build
 ```
 
 Add Kubernetes manifests to `/etc/microshift/manifests.d/002-jumpstarter/` by
 editing `kustomization.yaml`. For live config service changes without rebuild:
 
-```bash
+```console
 make bootc-reload-app
 ```
 
@@ -81,7 +81,7 @@ make bootc-reload-app
 The QCOW2 image is configured via `config.toml` (LVM partitioning with 20GB
 minimum, XFS root filesystem, default password `root:jumpstarter`).
 
-```bash
+```console
 qemu-system-x86_64 \
     -m 4096 \
     -smp 2 \
@@ -113,7 +113,7 @@ The system uses `nip.io` for automatic DNS resolution (e.g.
 
 ### LVM/TopoLVM Issues
 
-```bash
+```console
 sudo podman exec jumpstarter-microshift-okd vgs
 sudo podman exec jumpstarter-microshift-okd pvs
 make bootc-rm && make clean && make bootc-run
@@ -121,21 +121,21 @@ make bootc-rm && make clean && make bootc-run
 
 ### MicroShift Not Starting
 
-```bash
+```console
 sudo podman logs jumpstarter-microshift-okd
 sudo podman exec jumpstarter-microshift-okd journalctl -u microshift -f
 ```
 
 ### Configuration Service Issues
 
-```bash
+```console
 sudo podman exec jumpstarter-microshift-okd systemctl status config-svc
 sudo podman exec jumpstarter-microshift-okd journalctl -u config-svc -f
 ```
 
 ## Uninstall
 
-```bash
+```console
 make bootc-stop
 make bootc-rm
 make clean
