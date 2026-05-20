@@ -39,17 +39,21 @@ Jumpstarter architecture is based on the following key components:
 
 Component interactions include:
 
-- **{term}`DUT` and Drivers** - Drivers provide standardized interfaces to {term}`DUT`'s
-  hardware connections
-- **Drivers and {term}`Adapter`s** - {term}`Adapter`s transform driver connections for
-  specialized use cases
-- **Drivers/{term}`Adapter`s and {term}`Exporter`s** - {term}`Exporter`s manage drivers/{term}`adapter`s and
-  expose them via {term}`gRPC`
-- **{term}`hook`s and {term}`Exporter`s** - {term}`hook`s execute shell scripts at {term}`lease` boundaries,
-  running before drivers are available and after the {term}`session` ends
-- **{term}`Exporter`s and Clients** - Clients connect to {term}`exporter`s to control {term}`device`s
-- **Clients/{term}`Exporter`s and {term}`service`** - {term}`service` manages access control and
-  resource allocation in {term}`distributed mode`
+- **{term}`DUT` and {term}`Driver`s** - {term}`Driver`s provide standardized
+  interfaces to {term}`DUT`'s hardware connections
+- **{term}`Driver`s and {term}`Adapter`s** - {term}`Adapter`s transform
+  {term}`driver` connections for specialized use cases
+- **{term}`Driver`s/{term}`Adapter`s and {term}`Exporter`s** -
+  {term}`Exporter`s manage {term}`driver`s/{term}`adapter`s and expose them
+  via {term}`gRPC`
+- **{term}`Hook`s and {term}`Exporter`s** - {term}`Hook`s execute shell
+  scripts at {term}`lease` boundaries, running before {term}`driver`s are
+  available and after the {term}`session` ends
+- **{term}`Exporter`s and {term}`Client`s** - {term}`Client`s connect to
+  {term}`exporter`s to control {term}`device`s
+- **{term}`Client`s/{term}`Exporter`s and {term}`Service`** -
+  {term}`Service` manages access control and resource allocation in
+  {term}`distributed mode`
 
 Together, these components form a comprehensive testing framework that bridges
 the gap between development and deployment environments.
