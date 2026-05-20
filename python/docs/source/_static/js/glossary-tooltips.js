@@ -40,7 +40,7 @@
                 var span = document.createElement("span");
                 span.className = "glossary-term";
                 span.setAttribute("data-tooltip", def);
-                span.innerHTML = a.innerHTML;
+                span.textContent = a.textContent;
                 a.parentNode.replaceChild(span, a);
 
                 if (isTouch) {
