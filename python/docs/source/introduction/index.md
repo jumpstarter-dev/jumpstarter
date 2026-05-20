@@ -151,6 +151,30 @@ between different hardware or virtual {term}`device` setups.
 machine and the client is on another, but you don't need multi-user
 {term}`lease` management.
 
+```{mermaid}
+flowchart LR
+    subgraph "Client Machine"
+        Client["Client\n(Python Library/CLI)"]
+    end
+
+    subgraph "Exporter Machine"
+        Exporter["Exporter\n(Remote Service)"]
+        Power["Power"]
+        Serial["Serial"]
+        Storage["Storage"]
+    end
+
+    DUT["Device Under Test"]
+
+    Client <--> |"gRPC via TCP"| Exporter
+    Exporter --> Power
+    Exporter --> Serial
+    Exporter --> Storage
+    Power --> DUT
+    Serial --> DUT
+    Storage --> DUT
+```
+
 ```console
 $ jmp shell --exporter example-direct
 ```
