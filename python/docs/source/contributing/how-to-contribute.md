@@ -1,10 +1,10 @@
 # How to Contribute
 
-0. Get familiar with the [Introduction](../introduction/index.md)
-1. Follow the [development environment](development-environment.md) setup
-2. Make changes on a new branch
-3. Test your changes thoroughly
-4. Submit a pull request
+1. Get familiar with the [Introduction](../introduction/index.md)
+2. Follow the [development environment](development-environment.md) setup
+3. Make changes on a new branch
+4. Test your changes thoroughly
+5. Submit a pull request
 
 If you have questions, reach out in our Matrix chat or open an issue on GitHub.
 
