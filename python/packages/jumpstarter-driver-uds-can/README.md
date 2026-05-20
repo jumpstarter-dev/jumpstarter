@@ -53,19 +53,8 @@ export:
         tx_data_length: 8
 ```
 
-## Client API
+## API Reference
 
-The client API is shared by all UDS transport drivers via `jumpstarter-driver-uds`.
-See the UDS driver documentation for the full API reference.
-
-| Method                                | Description                                  |
-|---------------------------------------|----------------------------------------------|
-| `change_session(session)`             | Change diagnostic session                    |
-| `ecu_reset(reset_type)`              | Reset ECU                                    |
-| `tester_present()`                    | Keep session alive                           |
-| `read_data_by_identifier(did_list)`   | Read DID values                              |
-| `write_data_by_identifier(did, value)`| Write DID value                              |
-| `request_seed(level)`                 | Request security access seed                 |
-| `send_key(level, key)`               | Send security access key                     |
-| `clear_dtc(group)`                    | Clear diagnostic trouble codes               |
-| `read_dtc_by_status_mask(mask)`       | Read DTCs matching status mask               |
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_uds_can.driver.UdsCan()
+```

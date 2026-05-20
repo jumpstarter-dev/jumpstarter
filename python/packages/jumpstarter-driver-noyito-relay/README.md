@@ -74,18 +74,6 @@ export:
       channel: 2
 ```
 
-### API Reference
-
-Implements `PowerInterface` (provides `on`, `off`, `read`, and `cycle` via
-`PowerClient`).
-
-| Method | Description |
-|--------|-------------|
-| `on()` | Energise the configured relay channel |
-| `off()` | De-energise the configured relay channel |
-| `read()` | Yields a single `PowerReading(voltage=0.0, current=0.0)` |
-| `status()` | Returns the channel state string, e.g. `"on"`, `"off"`, or `"partial"` |
-
 ### CLI Usage
 
 Inside a `jmp exporter shell`:
@@ -144,18 +132,6 @@ export:
       all_channels: true
 ```
 
-### API Reference
-
-Implements `PowerInterface` (provides `on`, `off`, `read`, and `cycle` via
-`PowerClient`).
-
-| Method | Description |
-|--------|-------------|
-| `on()` | Energise the configured relay channel(s) |
-| `off()` | De-energise the configured relay channel(s) |
-| `read()` | Yields a single `PowerReading(voltage=0.0, current=0.0)` |
-| `status()` | Returns the channel state string, e.g. `"on"`, `"off"`, or `"partial"` |
-
 ### CLI Usage
 
 Inside a `jmp exporter shell`:
@@ -172,4 +148,12 @@ j relay_4ch_ch1 off
 
 # Power on all 8 channels simultaneously
 j relay_8ch_all on
+```
+
+## API Reference
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_noyito_relay.driver.NoyitoPowerSerial()
+
+.. autoclass:: jumpstarter_driver_noyito_relay.driver.NoyitoPowerHID()
 ```

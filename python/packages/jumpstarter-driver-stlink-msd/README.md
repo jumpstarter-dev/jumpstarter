@@ -48,7 +48,8 @@ j flasher flash firmware.hex       # flash an Intel HEX file
 j flasher info                     # show ST-LINK volume details
 ```
 
-## API
+## API Reference
 
-- **`flash(source, target=None)`** -- Flash firmware to the board. Accepts `.bin` or `.hex` files.
-- **`info()`** -- Read `DETAILS.TXT` from the ST-LINK volume and return board metadata.
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_stlink_msd.driver.StlinkMsdFlasher()
+```

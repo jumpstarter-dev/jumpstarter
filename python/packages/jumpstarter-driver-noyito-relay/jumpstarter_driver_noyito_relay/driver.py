@@ -69,23 +69,27 @@ class NoyitoPowerSerial(PowerInterface, Driver):
 
     @export
     def on(self) -> None:
+        """Energise the relay channel."""
         for ch in self._channels():
             self.logger.info("Relay channel %d ON", ch)
             self._send_command(_build_command(ch, 1))
 
     @export
     def off(self) -> None:
+        """De-energise the relay channel."""
         for ch in self._channels():
             self.logger.info("Relay channel %d OFF", ch)
             self._send_command(_build_command(ch, 0))
 
     @export
     def read(self) -> Generator[PowerReading, None, None]:
+        """Yield a power reading for the relay channel."""
         raise NotImplementedError
         yield  # makes this a generator function
 
     @export
     def status(self) -> str:
+        """Return the relay channel state as a string."""
         all_channels = self._query_status()
         states = set()
         for ch in self._channels():
@@ -148,12 +152,14 @@ class NoyitoPowerHID(PowerInterface, Driver):
 
     @export
     def on(self) -> None:
+        """Energise the relay channel."""
         for ch in self._channels():
             self.logger.info("HID Relay channel %d ON", ch)
             self._send_command(_build_command(ch, 1))
 
     @export
     def off(self) -> None:
+        """De-energise the relay channel."""
         for ch in self._channels():
             self.logger.info("HID Relay channel %d OFF", ch)
             self._send_command(_build_command(ch, 0))
@@ -185,11 +191,13 @@ class NoyitoPowerHID(PowerInterface, Driver):
 
     @export
     def read(self) -> Generator[PowerReading, None, None]:
+        """Yield a power reading for the relay channel."""
         raise NotImplementedError
         yield  # makes this a generator function
 
     @export
     def status(self) -> str:
+        """Return the relay channel state as a string."""
         states = self._query_status()
         channel_states = []
         for ch in self._channels():

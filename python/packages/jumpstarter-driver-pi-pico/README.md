@@ -86,9 +86,8 @@ When both GPIO and serial children are present, GPIO reset is preferred.
 - `j storage bootloader` -- request BOOTSEL mode without flashing
 - `j serial ...` -- USB CDC console (when serial child is configured)
 
-## API
+## API Reference
 
-- **`flash(source, target=None)`** -- Copies a UF2 from a Jumpstarter resource to the BOOTSEL volume. `target` is the destination filename (default `Firmware.uf2`).
-- **`enter_bootloader()`** -- Enters BOOTSEL mode via GPIO reset or 1200-baud serial touch.
-- **`bootloader_info()`** -- Parses `INFO_UF2.TXT` from the mounted volume.
-- **`dump`** -- Not supported over UF2 mass storage.
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_pi_pico.driver.PiPicoFlasher()
+```

@@ -36,16 +36,8 @@ export:
       ecu_logical_address: 224  # 0x00E0
 ```
 
-## Client API
+## API Reference
 
-| Method                         | Description                                      |
-|--------------------------------|--------------------------------------------------|
-| `entity_status()`              | Request DoIP entity status                       |
-| `alive_check()`                | Request alive check                              |
-| `diagnostic_power_mode()`      | Request diagnostic power mode                    |
-| `request_vehicle_identification()` | Request vehicle identification (VIN, EID, etc.) |
-| `routing_activation(type)`     | Request routing activation                       |
-| `send_diagnostic(payload)`     | Send raw diagnostic payload bytes                |
-| `receive_diagnostic(timeout)`  | Receive raw diagnostic response bytes            |
-| `reconnect(close_delay)`       | Reconnect after ECU reset                        |
-| `close_connection()`           | Close the DoIP connection                        |
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_doip.driver.DoIP()
+```
