@@ -1,10 +1,8 @@
 """Tests for the CRD documentation generator."""
 
-import os
-import tempfile
-
 import importlib
 import importlib.util
+import os
 
 import pytest
 import yaml
