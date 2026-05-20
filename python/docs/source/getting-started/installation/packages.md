@@ -59,12 +59,12 @@ After installation, the following structure is created:
 
 ##### Activating the Environment
 
-Activate for current session, adjust ~/.local/jumpstarter if you picked a custom install directory.
+Activate for current session, adjust `~/.local/jumpstarter` if you picked a custom install directory.
 ```{code-block} console
 source ~/.local/jumpstarter/set
 ```
 
-Or add to your shell profile for permanent activation, adjust ~/.local/jumpstarter if you picked a custom install directory.
+Or add to your shell profile for permanent activation, adjust `~/.local/jumpstarter` if you picked a custom install directory.
 ```{code-block} console
 echo 'source ~/.local/jumpstarter/set' >> ~/.bashrc
 ```

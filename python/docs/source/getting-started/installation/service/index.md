@@ -2,7 +2,7 @@
 
 This section explains how to install the Jumpstarter {term}`service`.
 
-- [CLI](cli.md): Set up a local cluster with jmp admin for
+- [CLI](cli.md): Set up a local cluster with `jmp admin` for
   development and testing
 - [Operator](operator.md): Deploy on Kubernetes or OpenShift with the
   Jumpstarter {term}`operator`

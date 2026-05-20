@@ -14,14 +14,14 @@ testing environments (devices accessed remotely through a central {term}`control
 communication happens over {term}`gRPC`, providing a consistent interface regardless of
 deployment model. Every interface is programmatic -- there is no GUI-only
 workflow that a script or agent cannot replicate. A human developer running
-jmp shell, a [pytest](https://docs.pytest.org/en/stable/) script, a CI
+`jmp shell`, a [pytest](https://docs.pytest.org/en/stable/) script, a CI
 pipeline, and an
 [AI agent](../getting-started/guides/integration-patterns/agentic.md)
 all use the exact same APIs, authentication, and access controls.
 
 Built on Python, Jumpstarter integrates easily with existing development
 workflows and runs almost anywhere. It works with common testing tools like
-pytest, shell scripts, Makefiles, and typical CI/CD systems. Beyond testing, it
+`pytest`, shell scripts, Makefiles, and typical CI/CD systems. Beyond testing, it
 can function as a virtual KVM (Keyboard, Video, Mouse) switch, enabling remote
 access to physical devices for development.
 
@@ -144,8 +144,8 @@ $ pytest test_device.py
 ```
 
 The example above shows typical {term}`local mode` usage: first connecting to an
-{term}`exporter` (which manages the {term}`device` interfaces) using the jmp shell command,
-and then running tests against the device with pytest. The `--exporter` flag
+{term}`exporter` (which manages the {term}`device` interfaces) using the `jmp shell` command,
+and then running tests against the device with `pytest`. The `--exporter` flag
 specifies which exporter configuration to use, allowing you to easily switch
 between different hardware or virtual {term}`device` setups.
 

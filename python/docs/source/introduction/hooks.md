@@ -2,8 +2,8 @@
 
 Jumpstarter supports lifecycle hooks that execute shell scripts automatically before or after a {term}`lease`.
 
-A beforeLease hook runs after a lease is assigned but
-before drivers are available to the client, and an afterLease hook runs after
+A `beforeLease` hook runs after a lease is assigned but
+before drivers are available to the client, and an `afterLease` hook runs after
 the {term}`session` ends but before the lease is released. Hooks are optional and
 configured in the [Exporter](exporters.md) YAML configuration file (exporter config).
 
@@ -178,7 +178,7 @@ Because {term}`hook`s use a PTY, programs that detect terminal mode (such as
 
 ## Failure Handling
 
-The onFailure field controls what happens when a hook script exits with a
+The `onFailure` field controls what happens when a hook script exits with a
 non-zero exit code or exceeds its timeout. A {term}`hook` is considered failed when the
 shell process returns a non-zero exit code or when execution exceeds the
 configured `timeout`.
@@ -223,7 +223,7 @@ The {term}`exporter` shuts down entirely with exit code `1` (Failure):
   `AFTER_LEASE_HOOK_FAILED` and the {term}`exporter` shuts down immediately.
 
 The exit code `1` signals to service managers such as `systemd` that the shutdown
-was intentional. If your systemd unit uses `Restart=always`, you should
+was intentional. If your `systemd` unit uses `Restart=always`, you should
 configure `RestartPreventExitStatus=1` to prevent automatic restarts after an
 `exit` failure.
 
@@ -238,7 +238,7 @@ reserve `exit` for critical failures.
 
 When a {term}`hook` exceeds its `timeout`, the process is terminated with `SIGTERM`
 followed by `SIGKILL` if the process does not exit within a few seconds. The
-resulting failure is then handled according to the onFailure setting, exactly
+resulting failure is then handled according to the `onFailure` setting, exactly
 as if the script had exited with a non-zero exit code.
 
 ## Use Cases

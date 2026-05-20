@@ -51,7 +51,7 @@ Using a Python with Jumpstarter allows you to:
 
 ### Running `pytest` in the Shell
 
-For structured test suites, Jumpstarter provides a JumpstarterTest base class
+For structured test suites, Jumpstarter provides a `JumpstarterTest` base class
 that handles connection management automatically. See the
 [Testing](testing.md) guide for full details on writing tests,
 custom fixtures, markers, and CI integration.

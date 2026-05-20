@@ -152,7 +152,7 @@ For production deployments, it is recommended to use a service manager such as [
 
 Containerized {term}`exporter`s can be installed as [`systemd`](https://systemd.io/) services using [`podman-systemd`](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html).
 
-Create a systemd service file at `/etc/containers/systemd/my-exporter.container` with the following content:
+Create a `systemd` service file at `/etc/containers/systemd/my-exporter.container` with the following content:
 
 ```{code-block} ini
 :substitutions:

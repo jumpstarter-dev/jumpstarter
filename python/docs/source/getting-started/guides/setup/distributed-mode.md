@@ -31,7 +31,7 @@ cluster with admin access. For installation instructions, refer to the
 
 ### Create an Exporter Configuration
 
-Create an exporter using the controller service API. The jmp admin CLI
+Create an exporter using the controller service API. The `jmp admin` CLI
 provides commands to interact with the {term}`controller` directly.
 
 Run this command to create an {term}`exporter` named `example-distributed` and save the
@@ -79,7 +79,7 @@ The {term}`exporter` runs until you terminate the process with or close the shel
 
 ### Create a Client
 
-Create a client to connect to your new {term}`exporter` using the jmp admin CLI:
+Create a client to connect to your new {term}`exporter` using the `jmp admin` CLI:
 
 The following command creates a client named "hello", enables unsafe drivers for
 development purposes, and saves the configuration locally in

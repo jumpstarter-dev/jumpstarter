@@ -6,7 +6,7 @@
 - Include practical examples
 - Break up text with headers, lists, and code blocks
 - Target both beginners and advanced users
-- For third-party tools (pytest, kubectl, cert-manager, etc.), link to the
+- For third-party tools (`pytest`, `kubectl`, `cert-manager`, etc.), link to the
   official documentation on first mention rather than defining them inline
 - The [glossary](../glossary.md) is reserved for Jumpstarter-specific terms only
   (entities, concepts, CLI commands). Do not add well-known industry terms or

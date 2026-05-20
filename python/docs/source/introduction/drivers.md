@@ -26,7 +26,7 @@ The architecture follows a pattern with these key components:
 
 - **Driver class** - Inherits from both the Interface and the base `Driver`
   class, implementing the logic to configure and use hardware interfaces. Driver
-  methods are marked with the @export decorator to expose them over the
+  methods are marked with the `@export` decorator to expose them over the
   network.
 
 - **Driver client class** - Provides a user-friendly interface that can be used by
@@ -175,7 +175,7 @@ flowchart LR
 - **Server Streaming** -- Methods marked with `@export` that return a generator
   produce a stream of responses from a single request. Used for continuous data
   like sensor readings.
-- **Bidirectional Streaming** -- Methods marked with the @exportstream decorator open a
+- **Bidirectional Streaming** -- Methods marked with the `@exportstream` decorator open a
   full-duplex byte stream. Used for serial communication, video capture, or
   tunneling existing protocols (such as SSH) over Jumpstarter.
 

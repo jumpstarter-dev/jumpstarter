@@ -72,15 +72,15 @@ You can run the {term}`exporter` in your local terminal with:
 $ jmp run --exporter myexporter
 ```
 
-{term}`Exporter`s can also be run in a privileged container or as a systemd daemon. It
+{term}`Exporter`s can also be run in a privileged container or as a `systemd` daemon. It
 is recommended to run the {term}`exporter` service in the background with auto-restart
 capabilities in case something goes wrong and it needs to be restarted.
 
 ## Lifecycle Hooks
 
 {term}`Exporter`s support lifecycle {term}`hook`s that execute shell scripts at {term}`lease`
-boundaries. A beforeLease hook runs after a {term}`lease` is assigned but before
-the client can access drivers, and an afterLease hook runs after the
+boundaries. A `beforeLease` hook runs after a {term}`lease` is assigned but before
+the client can access drivers, and an `afterLease` hook runs after the
 {term}`session` ends but before the {term}`lease` is released.
 
 {term}`Hook`s are configured in the `hooks` section of the exporter config file and
