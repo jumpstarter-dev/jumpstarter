@@ -90,6 +90,12 @@ Describe the internal design and component interactions here.
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_${DRIVER_MODULE_NAME}.driver.${DRIVER_CLASS}()
 ```
+
+<!-- Optional: uncomment for drivers with known issues or complex setup
+## Troubleshooting
+
+Document common issues and their solutions here.
+-->
 EOF
 # Need to expand variables after EOF to prevent early expansion
 $sed_cmd "s/\${DRIVER_CLASS}/${DRIVER_CLASS}/g; s/\${DRIVER_NAME}/${DRIVER_NAME}/g; s/\${DRIVER_MODULE_NAME}/${DRIVER_MODULE_NAME}/g" "${README_FILE}"
