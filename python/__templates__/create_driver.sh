@@ -73,9 +73,15 @@ export:
       # Add required config parameters here
 ```
 
+## Usage
+
+Add usage examples, CLI commands, and common workflows here.
+
 ## API Reference
 
-Add API documentation here.
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_${DRIVER_MODULE_NAME}.driver.${DRIVER_CLASS}()
+```
 EOF
 # Need to expand variables after EOF to prevent early expansion
 $sed_cmd "s/\${DRIVER_CLASS}/${DRIVER_CLASS}/g; s/\${DRIVER_NAME}/${DRIVER_NAME}/g; s/\${DRIVER_MODULE_NAME}/${DRIVER_MODULE_NAME}/g" "${README_FILE}"

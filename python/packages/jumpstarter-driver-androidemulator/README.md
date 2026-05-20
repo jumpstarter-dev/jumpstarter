@@ -16,6 +16,24 @@ For the optional Python ADB API:
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ "jumpstarter-driver-androidemulator[python-api]"
 ```
 
+### Prerequisites
+
+- Android SDK with emulator and platform-tools installed
+- `emulator` and `adb` available on PATH (or specify `emulator_path`)
+- An AVD created via Android Studio or `avdmanager`
+
+#### Quick AVD Setup
+
+```bash
+# Apple Silicon (arm64)
+sdkmanager "system-images;android-35;google_apis;arm64-v8a"
+avdmanager create avd -n Pixel_6 -k "system-images;android-35;google_apis;arm64-v8a" -d pixel_6
+
+# Intel/AMD (x86_64)
+sdkmanager "system-images;android-35;google_apis;x86_64"
+avdmanager create avd -n Pixel_6 -k "system-images;android-35;google_apis;x86_64" -d pixel_6
+```
+
 ## Configuration
 
 Example exporter configuration:
@@ -40,19 +58,6 @@ export:
 | headless        | Run without a window               | bool | no       | true       |
 | console_port    | Emulator console port              | int  | no       | 5554       |
 | adb_server_port | Port for the custom ADB server     | int  | no       | 15037      |
-
-## Architecture
-
-This is a composite driver with two children:
-
-- **`adb`** (`AdbServer` from `jumpstarter-driver-adb`): Manages the ADB server
-  and provides TCP tunneling for remote ADB access
-- **`power`** (`AndroidEmulatorPower`): Controls the emulator process lifecycle
-  via the standard `PowerInterface` (on/off/read)
-
-The emulator registers with the custom ADB server on port 15037 (via the
-`ANDROID_ADB_SERVER_PORT` environment variable) to avoid conflicts with any
-local ADB server on the standard port 5037.
 
 ## Usage
 
@@ -93,23 +98,18 @@ with serve(driver) as client:
     client.power.off()
 ```
 
-## Prerequisites
+## Architecture
 
-- Android SDK with emulator and platform-tools installed
-- `emulator` and `adb` available on PATH (or specify `emulator_path`)
-- An AVD created via Android Studio or `avdmanager`
+This is a composite driver with two children:
 
-### Quick AVD Setup
+- **`adb`** (`AdbServer` from `jumpstarter-driver-adb`): Manages the ADB server
+  and provides TCP tunneling for remote ADB access
+- **`power`** (`AndroidEmulatorPower`): Controls the emulator process lifecycle
+  via the standard `PowerInterface` (on/off/read)
 
-```bash
-# Apple Silicon (arm64)
-sdkmanager "system-images;android-35;google_apis;arm64-v8a"
-avdmanager create avd -n Pixel_6 -k "system-images;android-35;google_apis;arm64-v8a" -d pixel_6
-
-# Intel/AMD (x86_64)
-sdkmanager "system-images;android-35;google_apis;x86_64"
-avdmanager create avd -n Pixel_6 -k "system-images;android-35;google_apis;x86_64" -d pixel_6
-```
+The emulator registers with the custom ADB server on port 15037 (via the
+`ANDROID_ADB_SERVER_PORT` environment variable) to avoid conflicts with any
+local ADB server on the standard port 5037.
 
 ## API Reference
 

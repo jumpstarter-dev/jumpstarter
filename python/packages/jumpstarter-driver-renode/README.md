@@ -15,16 +15,6 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-renode
 Renode must be installed separately and available in `PATH`. See
 [Renode installation](https://renode.readthedocs.io/en/latest/introduction/installing.html).
 
-## Architecture
-
-The driver follows the composite driver pattern:
-
-- **`Renode`** -- root composite driver, manages the simulation lifecycle
-- **`RenodePower`** -- starts/stops the Renode process and controls the
-  simulation via the telnet monitor interface
-- **`RenodeFlasher`** -- loads firmware (ELF/BIN/HEX) into the simulated MCU
-- **`console`** -- UART output via PTY terminal, reusing the `PySerial` driver
-
 ## Configuration
 
 Users define Renode targets entirely through YAML configuration. No
@@ -109,6 +99,16 @@ response = renode.monitor_cmd("sysbus GetRegistrationPoints sysbus.usart2")
 ```
 
 The `monitor` CLI subcommand is also available inside a `jmp shell` session.
+
+## Architecture
+
+The driver follows the composite driver pattern:
+
+- **`Renode`** -- root composite driver, manages the simulation lifecycle
+- **`RenodePower`** -- starts/stops the Renode process and controls the
+  simulation via the telnet monitor interface
+- **`RenodeFlasher`** -- loads firmware (ELF/BIN/HEX) into the simulated MCU
+- **`console`** -- UART output via PTY terminal, reusing the `PySerial` driver
 
 ## Design Decisions
 

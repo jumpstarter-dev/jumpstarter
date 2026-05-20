@@ -83,7 +83,7 @@ export:
       all_channels: true
 ```
 
-## Board Detection
+### Board Detection
 
 To determine which driver to use, check whether the board appears as a serial
 port or a HID device:
@@ -94,7 +94,7 @@ port or a HID device:
   Drive-free board). Confirm with `lsusb` -- the NOYITO HID module appears with
   VID `0x1409` / PID `0x07D7` (decimal: 5131 / 2007).
 
-### Hardware Notes (Serial)
+#### Hardware Notes (Serial)
 
 - **Purchase**: [NOYITO 2-Channel USB Relay Module (Amazon)](https://www.amazon.com/NOYITO-2-Channel-Module-Control-Intelligent/dp/B081RM7PMY/)
 - **Chip**: CH340 USB-to-serial
@@ -103,7 +103,7 @@ port or a HID device:
 - **Channels**: 1 or 2 independent relay channels on one USB port
 - **Supply voltage**: 5 V via USB
 
-### Hardware Notes (HID)
+#### Hardware Notes (HID)
 
 - **Purchase (4-channel)**: [NOYITO 4-Channel HID Drive-free USB Relay (Amazon)](https://www.amazon.com/NOYITO-Drive-Free-Computer-2-Channel-Micro-USB/dp/B0B538N95Q)
 - **Purchase (8-channel)**: [NOYITO 8-Channel HID Drive-free USB Relay (Amazon)](https://www.amazon.com/NOYITO-Drive-Free-Computer-2-Channel-Micro-USB/dp/B0B536M5MH)
@@ -112,7 +112,7 @@ port or a HID device:
 - **Channels**: 4 or 8 independent relay channels
 - **Supply voltage**: 5 V via USB
 
-### CLI Usage
+## Usage
 
 Inside a `jmp exporter shell`:
 

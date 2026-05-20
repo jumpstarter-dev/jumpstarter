@@ -70,7 +70,7 @@ export:
       config_file: /path/to/xcp_config.py
 ```
 
-## Configuration Parameters
+### Configuration Parameters
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
@@ -85,13 +85,7 @@ export:
 | `can_id_slave` | `int` | `None` | CAN ID for slave -> master (CAN only) |
 | `config_file` | `str` | `None` | Path to a pyXCP config file (overrides individual params) |
 
-## API Reference
-
-```{eval-rst}
-.. autoclass:: jumpstarter_driver_xcp.driver.Xcp()
-```
-
-## Example Usage
+## Usage
 
 ```python
 from jumpstarter.common.utils import env
@@ -110,4 +104,10 @@ with env() as client:
     xcp.download(0x2000, b"\x42\x00\x00\x00")
 
     xcp.disconnect()
+```
+
+## API Reference
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_xcp.driver.Xcp()
 ```

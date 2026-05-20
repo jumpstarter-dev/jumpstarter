@@ -102,9 +102,9 @@ For native `adb` or external tools, export the env vars printed by the
 The `nodaemon` command is not supported as it would start a local ADB server
 process, ignoring the tunnel entirely.
 
-## Integration with Android Ecosystem Tools
+### Integration with Android Ecosystem Tools
 
-### Forward ADB for external tools
+#### Forward ADB for external tools
 
 The `tunnel` command creates a persistent tunnel that other `j adb` commands
 reuse automatically. For external tools, export the env vars printed by the
@@ -122,7 +122,7 @@ export ANDROID_ADB_SERVER_PORT=<port>
 adb devices
 ```
 
-### Android Studio
+#### Android Studio
 
 Android Studio automatically starts and maintains its own ADB server on
 port 5037. Because of this, the `tunnel` command uses an auto-assigned port
@@ -142,7 +142,7 @@ j adb tunnel -P 5037
 # causing a conflict. If this happens, use the auto-assigned port instead.
 ```
 
-### Trade Federation (tradefed)
+#### Trade Federation (tradefed)
 
 tradefed discovers devices through the ADB server via the
 `ANDROID_ADB_SERVER_PORT` environment variable:
@@ -158,7 +158,7 @@ tradefed.sh
 # > list devices   <-- shows remote devices
 ```
 
-### Python API
+#### Python API
 
 You can also perform interactions via ADB using the
 [`adbutils`](https://github.com/openatx/adbutils) Python package.
@@ -173,9 +173,9 @@ with client.adb.forward_adb(port=0) as (host, port):
         print(device.serial, device.prop.model)
 ```
 
-## CLI Reference
+### CLI
 
-### Standard ADB commands (passed through)
+#### Standard ADB commands (passed through)
 
 | Usage                         | Description                                       |
 | ----------------------------- | ------------------------------------------------- |
@@ -187,13 +187,13 @@ with client.adb.forward_adb(port=0) as (host, port):
 | `j adb pull <remote> <local>` | Pull a file from the device                       |
 | `j adb logcat`                | View device logs                                  |
 
-### Jumpstarter-specific commands
+#### Jumpstarter-specific commands
 
 | Usage                    | Description                                                             |
 | ------------------------ | ----------------------------------------------------------------------- |
 | `j adb tunnel [-P PORT]` | Create a persistent ADB tunnel (auto-assigned port, or specify with -P) |
 
-### Options
+#### Options
 
 | Option       | Description                          | Default   |
 | ------------ | ------------------------------------ | --------- |

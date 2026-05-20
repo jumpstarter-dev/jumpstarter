@@ -47,19 +47,19 @@ export:
 | cps            | Characters per second throttling limit. When set, data transmission will be throttled to simulate slow typing. Useful for devices that can't handle fast input | float | no       | None    |
 | disable_hupcl  | Disable HUPCL on POSIX systems to avoid toggling DTR/RTS on close (can prevent MCU reset on serial disconnect)                                       | bool  | no       | False   |
 
-## NVDemuxSerial Driver
+### NVDemuxSerial Driver
 
 The `NVDemuxSerial` driver provides serial access to NVIDIA Tegra demultiplexed UART channels using the [nv_tcu_demuxer](https://docs.nvidia.com/jetson/archives/r38.2.1/DeveloperGuide/AT/JetsonLinuxDevelopmentTools/TegraCombinedUART.html) tool. It automatically handles device reconnection when the target device restarts.
 
 The nv_tcu_demuxer tool can be obtained from the NVIDIA Jetson BSP, at this path: `Linux_for_Tegra/tools/demuxer/nv_tcu_demuxer`.
 
-### Multi-Instance Support
+#### Multi-Instance Support
 
 Multiple driver instances can share a single demuxer process by specifying different target channels. This allows simultaneous access to multiple UART channels (CCPLEX, BPMP, SCE, etc.) from the same physical device.
 
-### Configuration
+#### Configuration
 
-#### Single channel example:
+##### Single channel example:
 
 ```yaml
 export:
@@ -71,7 +71,7 @@ export:
       # chip defaults to T264 (Thor), use T234 for Orin
 ```
 
-#### Multiple channels example:
+##### Multiple channels example:
 
 ```yaml
 export:
@@ -97,7 +97,7 @@ export:
       chip: "T264"
 ```
 
-### Config parameters
+#### Config parameters
 
 | Parameter      | Description                                                                                     | Type  | Required | Default                                                                   |
 | -------------- | ----------------------------------------------------------------------------------------------- | ----- | -------- | ------------------------------------------------------------------------- |
@@ -110,7 +110,7 @@ export:
 | timeout        | Timeout in seconds waiting for demuxer to detect pts                                            | float | no       | 10.0                                                                      |
 | poll_interval  | Interval in seconds to poll for device reappearance after disconnect                            | float | no       | 1.0                                                                       |
 
-### Device Auto-Detection
+#### Device Auto-Detection
 
 The `device` parameter supports glob patterns for automatic device discovery:
 
@@ -125,7 +125,7 @@ device: "/dev/serial/by-id/usb-NVIDIA_Tegra_On-Platform_Operator_ABC123-if01"
 device: "/dev/ttyUSB0"
 ```
 
-### Auto-Recovery
+#### Auto-Recovery
 
 When the target device restarts (e.g., power cycle), the serial device disappears and the demuxer exits. The driver automatically:
 
@@ -136,7 +136,7 @@ When the target device restarts (e.g., power cycle), the serial device disappear
 
 Active connections will receive errors when the device disconnects. Clients should reconnect, and the driver will wait for the device to be available again.
 
-### Configuration Validation / Limitations
+#### Configuration Validation / Limitations
 
 When using multiple driver instances, all instances must have compatible configurations:
 
@@ -149,7 +149,7 @@ If these requirements are not met, the driver will raise a `ValueError` during i
 
 
 
-## CLI Commands
+## Usage
 
 The pyserial driver provides two CLI commands for interacting with serial ports:
 

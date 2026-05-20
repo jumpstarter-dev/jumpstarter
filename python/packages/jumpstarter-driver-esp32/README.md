@@ -45,12 +45,7 @@ the child driver. Use a `ref` proxy to share the serial driver with the
 top-level composite, enabling both `j serial start-console` and
 `j storage flash` to work.
 
-## API Reference
-
-```{eval-rst}
-.. autoclass:: jumpstarter_driver_esp32.client.Esp32FlasherClient()
-    :members: flash, dump, get_chip_info, erase, hard_reset, enter_bootloader
-```
+## Usage
 
 ### CLI
 
@@ -73,8 +68,6 @@ Commands:
   start-console  Start serial port console
   pipe           Pipe serial port data to stdout or file
 ```
-
-## Examples
 
 ### CLI usage
 
@@ -126,4 +119,11 @@ client.storage.hard_reset()
 console = client.serial.open()
 console.sendline("import machine")
 console.expect(">>>")
+```
+
+## API Reference
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_esp32.client.Esp32FlasherClient()
+    :members: flash, dump, get_chip_info, erase, hard_reset, enter_bootloader
 ```

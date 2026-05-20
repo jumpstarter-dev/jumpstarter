@@ -87,7 +87,7 @@ export:
 
 When both GPIO and serial children are present, GPIO reset is preferred.
 
-## Shell commands
+## Usage
 
 - `j storage flash ...` -- flash a UF2 file (auto-enters BOOTSEL if needed)
 - `j storage bootloader` -- request BOOTSEL mode without flashing

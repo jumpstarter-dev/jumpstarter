@@ -68,13 +68,7 @@ export:
       remote_port: 30490
 ```
 
-## API Reference
-
-```{eval-rst}
-.. autoclass:: jumpstarter_driver_someip.driver.SomeIp()
-```
-
-## Example Usage
+## Usage
 
 ### RPC Call
 
@@ -160,4 +154,10 @@ with env() as client:
 
     # Clean up
     someip.close_connection()
+```
+
+## API Reference
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_someip.driver.SomeIp()
 ```
