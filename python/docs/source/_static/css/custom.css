@@ -42,6 +42,26 @@ table td:first-child code {
 
 .glossary-term {
     border-bottom: 1px dotted var(--color-foreground-muted);
-    cursor: help;
+}
+
+.glossary-term[data-tooltip] {
+    position: relative;
+}
+
+.glossary-term[data-tooltip]:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 0;
+    bottom: 100%;
+    background: var(--color-background-secondary);
+    color: var(--color-foreground-primary);
+    border: 1px solid var(--color-foreground-muted);
+    padding: 0.4em 0.6em;
+    border-radius: 4px;
+    font-size: 0.85em;
+    max-width: 300px;
+    white-space: normal;
+    z-index: 1000;
+    pointer-events: none;
 }
 

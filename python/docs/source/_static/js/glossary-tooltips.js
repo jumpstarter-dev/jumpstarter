@@ -38,7 +38,7 @@
             if (def) {
                 var span = document.createElement("span");
                 span.className = "glossary-term";
-                span.setAttribute("title", def);
+                span.setAttribute("data-tooltip", def);
                 span.innerHTML = a.innerHTML;
                 a.parentNode.replaceChild(span, a);
             }
