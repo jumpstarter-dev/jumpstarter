@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 from jumpstarter_driver_mitmproxy.client import MitmproxyClient
 
-# -- Proxy session fixtures --------------------------------------------------
+# - Proxy session fixtures --------------------------------------------------
 
 
 @pytest.fixture(scope="session")
@@ -48,7 +48,7 @@ def proxy(proxy_session):
     proxy_session.clear_mocks()
 
 
-# -- Scenario fixtures -------------------------------------------------------
+# - Scenario fixtures -------------------------------------------------------
 
 
 @pytest.fixture

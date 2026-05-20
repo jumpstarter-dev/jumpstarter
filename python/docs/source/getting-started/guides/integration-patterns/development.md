@@ -22,9 +22,9 @@ flowchart TB
     TestCode --> LocalExporter
     LocalExporter --> DeviceOnDesk
 
-    TestCode -- "Request access" --> Controller
-    Controller -- "Assign lease" --> TestCode
-    Controller -- "Connect to" --> RemoteExporters
+    TestCode - "Request access" --> Controller
+    Controller - "Assign lease" --> TestCode
+    Controller - "Connect to" --> RemoteExporters
     RemoteExporters --> LabDevices
 ```
 
@@ -68,17 +68,17 @@ flowchart TB
           LabDevices["Device Under Test"]
       end
 
-    Dev -- "Access via browser" --> Workspace
-    Workspace -- "Contains" --> TestCode
+    Dev - "Access via browser" --> Workspace
+    Workspace - "Contains" --> TestCode
 
-    TestCode -- "Local system access" --> PortFwd
-    PortFwd -- "Forward connection" --> LocalExporter
-    LocalExporter -- "Control" --> DeviceOnDesk
+    TestCode - "Local system access" --> PortFwd
+    PortFwd - "Forward connection" --> LocalExporter
+    LocalExporter - "Control" --> DeviceOnDesk
 
-    TestCode -- "Request access" --> Controller
-    Controller -- "Assign lease" --> TestCode
-    Controller -- "Connect to" --> RemoteExporters
-    RemoteExporters -- "Control" --> LabDevices
+    TestCode - "Request access" --> Controller
+    Controller - "Assign lease" --> TestCode
+    Controller - "Connect to" --> RemoteExporters
+    RemoteExporters - "Control" --> LabDevices
 ```
 
 This architecture provides a cloud-native development experience while

@@ -151,15 +151,15 @@ for details on gRPC counterparts):
 flowchart LR
     subgraph "Unary RPC"
         direction TB
-        C1["Client"] -- "DriverCall\n(desired state)" --> D1["Driver"]
-        D1 -- "Result" --> C1
+        C1["Client"] - "DriverCall\n(desired state)" --> D1["Driver"]
+        D1 - "Result" --> C1
         E1["Example: power on/off"]
     end
 
     subgraph "Server Streaming RPC"
         direction TB
-        C2["Client"] -- "StreamingDriverCall\n(interval)" --> D2["Driver"]
-        D2 -- "Result Stream" --> C2
+        C2["Client"] - "StreamingDriverCall\n(interval)" --> D2["Driver"]
+        D2 - "Result Stream" --> C2
         E2["Example: power readings"]
     end
 
@@ -170,12 +170,12 @@ flowchart LR
     end
 ```
 
-- **Unary** -- Methods marked with `@export` send a single request and receive a
+- **Unary** - Methods marked with `@export` send a single request and receive a
   single response. Used for commands like power on/off or querying device state.
-- **Server Streaming** -- Methods marked with `@export` that return a generator
+- **Server Streaming** - Methods marked with `@export` that return a generator
   produce a stream of responses from a single request. Used for continuous data
   like sensor readings.
-- **Bidirectional Streaming** -- Methods marked with the `@exportstream` decorator open a
+- **Bidirectional Streaming** - Methods marked with the `@exportstream` decorator open a
   full-duplex byte stream. Used for serial communication, video capture, or
   tunneling existing protocols (such as SSH) over Jumpstarter.
 

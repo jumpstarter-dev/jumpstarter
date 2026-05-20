@@ -18,8 +18,8 @@ flowchart TB
         DUTs["Device Under Test"]
     end
 
-    IDE -- "MCP Protocol" --> JmpMCP
-    JmpMCP -- "Lease & connect" --> DUTs
+    IDE - "MCP Protocol" --> JmpMCP
+    JmpMCP - "Lease & connect" --> DUTs
 ```
 
 ## Prerequisites
@@ -170,13 +170,13 @@ sequenceDiagram
 
 ## Tips
 
-- **Use `jmp_explore` first** -- each {term}`device` type exposes different
+- **Use `jmp_explore` first** - each {term}`device` type exposes different
   commands
-- **Set `timeout_seconds` for streaming commands** -- commands like `serial pipe`
+- **Set `timeout_seconds` for streaming commands** - commands like `serial pipe`
   block indefinitely
-- **Use `jmp_drivers` for Python access** -- inspect the driver tree to discover
+- **Use `jmp_drivers` for Python access** - inspect the driver tree to discover
   methods and signatures
-- **Connections are persistent** -- create once, run many commands
+- **Connections are persistent** - create once, run many commands
 
 ## Logging
 

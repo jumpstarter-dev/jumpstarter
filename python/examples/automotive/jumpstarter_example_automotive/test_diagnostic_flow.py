@@ -1,7 +1,7 @@
 """Representative end-to-end diagnostic test using jumpstarter.
 
 Demonstrates a realistic ECU diagnostic workflow: session management,
-DID read/write, DTC handling, security access, and ECU reset -- all
+DID read/write, DTC handling, security access, and ECU reset - all
 running through the full jumpstarter driver/gRPC/client pipeline against
 a stateful mock ECU.
 """
@@ -37,7 +37,7 @@ def test_full_diagnostic_workflow(ecu_client):
     assert resp.success is True
     assert resp.service == "DiagnosticSessionControl"
 
-    # 4. Read DTCs -- mock ECU has pre-populated faults
+    # 4. Read DTCs - mock ECU has pre-populated faults
     dtcs = ecu_client.read_dtc_by_status_mask(0xFF)
     assert len(dtcs) == len(INITIAL_DTCS)
     initial_ids = {dtc_id for dtc_id, _ in INITIAL_DTCS}
@@ -144,7 +144,7 @@ def test_security_access_in_default_session(ecu_client):
     assert seed_resp.nrc == 0x22
 
 
-# -- RoutineControl tests ----------------------------------------------------
+# - RoutineControl tests ----------------------------------------------------
 
 
 def test_routine_start_stop_result(ecu_client):
@@ -185,7 +185,7 @@ def test_routine_unknown_id_rejected(ecu_client):
     assert resp.nrc == 0x31
 
 
-# -- Authentication tests ----------------------------------------------------
+# - Authentication tests ----------------------------------------------------
 
 
 ALGO_INDICATOR = bytes(16)
@@ -245,7 +245,7 @@ def test_deauthenticate(ecu_client):
     assert resp.success is True
 
 
-# -- RequestFileTransfer tests -----------------------------------------------
+# - RequestFileTransfer tests -----------------------------------------------
 
 
 def test_file_transfer_read_file(ecu_client):

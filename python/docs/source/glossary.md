@@ -6,25 +6,25 @@
 :sorted:
 
 CRD
-  Custom Resource Definition -- Kubernetes extension for Jumpstarter resources.
+  Custom Resource Definition - Kubernetes extension for Jumpstarter resources.
 
 DUT
   Device Under Test.
 
 gRPC
-  Google Remote Procedure Call -- Jumpstarter's communication framework.
+  Google Remote Procedure Call - Jumpstarter's communication framework.
 
 HiL
-  Hardware-in-the-Loop -- testing with real hardware in the loop.
+  Hardware-in-the-Loop - testing with real hardware in the loop.
 
 MAN
-  Manual -- reference documentation for command-line tools.
+  Manual - reference documentation for command-line tools.
 
 JEP
-  Jumpstarter Enhancement Proposal -- design document for significant changes.
+  Jumpstarter Enhancement Proposal - design document for significant changes.
 
 MCP
-  Model Context Protocol -- enables AI agents to interact with hardware.
+  Model Context Protocol - enables AI agents to interact with hardware.
 ```
 
 ## Entities

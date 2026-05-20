@@ -1,7 +1,7 @@
 """Representative end-to-end XCP ECU tests using jumpstarter.
 
 Demonstrates realistic XCP workflows: connection, measurement, calibration,
-DAQ configuration, and flash programming -- all running through the full
+DAQ configuration, and flash programming - all running through the full
 jumpstarter driver/gRPC/client pipeline against a stateful mock ECU.
 """
 
@@ -25,7 +25,7 @@ def _to_bytes(data) -> bytes:
     return bytes(data, "latin-1") if isinstance(data, str) else data
 
 
-# -- Full workflow tests -------------------------------------------------------
+# - Full workflow tests -------------------------------------------------------
 
 
 def test_full_measurement_and_calibration_workflow(ecu_client, mock_ecu):
@@ -56,7 +56,7 @@ def test_full_measurement_and_calibration_workflow(ecu_client, mock_ecu):
     coolant_temp = struct.unpack("<I", data)[0]
     assert coolant_temp == 90
 
-    # 5. Check protection status -- calpag should be protected
+    # 5. Check protection status - calpag should be protected
     status = ecu_client.get_status()
     assert status.resource_protection["calpag"] is True
     assert status.resource_protection["pgm"] is True
@@ -204,7 +204,7 @@ def test_full_daq_configuration_workflow(ecu_client, mock_ecu):
     ecu_client.disconnect()
 
 
-# -- Targeted scenario tests ---------------------------------------------------
+# - Targeted scenario tests ---------------------------------------------------
 
 
 def test_read_all_calibration_parameters(ecu_client):

@@ -3,7 +3,7 @@
 The Jumpstarter Protocol defines the gRPC-based communication layer for the
 [Jumpstarter](https://jumpstarter.dev) Hardware-in-the-Loop (HiL) ecosystem. It
 enables seamless, secure, and scalable interaction between clients, the
-Jumpstarter Service, and exporters -- whether they are interfacing with physical
+Jumpstarter Service, and exporters - whether they are interfacing with physical
 or virtual hardware, locally or remotely.
 
 The protocol provides a unified gRPC interface for clients to control and monitor

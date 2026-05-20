@@ -172,7 +172,7 @@ class UdsInterface:
             logger.warning("ReadDTCByStatusMask NRC 0x%02X (%s)", e.response.code, e.response.code_name)
             return []
 
-    # -- RoutineControl (0x31) ------------------------------------------------
+    # - RoutineControl (0x31) ------------------------------------------------
 
     @export
     @validate_call(validate_return=True)
@@ -234,7 +234,7 @@ class UdsInterface:
                 nrc=e.response.code, nrc_name=e.response.code_name,
             )
 
-    # -- Authentication (0x29) ------------------------------------------------
+    # - Authentication (0x29) ------------------------------------------------
 
     @export
     @validate_call(validate_return=True)
@@ -282,7 +282,7 @@ class UdsInterface:
                 nrc=e.response.code, nrc_name=e.response.code_name,
             )
 
-    # -- RequestFileTransfer (0x38) -------------------------------------------
+    # - RequestFileTransfer (0x38) -------------------------------------------
 
     @export
     @validate_call(validate_return=True)

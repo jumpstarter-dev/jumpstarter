@@ -26,7 +26,7 @@ This example requires the following hardware:
 $ cd jumpstarter_example_soc_pytest
 $ uv run pytest -s
 ================================================================== test session starts ===================================================================
-platform linux -- Python 3.12.3, pytest-8.3.3, pluggy-1.5.0
+platform linux - Python 3.12.3, pytest-8.3.3, pluggy-1.5.0
 rootdir: /home/majopela/jumpstarter/examples/soc-pytest
 configfile: pyproject.toml
 plugins: anyio-4.6.2.post1, cov-5.0.0

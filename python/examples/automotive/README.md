@@ -8,15 +8,15 @@ Unit) diagnostics using UDS (Unified Diagnostic Services) over DoIP
 
 A **stateful mock ECU** simulates a realistic diagnostic target with:
 
-- **Session management** -- default, extended, and programming sessions with
+- **Session management** - default, extended, and programming sessions with
   enforced preconditions (e.g., DID writes require extended session)
-- **Security access** -- seed/key challenge-response gating privileged
+- **Security access** - seed/key challenge-response gating privileged
   operations
-- **DID store** -- readable/writable Data Identifiers (VIN, part number,
+- **DID store** - readable/writable Data Identifiers (VIN, part number,
   software version, supplier ID)
-- **DTC memory** -- pre-populated Diagnostic Trouble Codes that can be read
+- **DTC memory** - pre-populated Diagnostic Trouble Codes that can be read
   and cleared, restored on ECU reset
-- **Negative responses** -- proper NRC codes when preconditions are violated
+- **Negative responses** - proper NRC codes when preconditions are violated
 
 The test exercises a complete diagnostic workflow through the full Jumpstarter
 pipeline (driver -> gRPC -> client), validating the end-to-end use case.
@@ -47,10 +47,10 @@ export:
       request_timeout: 5
 ```
 
-The test code using Jumpstarter's client API would remain unchanged -- only the
+The test code using Jumpstarter's client API would remain unchanged - only the
 exporter configuration changes between mock and real hardware.
 
 ## Drivers used
 
-- **jumpstarter-driver-uds-doip** -- UDS over DoIP transport
-- **jumpstarter-driver-uds** -- UDS service interface (base)
+- **jumpstarter-driver-uds-doip** - UDS over DoIP transport
+- **jumpstarter-driver-uds** - UDS service interface (base)

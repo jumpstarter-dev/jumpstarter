@@ -14,9 +14,9 @@ orphan: true
 | **Created**       | 2026-04-23                                                            |
 | **Updated**       | 2026-05-04                                                            |
 | **Discussion**    | https://github.com/jumpstarter-dev/jumpstarter/pull/631               |
-| **Requires**      | --                                                                     |
-| **Supersedes**    | --                                                                     |
-| **Superseded-By** | --                                                                     |
+| **Requires**      | -                                                                     |
+| **Supersedes**    | -                                                                     |
+| **Superseded-By** | -                                                                     |
 
 ---
 
@@ -25,8 +25,8 @@ orphan: true
 This JEP defines an optional, cross-component observability model for
 Jumpstarter covering lease context metadata, structured operational events,
 exporter/driver metrics, and standardized logging. It targets direct integration
-with Prometheus (scrape), Loki (log aggregation), and Perses (dashboards)  -- 
-without mandating OpenTelemetry -- and introduces an optional in-cluster
+with Prometheus (scrape), Loki (log aggregation), and Perses (dashboards)  - 
+without mandating OpenTelemetry - and introduces an optional in-cluster
 Jumpstarter Telemetry service that aggregates data from exporters and clients so
 that edge processes never need Loki or cluster-scrape credentials.
 Implementation is expected to land in phases; this JEP describes the end state
@@ -83,14 +83,14 @@ exporter-level metrics that a monitoring stack can scrape or receive.
 
 ### Concepts
 
-- **Lease context** -- Identifiers and labels supplied by a client or CI and
+- **Lease context** - Identifiers and labels supplied by a client or CI and
   associated for the life of a lease, propagated where safe so metrics, logs,
   and traces can be filtered and joined.
-- **Lease events** (or *operations*) -- Annotated, structured log entries
+- **Lease events** (or *operations*) - Annotated, structured log entries
   recording significant actions (for example *flash started*, *flash failed*,
   *image reference*) with typed fields, queryable in **Loki** alongside
   regular logs and distinct from higher-frequency debug output (see **DD-2**).
-- **Exporter metrics** -- Counters (operations, bytes), histograms (operation
+- **Exporter metrics** - Counters (operations, bytes), histograms (operation
   duration), and gauges (active sessions) exposed from the exporter and
   enriched by individual drivers via the `driver_type` label. Each driver
   selects a category from a predefined set in jumpstarter core (e.g.
@@ -99,11 +99,11 @@ exporter-level metrics that a monitoring stack can scrape or receive.
   Composite drivers (e.g. Renode, QEMU) that bundle multiple sub-drivers
   do not emit a single top-level category for delegated work. Instead,
   each sub-driver emits its own `driver_type` when it performs an
-  operation -- a Renode storage sub-driver emits `driver_type="storage"`,
+  operation - a Renode storage sub-driver emits `driver_type="storage"`,
   its power sub-driver emits `driver_type="power"`, and so on. Any
   top-level methods on the composite driver itself (e.g. VM lifecycle)
   emit `driver_type="composite"`.
-- **Jumpstarter Telemetry** (optional) -- a dedicated component that
+- **Jumpstarter Telemetry** (optional) - a dedicated component that
   reverse-scrapes connected exporters for metrics via `MetricsStream`
   and receives structured logs via `PushLogs`, using the same trust
   model (mTLS, ServiceAccount) as Controller/Router. It isolates
@@ -124,9 +124,9 @@ exporter-level metrics that a monitoring stack can scrape or receive.
   existing exporter↔control-plane trust boundary. On each Prometheus
   scrape, the Telemetry service fans out to connected exporters and
   serves the merged `/metrics` output (see **DD-3**, **DD-7**), with
-  cluster credentials -- avoiding per-exporter Loki and metrics secrets.
+  cluster credentials - avoiding per-exporter Loki and metrics secrets.
   Exporters and clients also push structured log entries via `PushLogs`
-  (not unbounded default chatter -- see *Control-plane aggregation*
+  (not unbounded default chatter - see *Control-plane aggregation*
   below).
 - The `jmp` CLI output remains human-readable, but when a Telemetry
   endpoint is available, `jmp` also pushes structured JSON logs to the
@@ -165,11 +165,11 @@ message TelemetryEndpoint {
 
 Exporters call `GetServiceEndpoints` after `Register`; clients call it
 after authentication. An empty `telemetry_endpoints` list means telemetry
-is not deployed -- callers skip all telemetry RPCs. Older controllers
+is not deployed - callers skip all telemetry RPCs. Older controllers
 that do not implement the method return `UNIMPLEMENTED`, which callers
 treat identically to an empty list.
 
-#### gRPC: Telemetry service (`telemetry.proto` -- new file)
+#### gRPC: Telemetry service (`telemetry.proto` - new file)
 
 A new `protocol/proto/jumpstarter/v1/telemetry.proto` defines the
 `TelemetryService` implemented by `jumpstarter-telemetry`. It has two
@@ -299,7 +299,7 @@ codes do not require a proto regeneration), and validation of allowed
 values is enforced at the application layer using the operator's
 configuration (e.g. `driverTypeEnum` allowlist). The same reasoning
 applies to `extra_fields` and `structured_fields` in
-`LogStreamResponse` -- they carry driver-specific key-value data
+`LogStreamResponse` - they carry driver-specific key-value data
 destined for log bodies, not typed metrics.
 
 #### gRPC: `AuditStream` removal (`jumpstarter.proto`)
@@ -308,7 +308,7 @@ The existing `AuditStream` RPC on `ControllerService` and its
 `AuditStreamRequest` message are removed. Analysis of the codebase
 shows this is dead code:
 
-- The Go controller has no implementation -- calls fall through to
+- The Go controller has no implementation - calls fall through to
   `UnimplementedControllerServiceServer` which returns
   `codes.Unimplemented`.
 - No Python code (exporter or client) calls the RPC.
@@ -320,7 +320,7 @@ message format.
 
 #### gRPC: `LogStreamResponse` enrichment (`jumpstarter.proto`)
 
-The existing `LogStream` RPC on `ExporterService` is kept -- it serves
+The existing `LogStream` RPC on `ExporterService` is kept - it serves
 a fundamentally different purpose (real-time session logs from
 exporter to connected client) from the Telemetry log push. However,
 the `LogStreamResponse` message is enriched with optional additive
@@ -341,14 +341,14 @@ message LogStreamResponse {
 }
 ```
 
-These fields are optional and backward compatible -- older clients
+These fields are optional and backward compatible - older clients
 ignore unknown fields; older exporters simply do not set them.
 The same size limits as `LogEntry.extra_fields` apply to
 `structured_fields` (16 entries, 64-char keys, 256-char values).
 
 #### Tracing scope
 
-This JEP covers *correlation only* -- `lease_id`, `trace_id`,
+This JEP covers *correlation only* - `lease_id`, `trace_id`,
 and `span_id` are propagated as log fields and Prometheus exemplar keys so that
 metrics, logs, and (future) traces can be joined. Full distributed tracing
 (span creation, sampling policies, trace storage and visualization) is deferred
@@ -365,7 +365,7 @@ metadata ignored by older servers).
 ### DD-1: How lease-scoped *context* metadata is stored
 
 **Scope:** This decision is about where to store generic metadata on a
-`Lease` that describes *why* a run exists or *where* it came from -- for example
+`Lease` that describes *why* a run exists or *where* it came from - for example
 an external build id, pipeline id, VCS revision, or other
 operator-defined keys (team, environment), within the cardinality and
 size limits defined in *Cardinality guidelines*. The same stored context
@@ -378,15 +378,15 @@ identity without re-typing it on every line.
 
 **Alternatives considered:**
 
-1. **Annotation and label only** on the `Lease` object -- Kube-native, no spec
+1. **Annotation and label only** on the `Lease` object - Kube-native, no spec
    change; limited size for annotations; labels for select queries only.
 2. **Typed subfields under `spec`** (for example `observability` or `context`)
-   -- easier validation, clearer API, migration path in CRD.
-3. **Only client-side** (environment / local config) -- no cluster visibility;
+   - easier validation, clearer API, migration path in CRD.
+3. **Only client-side** (environment / local config) - no cluster visibility;
    hard for operators to audit; no stable object-level link to per-lease
    metrics and server logs in the cluster.
 
-**Decision:** **(2)** -- a typed `spec.context` map under the Lease CRD for
+**Decision:** **(2)** - a typed `spec.context` map under the Lease CRD for
 first-class, validated context. **(1)** (labels/annotations) remains allowed
 for integration with generic tooling that only understands Kubernetes metadata
 or benefits from lease label filtering.
@@ -398,11 +398,11 @@ are still useful for selection and for tools that only understand metadata.
 
 **Alternatives considered:**
 
-1. **Kubernetes `Event` objects** -- built-in, TTL-limited, good for
+1. **Kubernetes `Event` objects** - built-in, TTL-limited, good for
    "what happened" in `kubectl get events` but not long-term history by default.
-2. **`Lease.status.conditions` only** -- compact but poor for a sequence of
+2. **`Lease.status.conditions` only** - compact but poor for a sequence of
    operations with payloads (image id, size).
-3. **Dedicated CRD** (for example per-event or a single stream object) -- more
+3. **Dedicated CRD** (for example per-event or a single stream object) - more
    design and RBAC, better long-term retention and querying if backed properly.
 4. **Annotated log events** Provides a lightweight alternative that can be traced
    and filtered along logs.
@@ -421,7 +421,7 @@ are still useful for selection and for tools that only understand metadata.
   `status.conditions` **(2)** is a poor fit for a sequence of operations with
   variable payloads (image digest, byte count, duration); a dedicated CRD
   **(3)** adds schema versioning, RBAC surface, and per-event etcd writes
-  that scale with flash volume -- all pressure the cluster does not need
+  that scale with flash volume - all pressure the cluster does not need
   for data whose primary consumers are dashboards and post-mortem
   queries, not reconciliation loops. Structured log events carry arbitrary
   fields without CRD migration, support configurable retention in Loki,
@@ -432,21 +432,21 @@ are still useful for selection and for tools that only understand metadata.
 
 **Alternatives considered:**
 
-1. **HTTP `GET /metrics` in Prometheus text format** (pull) -- the default
+1. **HTTP `GET /metrics` in Prometheus text format** (pull) - the default
    for in-cluster Prometheus in scrape mode; works
    with the Prometheus Operator (`ServiceMonitor`), `kube-prometheus`, and
    self-hosted jobs. The optional Jumpstarter Telemetry service exposes
    this for aggregated counters it holds after receiving +1 / +N
    from exporters.
 2. **Prometheus remote write** (or a Mimir / Cortex receiver)
-   from a Jumpstarter component -- useful in advanced topologies; not
+   from a Jumpstarter component - useful in advanced topologies; not
    part of the reference implementation in this JEP; operators can add a
    federation or `remote_write` from Prometheus to long-term
    storage without the application pushing to Prometheus.
-3. **Both** -- **(1)** is required for the documented path; **(2)** is
+3. **Both** - **(1)** is required for the documented path; **(2)** is
    optional infrastructure behind Prometheus, not a second
    required app protocol.
-4. **Reverse scrape via gRPC** -- exporters maintain a local
+4. **Reverse scrape via gRPC** - exporters maintain a local
    `prometheus_client.CollectorRegistry` and connect to the Telemetry
    service via a persistent bidirectional gRPC stream (`MetricsStream`).
    When Prometheus scrapes the Telemetry service's `/metrics` endpoint,
@@ -456,7 +456,7 @@ are still useful for selection and for tools that only understand metadata.
    scrape (no change). This avoids push-increment complexity on the wire
    and keeps full counter state on the exporter at all times.
 
-**Decision:** **(4)** -- exporter-originated metrics are reverse-scraped
+**Decision:** **(4)** - exporter-originated metrics are reverse-scraped
   through the Telemetry service via `MetricsStream`.
 
 **Rationale:** Exporters are often behind NAT or firewalls and cannot
@@ -464,7 +464,7 @@ are still useful for selection and for tools that only understand metadata.
   solves this: the exporter initiates an outbound gRPC stream
   (NAT-friendly, same direction as the existing controller connection),
   the Telemetry service requests metric snapshots on demand, and full
-  counter state remains on the exporter at all times -- eliminating
+  counter state remains on the exporter at all times - eliminating
   lost-increment concerns (see **DD-9**). The exporter uses standard
   `prometheus_client` primitives locally, so driver authors instrument
   with familiar counters and histograms. The OpenMetrics exposition
@@ -525,11 +525,11 @@ are still useful for selection and for tools that only understand metadata.
 
 **Alternatives considered:**
 
-1. **JSON always** for every process -- best for machines; hard for humans.
+1. **JSON always** for every process - best for machines; hard for humans.
 2. **Human text default for `jmp`**, **JSON for long-running services** and a
    CLI push via the Telemetry ingest endpoint in JSON format (in addition to the
    human-friendly output)
-3. **Single format** with a pretty-printer in front of developers -- more moving
+3. **Single format** with a pretty-printer in front of developers - more moving
    parts.
 
 **Decision:** **(2)**. Long-running services (`jumpstarter-controller`,
@@ -545,13 +545,13 @@ are still useful for selection and for tools that only understand metadata.
   the same time all services get parseable, joinable log lines. Writing JSON
   to stdout and relying on the cluster log shipper for Loki delivery
   decouples the Controller reconciler and Router session handling from
-  Loki availability -- a Loki outage does not affect lease operations.
+  Loki availability - a Loki outage does not affect lease operations.
   The Telemetry service retains a direct Loki-push because it is an
   isolated workload (**DD-7**) whose core job is Loki ingest.
 
 **Format:** JSONL (one JSON object per line), produced by setting
   `--zap-encoder=json` on the existing `controller-runtime` / Zap logger
-  (no changes to log call sites -- existing `logr` structured fields become
+  (no changes to log call sites - existing `logr` structured fields become
   JSON keys automatically). The `ts`, `level`, and `msg` fields follow
   Zap's default JSON encoder output; application code adds domain fields
   via the standard `logr` `WithValues` / `Info` / `Error` API.
@@ -582,7 +582,7 @@ are still useful for selection and for tools that only understand metadata.
   and used as indexed stream selectors. They must be low-cardinality to
   keep the active stream count manageable (Grafana recommends < 100 k
   active streams per tenant). With the labels above, a deployment with
-  200 exporters across 5 namespaces produces roughly 1 000 streams  -- 
+  200 exporters across 5 namespaces produces roughly 1 000 streams  - 
   well within budget. High-cardinality fields like `client` or
   `lease_id` must stay in the JSON body: promoting `client` to a
   stream label in a 1 000-client, 200-exporter cluster would create
@@ -600,22 +600,22 @@ are still useful for selection and for tools that only understand metadata.
 **Alternatives considered:**
 
 1. **Each exporter and edge host** holds credentials (or a sidecar) to push
-   directly to Loki and to Prometheus (or a metrics gateway) -- maximum
+   directly to Loki and to Prometheus (or a metrics gateway) - maximum
    flexibility; maximum secret distribution and rotation burden on lab and
    remote sites.
 2. **Jumpstarter Controller and/or Router** receive metrics and structured
    events from exporters and (optionally) from client traffic they already
    handle, and forward to the Loki push API and to
    Prometheus-compatible sinks (scrape registration)
-   with in-cluster auth -- one
+   with in-cluster auth - one
    credential surface; enriched with lease, exporter, and client context
    in one place; must be non-blocking, bounded, and optional so the
    control path does not depend on Loki or Prometheus availability.
-3. **Hybrid** -- generic in-cluster collectors for raw pod logs and scrape;
+3. **Hybrid** - generic in-cluster collectors for raw pod logs and scrape;
    (2) for lease-scoped events and aggregated exporter metrics the
    platform understands.
 4. **Dedicated Jumpstarter Telemetry Deployment** (see **DD-7**)
-   instead of folding everything into the Controller -- only
+   instead of folding everything into the Controller - only
    Telemetry holds Loki-push credentials; isolated failure domain
    and scaling for reverse-scrape and log ingest. Router and Controller
    write structured JSON to stdout (see **DD-4**) and expose `/metrics`
@@ -628,12 +628,12 @@ are still useful for selection and for tools that only understand metadata.
   cluster-ingest authentication
   to every exporter process while still attaching Jumpstarter-specific
   context. Among Jumpstarter components, only `jumpstarter-telemetry`
-  holds Loki-push credentials -- the Controller and Router have no Loki
+  holds Loki-push credentials - the Controller and Router have no Loki
   client dependency (see **DD-4**); their pod logs reach Loki via the
   cluster's existing log shipping infrastructure. Generic in-cluster
   collectors solve *credentials* but not *semantic* correlation unless
-  integrated; alternative (2)'s trust-model advantage -- which (4)
-  inherits -- reuses the existing exporter→controller relationship and
+  integrated; alternative (2)'s trust-model advantage - which (4)
+  inherits - reuses the existing exporter→controller relationship and
   can inject labels and tenant context in one place. A separate
   Deployment (**4** / **DD-7**) is preferable to overloading the main
   reconciler when load or residency of counters matters.
@@ -642,7 +642,7 @@ are still useful for selection and for tools that only understand metadata.
 
 **Alternatives considered:**
 
-1. **Adopt OpenTelemetry** -- instrument Controller, Router, Exporter, and
+1. **Adopt OpenTelemetry** - instrument Controller, Router, Exporter, and
    clients with the OTel SDK, export OTLP to a cluster-local
    OpenTelemetry Collector, and let the Collector fan out to Loki, Prometheus
    (remote write), and Tempo.
@@ -651,9 +651,9 @@ are still useful for selection and for tools that only understand metadata.
    (or logfmt) logs to stdout for shippers; optional W3C `traceparent` in
    gRPC metadata for correlation *without* shipping full distributed
    traces in the first iteration. If traces are ever needed, use Tempo
-   ingest where practical, *or* a thin sender -- still
+   ingest where practical, *or* a thin sender - still
    without a project-wide requirement on the OTel SDK in every binary.
-3. **Hybrid (OTel in one language, direct in another)** -- lowest common
+3. **Hybrid (OTel in one language, direct in another)** - lowest common
    implementation cost but inconsistent contributor experience and two
    operational models.
 
@@ -661,30 +661,30 @@ are still useful for selection and for tools that only understand metadata.
   Collector) part of the required reference architecture. Vendors and
   operators who already run an OpenTelemetry Collector may scrape the
   same `/metrics`, receive logs shipped by existing agents, or
-  receive the Loki body the hub would have sent -- compatibility
+  receive the Loki body the hub would have sent - compatibility
   is welcome; dependency is not mandatory.
 
 **Rationale:**
 
 The proposed Jumpstarter Telemetry service (**DD-7**) admittedly
-reimplements a subset of OTel Collector functionality -- metric
+reimplements a subset of OTel Collector functionality - metric
 aggregation, log forwarding, backpressure, and multi-replica HA. The
 decision to build a purpose-built component rather than adopt the OTel
 Collector rests on three arguments, ordered by importance:
 
-1. **Identity enforcement (primary)** -- The Telemetry service operates
+1. **Identity enforcement (primary)** - The Telemetry service operates
    inside Jumpstarter's existing authentication and trust domain (mTLS,
    registered client and exporter identities). It validates that every
    incoming `MetricsStream` or `PushLogs` call originates from the
-   claimed exporter -- preventing impersonation or label
-   injection -- using identities the platform already manages. A generic
+   claimed exporter - preventing impersonation or label
+   injection - using identities the platform already manages. A generic
    OTel Collector has no awareness of Jumpstarter identities; achieving
    the same guarantee would require an external auth policy layer
    (e.g. custom processors, mTLS-to-attribute mapping, and a sidecar or
    admission webhook to enforce label provenance), adding complexity
    that offsets the Collector's generality.
 
-2. **Operational simplicity** -- The Telemetry service is a single Go
+2. **Operational simplicity** - The Telemetry service is a single Go
    binary with a single config surface (the operator CR), no separate
    version matrix, and no generic pipeline DSL. An OTel Collector
    requires operator familiarity with its configuration model
@@ -694,7 +694,7 @@ Collector rests on three arguments, ordered by importance:
    monitor. This overhead is not justified when the data paths are
    known in advance.
 
-3. **Narrow scope** -- Jumpstarter metrics and lease events map directly
+3. **Narrow scope** - Jumpstarter metrics and lease events map directly
    to Prometheus and Loki wire protocols that operators already use.
    Full three-pillar OTel (unified logs and metrics via OTLP) is
    *optional product territory*; this JEP optimizes for low ceremony
@@ -714,7 +714,7 @@ project dependency.
 
 **Alternatives considered:**
 
-1. **In-process** in the Controller (and Router) reconciler -- few
+1. **In-process** in the Controller (and Router) reconciler - few
   moving parts; risk of CPU / GC pressure and stronger coupling
   between leases and high-volume increments or Loki writes.
 2. A **dedicated** in-cluster Service and Deployment (working name
@@ -722,10 +722,10 @@ project dependency.
    exporters and clients, applies them to counters in memory,
    POSTs to Loki, exposes `/metrics`, and uses the same K8s
    ServiceAccount / mTLS as other control-plane binaries.
-3. **Split** into separate sidecars (Loki-only, metrics-only) -- more images to
+3. **Split** into separate sidecars (Loki-only, metrics-only) - more images to
    build and version.
 4. **Dedicated Deployment with reverse-scrape for metrics and push for
-   logs** -- same dedicated `jumpstarter-telemetry` Deployment as **(2)**,
+   logs** - same dedicated `jumpstarter-telemetry` Deployment as **(2)**,
    but instead of receiving increment RPCs the service reverse-scrapes
    connected exporters via `MetricsStream` (see *API / Protocol
    Changes*). Exporters maintain local `prometheus_client` registries;
@@ -733,7 +733,7 @@ project dependency.
    demand when its `/metrics` endpoint is hit, merges the results, and
    serves them to Prometheus. Logs and events are still pushed by
    exporters and clients via `PushLogs`. Client-side metrics are not
-   collected -- all metrically-interesting operations are observable
+   collected - all metrically-interesting operations are observable
    from the exporter side.
 
 **Decision:** Prefer **(4)** for the optional aggregated-metrics + Loki
@@ -746,7 +746,7 @@ project dependency.
   Loki spikes and ingest load cannot starve lease reconciliation in the
   controller. The reverse-scrape model **(4)** is preferred over the
   increment-push model **(2)** because full counter state stays on the
-  exporter -- no metrics are lost when the Telemetry service restarts or
+  exporter - no metrics are lost when the Telemetry service restarts or
   is temporarily unavailable, and idempotency concerns are eliminated
   (see **DD-9**).
 
@@ -761,7 +761,7 @@ supporting detail, not an independent responsibility.
   identity of every `MetricsStream` connection and `PushLogs` RPC from
   the mTLS certificate or ServiceAccount token. The `exporter` and
   `client` labels on incoming data are enforced server-side to match the
-  authenticated identity -- a compromised or misconfigured exporter
+  authenticated identity - a compromised or misconfigured exporter
   cannot submit metrics under another exporter's name or inject
   arbitrary labels.
 
@@ -770,9 +770,9 @@ supporting detail, not an independent responsibility.
 | Scenario                        | Behavior                                                                                                                                                                                       |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Telemetry service unavailable   | Exporters keep counting locally; no metrics are lost. When the exporter reconnects, the next scrape returns the full current counter state. Log push RPCs are fire-and-forget with bounded retry; log entries may be lost but device operations are unaffected. |
-| Telemetry pod restart           | Metric state is rebuilt on the next scrape from each connected exporter -- no permanent data loss. Prometheus `rate()` and `increase()` handle the apparent counter reset transparently. |
+| Telemetry pod restart           | Metric state is rebuilt on the next scrape from each connected exporter - no permanent data loss. Prometheus `rate()` and `increase()` handle the apparent counter reset transparently. |
 | Loki unreachable                | The Telemetry service buffers log entries in a bounded queue (see *Backpressure* in the control-plane section). On overflow, entries are dropped and `jumpstarter_telemetry_dropped_total` incremented. |
-| Prometheus scrape fails         | No data loss -- the next successful scrape triggers a fresh fan-out to connected exporters and returns current values. |
+| Prometheus scrape fails         | No data loss - the next successful scrape triggers a fresh fan-out to connected exporters and returns current values. |
 
   The Telemetry service exposes `/healthz` (liveness) and `/readyz`
   (readiness, gated on Loki reachability and at least one connected
@@ -783,7 +783,7 @@ supporting detail, not an independent responsibility.
   parallel** and waits up to `spec.telemetry.metrics.scrapeTimeout`
   (default: 7 s) for responses. **Only metrics received during the
   current fan-out are included in the response.** Exporters that do not
-  respond in time are omitted entirely -- no cached or stale data is
+  respond in time are omitted entirely - no cached or stale data is
   ever served. This eliminates any risk of double-counting from stale
   connections where the exporter may have already migrated to another
   replica (see **DD-8**).
@@ -794,21 +794,21 @@ supporting detail, not an independent responsibility.
   producing ~50 series (bounded by `{operation, result, driver_type}`
   label combinations), the peak is ~10 000 series at ~200-300 bytes
   each, costing ~2-3 MB. Snapshots are discarded as soon as the
-  `/metrics` response is flushed -- no metric data is retained between
+  `/metrics` response is flushed - no metric data is retained between
   scrapes.
 
 ### DD-8: Multiple Telemetry replicas (HA) and persistent exporter connections
 
 **Context:** With the reverse-scrape model (see **DD-3** alternative 4
 and *API / Protocol Changes*), the Telemetry service does not hold
-authoritative counter state -- exporters maintain their own local
+authoritative counter state - exporters maintain their own local
 `prometheus_client` registries. The Telemetry service only caches the
 latest metric snapshot per exporter. Each exporter opens a single
 long-lived `MetricsStream` to one Telemetry replica.
 
 **Alternatives considered:**
 
-1. **Single replica** for Telemetry -- no cross-pod `sum` issue; SPOF for
+1. **Single replica** for Telemetry - no cross-pod `sum` issue; SPOF for
   ingest and scrape of that `Service`.
 2. **Multiple replicas** behind a load balancer; each RPC updates one
   pod, which only advances its partial counters for the label
@@ -819,8 +819,8 @@ long-lived `MetricsStream` to one Telemetry replica.
   event is applied at most once in the system (counters are
   additive; increments are partitioned by traffic).
 3. **Strong consistency** (Raft, Redis as source of truth for
-  counters) -- higher operating cost than this JEP’s v1 scope.
-4. **Multiple replicas with persistent exporter connections** -- each exporter
+  counters) - higher operating cost than this JEP’s v1 scope.
+4. **Multiple replicas with persistent exporter connections** - each exporter
    opens a single long-lived `MetricsStream` to one replica (persistent by stream).
    Each replica only caches metric snapshots for its connected
    exporters. Prometheus scrapes all replicas (via `PodMonitor`);
@@ -829,7 +829,7 @@ long-lived `MetricsStream` to one Telemetry replica.
    double-counting, because each exporter’s metrics appear on exactly
    one replica’s `/metrics` output. On replica failure the exporter
    reconnects to a survivor and the next scrape returns its full
-   current counter state -- no data is lost.
+   current counter state - no data is lost.
 
 **Decision:** **(4)**
 
@@ -845,19 +845,19 @@ long-lived `MetricsStream` to one Telemetry replica.
 ### DD-9: Idempotency vs. best-effort
 
 **Context:** With the reverse-scrape model, metrics idempotency is a
-non-issue -- each scrape returns the full current counter state from the
+non-issue - each scrape returns the full current counter state from the
 exporter, so there are no increments to deduplicate or double-count.
 The only remaining idempotency concern is for `PushLogs` RPCs, where
 a retry could result in duplicate log entries in Loki.
 
 **Alternatives considered:**
 
-1. **Idempotent** log pushes (deduplication keys per `LogEntry`)  -- 
+1. **Idempotent** log pushes (deduplication keys per `LogEntry`)  - 
   appropriate for billing- or SLO-sensitive log pipelines; requires
   a dedup store or Loki-side dedup.
 2. **Best effort** (at-least-once) for `PushLogs` without global
-  deduplication -- simpler; rare duplicate log entries on retries.
-3. **Metrics idempotency** (dedup keys on metric increments) -- no
+  deduplication - simpler; rare duplicate log entries on retries.
+3. **Metrics idempotency** (dedup keys on metric increments) - no
   longer applicable; the reverse-scrape model returns full state,
   making increment deduplication moot.
 
@@ -872,35 +872,35 @@ a retry could result in duplicate log entries in Loki.
 
 **Alternatives considered:**
 
-1. **Grafana** -- mature, widely deployed, massive plugin and datasource
+1. **Grafana** - mature, widely deployed, massive plugin and datasource
    ecosystem; governed by Grafana Labs (commercial); AGPL v3 license;
    custom JSON dashboard format; external to Kubernetes architecture.
-2. **Perses** -- CNCF project (vendor-neutral governance); Apache 2.0
+2. **Perses** - CNCF project (vendor-neutral governance); Apache 2.0
    license; standardized dashboard spec (CUE/JSON) with built-in static
    validation and SDKs for GitOps; Kubernetes-native (CRD support for
    dashboards-as-code); data-source focus on Prometheus, Loki, and
-   Tempo -- exactly the backends this JEP targets.
+   Tempo - exactly the backends this JEP targets.
 
 **Decision:** **(2)**
 
 **Rationale:**
 
-- **License alignment** -- Jumpstarter is Apache 2.0; recommending an
+- **License alignment** - Jumpstarter is Apache 2.0; recommending an
   AGPL-licensed dashboard layer introduces license friction for downstream
   distributors and embedders.
-- **CNCF governance** -- vendor-neutral stewardship matches the project's
+- **CNCF governance** - vendor-neutral stewardship matches the project's
   open-source posture; no single-vendor control over the dashboard layer.
-- **Kubernetes-native CRDs** -- dashboards can be managed as K8s resources,
+- **Kubernetes-native CRDs** - dashboards can be managed as K8s resources,
   fitting the same declarative, reconciler-driven model Jumpstarter already
   uses for Leases, Exporters, and the optional Telemetry Deployment.
-- **GitOps and validation** -- CUE-based specs with static validation and SDKs
+- **GitOps and validation** - CUE-based specs with static validation and SDKs
   enable dashboard-as-code in CI pipelines, consistent with the JEP's emphasis
   on automation and CI integration.
-- **Backend focus** -- Perses targets Prometheus, Loki, and Tempo -- exactly the
-  three backends this JEP standardizes on -- without carrying the cost of a
+- **Backend focus** - Perses targets Prometheus, Loki, and Tempo - exactly the
+  three backends this JEP standardizes on - without carrying the cost of a
   broad plugin ecosystem the project does not need.
 
-**Perses vs Grafana -- practical comparison:**
+**Perses vs Grafana - practical comparison:**
 
 | Aspect               | Perses                                  | Grafana                                    |
 | -------------------- | --------------------------------------- | ------------------------------------------ |
@@ -914,8 +914,8 @@ a retry could result in duplicate log entries in Loki.
 
 The main Perses gap today is exemplar visualization. Operators who need
 exemplar overlays on dashboards should use Grafana alongside Perses or
-wait for upstream support. Grafana remains fully compatible -- all
-`/metrics` and Loki endpoints are standard -- so the choice is
+wait for upstream support. Grafana remains fully compatible - all
+`/metrics` and Loki endpoints are standard - so the choice is
 non-exclusive.
 
 Operators who prefer Grafana can still point it at the same `/metrics` and Loki
@@ -925,19 +925,19 @@ endpoints; this DD only governs the *recommended* dashboard experience.
 
 ### Correlation and fields
 
-*Subject to review -- names and cardinality rules should be fixed before
+*Subject to review - names and cardinality rules should be fixed before
 "Implemented".*
 
 | Field / label                    | Prom label | Prom exemplar | Loki stream | Log line | Notes                                               |
 | -------------------------------- | :--------: | :-----------: | :---------: | :------: | --------------------------------------------------- |
-| `exporter`                       | yes        | --             | yes         | yes      | CRD name; bounded by cluster size.                  |
-| `operation`                      | yes        | --             | no          | yes      | Small fixed enum (flash, power, …).                 |
-| `result`                         | yes        | --             | no          | yes      | Small fixed enum (success, failure, …).             |
-| `driver_type`                    | yes        | --             | no          | yes      | Category from a predefined set in core (storage, power, …). |
-| `error_type`                     | yes        | --             | no          | yes      | Failure class (timeout, device_error, …); on errors. |
-| `direction`                      | yes        | --             | no          | yes      | tx / rx; for byte-counter and stream metrics only.  |
-| `component`                      | no         | --             | yes         | yes      | Fixed set (cli, controller, router, telemetry, exporter).|
-| `namespace`                      | no         | --             | yes         | yes      | K8s namespace; bounded.                             |
+| `exporter`                       | yes        | -             | yes         | yes      | CRD name; bounded by cluster size.                  |
+| `operation`                      | yes        | -             | no          | yes      | Small fixed enum (flash, power, …).                 |
+| `result`                         | yes        | -             | no          | yes      | Small fixed enum (success, failure, …).             |
+| `driver_type`                    | yes        | -             | no          | yes      | Category from a predefined set in core (storage, power, …). |
+| `error_type`                     | yes        | -             | no          | yes      | Failure class (timeout, device_error, …); on errors. |
+| `direction`                      | yes        | -             | no          | yes      | tx / rx; for byte-counter and stream metrics only.  |
+| `component`                      | no         | -             | yes         | yes      | Fixed set (cli, controller, router, telemetry, exporter).|
+| `namespace`                      | no         | -             | yes         | yes      | K8s namespace; bounded.                             |
 | `lease_id`                       | **no**     | yes           | **no**      | yes      | Unbounded; exemplar for drill-down.                 |
 | `client`                         | **no**     | yes           | **no**      | yes      | CRD name; exemplar for client identity.             |
 | `image_digest`, `build_id`, etc. | **no**     | yes           | **no**      | yes      | From `spec.context`; included when listed in `exemplarKeys`. |
@@ -962,7 +962,7 @@ Rules of thumb for this JEP:
 
 - **Prometheus labels**: each metric label dimension should have < 100 distinct
   values per scrape target. The label set for Jumpstarter metrics is
-  `{exporter, operation, result, driver_type}` -- all bounded enums.
+  `{exporter, operation, result, driver_type}` - all bounded enums.
   `error_type` is added on failure-path metrics and `direction` on
   byte-counter metrics. High-cardinality context is carried via exemplars,
   not labels.
@@ -990,7 +990,7 @@ Default exemplar keys emitted on every counter/histogram observation:
 | `lease_id` | Lease UID             | Correlate a metric sample with lease logs.      |
 | `trace_id` | W3C `traceparent`     | Included **only when present** in gRPC metadata.|
 
-`trace_id` is not synthesized by Jumpstarter -- it is included only when
+`trace_id` is not synthesized by Jumpstarter - it is included only when
 an external caller (CI pipeline, user code) propagates a `traceparent`.
 Full distributed tracing (spans, storage, visualization) is deferred to
 a future JEP; when it lands, `trace_id` becomes a default key. Until
@@ -998,8 +998,8 @@ then, omitting it saves ~45 characters of exemplar budget.
 
 `spec.context` keys (e.g. `build_id`, `image_digest`) are included as
 exemplar keys when listed in the operator's `exemplarKeys` allowlist (see
-*Operator configuration*). Because exemplars are per-observation metadata  -- 
-not label dimensions -- they have zero impact on series cardinality regardless
+*Operator configuration*). Because exemplars are per-observation metadata  - 
+not label dimensions - they have zero impact on series cardinality regardless
 of how many distinct values appear.
 
 **Exemplar size budget:** The OpenMetrics 1.0 limit is 128 UTF-8
@@ -1061,7 +1061,7 @@ on every observation.
 | `jumpstarter_operations_total`               | Dashboard   |  yes   | Failure rate > 20 % over 15 min per exporter.  |
 | `jumpstarter_operation_duration_seconds`      | Dashboard   |  yes   | p95 > 60 s per operation type.                 |
 | `jumpstarter_operation_errors_total`          | Dashboard   |  yes   | Error rate rising; group by `error_type`.       |
-| `jumpstarter_stream_bytes_total`             | Dashboard   |   no   | --                                              |
+| `jumpstarter_stream_bytes_total`             | Dashboard   |   no   | -                                              |
 | `jumpstarter_active_sessions`                | Dashboard   |  yes   | 0 sessions for > 30 min (possible exporter issue). |
 | `jumpstarter_lease_acquisitions_total`        | Dashboard   |  yes   | Failure rate > 10 % over 15 min.               |
 | `jumpstarter_telemetry_dropped_total`        | Alerting    |  yes   | Any increment (telemetry pipeline saturated).   |
@@ -1076,7 +1076,7 @@ environments with different baselines.
 **High-frequency byte counters:** `jumpstarter_stream_bytes_total` can
 be incremented at very high rates on serial and video streams. Because
 metrics live in the exporter's local `prometheus_client` registry, high
-update rates do not generate any RPC traffic -- the counter is updated
+update rates do not generate any RPC traffic - the counter is updated
 in-process and only serialized when the Telemetry service sends a
 `MetricsScrapeRequest`.
 
@@ -1198,7 +1198,7 @@ When this mode is enabled in a deployment:
   for the Loki log push path with a configurable depth
   (default: 10 000 entries, see `spec.telemetry.backpressure.queueDepth`).
   On overflow, dropped entries are replaced by a single **drop marker**
-  -- a standard `LogEntry` with `severity="warning"`,
+  - a standard `LogEntry` with `severity="warning"`,
   `component="telemetry"`, `operation="backpressure"`, and the drop
   count and time window placed in `extra_fields`
   (`{"count":"142","window_seconds":"12"}`). Subsequent drops while the
@@ -1208,7 +1208,7 @@ When this mode is enabled in a deployment:
   consumers do not need special-case parsing to detect or exclude it.
   A `jumpstarter_telemetry_dropped_total` counter (partitioned by
   `destination={loki}`) is also incremented on `/metrics` for alerting.
-  Metrics do not need backpressure -- the reverse-scrape model is
+  Metrics do not need backpressure - the reverse-scrape model is
   pull-based and transient (no buffering between scrapes).
   Because the Controller and Router do not push to Loki, their
   lease/session operations are inherently isolated from Loki slowdowns.
@@ -1304,7 +1304,7 @@ run one *alongside* and scrape the same targets if they choose.
 
 This JEP’s target wire protocols and components are Prometheus and
 Loki (and, if trace export is ever added, Tempo or Jaeger with
-native ingest or HTTP -- not OTLP as a *Jumpstarter* requirement; see
+native ingest or HTTP - not OTLP as a *Jumpstarter* requirement; see
 **DD-6**). OpenTelemetry is a parallel ecosystem: teams can run a
 Collector next to Jumpstarter and still scrape `/metrics` and ship
 logs with Promtail-class agents; the reference design does not depend
@@ -1319,14 +1319,14 @@ on the OTel SDK in application code.
   Perses (see **DD-10**) for search and with Promtail, Grafana
   Agent, or Grafana Alloy to ship logs, or with application push to Loki’s HTTP API as
   already discussed in the control-plane path.
-- Traces (optional, future work) -- if adopted, Grafana Tempo and Jaeger
+- Traces (optional, future work) - if adopted, Grafana Tempo and Jaeger
   are typical stores; use W3C Trace Context in RPC metadata for
   correlation even when full trace export is off. OTLP may be
   *only* a convenience for operators; it is not a JEP-0011 core
   dependency.
 - A typical Kubernetes integration path: `ServiceMonitor` + Prometheus
   (or a compatible remote-write consumer), a Loki endpoint for logs
-  -- any EKS, GKE, AKS, self-managed
+  - any EKS, GKE, AKS, self-managed
   Kubernetes, or bare-metal install that runs these same projects can be the
   target; the implementation
   plan should name tested combinations (Prometheus and Loki version
@@ -1343,9 +1343,9 @@ can tune metrics, logging, and exemplar behavior without editing code.
 | Field                                     | Type       | Default                                          | Description                                                                                    |
 | ----------------------------------------- | ---------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | `spec.telemetry.enabled`                  | `bool`     | `false`                                          | Deploy the optional Telemetry service.                                                         |
-| `spec.telemetry.loki.url`                 | `string`   | --                                                | Loki push endpoint; optional -- Telemetry can run metrics-only without Loki.                    |
-| `spec.telemetry.loki.secretRef`           | `string`   | --                                                | Secret with Loki credentials (see **DD-5**).                                                   |
-| `spec.telemetry.loki.tls.caSecretRef`     | `string`   | --                                                | Secret containing a CA bundle (`ca.crt` key) to trust for the Loki endpoint.                   |
+| `spec.telemetry.loki.url`                 | `string`   | -                                                | Loki push endpoint; optional - Telemetry can run metrics-only without Loki.                    |
+| `spec.telemetry.loki.secretRef`           | `string`   | -                                                | Secret with Loki credentials (see **DD-5**).                                                   |
+| `spec.telemetry.loki.tls.caSecretRef`     | `string`   | -                                                | Secret containing a CA bundle (`ca.crt` key) to trust for the Loki endpoint.                   |
 | `spec.telemetry.loki.tls.insecureSkipVerify` | `bool`  | `false`                                          | Disable TLS certificate verification (development/testing only).                               |
 | `spec.telemetry.exporterLabels`           | `[]string` | `[]`                                             | Exporter-level label keys (e.g. `board-type`) copied from Exporter CRD labels into log JSON fields and exemplar candidates. |
 | `spec.telemetry.metrics.exemplarKeys`     | `[]string` | `["client", "lease_id"]`                         | Allowlist of keys to include in exemplars (including `spec.context` and `exporterLabels` keys). Only listed keys are emitted; unlisted keys are omitted even if present. |
@@ -1408,11 +1408,11 @@ candidates for operations involving that exporter. For example, setting
 `exporterLabels: ["board-type"]` means an Exporter with the label
 `board-type: rpi4` will include `"board-type": "rpi4"` in its
 structured log lines and in the exemplar candidate pool. The list is
-empty by default -- no exporter labels are propagated unless the
+empty by default - no exporter labels are propagated unless the
 administrator opts in.
 
 The `exemplarKeys` list is an **allowlist** that controls which keys are
-included in Prometheus exemplars. This filters *everything* -- built-in
+included in Prometheus exemplars. This filters *everything* - built-in
 keys (`client`, `lease_id`), `spec.context` keys, and `exporterLabels`
 keys alike. Only keys present in `exemplarKeys` are emitted; unlisted
 keys are omitted even if available. This gives administrators full
@@ -1471,14 +1471,14 @@ Each component must be testable in isolation without deploying the full
 stack:
 
 - **Structured logging**: unit tests validate JSON output format, base
-  fields, and `spec.context` propagation using an in-memory logger -- no
+  fields, and `spec.context` propagation using an in-memory logger - no
   Loki required.
 - **Exporter metrics**: unit tests verify counter/histogram registration,
   label correctness, and exemplar attachment using a local Prometheus
-  registry -- no Telemetry service required.
+  registry - no Telemetry service required.
 - **Telemetry service**: integration tests use mock gRPC clients and a
   mock Loki endpoint to verify ingest, counter aggregation, backpressure
-  behavior, and drop markers -- no real exporters required.
+  behavior, and drop markers - no real exporters required.
 - **Operator configuration**: unit tests validate CRD admission
   (e.g. `spec.context` size limits) and `ServiceMonitor` generation.
 
@@ -1496,7 +1496,7 @@ constraints make this impractical, at minimum:
   Loki path.
 - **Prometheus scrape**: the existing Go/Ginkgo E2E test suite performs
   direct HTTP scrapes of the `/metrics` endpoints on Controller, Router,
-  and Telemetry services -- no separate Prometheus instance required. The
+  and Telemetry services - no separate Prometheus instance required. The
   test parses the OpenMetrics response and asserts that documented
   series, labels, and exemplars appear after a known operation sequence.
 - **Correlation round-trip**: an E2E test runs a lease lifecycle (create →
@@ -1551,13 +1551,13 @@ all subsequent phases have E2E coverage from the start.
   applicable.
 - **`AuditStream` removal:** The `AuditStream` RPC and `AuditStreamRequest`
   message on `ControllerService` are removed. This RPC was never implemented
-  or called by any client -- `Grep` across the codebase confirms zero usage
+  or called by any client - `Grep` across the codebase confirms zero usage
   outside its protobuf definition. Removing it is a no-op for all existing
   deployments. The new `PushLogs` RPC on `TelemetryService` supersedes the
   intended use case.
 - `LogStreamResponse` enrichment (new optional fields `driver_type`,
   `operation`, `timestamp`, `structured_fields`) is purely additive and
-  backward-compatible -- existing clients ignore unknown fields.
+  backward-compatible - existing clients ignore unknown fields.
 - No removal of current default CLI behavior; JSON logging only when selected.
 
 ## Consequences
@@ -1598,30 +1598,30 @@ all subsequent phases have E2E coverage from the start.
   Operators on older Prometheus versions still get full metrics and logs;
   exemplar-based drill-down is unavailable until they upgrade.
 - Prometheus / Loki / Perses-stack version drift in the field
-  -- document tested pairs; W3C Trace Context in gRPC remains
+  - document tested pairs; W3C Trace Context in gRPC remains
   best-effort across Python and Go (no OTel SDK requirement to
   propagate `traceparent` where needed).
 
 ## Rejected Alternatives
 
-- **"All metrics and facts are *generated* only in the controller"** -- would
+- **"All metrics and facts are *generated* only in the controller"** - would
   miss per-exporter and per-driver truth; rejected. *Forwarding*
   exporter-originated series and events *through* the control-plane (with
   stable labels) is not the same and remains in scope (see DD-5).
 - *Requiring Loki- and Prometheus-ingest credentials on every exporter
-  and edge* as the only supported model -- rejected in favor of
+  and edge* as the only supported model - rejected in favor of
   optional hub
   forwarding and of cluster-native collectors that also avoid per-host
   secrets, even though those collectors are not Jumpstarter-specific.
 - **"Mandatory OpenTelemetry SDK and Collector"** for all metrics,
-  logs, and traces -- rejected for the reference architecture;
+  logs, and traces - rejected for the reference architecture;
   rationale in **DD-6** (optional parallel deployment by operators is
   still fine).
-- **"Unstructured logs everywhere; parse with regex"** -- rejected as
+- **"Unstructured logs everywhere; parse with regex"** - rejected as
   unscalable for joins with traces and multi-service incidents.
-- **"Mandatory full tracing for every command"** -- high overhead; rejected; prefer
+- **"Mandatory full tracing for every command"** - high overhead; rejected; prefer
   sampling and opt-in for heavy paths.
-- **"Push metric increments from exporters to telemetry"** -- exporters
+- **"Push metric increments from exporters to telemetry"** - exporters
   would send `+1`/`+N` counter increments and histogram observations to
   the Telemetry service, which would maintain in-memory counters and
   expose them on `/metrics`. Rejected because: (a) counter state would
@@ -1630,7 +1630,7 @@ all subsequent phases have E2E coverage from the start.
   stream bytes) generate excessive RPC traffic. The reverse-scrape model
   keeps full counter state on the exporter and generates zero RPC
   traffic between scrapes (see **DD-3** alternative 4, **DD-7**).
-- **"Reuse `AuditStream` for telemetry log push"** -- `AuditStream` was an
+- **"Reuse `AuditStream` for telemetry log push"** - `AuditStream` was an
   unimplemented stub on `ControllerService` with no message schema for
   structured telemetry data. Rather than retrofitting it, a purpose-built
   `PushLogs` RPC on the new `TelemetryService` provides a cleaner contract
@@ -1639,25 +1639,25 @@ all subsequent phases have E2E coverage from the start.
 ## Prior Art
 
 - [Prometheus](https://prometheus.io/) and [Alertmanager](https://prometheus.io/docs/alerting/latest/alertmanager/)
-  -- time-series metrics and alerting; [Prometheus naming and labels](https://prometheus.io/docs/practices/naming/)
+  - time-series metrics and alerting; [Prometheus naming and labels](https://prometheus.io/docs/practices/naming/)
   on cardinality and naming; remote write for non-scrape topologies;
   [Exemplars](https://prometheus.io/docs/instrumenting/exposition_formats/#exemplars-experimental)
   for attaching high-cardinality context to individual samples.
 - [Grafana exemplar support](https://grafana.com/docs/grafana/latest/fundamentals/exemplars/)
-  -- visualizing exemplars in metric panels and linking to traces or logs.
-- [Loki](https://grafana.com/oss/loki/) -- log aggregation, label model, and push
+  - visualizing exemplars in metric panels and linking to traces or logs.
+- [Loki](https://grafana.com/oss/loki/) - log aggregation, label model, and push
   and query APIs; often combined with [Perses](https://perses.dev/) (see
   **DD-10**) and Grafana Agent / Alloy or
   [Promtail](https://grafana.com/docs/loki/latest/send-data/promtail/) for log
   shipping.
-- [Grafana Tempo](https://grafana.com/oss/tempo/) or [Jaeger](https://www.jaegertracing.io/) -- common trace backends
-  (native or HTTP ingest; OTLP where the operator uses it -- not a
+- [Grafana Tempo](https://grafana.com/oss/tempo/) or [Jaeger](https://www.jaegertracing.io/) - common trace backends
+  (native or HTTP ingest; OTLP where the operator uses it - not a
   Jumpstarter code dependency; see **DD-6**).
-- [Perses](https://perses.dev/) -- CNCF dashboard project; Apache 2.0;
+- [Perses](https://perses.dev/) - CNCF dashboard project; Apache 2.0;
   Kubernetes-native CRDs; CUE/JSON spec with GitOps SDKs; focused on
   Prometheus, Loki, and Tempo data sources (see **DD-10**).
 - [OpenTelemetry](https://opentelemetry.io/) and the
-  [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/)  -- 
+  [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/)  - 
   relevant as ecosystem and operator-side *optional* plumbing;
   this JEP intentionally does not adopt them in-process by default (**DD-6**).
 - Other HiL / test systems often separate "run metadata" (like Jenkins build
@@ -1684,7 +1684,7 @@ all subsequent phases have E2E coverage from the start.
 
 ## References
 
-- [JEP-0000 -- JEP Process](JEP-0000-jep-process.md)
+- [JEP-0000 - JEP Process](JEP-0000-jep-process.md)
 - [Kubernetes Events](https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/)
 - [W3C Trace Context](https://www.w3.org/TR/trace-context/) (`traceparent`)
 - Upstream project docs for the Prometheus, Loki, and

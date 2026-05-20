@@ -136,7 +136,7 @@ class MockXcpEcu:
         if not self._unlocked:
             raise RuntimeError("Resource protected - unlock required")
 
-    # -- Session Management --------------------------------------------------
+    # - Session Management --------------------------------------------------
 
     def connect(self, mode: int = 0):
         self._connected = True
@@ -157,7 +157,7 @@ class MockXcpEcu:
     def getCurrentProtectionStatus(self) -> dict[str, bool]:
         return dict(self._protection)
 
-    # -- Security (Seed & Key) -----------------------------------------------
+    # - Security (Seed & Key) -----------------------------------------------
 
     def cond_unlock(self, resources=None):
         self._require_connected()
@@ -165,7 +165,7 @@ class MockXcpEcu:
         for key in self._protection:
             self._protection[key] = False
 
-    # -- Memory Access -------------------------------------------------------
+    # - Memory Access -------------------------------------------------------
 
     def setMta(self, address: int, ext: int = 0):
         self._require_connected()
@@ -193,7 +193,7 @@ class MockXcpEcu:
             raise RuntimeError("CAL/PAG resource is protected - unlock first")
         self._memory[self._mta_address] = data
 
-    # -- Checksum ------------------------------------------------------------
+    # - Checksum ------------------------------------------------------------
 
     def buildChecksum(self, block_size: int):
         self._require_connected()
@@ -201,7 +201,7 @@ class MockXcpEcu:
         csum = sum(raw) & 0xFFFFFFFF
         return _AttrDict(checksumType=0x01, checksum=csum)
 
-    # -- DAQ -----------------------------------------------------------------
+    # - DAQ -----------------------------------------------------------------
 
     def getDaqInfo(self):
         self._require_connected()
@@ -265,7 +265,7 @@ class MockXcpEcu:
         for dl in self._daq_lists:
             dl.running = (mode == 1)
 
-    # -- Programming (Flashing) ----------------------------------------------
+    # - Programming (Flashing) ----------------------------------------------
 
     def programStart(self):
         self._require_connected()

@@ -3,7 +3,7 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-# -- Project information -----------------------------------------------------
+# - Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 import asyncio
@@ -20,7 +20,7 @@ project = "jumpstarter"
 copyright = "2026, Jumpstarter Contributors"
 author = "Jumpstarter Contributors"
 
-# -- General configuration ---------------------------------------------------
+# - General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
@@ -45,7 +45,7 @@ suppress_warnings = [
     "ref.class",
 ]
 
-# -- Options for HTML output -------------------------------------------------
+# - Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = "furo"

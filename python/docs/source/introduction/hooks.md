@@ -47,16 +47,16 @@ sequenceDiagram
 
 The {term}`exporter` transitions through these states during a {term}`lease`:
 
-1. **{term}`Lease` assigned** -- The {term}`controller` assigns a {term}`lease` to the {term}`exporter`.
-2. **`BEFORE_LEASE_HOOK`** -- The `beforeLease` script runs. Driver access is
+1. **{term}`Lease` assigned** - The {term}`controller` assigns a {term}`lease` to the {term}`exporter`.
+2. **`BEFORE_LEASE_HOOK`** - The `beforeLease` script runs. Driver access is
    blocked until the {term}`hook` completes successfully.
-3. **`LEASE_READY`** -- The {term}`hook` succeeded and the client can now access
+3. **`LEASE_READY`** - The {term}`hook` succeeded and the client can now access
    drivers.
-4. **Client {term}`session`** -- The client uses drivers normally.
-5. **{term}`Session` ends** -- The client disconnects or the {term}`lease` is released.
-6. **`AFTER_LEASE_HOOK`** -- The `afterLease` script runs. The {term}`session` remains
+4. **Client {term}`session`** - The client uses drivers normally.
+5. **{term}`Session` ends** - The client disconnects or the {term}`lease` is released.
+6. **`AFTER_LEASE_HOOK`** - The `afterLease` script runs. The {term}`session` remains
    open so `j` commands can still interact with drivers.
-7. **`AVAILABLE`** -- The {term}`hook` completed and the {term}`lease` is released. The
+7. **`AVAILABLE`** - The {term}`hook` completed and the {term}`lease` is released. The
    {term}`exporter` is ready for the next {term}`lease`.
 
 ```{note}
@@ -256,7 +256,7 @@ hooks:
       j power on
       echo "Waiting for SSH to become available..."
       for i in $(seq 1 30); do
-        if j ssh -o ConnectTimeout=2 -- echo "Device ready"; then
+        if j ssh -o ConnectTimeout=2 - echo "Device ready"; then
           exit 0
         fi
         sleep 1

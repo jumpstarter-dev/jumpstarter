@@ -10,7 +10,7 @@ You are helping the user create a new Jumpstarter Enhancement Proposal (JEP).
 
 ## Context
 
-JEPs are design documents for substantial changes to the Jumpstarter project -- changes that affect multiple components, alter public APIs or protocols, or require community consensus. Read `.cursor/rules/jep-process.mdc` for the full process definition.
+JEPs are design documents for substantial changes to the Jumpstarter project - changes that affect multiple components, alter public APIs or protocols, or require community consensus. Read `.cursor/rules/jep-process.mdc` for the full process definition.
 
 JEP topic: $ARGUMENTS
 
@@ -24,10 +24,10 @@ List existing files in `python/docs/source/contributing/jeps/` and pick the next
 
 Before writing the JEP, ask the user clarifying questions to understand:
 
-- **What problem does this solve?** -- The motivation section needs a concrete problem description.
-- **Who is affected?** -- Which components, drivers, or user workflows are impacted?
-- **What are the alternatives?** -- Each design decision needs at least two alternatives considered.
-- **What are the compatibility implications?** -- Does this break existing APIs, protocols, or workflows?
+- **What problem does this solve?** - The motivation section needs a concrete problem description.
+- **Who is affected?** - Which components, drivers, or user workflows are impacted?
+- **What are the alternatives?** - Each design decision needs at least two alternatives considered.
+- **What are the compatibility implications?** - Does this break existing APIs, protocols, or workflows?
 
 If the user provided a description in `$ARGUMENTS`, use it as a starting point but still ask about gaps.
 

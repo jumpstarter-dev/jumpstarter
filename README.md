@@ -9,8 +9,8 @@
 
 A free, open source tool for automated testing on real and virtual hardware with
 CI/CD integration. Simplify device automation with consistent rules across local
-and distributed environments. Every interface is programmatic -- there is no GUI
-wall -- so human developers, test scripts, CI pipelines, and AI agents interact
+and distributed environments. Every interface is programmatic - there is no GUI
+wall - so human developers, test scripts, CI pipelines, and AI agents interact
 with hardware through the same APIs.
 
 ## Highlights

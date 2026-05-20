@@ -15,12 +15,12 @@ flowchart TB
         DUTs["Device Under Test"]
     end
 
-    GitRepo -- "Code changes" --> Actions
-    Actions -- "Request access" --> Controller
-    Controller -- "Assign lease" --> Actions
-    Controller -- "Connect to" --> Exporters
-    Exporters -- "Control" --> DUTs
-    Actions -- "Update status" --> GitRepo
+    GitRepo - "Code changes" --> Actions
+    Actions - "Request access" --> Controller
+    Controller - "Assign lease" --> Actions
+    Controller - "Connect to" --> Exporters
+    Exporters - "Control" --> DUTs
+    Actions - "Update status" --> GitRepo
 ```
 
 This architecture integrates Jumpstarter with CI/CD pipelines to enable
@@ -83,14 +83,14 @@ flowchart TB
         Devices["Device Under Test"]
     end
 
-    GitRepo -- "Code changes" --> Actions
-    Actions -- "Dispatch job" --> Runner1
+    GitRepo - "Code changes" --> Actions
+    Actions - "Dispatch job" --> Runner1
 
-    Runner1 -- "Execute tests" --> JmpLocal
-    JmpLocal -- "Control" --> Devices
+    Runner1 - "Execute tests" --> JmpLocal
+    JmpLocal - "Control" --> Devices
 
-    Runner1 -- "Report results" --> Actions
-    Actions -- "Update status" --> GitRepo
+    Runner1 - "Report results" --> Actions
+    Actions - "Update status" --> GitRepo
 ```
 
 This architecture leverages a self-hosted runner with directly attached system:

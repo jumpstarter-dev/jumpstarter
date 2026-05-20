@@ -16,7 +16,7 @@ orphan: true
 
 ## Abstract
 
-This document defines the Jumpstarter Enhancement Proposal (JEP) process -- the
+This document defines the Jumpstarter Enhancement Proposal (JEP) process - the
 mechanism by which substantial changes to the Jumpstarter project are proposed,
 discussed, and decided upon. JEPs provide a consistent, transparent record of
 design decisions for the Jumpstarter hardware-in-the-loop (HiL) testing framework
@@ -29,19 +29,19 @@ As Jumpstarter grows in contributors, drivers, and production deployments, the
 project needs a structured way to propose and evaluate changes that go beyond
 routine bug fixes and minor improvements. An informal "open a PR and see what
 happens" approach doesn't scale when changes touch hardware interfaces, gRPC
-protocol definitions, operator CRDs, or the driver plugin architecture -- areas
+protocol definitions, operator CRDs, or the driver plugin architecture - areas
 where mistakes are expensive to reverse.
 
 The JEP process gives the community:
 
-- **Visibility** -- a single place to discover what's being proposed, what's been
+- **Visibility** - a single place to discover what's being proposed, what's been
   decided, and why.
-- **Structured discussion** -- a template that forces authors to think through
+- **Structured discussion** - a template that forces authors to think through
   motivation, hardware implications, backward compatibility, and testing before
   code is written.
-- **Historical record** -- versioned markdown files in the repository whose git
+- **Historical record** - versioned markdown files in the repository whose git
   history captures the evolution of each proposal.
-- **Inclusive governance** -- a lightweight, PR-based workflow that any contributor
+- **Inclusive governance** - a lightweight, PR-based workflow that any contributor
   can participate in, regardless of commit access.
 
 ## What Requires a JEP
@@ -217,16 +217,16 @@ Changes to the JEP process itself require a new Process-type JEP.
 
 This process draws inspiration from:
 
-- [Python Enhancement Proposals (PEPs)](https://peps.python.org/pep-0001/)  -- 
+- [Python Enhancement Proposals (PEPs)](https://peps.python.org/pep-0001/)  - 
   lightweight metadata, champion model, clear status lifecycle.
-- [Kubernetes Enhancement Proposals (KEPs)](https://github.com/kubernetes/enhancements/tree/master/keps)  -- 
+- [Kubernetes Enhancement Proposals (KEPs)](https://github.com/kubernetes/enhancements/tree/master/keps)  - 
   test plan requirements, graduation criteria, production readiness.
-- [Rust RFCs](https://github.com/rust-lang/rfcs) -- PR-based workflow, emphasis
+- [Rust RFCs](https://github.com/rust-lang/rfcs) - PR-based workflow, emphasis
   on motivation and teaching, prior art section.
-- [Architecture Decision Records (ADRs)](https://adr.github.io/) -- structured
+- [Architecture Decision Records (ADRs)](https://adr.github.io/) - structured
   decision documentation with context, alternatives, and consequences. The JEP
   template adopts the ADR pattern for individual design decisions.
-- [GitHub SpecKit](https://github.com/github/spec-kit) -- spec-driven development
+- [GitHub SpecKit](https://github.com/github/spec-kit) - spec-driven development
   methodology with structured templates and agent-friendly document conventions.
   The JEP template adopts SpecKit's practice of marking sections as mandatory or
   optional and structuring documents for machine readability.

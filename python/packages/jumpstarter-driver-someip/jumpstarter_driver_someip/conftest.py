@@ -355,7 +355,7 @@ class StatefulOsipClient:
         self._require_started()
         self._subscribed_eventgroups.discard(eventgroup_id)
 
-    # -- test helpers --
+    # - test helpers --
 
     def inject_event(self, service_id: int, event_id: int, payload: bytes):
         """Push a fake event notification into the event receiver queue."""

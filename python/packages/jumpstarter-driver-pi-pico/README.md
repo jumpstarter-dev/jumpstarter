@@ -4,9 +4,9 @@
 
 The driver supports two methods for entering BOOTSEL mode programmatically:
 
-1. **GPIO reset** -- wire the Pico's BOOTSEL pad and RUN pin to host GPIO
+1. **GPIO reset** - wire the Pico's BOOTSEL pad and RUN pin to host GPIO
    lines.
-2. **1200-baud serial touch** -- uses a USB CDC serial child. Only works when
+2. **1200-baud serial touch** - uses a USB CDC serial child. Only works when
    the running firmware implements the convention (Pico SDK `pico_stdio_usb`,
    CircuitPython, Arduino).
 
@@ -70,7 +70,7 @@ export:
   bootsel:
     type: jumpstarter_driver_gpiod.driver.DigitalOutput
     config:
-      device: "/dev/gpiochip4"   # RPi5 GPIO chip -- adjust for your host
+      device: "/dev/gpiochip4"   # RPi5 GPIO chip - adjust for your host
       line: 17                    # GPIO pin wired to BOOTSEL
       drive: open_drain
       active_low: true
@@ -89,9 +89,9 @@ When both GPIO and serial children are present, GPIO reset is preferred.
 
 ## Usage
 
-- `j storage flash ...` -- flash a UF2 file (auto-enters BOOTSEL if needed)
-- `j storage bootloader` -- request BOOTSEL mode without flashing
-- `j serial ...` -- USB CDC console (when serial child is configured)
+- `j storage flash ...` - flash a UF2 file (auto-enters BOOTSEL if needed)
+- `j storage bootloader` - request BOOTSEL mode without flashing
+- `j serial ...` - USB CDC console (when serial child is configured)
 
 ## API Reference
 

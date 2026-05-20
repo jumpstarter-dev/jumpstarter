@@ -5,9 +5,9 @@ USB relay boards in 1, 2, 4, and 8-channel variants.
 
 Two hardware series are supported:
 
-- **`NoyitoPowerSerial`** -- 1/2-channel boards using a CH340 USB-to-serial chip
+- **`NoyitoPowerSerial`** - 1/2-channel boards using a CH340 USB-to-serial chip
   (serial port, supports status query)
-- **`NoyitoPowerHID`** -- 4/8-channel "HID Drive-free" boards presenting as a
+- **`NoyitoPowerHID`** - 4/8-channel "HID Drive-free" boards presenting as a
   USB HID device (no serial port, supports all-channels status query)
 
 Both use the same 4-byte binary command protocol (`A0` + channel + state +
@@ -91,7 +91,7 @@ port or a HID device:
 - **Serial port** (`/dev/ttyUSB*`, `/dev/tty.usbserial-*`): Use `NoyitoPowerSerial`
   (1/2-channel CH340 board)
 - **No serial port / HID only**: Use `NoyitoPowerHID` (4/8-channel HID
-  Drive-free board). Confirm with `lsusb` -- the NOYITO HID module appears with
+  Drive-free board). Confirm with `lsusb` - the NOYITO HID module appears with
   VID `0x1409` / PID `0x07D7` (decimal: 5131 / 2007).
 
 #### Hardware Notes (Serial)
@@ -99,7 +99,7 @@ port or a HID device:
 - **Purchase**: [NOYITO 2-Channel USB Relay Module (Amazon)](https://www.amazon.com/NOYITO-2-Channel-Module-Control-Intelligent/dp/B081RM7PMY/)
 - **Chip**: CH340 USB-to-serial
 - **Baud rate**: 9600
-- **Default port**: `/dev/ttyUSB0` (Linux) -- may appear as `/dev/tty.usbserial-*` on macOS
+- **Default port**: `/dev/ttyUSB0` (Linux) - may appear as `/dev/tty.usbserial-*` on macOS
 - **Channels**: 1 or 2 independent relay channels on one USB port
 - **Supply voltage**: 5 V via USB
 

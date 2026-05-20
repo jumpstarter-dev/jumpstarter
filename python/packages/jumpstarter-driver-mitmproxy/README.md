@@ -1,16 +1,16 @@
 # mitmproxy Driver
 
-A [Jumpstarter](https://jumpstarter.dev) driver for [mitmproxy](https://mitmproxy.org) -- bringing HTTP(S) interception, backend mocking, and traffic recording to Hardware-in-the-Loop testing.
+A [Jumpstarter](https://jumpstarter.dev) driver for [mitmproxy](https://mitmproxy.org) - bringing HTTP(S) interception, backend mocking, and traffic recording to Hardware-in-the-Loop testing.
 
 This driver manages a `mitmdump` or `mitmweb` process on the Jumpstarter exporter host, providing your pytest HiL tests with:
 
-- **Backend mocking** -- Return deterministic JSON responses for any API endpoint, with hot-reloadable definitions, wildcard path matching, conditional rules, sequences, templates, and custom addons
-- **SSL/TLS interception** -- Inspect and modify HTTPS traffic from your DUT, with easy CA certificate retrieval for DUT provisioning
-- **Traffic recording & replay** -- Capture a "golden" session against real servers, then replay it offline in CI
-- **Request capture** -- Record every request the DUT makes and assert on them in your tests
-- **Browser-based UI** -- Launch `mitmweb` for interactive traffic inspection, with TCP port forwarding through the Jumpstarter tunnel
-- **Scenario files** -- Load complete mock configurations from YAML or JSON, swap between test scenarios instantly
-- **Full CLI** -- Control the proxy interactively from `jmp shell` sessions
+- **Backend mocking** - Return deterministic JSON responses for any API endpoint, with hot-reloadable definitions, wildcard path matching, conditional rules, sequences, templates, and custom addons
+- **SSL/TLS interception** - Inspect and modify HTTPS traffic from your DUT, with easy CA certificate retrieval for DUT provisioning
+- **Traffic recording & replay** - Capture a "golden" session against real servers, then replay it offline in CI
+- **Request capture** - Record every request the DUT makes and assert on them in your tests
+- **Browser-based UI** - Launch `mitmweb` for interactive traffic inspection, with TCP port forwarding through the Jumpstarter tunnel
+- **Scenario files** - Load complete mock configurations from YAML or JSON, swap between test scenarios instantly
+- **Full CLI** - Control the proxy interactively from `jmp shell` sessions
 
 ## Installation
 

@@ -18,7 +18,7 @@ The operator bundle version is driven by variables in `controller/deploy/operato
 - **`IMAGE_TAG_BASE`**: Registry prefix (`quay.io/jumpstarter-dev/jumpstarter-operator`).
 - **`BUNDLE_IMG`** / **`CATALOG_IMG`**: Also derived from `IMAGE_TAG_BASE` and `VERSION` automatically.
 
-The `config/manifests/bases/jumpstarter-operator.clusterserviceversion.yaml` uses placeholder version `0.0.0` -- the real version is injected by `make bundle`.
+The `config/manifests/bases/jumpstarter-operator.clusterserviceversion.yaml` uses placeholder version `0.0.0` - the real version is injected by `make bundle`.
 
 ## Image Tag Convention
 
@@ -34,7 +34,7 @@ When preparing a new release version X.Y.Z, update these files together:
 
 ### 1. `controller/deploy/operator/Makefile`
 - `VERSION ?= X.Y.Z`
-- `REPLACES ?= jumpstarter-operator.vPREVIOUS` (the most recent version published to the OLM channel -- including RCs. E.g. if `v0.8.1-rc.1` was published, REPLACES must be `jumpstarter-operator.v0.8.1-rc.1`, not `v0.8.0`)
+- `REPLACES ?= jumpstarter-operator.vPREVIOUS` (the most recent version published to the OLM channel - including RCs. E.g. if `v0.8.1-rc.1` was published, REPLACES must be `jumpstarter-operator.v0.8.1-rc.1`, not `v0.8.0`)
 - Optionally update `OPENSHIFT_VERSIONS` if the supported range changes
 
 ### 2. `controller/deploy/operator/api/v1alpha1/jumpstarter_types.go`

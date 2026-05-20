@@ -659,11 +659,11 @@ class TestStdoutIsolation:
             os.dup2(sys.stderr.fileno(), sys.stdout.fileno())  # fd 1 -> stderr
             sys.stdout = sys.stderr
 
-            # Stray write via sys.stdout -- should land in the stderr pipe
+            # Stray write via sys.stdout - should land in the stderr pipe
             sys.stdout.write("stray\n")
             sys.stdout.flush()
 
-            # MCP-only write via the saved fd -- should land in the stdout pipe
+            # MCP-only write via the saved fd - should land in the stdout pipe
             mcp_file = os.fdopen(mcp_fd, "w", closefd=True)
             mcp_file.write("mcp-json\n")
             mcp_file.flush()

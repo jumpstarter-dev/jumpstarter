@@ -274,7 +274,7 @@ On hosts running Docker, the default iptables policy is often set to
 `iptables -P FORWARD DROP` to isolate container networks.  Since modern
 Linux translates iptables rules into nftables under the hood, this creates
 a `table ip filter { chain FORWARD { policy drop } }` base chain that
-**all** forwarded packets must pass -- including traffic routed through
+**all** forwarded packets must pass - including traffic routed through
 the DUT interface.
 
 The driver **automatically** detects this situation using native nftables:

@@ -53,7 +53,7 @@ orphan: true
   addresses a gap in HiL testing workflows, explain the current workaround
   and its limitations.
 
-  Do not describe the solution here -- that belongs in the Proposal section.
+  Do not describe the solution here - that belongs in the Proposal section.
 -->
 
 ### User Stories *(optional)*
@@ -116,7 +116,7 @@ orphan: true
 
   For each decision, state what was decided, what alternatives were
   considered, and why the chosen approach was preferred. This section
-  is the most important part of the JEP for long-term project memory  -- 
+  is the most important part of the JEP for long-term project memory  - 
   future contributors will refer to it to understand *why* things are
   the way they are.
 -->
@@ -125,8 +125,8 @@ orphan: true
 
 **Alternatives considered:**
 
-1. **Option A** -- Brief description.
-2. **Option B** -- Brief description.
+1. **Option A** - Brief description.
+2. **Option B** - Brief description.
 
 **Decision:** Option A.
 
@@ -178,7 +178,7 @@ Reference specific project constraints, prior art, or technical tradeoffs.
 
 <!--
   Define measurable criteria that must be met for this JEP to be considered
-  successfully implemented. These should be specific, testable conditions  -- 
+  successfully implemented. These should be specific, testable conditions  - 
   not vague goals. Good acceptance criteria help reviewers evaluate the
   implementation and help authors know when their work is done.
 
@@ -243,7 +243,7 @@ Reference specific project constraints, prior art, or technical tradeoffs.
 <!--
   What other designs were considered? Why were they not chosen?
 
-  This section is critical -- it shows reviewers that the design space was
+  This section is critical - it shows reviewers that the design space was
   explored and helps future contributors understand why the chosen approach
   was preferred. Include brief descriptions of alternatives and the reasons
   they were rejected.

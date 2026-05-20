@@ -104,11 +104,11 @@ The `monitor` CLI subcommand is also available inside a `jmp shell` session.
 
 The driver follows the composite driver pattern:
 
-- **`Renode`** -- root composite driver, manages the simulation lifecycle
-- **`RenodePower`** -- starts/stops the Renode process and controls the
+- **`Renode`** - root composite driver, manages the simulation lifecycle
+- **`RenodePower`** - starts/stops the Renode process and controls the
   simulation via the telnet monitor interface
-- **`RenodeFlasher`** -- loads firmware (ELF/BIN/HEX) into the simulated MCU
-- **`console`** -- UART output via PTY terminal, reusing the `PySerial` driver
+- **`RenodeFlasher`** - loads firmware (ELF/BIN/HEX) into the simulated MCU
+- **`console`** - UART output via PTY terminal, reusing the `PySerial` driver
 
 ### Design Decisions
 

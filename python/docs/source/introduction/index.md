@@ -12,7 +12,7 @@ can control multiple devices under test. Its modular design supports both local
 development (devices connected directly to your machine) and {term}`distributed mode`
 testing environments (devices accessed remotely through a central {term}`controller`). All
 communication happens over {term}`gRPC`, providing a consistent interface regardless of
-deployment model. Every interface is programmatic -- there is no GUI-only
+deployment model. Every interface is programmatic - there is no GUI-only
 workflow that a script or agent cannot replicate. A human developer running
 `jmp shell`, a [pytest](https://docs.pytest.org/en/stable/) script, a CI
 pipeline, and an
@@ -90,7 +90,7 @@ flowchart TB
 
     Client["Client\n(CLI / Python API)"]
 
-    Client -- "Distributed\n(gRPC via Router)" --> Router
+    Client - "Distributed\n(gRPC via Router)" --> Router
     Router <--> Exporter
     Client -. "Direct\n(gRPC via TCP)" .-> Exporter
     Client -. "Local\n(gRPC via Socket)" .-> Exporter

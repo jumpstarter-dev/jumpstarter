@@ -44,7 +44,7 @@ directory. When working with Claude Code:
 - **CLAUDE.md**: The root `CLAUDE.md` provides project-level instructions
   including key commands for testing (`make pkg-test-<package_name>`), linting
   (`make lint-fix`), and type checking (`make pkg-ty-<package_name>`).
-- **Code Style**: Claude Code follows TDD practices -- writing failing tests
+- **Code Style**: Claude Code follows TDD practices - writing failing tests
   first, then minimal implementation code.
 - **Driver Creation**: When asked to create a new driver, Claude Code follows
   the guidelines in `.claude/rules/creating-new-drivers.md`.
