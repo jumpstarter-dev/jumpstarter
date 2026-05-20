@@ -17,6 +17,9 @@ gRPC
 HiL
   Hardware-in-the-Loop -- testing with real hardware in the loop.
 
+MAN
+  Manual -- reference documentation for command-line tools.
+
 JEP
   Jumpstarter Enhancement Proposal -- design document for significant changes.
 

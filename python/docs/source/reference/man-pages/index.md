@@ -1,4 +1,4 @@
-# Man Pages
+# MAN Pages
 
 This section provides reference documentation for Jumpstarter's command-line
 interfaces. The documentation covers:
