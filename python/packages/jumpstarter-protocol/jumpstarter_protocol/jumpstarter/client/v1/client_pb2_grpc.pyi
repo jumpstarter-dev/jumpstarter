@@ -144,7 +144,23 @@ _ClientServiceDeleteLeaseType = typing_extensions.TypeVar(
     ],
 )
 
-class ClientServiceStub(typing.Generic[_ClientServiceGetExporterType, _ClientServiceListExportersType, _ClientServiceGetLeaseType, _ClientServiceListLeasesType, _ClientServiceCreateLeaseType, _ClientServiceUpdateLeaseType, _ClientServiceDeleteLeaseType]):
+_ClientServiceRotateTokenType = typing_extensions.TypeVar(
+    '_ClientServiceRotateTokenType',
+    grpc.UnaryUnaryMultiCallable[
+        jumpstarter.client.v1.client_pb2.RotateTokenRequest,
+        jumpstarter.client.v1.client_pb2.RotateTokenResponse,
+    ],
+    grpc.aio.UnaryUnaryMultiCallable[
+        jumpstarter.client.v1.client_pb2.RotateTokenRequest,
+        jumpstarter.client.v1.client_pb2.RotateTokenResponse,
+    ],
+    default=grpc.UnaryUnaryMultiCallable[
+        jumpstarter.client.v1.client_pb2.RotateTokenRequest,
+        jumpstarter.client.v1.client_pb2.RotateTokenResponse,
+    ],
+)
+
+class ClientServiceStub(typing.Generic[_ClientServiceGetExporterType, _ClientServiceListExportersType, _ClientServiceGetLeaseType, _ClientServiceListLeasesType, _ClientServiceCreateLeaseType, _ClientServiceUpdateLeaseType, _ClientServiceDeleteLeaseType, _ClientServiceRotateTokenType]):
     @typing.overload
     def __init__(self: ClientServiceStub[
         grpc.UnaryUnaryMultiCallable[
@@ -174,6 +190,10 @@ class ClientServiceStub(typing.Generic[_ClientServiceGetExporterType, _ClientSer
         grpc.UnaryUnaryMultiCallable[
             jumpstarter.client.v1.client_pb2.DeleteLeaseRequest,
             google.protobuf.empty_pb2.Empty,
+        ],
+        grpc.UnaryUnaryMultiCallable[
+            jumpstarter.client.v1.client_pb2.RotateTokenRequest,
+            jumpstarter.client.v1.client_pb2.RotateTokenResponse,
         ],
     ], channel: grpc.Channel) -> None: ...
 
@@ -207,6 +227,10 @@ class ClientServiceStub(typing.Generic[_ClientServiceGetExporterType, _ClientSer
             jumpstarter.client.v1.client_pb2.DeleteLeaseRequest,
             google.protobuf.empty_pb2.Empty,
         ],
+        grpc.aio.UnaryUnaryMultiCallable[
+            jumpstarter.client.v1.client_pb2.RotateTokenRequest,
+            jumpstarter.client.v1.client_pb2.RotateTokenResponse,
+        ],
     ], channel: grpc.aio.Channel) -> None: ...
 
     GetExporter: _ClientServiceGetExporterType
@@ -222,6 +246,8 @@ class ClientServiceStub(typing.Generic[_ClientServiceGetExporterType, _ClientSer
     UpdateLease: _ClientServiceUpdateLeaseType
 
     DeleteLease: _ClientServiceDeleteLeaseType
+
+    RotateToken: _ClientServiceRotateTokenType
 
 ClientServiceAsyncStub: typing_extensions.TypeAlias = ClientServiceStub[
     grpc.aio.UnaryUnaryMultiCallable[
@@ -251,6 +277,10 @@ ClientServiceAsyncStub: typing_extensions.TypeAlias = ClientServiceStub[
     grpc.aio.UnaryUnaryMultiCallable[
         jumpstarter.client.v1.client_pb2.DeleteLeaseRequest,
         google.protobuf.empty_pb2.Empty,
+    ],
+    grpc.aio.UnaryUnaryMultiCallable[
+        jumpstarter.client.v1.client_pb2.RotateTokenRequest,
+        jumpstarter.client.v1.client_pb2.RotateTokenResponse,
     ],
 ]
 
@@ -303,5 +333,12 @@ class ClientServiceServicer(metaclass=abc.ABCMeta):
         request: jumpstarter.client.v1.client_pb2.DeleteLeaseRequest,
         context: _ServicerContext,
     ) -> typing.Union[google.protobuf.empty_pb2.Empty, collections.abc.Awaitable[google.protobuf.empty_pb2.Empty]]: ...
+
+    @abc.abstractmethod
+    def RotateToken(
+        self,
+        request: jumpstarter.client.v1.client_pb2.RotateTokenRequest,
+        context: _ServicerContext,
+    ) -> typing.Union[jumpstarter.client.v1.client_pb2.RotateTokenResponse, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.RotateTokenResponse]]: ...
 
 def add_ClientServiceServicer_to_server(servicer: ClientServiceServicer, server: typing.Union[grpc.Server, grpc.aio.Server]) -> None: ...

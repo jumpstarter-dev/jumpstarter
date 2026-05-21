@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
@@ -23,6 +24,17 @@ func LoadAuthenticationConfiguration(
 ) (authenticator.Token, string, error) {
 	if config.Internal.Prefix == "" {
 		config.Internal.Prefix = "internal:"
+	}
+
+	if config.Internal.TokenLifetime != "" {
+		lifetime, err := ParseDuration(config.Internal.TokenLifetime)
+		if err != nil {
+			return nil, "", err
+		}
+		if lifetime <= 0 {
+			return nil, "", fmt.Errorf("internal.tokenLifetime must be greater than 0")
+		}
+		signer.SetTokenLifetime(lifetime)
 	}
 
 	config.JWT = append(config.JWT, apiserverv1beta1.JWTAuthenticator{

@@ -347,3 +347,38 @@ class DeleteLeaseRequest(google.protobuf.message.Message):
     def ClearField(self, field_name: typing.Literal["name", b"name"]) -> None: ...
 
 Global___DeleteLeaseRequest: typing_extensions.TypeAlias = DeleteLeaseRequest
+
+@typing.final
+class RotateTokenRequest(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    PARENT_FIELD_NUMBER: builtins.int
+    parent: builtins.str
+    def __init__(
+        self,
+        *,
+        parent: builtins.str = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["parent", b"parent"]) -> None: ...
+
+Global___RotateTokenRequest: typing_extensions.TypeAlias = RotateTokenRequest
+
+@typing.final
+class RotateTokenResponse(google.protobuf.message.Message):
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    TOKEN_FIELD_NUMBER: builtins.int
+    EXPIRY_FIELD_NUMBER: builtins.int
+    token: builtins.str
+    @property
+    def expiry(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
+    def __init__(
+        self,
+        *,
+        token: builtins.str = ...,
+        expiry: google.protobuf.timestamp_pb2.Timestamp | None = ...,
+    ) -> None: ...
+    def HasField(self, field_name: typing.Literal["expiry", b"expiry"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["expiry", b"expiry", "token", b"token"]) -> None: ...
+
+Global___RotateTokenResponse: typing_extensions.TypeAlias = RotateTokenResponse

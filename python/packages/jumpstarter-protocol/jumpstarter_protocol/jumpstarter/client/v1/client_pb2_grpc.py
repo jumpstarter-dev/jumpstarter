@@ -50,6 +50,11 @@ class ClientServiceStub(object):
                 request_serializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.DeleteLeaseRequest.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
+        self.RotateToken = channel.unary_unary(
+                '/jumpstarter.client.v1.ClientService/RotateToken',
+                request_serializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.RotateTokenRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.RotateTokenResponse.FromString,
+                _registered_method=True)
 
 
 class ClientServiceServicer(object):
@@ -97,6 +102,12 @@ class ClientServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def RotateToken(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ClientServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -134,6 +145,11 @@ def add_ClientServiceServicer_to_server(servicer, server):
                     servicer.DeleteLease,
                     request_deserializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.DeleteLeaseRequest.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            ),
+            'RotateToken': grpc.unary_unary_rpc_method_handler(
+                    servicer.RotateToken,
+                    request_deserializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.RotateTokenRequest.FromString,
+                    response_serializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.RotateTokenResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -325,6 +341,33 @@ class ClientService(object):
             '/jumpstarter.client.v1.ClientService/DeleteLease',
             jumpstarter_dot_client_dot_v1_dot_client__pb2.DeleteLeaseRequest.SerializeToString,
             google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RotateToken(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.client.v1.ClientService/RotateToken',
+            jumpstarter_dot_client_dot_v1_dot_client__pb2.RotateTokenRequest.SerializeToString,
+            jumpstarter_dot_client_dot_v1_dot_client__pb2.RotateTokenResponse.FromString,
             options,
             channel_credentials,
             insecure,

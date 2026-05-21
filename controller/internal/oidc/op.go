@@ -17,10 +17,13 @@ import (
 	"github.com/zitadel/oidc/v3/pkg/op"
 )
 
+const defaultTokenLifetime = 365 * 24 * time.Hour
+
 type Signer struct {
-	privatekey *ecdsa.PrivateKey
-	issuer     string
-	audience   string
+	privatekey    *ecdsa.PrivateKey
+	issuer        string
+	audience      string
+	tokenLifetime time.Duration
 }
 
 func NewSigner(privateKey *ecdsa.PrivateKey, issuer, audience string) *Signer {
@@ -83,6 +86,10 @@ func (k *Signer) Register(group gin.IRoutes) {
 	})
 }
 
+func (k *Signer) SetTokenLifetime(d time.Duration) {
+	k.tokenLifetime = d
+}
+
 func (k *Signer) Validate(token string) error {
 	_, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
 		return &k.privatekey.PublicKey, nil
@@ -99,11 +106,16 @@ func (k *Signer) Validate(token string) error {
 func (k *Signer) Token(
 	subject string,
 ) (string, error) {
+	lifetime := k.tokenLifetime
+	if lifetime == 0 {
+		lifetime = defaultTokenLifetime
+	}
+	now := time.Now()
 	return jwt.NewWithClaims(jwt.SigningMethodES256, jwt.RegisteredClaims{
 		Issuer:    k.issuer,
 		Subject:   subject,
 		Audience:  []string{k.audience},
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(365 * 24 * time.Hour)), // FIXME: rotate keys on expiration
+		IssuedAt:  jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(now.Add(lifetime)),
 	}).SignedString(k.privatekey)
 }

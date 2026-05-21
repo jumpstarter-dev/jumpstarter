@@ -3,6 +3,7 @@ import base64
 import logging
 from typing import Literal, Optional
 
+from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 from pydantic import Field
 
@@ -160,6 +161,28 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
             drivers=ClientConfigV1Alpha1Drivers(allow=allow, unsafe=unsafe),
             tls=TLSConfigV1Alpha1(ca=ca_bundle),
         )
+
+    async def rotate_client_token(self, name: str) -> str:
+        """Rotate the internal token for a client by deleting its secret and waiting for regeneration."""
+        client = await self.get_client(name)
+        if client.status is None or client.status.credential is None:
+            raise Exception(f"Client '{name}' has no credential secret")
+
+        secret_name = client.status.credential.name
+        await self.core_api.delete_namespaced_secret(secret_name, self.namespace)
+
+        count = 0
+        while count < CREATE_CLIENT_COUNT:
+            try:
+                secret = await self.core_api.read_namespaced_secret(secret_name, self.namespace)
+                if secret.data and "token" in secret.data:
+                    return base64.b64decode(secret.data["token"]).decode("utf8")
+            except ApiException as e:
+                if e.status != 404:
+                    raise
+            count += 1
+            await asyncio.sleep(CREATE_CLIENT_DELAY)
+        raise Exception("Timeout waiting for token regeneration")
 
     async def delete_client(self, name: str):
         """Delete a client object"""

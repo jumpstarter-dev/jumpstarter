@@ -284,6 +284,7 @@ func main() {
 		Router:        router,
 		ServerOptions: option,
 		LeasePolicy:   leasePolicy,
+		Signer:        oidcSigner,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create service", "service", "Controller")
 		os.Exit(1)
