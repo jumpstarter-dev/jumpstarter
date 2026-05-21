@@ -20,19 +20,23 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/auth"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/utils"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type ClientService struct {
@@ -40,13 +44,15 @@ type ClientService struct {
 	kclient.Client
 	auth.Auth
 	MaxTags int32
+	Signer  *oidc.Signer
 }
 
-func NewClientService(client kclient.Client, auth auth.Auth, maxTags int32) *ClientService {
+func NewClientService(client kclient.Client, auth auth.Auth, maxTags int32, signer *oidc.Signer) *ClientService {
 	return &ClientService{
 		Client:  client,
 		Auth:    auth,
 		MaxTags: maxTags,
+		Signer:  signer,
 	}
 }
 
@@ -385,4 +391,59 @@ func (s *ClientService) DeleteLease(ctx context.Context, req *cpb.DeleteLeaseReq
 	}
 
 	return &emptypb.Empty{}, nil
+}
+
+func (s *ClientService) RotateToken(ctx context.Context, req *cpb.RotateTokenRequest) (*cpb.RotateTokenResponse, error) {
+	namespace, err := utils.ParseNamespaceIdentifier(req.Parent)
+	if err != nil {
+		return nil, err
+	}
+
+	jclient, err := s.AuthClient(ctx, namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	token, err := s.Signer.Token(jclient.InternalSubject())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to sign token: %s", err)
+	}
+
+	secretName := jclient.Name + "-client"
+	var secret corev1.Secret
+	if err := s.Get(ctx, types.NamespacedName{
+		Namespace: namespace,
+		Name:      secretName,
+	}, &secret); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get credential secret: %s", err)
+	}
+
+	original := kclient.MergeFrom(secret.DeepCopy())
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+	secret.Data["token"] = []byte(token)
+	if err := s.Patch(ctx, &secret, original); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to update credential secret: %s", err)
+	}
+
+	log.FromContext(ctx).Info("token rotated", "client", jclient.Name, "namespace", namespace)
+
+	claims := &struct {
+		jwt.RegisteredClaims
+	}{}
+	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
+	if _, _, err := parser.ParseUnverified(token, claims); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to parse token claims: %s", err)
+	}
+
+	var expiry *timestamppb.Timestamp
+	if claims.ExpiresAt != nil {
+		expiry = timestamppb.New(claims.ExpiresAt.Time)
+	}
+
+	return &cpb.RotateTokenResponse{
+		Token:  token,
+		Expiry: expiry,
+	}, nil
 }

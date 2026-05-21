@@ -129,3 +129,43 @@ async def refresh_token(config):
         config.refresh_token = new_refresh_token
     ClientConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
     click.echo("Access token refreshed.")
+
+
+@auth.command(name="rotate")
+@opt_config(exporter=False)
+@blocking
+async def rotate_token(config):
+    """Rotate the internal token, replacing it with a freshly signed one."""
+    token_str = getattr(config, "token", None)
+    if not token_str:
+        raise click.ClickException("No token found in config.")
+
+    remaining = get_token_remaining_seconds(token_str)
+    if remaining is not None and remaining < 0:
+        raise click.ClickException(
+            "Token is expired. Cannot rotate — recreate the client with 'jmp config client create'."
+        )
+
+    new_token = await config.rotate_token()
+    if not new_token:
+        raise click.ClickException("Token rotation failed: empty token received.")
+
+    try:
+        payload = decode_jwt(new_token)
+    except ValueError as e:
+        raise click.ClickException(f"Token rotation failed: invalid token returned ({e}).") from e
+
+    config.token = new_token
+    ClientConfigV1Alpha1.save(config)  # ty: ignore[invalid-argument-type]
+
+    new_remaining = get_token_remaining_seconds(new_token)
+    if new_remaining is not None:
+        duration = format_duration(new_remaining)
+        exp = payload.get("exp")
+        if exp:
+            exp_dt = datetime.fromtimestamp(exp, tz=timezone.utc)
+            click.echo(f"Token rotated. New expiry: {exp_dt.strftime('%Y-%m-%d %H:%M:%S %Z')} ({duration} remaining)")
+        else:
+            click.echo(f"Token rotated. {duration} remaining.")
+    else:
+        click.echo("Token rotated.")

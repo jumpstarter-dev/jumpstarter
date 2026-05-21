@@ -80,6 +80,7 @@ type ControllerService struct {
 	ServerOptions []grpc.ServerOption
 	Router        config.Router
 	LeasePolicy   *config.LeasePolicy
+	Signer        *oidc.Signer
 	listenQueues  sync.Map
 }
 
@@ -1010,7 +1011,7 @@ func (s *ControllerService) Start(ctx context.Context) error {
 	pb.RegisterControllerServiceServer(server, s)
 	cpb.RegisterClientServiceServer(
 		server,
-		clientsvcv1.NewClientService(s.Client, *auth.NewAuth(s.Client, s.Authn, s.Authz, s.Attr), s.effectiveMaxTags()),
+		clientsvcv1.NewClientService(s.Client, *auth.NewAuth(s.Client, s.Authn, s.Authz, s.Attr), s.effectiveMaxTags(), s.Signer),
 	)
 
 	// Register reflection service on gRPC server.

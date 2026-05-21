@@ -536,6 +536,15 @@ class ClientService:
                 )
             )
 
+    async def RotateToken(self) -> str:
+        with translate_grpc_exceptions():
+            response = await self.stub.RotateToken(
+                client_pb2.RotateTokenRequest(
+                    parent="namespaces/{}".format(self.namespace),
+                )
+            )
+        return response.token
+
 
 @dataclass(frozen=True, slots=True)
 class MultipathExporterStub:
