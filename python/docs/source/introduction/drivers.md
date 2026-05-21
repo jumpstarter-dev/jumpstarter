@@ -151,15 +151,15 @@ for details on gRPC counterparts):
 flowchart LR
     subgraph "Unary RPC"
         direction TB
-        C1["Client"] - "DriverCall\n(desired state)" --> D1["Driver"]
-        D1 - "Result" --> C1
+        C1["Client"] -- "DriverCall\n(desired state)" --> D1["Driver"]
+        D1 -- "Result" --> C1
         E1["Example: power on/off"]
     end
 
     subgraph "Server Streaming RPC"
         direction TB
-        C2["Client"] - "StreamingDriverCall\n(interval)" --> D2["Driver"]
-        D2 - "Result Stream" --> C2
+        C2["Client"] -- "StreamingDriverCall\n(interval)" --> D2["Driver"]
+        D2 -- "Result Stream" --> C2
         E2["Example: power readings"]
     end
 

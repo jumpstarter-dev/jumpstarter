@@ -90,7 +90,7 @@ flowchart TB
 
     Client["Client\n(CLI / Python API)"]
 
-    Client - "Distributed\n(gRPC via Router)" --> Router
+    Client -- "Distributed\n(gRPC via Router)" --> Router
     Router <--> Exporter
     Client -. "Direct\n(gRPC via TCP)" .-> Exporter
     Client -. "Local\n(gRPC via Socket)" .-> Exporter

@@ -1,7 +1,7 @@
-# Operator
+# Production
 
-For production deployments, install Jumpstarter on Kubernetes or OpenShift
-clusters using the Jumpstarter {term}`operator`.
+For production deployments, install Jumpstarter on a Kubernetes or OpenShift
+cluster using the Jumpstarter {term}`operator`.
 
 ## Prerequisites
 
@@ -72,7 +72,7 @@ The {term}`operator` reconciles the `Jumpstarter` CR and creates Deployments,
 Services, and networking resources for {term}`controller`/{term}`router`/login
 endpoints.
 
-```{tab} Kubernetes
+````{tab} Kubernetes
 ```{code-block} yaml
 apiVersion: operator.jumpstarter.dev/v1alpha1
 kind: Jumpstarter
@@ -110,9 +110,9 @@ spec:
             enabled: true
             class: nginx
 ```
-```
+````
 
-```{tab} OpenShift
+````{tab} OpenShift
 ```{code-block} yaml
 apiVersion: operator.jumpstarter.dev/v1alpha1
 kind: Jumpstarter
@@ -147,7 +147,7 @@ spec:
           route:
             enabled: true
 ```
-```
+````
 
 ```{code-block} console
 $ kubectl apply -f jumpstarter.yaml
@@ -155,21 +155,21 @@ $ kubectl apply -f jumpstarter.yaml
 
 ## Verify
 
-```{tab} Kubernetes
+````{tab} Kubernetes
 ```{code-block} console
 $ kubectl get jumpstarter -n jumpstarter-lab
 $ kubectl get deploy,svc,ingress -n jumpstarter-lab
 ```
-```
+````
 
-```{tab} OpenShift
+````{tab} OpenShift
 ```{code-block} console
 $ kubectl get jumpstarter -n jumpstarter-lab
 $ kubectl get deploy,svc,route -n jumpstarter-lab
 ```
 
 Ensure DNS is configured so route hostnames resolve correctly.
-```
+````
 
 ## Configuration
 
@@ -196,7 +196,7 @@ not install your identity provider. See
 
 Set `spec.certManager.enabled: true` for {term}`operator`-managed certificates.
 
-```{tab} Self-signed
+````{tab} Self-signed
 ```{code-block} yaml
 spec:
   certManager:
@@ -208,9 +208,9 @@ spec:
 
 Creates: `<name>-selfsigned-issuer`, `<name>-ca`, `<name>-ca-issuer`,
 `<name>-controller-tls`, `<name>-router-<replica>-tls`.
-```
+````
 
-```{tab} External issuer
+````{tab} External issuer
 ```{code-block} yaml
 spec:
   certManager:
@@ -220,9 +220,9 @@ spec:
         name: my-cluster-issuer
         kind: ClusterIssuer
 ```
-```
+````
 
-```{tab} ACME
+````{tab} ACME
 ```{code-block} yaml
 spec:
   controller:
@@ -235,7 +235,7 @@ spec:
             annotations:
               cert-manager.io/cluster-issuer: letsencrypt-prod
 ```
-```
+````
 
 ### GitOps
 

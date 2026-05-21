@@ -18,8 +18,8 @@ flowchart TB
         DUTs["Device Under Test"]
     end
 
-    IDE - "MCP Protocol" --> JmpMCP
-    JmpMCP - "Lease & connect" --> DUTs
+    IDE -- "MCP Protocol" --> JmpMCP
+    JmpMCP -- "Lease & connect" --> DUTs
 ```
 
 ## Prerequisites

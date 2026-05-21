@@ -1,13 +1,9 @@
-# Bootc Image
+# Standalone
 
-Lightweight edge deployment using MicroShift and a bootable container (bootc)
-image with the Jumpstarter {term}`operator` pre-installed. Ideal for edge
-devices, development environments, and small labs. Maintained by the community.
-
-```{note}
-This is a **community-supported** deployment. For production, use the
-[Operator](operator.md) installation on Kubernetes or OpenShift.
-```
+Lightweight deployment using MicroShift and a bootable container (bootc) image
+with the Jumpstarter {term}`operator` pre-installed. Ideal for edge devices,
+development environments, and small labs. For production deployments, see
+[Production](production.md).
 
 ## Prerequisites
 
