@@ -220,6 +220,84 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 	})
 
 	// -------------------------------------------------------------------
+	// Token rotation
+	// -------------------------------------------------------------------
+	Context("Token rotation", func() {
+		clientConfigPath := func(alias string) string {
+			return filepath.Join(os.Getenv("HOME"), ".config", "jumpstarter", "clients", alias+".yaml")
+		}
+
+		It("admin can rotate a client token", func() {
+			ns := Namespace()
+			out, err := Jmp("admin", "rotate", "client", "-n", ns, "test-client-legacy")
+			Expect(err).NotTo(HaveOccurred(), out)
+			Expect(out).To(ContainSubstring("Token rotated"))
+		})
+
+		It("admin rotate with --save updates local config", func() {
+			ns := Namespace()
+			configFile := clientConfigPath("test-client-legacy")
+			Expect(configFile).To(BeAnExistingFile())
+
+			oldToken := MustReadYAMLField(configFile, "token")
+			Expect(oldToken).NotTo(BeEmpty())
+
+			out, err := Jmp("admin", "rotate", "client", "-n", ns, "test-client-legacy", "--save")
+			Expect(err).NotTo(HaveOccurred(), out)
+			Expect(out).To(ContainSubstring("updated with new token"))
+
+			newToken := MustReadYAMLField(configFile, "token")
+			Expect(newToken).NotTo(BeEmpty())
+			Expect(newToken).NotTo(Equal(oldToken))
+		})
+
+		It("client can self-rotate token via auth rotate", func() {
+			configFile := clientConfigPath("test-client-legacy")
+			oldToken := MustReadYAMLField(configFile, "token")
+
+			out, err := Jmp("auth", "rotate", "--client", "test-client-legacy")
+			Expect(err).NotTo(HaveOccurred(), out)
+			Expect(out).To(ContainSubstring("rotated"))
+
+			newToken := MustReadYAMLField(configFile, "token")
+			Expect(newToken).NotTo(BeEmpty())
+			Expect(newToken).NotTo(Equal(oldToken))
+		})
+
+		It("auth status shows valid token after rotation", func() {
+			out, err := Jmp("auth", "status", "--client", "test-client-legacy")
+			Expect(err).NotTo(HaveOccurred(), out)
+			Expect(out).To(ContainSubstring("Valid"))
+		})
+
+		It("double rotation produces distinct tokens", func() {
+			ns := Namespace()
+			configFile := clientConfigPath("test-client-legacy")
+
+			MustJmp("admin", "rotate", "client", "-n", ns, "test-client-legacy", "--save")
+			tokenA := MustReadYAMLField(configFile, "token")
+
+			MustJmp("admin", "rotate", "client", "-n", ns, "test-client-legacy", "--save")
+			tokenB := MustReadYAMLField(configFile, "token")
+
+			Expect(tokenA).NotTo(Equal(tokenB))
+		})
+
+		It("admin rotate fails for non-existent client", func() {
+			ns := Namespace()
+			_, err := Jmp("admin", "rotate", "client", "-n", ns, "does-not-exist")
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("rotated token works for listing exporters", func() {
+			// Verify the rotated token can still authenticate to the controller.
+			// No running exporter process needed — just list the CRDs.
+			out, err := Jmp("get", "exporters", "--client", "test-client-legacy")
+			Expect(err).NotTo(HaveOccurred(), out)
+		})
+	})
+
+	// -------------------------------------------------------------------
 	// Running exporters
 	// -------------------------------------------------------------------
 	Context("Exporter lifecycle", func() {
