@@ -62,7 +62,7 @@ hardware-test:
   script:
     - jmp config client use ci-client
     - LEASE_ID=$(jmp create lease --selector project=myproject --wait 300 -o name)
-    - pytest tests/hardware_tests/
+    - jmp shell --lease ${LEASE_ID} pytest tests/hardware_tests/
   after_script:
     - jmp delete lease ${LEASE_ID}
 ```
