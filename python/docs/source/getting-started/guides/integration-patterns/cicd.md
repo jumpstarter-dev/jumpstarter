@@ -120,11 +120,6 @@ jobs:
       - uses: actions/checkout@v3
       - name: Run Jumpstarter in local mode
         run: jmp local start --config=./.jumpstarter/local-config.yaml
-      - name: Run tests
-        run: pytest tests/hardware_tests/
-      - name: Cleanup
-        if: always()
-        run: jmp local stop
 ```
 ````
 
