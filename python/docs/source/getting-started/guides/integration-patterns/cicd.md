@@ -44,7 +44,7 @@ jobs:
       - name: Request hardware lease
         run: |
           jmp config client use ci-client
-          jmp create lease --selector project=myproject --wait 300
+          LEASE_ID=$(jmp create lease --selector project=myproject --wait 300 -o name)
       - name: Run tests
         run: pytest tests/hardware_tests/
       - name: Release hardware lease
