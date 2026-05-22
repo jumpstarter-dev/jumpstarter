@@ -119,7 +119,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Run Jumpstarter in local mode
-        run: jmp local start --config=./.jumpstarter/local-config.yaml
+        run: jmp shell --exporter-config=./.jumpstarter/local-config.yaml pytest test/hardware/tests/
 ```
 ````
 
