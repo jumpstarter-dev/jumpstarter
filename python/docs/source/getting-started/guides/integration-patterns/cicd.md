@@ -64,7 +64,7 @@ hardware-test:
     - jmp create lease --selector project=myproject --wait 300
     - pytest tests/hardware_tests/
   after_script:
-    - jmp delete lease
+    - jmp delete lease ${LEASE_ID}
 ```
 ````
 
