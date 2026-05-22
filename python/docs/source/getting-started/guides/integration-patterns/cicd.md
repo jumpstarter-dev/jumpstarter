@@ -49,7 +49,7 @@ jobs:
         run: pytest tests/hardware_tests/
       - name: Release hardware lease
         if: always()
-        run: jmp delete lease
+        run: jmp delete lease ${LEASE_ID}
 ```
 ````
 
