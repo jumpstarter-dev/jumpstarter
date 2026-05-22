@@ -246,7 +246,7 @@ authentication system that secures access through:
 
 - **Client Registration** - Clients register in the Kubernetes cluster with
    unique identities
-- **Token Issuance** - {term}`Controller` issues JWT tokens to authenticated clients and
+- **Token Issuance** - {term}`Controller` or an OIDC server issues JWT tokens to authenticated clients and
    {term}`exporter`s
 - **Secure Communication** - All {term}`gRPC` communication between components uses
    token authentication
