@@ -130,9 +130,6 @@ hardware-test:
   tags:
     - hw-attached
   script:
-    - jmp local start --config=./.jumpstarter/local-config.yaml
-    - pytest tests/hardware_tests/
-  after_script:
-    - jmp local stop
+    - jmp shell --exporter-config=./.jumpstarter/local-config.yaml pytest tests/hardware_tests/
 ```
 ````
