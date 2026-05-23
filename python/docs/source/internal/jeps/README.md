@@ -32,11 +32,12 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 
 ### Standards Track JEPs
 
-| JEP  | Title                                                                                                                  | Status      | Author(s)                            |
-| ---- | ---------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------------------ |
-| 0010 | [Renode Integration](JEP-0010-renode-integration.md)                                                                   | Implemented | @vtz (Vinicius Zein)                 |
+| JEP  | Title                                                                              | Status      | Author(s)            |
+| ---- | ---------------------------------------------------------------------------------- | ----------- | -------------------- |
+| 0010 | [Renode Integration](JEP-0010-renode-integration.md)                               | Implemented | @vtz (Vinicius Zein) |
 | 0011 | [Protobuf Introspection and Interface Generation](JEP-0011-protobuf-introspection-interface-generation.md)             | Accepted    | @kirkbrauer (Kirk Brauer)            |
 | 0013 | [Metrics, Tracing, and Log Observability](JEP-0013-observability-telemetry-logs.md)                                    | Accepted    | @mangelajo (Miguel Angel Ajo Pelayo) |
+| 0014 | [Admin API and Identity Federation](JEP-0014-admin-api.md)                         | Accepted       | @kirkbrauer (Kirk Brauer) |
 
 ### Informational JEPs
 
@@ -71,4 +72,5 @@ JEP-0000-jep-process.md
 JEP-0010-renode-integration.md
 JEP-0011-protobuf-introspection-interface-generation.md
 JEP-0013-observability-telemetry-logs.md
+JEP-0014-admin-api.md
 ```
