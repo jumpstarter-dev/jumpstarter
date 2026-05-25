@@ -1,4 +1,6 @@
+import os
 import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 import click
@@ -161,3 +163,27 @@ def test_flash_no_target_no_partition_spec(ridesx_client):
     """Non-OCI path without colon or target should give a generic helpful error"""
     with pytest.raises(click.ClickException, match="requires a target partition"):
         ridesx_client.flash("/path/to/boot.img")
+
+
+def test_upload_file_if_needed_resolves_relative_path(ridesx_client):
+    """Relative paths like ./file.img must be resolved to absolute before upload."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        img = Path(tmpdir) / "boot_a.simg"
+        img.write_bytes(b"\x00" * 1024)
+
+        saved_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            with (
+                patch.object(ridesx_client, "_should_upload_file", return_value=True),
+                patch.object(ridesx_client.storage, "write_from_path") as mock_write,
+            ):
+                ridesx_client._upload_file_if_needed("./boot_a.simg")
+
+                src_arg = mock_write.call_args[0][1]
+                assert Path(src_arg).is_absolute(), (
+                    f"write_from_path got relative path '{src_arg}' — "
+                    f"opendal Operator(root='/') cannot resolve relative paths"
+                )
+        finally:
+            os.chdir(saved_cwd)
