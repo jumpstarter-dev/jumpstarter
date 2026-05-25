@@ -1,10 +1,11 @@
 # gPTP driver
 
-`jumpstarter-driver-gptp` provides IEEE 802.1AS (gPTP) and IEEE 1588 (PTPv2)
-time synchronization for Jumpstarter. It manages the
+`jumpstarter-driver-gptp` provides IEEE 802.1AS-2020 (gPTP) and IEEE 1588-2019
+(PTPv2.1) time synchronization for Jumpstarter. It manages the
 [linuxptp](https://linuxptp.nwtime.org/) stack (`ptp4l` and `phc2sys`) as
 supervised subprocesses, enabling precise clock synchronization between an
-exporter host and a target device over automotive Ethernet or standard IP networks.
+exporter host and a target device over automotive Ethernet or standard IP
+networks. Parameter ranges and defaults follow the respective standards.
 
 gPTP is the foundation of Time-Sensitive Networking (TSN), required for
 applications like sensor fusion, ADAS, and synchronized diagnostics in
@@ -97,24 +98,30 @@ export:
 
 ### Config parameters
 
-| Parameter          | Description                                          | Type       | Required | Default  |
-| ------------------ | ---------------------------------------------------- | ---------- | -------- | -------- |
-| interface          | Network interface for PTP (e.g. `eth0`, `enp3s0`)    | str        | yes      |          |
-| domain             | PTP domain number (0-127)                            | int        | no       | 0        |
-| profile            | `"gptp"` (IEEE 802.1AS) or `"default"` (IEEE 1588)  | str        | no       | `"gptp"` |
-| transport          | `"L2"`, `"UDPv4"`, or `"UDPv6"`                     | str        | no       | `"L2"`   |
-| role               | `"master"`, `"slave"`, or `"auto"` (BMCA election)  | str        | no       | `"auto"` |
-| sync_system_clock  | Run `phc2sys` to sync CLOCK_REALTIME to PHC          | bool       | no       | true     |
-| ptp4l_extra_args   | Additional ptp4l command-line arguments              | list[str]  | no       | []       |
+| Parameter          | Description                                          | Type       | Required | Default  | Standard ref        |
+| ------------------ | ---------------------------------------------------- | ---------- | -------- | -------- | ------------------- |
+| interface          | Network interface for PTP (e.g. `eth0`, `enp3s0`)    | str        | yes      |          |                     |
+| domain             | PTP domain number (0-127)                            | int        | no       | 0        | IEEE 1588-2019 §7.1 |
+| profile            | `"gptp"` (802.1AS-2020) or `"default"` (1588-2019)  | str        | no       | `"gptp"` |                     |
+| transport          | `"L2"`, `"UDPv4"`, or `"UDPv6"`                     | str        | no       | `"L2"`   |                     |
+| role               | `"master"`, `"slave"`, or `"auto"` (BMCA election)  | str        | no       | `"auto"` |                     |
+| sync_system_clock  | Run `phc2sys` to sync CLOCK_REALTIME to PHC          | bool       | no       | true     |                     |
+| ptp4l_extra_args   | Additional ptp4l command-line arguments              | list[str]  | no       | []       |                     |
 
 ## PTP Standards Reference
 
-### IEEE 802.1AS (gPTP) vs IEEE 1588 (PTPv2)
+This driver targets **IEEE 802.1AS-2020** (gPTP) and **IEEE 1588-2019**
+(PTPv2.1) via the linuxptp reference implementation. All parameter ranges and
+defaults are validated according to these editions.
 
-| Feature           | 802.1AS (gPTP)               | IEEE 1588 (PTPv2)             |
+### IEEE 802.1AS-2020 (gPTP) vs IEEE 1588-2019 (PTPv2.1)
+
+| Feature           | 802.1AS-2020 (gPTP)          | IEEE 1588-2019 (PTPv2.1)     |
 | ----------------- | ---------------------------- | ----------------------------- |
 | Transport         | Layer 2 only                 | L2, UDPv4, UDPv6             |
+| Domain            | Always 0                     | 0-127 (§7.1)                 |
 | Timestamping      | Hardware required             | HW or software               |
+| Priority1 range   | 0-255 (§7.6.2.2)            | 0-255 (§7.6.2.2)             |
 | Accuracy          | Sub-microsecond              | Sub-microsecond to ms         |
 | Use case          | Automotive, industrial TSN   | General purpose               |
 | Profile setting   | `profile: gptp`              | `profile: default`            |

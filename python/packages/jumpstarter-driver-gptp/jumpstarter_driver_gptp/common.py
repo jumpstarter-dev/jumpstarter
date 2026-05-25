@@ -1,4 +1,7 @@
-"""Pydantic models and enums for gPTP/PTP time synchronization."""
+"""Pydantic models and enums for gPTP/PTP time synchronization.
+
+Parameter ranges and defaults follow IEEE 802.1AS-2020 and IEEE 1588-2019.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +12,7 @@ from pydantic import BaseModel, field_validator
 
 
 class PortState(str, Enum):
-    """IEEE 802.1AS / IEEE 1588 port state machine states."""
+    """IEEE 802.1AS-2020 / IEEE 1588-2019 port state machine states."""
 
     INITIALIZING = "INITIALIZING"
     LISTENING = "LISTENING"
@@ -42,7 +45,7 @@ VALID_PORT_TRANSITIONS: dict[str, set[str]] = {
     "FAULTY": {"INITIALIZING", "LISTENING"},
     "UNCALIBRATED": {"SLAVE", "FAULTY", "LISTENING"},
 }
-"""Valid IEEE 802.1AS port state transitions, keyed by current state."""
+"""Valid IEEE 802.1AS-2020 port state transitions, keyed by current state."""
 
 
 class GptpStatus(BaseModel):
@@ -50,8 +53,10 @@ class GptpStatus(BaseModel):
 
     Attributes:
         port_state: Current port state machine state.
-        clock_class: PTP clock class (default 248 = slave-only).
-        clock_accuracy: PTP clock accuracy enumeration.
+        clock_class: PTP clock class (default 248 = slave-only,
+            per IEEE 1588-2019 Table 5).
+        clock_accuracy: PTP clock accuracy enumeration (default 0xFE = unknown,
+            per IEEE 1588-2019 Table 6).
         offset_ns: Current offset from master in nanoseconds.
         mean_delay_ns: Mean path delay in nanoseconds.
         gm_identity: Grandmaster clock identity string.

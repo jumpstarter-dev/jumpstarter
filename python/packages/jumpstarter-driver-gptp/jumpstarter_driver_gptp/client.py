@@ -175,7 +175,7 @@ class GptpClient(DriverClient):
         for v in self.streamingcall("read"):
             yield GptpSyncEvent.model_validate(v)
 
-    def cli(self):
+    def cli(self):  # noqa: C901
         """Build the Click CLI group for gPTP commands.
 
         Returns:
