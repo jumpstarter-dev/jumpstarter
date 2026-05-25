@@ -149,13 +149,16 @@ class Gptp(Driver):
     """gPTP/PTP driver managing linuxptp (ptp4l/phc2sys) for time synchronization.
 
     Provides lifecycle management, status monitoring, and configuration of
-    IEEE 802.1AS (gPTP) or IEEE 1588 (PTPv2) time synchronization between
-    the exporter host and a target device.
+    IEEE 802.1AS-2020 (gPTP) or IEEE 1588-2019 (PTPv2.1) time synchronization
+    between the exporter host and a target device. Parameter ranges and defaults
+    follow the respective standards; linuxptp is the reference implementation.
 
     Attributes:
         interface: Network interface name (e.g. ``eth0``).
-        domain: PTP domain number (0-127).
-        profile: ``"gptp"`` (IEEE 802.1AS) or ``"default"`` (IEEE 1588).
+        domain: PTP domain number (0-127 per IEEE 1588-2019 §7.1;
+            IEEE 802.1AS-2020 uses domain 0).
+        profile: ``"gptp"`` (IEEE 802.1AS-2020) or ``"default"``
+            (IEEE 1588-2019).
         transport: ``"L2"``, ``"UDPv4"``, or ``"UDPv6"``.
         role: ``"master"``, ``"slave"``, or ``"auto"`` (BMCA election).
         sync_system_clock: Whether to run ``phc2sys`` for CLOCK_REALTIME sync.
@@ -198,6 +201,12 @@ class Gptp(Driver):
             raise ValueError(
                 f"Invalid interface name: {self.interface!r}. "
                 "Must match [a-zA-Z0-9][a-zA-Z0-9._-]{0,14}"
+            )
+        if not 0 <= self.domain <= 127:
+            raise ValueError(
+                f"Invalid domain: {self.domain}. "
+                "Must be 0-127 per IEEE 1588-2019 §7.1 "
+                "(IEEE 802.1AS-2020 uses domain 0)"
             )
         if self.profile not in _VALID_PROFILES:
             raise ValueError(
@@ -392,8 +401,8 @@ class Gptp(Driver):
                     stderr=asyncio.subprocess.STDOUT,
                     start_new_session=True,
                 )
-            except FileNotFoundError:
-                raise RuntimeError("ptp4l not found — install linuxptp")
+            except FileNotFoundError as err:
+                raise RuntimeError("ptp4l not found — install linuxptp") from err
 
             self._port_state = "INITIALIZING"
             self._servo_state = "s0"
@@ -548,11 +557,16 @@ class Gptp(Driver):
         integration or config-reload mechanism.
 
         Args:
-            priority: Priority1 value (0-255).
+            priority: Priority1 value (0-255, per IEEE 1588-2019 §7.6.2.2).
 
         Raises:
+            ValueError: If priority is outside 0-255.
             NotImplementedError: Always, until UDS integration is added.
         """
+        if not 0 <= priority <= 255:
+            raise ValueError(
+                f"Invalid priority1: {priority}. Must be 0-255 per IEEE 1588-2019 §7.6.2.2"
+            )
         self._require_started()
         raise NotImplementedError(
             "set_priority1 requires ptp4l UDS management socket integration "
@@ -650,7 +664,15 @@ class MockGptpBackend:
         self._offset_ns = 0.0
 
     def set_priority1(self, priority: int):
-        """Set priority1 and simulate BMCA role change."""
+        """Set priority1 and simulate BMCA role change.
+
+        Args:
+            priority: Priority1 value (0-255, per IEEE 1588-2019 §7.6.2.2).
+        """
+        if not 0 <= priority <= 255:
+            raise ValueError(
+                f"Invalid priority1: {priority}. Must be 0-255 per IEEE 1588-2019 §7.6.2.2"
+            )
         self.require_started()
         self._priority1 = priority
         if priority < 128 and self._port_state in ("SLAVE", "LISTENING", "PASSIVE"):
@@ -796,9 +818,10 @@ class MockGptp(Driver):
         """Set clock priority1 and simulate BMCA role change.
 
         Args:
-            priority: Priority1 value (0-255).
+            priority: Priority1 value (0-255, per IEEE 1588-2019 §7.6.2.2).
 
         Raises:
+            ValueError: If priority is outside 0-255.
             RuntimeError: If not started.
         """
         self._internal_backend.set_priority1(priority)

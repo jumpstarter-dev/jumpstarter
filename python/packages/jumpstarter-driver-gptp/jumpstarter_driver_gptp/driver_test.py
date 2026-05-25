@@ -270,6 +270,20 @@ class TestDriverConfigValidation:
             d = Gptp(interface=name)
             assert d.interface == name
 
+    def test_gptp_invalid_domain_negative(self):
+        with pytest.raises(ValueError, match="Invalid domain"):
+            Gptp(interface="eth0", domain=-1)
+
+    def test_gptp_invalid_domain_too_high(self):
+        with pytest.raises(ValueError, match="Invalid domain"):
+            Gptp(interface="eth0", domain=128)
+
+    def test_gptp_valid_domain_boundary(self):
+        d = Gptp(interface="eth0", domain=0)
+        assert d.domain == 0
+        d = Gptp(interface="eth0", domain=127)
+        assert d.domain == 127
+
     def test_gptp_denied_extra_args(self):
         with pytest.raises(ValueError, match="denied argument"):
             Gptp(interface="eth0", ptp4l_extra_args=["-f", "/etc/shadow"])
@@ -372,6 +386,22 @@ class TestMockGptpLifecycle:
             assert client.status().port_state == PortState.SLAVE
             client.set_priority1(0)
             assert client.status().port_state == PortState.MASTER
+            client.stop()
+
+    def test_mock_gptp_set_priority_boundary_values(self):
+        with serve(MockGptp()) as client:
+            client.start()
+            client.set_priority1(0)
+            client.set_priority1(255)
+            client.stop()
+
+    def test_mock_gptp_set_priority_invalid(self):
+        with serve(MockGptp()) as client:
+            client.start()
+            with pytest.raises(DriverError):
+                client.set_priority1(-1)
+            with pytest.raises(DriverError):
+                client.set_priority1(256)
             client.stop()
 
 

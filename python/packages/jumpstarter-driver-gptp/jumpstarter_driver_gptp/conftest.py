@@ -139,11 +139,16 @@ class StatefulPtp4l(MockGptpBackend):
         """Set priority1 and simulate BMCA re-evaluation.
 
         Args:
-            value: New priority1 value (0-255).
+            value: New priority1 value (0-255, per IEEE 1588-2019 §7.6.2.2).
 
         Raises:
+            ValueError: If value is outside 0-255.
             PtpNotStartedError: If not started.
         """
+        if not 0 <= value <= 255:
+            raise ValueError(
+                f"Invalid priority1: {value}. Must be 0-255 per IEEE 1588-2019 §7.6.2.2"
+            )
         self.require_started()
         self._priority1 = value
         if value < 128 and self._port_state in ("SLAVE", "LISTENING", "PASSIVE"):
