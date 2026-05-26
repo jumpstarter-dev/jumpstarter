@@ -76,7 +76,7 @@ python/packages/jumpstarter-driver-<driver_package>/
 │   ├── client.py
 │   ├── driver.py
 │   ├── driver_test.py
-│   └── examples_test.py
+│   └── test_examples.py
 ├── examples/
 │   ├── config.yaml
 │   └── exporter.yaml
