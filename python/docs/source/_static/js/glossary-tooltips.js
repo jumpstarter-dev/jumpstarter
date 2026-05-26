@@ -40,17 +40,19 @@
                 var span = document.createElement("span");
                 span.className = "glossary-term";
                 span.setAttribute("data-tooltip", def);
-                span.innerHTML = a.innerHTML;
-                a.parentNode.replaceChild(span, a);
+                while (a.firstChild) {
+                    span.appendChild(a.firstChild);
+                }
+                a.appendChild(span);
 
                 if (isTouch) {
-                    span.addEventListener("click", function (e) {
-                        e.preventDefault();
+                    a.addEventListener("click", function (e) {
                         var wasActive = span.classList.contains("tooltip-active");
                         document.querySelectorAll(".glossary-term.tooltip-active").forEach(function (el) {
                             el.classList.remove("tooltip-active");
                         });
                         if (!wasActive) {
+                            e.preventDefault();
                             span.classList.add("tooltip-active");
                         }
                     });
