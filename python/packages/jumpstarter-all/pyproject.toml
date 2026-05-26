@@ -37,6 +37,7 @@ dependencies = [
   "jumpstarter-driver-someip",
   "jumpstarter-driver-snmp",
   "jumpstarter-driver-ssh",
+  "jumpstarter-driver-ssh-mount",
   "jumpstarter-driver-tftp",
   "jumpstarter-driver-tmt",
   "jumpstarter-driver-uboot",

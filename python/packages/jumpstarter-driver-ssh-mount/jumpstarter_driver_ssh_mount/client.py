@@ -162,27 +162,51 @@ class SSHMountClient(CompositeClient):
     def _start_sshfs_with_fallback(
         self, sshfs_args: list[str], mountpoint: str,
     ) -> subprocess.Popen[bytes]:
-        test_args = [a for a in sshfs_args if a != "-f"]
-        result = subprocess.run(test_args, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
+        proc = subprocess.Popen(
+            sshfs_args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
 
-        if result.returncode != 0 and "allow_other" in result.stderr:
-            self.logger.debug("Retrying sshfs without allow_other option")
-            sshfs_args = self._remove_allow_other(sshfs_args)
-            test_args = [a for a in sshfs_args if a != "-f"]
-            result = subprocess.run(test_args, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
+        try:
+            try:
+                proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                pass
+            else:
+                stderr = proc.stderr.read().decode(errors="replace").strip() if proc.stderr else ""
+                if proc.returncode != 0 and "allow_other" in stderr:
+                    self.logger.debug("Retrying sshfs without allow_other option")
+                    sshfs_args = self._remove_allow_other(sshfs_args)
+                    return self._start_sshfs_foreground(sshfs_args, mountpoint)
+                if proc.returncode != 0:
+                    raise click.ClickException(
+                        f"sshfs mount failed (exit code {proc.returncode}): {stderr}"
+                    )
+                raise click.ClickException(
+                    f"sshfs mount failed immediately (exit code {proc.returncode})"
+                )
 
-        if result.returncode != 0:
-            stderr = result.stderr.strip()
+            # Close stderr now that the startup check passed to avoid SIGPIPE
+            if proc.stderr:
+                proc.stderr.close()
+
+            deadline = time.monotonic() + MOUNT_POLL_TIMEOUT
+            while time.monotonic() < deadline:
+                if os.path.ismount(mountpoint):
+                    return proc
+                time.sleep(MOUNT_POLL_INTERVAL)
+
             raise click.ClickException(
-                f"sshfs mount failed (exit code {result.returncode}): {stderr}"
+                f"sshfs started but {mountpoint} is not mounted after {MOUNT_POLL_TIMEOUT}s"
             )
+        except BaseException:
+            self._terminate_proc(proc)
+            raise
 
-        self._force_umount(mountpoint)
-        if os.path.ismount(mountpoint):
-            raise click.ClickException(
-                f"Failed to unmount test mount at {mountpoint}; cannot proceed"
-            )
-
+    def _start_sshfs_foreground(
+        self, sshfs_args: list[str], mountpoint: str,
+    ) -> subprocess.Popen[bytes]:
         proc = subprocess.Popen(
             sshfs_args,
             stdout=subprocess.DEVNULL,
@@ -192,11 +216,12 @@ class SSHMountClient(CompositeClient):
         try:
             try:
                 proc.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                pass
+            else:
                 raise click.ClickException(
                     f"sshfs mount failed immediately (exit code {proc.returncode})"
                 )
-            except subprocess.TimeoutExpired:
-                pass
 
             deadline = time.monotonic() + MOUNT_POLL_TIMEOUT
             while time.monotonic() < deadline:
@@ -204,7 +229,6 @@ class SSHMountClient(CompositeClient):
                     return proc
                 time.sleep(MOUNT_POLL_INTERVAL)
 
-            self._terminate_proc(proc)
             raise click.ClickException(
                 f"sshfs started but {mountpoint} is not mounted after {MOUNT_POLL_TIMEOUT}s"
             )
@@ -293,7 +317,7 @@ class SSHMountClient(CompositeClient):
 
         sshfs_args = ["sshfs", remote_spec, mountpoint]
 
-        if port and port != 22:
+        if port not in (0, 22):
             sshfs_args.extend(["-p", str(port)])
 
         if extra_args:
