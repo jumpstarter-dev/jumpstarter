@@ -11,6 +11,7 @@ from jumpstarter_cli.jmp import jmp
 from jumpstarter_cli.login import (
     _validate_auth_config_payload,
     _validate_login_endpoint_url,
+    _warn_exporter_client_only_flags,
     fetch_auth_config,
     parse_login_argument,
 )
@@ -207,6 +208,39 @@ async def test_fetch_auth_config_defaults_to_https_with_insecure_tls():
     call_url = mock_session.get.call_args[0][0]
     assert call_url.startswith("https://")
     assert result["grpcEndpoint"] == "grpc.example.com"
+
+
+def test_warn_exporter_client_only_flags_warns_on_allow(capsys) -> None:
+    _warn_exporter_client_only_flags("exporter", "some-driver", None)
+    captured = capsys.readouterr()
+    assert "--allow" in captured.out
+    assert "ignored" in captured.out.lower()
+
+
+def test_warn_exporter_client_only_flags_warns_on_unsafe(capsys) -> None:
+    _warn_exporter_client_only_flags("exporter", "", True)
+    captured = capsys.readouterr()
+    assert "--unsafe" in captured.out
+    assert "ignored" in captured.out.lower()
+
+
+def test_warn_exporter_client_only_flags_warns_on_exporter_config_kind(capsys) -> None:
+    _warn_exporter_client_only_flags("exporter_config", "pkg", True)
+    captured = capsys.readouterr()
+    assert "--allow" in captured.out
+    assert "--unsafe" in captured.out
+
+
+def test_warn_exporter_client_only_flags_silent_for_client(capsys) -> None:
+    _warn_exporter_client_only_flags("client", "some-driver", True)
+    captured = capsys.readouterr()
+    assert captured.out == ""
+
+
+def test_warn_exporter_client_only_flags_silent_when_no_flags(capsys) -> None:
+    _warn_exporter_client_only_flags("exporter", "", None)
+    captured = capsys.readouterr()
+    assert captured.out == ""
 
 
 def test_login_maps_ssl_cert_error_during_oidc_to_friendly_message(monkeypatch) -> None:
