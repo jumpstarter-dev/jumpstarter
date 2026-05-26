@@ -1,0 +1,11 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: ${DRIVER_NAME}
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
+export:
+  ${DRIVER_MODULE_NAME}:
+    type: jumpstarter_driver_${DRIVER_MODULE_NAME}.driver.${DRIVER_CLASS}
+    config: {}

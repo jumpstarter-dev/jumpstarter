@@ -53,8 +53,9 @@ Once the driver is created:
 4. Review the generated files and customize as needed
 5. Implement the driver logic in `driver.py`
 6. Add tests in `driver_test.py`
-7. Update the README.md with specific documentation
-8. Test the driver: `make pkg-test-<driver_package>`
+7. Update `examples/config.yaml` with driver-specific config parameters
+8. Update the README.md with specific documentation (uses `{literalinclude}` to reference `examples/config.yaml`)
+9. Test the driver: `make pkg-test-<driver_package>` (includes example validation via `examples_test.py`)
 
 ## 6. Driver Naming Conventions
 - **Package names**: lowercase with hyphens (e.g., `my-driver`)
@@ -74,8 +75,10 @@ python/packages/jumpstarter-driver-<driver_package>/
 │   ├── __init__.py
 │   ├── client.py
 │   ├── driver.py
-│   └── driver_test.py
+│   ├── driver_test.py
+│   └── examples_test.py
 ├── examples/
+│   ├── config.yaml
 │   └── exporter.yaml
 ├── .gitignore
 ├── pyproject.toml

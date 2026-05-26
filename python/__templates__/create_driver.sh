@@ -65,37 +65,15 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 
 Example configuration:
 
-```yaml
-export:
-  ${DRIVER_NAME}:
-    type: jumpstarter_driver_${DRIVER_MODULE_NAME}.driver.${DRIVER_CLASS}
-    config:
-      # Add required config parameters here
+```{literalinclude} ../../../../../packages/jumpstarter-driver-${DRIVER_NAME}/examples/config.yaml
+:language: yaml
 ```
-
-<!-- Optional: uncomment if this driver has usage examples or CLI commands
-## Usage
-
-Add usage examples, CLI commands, and common workflows here.
--->
-
-<!-- Optional: uncomment for complex drivers with non-trivial internals
-## Architecture
-
-Describe the internal design and component interactions here.
--->
 
 ## API Reference
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_${DRIVER_MODULE_NAME}.driver.${DRIVER_CLASS}()
 ```
-
-<!-- Optional: uncomment for drivers with known issues or complex setup
-## Troubleshooting
-
-Document common issues and their solutions here.
--->
 EOF
 # Need to expand variables after EOF to prevent early expansion
 $sed_cmd "s/\${DRIVER_CLASS}/${DRIVER_CLASS}/g; s/\${DRIVER_NAME}/${DRIVER_NAME}/g; s/\${DRIVER_MODULE_NAME}/${DRIVER_MODULE_NAME}/g" "${README_FILE}"
@@ -109,12 +87,12 @@ rel_path=$(python3 -c "import os.path; print(os.path.relpath('${README_FILE}', '
 ln -sf "${rel_path}" "${DOC_FILE}"
 echo "Created symlink: ${DOC_FILE} -> ${rel_path}"
 
-for f in __init__.py client.py driver_test.py driver.py; do
+for f in __init__.py client.py driver_test.py driver.py examples_test.py; do
     echo "Creating: ${MODULE_DIRECTORY}/${f}"
     envsubst < ${SCRIPT_DIR}/driver/jumpstarter_driver/${f}.tmpl > ${MODULE_DIRECTORY}/${f}
 done
 
-for f in .gitignore pyproject.toml examples/exporter.yaml; do
+for f in .gitignore pyproject.toml examples/exporter.yaml examples/config.yaml; do
     echo "Creating: ${DRIVER_DIRECTORY}/${f}"
     envsubst < ${SCRIPT_DIR}/driver/${f}.tmpl > ${DRIVER_DIRECTORY}/${f}
 done
