@@ -1,16 +1,6 @@
 import yaml
 
 
-def test_exporters_config_file_exists(examples_root):
-    config_file = examples_root / "introduction" / "exporter_config.yaml"
-    assert config_file.is_file(), f"Expected file at {config_file}"
-
-
-def test_drivers_config_file_exists(examples_root):
-    config_file = examples_root / "introduction" / "driver_exporter_config.yaml"
-    assert config_file.is_file(), f"Expected file at {config_file}"
-
-
 def test_exporters_config_is_valid_yaml(examples_root):
     config_file = examples_root / "introduction" / "exporter_config.yaml"
     data = yaml.safe_load(config_file.read_text())

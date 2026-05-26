@@ -6,7 +6,6 @@ metadata:
 endpoint: grpc.jumpstarter.example.com:443
 token: xxxxx
 export:
-  # Physical hardware drivers
   power:
     type: jumpstarter_driver_yepkit.driver.Ykush
     config:
@@ -19,7 +18,6 @@ export:
       url: "/dev/ttyUSB0"
       baudrate: 115200
 
-  # Virtual device drivers
   qemu:
     type: "jumpstarter_driver_qemu.driver.QEMU"
     config:

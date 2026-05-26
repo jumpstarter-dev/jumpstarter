@@ -37,7 +37,7 @@ that validates it.
    - **YAML**: parse with `yaml.safe_load()` and validate against the
      appropriate Pydantic model (for example, `ExporterConfigV1Alpha1` or
      `HookConfigV1Alpha1`).
-   - **Bash**: use `compile()` is not applicable; use `bash -n` for syntax
+   - **Bash**: `compile()` is not applicable; use `bash -n` for syntax
      checking.
 4. Run the tests: `make docs-snippet-test` (from the `python/` directory)
    or directly with `pytest docs/source/examples/tests/ -v`.
