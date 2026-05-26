@@ -1,14 +1,16 @@
 from pathlib import Path
 
 import pytest
-
-jumpstarter_testing = pytest.importorskip("jumpstarter.testing.examples")
+from jumpstarter.testing.checks import discover_example_files
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "introduction"
 
 
-@pytest.mark.parametrize(
-    "path,kind", jumpstarter_testing.make_example_test_params(EXAMPLES_DIR)
-)
+def _example_params():
+    return [pytest.param(path, kind, id=path.name) for path, kind in discover_example_files(EXAMPLES_DIR)]
+
+
+@pytest.mark.parametrize("path,kind", _example_params())
 def test_example(path, kind):
-    jumpstarter_testing.validate_example(path, kind)
+    testing = pytest.importorskip("jumpstarter.testing.examples")
+    testing.validate_example(path, kind)

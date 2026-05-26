@@ -32,14 +32,16 @@ that validates it.
    ```
    ````
 3. Write a test in `examples/tests/` that validates the extracted file:
-   - **Python**: import and execute the module, or use `compile()` for
-     scripts that require runtime context (environment variables, hardware).
+   - **Python**: validated for correct syntax via `compile()` and import
+     checking. Usage files are illustrative fragments (they may reference
+     variables like `client` or `proxy` from runtime context) and are not
+     expected to execute standalone.
    - **YAML**: parse with `yaml.safe_load()` and validate against the
-     appropriate Pydantic model (for example, `ExporterConfigV1Alpha1` or
-     `HookConfigV1Alpha1`).
+     appropriate Pydantic model based on the `kind` field (for example,
+     `ExporterConfigV1Alpha1` or `HookConfigV1Alpha1`).
    - **Bash**: `compile()` is not applicable; use `bash -n` for syntax
      checking.
-4. Run the tests: `make docs-snippet-test` (from the `python/` directory)
+4. Run the tests: `make docs-test` (from the `python/` directory)
    or directly with `pytest docs/source/examples/tests/ -v`.
 
 ### Test fixtures

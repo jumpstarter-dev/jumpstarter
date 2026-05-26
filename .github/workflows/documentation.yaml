@@ -114,7 +114,7 @@ jobs:
           uv python install
 
       - name: Run documentation snippet tests
-        run: make docs-test
+        run: make sync && make docs-test
 
   linkcheck:
     runs-on: ubuntu-latest
