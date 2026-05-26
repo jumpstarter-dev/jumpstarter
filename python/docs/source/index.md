@@ -23,11 +23,11 @@
 ```
 
 Jumpstarter is a free and open source Hardware-in-the-Loop (HiL) test automation
-framework. It bridges the gap between
-embedded development workflows and deployment environments, enabling consistent
-automated testing across real hardware and virtual environments with CI/CD
-integration. Every interface is programmatic, so human developers, test scripts,
-CI pipelines, and AI agents interact with devices through the same APIs.
+framework. It bridges the gap between embedded development workflows and deployment
+environments, enabling consistent automated testing across real hardware and virtual
+environments with CI/CD integration. Every interface is programmatic, so human
+developers, test scripts, CI pipelines, and AI agents interact with devices through
+the same APIs.
 
 See Jumpstarter in action:
 

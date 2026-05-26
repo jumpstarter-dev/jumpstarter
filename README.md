@@ -8,16 +8,16 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jumpstarter-dev/jumpstarter)
 
 Jumpstarter is a free and open source Hardware-in-the-Loop (HiL) test automation
-framework. It bridges the gap between
-embedded development workflows and deployment environments, enabling consistent
-automated testing across real hardware and virtual environments with CI/CD
-integration. Every interface is programmatic, so human developers, test scripts,
-CI pipelines, and AI agents interact with devices through the same APIs.
+framework. It bridges the gap between embedded development workflows and deployment
+environments, enabling consistent automated testing across real hardware and virtual
+environments with CI/CD integration. Every interface is programmatic, so human
+developers, test scripts, CI pipelines, and AI agents interact with devices through
+the same APIs.
 
 ## Highlights
 
-- 🧪 **Unified Testing** - Automate testing across physical and virtual devices under test (DUTs)
-- 🔌 **Hardware Abstraction** - Control test interfaces like UART, CAN, SPI, GPIO, power, and USB through drivers
+- 🧪 **Unified Testing** - One tool for physical and virtual devices under test (DUTs)
+- 🔌 **Hardware Abstraction** - Control UART, CAN, SPI, GPIO, power, and USB through drivers
 - 🐍 **Python-Powered** - Integrate with PyTest and Python's testing ecosystem
 - 🌐 **Collaborative** - Share and securely lease test hardware across teams
 - ⚙️ **Automation Ready** - Same APIs for humans, test scripts, CI pipelines, and AI agents
