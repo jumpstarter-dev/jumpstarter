@@ -1,0 +1,7 @@
+export:
+  ccplex:
+    type: jumpstarter_driver_pyserial.nvdemux.driver.NVDemuxSerial
+    config:
+      demuxer_path: "/opt/nvidia/nv_tcu_demuxer"
+      # device defaults to auto-detect NVIDIA Tegra On-Platform Operator
+      # chip defaults to T264 (Thor), use T234 for Orin

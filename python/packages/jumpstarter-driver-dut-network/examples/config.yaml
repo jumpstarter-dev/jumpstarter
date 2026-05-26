@@ -1,0 +1,16 @@
+export:
+  dut-network:
+    type: jumpstarter_driver_dut_network.driver.DutNetwork
+    config:
+      interface: "eth2"
+      subnet: "192.168.100.0/24"
+      gateway_ip: "192.168.100.1"
+      nat_mode: "masquerade"
+      dhcp_enabled: true
+      dhcp_range_start: "192.168.100.100"
+      dhcp_range_end: "192.168.100.200"
+      addresses:
+        - mac: "8a:12:4e:25:f4:8e"
+          ip: "192.168.100.10"
+          hostname: "sa8775p"
+      dns_servers: ["8.8.8.8", "8.8.4.4"]

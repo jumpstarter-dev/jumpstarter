@@ -38,15 +38,8 @@ avdmanager create avd -n Pixel_6 -k "system-images;android-35;google_apis;x86_64
 
 Example exporter configuration:
 
-```yaml
-export:
-  android:
-    type: jumpstarter_driver_androidemulator.driver.AndroidEmulator
-    config:
-      avd_name: "Pixel_6"
-      headless: true
-      console_port: 5554
-      adb_server_port: 15037
+```{literalinclude} ../../../../../packages/jumpstarter-driver-androidemulator/examples/config.yaml
+:language: yaml
 ```
 
 ### Configuration Parameters
@@ -82,20 +75,8 @@ j android power off
 
 ### Python API
 
-```python
-from jumpstarter.common.utils import serve
-from jumpstarter_driver_androidemulator.driver import AndroidEmulator
-
-driver = AndroidEmulator(avd_name="Pixel_6")
-with serve(driver) as client:
-    client.power.on()
-
-    # Wait for boot and get an adbutils device
-    with client.adb_device(timeout=180) as device:
-        print(device.prop.model)
-        print(device.shell("pm list packages"))
-
-    client.power.off()
+```{literalinclude} ../../../../../packages/jumpstarter-driver-androidemulator/examples/usage.py
+:language: python
 ```
 
 ## Architecture

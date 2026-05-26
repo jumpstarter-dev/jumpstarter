@@ -34,60 +34,28 @@ code changes are needed for new targets.
 
 #### STM32F407 Discovery (opensomeip FreeRTOS/ThreadX)
 
-```yaml
-export:
-  ecu:
-    type: jumpstarter_driver_renode.driver.Renode
-    config:
-      platform: "platforms/boards/stm32f4_discovery-kit.repl"
-      uart: "sysbus.usart2"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-renode/examples/config.yaml
+:language: yaml
 ```
 
 #### NXP S32K388 (opensomeip Zephyr)
 
-```yaml
-export:
-  ecu:
-    type: jumpstarter_driver_renode.driver.Renode
-    config:
-      platform: "/path/to/s32k388_renode.repl"
-      uart: "sysbus.uart0"
-      extra_commands:
-        - "sysbus WriteDoubleWord 0x40090030 0x0301"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-renode/examples/config_nxp_s32k388_opensomeip_zephyr.yaml
+:language: yaml
 ```
 
 #### Nucleo H753ZI (openbsw-zephyr)
 
-```yaml
-export:
-  ecu:
-    type: jumpstarter_driver_renode.driver.Renode
-    config:
-      platform: "platforms/cpus/stm32h743.repl"
-      uart: "sysbus.usart3"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-renode/examples/config_nucleo_h753zi_openbsw_zephyr.yaml
+:language: yaml
 ```
 
 ## Usage
 
 ### Programmatic (pytest)
 
-```python
-from jumpstarter_driver_renode.driver import Renode
-from jumpstarter.common.utils import serve
-
-with serve(
-    Renode(
-        platform="platforms/boards/stm32f4_discovery-kit.repl",
-        uart="sysbus.usart2",
-    )
-) as renode:
-    renode.flasher.flash("/path/to/firmware.elf")
-    renode.power.on()
-
-    with renode.console.pexpect() as p:
-        p.expect("Hello from MCU", timeout=30)
-
-    renode.power.off()
+```{literalinclude} ../../../../../packages/jumpstarter-driver-renode/examples/usage.py
+:language: python
 ```
 
 ### Monitor Commands

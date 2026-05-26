@@ -16,19 +16,8 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 
 Example configuration:
 
-```yaml
-export:
-  ssh:
-    type: jumpstarter_driver_ssh.driver.SSHWrapper
-    config:
-      default_username: "root"
-      ssh_command: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-    children:
-      tcp:
-        type: jumpstarter_driver_network.driver.TcpNetwork
-        config:
-          host: "192.168.1.100"
-          port: 22
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ssh/examples/config.yaml
+:language: yaml
 ```
 
 ## Usage

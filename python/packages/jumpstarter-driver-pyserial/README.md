@@ -14,26 +14,13 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-pyserial
 
 Example configuration:
 
-```yaml
-export:
-  serial:
-    type: jumpstarter_driver_pyserial.driver.PySerial
-    config:
-      url: "/dev/ttyUSB0"
-      baudrate: 115200
-      cps: 10  # Optional: throttle to 10 characters per second
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/config.yaml
+:language: yaml
 ```
 
 Example configuration to send commands to a MCU with DTR/RTS controlling boot process over serial port, with --no-output (fire-and-forget mode):
-```yaml
-export:
-  serial:
-    type: jumpstarter_driver_pyserial.driver.PySerial
-    config:
-      url: "/dev/ttyUSB0"
-      baudrate: 115200
-      disable_hupcl: true # Prevents MCU reset on each command/close.
-      #cps: Avoid using cps when using --no-output.
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/config_configuration.yaml
+:language: yaml
 ```
 
 
@@ -61,40 +48,14 @@ Multiple driver instances can share a single demuxer process by specifying diffe
 
 ##### Single channel example:
 
-```yaml
-export:
-  ccplex:
-    type: jumpstarter_driver_pyserial.nvdemux.driver.NVDemuxSerial
-    config:
-      demuxer_path: "/opt/nvidia/nv_tcu_demuxer"
-      # device defaults to auto-detect NVIDIA Tegra On-Platform Operator
-      # chip defaults to T264 (Thor), use T234 for Orin
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/config_single_channel_example.yaml
+:language: yaml
 ```
 
 ##### Multiple channels example:
 
-```yaml
-export:
-  ccplex:
-    type: jumpstarter_driver_pyserial.nvdemux.driver.NVDemuxSerial
-    config:
-      demuxer_path: "/opt/nvidia/nv_tcu_demuxer"
-      target: "CCPLEX: 0"
-      chip: "T264"
-
-  bpmp:
-    type: jumpstarter_driver_pyserial.nvdemux.driver.NVDemuxSerial
-    config:
-      demuxer_path: "/opt/nvidia/nv_tcu_demuxer"
-      target: "BPMP: 1"
-      chip: "T264"
-
-  sce:
-    type: jumpstarter_driver_pyserial.nvdemux.driver.NVDemuxSerial
-    config:
-      demuxer_path: "/opt/nvidia/nv_tcu_demuxer"
-      target: "SCE: 2"
-      chip: "T264"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/config_multiple_channels_example.yaml
+:language: yaml
 ```
 
 #### Config parameters
@@ -114,15 +75,8 @@ export:
 
 The `device` parameter supports glob patterns for automatic device discovery:
 
-```yaml
-# Auto-detect any NVIDIA Tegra On-Platform Operator device (default)
-device: "/dev/serial/by-id/usb-NVIDIA_Tegra_On-Platform_Operator_*-if01"
-
-# Specific serial number
-device: "/dev/serial/by-id/usb-NVIDIA_Tegra_On-Platform_Operator_ABC123-if01"
-
-# Direct device path (no glob)
-device: "/dev/ttyUSB0"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/config_device_auto_detection.yaml
+:language: yaml
 ```
 
 #### Auto-Recovery
@@ -146,7 +100,6 @@ When using multiple driver instances, all instances must have compatible configu
 - **target**: Must be unique for each instance (no duplicates allowed)
 
 If these requirements are not met, the driver will raise a `ValueError` during initialization.
-
 
 
 ## Usage
@@ -221,43 +174,21 @@ Exit with Ctrl+C.
 ### Examples
 
 Using expect with a context manager
-```{testcode}
-with pyserialclient.pexpect() as session:
-    session.sendline("Hello, world!")
-    session.expect("Hello, world!")
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/usage.py
+:language: python
 ```
 
 Using expect without a context manager
-```{testcode}
-session = pyserialclient.open()
-session.sendline("Hello, world!")
-session.expect("Hello, world!")
-pyserialclient.close()
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/usage_examples.py
+:language: python
 ```
 
 Using a simple BlockingStream with a context manager
-```{testcode}
-with pyserialclient.stream() as stream:
-    stream.send(b"Hello, world!")
-    data = stream.receive()
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/usage_examples_1.py
+:language: python
 ```
 
 Using a simple BlockingStream without a context manager
-```{testcode}
-stream = pyserialclient.open_stream()
-stream.send(b"Hello, world!")
-data = stream.receive()
-```
-
-```{testsetup} *
-from jumpstarter_driver_pyserial.driver import PySerial
-from jumpstarter.common.utils import serve
-
-instance = serve(PySerial(url="loop://"))
-
-pyserialclient = instance.__enter__()
-```
-
-```{testcleanup} *
-instance.__exit__(None, None, None)
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/usage_examples_2.py
+:language: python
 ```

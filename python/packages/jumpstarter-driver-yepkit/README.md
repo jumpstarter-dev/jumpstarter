@@ -14,19 +14,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-yepkit
 
 Example configuration:
 
-```yaml
-export:
-  power:
-    type: jumpstarter_driver_yepkit.driver.Ykush
-    config:
-      serial: "YK25838"
-      port: "1"
-
-  power2:
-    type: jumpstarter_driver_yepkit.driver.Ykush
-    config:
-      serial: "YK25838"
-      port: "2"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-yepkit/examples/config.yaml
+:language: yaml
 ```
 
 ### Config parameters
@@ -49,11 +38,8 @@ The yepkit ykush driver provides a `PowerClient` with the following API:
 ### Examples
 
 Powering on and off a device
-```{testcode}
-:skipif: True
-client.power.on()
-time.sleep(1)
-client.power.off()
+```{literalinclude} ../../../../../packages/jumpstarter-driver-yepkit/examples/usage.py
+:language: python
 ```
 
 ### CLI access

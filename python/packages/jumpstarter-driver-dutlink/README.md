@@ -14,12 +14,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-dutlink
 
 Example configuration:
 
-```yaml
-export:
-  dutlink:
-    type: jumpstarter_driver_dutlink.driver.Dutlink
-    config:
-      # Add required config parameters here
+```{literalinclude} ../../../../../packages/jumpstarter-driver-dutlink/examples/config.yaml
+:language: yaml
 ```
 
 ## API Reference

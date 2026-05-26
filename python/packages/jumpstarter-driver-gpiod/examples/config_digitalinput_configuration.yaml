@@ -1,0 +1,7 @@
+export:
+  button_input:
+    type: jumpstarter_driver_gpiod.driver.DigitalInput
+    config:
+      line: 17
+      active_low: false
+      bias: "pull_up"

@@ -15,14 +15,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-energenie
 
 Example configuration:
 
-```yaml
-export:
-  power:
-    type: jumpstarter_driver_energenie.driver.EnerGenie
-    config:
-      host: "192.168.0.1"
-      password: "password"
-      slot: 1
+```{literalinclude} ../../../../../packages/jumpstarter-driver-energenie/examples/config.yaml
+:language: yaml
 ```
 
 | Parameter | Description | Type | Required | Default |
@@ -42,11 +36,8 @@ export:
 
 Powering on and off a device
 
-```{testcode}
-:skipif: True
-client.power.on()
-time.sleep(1)
-client.power.off()
+```{literalinclude} ../../../../../packages/jumpstarter-driver-energenie/examples/usage.py
+:language: python
 ```
 
 ### CLI

@@ -15,12 +15,8 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 
 ## Configuration
 
-```yaml
-export:
-  flasher:
-    type: jumpstarter_driver_stlink_msd.driver.StlinkMsdFlasher
-    config:
-      # volume_name: "NOD_H755ZI"   # optional: auto-detected if only one ST-LINK is connected
+```{literalinclude} ../../../../../packages/jumpstarter-driver-stlink-msd/examples/config.yaml
+:language: yaml
 ```
 
 | Parameter     | Description                                                      | Type           | Required | Default      |

@@ -1,0 +1,18 @@
+# scenarios/happy-path.yaml
+endpoints:
+  GET /api/v1/status:
+    status: 200
+    body:
+      id: device-001
+      status: active
+      firmware_version: "2.5.1"
+
+  POST /api/v1/telemetry/upload:
+    status: 202
+    body:
+      accepted: true
+
+  GET /api/v1/search*:      # wildcard prefix match
+    status: 200
+    body:
+      results: []

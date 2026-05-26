@@ -1,0 +1,6 @@
+export:
+  adb:
+    type: jumpstarter_driver_adb.driver.AdbServer
+    config:
+      host: "127.0.0.1"
+      port: 15037

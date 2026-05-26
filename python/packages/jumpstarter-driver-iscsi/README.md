@@ -34,18 +34,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-iscsi
 The driver is configured through the exporter YAML file.  A minimal example
 exports the local file `disk.img` as a 5 GiB LUN:
 
-```yaml
-export:
-  iscsi:
-    type: jumpstarter_driver_iscsi.driver.ISCSI
-    config:
-      root_dir: "/var/lib/iscsi"
-      target_name: "demo"
-      remove_created_on_close: false  # Keep disk images persistent (default)
-      block_device_allowlist:         # Required to use is_block=True LUNs
-        - /dev/sda
-        - /dev/disk/by-id/my-disk
-      # When size_mb is 0 a pre-existing file size is used.
+```{literalinclude} ../../../../../packages/jumpstarter-driver-iscsi/examples/config.yaml
+:language: yaml
 ```
 
 ### Config parameters

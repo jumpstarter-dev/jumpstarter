@@ -14,19 +14,8 @@ The VNC driver is a composite driver that requires a TCP child driver to establi
 
 Example `exporter.yaml` configuration:
 
-```yaml
-export:
-  vnc:
-    type: jumpstarter_driver_vnc.driver.Vnc
-    # You can set the default encryption behavior for the `j vnc session` command.
-    # If not set, it defaults to False (unencrypted).
-    default_encrypt: false
-    children:
-      tcp:
-        type: jumpstarter_driver_network.driver.TcpNetwork
-        config:
-          host: "127.0.0.1"
-          port: 5901 # Default VNC port for display :1
+```{literalinclude} ../../../../../packages/jumpstarter-driver-vnc/examples/config.yaml
+:language: yaml
 ```
 
 ## API Reference

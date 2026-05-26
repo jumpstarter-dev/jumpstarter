@@ -1,0 +1,8 @@
+# Auto-detect any NVIDIA Tegra On-Platform Operator device (default)
+device: "/dev/serial/by-id/usb-NVIDIA_Tegra_On-Platform_Operator_*-if01"
+
+# Specific serial number
+device: "/dev/serial/by-id/usb-NVIDIA_Tegra_On-Platform_Operator_ABC123-if01"
+
+# Direct device path (no glob)
+device: "/dev/ttyUSB0"

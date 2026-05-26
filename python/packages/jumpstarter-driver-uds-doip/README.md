@@ -27,14 +27,8 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 
 ### Example exporter configuration
 
-```yaml
-export:
-  uds:
-    type: jumpstarter_driver_uds_doip.driver.UdsDoip
-    config:
-      ecu_ip: "192.168.1.100"
-      ecu_logical_address: 224  # 0x00E0
-      request_timeout: 5
+```{literalinclude} ../../../../../packages/jumpstarter-driver-uds-doip/examples/config.yaml
+:language: yaml
 ```
 
 ## API Reference

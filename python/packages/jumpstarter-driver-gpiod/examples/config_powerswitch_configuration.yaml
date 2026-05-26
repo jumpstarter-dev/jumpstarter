@@ -1,0 +1,9 @@
+export:
+  power_switch:
+    type: jumpstarter_driver_gpiod.driver.PowerSwitch
+    config:
+      line: 18
+      mode: "push_pull"
+      active_low: false
+      bias: "pull_up"
+      initial_value: "inactive"

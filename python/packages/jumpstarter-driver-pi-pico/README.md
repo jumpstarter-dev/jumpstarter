@@ -21,19 +21,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-pi-pico
 
 ### Serial-based BOOTSEL entry
 
-```yaml
-export:
-  storage:
-    type: jumpstarter_driver_pi_pico.driver.PiPicoFlasher
-    config: {}
-    children:
-      serial:
-        ref: serial
-  serial:
-    type: jumpstarter_driver_pyserial.driver.PySerial
-    config:
-      url: /dev/ttyACM0
-      baudrate: 115200
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pi-pico/examples/config.yaml
+:language: yaml
 ```
 
 ### GPIO-based BOOTSEL entry
@@ -50,39 +39,8 @@ Both GPIO outputs should use **open-drain** drive and **active-low** polarity so
 that `on()` pulls the line LOW and `off()` releases to high-impedance (the
 Pico's internal pull-ups keep the lines high when released).
 
-```yaml
-export:
-  storage:
-    type: jumpstarter_driver_pi_pico.driver.PiPicoFlasher
-    config: {}
-    children:
-      serial:
-        ref: serial
-      bootsel:
-        ref: bootsel
-      run:
-        ref: run
-  serial:
-    type: jumpstarter_driver_pyserial.driver.PySerial
-    config:
-      url: /dev/ttyACM0
-      baudrate: 115200
-  bootsel:
-    type: jumpstarter_driver_gpiod.driver.DigitalOutput
-    config:
-      device: "/dev/gpiochip4"   # RPi5 GPIO chip - adjust for your host
-      line: 17                    # GPIO pin wired to BOOTSEL
-      drive: open_drain
-      active_low: true
-      initial_value: inactive
-  run:
-    type: jumpstarter_driver_gpiod.driver.DigitalOutput
-    config:
-      device: "/dev/gpiochip4"
-      line: 27                    # GPIO pin wired to RUN
-      drive: open_drain
-      active_low: true
-      initial_value: inactive
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pi-pico/examples/config_gpio_based_bootsel_entry.yaml
+:language: yaml
 ```
 
 When both GPIO and serial children are present, GPIO reset is preferred.

@@ -1,0 +1,5 @@
+export:
+  composite:
+    type: jumpstarter_driver_composite.driver.Composite
+    config:
+      # Add required config parameters here

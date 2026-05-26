@@ -14,12 +14,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-qemu
 
 Example configuration:
 
-```yaml
-export:
-  qemu:
-    type: jumpstarter_driver_qemu.driver.Qemu
-    config:
-      # Add required config parameters here
+```{literalinclude} ../../../../../packages/jumpstarter-driver-qemu/examples/config.yaml
+:language: yaml
 ```
 
 ## API Reference

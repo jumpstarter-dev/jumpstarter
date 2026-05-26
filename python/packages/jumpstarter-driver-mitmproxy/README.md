@@ -31,30 +31,8 @@ pip install dist/jumpstarter_driver_mitmproxy-*.whl
 
 ### Exporter Configuration
 
-```yaml
-# /etc/jumpstarter/exporters/my-bench.yaml
-export:
-  proxy:
-    type: jumpstarter_driver_mitmproxy.driver.MitmproxyDriver
-    config:
-      listen:
-        host: "0.0.0.0"
-        port: 8080          # Proxy port (DUT connects here)
-      web:
-        host: "0.0.0.0"
-        port: 8081           # mitmweb browser UI port
-      directories:
-        data: /opt/jumpstarter/mitmproxy
-      ssl_insecure: true     # Skip upstream cert verification
-
-      # Auto-load a scenario on startup (relative to mocks dir)
-      # mock_scenario: happy-path.yaml
-
-      # Inline mock definitions (overlaid on scenario)
-      # mocks:
-      #   GET /api/v1/health:
-      #     status: 200
-      #     body: {ok: true}
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/config.yaml
+:language: yaml
 ```
 
 ### Configuration Reference
@@ -90,25 +68,16 @@ j proxy cert /tmp/ca.pem               # custom output path
 
 #### From Python
 
-```python
-# Get the PEM certificate contents
-pem = proxy.get_ca_cert()
-
-# Write to a local file
-from pathlib import Path
-Path("/tmp/mitmproxy-ca.pem").write_text(pem)
-
-# Or push directly to the DUT via serial/ssh/adb
-dut.write_file("/etc/ssl/certs/mitmproxy-ca.pem", pem)
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage.py
+:language: python
 ```
 
 #### Exporter-side path
 
 If you need the path on the exporter host itself (for provisioning scripts that run locally):
 
-```python
-cert_path = proxy.get_ca_cert_path()
-# -> /opt/jumpstarter/mitmproxy/conf/mitmproxy-ca-cert.pem
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_exporter_side_path.py
+:language: python
 ```
 
 ## Usage
@@ -182,25 +151,8 @@ j proxy cert /tmp/ca.pem                # download to a specific path
 
 Create YAML or JSON files with endpoint definitions:
 
-```yaml
-# scenarios/happy-path.yaml
-endpoints:
-  GET /api/v1/status:
-    status: 200
-    body:
-      id: device-001
-      status: active
-      firmware_version: "2.5.1"
-
-  POST /api/v1/telemetry/upload:
-    status: 202
-    body:
-      accepted: true
-
-  GET /api/v1/search*:      # wildcard prefix match
-    status: 200
-    body:
-      results: []
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/config_mock_scenarios.yaml
+:language: yaml
 ```
 
 Load from CLI or Python:
@@ -210,12 +162,8 @@ j proxy mock load happy-path.yaml
 j proxy mock load my-capture/            # directory from 'capture save'
 ```
 
-```python
-proxy.load_mock_scenario("happy-path.yaml")
-
-# Or with automatic cleanup:
-with proxy.mock_scenario("happy-path.yaml"):
-    run_tests()
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_mock_scenarios.py
+:language: python
 ```
 
 See `examples/scenarios/` in the package source for complete scenario examples including conditional rules, templates, and sequences.
@@ -236,42 +184,16 @@ Then open `http://localhost:8081` in your browser to inspect traffic in real tim
 
 #### Basic Usage
 
-```python
-def test_device_status(client):
-    proxy = client.proxy
-
-    # Start with web UI for debugging
-    proxy.start(mode="mock", web_ui=True)
-
-    # Mock a backend endpoint
-    proxy.set_mock(
-        "GET", "/api/v1/status",
-        body={"id": "device-001", "status": "active"},
-    )
-
-    # ... interact with DUT ...
-
-    proxy.stop()
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_basic_usage.py
+:language: python
 ```
 
 #### Context Managers
 
 Context managers ensure clean teardown even if the test fails:
 
-```python
-def test_firmware_update(client):
-    proxy = client.proxy
-
-    with proxy.session(mode="mock", web_ui=True):
-        with proxy.mock_endpoint(
-            "GET", "/api/v1/updates/check",
-            body={"update_available": True, "version": "2.6.0"},
-        ):
-            # DUT will see the mocked update
-            trigger_update_check(client)
-            assert_update_dialog_shown(client)
-        # Mock auto-removed here
-    # Proxy auto-stopped here
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_context_managers.py
+:language: python
 ```
 
 Available context managers:
@@ -289,17 +211,8 @@ Available context managers:
 
 Verify that the DUT is making the right API calls:
 
-```python
-def test_telemetry_sent(client):
-    proxy = client.proxy
-
-    with proxy.capture() as cap:
-        # ... DUT sends telemetry through the proxy ...
-        cap.wait_for_request("POST", "/api/v1/telemetry", timeout=10)
-
-    # After the block, cap.requests is a frozen snapshot
-    assert len(cap.requests) >= 1
-    cap.assert_request_made("POST", "/api/v1/telemetry")
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_request_capture.py
+:language: python
 ```
 
 #### Advanced Mocking
@@ -308,84 +221,50 @@ def test_telemetry_sent(client):
 
 Return different responses based on request headers, body, or query params:
 
-```python
-proxy.set_mock_conditional("POST", "/api/auth", [
-    {
-        "match": {"body_json": {"username": "admin", "password": "secret"}},
-        "status": 200,
-        "body": {"token": "mock-token-001"},
-    },
-    {"status": 401, "body": {"error": "unauthorized"}},
-])
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_conditional_responses.py
+:language: python
 ```
 
 ##### Response sequences
 
 Return different responses on successive calls:
 
-```python
-proxy.set_mock_sequence("GET", "/api/v1/auth/token", [
-    {"status": 200, "body": {"token": "aaa"}, "repeat": 3},
-    {"status": 401, "body": {"error": "expired"}, "repeat": 1},
-    {"status": 200, "body": {"token": "bbb"}},
-])
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_response_sequences.py
+:language: python
 ```
 
 ##### Dynamic templates
 
 Responses with per-request dynamic values:
 
-```python
-proxy.set_mock_template("GET", "/api/v1/weather", {
-    "temp_f": "{{random_int(60, 95)}}",
-    "condition": "{{random_choice('sunny', 'rain')}}",
-    "timestamp": "{{now_iso}}",
-    "request_id": "{{uuid}}",
-})
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_dynamic_templates.py
+:language: python
 ```
 
 ##### Simulated latency
 
-```python
-proxy.set_mock_with_latency(
-    "GET", "/api/v1/status",
-    body={"status": "online"},
-    latency_ms=3000,
-)
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_simulated_latency.py
+:language: python
 ```
 
 ##### File serving
 
-```python
-proxy.set_mock_file(
-    "GET", "/api/v1/downloads/firmware.bin",
-    "firmware/test.bin",
-    content_type="application/octet-stream",
-)
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_file_serving.py
+:language: python
 ```
 
 ##### Custom addon scripts
 
-```python
-proxy.set_mock_addon(
-    "GET", "/streaming/audio/channel/*",
-    "hls_audio_stream",
-    addon_config={"segment_duration_s": 6},
-)
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_custom_addon_scripts.py
+:language: python
 ```
 
 #### State Store
 
 Share state between tests and conditional mock rules:
 
-```python
-proxy.set_state("auth_token", "mock-token-001")
-proxy.set_state("retries", 3)
-
-token = proxy.get_state("auth_token")   # "mock-token-001"
-all_state = proxy.get_all_state()       # {"auth_token": "...", "retries": 3}
-
-proxy.clear_state()
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_state_store.py
+:language: python
 ```
 
 ## API Reference

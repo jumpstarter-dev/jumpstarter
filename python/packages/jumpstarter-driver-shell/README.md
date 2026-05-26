@@ -15,53 +15,14 @@ The shell driver supports two configuration formats for methods:
 
 ### Format 1: Simple String e.g. for self-descriptive short commands
 
-```yaml
-export:
-  shell:
-    type: jumpstarter_driver_shell.driver.Shell
-    config:
-      methods:
-        ls: "ls"
-        echo_hello: "echo 'Hello World'"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-shell/examples/config.yaml
+:language: yaml
 ```
 
 ### Format 2: Unified Format with Descriptions
 
-```yaml
-export:
-  shell:
-    type: jumpstarter_driver_shell.driver.Shell
-    config:
-      methods:
-        ls:
-          command: "ls -la"
-          description: "List directory contents with details"
-        deploy:
-          command: "ansible-playbook deploy.yml"
-          description: "Deploy application using Ansible"
-        # Multi-line commands work too
-        setup:
-          command: |
-            echo 'Setting up environment'
-            export PATH=$PATH:/usr/local/bin
-            ./setup.sh
-          description: "Set up the development environment"
-        # Description-only (uses default "echo Hello" command)
-        placeholder:
-          description: "Placeholder method for testing"
-        # Custom timeout for long-running operations
-        long_backup:
-          command: "tar -czf backup.tar.gz /data && rsync backup.tar.gz remote:/backups/"
-          description: "Create and sync backup (may take a while)"
-          timeout: 1800  # 30 minutes instead of default 5 minutes
-        # You can mix both formats
-        simple_echo: "echo 'simple'"
-      # optional parameters
-      cwd: "/tmp"
-      log_level: "INFO"
-      shell:
-        - "/bin/bash"
-        - "-c"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-shell/examples/config_format_2_unified_format_with_description.yaml
+:language: yaml
 ```
 
 ### Configuration Parameters
@@ -120,12 +81,8 @@ Commands:
 
 **Mixed format example:**
 
-```yaml
-methods:
-  deploy:
-    command: "ansible-playbook deploy.yml"
-    description: "Deploy using Ansible"
-  restart: "systemctl restart myapp"  # Simple format
+```{literalinclude} ../../../../../packages/jumpstarter-driver-shell/examples/config_cli_help_output.yaml
+:language: yaml
 ```
 
 Results in:

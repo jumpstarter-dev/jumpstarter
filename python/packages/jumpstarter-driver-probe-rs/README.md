@@ -14,17 +14,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-probe-rs
 
 Example configuration:
 
-```yaml
-export:
-  probe:
-    type: jumpstarter_driver_probe_rs.driver.ProbeRs
-    config:
-      probe: "2e8a:000c:5798DE5E500ACB60"
-      probe_rs_path: "/home/majopela/.cargo/bin/probe-rs"
-      chip: "RP2350"
-      protocol: "swd"
-      connect_under_reset: false
-      speed: 4000
+```{literalinclude} ../../../../../packages/jumpstarter-driver-probe-rs/examples/config.yaml
+:language: yaml
 ```
 
 ### Config parameters

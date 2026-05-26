@@ -1,0 +1,23 @@
+# /etc/jumpstarter/exporters/my-bench.yaml
+export:
+  proxy:
+    type: jumpstarter_driver_mitmproxy.driver.MitmproxyDriver
+    config:
+      listen:
+        host: "0.0.0.0"
+        port: 8080          # Proxy port (DUT connects here)
+      web:
+        host: "0.0.0.0"
+        port: 8081           # mitmweb browser UI port
+      directories:
+        data: /opt/jumpstarter/mitmproxy
+      ssl_insecure: true     # Skip upstream cert verification
+
+      # Auto-load a scenario on startup (relative to mocks dir)
+      # mock_scenario: happy-path.yaml
+
+      # Inline mock definitions (overlaid on scenario)
+      # mocks:
+      #   GET /api/v1/health:
+      #     status: 200
+      #     body: {ok: true}

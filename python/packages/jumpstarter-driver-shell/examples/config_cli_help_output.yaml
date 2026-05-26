@@ -1,0 +1,5 @@
+methods:
+  deploy:
+    command: "ansible-playbook deploy.yml"
+    description: "Deploy using Ansible"
+  restart: "systemctl restart myapp"  # Simple format

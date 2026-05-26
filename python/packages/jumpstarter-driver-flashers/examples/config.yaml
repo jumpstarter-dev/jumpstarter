@@ -1,0 +1,18 @@
+export:
+  storage:
+    type: "jumpstarter_driver_flashers.driver.TIJ784S4Flasher"
+    children:
+      serial:
+        ref: "serial"
+      power:
+        ref: "power"
+  serial:
+    type: "jumpstarter_driver_pyserial.driver.PySerial"
+    config:
+      url: "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_112214101760A-if00-port0"
+      baudrate: 115200
+  power:
+    type: jumpstarter_driver_yepkit.driver.Ykush
+    config:
+      serial: "YK112233"
+      port: "1"

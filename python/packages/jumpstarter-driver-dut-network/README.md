@@ -27,84 +27,32 @@ Optional:
 
 DUTs share the exporter's upstream IP when accessing the network:
 
-```yaml
-export:
-  dut-network:
-    type: jumpstarter_driver_dut_network.driver.DutNetwork
-    config:
-      interface: "eth2"
-      subnet: "192.168.100.0/24"
-      gateway_ip: "192.168.100.1"
-      nat_mode: "masquerade"
-      dhcp_enabled: true
-      dhcp_range_start: "192.168.100.100"
-      dhcp_range_end: "192.168.100.200"
-      addresses:
-        - mac: "8a:12:4e:25:f4:8e"
-          ip: "192.168.100.10"
-          hostname: "sa8775p"
-      dns_servers: ["8.8.8.8", "8.8.4.4"]
+```{literalinclude} ../../../../../packages/jumpstarter-driver-dut-network/examples/config.yaml
+:language: yaml
 ```
 
 ### 1:1 NAT
 
 Each DUT gets a dedicated public IP alias via a per-entry `public_ip` field, enabling inbound connections from the LAN. Entries without a `public_ip` fall back to masquerade for outbound traffic. Entries without a `mac` are used for 1:1 NAT mappings only and are excluded from DHCP static lease generation.
 
-```yaml
-export:
-  dut-network:
-    type: jumpstarter_driver_dut_network.driver.DutNetwork
-    config:
-      interface: "eth2"
-      subnet: "192.168.100.0/24"
-      gateway_ip: "192.168.100.1"
-      upstream_interface: "enp2s0"
-      nat_mode: "1to1"
-      addresses:
-        - mac: "8a:12:4e:25:f4:8e"
-          ip: "192.168.100.10"
-          hostname: "sa8775p-1"
-          public_ip: "10.26.28.84"
-        - mac: "8a:12:4e:25:f4:8f"
-          ip: "192.168.100.11"
-          hostname: "sa8775p-2"
-          public_ip: "10.26.28.85"
-        # Entry without MAC: 1:1 NAT mapping only, no DHCP static lease
-        - ip: "192.168.100.12"
-          hostname: "nxp-board-03"
-          public_ip: "10.26.28.86"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-dut-network/examples/config_1_1_nat.yaml
+:language: yaml
 ```
 
 ### Disabled NAT (DHCP only)
 
 DHCP works normally but no NAT rules or IP forwarding are configured. Useful for pure L2 isolation or when routing is handled externally:
 
-```yaml
-export:
-  dut-network:
-    type: jumpstarter_driver_dut_network.driver.DutNetwork
-    config:
-      interface: "enx00e04c683af1"
-      nat_mode: "disabled"   # also accepts "none"
-      dhcp_enabled: true
+```{literalinclude} ../../../../../packages/jumpstarter-driver-dut-network/examples/config_disabled_nat_dhcp_only.yaml
+:language: yaml
 ```
 
 ### Custom DNS Entries
 
 Register custom DNS records that dnsmasq will respond to. Useful for pointing DUTs at local services without a full DNS infrastructure:
 
-```yaml
-export:
-  dut-network:
-    type: jumpstarter_driver_dut_network.driver.DutNetwork
-    config:
-      interface: "eth2"
-      nat_mode: "masquerade"
-      dns_entries:
-        - hostname: "controller.lab.local"
-          ip: "10.26.28.1"
-        - hostname: "registry.lab.local"
-          ip: "10.26.28.2"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-dut-network/examples/config_custom_dns_entries.yaml
+:language: yaml
 ```
 
 ### Reference
@@ -174,33 +122,8 @@ j dut-network remove-dns controller.lab.local
 
 ### Python
 
-```python
-from jumpstarter.common.utils import env
-
-with env() as client:
-    # Get network status
-    status = client.dut_network.status()
-    print(status["interface_status"]["name"])
-
-    # Get all DHCP leases
-    leases = client.dut_network.get_leases()
-    for lease in leases:
-        print(f"{lease['mac']} -> {lease['ip']}")
-
-    # Look up DUT IP
-    ip = client.dut_network.get_dut_ip("8a:12:4e:25:f4:8e")
-
-    # Manage address entries at runtime
-    # With MAC: creates a DHCP static lease + optional 1:1 NAT mapping
-    client.dut_network.add_address("192.168.100.50", mac="02:00:00:aa:bb:cc", hostname="new-dut")
-    # Without MAC: 1:1 NAT mapping only (no DHCP lease)
-    client.dut_network.add_address("192.168.100.51", public_ip="10.26.28.90")
-    client.dut_network.remove_address("192.168.100.50")
-
-    # Manage DNS entries at runtime
-    client.dut_network.add_dns_entry("myhost.lab.local", "10.0.0.99")
-    entries = client.dut_network.get_dns_entries()
-    client.dut_network.remove_dns_entry("myhost.lab.local")
+```{literalinclude} ../../../../../packages/jumpstarter-driver-dut-network/examples/usage.py
+:language: python
 ```
 
 ## Architecture

@@ -1,0 +1,20 @@
+export:
+  http_power:
+    type: jumpstarter_driver_http_power.driver.HttpPower
+    config:
+      name: "device"
+      power_on:
+        url: "http://power-controller.local/api/power/on"
+        method: "POST"
+        data: "action=on"
+      power_off:
+        url: "http://power-controller.local/api/power/off"
+        method: "POST"
+        data: "action=off"
+      power_read:
+        url: "http://power-controller.local/api/power/status"
+        method: "GET"
+      auth:
+        basic:
+          user: "admin"
+          password: "secret"

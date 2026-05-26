@@ -1,0 +1,8 @@
+export:
+  ecu:
+    type: jumpstarter_driver_renode.driver.Renode
+    config:
+      platform: "/path/to/s32k388_renode.repl"
+      uart: "sysbus.uart0"
+      extra_commands:
+        - "sysbus WriteDoubleWord 0x40090030 0x0301"

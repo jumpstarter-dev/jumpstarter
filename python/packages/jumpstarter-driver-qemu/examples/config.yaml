@@ -1,0 +1,5 @@
+export:
+  qemu:
+    type: jumpstarter_driver_qemu.driver.Qemu
+    config:
+      # Add required config parameters here

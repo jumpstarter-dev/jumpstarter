@@ -28,25 +28,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-flashers
 ### Driver configuration
 **driver**: `jumpstarter_driver_flashers.driver.${DRIVER}`
 
-```yaml
-export:
-  storage:
-    type: "jumpstarter_driver_flashers.driver.TIJ784S4Flasher"
-    children:
-      serial:
-        ref: "serial"
-      power:
-        ref: "power"
-  serial:
-    type: "jumpstarter_driver_pyserial.driver.PySerial"
-    config:
-      url: "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_112214101760A-if00-port0"
-      baudrate: 115200
-  power:
-    type: jumpstarter_driver_yepkit.driver.Ykush
-    config:
-      serial: "YK112233"
-      port: "1"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-flashers/examples/config.yaml
+:language: yaml
 ```
 
 flasher drivers require four children drivers:
@@ -335,19 +318,13 @@ when using the `busybox_shell` and `bootloader_shell` methods the embedded http
 and tftp servers will be online and serving the images from the flasher bundle.
 
 Get the busybox shell on the device
-```python
-with flasherclient.busybox_shell() as serial:
-    serial.send("ls -la\n")
-    serial.expect("#")
-    print(serial.before)
+```{literalinclude} ../../../../../packages/jumpstarter-driver-flashers/examples/usage.py
+:language: python
 ```
 
 Get the bootloader shell on the device
-```python
-with flasherclient.bootloader_shell() as serial:
-    serial.send("version\n")
-    serial.expect("=>")
-    print(serial.before)
+```{literalinclude} ../../../../../packages/jumpstarter-driver-flashers/examples/usage_utility_consoles.py
+:language: python
 ```
 
 ## API Reference

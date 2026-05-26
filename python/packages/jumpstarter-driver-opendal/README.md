@@ -41,13 +41,8 @@ The OpenDAL driver tracks all files and directories created during a session:
 
 ### Tracking API
 
-```python
-# Get all created resources (files and directories)
-created_resources = await driver.get_created_resources()  # Returns set[str]
-
-# Example usage
-for path in created_resources:
-    print(f"Created: {path}")
+```{literalinclude} ../../../../../packages/jumpstarter-driver-opendal/examples/usage.py
+:language: python
 ```
 
 #### Use Cases
@@ -76,21 +71,6 @@ remove_created_on_close: false
 >>> opendal.write_bytes("test/directory/file", b"hello")
 >>> assert opendal.hash("test/directory/file", "md5") == "5d41402abc4b2a76b9719d911017c592"
 >>> opendal.remove_all("test/")
-```
-
-```{testsetup} *
-from jumpstarter.config.exporter import ExporterConfigV1Alpha1DriverInstance
-from jumpstarter.common.utils import serve
-
-instance = serve(
-    ExporterConfigV1Alpha1DriverInstance.from_path("source/reference/package-apis/drivers/opendal.yaml"
-).instantiate())
-
-opendal = instance.__enter__()
-```
-
-```{testcleanup} *
-instance.__exit__(None, None, None)
 ```
 
 ### Client API

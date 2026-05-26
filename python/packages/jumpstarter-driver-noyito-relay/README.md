@@ -41,18 +41,8 @@ If you are using `NoyitoPowerHID`, the `hid` Python package requires the native
 
 Example configuration controlling both channels independently:
 
-```yaml
-export:
-  relay1:
-    type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerSerial
-    config:
-      port: "/dev/ttyUSB0"
-      channel: 1
-  relay2:
-    type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerSerial
-    config:
-      port: "/dev/ttyUSB0"
-      channel: 2
+```{literalinclude} ../../../../../packages/jumpstarter-driver-noyito-relay/examples/config.yaml
+:language: yaml
 ```
 
 ### NoyitoPowerHID (4/8-Channel HID)
@@ -68,19 +58,8 @@ export:
 Example configuration for a 4-channel board (channel 1) and an 8-channel board
 (all channels simultaneously):
 
-```yaml
-export:
-  relay_4ch_ch1:
-    type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerHID
-    config:
-      num_channels: 4
-      channel: 1
-  relay_8ch_all:
-    type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerHID
-    config:
-      num_channels: 8
-      channel: 1
-      all_channels: true
+```{literalinclude} ../../../../../packages/jumpstarter-driver-noyito-relay/examples/config_noyitopowerhid_4_8_channel_hid.yaml
+:language: yaml
 ```
 
 ### Board Detection

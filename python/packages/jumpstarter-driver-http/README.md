@@ -13,16 +13,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-http
 
 Example configuration:
 
-```yaml
-export:
-  http:
-    type: jumpstarter_driver_http.driver.HttpServer
-    config:
-      root_dir: "/var/www"
-      host: "0.0.0.0"
-      port: 8080  # Default port; use 0 for OS-assigned port
-      timeout: 600
-      remove_created_on_close: true  # Clean up temporary files on close
+```{literalinclude} ../../../../../packages/jumpstarter-driver-http/examples/config.yaml
+:language: yaml
 ```
 
 ### Config parameters

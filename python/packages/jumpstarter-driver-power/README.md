@@ -14,12 +14,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-power
 
 Example configuration:
 
-```yaml
-export:
-  power:
-    type: jumpstarter_driver_power.driver.MockPower
-    config:
-      # Add required config parameters here
+```{literalinclude} ../../../../../packages/jumpstarter-driver-power/examples/config.yaml
+:language: yaml
 ```
 
 ## API Reference

@@ -1,0 +1,20 @@
+export:
+  ssh_mitm:  # ← This gives you "j ssh_mitm" command
+    type: jumpstarter_driver_ssh.driver.SSHWrapper
+    config:
+      default_username: root
+    children:
+      tcp:
+        type: jumpstarter_driver_ssh_mitm.driver.SSHMITM
+        config:
+          default_username: root
+          ssh_identity: |
+            -----BEGIN OPENSSH PRIVATE KEY-----
+            ...
+            -----END OPENSSH PRIVATE KEY-----
+        children:
+          tcp:
+            type: jumpstarter_driver_network.driver.TcpNetwork
+            config:
+              host: 192.168.1.100
+              port: 22

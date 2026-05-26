@@ -1,0 +1,10 @@
+export:
+  xcp:
+    type: jumpstarter_driver_xcp.driver.Xcp
+    config:
+      transport: CAN
+      can_interface: vector
+      channel: 0
+      bitrate: 500000
+      can_id_master: 0x7E0
+      can_id_slave: 0x7E1

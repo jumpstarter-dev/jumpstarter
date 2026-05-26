@@ -12,52 +12,14 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 
 Example configuration:
 
-```yaml
-export:
-  http_power:
-    type: jumpstarter_driver_http_power.driver.HttpPower
-    config:
-      name: "device"
-      power_on:
-        url: "http://power-controller.local/api/power/on"
-        method: "POST"
-        data: "action=on"
-      power_off:
-        url: "http://power-controller.local/api/power/off"
-        method: "POST"
-        data: "action=off"
-      power_read:
-        url: "http://power-controller.local/api/power/status"
-        method: "GET"
-      auth:
-        basic:
-          user: "admin"
-          password: "secret"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-http-power/examples/config.yaml
+:language: yaml
 ```
 
 ### Example configuration for Shelly Smart Plug:
 
-```yaml
-apiVersion: jumpstarter.dev/v1alpha1
-kind: ExporterConfig
-metadata:
-  namespace: default
-  name: demo
-endpoint: ""
-token: ""
-export:
-  power:
-    type: jumpstarter_driver_http_power.driver.HttpPower
-    config:
-      name: "my-splug"
-      power_on:
-        url: "http://192.168.1.65/relay/0?turn=on"
-      power_off:
-        url: "http://192.168.1.65/relay/0?turn=off"
-      auth:
-        basic:
-          user: admin
-          password: something
+```{literalinclude} ../../../../../packages/jumpstarter-driver-http-power/examples/config_example_configuration_for_shelly_smart_p.yaml
+:language: yaml
 ```
 
 ### Config parameters
@@ -97,12 +59,8 @@ export:
 ### Examples
 
 Basic power control:
-```python
-# Power on the device
-http_power_client.on()
-
-# Power off the device
-http_power_client.off()
+```{literalinclude} ../../../../../packages/jumpstarter-driver-http-power/examples/usage.py
+:language: python
 ```
 
 

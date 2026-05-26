@@ -14,21 +14,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-snmp
 
 Example configuration:
 
-```yaml
-export:
-  power:
-    type: jumpstarter_driver_snmp.driver.SNMPServer
-    config:
-      host: "pdu.mgmt.com"
-      user: "labuser"
-      plug: 32
-      port: 161
-      oid: "1.3.6.1.4.1.13742.6.4.1.2.1.2.1"
-      auth_protocol: "NONE"
-      auth_key: null
-      priv_protocol: "NONE"
-      priv_key: null
-      timeout: 5.0
+```{literalinclude} ../../../../../packages/jumpstarter-driver-snmp/examples/config.yaml
+:language: yaml
 ```
 
 ### Config parameters
@@ -62,9 +49,8 @@ snmp_client.cycle(wait=3)
 ```
 
 Basic power control:
-```python
-snmp_client.off()
-snmp_client.on()
+```{literalinclude} ../../../../../packages/jumpstarter-driver-snmp/examples/usage.py
+:language: python
 ```
 
 Using the CLI:

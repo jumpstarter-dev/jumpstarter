@@ -1,0 +1,14 @@
+export:
+  tmt:
+    type: jumpstarter_driver_tmt.driver.TMT
+    config:
+      reboot_cmd: "j power cycle"
+      default_username: "root"
+      default_password: "somePassword"
+    children:
+      ssh:
+        type: jumpstarter_driver_network.driver.TcpNetwork
+        config:
+          host: "192.168.1.100"
+          port: 22
+          enable_address: true

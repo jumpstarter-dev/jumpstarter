@@ -18,13 +18,8 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ "jumpstarter-
 
 Example exporter configuration:
 
-```yaml
-export:
-  adb:
-    type: jumpstarter_driver_adb.driver.AdbServer
-    config:
-      host: "127.0.0.1"
-      port: 15037
+```{literalinclude} ../../../../../packages/jumpstarter-driver-adb/examples/config.yaml
+:language: yaml
 ```
 
 ### Configuration Parameters

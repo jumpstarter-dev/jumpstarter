@@ -1,0 +1,7 @@
+export:
+  serial:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      url: "/dev/ttyUSB0"
+      baudrate: 115200
+      cps: 10  # Optional: throttle to 10 characters per second

@@ -15,14 +15,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-network
 
 Example configuration:
 
-```yaml
-export:
-  network:
-    type: jumpstarter_driver_network.driver.TcpNetwork
-    config:
-      host: 192.168.1.2
-      port: 5201
-      enable_address: true
+```{literalinclude} ../../../../../packages/jumpstarter-driver-network/examples/config.yaml
+:language: yaml
 ```
 
 ### Config parameters

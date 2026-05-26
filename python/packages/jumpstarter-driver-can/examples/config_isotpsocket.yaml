@@ -1,0 +1,12 @@
+export:
+  can:
+    type: jumpstarter_driver_can.IsoTpSocket
+    config:
+      channel: "vcan0"
+      address:
+        rxid: 1
+        txid: 2
+      params:
+        max_frame_size: 2048
+        blocking_send: false
+        can_fd: true

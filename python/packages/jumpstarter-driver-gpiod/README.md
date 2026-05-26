@@ -27,47 +27,24 @@ The gpiod driver provides three main driver types:
 
 Example configuration for digital output:
 
-```yaml
-export:
-  led_output:
-    type: jumpstarter_driver_gpiod.driver.DigitalOutput
-    config:
-      device: "/dev/gpiochip0"
-      line: 18
-      drive: "push_pull"
-      active_low: false
-      bias: "pull_up"
-      initial_value: "inactive"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-gpiod/examples/config.yaml
+:language: yaml
 ```
 
 ### DigitalInput Configuration
 
 Example configuration for digital input:
 
-```yaml
-export:
-  button_input:
-    type: jumpstarter_driver_gpiod.driver.DigitalInput
-    config:
-      line: 17
-      active_low: false
-      bias: "pull_up"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-gpiod/examples/config_digitalinput_configuration.yaml
+:language: yaml
 ```
 
 ### PowerSwitch Configuration
 
 Example configuration for power switching:
 
-```yaml
-export:
-  power_switch:
-    type: jumpstarter_driver_gpiod.driver.PowerSwitch
-    config:
-      line: 18
-      mode: "push_pull"
-      active_low: false
-      bias: "pull_up"
-      initial_value: "inactive"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-gpiod/examples/config_powerswitch_configuration.yaml
+:language: yaml
 ```
 
 ### Config parameters

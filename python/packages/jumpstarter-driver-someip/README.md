@@ -26,28 +26,14 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 
 ### UDP (default)
 
-```yaml
-export:
-  someip:
-    type: jumpstarter_driver_someip.driver.SomeIp
-    config:
-      host: "192.168.1.100"
-      port: 30490
-      transport_mode: UDP
-      multicast_group: "239.127.0.1"
-      multicast_port: 30490
+```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/config.yaml
+:language: yaml
 ```
 
 ### TCP
 
-```yaml
-export:
-  someip:
-    type: jumpstarter_driver_someip.driver.SomeIp
-    config:
-      host: "192.168.1.100"
-      port: 30490
-      transport_mode: TCP
+```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/config_tcp.yaml
+:language: yaml
 ```
 
 ### Static remote endpoint (no Service Discovery)
@@ -56,104 +42,40 @@ When the target ECU does not run SOME/IP-SD (e.g. Zephyr firmware with
 multicast TX disabled), set `remote_host` and optionally `remote_port`
 to send messages directly without Service Discovery:
 
-```yaml
-export:
-  someip:
-    type: jumpstarter_driver_someip.driver.SomeIp
-    config:
-      host: "192.168.100.1"
-      port: 30490
-      transport_mode: UDP
-      remote_host: "192.168.100.10"
-      remote_port: 30490
+```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/config_static_remote_endpoint_no_service_discov.yaml
+:language: yaml
 ```
 
 ## Usage
 
 ### RPC Call
 
-```python
-from jumpstarter.common.utils import env
-
-with env() as client:
-    someip = client.someip
-
-    response = someip.rpc_call(0x1234, 0x0001, b"\x01\x02\x03")
-    print(f"Response: {bytes.fromhex(response.payload)}")
-    print(f"Return code: {response.return_code}")
+```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/usage.py
+:language: python
 ```
 
 ### Service Discovery + RPC
 
-```python
-from jumpstarter.common.utils import env
-
-with env() as client:
-    someip = client.someip
-
-    # Discover available services
-    services = someip.find_service(0x1234, timeout=3.0)
-    for svc in services:
-        print(f"Found: service={svc.service_id:#06x} instance={svc.instance_id:#06x}")
-
-    # Call the first discovered service
-    if services:
-        resp = someip.rpc_call(0x1234, 0x0001, b"\x10\x20")
-        print(f"RPC result: {resp.payload}")
+```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/usage_service_discovery_rpc.py
+:language: python
 ```
 
 ### Event Subscription
 
-```python
-from jumpstarter.common.utils import env
-
-with env() as client:
-    someip = client.someip
-
-    # Subscribe to event group 1
-    someip.subscribe_eventgroup(1)
-
-    # Wait for event notifications
-    try:
-        event = someip.receive_event(timeout=10.0)
-        print(f"Event service={event.service_id:#06x} id={event.event_id:#06x}")
-        print(f"Payload: {bytes.fromhex(event.payload)}")
-    finally:
-        someip.unsubscribe_eventgroup(1)
+```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/usage_event_subscription.py
+:language: python
 ```
 
 ### Raw Messaging
 
-```python
-from jumpstarter.common.utils import env
-
-with env() as client:
-    someip = client.someip
-
-    someip.send_message(0x1234, 0x0001, b"\xAA\xBB")
-    msg = someip.receive_message(timeout=2.0)
-    print(f"Received from service={msg.service_id:#06x}: {msg.payload}")
+```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/usage_raw_messaging.py
+:language: python
 ```
 
 ### Connection Management
 
-```python
-from jumpstarter.common.utils import env
-
-with env() as client:
-    someip = client.someip
-
-    # Perform operations...
-    someip.rpc_call(0x1234, 0x0001, b"\x01")
-
-    # Reconnect after network disruption
-    someip.reconnect()
-
-    # Continue operations
-    someip.rpc_call(0x1234, 0x0001, b"\x02")
-
-    # Clean up
-    someip.close_connection()
+```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/usage_connection_management.py
+:language: python
 ```
 
 ## API Reference

@@ -14,15 +14,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-ble
 
 Example configuration:
 
-```yaml
-export:
-  ble:
-    type: "jumpstarter_driver_ble.driver.BleWriteNotifyStream"
-    config:
-      address: "00:11:22:33:44:55"
-      service_uuid: "0000180a-0000-1000-8000-000000000000"
-      write_char_uuid: "0000fe41-8e22-4541-9d4c-000000000000"
-      notify_char_uuid: "0000fe42-8e22-4541-9d4c-000000000000"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ble/examples/config.yaml
+:language: yaml
 ```
 
 ### Config parameters

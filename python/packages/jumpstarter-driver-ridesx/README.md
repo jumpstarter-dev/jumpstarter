@@ -92,43 +92,28 @@ Both drivers require:
 
 ### Flash Single Partition
 
-```{code-block} python
-# Flash a single partition (paths must exist; flash runs fastboot on the exporter)
-ridesx_client.flash("/path/to/boot.img", target="boot")
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ridesx/examples/usage.py
+:language: python
 ```
 
 ### Flash Multiple Partitions
 
-```{code-block} python
-# Flash multiple partitions
-partitions = {
-    "boot": "/path/to/boot.img",
-    "system": "/path/to/system.img",
-    "userdata": "/path/to/userdata.img"
-}
-ridesx_client.flash(partitions)
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ridesx/examples/usage_flash_multiple_partitions.py
+:language: python
 ```
 
 ### Flash with Compressed Images
 
 The driver automatically handles compressed images (`.gz`, `.gzip`, `.xz`):
 
-```{code-block} python
-# Flash compressed images - decompression is automatic
-ridesx_client.flash("/path/to/boot.img.gz", target="boot")
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ridesx/examples/usage_flash_with_compressed_images.py
+:language: python
 ```
 
 ### Power Control
 
-```{code-block} python
-# Turn device power on
-power_client.on()
-
-# Turn device power off
-power_client.off()
-
-# Power cycle the device
-power_client.cycle(wait=5)  # Wait 5 seconds between off/on
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ridesx/examples/usage_power_control.py
+:language: python
 ```
 
 ## API Reference

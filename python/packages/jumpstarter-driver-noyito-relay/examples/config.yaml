@@ -1,0 +1,11 @@
+export:
+  relay1:
+    type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerSerial
+    config:
+      port: "/dev/ttyUSB0"
+      channel: 1
+  relay2:
+    type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerSerial
+    config:
+      port: "/dev/ttyUSB0"
+      channel: 2

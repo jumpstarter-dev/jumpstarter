@@ -1,0 +1,12 @@
+export:
+  relay_4ch_ch1:
+    type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerHID
+    config:
+      num_channels: 4
+      channel: 1
+  relay_8ch_all:
+    type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerHID
+    config:
+      num_channels: 8
+      channel: 1
+      all_channels: true

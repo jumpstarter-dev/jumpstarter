@@ -1,0 +1,7 @@
+export:
+  shell:
+    type: jumpstarter_driver_shell.driver.Shell
+    config:
+      methods:
+        ls: "ls"
+        echo_hello: "echo 'Hello World'"

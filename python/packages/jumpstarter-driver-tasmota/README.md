@@ -13,10 +13,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-tasmota
 
 Example configuration:
 
-```yaml
-export:
-  power:
-    type: jumpstarter_driver_tasmota.driver.TasmotaPower
+```{literalinclude} ../../../../../packages/jumpstarter-driver-tasmota/examples/config.yaml
+:language: yaml
 ```
 
 ### Config parameters

@@ -12,21 +12,8 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 
 Example configuration:
 
-```yaml
-export:
-  tmt:
-    type: jumpstarter_driver_tmt.driver.TMT
-    config:
-      reboot_cmd: "j power cycle"
-      default_username: "root"
-      default_password: "somePassword"
-    children:
-      ssh:
-        type: jumpstarter_driver_network.driver.TcpNetwork
-        config:
-          host: "192.168.1.100"
-          port: 22
-          enable_address: true
+```{literalinclude} ../../../../../packages/jumpstarter-driver-tmt/examples/config.yaml
+:language: yaml
 ```
 
 ### Config parameters

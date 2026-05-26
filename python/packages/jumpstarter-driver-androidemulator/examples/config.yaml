@@ -1,0 +1,8 @@
+export:
+  android:
+    type: jumpstarter_driver_androidemulator.driver.AndroidEmulator
+    config:
+      avd_name: "Pixel_6"
+      headless: true
+      console_port: 5554
+      adb_server_port: 15037

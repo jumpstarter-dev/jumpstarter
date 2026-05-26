@@ -37,20 +37,8 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 
 ### Example exporter configuration
 
-```yaml
-export:
-  uds:
-    type: jumpstarter_driver_uds_can.driver.UdsCan
-    config:
-      channel: "can0"
-      interface: "socketcan"
-      rxid: 1601  # 0x641
-      txid: 1602  # 0x642
-      request_timeout: 5
-      isotp_params:
-        stmin: 32
-        blocksize: 8
-        tx_data_length: 8
+```{literalinclude} ../../../../../packages/jumpstarter-driver-uds-can/examples/config.yaml
+:language: yaml
 ```
 
 ## API Reference

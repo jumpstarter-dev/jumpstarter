@@ -15,49 +15,14 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-ssh-mitm
 
 The command name is determined by the key in the `export` section. Use `ssh_mitm` to get the `j ssh_mitm` command:
 
-```yaml
-export:
-  ssh_mitm:  # ← This gives you "j ssh_mitm" command
-    type: jumpstarter_driver_ssh.driver.SSHWrapper
-    config:
-      default_username: root
-    children:
-      tcp:
-        type: jumpstarter_driver_ssh_mitm.driver.SSHMITM
-        config:
-          ssh_identity_file: /path/to/private/key
-          default_username: root
-        children:
-          tcp:
-            type: jumpstarter_driver_network.driver.TcpNetwork
-            config:
-              host: 192.168.1.100
-              port: 22
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ssh-mitm/examples/config.yaml
+:language: yaml
 ```
 
 Or with inline key:
 
-```yaml
-export:
-  ssh_mitm:  # ← This gives you "j ssh_mitm" command
-    type: jumpstarter_driver_ssh.driver.SSHWrapper
-    config:
-      default_username: root
-    children:
-      tcp:
-        type: jumpstarter_driver_ssh_mitm.driver.SSHMITM
-        config:
-          default_username: root
-          ssh_identity: |
-            -----BEGIN OPENSSH PRIVATE KEY-----
-            ...
-            -----END OPENSSH PRIVATE KEY-----
-        children:
-          tcp:
-            type: jumpstarter_driver_network.driver.TcpNetwork
-            config:
-              host: 192.168.1.100
-              port: 22
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ssh-mitm/examples/config_configuration.yaml
+:language: yaml
 ```
 
 ### SSHMITM Config parameters

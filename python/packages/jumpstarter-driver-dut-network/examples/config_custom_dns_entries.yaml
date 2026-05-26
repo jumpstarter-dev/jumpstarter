@@ -1,0 +1,11 @@
+export:
+  dut-network:
+    type: jumpstarter_driver_dut_network.driver.DutNetwork
+    config:
+      interface: "eth2"
+      nat_mode: "masquerade"
+      dns_entries:
+        - hostname: "controller.lab.local"
+          ip: "10.26.28.1"
+        - hostname: "registry.lab.local"
+          ip: "10.26.28.2"

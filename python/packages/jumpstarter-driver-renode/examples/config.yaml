@@ -1,0 +1,6 @@
+export:
+  ecu:
+    type: jumpstarter_driver_renode.driver.Renode
+    config:
+      platform: "platforms/boards/stm32f4_discovery-kit.repl"
+      uart: "sysbus.usart2"

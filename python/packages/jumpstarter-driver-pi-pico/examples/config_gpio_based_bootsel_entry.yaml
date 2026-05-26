@@ -1,0 +1,32 @@
+export:
+  storage:
+    type: jumpstarter_driver_pi_pico.driver.PiPicoFlasher
+    config: {}
+    children:
+      serial:
+        ref: serial
+      bootsel:
+        ref: bootsel
+      run:
+        ref: run
+  serial:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      url: /dev/ttyACM0
+      baudrate: 115200
+  bootsel:
+    type: jumpstarter_driver_gpiod.driver.DigitalOutput
+    config:
+      device: "/dev/gpiochip4"   # RPi5 GPIO chip - adjust for your host
+      line: 17                    # GPIO pin wired to BOOTSEL
+      drive: open_drain
+      active_low: true
+      initial_value: inactive
+  run:
+    type: jumpstarter_driver_gpiod.driver.DigitalOutput
+    config:
+      device: "/dev/gpiochip4"
+      line: 27                    # GPIO pin wired to RUN
+      drive: open_drain
+      active_low: true
+      initial_value: inactive

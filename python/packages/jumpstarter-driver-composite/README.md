@@ -12,12 +12,8 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 
 Example configuration:
 
-```yaml
-export:
-  composite:
-    type: jumpstarter_driver_composite.driver.Composite
-    config:
-      # Add required config parameters here
+```{literalinclude} ../../../../../packages/jumpstarter-driver-composite/examples/config.yaml
+:language: yaml
 ```
 
 ## API Reference

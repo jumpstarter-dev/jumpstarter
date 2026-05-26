@@ -1,0 +1,6 @@
+export:
+  xcp:
+    type: jumpstarter_driver_xcp.driver.Xcp
+    config:
+      transport: ETH
+      config_file: /path/to/xcp_config.py

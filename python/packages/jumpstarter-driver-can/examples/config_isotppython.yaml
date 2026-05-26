@@ -1,0 +1,13 @@
+export:
+  can:
+    type: jumpstarter_driver_can.IsoTpPython
+    config:
+      channel: 0
+      interface: "virtual"
+      address:
+        rxid: 1
+        txid: 2
+      params:
+        max_frame_size: 2048
+        blocking_send: false
+        can_fd: true

@@ -1,0 +1,8 @@
+export:
+  serial:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      url: "/dev/ttyUSB0"
+      baudrate: 115200
+      disable_hupcl: true # Prevents MCU reset on each command/close.
+      #cps: Avoid using cps when using --no-output.

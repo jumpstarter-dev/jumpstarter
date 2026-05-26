@@ -21,13 +21,8 @@ Available on any platform, supports many different CAN interfaces through the `p
 
 Example configuration:
 
-```yaml
-export:
-  can:
-    type: jumpstarter_driver_can.Can
-    config:
-      channel: 1
-      interface: "virtual"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-can/examples/config.yaml
+:language: yaml
 ```
 
 | Parameter     | Description | Type | Required | Default |
@@ -44,21 +39,8 @@ performance and reliability, wide support for non-standard hardware interfaces
 
 Example configuration:
 
-```yaml
-export:
-  can:
-    type: jumpstarter_driver_can.IsoTpPython
-    config:
-      channel: 0
-      interface: "virtual"
-      address:
-        rxid: 1
-        txid: 2
-      params:
-        max_frame_size: 2048
-        blocking_send: false
-        can_fd: true
-
+```{literalinclude} ../../../../../packages/jumpstarter-driver-can/examples/config_isotppython.yaml
+:language: yaml
 ```
 
 | Parameter     | Description | Type | Required | Default |
@@ -77,20 +59,8 @@ Available on any platform, moderate performance and reliability, wide support fo
 
 Example configuration:
 
-```yaml
-export:
-  can:
-    type: jumpstarter_driver_can.IsoTpSocket
-    config:
-      channel: "vcan0"
-      address:
-        rxid: 1
-        txid: 2
-      params:
-        max_frame_size: 2048
-        blocking_send: false
-        can_fd: true
-
+```{literalinclude} ../../../../../packages/jumpstarter-driver-can/examples/config_isotpsocket.yaml
+:language: yaml
 ```
 
 | Parameter     | Description | Type | Required | Default |

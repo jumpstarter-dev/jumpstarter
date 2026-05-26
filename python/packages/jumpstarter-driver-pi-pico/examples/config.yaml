@@ -1,0 +1,12 @@
+export:
+  storage:
+    type: jumpstarter_driver_pi_pico.driver.PiPicoFlasher
+    config: {}
+    children:
+      serial:
+        ref: serial
+  serial:
+    type: jumpstarter_driver_pyserial.driver.PySerial
+    config:
+      url: /dev/ttyACM0
+      baudrate: 115200

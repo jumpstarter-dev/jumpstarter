@@ -1,0 +1,47 @@
+from __future__ import annotations
+
+from pathlib import Path
+import yaml
+
+EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
+
+
+def test_config_yaml_is_valid_yaml():
+    data = yaml.safe_load((EXAMPLES_DIR / "config.yaml").read_text())
+    assert data is not None
+
+def test_config_configuration_yaml_is_valid_yaml():
+    data = yaml.safe_load((EXAMPLES_DIR / "config_configuration.yaml").read_text())
+    assert data is not None
+
+def test_config_single_channel_example_yaml_is_valid_yaml():
+    data = yaml.safe_load((EXAMPLES_DIR / "config_single_channel_example.yaml").read_text())
+    assert data is not None
+
+def test_config_multiple_channels_example_yaml_is_valid_yaml():
+    data = yaml.safe_load((EXAMPLES_DIR / "config_multiple_channels_example.yaml").read_text())
+    assert data is not None
+
+def test_config_device_auto_detection_yaml_is_valid_yaml():
+    data = yaml.safe_load((EXAMPLES_DIR / "config_device_auto_detection.yaml").read_text())
+    assert data is not None
+
+
+def test_usage_py_compiles():
+    source = (EXAMPLES_DIR / "usage.py").read_text()
+    compile(source, "usage.py", "exec")
+
+
+def test_usage_examples_py_compiles():
+    source = (EXAMPLES_DIR / "usage_examples.py").read_text()
+    compile(source, "usage_examples.py", "exec")
+
+
+def test_usage_examples_1_py_compiles():
+    source = (EXAMPLES_DIR / "usage_examples_1.py").read_text()
+    compile(source, "usage_examples_1.py", "exec")
+
+
+def test_usage_examples_2_py_compiles():
+    source = (EXAMPLES_DIR / "usage_examples_2.py").read_text()
+    compile(source, "usage_examples_2.py", "exec")

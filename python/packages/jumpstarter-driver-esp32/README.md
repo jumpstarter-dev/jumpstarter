@@ -15,21 +15,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-esp32
 
 Example configuration:
 
-```yaml
-export:
-  storage:
-    type: jumpstarter_driver_esp32.driver.Esp32Flasher
-    config:
-      baudrate: 115200
-      chip: "esp32"
-    children:
-      serial:
-        ref: serial
-  serial:
-    type: jumpstarter_driver_pyserial.driver.PySerial
-    config:
-      url: "/dev/ttyUSB0"
-      baudrate: 115200
+```{literalinclude} ../../../../../packages/jumpstarter-driver-esp32/examples/config.yaml
+:language: yaml
 ```
 
 ### Config parameters
@@ -96,29 +83,8 @@ j serial pipe
 
 ### Python API
 
-```python
-# Get chip information
-info = client.storage.get_chip_info()
-print(info["chip"])      # e.g. "ESP32-D0WD-V3 (revision v3.1)"
-print(info["features"])  # e.g. "Wi-Fi, BT, Dual Core"
-print(info["mac"])       # e.g. "5c:01:3b:68:ab:0c"
-
-# Flash firmware
-client.storage.flash("/path/to/firmware.bin", target="0x1000")
-
-# Enter download mode
-client.storage.enter_bootloader()
-
-# Erase flash
-client.storage.erase()
-
-# Hard reset
-client.storage.hard_reset()
-
-# Serial console via pexpect
-console = client.serial.open()
-console.sendline("import machine")
-console.expect(">>>")
+```{literalinclude} ../../../../../packages/jumpstarter-driver-esp32/examples/usage.py
+:language: python
 ```
 
 ## API Reference

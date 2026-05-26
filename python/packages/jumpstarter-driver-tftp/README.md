@@ -14,15 +14,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-tftp
 
 Example configuration:
 
-```yaml
-export:
-  tftp:
-    type: jumpstarter_driver_tftp.driver.Tftp
-    config:
-      root_dir: /var/lib/tftpboot        # Directory to serve files from
-      host: 192.168.1.100                # Host IP to bind to (optional)
-      port: 69                           # Port to listen on (optional)
-      remove_created_on_close: true      # Clean up temporary boot files (default)
+```{literalinclude} ../../../../../packages/jumpstarter-driver-tftp/examples/config.yaml
+:language: yaml
 ```
 
 ### Config parameters

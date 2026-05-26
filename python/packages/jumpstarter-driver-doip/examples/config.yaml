@@ -1,0 +1,6 @@
+export:
+  doip:
+    type: jumpstarter_driver_doip.driver.DoIP
+    config:
+      ecu_ip: "192.168.1.100"
+      ecu_logical_address: 224  # 0x00E0

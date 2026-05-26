@@ -1,0 +1,10 @@
+export:
+  led_output:
+    type: jumpstarter_driver_gpiod.driver.DigitalOutput
+    config:
+      device: "/dev/gpiochip0"
+      line: 18
+      drive: "push_pull"
+      active_low: false
+      bias: "pull_up"
+      initial_value: "inactive"
