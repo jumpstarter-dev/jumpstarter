@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+
 from jumpstarter.testing.checks import (
     discover_example_files,
     find_inline_code_blocks,
