@@ -21,3 +21,8 @@ def test_config_yaml_validates_driver_instances():
 def test_tftp_test_py_compiles():
     source = (EXAMPLES_DIR / "tftp_test.py").read_text()
     compile(source, "tftp_test.py", "exec")
+
+
+def test_usage_e2e_py_compiles():
+    source = (EXAMPLES_DIR / "usage_e2e.py").read_text()
+    compile(source, "usage_e2e.py", "exec")

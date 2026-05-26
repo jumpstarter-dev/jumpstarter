@@ -23,8 +23,8 @@ help:
 	@echo "  test               - Run all package tests and documentation tests"
 	@echo "  pkg-test-all       - Run tests for all packages"
 	@echo "  pkg-test-<pkg>     - Run tests for a specific package"
-	@echo "  docs-test          - Run documentation tests"
-	@echo "  docs-snippet-test  - Run documentation snippet e2e tests"
+	@echo "  docs-test          - Run documentation snippet tests"
+	@echo "  docs-snippet-test  - Alias for docs-test"
 	@echo ""
 	@echo "Linting and type checking:"
 	@echo "  ty                 - Run ty type checking on all packages"
@@ -75,11 +75,10 @@ docs-check-grpc:
 docs-test-grpc:
 	uv run --isolated --all-packages --group docs pytest --cov=docs/source/reference --cov-report=xml:docs/source/reference/coverage.xml docs/source/reference/generate_grpc_docs_test.py
 
-docs-test: docs-generate-crds docs-generate-grpc
-	uv run --isolated --all-packages --group docs $(MAKE) -C docs doctest
-
-docs-snippet-test:
+docs-test:
 	uv run --isolated --all-packages --group docs pytest docs/source/examples/tests/ -v
+
+docs-snippet-test: docs-test
 
 docs-linkcheck: docs-generate-crds docs-generate-grpc
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs linkcheck
