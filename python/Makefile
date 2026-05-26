@@ -138,7 +138,7 @@ lint-fix:
 
 .PHONY: default help docs docs-all docs-serve docs-serve-all docs-clean docs-test \
 	docs-check-grpc docs-test-grpc docs-linkcheck docs-generate-grpc pkg-test-all pkg-ty-all build generate sync \
-	clean-venv clean-build clean-test clean-all test-all ty-all docs \
+	clean clean-venv clean-build clean-test clean-all test test-all ty-all docs \
 	lint lint-fix \
 	pkg-ty-jumpstarter \
 	pkg-ty-jumpstarter-cli-admin \
