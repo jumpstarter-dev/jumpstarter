@@ -7,10 +7,12 @@ on:
     paths:
       - 'python/docs/**'
       - 'python/packages/**'
+      - 'protocol/proto/**'
   pull_request:
     paths:
       - 'python/docs/**'
       - 'python/packages/**'
+      - 'protocol/proto/**'
   merge_group:
 
   # Allows you to run this workflow manually from the Actions tab
