@@ -6,7 +6,7 @@ def test_driver_example_file_exists(examples_root):
     assert driver_example.is_file(), f"Expected file at {driver_example}"
 
 
-def test_driver_example_executes_successfully(examples_root):
+def test_driver_example_imports_successfully(examples_root):
     driver_example = examples_root / "introduction" / "driver_example.py"
     spec = importlib.util.spec_from_file_location(
         "driver_example", str(driver_example)
