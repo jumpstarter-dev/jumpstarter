@@ -74,7 +74,7 @@ async def test_rotate_client_token_no_credential():
 
 
 @pytest.mark.asyncio
-@patch("jumpstarter_kubernetes.clients.asyncio.sleep", new_callable=AsyncMock)
+@patch("jumpstarter_kubernetes.clients.anyio.sleep", new_callable=AsyncMock)
 async def test_rotate_client_token_timeout(mock_sleep):
     """Rotate raises on timeout when secret never regenerates (404 loop)."""
     api = ClientsV1Alpha1Api(namespace="default")
