@@ -1,4 +1,4 @@
-# Jumpstarter - Hardware at the Speed of Software
+# ![bolt](../../assets/bolt.svg) Jumpstarter - Hardware at the Speed of Software
 
 ```{eval-rst}
 .. image:: https://img.shields.io/badge/GitHub-Repository-blue?logo=github
