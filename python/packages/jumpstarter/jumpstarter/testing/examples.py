@@ -4,7 +4,6 @@ import ast
 import importlib
 from pathlib import Path
 
-import pytest
 import yaml
 
 KIND_TO_MODEL: dict[str, str] = {
@@ -62,73 +61,8 @@ def validate_python_example(path: Path) -> None:
                 importlib.import_module(alias.name)
 
 
-def discover_examples(examples_dir: Path) -> list[tuple[Path, str]]:
-    items: list[tuple[Path, str]] = []
-    for f in sorted(examples_dir.glob("**/*.yaml")):
-        if f.name == "exporter.yaml":
-            continue
-        items.append((f, "yaml"))
-    for f in sorted(examples_dir.glob("**/*.py")):
-        items.append((f, "python"))
-    return items
-
-
-def make_example_test_params(examples_dir: Path) -> list[pytest.param]:
-    params: list[pytest.param] = []
-    for path, kind in discover_examples(examples_dir):
-        params.append(pytest.param(path, kind, id=path.name))
-    return params
-
-
 def validate_example(path: Path, kind: str) -> None:
     if kind == "yaml":
         validate_yaml_example(path)
     elif kind == "python":
         validate_python_example(path)
-
-
-def find_unused_examples(examples_dir: Path, readme_path: Path) -> list[Path]:
-    if not readme_path.exists() or not examples_dir.exists():
-        return []
-    readme_content = readme_path.read_text(encoding="utf-8")
-    unused = []
-    for path, _kind in discover_examples(examples_dir):
-        if path.name not in readme_content:
-            unused.append(path)
-    return unused
-
-
-INLINE_FENCE_LANGUAGES = frozenset({"yaml", "python", "py"})
-
-
-def find_inline_code_blocks(readme_path: Path) -> list[tuple[int, str]]:
-    if not readme_path.exists():
-        return []
-    import re
-
-    lines = readme_path.read_text(encoding="utf-8").splitlines()
-    violations: list[tuple[int, str]] = []
-    i = 0
-    while i < len(lines):
-        stripped = lines[i].strip()
-        match = re.match(r"^(`{3,})\{?([^}`\s]*)\}?\s*(.*)", stripped)
-        if not match or not match.group(2):
-            i += 1
-            continue
-        lang = match.group(2).strip("{}").lower()
-        extra = match.group(3).strip()
-        if lang == "literalinclude":
-            i += 1
-            continue
-        if lang in ("eval-rst", "code-block", "testsetup", "testcleanup",
-                     "note", "warning", "tip", "mermaid", "toctree",
-                     "glossary", "tab", "important", "seealso", "raw",
-                     "include", "doctest", "testcode"):
-            i += 1
-            continue
-        if lang == "code-block" and extra:
-            lang = extra.split()[0].lower()
-        if lang in INLINE_FENCE_LANGUAGES:
-            violations.append((i + 1, f"inline {lang} block"))
-        i += 1
-    return violations
