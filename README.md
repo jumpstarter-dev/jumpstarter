@@ -15,7 +15,7 @@ scripts, CI pipelines, and AI agents interact with devices through the same APIs
 
 ## Highlights
 
-- 🧪 **Unified Testing** - One tool for physical and virtual devices under test (DUTs)
+- 🧪 **Unified Testing** - One tool for physical and virtual devices under test
 - 🔌 **Hardware Abstraction** - Control UART, CAN, SPI, GPIO, power, and USB through drivers
 - 🐍 **Python-Powered** - Integrate with PyTest and Python's testing ecosystem
 - 🌐 **Collaborative** - Share and securely lease test hardware across teams
