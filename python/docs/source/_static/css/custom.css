@@ -7,6 +7,11 @@
     display: none !important;
 }
 
+#demo-player .ap-player {
+    --term-color-background: var(--color-background-primary);
+    --term-color-foreground: var(--color-foreground-primary);
+}
+
 /* Align sidebar logo with content heading */
 .sidebar-drawer {
     padding-top: 1.5rem;

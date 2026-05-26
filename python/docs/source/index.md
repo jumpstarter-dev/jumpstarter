@@ -28,12 +28,25 @@ software stack consistently across both real hardware and virtual environments
 using cloud native principles. See Jumpstarter in action:
 
 ```{raw} html
-<script
-   src="https://asciinema.org/a/xhJLxvKMsF8r8Sb7o2EIURufU.js"
-   id="asciicast-xhJLxvKMsF8r8Sb7o2EIURufU"
-   async="true"
-   data-size="medium"
-></script>
+<div id="demo-player"></div>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    AsciinemaPlayer.create('_static/demo.cast', document.getElementById('demo-player'), {
+      fit: 'width',
+      autoPlay: false,
+      poster: 'npt:0:05',
+      loop: true,
+      speed: 1.5,
+      rows: 25,
+      markers: [
+        [16.7, "lease device"],
+        [24.0, "power cycle"],
+        [34.3, "serial start"],
+        [41.5, "pytest"]
+      ]
+    });
+  });
+</script>
 ```
 
 One tool, any target. Jumpstarter decouples devices from test runners, letting
