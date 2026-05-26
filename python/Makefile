@@ -63,14 +63,13 @@ docs-serve-all: clean-docs docs-all
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve-multiversion
 
 docs-check-grpc:
-	$(eval TMPDIR1 := $(shell mktemp -d))
-	$(eval TMPDIR2 := $(shell mktemp -d))
+	@TMPDIR1=$$(mktemp -d) && TMPDIR2=$$(mktemp -d) && \
+	trap 'rm -rf "$$TMPDIR1" "$$TMPDIR2"' EXIT && \
 	uv run --isolated --all-packages --group docs python3 -c \
-		"import sys; sys.path.insert(0, 'docs/source/reference'); from generate_grpc_docs import main; main(output_dir='$(TMPDIR1)')"
+		"import sys; sys.path.insert(0, 'docs/source/reference'); from generate_grpc_docs import main; main(output_dir='$$TMPDIR1')" && \
 	uv run --isolated --all-packages --group docs python3 -c \
-		"import sys; sys.path.insert(0, 'docs/source/reference'); from generate_grpc_docs import main; main(output_dir='$(TMPDIR2)')"
-	diff -r $(TMPDIR1)/ $(TMPDIR2)/
-	rm -rf $(TMPDIR1) $(TMPDIR2)
+		"import sys; sys.path.insert(0, 'docs/source/reference'); from generate_grpc_docs import main; main(output_dir='$$TMPDIR2')" && \
+	diff -r "$$TMPDIR1/" "$$TMPDIR2/"
 
 docs-test-grpc:
 	uv run --isolated --all-packages --group docs pytest --cov=docs/source/reference --cov-report=xml:docs/source/reference/coverage.xml docs/source/reference/generate_grpc_docs_test.py
