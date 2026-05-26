@@ -23,7 +23,7 @@ help:
 	@echo "  test               - Run all package tests and documentation tests"
 	@echo "  pkg-test-all       - Run tests for all packages"
 	@echo "  pkg-test-<pkg>     - Run tests for a specific package"
-	@echo "  docs-test          - Run documentation snippet tests"
+	@echo "  docs-test          - Run documentation tests"
 	@echo ""
 	@echo "Linting and type checking:"
 	@echo "  ty                 - Run ty type checking on all packages"
