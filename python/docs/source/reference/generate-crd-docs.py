@@ -64,6 +64,7 @@ def render_table(rows):
         return "*No fields defined.*\n"
     lines = ["| Field | Type | Description |", "| --- | --- | --- |"]
     for field, typ, desc in rows:
+        desc = desc.replace("|", r"\|")
         lines.append(f"| {field} | {typ} | {desc} |")
     return "\n".join(lines) + "\n"
 

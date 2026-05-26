@@ -208,6 +208,12 @@ class TestRenderTable:
         lines = result.strip().split("\n")
         assert len(lines) == 4
 
+    def test_pipe_characters_in_description_are_escaped(self):
+        rows = [("`field`", "string", "value is A | B")]
+        result = render_table(rows)
+        lines = result.strip().split("\n")
+        assert lines[2] == r"| `field` | string | value is A \| B |"
+
 
 class TestProcessCrd:
     def test_minimal_crd_produces_kind_and_heading(self, tmp_path):
