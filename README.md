@@ -7,12 +7,11 @@
 ![PyPI - Version](https://img.shields.io/pypi/v/jumpstarter)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jumpstarter-dev/jumpstarter)
 
-Jumpstarter is a free and open source Hardware-in-the-Loop (HiL) test automation
-framework. It bridges the gap between embedded development workflows and deployment
-environments, enabling consistent automated testing across real hardware and virtual
-environments with CI/CD integration. Every interface is programmatic, so human
-developers, test scripts, CI pipelines, and AI agents interact with devices through
-the same APIs.
+Jumpstarter is a free and open source test automation framework. It bridges the gap
+between embedded development workflows and deployment environments, enabling
+consistent automated testing across real hardware and virtual environments with
+CI/CD integration. Every interface is programmatic, so human developers, test
+scripts, CI pipelines, and AI agents interact with devices through the same APIs.
 
 ## Highlights
 
