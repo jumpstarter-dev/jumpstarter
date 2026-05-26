@@ -23,7 +23,7 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 
 ### Ethernet (UDP)
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-xcp/examples/config_ethernet_udp.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-xcp/examples/config_udp.yaml
 :language: yaml
 ```
 
@@ -38,7 +38,7 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 For advanced configuration (seed & key, DAQ policies, etc.), provide a
 [pyXCP configuration file](https://pyxcp.readthedocs.io/en/latest/configuration.html):
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-xcp/examples/config_using_a_pyxcp_config_file.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-xcp/examples/config_pyxcp.yaml
 :language: yaml
 ```
 

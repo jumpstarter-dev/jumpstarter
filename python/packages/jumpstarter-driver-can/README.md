@@ -39,7 +39,7 @@ performance and reliability, wide support for non-standard hardware interfaces
 
 Example configuration:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-can/examples/config_isotppython.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-can/examples/config_isotp_python.yaml
 :language: yaml
 ```
 
@@ -59,7 +59,7 @@ Available on any platform, moderate performance and reliability, wide support fo
 
 Example configuration:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-can/examples/config_isotpsocket.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-can/examples/config_isotp_socket.yaml
 :language: yaml
 ```
 

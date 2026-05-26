@@ -53,6 +53,6 @@ The TFTP server driver automatically tracks files and directories created during
 
 ### Examples
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-tftp/examples/usage_e2e.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-tftp/examples/usage_server.py
 :language: python
 ```

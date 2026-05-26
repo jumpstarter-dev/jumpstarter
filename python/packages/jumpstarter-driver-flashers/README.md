@@ -323,7 +323,7 @@ Get the busybox shell on the device
 ```
 
 Get the bootloader shell on the device
-```{literalinclude} ../../../../../packages/jumpstarter-driver-flashers/examples/usage_utility_consoles.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-flashers/examples/usage_bootloader.py
 :language: python
 ```
 

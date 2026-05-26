@@ -58,7 +58,7 @@ Example configuration controlling both channels independently:
 Example configuration for a 4-channel board (channel 1) and an 8-channel board
 (all channels simultaneously):
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-noyito-relay/examples/config_noyitopowerhid_4_8_channel_hid.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-noyito-relay/examples/config_hid.yaml
 :language: yaml
 ```
 

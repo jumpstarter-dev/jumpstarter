@@ -35,7 +35,7 @@ Example configuration for digital output:
 
 Example configuration for digital input:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-gpiod/examples/config_digitalinput_configuration.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-gpiod/examples/config_digital_input.yaml
 :language: yaml
 ```
 
@@ -43,7 +43,7 @@ Example configuration for digital input:
 
 Example configuration for power switching:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-gpiod/examples/config_powerswitch_configuration.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-gpiod/examples/config_power_switch.yaml
 :language: yaml
 ```
 

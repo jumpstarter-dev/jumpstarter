@@ -40,13 +40,13 @@ code changes are needed for new targets.
 
 #### NXP S32K388 (opensomeip Zephyr)
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-renode/examples/config_nxp_s32k388_opensomeip_zephyr.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-renode/examples/config_nxp_s32k388.yaml
 :language: yaml
 ```
 
 #### Nucleo H753ZI (openbsw-zephyr)
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-renode/examples/config_nucleo_h753zi_openbsw_zephyr.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-renode/examples/config_nucleo_h753zi.yaml
 :language: yaml
 ```
 

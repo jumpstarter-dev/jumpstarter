@@ -18,7 +18,7 @@ Example configuration:
 
 ### Example configuration for Shelly Smart Plug:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-http-power/examples/config_example_configuration_for_shelly_smart_p.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-http-power/examples/config_shelly.yaml
 :language: yaml
 ```
 

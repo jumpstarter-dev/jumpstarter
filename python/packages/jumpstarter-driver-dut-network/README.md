@@ -35,7 +35,7 @@ DUTs share the exporter's upstream IP when accessing the network:
 
 Each DUT gets a dedicated public IP alias via a per-entry `public_ip` field, enabling inbound connections from the LAN. Entries without a `public_ip` fall back to masquerade for outbound traffic. Entries without a `mac` are used for 1:1 NAT mappings only and are excluded from DHCP static lease generation.
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-dut-network/examples/config_1_1_nat.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-dut-network/examples/config_1to1_nat.yaml
 :language: yaml
 ```
 
@@ -43,7 +43,7 @@ Each DUT gets a dedicated public IP alias via a per-entry `public_ip` field, ena
 
 DHCP works normally but no NAT rules or IP forwarding are configured. Useful for pure L2 isolation or when routing is handled externally:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-dut-network/examples/config_disabled_nat_dhcp_only.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-dut-network/examples/config_dhcp_only.yaml
 :language: yaml
 ```
 
@@ -51,7 +51,7 @@ DHCP works normally but no NAT rules or IP forwarding are configured. Useful for
 
 Register custom DNS records that dnsmasq will respond to. Useful for pointing DUTs at local services without a full DNS infrastructure:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-dut-network/examples/config_custom_dns_entries.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-dut-network/examples/config_dns.yaml
 :language: yaml
 ```
 

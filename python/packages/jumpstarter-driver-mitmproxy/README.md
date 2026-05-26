@@ -76,7 +76,7 @@ j proxy cert /tmp/ca.pem               # custom output path
 
 If you need the path on the exporter host itself (for provisioning scripts that run locally):
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_exporter_side_path.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_exporter.py
 :language: python
 ```
 
@@ -151,7 +151,7 @@ j proxy cert /tmp/ca.pem                # download to a specific path
 
 Create YAML or JSON files with endpoint definitions:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/config_mock_scenarios.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/config_scenarios.yaml
 :language: yaml
 ```
 
@@ -162,7 +162,7 @@ j proxy mock load happy-path.yaml
 j proxy mock load my-capture/            # directory from 'capture save'
 ```
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_mock_scenarios.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_scenarios.py
 :language: python
 ```
 
@@ -184,7 +184,7 @@ Then open `http://localhost:8081` in your browser to inspect traffic in real tim
 
 #### Basic Usage
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_basic_usage.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_basic.py
 :language: python
 ```
 
@@ -192,7 +192,7 @@ Then open `http://localhost:8081` in your browser to inspect traffic in real tim
 
 Context managers ensure clean teardown even if the test fails:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_context_managers.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_context.py
 :language: python
 ```
 
@@ -211,7 +211,7 @@ Available context managers:
 
 Verify that the DUT is making the right API calls:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_request_capture.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_capture.py
 :language: python
 ```
 
@@ -221,7 +221,7 @@ Verify that the DUT is making the right API calls:
 
 Return different responses based on request headers, body, or query params:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_conditional_responses.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_conditionals.py
 :language: python
 ```
 
@@ -229,7 +229,7 @@ Return different responses based on request headers, body, or query params:
 
 Return different responses on successive calls:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_response_sequences.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_sequences.py
 :language: python
 ```
 
@@ -237,25 +237,25 @@ Return different responses on successive calls:
 
 Responses with per-request dynamic values:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_dynamic_templates.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_templates.py
 :language: python
 ```
 
 ##### Simulated latency
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_simulated_latency.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_latency.py
 :language: python
 ```
 
 ##### File serving
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_file_serving.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_files.py
 :language: python
 ```
 
 ##### Custom addon scripts
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_custom_addon_scripts.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_addons.py
 :language: python
 ```
 
@@ -263,7 +263,7 @@ Responses with per-request dynamic values:
 
 Share state between tests and conditional mock rules:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_state_store.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/usage_state.py
 :language: python
 ```
 

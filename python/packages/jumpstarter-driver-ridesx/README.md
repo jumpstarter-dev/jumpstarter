@@ -98,7 +98,7 @@ Both drivers require:
 
 ### Flash Multiple Partitions
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-ridesx/examples/usage_flash_multiple_partitions.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ridesx/examples/usage_multi_flash.py
 :language: python
 ```
 
@@ -106,13 +106,13 @@ Both drivers require:
 
 The driver automatically handles compressed images (`.gz`, `.gzip`, `.xz`):
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-ridesx/examples/usage_flash_with_compressed_images.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ridesx/examples/usage_compressed_flash.py
 :language: python
 ```
 
 ### Power Control
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-ridesx/examples/usage_power_control.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ridesx/examples/usage_power.py
 :language: python
 ```
 

@@ -39,7 +39,7 @@ Both GPIO outputs should use **open-drain** drive and **active-low** polarity so
 that `on()` pulls the line LOW and `off()` releases to high-impedance (the
 Pico's internal pull-ups keep the lines high when released).
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-pi-pico/examples/config_gpio_based_bootsel_entry.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pi-pico/examples/config_gpio_bootsel.yaml
 :language: yaml
 ```
 

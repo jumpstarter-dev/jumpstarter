@@ -42,7 +42,7 @@ When the target ECU does not run SOME/IP-SD (e.g. Zephyr firmware with
 multicast TX disabled), set `remote_host` and optionally `remote_port`
 to send messages directly without Service Discovery:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/config_static_remote_endpoint_no_service_discov.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/config_static.yaml
 :language: yaml
 ```
 

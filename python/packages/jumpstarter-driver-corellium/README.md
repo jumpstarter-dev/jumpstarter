@@ -22,11 +22,11 @@ Example configuration:
 
 You can run an exporter by running: `jmp exporter shell -c $file`:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-corellium/examples/config_exporterconfig_example.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-corellium/examples/config_virtual_device.yaml
 :language: yaml
 ```
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-corellium/examples/config_exporterconfig_example_1.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-corellium/examples/config_avh.yaml
 :language: yaml
 ```
 

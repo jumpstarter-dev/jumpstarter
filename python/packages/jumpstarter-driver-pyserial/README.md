@@ -19,7 +19,7 @@ Example configuration:
 ```
 
 Example configuration to send commands to a MCU with DTR/RTS controlling boot process over serial port, with --no-output (fire-and-forget mode):
-```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/config_configuration.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/config_mux.yaml
 :language: yaml
 ```
 
@@ -48,13 +48,13 @@ Multiple driver instances can share a single demuxer process by specifying diffe
 
 ##### Single channel example:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/config_single_channel_example.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/config_single_channel.yaml
 :language: yaml
 ```
 
 ##### Multiple channels example:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/config_multiple_channels_example.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/config_multi_channel.yaml
 :language: yaml
 ```
 
@@ -179,16 +179,16 @@ Using expect with a context manager
 ```
 
 Using expect without a context manager
-```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/usage_examples.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/usage_session.py
 :language: python
 ```
 
 Using a simple BlockingStream with a context manager
-```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/usage_examples_1.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/usage_mux.py
 :language: python
 ```
 
 Using a simple BlockingStream without a context manager
-```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/usage_examples_2.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pyserial/examples/usage_detect.py
 :language: python
 ```

@@ -21,7 +21,7 @@ The shell driver supports two configuration formats for methods:
 
 ### Format 2: Unified Format with Descriptions
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-shell/examples/config_format_2_unified_format_with_description.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-shell/examples/config_methods.yaml
 :language: yaml
 ```
 
@@ -81,7 +81,7 @@ Commands:
 
 **Mixed format example:**
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-shell/examples/config_cli_help_output.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-shell/examples/config_methods_inline.yaml
 :language: yaml
 ```
 
