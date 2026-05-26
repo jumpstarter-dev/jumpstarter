@@ -17,11 +17,9 @@ def discover_example_files(
     items: list[tuple[Path, str]] = []
     if not examples_dir.exists():
         return items
-    for f in sorted(examples_dir.glob("**/*.yaml")):
-        if f.name == "exporter.yaml":
-            continue
+    for f in sorted(examples_dir.glob("config*.yaml")):
         items.append((f, "yaml"))
-    for f in sorted(examples_dir.glob("**/*.py")):
+    for f in sorted(examples_dir.glob("usage*.py")):
         items.append((f, "python"))
     return items
 
