@@ -1,4 +1,5 @@
 import os
+
 from jumpstarter.utils.env import env
 
 lease = os.environ["LEASE_NAME"]
