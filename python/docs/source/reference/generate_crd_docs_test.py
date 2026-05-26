@@ -1,7 +1,6 @@
 import os
 import sys
 
-import pytest
 import yaml
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -280,10 +279,10 @@ class TestProcessCrd:
 
 
 class TestMain:
-    def test_exits_with_error_when_no_crds_found(self, tmp_path):
-        with pytest.raises(SystemExit) as exc_info:
-            main(crd_dir=str(tmp_path))
-        assert exc_info.value.code == 1
+    def test_returns_gracefully_when_no_crds_found(self, tmp_path, capsys):
+        main(crd_dir=str(tmp_path))
+        captured = capsys.readouterr()
+        assert "No CRD files found" in captured.out
 
     def test_generates_output_files(self, tmp_path):
         crd_dir = tmp_path / "crds_in"

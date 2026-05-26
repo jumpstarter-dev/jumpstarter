@@ -3,7 +3,6 @@
 
 import glob
 import os
-import sys
 from typing import Any
 
 import yaml
@@ -113,7 +112,7 @@ def main(crd_dir: str = CRD_DIR, output_dir: str = OUTPUT_DIR) -> None:
     crds = sorted(glob.glob(os.path.join(crd_dir, "*.yaml")))
     if not crds:
         print(f"No CRD files found in {crd_dir}")
-        sys.exit(1)
+        return
 
     os.makedirs(output_dir, exist_ok=True)
 
