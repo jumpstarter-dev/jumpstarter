@@ -22,38 +22,8 @@ and the configuration required.
 Here is an example exporter config file which would typically be saved at
 `/etc/jumpstarter/exporters/demo.yaml`:
 
-```yaml
-apiVersion: jumpstarter.dev/v1alpha1
-kind: ExporterConfig
-metadata:
-  namespace: default
-  name: demo
-endpoint: grpc.jumpstarter.example.com:443
-token: xxxxx
-grpcConfig:
-    grpc.keepalive_time_ms: 20000
-export:
-  power:
-    type: jumpstarter_driver_yepkit.driver.Ykush
-    config:
-      serial: "YK25838"
-      port: "1"
-  serial:
-    type: "jumpstarter_driver_pyserial.driver.PySerial"
-    config:
-      url: "/dev/ttyUSB0"
-      baudrate: 115200
-  storage:
-    type: "jumpstarter_driver_sdwire.driver.SDWire"
-    config:
-      serial: "sdw-00001"
-      storage_device: "/dev/disk/by-path/..."
-  custom:
-    type: "vendorpackage.CustomDriver"
-    config:
-      hello: "world"
-  reference:
-    ref: "power"
+```{literalinclude} ../examples/introduction/exporter_config.yaml
+:language: yaml
 ```
 
 Note that the `grpcConfig` section supports all options documented in the [gRPC

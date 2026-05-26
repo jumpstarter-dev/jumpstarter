@@ -110,35 +110,8 @@ packages making it easy to develop and install your own drivers.
 Here is an example exporter config that loads drivers for both physical and
 virtual devices:
 
-```yaml
-apiVersion: jumpstarter.dev/v1alpha1
-kind: ExporterConfig
-metadata:
-  namespace: default
-  name: demo
-endpoint: grpc.jumpstarter.example.com:443
-token: xxxxx
-export:
-  # Physical hardware drivers
-  power:
-    type: jumpstarter_driver_yepkit.driver.Ykush
-    config:
-      serial: "YK25838"
-      port: "1"
-
-  serial:
-    type: "jumpstarter_driver_pyserial.driver.PySerial"
-    config:
-      url: "/dev/ttyUSB0"
-      baudrate: 115200
-
-  # Virtual device drivers
-  qemu:
-    type: "jumpstarter_driver_qemu.driver.QEMU"
-    config:
-      image_path: "/var/lib/jumpstarter/images/vm.qcow2"
-      memory: "1G"
-      cpu_cores: 2
+```{literalinclude} ../examples/introduction/driver_exporter_config.yaml
+:language: yaml
 ```
 
 ## Communication
