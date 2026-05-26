@@ -267,6 +267,17 @@ Share state between tests and conditional mock rules:
 :language: python
 ```
 
+
+### Example Test Fixtures
+
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/conftest.py
+:language: python
+```
+
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/test_device.py
+:language: python
+```
+
 ## API Reference
 
 ```{eval-rst}

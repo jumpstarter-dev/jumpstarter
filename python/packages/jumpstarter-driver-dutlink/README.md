@@ -18,6 +18,13 @@ Example configuration:
 :language: yaml
 ```
 
+
+### CLI Script
+
+```{literalinclude} ../../../../../packages/jumpstarter-driver-dutlink/examples/dutlink.py
+:language: python
+```
+
 ## API Reference
 
 ```{eval-rst}

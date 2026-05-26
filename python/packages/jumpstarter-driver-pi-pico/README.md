@@ -51,6 +51,21 @@ When both GPIO and serial children are present, GPIO reset is preferred.
 - `j storage bootloader` - request BOOTSEL mode without flashing
 - `j serial ...` - USB CDC console (when serial child is configured)
 
+
+### Full Exporter Configurations
+
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pi-pico/examples/pico-exporter.yaml
+:language: yaml
+```
+
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pi-pico/examples/pico-exporter-gpio.yaml
+:language: yaml
+```
+
+```{literalinclude} ../../../../../packages/jumpstarter-driver-pi-pico/examples/pico-exporter-standalone.yaml
+:language: yaml
+```
+
 ## API Reference
 
 ```{eval-rst}

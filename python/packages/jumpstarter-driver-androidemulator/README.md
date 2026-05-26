@@ -92,6 +92,13 @@ The emulator registers with the custom ADB server on port 15037 (via the
 `ANDROID_ADB_SERVER_PORT` environment variable) to avoid conflicts with any
 local ADB server on the standard port 5037.
 
+
+### Local Exporter Configuration
+
+```{literalinclude} ../../../../../packages/jumpstarter-driver-androidemulator/examples/local-exporter.yaml
+:language: yaml
+```
+
 ## API Reference
 
 ### Driver

@@ -31,6 +31,13 @@ Example configuration:
 
 The TFTP server driver automatically tracks files and directories created during the session. By default, `remove_created_on_close` is set to `true` to clean up temporary boot files automatically. Set to `false` if you want to preserve boot files and firmware images that are reused across sessions.
 
+
+### Example Test
+
+```{literalinclude} ../../../../../packages/jumpstarter-driver-tftp/examples/tftp_test.py
+:language: python
+```
+
 ## API Reference
 
 ```{eval-rst}

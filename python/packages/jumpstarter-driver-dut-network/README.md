@@ -178,6 +178,13 @@ When NetworkManager is detected, the driver marks managed interfaces as `unmanag
   isolation or when routing is handled externally.
 ```
 
+
+### Full 1:1 NAT Exporter Configuration
+
+```{literalinclude} ../../../../../packages/jumpstarter-driver-dut-network/examples/exporter-1to1-nat.yaml
+:language: yaml
+```
+
 ## API Reference
 
 ```{eval-rst}

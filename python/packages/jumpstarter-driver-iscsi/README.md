@@ -54,6 +54,13 @@ exports the local file `disk.img` as a 5 GiB LUN:
 
 The iSCSI server driver automatically tracks disk image files and directories created during the session. By default, `remove_created_on_close` is set to `false` to preserve disk images that are typically reused across test sessions. Set to `true` if you want temporary disk images to be cleaned up automatically.
 
+
+### CLI Script
+
+```{literalinclude} ../../../../../packages/jumpstarter-driver-iscsi/examples/iscsi.py
+:language: python
+```
+
 ## API Reference
 
 ```{eval-rst}

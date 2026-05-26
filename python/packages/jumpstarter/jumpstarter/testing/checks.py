@@ -37,6 +37,7 @@ def find_unused_examples(
         path
         for path, _ in discover_example_files(examples_dir)
         if path.name not in readme_content
+        and path.parent == examples_dir
     ]
 
 
