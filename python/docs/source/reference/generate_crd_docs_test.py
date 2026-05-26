@@ -280,13 +280,12 @@ class TestProcessCrd:
 
 
 class TestMain:
-    def test_exits_with_error_when_no_crds_found(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(generate_crd_docs, "CRD_DIR", str(tmp_path))
+    def test_exits_with_error_when_no_crds_found(self, tmp_path):
         with pytest.raises(SystemExit) as exc_info:
-            main()
+            main(crd_dir=str(tmp_path))
         assert exc_info.value.code == 1
 
-    def test_generates_output_files(self, tmp_path, monkeypatch):
+    def test_generates_output_files(self, tmp_path):
         crd_dir = tmp_path / "crds_in"
         crd_dir.mkdir()
         output_dir = tmp_path / "crds_out"
@@ -296,10 +295,7 @@ class TestMain:
         )
         (crd_dir / "test_crd.yaml").write_text(yaml.dump(crd), encoding="utf-8")
 
-        monkeypatch.setattr(generate_crd_docs, "CRD_DIR", str(crd_dir))
-        monkeypatch.setattr(generate_crd_docs, "OUTPUT_DIR", str(output_dir))
-
-        main()
+        main(crd_dir=str(crd_dir), output_dir=str(output_dir))
 
         generated = list(output_dir.iterdir())
         assert len(generated) == 1

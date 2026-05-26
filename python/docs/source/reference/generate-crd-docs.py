@@ -109,13 +109,13 @@ def process_crd(filepath: str) -> tuple[str, str]:
     return kind, "\n".join(sections)
 
 
-def main() -> None:
-    crds = sorted(glob.glob(os.path.join(CRD_DIR, "*.yaml")))
+def main(crd_dir: str = CRD_DIR, output_dir: str = OUTPUT_DIR) -> None:
+    crds = sorted(glob.glob(os.path.join(crd_dir, "*.yaml")))
     if not crds:
-        print(f"No CRD files found in {CRD_DIR}")
+        print(f"No CRD files found in {crd_dir}")
         sys.exit(1)
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     count = 0
     for crd_file in crds:
@@ -124,12 +124,12 @@ def main() -> None:
         slug = kind.lower()
         filename = f"{slug}.md"
 
-        with open(os.path.join(OUTPUT_DIR, filename), "w", encoding="utf-8") as f:
+        with open(os.path.join(output_dir, filename), "w", encoding="utf-8") as f:
             f.write(content)
 
         count += 1
 
-    print(f"Generated {count} CRD docs in {OUTPUT_DIR}/")
+    print(f"Generated {count} CRD docs in {output_dir}/")
 
 
 if __name__ == "__main__":
