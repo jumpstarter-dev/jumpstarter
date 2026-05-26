@@ -21,6 +21,8 @@ from generate_grpc_docs import (
     _parse_nested_message,
     _parse_oneof_block,
     _parse_service_block,
+    build_type_index,
+    format_type_ref,
     main,
     parse_proto_file,
     render_enum,
@@ -939,6 +941,326 @@ class TestProtoCommentPeriods:
             "Proto documentation comments must end with a period:\n"
             + "\n".join(all_violations)
         )
+
+
+class TestBuildTypeIndex:
+    def test_indexes_message_by_name(self):
+        proto_files = [
+            ProtoFile(
+                filename="widget.proto",
+                package="test.v1",
+                syntax="proto3",
+                services=[],
+                messages=[Message(name="Widget", description="", fields=[])],
+                enums=[],
+            ),
+        ]
+        index = build_type_index(proto_files)
+        assert index["Widget"] == "widget.md#widget"
+
+    def test_indexes_enum_by_name(self):
+        proto_files = [
+            ProtoFile(
+                filename="common.proto",
+                package="test.v1",
+                syntax="proto3",
+                services=[],
+                messages=[],
+                enums=[EnumDef(name="Status", description="", values=[])],
+            ),
+        ]
+        index = build_type_index(proto_files)
+        assert index["Status"] == "common.md#status"
+
+    def test_indexes_nested_message(self):
+        proto_files = [
+            ProtoFile(
+                filename="widget.proto",
+                package="test.v1",
+                syntax="proto3",
+                services=[],
+                messages=[
+                    Message(name="Outer", description="", fields=[]),
+                    Message(name="Outer.Inner", description="", fields=[]),
+                ],
+                enums=[],
+            ),
+        ]
+        index = build_type_index(proto_files)
+        assert index["Outer.Inner"] == "widget.md#outerinner"
+
+    def test_indexes_types_across_multiple_files(self):
+        proto_files = [
+            ProtoFile(
+                filename="common.proto",
+                package="test.v1",
+                syntax="proto3",
+                services=[],
+                messages=[Message(name="CommonMsg", description="", fields=[])],
+                enums=[],
+            ),
+            ProtoFile(
+                filename="service.proto",
+                package="test.v1",
+                syntax="proto3",
+                services=[],
+                messages=[Message(name="ServiceMsg", description="", fields=[])],
+                enums=[],
+            ),
+        ]
+        index = build_type_index(proto_files)
+        assert index["CommonMsg"] == "common.md#commonmsg"
+        assert index["ServiceMsg"] == "service.md#servicemsg"
+
+    def test_empty_proto_files_returns_empty_index(self):
+        index = build_type_index([])
+        assert index == {}
+
+
+class TestFormatTypeRef:
+    def test_links_known_type(self):
+        index = {"Widget": "widget.md#widget"}
+        result = format_type_ref("Widget", index)
+        assert result == "[`Widget`](widget.md#widget)"
+
+    def test_backtick_only_for_unknown_type(self):
+        index = {}
+        result = format_type_ref("string", index)
+        assert result == "`string`"
+
+    def test_backtick_only_for_primitive_type(self):
+        index = {"Widget": "widget.md#widget"}
+        result = format_type_ref("int32", index)
+        assert result == "`int32`"
+
+    def test_links_fully_qualified_type(self):
+        index = {"ExporterStatus": "common.md#exporterstatus"}
+        result = format_type_ref("ExporterStatus", index)
+        assert result == "[`ExporterStatus`](common.md#exporterstatus)"
+
+
+class TestRenderMessageWithCrossRefs:
+    def test_field_type_links_to_known_type(self):
+        index = {"Widget": "widget.md#widget"}
+        message = Message(
+            name="CreateWidgetRequest",
+            description="",
+            fields=[
+                Field(
+                    name="widget",
+                    number=1,
+                    type="Widget",
+                    label="",
+                    description="The widget",
+                ),
+            ],
+        )
+        result = render_message(message, type_index=index)
+        assert "[`Widget`](widget.md#widget)" in result
+
+    def test_field_type_stays_backtick_for_primitive(self):
+        index = {"Widget": "widget.md#widget"}
+        message = Message(
+            name="Msg",
+            description="",
+            fields=[
+                Field(
+                    name="name",
+                    number=1,
+                    type="string",
+                    label="",
+                    description="The name",
+                ),
+            ],
+        )
+        result = render_message(message, type_index=index)
+        assert "| `string`" in result
+
+    def test_backward_compatible_without_type_index(self):
+        message = Message(
+            name="Msg",
+            description="",
+            fields=[
+                Field(
+                    name="id",
+                    number=1,
+                    type="Widget",
+                    label="",
+                    description="",
+                ),
+            ],
+        )
+        result = render_message(message)
+        assert "`Widget`" in result
+        assert "[`Widget`]" not in result
+
+
+class TestRenderServiceWithCrossRefs:
+    def test_request_type_links_to_known_type(self):
+        index = {"CreateWidgetRequest": "widget.md#createwidgetrequest"}
+        service = Service(
+            name="WidgetService",
+            description="",
+            methods=[
+                RpcMethod(
+                    name="CreateWidget",
+                    input_type="CreateWidgetRequest",
+                    output_type="CreateWidgetResponse",
+                    client_streaming=False,
+                    server_streaming=False,
+                    description="Creates a widget",
+                ),
+            ],
+        )
+        result = render_service(service, type_index=index)
+        assert "[`CreateWidgetRequest`](widget.md#createwidgetrequest)" in result
+
+    def test_response_type_links_to_known_type(self):
+        index = {"CreateWidgetResponse": "widget.md#createwidgetresponse"}
+        service = Service(
+            name="WidgetService",
+            description="",
+            methods=[
+                RpcMethod(
+                    name="CreateWidget",
+                    input_type="CreateWidgetRequest",
+                    output_type="CreateWidgetResponse",
+                    client_streaming=False,
+                    server_streaming=False,
+                    description="Creates a widget",
+                ),
+            ],
+        )
+        result = render_service(service, type_index=index)
+        assert "[`CreateWidgetResponse`](widget.md#createwidgetresponse)" in result
+
+    def test_streaming_prefix_preserved_with_link(self):
+        index = {"StreamResp": "widget.md#streamresp"}
+        service = Service(
+            name="Svc",
+            description="",
+            methods=[
+                RpcMethod(
+                    name="List",
+                    input_type="ListReq",
+                    output_type="StreamResp",
+                    client_streaming=False,
+                    server_streaming=True,
+                    description="Lists",
+                ),
+            ],
+        )
+        result = render_service(service, type_index=index)
+        assert "stream [`StreamResp`](widget.md#streamresp)" in result
+
+    def test_backward_compatible_without_type_index(self):
+        service = Service(
+            name="Svc",
+            description="",
+            methods=[
+                RpcMethod(
+                    name="Do",
+                    input_type="DoReq",
+                    output_type="DoResp",
+                    client_streaming=False,
+                    server_streaming=False,
+                    description="Does",
+                ),
+            ],
+        )
+        result = render_service(service)
+        assert "`DoReq`" in result
+        assert "[`DoReq`]" not in result
+
+
+class TestRenderProtoDocWithCrossRefs:
+    def test_renders_with_type_index(self):
+        index = {"Widget": "widget.md#widget"}
+        proto_data = ProtoFile(
+            filename="service.proto",
+            package="test.v1",
+            syntax="proto3",
+            services=[],
+            messages=[
+                Message(
+                    name="CreateReq",
+                    description="",
+                    fields=[
+                        Field(
+                            name="widget",
+                            number=1,
+                            type="Widget",
+                            label="",
+                            description="The widget",
+                        ),
+                    ],
+                ),
+            ],
+            enums=[],
+        )
+        result = render_proto_doc(proto_data, type_index=index)
+        assert "[`Widget`](widget.md#widget)" in result
+
+    def test_renders_without_type_index(self):
+        proto_data = ProtoFile(
+            filename="service.proto",
+            package="test.v1",
+            syntax="proto3",
+            services=[],
+            messages=[
+                Message(
+                    name="CreateReq",
+                    description="",
+                    fields=[
+                        Field(
+                            name="widget",
+                            number=1,
+                            type="Widget",
+                            label="",
+                            description="",
+                        ),
+                    ],
+                ),
+            ],
+            enums=[],
+        )
+        result = render_proto_doc(proto_data)
+        assert "`Widget`" in result
+
+
+class TestMainWithCrossRefs:
+    def test_generated_docs_contain_cross_reference_links(self, tmp_path):
+        proto_dir = tmp_path / "protos"
+        proto_dir.mkdir()
+        output_dir = tmp_path / "output"
+
+        common_proto = """\
+syntax = "proto3";
+
+package test.v1;
+
+// Status of a widget.
+enum WidgetStatus {
+  WIDGET_STATUS_UNSPECIFIED = 0; // Unknown status.
+}
+"""
+        service_proto = """\
+syntax = "proto3";
+
+package test.v1;
+
+// Request to get status.
+message GetStatusResponse {
+  WidgetStatus status = 1; // The status.
+}
+"""
+        (proto_dir / "common.proto").write_text(common_proto, encoding="utf-8")
+        (proto_dir / "service.proto").write_text(service_proto, encoding="utf-8")
+
+        main(proto_dirs=[str(proto_dir)], output_dir=str(output_dir))
+
+        content = (output_dir / "service.md").read_text(encoding="utf-8")
+        assert "[`WidgetStatus`](common.md#widgetstatus)" in content
 
 
 class TestProtoServiceCommentAccuracy:

@@ -355,7 +355,27 @@ def _parse_enum_values(body_lines: list[str]) -> list[EnumValue]:
     return values
 
 
-def render_service(service: Service) -> str:
+def build_type_index(proto_files: list[ProtoFile]) -> dict[str, str]:
+    index: dict[str, str] = {}
+    for proto_file in proto_files:
+        slug = proto_file["filename"].replace(".proto", "")
+        md_file = f"{slug}.md"
+        for message in proto_file["messages"]:
+            anchor = message["name"].replace(".", "").lower()
+            index[message["name"]] = f"{md_file}#{anchor}"
+        for enum_def in proto_file["enums"]:
+            anchor = enum_def["name"].lower()
+            index[enum_def["name"]] = f"{md_file}#{anchor}"
+    return index
+
+
+def format_type_ref(type_name: str, type_index: dict[str, str]) -> str:
+    if type_name in type_index:
+        return f"[`{type_name}`]({type_index[type_name]})"
+    return f"`{type_name}`"
+
+
+def render_service(service: Service, *, type_index: dict[str, str] | None = None) -> str:
     sections = []
     sections.append(f"### {service['name']}\n")
     if service["description"]:
@@ -366,8 +386,14 @@ def render_service(service: Service) -> str:
         for method in service["methods"]:
             streaming_prefix_in = "stream " if method["client_streaming"] else ""
             streaming_prefix_out = "stream " if method["server_streaming"] else ""
-            request = f"{streaming_prefix_in}`{method['input_type']}`"
-            response = f"{streaming_prefix_out}`{method['output_type']}`"
+            if type_index is not None:
+                request_ref = format_type_ref(method["input_type"], type_index)
+                response_ref = format_type_ref(method["output_type"], type_index)
+            else:
+                request_ref = f"`{method['input_type']}`"
+                response_ref = f"`{method['output_type']}`"
+            request = f"{streaming_prefix_in}{request_ref}"
+            response = f"{streaming_prefix_out}{response_ref}"
             desc = method["description"].replace("|", r"\|")
             sections.append(
                 f"| `{method['name']}` | {request} | {response} | {desc} |"
@@ -375,7 +401,7 @@ def render_service(service: Service) -> str:
     return "\n".join(sections) + "\n"
 
 
-def render_message(message: Message) -> str:
+def render_message(message: Message, *, type_index: dict[str, str] | None = None) -> str:
     sections = []
     display_name = message["name"]
     sections.append(f"### {display_name}\n")
@@ -386,8 +412,12 @@ def render_message(message: Message) -> str:
         sections.append("| --- | --- | --- | --- | --- |")
         for field in message["fields"]:
             desc = field["description"].replace("|", r"\|")
+            if type_index is not None:
+                type_ref = format_type_ref(field["type"], type_index)
+            else:
+                type_ref = f"`{field['type']}`"
             sections.append(
-                f"| `{field['name']}` | {field['number']} | `{field['type']}`"
+                f"| `{field['name']}` | {field['number']} | {type_ref}"
                 f" | {field['label']} | {desc} |"
             )
     else:
@@ -409,7 +439,7 @@ def render_enum(enum_def: EnumDef) -> str:
     return "\n".join(sections) + "\n"
 
 
-def render_proto_doc(proto_data: ProtoFile) -> str:
+def render_proto_doc(proto_data: ProtoFile, *, type_index: dict[str, str] | None = None) -> str:
     name = proto_data["filename"].replace(".proto", "")
     sections = []
     sections.append(f"# {name}\n")
@@ -418,12 +448,12 @@ def render_proto_doc(proto_data: ProtoFile) -> str:
     if proto_data["services"]:
         sections.append("## Services\n")
         for service in proto_data["services"]:
-            sections.append(render_service(service))
+            sections.append(render_service(service, type_index=type_index))
 
     if proto_data["messages"]:
         sections.append("## Messages\n")
         for message in proto_data["messages"]:
-            sections.append(render_message(message))
+            sections.append(render_message(message, type_index=type_index))
 
     if proto_data["enums"]:
         sections.append("## Enums\n")
@@ -451,11 +481,16 @@ def main(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    generated = []
+    parsed: list[ProtoFile] = []
     for proto_file in all_protos:
         print(f"Processing {os.path.basename(proto_file)}")
-        proto_data = parse_proto_file(proto_file)
-        content = render_proto_doc(proto_data)
+        parsed.append(parse_proto_file(proto_file))
+
+    type_index = build_type_index(parsed)
+
+    generated = []
+    for proto_data in parsed:
+        content = render_proto_doc(proto_data, type_index=type_index)
         slug = proto_data["filename"].replace(".proto", "")
         filename = f"{slug}.md"
         with open(os.path.join(output_dir, filename), "w", encoding="utf-8") as f:
