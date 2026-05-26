@@ -1,4 +1,4 @@
-# ![bolt](python/assets/bolt.svg) Jumpstarter
+# ![bolt](python/assets/bolt.svg) Jumpstarter - Hardware at the Speed of Software
 
 [![Matrix](https://img.shields.io/matrix/jumpstarter%3Amatrix.org?color=blue)](https://matrix.to/#/#jumpstarter:matrix.org)
 [![Etherpad](https://img.shields.io/badge/Etherpad-Notes-blue?logo=etherpad)](https://etherpad.jumpstarter.dev/pad-lister)
@@ -7,18 +7,19 @@
 ![PyPI - Version](https://img.shields.io/pypi/v/jumpstarter)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jumpstarter-dev/jumpstarter)
 
-A free, open source tool for automated testing on real and virtual hardware with
-CI/CD integration. Simplify device automation with consistent rules across local
-and distributed environments. Every interface is programmatic - there is no GUI
-wall - so human developers, test scripts, CI pipelines, and AI agents interact
-with hardware through the same APIs.
+Jumpstarter is a free and open source Hardware-in-the-Loop (HiL) test automation
+framework. It bridges the gap between
+embedded development workflows and deployment environments, enabling consistent
+automated testing across real hardware and virtual environments with CI/CD
+integration. Every interface is programmatic, so human developers, test scripts,
+CI pipelines, and AI agents interact with devices through the same APIs.
 
 ## Highlights
 
-- 🧪 **Unified Testing** - One tool for local, virtual, and remote hardware
-- 🐍 **Python-Powered** - Leverage Python's testing ecosystem
-- 🔌 **Hardware Abstraction** - Simplify complex hardware interfaces with drivers
-- 🌐 **Collaborative** - Share test hardware globally
+- 🧪 **Unified Testing** - Automate testing across physical and virtual devices under test (DUTs)
+- 🔌 **Hardware Abstraction** - Control test interfaces like UART, CAN, SPI, GPIO, power, and USB through drivers
+- 🐍 **Python-Powered** - Integrate with PyTest and Python's testing ecosystem
+- 🌐 **Collaborative** - Share and securely lease test hardware across teams
 - ⚙️ **Automation Ready** - Same APIs for humans, test scripts, CI pipelines, and AI agents
 - 💻 **Cross-Platform** - Supports Linux and macOS
 

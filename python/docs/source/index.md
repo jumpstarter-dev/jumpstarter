@@ -1,4 +1,4 @@
-# Welcome to Jumpstarter
+# Jumpstarter - Hardware at the Speed of Software
 
 ```{eval-rst}
 .. image:: https://img.shields.io/badge/GitHub-Repository-blue?logo=github
@@ -22,10 +22,14 @@
    :alt: Weekly Meeting
 ```
 
-Jumpstarter is a free and open source testing tool that bridges the gap between
-development workflows and deployment environments. It enables you to test your
-software stack consistently across both real hardware and virtual environments
-using cloud native principles. See Jumpstarter in action:
+Jumpstarter is a free and open source Hardware-in-the-Loop (HiL) test automation
+framework. It bridges the gap between
+embedded development workflows and deployment environments, enabling consistent
+automated testing across real hardware and virtual environments with CI/CD
+integration. Every interface is programmatic, so human developers, test scripts,
+CI pipelines, and AI agents interact with devices through the same APIs.
+
+See Jumpstarter in action:
 
 ```{raw} html
 <script
@@ -35,11 +39,6 @@ using cloud native principles. See Jumpstarter in action:
    data-size="medium"
 ></script>
 ```
-
-One tool, any target. Jumpstarter decouples devices from test runners, letting
-you use identical automation scripts everywhere - your *Makefile* for device
-testing. Every interface is programmatic, so human developers, test scripts, CI
-pipelines, and AI agents all interact with hardware through the same APIs.
 
 ```{include} ../../../README.md
 :start-after: "## Highlights"
