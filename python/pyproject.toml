@@ -92,6 +92,10 @@ line-length = 120
 exclude = ["packages/jumpstarter-protocol"]
 extend-select = ["I", "C", "E", "F", "W", "B", "ERA"]
 
+[tool.ruff.lint.per-file-ignores]
+"packages/jumpstarter-driver-*/examples/*.py" = ["F821", "F841", "F401", "E402", "F704"]
+"docs/source/examples/**/*.py" = ["F821", "F841", "F401", "E402", "F704"]
+
 [tool.ruff.lint.isort]
 known-local-folder = ["packages", "examples", "jumpstarter"]
 

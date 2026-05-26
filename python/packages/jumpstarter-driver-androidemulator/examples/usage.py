@@ -1,5 +1,6 @@
-from jumpstarter.common.utils import serve
 from jumpstarter_driver_androidemulator.driver import AndroidEmulator
+
+from jumpstarter.common.utils import serve
 
 driver = AndroidEmulator(avd_name="Pixel_6")
 with serve(driver) as client:

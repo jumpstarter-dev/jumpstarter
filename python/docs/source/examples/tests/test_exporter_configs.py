@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+
 from jumpstarter.testing.checks import discover_example_files
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "introduction"
