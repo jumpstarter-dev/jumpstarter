@@ -13,6 +13,41 @@
   third-party project names to it
 - Use ASCII hyphens (`-`) instead of en-dash or em-dash characters
 
+## Documentation Snippets
+
+Code snippets in documentation are extracted into standalone files under
+`docs/source/examples/` and referenced using `{literalinclude}` directives.
+Each extracted file has a corresponding test in `docs/source/examples/tests/`
+that validates it.
+
+### Converting a snippet
+
+1. Copy the inline code block from the `.md` file into a new file under
+   `examples/`, using a subdirectory that mirrors the doc path (for example,
+   `examples/introduction/` for files in `introduction/`).
+2. Replace the inline code block with a literalinclude directive:
+   ````
+   ```{literalinclude} ../examples/introduction/my_example.py
+   :language: python
+   ```
+   ````
+3. Write a test in `examples/tests/` that validates the extracted file:
+   - **Python**: import and execute the module, or use `compile()` for
+     scripts that require runtime context (environment variables, hardware).
+   - **YAML**: parse with `yaml.safe_load()` and validate against the
+     appropriate Pydantic model (for example, `ExporterConfigV1Alpha1` or
+     `HookConfigV1Alpha1`).
+   - **Bash**: use `compile()` is not applicable; use `bash -n` for syntax
+     checking.
+4. Run the tests: `make docs-snippet-test` (from the `python/` directory)
+   or directly with `pytest docs/source/examples/tests/ -v`.
+
+### Test fixtures
+
+The `conftest.py` in `examples/tests/` provides an `examples_root` fixture
+that resolves to the `examples/` directory. Use it to build paths to extracted
+files.
+
 ## AI Assistants
 
 This project accepts contributions from AI assistants, although you should be
