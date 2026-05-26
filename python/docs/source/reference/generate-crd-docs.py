@@ -3,6 +3,7 @@
 
 import glob
 import os
+import sys
 
 import yaml
 
@@ -68,12 +69,16 @@ def render_table(rows):
 
 
 def process_crd(filepath):
-    with open(filepath) as f:
+    with open(filepath, encoding="utf-8") as f:
         crd = yaml.safe_load(f)
 
     group = crd["spec"]["group"]
     kind = crd["spec"]["names"]["kind"]
-    version = crd["spec"]["versions"][0]
+    versions = crd["spec"]["versions"]
+    version = next(
+        (v for v in versions if v.get("storage", False)),
+        versions[0],
+    )
     ver = version["name"]
     schema = version["schema"]["openAPIV3Schema"]
 
@@ -104,26 +109,23 @@ def main():
     crds = sorted(glob.glob(os.path.join(CRD_DIR, "*.yaml")))
     if not crds:
         print(f"No CRD files found in {CRD_DIR}")
-        return
+        sys.exit(1)
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    toctree_entries = []
-    index_entries = []
-
+    count = 0
     for crd_file in crds:
         print(f"Processing {os.path.basename(crd_file)}")
         kind, content = process_crd(crd_file)
         slug = kind.lower()
         filename = f"{slug}.md"
 
-        with open(os.path.join(OUTPUT_DIR, filename), "w") as f:
+        with open(os.path.join(OUTPUT_DIR, filename), "w", encoding="utf-8") as f:
             f.write(content)
 
-        toctree_entries.append(filename)
-        index_entries.append(f"- [{kind}]({filename})")
+        count += 1
 
-    print(f"Generated {len(toctree_entries)} CRD docs in {OUTPUT_DIR}/")
+    print(f"Generated {count} CRD docs in {OUTPUT_DIR}/")
 
 
 if __name__ == "__main__":
