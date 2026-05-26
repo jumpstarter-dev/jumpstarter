@@ -4,7 +4,7 @@ syntax = "proto3";
 
 package jumpstarter.v1;
 
-// StreamService.
+// Router service for multiplexing bidirectional streams between clients and exporters.
 // Claims:
 // iss: jumpstarter controller
 // aud: jumpstarter router

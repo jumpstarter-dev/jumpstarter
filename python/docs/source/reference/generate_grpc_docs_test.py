@@ -939,3 +939,45 @@ class TestProtoCommentPeriods:
             "Proto documentation comments must end with a period:\n"
             + "\n".join(all_violations)
         )
+
+
+class TestProtoServiceCommentAccuracy:
+    def test_service_leading_comment_does_not_name_different_service(self):
+        import glob
+
+        all_exist = all(os.path.isdir(d) for d in PROTO_DIRS)
+        if not all_exist:
+            pytest.skip("Default PROTO_DIRS not available in this environment")
+
+        mismatches = []
+        for proto_dir in PROTO_DIRS:
+            for proto_file in sorted(glob.glob(os.path.join(proto_dir, "*.proto"))):
+                with open(proto_file, encoding="utf-8") as f:
+                    lines = f.readlines()
+                comment_lines = []
+                for i, raw_line in enumerate(lines):
+                    stripped = raw_line.strip()
+                    if stripped.startswith("//"):
+                        comment_lines.append(stripped.lstrip("/").strip())
+                    elif stripped.startswith("service "):
+                        service_name = stripped.split()[1].rstrip("{")
+                        if comment_lines:
+                            comment_text = " ".join(comment_lines)
+                            for word in comment_text.replace(".", " ").split():
+                                if (
+                                    word.endswith("Service")
+                                    and word != service_name
+                                    and word[0].isupper()
+                                ):
+                                    mismatches.append(
+                                        f"  {os.path.basename(proto_file)}:{i + 1}: "
+                                        f"service {service_name} comment mentions '{word}'"
+                                    )
+                        comment_lines = []
+                    else:
+                        comment_lines = []
+
+        assert mismatches == [], (
+            "Service leading comments must not name a different service:\n"
+            + "\n".join(mismatches)
+        )
