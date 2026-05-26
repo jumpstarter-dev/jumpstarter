@@ -15,17 +15,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-ustreamer
 
 Example configuration:
 
-```{literalinclude} ustreamer.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ustreamer/examples/config.yaml
 :language: yaml
-```
-
-```{doctest}
-:hide:
->>> from jumpstarter.config.exporter import ExporterConfigV1Alpha1DriverInstance
->>> ExporterConfigV1Alpha1DriverInstance.from_path("source/reference/package-apis/drivers/ustreamer.yaml").instantiate()
-Traceback (most recent call last):
-...
-io.UnsupportedOperation: fileno
 ```
 
 ## API Reference

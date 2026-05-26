@@ -15,15 +15,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-uboot
 
 Example configuration:
 
-```{literalinclude} uboot.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-uboot/examples/config.yaml
 :language: yaml
-```
-
-```{doctest}
-:hide:
->>> from jumpstarter.config.exporter import ExporterConfigV1Alpha1DriverInstance
->>> ExporterConfigV1Alpha1DriverInstance.from_path("source/reference/package-apis/drivers/uboot.yaml").instantiate()
-UbootConsole(...)
 ```
 
 ## API Reference

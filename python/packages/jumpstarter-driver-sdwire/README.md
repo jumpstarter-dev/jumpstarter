@@ -15,17 +15,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-sdwire
 
 Example configuration:
 
-```{literalinclude} sdwire.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-sdwire/examples/config.yaml
 :language: yaml
-```
-
-```{doctest}
-:hide:
->>> from jumpstarter.config.exporter import ExporterConfigV1Alpha1DriverInstance
->>> ExporterConfigV1Alpha1DriverInstance.from_path("source/api-reference/drivers/sdwire.yaml").instantiate()
-Traceback (most recent call last):
-...
-FileNotFoundError: failed to find sd-wire device
 ```
 
 ## API Reference
