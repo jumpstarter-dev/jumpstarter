@@ -299,16 +299,15 @@ async def test_unexpected_exception_propagates_from_streaming_loop():
     """
     shell = Shell(methods={"sleeper": "sleep 10"})
 
-    call_count = 0
+    state = {"call_count": 0}
 
     original_read = shell._read_process_output
 
     async def failing_read(process, read_all=False):
-        nonlocal call_count
         if read_all:
             return await original_read(process, read_all)
-        call_count += 1
-        if call_count >= 2:
+        state["call_count"] += 1
+        if state["call_count"] >= 2:
             raise RuntimeError("simulated unexpected failure")
         return await original_read(process, read_all)
 
@@ -323,16 +322,15 @@ async def test_stream_exceptions_cause_clean_exit():
     """Verify that anyio.EndOfStream causes a clean loop exit, not an error."""
     shell = Shell(methods={"sleeper": "echo done"})
 
-    call_count = 0
+    state = {"call_count": 0}
 
     original_read = shell._read_process_output
 
     async def eos_read(process, read_all=False):
-        nonlocal call_count
         if read_all:
             return await original_read(process, read_all)
-        call_count += 1
-        if call_count >= 2:
+        state["call_count"] += 1
+        if state["call_count"] >= 2:
             raise anyio.EndOfStream()
         return await original_read(process, read_all)
 
