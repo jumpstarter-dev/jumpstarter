@@ -777,6 +777,30 @@ class TestMain:
         content = (output_dir / "garbage.md").read_text(encoding="utf-8")
         assert "# garbage" in content
 
+    def test_output_is_deterministic_across_runs(self, tmp_path):
+        proto_dir = tmp_path / "protos"
+        proto_dir.mkdir()
+        output_dir1 = tmp_path / "output1"
+        output_dir2 = tmp_path / "output2"
+
+        (proto_dir / "common.proto").write_text(PROTO_WITH_ENUM, encoding="utf-8")
+        (proto_dir / "service.proto").write_text(PROTO_WITH_SERVICE, encoding="utf-8")
+        (proto_dir / "messages.proto").write_text(PROTO_WITH_MESSAGE, encoding="utf-8")
+
+        main(proto_dirs=[str(proto_dir)], output_dir=str(output_dir1))
+        main(proto_dirs=[str(proto_dir)], output_dir=str(output_dir2))
+
+        files1 = sorted(f.name for f in output_dir1.iterdir())
+        files2 = sorted(f.name for f in output_dir2.iterdir())
+        assert files1 == files2
+
+        for filename in files1:
+            content1 = (output_dir1 / filename).read_bytes()
+            content2 = (output_dir2 / filename).read_bytes()
+            assert content1 == content2, (
+                f"File {filename} differs between runs"
+            )
+
 
 class TestParseNestedMessageGuard:
     def test_returns_empty_when_line_does_not_match_message(self):
