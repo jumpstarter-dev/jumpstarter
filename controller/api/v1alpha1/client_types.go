@@ -21,16 +21,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ClientSpec defines the desired state of Client
+// ClientSpec defines the desired state of Client.
 type ClientSpec struct {
+	// Username is the identity of the client, used for authentication and authorization.
 	Username *string `json:"username,omitempty"`
 }
 
-// ClientStatus defines the observed state of Client
+// ClientStatus defines the observed state of Client.
 type ClientStatus struct {
-	// Status field for the clients
+	// Credential is a reference to the secret containing the client credentials.
 	Credential *corev1.LocalObjectReference `json:"credential,omitempty"`
-	Endpoint   string                       `json:"endpoint,omitempty"`
+	// Endpoint is the controller gRPC endpoint URL assigned to this client.
+	Endpoint string `json:"endpoint,omitempty"`
 }
 
 // +kubebuilder:object:root=true

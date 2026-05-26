@@ -93,6 +93,9 @@ jobs:
           uv python pin 3.12
           uv python install
 
+      - name: Verify generated gRPC docs are up to date
+        run: make docs-check-grpc
+
       - name: Build the documentation for the current version (no warnings allowed)
         run: make sync && make docs
 

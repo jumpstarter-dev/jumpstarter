@@ -20,24 +20,30 @@ import "google/protobuf/timestamp.proto";
 import "jumpstarter/v1/kubernetes.proto";
 import "jumpstarter/v1/common.proto";
 
+// Client-facing API service for managing exporters and leases.
 service ClientService {
+  // Retrieve a single exporter by resource name.
   rpc GetExporter(GetExporterRequest) returns (Exporter) {
     option (google.api.http) = {get: "/v1/{name=namespaces/*/exporters/*}"};
     option (google.api.method_signature) = "name";
   }
+  // List exporters in a namespace with optional filtering.
   rpc ListExporters(ListExportersRequest) returns (ListExportersResponse) {
     option (google.api.http) = {get: "/v1/{parent=namespaces/*}/exporters"};
     option (google.api.method_signature) = "parent";
   }
 
+  // Retrieve a single lease by resource name.
   rpc GetLease(GetLeaseRequest) returns (Lease) {
     option (google.api.http) = {get: "/v1/{name=namespaces/*/leases/*}"};
     option (google.api.method_signature) = "name";
   }
+  // List leases in a namespace with optional filtering.
   rpc ListLeases(ListLeasesRequest) returns (ListLeasesResponse) {
     option (google.api.http) = {get: "/v1/{parent=namespaces/*}/leases"};
     option (google.api.method_signature) = "parent";
   }
+  // Create a new lease for an exporter.
   rpc CreateLease(CreateLeaseRequest) returns (Lease) {
     option (google.api.http) = {
       post: "/v1/{parent=namespaces/*}/leases"
@@ -45,6 +51,7 @@ service ClientService {
     };
     option (google.api.method_signature) = "parent,lease,lease_id";
   }
+  // Update an existing lease.
   rpc UpdateLease(UpdateLeaseRequest) returns (Lease) {
     option (google.api.http) = {
       patch: "/v1/{lease.name=namespaces/*/leases/*}"
@@ -52,11 +59,13 @@ service ClientService {
     };
     option (google.api.method_signature) = "lease,update_mask";
   }
+  // Delete a lease by resource name.
   rpc DeleteLease(DeleteLeaseRequest) returns (google.protobuf.Empty) {
     option (google.api.http) = {delete: "/v1/{name=namespaces/*/leases/*}"};
     option (google.api.method_signature) = "name";
   }
 
+  // Rotate the authentication token for the client.
   rpc RotateToken(RotateTokenRequest) returns (RotateTokenResponse) {
     option (google.api.http) = {
       post: "/v1/{parent=namespaces/*}/rotate-token"
@@ -66,6 +75,7 @@ service ClientService {
   }
 }
 
+// An exporter resource representing a registered device provider.
 message Exporter {
   option (google.api.resource) = {
     type: "jumpstarter.dev/Exporter"
@@ -74,13 +84,19 @@ message Exporter {
     plural: "exporters"
   };
 
+  // The resource name of the exporter.
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // The set of labels associated with the exporter.
   map<string, string> labels = 2;
+  // Whether the exporter is currently online. Deprecated in favor of the status field.
   bool online = 3 [(google.api.field_behavior) = OUTPUT_ONLY, deprecated = true];
+  // The current status of the exporter.
   jumpstarter.v1.ExporterStatus status = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // A human-readable message providing details about the exporter status.
   string status_message = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
+// A lease resource representing a reservation of an exporter.
 message Lease {
   option (google.api.resource) = {
     type: "jumpstarter.dev/Lease"
@@ -89,107 +105,156 @@ message Lease {
     plural: "leases"
   };
 
+  // The resource name of the lease.
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
+  // The label selector expression used to match an exporter.
   string selector = 2 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.field_behavior) = IMMUTABLE
   ];
+  // The requested duration of the lease.
   optional google.protobuf.Duration duration = 3;
+  // The server-computed effective duration of the lease.
   google.protobuf.Duration effective_duration = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The requested begin time of the lease.
   optional google.protobuf.Timestamp begin_time = 5;
+  // The server-computed effective begin time of the lease.
   optional google.protobuf.Timestamp effective_begin_time = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The requested end time of the lease.
   optional google.protobuf.Timestamp end_time = 7;
+  // The server-computed effective end time of the lease.
   optional google.protobuf.Timestamp effective_end_time = 8 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The resource name of the client that owns this lease.
   optional string client = 9 [
     (google.api.field_behavior) = OUTPUT_ONLY,
     (google.api.resource_reference) = {type: "jumpstarter.dev/Client"}
   ];
+  // The resource name of the exporter assigned to this lease.
   optional string exporter = 10 [
     (google.api.field_behavior) = OUTPUT_ONLY,
     (google.api.resource_reference) = {type: "jumpstarter.dev/Exporter"}
   ];
+  // The list of conditions reflecting the current state of the lease.
   repeated jumpstarter.v1.Condition conditions = 11 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The name of a specific exporter to target for the lease.
   optional string exporter_name = 12 [(google.api.field_behavior) = IMMUTABLE];
+  // The set of tags associated with the lease.
   map<string, string> tags = 13 [(google.api.field_behavior) = IMMUTABLE];
 }
 
+// Request to retrieve an exporter.
 message GetExporterRequest {
+  // The resource name of the exporter.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {type: "jumpstarter.dev/Exporter"}
   ];
 }
 
+// Request to list exporters.
 message ListExportersRequest {
+  // The parent resource name (namespace).
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {child_type: "jumpstarter.dev/Exporter"}
   ];
+  // Maximum number of results to return.
   int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+  // Token for retrieving the next page of results.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+  // Filter expression for the results.
   string filter = 4 [(google.api.field_behavior) = OPTIONAL];
 }
 
+// Response containing a list of exporters.
 message ListExportersResponse {
+  // The list of exporters.
   repeated Exporter exporters = 1;
+  // Token for the next page of results.
   string next_page_token = 2;
 }
 
+// Request to retrieve a lease.
 message GetLeaseRequest {
+  // The resource name of the lease.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {type: "jumpstarter.dev/Lease"}
   ];
 }
 
+// Request to list leases.
 message ListLeasesRequest {
+  // The parent resource name (namespace).
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {child_type: "jumpstarter.dev/Lease"}
   ];
+  // Maximum number of results to return.
   int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+  // Token for retrieving the next page of results.
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+  // Filter expression for the results.
   string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+  // If true, return only active leases.
   optional bool only_active = 5 [(google.api.field_behavior) = OPTIONAL];
+  // Filter expression for lease tags.
   string tag_filter = 6 [(google.api.field_behavior) = OPTIONAL];
 }
 
+// Response containing a list of leases.
 message ListLeasesResponse {
+  // The list of leases.
   repeated Lease leases = 1;
+  // Token for the next page of results.
   string next_page_token = 2;
 }
 
+// Request to create a lease.
 message CreateLeaseRequest {
+  // The parent resource name (namespace).
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {child_type: "jumpstarter.dev/Lease"}
   ];
 
+  // The client-assigned identifier for the lease.
   string lease_id = 2 [(google.api.field_behavior) = OPTIONAL];
+  // The lease resource to create.
   Lease lease = 3 [(google.api.field_behavior) = REQUIRED];
 }
 
+// Request to update a lease.
 message UpdateLeaseRequest {
+  // The lease resource with updated fields.
   Lease lease = 1 [(google.api.field_behavior) = REQUIRED];
+  // The set of fields to update.
   google.protobuf.FieldMask update_mask = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
+// Request to delete a lease.
 message DeleteLeaseRequest {
+  // The resource name of the lease.
   string name = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {type: "jumpstarter.dev/Lease"}
   ];
 }
 
+// Request to rotate the authentication token for a client.
 message RotateTokenRequest {
+  // The parent resource name (namespace).
   string parent = 1 [
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {child_type: "jumpstarter.dev/Client"}
   ];
 }
 
+// Response containing the newly rotated token.
 message RotateTokenResponse {
+  // The new authentication token.
   string token = 1;
+  // The expiration time of the new token.
   google.protobuf.Timestamp expiry = 2;
 }

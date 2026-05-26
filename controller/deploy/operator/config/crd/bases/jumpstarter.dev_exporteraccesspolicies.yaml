@@ -90,10 +90,16 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               policies:
+                description: Policies is the list of access policy rules to apply.
                 items:
+                  description: Policy defines an access policy rule for exporter access.
                   properties:
                     from:
+                      description: From is the list of client selectors that this policy
+                        applies to.
                       items:
+                        description: From defines a source matcher for clients allowed
+                          access.
                         properties:
                           clientSelector:
                             description: |-
@@ -147,10 +153,16 @@ spec:
                         type: object
                       type: array
                     maximumDuration:
+                      description: MaximumDuration is the maximum lease duration allowed
+                        by this policy.
                       type: string
                     priority:
+                      description: Priority is the priority of this policy rule. Higher
+                        values indicate higher priority.
                       type: integer
                     spotAccess:
+                      description: SpotAccess indicates whether spot access (preemptible
+                        leases) is allowed.
                       type: boolean
                   type: object
                 type: array

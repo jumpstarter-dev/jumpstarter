@@ -27,6 +27,9 @@ build/
 *~
 .DS_Store
 
+# Generated documentation
+python/docs/source/reference/grpc/*.md
+
 # Local tooling
 .specify/
 .envrc

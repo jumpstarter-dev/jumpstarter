@@ -45,16 +45,19 @@ spec:
           metadata:
             type: object
           spec:
-            description: ExporterSpec defines the desired state of Exporter
+            description: ExporterSpec defines the desired state of Exporter.
             properties:
               username:
+                description: Username is the identity of the exporter, used for authentication
+                  and authorization.
                 type: string
             type: object
           status:
-            description: ExporterStatus defines the observed state of Exporter
+            description: ExporterStatus defines the observed state of Exporter.
             properties:
               conditions:
-                description: Exporter status fields
+                description: Conditions represent the latest available observations
+                  of the exporter state.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -111,9 +114,8 @@ spec:
                   type: object
                 type: array
               credential:
-                description: |-
-                  LocalObjectReference contains enough information to let you locate the
-                  referenced object inside the same namespace.
+                description: Credential is a reference to the secret containing the
+                  exporter credentials.
                 properties:
                   name:
                     default: ""
@@ -127,19 +129,29 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               devices:
+                description: Devices is the list of driver instances currently reported
+                  by the exporter.
                 items:
+                  description: Device represents a driver instance reported by an exporter.
                   properties:
                     labels:
                       additionalProperties:
                         type: string
+                      description: Labels are key-value pairs associated with the device.
                       type: object
                     parent_uuid:
+                      description: ParentUuid is the UUID of the parent device, if
+                        this is a child device.
                       type: string
                     uuid:
+                      description: Uuid is the unique identifier of the device within
+                        the exporter.
                       type: string
                   type: object
                 type: array
               endpoint:
+                description: Endpoint is the gRPC endpoint URL where the exporter is
+                  reachable.
                 type: string
               exporterStatus:
                 description: ExporterStatusValue is the current operational status
@@ -155,12 +167,13 @@ spec:
                 - AfterLeaseHookFailed
                 type: string
               lastSeen:
+                description: LastSeen is the timestamp of the last communication from
+                  the exporter.
                 format: date-time
                 type: string
               leaseRef:
-                description: |-
-                  LocalObjectReference contains enough information to let you locate the
-                  referenced object inside the same namespace.
+                description: LeaseRef is a reference to the lease currently assigned
+                  to this exporter.
                 properties:
                   name:
                     default: ""
@@ -175,7 +188,7 @@ spec:
                 x-kubernetes-map-type: atomic
               statusMessage:
                 description: StatusMessage is an optional human-readable message describing
-                  the current state
+                  the current state.
                 type: string
             type: object
         type: object

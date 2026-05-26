@@ -20,21 +20,30 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// From defines a source matcher for clients allowed access.
 type From struct {
+	// ClientSelector is a label selector that matches clients this rule applies to.
 	ClientSelector metav1.LabelSelector `json:"clientSelector,omitempty"`
 }
 
+// Policy defines an access policy rule for exporter access.
 type Policy struct {
-	Priority        int              `json:"priority,omitempty"`
-	From            []From           `json:"from,omitempty"`
+	// Priority is the priority of this policy rule. Higher values indicate higher priority.
+	Priority int `json:"priority,omitempty"`
+	// From is the list of client selectors that this policy applies to.
+	From []From `json:"from,omitempty"`
+	// MaximumDuration is the maximum lease duration allowed by this policy.
 	MaximumDuration *metav1.Duration `json:"maximumDuration,omitempty"`
-	SpotAccess      bool             `json:"spotAccess,omitempty"`
+	// SpotAccess indicates whether spot access (preemptible leases) is allowed.
+	SpotAccess bool `json:"spotAccess,omitempty"`
 }
 
 // ExporterAccessPolicySpec defines the desired state of ExporterAccessPolicy.
 type ExporterAccessPolicySpec struct {
+	// ExporterSelector is a label selector that matches the exporters this policy applies to.
 	ExporterSelector metav1.LabelSelector `json:"exporterSelector,omitempty"`
-	Policies         []Policy             `json:"policies,omitempty"`
+	// Policies is the list of access policy rules to apply.
+	Policies []Policy `json:"policies,omitempty"`
 }
 
 // ExporterAccessPolicyStatus defines the observed state of ExporterAccessPolicy.

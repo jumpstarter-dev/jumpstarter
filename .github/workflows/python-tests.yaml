@@ -144,7 +144,7 @@ jobs:
         if: github.event_name == 'pull_request' && runner.os == 'Linux'
         working-directory: python
         run: |
-          coverage_files=$(find packages -name coverage.xml 2>/dev/null | sort)
+          coverage_files=$(find packages docs/source/reference -name coverage.xml 2>/dev/null | sort)
           if [ -z "$coverage_files" ]; then
             echo "::error::No coverage.xml files found"
             exit 1

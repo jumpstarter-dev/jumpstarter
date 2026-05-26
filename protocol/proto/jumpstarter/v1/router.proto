@@ -11,23 +11,34 @@ package jumpstarter.v1;
 // sub: jumpstarter client/exporter
 // stream: stream id
 service RouterService {
-  // Stream connects caller to another caller of the same stream
+  // Stream connects caller to another caller of the same stream.
   rpc Stream(stream StreamRequest) returns (stream StreamResponse);
 }
 
+// Frame types for the stream protocol.
 enum FrameType {
+  // Data frame carrying payload bytes.
   FRAME_TYPE_DATA = 0x00;
+  // Reset stream signal.
   FRAME_TYPE_RST_STREAM = 0x03;
+  // Keepalive ping frame.
   FRAME_TYPE_PING = 0x06;
+  // Graceful shutdown signal.
   FRAME_TYPE_GOAWAY = 0x07;
 }
 
+// Request message for bidirectional stream communication.
 message StreamRequest {
+  // The raw bytes of the stream frame.
   bytes payload = 1;
+  // The type of frame being sent.
   FrameType frame_type = 2;
 }
 
+// Response message for bidirectional stream communication.
 message StreamResponse {
+  // The raw bytes of the stream frame.
   bytes payload = 1;
+  // The type of frame being received.
   FrameType frame_type = 2;
 }
