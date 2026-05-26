@@ -17,9 +17,11 @@ def discover_example_files(
     items: list[tuple[Path, str]] = []
     if not examples_dir.exists():
         return items
-    for f in sorted(examples_dir.glob("config*.yaml")):
+    for f in sorted(examples_dir.glob("**/*.yaml")):
+        if f.name == "exporter.yaml":
+            continue
         items.append((f, "yaml"))
-    for f in sorted(examples_dir.glob("usage*.py")):
+    for f in sorted(examples_dir.glob("**/*.py")):
         items.append((f, "python"))
     return items
 
@@ -34,8 +36,7 @@ def find_unused_examples(
     return [
         path
         for path, _ in discover_example_files(examples_dir)
-        if (path.name.startswith("config") or path.name.startswith("usage"))
-        and path.name not in readme_content
+        if path.name not in readme_content
     ]
 
 

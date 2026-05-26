@@ -50,15 +50,23 @@ def validate_yaml_example(path: Path) -> None:
 
 
 def validate_python_example(path: Path) -> None:
+    import pytest
+
     source = path.read_text(encoding="utf-8")
     compile(source, path.name, "exec")
     tree = ast.parse(source)
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module:
-            importlib.import_module(node.module)
+            try:
+                importlib.import_module(node.module)
+            except ImportError:
+                pytest.skip(f"{node.module} not installed")
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                importlib.import_module(alias.name)
+                try:
+                    importlib.import_module(alias.name)
+                except ImportError:
+                    pytest.skip(f"{alias.name} not installed")
 
 
 def validate_example(path: Path, kind: str) -> None:
