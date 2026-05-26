@@ -14,6 +14,7 @@ for BRANCH in "${BRANCHES[@]}"; do
   WORKTREE="${OUTPUT_DIR}/.worktree/tmp-docs-${BRANCH}"
 
   git worktree add --force    "${WORKTREE}" "${BRANCH}"
+  trap 'git worktree remove --force "${WORKTREE}" 2>/dev/null || true' EXIT
 
   CRD_SCRIPT="${WORKTREE}/python/docs/source/reference/generate-crd-docs.py"
   if [[ -f "${CRD_SCRIPT}" ]]; then
@@ -33,6 +34,7 @@ for BRANCH in "${BRANCHES[@]}"; do
   cp -r "${WORKTREE}/python/docs/build/html" "${OUTPUT_DIR}/${BRANCH}"
 
   git worktree remove --force "${WORKTREE}"
+  trap - EXIT
 done
 
 pushd "${OUTPUT_DIR}"
