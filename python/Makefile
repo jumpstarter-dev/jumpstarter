@@ -24,7 +24,6 @@ help:
 	@echo "  pkg-test-all       - Run tests for all packages"
 	@echo "  pkg-test-<pkg>     - Run tests for a specific package"
 	@echo "  docs-test          - Run documentation snippet tests"
-	@echo "  docs-snippet-test  - Alias for docs-test"
 	@echo ""
 	@echo "Linting and type checking:"
 	@echo "  ty                 - Run ty type checking on all packages"
