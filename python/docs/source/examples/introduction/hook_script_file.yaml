@@ -1,0 +1,6 @@
+hooks:
+  beforeLease:
+    exec: /bin/bash
+    script: /opt/jumpstarter/hooks/prepare_device.sh
+    timeout: 120
+    onFailure: endLease

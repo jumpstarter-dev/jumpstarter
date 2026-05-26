@@ -1,0 +1,25 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: demo
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
+export:
+  power:
+    type: jumpstarter_driver_yepkit.driver.Ykush
+    config:
+      serial: "YK25838"
+      port: "1"
+hooks:
+  beforeLease:
+    script: |
+      j power on
+      sleep 5
+    timeout: 60
+    onFailure: endLease
+  afterLease:
+    script: |
+      j power off
+    timeout: 30
+    onFailure: warn

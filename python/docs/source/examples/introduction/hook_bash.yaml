@@ -1,0 +1,9 @@
+hooks:
+  beforeLease:
+    exec: /bin/bash
+    script: |
+      echo "Checking device readiness..."
+      [[ -f /dev/ttyUSB0 ]] || { echo "Serial device missing"; exit 1; }
+      j power on
+    timeout: 60
+    onFailure: endLease

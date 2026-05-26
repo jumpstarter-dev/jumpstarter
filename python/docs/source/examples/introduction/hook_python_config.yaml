@@ -1,0 +1,5 @@
+hooks:
+  beforeLease:
+    script: /opt/jumpstarter/hooks/prepare_device.py
+    timeout: 60
+    onFailure: endLease

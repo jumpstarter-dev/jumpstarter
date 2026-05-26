@@ -68,32 +68,8 @@ assignment to `LEASE_READY` and from {term}`session` end to `AVAILABLE`.
 
 {term}`Hook`s are configured in the `hooks` section of the exporter config file:
 
-```yaml
-apiVersion: jumpstarter.dev/v1alpha1
-kind: ExporterConfig
-metadata:
-  namespace: default
-  name: demo
-endpoint: grpc.jumpstarter.example.com:443
-token: xxxxx
-export:
-  power:
-    type: jumpstarter_driver_yepkit.driver.Ykush
-    config:
-      serial: "YK25838"
-      port: "1"
-hooks:
-  beforeLease:
-    script: |
-      j power on
-      sleep 5
-    timeout: 60
-    onFailure: endLease
-  afterLease:
-    script: |
-      j power off
-    timeout: 30
-    onFailure: warn
+```{literalinclude} ../examples/introduction/hooks_exporter_config.yaml
+:language: yaml
 ```
 
 ### Field Reference
@@ -248,23 +224,8 @@ as if the script had exited with a non-zero exit code.
 Power on the {term}`device` and wait until it is reachable over SSH before the client
 connects:
 
-```yaml
-hooks:
-  beforeLease:
-    script: |
-      echo "Powering on device..."
-      j power on
-      echo "Waiting for SSH to become available..."
-      for i in $(seq 1 30); do
-        if j ssh -o ConnectTimeout=2 - echo "Device ready"; then
-          exit 0
-        fi
-        sleep 1
-      done
-      echo "Device did not become reachable"
-      exit 1
-    timeout: 120
-    onFailure: endLease
+```{literalinclude} ../examples/introduction/hook_device_init.yaml
+:language: yaml
 ```
 
 Note that the `j ssh` command does not have a built-in connection timeout, so
@@ -277,14 +238,8 @@ within the {term}`hook`'s `timeout`.
 Power off the {term}`device` after each {term}`lease` to ensure a clean environment for the
 next user:
 
-```yaml
-hooks:
-  afterLease:
-    script: |
-      echo "Cleaning up..."
-      j power off
-    timeout: 30
-    onFailure: warn
+```{literalinclude} ../examples/introduction/hook_device_cleanup.yaml
+:language: yaml
 ```
 
 ### Firmware Flashing
@@ -292,16 +247,8 @@ hooks:
 Flash known-good firmware before each test {term}`session` to guarantee a consistent
 starting state:
 
-```yaml
-hooks:
-  beforeLease:
-    script: |
-      echo "Flashing firmware..."
-      j storage write --image /var/lib/jumpstarter/images/firmware.bin
-      j power cycle
-      sleep 10
-    timeout: 180
-    onFailure: endLease
+```{literalinclude} ../examples/introduction/hook_firmware_flash.yaml
+:language: yaml
 ```
 
 ### Using Bash
@@ -309,16 +256,8 @@ hooks:
 Set `exec: /bin/bash` to use bash-specific features such as `[[ ]]` tests,
 arrays, and process substitution:
 
-```yaml
-hooks:
-  beforeLease:
-    exec: /bin/bash
-    script: |
-      echo "Checking device readiness..."
-      [[ -f /dev/ttyUSB0 ]] || { echo "Serial device missing"; exit 1; }
-      j power on
-    timeout: 60
-    onFailure: endLease
+```{literalinclude} ../examples/introduction/hook_bash.yaml
+:language: yaml
 ```
 
 ### Using Python
@@ -332,26 +271,14 @@ via the `JUMPSTARTER_HOST` socket automatically.
 
 Exporter config:
 
-```yaml
-hooks:
-  beforeLease:
-    script: /opt/jumpstarter/hooks/prepare_device.py
-    timeout: 60
-    onFailure: endLease
+```{literalinclude} ../examples/introduction/hook_python_config.yaml
+:language: yaml
 ```
 
 `/opt/jumpstarter/hooks/prepare_device.py`:
 
-```python
-import os
-from jumpstarter.utils.env import env
-
-lease = os.environ["LEASE_NAME"]
-print(f"Preparing device for lease {lease}")
-
-with env() as client:
-    client.power.on()
-    print("Power on complete")
+```{literalinclude} ../examples/introduction/hook_prepare_device.py
+:language: python
 ```
 
 The `env()` context manager returns a `DriverClient` whose attributes
@@ -364,13 +291,8 @@ an {term}`exporter`.
 Point `script` to an existing file on disk instead of writing the script
 inline. The interpreter runs the file directly:
 
-```yaml
-hooks:
-  beforeLease:
-    exec: /bin/bash
-    script: /opt/jumpstarter/hooks/prepare_device.sh
-    timeout: 120
-    onFailure: endLease
+```{literalinclude} ../examples/introduction/hook_script_file.yaml
+:language: yaml
 ```
 
 ## Best Practices

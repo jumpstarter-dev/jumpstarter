@@ -1,0 +1,7 @@
+hooks:
+  afterLease:
+    script: |
+      echo "Cleaning up..."
+      j power off
+    timeout: 30
+    onFailure: warn

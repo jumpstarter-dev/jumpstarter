@@ -1,0 +1,16 @@
+hooks:
+  beforeLease:
+    script: |
+      echo "Powering on device..."
+      j power on
+      echo "Waiting for SSH to become available..."
+      for i in $(seq 1 30); do
+        if j ssh -o ConnectTimeout=2 - echo "Device ready"; then
+          exit 0
+        fi
+        sleep 1
+      done
+      echo "Device did not become reachable"
+      exit 1
+    timeout: 120
+    onFailure: endLease

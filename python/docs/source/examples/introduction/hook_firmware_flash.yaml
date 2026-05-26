@@ -1,0 +1,9 @@
+hooks:
+  beforeLease:
+    script: |
+      echo "Flashing firmware..."
+      j storage write --image /var/lib/jumpstarter/images/firmware.bin
+      j power cycle
+      sleep 10
+    timeout: 180
+    onFailure: endLease
