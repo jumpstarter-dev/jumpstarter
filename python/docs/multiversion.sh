@@ -21,7 +21,7 @@ for BRANCH in "${BRANCHES[@]}"; do
       python3 "${CRD_SCRIPT}"
   fi
 
-  GRPC_SCRIPT="${WORKTREE}/python/docs/source/reference/generate-grpc-docs.py"
+  GRPC_SCRIPT="${WORKTREE}/python/docs/source/reference/generate_grpc_docs.py"
   if [[ -f "${GRPC_SCRIPT}" ]]; then
     uv run --project "${WORKTREE}/python" --isolated --all-packages --group docs \
       python3 "${GRPC_SCRIPT}"

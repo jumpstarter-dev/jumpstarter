@@ -1,36 +1,33 @@
 import os
 import sys
-from importlib.util import module_from_spec, spec_from_file_location
 
 import pytest
 
-_spec = spec_from_file_location(
-    "generate_grpc_docs",
-    os.path.join(os.path.dirname(__file__), "generate-grpc-docs.py"),
-)
-generate_grpc_docs = module_from_spec(_spec)
-_spec.loader.exec_module(generate_grpc_docs)
+sys.path.insert(0, os.path.dirname(__file__))
 
-EnumDef = generate_grpc_docs.EnumDef
-EnumValue = generate_grpc_docs.EnumValue
-Field = generate_grpc_docs.Field
-Message = generate_grpc_docs.Message
-ProtoFile = generate_grpc_docs.ProtoFile
-RpcMethod = generate_grpc_docs.RpcMethod
-Service = generate_grpc_docs.Service
-_extract_inline_comment = generate_grpc_docs._extract_inline_comment
-_find_brace_end = generate_grpc_docs._find_brace_end
-_parse_enum_block = generate_grpc_docs._parse_enum_block
-_parse_message_block = generate_grpc_docs._parse_message_block
-_parse_nested_message = generate_grpc_docs._parse_nested_message
-_parse_oneof_block = generate_grpc_docs._parse_oneof_block
-_parse_service_block = generate_grpc_docs._parse_service_block
-main = generate_grpc_docs.main
-parse_proto_file = generate_grpc_docs.parse_proto_file
-render_enum = generate_grpc_docs.render_enum
-render_message = generate_grpc_docs.render_message
-render_proto_doc = generate_grpc_docs.render_proto_doc
-render_service = generate_grpc_docs.render_service
+from generate_grpc_docs import (
+    PROTO_DIRS,
+    EnumDef,
+    EnumValue,
+    Field,
+    Message,
+    ProtoFile,
+    RpcMethod,
+    Service,
+    _extract_inline_comment,
+    _find_brace_end,
+    _parse_enum_block,
+    _parse_message_block,
+    _parse_nested_message,
+    _parse_oneof_block,
+    _parse_service_block,
+    main,
+    parse_proto_file,
+    render_enum,
+    render_message,
+    render_proto_doc,
+    render_service,
+)
 
 MINIMAL_PROTO = """\
 syntax = "proto3";
@@ -847,13 +844,11 @@ class TestMainEntryPoint:
     def test_script_runs_as_main_module(self, tmp_path):
         import subprocess
 
-        PROTO_DIRS = generate_grpc_docs.PROTO_DIRS
-
         all_exist = all(os.path.isdir(d) for d in PROTO_DIRS)
         if not all_exist:
             pytest.skip("Default PROTO_DIRS not available in this environment")
 
-        script_path = os.path.join(os.path.dirname(__file__), "generate-grpc-docs.py")
+        script_path = os.path.join(os.path.dirname(__file__), "generate_grpc_docs.py")
         env = os.environ.copy()
         env.pop("COV_CORE_DATAFILE", None)
         env.pop("COV_CORE_SOURCE", None)
@@ -872,8 +867,6 @@ class TestMainEntryPoint:
 
 class TestMainIntegration:
     def test_generates_docs_from_default_proto_dirs(self, tmp_path):
-        PROTO_DIRS = generate_grpc_docs.PROTO_DIRS
-
         all_exist = all(os.path.isdir(d) for d in PROTO_DIRS)
         if not all_exist:
             pytest.skip("Default PROTO_DIRS not available in this environment")
