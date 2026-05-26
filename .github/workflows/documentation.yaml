@@ -8,11 +8,13 @@ on:
       - 'python/docs/**'
       - 'python/packages/**'
       - 'protocol/proto/**'
+      - 'controller/deploy/operator/config/crd/bases/**'
   pull_request:
     paths:
       - 'python/docs/**'
       - 'python/packages/**'
       - 'protocol/proto/**'
+      - 'controller/deploy/operator/config/crd/bases/**'
   merge_group:
 
   # Allows you to run this workflow manually from the Actions tab
