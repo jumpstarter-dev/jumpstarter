@@ -1,10 +1,15 @@
-type: "jumpstarter_driver_opendal.driver.Opendal"
-config:
-  # See https://docs.rs/opendal/latest/opendal/services/index.html
-  # for list of supported services and their configuration parameters
-  scheme: "fs"
-  kwargs:
-    root: "/tmp/jumpstarter"
-  # Optional: automatically remove created files/directories when driver closes
-  # Note: all tracked paths are normalized by stripping leading/trailing slashes
-  remove_created_on_close: false
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: opendal
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
+export:
+  opendal:
+    type: jumpstarter_driver_opendal.driver.Opendal
+    config:
+      scheme: fs
+      kwargs:
+        root: /tmp/jumpstarter
+      remove_created_on_close: false

@@ -1,16 +1,25 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: dut-network
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   dut-network:
     type: jumpstarter_driver_dut_network.driver.DutNetwork
     config:
-      interface: "eth2"
-      subnet: "192.168.100.0/24"
-      gateway_ip: "192.168.100.1"
-      nat_mode: "masquerade"
+      interface: eth2
+      subnet: 192.168.100.0/24
+      gateway_ip: 192.168.100.1
+      nat_mode: masquerade
       dhcp_enabled: true
-      dhcp_range_start: "192.168.100.100"
-      dhcp_range_end: "192.168.100.200"
+      dhcp_range_start: 192.168.100.100
+      dhcp_range_end: 192.168.100.200
       addresses:
-        - mac: "8a:12:4e:25:f4:8e"
-          ip: "192.168.100.10"
-          hostname: "sa8775p"
-      dns_servers: ["8.8.8.8", "8.8.4.4"]
+      - mac: 8a:12:4e:25:f4:8e
+        ip: 192.168.100.10
+        hostname: sa8775p
+      dns_servers:
+      - 8.8.8.8
+      - 8.8.4.4

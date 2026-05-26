@@ -1,7 +1,14 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: shell
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   shell:
     type: jumpstarter_driver_shell.driver.Shell
     config:
       methods:
-        ls: "ls"
-        echo_hello: "echo 'Hello World'"
+        ls: ls
+        echo_hello: echo 'Hello World'

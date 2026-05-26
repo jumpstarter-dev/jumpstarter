@@ -1,11 +1,17 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: iscsi
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   iscsi:
     type: jumpstarter_driver_iscsi.driver.ISCSI
     config:
-      root_dir: "/var/lib/iscsi"
-      target_name: "demo"
-      remove_created_on_close: false  # Keep disk images persistent (default)
-      block_device_allowlist:         # Required to use is_block=True LUNs
-        - /dev/sda
-        - /dev/disk/by-id/my-disk
-      # When size_mb is 0 a pre-existing file size is used.
+      root_dir: /var/lib/iscsi
+      target_name: demo
+      remove_created_on_close: false
+      block_device_allowlist:
+      - /dev/sda
+      - /dev/disk/by-id/my-disk

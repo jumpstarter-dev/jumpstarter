@@ -1,34 +1,39 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: shell
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   shell:
     type: jumpstarter_driver_shell.driver.Shell
     config:
       methods:
         ls:
-          command: "ls -la"
-          description: "List directory contents with details"
+          command: ls -la
+          description: List directory contents with details
         deploy:
-          command: "ansible-playbook deploy.yml"
-          description: "Deploy application using Ansible"
-        # Multi-line commands work too
+          command: ansible-playbook deploy.yml
+          description: Deploy application using Ansible
         setup:
-          command: |
-            echo 'Setting up environment'
+          command: 'echo ''Setting up environment''
+
             export PATH=$PATH:/usr/local/bin
+
             ./setup.sh
-          description: "Set up the development environment"
-        # Description-only (uses default "echo Hello" command)
+
+            '
+          description: Set up the development environment
         placeholder:
-          description: "Placeholder method for testing"
-        # Custom timeout for long-running operations
+          description: Placeholder method for testing
         long_backup:
-          command: "tar -czf backup.tar.gz /data && rsync backup.tar.gz remote:/backups/"
-          description: "Create and sync backup (may take a while)"
-          timeout: 1800  # 30 minutes instead of default 5 minutes
-        # You can mix both formats
-        simple_echo: "echo 'simple'"
-      # optional parameters
-      cwd: "/tmp"
-      log_level: "INFO"
+          command: tar -czf backup.tar.gz /data && rsync backup.tar.gz remote:/backups/
+          description: Create and sync backup (may take a while)
+          timeout: 1800
+        simple_echo: echo 'simple'
+      cwd: /tmp
+      log_level: INFO
       shell:
-        - "/bin/bash"
-        - "-c"
+      - /bin/bash
+      - -c

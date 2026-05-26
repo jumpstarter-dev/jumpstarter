@@ -1,9 +1,16 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: gpiod
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   power_switch:
     type: jumpstarter_driver_gpiod.driver.PowerSwitch
     config:
       line: 18
-      mode: "push_pull"
+      mode: push_pull
       active_low: false
-      bias: "pull_up"
-      initial_value: "inactive"
+      bias: pull_up
+      initial_value: inactive

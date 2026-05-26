@@ -1,11 +1,18 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: uds-can
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   uds:
     type: jumpstarter_driver_uds_can.driver.UdsCan
     config:
-      channel: "can0"
-      interface: "socketcan"
-      rxid: 1601  # 0x641
-      txid: 1602  # 0x642
+      channel: can0
+      interface: socketcan
+      rxid: 1601
+      txid: 1602
       request_timeout: 5
       isotp_params:
         stmin: 32

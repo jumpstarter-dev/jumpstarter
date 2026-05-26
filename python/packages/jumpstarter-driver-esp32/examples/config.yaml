@@ -1,14 +1,21 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: esp32
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   storage:
     type: jumpstarter_driver_esp32.driver.Esp32Flasher
     config:
       baudrate: 115200
-      chip: "esp32"
+      chip: esp32
     children:
       serial:
         ref: serial
   serial:
     type: jumpstarter_driver_pyserial.driver.PySerial
     config:
-      url: "/dev/ttyUSB0"
+      url: /dev/ttyUSB0
       baudrate: 115200

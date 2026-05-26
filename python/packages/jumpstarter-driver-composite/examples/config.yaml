@@ -1,5 +1,11 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: composite
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   composite:
     type: jumpstarter_driver_composite.driver.Composite
-    config:
-      # Add required config parameters here
+    config: null

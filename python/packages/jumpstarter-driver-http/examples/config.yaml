@@ -1,9 +1,16 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: http
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   http:
     type: jumpstarter_driver_http.driver.HttpServer
     config:
-      root_dir: "/var/www"
-      host: "0.0.0.0"
+      root_dir: /var/www
+      host: 0.0.0.0
       port: 8080
       timeout: 600
-      remove_created_on_close: true  # Clean up temporary files on close
+      remove_created_on_close: true

@@ -1,3 +1,10 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: noyito-relay
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   relay_4ch_ch1:
     type: jumpstarter_driver_noyito_relay.driver.NoyitoPowerHID

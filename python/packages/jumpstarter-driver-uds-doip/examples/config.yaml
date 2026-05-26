@@ -1,7 +1,14 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: uds-doip
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   uds:
     type: jumpstarter_driver_uds_doip.driver.UdsDoip
     config:
-      ecu_ip: "192.168.1.100"
-      ecu_logical_address: 224  # 0x00E0
+      ecu_ip: 192.168.1.100
+      ecu_logical_address: 224
       request_timeout: 5

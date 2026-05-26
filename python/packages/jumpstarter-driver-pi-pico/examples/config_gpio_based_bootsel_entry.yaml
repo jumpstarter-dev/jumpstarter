@@ -1,3 +1,10 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: pi-pico
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   storage:
     type: jumpstarter_driver_pi_pico.driver.PiPicoFlasher
@@ -17,16 +24,16 @@ export:
   bootsel:
     type: jumpstarter_driver_gpiod.driver.DigitalOutput
     config:
-      device: "/dev/gpiochip4"   # RPi5 GPIO chip - adjust for your host
-      line: 17                    # GPIO pin wired to BOOTSEL
+      device: /dev/gpiochip4
+      line: 17
       drive: open_drain
       active_low: true
       initial_value: inactive
   run:
     type: jumpstarter_driver_gpiod.driver.DigitalOutput
     config:
-      device: "/dev/gpiochip4"
-      line: 27                    # GPIO pin wired to RUN
+      device: /dev/gpiochip4
+      line: 27
       drive: open_drain
       active_low: true
       initial_value: inactive

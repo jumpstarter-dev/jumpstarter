@@ -1,7 +1,14 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: dut-network
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   dut-network:
     type: jumpstarter_driver_dut_network.driver.DutNetwork
     config:
-      interface: "enx00e04c683af1"
-      nat_mode: "disabled"   # also accepts "none"
+      interface: enx00e04c683af1
+      nat_mode: disabled
       dhcp_enabled: true

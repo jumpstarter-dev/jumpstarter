@@ -1,5 +1,11 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: stlink-msd
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   flasher:
     type: jumpstarter_driver_stlink_msd.driver.StlinkMsdFlasher
-    config:
-      # volume_name: "NOD_H755ZI"   # optional: auto-detected if only one ST-LINK is connected
+    config: null

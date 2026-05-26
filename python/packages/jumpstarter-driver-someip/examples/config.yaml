@@ -1,9 +1,16 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: someip
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   someip:
     type: jumpstarter_driver_someip.driver.SomeIp
     config:
-      host: "192.168.1.100"
+      host: 192.168.1.100
       port: 30490
       transport_mode: UDP
-      multicast_group: "239.127.0.1"
+      multicast_group: 239.127.0.1
       multicast_port: 30490

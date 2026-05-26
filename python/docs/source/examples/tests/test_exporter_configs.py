@@ -1,59 +1,14 @@
-import yaml
+from pathlib import Path
+
+import pytest
+
+jumpstarter_testing = pytest.importorskip("jumpstarter.testing.examples")
+
+EXAMPLES_DIR = Path(__file__).parent.parent / "introduction"
 
 
-def test_exporters_config_is_valid_yaml(examples_root):
-    config_file = examples_root / "introduction" / "exporter_config.yaml"
-    data = yaml.safe_load(config_file.read_text())
-    assert data is not None
-    assert data["apiVersion"] == "jumpstarter.dev/v1alpha1"
-    assert data["kind"] == "ExporterConfig"
-
-
-def test_drivers_config_is_valid_yaml(examples_root):
-    config_file = examples_root / "introduction" / "driver_exporter_config.yaml"
-    data = yaml.safe_load(config_file.read_text())
-    assert data is not None
-    assert data["apiVersion"] == "jumpstarter.dev/v1alpha1"
-    assert data["kind"] == "ExporterConfig"
-
-
-def test_exporters_config_validates_against_model(examples_root):
-    from jumpstarter.config.exporter import ExporterConfigV1Alpha1
-
-    config_file = examples_root / "introduction" / "exporter_config.yaml"
-    data = yaml.safe_load(config_file.read_text())
-    config = ExporterConfigV1Alpha1.model_validate(data)
-    assert config.metadata.name == "demo"
-    assert "power" in config.export
-    assert "serial" in config.export
-
-
-def test_drivers_config_validates_against_model(examples_root):
-    from jumpstarter.config.exporter import ExporterConfigV1Alpha1
-
-    config_file = examples_root / "introduction" / "driver_exporter_config.yaml"
-    data = yaml.safe_load(config_file.read_text())
-    config = ExporterConfigV1Alpha1.model_validate(data)
-    assert config.metadata.name == "demo"
-    assert "power" in config.export
-    assert "serial" in config.export
-
-
-def test_exporters_config_has_expected_drivers(examples_root):
-    config_file = examples_root / "introduction" / "exporter_config.yaml"
-    data = yaml.safe_load(config_file.read_text())
-    export = data["export"]
-    assert "power" in export
-    assert "serial" in export
-    assert "storage" in export
-    assert "custom" in export
-    assert "reference" in export
-
-
-def test_drivers_config_has_expected_drivers(examples_root):
-    config_file = examples_root / "introduction" / "driver_exporter_config.yaml"
-    data = yaml.safe_load(config_file.read_text())
-    export = data["export"]
-    assert "power" in export
-    assert "serial" in export
-    assert "qemu" in export
+@pytest.mark.parametrize(
+    "path,kind", jumpstarter_testing.make_example_test_params(EXAMPLES_DIR)
+)
+def test_example(path, kind):
+    jumpstarter_testing.validate_example(path, kind)

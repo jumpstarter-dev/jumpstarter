@@ -1,8 +1,15 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: can
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   can:
     type: jumpstarter_driver_can.IsoTpSocket
     config:
-      channel: "vcan0"
+      channel: vcan0
       address:
         rxid: 1
         txid: 2

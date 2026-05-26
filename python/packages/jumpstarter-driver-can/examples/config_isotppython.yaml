@@ -1,9 +1,16 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: can
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   can:
     type: jumpstarter_driver_can.IsoTpPython
     config:
       channel: 0
-      interface: "virtual"
+      interface: virtual
       address:
         rxid: 1
         txid: 2

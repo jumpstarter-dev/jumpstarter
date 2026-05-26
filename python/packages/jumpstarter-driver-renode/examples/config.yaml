@@ -1,6 +1,13 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: renode
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   ecu:
     type: jumpstarter_driver_renode.driver.Renode
     config:
-      platform: "platforms/boards/stm32f4_discovery-kit.repl"
-      uart: "sysbus.usart2"
+      platform: platforms/boards/stm32f4_discovery-kit.repl
+      uart: sysbus.usart2

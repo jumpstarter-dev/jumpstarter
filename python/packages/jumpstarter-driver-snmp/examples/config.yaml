@@ -1,14 +1,21 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: snmp
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   power:
     type: jumpstarter_driver_snmp.driver.SNMPServer
     config:
-      host: "pdu.mgmt.com"
-      user: "labuser"
+      host: pdu.mgmt.com
+      user: labuser
       plug: 32
       port: 161
-      oid: "1.3.6.1.4.1.13742.6.4.1.2.1.2.1"
-      auth_protocol: "NONE"
+      oid: 1.3.6.1.4.1.13742.6.4.1.2.1.2.1
+      auth_protocol: NONE
       auth_key: null
-      priv_protocol: "NONE"
+      priv_protocol: NONE
       priv_key: null
       timeout: 5.0

@@ -1,12 +1,18 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: yepkit
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   power:
     type: jumpstarter_driver_yepkit.driver.Ykush
     config:
-      serial: "YK25838"
-      port: "1"
-
+      serial: YK25838
+      port: '1'
   power2:
     type: jumpstarter_driver_yepkit.driver.Ykush
     config:
-      serial: "YK25838"
-      port: "2"
+      serial: YK25838
+      port: '2'

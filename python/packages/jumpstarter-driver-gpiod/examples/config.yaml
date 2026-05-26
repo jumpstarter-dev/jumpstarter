@@ -1,10 +1,17 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: gpiod
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   led_output:
     type: jumpstarter_driver_gpiod.driver.DigitalOutput
     config:
-      device: "/dev/gpiochip0"
+      device: /dev/gpiochip0
       line: 18
-      drive: "push_pull"
+      drive: push_pull
       active_low: false
-      bias: "pull_up"
-      initial_value: "inactive"
+      bias: pull_up
+      initial_value: inactive

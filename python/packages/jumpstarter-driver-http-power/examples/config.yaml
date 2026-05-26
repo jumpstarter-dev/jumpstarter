@@ -1,20 +1,27 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: http-power
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   http_power:
     type: jumpstarter_driver_http_power.driver.HttpPower
     config:
-      name: "device"
+      name: device
       power_on:
-        url: "http://power-controller.local/api/power/on"
-        method: "POST"
-        data: "action=on"
+        url: http://power-controller.local/api/power/on
+        method: POST
+        data: action=on
       power_off:
-        url: "http://power-controller.local/api/power/off"
-        method: "POST"
-        data: "action=off"
+        url: http://power-controller.local/api/power/off
+        method: POST
+        data: action=off
       power_read:
-        url: "http://power-controller.local/api/power/status"
-        method: "GET"
+        url: http://power-controller.local/api/power/status
+        method: GET
       auth:
         basic:
-          user: "admin"
-          password: "secret"
+          user: admin
+          password: secret

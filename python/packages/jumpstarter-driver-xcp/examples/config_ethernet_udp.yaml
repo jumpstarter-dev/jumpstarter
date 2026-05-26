@@ -1,8 +1,15 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: xcp
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   xcp:
     type: jumpstarter_driver_xcp.driver.Xcp
     config:
       transport: ETH
-      host: "192.168.1.100"
+      host: 192.168.1.100
       port: 5555
       protocol: UDP

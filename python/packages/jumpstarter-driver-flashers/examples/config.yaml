@@ -1,18 +1,25 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: flashers
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   storage:
-    type: "jumpstarter_driver_flashers.driver.TIJ784S4Flasher"
+    type: jumpstarter_driver_flashers.driver.TIJ784S4Flasher
     children:
       serial:
-        ref: "serial"
+        ref: serial
       power:
-        ref: "power"
+        ref: power
   serial:
-    type: "jumpstarter_driver_pyserial.driver.PySerial"
+    type: jumpstarter_driver_pyserial.driver.PySerial
     config:
-      url: "/dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_112214101760A-if00-port0"
+      url: /dev/serial/by-id/usb-FTDI_USB__-__Serial_Converter_112214101760A-if00-port0
       baudrate: 115200
   power:
     type: jumpstarter_driver_yepkit.driver.Ykush
     config:
-      serial: "YK112233"
-      port: "1"
+      serial: YK112233
+      port: '1'

@@ -1,7 +1,14 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: pyserial
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   serial:
     type: jumpstarter_driver_pyserial.driver.PySerial
     config:
-      url: "/dev/ttyUSB0"
+      url: /dev/ttyUSB0
       baudrate: 115200
-      cps: 10  # Optional: throttle to 10 characters per second
+      cps: 10

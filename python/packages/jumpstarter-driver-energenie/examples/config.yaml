@@ -1,7 +1,14 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: energenie
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   power:
     type: jumpstarter_driver_energenie.driver.EnerGenie
     config:
-      host: "192.168.0.1"
-      password: "password"
+      host: 192.168.0.1
+      password: password
       slot: 1

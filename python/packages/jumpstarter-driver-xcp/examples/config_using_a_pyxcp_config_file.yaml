@@ -1,3 +1,10 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: xcp
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   xcp:
     type: jumpstarter_driver_xcp.driver.Xcp

@@ -1,5 +1,12 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: ssh-mitm
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
-  ssh_mitm:  # ← This gives you "j ssh_mitm" command
+  ssh_mitm:
     type: jumpstarter_driver_ssh.driver.SSHWrapper
     config:
       default_username: root
@@ -8,10 +15,13 @@ export:
         type: jumpstarter_driver_ssh_mitm.driver.SSHMITM
         config:
           default_username: root
-          ssh_identity: |
-            -----BEGIN OPENSSH PRIVATE KEY-----
+          ssh_identity: '-----BEGIN OPENSSH PRIVATE KEY-----
+
             ...
+
             -----END OPENSSH PRIVATE KEY-----
+
+            '
         children:
           tcp:
             type: jumpstarter_driver_network.driver.TcpNetwork

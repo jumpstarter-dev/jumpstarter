@@ -1,3 +1,10 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: tasmota
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   power:
     type: jumpstarter_driver_tasmota.driver.TasmotaPower

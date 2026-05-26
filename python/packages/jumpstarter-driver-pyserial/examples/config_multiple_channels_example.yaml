@@ -1,21 +1,26 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: pyserial
+  namespace: default
+endpoint: grpc.jumpstarter.example.com:443
+token: xxxxx
 export:
   ccplex:
     type: jumpstarter_driver_pyserial.nvdemux.driver.NVDemuxSerial
     config:
-      demuxer_path: "/opt/nvidia/nv_tcu_demuxer"
-      target: "CCPLEX: 0"
-      chip: "T264"
-
+      demuxer_path: /opt/nvidia/nv_tcu_demuxer
+      target: 'CCPLEX: 0'
+      chip: T264
   bpmp:
     type: jumpstarter_driver_pyserial.nvdemux.driver.NVDemuxSerial
     config:
-      demuxer_path: "/opt/nvidia/nv_tcu_demuxer"
-      target: "BPMP: 1"
-      chip: "T264"
-
+      demuxer_path: /opt/nvidia/nv_tcu_demuxer
+      target: 'BPMP: 1'
+      chip: T264
   sce:
     type: jumpstarter_driver_pyserial.nvdemux.driver.NVDemuxSerial
     config:
-      demuxer_path: "/opt/nvidia/nv_tcu_demuxer"
-      target: "SCE: 2"
-      chip: "T264"
+      demuxer_path: /opt/nvidia/nv_tcu_demuxer
+      target: 'SCE: 2'
+      chip: T264
