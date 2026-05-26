@@ -4,6 +4,7 @@
 import glob
 import os
 import sys
+from typing import Any
 
 import yaml
 
@@ -22,7 +23,9 @@ SKIP_EXPAND = {
 }
 
 
-def flatten_properties(properties, prefix="", depth=0):
+def flatten_properties(
+    properties: dict[str, Any], prefix: str = "", depth: int = 0
+) -> list[tuple[str, str, str]]:
     rows = []
     for name, prop in sorted(properties.items()):
         path = f"{prefix}{name}" if prefix else name
@@ -59,7 +62,7 @@ def flatten_properties(properties, prefix="", depth=0):
     return rows
 
 
-def render_table(rows):
+def render_table(rows: list[tuple[str, str, str]]) -> str:
     if not rows:
         return "*No fields defined.*\n"
     lines = ["| Field | Type | Description |", "| --- | --- | --- |"]
@@ -69,7 +72,7 @@ def render_table(rows):
     return "\n".join(lines) + "\n"
 
 
-def process_crd(filepath):
+def process_crd(filepath: str) -> tuple[str, str]:
     with open(filepath, encoding="utf-8") as f:
         crd = yaml.safe_load(f)
 
@@ -106,7 +109,7 @@ def process_crd(filepath):
     return kind, "\n".join(sections)
 
 
-def main():
+def main() -> None:
     crds = sorted(glob.glob(os.path.join(CRD_DIR, "*.yaml")))
     if not crds:
         print(f"No CRD files found in {CRD_DIR}")
