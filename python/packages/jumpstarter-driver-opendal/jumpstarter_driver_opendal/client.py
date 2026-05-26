@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import cast
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 from uuid import UUID
 
 import click
@@ -58,7 +58,7 @@ def clean_filename(path: PathBuf) -> str:
     return Path(path_str).name
 
 
-def path_with_query(parsed_url) -> str:
+def path_with_query(parsed_url: ParseResult) -> str:
     """Reconstruct path preserving query parameters for signed URL support."""
     if parsed_url.query:
         return f"{parsed_url.path}?{parsed_url.query}"

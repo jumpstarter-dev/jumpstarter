@@ -971,9 +971,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             original_url: Original URL for HTTP fallback
             headers: HTTP headers for requests
         """
-        filename = self._filename(src_path)
-        self.logger.info(f"Writing image to storage in the background: {filename}")
         try:
+            filename = self._filename(src_path)
+            self.logger.info(f"Writing image to storage in the background: {filename}")
 
             if src_operator_scheme == "fs":
                 file_hash = self._sha256_file(src_operator, src_path)
@@ -1621,16 +1621,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         return base
 
 
-def _get_decompression_command(filename_or_url) -> str:
-    """
-    Determine the appropriate decompression command based on file extension
-
-    Args:
-        filename_or_url (str): Name of the file or URL to check
-
-    Returns:
-        str: Decompression command ('zcat |', 'xzcat |', 'zstdcat |', or '' for uncompressed)
-    """
+def _get_decompression_command(filename_or_url: PathBuf) -> str:
+    """Determine the appropriate decompression command based on file extension."""
     filename = clean_filename(filename_or_url).lower()
     if filename.endswith((".gz", ".gzip")):
         return "zcat |"
