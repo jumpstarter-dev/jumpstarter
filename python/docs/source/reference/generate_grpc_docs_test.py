@@ -877,3 +877,65 @@ class TestMainIntegration:
         generated = sorted(f.name for f in output_dir.iterdir())
         assert "index.md" in generated
         assert len(generated) > 1
+
+
+class TestProtoCommentPeriods:
+    _SKIP_PREFIXES = ("Copyright", "(--", "Reference:")
+
+    def _is_metadata_comment(self, text):
+        return any(text.startswith(prefix) for prefix in self._SKIP_PREFIXES)
+
+    def _collect_comment_block_violations(self, filepath):
+        violations = []
+        with open(filepath, encoding="utf-8") as f:
+            lines = f.readlines()
+        block_lines = []
+        for i, raw_line in enumerate(lines):
+            stripped = raw_line.strip()
+            if stripped.startswith("//"):
+                text = stripped.lstrip("/").strip()
+                block_lines.append((i + 1, text))
+            else:
+                if block_lines:
+                    last_line_num, last_text = block_lines[-1]
+                    first_text = block_lines[0][1]
+                    if (
+                        last_text
+                        and not self._is_metadata_comment(first_text)
+                        and not self._is_metadata_comment(last_text)
+                        and not last_text.endswith(".")
+                    ):
+                        violations.append((last_line_num, last_text))
+                    block_lines = []
+        if block_lines:
+            last_line_num, last_text = block_lines[-1]
+            first_text = block_lines[0][1]
+            if (
+                last_text
+                and not self._is_metadata_comment(first_text)
+                and not self._is_metadata_comment(last_text)
+                and not last_text.endswith(".")
+            ):
+                violations.append((last_line_num, last_text))
+        return violations
+
+    def test_all_proto_doc_comments_end_with_period(self):
+        import glob
+
+        all_exist = all(os.path.isdir(d) for d in PROTO_DIRS)
+        if not all_exist:
+            pytest.skip("Default PROTO_DIRS not available in this environment")
+
+        all_violations = []
+        for proto_dir in PROTO_DIRS:
+            for proto_file in sorted(glob.glob(os.path.join(proto_dir, "*.proto"))):
+                violations = self._collect_comment_block_violations(proto_file)
+                for line_num, text in violations:
+                    all_violations.append(
+                        f"  {os.path.basename(proto_file)}:{line_num}: {text}"
+                    )
+
+        assert all_violations == [], (
+            "Proto documentation comments must end with a period:\n"
+            + "\n".join(all_violations)
+        )
