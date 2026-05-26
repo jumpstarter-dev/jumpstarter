@@ -27,7 +27,7 @@
 #   j proxy cert [output.pem]           # download CA certificate
 
 export:
-  # -- Hardware interfaces ---------------------------------------------------
+  # - Hardware interfaces ---------------------------------------------------
 
   dutlink:
     type: jumpstarter_driver_dutlink.driver.Dutlink
@@ -45,7 +45,7 @@ export:
       args:
         device: "/dev/video0"
 
-  # -- Network proxy / mocking -----------------------------------------------
+  # - Network proxy / mocking -----------------------------------------------
 
   proxy:
     type: jumpstarter_driver_mitmproxy.driver.MitmproxyDriver

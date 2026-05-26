@@ -1,25 +1,25 @@
 # Exporters
 
-Jumpstarter uses a program called an Exporter to enable remote access to your
-hardware. The Exporter typically runs on a "host" system directly connected to
-your hardware. It is called an Exporter because it "exports" the interfaces
+Jumpstarter uses a program called an {term}`exporter` to enable remote access to your
+hardware. The {term}`exporter` typically runs on a {term}`host` system directly connected to
+your hardware. It is called an {term}`exporter` because it "exports" the interfaces
 connected to the target device for client access.
 
 ## Hosts
 
-Typically, the host will be a low-cost test system such as a single board
+Typically, the {term}`host` will be a low-cost test system such as a single board
 computer with sufficient interfaces to connect to your hardware. It is also
-possible to use a local high-power server (or CI runner) as the host device.
+possible to use a local high-power server (or CI runner) as the {term}`host` device.
 
-A host can run multiple Exporter instances simultaneously if it needs to
+A {term}`host` can run multiple Exporter instances simultaneously if it needs to
 interact with several different devices at the same time.
 
 ## Exporter Configuration
 
-Exporters use a YAML configuration file to define which Drivers must be loaded
+Exporters use a YAML configuration file (exporter config) to define which Drivers must be loaded
 and the configuration required.
 
-Here is an example Exporter config file which would typically be saved at
+Here is an example exporter config file which would typically be saved at
 `/etc/jumpstarter/exporters/demo.yaml`:
 
 ```yaml
@@ -62,27 +62,27 @@ documentation](https://grpc.github.io/grpc/core/group__grpc__arg__keys.html).
 
 ## Running an Exporter
 
-To run an Exporter on a host system, you must have Python {{requires_python}}
+To run an Exporter on a {term}`host` system, you must have Python {{requires_python}}
 installed and the driver packages specified in the config installed in your
 current Python environment.
 
-You can run the exporter in your local terminal with:
+You can run the {term}`exporter` in your local terminal with:
 
 ```console
 $ jmp run --exporter myexporter
 ```
 
-Exporters can also be run in a privileged container or as a systemd daemon. It
-is recommended to run the Exporter service in the background with auto-restart
+{term}`Exporter`s can also be run in a privileged container or as a `systemd` daemon. It
+is recommended to run the {term}`exporter` service in the background with auto-restart
 capabilities in case something goes wrong and it needs to be restarted.
 
 ## Lifecycle Hooks
 
-Exporters support lifecycle hooks that execute shell scripts at lease
-boundaries. A `beforeLease` hook runs after a lease is assigned but before
+{term}`Exporter`s support lifecycle {term}`hook`s that execute shell scripts at {term}`lease`
+boundaries. A `beforeLease` hook runs after a {term}`lease` is assigned but before
 the client can access drivers, and an `afterLease` hook runs after the
-session ends but before the lease is released.
+{term}`session` ends but before the {term}`lease` is released.
 
-Hooks are configured in the `hooks` section of the exporter config file and
-use the `j` CLI to interact with exported devices. For full details, see
+{term}`Hook`s are configured in the `hooks` section of the exporter config file and
+use the {term}`j` CLI to interact with exported devices. For full details, see
 [Hooks](hooks.md).

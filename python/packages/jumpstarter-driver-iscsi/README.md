@@ -1,4 +1,4 @@
-# iSCSI server driver
+# iSCSI Driver
 
 `jumpstarter-driver-iscsi` provides a lightweight iSCSI **target** implementation powered by the Linux
 [RFC-tgt](https://github.com/open-iscsi/tcmu-runner/) framework via the
@@ -58,7 +58,7 @@ export:
 | `host`                  | IP address to bind the target to. Empty string will auto-detect | str  | no       | _auto_                        |
 | `port`                  | TCP port the target listens on                                  | int  | no       | `3260`                        |
 | `remove_created_on_close`| Automatically remove created files/directories when driver closes| bool | no       | false                         |
-| `block_device_allowlist`| List of allowed block device paths for `is_block=True` LUNs. Symlinks are resolved before matching. Must be set to use block devices. | list[str] | no | `[]` (empty -- block devices disabled) |
+| `block_device_allowlist`| List of allowed block device paths for `is_block=True` LUNs. Symlinks are resolved before matching. Must be set to use block devices. | list[str] | no | `[]` (empty - block devices disabled) |
 
 ### File Management
 

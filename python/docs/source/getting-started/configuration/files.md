@@ -53,9 +53,9 @@ drivers:
 - `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification globally
 - `JMP_CLIENT_CONFIG` - Path to a client configuration file
 - `JMP_CLIENT` - Name of a registered client config
-- `JMP_NAMESPACE` - Namespace in the controller
+- `JMP_NAMESPACE` - Namespace in the {term}`controller`
 - `JMP_NAME` - Client name
-- `JMP_ENDPOINT` - gRPC endpoint (overrides config file)
+- `JMP_ENDPOINT` - {term}`gRPC` endpoint (overrides config file)
 - `JMP_TOKEN` - Auth token (overrides config file)
 - `JMP_DRIVERS_ALLOW` - Comma-separated list of allowed driver namespaces
 - `JUMPSTARTER_FORCE_SYSTEM_CERTS` - Set to `1` to force system CA certificates
@@ -70,9 +70,9 @@ $ jmp config client delete <alias>  # Remove a client config locally
 
 ## Exporter Configuration
 
-**File**: All valid exporter configuration files with a `.yaml` extension  
+**File**: All valid {term}`exporter` configuration files with a `.yaml` extension  
 **Location**: `/etc/jumpstarter/exporters/*.yaml`  
-**Description**: Defines exporter settings including connection details and
+**Description**: Defines {term}`exporter` settings including connection details and
 driver configurations.  
 
 **Format**:
@@ -113,16 +113,16 @@ hooks: # Optional lifecycle hooks that run at lease boundaries
     onFailure: warn
 ```
 
-The optional `hooks` section configures lifecycle scripts that run at lease
-boundaries. See [Hooks](../../introduction/hooks.md) for full details on
-hook configuration, environment variables, and failure handling.
+The optional `hooks` section configures lifecycle scripts that run at {term}`lease`
+boundaries. See [{term}`Hook`s](../../introduction/hooks.md) for full details on
+{term}`hook` configuration, environment variables, and failure handling.
 
 **Environment Variables**:
 - `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification
-- `JMP_ENDPOINT` - gRPC endpoint (overrides config file)
+- `JMP_ENDPOINT` - {term}`gRPC` endpoint (overrides config file)
 - `JMP_TOKEN` - Auth token (overrides config file)
-- `JMP_NAMESPACE` - Namespace in the controller
-- `JMP_NAME` - Exporter name
+- `JMP_NAMESPACE` - Namespace in the {term}`controller`
+- `JMP_NAME` - {term}`Exporter` name
 
 **CLI Commands**:
 ```{code-block}  console
@@ -148,11 +148,11 @@ $ jmp run --exporter-config /etc/jumpstarter/exporters/my-exporter.yaml
 
 ### Running as a Service
 
-For production deployments, it is recommended to use a service manager such as [`systemd`](https://systemd.io/) to keep the exporter process alive and restart it after a lease ends or something goes wrong.
+For production deployments, it is recommended to use a service manager such as [`systemd`](https://systemd.io/) to keep the {term}`exporter` process alive and restart it after a {term}`lease` ends or something goes wrong.
 
-Containerized exporters can be installed as [`systemd`](https://systemd.io/) services using [`podman-systemd`](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html).
+Containerized {term}`exporter`s can be installed as [`systemd`](https://systemd.io/) services using [`podman-systemd`](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html).
 
-Create a systemd service file at `/etc/containers/systemd/my-exporter.container` with the following content:
+Create a `systemd` service file at `/etc/containers/systemd/my-exporter.container` with the following content:
 
 ```{code-block} ini
 :substitutions:

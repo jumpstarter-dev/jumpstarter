@@ -12,9 +12,9 @@ This rule helps with creating Jumpstarter Enhancement Proposals (JEPs).
 
 ## Creating a JEP
 
-1. **Choose the next JEP number**: Look at existing files in `python/docs/source/internal/jeps/` and pick the next available incrementing integer. JEP-0000 through JEP-0009 are reserved for process/meta-JEPs, so start from JEP-0010 for regular proposals.
+1. **Choose the next JEP number**: Look at existing files in `python/docs/source/contributing/jeps/` and pick the next available incrementing integer. JEP-0000 through JEP-0009 are reserved for process/meta-JEPs, so start from JEP-0010 for regular proposals.
 
-2. **Create the file**: Copy the template from `python/docs/source/internal/jeps/JEP-NNNN-template.md` to `python/docs/source/internal/jeps/JEP-NNNN-short-title.md`, replacing `NNNN` with the zero-padded number and `short-title` with a descriptive slug.
+2. **Create the file**: Copy the template from `python/docs/source/contributing/jeps/JEP-NNNN-template.md` to `python/docs/source/contributing/jeps/JEP-NNNN-short-title.md`, replacing `NNNN` with the zero-padded number and `short-title` with a descriptive slug.
 
 3. **Fill in the metadata table**:
    - Set the JEP number (incrementing integer, NOT the PR number)
@@ -45,8 +45,8 @@ JEPs use this format for individual decisions:
 
 **Alternatives considered:**
 
-1. **Option A** — Brief description.
-2. **Option B** — Brief description.
+1. **Option A** - Brief description.
+2. **Option B** - Brief description.
 
 **Decision:** Option A.
 
@@ -56,7 +56,7 @@ JEPs use this format for individual decisions:
 ## Key Rules
 
 - JEP numbers are incrementing integers, NOT derived from PR numbers
-- JEPs live in `python/docs/source/internal/jeps/`
+- JEPs live in `python/docs/source/contributing/jeps/`
 - All JEPs should be merged as PRs so the documentation is part of the Jumpstarter docs/source
 - Rejected JEPs are normally not merged, but can be merged with "Rejected" status if there is an architectural reason to preserve them
 - The license for all documents is Apache-2.0

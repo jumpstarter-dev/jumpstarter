@@ -493,7 +493,7 @@ class HookExecutor:
                 cause = e
                 logger.error(error_msg, exc_info=True)
             finally:
-                # Clean up file descriptors — only close those still open to avoid
+                # Clean up file descriptors - only close those still open to avoid
                 # closing an unrelated fd that reused the same number.
                 if pty_state.parent_fd_open:
                     try:
@@ -750,7 +750,7 @@ class HookExecutor:
 
         except Exception as e:
             # Unexpected errors: report failure but do not shut down.
-            # Same transient status — the lease is released and the exporter
+            # Same transient status - the lease is released and the exporter
             # accepts new leases after the finally block completes.
             logger.error("afterLease hook failed with unexpected error: %s", e, exc_info=True)
             await report_status(
@@ -762,7 +762,7 @@ class HookExecutor:
             # Always delay to give client time to poll the final status
             await anyio.sleep(1.0)
 
-            # Don't release lease when exporter is shutting down — unregistration handles cleanup.
+            # Don't release lease when exporter is shutting down - unregistration handles cleanup.
             # Releasing here would report AVAILABLE to the controller right before shutdown.
             if request_lease_release and not shutdown_called:
                 try:

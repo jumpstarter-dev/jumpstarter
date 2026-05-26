@@ -1,4 +1,4 @@
-# QEMU driver
+# QEMU Driver
 
 `jumpstarter-driver-qemu` provides functionality for interacting with QEMU
 virtualization platform.
@@ -24,4 +24,6 @@ export:
 
 ## API Reference
 
-Add API documentation here.
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_qemu.driver.Qemu()
+```

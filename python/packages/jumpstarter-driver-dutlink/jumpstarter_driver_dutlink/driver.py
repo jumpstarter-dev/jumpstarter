@@ -234,6 +234,8 @@ class DutlinkStorageMux(DutlinkConfig, StorageMuxFlasherInterface, Driver):
 
 @dataclass(kw_only=True)
 class Dutlink(DutlinkConfig, CompositeInterface, Driver):
+    """DUT Link Board composite driver for power, serial, and storage."""
+
     alternate_console: str | None = field(default=None)
     storage_device: str
     baudrate: int = field(default=115200)

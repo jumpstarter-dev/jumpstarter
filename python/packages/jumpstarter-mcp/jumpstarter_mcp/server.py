@@ -41,13 +41,13 @@ what's available. Common patterns:
 - Power: ["power", "on"], ["power", "off"], ["power", "cycle"]
 - SSH: ["ssh", "--", "your", "command", "here"]
 - Storage: ["storage", "flash", "/path/to/image"]
-- Serial: ["serial", "pipe"] (streaming -- use a short timeout_seconds, e.g. 10-15)
+- Serial: ["serial", "pipe"] (streaming - use a short timeout_seconds, e.g. 10-15)
 
 jmp_run has a timeout_seconds parameter (default 120). For streaming/blocking
 commands like "serial pipe", set a short timeout_seconds so the command is
 killed after capturing available output rather than hanging.
 
-Connections are persistent -- create once, run many commands against it.
+Connections are persistent - create once, run many commands against it.
 
 For deeper inspection:
 - jmp_drivers shows the Python driver object tree (class names, descriptions, methods)
@@ -62,12 +62,12 @@ variables and Python/j paths. This lets you:
   installed, so `import jumpstarter` just works
 - Use jmp_driver_methods to get exact method signatures for Python code
 
-IMPORTANT -- Python code examples:
+IMPORTANT - Python code examples:
 When generating Python examples for the user, ALWAYS use the env() helper
 from jumpstarter.utils.env. This assumes the script runs under a jumpstarter
 shell where JUMPSTARTER_HOST is already set (via jmp_get_env or `j shell`).
 
-NEVER use ClientConfigV1Alpha1, lease(), or connect() in examples -- those
+NEVER use ClientConfigV1Alpha1, lease(), or connect() in examples - those
 are for standalone automation, not interactive use.
 
 Canonical pattern:
@@ -134,7 +134,7 @@ async def _ensure_fresh_token(config: ClientConfigV1Alpha1) -> ClientConfigV1Alp
 
     refresh_token = config.refresh_token
     if not refresh_token:
-        logger.warning("Token is expired but no refresh_token stored — run 'jmp login --offline-access'")
+        logger.warning("Token is expired but no refresh_token stored - run 'jmp login --offline-access'")
         return config
 
     try:
@@ -158,7 +158,7 @@ async def _ensure_fresh_token(config: ClientConfigV1Alpha1) -> ClientConfigV1Alp
         ClientConfigV1Alpha1.save(config)
         logger.info("Access token refreshed successfully")
     except Exception:
-        logger.warning("Token refresh failed — downstream call will likely fail", exc_info=True)
+        logger.warning("Token refresh failed - downstream call will likely fail", exc_info=True)
 
     return config
 

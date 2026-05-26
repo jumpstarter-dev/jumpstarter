@@ -15,7 +15,7 @@ export:
       multicast_group: "239.127.0.1"
       multicast_port: 30490
 ---
-# Static endpoint (no Service Discovery) — for ECUs that don't run SOME/IP-SD
+# Static endpoint (no Service Discovery) - for ECUs that don't run SOME/IP-SD
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
 metadata:

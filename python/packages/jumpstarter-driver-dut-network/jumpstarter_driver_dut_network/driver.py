@@ -115,6 +115,8 @@ class FilterConfig:
 
 @dataclass(kw_only=True)
 class DutNetwork(Driver):
+    """DUT network isolation with bridge, DHCP, DNS, and NAT."""
+
     interface: str
     subnet: str = "192.168.100.0/24"
     gateway_ip: str = "192.168.100.1"

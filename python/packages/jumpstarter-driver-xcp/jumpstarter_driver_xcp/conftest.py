@@ -351,9 +351,9 @@ class StatefulXcpMaster:
 
     def _require_connected(self):
         if not self._connected:
-            raise XcpNotConnected("Not connected – call connect() first")
+            raise XcpNotConnected("Not connected - call connect() first")
 
-    # -- session --------------------------------------------------------
+    # - session --------------------------------------------------------
 
     def connect(self, mode: int = 0):
         if self._connected:
@@ -377,7 +377,7 @@ class StatefulXcpMaster:
     def getCurrentProtectionStatus(self) -> dict[str, bool]:
         return dict(self._protection)
 
-    # -- security -------------------------------------------------------
+    # - security -------------------------------------------------------
 
     def cond_unlock(self, resources=None):
         self._require_connected()
@@ -385,7 +385,7 @@ class StatefulXcpMaster:
         for key in self._protection:
             self._protection[key] = False
 
-    # -- memory access --------------------------------------------------
+    # - memory access --------------------------------------------------
 
     def setMta(self, address: int, ext: int = 0):
         self._require_connected()
@@ -403,7 +403,7 @@ class StatefulXcpMaster:
         self._require_connected()
         self._memory[self._mta_address] = data
 
-    # -- checksum -------------------------------------------------------
+    # - checksum -------------------------------------------------------
 
     def buildChecksum(self, block_size: int):
         self._require_connected()
@@ -412,7 +412,7 @@ class StatefulXcpMaster:
         csum = sum(raw) & 0xFFFFFFFF
         return _SlaveProperties(checksumType=0x01, checksum=csum)
 
-    # -- DAQ ------------------------------------------------------------
+    # - DAQ ------------------------------------------------------------
 
     def getDaqInfo(self):
         self._require_connected()
@@ -458,7 +458,7 @@ class StatefulXcpMaster:
     def startStopSynch(self, mode: int):
         self._require_connected()
 
-    # -- programming ----------------------------------------------------
+    # - programming ----------------------------------------------------
 
     def programStart(self):
         self._require_connected()

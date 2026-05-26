@@ -43,10 +43,10 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Install the latest version of uv
+      - name: Install uv
         uses: astral-sh/setup-uv@803947b9bd8e9f986429fa0c5a41c367cd732b41 # v7.2.1
         with:
-          version: "latest"
+          version: "0.11.6"
 
       - name: Install Python
         run: |
@@ -83,10 +83,10 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Install the latest version of uv
+      - name: Install uv
         uses: astral-sh/setup-uv@803947b9bd8e9f986429fa0c5a41c367cd732b41 # v7.2.1
         with:
-          version: "latest"
+          version: "0.11.6"
 
       - name: Install Python
         run: |
@@ -95,6 +95,28 @@ jobs:
 
       - name: Build the documentation for the current version (no warnings allowed)
         run: make sync && make docs
+
+  linkcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@803947b9bd8e9f986429fa0c5a41c367cd732b41 # v7.2.1
+        with:
+          version: "0.11.6"
+
+      - name: Install Python
+        run: |
+          uv python pin 3.12
+          uv python install
+
+      - name: Check documentation links
+        run: make sync && make docs-linkcheck
 
   # Deployment job
   deploy:

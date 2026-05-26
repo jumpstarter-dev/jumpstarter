@@ -41,25 +41,28 @@ help:
 
 default: help
 
-docs-singlehtml:
+docs-singlehtml: docs-generate-crds
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs singlehtml
 
-docs:
+docs-generate-crds:
+	uv run --isolated --all-packages --group docs python3 docs/source/reference/generate-crd-docs.py
+
+docs: docs-generate-crds
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs html SPHINXOPTS="-W --keep-going -n"
 
-docs-all:
+docs-all: docs-generate-crds
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs multiversion
 
-docs-serve: clean-docs
+docs-serve: clean-docs docs-generate-crds
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve
 
 docs-serve-all: clean-docs docs-all
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve-multiversion
 
-docs-test:
+docs-test: docs-generate-crds
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs doctest
 
-docs-linkcheck:
+docs-linkcheck: docs-generate-crds
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs linkcheck
 
 pkg-test-%: packages/%

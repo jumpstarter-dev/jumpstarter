@@ -160,7 +160,7 @@ def _convert_url_endpoints(endpoints: dict) -> dict:
     converted: dict[str, dict] = {}
     for key, ep in endpoints.items():
         if not key.startswith(("http://", "https://")):
-            # Legacy format — keep as-is
+            # Legacy format - keep as-is
             converted[key] = ep
             continue
 
@@ -622,12 +622,12 @@ class MitmproxyDriver(Driver):
         if self._is_port_in_use(self.listen.host, self.listen.port):
             port_hint = (
                 f" (port {self.listen.port} is already in use"
-                " — is another mitmproxy instance running?)"
+                " - is another mitmproxy instance running?)"
             )
         elif web_ui and self._is_port_in_use(self.web.host, self.web.port):
             port_hint = (
                 f" (web UI port {self.web.port} is already in use"
-                " — is another mitmproxy instance running?)"
+                " - is another mitmproxy instance running?)"
             )
         logger.error(
             "mitmproxy exited during startup (exit code %s)%s: %s",
@@ -722,7 +722,7 @@ class MitmproxyDriver(Driver):
         self._web_ui_enabled = False
         self._current_flow_file = None
 
-        # Stop capture server (do NOT clear _captured_requests — tests may
+        # Stop capture server (do NOT clear _captured_requests - tests may
         # read captures after stop)
         self._stop_capture_server()
 
@@ -1699,7 +1699,7 @@ class MitmproxyDriver(Driver):
     ) -> str:
         """Write a response body to a file, formatting JSON if possible.
 
-        Always writes to a file — never inlines into the YAML. JSON
+        Always writes to a file - never inlines into the YAML. JSON
         bodies are pretty-printed for readability.
 
         Returns the relative file path for the client to download.
@@ -1715,7 +1715,7 @@ class MitmproxyDriver(Driver):
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
             pass
 
-        # Non-JSON — write as-is with an appropriate extension
+        # Non-JSON - write as-is with an appropriate extension
         ext = _content_type_to_ext(content_type)
         return _write_captured_file(
             method, file_key, ext, raw, endpoint, files_dir,

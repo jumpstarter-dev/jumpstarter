@@ -37,29 +37,8 @@ export:
       request_timeout: 5
 ```
 
-## Client API
+## API Reference
 
-| Method                                | Description                                  |
-|---------------------------------------|----------------------------------------------|
-| `change_session(session)`             | Change diagnostic session (default/extended/programming/safety) |
-| `ecu_reset(reset_type)`              | Reset ECU (hard/soft/key_off_on)             |
-| `tester_present()`                    | Keep session alive                           |
-| `read_data_by_identifier(did_list)`   | Read DID values                              |
-| `write_data_by_identifier(did, value)`| Write DID value                              |
-| `request_seed(level)`                 | Request security access seed                 |
-| `send_key(level, key)`               | Send security access key                     |
-| `clear_dtc(group)`                    | Clear diagnostic trouble codes               |
-| `read_dtc_by_status_mask(mask)`       | Read DTCs matching status mask               |
-
-### Session Types
-
-- `default` -- Default diagnostic session
-- `programming` -- Programming session
-- `extended` -- Extended diagnostic session
-- `safety` -- Safety system diagnostic session
-
-### Reset Types
-
-- `hard` -- Hard reset
-- `key_off_on` -- Key off/on reset
-- `soft` -- Soft reset
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_uds_doip.driver.UdsDoip()
+```

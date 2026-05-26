@@ -25,12 +25,12 @@ For client operations, Jumpstarter processes configurations in this order:
 
 ## Exporter Configuration Hierarchy
 
-For exporter operations, Jumpstarter processes configurations in this order:
+For {term}`exporter` operations, Jumpstarter processes configurations in this order:
 
 1. **Command-line options** such as `--exporter` or `--exporter-config`
 2. **Environment variables** such as `JMP_ENDPOINT`, `JMP_TOKEN`, or
    `JMP_NAMESPACE`
-3. **Specific exporter file** in `/etc/jumpstarter/exporters/<n>.yaml`
+3. **Specific {term}`exporter` file** in `/etc/jumpstarter/exporters/<n>.yaml`
 
 ## Example
 

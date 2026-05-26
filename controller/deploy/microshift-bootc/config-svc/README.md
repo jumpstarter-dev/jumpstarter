@@ -165,13 +165,4 @@ mypy app.py auth.py system.py api.py routes.py
 - Hostname validation per RFC 1123
 - Default password change enforcement
 
-## License
-
-Apache License 2.0
-
-## Links
-
-- Homepage: https://jumpstarter.dev
-- Documentation: https://docs.jumpstarter.dev
-- Repository: https://github.com/jumpstarter-dev/jumpstarter-controller
 

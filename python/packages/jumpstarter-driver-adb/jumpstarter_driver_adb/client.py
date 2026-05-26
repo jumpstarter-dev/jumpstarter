@@ -193,7 +193,7 @@ class AdbClient(DriverClient):
                 )
                 return process.wait()
 
-            # No persistent tunnel — create an ephemeral one
+            # No persistent tunnel - create an ephemeral one
             with self.forward_adb(host, port) as addr:
                 env = os.environ | {
                     "ANDROID_ADB_SERVER_ADDRESS": addr[0],

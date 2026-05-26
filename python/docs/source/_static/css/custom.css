@@ -7,6 +7,11 @@
     display: none !important;
 }
 
+/* Align sidebar logo with content heading */
+.sidebar-drawer {
+    padding-top: 1.5rem;
+}
+
 /* Fix version name overflow in sidebar */
 .sidebar-brand .sidebar-brand-text {
     white-space: normal;
@@ -19,3 +24,32 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+
+.glossary-term {
+    border-bottom: 1px dotted var(--color-background-border);
+}
+
+.glossary-term[data-tooltip] {
+    position: relative;
+}
+
+.glossary-term[data-tooltip]:hover::after,
+.glossary-term[data-tooltip].tooltip-active::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 0;
+    bottom: 100%;
+    background: var(--color-background-secondary);
+    color: var(--color-foreground-primary);
+    border: 1px solid var(--color-foreground-muted);
+    padding: 0.4em 0.6em;
+    border-radius: 4px;
+    font-size: 0.85em;
+    min-width: 200px;
+    max-width: 400px;
+    white-space: normal;
+    z-index: 1000;
+    pointer-events: none;
+}
+

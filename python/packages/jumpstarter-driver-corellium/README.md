@@ -68,3 +68,9 @@ export:
       device_os: "1.0"
       device_build: "Critical Application Monitor (Baremetal)"
 ```
+
+## API Reference
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_corellium.driver.Corellium()
+```

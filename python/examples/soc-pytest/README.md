@@ -18,7 +18,7 @@ This example requires the following hardware:
 
 1) Setup an environment with the required hardware, and customize the
    exporter.yaml
-2) Setup the exporter to be run from a container (TODO: link)
+2) Setup the exporter to be run from a container (see [Exporter Installation](https://jumpstarter.dev/main/getting-started/installation/index.html))
 3) Label the exporter in k8s with the `board=rpi4` label
 4) Prepare the images by running `make` in the `image` directory
 5) Run the tests in this directory by running:
@@ -26,7 +26,7 @@ This example requires the following hardware:
 $ cd jumpstarter_example_soc_pytest
 $ uv run pytest -s
 ================================================================== test session starts ===================================================================
-platform linux -- Python 3.12.3, pytest-8.3.3, pluggy-1.5.0
+platform linux - Python 3.12.3, pytest-8.3.3, pluggy-1.5.0
 rootdir: /home/majopela/jumpstarter/examples/soc-pytest
 configfile: pyproject.toml
 plugins: anyio-4.6.2.post1, cov-5.0.0

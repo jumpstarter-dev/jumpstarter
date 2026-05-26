@@ -1,38 +1,33 @@
-# UDS Driver (Shared Interface)
+# UDS Driver
 
 `jumpstarter-driver-uds` provides shared UDS (Unified Diagnostic Services, ISO-14229)
 models, client, and abstract interface for Jumpstarter UDS transport drivers.
 
-This package is not used directly -- install a transport-specific driver instead:
+This package is not used directly - install a transport-specific driver instead:
 
-- `jumpstarter-driver-uds-doip` -- UDS over DoIP (automotive Ethernet)
-- `jumpstarter-driver-uds-can` -- UDS over CAN/ISO-TP
+- `jumpstarter-driver-uds-doip` - UDS over DoIP (automotive Ethernet)
+- `jumpstarter-driver-uds-can` - UDS over CAN/ISO-TP
 
-## Client API
+## Installation
 
-All UDS transport drivers share the same client interface:
+```{code-block} console
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-uds
+```
 
-| Method                                | Description                                  |
-|---------------------------------------|----------------------------------------------|
-| `change_session(session)`             | Change diagnostic session (default/extended/programming/safety) |
-| `ecu_reset(reset_type)`              | Reset ECU (hard/soft/key_off_on)             |
-| `tester_present()`                    | Keep session alive                           |
-| `read_data_by_identifier(did_list)`   | Read DID values                              |
-| `write_data_by_identifier(did, value)`| Write DID value                              |
-| `request_seed(level)`                 | Request security access seed                 |
-| `send_key(level, key)`               | Send security access key                     |
-| `clear_dtc(group)`                    | Clear diagnostic trouble codes               |
-| `read_dtc_by_status_mask(mask)`       | Read DTCs matching status mask               |
+## Configuration
 
-### Session Types
+`jumpstarter-driver-uds` provides the shared UDS interface and client. It does
+not have its own exporter configuration because it is not used directly as a
+driver. Configuration is done on the transport-specific drivers:
 
-- `default` -- Default diagnostic session
-- `programming` -- Programming session
-- `extended` -- Extended diagnostic session
-- `safety` -- Safety system diagnostic session
+- `jumpstarter-driver-uds-can` - UDS over CAN/ISO-TP
+- `jumpstarter-driver-uds-doip` - UDS over DoIP (automotive Ethernet)
 
-### Reset Types
+Refer to those driver READMEs for exporter configuration examples.
 
-- `hard` -- Hard reset
-- `key_off_on` -- Key off/on reset
-- `soft` -- Soft reset
+## API Reference
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_uds.driver.UdsInterface()
+```

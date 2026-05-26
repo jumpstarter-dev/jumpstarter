@@ -1,4 +1,4 @@
-# SSHWrapper Driver
+# SSH Driver
 
 `jumpstarter-driver-ssh` provides SSH CLI functionality for Jumpstarter, allowing you to run SSH commands with configurable defaults and pass-through arguments.
 
@@ -7,6 +7,10 @@
 ```shell
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-ssh
 ```
+
+### Dependencies
+
+- `ssh`: Standard SSH client (usually pre-installed)
 
 ## Configuration
 
@@ -49,7 +53,7 @@ j ssh ls -la
 
 ```
 
-## CLI Options
+### CLI Options
 
 The SSH command supports the following options:
 
@@ -57,7 +61,7 @@ The SSH command supports the following options:
 
 All other arguments are passed directly to the SSH command. The driver uses the configured SSH command and default username from the driver configuration.
 
-### Username Handling
+#### Username Handling
 
 The driver supports multiple ways to specify the username:
 
@@ -65,10 +69,6 @@ The driver supports multiple ways to specify the username:
 2. **Default username**: Used when no username is specified in arguments
 
 If no `-l` flag or `user@hostname` format is provided, the default username from the driver configuration will be used automatically.
-
-## Dependencies
-
-- `ssh`: Standard SSH client (usually pre-installed)
 
 ## API Reference
 

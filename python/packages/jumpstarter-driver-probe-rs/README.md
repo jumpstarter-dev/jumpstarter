@@ -1,4 +1,4 @@
-# probe-rs driver
+# Probe-RS Driver
 
 `jumpstarter-driver-probe-rs` provides functionality for remote debugging and
 flashing of embedded devices using the [probe-rs](https://probe.rs) tools.

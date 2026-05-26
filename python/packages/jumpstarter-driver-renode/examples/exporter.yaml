@@ -2,7 +2,7 @@
 #
 # Each example shows a different Renode target. The driver accepts any
 # .repl platform description (built-in or custom) and any UART peripheral
-# path -- new targets require only YAML configuration, no code changes.
+# path - new targets require only YAML configuration, no code changes.
 
 # --- STM32F407 Discovery (opensomeip FreeRTOS/ThreadX) ---
 # Uses Renode's built-in platform, USART2 for console output.

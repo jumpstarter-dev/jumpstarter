@@ -1,14 +1,21 @@
-# PiPicoFlasher Driver
+# Pi Pico Driver
 
 `jumpstarter-driver-pi-pico` flashes Raspberry Pi **Pico** (RP2040), **Pico W**, and **Pico 2** (RP2350) by copying a UF2 file onto the **BOOTSEL** USB mass-storage volume.
 
 The driver supports two methods for entering BOOTSEL mode programmatically:
 
-1. **GPIO reset** — wire the Pico's BOOTSEL pad and RUN pin to host GPIO
+1. **GPIO reset** - wire the Pico's BOOTSEL pad and RUN pin to host GPIO
    lines.
-2. **1200-baud serial touch** — uses a USB CDC serial child. Only works when
+2. **1200-baud serial touch** - uses a USB CDC serial child. Only works when
    the running firmware implements the convention (Pico SDK `pico_stdio_usb`,
    CircuitPython, Arduino).
+
+## Installation
+
+```{code-block} console
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-pi-pico
+```
 
 ## Configuration
 
@@ -63,7 +70,7 @@ export:
   bootsel:
     type: jumpstarter_driver_gpiod.driver.DigitalOutput
     config:
-      device: "/dev/gpiochip4"   # RPi5 GPIO chip — adjust for your host
+      device: "/dev/gpiochip4"   # RPi5 GPIO chip - adjust for your host
       line: 17                    # GPIO pin wired to BOOTSEL
       drive: open_drain
       active_low: true
@@ -80,15 +87,14 @@ export:
 
 When both GPIO and serial children are present, GPIO reset is preferred.
 
-## Shell commands
+## Usage
 
-- `j storage flash ...` — flash a UF2 file (auto-enters BOOTSEL if needed)
-- `j storage bootloader` — request BOOTSEL mode without flashing
-- `j serial ...` — USB CDC console (when serial child is configured)
+- `j storage flash ...` - flash a UF2 file (auto-enters BOOTSEL if needed)
+- `j storage bootloader` - request BOOTSEL mode without flashing
+- `j serial ...` - USB CDC console (when serial child is configured)
 
-## API
+## API Reference
 
-- **`flash(source, target=None)`** — Copies a UF2 from a Jumpstarter resource to the BOOTSEL volume. `target` is the destination filename (default `Firmware.uf2`).
-- **`enter_bootloader()`** — Enters BOOTSEL mode via GPIO reset or 1200-baud serial touch.
-- **`bootloader_info()`** — Parses `INFO_UF2.TXT` from the mounted volume.
-- **`dump`** — Not supported over UF2 mass storage.
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_pi_pico.driver.PiPicoFlasher()
+```

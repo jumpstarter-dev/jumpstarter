@@ -1,10 +1,10 @@
 # Development Environment
 
 You can use
-[devspaces](https://github.com/jumpstarter-dev/jumpstarter/blob/main/python/.devfile.yaml),
-[devcontainers](https://github.com/jumpstarter-dev/jumpstarter/tree/main/python/.devcontainer),
-or your favorite OS/distro to develop Jumpstarter, however the following
-examples are for Fedora 43.
+[Eclipse Che](https://github.com/jumpstarter-dev/jumpstarter/blob/main/.devfile.yaml),
+[devcontainers](https://github.com/jumpstarter-dev/jumpstarter/tree/main/.devcontainer),
+or your favorite OS/distro to develop Jumpstarter. The following examples
+are for Fedora.
 
 Jumpstarter is programmed in Python and Go, the Jumpstarter controller is
 written in Go, while the core and drivers are written in Python.
@@ -27,19 +27,20 @@ Then you can clone the project and build the virtual environment with:
 ```console
 $ git clone https://github.com/jumpstarter-dev/jumpstarter.git
 $ cd jumpstarter
-$ make sync
+$ make build-python
 ```
 
 At this point you can run any of the jumpstarter commands prefixing them with
-`uv run`:
+`uv run` from the `python/` directory:
 
 ```console
+$ cd python
 $ uv run jmp
 ```
 
 ### Running the Tests
 
-To run the tests, you can use the `make` command:
+To run the tests, you can use `make` from the repository root:
 ```console
 $ make test
 ```
@@ -52,9 +53,8 @@ $ make pkg-test-${package_name}
 
 ## Go Environment
 
-The Jumpstarter controller lives in the
-[jumpstarter-controller](https://github.com/jumpstarter-dev/jumpstarter-controller)
-repository.
+The Jumpstarter controller lives in the `controller/` directory within the
+[jumpstarter](https://github.com/jumpstarter-dev/jumpstarter) monorepo.
 
 To install the basic set of dependencies, run the following commands:
 
@@ -62,11 +62,10 @@ To install the basic set of dependencies, run the following commands:
 $ sudo dnf install -y git make golang kubectl
 ```
 
-Then you can clone the project and build the project with:
+Then you can build the controller from the repository root:
 
 ```console
-$ git clone https://github.com/jumpstarter-dev/jumpstarter-controller.git
-$ cd jumpstarter-controller
+$ cd controller
 $ make build
 ```
 

@@ -634,7 +634,7 @@ class TestHookExecutor:
 
         Patches os.read so that, once the main loop has consumed the initial
         subprocess output via EOF from the specific PTY fd, a subsequent read
-        returns additional data -- simulating the macOS scenario where the
+        returns additional data - simulating the macOS scenario where the
         kernel buffers output that arrives after the reader stop flag is set.
         """
         import pty

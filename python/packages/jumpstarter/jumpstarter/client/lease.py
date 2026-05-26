@@ -245,7 +245,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                             message = condition_message(result.conditions, "Unsatisfiable")
                             # Old controllers (pre-918d6341) mark offline-but-matching
                             # exporters as Unsatisfiable with reason "NoExporter".
-                            # This is transient — retry with a new lease.
+                            # This is transient - retry with a new lease.
                             if condition_present_and_equal(result.conditions, "Unsatisfiable", "True", "NoExporter"):
                                 await self._handle_no_exporter_retry(spinner, message)
                                 continue

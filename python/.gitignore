@@ -71,6 +71,11 @@ instance/
 # Sphinx documentation
 docs/build/
 docs/build_all/
+docs/source/reference/crds/client.md
+docs/source/reference/crds/exporter.md
+docs/source/reference/crds/exporteraccesspolicy.md
+docs/source/reference/crds/jumpstarter.md
+docs/source/reference/crds/lease.md
 
 # PyBuilder
 .pybuilder/

@@ -232,7 +232,7 @@ class MockDiagnosticEcu:
 
         return []
 
-    # -- UDS stateful engine --------------------------------------------------
+    # - UDS stateful engine --------------------------------------------------
 
     def _handle_uds(self, data: bytes) -> bytes:
         if not data:
@@ -335,7 +335,7 @@ class MockDiagnosticEcu:
                     result += struct.pack(">I", dtc_id)[1:] + bytes([status])
         return result
 
-    # -- RoutineControl (0x31) ------------------------------------------------
+    # - RoutineControl (0x31) ------------------------------------------------
 
     def _uds_routine_control(self, data: bytes) -> bytes:
         if len(data) < 4:
@@ -367,7 +367,7 @@ class MockDiagnosticEcu:
 
         return bytes([data[0] + 0x40, control_type, data[2], data[3]]) + status_record
 
-    # -- Authentication (0x29) ------------------------------------------------
+    # - Authentication (0x29) ------------------------------------------------
 
     def _uds_authentication(self, data: bytes) -> bytes:
         if len(data) < 2:
@@ -424,7 +424,7 @@ class MockDiagnosticEcu:
 
         return _nrc(data[0], NRC_REQUEST_OUT_OF_RANGE)
 
-    # -- RequestFileTransfer (0x38) -------------------------------------------
+    # - RequestFileTransfer (0x38) -------------------------------------------
 
     def _uds_file_transfer(self, data: bytes) -> bytes:
         if len(data) < 4:

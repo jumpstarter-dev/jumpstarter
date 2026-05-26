@@ -86,10 +86,10 @@ class Handler:
         injector take over.
 
         Returns True to indicate the request was handled (but we
-        don't set flow.response — we let the WebSocket handshake
+        don't set flow.response - we let the WebSocket handshake
         complete naturally by NOT intercepting it here).
         """
-        # Don't block the handshake — return False to let it through
+        # Don't block the handshake - return False to let it through
         # to the server (or get intercepted later by websocket hooks)
         return False
 

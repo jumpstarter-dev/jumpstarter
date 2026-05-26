@@ -1,4 +1,4 @@
-# Renode driver
+# Renode Driver
 
 `jumpstarter-driver-renode` provides a Jumpstarter driver for the
 [Renode](https://renode.io/) embedded systems emulation framework. It
@@ -14,16 +14,6 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-renode
 
 Renode must be installed separately and available in `PATH`. See
 [Renode installation](https://renode.readthedocs.io/en/latest/introduction/installing.html).
-
-## Architecture
-
-The driver follows the composite driver pattern:
-
-- **`Renode`** -- root composite driver, manages the simulation lifecycle
-- **`RenodePower`** -- starts/stops the Renode process and controls the
-  simulation via the telnet monitor interface
-- **`RenodeFlasher`** -- loads firmware (ELF/BIN/HEX) into the simulated MCU
-- **`console`** -- UART output via PTY terminal, reusing the `PySerial` driver
 
 ## Configuration
 
@@ -110,7 +100,17 @@ response = renode.monitor_cmd("sysbus GetRegistrationPoints sysbus.usart2")
 
 The `monitor` CLI subcommand is also available inside a `jmp shell` session.
 
-## Design Decisions
+## Architecture
+
+The driver follows the composite driver pattern:
+
+- **`Renode`** - root composite driver, manages the simulation lifecycle
+- **`RenodePower`** - starts/stops the Renode process and controls the
+  simulation via the telnet monitor interface
+- **`RenodeFlasher`** - loads firmware (ELF/BIN/HEX) into the simulated MCU
+- **`console`** - UART output via PTY terminal, reusing the `PySerial` driver
+
+### Design Decisions
 
 Key decisions:
 
@@ -120,3 +120,9 @@ Key decisions:
 - **Configuration model**: Managed mode with `extra_commands` for
   target-specific customization
 - **Firmware loading**: `flash()` stores path, `on()` loads into simulation
+
+## API Reference
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_renode.driver.Renode()
+```

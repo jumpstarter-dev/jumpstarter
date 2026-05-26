@@ -1,14 +1,14 @@
 # Authentication
 
 Jumpstarter uses internally issued JWT tokens to authenticate clients and
-exporters by default. You can also configure Jumpstarter to use external OpenID
+{term}`exporter`s by default. You can also configure Jumpstarter to use external OpenID
 Connect (OIDC) providers.
 
-When installing with the operator, authentication is configured directly on the
+When installing with the {term}`operator`, authentication is configured directly on the
 `Jumpstarter` custom resource, under `spec.authentication`. 
 
-For operator installation context, see
-[Install with Operator](../installation/service/service-operator.md).
+For {term}`operator` installation context, see
+[Production](../installation/service/production.md).
 
 To use OIDC with your Jumpstarter installation:
 
@@ -16,7 +16,7 @@ To use OIDC with your Jumpstarter installation:
 2. Configure your OIDC provider to work with Jumpstarter
 3. Create users with appropriate OIDC usernames
 
-## Important: Username Collision Risk
+## Username Collisions
 
 When using OIDC auto provisioning, Jumpstarter derives resource names directly from
 the OIDC username by stripping the provider prefix (e.g., "dex:", "keycloak:")
@@ -36,7 +36,7 @@ To avoid collisions:
 1. Use a single OIDC provider per Jumpstarter installation, or
 2. Ensure usernames are unique across all configured OIDC providers, or
 3. Use different username claim mappings that include provider-specific prefixes, or
-4. Pre-create the resource (Client/Exporter) with explicit username mappings when conflicts exist
+4. Pre-create the resource (Client/{term}`Exporter`) with explicit username mappings when conflicts exist
 
 ## Examples
 
@@ -70,7 +70,7 @@ Note, the HTTPS URL is mandatory, and you only need to include
 certificateAuthority when using a self-signed certificate. The username will be
 prefixed with "keycloak:" (e.g., keycloak:example-user).
 
-3. Create clients and exporters with the `jmp admin create` commands. Be sure to
+3. Create clients and {term}`exporter`s with the `jmp admin create` commands. Be sure to
    prefix usernames with `keycloak:` as configured in the claim mappings:
 
 ```console
@@ -102,7 +102,7 @@ For machine-to-machine authentication (useful in CI environments), use a token:
 $ jmp login --client <client alias> [other parameters] --token <token>
 ```
 
-For exporters, use similar login command but with the `--exporter` flag:
+For {term}`exporter`s, use similar login command but with the `--exporter` flag:
 
 ```console
 $ jmp login --exporter <exporter alias> \
@@ -214,7 +214,7 @@ spec:
           prefix: "dex:"
 ```
 
-4. Create clients and exporters with appropriate OIDC usernames. Prefix the full
+4. Create clients and {term}`exporter`s with appropriate OIDC usernames. Prefix the full
    service account name with "dex:" as configured in the claim mappings.:
 
 ```console
@@ -237,7 +237,7 @@ $ jmp login --client <client alias> \
     --token $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
 ```
 
-For exporters:
+For {term}`exporter`s:
 
 ```console
 $ jmp login --exporter <exporter alias> \
@@ -251,73 +251,5 @@ $ jmp login --exporter <exporter alias> \
 
 ## Reference
 
-The reference section provides a complete example of `spec.authentication.jwt`
-with detailed comments. Use this as a template for your `Jumpstarter` resource.
-
-Key components include:
-
-- JWT issuer configuration
-- Claim validation rules
-- Claim mappings for username and groups
-- User validation rules
-
-```yaml
-spec:
-  authentication:
-    # JWT authenticators for OIDC-issued tokens
-    jwt:
-    - issuer:
-        # URL of the OIDC provider (must use https://)
-        url: https://example.com
-        # Optional: override URL for discovery information
-        discoveryURL: https://discovery.example.com/.well-known/openid-configuration
-        # Optional: PEM encoded CA certificates for validation
-        certificateAuthority: <PEM encoded CA certificates>
-        # List of acceptable token audiences
-        audiences:
-        - my-app
-        - my-other-app
-        # Required when multiple audiences are specified
-        audienceMatchPolicy: MatchAny
-      # rules applied to validate token claims to authenticate users.
-      claimValidationRules:
-        # Validate specific claim values
-      - claim: hd
-        requiredValue: example.com
-        # Alternative: use CEL expressions for complex validation
-      - expression: 'claims.hd == "example.com"'
-        message: the hd claim must be set to example.com
-      - expression: 'claims.exp - claims.nbf <= 86400'
-        message: total token lifetime must not exceed 24 hours
-      # Map OIDC claims to Jumpstarter user properties
-      claimMappings:
-        # Required: configure username mapping
-        username:
-          # JWT claim to use as username
-          claim: "sub"
-          # Prefix for username (required when claim is set)
-          prefix: ""
-          # Alternative: use CEL expression (mutually exclusive with claim+prefix)
-          # expression: 'claims.username + ":external-user"'
-        # Optional: configure groups mapping
-        groups:
-          claim: "sub"
-          prefix: ""
-          # Alternative: use CEL expression
-          # expression: 'claims.roles.split(",")'
-        # Optional: configure UID mapping
-        uid:
-          claim: 'sub'
-          # Alternative: use CEL expression
-          # expression: 'claims.sub'
-        # Optional: add extra attributes to UserInfo
-        extra:
-        - key: 'example.com/tenant'
-          valueExpression: 'claims.tenant'
-      # validation rules applied to the final user object.
-      userValidationRules:
-      - expression: "!user.username.startsWith('system:')"
-        message: 'username cannot use reserved system: prefix'
-      - expression: "user.groups.all(group, !group.startsWith('system:'))"
-        message: 'groups cannot use reserved system: prefix'
-```
+For the full `spec.authentication` field reference, see the
+[Jumpstarter {term}`CRD`](../../reference/crds/jumpstarter.md).

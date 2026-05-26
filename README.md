@@ -9,7 +9,9 @@
 
 A free, open source tool for automated testing on real and virtual hardware with
 CI/CD integration. Simplify device automation with consistent rules across local
-and distributed environments.
+and distributed environments. Every interface is programmatic - there is no GUI
+wall - so human developers, test scripts, CI pipelines, and AI agents interact
+with hardware through the same APIs.
 
 ## Highlights
 
@@ -17,7 +19,7 @@ and distributed environments.
 - 🐍 **Python-Powered** - Leverage Python's testing ecosystem
 - 🔌 **Hardware Abstraction** - Simplify complex hardware interfaces with drivers
 - 🌐 **Collaborative** - Share test hardware globally
-- ⚙️ **CI/CD Ready** - Works with cloud native developer environments and pipelines
+- ⚙️ **Automation Ready** - Same APIs for humans, test scripts, CI pipelines, and AI agents
 - 💻 **Cross-Platform** - Supports Linux and macOS
 
 ## Repository Structure
@@ -115,7 +117,7 @@ make e2e-clean
 ### Prerequisites
 
 - Python 3.11+ (for Python components)
-- Go 1.22+ (for controller)
+- Go 1.24+ (for controller)
 - Docker/Podman (for container builds)
 - kubectl (for Kubernetes deployment)
 
@@ -123,12 +125,12 @@ make e2e-clean
 
 ```shell
 # Build all components
-make all
+make build
 
 # Build specific components
-make python      # Python packages
-make controller  # Controller binary
-make protocol    # Generate protocol code
+make build-python      # Python packages
+make build-controller  # Controller binary
+make build-protocol    # Generate protocol code
 
 # Run tests
 make test
@@ -139,20 +141,13 @@ make e2e        # Run tests
 make e2e-clean  # Clean up
 ```
 
-### Running Locally
-
-```shell
-# Start a local development environment
-make dev
-```
-
 ## Documentation
 
 Jumpstarter's documentation is available at [jumpstarter.dev](https://jumpstarter.dev).
 
 - [Getting Started](https://jumpstarter.dev/main/getting-started/)
 - [User Guide](https://jumpstarter.dev/main/introduction/)
-- [API Reference](https://jumpstarter.dev/main/api/)
+- [API Reference](https://jumpstarter.dev/main/reference/)
 - [Contributing Guide](https://jumpstarter.dev/main/contributing.html)
 
 ## Contributing

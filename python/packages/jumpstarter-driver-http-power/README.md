@@ -106,8 +106,8 @@ http_power_client.off()
 ```
 
 
-## Notes
-
-- The power reading response parsing is not yet implemented. The driver currently returns dummy values (0.0V, 0.0A).
-- Authentication is optional and currently supports HTTP Basic Auth only.
-- All HTTP requests will raise exceptions on HTTP error status codes.
+```{note}
+Power reading response parsing is not yet implemented - the driver returns
+dummy values (0.0V, 0.0A). Authentication is optional and supports HTTP
+Basic Auth only.
+```

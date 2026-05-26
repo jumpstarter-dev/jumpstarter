@@ -137,7 +137,7 @@ func (s *Service) Start(ctx context.Context) error {
 	// Otherwise treat it as a bare port and prepend ":".
 	if port != "" {
 		if _, _, err := net.SplitHostPort(port); err != nil {
-			// Not a valid host:port — assume bare port (e.g. "8086")
+			// Not a valid host:port - assume bare port (e.g. "8086")
 			if port[0] != ':' {
 				port = ":" + port
 			}

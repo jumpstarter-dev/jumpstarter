@@ -1,4 +1,4 @@
-# Vnc Driver
+# VNC Driver
 
 `jumpstarter-driver-vnc` provides functionality for interacting with VNC servers. It allows you to create a secure, tunneled VNC session in your browser.
 
@@ -31,38 +31,6 @@ export:
 
 ## API Reference
 
-The client class for this driver is `jumpstarter_driver_vnc.client.VNClient`.
-
-### `vnc.session()`
-
-This asynchronous context manager establishes a connection to the remote VNC server and provides a local web server to view the session.
-
-**Usage:**
-
-```python
-async with vnc.session() as novnc_adapter:
-    print(f"VNC session available at: {novnc_adapter.url}")
-    # The session remains open until the context block is exited.
-    await novnc_adapter.wait()
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_vnc.driver.Vnc()
 ```
-
-### CLI: `j vnc session`
-
-This driver provides a convenient CLI command within the `jmp shell`. By default, it will open the session URL in your default web browser.
-
-**Usage:**
-
-```shell
-# This will start the local server and open a browser.
-j vnc session
-
-# To prevent it from opening a browser automatically:
-j vnc session --no-browser
-
-# To force an encrypted (wss://) or unencrypted (ws://) connection, overriding
-# the default set in the exporter configuration:
-j vnc session --encrypt
-j vnc session --no-encrypt
-```
-
-> **Note:** Using an encrypted connection is intended for advanced scenarios where the local proxy can be configured with a TLS certificate that your browser trusts. For standard local development, modern browsers will likely reject the self-signed certificate and the connection will fail.

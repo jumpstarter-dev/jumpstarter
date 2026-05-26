@@ -1,4 +1,4 @@
-# Flashers
+# Flashers Driver
 
 The flasher drivers are used to flash images to DUTs via network, typically
 using TFTP and HTTP. It is designed to interact with the target bootloader and
@@ -16,14 +16,16 @@ See the [bundle](#oci-bundles) section for more details.
 $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-flashers
 ```
 
-## Available drivers and bundles
+## Configuration
+
+### Available drivers and bundles
 
 | Driver          | Bundle                                                       |
 | --------------- | ------------------------------------------------------------ |
 | TIJ784S4Flasher | quay.io/jumpstarter-dev/jumpstarter-flasher-ti-j784s4:latest |
 
 
-## Driver configuration
+### Driver configuration
 **driver**: `jumpstarter_driver_flashers.driver.${DRIVER}`
 
 ```yaml
@@ -72,15 +74,60 @@ HTTP servers are used to serve images to the DUT bootloader and busybox shell.
 | manifest       | The manifest to use from the bundle. Every bundle can have multiple manifests, this is the name of the manifest to use  | str  | no       | manifest.yaml |
 | default_target | The default target to flash to if none specified | str  | no       |                              |
 
-## BaseFlasher API
+### oci-bundles
 
-The `BaseFlasher` class provides a set of methods to flash the DUT,
-```{eval-rst}
-.. autoclass:: jumpstarter_driver_flashers.client.BaseFlasherClient()
-    :members: flash, busybox_shell, bootloader_shell, use_dtb, use_initram, use_kernel
+The flasher drivers require some artifacts and basic information about the
+target device to operate. To make this easy to distribute and use, we use OCI
+bundles to package the artifacts and metadata.
+
+The bundle is a container that uses [oras](https://oras.land/) to transport the
+artifacts and metadata. It is a container that contains the following:
+- `manifest.yaml`: The manifest file that describes the bundle
+- `data/*`: The artifacts, including kernel, initram, dtbs, etc.
+
+### The format of the manifest is as follows:
+
+```{literalinclude} ../../../../../packages/jumpstarter-driver-flashers/oci_bundles/test/manifest.yaml
+:language: yaml
 ```
 
-## CLI
+### Table with the spec fields of the manifest:
+
+| Field                | Description                                                                | Default |
+| -------------------- | -------------------------------------------------------------------------- | ------- |
+| `manufacturer`       | Name of the device manufacturer                                            |         |
+| `link`               | URL to device documentation or manufacturer website                        |         |
+| `bootcmd`            | Command used to boot the device (e.g. booti, bootz)                        |         |
+| `default_target`     | Default target device to flash to if none specified                        |         |
+| `targets`            | Map of target names to device paths                                        |         |
+| `login.type`         | Type of login shell                                                        | busybox |
+| `login.login_prompt` | Expected login prompt string                                               | login:  |
+| `login.username`     | Username to log in with, leave empty if not needed                         |         |
+| `login.password`     | Password for login, leave empty if not needed                              |         |
+| `login.prompt`       | Shell prompt after successful login                                        | #       |
+| `preflash_commands`  | List of commands to run before flashing, useful to clear boot entries, etc |         |
+| `kernel.file`        | Path to kernel image within bundle                                         |         |
+| `kernel.address`     | Memory address to load kernel to                                           |         |
+| `initram.file`       | Path to initramfs within bundle (if any)                                   |         |
+| `initram.address`    | Memory address to load initramfs to (if any)                               |         |
+| `dtb.default`        | Default DTB variant to use                                                 |         |
+| `dtb.address`        | Memory address to load DTB to                                              |         |
+| `dtb.variants`       | Map of DTB variant names to files                                          |         |
+
+### Bundle Examples
+
+An example bundle for the TI J784S4XEVM looks like this:
+
+```{literalinclude} ../../../../../packages/jumpstarter-driver-flashers/oci_bundles/ti_j784s4xevm/manifest.yaml
+:language: yaml
+```
+
+You can find a script to build and push a bundle to a registry here:
+[oci_bundles](https://github.com/jumpstarter-dev/jumpstarter/tree/main/python/packages/jumpstarter-driver-flashers/oci_bundles)
+
+## Usage
+
+### CLI
 
 The flasher driver provides a CLI to perform flashing, access to busybox shell
 and uboot.
@@ -111,7 +158,7 @@ Commands:
 
 ```
 
-### flash
+#### flash
 ```shell
 Usage: j storage flash [OPTIONS] [FILE]
 
@@ -206,7 +253,7 @@ Environment variables for OCI auth:
 - `OCI_USERNAME`: registry username
 - `OCI_PASSWORD`: registry password
 
-### bootloader-shell
+#### bootloader-shell
 ```shell
 Usage: j storage bootloader-shell [OPTIONS]
 
@@ -231,7 +278,7 @@ U-Boot 2024.01-rc3 (Jan 09 2024 - 00:00:00 +0000)
 gcc (GCC) 11.4.1 20231218 (Red Hat 11.4.1-3)
 GNU ld version 2.35.2-42.el9
 ```
-### busybox-shell
+#### busybox-shell
 ```shell
 Usage: j storage busybox-shell [OPTIONS]
 
@@ -263,7 +310,7 @@ Linux buildroot 6.1.46-dirty #2 SMP PREEMPT Thu Mar 14 14:37:01 UTC 2024 aarch64
 #
 ```
 
-## Examples
+### Python Examples
 
 Flash the device with a specific image
 ```python
@@ -280,8 +327,7 @@ Flash into a specific partition
 flasherclient.flash("/path/to/image.raw.xz", partition="emmc")
 ```
 
-
-## Examples of utility consoles
+### Utility Consoles
 
 In addition to the flashing mechanisms, the flasher drivers also provide a way
 to access the DUT bootloader and busybox shell for convenience and debugging,
@@ -304,53 +350,10 @@ with flasherclient.bootloader_shell() as serial:
     print(serial.before)
 ```
 
-## oci-bundles
+## API Reference
 
-The flasher drivers require some artifacts and basic information about the
-target device to operate. To make this easy to distribute and use, we use OCI
-bundles to package the artifacts and metadata.
-
-The bundle is a container that uses [oras](https://oras.land/) to transport the
-artifacts and metadata. It is a container that contains the following:
-- `manifest.yaml`: The manifest file that describes the bundle
-- `data/*`: The artifacts, including kernel, initram, dtbs, etc.
-
-## The format of the manifest is as follows:
-
-```{literalinclude} ../../../../../packages/jumpstarter-driver-flashers/oci_bundles/test/manifest.yaml
-:language: yaml
+The `BaseFlasher` class provides a set of methods to flash the DUT,
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_flashers.client.BaseFlasherClient()
+    :members: flash, busybox_shell, bootloader_shell, use_dtb, use_initram, use_kernel
 ```
-
-## Table with the spec fields of the manifest:
-
-| Field                | Description                                                                | Default |
-| -------------------- | -------------------------------------------------------------------------- | ------- |
-| `manufacturer`       | Name of the device manufacturer                                            |         |
-| `link`               | URL to device documentation or manufacturer website                        |         |
-| `bootcmd`            | Command used to boot the device (e.g. booti, bootz)                        |         |
-| `default_target`     | Default target device to flash to if none specified                        |         |
-| `targets`            | Map of target names to device paths                                        |         |
-| `login.type`         | Type of login shell                                                        | busybox |
-| `login.login_prompt` | Expected login prompt string                                               | login:  |
-| `login.username`     | Username to log in with, leave empty if not needed                         |         |
-| `login.password`     | Password for login, leave empty if not needed                              |         |
-| `login.prompt`       | Shell prompt after successful login                                        | #       |
-| `preflash_commands`  | List of commands to run before flashing, useful to clear boot entries, etc |         |
-| `kernel.file`        | Path to kernel image within bundle                                         |         |
-| `kernel.address`     | Memory address to load kernel to                                           |         |
-| `initram.file`       | Path to initramfs within bundle (if any)                                   |         |
-| `initram.address`    | Memory address to load initramfs to (if any)                               |         |
-| `dtb.default`        | Default DTB variant to use                                                 |         |
-| `dtb.address`        | Memory address to load DTB to                                              |         |
-| `dtb.variants`       | Map of DTB variant names to files                                          |         |
-
-## Examples
-
-An example bundle for the TI J784S4XEVM looks like this:
-
-```{literalinclude} ../../../../../packages/jumpstarter-driver-flashers/oci_bundles/ti_j784s4xevm/manifest.yaml
-:language: yaml
-```
-
-You can find a script to build and push a bundle to a registry here:
-[oci_bundles](https://github.com/jumpstarter-dev/jumpstarter/tree/main/python/packages/jumpstarter-driver-flashers/oci_bundles)

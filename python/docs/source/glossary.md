@@ -2,103 +2,105 @@
 
 ## Acronyms
 
-* `DUT`: Device Under Test
-* `CRD`: Custom Resource Definition
-* `CI/CD`: Continuous Integration/Continuous Deployment
-* `gRPC`: Google Remote Procedure Call
-* `JWT`: JSON Web Token
-* `KVM`: Keyboard, Video, Mouse
+```{glossary}
+:sorted:
+
+CRD
+  Custom Resource Definition - Kubernetes extension for Jumpstarter resources.
+
+DUT
+  Device Under Test.
+
+gRPC
+  Google Remote Procedure Call - Jumpstarter's communication framework.
+
+HiL
+  Hardware-in-the-Loop - testing with real hardware in the loop.
+
+MAN
+  Manual - reference documentation for command-line tools.
+
+JEP
+  Jumpstarter Enhancement Proposal - design document for significant changes.
+
+MCP
+  Model Context Protocol - enables AI agents to interact with hardware.
+```
 
 ## Entities
 
-* `exporter`: A Linux service that exports the interfaces to the DUTs. An
-  exporter connects directly to a Jumpstarter server or directly to a client.
+```{glossary}
+:sorted:
 
-* `client`: A developer or a CI/CD pipeline that connects to the Jumpstarter
-  server and leases exporters. The client can run tests on the leased resources.
+client
+  A user or CI pipeline that connects to the service and leases exporters.
 
-* `controller`: The central service that authenticates and connects the
-  exporters and clients, manages leases, and provides an inventory of available
-  exporters and clients.
+controller
+  Central service for authentication, lease management, and inventory.
 
-* `router`: A service used by the controller to route messages between clients
-  and exporters through a gRPC tunnel, enabling remote access to exported
-  interfaces.
+exporter
+  Service that exposes hardware interfaces to clients over gRPC.
 
-* `host`: A system running the exporter service, typically a low-cost test
-  system such as a single board computer with sufficient interfaces to connect
-  to hardware.
+host
+  Machine running the exporter, typically a single board computer.
+
+operator
+  Kubernetes operator that deploys the controller, router, and CRDs.
+
+router
+  Routes traffic between clients and exporters through a gRPC tunnel.
+
+service
+  Kubernetes backend providing controller, router, and authentication.
+```
 
 ## Concepts
 
-* `device`: A device that is exposed on an exporter. The exporter enumerates
-  these devices and makes them available for use in tests. Examples of resources
-  include:
-  * Network interface
-  * Serial port
-  * GPIO pin
-  * Storage device (USB Muxer, SD-Wire, etc.)
-  * CAN bus interface
+```{glossary}
+:sorted:
 
-* `hook`: A shell script configured on an exporter that runs automatically at
-  lease boundaries. A `beforeLease` hook runs after a lease is assigned but
-  before drivers are available to the client, and an `afterLease` hook runs
-  after the session ends but before the lease is released. Hooks use the `j`
-  CLI to interact with exported devices.
+adapter
+  Transforms driver connections into other forms (port forwarding, VNC, etc).
 
-* `lease`: A time-limited reservation of an exporter. A lease is created by a
-  client and allows the client to use the exporter resources for a limited time.
-  Leases ensure exclusive access to specific devices/exporters.
+device
+  Hardware or virtual resource exposed on an exporter.
 
-* `adapter`: A component that transforms connections exposed by drivers into
-  different forms or interfaces. Adapters take a driver client as input and
-  provide alternative ways to interact with the underlying connection, such as
-  port forwarding, VNC access, or terminal emulation.
+direct mode
+  Client connects to an exporter over TCP without a controller.
 
-* `interface class`: An abstract base class that defines the contract for driver
-  implementations. It specifies the required methods that must be implemented by
-  driver classes and provides the client class path through the `client()` class
-  method.
+distributed mode
+  Shared hardware access across teams via a jumpstarter-controller.
 
-* `driver class`: A class that implements an interface and inherits from the
-  `Driver` base class. It uses the `@export` decorator to expose methods that
-  can be called remotely by clients.
+driver
+  Modular component providing a standardized interface to a device type.
 
-* `driver client class`: The driver client class that is used directly by end
-  users. It interacts with the `driver class` remotely via remote procedure call
-  to invoke exported methods, which in turn interact with the exporter
-  resources.
+exporter shell
+  Interactive shell spawned by `jmp shell` for driver CLI access.
 
-* `driver`: The term for both the `driver class` and the corresponding `driver
-  client class`, not to be confused with `Driver`, the base class of all `driver
-  classes`. Drivers in the main `jumpstarter` repository are called `in-tree
-  drivers`, otherwise they are called `out-of-tree drivers`. Drivers
-  implementing predefined interfaces are called `standard drivers`, otherwise
-  they are called `custom drivers`.
+hook
+  Shell script that runs automatically at lease boundaries.
 
-* `composite driver`: A driver that combines multiple lower-level drivers to
-  create higher-level abstractions or specialized workflows, organized in a tree
-  structure to represent complex device configurations.
+label selector
+  Key-value metadata for selecting exporters when leasing.
 
-* `local mode`: An operation mode where clients communicate directly with
-  exporters running on the same machine or through direct network connections,
-  ideal for individual developers working directly with accessible hardware or
-  virtual devices.
+lease
+  Time-limited reservation of an exporter with exclusive access.
 
-* `distributed mode`: An operation mode that enables multiple teams to securely
-  share hardware resources across a network using a Kubernetes-based controller
-  to coordinate access to exporters and manage leases.
+local mode
+  Client and exporter on the same machine, no Kubernetes required.
 
-* `stream`: A continuous data exchange channel established by drivers for
-  communications like serial connections or video streaming, enabling real-time
-  interaction with both physical and virtual interfaces across the network.
+session
+  Connection context between client and exporter during testing.
+```
 
-* `message`: Commands sent from driver clients to driver implementations,
-  allowing the client to trigger actions or retrieve information from the
-  device.
+## Tools
 
-* `exporter status`: The current state of an exporter in its lifecycle. States
-  include `AVAILABLE`, `BEFORE_LEASE_HOOK`, `LEASE_READY`,
-  `AFTER_LEASE_HOOK`, `BEFORE_LEASE_HOOK_FAILED`, `AFTER_LEASE_HOOK_FAILED`,
-  and `OFFLINE`. The status tracks transitions through the lease and hook
-  lifecycle.
+```{glossary}
+:sorted:
+
+j
+  Shorthand CLI for driver access within the exporter shell.
+
+jmp
+  Primary Jumpstarter CLI for managing clients, exporters, and leases.
+```

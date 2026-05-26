@@ -1,4 +1,4 @@
-# DUT Link driver
+# DUT Link Driver
 
 `jumpstarter-driver-dutlink` provides functionality for interacting with DUT
 Link devices.
@@ -24,4 +24,6 @@ export:
 
 ## API Reference
 
-Add API documentation here.
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_dutlink.driver.Dutlink()
+```

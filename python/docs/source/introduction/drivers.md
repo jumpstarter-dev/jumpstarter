@@ -4,43 +4,43 @@ Jumpstarter uses a modular driver model to build abstractions around the
 interfaces used to interact with target devices, both physical hardware and
 virtual systems.
 
-An [Exporter](exporters.md) uses Drivers to "export" these interfaces from a
-host machine to the clients via [gRPC](https://grpc.io/). Drivers can be thought
+An [{term}`Exporter`](exporters.md) uses Drivers to "export" these interfaces from a
+{term}`host` machine to the clients via {term}`gRPC`. Drivers can be thought
 of as a simplified API for an interface or device type.
 
 ## Architecture
 
 Drivers in Jumpstarter follow a client/server architecture where:
 
-- Driver implementations run on the exporter side and interact directly with
-  hardware or virtual devices
-- Driver clients run on the client side and communicate with drivers via gRPC
+- Driver implementations run on the {term}`exporter` side and interact directly with
+  hardware or virtual {term}`device`s
+- Driver clients run on the client side and communicate with drivers via {term}`gRPC`
 - Interface classes define the contract between implementations and clients
 
 The architecture follows a pattern with these key components:
 
-- **Interface Class** - An abstract base class using Python's ABCMeta to define
+- **Interface class** - An abstract base class using Python's ABCMeta to define
   the contract (methods and their signatures) that driver implementations must
   fulfill. The interface also specifies the client class through the `client()`
   class method.
 
-- **Driver Class** - Inherits from both the Interface and the base `Driver`
+- **Driver class** - Inherits from both the Interface and the base `Driver`
   class, implementing the logic to configure and use hardware interfaces. Driver
   methods are marked with the `@export` decorator to expose them over the
   network.
 
-- **Driver Client** - Provides a user-friendly interface that can be used by
+- **Driver client class** - Provides a user-friendly interface that can be used by
   clients to interact with the driver either locally or remotely over the
   network.
 
-When a client requests a lease and connects to an exporter, a session is created
-for all tests the client needs to execute. Within this session, the specified
+When a client requests a {term}`lease` and connects to an {term}`exporter`, a {term}`session` is created
+for all tests the client needs to execute. Within this {term}`session`, the specified
 `Driver` subclass is instantiated for each configured interface. These driver
-instances live throughout the session's duration, maintaining state and
+instances live throughout the {term}`session`'s duration, maintaining state and
 executing setup/teardown logic.
 
 On the client side, a `DriverClient` subclass is instantiated for each exported
-interface. Since clients may run on different machines than exporters,
+interface. Since clients may run on different machines than {term}`exporter`s,
 `DriverClient` classes are loaded dynamically when specified in the allowed
 packages list.
 
@@ -49,34 +49,34 @@ methods when needed but preserve existing signatures. If breaking changes are
 required, create new interface, client, and driver versions within the same
 module.
 
-Drivers are often used with [Adapters](adapters.md), which transform driver
+Drivers are often used with [{term}`adapter`s](adapters.md), which transform driver
 connections into different forms or interfaces for specific use cases.
 
 ## Types
 
-The API reference of the documentation provides a complete list of all standard
-drivers, you can find it here: [Driver API
+The API reference of the documentation provides a complete list of all
+standard drivers, you can find it here: [Driver API
 Reference](../reference/package-apis/drivers/index.md).
 
 Some categories of drivers include:
 
-- [System
-  Control](../reference/package-apis/drivers/index.md#system-control-drivers):
+- [System Control](../reference/package-apis/drivers/index.md#system-control):
   Control power to devices, or general control.
-- [Communication](../reference/package-apis/drivers/index.md#communication-drivers):
+- [Communication](../reference/package-apis/drivers/index.md#communication):
   Provide protocols for network communication, such as TCP/IP, Serial, CAN bus,
   etc.
-- [Data and
-  Storage](../reference/package-apis/drivers/index.md#storage-and-data-drivers):
+- [Storage and Data](../reference/package-apis/drivers/index.md#storage-and-data):
   Control storage devices, such as SD cards or USB drives, and data.
-- [Media](../reference/package-apis/drivers/index.md#media-drivers): Provide
+- [Media](../reference/package-apis/drivers/index.md#media): Provide
   interfaces for media capture and playback, such as video or audio.
-- [Debug and
-  Programming](../reference/package-apis/drivers/index.md#debug-and-programming-drivers):
-  Provide interfaces for debugging and programming devices, such as JTAG or SWD,
-  remote flashing, emulation, etc.
-- [Utility](../reference/package-apis/drivers/index.md#utility-drivers): Provide
-  utility functions, such as shell driver commands on a exporter.
+- [Automotive Diagnostics](../reference/package-apis/drivers/index.md#automotive-diagnostics):
+  Provide automotive diagnostic protocol interfaces.
+- [Flashing and Programming](../reference/package-apis/drivers/index.md#flashing-and-programming):
+  Provide interfaces for flashing firmware and programming devices.
+- [Emulation](../reference/package-apis/drivers/index.md#emulation):
+  Manage virtual and emulated targets.
+- [Utility](../reference/package-apis/drivers/index.md#utility): Provide
+  utility functions, such as shell driver commands on an {term}`exporter`.
 
 ### Composite Drivers
 
@@ -85,7 +85,7 @@ abstractions or specialized workflows. For example, a composite driver might
 coordinate power cycling, storage re-flashing, and serial communication to
 automate a device initialization process.
 
-In Jumpstarter, drivers are organized in a tree structure which allows for the
+In Jumpstarter, drivers are organized in a driver tree structure which allows for the
 representation of complex device configurations that may be found in your
 environment.
 
@@ -103,7 +103,7 @@ MyHarness         # Custom composite driver for the entire target device harness
 
 ## Configuration
 
-Drivers are configured using a YAML Exporter config file, which specifies the
+Drivers are configured using a YAML exporter config file, which specifies the
 drivers to load and the parameters for each. Drivers are distributed as Python
 packages making it easy to develop and install your own drivers.
 
@@ -143,20 +143,41 @@ export:
 
 ## Communication
 
-Drivers use two primary methods to communicate between client and exporter:
+Drivers expose their methods over {term}`gRPC` using three RPC styles (see
+[RPC life cycle](https://grpc.io/docs/what-is-grpc/core-concepts/#rpc-life-cycle)
+for details on gRPC counterparts):
 
-### Messages
+```{mermaid}
+flowchart LR
+    subgraph "Unary RPC"
+        direction TB
+        C1["Client"] -- "DriverCall\n(desired state)" --> D1["Driver"]
+        D1 -- "Result" --> C1
+        E1["Example: power on/off"]
+    end
 
-Commands are sent as messages from driver clients to driver implementations,
-allowing the client to trigger actions or retrieve information from the device.
-Methods marked with the `@export` decorator are made available over the network.
+    subgraph "Server Streaming RPC"
+        direction TB
+        C2["Client"] -- "StreamingDriverCall\n(interval)" --> D2["Driver"]
+        D2 -- "Result Stream" --> C2
+        E2["Example: power readings"]
+    end
 
-### Streams
+    subgraph "Bidirectional Streaming RPC"
+        direction TB
+        C3["Client"] <-- "DriverStream\n(Byte Stream)" --> D3["Driver"]
+        E3["Example: video capture"]
+    end
+```
 
-Drivers can establish streams for continuous data exchange, such as for serial
-communication or video streaming. This enables real-time interaction with both
-physical and virtual interfaces across the network. Methods marked with the
-`@exportstream` decorator create streams for bidirectional communication.
+- **Unary** - Methods marked with `@export` send a single request and receive a
+  single response. Used for commands like power on/off or querying device state.
+- **Server Streaming** - Methods marked with `@export` that return a generator
+  produce a stream of responses from a single request. Used for continuous data
+  like sensor readings.
+- **Bidirectional Streaming** - Methods marked with the `@exportstream` decorator open a
+  full-duplex byte stream. Used for serial communication, video capture, or
+  tunneling existing protocols (such as SSH) over Jumpstarter.
 
 
 ## Authentication and Security
@@ -165,33 +186,33 @@ Driver access is controlled through Jumpstarter's authentication mechanisms:
 
 ### Local Mode Authentication
 
-In local mode, drivers are accessible to any process that can connect to the
+In {term}`local mode`, drivers are accessible to any process that can connect to the
 local Unix socket. This is typically restricted by file system permissions. When
 running tests locally, authentication is simplified since everything runs in the
 same user context.
 
 ### Distributed Mode Authentication
 
-In distributed mode, authentication is handled through JWT tokens:
+In {term}`distributed mode`, authentication is handled through JWT tokens:
 
-- **Client Authentication**: Clients authenticate to the controller using JWT
+- **Client Authentication**: Clients authenticate to the {term}`controller` using JWT
   tokens, which establishes their identity and permissions
-- **Exporter Authentication**: Similarly, exporters authenticate to the
-  controller with their own tokens
-- **Driver Access Control**: The controller enforces access control by only
-  allowing authorized clients to acquire leases on exporters and their drivers
-- **Driver Allowlist**: Client configurations can specify which driver packages
+- **Exporter Authentication**: Similarly, {term}`exporter`s authenticate to the
+  {term}`controller` with their own tokens
+- **Driver Access Control**: The {term}`controller` enforces access control by only
+  allowing authorized clients to acquire {term}`lease`s on {term}`exporter`s and their drivers
+- **Driver allowlist**: Client configurations can specify which driver packages
   are allowed to be loaded, preventing unintended execution of untrusted code
 
 ### Driver Package Security
 
-When using distributed mode, driver security considerations include:
+When using {term}`distributed mode`, driver security considerations include:
 
 - **Package Verification**: Clients can verify that only trusted driver packages
   are loaded by configuring allowlists
 - **Capability Restrictions**: Access to specific driver functionality can be
   restricted based on client permissions
-- **Session Isolation**: Each client session operates with its own driver
+- **{term}`Session` Isolation**: Each client {term}`session` operates with its own driver
   instances to prevent interference between users
 
 ## Custom Drivers

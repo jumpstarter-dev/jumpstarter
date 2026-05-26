@@ -11,16 +11,6 @@ used as a child of `SSHWrapper`.
 $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-ssh-mitm
 ```
 
-## Architecture
-
-```
-SSHWrapper --> SSHMITM --> TcpNetwork --> DUT
-```
-
-- **SSHWrapper**: Handles SSH CLI and command execution
-- **SSHMITM**: Provides authenticated proxy connection (stores the SSH key)
-- **TcpNetwork**: Raw TCP connection to the DUT
-
 ## Configuration
 
 The command name is determined by the key in the `export` section. Use `ssh_mitm` to get the `j ssh_mitm` command:
@@ -103,6 +93,16 @@ j ssh_mitm -v hostname
 ```
 
 **Note**: The command name (`ssh_mitm`) is determined by the key in your exporter config's `export` section. You can use any name you prefer.
+
+## Architecture
+
+```
+SSHWrapper --> SSHMITM --> TcpNetwork --> DUT
+```
+
+- **SSHWrapper**: Handles SSH CLI and command execution
+- **SSHMITM**: Provides authenticated proxy connection (stores the SSH key)
+- **TcpNetwork**: Raw TCP connection to the DUT
 
 ## API Reference
 

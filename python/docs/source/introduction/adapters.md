@@ -1,40 +1,40 @@
 # Adapters
 
-Jumpstarter uses adapters to transform network connections established by
+Jumpstarter uses {term}`adapter`s to transform network connections established by
 drivers into different forms or interfaces that are more appropriate for
 specific use cases.
 
 ## Architecture
 
-Adapters in Jumpstarter follow a transformation pattern where:
+{term}`Adapter`s in Jumpstarter follow a transformation pattern where:
 
-- Adapters take a driver client as input
+- {term}`Adapter`s take a driver client class as input
 - They transform the connection into a different interface format
 - The transformed interface is exposed to the user in a way that's tailored for
   specific scenarios
 
 The architecture consists of these key components:
 
-- **Adapter Base** - Adapters typically follow a context manager pattern using
-  Python's `with` statement for resource management. Each adapter takes a driver
+- **{term}`Adapter` Base** - {term}`Adapter`s typically follow a context manager pattern using
+  Python's `with` statement for resource management. Each {term}`adapter` takes a driver
   client as input and transforms its connection.
 
-- **Connection Transformation** - Adapters create a new interface on top of an
+- **Connection Transformation** - {term}`Adapter`s create a new interface on top of an
   existing driver connection, such as forwarding ports, providing web
   interfaces, or offering terminal-like access.
 
-- **Resource Lifecycle** - Adapters handle proper setup and teardown of
+- **Resource Lifecycle** - {term}`Adapter`s handle proper setup and teardown of
   resources, ensuring connections are properly established and cleaned up.
 
 Unlike [Drivers](drivers.md), which establish the foundational connections to
-hardware or virtual interfaces, adapters focus on providing alternative ways to
+hardware or virtual interfaces, {term}`adapter`s focus on providing alternative ways to
 interact with those connections without modifying the underlying drivers.
-Adapters operate entirely on the client side and transform existing connections
+{term}`Adapter`s operate entirely on the client side and transform existing connections
 rather than establishing new ones directly with hardware or virtual devices.
 
 ## Types
 
-Different types of adapters serve different needs:
+Different types of {term}`adapter`s serve different needs:
 
 - **Port Forwarding Adapters** - Convert network connections to local ports or
   sockets
@@ -45,17 +45,17 @@ Different types of adapters serve different needs:
 - **UI Adapters** - Create user interfaces for interacting with devices (e.g.,
   web-based VNC)
 
-Adapters can be composed and extended for more complex scenarios:
+{term}`Adapter`s can be composed and extended for more complex scenarios:
 
-- **Chaining adapters**: Use the output of one adapter as the input to another
-- **Custom adapters**: Create specialized adapters for specific hardware or
+- **Chaining {term}`adapter`s**: Use the output of one {term}`adapter` as the input to another
+- **Custom {term}`adapter`s**: Create specialized {term}`adapter`s for specific hardware or
   software interfaces
 - **Extended functionality**: Add logging, monitoring, or security features on
-  top of base adapters
+  top of base {term}`adapter`s
 
 ## Implementation Patterns
 
-Adapters typically implement the context manager protocol (`__enter__` and
+{term}`Adapter`s typically implement the context manager protocol (`__enter__` and
 `__exit__`) to ensure proper resource management. The general pattern is:
 
 1. Initialize with a driver client reference
@@ -63,10 +63,10 @@ Adapters typically implement the context manager protocol (`__enter__` and
 3. Return the appropriate interface (URL, address, interactive object)
 4. Clean up resources in `__exit__`
 
-This allows adapters to be used in `with` statements for clean, deterministic
+This allows {term}`adapter`s to be used in `with` statements for clean, deterministic
 resource handling.
 
-When working with adapters, follow these recommended practices:
+When working with {term}`adapter`s, follow these recommended practices:
 
 1. **Always use context managers** (`with` statements) to ensure proper resource
    cleanup and prevent resource leaks

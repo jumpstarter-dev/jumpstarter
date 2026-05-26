@@ -427,6 +427,8 @@ class Hostfwd(BaseModel):
 
 @dataclass(kw_only=True)
 class Qemu(Driver):
+    """QEMU virtual machine management driver."""
+
     arch: str = field(default_factory=platform.machine)
     cpu: str | None = None
 

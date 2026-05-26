@@ -1,13 +1,13 @@
-# NoyitoPowerSerial / NoyitoPowerHID Driver
+# Noyito Relay Driver
 
 `jumpstarter-driver-noyito-relay` provides Jumpstarter power drivers for NOYITO
 USB relay boards in 1, 2, 4, and 8-channel variants.
 
 Two hardware series are supported:
 
-- **`NoyitoPowerSerial`** — 1/2-channel boards using a CH340 USB-to-serial chip
+- **`NoyitoPowerSerial`** - 1/2-channel boards using a CH340 USB-to-serial chip
   (serial port, supports status query)
-- **`NoyitoPowerHID`** — 4/8-channel "HID Drive-free" boards presenting as a
+- **`NoyitoPowerHID`** - 4/8-channel "HID Drive-free" boards presenting as a
   USB HID device (no serial port, supports all-channels status query)
 
 Both use the same 4-byte binary command protocol (`A0` + channel + state +
@@ -15,8 +15,9 @@ checksum).
 
 ## Installation
 
-```shell
-pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-noyito-relay
+```{code-block} console
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-noyito-relay
 ```
 
 If you are using `NoyitoPowerHID`, the `hid` Python package requires the native
@@ -28,29 +29,9 @@ If you are using `NoyitoPowerHID`, the `hid` Python package requires the native
 | Debian/Ubuntu | `sudo apt-get install libhidapi-hidraw0` |
 | Fedora/RHEL | `sudo dnf install hidapi` |
 
-## Board Detection
+## Configuration
 
-To determine which driver to use, check whether the board appears as a serial
-port or a HID device:
-
-- **Serial port** (`/dev/ttyUSB*`, `/dev/tty.usbserial-*`): Use `NoyitoPowerSerial`
-  (1/2-channel CH340 board)
-- **No serial port / HID only**: Use `NoyitoPowerHID` (4/8-channel HID
-  Drive-free board). Confirm with `lsusb` — the NOYITO HID module appears with
-  VID `0x1409` / PID `0x07D7` (decimal: 5131 / 2007).
-
-## `NoyitoPowerSerial` (1/2-Channel Serial)
-
-### Hardware Notes
-
-- **Purchase**: [NOYITO 2-Channel USB Relay Module (Amazon)](https://www.amazon.com/NOYITO-2-Channel-Module-Control-Intelligent/dp/B081RM7PMY/)
-- **Chip**: CH340 USB-to-serial
-- **Baud rate**: 9600
-- **Default port**: `/dev/ttyUSB0` (Linux) — may appear as `/dev/tty.usbserial-*` on macOS
-- **Channels**: 1 or 2 independent relay channels on one USB port
-- **Supply voltage**: 5 V via USB
-
-### Configuration
+### NoyitoPowerSerial (1/2-Channel Serial)
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -74,49 +55,7 @@ export:
       channel: 2
 ```
 
-### API Reference
-
-Implements `PowerInterface` (provides `on`, `off`, `read`, and `cycle` via
-`PowerClient`).
-
-| Method | Description |
-|--------|-------------|
-| `on()` | Energise the configured relay channel |
-| `off()` | De-energise the configured relay channel |
-| `read()` | Yields a single `PowerReading(voltage=0.0, current=0.0)` |
-| `status()` | Returns the channel state string, e.g. `"on"`, `"off"`, or `"partial"` |
-
-### CLI Usage
-
-Inside a `jmp exporter shell`:
-
-```shell
-# Power on relay 1
-j relay1 on
-
-# Query state of relay 1
-j relay1 status
-# on
-
-# Power cycle relay 2 with a 3-second wait
-j relay2 cycle --wait 3
-
-# Power off relay 1
-j relay1 off
-```
-
-## `NoyitoPowerHID` (4/8-Channel HID Drive-free)
-
-### Hardware Notes
-
-- **Purchase (4-channel)**: [NOYITO 4-Channel HID Drive-free USB Relay (Amazon)](https://www.amazon.com/NOYITO-Drive-Free-Computer-2-Channel-Micro-USB/dp/B0B538N95Q)
-- **Purchase (8-channel)**: [NOYITO 8-Channel HID Drive-free USB Relay (Amazon)](https://www.amazon.com/NOYITO-Drive-Free-Computer-2-Channel-Micro-USB/dp/B0B536M5MH)
-- **Interface**: USB HID (no serial port)
-- **Default VID/PID**: `5131` / `2007` (0x1409 / 0x07D7)
-- **Channels**: 4 or 8 independent relay channels
-- **Supply voltage**: 5 V via USB
-
-### Configuration
+### NoyitoPowerHID (4/8-Channel HID)
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -144,32 +83,63 @@ export:
       all_channels: true
 ```
 
-### API Reference
+### Board Detection
 
-Implements `PowerInterface` (provides `on`, `off`, `read`, and `cycle` via
-`PowerClient`).
+To determine which driver to use, check whether the board appears as a serial
+port or a HID device:
 
-| Method | Description |
-|--------|-------------|
-| `on()` | Energise the configured relay channel(s) |
-| `off()` | De-energise the configured relay channel(s) |
-| `read()` | Yields a single `PowerReading(voltage=0.0, current=0.0)` |
-| `status()` | Returns the channel state string, e.g. `"on"`, `"off"`, or `"partial"` |
+- **Serial port** (`/dev/ttyUSB*`, `/dev/tty.usbserial-*`): Use `NoyitoPowerSerial`
+  (1/2-channel CH340 board)
+- **No serial port / HID only**: Use `NoyitoPowerHID` (4/8-channel HID
+  Drive-free board). Confirm with `lsusb` - the NOYITO HID module appears with
+  VID `0x1409` / PID `0x07D7` (decimal: 5131 / 2007).
 
-### CLI Usage
+#### Hardware Notes (Serial)
+
+- **Purchase**: [NOYITO 2-Channel USB Relay Module (Amazon)](https://www.amazon.com/NOYITO-2-Channel-Module-Control-Intelligent/dp/B081RM7PMY/)
+- **Chip**: CH340 USB-to-serial
+- **Baud rate**: 9600
+- **Default port**: `/dev/ttyUSB0` (Linux) - may appear as `/dev/tty.usbserial-*` on macOS
+- **Channels**: 1 or 2 independent relay channels on one USB port
+- **Supply voltage**: 5 V via USB
+
+#### Hardware Notes (HID)
+
+- **Purchase (4-channel)**: [NOYITO 4-Channel HID Drive-free USB Relay (Amazon)](https://www.amazon.com/NOYITO-Drive-Free-Computer-2-Channel-Micro-USB/dp/B0B538N95Q)
+- **Purchase (8-channel)**: [NOYITO 8-Channel HID Drive-free USB Relay (Amazon)](https://www.amazon.com/NOYITO-Drive-Free-Computer-2-Channel-Micro-USB/dp/B0B536M5MH)
+- **Interface**: USB HID (no serial port)
+- **Default VID/PID**: `5131` / `2007` (0x1409 / 0x07D7)
+- **Channels**: 4 or 8 independent relay channels
+- **Supply voltage**: 5 V via USB
+
+## Usage
 
 Inside a `jmp exporter shell`:
 
 ```shell
-# Power on relay channel 1 of the 4-ch board
-j relay_4ch_ch1 on
+# Power on relay 1
+j relay1 on
 
-# Power cycle with a 1-second wait
-j relay_4ch_ch1 cycle --wait 1
+# Query state of relay 1
+j relay1 status
+# on
 
-# Power off
-j relay_4ch_ch1 off
+# Power cycle relay 2 with a 3-second wait
+j relay2 cycle --wait 3
+
+# Power off relay 1
+j relay1 off
 
 # Power on all 8 channels simultaneously
 j relay_8ch_all on
+```
+
+## API Reference
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_noyito_relay.driver.NoyitoPowerSerial()
+    :members:
+
+.. autoclass:: jumpstarter_driver_noyito_relay.driver.NoyitoPowerHID()
+    :members:
 ```

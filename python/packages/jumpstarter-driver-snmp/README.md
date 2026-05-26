@@ -1,4 +1,4 @@
-# SNMP driver
+# SNMP Driver
 
 `jumpstarter-driver-snmp` provides functionality for controlling power via
 SNMP-enabled PDUs (Power Distribution Units).

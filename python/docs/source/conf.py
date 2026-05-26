@@ -3,7 +3,7 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-# -- Project information -----------------------------------------------------
+# - Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 import asyncio
@@ -17,10 +17,10 @@ os.environ["TERM"] = "dumb"
 sys.path.insert(0, os.path.abspath("../.."))
 
 project = "jumpstarter"
-copyright = "2025, Jumpstarter Contributors"
+copyright = "2026, Jumpstarter Contributors"
 author = "Jumpstarter Contributors"
 
-# -- General configuration ---------------------------------------------------
+# - General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
@@ -39,13 +39,13 @@ templates_path = ["_templates"]
 exclude_patterns = []
 
 mermaid_version = "10.9.1"
+mermaid_init_js = ""
 
 suppress_warnings = [
-    "ref.class",  # suppress unresolved Python class references (external references
-    # are warnings otherwise)
+    "ref.class",
 ]
 
-# -- Options for HTML output -------------------------------------------------
+# - Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = "furo"
@@ -88,7 +88,7 @@ myst_substitutions = {
 
 doctest_test_doctest_blocks = ""
 
-html_js_files = ["js/theme-toggle.js"]
+html_js_files = ["js/theme-toggle.js", "js/mermaid-theme.js", "js/glossary-tooltips.js"]
 html_static_path = ["_static"]
 html_css_files = ["css/custom.css"]
 html_sidebars = {

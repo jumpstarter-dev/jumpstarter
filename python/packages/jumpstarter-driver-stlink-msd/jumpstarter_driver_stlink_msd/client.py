@@ -41,6 +41,6 @@ class StlinkMsdFlasherClient(FlasherClient):
             name = Path(file).name
             click.echo(f"Flashing {name}...")
             self.flash(file, target=name, compression=compression)
-            click.echo("Flash complete — ST-LINK will program the target MCU.")
+            click.echo("Flash complete - ST-LINK will program the target MCU.")
 
         return base

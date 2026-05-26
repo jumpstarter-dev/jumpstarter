@@ -61,7 +61,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.24"
 
       - name: Cache controller image
         id: cache
@@ -104,7 +104,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.24"
 
       - name: Cache operator artifacts
         id: cache
@@ -189,7 +189,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.24"
 
       - name: Download controller image
         uses: actions/download-artifact@v4
@@ -259,7 +259,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.24"
 
       - name: Setup compat environment (old controller v0.8.1)
         run: make e2e-compat-setup COMPAT_SCENARIO=old-controller
@@ -287,7 +287,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version: "1.24"
 
       - name: Download controller image
         uses: actions/download-artifact@v4

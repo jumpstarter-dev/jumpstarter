@@ -56,7 +56,7 @@ def _make_mock_osip_client():
 
 
 # =========================================================================
-# Unit tests — happy paths
+# Unit tests - happy paths
 # =========================================================================
 
 
@@ -560,7 +560,7 @@ def stateful_client(stateful_osip):
     yield from _stateful_client_ctx(stateful_osip)
 
 
-# -- RPC workflows ---------------------------------------------------------
+# - RPC workflows ---------------------------------------------------------
 
 
 def test_stateful_rpc_call_returns_canned_response(stateful_client, stateful_osip):
@@ -600,7 +600,7 @@ def test_stateful_custom_rpc_response(stateful_client, stateful_osip):
     assert resp.payload == "cafe"
 
 
-# -- send / receive messaging workflow -------------------------------------
+# - send / receive messaging workflow -------------------------------------
 
 
 def test_stateful_send_then_receive(stateful_client, stateful_osip):
@@ -637,7 +637,7 @@ def test_stateful_multiple_messages_fifo(stateful_client, stateful_osip):
     assert r3.service_id == 0x3333
 
 
-# -- service discovery workflow --------------------------------------------
+# - service discovery workflow --------------------------------------------
 
 
 def test_stateful_find_service_all_instances(stateful_client):
@@ -738,7 +738,7 @@ def test_stateful_discover_then_rpc_to_each_instance(stateful_client, stateful_o
     assert len(stateful_osip._rpc_history) == 2
 
 
-# -- event subscription workflow -------------------------------------------
+# - event subscription workflow -------------------------------------------
 
 
 def test_stateful_subscribe_receive_unsubscribe(stateful_client, stateful_osip):
@@ -793,7 +793,7 @@ def test_stateful_event_timeout_when_no_events(stateful_client):
         stateful_client.receive_event(timeout=0.1)
 
 
-# -- connection management workflows ---------------------------------------
+# - connection management workflows ---------------------------------------
 
 
 def test_stateful_reconnect_resets_subscriptions(stateful_client, stateful_osip):
@@ -815,7 +815,7 @@ def test_stateful_close_then_reconnect(stateful_client, stateful_osip):
     assert stateful_osip._started is True
 
 
-# -- end-to-end composite workflows ----------------------------------------
+# - end-to-end composite workflows ----------------------------------------
 
 
 def test_stateful_full_rpc_session(stateful_client, stateful_osip):

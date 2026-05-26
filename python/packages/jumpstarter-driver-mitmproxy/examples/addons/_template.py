@@ -29,7 +29,7 @@ Optional methods:
 
     cleanup()
         Called when the addon is unloaded (not currently triggered
-        automatically — reserved for future use).
+        automatically - reserved for future use).
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from mitmproxy import ctx, http
 
 
 class Handler:
-    """Template handler — replace with your implementation."""
+    """Template handler - replace with your implementation."""
 
     def __init__(self):
         # Initialize any state your handler needs.
@@ -107,6 +107,6 @@ class Handler:
     def cleanup(self) -> None:
         """Called when the addon is unloaded.
 
-        Reserved for future use — not yet triggered automatically.
+        Reserved for future use - not yet triggered automatically.
         Add teardown logic here (close connections, flush buffers, etc.).
         """

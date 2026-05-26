@@ -1,4 +1,4 @@
-# DutNetwork Driver
+# DUT Network Driver
 
 `jumpstarter-driver-dut-network` provides network isolation for DUTs (Devices Under Test) by configuring a dedicated network interface with NAT, DHCP, and nftables-based firewall rules on the exporter host.
 
@@ -20,17 +20,6 @@ The following must be available on the exporter host:
 
 Optional:
 - `nmcli` (NetworkManager) - only needed if NM is running; the driver marks its interfaces as unmanaged
-
-## How It Works
-
-The driver configures an isolated network for the DUT:
-
-1. Takes over a dedicated Ethernet interface (e.g., USB NIC) and assigns a gateway IP directly to it
-2. Runs dnsmasq to provide DHCP to DUTs connected to that interface
-3. Configures nftables rules for NAT (masquerade or 1:1)
-4. Enables IP forwarding so DUT traffic routes through the exporter
-
-When NetworkManager is detected, the driver marks managed interfaces as `unmanaged` to prevent interference. On cleanup, existing addresses are flushed and the interface is restored to NetworkManager control.
 
 ## Configuration
 
@@ -118,7 +107,7 @@ export:
           ip: "10.26.28.2"
 ```
 
-## Configuration Reference
+### Reference
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
@@ -136,7 +125,7 @@ export:
 | `nat_mode` | str | `masquerade` | NAT mode: `masquerade`, `1to1`, `disabled`, or `none` |
 | `public_interface` | str | None | Interface for IP alias (defaults to upstream) |
 
-### Address Entry Fields
+#### Address Entry Fields
 
 | Field | Required | Description |
 |-------|----------|-------------|
@@ -145,7 +134,9 @@ export:
 | `hostname` | no | Hostname for DHCP |
 | `public_ip` | no | Public IP for 1:1 NAT (per-entry). At least one entry must have `public_ip` when `nat_mode=1to1` |
 
-## Client CLI
+## Usage
+
+### CLI
 
 Inside a `jmp shell` session:
 
@@ -181,7 +172,7 @@ j dut-network add-dns controller.lab.local 10.26.28.1
 j dut-network remove-dns controller.lab.local
 ```
 
-## Python API
+### Python
 
 ```python
 from jumpstarter.common.utils import env
@@ -212,11 +203,16 @@ with env() as client:
     client.dut_network.remove_dns_entry("myhost.lab.local")
 ```
 
-## nftables Coexistence
-
-The driver uses a dedicated nftables table (named after the interface, e.g. `table ip jumpstarter_enx00e04c683af1`) that does not conflict with firewalld or other nftables users. Firewalld manages its own `firewalld` table and does not touch other tables, even during reloads.
-
 ## Architecture
+
+The driver configures an isolated network for the DUT:
+
+1. Takes over a dedicated Ethernet interface (e.g., USB NIC) and assigns a gateway IP directly to it
+2. Runs dnsmasq to provide DHCP to DUTs connected to that interface
+3. Configures nftables rules for NAT (masquerade or 1:1)
+4. Enables IP forwarding so DUT traffic routes through the exporter
+
+When NetworkManager is detected, the driver marks managed interfaces as `unmanaged` to prevent interference. On cleanup, existing addresses are flushed and the interface is restored to NetworkManager control.
 
 ```text
                      Exporter Host
@@ -259,6 +255,17 @@ The driver uses a dedicated nftables table (named after the interface, e.g. `tab
   isolation or when routing is handled externally.
 ```
 
+## API Reference
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_dut_network.driver.DutNetwork()
+```
+
+```{note}
+The driver uses a dedicated nftables table (named after the interface) that
+does not conflict with firewalld or other nftables users.
+```
+
 ## Troubleshooting
 
 ### NAT traffic not forwarding (Docker hosts)
@@ -267,7 +274,7 @@ On hosts running Docker, the default iptables policy is often set to
 `iptables -P FORWARD DROP` to isolate container networks.  Since modern
 Linux translates iptables rules into nftables under the hood, this creates
 a `table ip filter { chain FORWARD { policy drop } }` base chain that
-**all** forwarded packets must pass — including traffic routed through
+**all** forwarded packets must pass - including traffic routed through
 the DUT interface.
 
 The driver **automatically** detects this situation using native nftables:
@@ -290,12 +297,3 @@ sysctl net.ipv4.conf.<interface>.forwarding
 sysctl net.ipv4.conf.<upstream>.forwarding
 ```
 
-## Running Tests
-
-Integration tests require root privileges through passwordless sudo, or direct root access:
-
-```shell
-make pkg-test-dut-network
-```
-
-Tests use veth pairs and network namespaces to simulate the DUT without real hardware.

@@ -1,4 +1,4 @@
-# Shell driver
+# Shell Driver
 
 `jumpstarter-driver-shell` provides functionality for shell command execution.
 
@@ -83,37 +83,7 @@ For the dict format, each method supports:
 
 **Note:** You can mix both formats in the same configuration - use string format for simple commands and dict format when you want custom descriptions or timeouts.
 
-## API Reference
-
-Assuming the exporter driver is configured as in the example above, the client
-methods will be generated dynamically, and they will be available as follows:
-
-```{eval-rst}
-.. autoclass:: jumpstarter_driver_shell.client.ShellClient
-    :members:
-
-.. function:: ls()
-   :noindex:
-
-   :returns: A tuple(stdout, stderr, return_code)
-
-.. function:: method2()
-    :noindex:
-
-    :returns: A tuple(stdout, stderr, return_code)
-
-.. function:: method3(arg1, arg2)
-    :noindex:
-
-    :returns: A tuple(stdout, stderr, return_code)
-
-.. function:: env_var(arg1, arg2, ENV_VAR="value")
-    :noindex:
-
-    :returns: A tuple(stdout, stderr, return_code)
-```
-
-## CLI Usage
+## Usage
 
 The shell driver also provides a CLI when using `jmp shell`. All configured methods become available as CLI commands, except for methods starting with `_` which are considered private and hidden from the end user.
 
@@ -195,4 +165,34 @@ Hello World second arg
 # Set environment variables
 $ j shell env_var arg1 arg2 --env ENV_VAR=myvalue
 arg1,arg2,myvalue
+```
+
+## API Reference
+
+Assuming the exporter driver is configured as in the example above, the client
+methods will be generated dynamically, and they will be available as follows:
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_shell.client.ShellClient
+    :members:
+
+.. function:: ls()
+   :noindex:
+
+   :returns: A tuple(stdout, stderr, return_code)
+
+.. function:: method2()
+    :noindex:
+
+    :returns: A tuple(stdout, stderr, return_code)
+
+.. function:: method3(arg1, arg2)
+    :noindex:
+
+    :returns: A tuple(stdout, stderr, return_code)
+
+.. function:: env_var(arg1, arg2, ENV_VAR="value")
+    :noindex:
+
+    :returns: A tuple(stdout, stderr, return_code)
 ```

@@ -1,7 +1,10 @@
-# RideSX driver
+# RideSX Driver
 
 `jumpstarter-driver-ridesx` provides functionality for Qualcomm RideSX devices,
 supporting fastboot flashing operations and power control through serial communication.
+It includes automatic compression handling (`.gz`, `.gzip`, `.xz`), built-in storage
+for firmware images with upload/download capabilities, and direct access to the
+underlying serial interface for custom commands.
 
 This is mainly tailored towards images that were produced using [automotive-image-builder](https://sigs.centos.org/automotive/latest/getting-started/about-automotive-image-builder.html):
 
@@ -85,23 +88,7 @@ Both drivers require:
 | ------ | ------------------------------------------------------------ | -------- |
 | serial | PySerial driver instance for communicating with the device  | yes      |
 
-## API Reference
-
-### RideSXClient
-
-```{eval-rst}
-.. autoclass:: jumpstarter_driver_ridesx.client.RideSXClient()
-    :members: flash, flash_images, boot_to_fastboot, cli
-```
-
-### RideSXPowerClient
-
-```{eval-rst}
-.. autoclass:: jumpstarter_driver_ridesx.client.RideSXPowerClient()
-    :members: on, off, cycle, rescue, serial
-```
-
-## Usage Examples
+## Usage
 
 ### Flash Single Partition
 
@@ -144,10 +131,18 @@ power_client.off()
 power_client.cycle(wait=5)  # Wait 5 seconds between off/on
 ```
 
-## Features
+## API Reference
 
-- **Fastboot Support**: Automatically detects fastboot devices and flashes partitions
-- **Compression Handling**: Supports automatic decompression of `.gz`, `.gzip`, and `.xz` files
-- **Power Control**: Serial-based power control with on/off/cycle operations
-- **Storage Management**: Built-in storage for firmware images with upload/download capabilities
-- **Serial Communication**: Direct access to underlying serial interface for custom commands
+### RideSXClient
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_ridesx.client.RideSXClient()
+    :members: flash, flash_images, boot_to_fastboot, cli
+```
+
+### RideSXPowerClient
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_ridesx.client.RideSXPowerClient()
+    :members: on, off, cycle, rescue, serial
+```

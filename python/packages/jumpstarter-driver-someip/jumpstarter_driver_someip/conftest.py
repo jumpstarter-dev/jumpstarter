@@ -99,7 +99,7 @@ def _read_someip_message(conn: socket.socket) -> tuple[int, int, int, int, int, 
 
 
 # =========================================================================
-# MockSomeIpServer — minimal TCP server for wire-level integration tests
+# MockSomeIpServer - minimal TCP server for wire-level integration tests
 # =========================================================================
 
 
@@ -195,7 +195,7 @@ def mock_someip_server():
 
 
 # =========================================================================
-# StatefulOsipClient — drop-in for opensomeip.SomeIpClient
+# StatefulOsipClient - drop-in for opensomeip.SomeIpClient
 #
 # Tracks connection state, service registry, event subscriptions,
 # message history, and enforces ordering rules.  Designed to be
@@ -307,7 +307,7 @@ class StatefulOsipClient:
 
     def _require_started(self):
         if not self._started:
-            raise SomeIpNotStarted("Client not started — call start() first")
+            raise SomeIpNotStarted("Client not started - call start() first")
 
     def start(self):
         self._started = True
@@ -355,7 +355,7 @@ class StatefulOsipClient:
         self._require_started()
         self._subscribed_eventgroups.discard(eventgroup_id)
 
-    # -- test helpers --
+    # - test helpers --
 
     def inject_event(self, service_id: int, event_id: int, payload: bytes):
         """Push a fake event notification into the event receiver queue."""

@@ -1,4 +1,4 @@
-# SDWire driver
+# SD Wire Driver
 
 `jumpstarter-driver-sdwire` provides functionality for using the SDWire storage
 multiplexer. This device multiplexes an SD card between the DUT and the exporter

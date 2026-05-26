@@ -1,4 +1,4 @@
-# Ustreamer driver
+# uStreamer Driver
 
 `jumpstarter-driver-ustreamer` provides functionality for using the ustreamer
 video streaming server driven by the jumpstarter exporter. This driver takes a

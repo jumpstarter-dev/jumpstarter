@@ -442,7 +442,7 @@ def stateful_client(stateful_master):
     yield from _stateful_client_ctx(stateful_master)
 
 
-# -- session & identification --------------------------------------------------
+# - session & identification --------------------------------------------------
 
 
 def test_stateful_connect_disconnect(stateful_client, stateful_master):
@@ -470,7 +470,7 @@ def test_stateful_get_status_shows_protection(stateful_client):
     assert status.resource_protection["daq"] is False
 
 
-# -- unlock flow ---------------------------------------------------------------
+# - unlock flow ---------------------------------------------------------------
 
 
 def test_stateful_unlock_clears_protection(stateful_client):
@@ -481,11 +481,11 @@ def test_stateful_unlock_clears_protection(stateful_client):
     assert result["dbg"] is False
 
 
-# -- memory read / write round-trip -------------------------------------------
+# - memory read / write round-trip -------------------------------------------
 
 
 def test_stateful_download_then_upload(stateful_client):
-    """Write data to an address and read it back — verifies memory state."""
+    """Write data to an address and read it back - verifies memory state."""
     stateful_client.connect()
     stateful_client.download(0x1000, b"\x0C\x0A", 0)
 
@@ -502,7 +502,7 @@ def test_stateful_upload_unwritten_address_returns_zeros(stateful_client):
 
 
 def test_stateful_overwrite_memory(stateful_client):
-    """Download twice to the same address — second write wins."""
+    """Download twice to the same address - second write wins."""
     stateful_client.connect()
     stateful_client.download(0x2000, b"\x11\x22", 0)
     stateful_client.download(0x2000, b"\x33\x44", 0)
@@ -525,7 +525,7 @@ def test_stateful_multiple_addresses(stateful_client):
         assert raw == expected, f"Mismatch at 0x{addr:X}"
 
 
-# -- checksum ------------------------------------------------------------------
+# - checksum ------------------------------------------------------------------
 
 
 def test_stateful_checksum_over_written_data(stateful_client):
@@ -538,7 +538,7 @@ def test_stateful_checksum_over_written_data(stateful_client):
     assert result.checksum_value == 0x01 + 0x02 + 0x03 + 0x04
 
 
-# -- DAQ allocation workflow ---------------------------------------------------
+# - DAQ allocation workflow ---------------------------------------------------
 
 
 def test_stateful_daq_alloc_flow(stateful_client, stateful_master):
@@ -569,7 +569,7 @@ def test_stateful_daq_alloc_flow(stateful_client, stateful_master):
     assert stateful_master._daq_lists == 0
 
 
-# -- programming sequence -----------------------------------------------------
+# - programming sequence -----------------------------------------------------
 
 
 def test_stateful_full_programming_flow(stateful_client, stateful_master):
@@ -633,7 +633,7 @@ def test_stateful_program_before_clear_raises(stateful_master):
                 c.program(b"\x00" * 8)
 
 
-# -- end-to-end calibration workflow ------------------------------------------
+# - end-to-end calibration workflow ------------------------------------------
 
 
 def test_stateful_calibration_workflow(stateful_client):
@@ -663,7 +663,7 @@ def test_stateful_calibration_workflow(stateful_client):
     stateful_client.disconnect()
 
 
-# -- connect-required enforcement ---------------------------------------------
+# - connect-required enforcement ---------------------------------------------
 
 
 def test_stateful_operations_before_connect_raise(stateful_master):

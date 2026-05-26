@@ -16,18 +16,18 @@ from dataclasses import dataclass, field
 # Pre-populated calibration parameters (address -> value)
 # All byte values kept in 0x00-0x7F range (UTF-8 safe for gRPC transport)
 CALIBRATION_MAP: dict[int, bytes] = {
-    0x0010_0000: b"\x64\x00\x00\x00",     # int32 100    – max engine RPM scale
-    0x0010_0004: b"\x32\x00\x00\x00",     # int32 50     – idle RPM target
-    0x0010_0008: b"\x0A\x00\x00\x00",     # int32 10     – fuel trim %
-    0x0010_000C: b"\x01",                  # bool  True   – traction control enabled
+    0x0010_0000: b"\x64\x00\x00\x00",     # int32 100    - max engine RPM scale
+    0x0010_0004: b"\x32\x00\x00\x00",     # int32 50     - idle RPM target
+    0x0010_0008: b"\x0A\x00\x00\x00",     # int32 10     - fuel trim %
+    0x0010_000C: b"\x01",                  # bool  True   - traction control enabled
 }
 
 # Pre-populated measurement signals (address -> initial value)
 MEASUREMENT_MAP: dict[int, bytes] = {
-    0x0020_0000: b"\x5A\x00\x00\x00",     # int32 90     – coolant temperature (C)
-    0x0020_0004: b"\x00\x00\x00\x00",     # int32 0      – vehicle speed (km/h)
-    0x0020_0008: b"\x37\x00\x00\x00",     # int32 55     – battery voltage (x10)
-    0x0020_000C: b"\x03\x04\x00\x00",     # int32 1027   – engine RPM
+    0x0020_0000: b"\x5A\x00\x00\x00",     # int32 90     - coolant temperature (C)
+    0x0020_0004: b"\x00\x00\x00\x00",     # int32 0      - vehicle speed (km/h)
+    0x0020_0008: b"\x37\x00\x00\x00",     # int32 55     - battery voltage (x10)
+    0x0020_000C: b"\x03\x04\x00\x00",     # int32 1027   - engine RPM
 }
 
 # Flash region: uses 0x00 as erased state (UTF-8 safe, unlike 0xFF)
@@ -130,13 +130,13 @@ class MockXcpEcu:
 
     def _require_connected(self):
         if not self._connected:
-            raise RuntimeError("Not connected – call connect() first")
+            raise RuntimeError("Not connected - call connect() first")
 
     def _require_unlocked(self):
         if not self._unlocked:
-            raise RuntimeError("Resource protected – unlock required")
+            raise RuntimeError("Resource protected - unlock required")
 
-    # -- Session Management --------------------------------------------------
+    # - Session Management --------------------------------------------------
 
     def connect(self, mode: int = 0):
         self._connected = True
@@ -157,7 +157,7 @@ class MockXcpEcu:
     def getCurrentProtectionStatus(self) -> dict[str, bool]:
         return dict(self._protection)
 
-    # -- Security (Seed & Key) -----------------------------------------------
+    # - Security (Seed & Key) -----------------------------------------------
 
     def cond_unlock(self, resources=None):
         self._require_connected()
@@ -165,7 +165,7 @@ class MockXcpEcu:
         for key in self._protection:
             self._protection[key] = False
 
-    # -- Memory Access -------------------------------------------------------
+    # - Memory Access -------------------------------------------------------
 
     def setMta(self, address: int, ext: int = 0):
         self._require_connected()
@@ -190,10 +190,10 @@ class MockXcpEcu:
     def download(self, data: bytes):
         self._require_connected()
         if self._protection.get("calpag", False):
-            raise RuntimeError("CAL/PAG resource is protected – unlock first")
+            raise RuntimeError("CAL/PAG resource is protected - unlock first")
         self._memory[self._mta_address] = data
 
-    # -- Checksum ------------------------------------------------------------
+    # - Checksum ------------------------------------------------------------
 
     def buildChecksum(self, block_size: int):
         self._require_connected()
@@ -201,7 +201,7 @@ class MockXcpEcu:
         csum = sum(raw) & 0xFFFFFFFF
         return _AttrDict(checksumType=0x01, checksum=csum)
 
-    # -- DAQ -----------------------------------------------------------------
+    # - DAQ -----------------------------------------------------------------
 
     def getDaqInfo(self):
         self._require_connected()
@@ -265,12 +265,12 @@ class MockXcpEcu:
         for dl in self._daq_lists:
             dl.running = (mode == 1)
 
-    # -- Programming (Flashing) ----------------------------------------------
+    # - Programming (Flashing) ----------------------------------------------
 
     def programStart(self):
         self._require_connected()
         if self._protection.get("pgm", False):
-            raise RuntimeError("PGM resource is protected – unlock first")
+            raise RuntimeError("PGM resource is protected - unlock first")
         self._programming = True
         self._program_cleared = False
         return _AttrDict(
