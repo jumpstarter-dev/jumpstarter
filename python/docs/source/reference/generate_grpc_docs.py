@@ -366,11 +366,11 @@ def render_service(service: Service) -> str:
         for method in service["methods"]:
             streaming_prefix_in = "stream " if method["client_streaming"] else ""
             streaming_prefix_out = "stream " if method["server_streaming"] else ""
-            request = f"{streaming_prefix_in}{method['input_type']}"
-            response = f"{streaming_prefix_out}{method['output_type']}"
+            request = f"{streaming_prefix_in}`{method['input_type']}`"
+            response = f"{streaming_prefix_out}`{method['output_type']}`"
             desc = method["description"].replace("|", r"\|")
             sections.append(
-                f"| {method['name']} | {request} | {response} | {desc} |"
+                f"| `{method['name']}` | {request} | {response} | {desc} |"
             )
     return "\n".join(sections) + "\n"
 
@@ -387,7 +387,7 @@ def render_message(message: Message) -> str:
         for field in message["fields"]:
             desc = field["description"].replace("|", r"\|")
             sections.append(
-                f"| {field['name']} | {field['number']} | {field['type']}"
+                f"| `{field['name']}` | {field['number']} | `{field['type']}`"
                 f" | {field['label']} | {desc} |"
             )
     else:
@@ -405,7 +405,7 @@ def render_enum(enum_def: EnumDef) -> str:
         sections.append("| --- | --- | --- |")
         for value in enum_def["values"]:
             desc = value["description"].replace("|", r"\|")
-            sections.append(f"| {value['name']} | {value['number']} | {desc} |")
+            sections.append(f"| `{value['name']}` | {value['number']} | {desc} |")
     return "\n".join(sections) + "\n"
 
 

@@ -477,7 +477,7 @@ class TestRenderService:
         )
         result = render_service(service)
         assert "| Method | Request | Response | Description |" in result
-        assert "| DoSomething | DoRequest | DoResponse | Does something |" in result
+        assert "| `DoSomething` | `DoRequest` | `DoResponse` | Does something |" in result
 
     def test_renders_streaming_prefix(self):
         service = Service(
@@ -495,8 +495,8 @@ class TestRenderService:
             ],
         )
         result = render_service(service)
-        assert "stream StreamReq" in result
-        assert "stream StreamResp" in result
+        assert "stream `StreamReq`" in result
+        assert "stream `StreamResp`" in result
 
     def test_escapes_pipe_in_description(self):
         service = Service(
@@ -549,7 +549,7 @@ class TestRenderMessage:
         )
         result = render_message(message)
         assert "| Field | Number | Type | Label | Description |" in result
-        assert "| id | 1 | string |  | The ID |" in result
+        assert "| `id` | 1 | `string` |  | The ID |" in result
 
     def test_renders_field_with_label(self):
         message = Message(
@@ -566,7 +566,7 @@ class TestRenderMessage:
             ],
         )
         result = render_message(message)
-        assert "| items | 1 | string | repeated | List of items |" in result
+        assert "| `items` | 1 | `string` | repeated | List of items |" in result
 
 
 class TestRenderEnum:
@@ -591,8 +591,8 @@ class TestRenderEnum:
         )
         result = render_enum(enum_def)
         assert "| Name | Number | Description |" in result
-        assert "| VALUE_A | 0 | First |" in result
-        assert "| VALUE_B | 1 | Second |" in result
+        assert "| `VALUE_A` | 0 | First |" in result
+        assert "| `VALUE_B` | 1 | Second |" in result
 
 
 class TestRenderProtoDoc:
