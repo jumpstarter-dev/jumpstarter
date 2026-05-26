@@ -1,8 +1,9 @@
 import os
 import tempfile
 
-from jumpstarter.common.utils import serve
 from jumpstarter_driver_tftp.driver import Tftp
+
+from jumpstarter.common.utils import serve
 
 with tempfile.TemporaryDirectory() as tmp_dir:
     test_file = os.path.join(tmp_dir, "test.txt")

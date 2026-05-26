@@ -12,6 +12,7 @@ dependencies = ["jumpstarter", "mitmproxy>=10.0"]
 MitmproxyDriver = "jumpstarter_driver_mitmproxy.driver:MitmproxyDriver"
 
 [tool.pytest.ini_options]
+norecursedirs = ["examples"]
 addopts = "--cov --cov-report=html --cov-report=xml"
 log_cli = true
 log_cli_level = "INFO"

@@ -28,6 +28,7 @@ dev = [
 
 
 [tool.pytest.ini_options]
+norecursedirs = ["examples"]
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_snmp"]

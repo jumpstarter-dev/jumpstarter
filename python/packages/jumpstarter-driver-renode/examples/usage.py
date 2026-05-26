@@ -1,4 +1,5 @@
 from jumpstarter_driver_renode.driver import Renode
+
 from jumpstarter.common.utils import serve
 
 with serve(

@@ -34,6 +34,7 @@ Homepage = "https://jumpstarter.dev"
 source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
 
 [tool.pytest.ini_options]
+norecursedirs = ["examples"]
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_tftp"]

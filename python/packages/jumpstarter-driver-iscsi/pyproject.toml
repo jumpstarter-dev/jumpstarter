@@ -30,6 +30,7 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 omit = ["*_test.py", "**/test_*.py"]
 
 [tool.pytest.ini_options]
+norecursedirs = ["examples"]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["jumpstarter_driver_iscsi"]

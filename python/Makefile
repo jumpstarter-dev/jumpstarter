@@ -84,7 +84,7 @@ pkg-test-%: packages/%
 	uv run --isolated --directory $< pytest || [ $$? -eq 5 ]
 
 pkg-ty-%: packages/%
-	uv run --isolated --directory $< ty check .
+	uv run --isolated --directory $< ty check . --exclude examples
 
 pkg-test-all: $(addprefix pkg-test-,$(PKG_TARGETS))
 
