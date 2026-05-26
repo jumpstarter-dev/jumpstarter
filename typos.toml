@@ -37,4 +37,7 @@ extend-exclude = [
     "*.lock",
     # Vendored dependencies
     "vendor/",
+    # Vendored asciinema player (minified third-party JS/CSS)
+    "python/docs/source/_static/js/asciinema-player.min.js",
+    "python/docs/source/_static/css/asciinema-player.css",
 ]
