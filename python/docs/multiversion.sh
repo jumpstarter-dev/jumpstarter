@@ -16,6 +16,9 @@ for BRANCH in "${BRANCHES[@]}"; do
   git worktree add --force    "${WORKTREE}" "${BRANCH}"
 
   uv run --project "${WORKTREE}/python" --isolated --all-packages --group docs \
+    python3 "${WORKTREE}/python/docs/source/reference/generate-crd-docs.py" || true
+
+  uv run --project "${WORKTREE}/python" --isolated --all-packages --group docs \
     make -C "${WORKTREE}/python/docs" html SPHINXOPTS="-D version=${BRANCH}"
 
   cp -r "${WORKTREE}/python/docs/build/html" "${OUTPUT_DIR}/${BRANCH}"
