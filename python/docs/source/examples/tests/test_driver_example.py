@@ -1,5 +1,4 @@
 import importlib.util
-from pathlib import Path
 
 
 def test_driver_example_file_exists(examples_root):
