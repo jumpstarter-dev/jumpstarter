@@ -44,7 +44,7 @@ Example configuration:
 ### Examples
 
 Power cycling a device:
-```python
+```{code-block} python
 snmp_client.cycle(wait=3)
 ```
 

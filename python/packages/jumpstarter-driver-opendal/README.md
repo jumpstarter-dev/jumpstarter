@@ -48,13 +48,13 @@ The OpenDAL driver tracks all files and directories created during a session:
 #### Use Cases
 
 **Temporary File Management:**
-```yaml
+```{code-block} yaml
 # Enable cleanup for temporary storage
 remove_created_on_close: true
 ```
 
 **Persistent Storage:**
-```yaml
+```{code-block} yaml
 # Disable cleanup to preserve files (default)
 remove_created_on_close: false
 ```

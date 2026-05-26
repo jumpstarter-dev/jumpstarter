@@ -296,17 +296,17 @@ Linux buildroot 6.1.46-dirty #2 SMP PREEMPT Thu Mar 14 14:37:01 UTC 2024 aarch64
 ### Python Examples
 
 Flash the device with a specific image
-```python
+```{code-block} python
 flasherclient.flash("/path/to/image.raw.xz")
 ```
 
 Flash the device with a specific image from a remote URL
-```python
+```{code-block} python
 flasherclient.flash("https://autosd.sig.centos.org/AutoSD-9/nightly/TI/auto-osbuild-j784s4evm-autosd9-qa-regular-aarch64-1716106242.66b4d866.raw.xz")
 ```
 
 Flash into a specific partition
-```python
+```{code-block} python
 flasherclient.flash("/path/to/image.raw.xz", partition="emmc")
 ```
 

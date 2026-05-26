@@ -56,25 +56,25 @@ to send messages directly without Service Discovery:
 
 ### Service Discovery + RPC
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/usage_service_discovery_rpc.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/usage_rpc.py
 :language: python
 ```
 
 ### Event Subscription
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/usage_event_subscription.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/usage_events.py
 :language: python
 ```
 
 ### Raw Messaging
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/usage_raw_messaging.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/usage_raw.py
 :language: python
 ```
 
 ### Connection Management
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/usage_connection_management.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-someip/examples/usage_connections.py
 :language: python
 ```
 

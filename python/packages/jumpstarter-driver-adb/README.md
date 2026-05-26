@@ -158,7 +158,7 @@ tradefed.sh
 You can also perform interactions via ADB using the
 [`adbutils`](https://github.com/openatx/adbutils) Python package.
 
-```python
+```{code-block} python
 # Requires: pip install jumpstarter-driver-adb[python-api]
 import adbutils
 

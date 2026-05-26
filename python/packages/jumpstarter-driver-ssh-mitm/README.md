@@ -21,7 +21,7 @@ The command name is determined by the key in the `export` section. Use `ssh_mitm
 
 Or with inline key:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-ssh-mitm/examples/config_mux.yaml
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ssh-mitm/examples/config_full.yaml
 :language: yaml
 ```
 

@@ -27,7 +27,7 @@ The RideSX driver supports two main components:
 
 Example configuration for the RideSX driver:
 
-```yaml
+```{code-block} yaml
   storage:
     type: "jumpstarter_driver_ridesx.driver.RideSXDriver"
     config:

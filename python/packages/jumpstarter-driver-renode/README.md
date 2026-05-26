@@ -62,7 +62,7 @@ code changes are needed for new targets.
 
 Send arbitrary Renode monitor commands via the client:
 
-```python
+```{code-block} python
 response = renode.monitor_cmd("sysbus GetRegistrationPoints sysbus.usart2")
 ```
 
