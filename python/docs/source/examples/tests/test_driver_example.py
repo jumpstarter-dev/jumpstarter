@@ -1,28 +1,14 @@
-import importlib.util
+def test_driver_example_imports_successfully(driver_example_module):
+    assert driver_example_module is not None
 
 
-def test_driver_example_imports_successfully(examples_root):
-    driver_example = examples_root / "introduction" / "driver_example.py"
-    spec = importlib.util.spec_from_file_location(
-        "driver_example", str(driver_example)
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-
-
-def test_driver_example_serve_creates_client(examples_root):
-    driver_example = examples_root / "introduction" / "driver_example.py"
-    spec = importlib.util.spec_from_file_location(
-        "driver_example", str(driver_example)
-    )
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    assert hasattr(mod, "GenericDriver")
-    assert hasattr(mod, "GenericClient")
+def test_driver_example_serve_creates_client(driver_example_module):
+    assert hasattr(driver_example_module, "GenericDriver")
+    assert hasattr(driver_example_module, "GenericClient")
 
     from jumpstarter.common.utils import serve
 
-    with serve(mod.GenericDriver()) as client:
+    with serve(driver_example_module.GenericDriver()) as client:
         result = client.query("e2e")
         assert result == "Response for e2e"
 
