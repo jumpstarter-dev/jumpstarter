@@ -27,7 +27,8 @@ def discover_example_files(
 
 
 def _is_referenced(path: Path, examples_dir: Path, readme_content: str) -> bool:
-    if path.name in readme_content:
+    rel_path = str(path.relative_to(examples_dir.parent))
+    if rel_path in readme_content:
         return True
     if path.parent != examples_dir:
         rel_dir = str(path.parent.relative_to(examples_dir.parent)) + "/"

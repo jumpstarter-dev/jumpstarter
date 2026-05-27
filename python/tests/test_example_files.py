@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from jumpstarter.testing.checks import (
+    _is_referenced,
     discover_example_files,
     find_inline_code_blocks,
     find_unused_examples,
@@ -44,6 +45,24 @@ def _driver_params() -> list[pytest.param]:
 def test_example_validates(path, kind):
     testing = pytest.importorskip("jumpstarter.testing.examples")
     testing.validate_example(path, kind)
+
+
+def test_is_referenced_rejects_bare_filename_in_prose(tmp_path):
+    examples_dir = tmp_path / "examples"
+    examples_dir.mkdir()
+    example = examples_dir / "config.yaml"
+    example.write_text("kind: ExporterConfig\n", encoding="utf-8")
+    readme_content = "The config.yaml word appears in prose but not as a literalinclude path"
+    assert not _is_referenced(example, examples_dir, readme_content)
+
+
+def test_is_referenced_matches_relative_path(tmp_path):
+    examples_dir = tmp_path / "examples"
+    examples_dir.mkdir()
+    example = examples_dir / "config.yaml"
+    example.write_text("kind: ExporterConfig\n", encoding="utf-8")
+    readme_content = "```{literalinclude} examples/config.yaml\n```"
+    assert _is_referenced(example, examples_dir, readme_content)
 
 
 def test_validate_yaml_warns_on_unrecognized_structure(tmp_path):
