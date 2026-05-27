@@ -26,6 +26,16 @@ def discover_example_files(
     return items
 
 
+def _is_referenced(path: Path, examples_dir: Path, readme_content: str) -> bool:
+    if path.name in readme_content:
+        return True
+    if path.parent != examples_dir:
+        rel_dir = str(path.parent.relative_to(examples_dir.parent)) + "/"
+        if rel_dir in readme_content:
+            return True
+    return False
+
+
 def find_unused_examples(
     examples_dir: Path,
     readme_path: Path,
@@ -36,8 +46,7 @@ def find_unused_examples(
     return [
         path
         for path, _ in discover_example_files(examples_dir)
-        if path.name not in readme_content
-        and path.parent == examples_dir
+        if not _is_referenced(path, examples_dir, readme_content)
     ]
 
 

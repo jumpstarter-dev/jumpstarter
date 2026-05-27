@@ -259,6 +259,8 @@ Responses with per-request dynamic values:
 :language: python
 ```
 
+See `examples/addons/` in the package source for ready-to-use addon scripts including WebSocket data streaming, HLS audio streaming, and MJPEG video streaming.
+
 #### State Store
 
 Share state between tests and conditional mock rules:

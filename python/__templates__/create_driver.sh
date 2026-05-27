@@ -87,7 +87,7 @@ rel_path=$(python3 -c "import os.path; print(os.path.relpath('${README_FILE}', '
 ln -sf "${rel_path}" "${DOC_FILE}"
 echo "Created symlink: ${DOC_FILE} -> ${rel_path}"
 
-for f in __init__.py client.py driver_test.py driver.py test_examples.py; do
+for f in __init__.py client.py driver_test.py driver.py; do
     echo "Creating: ${MODULE_DIRECTORY}/${f}"
     envsubst < ${SCRIPT_DIR}/driver/jumpstarter_driver/${f}.tmpl > ${MODULE_DIRECTORY}/${f}
 done
