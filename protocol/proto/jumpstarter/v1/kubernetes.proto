@@ -4,29 +4,45 @@ syntax = "proto3";
 
 package jumpstarter.v1;
 
+// A label selector requirement with key, operator, and values.
 message LabelSelectorRequirement {
+  // The label key that the selector applies to.
   string key = 1;
+  // The operator (In, NotIn, Exists, DoesNotExist) relating the key to values.
   string operator = 2;
+  // The set of values for the operator to match against.
   repeated string values = 3;
 }
 
 // Reference: https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/label-selector/
 message LabelSelector {
+  // A list of label selector requirements combined by AND.
   repeated LabelSelectorRequirement match_expressions = 1;
+  // A map of key-value pairs that must match exactly.
   map<string, string> match_labels = 2;
 }
 
+// Timestamp in seconds and nanoseconds since the Unix epoch.
 // Reference: https://github.com/kubernetes/kubernetes/blob/v1.31.1/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto
 message Time {
+  // Seconds since the Unix epoch.
   optional int64 seconds = 1;
+  // Non-negative fractions of a second at nanosecond resolution.
   optional int32 nanos = 2;
 }
 
+// A Kubernetes-style status condition.
 message Condition {
+  // The type of condition.
   optional string type = 1;
+  // The status of the condition (True, False, Unknown).
   optional string status = 2;
+  // The generation observed by the controller.
   optional int64 observedGeneration = 3;
+  // The last time the condition transitioned.
   optional Time lastTransitionTime = 4;
+  // A machine-readable reason for the condition.
   optional string reason = 5;
+  // A human-readable description of the condition.
   optional string message = 6;
 }

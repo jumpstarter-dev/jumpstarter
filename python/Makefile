@@ -41,28 +41,43 @@ help:
 
 default: help
 
-docs-singlehtml: docs-generate-crds
+docs-singlehtml: docs-generate-crds docs-generate-grpc
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs singlehtml
 
 docs-generate-crds:
 	uv run --isolated --all-packages --group docs python3 docs/source/reference/generate-crd-docs.py
 
-docs: docs-generate-crds
+docs-generate-grpc:
+	uv run --isolated --all-packages --group docs python3 docs/source/reference/generate_grpc_docs.py
+
+docs: docs-generate-crds docs-generate-grpc
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs html SPHINXOPTS="-W --keep-going -n"
 
-docs-all: docs-generate-crds
+docs-all: docs-generate-crds docs-generate-grpc
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs multiversion
 
-docs-serve: clean-docs docs-generate-crds
+docs-serve: clean-docs docs-generate-crds docs-generate-grpc
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve
 
 docs-serve-all: clean-docs docs-all
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve-multiversion
 
-docs-test: docs-generate-crds
+docs-check-grpc:
+	@TMPDIR1=$$(mktemp -d) && TMPDIR2=$$(mktemp -d) && \
+	trap 'rm -rf "$$TMPDIR1" "$$TMPDIR2"' EXIT && \
+	uv run --isolated --all-packages --group docs python3 -c \
+		"import sys; sys.path.insert(0, 'docs/source/reference'); from generate_grpc_docs import main; main(output_dir='$$TMPDIR1')" && \
+	uv run --isolated --all-packages --group docs python3 -c \
+		"import sys; sys.path.insert(0, 'docs/source/reference'); from generate_grpc_docs import main; main(output_dir='$$TMPDIR2')" && \
+	diff -r "$$TMPDIR1/" "$$TMPDIR2/"
+
+docs-test-grpc:
+	uv run --isolated --all-packages --group docs pytest --cov=docs/source/reference --cov-report=xml:docs/source/reference/coverage.xml docs/source/reference/generate_grpc_docs_test.py
+
+docs-test: docs-generate-crds docs-generate-grpc
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs doctest
 
-docs-linkcheck: docs-generate-crds
+docs-linkcheck: docs-generate-crds docs-generate-grpc
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs linkcheck
 
 pkg-test-%: packages/%
@@ -111,7 +126,7 @@ clean-docs:
 
 clean: clean-docs clean-venv clean-build clean-test
 
-test: pkg-test-all docs-test
+test: pkg-test-all docs-test docs-test-grpc
 
 ty: pkg-ty-all
 
@@ -122,8 +137,8 @@ lint-fix:
 	uv run ruff check --fix
 
 .PHONY: default help docs docs-all docs-serve docs-serve-all docs-clean docs-test \
-	docs-linkcheck pkg-test-all pkg-ty-all build generate sync \
-	clean-venv clean-build clean-test clean-all test-all ty-all docs \
+	docs-check-grpc docs-test-grpc docs-linkcheck docs-generate-grpc pkg-test-all pkg-ty-all build generate sync \
+	clean clean-venv clean-build clean-test clean-all test test-all ty-all docs \
 	lint lint-fix \
 	pkg-ty-jumpstarter \
 	pkg-ty-jumpstarter-cli-admin \

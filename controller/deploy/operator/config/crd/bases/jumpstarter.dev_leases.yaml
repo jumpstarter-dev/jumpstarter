@@ -167,15 +167,15 @@ spec:
             - message: tags are immutable after creation
               rule: '!has(oldSelf.tags) || self.tags == oldSelf.tags'
           status:
-            description: LeaseStatus defines the observed state of Lease
+            description: LeaseStatus defines the observed state of Lease.
             properties:
               beginTime:
-                description: |-
-                  If the lease has been acquired an exporter name is assigned
-                  and then it can be used, it will be empty while still pending
+                description: BeginTime is the actual start time of the lease.
                 format: date-time
                 type: string
               conditions:
+                description: Conditions represent the latest available observations
+                  of the lease state.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -232,14 +232,15 @@ spec:
                   type: object
                 type: array
               endTime:
+                description: EndTime is the actual end time of the lease.
                 format: date-time
                 type: string
               ended:
+                description: Ended indicates whether the lease has been terminated.
                 type: boolean
               exporterRef:
-                description: |-
-                  LocalObjectReference contains enough information to let you locate the
-                  referenced object inside the same namespace.
+                description: ExporterRef is a reference to the exporter assigned to
+                  this lease.
                 properties:
                   name:
                     default: ""
@@ -253,8 +254,12 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               priority:
+                description: Priority is the effective priority of the lease from the
+                  access policy.
                 type: integer
               spotAccess:
+                description: SpotAccess indicates whether this lease was granted with
+                  spot (preemptible) access.
                 type: boolean
             required:
             - ended

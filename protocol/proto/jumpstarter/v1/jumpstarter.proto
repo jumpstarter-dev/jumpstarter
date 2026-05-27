@@ -11,230 +11,257 @@ import "google/protobuf/timestamp.proto";
 import "jumpstarter/v1/kubernetes.proto";
 import "jumpstarter/v1/common.proto";
 
-// A service where a exporter can connect to make itself available
+// A service where an exporter can connect to make itself available.
 service ControllerService {
-  // Exporter registration
+  // Register an exporter with the controller.
   rpc Register(RegisterRequest) returns (RegisterResponse);
 
-  // Exporter disconnection
-  // Disconnecting with bye will invalidate any existing router tokens
-  // we will eventually have a mechanism to tell the router this token
-  // has been invalidated
+  // Unregister an exporter from the controller.
+  // Disconnecting will invalidate any existing router tokens.
   rpc Unregister(UnregisterRequest) returns (UnregisterResponse);
 
-  // Exporter status report
-  // Allows exporters to report their own status to the controller
+  // Report exporter status to the controller.
   rpc ReportStatus(ReportStatusRequest) returns (ReportStatusResponse);
 
-  // Exporter listening
-  // Returns stream tokens for accepting incoming client connections
+  // Listen for incoming client connections on a lease.
+  // Returns stream tokens for accepting incoming client connections.
   rpc Listen(ListenRequest) returns (stream ListenResponse);
 
-  // Exporter status
-  // Returns lease status for the exporter
+  // Stream lease status updates for the exporter.
   rpc Status(StatusRequest) returns (stream StatusResponse);
 
-  // Client connecting
-  // Returns stream token for connecting to the desired exporter
-  // Leases are checked before token issuance
+  // Dial an exporter through the router.
+  // Returns a stream token for connecting to the desired exporter.
+  // Leases are checked before token issuance.
   rpc Dial(DialRequest) returns (DialResponse);
 
-  // Audit events from the exporters
-  // audit events are used to track the exporter's activity
+  // Stream audit events from the exporters.
+  // Audit events are used to track the exporter activity.
   rpc AuditStream(stream AuditStreamRequest) returns (google.protobuf.Empty);
 
-  // Get Lease
+  // Retrieve a lease by name.
   rpc GetLease(GetLeaseRequest) returns (GetLeaseResponse);
-  // Request Lease
+  // Request a new lease for an exporter.
   rpc RequestLease(RequestLeaseRequest) returns (RequestLeaseResponse);
-  // Release Lease
+  // Release an active lease.
   rpc ReleaseLease(ReleaseLeaseRequest) returns (ReleaseLeaseResponse);
-  // List Leases
+  // List all leases.
   rpc ListLeases(ListLeasesRequest) returns (ListLeasesResponse);
 }
 
+// Registration request sent by an exporter to the controller.
 message RegisterRequest {
-  // additional context:
-  // - token/authentication mechanism
-  map<string, string> labels = 1;
-  // standard labels:
-  // jumpstarter.dev/hostname=
-  // jumpstarter.dev/name=
-  repeated DriverInstanceReport reports = 2;
+  map<string, string> labels = 1; // Key-value metadata labels.
+  repeated DriverInstanceReport reports = 2; // Driver instance reports for this exporter.
 }
 
+// Report describing a single driver instance on an exporter.
 message DriverInstanceReport {
-  string uuid = 1; // a unique id within the exporter
-  optional string parent_uuid = 2; // optional, if device has a parent device
-  map<string, string> labels = 3;
-  optional string description = 4; // optional custom driver description for CLI
-  map<string, string> methods_description = 5; // method name -> help text for CLI
+  string uuid = 1; // Unique identifier within the exporter.
+  optional string parent_uuid = 2; // Parent device UUID, if this is a child device.
+  map<string, string> labels = 3; // Key-value metadata labels.
+  optional string description = 4; // Custom driver description for CLI display.
+  map<string, string> methods_description = 5; // Method name to help text mapping for CLI.
 }
 
+// Registration response returned by the controller.
 message RegisterResponse {
-  string uuid = 1;
+  string uuid = 1; // Assigned exporter UUID.
 }
 
+// Request to unregister an exporter from the controller.
 message UnregisterRequest {
-  string reason = 2;
+  string reason = 2; // Reason for unregistering.
 }
 
+// Response to an unregister request.
 message UnregisterResponse {}
 
+// Request to listen for incoming client connections on a lease.
 message ListenRequest {
-  string lease_name = 1;
+  string lease_name = 1; // Name of the lease to listen on.
 }
 
+// Response containing router connection details for an incoming client.
 message ListenResponse {
-  string router_endpoint = 1;
-  string router_token = 2;
+  string router_endpoint = 1; // The router gRPC endpoint URL.
+  string router_token = 2; // Authentication token for the router.
 }
 
+// Request to subscribe to exporter lease status updates.
 message StatusRequest {}
 
+// Lease status update for an exporter.
 message StatusResponse {
-  bool leased = 1;
-  optional string lease_name = 2;
-  optional string client_name = 3;
+  bool leased = 1; // Whether the exporter is currently leased.
+  optional string lease_name = 2; // Name of the active lease, if any.
+  optional string client_name = 3; // Name of the connected client, if any.
 }
 
+// Request to dial an exporter through the router.
 message DialRequest {
-  string lease_name = 1;
+  string lease_name = 1; // Name of the lease to connect through.
 }
 
+// Response containing router connection details for the dialed exporter.
 message DialResponse {
-  string router_endpoint = 1;
-  string router_token = 2;
+  string router_endpoint = 1; // The router gRPC endpoint URL.
+  string router_token = 2; // Authentication token for the router.
 }
 
+// An audit event sent from an exporter to the controller.
 message AuditStreamRequest {
-  // additional context:
-  // - token/authentication mechanism
-  string exporter_uuid = 1;
-  string driver_instance_uuid = 2;
-  string severity = 3;
-  string message = 4;
+  string exporter_uuid = 1; // UUID of the exporter.
+  string driver_instance_uuid = 2; // UUID of the driver instance.
+  string severity = 3; // Severity level of the event.
+  string message = 4; // Human-readable event message.
 }
 
+// Request to report exporter status to the controller.
 message ReportStatusRequest {
-  ExporterStatus status = 1;
-  optional string message = 2;  // Optional human-readable status message
-  optional bool release_lease = 3;  // When true, controller should release the active lease
+  ExporterStatus status = 1; // Current exporter status.
+  optional string message = 2; // Optional human-readable status message.
+  optional bool release_lease = 3; // When true, controller should release the active lease.
 }
 
+// Response to a status report request.
 message ReportStatusResponse {}
 
-// A service a exporter can share locally to be used without a server
-// Channel/Call credentials are used to authenticate the client, and routing to the right exporter
+// A service an exporter can share locally to be used without a server.
+// Channel and call credentials are used to authenticate the client and route to the right exporter.
 service ExporterService {
-  // Exporter registration
+  // Retrieve the exporter driver report.
   rpc GetReport(google.protobuf.Empty) returns (GetReportResponse);
+  // Invoke a method on a driver instance.
   rpc DriverCall(DriverCallRequest) returns (DriverCallResponse);
+  // Invoke a streaming method on a driver instance.
   rpc StreamingDriverCall(StreamingDriverCallRequest) returns (stream StreamingDriverCallResponse);
+  // Stream log messages from the exporter.
   rpc LogStream(google.protobuf.Empty) returns (stream LogStreamResponse);
+  // Reset the exporter connection.
   rpc Reset(ResetRequest) returns (ResetResponse);
+  // Retrieve the current exporter status.
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
-  // End the current session, triggering the afterLease hook
-  // The client should keep the connection open to receive hook logs via LogStream
-  // Returns after the afterLease hook completes
+  // End the current session, triggering the afterLease hook.
+  // The client should keep the connection open to receive hook logs via LogStream.
+  // Returns after the afterLease hook completes.
   rpc EndSession(EndSessionRequest) returns (EndSessionResponse);
 }
 
+// Response containing the exporter driver report.
 message GetReportResponse {
-  string uuid = 1;
-  map<string, string> labels = 2;
-  // standard labels:
-  // jumpstarter.dev/hostname=
-  // jumpstarter.dev/name=
-  repeated DriverInstanceReport reports = 3;
-  repeated Endpoint alternative_endpoints = 4;
+  string uuid = 1; // Exporter UUID.
+  map<string, string> labels = 2; // Key-value metadata labels.
+  repeated DriverInstanceReport reports = 3; // Driver instance reports.
+  repeated Endpoint alternative_endpoints = 4; // Alternative connection endpoints.
 }
 
+// Connection endpoint with TLS credentials.
 message Endpoint {
-  string endpoint = 1;
-  string certificate = 2;
-  string client_certificate = 3;
-  string client_private_key = 4;
+  string endpoint = 1; // The endpoint URL.
+  string certificate = 2; // Server TLS certificate.
+  string client_certificate = 3; // Client TLS certificate.
+  string client_private_key = 4; // Client TLS private key.
 }
 
+// Request to invoke a method on a driver instance.
 message DriverCallRequest {
-  string uuid = 1;
-  string method = 2;
-  repeated google.protobuf.Value args = 3;
+  string uuid = 1; // UUID of the driver instance.
+  string method = 2; // Method name to invoke.
+  repeated google.protobuf.Value args = 3; // Arguments for the method call.
 }
 
+// Response from a driver method invocation.
 message DriverCallResponse {
-  string uuid = 1;
-  google.protobuf.Value result = 2;
+  string uuid = 1; // UUID of the driver instance.
+  google.protobuf.Value result = 2; // Return value from the method call.
 }
 
+// Request to invoke a streaming method on a driver instance.
 message StreamingDriverCallRequest {
-  string uuid = 1;
-  string method = 2;
-  repeated google.protobuf.Value args = 3;
+  string uuid = 1; // UUID of the driver instance.
+  string method = 2; // Method name to invoke.
+  repeated google.protobuf.Value args = 3; // Arguments for the method call.
 }
 
+// Response from a streaming driver method invocation.
 message StreamingDriverCallResponse {
-  string uuid = 1;
-  google.protobuf.Value result = 2;
+  string uuid = 1; // UUID of the driver instance.
+  google.protobuf.Value result = 2; // Return value from the method call.
 }
 
+// A log message from the exporter log stream.
 message LogStreamResponse {
-  string uuid = 1;
-  string severity = 2;
-  string message = 3;
-  optional LogSource source = 4;  // New optional field
+  string uuid = 1; // UUID of the driver instance.
+  string severity = 2; // Log severity level.
+  string message = 3; // Log message content.
+  optional LogSource source = 4; // Source of the log message.
 }
 
+// Request to reset the exporter connection.
 message ResetRequest {}
+
+// Response to a reset request.
 message ResetResponse {}
 
+// Request to retrieve a lease by name.
 message GetLeaseRequest {
-  string name = 1;
+  string name = 1; // Name of the lease to retrieve.
 }
 
+// Response containing lease details.
 message GetLeaseResponse {
-  google.protobuf.Duration duration = 1;
-  LabelSelector selector = 2;
-  optional google.protobuf.Timestamp begin_time = 3;
-  optional google.protobuf.Timestamp end_time = 4;
-  optional string exporter_uuid = 5;
-  repeated Condition conditions = 6;
+  google.protobuf.Duration duration = 1; // Requested lease duration.
+  LabelSelector selector = 2; // Label selector for matching exporters.
+  optional google.protobuf.Timestamp begin_time = 3; // Lease start time, if active.
+  optional google.protobuf.Timestamp end_time = 4; // Lease end time, if active.
+  optional string exporter_uuid = 5; // UUID of the assigned exporter, if any.
+  repeated Condition conditions = 6; // Lease status conditions.
 }
 
+// Request to create a new lease for an exporter.
 message RequestLeaseRequest {
-  google.protobuf.Duration duration = 1;
-  LabelSelector selector = 2;
+  google.protobuf.Duration duration = 1; // Desired lease duration.
+  LabelSelector selector = 2; // Label selector for matching exporters.
 }
 
+// Response containing the name of the created lease.
 message RequestLeaseResponse {
-  string name = 1;
+  string name = 1; // Name of the created lease.
 }
 
+// Request to release an active lease.
 message ReleaseLeaseRequest {
-  string name = 1;
+  string name = 1; // Name of the lease to release.
 }
 
+// Response to a release lease request.
 message ReleaseLeaseResponse {}
 
+// Request to list all leases.
 message ListLeasesRequest {}
 
+// Response containing the list of lease names.
 message ListLeasesResponse {
-  repeated string names = 1;
+  repeated string names = 1; // Names of all leases.
 }
 
+// Request to retrieve the current exporter status.
 message GetStatusRequest {}
 
+// Response containing the current exporter status.
 message GetStatusResponse {
-  ExporterStatus status = 1;
-  optional string message = 2;
-  uint64 status_version = 3;           // Monotonic counter, increments on each status change
-  optional ExporterStatus previous_status = 4;  // Previous status for transition tracking
+  ExporterStatus status = 1; // Current exporter status.
+  optional string message = 2; // Human-readable status message.
+  uint64 status_version = 3; // Monotonic counter, increments on each status change.
+  optional ExporterStatus previous_status = 4; // Previous status for transition tracking.
 }
 
+// Request to end the current exporter session.
 message EndSessionRequest {}
 
+// Response to an end session request.
 message EndSessionResponse {
-  bool success = 1;
-  optional string message = 2;
+  bool success = 1; // Whether the session ended successfully.
+  optional string message = 2; // Human-readable result message.
 }

@@ -21,20 +21,26 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ExporterSpec defines the desired state of Exporter
+// ExporterSpec defines the desired state of Exporter.
 type ExporterSpec struct {
+	// Username is the identity of the exporter, used for authentication and authorization.
 	Username *string `json:"username,omitempty"`
 }
 
-// ExporterStatus defines the observed state of Exporter
+// ExporterStatus defines the observed state of Exporter.
 type ExporterStatus struct {
-	// Exporter status fields
-	Conditions []metav1.Condition           `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+	// Conditions represent the latest available observations of the exporter state.
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+	// Credential is a reference to the secret containing the exporter credentials.
 	Credential *corev1.LocalObjectReference `json:"credential,omitempty"`
-	Devices    []Device                     `json:"devices,omitempty"`
-	LeaseRef   *corev1.LocalObjectReference `json:"leaseRef,omitempty"`
-	LastSeen   metav1.Time                  `json:"lastSeen,omitempty"`
-	Endpoint   string                       `json:"endpoint,omitempty"`
+	// Devices is the list of driver instances currently reported by the exporter.
+	Devices []Device `json:"devices,omitempty"`
+	// LeaseRef is a reference to the lease currently assigned to this exporter.
+	LeaseRef *corev1.LocalObjectReference `json:"leaseRef,omitempty"`
+	// LastSeen is the timestamp of the last communication from the exporter.
+	LastSeen metav1.Time `json:"lastSeen,omitempty"`
+	// Endpoint is the gRPC endpoint URL where the exporter is reachable.
+	Endpoint string `json:"endpoint,omitempty"`
 	// ExporterStatusValue is the current operational status reported by the exporter
 	// +kubebuilder:validation:Enum=Unspecified;Offline;Available;BeforeLeaseHook;LeaseReady;AfterLeaseHook;BeforeLeaseHookFailed;AfterLeaseHookFailed
 	ExporterStatusValue string `json:"exporterStatus,omitempty"`

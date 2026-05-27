@@ -7,10 +7,12 @@ on:
     paths:
       - 'python/docs/**'
       - 'python/packages/**'
+      - 'protocol/proto/**'
   pull_request:
     paths:
       - 'python/docs/**'
       - 'python/packages/**'
+      - 'protocol/proto/**'
   merge_group:
 
   # Allows you to run this workflow manually from the Actions tab
@@ -92,6 +94,9 @@ jobs:
         run: |
           uv python pin 3.12
           uv python install
+
+      - name: Verify generated gRPC docs are up to date
+        run: make docs-check-grpc
 
       - name: Build the documentation for the current version (no warnings allowed)
         run: make sync && make docs

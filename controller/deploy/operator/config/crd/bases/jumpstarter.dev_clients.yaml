@@ -37,16 +37,19 @@ spec:
           metadata:
             type: object
           spec:
-            description: ClientSpec defines the desired state of Client
+            description: ClientSpec defines the desired state of Client.
             properties:
               username:
+                description: Username is the identity of the client, used for authentication
+                  and authorization.
                 type: string
             type: object
           status:
-            description: ClientStatus defines the observed state of Client
+            description: ClientStatus defines the observed state of Client.
             properties:
               credential:
-                description: Status field for the clients
+                description: Credential is a reference to the secret containing the
+                  client credentials.
                 properties:
                   name:
                     default: ""
@@ -60,6 +63,8 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               endpoint:
+                description: Endpoint is the controller gRPC endpoint URL assigned
+                  to this client.
                 type: string
             type: object
         type: object

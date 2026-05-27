@@ -50,17 +50,22 @@ type LeaseSpec struct {
 	EndTime *metav1.Time `json:"endTime,omitempty"`
 }
 
-// LeaseStatus defines the observed state of Lease
+// LeaseStatus defines the observed state of Lease.
 type LeaseStatus struct {
-	// If the lease has been acquired an exporter name is assigned
-	// and then it can be used, it will be empty while still pending
-	BeginTime   *metav1.Time                 `json:"beginTime,omitempty"`
-	EndTime     *metav1.Time                 `json:"endTime,omitempty"`
+	// BeginTime is the actual start time of the lease.
+	BeginTime *metav1.Time `json:"beginTime,omitempty"`
+	// EndTime is the actual end time of the lease.
+	EndTime *metav1.Time `json:"endTime,omitempty"`
+	// ExporterRef is a reference to the exporter assigned to this lease.
 	ExporterRef *corev1.LocalObjectReference `json:"exporterRef,omitempty"`
-	Ended       bool                         `json:"ended"`
-	Priority    int                          `json:"priority,omitempty"`
-	SpotAccess  bool                         `json:"spotAccess,omitempty"`
-	Conditions  []metav1.Condition           `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+	// Ended indicates whether the lease has been terminated.
+	Ended bool `json:"ended"`
+	// Priority is the effective priority of the lease from the access policy.
+	Priority int `json:"priority,omitempty"`
+	// SpotAccess indicates whether this lease was granted with spot (preemptible) access.
+	SpotAccess bool `json:"spotAccess,omitempty"`
+	// Conditions represent the latest available observations of the lease state.
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }
 
 type LeaseConditionType string
