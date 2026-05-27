@@ -1,8 +1,11 @@
-"""Tests for the exporter run module, specifically rapid failure detection."""
+"""Tests for the exporter run module, covering rapid failure detection and CLI argument validation."""
 
 from unittest.mock import MagicMock, patch
 
+import click.testing
+
 import jumpstarter_cli.run as run_mod
+from jumpstarter_cli.run import run
 
 
 def _make_config(max_rapid_failures=5, rapid_failure_window=60):
@@ -177,3 +180,128 @@ class TestServeWithExcHandlingRapidFailures:
 
         assert exit_code == 1
         assert counter[0] == 3
+
+
+class TestRunCommandAuthValidation:
+    """Test CLI argument validation for auth-by-default behaviour in the run command.
+
+    These tests exercise the validation and warning branches added for
+    --passphrase, --unsafe-no-auth, and auto-generated passphrase logic.
+    """
+
+    def _invoke(self, args, mock_serve=True):
+        """Invoke the ``run`` CLI command via CliRunner.
+
+        When *mock_serve* is True, ``_serve_with_exc_handling`` and config
+        loading are mocked so the command can reach the auth-validation code
+        without actually forking or reading real config files.
+        """
+        runner = click.testing.CliRunner(mix_stderr=False)
+        patches = []
+        if mock_serve:
+            patches.append(
+                patch.object(run_mod, "_serve_with_exc_handling", return_value=0),
+            )
+            patches.append(
+                patch(
+                    "jumpstarter.config.exporter.ExporterConfigV1Alpha1.load_path",
+                    return_value=MagicMock(),
+                ),
+            )
+
+        # Stack all context-manager patches
+        from contextlib import ExitStack
+
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            result = runner.invoke(run, args)
+        return result
+
+    # --- Validation errors (no mocking of _serve_with_exc_handling needed) ---
+
+    def test_passphrase_and_unsafe_no_auth_mutually_exclusive(self):
+        """--passphrase and --unsafe-no-auth together must raise a UsageError."""
+        result = self._invoke([
+            "--exporter-config", "/dev/null",
+            "--tls-grpc-listener", "1234",
+            "--tls-grpc-insecure",
+            "--passphrase", "secret",
+            "--unsafe-no-auth",
+        ])
+        assert result.exit_code != 0
+        assert "--passphrase and --unsafe-no-auth are mutually exclusive" in result.output
+
+    def test_tls_grpc_listener_requires_tls_mode(self):
+        """--tls-grpc-listener without --tls-grpc-insecure or certs must error."""
+        result = self._invoke([
+            "--exporter-config", "/dev/null",
+            "--tls-grpc-listener", "1234",
+        ])
+        assert result.exit_code != 0
+        assert "--tls-grpc-listener requires either --tls-grpc-insecure" in result.output
+
+    # --- Auto-generated passphrase ---
+
+    def test_auto_generated_passphrase_printed_to_stderr(self):
+        """When no --passphrase and no --unsafe-no-auth, a passphrase is auto-generated and printed."""
+        result = self._invoke([
+            "--exporter-config", "/dev/null",
+            "--tls-grpc-listener", "1234",
+            "--tls-grpc-insecure",
+        ])
+        assert result.exit_code == 0
+        assert "Generated random passphrase" in result.stderr
+
+    # --- Warning messages ---
+
+    def test_unsafe_no_auth_with_tls_insecure_warns_completely_unprotected(self):
+        """--unsafe-no-auth + --tls-grpc-insecure must warn about completely unprotected server."""
+        result = self._invoke([
+            "--exporter-config", "/dev/null",
+            "--tls-grpc-listener", "1234",
+            "--tls-grpc-insecure",
+            "--unsafe-no-auth",
+        ])
+        assert result.exit_code == 0
+        assert "completely unprotected" in result.stderr
+
+    def test_unsafe_no_auth_without_tls_insecure_warns_no_auth(self):
+        """--unsafe-no-auth without --tls-grpc-insecure warns about unauthenticated access."""
+        # Need to provide TLS cert/key for this path (since tls_insecure is not set)
+        # We mock Path(exists=True) validation by passing files that "exist"
+        import tempfile
+        import os
+
+        with tempfile.NamedTemporaryFile(suffix=".pem", delete=False) as cert, \
+             tempfile.NamedTemporaryFile(suffix=".pem", delete=False) as key:
+            cert.write(b"dummy cert")
+            key.write(b"dummy key")
+            cert_path = cert.name
+            key_path = key.name
+
+        try:
+            result = self._invoke([
+                "--exporter-config", "/dev/null",
+                "--tls-grpc-listener", "1234",
+                "--tls-cert", cert_path,
+                "--tls-key", key_path,
+                "--unsafe-no-auth",
+            ])
+            assert result.exit_code == 0
+            assert "running without authentication" in result.stderr
+            assert "completely unprotected" not in result.stderr
+        finally:
+            os.unlink(cert_path)
+            os.unlink(key_path)
+
+    # --- Options require --tls-grpc-listener ---
+
+    def test_unsafe_no_auth_without_listener_errors(self):
+        """--unsafe-no-auth without --tls-grpc-listener must error."""
+        result = self._invoke([
+            "--exporter-config", "/dev/null",
+            "--unsafe-no-auth",
+        ])
+        assert result.exit_code != 0
+        assert "require --tls-grpc-listener" in result.output
