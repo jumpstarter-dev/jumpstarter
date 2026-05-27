@@ -113,6 +113,3 @@ copybutton_line_continuation_character = "\\"
 
 # matrix.to uses client-side fragment routing; anchor checks are false positives.
 linkcheck_anchors_ignore_for_url = [r"^https://matrix\.to/"]
-
-# energenie.com is chronically unreliable and causes flaky CI failures.
-linkcheck_ignore = [r"^https://energenie\.com/"]
