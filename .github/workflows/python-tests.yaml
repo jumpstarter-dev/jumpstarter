@@ -31,6 +31,8 @@ jobs:
           filters: |
             python:
               - 'python/**'
+              - '!python/docs/**'
+              - '!python/**/*.md'
               - '.github/workflows/python-tests.yaml'
             renode_driver:
               - 'python/packages/jumpstarter-driver-renode/**'
