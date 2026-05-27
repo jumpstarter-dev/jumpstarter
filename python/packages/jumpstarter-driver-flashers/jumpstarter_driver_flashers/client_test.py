@@ -457,7 +457,7 @@ def test_filename_strips_query_params_from_url_path():
         == "image.raw.xz"
     )
 
-    # Path string with query parameters (as returned by operator_for_path after fix)
+    # Path string with query parameters (e.g. from path_with_query in bearer token path)
     assert client._filename("/images/image.raw.xz?Expires=123&Signature=abc") == "image.raw.xz"
 
     # Plain path without query parameters
@@ -485,7 +485,7 @@ def test_decompression_command_with_query_params():
     assert _get_decompression_command(PosixPath("/images/image.raw.zst")) == "zstdcat |"
     assert _get_decompression_command("https://cdn.example.com/images/image.raw.zst") == "zstdcat |"
 
-    # String path with query parameters (as returned by operator_for_path for signed URLs)
+    # String path with query parameters (e.g. from path_with_query in bearer token path)
     assert _get_decompression_command("/images/image.raw.xz?Expires=123&Signature=abc") == "xzcat |"
     assert _get_decompression_command("/images/image.raw.gz?Expires=123") == "zcat |"
     assert _get_decompression_command("/images/image.raw.zst?Expires=123") == "zstdcat |"

@@ -193,7 +193,7 @@ def test_upload_file_if_needed_strips_query_params(ridesx_client):
     """Verify _upload_file_if_needed produces a clean filename for signed URLs"""
     from jumpstarter_driver_opendal.client import clean_filename
 
-    # Simulate the path_buf that would come from operator_for_path with a signed URL
+    # Verify clean_filename handles paths with query parameters (e.g. signed URLs)
     path_with_query = "/images/image.raw.xz?Expires=123&Signature=abc/def&Key-Pair-Id=xyz"
     result = clean_filename(path_with_query)
     assert result == "image.raw.xz"

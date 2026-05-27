@@ -364,34 +364,32 @@ def test_clean_filename():
     assert clean_filename("/images/image.raw.xz?") == "image.raw.xz"
 
 
-def test_operator_for_path_preserves_query_params():
-    """Test that operator_for_path preserves query parameters for HTTP URLs"""
+def test_operator_for_path_strips_query_params():
+    """Test that operator_for_path strips query parameters from HTTP URLs.
+
+    Signed URL support is handled via the original_url mechanism (see bennyz's
+    implementation in OpendalFile.write_from_path and FlasherClient._flash_single),
+    so operator_for_path returns only the path component.
+    """
+    from pathlib import Path
+
     from .client import operator_for_path
 
     # HTTP URL without query parameters
     path, operator, scheme = operator_for_path("https://cdn.example.com/images/image.raw.xz")
     assert scheme == "http"
-    assert path == "/images/image.raw.xz"
+    assert path == Path("/images/image.raw.xz")
 
-    # HTTP URL with query parameters (e.g. CloudFront signed URL)
+    # HTTP URL with query parameters - query params are stripped because
+    # signed URL downloads use original_url passthrough instead
     path, operator, scheme = operator_for_path(
         "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
     )
     assert scheme == "http"
-    assert path == "/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
-    assert "Expires=123" in path
-    assert "Signature=abc" in path
-    assert "Key-Pair-Id=xyz" in path
-
-    # HTTP URL with trailing ? but no query params
-    path, operator, scheme = operator_for_path("https://cdn.example.com/images/image.raw.xz?")
-    assert scheme == "http"
-    assert path == "/images/image.raw.xz"
+    assert path == Path("/images/image.raw.xz")
 
     # Filesystem path (use resolve() for the expected value since macOS
     # resolves /tmp to /private/tmp)
-    from pathlib import Path
-
     path, operator, scheme = operator_for_path("/tmp/image.raw.xz")
     assert scheme == "fs"
     assert path == Path("/tmp/image.raw.xz").resolve()

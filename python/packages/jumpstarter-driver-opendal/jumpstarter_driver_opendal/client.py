@@ -66,20 +66,16 @@ def path_with_query(parsed_url: ParseResult) -> str:
 
 
 def operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator, str]:
-    """Create an operator for the given path.
-
-    For HTTP URLs, query parameters are preserved in the returned path so that
-    signed URLs (e.g. CloudFront with Expires/Signature/Key-Pair-Id) work correctly.
-
+    """Create an operator for the given path
     Return a tuple of:
-        - the path (str for HTTP, Path for filesystem)
+        - the path
         - the operator for the given path
-        - the scheme of the operator
+        - the scheme of the operator.
     """
     if isinstance(path, str) and path.startswith(("http://", "https://")):
         parsed_url = urlparse(path)
         operator = Operator("http", root="/", endpoint=f"{parsed_url.scheme}://{parsed_url.netloc}")
-        return path_with_query(parsed_url), operator, "http"
+        return Path(parsed_url.path), operator, "http"
     else:
         return Path(path).resolve(), Operator("fs", root="/"), "fs"
 
