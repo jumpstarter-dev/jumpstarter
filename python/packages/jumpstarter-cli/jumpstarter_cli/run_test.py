@@ -1,5 +1,7 @@
 """Tests for the exporter run module, covering rapid failure detection and CLI argument validation."""
 
+import os
+import tempfile
 from unittest.mock import MagicMock, patch
 
 import click.testing
@@ -196,7 +198,7 @@ class TestRunCommandAuthValidation:
         loading are mocked so the command can reach the auth-validation code
         without actually forking or reading real config files.
         """
-        runner = click.testing.CliRunner(mix_stderr=False)
+        runner = click.testing.CliRunner()
         patches = []
         if mock_serve:
             patches.append(
@@ -270,9 +272,6 @@ class TestRunCommandAuthValidation:
         """--unsafe-no-auth without --tls-grpc-insecure warns about unauthenticated access."""
         # Need to provide TLS cert/key for this path (since tls_insecure is not set)
         # We mock Path(exists=True) validation by passing files that "exist"
-        import tempfile
-        import os
-
         with tempfile.NamedTemporaryFile(suffix=".pem", delete=False) as cert, \
              tempfile.NamedTemporaryFile(suffix=".pem", delete=False) as key:
             cert.write(b"dummy cert")
