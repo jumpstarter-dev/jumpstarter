@@ -4,7 +4,7 @@ from typing import Dict, Optional
 
 import click
 from jumpstarter_driver_composite.client import CompositeClient
-from jumpstarter_driver_opendal.client import FlasherClient, operator_for_path
+from jumpstarter_driver_opendal.client import FlasherClient, clean_filename, operator_for_path
 from jumpstarter_driver_power.client import PowerClient
 from opendal import Operator
 
@@ -38,7 +38,7 @@ class RideSXClient(FlasherClient, CompositeClient):
             path_buf = Path(file_path)
             operator_scheme = "unknown"
 
-        filename = Path(path_buf).name
+        filename = clean_filename(path_buf)
 
         if self._should_upload_file(self.storage, filename, path_buf, operator, operator_scheme):
             if operator_scheme == "http":

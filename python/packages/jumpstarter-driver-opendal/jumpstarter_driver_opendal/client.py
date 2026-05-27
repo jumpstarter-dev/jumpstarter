@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from typing import cast
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, urlparse
 from uuid import UUID
 
 import click
@@ -42,6 +42,27 @@ class BytesIOStream(ObjectStream[bytes]):
 
     async def aclose(self):
         pass
+
+
+def clean_filename(path: PathBuf) -> str:
+    """Extract a clean filename from a path or URL, stripping query parameters.
+
+    Handles paths returned by operator_for_path() which may contain
+    query parameters for signed URLs (e.g. /path/to/image.raw.xz?Expires=...&Signature=...).
+    """
+    path_str = str(path)
+    if path_str.startswith(("http://", "https://")):
+        return urlparse(path_str).path.split("/")[-1]
+    if "?" in path_str:
+        path_str = path_str.split("?", 1)[0]
+    return Path(path_str).name
+
+
+def path_with_query(parsed_url: ParseResult) -> str:
+    """Reconstruct path preserving query parameters for signed URL support."""
+    if parsed_url.query:
+        return f"{parsed_url.path}?{parsed_url.query}"
+    return parsed_url.path
 
 
 def operator_for_path(path: PathBuf) -> tuple[PathBuf, Operator, str]:

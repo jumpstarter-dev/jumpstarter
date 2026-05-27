@@ -187,3 +187,57 @@ def test_upload_file_if_needed_resolves_relative_path(ridesx_client):
                 )
         finally:
             os.chdir(saved_cwd)
+
+
+def test_upload_file_if_needed_strips_query_params(ridesx_client):
+    """Verify _upload_file_if_needed produces a clean filename for signed URLs.
+
+    When a signed HTTP URL (with query parameters like ?Expires=...&Signature=...)
+    is passed to _upload_file_if_needed, the filename stored on the exporter must
+    be free of query parameters.
+    """
+    from opendal import Operator
+
+    signed_url = "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
+
+    with (
+        patch.object(ridesx_client, "_should_upload_file", return_value=True),
+        patch.object(ridesx_client.storage, "write_from_path") as mock_write,
+    ):
+        returned_filename = ridesx_client._upload_file_if_needed(signed_url)
+
+        # The filename written to storage must not contain query parameters
+        assert returned_filename == "image.raw.xz", (
+            f"Expected clean filename 'image.raw.xz', got '{returned_filename}'"
+        )
+
+        # write_from_path must have been called with the clean filename
+        mock_write.assert_called_once()
+        dest_arg = mock_write.call_args[0][0]
+        assert dest_arg == "image.raw.xz", (
+            f"write_from_path destination should be 'image.raw.xz', got '{dest_arg}'"
+        )
+
+    # Also verify with a plain path string containing query parameters
+    # (simulates the case where an operator is pre-provided and the path
+    # still carries query params from operator_for_path)
+    path_with_query = "/images/image.raw.xz?Expires=123&Signature=abc/def&Key-Pair-Id=xyz"
+    mock_operator = Operator("memory")
+
+    with (
+        patch.object(ridesx_client, "_should_upload_file", return_value=True),
+        patch.object(ridesx_client.storage, "write_from_path") as mock_write,
+    ):
+        returned_filename = ridesx_client._upload_file_if_needed(
+            path_with_query, operator=mock_operator
+        )
+
+        assert returned_filename == "image.raw.xz", (
+            f"Expected clean filename 'image.raw.xz', got '{returned_filename}'"
+        )
+
+        mock_write.assert_called_once()
+        dest_arg = mock_write.call_args[0][0]
+        assert dest_arg == "image.raw.xz", (
+            f"write_from_path destination should be 'image.raw.xz', got '{dest_arg}'"
+        )
