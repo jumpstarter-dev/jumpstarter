@@ -92,6 +92,7 @@ Drivers for virtual and emulated targets:
 General-purpose utility drivers:
 
 - **[Shell](shell.md)** (`jumpstarter-driver-shell`) - Shell command execution
+- **[SSH Mount](ssh-mount.md)** (`jumpstarter-driver-ssh-mount`) - SSHFS remote filesystem mounting
 - **[TMT](tmt.md)** (`jumpstarter-driver-tmt`) - Test Management Tool wrapper
 
 ```{toctree}
@@ -127,6 +128,7 @@ shell.md
 snmp.md
 someip.md
 ssh.md
+ssh-mount.md
 ssh-mitm.md
 stlink-msd.md
 tasmota.md
