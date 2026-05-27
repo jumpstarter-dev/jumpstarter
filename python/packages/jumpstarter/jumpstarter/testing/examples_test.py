@@ -1,0 +1,130 @@
+from __future__ import annotations
+
+import warnings
+
+import pytest
+import yaml as _yaml
+
+from jumpstarter.config.exporter import (
+    ExporterConfigV1Alpha1,
+    ExporterConfigV1Alpha1DriverInstance,
+    HookConfigV1Alpha1,
+    HookInstanceConfigV1Alpha1,
+)
+from jumpstarter.testing.examples import (
+    instantiate_yaml_example,
+    validate_example,
+    validate_python_example,
+    validate_yaml_example,
+)
+
+
+def _dump_exporter_config(**overrides) -> str:
+    config = ExporterConfigV1Alpha1(
+        metadata={"name": "test", "namespace": "default"},
+        endpoint="grpc.example.com:443",
+        token="xxxxx",
+        **overrides,
+    )
+    return _yaml.dump(config.model_dump(by_alias=True, exclude_none=True))
+
+
+def test_validate_yaml_example_with_exporter_config(tmp_path):
+    driver = ExporterConfigV1Alpha1DriverInstance.model_validate(
+        {"type": "jumpstarter_driver_shell.driver.Shell", "config": {"methods": {"ls": "ls"}}}
+    )
+    f = tmp_path / "config.yaml"
+    f.write_text(_dump_exporter_config(export={"shell": driver}))
+    validate_yaml_example(f)
+
+
+def test_validate_yaml_example_with_export_section(tmp_path):
+    driver = ExporterConfigV1Alpha1DriverInstance.model_validate(
+        {"type": "jumpstarter_driver_shell.driver.Shell", "config": {"methods": {"ls": "ls"}}}
+    )
+    f = tmp_path / "export.yaml"
+    f.write_text(_yaml.dump({"export": {"shell": driver.model_dump(by_alias=True, exclude_none=True)}}))
+    validate_yaml_example(f)
+
+
+def test_validate_yaml_example_warns_on_unknown_structure(tmp_path):
+    f = tmp_path / "fragment.yaml"
+    f.write_text(_yaml.dump({"device": "/dev/ttyUSB0"}))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        validate_yaml_example(f)
+    assert any("no model validation" in str(w.message).lower() for w in caught)
+
+
+def test_validate_yaml_example_asserts_on_empty(tmp_path):
+    f = tmp_path / "empty.yaml"
+    f.write_text("")
+    with pytest.raises(AssertionError, match="parsed as empty"):
+        validate_yaml_example(f)
+
+
+def test_validate_yaml_example_accepts_non_dict(tmp_path):
+    f = tmp_path / "list.yaml"
+    f.write_text(_yaml.dump(["item1", "item2"]))
+    validate_yaml_example(f)
+
+
+def test_validate_python_example_valid_syntax(tmp_path):
+    f = tmp_path / "usage.py"
+    f.write_text("x = 1 + 2\n")
+    validate_python_example(f)
+
+
+def test_validate_python_example_skips_on_missing_import(tmp_path):
+    f = tmp_path / "usage.py"
+    f.write_text("from nonexistent_package_xyz import something\n")
+    with pytest.raises(pytest.skip.Exception):
+        validate_python_example(f)
+
+
+def test_validate_python_example_skips_on_missing_plain_import(tmp_path):
+    f = tmp_path / "usage.py"
+    f.write_text("import nonexistent_package_xyz\n")
+    with pytest.raises(pytest.skip.Exception):
+        validate_python_example(f)
+
+
+def test_validate_example_dispatches_yaml(tmp_path):
+    f = tmp_path / "config.yaml"
+    f.write_text(_yaml.dump(["item"]))
+    validate_example(f, "yaml")
+
+
+def test_validate_example_dispatches_python(tmp_path):
+    f = tmp_path / "usage.py"
+    f.write_text("x = 1\n")
+    validate_example(f, "python")
+
+
+def test_validate_yaml_example_with_hooks_section(tmp_path):
+    hook = HookConfigV1Alpha1(
+        before_lease=HookInstanceConfigV1Alpha1(script="echo hello"),
+    )
+    f = tmp_path / "hooks.yaml"
+    f.write_text(_yaml.dump({"hooks": hook.model_dump(by_alias=True, exclude_none=True)}))
+    validate_yaml_example(f)
+
+
+def test_instantiate_yaml_example_skips_without_export(tmp_path):
+    hook = HookConfigV1Alpha1(
+        before_lease=HookInstanceConfigV1Alpha1(script="echo hi"),
+    )
+    f = tmp_path / "hooks.yaml"
+    f.write_text(_yaml.dump({"hooks": hook.model_dump(by_alias=True, exclude_none=True)}))
+    with pytest.raises(pytest.skip.Exception, match="no export section"):
+        instantiate_yaml_example(f)
+
+
+def test_instantiate_yaml_example_skips_on_missing_driver(tmp_path):
+    driver = ExporterConfigV1Alpha1DriverInstance.model_validate(
+        {"type": "nonexistent_driver_package.driver.Fake"}
+    )
+    f = tmp_path / "config.yaml"
+    f.write_text(_yaml.dump({"export": {"dev": driver.model_dump(by_alias=True, exclude_none=True)}}))
+    with pytest.raises(pytest.skip.Exception, match="driver 'dev'"):
+        instantiate_yaml_example(f)

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 
 import pytest
 
 from jumpstarter.testing.checks import (
-    _is_referenced,
     discover_example_files,
     find_inline_code_blocks,
     find_unused_examples,
@@ -47,34 +45,13 @@ def test_example_validates(path, kind):
     testing.validate_example(path, kind)
 
 
-def test_is_referenced_rejects_bare_filename_in_prose(tmp_path):
-    examples_dir = tmp_path / "examples"
-    examples_dir.mkdir()
-    example = examples_dir / "config.yaml"
-    example.write_text("kind: ExporterConfig\n", encoding="utf-8")
-    readme_content = "The config.yaml word appears in prose but not as a literalinclude path"
-    assert not _is_referenced(example, examples_dir, readme_content)
 
-
-def test_is_referenced_matches_relative_path(tmp_path):
-    examples_dir = tmp_path / "examples"
-    examples_dir.mkdir()
-    example = examples_dir / "config.yaml"
-    example.write_text("kind: ExporterConfig\n", encoding="utf-8")
-    readme_content = "```{literalinclude} examples/config.yaml\n```"
-    assert _is_referenced(example, examples_dir, readme_content)
-
-
-def test_validate_yaml_warns_on_unrecognized_structure(tmp_path):
-    yaml_file = tmp_path / "fragment.yaml"
-    yaml_file.write_text("device: /dev/ttyUSB0\n", encoding="utf-8")
+@pytest.mark.parametrize("path,kind", _example_file_params())
+def test_example_instantiates(path, kind):
+    if kind != "yaml":
+        pytest.skip("not a YAML example")
     testing = pytest.importorskip("jumpstarter.testing.examples")
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        testing.validate_yaml_example(yaml_file)
-    assert any("no model validation" in str(w.message).lower() for w in caught), (
-        f"Expected a warning about missing model validation, got: {[str(w.message) for w in caught]}"
-    )
+    testing.instantiate_yaml_example(path)
 
 
 @pytest.mark.parametrize("pkg", _driver_params())

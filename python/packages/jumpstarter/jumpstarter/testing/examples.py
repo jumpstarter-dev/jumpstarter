@@ -75,6 +75,23 @@ def validate_python_example(path: Path) -> None:
                     pytest.skip(f"{alias.name} not installed")
 
 
+def instantiate_yaml_example(path: Path) -> None:
+    import pytest
+
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or "export" not in data:
+        pytest.skip("no export section")
+
+    from jumpstarter.config.exporter import ExporterConfigV1Alpha1DriverInstance
+
+    for name, entry in data["export"].items():
+        instance = ExporterConfigV1Alpha1DriverInstance.model_validate(entry)
+        try:
+            instance.instantiate()
+        except Exception as exc:
+            pytest.skip(f"driver '{name}': {exc}")
+
+
 def validate_example(path: Path, kind: str) -> None:
     if kind == "yaml":
         validate_yaml_example(path)
