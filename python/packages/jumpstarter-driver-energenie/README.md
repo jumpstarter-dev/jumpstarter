@@ -2,7 +2,7 @@
 
 Drivers for EnerGenie products.
 
-This driver provides a client for the [EnerGenie Programmable power switch](https://energenie.com/products.aspx?sg=239). The driver was tested on EG-PMS2-LAN device only but should be easy to support other devices.
+This driver provides a client for the EnerGenie Programmable power switch. The driver was tested on EG-PMS2-LAN device only but should be easy to support other devices.
 
 ## Installation
 
