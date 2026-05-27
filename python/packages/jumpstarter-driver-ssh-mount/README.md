@@ -23,24 +23,8 @@ The SSHMount driver references an existing SSH driver to inherit credentials
 
 Example exporter configuration:
 
-```yaml
-export:
-  ssh:
-    type: jumpstarter_driver_ssh.driver.SSHWrapper
-    config:
-      default_username: "root"
-      # ssh_identity_file: "/path/to/ssh/key"
-    children:
-      tcp:
-        type: jumpstarter_driver_network.driver.TcpNetwork
-        config:
-          host: "192.168.1.100"
-          port: 22
-  mount:
-    type: jumpstarter_driver_ssh_mount.driver.SSHMount
-    children:
-      ssh:
-        ref: "ssh"
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ssh-mount/examples/config.yaml
+:language: yaml
 ```
 
 ## CLI Usage
