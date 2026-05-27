@@ -75,7 +75,7 @@ docs-test-grpc:
 	uv run --isolated --all-packages --group docs pytest --cov=docs/source/reference --cov-report=xml:docs/source/reference/coverage.xml docs/source/reference/generate_grpc_docs_test.py
 
 docs-test:
-	uv run --isolated --all-packages --group docs pytest docs/source/examples/tests/ -v
+	uv run --isolated --all-packages --group docs pytest tests/test_example_files.py docs/source/examples/tests/ -v
 
 docs-linkcheck: docs-generate-crds docs-generate-grpc
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs linkcheck
