@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import warnings
 from pathlib import Path
 
 import yaml
@@ -47,6 +48,11 @@ def validate_yaml_example(path: Path) -> None:
             elif section_key == "hooks" and isinstance(section, dict):
                 model_class.model_validate(section)
             return
+
+    warnings.warn(
+        f"{path.name}: no model validation performed, only YAML syntax was checked",
+        stacklevel=2,
+    )
 
 
 def validate_python_example(path: Path) -> None:

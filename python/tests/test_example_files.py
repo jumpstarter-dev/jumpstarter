@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,18 @@ def _driver_params() -> list[pytest.param]:
 def test_example_validates(path, kind):
     testing = pytest.importorskip("jumpstarter.testing.examples")
     testing.validate_example(path, kind)
+
+
+def test_validate_yaml_warns_on_unrecognized_structure(tmp_path):
+    yaml_file = tmp_path / "fragment.yaml"
+    yaml_file.write_text("device: /dev/ttyUSB0\n", encoding="utf-8")
+    testing = pytest.importorskip("jumpstarter.testing.examples")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        testing.validate_yaml_example(yaml_file)
+    assert any("no model validation" in str(w.message).lower() for w in caught), (
+        f"Expected a warning about missing model validation, got: {[str(w.message) for w in caught]}"
+    )
 
 
 @pytest.mark.parametrize("pkg", _driver_params())
