@@ -28,6 +28,12 @@ for BRANCH in "${BRANCHES[@]}"; do
       python3 "${GRPC_SCRIPT}"
   fi
 
+  CRD_SCRIPT="${WORKTREE}/python/docs/source/reference/generate-crd-docs.py"
+  if [[ -f "${CRD_SCRIPT}" ]]; then
+    uv run --project "${WORKTREE}/python" --isolated --all-packages --group docs \
+      python3 "${CRD_SCRIPT}"
+  fi
+
   uv run --project "${WORKTREE}/python" --isolated --all-packages --group docs \
     make -C "${WORKTREE}/python/docs" html SPHINXOPTS="-D version=${BRANCH}"
 

@@ -146,14 +146,14 @@ make e2e-clean  # Clean up
 Jumpstarter's documentation is available at [jumpstarter.dev](https://jumpstarter.dev).
 
 - [Getting Started](https://jumpstarter.dev/main/getting-started/)
-- [User Guide](https://jumpstarter.dev/main/introduction/)
-- [API Reference](https://jumpstarter.dev/main/reference/)
-- [Contributing Guide](https://jumpstarter.dev/main/contributing.html)
+- [Introduction](https://jumpstarter.dev/main/introduction/)
+- [Reference](https://jumpstarter.dev/main/reference/)
+- [Contributing](https://jumpstarter.dev/main/contributing.html)
 
 ## Contributing
 
 Jumpstarter welcomes contributors of all levels of experience! See the
-[contributing guide](https://jumpstarter.dev/main/contributing.html) to get started.
+[contributing](https://jumpstarter.dev/main/contributing.html) guide to get started.
 
 ### Community
 
