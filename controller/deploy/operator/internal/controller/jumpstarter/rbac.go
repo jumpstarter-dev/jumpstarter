@@ -18,190 +18,132 @@ import (
 
 // reconcileRBAC reconciles all RBAC resources (ServiceAccount, Role, RoleBinding)
 func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
+	// Controller ServiceAccount
+	// Note: We intentionally do NOT set controller reference on ServiceAccounts to prevent
+	// them from being garbage collected when the Jumpstarter CR is deleted
+	if err := r.reconcileServiceAccount(ctx, r.createServiceAccount(jumpstarter)); err != nil {
+		return err
+	}
+
+	// Router ServiceAccount
+	if err := r.reconcileServiceAccount(ctx, r.createRouterServiceAccount(jumpstarter)); err != nil {
+		return err
+	}
+
+	// Controller Role
+	if err := r.reconcileRole(ctx, jumpstarter, r.createRole(jumpstarter)); err != nil {
+		return err
+	}
+
+	// Controller RoleBinding
+	// Note: RoleRef is immutable in Kubernetes. If it changes, we must delete and recreate.
+	if err := r.reconcileRoleBinding(ctx, jumpstarter, r.createRoleBinding(jumpstarter)); err != nil {
+		return err
+	}
+
+	// Router Role (minimal permissions: read configmaps)
+	if err := r.reconcileRole(ctx, jumpstarter, r.createRouterRole(jumpstarter)); err != nil {
+		return err
+	}
+
+	// Router RoleBinding
+	if err := r.reconcileRoleBinding(ctx, jumpstarter, r.createRouterRoleBinding(jumpstarter)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// reconcileServiceAccount reconciles a ServiceAccount using CreateOrUpdate.
+// Note: controller reference is intentionally NOT set on ServiceAccounts to prevent
+// them from being garbage collected when the Jumpstarter CR is deleted.
+func (r *JumpstarterReconciler) reconcileServiceAccount(
+	ctx context.Context,
+	desired *corev1.ServiceAccount,
+) error {
 	log := logf.FromContext(ctx)
 
-	// ServiceAccount
-	// Note: We intentionally do NOT set controller reference on ServiceAccount to prevent
-	// it from being garbage collected when the Jumpstarter CR is deleted
-	desiredSA := r.createServiceAccount(jumpstarter)
+	existing := &corev1.ServiceAccount{}
+	existing.Name = desired.Name
+	existing.Namespace = desired.Namespace
 
-	existingSA := &corev1.ServiceAccount{}
-	existingSA.Name = desiredSA.Name
-	existingSA.Namespace = desiredSA.Namespace
-
-	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existingSA, func() error {
-		// Check if this is a new service account or an existing one
-		if existingSA.CreationTimestamp.IsZero() {
-			// ServiceAccount is being created, copy all fields from desired
-			existingSA.Labels = desiredSA.Labels
-			existingSA.Annotations = desiredSA.Annotations
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existing, func() error {
+		if existing.CreationTimestamp.IsZero() {
+			existing.Labels = desired.Labels
+			existing.Annotations = desired.Annotations
 			return nil
 		}
 
-		// ServiceAccount exists, check if update is needed
-		if !serviceAccountNeedsUpdate(existingSA, desiredSA) {
+		if !serviceAccountNeedsUpdate(existing, desired) {
 			log.V(1).Info("ServiceAccount is up to date, skipping update",
-				"name", existingSA.Name,
-				"namespace", existingSA.Namespace)
+				"name", existing.Name,
+				"namespace", existing.Namespace)
 			return nil
 		}
 
-		// Update needed - apply changes
-		existingSA.Labels = desiredSA.Labels
-		existingSA.Annotations = desiredSA.Annotations
+		existing.Labels = desired.Labels
+		existing.Annotations = desired.Annotations
 		return nil
 	})
 
 	if err != nil {
 		log.Error(err, "Failed to reconcile ServiceAccount",
-			"name", desiredSA.Name,
-			"namespace", desiredSA.Namespace)
+			"name", desired.Name,
+			"namespace", desired.Namespace)
 		return err
 	}
 
 	log.Info("ServiceAccount reconciled",
-		"name", existingSA.Name,
-		"namespace", existingSA.Namespace,
+		"name", existing.Name,
+		"namespace", existing.Namespace,
 		"operation", op)
+	return nil
+}
 
-	// Router ServiceAccount (uses dedicated minimal Role)
-	// Note: We intentionally do NOT set controller reference on ServiceAccount to prevent
-	// it from being garbage collected when the Jumpstarter CR is deleted
-	desiredRouterSA := r.createRouterServiceAccount(jumpstarter)
+// reconcileRole reconciles a Role using CreateOrUpdate and sets the controller reference.
+func (r *JumpstarterReconciler) reconcileRole(
+	ctx context.Context,
+	jumpstarter *operatorv1alpha1.Jumpstarter,
+	desired *rbacv1.Role,
+) error {
+	log := logf.FromContext(ctx)
 
-	existingRouterSA := &corev1.ServiceAccount{}
-	existingRouterSA.Name = desiredRouterSA.Name
-	existingRouterSA.Namespace = desiredRouterSA.Namespace
+	existing := &rbacv1.Role{}
+	existing.Name = desired.Name
+	existing.Namespace = desired.Namespace
 
-	op, err = controllerutil.CreateOrUpdate(ctx, r.Client, existingRouterSA, func() error {
-		if existingRouterSA.CreationTimestamp.IsZero() {
-			existingRouterSA.Labels = desiredRouterSA.Labels
-			existingRouterSA.Annotations = desiredRouterSA.Annotations
-			return nil
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existing, func() error {
+		if existing.CreationTimestamp.IsZero() {
+			existing.Labels = desired.Labels
+			existing.Annotations = desired.Annotations
+			existing.Rules = desired.Rules
+			return controllerutil.SetControllerReference(jumpstarter, existing, r.Scheme)
 		}
 
-		if !serviceAccountNeedsUpdate(existingRouterSA, desiredRouterSA) {
-			log.V(1).Info("Router ServiceAccount is up to date, skipping update",
-				"name", existingRouterSA.Name,
-				"namespace", existingRouterSA.Namespace)
-			return nil
-		}
-
-		existingRouterSA.Labels = desiredRouterSA.Labels
-		existingRouterSA.Annotations = desiredRouterSA.Annotations
-		return nil
-	})
-
-	if err != nil {
-		log.Error(err, "Failed to reconcile Router ServiceAccount",
-			"name", desiredRouterSA.Name,
-			"namespace", desiredRouterSA.Namespace)
-		return err
-	}
-
-	log.Info("Router ServiceAccount reconciled",
-		"name", existingRouterSA.Name,
-		"namespace", existingRouterSA.Namespace,
-		"operation", op)
-
-	// Role
-	desiredRole := r.createRole(jumpstarter)
-
-	existingRole := &rbacv1.Role{}
-	existingRole.Name = desiredRole.Name
-	existingRole.Namespace = desiredRole.Namespace
-
-	op, err = controllerutil.CreateOrUpdate(ctx, r.Client, existingRole, func() error {
-		// Check if this is a new role or an existing one
-		if existingRole.CreationTimestamp.IsZero() {
-			// Role is being created, copy all fields from desired
-			existingRole.Labels = desiredRole.Labels
-			existingRole.Annotations = desiredRole.Annotations
-			existingRole.Rules = desiredRole.Rules
-			return controllerutil.SetControllerReference(jumpstarter, existingRole, r.Scheme)
-		}
-
-		// Role exists, check if update is needed
-		if !roleNeedsUpdate(existingRole, desiredRole) {
+		if !roleNeedsUpdate(existing, desired) {
 			log.V(1).Info("Role is up to date, skipping update",
-				"name", existingRole.Name,
-				"namespace", existingRole.Namespace)
+				"name", existing.Name,
+				"namespace", existing.Namespace)
 			return nil
 		}
 
-		// Update needed - apply changes
-		existingRole.Labels = desiredRole.Labels
-		existingRole.Annotations = desiredRole.Annotations
-		existingRole.Rules = desiredRole.Rules
-		return controllerutil.SetControllerReference(jumpstarter, existingRole, r.Scheme)
+		existing.Labels = desired.Labels
+		existing.Annotations = desired.Annotations
+		existing.Rules = desired.Rules
+		return controllerutil.SetControllerReference(jumpstarter, existing, r.Scheme)
 	})
 
 	if err != nil {
 		log.Error(err, "Failed to reconcile Role",
-			"name", desiredRole.Name,
-			"namespace", desiredRole.Namespace)
+			"name", desired.Name,
+			"namespace", desired.Namespace)
 		return err
 	}
 
 	log.Info("Role reconciled",
-		"name", existingRole.Name,
-		"namespace", existingRole.Namespace,
+		"name", existing.Name,
+		"namespace", existing.Namespace,
 		"operation", op)
-
-	// RoleBinding
-	// Note: RoleRef is immutable in Kubernetes. If it changes, we must delete and recreate.
-	desiredRoleBinding := r.createRoleBinding(jumpstarter)
-	if err := r.reconcileRoleBinding(ctx, jumpstarter, desiredRoleBinding); err != nil {
-		return err
-	}
-
-	// Router Role (minimal permissions: read configmaps)
-	desiredRouterRole := r.createRouterRole(jumpstarter)
-
-	existingRouterRole := &rbacv1.Role{}
-	existingRouterRole.Name = desiredRouterRole.Name
-	existingRouterRole.Namespace = desiredRouterRole.Namespace
-
-	op, err = controllerutil.CreateOrUpdate(ctx, r.Client, existingRouterRole, func() error {
-		if existingRouterRole.CreationTimestamp.IsZero() {
-			existingRouterRole.Labels = desiredRouterRole.Labels
-			existingRouterRole.Annotations = desiredRouterRole.Annotations
-			existingRouterRole.Rules = desiredRouterRole.Rules
-			return controllerutil.SetControllerReference(jumpstarter, existingRouterRole, r.Scheme)
-		}
-
-		if !roleNeedsUpdate(existingRouterRole, desiredRouterRole) {
-			log.V(1).Info("Router Role is up to date, skipping update",
-				"name", existingRouterRole.Name,
-				"namespace", existingRouterRole.Namespace)
-			return nil
-		}
-
-		existingRouterRole.Labels = desiredRouterRole.Labels
-		existingRouterRole.Annotations = desiredRouterRole.Annotations
-		existingRouterRole.Rules = desiredRouterRole.Rules
-		return controllerutil.SetControllerReference(jumpstarter, existingRouterRole, r.Scheme)
-	})
-
-	if err != nil {
-		log.Error(err, "Failed to reconcile Router Role",
-			"name", desiredRouterRole.Name,
-			"namespace", desiredRouterRole.Namespace)
-		return err
-	}
-
-	log.Info("Router Role reconciled",
-		"name", existingRouterRole.Name,
-		"namespace", existingRouterRole.Namespace,
-		"operation", op)
-
-	// Router RoleBinding
-	// Note: RoleRef is immutable in Kubernetes. If it changes, we must delete and recreate.
-	desiredRouterRoleBinding := r.createRouterRoleBinding(jumpstarter)
-	if err := r.reconcileRoleBinding(ctx, jumpstarter, desiredRouterRoleBinding); err != nil {
-		return err
-	}
-
 	return nil
 }
 
