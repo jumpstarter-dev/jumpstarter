@@ -31,6 +31,14 @@ def _example_file_params() -> list[pytest.param]:
         for path, kind in discover_example_files(examples_dir):
             rel = path.relative_to(pkg)
             params.append(pytest.param(path, kind, id=f"{pkg.name}/{rel}"))
+    docs_examples_root = DOCS_SOURCE_DIR / "examples"
+    if docs_examples_root.is_dir():
+        for subdir in sorted(docs_examples_root.iterdir()):
+            if not subdir.is_dir() or subdir.name == "tests":
+                continue
+            for path, kind in discover_example_files(subdir):
+                rel = path.relative_to(docs_examples_root)
+                params.append(pytest.param(path, kind, id=f"docs-examples/{rel}"))
     return params
 
 
