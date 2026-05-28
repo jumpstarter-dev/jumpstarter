@@ -647,8 +647,12 @@ class TestHandleAsyncTransientRetry:
     @pytest.mark.anyio
     @pytest.mark.parametrize(
         "status_code",
-        [grpc.StatusCode.RESOURCE_EXHAUSTED, grpc.StatusCode.ABORTED, grpc.StatusCode.INTERNAL, grpc.StatusCode.UNKNOWN],
-        ids=["RESOURCE_EXHAUSTED", "ABORTED", "INTERNAL", "UNKNOWN"],
+        [
+            grpc.StatusCode.RESOURCE_EXHAUSTED,
+            grpc.StatusCode.ABORTED,
+            grpc.StatusCode.INTERNAL,
+        ],
+        ids=["RESOURCE_EXHAUSTED", "ABORTED", "INTERNAL"],
     )
     async def test_retries_multiple_transient_codes(self, status_code):
         """Should retry on RESOURCE_EXHAUSTED, ABORTED, INTERNAL."""
@@ -676,6 +680,53 @@ class TestHandleAsyncTransientRetry:
                 await lease.handle_async(Mock())
 
         assert call_count == 2, f"Expected 2 calls for {status_code}, got {call_count}"
+
+    @pytest.mark.anyio
+    async def test_retries_unknown_with_watch_channel_closed(self):
+        """Should retry UNKNOWN only when details contain 'watch channel closed'."""
+        lease = _make_lease_for_handle()
+        dial_response = Mock(router_endpoint="ep", router_token="tok")
+        call_count = 0
+
+        async def dial_side_effect(req):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise _make_aio_rpc_error(
+                    grpc.StatusCode.UNKNOWN, "watch channel closed"
+                )
+            return dial_response
+
+        lease.controller.Dial = AsyncMock(side_effect=dial_side_effect)
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            with patch("jumpstarter.client.lease.connect_router_stream") as mock_router:
+
+                @asynccontextmanager
+                async def fake_router(*args, **kwargs):
+                    yield
+
+                mock_router.side_effect = fake_router
+                await lease.handle_async(Mock())
+
+        assert call_count == 2
+
+    @pytest.mark.anyio
+    async def test_unknown_without_known_message_not_retried(self):
+        """UNKNOWN with an unrecognized message should NOT be retried."""
+        lease = _make_lease_for_handle()
+
+        lease.controller.Dial = AsyncMock(
+            side_effect=_make_aio_rpc_error(
+                grpc.StatusCode.UNKNOWN, "some unexpected server bug"
+            ),
+        )
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            await lease.handle_async(Mock())
+
+        # Should return after just one attempt (no retry)
+        lease.controller.Dial.assert_called_once()
 
     @pytest.mark.anyio
     async def test_router_transient_error_retries_full_dial_and_connect(self):
@@ -831,9 +882,16 @@ class TestTransientGrpcCodes:
         assert grpc.StatusCode.RESOURCE_EXHAUSTED in Lease._TRANSIENT_GRPC_CODES
         assert grpc.StatusCode.ABORTED in Lease._TRANSIENT_GRPC_CODES
         assert grpc.StatusCode.INTERNAL in Lease._TRANSIENT_GRPC_CODES
-        assert grpc.StatusCode.UNKNOWN in Lease._TRANSIENT_GRPC_CODES
+
+    def test_unknown_not_in_blanket_transient_codes(self):
+        """UNKNOWN is handled separately via _TRANSIENT_UNKNOWN_MESSAGES."""
+        assert grpc.StatusCode.UNKNOWN not in Lease._TRANSIENT_GRPC_CODES
 
     def test_does_not_contain_non_transient_codes(self):
         assert grpc.StatusCode.PERMISSION_DENIED not in Lease._TRANSIENT_GRPC_CODES
         assert grpc.StatusCode.NOT_FOUND not in Lease._TRANSIENT_GRPC_CODES
         assert grpc.StatusCode.FAILED_PRECONDITION not in Lease._TRANSIENT_GRPC_CODES
+
+    def test_transient_unknown_messages(self):
+        """Should contain the known tunnel teardown messages."""
+        assert "watch channel closed" in Lease._TRANSIENT_UNKNOWN_MESSAGES

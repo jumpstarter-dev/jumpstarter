@@ -313,15 +313,18 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
             yield value
 
     # gRPC status codes that indicate transient network failures worth retrying.
-    # UNKNOWN is included because tunnel teardowns (e.g. "watch channel closed")
-    # surface as UNKNOWN rather than UNAVAILABLE.
     _TRANSIENT_GRPC_CODES = frozenset({
         grpc.StatusCode.UNAVAILABLE,
         grpc.StatusCode.RESOURCE_EXHAUSTED,
         grpc.StatusCode.ABORTED,
         grpc.StatusCode.INTERNAL,
-        grpc.StatusCode.UNKNOWN,
     })
+
+    # UNKNOWN error messages that indicate transient tunnel teardowns.
+    # We don't blanket-retry all UNKNOWN errors (they could be permanent
+    # server bugs), but specific messages like "watch channel closed" are
+    # known to occur during tunnel reconnection.
+    _TRANSIENT_UNKNOWN_MESSAGES = ("watch channel closed",)
 
     async def _dial_and_connect(self, stream):
         """Dial the controller and connect to the router stream.
@@ -372,8 +375,14 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     await sleep(delay)
                     attempt += 1
                     continue
-                # Retry on transient network errors (e.g. tunnel to router dropped)
-                if e.code() in self._TRANSIENT_GRPC_CODES:
+                # Retry on transient network errors (e.g. tunnel to router dropped).
+                # Also retry UNKNOWN when the message matches a known transient
+                # tunnel teardown (e.g. "watch channel closed").
+                is_transient = e.code() in self._TRANSIENT_GRPC_CODES or (
+                    e.code() == grpc.StatusCode.UNKNOWN
+                    and any(msg in str(e.details()).lower() for msg in self._TRANSIENT_UNKNOWN_MESSAGES)
+                )
+                if is_transient:
                     if remaining <= 0:
                         logger.warning(
                             "Connection failed with transient error after %d attempts (%.1fs elapsed): %s",
