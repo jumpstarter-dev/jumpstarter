@@ -105,19 +105,9 @@ class QemuFlasher(FlasherInterface, Driver):
         if not oci_url.startswith("oci://"):
             raise ValueError(f"OCI URL must start with oci://, got: {oci_url}")
 
-        # If explicit credentials were provided, validate immediately
-        if oci_username or oci_password:
-            if bool(oci_username) != bool(oci_password):
-                raise ValueError("OCI authentication requires both username and password")
-        else:
-            # Fall back to env vars, then container auth files
-            from jumpstarter.common.oci import resolve_oci_credentials
+        from jumpstarter.common.oci import resolve_oci_credentials
 
-            oci_username, oci_password = resolve_oci_credentials(oci_url)
-            if oci_username and oci_password:
-                self.logger.info("Using OCI registry credentials from environment or auth file")
-            elif oci_username or oci_password:
-                raise ValueError("OCI authentication requires both username and password")
+        creds = resolve_oci_credentials(oci_url, username=oci_username, password=oci_password)
 
         target_path = str(self.parent.validate_partition(partition))
 
@@ -130,10 +120,10 @@ class QemuFlasher(FlasherInterface, Driver):
         fls_cmd = [fls_binary, "from-url", oci_url, target_path]
 
         fls_env = None
-        if oci_username and oci_password:
+        if creds.is_authenticated:
             fls_env = os.environ.copy()
-            fls_env["FLS_REGISTRY_USERNAME"] = oci_username
-            fls_env["FLS_REGISTRY_PASSWORD"] = oci_password
+            fls_env["FLS_REGISTRY_USERNAME"] = creds.username
+            fls_env["FLS_REGISTRY_PASSWORD"] = creds.plain_password
 
         self.logger.info(f"Running fls: {' '.join(fls_cmd)}")
 
