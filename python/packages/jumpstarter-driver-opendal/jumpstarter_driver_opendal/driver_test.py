@@ -326,6 +326,25 @@ def test_copy_and_rename_tracking(tmp_path):
     assert len(created_paths) == 4
 
 
+def test_path_with_query():
+    """Test path_with_query reconstructs path preserving query parameters."""
+    from urllib.parse import urlparse
+
+    from .client import path_with_query
+
+    parsed_with_query = urlparse("https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc")
+    assert path_with_query(parsed_with_query) == "/images/image.raw.xz?Expires=123&Signature=abc"
+
+    parsed_without_query = urlparse("https://cdn.example.com/images/image.raw.xz")
+    assert path_with_query(parsed_without_query) == "/images/image.raw.xz"
+
+    parsed_root_with_query = urlparse("https://cdn.example.com/?token=xyz")
+    assert path_with_query(parsed_root_with_query) == "/?token=xyz"
+
+    parsed_root_without_query = urlparse("https://cdn.example.com/")
+    assert path_with_query(parsed_root_without_query) == "/"
+
+
 def test_clean_filename():
     """Test clean_filename extracts filenames and strips query parameters"""
     from pathlib import PosixPath
