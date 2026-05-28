@@ -873,6 +873,55 @@ class TestHandleAsyncTransientRetry:
         # Only the initial Dial, no retry
         assert lease.controller.Dial.call_count == 1
 
+    @pytest.mark.anyio
+    async def test_exponential_backoff_delay_values(self):
+        """Verify that sleep delays follow exponential backoff: 0.3, 0.6, 1.2, 2.4, 4.8, capped at 5.0."""
+        lease = _make_lease_for_handle()
+        lease.dial_timeout = 60.0  # large timeout so remaining doesn't cap delays
+
+        # Fail 6 times then succeed on the 7th attempt
+        total_failures = 6
+        call_count = 0
+        dial_response = Mock(router_endpoint="ep", router_token="tok")
+
+        async def dial_side_effect(req):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= total_failures:
+                raise _make_aio_rpc_error(
+                    grpc.StatusCode.UNAVAILABLE, "tunnel dropped"
+                )
+            return dial_response
+
+        lease.controller.Dial = AsyncMock(side_effect=dial_side_effect)
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock) as mock_sleep:
+            with patch("jumpstarter.client.lease.connect_router_stream") as mock_router:
+
+                @asynccontextmanager
+                async def fake_router(*args, **kwargs):
+                    yield
+
+                mock_router.side_effect = fake_router
+                await lease.handle_async(Mock())
+
+        assert call_count == total_failures + 1
+
+        # Verify exponential backoff: base_delay=0.3, max_delay=5.0
+        # attempt 0: 0.3 * 2^0 = 0.3
+        # attempt 1: 0.3 * 2^1 = 0.6
+        # attempt 2: 0.3 * 2^2 = 1.2
+        # attempt 3: 0.3 * 2^3 = 2.4
+        # attempt 4: 0.3 * 2^4 = 4.8
+        # attempt 5: min(0.3 * 2^5, 5.0) = min(9.6, 5.0) = 5.0
+        expected_delays = [0.3, 0.6, 1.2, 2.4, 4.8, 5.0]
+        actual_delays = [call.args[0] for call in mock_sleep.call_args_list]
+        assert len(actual_delays) == len(expected_delays)
+        for actual, expected in zip(actual_delays, expected_delays):
+            assert actual == pytest.approx(expected), (
+                f"Expected delay {expected}, got {actual}"
+            )
+
 
 class TestTransientGrpcCodes:
     """Tests for the _TRANSIENT_GRPC_CODES class attribute."""

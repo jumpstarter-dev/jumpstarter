@@ -390,6 +390,9 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                             self.dial_timeout,
                             e.details(),
                         )
+                        # Return instead of raising: handle_async runs inside
+                        # TemporaryUnixListener.serve's task group, so an
+                        # unhandled exception would crash the listener.
                         return
                     delay = min(base_delay * (2**attempt), max_delay, remaining)
                     logger.info(
@@ -429,6 +432,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     attempt += 1
                     continue
                 logger.warning("Connection failed: %s", e)
+                # Return instead of raising: see transient-error comment above.
                 return
 
     @asynccontextmanager
