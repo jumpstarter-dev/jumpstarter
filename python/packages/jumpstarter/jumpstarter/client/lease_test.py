@@ -917,7 +917,7 @@ class TestHandleAsyncTransientRetry:
         expected_delays = [0.3, 0.6, 1.2, 2.4, 4.8, 5.0]
         actual_delays = [call.args[0] for call in mock_sleep.call_args_list]
         assert len(actual_delays) == len(expected_delays)
-        for actual, expected in zip(actual_delays, expected_delays):
+        for actual, expected in zip(actual_delays, expected_delays, strict=True):
             assert actual == pytest.approx(expected), (
                 f"Expected delay {expected}, got {actual}"
             )
