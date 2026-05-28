@@ -51,6 +51,24 @@ def find_unused_examples(
     ]
 
 
+def find_unused_examples_in_docs(
+    examples_dir: Path,
+    markdown_files: list[Path],
+) -> list[Path]:
+    if not examples_dir.exists():
+        return []
+    combined_content = "\n".join(
+        md.read_text(encoding="utf-8")
+        for md in markdown_files
+        if md.exists()
+    )
+    return [
+        path
+        for path, _ in discover_example_files(examples_dir)
+        if not _is_referenced(path, examples_dir, combined_content)
+    ]
+
+
 def find_inline_code_blocks(readme_path: Path) -> list[tuple[int, str]]:
     if not readme_path.exists():
         return []
