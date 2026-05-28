@@ -13,6 +13,11 @@ from jumpstarter_cli_common.oidc import (
 )
 
 
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
 class TestOAuth2ClientInit:
     def test_init_sets_attributes(self):
         client = _OAuth2Client(client_id="my-client", scope=["openid", "profile"])
