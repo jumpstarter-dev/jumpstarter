@@ -246,16 +246,45 @@ class TestRunCommandAuthValidation:
     # --- Auto-generated passphrase ---
 
     def test_auto_generated_passphrase_printed_to_stderr(self):
-        """When no --passphrase and no --unsafe-no-auth, a passphrase is auto-generated and printed."""
+        """When no --passphrase and no --unsafe-no-auth, a passphrase is auto-generated and printed.
+
+        Also verify that the generated passphrase is actually forwarded to
+        ``_serve_with_exc_handling`` (not silently dropped).
+        """
+        runner = click.testing.CliRunner()
+        mock_serve = MagicMock(return_value=0)
+        with (
+            patch.object(run_mod, "_serve_with_exc_handling", mock_serve),
+            patch(
+                "jumpstarter.config.exporter.ExporterConfigV1Alpha1.load_path",
+                return_value=MagicMock(),
+            ),
+        ):
+            result = runner.invoke(run, [
+                "--exporter-config", "/dev/null",
+                "--tls-grpc-listener", "1234",
+                "--tls-grpc-insecure",
+            ])
+        assert result.exit_code == 0
+        assert "Generated random passphrase" in result.stderr
+        # Verify the passphrase was forwarded to _serve_with_exc_handling
+        mock_serve.assert_called_once()
+        forwarded_passphrase = mock_serve.call_args[1].get("passphrase") or mock_serve.call_args[0][5]
+        assert isinstance(forwarded_passphrase, str)
+        assert len(forwarded_passphrase) > 0
+
+    # --- Warning messages ---
+
+    def test_passphrase_with_tls_insecure_warns_plaintext(self):
+        """--passphrase + --tls-grpc-insecure must warn that auth is active but TLS is disabled."""
         result = self._invoke([
             "--exporter-config", "/dev/null",
             "--tls-grpc-listener", "1234",
             "--tls-grpc-insecure",
+            "--passphrase", "mysecret",
         ])
         assert result.exit_code == 0
-        assert "Generated random passphrase" in result.stderr
-
-    # --- Warning messages ---
+        assert "authentication is active but TLS is disabled" in result.stderr
 
     def test_unsafe_no_auth_with_tls_insecure_warns_completely_unprotected(self):
         """--unsafe-no-auth + --tls-grpc-insecure must warn about completely unprotected server."""

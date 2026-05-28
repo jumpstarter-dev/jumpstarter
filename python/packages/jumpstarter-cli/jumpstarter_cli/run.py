@@ -104,12 +104,7 @@ def _handle_child(config, parsed_bind=None, tls_insecure=False, tls_cert=None, t
                 host, port = parsed_bind
                 tls_credentials = None
                 if tls_insecure:
-                    if passphrase:
-                        click.echo(
-                            "WARNING: passphrase authentication is active but TLS is disabled; "
-                            "the passphrase will be transmitted in plaintext",
-                            err=True,
-                        )
+                    pass  # Warning already emitted by run()
                 elif tls_cert and tls_key:
                     tls_credentials = _tls_server_credentials(tls_cert, tls_key)
 
@@ -317,6 +312,13 @@ def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase, unsa
             passphrase = secrets.token_urlsafe(32)
             click.echo(
                 f"Generated random passphrase (use --passphrase to set your own): {passphrase}",
+                err=True,
+            )
+
+        if passphrase and tls_insecure:
+            click.echo(
+                "WARNING: passphrase authentication is active but TLS is disabled; "
+                "the passphrase will be transmitted in plaintext",
                 err=True,
             )
 
