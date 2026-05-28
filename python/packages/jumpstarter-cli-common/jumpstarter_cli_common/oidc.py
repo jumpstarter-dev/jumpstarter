@@ -5,7 +5,7 @@ import ssl
 import time
 from dataclasses import dataclass
 from functools import wraps
-from typing import ClassVar
+from typing import Any, ClassVar
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import aiohttp
@@ -21,31 +21,41 @@ from yarl import URL
 from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT
 
 
-class _OAuth2Client:
-    """Lightweight OAuth2 client using requests.Session.
+class OAuthError(Exception):
+    """Raised when an OAuth2 error response is received."""
 
-    Replaces authlib.integrations.requests_client.OAuth2Session to avoid
-    the AuthlibDeprecationWarning triggered by authlib's internal
-    authlib.jose imports (see https://github.com/jumpstarter-dev/jumpstarter/issues/627).
-    """
+
+class OAuthStateMismatchError(OAuthError):
+    """Raised when the OAuth2 state parameter does not match the expected value."""
+
+
+class _OAuth2Client:
+    """Minimal OAuth2 client wrapping requests.Session for authorization code,
+    password, token-exchange, and refresh-token grants."""
 
     def __init__(self, client_id: str, scope: list[str], redirect_uri: str | None = None):
         self.client_id = client_id
         self.scope = scope
         self.redirect_uri = redirect_uri
         self._session = requests.Session()
+        self._expected_state: str | None = None
 
     @property
-    def verify(self):
+    def verify(self) -> bool | str:
         return self._session.verify
 
     @verify.setter
-    def verify(self, value):
+    def verify(self, value: bool | str) -> None:
         self._session.verify = value
+
+    def close(self) -> None:
+        """Close the underlying requests session."""
+        self._session.close()
 
     def create_authorization_url(self, url: str, **kwargs) -> tuple[str, str]:
         """Build an authorization URL with a generated state parameter."""
         state = secrets.token_urlsafe(32)
+        self._expected_state = state
         params = {
             "response_type": "code",
             "client_id": self.client_id,
@@ -58,15 +68,30 @@ class _OAuth2Client:
         separator = "&" if "?" in url else "?"
         return f"{url}{separator}{urlencode(params)}", state
 
-    def fetch_token(self, url: str, **kwargs) -> dict:
+    def fetch_token(self, url: str, **kwargs) -> dict[str, Any]:
         """Exchange credentials for an OAuth2 token via HTTP POST."""
-        data = {"client_id": self.client_id}
+        data: dict[str, Any] = {"client_id": self.client_id}
 
-        # Handle authorization_response: extract the code from the callback URL
         authorization_response = kwargs.pop("authorization_response", None)
         if authorization_response:
             parsed = urlparse(authorization_response)
             qs = parse_qs(parsed.query)
+
+            error = qs.get("error", [None])[0]
+            if error:
+                description = qs.get("error_description", [""])[0]
+                raise OAuthError(
+                    f"OAuth2 authorization error: {error}"
+                    + (f" - {description}" if description else "")
+                )
+
+            if self._expected_state is not None:
+                returned_state = qs.get("state", [None])[0]
+                if returned_state != self._expected_state:
+                    raise OAuthStateMismatchError(
+                        "OAuth2 state mismatch: possible CSRF attack"
+                    )
+
             code = qs.get("code", [None])[0]
             if code:
                 data["code"] = code
@@ -74,20 +99,26 @@ class _OAuth2Client:
                 data["redirect_uri"] = self.redirect_uri
             data.setdefault("grant_type", "authorization_code")
 
-        # Merge remaining kwargs into the POST body
         data.update(kwargs)
 
-        # Ensure scope is a space-separated string
         if "scope" not in data:
             data["scope"] = " ".join(self.scope)
 
         response = self._session.post(
             url,
             data=data,
-            headers={"Accept": "application/json"},
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
         )
         response.raise_for_status()
-        return response.json()
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise OAuthError(
+                f"Token endpoint returned non-JSON response (HTTP {response.status_code})"
+            ) from exc
 
 
 def _get_ssl_context() -> ssl.SSLContext:
@@ -154,43 +185,46 @@ class Config:
 
     async def token_exchange_grant(self, token: str, **kwargs):
         config = await self.configuration()
-
         client = self.client()
-
-        return await run_sync(
-            lambda: client.fetch_token(
-                config["token_endpoint"],
-                grant_type="urn:ietf:params:oauth:grant-type:token-exchange",
-                requested_token_type="urn:ietf:params:oauth:token-type:access_token",
-                subject_token_type="urn:ietf:params:oauth:token-type:id_token",
-                subject_token=token,
-                **kwargs,
+        try:
+            return await run_sync(
+                lambda: client.fetch_token(
+                    config["token_endpoint"],
+                    grant_type="urn:ietf:params:oauth:grant-type:token-exchange",
+                    requested_token_type="urn:ietf:params:oauth:token-type:access_token",
+                    subject_token_type="urn:ietf:params:oauth:token-type:id_token",
+                    subject_token=token,
+                    **kwargs,
+                )
             )
-        )
+        finally:
+            client.close()
 
     async def refresh_token_grant(self, refresh_token: str):
         config = await self.configuration()
-
         client = self.client()
-
-        return await run_sync(
-            lambda: client.fetch_token(
-                config["token_endpoint"],
-                grant_type="refresh_token",
-                refresh_token=refresh_token,
+        try:
+            return await run_sync(
+                lambda: client.fetch_token(
+                    config["token_endpoint"],
+                    grant_type="refresh_token",
+                    refresh_token=refresh_token,
+                )
             )
-        )
+        finally:
+            client.close()
 
     async def password_grant(self, username: str, password: str):
         config = await self.configuration()
-
         client = self.client()
-
-        return await run_sync(
-            lambda: client.fetch_token(
-                config["token_endpoint"], grant_type="password", username=username, password=password
+        try:
+            return await run_sync(
+                lambda: client.fetch_token(
+                    config["token_endpoint"], grant_type="password", username=username, password=password
+                )
             )
-        )
+        finally:
+            client.close()
 
     async def authorization_code_grant(self, callback_port: int | None = None, prompt: str | None = None):
         config = await self.configuration()
@@ -244,9 +278,12 @@ class Config:
         await site.stop()
         await runner.cleanup()
 
-        return await run_sync(
-            lambda: client.fetch_token(config["token_endpoint"], authorization_response=authorization_response)
-        )
+        try:
+            return await run_sync(
+                lambda: client.fetch_token(config["token_endpoint"], authorization_response=authorization_response)
+            )
+        finally:
+            client.close()
 
 
 def decode_jwt(token: str):
