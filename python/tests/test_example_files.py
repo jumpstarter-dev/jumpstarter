@@ -9,6 +9,7 @@ from jumpstarter.testing.checks import (
     find_inline_code_blocks,
     find_unused_examples,
 )
+from jumpstarter.testing.examples import instantiate_yaml_example, validate_example
 
 PACKAGES_DIR = Path(__file__).resolve().parent.parent / "packages"
 
@@ -41,8 +42,7 @@ def _driver_params() -> list[pytest.param]:
 
 @pytest.mark.parametrize("path,kind", _example_file_params())
 def test_example_validates(path, kind):
-    testing = pytest.importorskip("jumpstarter.testing.examples")
-    testing.validate_example(path, kind)
+    validate_example(path, kind)
 
 
 
@@ -50,8 +50,7 @@ def test_example_validates(path, kind):
 def test_example_instantiates(path, kind):
     if kind != "yaml":
         pytest.skip("not a YAML example")
-    testing = pytest.importorskip("jumpstarter.testing.examples")
-    testing.instantiate_yaml_example(path)
+    instantiate_yaml_example(path)
 
 
 @pytest.mark.parametrize("pkg", _driver_params())
