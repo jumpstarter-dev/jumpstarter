@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-EXTRACTABLE_LANGUAGES = frozenset({"yaml", "python", "py"})
+EXTRACTABLE_LANGUAGES = frozenset({"yaml", "python", "py", "bash", "shell"})
 SKIP_DIRECTIVES = frozenset(
     {
         "literalinclude",

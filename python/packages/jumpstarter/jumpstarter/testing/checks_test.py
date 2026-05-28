@@ -123,3 +123,19 @@ def test_find_inline_code_blocks_ignores_mermaid(tmp_path):
 
 def test_find_inline_code_blocks_empty_for_missing_file(tmp_path):
     assert find_inline_code_blocks(tmp_path / "README.md") == []
+
+
+def test_find_inline_code_blocks_detects_bash(tmp_path):
+    readme = tmp_path / "README.md"
+    readme.write_text("```bash\necho hello\n```\n", encoding="utf-8")
+    violations = find_inline_code_blocks(readme)
+    assert len(violations) == 1
+    assert violations[0][0] == 1
+
+
+def test_find_inline_code_blocks_detects_shell(tmp_path):
+    readme = tmp_path / "README.md"
+    readme.write_text("```shell\nls -la\n```\n", encoding="utf-8")
+    violations = find_inline_code_blocks(readme)
+    assert len(violations) == 1
+    assert violations[0][0] == 1

@@ -42,6 +42,47 @@ def _driver_params() -> list[pytest.param]:
     return [pytest.param(pkg, id=pkg.name) for pkg in _discover_driver_packages() if (pkg / "examples").is_dir()]
 
 
+def _driver_inline_params() -> list[pytest.param]:
+    params = []
+    for pkg in _discover_driver_packages():
+        if not (pkg / "examples").is_dir():
+            continue
+        marks = ()
+        if pkg.name in DRIVER_INLINE_BASH_XFAIL:
+            marks = (pytest.mark.xfail(reason="known inline bash/shell code blocks to be converted", strict=True),)
+        params.append(pytest.param(pkg, id=pkg.name, marks=marks))
+    return params
+
+
+DRIVER_INLINE_BASH_XFAIL = frozenset(
+    {
+        "jumpstarter-driver-adb",
+        "jumpstarter-driver-androidemulator",
+        "jumpstarter-driver-composite",
+        "jumpstarter-driver-doip",
+        "jumpstarter-driver-dut-network",
+        "jumpstarter-driver-energenie",
+        "jumpstarter-driver-esp32",
+        "jumpstarter-driver-flashers",
+        "jumpstarter-driver-http-power",
+        "jumpstarter-driver-mitmproxy",
+        "jumpstarter-driver-noyito-relay",
+        "jumpstarter-driver-pyserial",
+        "jumpstarter-driver-snmp",
+        "jumpstarter-driver-someip",
+        "jumpstarter-driver-ssh",
+        "jumpstarter-driver-ssh-mitm",
+        "jumpstarter-driver-ssh-mount",
+        "jumpstarter-driver-stlink-msd",
+        "jumpstarter-driver-tmt",
+        "jumpstarter-driver-uds-can",
+        "jumpstarter-driver-uds-doip",
+        "jumpstarter-driver-vnc",
+        "jumpstarter-driver-xcp",
+        "jumpstarter-driver-yepkit",
+    }
+)
+
 DOCS_INLINE_CODE_XFAIL = frozenset(
     {
         "getting-started/configuration/authentication.md",
@@ -53,6 +94,29 @@ DOCS_INLINE_CODE_XFAIL = frozenset(
         "getting-started/guides/setup/direct-mode.md",
         "getting-started/guides/setup/distributed-mode.md",
         "getting-started/guides/setup/local-mode.md",
+        "reference/package-apis/drivers/adb.md",
+        "reference/package-apis/drivers/androidemulator.md",
+        "reference/package-apis/drivers/doip.md",
+        "reference/package-apis/drivers/dut-network.md",
+        "reference/package-apis/drivers/energenie.md",
+        "reference/package-apis/drivers/esp32.md",
+        "reference/package-apis/drivers/flashers.md",
+        "reference/package-apis/drivers/http-power.md",
+        "reference/package-apis/drivers/mitmproxy.md",
+        "reference/package-apis/drivers/noyito-relay.md",
+        "reference/package-apis/drivers/pyserial.md",
+        "reference/package-apis/drivers/snmp.md",
+        "reference/package-apis/drivers/someip.md",
+        "reference/package-apis/drivers/ssh-mitm.md",
+        "reference/package-apis/drivers/ssh-mount.md",
+        "reference/package-apis/drivers/ssh.md",
+        "reference/package-apis/drivers/stlink-msd.md",
+        "reference/package-apis/drivers/tmt.md",
+        "reference/package-apis/drivers/uds-can.md",
+        "reference/package-apis/drivers/uds-doip.md",
+        "reference/package-apis/drivers/vnc.md",
+        "reference/package-apis/drivers/xcp.md",
+        "reference/package-apis/drivers/yepkit.md",
     }
 )
 
@@ -100,7 +164,7 @@ def test_no_unused_examples(pkg):
     assert not unused, f"{pkg.name}: example files not referenced in README.md: {[p.name for p in unused]}"
 
 
-@pytest.mark.parametrize("pkg", _driver_params())
+@pytest.mark.parametrize("pkg", _driver_inline_params())
 def test_no_inline_code_blocks(pkg):
     readme_path = pkg / "README.md"
     violations = find_inline_code_blocks(readme_path)
