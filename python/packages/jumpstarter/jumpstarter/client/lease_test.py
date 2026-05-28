@@ -647,8 +647,8 @@ class TestHandleAsyncTransientRetry:
     @pytest.mark.anyio
     @pytest.mark.parametrize(
         "status_code",
-        [grpc.StatusCode.RESOURCE_EXHAUSTED, grpc.StatusCode.ABORTED, grpc.StatusCode.INTERNAL],
-        ids=["RESOURCE_EXHAUSTED", "ABORTED", "INTERNAL"],
+        [grpc.StatusCode.RESOURCE_EXHAUSTED, grpc.StatusCode.ABORTED, grpc.StatusCode.INTERNAL, grpc.StatusCode.UNKNOWN],
+        ids=["RESOURCE_EXHAUSTED", "ABORTED", "INTERNAL", "UNKNOWN"],
     )
     async def test_retries_multiple_transient_codes(self, status_code):
         """Should retry on RESOURCE_EXHAUSTED, ABORTED, INTERNAL."""
@@ -831,6 +831,7 @@ class TestTransientGrpcCodes:
         assert grpc.StatusCode.RESOURCE_EXHAUSTED in Lease._TRANSIENT_GRPC_CODES
         assert grpc.StatusCode.ABORTED in Lease._TRANSIENT_GRPC_CODES
         assert grpc.StatusCode.INTERNAL in Lease._TRANSIENT_GRPC_CODES
+        assert grpc.StatusCode.UNKNOWN in Lease._TRANSIENT_GRPC_CODES
 
     def test_does_not_contain_non_transient_codes(self):
         assert grpc.StatusCode.PERMISSION_DENIED not in Lease._TRANSIENT_GRPC_CODES

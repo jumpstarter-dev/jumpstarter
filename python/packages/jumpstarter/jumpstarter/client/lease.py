@@ -312,12 +312,15 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         with self.portal.wrap_async_context_manager(self) as value:
             yield value
 
-    # gRPC status codes that indicate transient network failures worth retrying
+    # gRPC status codes that indicate transient network failures worth retrying.
+    # UNKNOWN is included because tunnel teardowns (e.g. "watch channel closed")
+    # surface as UNKNOWN rather than UNAVAILABLE.
     _TRANSIENT_GRPC_CODES = frozenset({
         grpc.StatusCode.UNAVAILABLE,
         grpc.StatusCode.RESOURCE_EXHAUSTED,
         grpc.StatusCode.ABORTED,
         grpc.StatusCode.INTERNAL,
+        grpc.StatusCode.UNKNOWN,
     })
 
     async def _dial_and_connect(self, stream):
