@@ -137,6 +137,13 @@ def test_validate_yaml_example_raises_on_unrecognized_kind(tmp_path):
         validate_yaml_example(f)
 
 
+def test_validate_yaml_example_rejects_invalid_export_entry(tmp_path):
+    f = tmp_path / "invalid_export.yaml"
+    f.write_text(_yaml.dump({"export": {"dev": "not-a-dict"}}))
+    with pytest.raises(ValidationError):
+        validate_yaml_example(f)
+
+
 def test_instantiate_yaml_example_skips_on_missing_driver(tmp_path):
     driver = ExporterConfigV1Alpha1DriverInstance.model_validate(
         {"type": "nonexistent_driver_package.driver.Fake"}
