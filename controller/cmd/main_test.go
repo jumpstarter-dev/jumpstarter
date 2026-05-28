@@ -33,10 +33,11 @@ func TestExtractOIDCConfigs(t *testing.T) {
 	}
 
 	tests := []struct {
-		name      string
-		configmap *corev1.ConfigMap
-		wantCount int
-		wantNil   bool
+		name       string
+		configmap  *corev1.ConfigMap
+		wantCount  int
+		wantNil    bool
+		wantIssuer string
 	}{
 		{
 			name: "valid config key with JWT authenticators",
@@ -127,6 +128,45 @@ authentication:
 			wantNil: true,
 		},
 		{
+			name: "both config and legacy authentication keys present reads only config",
+			configmap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "jumpstarter-controller",
+					Namespace: "default",
+				},
+				Data: map[string]string{
+					"config": `
+authentication:
+  internal:
+    prefix: "internal:"
+    tokenLifetime: "43800h"
+  jwt:
+    - issuer:
+        url: "https://dex.example.com"
+        audiences:
+          - "jumpstarter"
+      claimMappings:
+        username:
+          claim: "email"
+          prefix: ""
+`,
+					"authentication": `
+jwt:
+  - issuer:
+      url: "https://legacy.example.com"
+      audiences:
+        - "jumpstarter"
+    claimMappings:
+      username:
+        claim: "email"
+        prefix: ""
+`,
+				},
+			},
+			wantCount:  1,
+			wantIssuer: "https://dex.example.com",
+		},
+		{
 			name:      "missing configmap returns nil",
 			configmap: nil,
 			wantNil:   true,
@@ -156,6 +196,12 @@ authentication:
 
 			if len(configs) != tt.wantCount {
 				t.Errorf("expected %d configs, got %d", tt.wantCount, len(configs))
+			}
+
+			if tt.wantIssuer != "" && len(configs) > 0 {
+				if configs[0].Issuer != tt.wantIssuer {
+					t.Errorf("expected issuer %q, got %q", tt.wantIssuer, configs[0].Issuer)
+				}
 			}
 		})
 	}
@@ -215,11 +261,6 @@ authentication:
 	}
 }
 
-// TestExtractOIDCConfigsIgnoresLegacyKey is a dedicated regression test
-// ensuring that a ConfigMap containing only the legacy "authentication" key
-// (without the "config" key) does NOT produce any OIDC configurations.
-// This prevents accidental reintroduction of the legacy fallback removed in
-// this PR.
 func TestExtractOIDCConfigsIgnoresLegacyKey(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := corev1.AddToScheme(scheme); err != nil {
