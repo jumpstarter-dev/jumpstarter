@@ -175,6 +175,8 @@ class SSHMountClient(CompositeClient):
                 pass
             else:
                 stderr = proc.stderr.read().decode(errors="replace").strip() if proc.stderr else ""
+                if proc.stderr:
+                    proc.stderr.close()
                 if proc.returncode != 0 and "allow_other" in stderr:
                     self.logger.debug("Retrying sshfs without allow_other option")
                     sshfs_args = self._remove_allow_other(sshfs_args)
