@@ -4,6 +4,7 @@ import warnings
 
 import pytest
 import yaml as _yaml
+from pydantic import ValidationError
 
 from jumpstarter.config.exporter import (
     ExporterConfigV1Alpha1,
@@ -118,6 +119,15 @@ def test_instantiate_yaml_example_skips_without_export(tmp_path):
     f.write_text(_yaml.dump({"hooks": hook.model_dump(by_alias=True, exclude_none=True)}))
     with pytest.raises(pytest.skip.Exception, match="no export section"):
         instantiate_yaml_example(f)
+
+
+def test_validate_yaml_example_rejects_invalid_exporter_config(tmp_path):
+    f = tmp_path / "invalid_exporter.yaml"
+    f.write_text(
+        _yaml.dump({"apiVersion": "jumpstarter.dev/v1alpha1", "kind": "ExporterConfig"})
+    )
+    with pytest.raises(ValidationError):
+        validate_yaml_example(f)
 
 
 def test_validate_yaml_example_raises_on_unrecognized_kind(tmp_path):
