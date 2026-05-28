@@ -120,6 +120,13 @@ def test_instantiate_yaml_example_skips_without_export(tmp_path):
         instantiate_yaml_example(f)
 
 
+def test_validate_yaml_example_raises_on_unrecognized_kind(tmp_path):
+    f = tmp_path / "bad_kind.yaml"
+    f.write_text(_yaml.dump({"apiVersion": "jumpstarter.dev/v1alpha1", "kind": "ExporerConfig"}))
+    with pytest.raises(ValueError, match="unrecognized kind"):
+        validate_yaml_example(f)
+
+
 def test_instantiate_yaml_example_skips_on_missing_driver(tmp_path):
     driver = ExporterConfigV1Alpha1DriverInstance.model_validate(
         {"type": "nonexistent_driver_package.driver.Fake"}

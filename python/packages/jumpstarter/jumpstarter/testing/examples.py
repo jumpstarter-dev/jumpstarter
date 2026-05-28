@@ -33,7 +33,11 @@ def validate_yaml_example(path: Path) -> None:
         return
 
     kind = data.get("kind")
-    if kind and kind in KIND_TO_MODEL:
+    if kind is not None:
+        if kind not in KIND_TO_MODEL:
+            raise ValueError(
+                f"{path.name}: unrecognized kind '{kind}', expected one of {sorted(KIND_TO_MODEL)}"
+            )
         model_class = _resolve_model(KIND_TO_MODEL[kind])
         model_class.model_validate(data)
         return
