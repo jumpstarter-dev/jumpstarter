@@ -19,169 +19,93 @@ package main
 import (
 	"testing"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 )
 
-func TestExtractOIDCConfigs(t *testing.T) {
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("failed to add corev1 to scheme: %v", err)
-	}
-
+func TestJwtAuthenticatorsToOIDCConfigs(t *testing.T) {
 	tests := []struct {
-		name       string
-		configmap  *corev1.ConfigMap
-		wantCount  int
-		wantNil    bool
-		wantIssuer string
+		name           string
+		authenticators []apiserverv1beta1.JWTAuthenticator
+		wantCount      int
+		wantNil        bool
+		wantIssuer     string
 	}{
 		{
-			name: "valid config key with JWT authenticators",
-			configmap: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "jumpstarter-controller",
-					Namespace: "default",
-				},
-				Data: map[string]string{
-					"config": `
-authentication:
-  internal:
-    prefix: "internal:"
-    tokenLifetime: "43800h"
-  jwt:
-    - issuer:
-        url: "https://dex.example.com"
-        audiences:
-          - "jumpstarter"
-      claimMappings:
-        username:
-          claim: "email"
-          prefix: ""
-`,
+			name: "single JWT authenticator",
+			authenticators: []apiserverv1beta1.JWTAuthenticator{
+				{
+					Issuer: apiserverv1beta1.Issuer{
+						URL:       "https://dex.example.com",
+						Audiences: []string{"jumpstarter"},
+					},
 				},
 			},
 			wantCount: 1,
 		},
 		{
-			name: "valid config key with multiple JWT authenticators including localhost",
-			configmap: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "jumpstarter-controller",
-					Namespace: "default",
+			name: "multiple JWT authenticators including localhost",
+			authenticators: []apiserverv1beta1.JWTAuthenticator{
+				{
+					Issuer: apiserverv1beta1.Issuer{
+						URL:       "https://localhost:8085",
+						Audiences: []string{"jumpstarter"},
+					},
 				},
-				Data: map[string]string{
-					"config": `
-authentication:
-  internal:
-    prefix: "internal:"
-    tokenLifetime: "43800h"
-  jwt:
-    - issuer:
-        url: "https://localhost:8085"
-        audiences:
-          - "jumpstarter"
-      claimMappings:
-        username:
-          claim: "sub"
-          prefix: ""
-    - issuer:
-        url: "https://dex.example.com"
-        audiences:
-          - "jumpstarter"
-      claimMappings:
-        username:
-          claim: "email"
-          prefix: ""
-`,
+				{
+					Issuer: apiserverv1beta1.Issuer{
+						URL:       "https://dex.example.com",
+						Audiences: []string{"jumpstarter"},
+					},
 				},
 			},
 			wantCount: 1, // localhost issuer should be skipped
 		},
 		{
-			name: "missing config key returns nil",
-			configmap: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "jumpstarter-controller",
-					Namespace: "default",
-				},
-				Data: map[string]string{
-					"router": `default: {endpoint: "router.example.com:443"}`,
+			name:           "nil authenticators returns nil",
+			authenticators: nil,
+			wantNil:        true,
+		},
+		{
+			name:           "empty authenticators returns nil",
+			authenticators: []apiserverv1beta1.JWTAuthenticator{},
+			wantNil:        true,
+		},
+		{
+			name: "only localhost authenticator returns nil",
+			authenticators: []apiserverv1beta1.JWTAuthenticator{
+				{
+					Issuer: apiserverv1beta1.Issuer{
+						URL:       "https://localhost:8085",
+						Audiences: []string{"jumpstarter"},
+					},
 				},
 			},
 			wantNil: true,
 		},
 		{
-			name: "invalid YAML in config key returns nil",
-			configmap: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "jumpstarter-controller",
-					Namespace: "default",
+			name: "multiple external authenticators",
+			authenticators: []apiserverv1beta1.JWTAuthenticator{
+				{
+					Issuer: apiserverv1beta1.Issuer{
+						URL:       "https://dex.example.com",
+						Audiences: []string{"jumpstarter"},
+					},
 				},
-				Data: map[string]string{
-					"config": `{{{invalid yaml`,
-				},
-			},
-			wantNil: true,
-		},
-		{
-			name: "both config and legacy authentication keys present reads only config",
-			configmap: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "jumpstarter-controller",
-					Namespace: "default",
-				},
-				Data: map[string]string{
-					"config": `
-authentication:
-  internal:
-    prefix: "internal:"
-    tokenLifetime: "43800h"
-  jwt:
-    - issuer:
-        url: "https://dex.example.com"
-        audiences:
-          - "jumpstarter"
-      claimMappings:
-        username:
-          claim: "email"
-          prefix: ""
-`,
-					"authentication": `
-jwt:
-  - issuer:
-      url: "https://legacy.example.com"
-      audiences:
-        - "jumpstarter"
-    claimMappings:
-      username:
-        claim: "email"
-        prefix: ""
-`,
+				{
+					Issuer: apiserverv1beta1.Issuer{
+						URL:       "https://keycloak.example.com",
+						Audiences: []string{"jumpstarter", "jumpstarter-cli"},
+					},
 				},
 			},
-			wantCount:  1,
+			wantCount:  2,
 			wantIssuer: "https://dex.example.com",
-		},
-		{
-			name:      "missing configmap returns nil",
-			configmap: nil,
-			wantNil:   true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			builder := fake.NewClientBuilder().WithScheme(scheme)
-			if tt.configmap != nil {
-				builder = builder.WithObjects(tt.configmap)
-			}
-			fakeClient := builder.Build()
-
-			configs := extractOIDCConfigs(fakeClient.(client.Reader), "default")
+			configs := jwtAuthenticatorsToOIDCConfigs(tt.authenticators)
 
 			if tt.wantNil {
 				if configs != nil {
@@ -207,43 +131,17 @@ jwt:
 	}
 }
 
-func TestExtractOIDCConfigsContent(t *testing.T) {
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("failed to add corev1 to scheme: %v", err)
-	}
-
-	configmap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "jumpstarter-controller",
-			Namespace: "default",
-		},
-		Data: map[string]string{
-			"config": `
-authentication:
-  internal:
-    prefix: "internal:"
-    tokenLifetime: "43800h"
-  jwt:
-    - issuer:
-        url: "https://dex.example.com"
-        audiences:
-          - "jumpstarter"
-          - "jumpstarter-cli"
-      claimMappings:
-        username:
-          claim: "email"
-          prefix: ""
-`,
+func TestJwtAuthenticatorsToOIDCConfigsContent(t *testing.T) {
+	authenticators := []apiserverv1beta1.JWTAuthenticator{
+		{
+			Issuer: apiserverv1beta1.Issuer{
+				URL:       "https://dex.example.com",
+				Audiences: []string{"jumpstarter", "jumpstarter-cli"},
+			},
 		},
 	}
 
-	fakeClient := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(configmap).
-		Build()
-
-	configs := extractOIDCConfigs(fakeClient.(client.Reader), "default")
+	configs := jwtAuthenticatorsToOIDCConfigs(authenticators)
 
 	if len(configs) != 1 {
 		t.Fatalf("expected 1 config, got %d", len(configs))
@@ -253,49 +151,7 @@ authentication:
 	if cfg.Issuer != "https://dex.example.com" {
 		t.Errorf("expected issuer 'https://dex.example.com', got %q", cfg.Issuer)
 	}
-	if cfg.ClientID != "jumpstarter-cli" {
-		t.Errorf("expected clientID 'jumpstarter-cli', got %q", cfg.ClientID)
-	}
 	if len(cfg.Audiences) != 2 {
 		t.Errorf("expected 2 audiences, got %d", len(cfg.Audiences))
-	}
-}
-
-func TestExtractOIDCConfigsIgnoresLegacyKey(t *testing.T) {
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("failed to add corev1 to scheme: %v", err)
-	}
-
-	configmap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "jumpstarter-controller",
-			Namespace: "default",
-		},
-		Data: map[string]string{
-			// Only the legacy key -- this must NOT be read
-			"authentication": `
-jwt:
-  - issuer:
-      url: "https://dex.example.com"
-      audiences:
-        - "jumpstarter"
-    claimMappings:
-      username:
-        claim: "email"
-        prefix: ""
-`,
-		},
-	}
-
-	fakeClient := fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(configmap).
-		Build()
-
-	configs := extractOIDCConfigs(fakeClient.(client.Reader), "default")
-
-	if configs != nil {
-		t.Errorf("expected nil when only legacy 'authentication' key is present, got %v", configs)
 	}
 }

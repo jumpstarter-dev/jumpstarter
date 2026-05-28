@@ -30,10 +30,8 @@ import (
 	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/apimachinery/pkg/util/yaml"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -219,7 +217,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	authenticator, prefix, router, option, provisioning, leasePolicy, err := config.LoadConfiguration(
+	authenticator, prefix, router, option, provisioning, leasePolicy, loadedConfig, err := config.LoadConfiguration(
 		context.Background(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
@@ -308,9 +306,8 @@ func main() {
 
 	// Setup Login Service for simplified CLI login
 	loginService := login.NewServiceFromEnv()
-	// Extract OIDC configuration from the loaded config for the login service
-	oidcConfigs := extractOIDCConfigs(mgr.GetAPIReader(), watchNamespace)
-	loginService.SetOIDCConfig(oidcConfigs)
+	// Use the already-parsed config to extract OIDC configuration for the login service
+	loginService.SetOIDCConfig(jwtAuthenticatorsToOIDCConfigs(loadedConfig.Authentication.JWT))
 	if err = loginService.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create service", "service", "Login")
 		os.Exit(1)
@@ -330,31 +327,6 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
-}
-
-// extractOIDCConfigs reads the OIDC configuration from the ConfigMap
-func extractOIDCConfigs(reader client.Reader, namespace string) []login.OIDCConfig {
-	var configmap corev1.ConfigMap
-	if err := reader.Get(context.Background(), client.ObjectKey{
-		Namespace: namespace,
-		Name:      "jumpstarter-controller",
-	}, &configmap); err != nil {
-		setupLog.Error(err, "unable to read configmap for OIDC config")
-		return nil
-	}
-
-	rawConfig, ok := configmap.Data["config"]
-	if !ok {
-		return nil
-	}
-
-	var cfg config.Config
-	if err := yaml.UnmarshalStrict([]byte(rawConfig), &cfg); err != nil {
-		setupLog.Error(err, "unable to parse config for OIDC config extraction")
-		return nil
-	}
-
-	return jwtAuthenticatorsToOIDCConfigs(cfg.Authentication.JWT)
 }
 
 // jwtAuthenticatorsToOIDCConfigs converts JWT authenticators to login OIDC configs
