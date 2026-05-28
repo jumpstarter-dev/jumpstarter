@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from os import PathLike
 from pathlib import Path
-from typing import Any, Callable, Mapping, cast
+from typing import Any, Callable, Literal, Mapping, cast
 
 import click
 from anyio import BrokenResourceError, EndOfStream
@@ -79,7 +79,7 @@ class _FileWriteObjectStream(ObjectStream[bytes]):
             self._file = None
 
 
-def _parse_path(path: PathBuf) -> tuple[Path | None, str | None]:
+def _parse_path(path: PathBuf) -> tuple[Path, None] | tuple[None, str]:
     """Parse a path into either a local Path or an HTTP URL.
 
     Returns (local_path, None) for local files, or (None, url) for HTTP URLs.
@@ -96,7 +96,7 @@ async def _local_file_adapter(
     *,
     client: DriverClient,
     path: Path,
-    mode: str = "rb",
+    mode: Literal["rb", "wb"] = "rb",
     compression: Compression | None = None,
 ):
     """Stream a local file via resource_async, without opendal."""
@@ -134,7 +134,7 @@ async def _http_url_adapter(
     *,
     client: DriverClient,
     url: str,
-    mode: str = "rb",
+    mode: Literal["rb", "wb"] = "rb",
 ):
     """Create a PresignedRequestResource for an HTTP URL.
 

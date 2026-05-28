@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 from contextlib import contextmanager
 
@@ -6,12 +8,20 @@ from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_network.adapters import FabricAdapter, NovncAdapter
 
 from jumpstarter.client import FlasherClient
+from jumpstarter.client.flasher import PathBuf
+from jumpstarter.streams.encoding import Compression
 
 
 class QemuFlasherClient(FlasherClient):
     """Flasher client for QEMU with OCI support via fls."""
 
-    def flash(self, path, *, target=None, compression=None):
+    def flash(
+        self,
+        path: PathBuf | dict[str, PathBuf],
+        *,
+        target: str | None = None,
+        compression: Compression | None = None,
+    ):
         if isinstance(path, str) and path.startswith("oci://"):
             returncode = 0
             for stdout, stderr, code in self.streamingcall("flash_oci", path, target):
