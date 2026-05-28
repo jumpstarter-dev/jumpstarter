@@ -21,6 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -118,6 +119,171 @@ var _ = Describe("RBAC factory functions", func() {
 			Expect(rb.Subjects[0].Name).To(Equal("test-router-sa"))
 			Expect(rb.Subjects[0].Namespace).To(Equal("default"))
 		})
+	})
+})
+
+var _ = Describe("reconcileRBAC integration", func() {
+	var (
+		r   *JumpstarterReconciler
+		js  *operatorv1alpha1.Jumpstarter
+		ctx context.Context
+	)
+
+	BeforeEach(func() {
+		r = &JumpstarterReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
+		}
+		ctx = context.Background()
+
+		js = &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "rbac-integ",
+				Namespace: "default",
+			},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				BaseDomain: "example.com",
+				Controller: operatorv1alpha1.ControllerConfig{
+					Image:    "quay.io/jumpstarter/jumpstarter:latest",
+					Replicas: 1,
+				},
+				Routers: operatorv1alpha1.RoutersConfig{
+					Image:    "quay.io/jumpstarter/jumpstarter:latest",
+					Replicas: 1,
+				},
+			},
+		}
+		err := k8sClient.Get(ctx, types.NamespacedName{Name: js.Name, Namespace: js.Namespace}, &operatorv1alpha1.Jumpstarter{})
+		if errors.IsNotFound(err) {
+			Expect(k8sClient.Create(ctx, js)).To(Succeed())
+		}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: js.Name, Namespace: js.Namespace}, js)).To(Succeed())
+	})
+
+	AfterEach(func() {
+		// Clean up all RBAC resources
+		for _, name := range []string{"rbac-integ-controller-rolebinding", "rbac-integ-router-rolebinding"} {
+			rb := &rbacv1.RoleBinding{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, rb); err == nil {
+				_ = k8sClient.Delete(ctx, rb)
+			}
+		}
+		for _, name := range []string{"rbac-integ-controller-role", "rbac-integ-router-role"} {
+			role := &rbacv1.Role{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, role); err == nil {
+				_ = k8sClient.Delete(ctx, role)
+			}
+		}
+		for _, name := range []string{"rbac-integ-controller-manager", "rbac-integ-router-sa"} {
+			sa := &corev1.ServiceAccount{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, sa); err == nil {
+				_ = k8sClient.Delete(ctx, sa)
+			}
+		}
+		resource := &operatorv1alpha1.Jumpstarter{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: js.Name, Namespace: js.Namespace}, resource); err == nil {
+			_ = k8sClient.Delete(ctx, resource)
+		}
+	})
+
+	It("should create all six RBAC resources with correct names, permissions, and bindings", func() {
+		err := r.reconcileRBAC(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+
+		// 1. Controller ServiceAccount
+		controllerSA := &corev1.ServiceAccount{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-controller-manager", Namespace: "default"}, controllerSA)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(controllerSA.Labels).To(HaveKeyWithValue("app", "jumpstarter-controller"))
+
+		// 2. Router ServiceAccount
+		routerSA := &corev1.ServiceAccount{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-router-sa", Namespace: "default"}, routerSA)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(routerSA.Labels).To(HaveKeyWithValue("app", "jumpstarter-router"))
+
+		// 3. Controller Role
+		controllerRole := &rbacv1.Role{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-controller-role", Namespace: "default"}, controllerRole)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(controllerRole.Labels).To(HaveKeyWithValue("app", "jumpstarter-controller"))
+		// Controller role should have access to secrets
+		hasSecrets := false
+		for _, rule := range controllerRole.Rules {
+			for _, res := range rule.Resources {
+				if res == "secrets" {
+					hasSecrets = true
+				}
+			}
+		}
+		Expect(hasSecrets).To(BeTrue(), "controller role should have access to secrets")
+
+		// 4. Router Role
+		routerRole := &rbacv1.Role{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-router-role", Namespace: "default"}, routerRole)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(routerRole.Labels).To(HaveKeyWithValue("app", "jumpstarter-router"))
+		// Router role should only have read-only access to configmaps
+		Expect(routerRole.Rules).To(HaveLen(1))
+		Expect(routerRole.Rules[0].Resources).To(Equal([]string{"configmaps"}))
+		Expect(routerRole.Rules[0].Verbs).To(ConsistOf("get", "list", "watch"))
+		// Router role should NOT have access to secrets
+		for _, rule := range routerRole.Rules {
+			Expect(rule.Resources).NotTo(ContainElement("secrets"))
+		}
+
+		// 5. Controller RoleBinding
+		controllerRB := &rbacv1.RoleBinding{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-controller-rolebinding", Namespace: "default"}, controllerRB)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(controllerRB.RoleRef.Name).To(Equal("rbac-integ-controller-role"))
+		Expect(controllerRB.RoleRef.Kind).To(Equal("Role"))
+		Expect(controllerRB.Subjects).To(HaveLen(1))
+		Expect(controllerRB.Subjects[0].Name).To(Equal("rbac-integ-controller-manager"))
+		Expect(controllerRB.Subjects[0].Kind).To(Equal("ServiceAccount"))
+
+		// 6. Router RoleBinding
+		routerRB := &rbacv1.RoleBinding{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-router-rolebinding", Namespace: "default"}, routerRB)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(routerRB.RoleRef.Name).To(Equal("rbac-integ-router-role"))
+		Expect(routerRB.RoleRef.Kind).To(Equal("Role"))
+		Expect(routerRB.Subjects).To(HaveLen(1))
+		Expect(routerRB.Subjects[0].Name).To(Equal("rbac-integ-router-sa"))
+		Expect(routerRB.Subjects[0].Kind).To(Equal("ServiceAccount"))
+	})
+
+	It("should be idempotent on a second reconciliation", func() {
+		// First reconciliation
+		err := r.reconcileRBAC(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+
+		// Capture ResourceVersions
+		controllerSA := &corev1.ServiceAccount{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-controller-manager", Namespace: "default"}, controllerSA)).To(Succeed())
+		routerSA := &corev1.ServiceAccount{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-router-sa", Namespace: "default"}, routerSA)).To(Succeed())
+		controllerRole := &rbacv1.Role{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-controller-role", Namespace: "default"}, controllerRole)).To(Succeed())
+		routerRole := &rbacv1.Role{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-router-role", Namespace: "default"}, routerRole)).To(Succeed())
+		controllerRB := &rbacv1.RoleBinding{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-controller-rolebinding", Namespace: "default"}, controllerRB)).To(Succeed())
+		routerRB := &rbacv1.RoleBinding{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-router-rolebinding", Namespace: "default"}, routerRB)).To(Succeed())
+
+		// Second reconciliation
+		err = r.reconcileRBAC(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+
+		// Verify RoleBindings did not change (no unnecessary writes)
+		controllerRBAfter := &rbacv1.RoleBinding{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-controller-rolebinding", Namespace: "default"}, controllerRBAfter)).To(Succeed())
+		Expect(controllerRBAfter.ResourceVersion).To(Equal(controllerRB.ResourceVersion))
+
+		routerRBAfter := &rbacv1.RoleBinding{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-router-rolebinding", Namespace: "default"}, routerRBAfter)).To(Succeed())
+		Expect(routerRBAfter.ResourceVersion).To(Equal(routerRB.ResourceVersion))
 	})
 })
 

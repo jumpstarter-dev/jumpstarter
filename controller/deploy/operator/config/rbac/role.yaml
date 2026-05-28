@@ -200,6 +200,16 @@ rules:
   - rbac.authorization.k8s.io
   resources:
   - rolebindings
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
   - roles
   verbs:
   - create
