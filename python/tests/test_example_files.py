@@ -17,11 +17,7 @@ DOCS_SOURCE_DIR = Path(__file__).resolve().parent.parent / "docs" / "source"
 
 
 def _discover_driver_packages() -> list[Path]:
-    return sorted(
-        pkg
-        for pkg in PACKAGES_DIR.iterdir()
-        if pkg.is_dir() and pkg.name.startswith("jumpstarter-driver-")
-    )
+    return sorted(pkg for pkg in PACKAGES_DIR.iterdir() if pkg.is_dir() and pkg.name.startswith("jumpstarter-driver-"))
 
 
 def _example_file_params() -> list[pytest.param]:
@@ -43,24 +39,22 @@ def _example_file_params() -> list[pytest.param]:
 
 
 def _driver_params() -> list[pytest.param]:
-    return [
-        pytest.param(pkg, id=pkg.name)
-        for pkg in _discover_driver_packages()
-        if (pkg / "examples").is_dir()
-    ]
+    return [pytest.param(pkg, id=pkg.name) for pkg in _discover_driver_packages() if (pkg / "examples").is_dir()]
 
 
-DOCS_INLINE_CODE_XFAIL = frozenset({
-    "getting-started/configuration/authentication.md",
-    "getting-started/configuration/files.md",
-    "getting-started/configuration/loading-order.md",
-    "getting-started/guides/examples/scripting.md",
-    "getting-started/guides/examples/testing.md",
-    "getting-started/guides/integration-patterns/cicd.md",
-    "getting-started/guides/setup/direct-mode.md",
-    "getting-started/guides/setup/distributed-mode.md",
-    "getting-started/guides/setup/local-mode.md",
-})
+DOCS_INLINE_CODE_XFAIL = frozenset(
+    {
+        "getting-started/configuration/authentication.md",
+        "getting-started/configuration/files.md",
+        "getting-started/configuration/loading-order.md",
+        "getting-started/guides/examples/scripting.md",
+        "getting-started/guides/examples/testing.md",
+        "getting-started/guides/integration-patterns/cicd.md",
+        "getting-started/guides/setup/direct-mode.md",
+        "getting-started/guides/setup/distributed-mode.md",
+        "getting-started/guides/setup/local-mode.md",
+    }
+)
 
 
 def _docs_markdown_params() -> list[pytest.param]:
@@ -82,21 +76,13 @@ def _docs_example_dirs() -> list[pytest.param]:
     examples_root = DOCS_SOURCE_DIR / "examples"
     if not examples_root.is_dir():
         return []
-    dirs = sorted(
-        d for d in examples_root.iterdir()
-        if d.is_dir() and d.name != "tests"
-    )
-    return [
-        pytest.param(d, id=d.name)
-        for d in dirs
-        if any(discover_example_files(d))
-    ]
+    dirs = sorted(d for d in examples_root.iterdir() if d.is_dir() and d.name != "tests")
+    return [pytest.param(d, id=d.name) for d in dirs if any(discover_example_files(d))]
 
 
 @pytest.mark.parametrize("path,kind", _example_file_params())
 def test_example_validates(path, kind):
     validate_example(path, kind)
-
 
 
 @pytest.mark.parametrize("path,kind", _example_file_params())
@@ -139,6 +125,5 @@ def test_docs_no_unused_examples(examples_dir):
     docs_markdown_files = sorted(DOCS_SOURCE_DIR.rglob("*.md"))
     unused = find_unused_examples_in_docs(examples_dir, docs_markdown_files)
     assert not unused, (
-        f"docs/source/examples/{examples_dir.name}: example files not referenced in any doc: "
-        f"{[p.name for p in unused]}"
+        f"docs/source/examples/{examples_dir.name}: example files not referenced in any doc: {[p.name for p in unused]}"
     )

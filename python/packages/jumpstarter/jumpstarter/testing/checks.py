@@ -4,11 +4,28 @@ import re
 from pathlib import Path
 
 EXTRACTABLE_LANGUAGES = frozenset({"yaml", "python", "py"})
-SKIP_DIRECTIVES = frozenset({
-    "literalinclude", "eval-rst", "code-block", "testsetup", "testcleanup",
-    "note", "warning", "tip", "mermaid", "toctree", "glossary", "tab",
-    "important", "seealso", "raw", "include", "doctest", "testcode",
-})
+SKIP_DIRECTIVES = frozenset(
+    {
+        "literalinclude",
+        "eval-rst",
+        "code-block",
+        "testsetup",
+        "testcleanup",
+        "note",
+        "warning",
+        "tip",
+        "mermaid",
+        "toctree",
+        "glossary",
+        "tab",
+        "important",
+        "seealso",
+        "raw",
+        "include",
+        "doctest",
+        "testcode",
+    }
+)
 
 
 def discover_example_files(
@@ -57,11 +74,7 @@ def find_unused_examples_in_docs(
 ) -> list[Path]:
     if not examples_dir.exists():
         return []
-    combined_content = "\n".join(
-        md.read_text(encoding="utf-8")
-        for md in markdown_files
-        if md.exists()
-    )
+    combined_content = "\n".join(md.read_text(encoding="utf-8") for md in markdown_files if md.exists())
     return [
         path
         for path, _ in discover_example_files(examples_dir)
