@@ -45,7 +45,7 @@ docs-singlehtml: docs-generate-crds docs-generate-grpc
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs singlehtml
 
 docs-generate-crds:
-	uv run --isolated --all-packages --group docs python3 docs/source/reference/generate-crd-docs.py
+	uv run --isolated --all-packages --group docs python3 docs/source/reference/generate_crd_docs.py
 
 docs-generate-grpc:
 	uv run --isolated --all-packages --group docs python3 docs/source/reference/generate_grpc_docs.py
