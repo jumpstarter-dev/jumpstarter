@@ -9,7 +9,7 @@ For raw CAN and ISO-TP operations, see `jumpstarter-driver-can`.
 
 ## Installation
 
-```shell
+```{code-block} shell
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-uds-can
 ```
 

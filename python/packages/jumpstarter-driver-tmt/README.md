@@ -4,7 +4,7 @@
 
 ## Installation
 
-```shell
+```{code-block} shell
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-tmt
 ```
 
@@ -36,7 +36,7 @@ Example configuration:
 
 The TMT driver provides a CLI command `tmt` that allows you to run TMT commands locally while connecting to remote devices:
 
-```bash
+```{code-block} bash
 # assuming that your DUT has a power and storage driver
 j power on
 j storage flash ....
@@ -87,7 +87,7 @@ The driver automatically handles TMT provision arguments by:
 3. **Preserving other arguments**: Keeps all other TMT arguments intact
 
 Example of how arguments are transformed:
-```bash
+```{code-block} bash
 # Input command
 j tmt run --name /my/test/plan provision -h connect -g 192.168.1.100 -P 22
 

@@ -9,7 +9,7 @@ For UDS over CAN/ISO-TP, see `jumpstarter-driver-uds-can`.
 
 ## Installation
 
-```shell
+```{code-block} shell
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-uds-doip
 ```
 

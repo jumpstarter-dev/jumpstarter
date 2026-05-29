@@ -9,7 +9,7 @@ CAN, USB, and Serial (SxI) transports.
 
 ## Installation
 
-```shell
+```{code-block} shell
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-xcp
 ```
 

@@ -44,7 +44,7 @@ Powering on and off a device
 
 ### CLI access
 
-```shell
+```{code-block} shell
 $ sudo ~/.cargo/bin/uv run jmp shell --exporter-config ./packages/jumpstarter-driver-yepkit/examples/exporter.yaml
 WARNING:Ykush:No serial number provided for ykush, using the first one found: YK25838
 INFO:Ykush:Power OFF for Ykush YK25838 on port 1
