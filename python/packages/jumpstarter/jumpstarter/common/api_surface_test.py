@@ -2,7 +2,6 @@ import importlib
 import pkgutil
 from types import ModuleType
 
-
 MODULES_WITH_ALL = {
     "jumpstarter.common": [
         "AsyncChannel",
@@ -109,7 +108,7 @@ class TestPackageSubmoduleDiscovery:
     def test_jumpstarter_common_submodules_importable(self) -> None:
         mod = _load_module("jumpstarter.common")
         package_path = mod.__path__
-        for importer, modname, ispkg in pkgutil.iter_modules(package_path):
+        for _importer, modname, _ispkg in pkgutil.iter_modules(package_path):
             if modname.endswith("_test"):
                 continue
             full_name = f"jumpstarter.common.{modname}"
@@ -118,7 +117,7 @@ class TestPackageSubmoduleDiscovery:
     def test_jumpstarter_config_submodules_importable(self) -> None:
         mod = _load_module("jumpstarter.config")
         package_path = mod.__path__
-        for importer, modname, ispkg in pkgutil.iter_modules(package_path):
+        for _importer, modname, _ispkg in pkgutil.iter_modules(package_path):
             if modname.endswith("_test"):
                 continue
             full_name = f"jumpstarter.config.{modname}"
