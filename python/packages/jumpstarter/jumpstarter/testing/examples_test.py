@@ -161,6 +161,13 @@ def test_validate_yaml_example_validates_all_matching_sections(tmp_path):
         validate_yaml_example(f)
 
 
+def test_validate_yaml_example_rejects_non_dict_hooks(tmp_path):
+    f = tmp_path / "bad_hooks.yaml"
+    f.write_text(_yaml.dump({"hooks": ["not", "a", "dict"]}))
+    with pytest.raises(TypeError, match="hooks"):
+        validate_yaml_example(f)
+
+
 def test_validate_example_raises_on_unsupported_kind(tmp_path):
     f = tmp_path / "script.sh"
     f.write_text("echo hello\n")

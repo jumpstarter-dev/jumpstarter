@@ -25,6 +25,16 @@ def _resolve_model(qualified_name: str) -> type:
     return getattr(module, class_name)
 
 
+def _validate_section(path: Path, section_key: str, section: object, model_class: type) -> None:
+    if section_key == "export" and isinstance(section, dict):
+        for _name, entry in section.items():
+            model_class.model_validate(entry)
+    elif section_key == "hooks":
+        if not isinstance(section, dict):
+            raise TypeError(f"{path.name}: hooks section must be a dict, got {type(section).__name__}")
+        model_class.model_validate(section)
+
+
 def validate_yaml_example(path: Path) -> None:
     content = path.read_text(encoding="utf-8")
     data = yaml.safe_load(content)
@@ -46,12 +56,7 @@ def validate_yaml_example(path: Path) -> None:
     for section_key, model_path in SECTION_TO_MODEL.items():
         if section_key in data:
             model_class = _resolve_model(model_path)
-            section = data[section_key]
-            if section_key == "export" and isinstance(section, dict):
-                for _name, entry in section.items():
-                    model_class.model_validate(entry)
-            elif section_key == "hooks" and isinstance(section, dict):
-                model_class.model_validate(section)
+            _validate_section(path, section_key, data[section_key], model_class)
             validated_any = True
 
     if validated_any:
