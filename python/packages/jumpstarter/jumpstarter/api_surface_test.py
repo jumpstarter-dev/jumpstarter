@@ -230,6 +230,7 @@ class TestExternalUsageCounting:
 TRACKED_PACKAGES = [
     "jumpstarter.common",
     "jumpstarter.client",
+    "jumpstarter.config",
     "jumpstarter.driver",
     "jumpstarter.exporter",
 ]
