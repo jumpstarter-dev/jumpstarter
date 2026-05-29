@@ -5,12 +5,12 @@ from hypothesis import strategies as st
 
 from .metadata import Metadata
 
-label_key = st.text(
+label_key: st.SearchStrategy[str] = st.text(
     alphabet=st.characters(categories=("L", "N"), include_characters=[".", "/", "-", "_"]),
     min_size=1,
     max_size=63,
 )
-label_value = st.text(
+label_value: st.SearchStrategy[str] = st.text(
     alphabet=st.characters(categories=("L", "N"), include_characters=[".", "-", "_"]),
     min_size=0,
     max_size=63,

@@ -182,6 +182,32 @@ class TestExternalUsageCounting:
         )
 
 
+TRACKED_PACKAGES = [
+    "jumpstarter.common",
+    "jumpstarter.client",
+    "jumpstarter.driver",
+    "jumpstarter.exporter",
+]
+
+
+class TestModulesWithAllDiscovery:
+    def test_all_modules_defining_all_are_tracked(self) -> None:
+        untracked: list[str] = []
+        for package_name in TRACKED_PACKAGES:
+            pkg = _load_module(package_name)
+            for _importer, modname, _ispkg in pkgutil.iter_modules(getattr(pkg, "__path__", [])):
+                if modname.endswith("_test"):
+                    continue
+                full_name = f"{package_name}.{modname}"
+                try:
+                    mod = importlib.import_module(full_name)
+                except ImportError:
+                    continue
+                if hasattr(mod, "__all__") and full_name not in MODULES_WITH_ALL:
+                    untracked.append(full_name)
+        assert not untracked, f"Modules defining __all__ not tracked in MODULES_WITH_ALL: {sorted(untracked)}"
+
+
 class TestPackageSubmoduleDiscovery:
     def test_jumpstarter_common_submodules_importable(self) -> None:
         mod = _load_module("jumpstarter.common")

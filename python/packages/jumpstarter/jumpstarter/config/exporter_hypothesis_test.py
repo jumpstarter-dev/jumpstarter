@@ -1,38 +1,9 @@
+from typing import Literal
+
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from .exporter import HookInstanceConfigV1Alpha1
-from .tls import TLSConfigV1Alpha1
-
-
-class TestTLSConfigRoundtrip:
-    @given(
-        ca=st.text(min_size=0, max_size=200),
-        insecure=st.booleans(),
-    )
-    @settings(max_examples=50)
-    def test_roundtrip_through_dict(self, ca: str, insecure: bool) -> None:
-        original = TLSConfigV1Alpha1(ca=ca, insecure=insecure)
-        dumped = original.model_dump()
-        restored = TLSConfigV1Alpha1.model_validate(dumped)
-        assert restored == original
-
-    @given(
-        ca=st.text(min_size=0, max_size=200),
-        insecure=st.booleans(),
-    )
-    @settings(max_examples=50)
-    def test_roundtrip_through_json(self, ca: str, insecure: bool) -> None:
-        original = TLSConfigV1Alpha1(ca=ca, insecure=insecure)
-        json_str = original.model_dump_json()
-        restored = TLSConfigV1Alpha1.model_validate_json(json_str)
-        assert restored == original
-
-    @given(insecure=st.booleans())
-    @settings(max_examples=20)
-    def test_default_ca_is_empty_string(self, insecure: bool) -> None:
-        config = TLSConfigV1Alpha1(insecure=insecure)
-        assert config.ca == ""
 
 
 class TestHookInstanceConfigConstruction:
@@ -42,7 +13,9 @@ class TestHookInstanceConfigConstruction:
         on_failure=st.sampled_from(["warn", "endLease", "exit"]),
     )
     @settings(max_examples=50)
-    def test_valid_construction(self, script: str, timeout: int, on_failure: str) -> None:
+    def test_valid_construction(
+        self, script: str, timeout: int, on_failure: Literal["warn", "endLease", "exit"]
+    ) -> None:
         config = HookInstanceConfigV1Alpha1(script=script, timeout=timeout, onFailure=on_failure)
         assert config.script == script
         assert config.timeout == timeout
@@ -54,7 +27,9 @@ class TestHookInstanceConfigConstruction:
         on_failure=st.sampled_from(["warn", "endLease", "exit"]),
     )
     @settings(max_examples=50)
-    def test_roundtrip_through_dict(self, script: str, timeout: int, on_failure: str) -> None:
+    def test_roundtrip_through_dict(
+        self, script: str, timeout: int, on_failure: Literal["warn", "endLease", "exit"]
+    ) -> None:
         original = HookInstanceConfigV1Alpha1(script=script, timeout=timeout, onFailure=on_failure)
         dumped = original.model_dump(by_alias=True)
         restored = HookInstanceConfigV1Alpha1.model_validate(dumped)

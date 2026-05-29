@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from .oci import OciCredentials
 
-non_empty_stripped_text = st.text(
+non_empty_stripped_text: st.SearchStrategy[str] = st.text(
     alphabet=st.characters(categories=("L", "N", "P", "S")),
     min_size=1,
     max_size=100,
@@ -90,5 +90,6 @@ class TestOciCredentialsRoundtrip:
     )
     @settings(max_examples=50)
     def test_frozen_model_is_hashable(self, username: str, password: str) -> None:
-        creds = OciCredentials(username=username, password=password)
-        hash(creds)
+        creds_a = OciCredentials(username=username, password=password)
+        creds_b = OciCredentials(username=username, password=password)
+        assert hash(creds_a) == hash(creds_b)

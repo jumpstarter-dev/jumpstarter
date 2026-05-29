@@ -1,51 +1,64 @@
-from hypothesis import given, settings
-from hypothesis import strategies as st
+import pytest
+from jumpstarter_protocol.jumpstarter.v1 import common_pb2
 
 from .enums import ExporterStatus, LogSource
 
 
 class TestExporterStatusRoundtrip:
-    @given(status=st.sampled_from(list(ExporterStatus)))
-    @settings(max_examples=50)
+    @pytest.mark.parametrize("status", list(ExporterStatus))
     def test_from_proto_to_proto_roundtrip(self, status: ExporterStatus) -> None:
         assert ExporterStatus.from_proto(status.to_proto()) == status
 
-    @given(status=st.sampled_from(list(ExporterStatus)))
-    @settings(max_examples=50)
+    @pytest.mark.parametrize("status", list(ExporterStatus))
     def test_to_proto_returns_int(self, status: ExporterStatus) -> None:
         assert isinstance(status.to_proto(), int)
 
-    @given(status=st.sampled_from(list(ExporterStatus)))
-    @settings(max_examples=50)
+    @pytest.mark.parametrize("status", list(ExporterStatus))
     def test_str_is_name(self, status: ExporterStatus) -> None:
         assert str(status) == status.name
 
-    @given(status=st.sampled_from(list(ExporterStatus)))
-    @settings(max_examples=50)
-    def test_value_equals_proto(self, status: ExporterStatus) -> None:
-        assert status.value == status.to_proto()
+    @pytest.mark.parametrize(
+        ("status", "expected_proto"),
+        [
+            (ExporterStatus.UNSPECIFIED, common_pb2.EXPORTER_STATUS_UNSPECIFIED),
+            (ExporterStatus.OFFLINE, common_pb2.EXPORTER_STATUS_OFFLINE),
+            (ExporterStatus.AVAILABLE, common_pb2.EXPORTER_STATUS_AVAILABLE),
+            (ExporterStatus.BEFORE_LEASE_HOOK, common_pb2.EXPORTER_STATUS_BEFORE_LEASE_HOOK),
+            (ExporterStatus.LEASE_READY, common_pb2.EXPORTER_STATUS_LEASE_READY),
+            (ExporterStatus.AFTER_LEASE_HOOK, common_pb2.EXPORTER_STATUS_AFTER_LEASE_HOOK),
+            (ExporterStatus.BEFORE_LEASE_HOOK_FAILED, common_pb2.EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED),
+            (ExporterStatus.AFTER_LEASE_HOOK_FAILED, common_pb2.EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED),
+        ],
+    )
+    def test_value_matches_protobuf_constant(self, status: ExporterStatus, expected_proto: int) -> None:
+        assert status.to_proto() == expected_proto
 
 
 class TestLogSourceRoundtrip:
-    @given(source=st.sampled_from(list(LogSource)))
-    @settings(max_examples=50)
+    @pytest.mark.parametrize("source", list(LogSource))
     def test_from_proto_to_proto_roundtrip(self, source: LogSource) -> None:
         assert LogSource.from_proto(source.to_proto()) == source
 
-    @given(source=st.sampled_from(list(LogSource)))
-    @settings(max_examples=50)
+    @pytest.mark.parametrize("source", list(LogSource))
     def test_to_proto_returns_int(self, source: LogSource) -> None:
         assert isinstance(source.to_proto(), int)
 
-    @given(source=st.sampled_from(list(LogSource)))
-    @settings(max_examples=50)
+    @pytest.mark.parametrize("source", list(LogSource))
     def test_str_is_name(self, source: LogSource) -> None:
         assert str(source) == source.name
 
-    @given(source=st.sampled_from(list(LogSource)))
-    @settings(max_examples=50)
-    def test_value_equals_proto(self, source: LogSource) -> None:
-        assert source.value == source.to_proto()
+    @pytest.mark.parametrize(
+        ("source", "expected_proto"),
+        [
+            (LogSource.UNSPECIFIED, common_pb2.LOG_SOURCE_UNSPECIFIED),
+            (LogSource.DRIVER, common_pb2.LOG_SOURCE_DRIVER),
+            (LogSource.BEFORE_LEASE_HOOK, common_pb2.LOG_SOURCE_BEFORE_LEASE_HOOK),
+            (LogSource.AFTER_LEASE_HOOK, common_pb2.LOG_SOURCE_AFTER_LEASE_HOOK),
+            (LogSource.SYSTEM, common_pb2.LOG_SOURCE_SYSTEM),
+        ],
+    )
+    def test_value_matches_protobuf_constant(self, source: LogSource, expected_proto: int) -> None:
+        assert source.to_proto() == expected_proto
 
 
 class TestEnumCoverage:

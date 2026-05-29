@@ -13,7 +13,7 @@ else:
 
 from .encoding import COMPRESSION_SIGNATURES, Compression, create_decompressor, detect_compression_from_signature
 
-known_signatures = [sig.signature for sig in COMPRESSION_SIGNATURES]
+known_signatures: list[bytes] = [sig.signature for sig in COMPRESSION_SIGNATURES]
 
 
 def _starts_with_any_signature(data: bytes) -> bool:
