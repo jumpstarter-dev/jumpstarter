@@ -40,6 +40,7 @@ name = "pin_jumpstarter"
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.0.0",
     "pytest-cov>=6.0.0",
     "pytest>=8.3.3",
     "pytest-mqtt>=0.5.0",

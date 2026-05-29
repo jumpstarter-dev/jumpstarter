@@ -19,6 +19,7 @@ SNMPServer = "jumpstarter_driver_snmp.driver:SNMPServer"
 
 [dependency-groups]
 dev = [
+    "hypothesis>=6.0.0",
     "pytest>=8.3.2",
     "pytest-cov>=6.0.0",
     "pytest-anyio>=0.0.0",
