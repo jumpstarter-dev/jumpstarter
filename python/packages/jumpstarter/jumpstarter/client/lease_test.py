@@ -923,6 +923,87 @@ class TestHandleAsyncTransientRetry:
             )
 
 
+    @pytest.mark.anyio
+    async def test_failed_precondition_not_ready_retries_then_succeeds(self):
+        """FAILED_PRECONDITION 'not ready' should retry and succeed on next attempt."""
+        lease = _make_lease_for_handle()
+        dial_response = Mock(router_endpoint="ep", router_token="tok")
+        call_count = 0
+
+        async def dial_side_effect(req):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise _make_aio_rpc_error(
+                    grpc.StatusCode.FAILED_PRECONDITION, "exporter not ready"
+                )
+            return dial_response
+
+        lease.controller.Dial = AsyncMock(side_effect=dial_side_effect)
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            with patch("jumpstarter.client.lease.connect_router_stream") as mock_router:
+
+                @asynccontextmanager
+                async def fake_router(*args, **kwargs):
+                    yield
+
+                mock_router.side_effect = fake_router
+                await lease.handle_async(Mock())
+
+        assert call_count == 2
+
+    @pytest.mark.anyio
+    async def test_failed_precondition_returns_after_timeout(self):
+        """FAILED_PRECONDITION should return (not raise) when dial_timeout is exceeded."""
+        lease = _make_lease_for_handle()
+        lease.dial_timeout = 0.0  # already expired
+
+        lease.controller.Dial = AsyncMock(
+            side_effect=_make_aio_rpc_error(
+                grpc.StatusCode.FAILED_PRECONDITION, "exporter not ready"
+            ),
+        )
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            # Should return without raising
+            await lease.handle_async(Mock())
+
+        lease.controller.Dial.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_permission_denied_sets_lease_transferred(self):
+        """PERMISSION_DENIED should set lease_transferred = True."""
+        lease = _make_lease_for_handle()
+        assert lease.lease_transferred is False
+
+        lease.controller.Dial = AsyncMock(
+            side_effect=_make_aio_rpc_error(
+                grpc.StatusCode.PERMISSION_DENIED, "permission denied"
+            ),
+        )
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            await lease.handle_async(Mock())
+
+        assert lease.lease_transferred is True
+
+
+class TestRetryDelay:
+    """Tests for the _retry_delay static method."""
+
+    def test_basic_exponential(self):
+        assert Lease._retry_delay(0, 60.0) == pytest.approx(0.3)
+        assert Lease._retry_delay(1, 60.0) == pytest.approx(0.6)
+        assert Lease._retry_delay(2, 60.0) == pytest.approx(1.2)
+
+    def test_capped_by_max(self):
+        assert Lease._retry_delay(10, 60.0) == pytest.approx(5.0)
+
+    def test_capped_by_remaining(self):
+        assert Lease._retry_delay(0, 0.1) == pytest.approx(0.1)
+
+
 class TestTransientGrpcCodes:
     """Tests for the _TRANSIENT_GRPC_CODES class attribute."""
 
