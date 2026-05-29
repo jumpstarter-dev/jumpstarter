@@ -21,7 +21,7 @@ is no {term}`controller` to register with.
 
 Create `example-direct.yaml`:
 
-```yaml
+```{code-block} yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
 metadata:

@@ -39,7 +39,7 @@ Here's a practical example of how configuration overrides work:
 1. You create a client configuration file at
    `${HOME}/.config/jumpstarter/clients/default.yaml`:
 
-   ```yaml
+   ```{code-block} yaml
    endpoint: "jumpstarter1.my-lab.com:1443"
    ```
 

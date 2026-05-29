@@ -15,7 +15,7 @@ different sources are prioritized.
 selection.  
 
 **Format**:
-```yaml
+```{code-block} yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
 config:
@@ -32,7 +32,7 @@ config:
 tokens, and driver settings.
 
 **Format**:
-```yaml
+```{code-block} yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
 metadata:
@@ -83,7 +83,7 @@ config home can be overridden with `JMP_CLIENT_CONFIG_HOME` or `XDG_CONFIG_HOME`
 to write the config to an explicit path.
 
 **Format**:
-```yaml
+```{code-block} yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
 metadata:

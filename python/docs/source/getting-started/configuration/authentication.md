@@ -51,7 +51,7 @@ Set up Keycloak for Jumpstarter authentication:
 
 2. Configure `spec.authentication.jwt` on your `Jumpstarter` resource:
 
-```yaml
+```{code-block} yaml
 spec:
   authentication:
     jwt:
@@ -135,7 +135,7 @@ $ kubectl -n dex create secret tls dex-tls \
 
 2. Install Dex with Helm using the following `values.yaml`:
 
-```yaml
+```{code-block} yaml
 https:
   enabled: true
 config:
@@ -197,7 +197,7 @@ $ helm install --namespace dex --wait -f values.yaml dex dex/dex
 3. Configure Jumpstarter to trust Dex. Use this configuration for
    `jumpstarter-controller.authenticationConfiguration` during installation:
 
-```yaml
+```{code-block} yaml
 spec:
   authentication:
     jwt:

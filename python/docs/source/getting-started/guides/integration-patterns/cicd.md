@@ -34,7 +34,7 @@ automated testing on real systems:
 **CI Configuration Examples:**
 
 ````{tab} GitHub
-```yaml
+```{code-block} yaml
 # .github/workflows/hardware-test.yml
 jobs:
   hardware-test:
@@ -54,7 +54,7 @@ jobs:
 ````
 
 ````{tab} GitLab
-```yaml
+```{code-block} yaml
 # .gitlab-ci.yml
 hardware-test:
   tags:
@@ -111,7 +111,7 @@ This approach works best when:
 **CI Configuration Examples:**
 
 ````{tab} GitHub
-```yaml
+```{code-block} yaml
 # .github/workflows/self-hosted-hw-test.yml
 jobs:
   hardware-test:
@@ -124,7 +124,7 @@ jobs:
 ````
 
 ````{tab} GitLab
-```yaml
+```{code-block} yaml
 # .gitlab-ci.yml
 hardware-test:
   tags:

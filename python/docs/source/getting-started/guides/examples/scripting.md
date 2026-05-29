@@ -12,13 +12,8 @@ doesn't provide a CLI.
 Create a Python file for interacting with your {term}`exporter`. This example
 (`example.py`) demonstrates a complete power cycle workflow:
 
-```python
-import time
-from jumpstarter.common.utils import env
-
-with env() as client:
-   client.power.on()
-   client.power.off()
+```{literalinclude} ../../../examples/getting-started/scripting_env.py
+:language: python
 ```
 
 ```console

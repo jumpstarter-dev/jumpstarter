@@ -26,7 +26,7 @@ don't need to connect to the {term}`controller` {term}`service`.
 
 Create `example-local.yaml` in `/etc/jumpstarter/exporters` with this content:
 
-```yaml
+```{code-block} yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
 metadata:

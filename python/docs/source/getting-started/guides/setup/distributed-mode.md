@@ -52,7 +52,7 @@ $ jmp config exporter edit example-distributed
 Add the `storage` and `power` drivers under the `export` field in the
 configuration file. Your configuration should look like this:
 
-```yaml
+```{code-block} yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
 metadata:

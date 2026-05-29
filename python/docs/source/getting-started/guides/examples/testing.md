@@ -28,18 +28,8 @@ the test class. It connects to a Jumpstarter {term}`exporter` in one of two ways
 2. **{term}`Lease` mode**: when `JUMPSTARTER_HOST` is not set, it loads the default
    client config and acquires a {term}`lease` using the `selector` class variable.
 
-```python
-from jumpstarter_testing.pytest import JumpstarterTest
-
-
-class TestPowerCycle(JumpstarterTest):
-    selector = "board=rpi4"
-
-    def test_power_on(self, client):
-        client.dutlink.power.on()
-
-    def test_power_off(self, client):
-        client.dutlink.power.off()
+```{literalinclude} ../../../examples/getting-started/testing_basic.py
+:language: python
 ```
 
 The `selector` class variable is a comma-separated list of {term}`label selector`s that
@@ -83,31 +73,8 @@ Create additional `pytest` fixtures that build on the `client` fixture provided 
 `JumpstarterTest`. This is useful for setting up {term}`device` state or wrapping driver
 interfaces.
 
-```python
-import pytest
-from jumpstarter_driver_network.adapters import PexpectAdapter
-from jumpstarter_testing.pytest import JumpstarterTest
-
-
-class TestBoot(JumpstarterTest):
-    selector = "board=rpi4"
-
-    @pytest.fixture()
-    def console(self, client):
-        with PexpectAdapter(client=client.dutlink.console) as console:
-            yield console
-
-    @pytest.fixture()
-    def powered_device(self, client, console):
-        client.dutlink.power.off()
-        client.dutlink.storage.write_local_file("firmware.img")
-        client.dutlink.storage.dut()
-        client.dutlink.power.on()
-        yield console
-        client.dutlink.power.off()
-
-    def test_device_boots(self, powered_device):
-        powered_device.expect("login:", timeout=240)
+```{literalinclude} ../../../examples/getting-started/testing_fixtures.py
+:language: python
 ```
 
 The `client` fixture has class scope, so it is shared across all test methods in
@@ -124,53 +91,16 @@ which wraps a driver client class into a [pexpect](https://pexpect.readthedocs.i
 Use Python's `logging` module to add diagnostic output to tests. `pytest` captures
 log output by default and displays it for failing tests.
 
-```python
-import logging
-
-import pytest
-from jumpstarter_driver_network.adapters import PexpectAdapter
-from jumpstarter_testing.pytest import JumpstarterTest
-
-log = logging.getLogger(__name__)
-
-
-class TestDiagnostics(JumpstarterTest):
-    selector = "board=rpi4"
-
-    @pytest.fixture()
-    def console(self, client):
-        with PexpectAdapter(client=client.dutlink.console) as console:
-            yield console
-
-    def test_firmware_version(self, client, console):
-        client.dutlink.power.on()
-        console.expect("version:", timeout=60)
-        log.info("Firmware reported: %s", console.after)
-        client.dutlink.power.off()
+```{literalinclude} ../../../examples/getting-started/testing_logging.py
+:language: python
 ```
 
 ### Skipping and marking tests
 
 Use standard `pytest` markers to control test execution:
 
-```python
-import pytest
-from jumpstarter_testing.pytest import JumpstarterTest
-
-
-class TestOptionalFeatures(JumpstarterTest):
-    selector = "board=rpi4"
-
-    @pytest.mark.slow
-    def test_power_cycle(self, client):
-        client.dutlink.power.on()
-        client.dutlink.power.cycle(wait=5)
-        client.dutlink.power.off()
-
-    @pytest.mark.skip(reason="hardware not available")
-    def test_camera_capture(self, client):
-        image = client.camera.snapshot()
-        image.save("capture.jpeg")
+```{literalinclude} ../../../examples/getting-started/testing_markers.py
+:language: python
 ```
 
 Run only tests without the `slow` marker:
@@ -183,25 +113,8 @@ $ pytest -m "not slow"
 
 A fixture that manages storage flashing before tests:
 
-```python
-import pytest
-from jumpstarter_testing.pytest import JumpstarterTest
-
-
-class TestWithFirmware(JumpstarterTest):
-    selector = "board=rpi4"
-
-    @pytest.fixture()
-    def flashed_device(self, client):
-        client.dutlink.power.off()
-        client.dutlink.storage.write_local_file("firmware.img")
-        client.dutlink.storage.dut()
-        client.dutlink.power.on()
-        yield client
-        client.dutlink.power.off()
-
-    def test_device_responds(self, flashed_device):
-        flashed_device.dutlink.power.read()
+```{literalinclude} ../../../examples/getting-started/testing_setup_teardown.py
+:language: python
 ```
 
 ## CI integration
@@ -212,7 +125,7 @@ depending on your setup.
 ### Shell mode in CI
 
 ````{tab} GitHub
-```yaml
+```{code-block} yaml
 # .github/workflows/hardware-test.yml
 jobs:
   hardware-test:
@@ -226,7 +139,7 @@ jobs:
 ````
 
 ````{tab} GitLab
-```yaml
+```{code-block} yaml
 # .gitlab-ci.yml
 hardware-test:
   tags:
@@ -242,7 +155,7 @@ When tests use `selector` and run outside a shell, configure the client before
 running `pytest`:
 
 ````{tab} GitHub
-```yaml
+```{code-block} yaml
 # .github/workflows/hardware-test.yml
 jobs:
   hardware-test:
@@ -257,7 +170,7 @@ jobs:
 ````
 
 ````{tab} GitLab
-```yaml
+```{code-block} yaml
 # .gitlab-ci.yml
 hardware-test:
   tags:
