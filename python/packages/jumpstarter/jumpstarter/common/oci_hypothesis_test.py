@@ -11,7 +11,6 @@ from pydantic import ValidationError
 from .oci import OciCredentials, parse_oci_registry, read_auth_file_credentials, resolve_oci_credentials
 
 non_empty_stripped_text: st.SearchStrategy[str] = st.text(
-    alphabet=st.characters(categories=("L", "N", "P", "S")),
     min_size=1,
     max_size=100,
 ).filter(lambda s: s.strip() != "")

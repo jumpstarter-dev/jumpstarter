@@ -8,11 +8,7 @@ json_primitives = st.one_of(
     st.booleans(),
     st.integers(min_value=-(2**31), max_value=2**31),
     st.floats(allow_nan=False, allow_infinity=False, min_value=-1e10, max_value=1e10),
-    st.text(
-        alphabet=st.characters(categories=("L", "N", "P", "S", "Z"), max_codepoint=0xFFFF),
-        min_size=0,
-        max_size=50,
-    ),
+    st.text(min_size=0, max_size=50),
 )
 
 
@@ -21,11 +17,7 @@ json_values = st.recursive(
     lambda children: st.one_of(
         st.lists(children, max_size=5),
         st.dictionaries(
-            st.text(
-                alphabet=st.characters(categories=("L", "N"), max_codepoint=0x7E),
-                min_size=1,
-                max_size=10,
-            ),
+            st.text(min_size=1, max_size=10),
             children,
             max_size=5,
         ),
@@ -82,6 +74,62 @@ class TestEncodeDecodeRoundtrip:
         decoded = decode_value(encoded)
         for original, restored in zip(values, decoded, strict=True):
             assert restored == original or restored == float(original)
+
+
+class TestEncodeDecodeSpecialFloats:
+    def test_nan_encodes_to_null(self) -> None:
+        encoded = encode_value(float("nan"))
+        decoded = decode_value(encoded)
+        assert decoded is None
+
+    def test_positive_infinity_encodes_to_null(self) -> None:
+        encoded = encode_value(float("inf"))
+        decoded = decode_value(encoded)
+        assert decoded is None
+
+    def test_negative_infinity_encodes_to_null(self) -> None:
+        encoded = encode_value(float("-inf"))
+        decoded = decode_value(encoded)
+        assert decoded is None
+
+    @given(
+        value=st.floats(allow_nan=True, allow_infinity=True),
+    )
+    def test_any_float_no_crash(self, value: float) -> None:
+        import math
+
+        encoded = encode_value(value)
+        decoded = decode_value(encoded)
+        if math.isnan(value) or math.isinf(value):
+            assert decoded is None
+        else:
+            assert decoded == value
+
+
+class TestDeeplyNestedStructures:
+    @given(
+        value=st.recursive(
+            st.one_of(
+                st.none(),
+                st.booleans(),
+                st.integers(min_value=-(2**31), max_value=2**31),
+                st.text(min_size=0, max_size=10),
+            ),
+            lambda children: st.one_of(
+                st.lists(children, max_size=3),
+                st.dictionaries(
+                    st.text(min_size=1, max_size=5),
+                    children,
+                    max_size=3,
+                ),
+            ),
+            max_leaves=30,
+        ),
+    )
+    def test_deep_nesting_roundtrip(self, value: object) -> None:
+        encoded = encode_value(value)
+        decoded = decode_value(encoded)
+        assert decoded == value
 
 
 class TestEncodeProducesProtobufValue:

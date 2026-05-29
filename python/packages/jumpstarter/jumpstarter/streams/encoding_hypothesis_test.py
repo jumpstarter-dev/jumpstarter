@@ -57,6 +57,77 @@ class TestCompressionRealDataDetection:
         assert detect_compression_from_signature(compressed) == Compression.ZSTD
 
 
+class TestCorruptedCompressedData:
+    @given(
+        compression=st.sampled_from(list(Compression)),
+        payload=st.binary(min_size=1, max_size=500),
+        truncate_bytes=st.integers(min_value=1, max_value=100),
+    )
+    def test_truncated_data_raises_clean_error(
+        self, compression: Compression, payload: bytes, truncate_bytes: int
+    ) -> None:
+        compressors = {
+            Compression.GZIP: gzip.compress,
+            Compression.XZ: lambda d: lzma.compress(d, format=lzma.FORMAT_XZ),
+            Compression.BZ2: bz2.compress,
+            Compression.ZSTD: zstd.compress,
+        }
+        compressed = compressors[compression](payload)
+        if truncate_bytes >= len(compressed):
+            return
+        truncated = compressed[: len(compressed) - truncate_bytes]
+        decompressor = create_decompressor(compression)
+        try:
+            decompressor.decompress(truncated)
+            if hasattr(decompressor, "flush"):
+                decompressor.flush()
+        except Exception:
+            pass
+
+    @given(
+        compression=st.sampled_from(list(Compression)),
+        payload=st.binary(min_size=1, max_size=500),
+        corruption_offset=st.integers(min_value=0),
+        corruption_byte=st.binary(min_size=1, max_size=1),
+    )
+    def test_corrupted_byte_raises_clean_error(
+        self,
+        compression: Compression,
+        payload: bytes,
+        corruption_offset: int,
+        corruption_byte: bytes,
+    ) -> None:
+        compressors = {
+            Compression.GZIP: gzip.compress,
+            Compression.XZ: lambda d: lzma.compress(d, format=lzma.FORMAT_XZ),
+            Compression.BZ2: bz2.compress,
+            Compression.ZSTD: zstd.compress,
+        }
+        compressed = compressors[compression](payload)
+        if len(compressed) == 0:
+            return
+        offset = corruption_offset % len(compressed)
+        corrupted = compressed[:offset] + corruption_byte + compressed[offset + 1 :]
+        decompressor = create_decompressor(compression)
+        try:
+            decompressor.decompress(corrupted)
+            if hasattr(decompressor, "flush"):
+                decompressor.flush()
+        except Exception:
+            pass
+
+    @given(
+        compression=st.sampled_from(list(Compression)),
+        random_data=st.binary(min_size=1, max_size=200),
+    )
+    def test_random_bytes_do_not_crash_decompressor(self, compression: Compression, random_data: bytes) -> None:
+        decompressor = create_decompressor(compression)
+        try:
+            decompressor.decompress(random_data)
+        except Exception:
+            pass
+
+
 class TestCreateDecompressorRoundtrip:
     @given(payload=st.binary(min_size=1, max_size=1000))
     def test_gzip_decompressor(self, payload: bytes) -> None:

@@ -9,11 +9,7 @@ CRD_BASE = (
     pathlib.Path(__file__).resolve().parents[4] / "controller" / "deploy" / "operator" / "config" / "crd" / "bases"
 )
 
-safe_text = st.text(
-    alphabet=st.characters(categories=("L", "N"), max_codepoint=0x7E),
-    min_size=1,
-    max_size=30,
-)
+safe_text = st.text(min_size=1, max_size=30)
 safe_key = st.from_regex(r"[a-zA-Z][a-zA-Z0-9._-]{0,20}", fullmatch=True)
 safe_value = st.from_regex(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,20}", fullmatch=True)
 label_maps = st.dictionaries(safe_key, safe_value, max_size=3)
@@ -376,6 +372,148 @@ class TestNegativeExporterCRDValidation:
         try:
             _validate_against_schema(instance, self.SCHEMA)
             raise AssertionError("Expected validation error for wrong username type")
+        except jsonschema.ValidationError:
+            pass
+
+
+class TestAdversarialLabels:
+    LEASE_SCHEMA = _load_crd_schema("jumpstarter.dev_leases.yaml")
+
+    @given(
+        key=st.text(min_size=1, max_size=100),
+        value=st.text(min_size=0, max_size=100),
+    )
+    def test_full_unicode_labels_validated(self, key: str, value: str) -> None:
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {},
+            "spec": {
+                "selector": {"matchLabels": {key: value}},
+                "duration": "1h",
+                "clientRef": {"name": "test-client"},
+            },
+        }
+        try:
+            _validate_against_schema(instance, self.LEASE_SCHEMA)
+        except jsonschema.ValidationError:
+            pass
+
+    def test_boundary_62_char_label_key(self) -> None:
+        key = "a" * 62
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {},
+            "spec": {
+                "selector": {"matchLabels": {key: "val"}},
+                "duration": "1h",
+                "clientRef": {"name": "test-client"},
+            },
+        }
+        _validate_against_schema(instance, self.LEASE_SCHEMA)
+
+    def test_boundary_63_char_label_key(self) -> None:
+        key = "a" * 63
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {},
+            "spec": {
+                "selector": {"matchLabels": {key: "val"}},
+                "duration": "1h",
+                "clientRef": {"name": "test-client"},
+            },
+        }
+        _validate_against_schema(instance, self.LEASE_SCHEMA)
+
+    def test_boundary_64_char_label_key(self) -> None:
+        key = "a" * 64
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {},
+            "spec": {
+                "selector": {"matchLabels": {key: "val"}},
+                "duration": "1h",
+                "clientRef": {"name": "test-client"},
+            },
+        }
+        _validate_against_schema(instance, self.LEASE_SCHEMA)
+
+    def test_boundary_62_char_label_value(self) -> None:
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {},
+            "spec": {
+                "selector": {"matchLabels": {"key": "v" * 62}},
+                "duration": "1h",
+                "clientRef": {"name": "test-client"},
+            },
+        }
+        _validate_against_schema(instance, self.LEASE_SCHEMA)
+
+    def test_boundary_63_char_label_value(self) -> None:
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {},
+            "spec": {
+                "selector": {"matchLabels": {"key": "v" * 63}},
+                "duration": "1h",
+                "clientRef": {"name": "test-client"},
+            },
+        }
+        _validate_against_schema(instance, self.LEASE_SCHEMA)
+
+    def test_boundary_64_char_label_value(self) -> None:
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {},
+            "spec": {
+                "selector": {"matchLabels": {"key": "v" * 64}},
+                "duration": "1h",
+                "clientRef": {"name": "test-client"},
+            },
+        }
+        _validate_against_schema(instance, self.LEASE_SCHEMA)
+
+    @given(
+        count=st.integers(min_value=0, max_value=20),
+    )
+    def test_many_label_pairs_validated(self, count: int) -> None:
+        labels = {f"key-{i}": f"val-{i}" for i in range(count)}
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {},
+            "spec": {
+                "selector": {"matchLabels": labels},
+                "duration": "1h",
+                "clientRef": {"name": "test-client"},
+            },
+        }
+        _validate_against_schema(instance, self.LEASE_SCHEMA)
+
+    @given(
+        key=st.text(min_size=0, max_size=200),
+        value=st.text(min_size=0, max_size=200),
+    )
+    def test_arbitrary_label_no_crash(self, key: str, value: str) -> None:
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {},
+            "spec": {
+                "selector": {"matchLabels": {key: value}},
+                "duration": "1h",
+                "clientRef": {"name": "test-client"},
+            },
+        }
+        try:
+            _validate_against_schema(instance, self.LEASE_SCHEMA)
         except jsonschema.ValidationError:
             pass
 

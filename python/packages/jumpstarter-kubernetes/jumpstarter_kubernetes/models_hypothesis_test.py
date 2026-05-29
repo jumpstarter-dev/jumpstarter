@@ -6,17 +6,9 @@ from .exporters import V1Alpha1ExporterDevice, V1Alpha1ExporterList
 from .json import JsonBaseModel
 from .list import V1Alpha1List
 
-safe_text = st.text(
-    alphabet=st.characters(categories=("L", "N"), max_codepoint=0x7E),
-    min_size=0,
-    max_size=30,
-)
+safe_text = st.text(min_size=0, max_size=30)
 
-non_empty_text = st.text(
-    alphabet=st.characters(categories=("L", "N"), max_codepoint=0x7E),
-    min_size=1,
-    max_size=30,
-)
+non_empty_text = st.text(min_size=1, max_size=30)
 
 safe_key = st.from_regex(r"[a-zA-Z][a-zA-Z0-9._-]{0,20}", fullmatch=True)
 safe_value = st.from_regex(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,20}", fullmatch=True)

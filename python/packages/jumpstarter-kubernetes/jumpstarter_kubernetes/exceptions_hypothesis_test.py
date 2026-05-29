@@ -14,11 +14,7 @@ from .exceptions import (
     ToolNotInstalledError,
 )
 
-safe_text = st.text(
-    alphabet=st.characters(categories=("L", "N"), max_codepoint=0x7E),
-    min_size=1,
-    max_size=50,
-)
+safe_text = st.text(min_size=1, max_size=50)
 
 
 class TestJumpstarterKubernetesError:

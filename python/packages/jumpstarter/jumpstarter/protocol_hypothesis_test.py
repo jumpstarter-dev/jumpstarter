@@ -8,11 +8,7 @@ from jumpstarter_protocol.jumpstarter.v1 import (
     router_pb2,
 )
 
-safe_text = st.text(
-    alphabet=st.characters(categories=("L", "M", "N", "P", "S", "Z"), max_codepoint=0xFFFF),
-    min_size=0,
-    max_size=50,
-)
+safe_text = st.text(min_size=0, max_size=50)
 
 safe_key = st.from_regex(r"[a-zA-Z][a-zA-Z0-9._-]{0,20}", fullmatch=True)
 safe_value = st.from_regex(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,20}", fullmatch=True)

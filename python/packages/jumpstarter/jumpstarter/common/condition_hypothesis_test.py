@@ -4,11 +4,7 @@ from jumpstarter_protocol import kubernetes_pb2
 
 from .condition import condition_false, condition_message, condition_present_and_equal, condition_true
 
-safe_text = st.text(
-    alphabet=st.characters(categories=("L", "N"), max_codepoint=0x7E),
-    min_size=1,
-    max_size=30,
-)
+safe_text = st.text(min_size=1, max_size=30)
 
 
 def _make_condition(
