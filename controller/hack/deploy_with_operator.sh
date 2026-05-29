@@ -184,6 +184,10 @@ ${AUTH_CONFIG}
     image: ${IMAGE_REPO}
     imagePullPolicy: IfNotPresent
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
     grpc:
       endpoints:
 ${CONTROLLER_ENDPOINT_CONFIG}
