@@ -113,6 +113,39 @@ class TestSelectorContainsProperties:
         requirement = f"{key} in ({value})"
         assert selector_contains(selector, requirement) is True
 
+    @given(key=selector_key, value=selector_value)
+    @settings(max_examples=30)
+    def test_label_selector_satisfies_exists_requirement(self, key: str, value: str) -> None:
+        selector = f"{key}={value}"
+        requirement = key
+        assert selector_contains(selector, requirement) is True
+
+    @given(
+        key=selector_key,
+        value=selector_value,
+        other=selector_value,
+    )
+    @settings(max_examples=30)
+    def test_label_selector_satisfies_not_equal_requirement(self, key: str, value: str, other: str) -> None:
+        if value == other:
+            return
+        selector = f"{key}={value}"
+        requirement = f"{key}!={other}"
+        assert selector_contains(selector, requirement) is True
+
+    @given(
+        key=selector_key,
+        value=selector_value,
+        other=selector_value,
+    )
+    @settings(max_examples=30)
+    def test_label_selector_satisfies_notin_requirement(self, key: str, value: str, other: str) -> None:
+        if value == other:
+            return
+        selector = f"{key}={value}"
+        requirement = f"{key} notin ({other})"
+        assert selector_contains(selector, requirement) is True
+
 
 class TestParseLabelSelectorEdgeCases:
     def test_empty_string(self) -> None:
