@@ -276,14 +276,30 @@ var _ = Describe("reconcileRBAC integration", func() {
 		err = r.reconcileRBAC(ctx, js)
 		Expect(err).NotTo(HaveOccurred())
 
-		// Verify RoleBindings did not change (no unnecessary writes)
+		// Verify no resources changed (no unnecessary API writes)
+		controllerSAAfter := &corev1.ServiceAccount{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-controller-manager", Namespace: "default"}, controllerSAAfter)).To(Succeed())
+		Expect(controllerSAAfter.ResourceVersion).To(Equal(controllerSA.ResourceVersion), "controller SA ResourceVersion should be unchanged")
+
+		routerSAAfter := &corev1.ServiceAccount{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-router-sa", Namespace: "default"}, routerSAAfter)).To(Succeed())
+		Expect(routerSAAfter.ResourceVersion).To(Equal(routerSA.ResourceVersion), "router SA ResourceVersion should be unchanged")
+
+		controllerRoleAfter := &rbacv1.Role{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-controller-role", Namespace: "default"}, controllerRoleAfter)).To(Succeed())
+		Expect(controllerRoleAfter.ResourceVersion).To(Equal(controllerRole.ResourceVersion), "controller Role ResourceVersion should be unchanged")
+
+		routerRoleAfter := &rbacv1.Role{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-router-role", Namespace: "default"}, routerRoleAfter)).To(Succeed())
+		Expect(routerRoleAfter.ResourceVersion).To(Equal(routerRole.ResourceVersion), "router Role ResourceVersion should be unchanged")
+
 		controllerRBAfter := &rbacv1.RoleBinding{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-controller-rolebinding", Namespace: "default"}, controllerRBAfter)).To(Succeed())
-		Expect(controllerRBAfter.ResourceVersion).To(Equal(controllerRB.ResourceVersion))
+		Expect(controllerRBAfter.ResourceVersion).To(Equal(controllerRB.ResourceVersion), "controller RoleBinding ResourceVersion should be unchanged")
 
 		routerRBAfter := &rbacv1.RoleBinding{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-integ-router-rolebinding", Namespace: "default"}, routerRBAfter)).To(Succeed())
-		Expect(routerRBAfter.ResourceVersion).To(Equal(routerRB.ResourceVersion))
+		Expect(routerRBAfter.ResourceVersion).To(Equal(routerRB.ResourceVersion), "router RoleBinding ResourceVersion should be unchanged")
 	})
 })
 
