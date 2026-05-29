@@ -23,7 +23,6 @@ MOUNT_POLL_TIMEOUT = 10
 
 @dataclass(kw_only=True)
 class SSHMountClient(CompositeClient):
-
     def cli(self) -> click.Command:
         @driver_click_command(self)
         @click.argument("mountpoint", type=click.Path())
@@ -101,11 +100,11 @@ class SSHMountClient(CompositeClient):
 
         if use_portforward:
             with TcpPortforwardAdapter(client=self.ssh.tcp) as (host, port):
-                self._run_sshfs(host, port, mountpoint, remote_path, extra_args,
-                                foreground=foreground, insecure=insecure)
+                self._run_sshfs(
+                    host, port, mountpoint, remote_path, extra_args, foreground=foreground, insecure=insecure
+                )
         else:
-            self._run_sshfs(host, port, mountpoint, remote_path, extra_args,
-                            foreground=foreground, insecure=insecure)
+            self._run_sshfs(host, port, mountpoint, remote_path, extra_args, foreground=foreground, insecure=insecure)
 
     def _run_sshfs(
         self,
@@ -123,7 +122,12 @@ class SSHMountClient(CompositeClient):
 
         try:
             sshfs_args = self._build_sshfs_args(
-                host, port, mountpoint, remote_path, identity_file, extra_args,
+                host,
+                port,
+                mountpoint,
+                remote_path,
+                identity_file,
+                extra_args,
                 insecure=insecure,
             )
             sshfs_args.append("-f")
@@ -165,7 +169,9 @@ class SSHMountClient(CompositeClient):
             proc.wait()
 
     def _start_sshfs_with_fallback(
-        self, sshfs_args: list[str], mountpoint: str,
+        self,
+        sshfs_args: list[str],
+        mountpoint: str,
     ) -> subprocess.Popen[bytes]:
         proc = subprocess.Popen(
             sshfs_args,
@@ -187,12 +193,8 @@ class SSHMountClient(CompositeClient):
                     sshfs_args = self._remove_allow_other(sshfs_args)
                     return self._start_sshfs_foreground(sshfs_args, mountpoint)
                 if proc.returncode != 0:
-                    raise click.ClickException(
-                        f"sshfs mount failed (exit code {proc.returncode}): {stderr}"
-                    )
-                raise click.ClickException(
-                    f"sshfs mount failed immediately (exit code {proc.returncode})"
-                )
+                    raise click.ClickException(f"sshfs mount failed (exit code {proc.returncode}): {stderr}")
+                raise click.ClickException(f"sshfs mount failed immediately (exit code {proc.returncode})")
 
             # Close stderr now that the startup check passed to avoid SIGPIPE
             if proc.stderr:
@@ -204,15 +206,15 @@ class SSHMountClient(CompositeClient):
                     return proc
                 time.sleep(MOUNT_POLL_INTERVAL)
 
-            raise click.ClickException(
-                f"sshfs started but {mountpoint} is not mounted after {MOUNT_POLL_TIMEOUT}s"
-            )
+            raise click.ClickException(f"sshfs started but {mountpoint} is not mounted after {MOUNT_POLL_TIMEOUT}s")
         except BaseException:
             self._terminate_proc(proc)
             raise
 
     def _start_sshfs_foreground(
-        self, sshfs_args: list[str], mountpoint: str,
+        self,
+        sshfs_args: list[str],
+        mountpoint: str,
     ) -> subprocess.Popen[bytes]:
         proc = subprocess.Popen(
             sshfs_args,
@@ -226,9 +228,7 @@ class SSHMountClient(CompositeClient):
             except subprocess.TimeoutExpired:
                 pass
             else:
-                raise click.ClickException(
-                    f"sshfs mount failed immediately (exit code {proc.returncode})"
-                )
+                raise click.ClickException(f"sshfs mount failed immediately (exit code {proc.returncode})")
 
             deadline = time.monotonic() + MOUNT_POLL_TIMEOUT
             while time.monotonic() < deadline:
@@ -236,9 +236,7 @@ class SSHMountClient(CompositeClient):
                     return proc
                 time.sleep(MOUNT_POLL_INTERVAL)
 
-            raise click.ClickException(
-                f"sshfs started but {mountpoint} is not mounted after {MOUNT_POLL_TIMEOUT}s"
-            )
+            raise click.ClickException(f"sshfs started but {mountpoint} is not mounted after {MOUNT_POLL_TIMEOUT}s")
         except BaseException:
             self._terminate_proc(proc)
             raise
@@ -380,7 +378,7 @@ class SSHMountClient(CompositeClient):
         fd = None
         temp_path = None
         try:
-            fd, temp_path = tempfile.mkstemp(suffix='_ssh_key')
+            fd, temp_path = tempfile.mkstemp(suffix="_ssh_key")
             os.fchmod(fd, 0o600)
             os.write(fd, ssh_identity.encode())
             os.close(fd)
@@ -426,8 +424,9 @@ class SSHMountClient(CompositeClient):
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT)
             if result.returncode != 0:
-                self.logger.debug("Force umount of %s returned %d: %s",
-                                  mountpoint, result.returncode, result.stderr.strip())
+                self.logger.debug(
+                    "Force umount of %s returned %d: %s", mountpoint, result.returncode, result.stderr.strip()
+                )
         except Exception as e:
             self.logger.debug("Force umount of %s failed: %s", mountpoint, e)
 
