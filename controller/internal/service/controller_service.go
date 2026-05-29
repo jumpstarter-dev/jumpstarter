@@ -85,20 +85,24 @@ type ControllerService struct {
 }
 
 type listenQueue struct {
-	ch        chan *pb.ListenResponse
-	done      chan struct{}
-	closeOnce sync.Once
+	ch        chan *pb.ListenResponse // buffered channel for router tokens
+	done      chan struct{}           // closed when this queue is superseded or the listener exits
+	closeOnce sync.Once               // prevents double-close panic on done
 }
 
 func (q *listenQueue) closeDone() {
 	q.closeOnce.Do(func() { close(q.done) })
 }
 
+// leaseLock is a reference-counted mutex for a single lease. It lives in the
+// leaseLocks sync.Map and is cleaned up when all goroutines release it.
 type leaseLock struct {
 	mu   sync.Mutex
-	refs int32
+	refs int32 // active users; cleaned up via CompareAndDelete when it hits 0
 }
 
+// acquireLeaseLock returns the per-lease mutex, creating one if needed.
+// The caller MUST call releaseLeaseLock when done.
 func (s *ControllerService) acquireLeaseLock(leaseName string) *sync.Mutex {
 	for {
 		v, loaded := s.leaseLocks.LoadOrStore(leaseName, &leaseLock{refs: 1})
@@ -108,6 +112,9 @@ func (s *ControllerService) acquireLeaseLock(leaseName string) *sync.Mutex {
 		}
 		newRefs := atomic.AddInt32(&ll.refs, 1)
 		if newRefs <= 1 {
+			// refs was 0 before our increment: a concurrent releaseLeaseLock
+			// is tearing this entry down. Back out and retry so we don't end
+			// up with a stale mutex that's no longer in the map.
 			atomic.AddInt32(&ll.refs, -1)
 			continue
 		}
@@ -115,6 +122,10 @@ func (s *ControllerService) acquireLeaseLock(leaseName string) *sync.Mutex {
 	}
 }
 
+// releaseLeaseLock decrements the reference count for a lease's lock. When the
+// last reference is released (refs hits 0), the entry is removed from the map
+// via CompareAndDelete, which is safe against a concurrent acquireLeaseLock
+// that may have already stored a new entry for the same key.
 func (s *ControllerService) releaseLeaseLock(leaseName string) {
 	v, ok := s.leaseLocks.Load(leaseName)
 	if !ok {
@@ -140,10 +151,19 @@ func (s *ControllerService) swapListenQueue(leaseName string, newQueue *listenQu
 	s.releaseLeaseLock(leaseName)
 }
 
-// sendToListener delivers a response to the active listener for a lease. The
-// per-lease lock guarantees that the queue loaded here cannot be superseded
-// between the load and the send, eliminating the TOCTOU race between Dial and
-// a reconnecting Listen.
+// sendToListener delivers a router token to the active listener for a lease.
+// Called by Dial() to pass the (endpoint, token) pair to the exporter's
+// Listen() goroutine so both sides can connect to the router.
+//
+// The per-lease mutex guarantees that the queue loaded here cannot be
+// superseded between the Load and the channel send, eliminating the TOCTOU
+// race where Dial loads a queue reference, a reconnecting Listen swaps in a
+// new queue, and Dial sends to the old (now dead) queue.
+//
+// The send is non-blocking: if the channel buffer is full, we return
+// ResourceExhausted immediately rather than blocking while holding the mutex
+// (which would prevent a reconnecting Listen from swapping the queue,
+// causing a deadlock chain).
 func (s *ControllerService) sendToListener(_ context.Context, leaseName string, response *pb.ListenResponse) error {
 	mu := s.acquireLeaseLock(leaseName)
 	defer s.releaseLeaseLock(leaseName)
@@ -154,11 +174,14 @@ func (s *ControllerService) sendToListener(_ context.Context, leaseName string, 
 		return status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
 	}
 	q := v.(*listenQueue)
+	// Reject if this queue was already superseded (done channel closed).
 	select {
 	case <-q.done:
 		return status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
 	default:
 	}
+	// Non-blocking send: avoids holding the mutex while waiting for the
+	// listener to drain the buffer.
 	select {
 	case q.ch <- response:
 		return nil
@@ -524,11 +547,15 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return err
 	}
 
+	// Each Listen() goroutine gets its own listenQueue with a fresh channel,
+	// so a reconnecting exporter never shares a channel with the old goroutine
+	// (which would cause tokens to be delivered to the wrong reader).
 	wrapper := &listenQueue{
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
 	listenMu := s.acquireLeaseLock(leaseName)
+	// Swap our queue in, signaling any previous listener to exit.
 	s.swapListenQueue(leaseName, wrapper)
 	defer func() {
 		listenMu.Lock()
@@ -542,6 +569,9 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		case <-ctx.Done():
 			return nil
 		case <-wrapper.done:
+			// We've been superseded by a reconnecting Listen. Drain any
+			// tokens already buffered in our channel so they still get
+			// delivered to the exporter before we exit.
 			for {
 				select {
 				case msg := <-wrapper.ch:
