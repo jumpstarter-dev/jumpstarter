@@ -7,6 +7,7 @@ from jumpstarter.testing.checks import (
     discover_example_files,
     find_inline_code_blocks,
     find_unused_examples,
+    find_unused_examples_in_docs,
 )
 
 
@@ -92,6 +93,48 @@ def test_find_unused_examples_empty_when_no_readme(tmp_path):
     examples.mkdir()
     _write_yaml(examples / "config.yaml", {"key": "value"})
     assert find_unused_examples(examples, tmp_path / "README.md") == []
+
+
+def test_find_unused_examples_in_docs_returns_empty_for_no_markdown_files(tmp_path):
+    examples = tmp_path / "examples"
+    examples.mkdir()
+    _write_yaml(examples / "config.yaml", {"key": "value"})
+    unused = find_unused_examples_in_docs(examples, [])
+    assert len(unused) == 1
+    assert unused[0].name == "config.yaml"
+
+
+def test_find_unused_examples_in_docs_finds_reference_across_multiple_files(tmp_path):
+    examples = tmp_path / "examples"
+    examples.mkdir()
+    _write_yaml(examples / "config.yaml", {"key": "value"})
+    _write_yaml(examples / "other.yaml", {"key": "value"})
+
+    doc1 = tmp_path / "doc1.md"
+    doc1.write_text("see examples/config.yaml for details\n", encoding="utf-8")
+    doc2 = tmp_path / "doc2.md"
+    doc2.write_text("see examples/other.yaml for details\n", encoding="utf-8")
+
+    unused = find_unused_examples_in_docs(examples, [doc1, doc2])
+    assert unused == []
+
+
+def test_find_unused_examples_in_docs_returns_unreferenced(tmp_path):
+    examples = tmp_path / "examples"
+    examples.mkdir()
+    _write_yaml(examples / "config.yaml", {"key": "value"})
+    _write_yaml(examples / "unused.yaml", {"key": "value"})
+
+    doc = tmp_path / "doc.md"
+    doc.write_text("see examples/config.yaml\n", encoding="utf-8")
+
+    unused = find_unused_examples_in_docs(examples, [doc])
+    assert len(unused) == 1
+    assert unused[0].name == "unused.yaml"
+
+
+def test_find_unused_examples_in_docs_returns_empty_for_missing_dir(tmp_path):
+    assert find_unused_examples_in_docs(tmp_path / "nonexistent", []) == []
 
 
 def test_find_inline_code_blocks_detects_yaml(tmp_path):
