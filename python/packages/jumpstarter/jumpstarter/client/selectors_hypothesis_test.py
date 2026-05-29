@@ -106,6 +106,13 @@ class TestSelectorContainsProperties:
         requirement = f"!{key}"
         assert selector_contains(selector, requirement) is False
 
+    @given(key=selector_key, value=selector_value)
+    @settings(max_examples=30)
+    def test_label_selector_satisfies_in_requirement(self, key: str, value: str) -> None:
+        selector = f"{key}={value}"
+        requirement = f"{key} in ({value})"
+        assert selector_contains(selector, requirement) is True
+
 
 class TestParseLabelSelectorEdgeCases:
     def test_empty_string(self) -> None:
