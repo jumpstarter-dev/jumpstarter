@@ -18,7 +18,7 @@ testpaths = ["jumpstarter_driver_shell"]
 
 
 [dependency-groups]
-dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
+dev = ["hypothesis>=6.0.0", "pytest-cov>=6.0.0", "pytest>=8.3.3"]
 
 
 [tool.hatch.metadata.hooks.vcs.urls]
