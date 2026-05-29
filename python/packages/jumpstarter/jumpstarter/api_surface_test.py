@@ -1,6 +1,7 @@
 import ast
 import importlib
 import pkgutil
+import types
 from pathlib import Path
 from types import ModuleType
 
@@ -117,7 +118,7 @@ def _non_local_names(mod: ModuleType, module_name: str) -> set[str]:
         if defining_module is None:
             if not callable(obj):
                 non_local.add(attr)
-        elif not defining_module.startswith(module_name):
+        elif defining_module != module_name and not defining_module.startswith(module_name + "."):
             non_local.add(attr)
     return non_local
 
@@ -263,3 +264,17 @@ class TestPackageSubmoduleDiscovery:
                 continue
             full_name = f"jumpstarter.config.{modname}"
             importlib.import_module(full_name)
+
+
+class TestNonLocalNamesFilter:
+    def test_prefix_match_does_not_over_match(self) -> None:
+        mod = types.ModuleType("fake")
+        local_func = types.FunctionType(compile("0", "", "eval"), {})
+        local_func.__module__ = "jumpstarter.common.utils"
+        foreign_func = types.FunctionType(compile("0", "", "eval"), {})
+        foreign_func.__module__ = "jumpstarter.commonx"
+        mod.local_func = local_func
+        mod.foreign_func = foreign_func
+        result = _non_local_names(mod, "jumpstarter.common")
+        assert "foreign_func" in result
+        assert "local_func" not in result
