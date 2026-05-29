@@ -5,6 +5,8 @@ import types
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 MODULES_WITH_ALL = {
     "jumpstarter.common": [
         "AsyncChannel",
@@ -255,22 +257,16 @@ class TestModulesWithAllDiscovery:
 
 
 class TestPackageSubmoduleDiscovery:
-    def test_jumpstarter_common_submodules_importable(self) -> None:
-        mod = _load_module("jumpstarter.common")
-        package_path = mod.__path__
+    @pytest.mark.parametrize("package_name", TRACKED_PACKAGES)
+    def test_submodules_importable(self, package_name: str) -> None:
+        mod = _load_module(package_name)
+        package_path = getattr(mod, "__path__", None)
+        if package_path is None:
+            return
         for _importer, modname, _ispkg in pkgutil.iter_modules(package_path):
             if modname.endswith("_test"):
                 continue
-            full_name = f"jumpstarter.common.{modname}"
-            importlib.import_module(full_name)
-
-    def test_jumpstarter_config_submodules_importable(self) -> None:
-        mod = _load_module("jumpstarter.config")
-        package_path = mod.__path__
-        for _importer, modname, _ispkg in pkgutil.iter_modules(package_path):
-            if modname.endswith("_test"):
-                continue
-            full_name = f"jumpstarter.config.{modname}"
+            full_name = f"{package_name}.{modname}"
             importlib.import_module(full_name)
 
 
