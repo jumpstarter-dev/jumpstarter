@@ -73,9 +73,7 @@ class TestPublicExportsMatchAll:
             actual_all = sorted(getattr(mod, "__all__", []))
             expected_sorted = sorted(expected_exports)
             assert actual_all == expected_sorted, (
-                f"{module_name}.__all__ mismatch.\n"
-                f"  Expected: {expected_sorted}\n"
-                f"  Actual:   {actual_all}"
+                f"{module_name}.__all__ mismatch.\n  Expected: {expected_sorted}\n  Actual:   {actual_all}"
             )
 
     def test_all_exports_are_resolvable(self) -> None:
@@ -92,8 +90,7 @@ class TestPublicExportsMatchAll:
             public_attrs = {
                 attr
                 for attr in dir(mod)
-                if not attr.startswith("_")
-                and not isinstance(getattr(mod, attr, None), ModuleType)
+                if not attr.startswith("_") and not isinstance(getattr(mod, attr, None), ModuleType)
             }
             leaks = public_attrs - declared - _non_local_names(mod, module_name) - allowed
             assert not leaks, f"{module_name} leaks undeclared public symbols: {sorted(leaks)}"
@@ -289,6 +286,12 @@ class TestCollectImportedNames:
         tree = ast.parse(source)
         usage = _collect_imported_names_from_tree(tree, "test.py")
         assert "jumpstarter.common.oci:parse_oci_registry" in usage
+
+    def test_assignment_aliased_import_not_tracked(self) -> None:
+        source = "import jumpstarter.common\nm = jumpstarter.common\nm.Metadata\n"
+        tree = ast.parse(source)
+        usage = _collect_imported_names_from_tree(tree, "test.py")
+        assert "jumpstarter.common:Metadata" not in usage
 
 
 class TestNonLocalNamesFilter:
