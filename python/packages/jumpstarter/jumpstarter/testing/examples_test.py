@@ -161,6 +161,13 @@ def test_validate_yaml_example_validates_all_matching_sections(tmp_path):
         validate_yaml_example(f)
 
 
+def test_validate_example_raises_on_unsupported_kind(tmp_path):
+    f = tmp_path / "script.sh"
+    f.write_text("echo hello\n")
+    with pytest.raises(ValueError, match="unsupported"):
+        validate_example(f, "bash")
+
+
 def test_instantiate_yaml_example_skips_on_missing_driver(tmp_path):
     driver = ExporterConfigV1Alpha1DriverInstance.model_validate(
         {"type": "nonexistent_driver_package.driver.Fake"}

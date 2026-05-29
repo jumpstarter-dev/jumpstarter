@@ -105,3 +105,5 @@ def validate_example(path: Path, kind: str) -> None:
         validate_yaml_example(path)
     elif kind == "python":
         validate_python_example(path)
+    else:
+        raise ValueError(f"{path.name}: unsupported example kind '{kind}', expected 'yaml' or 'python'")
