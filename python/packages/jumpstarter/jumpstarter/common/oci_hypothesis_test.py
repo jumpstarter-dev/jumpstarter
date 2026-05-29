@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
@@ -22,7 +22,6 @@ class TestOciCredentialsBothOrNeither:
         username=non_empty_stripped_text,
         password=non_empty_stripped_text,
     )
-    @settings(max_examples=50)
     def test_both_set_is_authenticated(self, username: str, password: str) -> None:
         creds = OciCredentials(username=username, password=password)
         assert creds.is_authenticated is True
@@ -36,13 +35,11 @@ class TestOciCredentialsBothOrNeither:
         assert creds.plain_password is None
 
     @given(username=non_empty_stripped_text)
-    @settings(max_examples=50)
     def test_only_username_raises(self, username: str) -> None:
         with pytest.raises(ValidationError):
             OciCredentials(username=username)
 
     @given(password=non_empty_stripped_text)
-    @settings(max_examples=50)
     def test_only_password_raises(self, password: str) -> None:
         with pytest.raises(ValidationError):
             OciCredentials(password=password)
@@ -56,7 +53,6 @@ class TestOciCredentialsWhitespaceNormalization:
             max_size=10,
         ),
     )
-    @settings(max_examples=30)
     def test_whitespace_only_username_becomes_none(self, padding: str) -> None:
         creds = OciCredentials(username=padding)
         assert creds.username is None
@@ -69,7 +65,6 @@ class TestOciCredentialsWhitespaceNormalization:
             max_size=10,
         ),
     )
-    @settings(max_examples=30)
     def test_whitespace_only_password_becomes_none(self, padding: str) -> None:
         creds = OciCredentials(password=padding)
         assert creds.plain_password is None
@@ -81,7 +76,6 @@ class TestOciCredentialsRoundtrip:
         username=non_empty_stripped_text,
         password=non_empty_stripped_text,
     )
-    @settings(max_examples=50)
     def test_roundtrip_through_dict(self, username: str, password: str) -> None:
         original = OciCredentials(username=username, password=password)
         dumped = original.model_dump()
@@ -93,7 +87,6 @@ class TestOciCredentialsRoundtrip:
         username=non_empty_stripped_text,
         password=non_empty_stripped_text,
     )
-    @settings(max_examples=50)
     def test_frozen_model_is_hashable(self, username: str, password: str) -> None:
         creds_a = OciCredentials(username=username, password=password)
         creds_b = OciCredentials(username=username, password=password)
@@ -108,25 +101,21 @@ tag: st.SearchStrategy[str] = st.from_regex(r"[a-zA-Z0-9._-]{1,20}", fullmatch=T
 
 class TestParseOciRegistry:
     @given(host=registry_host, img=image_name, t=tag)
-    @settings(max_examples=50)
     def test_explicit_registry_extracted(self, host: str, img: str, t: str) -> None:
         url = f"{host}/{img}:{t}"
         assert parse_oci_registry(url) == host
 
     @given(host=registry_host, img=image_name, t=tag)
-    @settings(max_examples=50)
     def test_oci_scheme_stripped(self, host: str, img: str, t: str) -> None:
         url = f"oci://{host}/{img}:{t}"
         assert parse_oci_registry(url) == host
 
     @given(host=registry_host, p=port, img=image_name)
-    @settings(max_examples=50)
     def test_registry_with_port_preserved(self, host: str, p: int, img: str) -> None:
         url = f"{host}:{p}/{img}"
         assert parse_oci_registry(url) == f"{host}:{p}"
 
     @given(host=registry_host, img=image_name)
-    @settings(max_examples=30)
     def test_idempotent_with_and_without_oci_prefix(self, host: str, img: str) -> None:
         plain = f"{host}/{img}"
         prefixed = f"oci://{host}/{img}"
