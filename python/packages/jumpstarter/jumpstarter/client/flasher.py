@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import warnings
 from abc import ABCMeta, abstractmethod
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from os import PathLike
@@ -26,7 +27,7 @@ PathBuf = str | PathLike
 class _AsyncIteratorStream(ObjectStream[bytes]):
     """Wraps an async iterator as an ObjectStream for resource_async."""
 
-    iterator: Any
+    iterator: AsyncGenerator[bytes, None]
     total: int | None = None
 
     async def receive(self) -> bytes:
@@ -163,7 +164,7 @@ class FlasherClientInterface(metaclass=ABCMeta):
         *,
         target: str | None = None,
         compression: Compression | None = None,
-    ):
+    ) -> Any:
         """Flash image to DUT"""
         ...
 
@@ -174,11 +175,11 @@ class FlasherClientInterface(metaclass=ABCMeta):
         *,
         target: str | None = None,
         compression: Compression | None = None,
-    ):
+    ) -> Any:
         """Dump image from DUT"""
         ...
 
-    def cli(self):
+    def cli(self) -> click.Group:
         @driver_click_group(self)
         def base():
             """Generic flasher interface"""
@@ -228,7 +229,7 @@ class FlasherClient(FlasherClientInterface, DriverClient):
         *,
         target: str | None,
         compression: Compression | None,
-    ):
+    ) -> Any:
         """Flash image to DUT"""
         local_path, url = _parse_path(image)
 
@@ -252,7 +253,7 @@ class FlasherClient(FlasherClientInterface, DriverClient):
         *,
         target: str | None = None,
         compression: Compression | None = None,
-    ):
+    ) -> Any:
         if isinstance(path, dict):
             if target is not None:
                 from jumpstarter.common.exceptions import ArgumentError
@@ -272,7 +273,7 @@ class FlasherClient(FlasherClientInterface, DriverClient):
         *,
         target: str | None = None,
         compression: Compression | None = None,
-    ):
+    ) -> Any:
         """Dump image from DUT"""
         local_path, url = _parse_path(path)
 
