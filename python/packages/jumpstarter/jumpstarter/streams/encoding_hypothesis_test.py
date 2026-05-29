@@ -11,7 +11,7 @@ if sys.version_info >= (3, 14):
 else:
     from backports import zstd
 
-from .encoding import COMPRESSION_SIGNATURES, Compression, detect_compression_from_signature
+from .encoding import COMPRESSION_SIGNATURES, Compression, create_decompressor, detect_compression_from_signature
 
 known_signatures = [sig.signature for sig in COMPRESSION_SIGNATURES]
 
@@ -63,23 +63,33 @@ class TestCompressionRealDataDetection:
         assert detect_compression_from_signature(compressed) == Compression.ZSTD
 
 
-class TestCompressionRoundtrip:
+class TestCreateDecompressorRoundtrip:
     @given(payload=st.binary(min_size=1, max_size=1000))
     @settings(max_examples=30)
-    def test_gzip_roundtrip(self, payload: bytes) -> None:
-        assert gzip.decompress(gzip.compress(payload)) == payload
+    def test_gzip_decompressor(self, payload: bytes) -> None:
+        compressed = gzip.compress(payload)
+        decompressor = create_decompressor(Compression.GZIP)
+        result = decompressor.decompress(compressed)
+        remaining = decompressor.flush()
+        assert result + remaining == payload
 
     @given(payload=st.binary(min_size=1, max_size=1000))
     @settings(max_examples=30)
-    def test_bz2_roundtrip(self, payload: bytes) -> None:
-        assert bz2.decompress(bz2.compress(payload)) == payload
+    def test_bz2_decompressor(self, payload: bytes) -> None:
+        compressed = bz2.compress(payload)
+        decompressor = create_decompressor(Compression.BZ2)
+        assert decompressor.decompress(compressed) == payload
 
     @given(payload=st.binary(min_size=1, max_size=1000))
     @settings(max_examples=30)
-    def test_xz_roundtrip(self, payload: bytes) -> None:
-        assert lzma.decompress(lzma.compress(payload, format=lzma.FORMAT_XZ)) == payload
+    def test_xz_decompressor(self, payload: bytes) -> None:
+        compressed = lzma.compress(payload, format=lzma.FORMAT_XZ)
+        decompressor = create_decompressor(Compression.XZ)
+        assert decompressor.decompress(compressed) == payload
 
     @given(payload=st.binary(min_size=1, max_size=1000))
     @settings(max_examples=30)
-    def test_zstd_roundtrip(self, payload: bytes) -> None:
-        assert zstd.decompress(zstd.compress(payload)) == payload
+    def test_zstd_decompressor(self, payload: bytes) -> None:
+        compressed = zstd.compress(payload)
+        decompressor = create_decompressor(Compression.ZSTD)
+        assert decompressor.decompress(compressed) == payload
