@@ -3,18 +3,9 @@ from uuid import UUID
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from .metadata import Metadata
+from jumpstarter.testing_strategies import label_key, label_value
 
-label_key: st.SearchStrategy[str] = st.text(
-    alphabet=st.characters(categories=("L", "N"), include_characters=[".", "/", "-", "_"]),
-    min_size=1,
-    max_size=63,
-)
-label_value: st.SearchStrategy[str] = st.text(
-    alphabet=st.characters(categories=("L", "N"), include_characters=[".", "-", "_"]),
-    min_size=0,
-    max_size=63,
-)
+from .metadata import Metadata
 
 
 class TestMetadataConstruction:
