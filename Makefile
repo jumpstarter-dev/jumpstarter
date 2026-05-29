@@ -30,6 +30,12 @@ help:
 	@echo "  make e2e-full   - Full setup + run (for CI or first time)"
 	@echo "  make e2e-clean  - Clean up e2e test environment (delete cluster, certs, etc.)"
 	@echo ""
+	@echo "Fuzz testing:"
+	@echo "  make fuzz                   - Run all fuzz tests for FUZZ_TIME (default 30m)"
+	@echo "  make fuzz-python            - Run Python hypothesis fuzz tests for FUZZ_TIME"
+	@echo "  make fuzz-go                - Run Go native fuzz tests for FUZZ_TIME"
+	@echo "  FUZZ_TIME=2h make fuzz      - Override total fuzz duration"
+	@echo ""
 	@echo "Per-project targets:"
 	@echo "  make build-<project>  - Build specific project"
 	@echo "  make test-<project>   - Test specific project"
@@ -158,6 +164,19 @@ e2e-clean:
 	@echo ""
 	@echo "Note: You may need to manually remove the dex entry from /etc/hosts:"
 	@echo "  sudo sed -i.bak '/dex.dex.svc.cluster.local/d' /etc/hosts"
+
+# Fuzz testing
+FUZZ_TIME ?= 30m
+
+.PHONY: fuzz fuzz-python fuzz-go
+fuzz:
+	@python3 scripts/fuzz.py --time $(FUZZ_TIME)
+
+fuzz-python:
+	@python3 scripts/fuzz.py --time $(FUZZ_TIME) --python-only
+
+fuzz-go:
+	@python3 scripts/fuzz.py --time $(FUZZ_TIME) --go-only
 
 # Backward compatibility alias
 .PHONY: test-e2e

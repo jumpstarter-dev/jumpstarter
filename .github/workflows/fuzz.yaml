@@ -1,0 +1,99 @@
+name: Fuzz Tests
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      fuzz_time:
+        description: "Fuzz duration per job (e.g. 30m, 2h, 6h)"
+        default: "30m"
+  pull_request:
+    paths:
+      - "python/**"
+      - "controller/**"
+      - "protocol/**"
+      - "scripts/fuzz.py"
+      - ".github/workflows/fuzz.yaml"
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    if: github.repository_owner == 'jumpstarter-dev'
+    runs-on: ubuntu-latest
+    outputs:
+      go_targets: ${{ steps.targets.outputs.go_targets }}
+      fuzz_time: ${{ steps.duration.outputs.time }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: targets
+        run: echo "go_targets=$(python3 scripts/fuzz.py --list-go-targets)" >> "$GITHUB_OUTPUT"
+      - id: duration
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "time=6h" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "time=${{ inputs.fuzz_time }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "time=5m" >> "$GITHUB_OUTPUT"
+          fi
+
+  fuzz-python:
+    needs: matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 370
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Fuzz Python
+        run: python3 scripts/fuzz.py --time ${{ needs.matrix.outputs.fuzz_time }} --python-only
+
+      - name: Upload Hypothesis examples
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hypothesis-examples
+          path: python/.hypothesis/
+          if-no-files-found: ignore
+
+  fuzz-go:
+    needs: matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 370
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(needs.matrix.outputs.go_targets) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: controller/go.mod
+          cache-dependency-path: controller/go.sum
+
+      - name: Restore Go fuzz cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/go-build/fuzz
+          key: go-fuzz-${{ matrix.target.name }}-${{ runner.os }}-${{ hashFiles('controller/**/*_fuzz_test.go') }}
+          restore-keys: |
+            go-fuzz-${{ matrix.target.name }}-${{ runner.os }}-
+
+      - name: Fuzz ${{ matrix.target.name }}
+        run: python3 scripts/fuzz.py --time ${{ needs.matrix.outputs.fuzz_time }} --go-target ${{ matrix.target.name }}
+
+      - name: Upload crash reproducers
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-crash-${{ matrix.target.name }}
+          path: controller/**/testdata/fuzz/${{ matrix.target.name }}/
+          if-no-files-found: ignore

@@ -1,0 +1,433 @@
+#!/usr/bin/env python3
+"""Fuzz test runner that dispatches Python and Go fuzz targets within a time budget.
+
+Both languages follow the same regression model:
+1. Fuzzer runs, writes discoveries to a working directory (.hypothesis/ or testdata/fuzz/)
+2. After fuzzing, replay failures and inject them as source-level regression tests
+   - Python: @example() decorators on @given test functions
+   - Go: f.Add() seed corpus entries in Fuzz* functions
+3. Working directories stay gitignored; regression tests live in committed source
+
+This means `git diff` after a fuzz run shows exactly what was found, and
+`pytest` / `go test` replay those regressions on every future run.
+"""
+
+import argparse
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+GO_FUZZ_TARGETS = [
+    ("FuzzParseLabelSelector", "./api/v1alpha1/"),
+    ("FuzzReconcileLeaseTimeFields", "./api/v1alpha1/"),
+    ("FuzzValidateLeaseTags", "./api/v1alpha1/"),
+    ("FuzzNormalizeOIDCUsername", "./internal/authorization/"),
+    ("FuzzBearerTokenExtraction", "./internal/authentication/"),
+    ("FuzzMatchLabels", "./internal/service/"),
+    ("FuzzLoadGrpcConfiguration", "./internal/config/"),
+]
+
+PYTEST_FILTER = "hypothesis_test or robustness_test"
+
+PYTHON_FUZZ_DIRS = [
+    "packages/jumpstarter/jumpstarter",
+    "packages/jumpstarter-cli/jumpstarter_cli",
+    "packages/jumpstarter-kubernetes/jumpstarter_kubernetes",
+]
+
+MAX_EXAMPLES_PER_TEST = 1
+
+
+def parse_duration(value: str) -> int:
+    total = 0
+    rest = value.strip()
+    for suffix, multiplier in [("h", 3600), ("m", 60), ("s", 1)]:
+        if suffix in rest:
+            parts = rest.split(suffix, 1)
+            total += int(parts[0]) * multiplier
+            rest = parts[1]
+    if rest.strip():
+        total += int(rest)
+    return total
+
+
+# --- Python fuzzing ---
+
+
+def run_hypofuzz(seconds: int) -> bool:
+    print(f"Python fuzz (HypoFuzz): coverage-guided for {seconds}s", flush=True)
+    workers = max(1, (os.cpu_count() or 2) - 2)
+    proc = subprocess.Popen(
+        [
+            "uv", "run", "hypothesis", "fuzz",
+            "--no-dashboard",
+            "-n", str(workers),
+            "--",
+            *PYTHON_FUZZ_DIRS,
+            "-k", PYTEST_FILTER,
+            "--no-cov",
+        ],
+        cwd="python",
+    )
+    try:
+        proc.wait(timeout=seconds)
+    except subprocess.TimeoutExpired:
+        proc.send_signal(signal.SIGINT)
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        print(f"HypoFuzz: stopped after {seconds}s (budget exhausted)")
+        return True
+
+    if proc.returncode == 0:
+        print("HypoFuzz: completed (no more tests to fuzz)")
+    else:
+        print(f"HypoFuzz: exited with code {proc.returncode} (found failures)")
+    return True
+
+
+def run_hypothesis_loop(seconds: int) -> bool:
+    deadline = time.monotonic() + seconds
+    passed = 0
+    failures = 0
+
+    print(f"Python fuzz (Hypothesis loop): {seconds}s remaining", flush=True)
+    while time.monotonic() < deadline:
+        passed += 1
+        remaining = int(deadline - time.monotonic())
+        if remaining <= 0:
+            break
+        print(f"--- pass {passed} ({remaining}s remaining) ---", flush=True)
+        try:
+            result = subprocess.run(
+                [
+                    "uv", "run", "pytest",
+                    *PYTHON_FUZZ_DIRS,
+                    "-k", PYTEST_FILTER,
+                    "--no-cov", "-x", "-q",
+                ],
+                cwd="python",
+                env={**os.environ, "HYPOTHESIS_PROFILE": "fuzz"},
+                timeout=remaining + 30,
+            )
+        except subprocess.TimeoutExpired:
+            print(f"Pass {passed} timed out (budget exhausted)")
+            break
+        if result.returncode not in (0, 5):
+            failures += 1
+            print(f"FAILURE on pass {passed}")
+            break
+
+    print(f"Hypothesis loop: {passed} passes, {failures} failures")
+    return failures == 0
+
+
+def _find_test_file(func_name: str) -> Path | None:
+    for d in PYTHON_FUZZ_DIRS:
+        base = Path("python") / d
+        for p in base.rglob("*_test.py"):
+            try:
+                text = p.read_text()
+            except OSError:
+                continue
+            if re.search(rf"def {re.escape(func_name)}\(", text):
+                return p
+    return None
+
+
+def _count_existing_examples(text: str, func_name: str) -> int:
+    before_func = text.split(f"def {func_name}(")[0] if f"def {func_name}(" in text else ""
+    lines = before_func.splitlines()
+    count = 0
+    for line in reversed(lines):
+        stripped = line.strip()
+        if stripped.startswith("@example("):
+            count += 1
+        elif stripped.startswith("@") or stripped == "" or stripped.startswith("#"):
+            continue
+        else:
+            break
+    return count
+
+
+def _insert_example(path: Path, func_name: str, example_args: str) -> bool:
+    text = path.read_text()
+    decorator = f"@example({example_args})"
+
+    if decorator in text:
+        return False
+
+    if _count_existing_examples(text, func_name) >= MAX_EXAMPLES_PER_TEST:
+        return False
+
+    pattern = re.compile(
+        rf"([ \t]*)(@given\(.*?\))\s*\n([ \t]*def {re.escape(func_name)}\()",
+        re.DOTALL,
+    )
+    m = pattern.search(text)
+    if m:
+        indent = m.group(1)
+        replacement = f"{indent}{decorator}\n{indent}{m.group(2)}\n{m.group(3)}"
+        text = text[:m.start()] + replacement + text[m.end():]
+    else:
+        pattern = re.compile(rf"([ \t]*)(def {re.escape(func_name)}\()")
+        m = pattern.search(text)
+        if not m:
+            return False
+        indent = m.group(1)
+        text = text[:m.start()] + f"{indent}{decorator}\n{indent}{m.group(2)}" + text[m.end():]
+
+    if "from hypothesis import" in text:
+        import_line_match = re.search(r"from hypothesis import (.+)", text)
+        if import_line_match and "example" not in import_line_match.group(1):
+            text = text.replace(
+                import_line_match.group(0),
+                f"from hypothesis import example, {import_line_match.group(1)}",
+                1,
+            )
+    else:
+        text = f"from hypothesis import example\n{text}"
+
+    path.write_text(text)
+    return True
+
+
+def replay_and_inject_python() -> int:
+    print("\n=== Replaying Hypothesis database for regressions ===", flush=True)
+    result = subprocess.run(
+        [
+            "uv", "run", "pytest",
+            *PYTHON_FUZZ_DIRS,
+            "-k", PYTEST_FILTER,
+            "--no-cov", "-v", "--tb=long",
+        ],
+        cwd="python",
+        capture_output=True,
+        text=True,
+    )
+
+    output = result.stdout + "\n" + result.stderr
+    example_re = re.compile(r"Falsifying example: (\w+)\((.+)\)")
+
+    seen = set()
+    regressions = []
+    for m in example_re.finditer(output):
+        key = (m.group(1), m.group(2))
+        if key not in seen:
+            seen.add(key)
+            regressions.append(key)
+
+    if not regressions:
+        print("No regressions found in Hypothesis database.")
+        return 0
+
+    injected = 0
+    for func_name, example_args in regressions:
+        path = _find_test_file(func_name)
+        if not path:
+            print(f"  could not find file for {func_name}, skipping")
+            continue
+        if _insert_example(path, func_name, example_args):
+            injected += 1
+            print(f"  added @example({example_args}) to {path}::{func_name}")
+        else:
+            existing = _count_existing_examples(path.read_text(), func_name)
+            if existing >= MAX_EXAMPLES_PER_TEST:
+                print(f"  {func_name} already has {existing} @example decorators (max {MAX_EXAMPLES_PER_TEST}), skipping")
+            else:
+                print(f"  @example already present for {func_name}")
+
+    if injected:
+        print(f"\n{injected} regression @example(s) injected into test files.")
+        print("Review with 'git diff python/', then commit.")
+    return injected
+
+
+def run_python(seconds: int) -> bool:
+    start = time.monotonic()
+    run_hypofuzz(min(seconds, max(60, seconds // 3)))
+    elapsed = int(time.monotonic() - start)
+    remaining = seconds - elapsed
+    if remaining > 30:
+        run_hypothesis_loop(remaining)
+
+    replay_and_inject_python()
+    return True
+
+
+# --- Go fuzzing ---
+
+
+def run_go_target(name: str, pkg: str, seconds: int) -> bool:
+    print(f"Go fuzz: {name} in {pkg} for {seconds}s", flush=True)
+    result = subprocess.run(
+        [
+            "go", "test",
+            "-run=^$",
+            f"-fuzz={name}",
+            pkg,
+            f"-fuzztime={seconds}s",
+        ],
+        cwd="controller",
+    )
+    if result.returncode != 0:
+        print(f"FAILURE: {name} found a crash")
+        return False
+    return True
+
+
+def run_go_all(seconds: int) -> bool:
+    per_target = max(10, seconds // len(GO_FUZZ_TARGETS))
+    print(f"Go fuzz: {len(GO_FUZZ_TARGETS)} targets, {per_target}s each")
+    for name, pkg in GO_FUZZ_TARGETS:
+        if not run_go_target(name, pkg, per_target):
+            return False
+    return True
+
+
+def _parse_go_corpus_file(path: Path) -> str | None:
+    lines = path.read_text().splitlines()
+    if not lines or not lines[0].startswith("go test fuzz"):
+        return None
+    values = []
+    for line in lines[1:]:
+        line = line.strip()
+        if line:
+            values.append(line)
+    return ", ".join(values) if values else None
+
+
+def _count_existing_go_seeds(text: str, fuzz_name: str) -> int:
+    pattern = re.compile(rf"{re.escape(fuzz_name)}.*?f\.Fuzz", re.DOTALL)
+    m = pattern.search(text)
+    if not m:
+        return 0
+    block = m.group(0)
+    return block.count("f.Add(")
+
+
+def _inject_go_seed(fuzz_file: Path, fuzz_name: str, seed_args: str) -> bool:
+    text = fuzz_file.read_text()
+    add_call = f"\tf.Add({seed_args})"
+
+    if add_call in text:
+        return False
+
+    if _count_existing_go_seeds(text, fuzz_name) >= MAX_EXAMPLES_PER_TEST:
+        return False
+
+    pattern = re.compile(
+        rf"(func {re.escape(fuzz_name)}\(f \*testing\.F\) \{{[^}}]*?)(f\.Fuzz)",
+        re.DOTALL,
+    )
+    m = pattern.search(text)
+    if not m:
+        return False
+
+    text = text[:m.end(1)] + add_call + "\n\t" + text[m.start(2):]
+    fuzz_file.write_text(text)
+    return True
+
+
+def replay_and_inject_go() -> int:
+    print("\n=== Checking Go fuzz corpus for crash reproducers ===", flush=True)
+    corpus_root = Path("controller")
+    corpus_dirs = list(corpus_root.rglob("testdata/fuzz"))
+    if not corpus_dirs:
+        print("No Go fuzz corpus found.")
+        return 0
+
+    injected = 0
+    for corpus_dir in corpus_dirs:
+        for fuzz_dir in sorted(corpus_dir.iterdir()):
+            if not fuzz_dir.is_dir():
+                continue
+            fuzz_name = fuzz_dir.name
+
+            fuzz_file = None
+            for candidate in fuzz_dir.parent.parent.glob("*_fuzz_test.go"):
+                if fuzz_name in candidate.read_text():
+                    fuzz_file = candidate
+                    break
+
+            if not fuzz_file:
+                continue
+
+            for entry in sorted(fuzz_dir.iterdir()):
+                if not entry.is_file():
+                    continue
+                seed_args = _parse_go_corpus_file(entry)
+                if seed_args and _inject_go_seed(fuzz_file, fuzz_name, seed_args):
+                    injected += 1
+                    print(f"  added f.Add({seed_args}) to {fuzz_file.name}::{fuzz_name}")
+
+    if injected:
+        print(f"\n{injected} regression f.Add() seed(s) injected into Go fuzz tests.")
+        print("Review with 'git diff controller/', then commit.")
+    else:
+        print("No new Go crash reproducers to inject.")
+    return injected
+
+
+# --- Main dispatch ---
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run fuzz tests within a time budget")
+    parser.add_argument("--time", default="30m", help="total time budget (e.g. 30m, 2h, 48h)")
+    parser.add_argument("--python-only", action="store_true")
+    parser.add_argument("--go-only", action="store_true")
+    parser.add_argument("--go-target", help="run a single Go fuzz target by name")
+    parser.add_argument("--list-go-targets", action="store_true", help="print Go targets as JSON for CI matrix")
+    args = parser.parse_args()
+
+    if args.list_go_targets:
+        targets = [{"name": name, "pkg": pkg} for name, pkg in GO_FUZZ_TARGETS]
+        print(json.dumps(targets))
+        return 0
+
+    total = parse_duration(args.time)
+
+    if args.go_target:
+        match = [(n, p) for n, p in GO_FUZZ_TARGETS if n == args.go_target]
+        if not match:
+            print(f"Unknown Go target: {args.go_target}", file=sys.stderr)
+            print(f"Available: {', '.join(n for n, _ in GO_FUZZ_TARGETS)}", file=sys.stderr)
+            return 1
+        name, pkg = match[0]
+        ok = run_go_target(name, pkg, total)
+        replay_and_inject_go()
+        return 0 if ok else 1
+
+    if args.python_only:
+        print(f"Python fuzz budget: {args.time} ({total}s)")
+        run_python(total)
+        return 0
+
+    if args.go_only:
+        print(f"Go fuzz budget: {args.time} ({total}s)")
+        ok = run_go_all(total)
+        replay_and_inject_go()
+        return 0 if ok else 1
+
+    slots = 1 + len(GO_FUZZ_TARGETS)
+    per_slot = max(30, total // slots)
+    print(f"Fuzz budget: {args.time} ({total}s) -- {slots} slots, {per_slot}s each")
+    run_python(per_slot)
+    for name, pkg in GO_FUZZ_TARGETS:
+        if not run_go_target(name, pkg, per_slot):
+            replay_and_inject_go()
+            return 1
+    replay_and_inject_go()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

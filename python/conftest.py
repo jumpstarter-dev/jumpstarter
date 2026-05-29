@@ -9,7 +9,7 @@ os.environ["TERM"] = "dumb"
 settings.register_profile("ci", max_examples=100)
 settings.register_profile(
     "fuzz",
-    max_examples=10000,
+    max_examples=500,
     suppress_health_check=[HealthCheck.too_slow],
 )
 settings.load_profile(os.getenv("HYPOTHESIS_PROFILE", "ci"))

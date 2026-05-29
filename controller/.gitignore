@@ -28,3 +28,6 @@ go.work
 *~
 
 goreleaser/
+
+# Fuzz corpus (regressions are injected as f.Add() seeds in source)
+**/testdata/fuzz/
