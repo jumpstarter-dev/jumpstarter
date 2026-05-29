@@ -26,6 +26,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/exp/maps"
@@ -82,6 +83,113 @@ type ControllerService struct {
 	LeasePolicy   *config.LeasePolicy
 	Signer        *oidc.Signer
 	listenQueues  sync.Map
+	leaseLocks    sync.Map
+}
+
+type listenQueue struct {
+	ch        chan *pb.ListenResponse // buffered channel for router tokens
+	done      chan struct{}           // closed when this queue is superseded or the listener exits
+	closeOnce sync.Once               // prevents double-close panic on done
+}
+
+func (q *listenQueue) closeDone() {
+	q.closeOnce.Do(func() { close(q.done) })
+}
+
+// leaseLock is a reference-counted mutex for a single lease. It lives in the
+// leaseLocks sync.Map and is cleaned up when all goroutines release it.
+type leaseLock struct {
+	mu   sync.Mutex
+	refs int32 // active users; cleaned up via CompareAndDelete when it hits 0
+}
+
+// acquireLeaseLock returns the per-lease mutex, creating one if needed.
+// The caller MUST call releaseLeaseLock when done.
+func (s *ControllerService) acquireLeaseLock(leaseName string) *sync.Mutex {
+	for {
+		v, loaded := s.leaseLocks.LoadOrStore(leaseName, &leaseLock{refs: 1})
+		ll := v.(*leaseLock)
+		if !loaded {
+			return &ll.mu
+		}
+		newRefs := atomic.AddInt32(&ll.refs, 1)
+		if newRefs <= 1 {
+			// refs was 0 before our increment: a concurrent releaseLeaseLock
+			// is tearing this entry down. Back out and retry so we don't end
+			// up with a stale mutex that's no longer in the map.
+			atomic.AddInt32(&ll.refs, -1)
+			continue
+		}
+		return &ll.mu
+	}
+}
+
+// releaseLeaseLock decrements the reference count for a lease's lock. When the
+// last reference is released (refs hits 0), the entry is removed from the map
+// via CompareAndDelete, which is safe against a concurrent acquireLeaseLock
+// that may have already stored a new entry for the same key.
+func (s *ControllerService) releaseLeaseLock(leaseName string) {
+	v, ok := s.leaseLocks.Load(leaseName)
+	if !ok {
+		return
+	}
+	ll := v.(*leaseLock)
+	if atomic.AddInt32(&ll.refs, -1) == 0 {
+		s.leaseLocks.CompareAndDelete(leaseName, ll)
+	}
+}
+
+// swapListenQueue atomically replaces the listen queue for a lease and signals
+// the previous queue to stop. The per-lease lock serializes this with
+// sendToListener so that Dial never sends a token to a superseded queue.
+func (s *ControllerService) swapListenQueue(leaseName string, newQueue *listenQueue) {
+	mu := s.acquireLeaseLock(leaseName)
+	mu.Lock()
+	old, loaded := s.listenQueues.Swap(leaseName, newQueue)
+	if loaded {
+		old.(*listenQueue).closeDone()
+	}
+	mu.Unlock()
+	s.releaseLeaseLock(leaseName)
+}
+
+// sendToListener delivers a router token to the active listener for a lease.
+// Called by Dial() to pass the (endpoint, token) pair to the exporter's
+// Listen() goroutine so both sides can connect to the router.
+//
+// The per-lease mutex guarantees that the queue loaded here cannot be
+// superseded between the Load and the channel send, eliminating the TOCTOU
+// race where Dial loads a queue reference, a reconnecting Listen swaps in a
+// new queue, and Dial sends to the old (now dead) queue.
+//
+// The send is non-blocking: if the channel buffer is full, we return
+// ResourceExhausted immediately rather than blocking while holding the mutex
+// (which would prevent a reconnecting Listen from swapping the queue,
+// causing a deadlock chain).
+func (s *ControllerService) sendToListener(_ context.Context, leaseName string, response *pb.ListenResponse) error {
+	mu := s.acquireLeaseLock(leaseName)
+	defer s.releaseLeaseLock(leaseName)
+	mu.Lock()
+	defer mu.Unlock()
+	v, ok := s.listenQueues.Load(leaseName)
+	if !ok {
+		return status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
+	}
+	q := v.(*listenQueue)
+	// Reject if this queue was already superseded (done channel closed).
+	select {
+	case <-q.done:
+		return status.Errorf(codes.Unavailable, "exporter is not listening on lease %s", leaseName)
+	default:
+	}
+	// Non-blocking send: avoids holding the mutex while waiting for the
+	// listener to drain the buffer.
+	select {
+	case q.ch <- response:
+		return nil
+	default:
+		return status.Errorf(codes.ResourceExhausted, "listener buffer full on lease %s", leaseName)
+	}
 }
 
 const defaultMaxTags int32 = 10
@@ -450,12 +558,42 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return err
 	}
 
-	queue, _ := s.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
+	// Each Listen() goroutine gets its own listenQueue with a fresh channel,
+	// so a reconnecting exporter never shares a channel with the old goroutine
+	// (which would cause tokens to be delivered to the wrong reader).
+	wrapper := &listenQueue{
+		ch:   make(chan *pb.ListenResponse, 8),
+		done: make(chan struct{}),
+	}
+	listenMu := s.acquireLeaseLock(leaseName)
+	// Swap our queue in, signaling any previous listener to exit.
+	s.swapListenQueue(leaseName, wrapper)
+	defer func() {
+		listenMu.Lock()
+		wrapper.closeDone()
+		listenMu.Unlock()
+		s.listenQueues.CompareAndDelete(leaseName, wrapper)
+		s.releaseLeaseLock(leaseName)
+	}()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case msg := <-queue.(chan *pb.ListenResponse):
+		case <-wrapper.done:
+			// We've been superseded by a reconnecting Listen. Drain any
+			// tokens already buffered in our channel so they still get
+			// delivered to the exporter before we exit.
+			for {
+				select {
+				case msg := <-wrapper.ch:
+					if err := stream.Send(msg); err != nil {
+						return err
+					}
+				default:
+					return nil
+				}
+			}
+		case msg := <-wrapper.ch:
 			if err := stream.Send(msg); err != nil {
 				return err
 			}
@@ -743,11 +881,8 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		RouterToken:    token,
 	}
 
-	queue, _ := s.listenQueues.LoadOrStore(leaseName, make(chan *pb.ListenResponse, 8))
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case queue.(chan *pb.ListenResponse) <- response:
+	if err := s.sendToListener(ctx, leaseName, response); err != nil {
+		return nil, err
 	}
 
 	logger.Info("Client dial assigned stream", "stream", stream)
