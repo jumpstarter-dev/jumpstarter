@@ -388,6 +388,10 @@ spec:
     image: %s
     imagePullPolicy: IfNotPresent
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
     grpc:
       endpoints:
         - address: grpc.%s:8082
@@ -399,7 +403,7 @@ spec:
         - address: login.%s
           nodeport:
             enabled: true
-            port: 30070 # send this to a higher nodeport to avoid collision with growing routers 
+            port: 30070 # send this to a higher nodeport to avoid collision with growing routers
   routers:
     image: %s
     imagePullPolicy: IfNotPresent
@@ -921,6 +925,10 @@ spec:
     image: %s
     imagePullPolicy: IfNotPresent
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
     grpc:
       endpoints:
         - address: grpc.%s:8082
@@ -939,6 +947,10 @@ spec:
     image: %s
     imagePullPolicy: IfNotPresent
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
     grpc:
       endpoints:
         - address: router.%s:8083
@@ -1085,6 +1097,10 @@ spec:
     image: %s
     imagePullPolicy: IfNotPresent
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
     grpc:
       endpoints:
         - address: grpc.%s:8082
@@ -1101,6 +1117,10 @@ spec:
     image: %s
     imagePullPolicy: IfNotPresent
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
     grpc:
       endpoints:
         - address: router.%s:8083
@@ -1182,6 +1202,10 @@ spec:
     image: %s
     imagePullPolicy: IfNotPresent
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
     grpc:
       endpoints:
         - address: grpc.%s:8082
@@ -1198,6 +1222,10 @@ spec:
     image: %s
     imagePullPolicy: IfNotPresent
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
     grpc:
       endpoints:
         - address: router.%s:8083
@@ -1282,6 +1310,10 @@ spec:
     image: %s
     imagePullPolicy: IfNotPresent
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
     grpc:
       endpoints:
         - address: grpc.%s:8082
@@ -1292,6 +1324,10 @@ spec:
     image: %s
     imagePullPolicy: IfNotPresent
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
     grpc:
       endpoints:
         - address: router.%s:8083
@@ -1393,6 +1429,10 @@ spec:
     image: %s
     imagePullPolicy: IfNotPresent
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
     grpc:
       endpoints:
         - address: grpc.%s:8082
@@ -1746,6 +1786,10 @@ spec:
     image: %s
     imagePullPolicy: IfNotPresent
     replicas: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 100Mi
     grpc:
       endpoints:
         - address: grpc.%s:8082

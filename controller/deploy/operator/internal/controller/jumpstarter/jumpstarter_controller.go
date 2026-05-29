@@ -32,6 +32,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -879,7 +880,7 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 								SuccessThreshold:    1,
 								FailureThreshold:    3,
 							},
-							Resources:                jumpstarter.Spec.Controller.Resources,
+							Resources:                defaultControllerResources(jumpstarter.Spec.Controller.Resources),
 							TerminationMessagePath:   "/dev/termination-log",
 							TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 							SecurityContext: &corev1.SecurityContext{
@@ -1039,7 +1040,7 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 									Protocol:      corev1.ProtocolTCP,
 								},
 							},
-							Resources:                jumpstarter.Spec.Routers.Resources,
+							Resources:                defaultRouterResources(jumpstarter.Spec.Routers.Resources),
 							TerminationMessagePath:   "/dev/termination-log",
 							TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 							SecurityContext: &corev1.SecurityContext{
@@ -1416,6 +1417,42 @@ func (r *JumpstarterReconciler) cleanupExcessRouterServices(ctx context.Context,
 	}
 
 	return nil
+}
+
+// defaultControllerResources returns the given resource requirements if they are
+// non-empty, otherwise it returns sensible defaults for the controller pod.
+func defaultControllerResources(spec corev1.ResourceRequirements) corev1.ResourceRequirements {
+	if len(spec.Requests) == 0 && len(spec.Limits) == 0 && len(spec.Claims) == 0 {
+		return corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("200m"),
+				corev1.ResourceMemory: resource.MustParse("512Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+		}
+	}
+	return spec
+}
+
+// defaultRouterResources returns the given resource requirements if they are
+// non-empty, otherwise it returns sensible defaults for a router pod.
+func defaultRouterResources(spec corev1.ResourceRequirements) corev1.ResourceRequirements {
+	if len(spec.Requests) == 0 && len(spec.Limits) == 0 && len(spec.Claims) == 0 {
+		return corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("256Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("512Mi"),
+			},
+		}
+	}
+	return spec
 }
 
 // SetupWithManager sets up the controller with the Manager.
