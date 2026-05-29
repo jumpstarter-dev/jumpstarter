@@ -14,9 +14,9 @@ import (
 
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	corev1 "k8s.io/api/core/v1"
-	apiserverinstall "k8s.io/apiserver/pkg/apis/apiserver/install"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	apiserverinstall "k8s.io/apiserver/pkg/apis/apiserver/install"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
