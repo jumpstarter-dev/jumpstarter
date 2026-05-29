@@ -148,12 +148,49 @@ def _collect_imported_names(scan_root: Path) -> dict[str, set[str]]:
             tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
         except SyntaxError:
             continue
+        direct_imports = _collect_direct_imports(tree)
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module:
                 for alias in node.names:
                     key = f"{node.module}:{alias.name}"
                     usage.setdefault(key, set()).add(str(py_file))
+            elif isinstance(node, ast.Attribute):
+                resolved = _resolve_attribute_chain(node)
+                if resolved is not None:
+                    root_name, attr_parts = resolved
+                    if root_name in direct_imports:
+                        module_name = direct_imports[root_name]
+                        dotted_suffix = ".".join(attr_parts[:-1])
+                        full_module = f"{module_name}.{dotted_suffix}" if dotted_suffix else module_name
+                        symbol = attr_parts[-1]
+                        key = f"{full_module}:{symbol}"
+                        usage.setdefault(key, set()).add(str(py_file))
     return usage
+
+
+def _collect_direct_imports(tree: ast.AST) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.asname:
+                    result[alias.asname] = alias.name
+                else:
+                    top_level = alias.name.split(".")[0]
+                    result[top_level] = top_level
+    return result
+
+
+def _resolve_attribute_chain(node: ast.Attribute) -> tuple[str, list[str]] | None:
+    attrs: list[str] = [node.attr]
+    current = node.value
+    while isinstance(current, ast.Attribute):
+        attrs.append(current.attr)
+        current = current.value
+    if isinstance(current, ast.Name):
+        attrs.reverse()
+        return current.id, attrs
+    return None
 
 
 def _packages_root() -> Path:
