@@ -1,3 +1,4 @@
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -109,3 +110,21 @@ class TestLabelSatisfiesExpressionRobustness:
             pass
         except Exception as exc:
             raise AssertionError(f"_label_satisfies_expression raised unexpected {type(exc).__name__}: {exc}") from exc
+
+
+class TestLabelSatisfiesExpressionNegative:
+    @given(
+        operator=st.text().filter(lambda s: s not in ("in", "notin", "exists", "!exists", "!=")),
+    )
+    def test_unknown_operator_raises_value_error(self, operator: str) -> None:
+        labels = {"key": "value"}
+        with pytest.raises(ValueError, match="unknown label selector operator"):
+            _label_satisfies_expression(labels, "key", operator, ["value"])
+
+    def test_binary_input_raises_type_error(self) -> None:
+        with pytest.raises(TypeError):
+            parse_label_selector(b"key=value")
+
+    def test_integer_input_raises_attribute_error(self) -> None:
+        with pytest.raises(AttributeError):
+            parse_label_selector(42)

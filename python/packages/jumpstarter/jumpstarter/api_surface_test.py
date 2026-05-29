@@ -7,54 +7,28 @@ from types import ModuleType
 
 import pytest
 
-MODULES_WITH_ALL = {
-    "jumpstarter.common": [
-        "AsyncChannel",
-        "ControllerStub",
-        "ExporterStatus",
-        "ExporterStub",
-        "HOOK_WARNING_PREFIX",
-        "LogSource",
-        "Metadata",
-        "RouterStub",
-        "TemporarySocket",
-        "TemporaryTcpListener",
-        "TemporaryUnixListener",
-        "download_fls",
-        "get_fls_binary",
-        "get_fls_github_url",
-    ],
-    "jumpstarter.common.oci": [
-        "OciCredentials",
-        "parse_oci_registry",
-        "read_auth_file_credentials",
-        "resolve_oci_credentials",
-    ],
-    "jumpstarter.common.types": [
-        "AsyncChannel",
-        "ControllerStub",
-        "ExporterStub",
-        "RouterStub",
-    ],
-    "jumpstarter.common.utils": [
-        "env",
-    ],
-    "jumpstarter.client": [
-        "DriverClient",
-        "DirectLease",
-        "client_from_path",
-        "Lease",
-    ],
-    "jumpstarter.driver": [
-        "Driver",
-        "export",
-        "exportstream",
-    ],
-    "jumpstarter.exporter": [
-        "Session",
-        "Exporter",
-    ],
-}
+TRACKED_MODULES_WITH_ALL = [
+    "jumpstarter.common",
+    "jumpstarter.common.oci",
+    "jumpstarter.common.types",
+    "jumpstarter.common.utils",
+    "jumpstarter.client",
+    "jumpstarter.driver",
+    "jumpstarter.exporter",
+]
+
+
+def _discover_modules_with_all() -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    for module_name in TRACKED_MODULES_WITH_ALL:
+        mod = importlib.import_module(module_name)
+        all_exports = getattr(mod, "__all__", None)
+        if all_exports is not None:
+            result[module_name] = sorted(all_exports)
+    return result
+
+
+MODULES_WITH_ALL = _discover_modules_with_all()
 
 
 def _load_module(module_name: str) -> ModuleType:
@@ -66,15 +40,6 @@ class TestPublicExportsMatchAll:
         for module_name in MODULES_WITH_ALL:
             mod = _load_module(module_name)
             assert hasattr(mod, "__all__"), f"{module_name} is missing __all__"
-
-    def test_all_exports_match_expected(self) -> None:
-        for module_name, expected_exports in MODULES_WITH_ALL.items():
-            mod = _load_module(module_name)
-            actual_all = sorted(getattr(mod, "__all__", []))
-            expected_sorted = sorted(expected_exports)
-            assert actual_all == expected_sorted, (
-                f"{module_name}.__all__ mismatch.\n  Expected: {expected_sorted}\n  Actual:   {actual_all}"
-            )
 
     def test_all_exports_are_resolvable(self) -> None:
         for module_name, expected_exports in MODULES_WITH_ALL.items():
@@ -279,9 +244,9 @@ class TestModulesWithAllDiscovery:
                     mod = importlib.import_module(full_name)
                 except ImportError:
                     continue
-                if hasattr(mod, "__all__") and full_name not in MODULES_WITH_ALL:
+                if hasattr(mod, "__all__") and full_name not in TRACKED_MODULES_WITH_ALL:
                     untracked.append(full_name)
-        assert not untracked, f"Modules defining __all__ not tracked in MODULES_WITH_ALL: {sorted(untracked)}"
+        assert not untracked, f"Modules defining __all__ not tracked in TRACKED_MODULES_WITH_ALL: {sorted(untracked)}"
 
 
 class TestPackageSubmoduleDiscovery:

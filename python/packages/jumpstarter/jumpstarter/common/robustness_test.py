@@ -1,5 +1,7 @@
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from pydantic import ValidationError
 
 from .enums import ExporterStatus, LogSource
 from .metadata import Metadata
@@ -122,4 +124,21 @@ class TestParseOciRegistryRobustness:
             raise AssertionError(f"parse_oci_registry raised unexpected {type(exc).__name__}: {exc}") from exc
 
 
-ALLOWED_PARSE_OCI_EXCEPTIONS = ()
+class TestOciCredentialsNegative:
+    @given(username=st.text(min_size=1).filter(lambda s: s.strip() != ""))
+    def test_only_username_raises_validation_error(self, username: str) -> None:
+        with pytest.raises(ValidationError):
+            OciCredentials(username=username)
+
+    @given(password=st.text(min_size=1).filter(lambda s: s.strip() != ""))
+    def test_only_password_raises_validation_error(self, password: str) -> None:
+        with pytest.raises(ValidationError):
+            OciCredentials(password=password)
+
+    def test_integer_username_raises_validation_error(self) -> None:
+        with pytest.raises(ValidationError):
+            OciCredentials(username=42, password="pass")
+
+    def test_integer_password_raises_validation_error(self) -> None:
+        with pytest.raises(ValidationError):
+            OciCredentials(username="user", password=42)
