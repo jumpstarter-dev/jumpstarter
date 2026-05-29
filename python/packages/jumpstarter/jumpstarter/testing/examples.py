@@ -42,6 +42,7 @@ def validate_yaml_example(path: Path) -> None:
         model_class.model_validate(data)
         return
 
+    validated_any = False
     for section_key, model_path in SECTION_TO_MODEL.items():
         if section_key in data:
             model_class = _resolve_model(model_path)
@@ -51,7 +52,10 @@ def validate_yaml_example(path: Path) -> None:
                     model_class.model_validate(entry)
             elif section_key == "hooks" and isinstance(section, dict):
                 model_class.model_validate(section)
-            return
+            validated_any = True
+
+    if validated_any:
+        return
 
     warnings.warn(
         f"{path.name}: no model validation performed, only YAML syntax was checked",

@@ -144,6 +144,23 @@ def test_validate_yaml_example_rejects_invalid_export_entry(tmp_path):
         validate_yaml_example(f)
 
 
+def test_validate_yaml_example_validates_all_matching_sections(tmp_path):
+    hook = HookConfigV1Alpha1(
+        before_lease=HookInstanceConfigV1Alpha1(script="echo hello"),
+    )
+    f = tmp_path / "combined.yaml"
+    f.write_text(
+        _yaml.dump(
+            {
+                "hooks": hook.model_dump(by_alias=True, exclude_none=True),
+                "export": {"dev": "not-a-dict"},
+            }
+        )
+    )
+    with pytest.raises(ValidationError):
+        validate_yaml_example(f)
+
+
 def test_instantiate_yaml_example_skips_on_missing_driver(tmp_path):
     driver = ExporterConfigV1Alpha1DriverInstance.model_validate(
         {"type": "nonexistent_driver_package.driver.Fake"}
