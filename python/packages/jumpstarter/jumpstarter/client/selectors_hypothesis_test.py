@@ -77,6 +77,36 @@ class TestSelectorContainsProperties:
         requirements_b = format_selector(disjoint_b)
         assert selector_contains(selector_a, requirements_b) is False
 
+    @given(key=selector_key, values=st.lists(selector_value, min_size=1, max_size=5))
+    @settings(max_examples=30)
+    def test_in_expression_reflexivity(self, key: str, values: list[str]) -> None:
+        expr = f"{key} in ({', '.join(values)})"
+        assert selector_contains(expr, expr) is True
+
+    @given(key=selector_key, values=st.lists(selector_value, min_size=1, max_size=5))
+    @settings(max_examples=30)
+    def test_notin_expression_reflexivity(self, key: str, values: list[str]) -> None:
+        expr = f"{key} notin ({', '.join(values)})"
+        assert selector_contains(expr, expr) is True
+
+    @given(key=selector_key)
+    @settings(max_examples=30)
+    def test_exists_expression_reflexivity(self, key: str) -> None:
+        assert selector_contains(key, key) is True
+
+    @given(key=selector_key)
+    @settings(max_examples=30)
+    def test_not_exists_expression_reflexivity(self, key: str) -> None:
+        expr = f"!{key}"
+        assert selector_contains(expr, expr) is True
+
+    @given(key=selector_key, value=selector_value)
+    @settings(max_examples=30)
+    def test_mismatched_operators_do_not_match(self, key: str, value: str) -> None:
+        selector = f"{key} in ({value})"
+        requirement = f"!{key}"
+        assert selector_contains(selector, requirement) is False
+
 
 class TestParseLabelSelectorEdgeCases:
     def test_empty_string(self) -> None:
