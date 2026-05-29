@@ -1,10 +1,9 @@
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from .selectors import extract_match_labels_filter, parse_label_selector, selector_contains
 from jumpstarter.testing_strategies import label_key as selector_key
 from jumpstarter.testing_strategies import label_value as selector_value
-
-from .selectors import extract_match_labels_filter, parse_label_selector, selector_contains
 
 
 def label_pairs_strategy(min_size: int = 1, max_size: int = 5) -> st.SearchStrategy[dict[str, str]]:

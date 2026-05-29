@@ -3,9 +3,8 @@ from uuid import UUID
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from jumpstarter.testing_strategies import label_key, label_value
-
 from .metadata import Metadata
+from jumpstarter.testing_strategies import label_key, label_value
 
 
 class TestMetadataConstruction:
