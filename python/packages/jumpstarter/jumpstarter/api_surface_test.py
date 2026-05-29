@@ -140,6 +140,28 @@ ZERO_USAGE_ALLOWLIST: set[str] = {
 }
 
 
+def _collect_imported_names_from_tree(tree: ast.AST, file_path: str) -> dict[str, set[str]]:
+    usage: dict[str, set[str]] = {}
+    direct_imports = _collect_direct_imports(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                key = f"{node.module}:{alias.name}"
+                usage.setdefault(key, set()).add(file_path)
+        elif isinstance(node, ast.Attribute):
+            resolved = _resolve_attribute_chain(node)
+            if resolved is not None:
+                root_name, attr_parts = resolved
+                if root_name in direct_imports:
+                    module_name = direct_imports[root_name]
+                    dotted_suffix = ".".join(attr_parts[:-1])
+                    full_module = f"{module_name}.{dotted_suffix}" if dotted_suffix else module_name
+                    symbol = attr_parts[-1]
+                    key = f"{full_module}:{symbol}"
+                    usage.setdefault(key, set()).add(file_path)
+    return usage
+
+
 def _collect_imported_names(scan_root: Path) -> dict[str, set[str]]:
     usage: dict[str, set[str]] = {}
     for py_file in scan_root.rglob("*.py"):
@@ -149,23 +171,9 @@ def _collect_imported_names(scan_root: Path) -> dict[str, set[str]]:
             tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
         except SyntaxError:
             continue
-        direct_imports = _collect_direct_imports(tree)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module:
-                for alias in node.names:
-                    key = f"{node.module}:{alias.name}"
-                    usage.setdefault(key, set()).add(str(py_file))
-            elif isinstance(node, ast.Attribute):
-                resolved = _resolve_attribute_chain(node)
-                if resolved is not None:
-                    root_name, attr_parts = resolved
-                    if root_name in direct_imports:
-                        module_name = direct_imports[root_name]
-                        dotted_suffix = ".".join(attr_parts[:-1])
-                        full_module = f"{module_name}.{dotted_suffix}" if dotted_suffix else module_name
-                        symbol = attr_parts[-1]
-                        key = f"{full_module}:{symbol}"
-                        usage.setdefault(key, set()).add(str(py_file))
+        file_usage = _collect_imported_names_from_tree(tree, str(py_file))
+        for key, files in file_usage.items():
+            usage.setdefault(key, set()).update(files)
     return usage
 
 
@@ -264,6 +272,27 @@ class TestPackageSubmoduleDiscovery:
                 continue
             full_name = f"jumpstarter.config.{modname}"
             importlib.import_module(full_name)
+
+
+class TestCollectImportedNames:
+    def test_dotted_import_attribute_access_resolves_correctly(self) -> None:
+        source = "import jumpstarter.common.oci\njumpstarter.common.oci.parse_oci_registry()\n"
+        tree = ast.parse(source)
+        scan_root = Path("/nonexistent")
+        usage = _collect_imported_names_from_tree(tree, str(scan_root / "test.py"))
+        assert "jumpstarter.common.oci:parse_oci_registry" in usage
+
+    def test_aliased_import_attribute_access_resolves_correctly(self) -> None:
+        source = "import jumpstarter.common.oci as oci\noci.parse_oci_registry()\n"
+        tree = ast.parse(source)
+        usage = _collect_imported_names_from_tree(tree, "test.py")
+        assert "jumpstarter.common.oci:parse_oci_registry" in usage
+
+    def test_from_import_records_usage(self) -> None:
+        source = "from jumpstarter.common.oci import parse_oci_registry\n"
+        tree = ast.parse(source)
+        usage = _collect_imported_names_from_tree(tree, "test.py")
+        assert "jumpstarter.common.oci:parse_oci_registry" in usage
 
 
 class TestNonLocalNamesFilter:
