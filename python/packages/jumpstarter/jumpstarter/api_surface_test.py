@@ -201,6 +201,36 @@ def _resolve_attribute_chain(node: ast.Attribute) -> tuple[str, list[str]] | Non
     return None
 
 
+def _collect_assignment_aliases(tree: ast.AST, tracked_modules: set[str]) -> set[str]:
+    direct_imports = _collect_direct_imports(tree)
+    aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        resolved = _resolve_dotted_name(node.value)
+        if resolved is None:
+            continue
+        parts = resolved.split(".")
+        root = parts[0]
+        if root in direct_imports:
+            full_name = direct_imports[root] + ("." + ".".join(parts[1:]) if len(parts) > 1 else "")
+        else:
+            full_name = resolved
+        if full_name in tracked_modules:
+            aliases.add(full_name)
+    return aliases
+
+
+def _resolve_dotted_name(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        prefix = _resolve_dotted_name(node.value)
+        if prefix is not None:
+            return f"{prefix}.{node.attr}"
+    return None
+
+
 def _packages_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent
 
@@ -293,6 +323,39 @@ class TestCollectImportedNames:
         tree = ast.parse(source)
         usage = _collect_imported_names_from_tree(tree, "test.py")
         assert "jumpstarter.common:Metadata" not in usage
+
+    def test_collect_assignment_aliases_detects_aliased_module(self) -> None:
+        source = "import jumpstarter.common\nm = jumpstarter.common\nm.Metadata\n"
+        tree = ast.parse(source)
+        tracked = {"jumpstarter.common"}
+        aliases = _collect_assignment_aliases(tree, tracked)
+        assert "jumpstarter.common" in aliases
+
+    def test_collect_assignment_aliases_ignores_untracked_module(self) -> None:
+        source = "import os\nm = os\nm.path\n"
+        tree = ast.parse(source)
+        tracked = {"jumpstarter.common"}
+        aliases = _collect_assignment_aliases(tree, tracked)
+        assert not aliases
+
+    def test_no_assignment_aliased_imports_in_codebase(self) -> None:
+        tracked_module_names = set(MODULES_WITH_ALL)
+        scan_root = _packages_root()
+        files_with_aliasing: list[str] = []
+        for py_file in scan_root.rglob("*.py"):
+            if py_file.name.endswith("_test.py"):
+                continue
+            try:
+                tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+            except SyntaxError:
+                continue
+            assigned_names = _collect_assignment_aliases(tree, tracked_module_names)
+            if assigned_names:
+                files_with_aliasing.append(f"{py_file}: {sorted(assigned_names)}")
+        assert not files_with_aliasing, (
+            f"Production files use assignment-based module aliasing that _collect_imported_names_from_tree "
+            f"cannot track: {files_with_aliasing}"
+        )
 
 
 class TestNonLocalNamesFilter:
