@@ -233,3 +233,187 @@ class TestCRDFilesExist:
                 doc = yaml.safe_load(fp)
             schema = doc["spec"]["versions"][0]["schema"]["openAPIV3Schema"]
             assert "spec" in schema["properties"], f"{crd_file.name} missing spec in properties"
+
+
+class TestNegativeLeaseCRDValidation:
+    SCHEMA = _load_crd_schema("jumpstarter.dev_leases.yaml")
+
+    def test_missing_required_selector_fails(self) -> None:
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {},
+            "spec": {
+                "clientRef": {"name": "test-client"},
+                "duration": "1h",
+            },
+        }
+        try:
+            _validate_against_schema(instance, self.SCHEMA)
+            raise AssertionError("Expected validation error for missing selector")
+        except jsonschema.ValidationError:
+            pass
+
+    def test_missing_required_client_ref_fails(self) -> None:
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {},
+            "spec": {
+                "selector": {"matchLabels": {"board": "rpi4"}},
+                "duration": "1h",
+            },
+        }
+        try:
+            _validate_against_schema(instance, self.SCHEMA)
+            raise AssertionError("Expected validation error for missing clientRef")
+        except jsonschema.ValidationError:
+            pass
+
+    @given(wrong_type=st.sampled_from([42, True, ["list"], None]))
+    def test_wrong_type_for_duration_fails(self, wrong_type: object) -> None:
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {},
+            "spec": {
+                "selector": {"matchLabels": {}},
+                "clientRef": {"name": "test-client"},
+                "duration": wrong_type,
+            },
+        }
+        try:
+            _validate_against_schema(instance, self.SCHEMA)
+            raise AssertionError("Expected validation error for wrong type")
+        except jsonschema.ValidationError:
+            pass
+
+    @given(wrong_type=st.sampled_from([42, "string", ["list"], None]))
+    def test_wrong_type_for_release_fails(self, wrong_type: object) -> None:
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {},
+            "spec": {
+                "selector": {"matchLabels": {}},
+                "clientRef": {"name": "test-client"},
+                "release": wrong_type,
+            },
+        }
+        try:
+            _validate_against_schema(instance, self.SCHEMA)
+            raise AssertionError("Expected validation error for wrong type")
+        except jsonschema.ValidationError:
+            pass
+
+    def test_empty_spec_fails(self) -> None:
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {},
+            "spec": {},
+        }
+        try:
+            _validate_against_schema(instance, self.SCHEMA)
+            raise AssertionError("Expected validation error for empty spec")
+        except jsonschema.ValidationError:
+            pass
+
+
+class TestNegativeLeaseStatusCRDValidation:
+    SCHEMA = _load_crd_schema("jumpstarter.dev_leases.yaml")
+
+    @given(wrong_type=st.sampled_from([42, "string", ["list"], None]))
+    def test_wrong_type_for_ended_fails(self, wrong_type: object) -> None:
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Lease",
+            "metadata": {},
+            "spec": {
+                "selector": {"matchLabels": {}},
+                "clientRef": {"name": "test-client"},
+            },
+            "status": {
+                "ended": wrong_type,
+            },
+        }
+        try:
+            _validate_against_schema(instance, self.SCHEMA)
+            raise AssertionError("Expected validation error for wrong ended type")
+        except jsonschema.ValidationError:
+            pass
+
+
+class TestNegativeClientCRDValidation:
+    SCHEMA = _load_crd_schema("jumpstarter.dev_clients.yaml")
+
+    @given(wrong_type=st.sampled_from([42, True, ["list"]]))
+    def test_wrong_type_for_username_fails(self, wrong_type: object) -> None:
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Client",
+            "metadata": {},
+            "spec": {"username": wrong_type},
+        }
+        try:
+            _validate_against_schema(instance, self.SCHEMA)
+            raise AssertionError("Expected validation error for wrong username type")
+        except jsonschema.ValidationError:
+            pass
+
+
+class TestNegativeExporterCRDValidation:
+    SCHEMA = _load_crd_schema("jumpstarter.dev_exporters.yaml")
+
+    @given(wrong_type=st.sampled_from([42, True, ["list"]]))
+    def test_wrong_type_for_username_fails(self, wrong_type: object) -> None:
+        instance = {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Exporter",
+            "metadata": {},
+            "spec": {"username": wrong_type},
+        }
+        try:
+            _validate_against_schema(instance, self.SCHEMA)
+            raise AssertionError("Expected validation error for wrong username type")
+        except jsonschema.ValidationError:
+            pass
+
+
+class TestJumpstarterCRDSchema:
+    SCHEMA = _load_crd_schema("operator.jumpstarter.dev_jumpstarters.yaml")
+
+    @given(
+        base_domain=st.from_regex(r"[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?", fullmatch=True).filter(lambda s: len(s) <= 63),
+    )
+    def test_valid_jumpstarter_validates(self, base_domain: str) -> None:
+        instance = {
+            "apiVersion": "operator.jumpstarter.dev/v1alpha1",
+            "kind": "Jumpstarter",
+            "metadata": {},
+            "spec": {"baseDomain": base_domain},
+        }
+        _validate_against_schema(instance, self.SCHEMA)
+
+    def test_empty_spec_validates(self) -> None:
+        instance = {
+            "apiVersion": "operator.jumpstarter.dev/v1alpha1",
+            "kind": "Jumpstarter",
+            "metadata": {},
+            "spec": {},
+        }
+        _validate_against_schema(instance, self.SCHEMA)
+
+    @given(wrong_type=st.sampled_from([42, True, ["list"]]))
+    def test_wrong_type_for_base_domain_fails(self, wrong_type: object) -> None:
+        instance = {
+            "apiVersion": "operator.jumpstarter.dev/v1alpha1",
+            "kind": "Jumpstarter",
+            "metadata": {},
+            "spec": {"baseDomain": wrong_type},
+        }
+        try:
+            _validate_against_schema(instance, self.SCHEMA)
+            raise AssertionError("Expected validation error for wrong baseDomain type")
+        except jsonschema.ValidationError:
+            pass

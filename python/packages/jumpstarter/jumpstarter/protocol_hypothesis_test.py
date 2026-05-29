@@ -702,3 +702,105 @@ class TestEmptyMessagesRoundtrip:
         restored = jumpstarter_pb2.ReleaseLeaseResponse()
         restored.ParseFromString(serialized)
         assert msg == restored
+
+
+class TestPaginatedResponseMessages:
+    @given(
+        exporter_count=st.integers(min_value=0, max_value=10),
+        next_page_token=safe_text,
+    )
+    def test_list_exporters_response_roundtrip(self, exporter_count: int, next_page_token: str) -> None:
+        exporters = [
+            client_pb2.Exporter(name=f"exp-{i}", labels={}, status=common_pb2.EXPORTER_STATUS_AVAILABLE)
+            for i in range(exporter_count)
+        ]
+        msg = client_pb2.ListExportersResponse(exporters=exporters, next_page_token=next_page_token)
+        serialized = msg.SerializeToString()
+        restored = client_pb2.ListExportersResponse()
+        restored.ParseFromString(serialized)
+        assert len(restored.exporters) == exporter_count
+        assert restored.next_page_token == next_page_token
+        for i, exp in enumerate(restored.exporters):
+            assert exp.name == f"exp-{i}"
+
+    @given(
+        names=st.lists(safe_text, max_size=10),
+        labels=label_maps,
+        status=st.sampled_from(
+            [
+                common_pb2.EXPORTER_STATUS_UNSPECIFIED,
+                common_pb2.EXPORTER_STATUS_AVAILABLE,
+                common_pb2.EXPORTER_STATUS_OFFLINE,
+            ]
+        ),
+        next_page_token=safe_text,
+    )
+    def test_list_exporters_response_with_fuzzed_exporters(
+        self,
+        names: list[str],
+        labels: dict[str, str],
+        status: int,
+        next_page_token: str,
+    ) -> None:
+        exporters = [client_pb2.Exporter(name=n, labels=labels, status=status) for n in names]
+        msg = client_pb2.ListExportersResponse(exporters=exporters, next_page_token=next_page_token)
+        serialized = msg.SerializeToString()
+        restored = client_pb2.ListExportersResponse()
+        restored.ParseFromString(serialized)
+        assert len(restored.exporters) == len(names)
+        for i, exp in enumerate(restored.exporters):
+            assert exp.name == names[i]
+            assert exp.status == status
+
+    @given(
+        lease_count=st.integers(min_value=0, max_value=10),
+        next_page_token=safe_text,
+    )
+    def test_list_leases_response_roundtrip(self, lease_count: int, next_page_token: str) -> None:
+        leases = [client_pb2.Lease(name=f"lease-{i}", selector="board=rpi4") for i in range(lease_count)]
+        msg = client_pb2.ListLeasesResponse(leases=leases, next_page_token=next_page_token)
+        serialized = msg.SerializeToString()
+        restored = client_pb2.ListLeasesResponse()
+        restored.ParseFromString(serialized)
+        assert len(restored.leases) == lease_count
+        assert restored.next_page_token == next_page_token
+        for i, lease in enumerate(restored.leases):
+            assert lease.name == f"lease-{i}"
+
+    @given(
+        names=st.lists(safe_text, max_size=10),
+        selectors=st.lists(safe_text, max_size=10),
+        tags=label_maps,
+        next_page_token=safe_text,
+    )
+    def test_list_leases_response_with_fuzzed_leases(
+        self,
+        names: list[str],
+        selectors: list[str],
+        tags: dict[str, str],
+        next_page_token: str,
+    ) -> None:
+        count = min(len(names), len(selectors))
+        leases = [client_pb2.Lease(name=names[i], selector=selectors[i], tags=tags) for i in range(count)]
+        msg = client_pb2.ListLeasesResponse(leases=leases, next_page_token=next_page_token)
+        serialized = msg.SerializeToString()
+        restored = client_pb2.ListLeasesResponse()
+        restored.ParseFromString(serialized)
+        assert len(restored.leases) == count
+        assert restored.next_page_token == next_page_token
+
+    def test_empty_list_exporters_response_roundtrip(self) -> None:
+        msg = client_pb2.ListExportersResponse()
+        serialized = msg.SerializeToString()
+        restored = client_pb2.ListExportersResponse()
+        restored.ParseFromString(serialized)
+        assert len(restored.exporters) == 0
+        assert restored.next_page_token == ""
+
+    def test_empty_list_leases_response_roundtrip(self) -> None:
+        msg = client_pb2.ListLeasesResponse()
+        serialized = msg.SerializeToString()
+        restored = client_pb2.ListLeasesResponse()
+        restored.ParseFromString(serialized)
+        assert len(restored.leases) == 0
+        assert restored.next_page_token == ""
