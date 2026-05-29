@@ -54,7 +54,6 @@ Basic power control:
 ```
 
 Using the CLI:
-```shell
-j power on
-j power off
-j power cycle --wait 3
+```{literalinclude} ../../../../../packages/jumpstarter-driver-snmp/examples/usage_cli.bash
+:language: shell
+```

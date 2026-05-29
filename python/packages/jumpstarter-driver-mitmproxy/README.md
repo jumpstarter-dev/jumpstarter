@@ -14,7 +14,7 @@ This driver manages a `mitmdump` or `mitmweb` process on the Jumpstarter exporte
 
 ## Installation
 
-```bash
+```{code-block} bash
 # On both the exporter host and test client
 pip install --extra-index-url https://pkg.jumpstarter.dev/simple \
     jumpstarter-driver-mitmproxy
@@ -22,7 +22,7 @@ pip install --extra-index-url https://pkg.jumpstarter.dev/simple \
 
 Or build from source:
 
-```bash
+```{code-block} bash
 uv build
 pip install dist/jumpstarter_driver_mitmproxy-*.whl
 ```
@@ -288,13 +288,6 @@ Share state between tests and conditional mock rules:
 
 ### Container Deployment
 
-```bash
-podman build -t jumpstarter-mitmproxy:latest .
-
-podman run --rm -it --privileged \
-  -v /dev:/dev \
-  -v /etc/jumpstarter:/etc/jumpstarter:Z \
-  -p 8080:8080 -p 8081:8081 \
-  jumpstarter-mitmproxy:latest \
-  jmp exporter start my-bench
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/container_deploy.bash
+:language: bash
 ```
