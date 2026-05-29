@@ -501,6 +501,7 @@ def test_cli_dispatches_mount():
                 direct=False,
                 foreground=False,
                 extra_args=[],
+                insecure=False,
             )
 
 
@@ -710,13 +711,12 @@ def test_extra_args_override_default_ssh_options():
                                 )
 
                         popen_args = mock_popen.call_args_list[0][0][0]
-                        # Find positions of both StrictHostKeyChecking options
                         user_idx = None
                         default_idx = None
                         for i, arg in enumerate(popen_args):
                             if arg == "StrictHostKeyChecking=yes":
                                 user_idx = i
-                            elif arg == "StrictHostKeyChecking=no":
+                            elif arg == "StrictHostKeyChecking=accept-new":
                                 default_idx = i
 
                         assert user_idx is not None, "User option not found in args"
@@ -944,6 +944,114 @@ def test_subshell_unknown_shell_fallback():
                 mock_run.assert_called_once()
                 call_args = mock_run.call_args[0][0]
                 assert call_args == ["/bin/dash", "-i"]
+
+
+def test_default_host_key_checking_uses_accept_new():
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 0
+        mock_proc.returncode = 1
+        mock_stderr = MagicMock()
+        mock_stderr.read.return_value = b"Connection refused"
+        mock_stderr.close = MagicMock()
+        mock_proc.stderr = mock_stderr
+
+        with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
+            with patch('subprocess.Popen', return_value=mock_proc) as mock_popen:
+                mock_proc.wait.side_effect = [None]
+
+                with patch('os.makedirs'):
+                    with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
+                        mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
+                        mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
+
+                        with patch.object(client, '_force_umount'):
+                            with pytest.raises(Exception, match="sshfs mount failed"):
+                                client.mount("/tmp/test-mount")
+
+                        popen_args = mock_popen.call_args_list[0][0][0]
+                        ssh_opts = [a for a in popen_args if "StrictHostKeyChecking" in a]
+                        assert len(ssh_opts) == 1
+                        assert ssh_opts[0] == "StrictHostKeyChecking=accept-new"
+
+                        known_hosts_opts = [a for a in popen_args if "UserKnownHostsFile" in a]
+                        assert len(known_hosts_opts) == 1
+                        assert known_hosts_opts[0] != "UserKnownHostsFile=/dev/null"
+
+
+def test_insecure_mode_disables_host_key_checking():
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 0
+        mock_proc.returncode = 1
+        mock_stderr = MagicMock()
+        mock_stderr.read.return_value = b"Connection refused"
+        mock_stderr.close = MagicMock()
+        mock_proc.stderr = mock_stderr
+
+        with patch.object(client, '_find_executable', return_value="/usr/bin/sshfs"):
+            with patch('subprocess.Popen', return_value=mock_proc) as mock_popen:
+                mock_proc.wait.side_effect = [None]
+
+                with patch('os.makedirs'):
+                    with patch('jumpstarter_driver_ssh_mount.client.TcpPortforwardAdapter') as mock_adapter:
+                        mock_adapter.return_value.__enter__ = MagicMock(return_value=("127.0.0.1", 22))
+                        mock_adapter.return_value.__exit__ = MagicMock(return_value=None)
+
+                        with patch.object(client, '_force_umount'):
+                            with pytest.raises(Exception, match="sshfs mount failed"):
+                                client.mount("/tmp/test-mount", insecure=True)
+
+                        popen_args = mock_popen.call_args_list[0][0][0]
+                        ssh_opts = [a for a in popen_args if "StrictHostKeyChecking" in a]
+                        assert "StrictHostKeyChecking=no" in ssh_opts
+
+                        known_hosts_opts = [a for a in popen_args if "UserKnownHostsFile" in a]
+                        assert "UserKnownHostsFile=/dev/null" in known_hosts_opts
+
+
+def test_cli_has_insecure_flag():
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        cli = client.cli()
+        from click.testing import CliRunner
+        runner = CliRunner()
+        result = runner.invoke(cli, ["--help"])
+        assert "--insecure" in result.output
+
+
+def test_cli_dispatches_mount_with_insecure():
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        cli = client.cli()
+        from click.testing import CliRunner
+        runner = CliRunner()
+
+        with patch.object(client, 'mount') as mock_mount:
+            result = runner.invoke(cli, ["/tmp/test-cli-mount", "--insecure"])
+            assert result.exit_code == 0
+            mock_mount.assert_called_once_with(
+                "/tmp/test-cli-mount",
+                remote_path="/",
+                direct=False,
+                foreground=False,
+                extra_args=[],
+                insecure=True,
+            )
 
 
 def test_subshell_bash_escapes_dollar_in_remote_path():

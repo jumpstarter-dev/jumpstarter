@@ -33,7 +33,8 @@ class SSHMountClient(CompositeClient):
         @click.option("--lazy", "-l", is_flag=True, help="Lazy unmount (detach filesystem now, clean up later)")
         @click.option("--foreground", is_flag=True, help="Block on sshfs in foreground without spawning a subshell")
         @click.option("--extra-args", "-o", multiple=True, help="Extra sshfs -o options (e.g. -o reconnect)")
-        def mount(mountpoint, umount, remote_path, direct, lazy, foreground, extra_args):
+        @click.option("--insecure", is_flag=True, help="Disable SSH host key verification")
+        def mount(mountpoint, umount, remote_path, direct, lazy, foreground, extra_args, insecure):
             """Mount or unmount remote filesystem via sshfs"""
             if umount:
                 self.umount(mountpoint, lazy=lazy)
@@ -44,6 +45,7 @@ class SSHMountClient(CompositeClient):
                     direct=direct,
                     foreground=foreground,
                     extra_args=list(extra_args),
+                    insecure=insecure,
                 )
 
         return mount
@@ -79,6 +81,7 @@ class SSHMountClient(CompositeClient):
         direct: bool = False,
         foreground: bool = False,
         extra_args: list[str] | None = None,
+        insecure: bool = False,
     ) -> None:
         """Mount remote filesystem locally via sshfs."""
         if not self._find_executable("sshfs"):
@@ -99,10 +102,10 @@ class SSHMountClient(CompositeClient):
         if use_portforward:
             with TcpPortforwardAdapter(client=self.ssh.tcp) as (host, port):
                 self._run_sshfs(host, port, mountpoint, remote_path, extra_args,
-                                foreground=foreground)
+                                foreground=foreground, insecure=insecure)
         else:
             self._run_sshfs(host, port, mountpoint, remote_path, extra_args,
-                            foreground=foreground)
+                            foreground=foreground, insecure=insecure)
 
     def _run_sshfs(
         self,
@@ -113,6 +116,7 @@ class SSHMountClient(CompositeClient):
         extra_args: list[str] | None,
         *,
         foreground: bool,
+        insecure: bool = False,
     ) -> None:
         identity_file = self._create_temp_identity_file()
         sshfs_proc: subprocess.Popen[bytes] | None = None
@@ -120,6 +124,7 @@ class SSHMountClient(CompositeClient):
         try:
             sshfs_args = self._build_sshfs_args(
                 host, port, mountpoint, remote_path, identity_file, extra_args,
+                insecure=insecure,
             )
             sshfs_args.append("-f")
             sshfs_proc = self._start_sshfs_with_fallback(sshfs_args, mountpoint)
@@ -328,6 +333,8 @@ class SSHMountClient(CompositeClient):
         remote_path: str,
         identity_file: str | None,
         extra_args: list[str] | None,
+        *,
+        insecure: bool = False,
     ) -> list[str]:
         default_username = self.username
         user_prefix = f"{default_username}@" if default_username else ""
@@ -343,11 +350,19 @@ class SSHMountClient(CompositeClient):
             for arg in extra_args:
                 sshfs_args.extend(["-o", arg])
 
-        ssh_opts = [
-            "StrictHostKeyChecking=no",
-            "UserKnownHostsFile=/dev/null",
-            "LogLevel=ERROR",
-        ]
+        if insecure:
+            ssh_opts = [
+                "StrictHostKeyChecking=no",
+                "UserKnownHostsFile=/dev/null",
+                "LogLevel=ERROR",
+            ]
+        else:
+            known_hosts = os.path.join(os.path.expanduser("~"), ".ssh", "known_hosts")
+            ssh_opts = [
+                "StrictHostKeyChecking=accept-new",
+                f"UserKnownHostsFile={known_hosts}",
+                "LogLevel=ERROR",
+            ]
 
         if identity_file:
             ssh_opts.append(f"IdentityFile={identity_file}")
