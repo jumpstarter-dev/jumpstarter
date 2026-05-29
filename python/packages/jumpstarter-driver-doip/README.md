@@ -9,7 +9,7 @@ For UDS (Unified Diagnostic Services) over DoIP, see `jumpstarter-driver-uds-doi
 
 ## Installation
 
-```shell
+```{code-block} shell
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-doip
 ```
 

@@ -4,13 +4,13 @@
 
 ## Installation
 
-```shell
+```{code-block} shell
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-adb
 ```
 
 For the optional Python ADB API:
 
-```shell
+```{code-block} shell
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ "jumpstarter-driver-adb[python-api]"
 ```
 
@@ -47,25 +47,8 @@ default. Use `-P` to specify a port (such as 5037) if needed.
 
 All standard adb commands are passed through to the remote ADB server:
 
-```bash
-# List devices
-j adb devices
-
-# Interactive shell
-j adb shell
-
-# Run a command on the device
-j adb shell getprop ro.product.model
-
-# Install an app
-j adb install app.apk
-
-# View device logs
-j adb logcat
-
-# Push/pull files
-j adb push local_file.txt /sdcard/
-j adb pull /sdcard/remote_file.txt .
+```{literalinclude} ../../../../../packages/jumpstarter-driver-adb/examples/usage_cli.bash
+:language: bash
 ```
 
 ### Persistent tunnel
@@ -74,15 +57,8 @@ The `tunnel` command is the only Jumpstarter-specific command. All other
 commands (including `start-server`, `kill-server`, `connect`, `disconnect`,
 `reconnect`, `pair`) are passed through to the remote ADB server.
 
-```bash
-# Create a persistent ADB tunnel (auto-assigned port)
-j adb tunnel
-
-# Create a tunnel on a specific port
-j adb tunnel -P 5038
-
-# Background the tunnel for continued shell use
-j adb tunnel &
+```{literalinclude} ../../../../../packages/jumpstarter-driver-adb/examples/usage_tunnel.bash
+:language: bash
 ```
 
 When a persistent tunnel is running, subsequent `j adb` commands will
@@ -105,12 +81,12 @@ The `tunnel` command creates a persistent tunnel that other `j adb` commands
 reuse automatically. For external tools, export the env vars printed by the
 command:
 
-```bash
+```{code-block} bash
 # In the jmp shell:
 j adb tunnel
 ```
 
-```bash
+```{code-block} bash
 # In another terminal, using the port printed by the tunnel command:
 export ANDROID_ADB_SERVER_ADDRESS=127.0.0.1
 export ANDROID_ADB_SERVER_PORT=<port>
@@ -130,11 +106,8 @@ To use the tunnel with Android Studio:
 3. Kill Android Studio's ADB server, bind the tunnel to port 5037, and
    restart Android Studio:
 
-```bash
-adb kill-server
-j adb tunnel -P 5037
-# Note: Android Studio may restart the ADB server on 5037 when opened,
-# causing a conflict. If this happens, use the auto-assigned port instead.
+```{literalinclude} ../../../../../packages/jumpstarter-driver-adb/examples/usage_android_studio.bash
+:language: bash
 ```
 
 #### Trade Federation (tradefed)
@@ -142,15 +115,8 @@ j adb tunnel -P 5037
 tradefed discovers devices through the ADB server via the
 `ANDROID_ADB_SERVER_PORT` environment variable:
 
-```bash
-# Terminal 1: Start the tunnel
-j adb tunnel
-# Note the port, e.g. 54321
-
-# Terminal 2: Run tradefed with the tunnel port
-export ANDROID_ADB_SERVER_PORT=54321
-tradefed.sh
-# > list devices   <-- shows remote devices
+```{literalinclude} ../../../../../packages/jumpstarter-driver-adb/examples/usage_tradefed.bash
+:language: bash
 ```
 
 #### Python API

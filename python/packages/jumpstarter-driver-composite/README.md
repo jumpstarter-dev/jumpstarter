@@ -4,7 +4,7 @@
 
 ## Installation
 
-```bash
+```{code-block} bash
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-composite
 ```
 

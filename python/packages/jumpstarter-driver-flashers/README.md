@@ -123,7 +123,7 @@ This doesn't work with sphinx-click, so we'll just use the raw CLI
     :nested: full
 ```
 -->
-```shell
+```{code-block} shell
 $ jmp shell -l board=ti-03
 INFO:jumpstarter.client.lease:Created lease request for labels {'board': 'ti-03'} for 0:30:00
 jumpstarter ⚡remote ➤ j storage
@@ -142,7 +142,7 @@ Commands:
 ```
 
 #### flash
-```shell
+```{code-block} shell
 Usage: j storage flash [OPTIONS] [FILE]
 
   Flash image(s) to DUT
@@ -227,7 +227,7 @@ BaseFlasherClient - INFO - Powering off target
 ```
 
 Flash from a private OCI registry with credentials:
-```shell
+```{code-block} shell
 OCI_USERNAME=myuser OCI_PASSWORD=mypassword \
   j storage flash oci://registry.example.com/org/image:tag
 ```
@@ -237,7 +237,7 @@ Environment variables for OCI auth:
 - `OCI_PASSWORD`: registry password
 
 #### bootloader-shell
-```shell
+```{code-block} shell
 Usage: j storage bootloader-shell [OPTIONS]
 
   Start a uboot/bootloader interactive console
@@ -262,7 +262,7 @@ gcc (GCC) 11.4.1 20231218 (Red Hat 11.4.1-3)
 GNU ld version 2.35.2-42.el9
 ```
 #### busybox-shell
-```shell
+```{code-block} shell
 Usage: j storage busybox-shell [OPTIONS]
 
   Start a busybox interactive console

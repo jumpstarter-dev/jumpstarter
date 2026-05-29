@@ -42,7 +42,7 @@ Powering on and off a device
 
 ### CLI
 
-```bash
+```{code-block} bash
 $ sudo uv run jmp exporter shell -c ./packages/jumpstarter-driver-energenie/examples/exporter.yaml
 
 $$ j

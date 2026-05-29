@@ -6,13 +6,13 @@ the Android emulator and combines it with the ADB driver for device access.
 
 ## Installation
 
-```shell
+```{code-block} shell
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-androidemulator
 ```
 
 For the optional Python ADB API:
 
-```shell
+```{code-block} shell
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ "jumpstarter-driver-androidemulator[python-api]"
 ```
 
@@ -24,14 +24,8 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ "jumpstarter-
 
 #### Quick AVD Setup
 
-```bash
-# Apple Silicon (arm64)
-sdkmanager "system-images;android-35;google_apis;arm64-v8a"
-avdmanager create avd -n Pixel_6 -k "system-images;android-35;google_apis;arm64-v8a" -d pixel_6
-
-# Intel/AMD (x86_64)
-sdkmanager "system-images;android-35;google_apis;x86_64"
-avdmanager create avd -n Pixel_6 -k "system-images;android-35;google_apis;x86_64" -d pixel_6
+```{literalinclude} ../../../../../packages/jumpstarter-driver-androidemulator/examples/avd_setup.bash
+:language: bash
 ```
 
 ## Configuration
@@ -56,21 +50,8 @@ Example exporter configuration:
 
 ### CLI
 
-```bash
-# Power on the emulator
-j android power on
-
-# Check ADB devices through the tunnel
-j android adb devices
-
-# Run ADB commands
-j android adb shell getprop ro.product.model
-
-# Create a persistent ADB tunnel
-j android adb tunnel
-
-# Power off the emulator
-j android power off
+```{literalinclude} ../../../../../packages/jumpstarter-driver-androidemulator/examples/usage_cli.bash
+:language: bash
 ```
 
 ### Python API
