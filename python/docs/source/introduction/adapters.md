@@ -81,7 +81,7 @@ When working with {term}`adapter`s, follow these recommended practices:
 
 ## Example Implementation
 
-```{testcode}
+```{code-block} python
 from contextlib import contextmanager
 import socket
 import threading
