@@ -1,5 +1,7 @@
+import ast
 import importlib
 import pkgutil
+from pathlib import Path
 from types import ModuleType
 
 MODULES_WITH_ALL = {
@@ -118,6 +120,66 @@ def _non_local_names(mod: ModuleType, module_name: str) -> set[str]:
         elif not defining_module.startswith(module_name):
             non_local.add(attr)
     return non_local
+
+
+ZERO_USAGE_ALLOWLIST: set[str] = {
+    "jumpstarter.common:AsyncChannel",
+    "jumpstarter.common:ControllerStub",
+    "jumpstarter.common:ExporterStub",
+    "jumpstarter.common:RouterStub",
+    "jumpstarter.common:download_fls",
+    "jumpstarter.common:get_fls_binary",
+    "jumpstarter.common:get_fls_github_url",
+    "jumpstarter.common.oci:parse_oci_registry",
+    "jumpstarter.common.oci:read_auth_file_credentials",
+    "jumpstarter.common.types:AsyncChannel",
+    "jumpstarter.common.types:ControllerStub",
+    "jumpstarter.common.types:ExporterStub",
+    "jumpstarter.common.types:RouterStub",
+}
+
+
+def _collect_imported_names(scan_root: Path) -> dict[str, set[str]]:
+    usage: dict[str, set[str]] = {}
+    for py_file in scan_root.rglob("*.py"):
+        if py_file.name.endswith("_test.py"):
+            continue
+        try:
+            tree = ast.parse(py_file.read_text(encoding="utf-8"), filename=str(py_file))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module:
+                for alias in node.names:
+                    key = f"{node.module}:{alias.name}"
+                    usage.setdefault(key, set()).add(str(py_file))
+    return usage
+
+
+def _packages_root() -> Path:
+    return Path(__file__).resolve().parent.parent.parent
+
+
+class TestExternalUsageCounting:
+    def test_exported_symbols_have_external_usage(self) -> None:
+        scan_root = _packages_root()
+        usage = _collect_imported_names(scan_root)
+        zero_usage_symbols: list[str] = []
+        for module_name, symbols in MODULES_WITH_ALL.items():
+            defining_module = _load_module(module_name)
+            defining_file = getattr(defining_module, "__file__", None)
+            for symbol in symbols:
+                key = f"{module_name}:{symbol}"
+                if key in ZERO_USAGE_ALLOWLIST:
+                    continue
+                import_sites = usage.get(key, set())
+                if defining_file:
+                    import_sites = import_sites - {defining_file}
+                if not import_sites:
+                    zero_usage_symbols.append(key)
+        assert not zero_usage_symbols, (
+            f"Exported symbols with zero external imports (candidates for review): {sorted(zero_usage_symbols)}"
+        )
 
 
 class TestPackageSubmoduleDiscovery:
