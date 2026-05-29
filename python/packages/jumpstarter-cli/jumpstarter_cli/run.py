@@ -103,9 +103,7 @@ def _handle_child(config, parsed_bind=None, tls_insecure=False, tls_cert=None, t
             if parsed_bind is not None:
                 host, port = parsed_bind
                 tls_credentials = None
-                if tls_insecure:
-                    pass  # Warning already emitted by run()
-                elif tls_cert and tls_key:
+                if tls_cert and tls_key:
                     tls_credentials = _tls_server_credentials(tls_cert, tls_key)
 
                 interceptors = None
@@ -250,16 +248,14 @@ def _serve_with_exc_handling(
             sys.exit(1) # should never happen
 
 
-def _validate_standalone_auth(passphrase, unsafe_no_auth, tls_insecure):
-    """Validate auth options for standalone mode and return the effective passphrase.
+def _validate_standalone_auth(
+    passphrase: str | None, unsafe_no_auth: bool, tls_insecure: bool
+) -> str | None:
+    passphrase = passphrase or None
 
-    Handles mutual-exclusivity checks, auto-generation of passphrases, and
-    warning emission.  Returns the passphrase to use (may be auto-generated).
-    """
     if passphrase and unsafe_no_auth:
         raise click.UsageError("--passphrase and --unsafe-no-auth are mutually exclusive")
 
-    # Auto-generate a passphrase when none is provided and auth is not explicitly disabled
     if not passphrase and not unsafe_no_auth:
         passphrase = secrets.token_urlsafe(32)
         click.echo(
@@ -318,6 +314,7 @@ def _validate_standalone_auth(passphrase, unsafe_no_auth, tls_insecure):
     "--passphrase",
     "passphrase",
     default=None,
+    envvar="JMP_GRPC_PASSPHRASE",
     help="Require this passphrase from clients connecting via --tls-grpc-listener. "
     "If not provided, a random passphrase is generated automatically.",
 )
@@ -346,4 +343,11 @@ def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase, unsa
             )
         passphrase = _validate_standalone_auth(passphrase, unsafe_no_auth, tls_insecure)
     parsed_bind = _parse_listener_bind(listener_bind) if listener_bind is not None else None
-    return _serve_with_exc_handling(config, parsed_bind, tls_insecure, tls_cert, tls_key, passphrase)
+    return _serve_with_exc_handling(
+        config,
+        parsed_bind=parsed_bind,
+        tls_insecure=tls_insecure,
+        tls_cert=tls_cert,
+        tls_key=tls_key,
+        passphrase=passphrase,
+    )

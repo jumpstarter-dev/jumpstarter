@@ -1,13 +1,13 @@
 """Tests for the exporter run module, covering rapid failure detection and CLI argument validation."""
 
-import os
-import tempfile
 from unittest.mock import MagicMock, patch
 
+import click
 import click.testing
+import pytest
 
 import jumpstarter_cli.run as run_mod
-from jumpstarter_cli.run import run
+from jumpstarter_cli.run import _validate_standalone_auth, run
 
 
 def _make_config(max_rapid_failures=5, rapid_failure_window=60):
@@ -184,21 +184,54 @@ class TestServeWithExcHandlingRapidFailures:
         assert counter[0] == 3
 
 
-class TestRunCommandAuthValidation:
-    """Test CLI argument validation for auth-by-default behaviour in the run command.
+class TestValidateStandaloneAuth:
+    """Direct unit tests for _validate_standalone_auth covering each branch."""
 
-    These tests exercise the validation and warning branches added for
-    --passphrase, --unsafe-no-auth, and auto-generated passphrase logic.
-    """
+    def test_passphrase_and_unsafe_no_auth_raises(self):
+        with pytest.raises(click.UsageError, match="mutually exclusive"):
+            _validate_standalone_auth("secret", unsafe_no_auth=True, tls_insecure=False)
+
+    def test_auto_generates_passphrase_when_none_provided(self, capsys):
+        result = _validate_standalone_auth(None, unsafe_no_auth=False, tls_insecure=False)
+        assert isinstance(result, str)
+        assert len(result) > 0
+        assert "Generated random passphrase" in capsys.readouterr().err
+
+    def test_empty_string_treated_as_no_passphrase(self, capsys):
+        result = _validate_standalone_auth("", unsafe_no_auth=False, tls_insecure=False)
+        assert isinstance(result, str)
+        assert len(result) > 0
+        assert "Generated random passphrase" in capsys.readouterr().err
+
+    def test_explicit_passphrase_returned_unchanged(self, capsys):
+        result = _validate_standalone_auth("my-secret", unsafe_no_auth=False, tls_insecure=False)
+        assert result == "my-secret"
+        assert "Generated random passphrase" not in capsys.readouterr().err
+
+    def test_unsafe_no_auth_returns_none(self):
+        result = _validate_standalone_auth(None, unsafe_no_auth=True, tls_insecure=False)
+        assert result is None
+
+    def test_passphrase_with_tls_insecure_warns(self, capsys):
+        _validate_standalone_auth("secret", unsafe_no_auth=False, tls_insecure=True)
+        assert "authentication is active but TLS is disabled" in capsys.readouterr().err
+
+    def test_unsafe_no_auth_with_tls_insecure_warns_unprotected(self, capsys):
+        _validate_standalone_auth(None, unsafe_no_auth=True, tls_insecure=True)
+        assert "completely unprotected" in capsys.readouterr().err
+
+    def test_unsafe_no_auth_without_tls_insecure_warns_no_auth(self, capsys):
+        _validate_standalone_auth(None, unsafe_no_auth=True, tls_insecure=False)
+        captured = capsys.readouterr().err
+        assert "running without authentication" in captured
+        assert "completely unprotected" not in captured
+
+
+class TestRunCommandAuthValidation:
+    """Integration tests exercising auth validation through the Click CLI layer."""
 
     def _invoke(self, args, mock_serve=True):
-        """Invoke the ``run`` CLI command via CliRunner.
-
-        When *mock_serve* is True, ``_serve_with_exc_handling`` and config
-        loading are mocked so the command can reach the auth-validation code
-        without actually forking or reading real config files.
-        """
-        runner = click.testing.CliRunner()
+        runner = click.testing.CliRunner(mix_stderr=False)
         patches = []
         if mock_serve:
             patches.append(
@@ -211,7 +244,6 @@ class TestRunCommandAuthValidation:
                 ),
             )
 
-        # Stack all context-manager patches
         from contextlib import ExitStack
 
         with ExitStack() as stack:
@@ -220,10 +252,7 @@ class TestRunCommandAuthValidation:
             result = runner.invoke(run, args)
         return result
 
-    # --- Validation errors (no mocking of _serve_with_exc_handling needed) ---
-
     def test_passphrase_and_unsafe_no_auth_mutually_exclusive(self):
-        """--passphrase and --unsafe-no-auth together must raise a UsageError."""
         result = self._invoke([
             "--exporter-config", "/dev/null",
             "--tls-grpc-listener", "1234",
@@ -235,7 +264,6 @@ class TestRunCommandAuthValidation:
         assert "--passphrase and --unsafe-no-auth are mutually exclusive" in result.output
 
     def test_tls_grpc_listener_requires_tls_mode(self):
-        """--tls-grpc-listener without --tls-grpc-insecure or certs must error."""
         result = self._invoke([
             "--exporter-config", "/dev/null",
             "--tls-grpc-listener", "1234",
@@ -243,15 +271,8 @@ class TestRunCommandAuthValidation:
         assert result.exit_code != 0
         assert "--tls-grpc-listener requires either --tls-grpc-insecure" in result.output
 
-    # --- Auto-generated passphrase ---
-
     def test_auto_generated_passphrase_printed_to_stderr(self):
-        """When no --passphrase and no --unsafe-no-auth, a passphrase is auto-generated and printed.
-
-        Also verify that the generated passphrase is actually forwarded to
-        ``_serve_with_exc_handling`` (not silently dropped).
-        """
-        runner = click.testing.CliRunner()
+        runner = click.testing.CliRunner(mix_stderr=False)
         mock_serve = MagicMock(return_value=0)
         with (
             patch.object(run_mod, "_serve_with_exc_handling", mock_serve),
@@ -267,16 +288,12 @@ class TestRunCommandAuthValidation:
             ])
         assert result.exit_code == 0
         assert "Generated random passphrase" in result.stderr
-        # Verify the passphrase was forwarded to _serve_with_exc_handling
         mock_serve.assert_called_once()
-        forwarded_passphrase = mock_serve.call_args[1].get("passphrase") or mock_serve.call_args[0][5]
+        forwarded_passphrase = mock_serve.call_args.kwargs["passphrase"]
         assert isinstance(forwarded_passphrase, str)
         assert len(forwarded_passphrase) > 0
 
-    # --- Warning messages ---
-
     def test_passphrase_with_tls_insecure_warns_plaintext(self):
-        """--passphrase + --tls-grpc-insecure must warn that auth is active but TLS is disabled."""
         result = self._invoke([
             "--exporter-config", "/dev/null",
             "--tls-grpc-listener", "1234",
@@ -287,7 +304,6 @@ class TestRunCommandAuthValidation:
         assert "authentication is active but TLS is disabled" in result.stderr
 
     def test_unsafe_no_auth_with_tls_insecure_warns_completely_unprotected(self):
-        """--unsafe-no-auth + --tls-grpc-insecure must warn about completely unprotected server."""
         result = self._invoke([
             "--exporter-config", "/dev/null",
             "--tls-grpc-listener", "1234",
@@ -297,36 +313,24 @@ class TestRunCommandAuthValidation:
         assert result.exit_code == 0
         assert "completely unprotected" in result.stderr
 
-    def test_unsafe_no_auth_without_tls_insecure_warns_no_auth(self):
-        """--unsafe-no-auth without --tls-grpc-insecure warns about unauthenticated access."""
-        # Need to provide TLS cert/key for this path (since tls_insecure is not set)
-        # We mock Path(exists=True) validation by passing files that "exist"
-        with tempfile.NamedTemporaryFile(suffix=".pem", delete=False) as cert, \
-             tempfile.NamedTemporaryFile(suffix=".pem", delete=False) as key:
-            cert.write(b"dummy cert")
-            key.write(b"dummy key")
-            cert_path = cert.name
-            key_path = key.name
+    def test_unsafe_no_auth_without_tls_insecure_warns_no_auth(self, tmp_path):
+        cert_path = tmp_path / "cert.pem"
+        key_path = tmp_path / "key.pem"
+        cert_path.write_text("dummy cert")
+        key_path.write_text("dummy key")
 
-        try:
-            result = self._invoke([
-                "--exporter-config", "/dev/null",
-                "--tls-grpc-listener", "1234",
-                "--tls-cert", cert_path,
-                "--tls-key", key_path,
-                "--unsafe-no-auth",
-            ])
-            assert result.exit_code == 0
-            assert "running without authentication" in result.stderr
-            assert "completely unprotected" not in result.stderr
-        finally:
-            os.unlink(cert_path)
-            os.unlink(key_path)
-
-    # --- Options require --tls-grpc-listener ---
+        result = self._invoke([
+            "--exporter-config", "/dev/null",
+            "--tls-grpc-listener", "1234",
+            "--tls-cert", str(cert_path),
+            "--tls-key", str(key_path),
+            "--unsafe-no-auth",
+        ])
+        assert result.exit_code == 0
+        assert "running without authentication" in result.stderr
+        assert "completely unprotected" not in result.stderr
 
     def test_unsafe_no_auth_without_listener_errors(self):
-        """--unsafe-no-auth without --tls-grpc-listener must error."""
         result = self._invoke([
             "--exporter-config", "/dev/null",
             "--unsafe-no-auth",
