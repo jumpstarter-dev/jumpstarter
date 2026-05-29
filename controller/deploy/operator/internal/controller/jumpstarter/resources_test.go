@@ -78,6 +78,21 @@ var _ = Describe("defaultControllerResources", func() {
 		Expect(result.Limits).To(HaveKeyWithValue(corev1.ResourceCPU, resource.MustParse("2")))
 		Expect(result.Limits).To(HaveKeyWithValue(corev1.ResourceMemory, resource.MustParse("4Gi")))
 	})
+
+	It("should preserve claims-only input without applying defaults", func() {
+		custom := corev1.ResourceRequirements{
+			Claims: []corev1.ResourceClaim{
+				{Name: "gpu"},
+			},
+		}
+
+		result := defaultControllerResources(custom)
+
+		Expect(result.Claims).To(HaveLen(1))
+		Expect(result.Claims[0].Name).To(Equal("gpu"))
+		Expect(result.Requests).To(BeNil())
+		Expect(result.Limits).To(BeNil())
+	})
 })
 
 var _ = Describe("defaultRouterResources", func() {
@@ -134,5 +149,20 @@ var _ = Describe("defaultRouterResources", func() {
 		Expect(result.Requests).To(HaveKeyWithValue(corev1.ResourceMemory, resource.MustParse("512Mi")))
 		Expect(result.Limits).To(HaveKeyWithValue(corev1.ResourceCPU, resource.MustParse("2")))
 		Expect(result.Limits).To(HaveKeyWithValue(corev1.ResourceMemory, resource.MustParse("2Gi")))
+	})
+
+	It("should preserve claims-only input without applying defaults", func() {
+		custom := corev1.ResourceRequirements{
+			Claims: []corev1.ResourceClaim{
+				{Name: "gpu"},
+			},
+		}
+
+		result := defaultRouterResources(custom)
+
+		Expect(result.Claims).To(HaveLen(1))
+		Expect(result.Claims[0].Name).To(Equal("gpu"))
+		Expect(result.Requests).To(BeNil())
+		Expect(result.Limits).To(BeNil())
 	})
 })

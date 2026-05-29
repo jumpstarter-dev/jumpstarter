@@ -1422,7 +1422,7 @@ func (r *JumpstarterReconciler) cleanupExcessRouterServices(ctx context.Context,
 // defaultControllerResources returns the given resource requirements if they are
 // non-empty, otherwise it returns sensible defaults for the controller pod.
 func defaultControllerResources(spec corev1.ResourceRequirements) corev1.ResourceRequirements {
-	if len(spec.Requests) == 0 && len(spec.Limits) == 0 {
+	if len(spec.Requests) == 0 && len(spec.Limits) == 0 && len(spec.Claims) == 0 {
 		return corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("200m"),
@@ -1440,7 +1440,7 @@ func defaultControllerResources(spec corev1.ResourceRequirements) corev1.Resourc
 // defaultRouterResources returns the given resource requirements if they are
 // non-empty, otherwise it returns sensible defaults for a router pod.
 func defaultRouterResources(spec corev1.ResourceRequirements) corev1.ResourceRequirements {
-	if len(spec.Requests) == 0 && len(spec.Limits) == 0 {
+	if len(spec.Requests) == 0 && len(spec.Limits) == 0 && len(spec.Claims) == 0 {
 		return corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("100m"),
