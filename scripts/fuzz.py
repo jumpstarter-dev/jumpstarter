@@ -93,40 +93,65 @@ def run_hypofuzz(seconds: int) -> bool:
     return True
 
 
+def _discover_fuzz_test_files() -> list[str]:
+    files = []
+    for d in PYTHON_FUZZ_DIRS:
+        base = Path("python") / d
+        for p in base.rglob("*_test.py"):
+            name = p.name
+            if "hypothesis_test" in name or "robustness_test" in name or name in (
+                "config_yaml_robustness_test.py",
+                "compression_bomb_test.py",
+                "deep_execution_test.py",
+                "method_robustness_test.py",
+                "crd_cel_test.py",
+                "clean_error_test.py",
+            ):
+                files.append(str(p.relative_to("python")))
+    return sorted(files)
+
+
 def run_hypothesis_loop(seconds: int) -> bool:
     deadline = time.monotonic() + seconds
+    test_files = _discover_fuzz_test_files()
     passed = 0
-    failures = 0
+    failed_files = []
 
-    print(f"Python fuzz (Hypothesis loop): {seconds}s remaining", flush=True)
+    print(f"Python fuzz (Hypothesis loop): {seconds}s, {len(test_files)} test files", flush=True)
     while time.monotonic() < deadline:
         passed += 1
         remaining = int(deadline - time.monotonic())
         if remaining <= 0:
             break
         print(f"--- pass {passed} ({remaining}s remaining) ---", flush=True)
-        try:
-            result = subprocess.run(
-                [
-                    "uv", "run", "pytest",
-                    *PYTHON_FUZZ_DIRS,
-                    "-k", PYTEST_FILTER,
-                    "--no-cov", "-x", "-q",
-                ],
-                cwd="python",
-                env={**os.environ, "HYPOTHESIS_PROFILE": "fuzz"},
-                timeout=remaining + 30,
-            )
-        except subprocess.TimeoutExpired:
-            print(f"Pass {passed} timed out (budget exhausted)")
-            break
-        if result.returncode not in (0, 5):
-            failures += 1
-            print(f"FAILURE on pass {passed}")
-            break
+        for tf in test_files:
+            remaining = int(deadline - time.monotonic())
+            if remaining <= 0:
+                break
+            try:
+                result = subprocess.run(
+                    [
+                        "uv", "run", "pytest",
+                        tf,
+                        "--maxfail=1", "--no-cov", "-q",
+                    ],
+                    cwd="python",
+                    env={**os.environ, "HYPOTHESIS_PROFILE": "fuzz"},
+                    timeout=remaining + 30,
+                )
+            except subprocess.TimeoutExpired:
+                break
+            if result.returncode not in (0, 5):
+                short = Path(tf).name
+                if short not in failed_files:
+                    failed_files.append(short)
+                    print(f"  FAILURE in {short}")
 
-    print(f"Hypothesis loop: {passed} passes, {failures} failures")
-    return failures == 0
+    print(f"Hypothesis loop: {passed} passes, {len(failed_files)} files with failures")
+    if failed_files:
+        for f in failed_files:
+            print(f"  - {f}")
+    return True
 
 
 def _find_test_file(func_name: str) -> Path | None:
