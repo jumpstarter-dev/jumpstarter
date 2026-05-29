@@ -83,25 +83,41 @@ class TestPublicExportsMatchAll:
         for module_name in MODULES_WITH_ALL:
             mod = _load_module(module_name)
             declared = set(getattr(mod, "__all__", []))
+            allowed = _allowed_leaks().get(module_name, set())
             public_attrs = {
                 attr
                 for attr in dir(mod)
                 if not attr.startswith("_")
                 and not isinstance(getattr(mod, attr, None), ModuleType)
             }
-            leaks = public_attrs - declared - _known_non_exported_names()
-            if leaks:
-                pass
+            leaks = public_attrs - declared - _non_local_names(mod, module_name) - allowed
+            assert not leaks, f"{module_name} leaks undeclared public symbols: {sorted(leaks)}"
 
 
-def _known_non_exported_names() -> set[str]:
+def _allowed_leaks() -> dict[str, set[str]]:
     return {
-        "field",
-        "dataclass",
-        "uuid4",
-        "UUID",
-        "annotations",
+        "jumpstarter.common.utils": {
+            "launch_shell",
+            "lease_ending_handler",
+            "serve",
+            "serve_async",
+        },
     }
+
+
+def _non_local_names(mod: ModuleType, module_name: str) -> set[str]:
+    non_local = set()
+    for attr in dir(mod):
+        if attr.startswith("_"):
+            continue
+        obj = getattr(mod, attr, None)
+        defining_module = getattr(obj, "__module__", None)
+        if defining_module is None:
+            if not callable(obj):
+                non_local.add(attr)
+        elif not defining_module.startswith(module_name):
+            non_local.add(attr)
+    return non_local
 
 
 class TestPackageSubmoduleDiscovery:
