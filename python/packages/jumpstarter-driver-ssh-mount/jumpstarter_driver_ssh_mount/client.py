@@ -255,6 +255,21 @@ class SSHMountClient(CompositeClient):
             filtered.append(arg)
         return filtered
 
+    @staticmethod
+    def _escape_for_bash_ps1(value: str) -> str:
+        value = value.replace("\\", "\\\\")
+        value = value.replace("$", "\\$")
+        value = value.replace("`", "\\`")
+        return value
+
+    @staticmethod
+    def _escape_for_zsh_ps1(value: str) -> str:
+        value = value.replace("\\", "\\\\")
+        value = value.replace("$", "\\$")
+        value = value.replace("`", "\\`")
+        value = value.replace("%", "%%")
+        return value
+
     def _run_subshell(self, mountpoint: str, remote_path: str) -> None:
         shell = os.environ.get("SHELL", "/bin/sh")
         shell_name = os.path.basename(shell)
@@ -263,11 +278,12 @@ class SSHMountClient(CompositeClient):
         mount_tag = "(mount)"
         try:
             if shell_name.endswith("bash"):
+                safe_path = self._escape_for_bash_ps1(remote_path)
                 ps1 = env.get("PS1", r"\$ ")
                 if "➤" in ps1:
                     ps1 = ps1.replace("➤", f"{mount_tag}➤")
                 else:
-                    ps1 = f"[sshfs:{remote_path}] {ps1}"
+                    ps1 = f"[sshfs:{safe_path}] {ps1}"
                 env["PS1"] = ps1
                 subprocess.run(
                     [shell, "--norc", "--noprofile", "-i"],
@@ -289,11 +305,12 @@ class SSHMountClient(CompositeClient):
                 )
                 subprocess.run([shell, "--init-command", fish_fn], env=env)
             elif shell_name == "zsh":
+                safe_path = self._escape_for_zsh_ps1(remote_path)
                 ps1 = env.get("PS1", "%# ")
                 if "➤" in ps1:
                     ps1 = ps1.replace("➤", f"{mount_tag}➤")
                 else:
-                    ps1 = f"[sshfs:{remote_path}] {ps1}"
+                    ps1 = f"[sshfs:{safe_path}] {ps1}"
                 env["PS1"] = ps1
                 subprocess.run([shell, "--no-rcs", "-i"], env=env)
             else:

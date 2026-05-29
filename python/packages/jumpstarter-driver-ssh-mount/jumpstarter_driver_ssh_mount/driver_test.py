@@ -944,3 +944,71 @@ def test_subshell_unknown_shell_fallback():
                 mock_run.assert_called_once()
                 call_args = mock_run.call_args[0][0]
                 assert call_args == ["/bin/dash", "-i"]
+
+
+def test_subshell_bash_escapes_dollar_in_remote_path():
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        with patch.dict(os.environ, {"SHELL": "/bin/bash", "PS1": r"\$ "}):
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                client._run_subshell("/tmp/test-mount", "/$(whoami)")
+
+                env_passed = mock_run.call_args[1].get("env", {})
+                ps1 = env_passed.get("PS1", "")
+                assert r"/\$(whoami)" in ps1
+                assert "/$(whoami)" not in ps1.replace("\\$", "")
+
+
+def test_subshell_bash_escapes_backtick_in_remote_path():
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        with patch.dict(os.environ, {"SHELL": "/bin/bash", "PS1": r"\$ "}):
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                client._run_subshell("/tmp/test-mount", "/`id`")
+
+                env_passed = mock_run.call_args[1].get("env", {})
+                ps1 = env_passed.get("PS1", "")
+                assert r"/\`id\`" in ps1
+                assert "/`id`" not in ps1.replace("\\`", "")
+
+
+def test_subshell_zsh_escapes_percent_in_remote_path():
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        with patch.dict(os.environ, {"SHELL": "/bin/zsh", "PS1": "%# "}):
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                client._run_subshell("/tmp/test-mount", "/%n-escape")
+
+                env_passed = mock_run.call_args[1].get("env", {})
+                ps1 = env_passed.get("PS1", "")
+                assert "/%%n-escape" in ps1
+                assert "/%n-escape" not in ps1.replace("%%", "")
+
+
+def test_subshell_zsh_escapes_dollar_in_remote_path():
+    instance = SSHMount(
+        children={"ssh": _make_ssh_child()},
+    )
+
+    with serve(instance) as client:
+        with patch.dict(os.environ, {"SHELL": "/bin/zsh", "PS1": "%# "}):
+            with patch('subprocess.run') as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                client._run_subshell("/tmp/test-mount", "/$(whoami)")
+
+                env_passed = mock_run.call_args[1].get("env", {})
+                ps1 = env_passed.get("PS1", "")
+                assert r"/\$(whoami)" in ps1
+                assert "/$(whoami)" not in ps1.replace("\\$", "")
