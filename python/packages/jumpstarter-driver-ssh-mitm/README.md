@@ -43,18 +43,8 @@ Or with inline key:
 
 Since SSHMITM is used as a child of SSHWrapper, you use the configured command name (e.g., `ssh_mitm`):
 
-```bash
-# Execute a command
-j ssh_mitm whoami
-
-# Interactive shell
-j ssh_mitm
-
-# With arguments
-j ssh_mitm ls -la /tmp
-
-# With SSH flags
-j ssh_mitm -v hostname
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ssh-mitm/examples/usage_cli.bash
+:language: bash
 ```
 
 **Note**: The command name (`ssh_mitm`) is determined by the key in your exporter config's `export` section. You can use any name you prefer.

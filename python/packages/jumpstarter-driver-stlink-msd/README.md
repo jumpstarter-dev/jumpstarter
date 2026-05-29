@@ -9,7 +9,7 @@ built-in mass storage interface handles all the flash programming.
 
 ## Installation
 
-```shell
+```{code-block} shell
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-stlink-msd
 ```
 
@@ -32,16 +32,14 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 
 ELF files must be converted externally before flashing:
 
-```shell
+```{code-block} shell
 arm-none-eabi-objcopy -O binary zephyr.elf zephyr.bin
 ```
 
 ## Usage
 
-```shell
-j flasher flash firmware.bin       # flash a raw binary
-j flasher flash firmware.hex       # flash an Intel HEX file
-j flasher info                     # show ST-LINK volume details
+```{literalinclude} ../../../../../packages/jumpstarter-driver-stlink-msd/examples/usage_cli.bash
+:language: shell
 ```
 
 ## API Reference

@@ -4,7 +4,7 @@
 
 ## Installation
 
-```shell
+```{code-block} shell
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-ssh
 ```
 
@@ -24,22 +24,8 @@ Example configuration:
 
 The SSH driver provides a CLI command that accepts all standard SSH arguments:
 
-```bash
-# Basic SSH connection (uses port forwarding by default)
-j ssh
-
-# SSH with direct TCP address
-j ssh --direct
-
-# SSH with specific user
-j ssh -l myuser
-
-# SSH with other flags
-j ssh -i ~/.ssh/id_rsa
-
-# Running a remote command
-j ssh ls -la
-
+```{literalinclude} ../../../../../packages/jumpstarter-driver-ssh/examples/usage_cli.bash
+:language: bash
 ```
 
 ### CLI Options
