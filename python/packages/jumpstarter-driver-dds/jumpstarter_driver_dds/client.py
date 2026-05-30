@@ -67,9 +67,9 @@ class DdsClient(DriverClient):
         """Get information about the DDS domain participant."""
         return DdsParticipantInfo.model_validate(self.call("get_participant_info"))
 
-    def monitor(self, topic_name: str) -> Generator[DdsSample, None, None]:
+    def monitor(self, topic_name: str, max_iterations: int = 0) -> Generator[DdsSample, None, None]:
         """Stream data samples from a topic as they arrive."""
-        for v in self.streamingcall("monitor", topic_name):
+        for v in self.streamingcall("monitor", topic_name, max_iterations):
             yield DdsSample.model_validate(v)
 
     def _register_lifecycle_commands(self, base):
@@ -142,10 +142,10 @@ class DdsClient(DriverClient):
 
         @base.command(name="monitor")
         @click.argument("topic_name")
-        @click.option("--count", "-n", default=10, help="Number of events")
+        @click.option("--count", "-n", default=10, type=click.IntRange(min=1), help="Number of events to display")
         def monitor_cmd(topic_name, count):
             """Monitor samples from a topic"""
-            for i, sample in enumerate(self.monitor(topic_name)):
+            for i, sample in enumerate(self.monitor(topic_name, max_iterations=count)):
                 click.echo(f"[{sample.topic_name}] {sample.data}")
                 if i + 1 >= count:
                     break

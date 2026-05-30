@@ -65,6 +65,8 @@ def _validate_field_names(fields: list[str]) -> None:
             raise ValueError(f"Field name {name!r} is not a valid Python identifier")
         if keyword.iskeyword(name):
             raise ValueError(f"Field name {name!r} is a Python keyword")
+        if name.startswith("__") and name.endswith("__"):
+            raise ValueError(f"Field name {name!r} is a dunder and conflicts with dataclass internals")
         if name in seen:
             raise ValueError(f"Duplicate field name {name!r}")
         seen.add(name)
@@ -137,22 +139,22 @@ class DdsBackend:
         for name, writer in self._writers.items():
             try:
                 writer.close()
-            except RuntimeError:
+            except Exception:
                 logger.debug("Failed to close writer for topic '%s'", name, exc_info=True)
         for name, reader in self._readers.items():
             try:
                 reader.close()
-            except RuntimeError:
+            except Exception:
                 logger.debug("Failed to close reader for topic '%s'", name, exc_info=True)
         for name, topic in self._topics.items():
             try:
                 topic.close()
-            except RuntimeError:
+            except Exception:
                 logger.debug("Failed to close topic '%s'", name, exc_info=True)
         if self._participant is not None:
             try:
                 self._participant.close()
-            except RuntimeError:
+            except Exception:
                 logger.debug("Failed to close DDS participant", exc_info=True)
         self._writers.clear()
         self._readers.clear()
@@ -197,8 +199,14 @@ class DdsBackend:
             reader = DataReader(self._participant, topic, qos=cqos)
         except Exception:
             if writer is not None:
-                writer.close()
-            topic.close()
+                try:
+                    writer.close()
+                except Exception:
+                    logger.debug("Failed to close writer during rollback", exc_info=True)
+            try:
+                topic.close()
+            except Exception:
+                logger.debug("Failed to close topic during rollback", exc_info=True)
             raise
 
         self._idl_types[name] = idl_type
@@ -253,6 +261,8 @@ class DdsBackend:
         will cause samples to be split unpredictably between the two.
         """
         self._require_connected()
+        if max_samples < 1:
+            raise ValueError("max_samples must be >= 1")
         if topic_name not in self._readers:
             raise ValueError(f"Topic '{topic_name}' not registered -- call create_topic() first")
 
@@ -385,6 +395,8 @@ class MockDdsBackend:
     def read(self, topic_name: str, max_samples: int) -> DdsReadResult:
         """Take up to *max_samples* from the in-memory buffer."""
         self._require_connected()
+        if max_samples < 1:
+            raise ValueError("max_samples must be >= 1")
         if topic_name not in self._topics:
             raise ValueError(f"Topic '{topic_name}' not registered -- call create_topic() first")
 
@@ -427,6 +439,13 @@ class Dds(Driver):
         if self.use_mock:
             self._backend = MockDdsBackend(domain_id=self.domain_id)
         else:
+            try:
+                from cyclonedds.domain import DomainParticipant  # noqa: F401
+            except ImportError as exc:
+                raise ImportError(
+                    "CycloneDDS native library is required when use_mock=False. "
+                    "Install with: pip install 'jumpstarter-driver-dds[cyclonedds]'"
+                ) from exc
             self._backend = DdsBackend(domain_id=self.domain_id)
 
     @classmethod
@@ -436,12 +455,14 @@ class Dds(Driver):
 
     def close(self):
         """Disconnect the backend (if connected) and release resources."""
-        if self._backend.is_connected:
-            try:
-                self._backend.disconnect()
-            except RuntimeError:
-                logger.warning("Failed to disconnect DDS backend", exc_info=True)
-        super().close()
+        try:
+            if self._backend.is_connected:
+                try:
+                    self._backend.disconnect()
+                except Exception:
+                    logger.warning("Failed to disconnect DDS backend", exc_info=True)
+        finally:
+            super().close()
 
     def _default_qos(self) -> DdsTopicQos:
         """Build a ``DdsTopicQos`` from this driver's default settings."""
@@ -519,6 +540,8 @@ class Dds(Driver):
         """
         import anyio
 
+        if max_iterations < 0:
+            raise ValueError("max_iterations must be >= 0 (0 = unlimited)")
         if not self._backend.is_connected:
             raise RuntimeError("Not connected -- call connect() first")
         if not self._backend.has_topic(topic_name):
@@ -568,12 +591,14 @@ class MockDds(Driver):
 
     def close(self):
         """Disconnect the mock backend (if connected) and release resources."""
-        if self._internal_backend.is_connected:
-            try:
-                self._internal_backend.disconnect()
-            except RuntimeError:
-                logger.warning("Failed to disconnect mock DDS backend", exc_info=True)
-        super().close()
+        try:
+            if self._internal_backend.is_connected:
+                try:
+                    self._internal_backend.disconnect()
+                except Exception:
+                    logger.warning("Failed to disconnect mock DDS backend", exc_info=True)
+        finally:
+            super().close()
 
     def _default_qos(self) -> DdsTopicQos:
         """Build a ``DdsTopicQos`` from this driver's default settings."""
@@ -648,6 +673,8 @@ class MockDds(Driver):
         """
         import anyio
 
+        if max_iterations < 0:
+            raise ValueError("max_iterations must be >= 0 (0 = unlimited)")
         if not self._internal_backend.is_connected:
             raise RuntimeError("Not connected -- call connect() first")
         if not self._internal_backend.has_topic(topic_name):
