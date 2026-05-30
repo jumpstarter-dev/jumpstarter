@@ -7,14 +7,15 @@ from dataclasses import field
 
 from opensomeip import ClientConfig, TransportMode
 from opensomeip import SomeIpClient as OsipClient
-try:
-    from opensomeip._bridge import get_ext
-except ImportError:
-    get_ext = lambda: None  # noqa: E731
 from opensomeip.message import Message
 from opensomeip.sd import SdConfig, ServiceInstance
 from opensomeip.transport import Endpoint
 from opensomeip.types import MessageId
+
+try:
+    from opensomeip._bridge import get_ext
+except ImportError:
+    get_ext = lambda: None  # noqa: E731  # ty: ignore[invalid-assignment]
 from pydantic import ConfigDict, SkipValidation, validate_call
 from pydantic.dataclasses import dataclass
 
