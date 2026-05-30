@@ -65,6 +65,7 @@ Drivers for automotive diagnostic protocols:
 - **[UDS over DoIP](uds-doip.md)** (`jumpstarter-driver-uds-doip`) - UDS diagnostics over DoIP transport
 - **[UDS over CAN](uds-can.md)** (`jumpstarter-driver-uds-can`) - UDS diagnostics over CAN/ISO-TP transport
 - **[SOME/IP](someip.md)** (`jumpstarter-driver-someip`) - SOME/IP protocol operations via opensomeip
+- **[gPTP](gptp.md)** (`jumpstarter-driver-gptp`) - IEEE 802.1AS / PTP time synchronization for automotive Ethernet (linuxptp)
 
 ### Flashing and Programming
 
@@ -122,6 +123,7 @@ probe-rs.md
 pyserial.md
 qemu.md
 renode.md
+gptp.md
 ridesx.md
 sdwire.md
 shell.md
