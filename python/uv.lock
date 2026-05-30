@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -50,6 +50,7 @@ members = [
     "jumpstarter-driver-someip",
     "jumpstarter-driver-ssh",
     "jumpstarter-driver-ssh-mitm",
+    "jumpstarter-driver-ssh-mount",
     "jumpstarter-driver-stlink-msd",
     "jumpstarter-driver-tasmota",
     "jumpstarter-driver-tftp",
@@ -86,6 +87,7 @@ docs = [
     { name = "esbonio", specifier = ">=0.16.4" },
     { name = "furo", specifier = ">=2024.8.6" },
     { name = "myst-parser", specifier = ">=5.0.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.33.1" },
     { name = "sphinx", specifier = "<8.1.0" },
     { name = "sphinx-autobuild", specifier = ">=2024.4.16" },
@@ -2032,6 +2034,7 @@ dependencies = [
     { name = "jumpstarter-driver-snmp" },
     { name = "jumpstarter-driver-someip" },
     { name = "jumpstarter-driver-ssh" },
+    { name = "jumpstarter-driver-ssh-mount" },
     { name = "jumpstarter-driver-tftp" },
     { name = "jumpstarter-driver-tmt" },
     { name = "jumpstarter-driver-uboot" },
@@ -2079,6 +2082,7 @@ requires-dist = [
     { name = "jumpstarter-driver-snmp", editable = "packages/jumpstarter-driver-snmp" },
     { name = "jumpstarter-driver-someip", editable = "packages/jumpstarter-driver-someip" },
     { name = "jumpstarter-driver-ssh", editable = "packages/jumpstarter-driver-ssh" },
+    { name = "jumpstarter-driver-ssh-mount", editable = "packages/jumpstarter-driver-ssh-mount" },
     { name = "jumpstarter-driver-tftp", editable = "packages/jumpstarter-driver-tftp" },
     { name = "jumpstarter-driver-tmt", editable = "packages/jumpstarter-driver-tmt" },
     { name = "jumpstarter-driver-uboot", editable = "packages/jumpstarter-driver-uboot" },
@@ -2438,6 +2442,7 @@ dev = [
 name = "jumpstarter-driver-dds"
 source = { editable = "packages/jumpstarter-driver-dds" }
 dependencies = [
+    { name = "anyio" },
     { name = "click" },
     { name = "jumpstarter" },
 ]
@@ -2455,6 +2460,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = ">=4.0" },
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "cyclonedds", marker = "extra == 'cyclonedds'", specifier = ">=0.10.0,<1.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
@@ -3347,6 +3353,38 @@ dev = [
     { name = "pytest", specifier = ">=8.3.3" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "trio", specifier = ">=0.28.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-ssh-mount"
+source = { editable = "packages/jumpstarter-driver-ssh-mount" }
+dependencies = [
+    { name = "click" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-ssh" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.0.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-ssh", editable = "packages/jumpstarter-driver-ssh" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
 [[package]]
