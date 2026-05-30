@@ -345,6 +345,12 @@ def test_someip_invalid_port_type():
         SomeIp(host="127.0.0.1", port="not_a_port")  # ty: ignore[invalid-argument-type]
 
 
+@patch("jumpstarter_driver_someip.driver.get_ext", return_value=None)
+def test_someip_raises_when_native_extension_unavailable(_mock_get_ext):
+    with pytest.raises(RuntimeError, match=r"_opensomeip.*not available"):
+        SomeIp(host="127.0.0.1", port=30490)
+
+
 @patch("jumpstarter_driver_someip.driver.OsipClient")
 def test_someip_invalid_transport_mode(mock_osip_cls):
     mock_osip_cls.return_value = _make_mock_osip_client()

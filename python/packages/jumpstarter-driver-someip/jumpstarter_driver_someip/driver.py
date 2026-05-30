@@ -11,6 +11,11 @@ from opensomeip.message import Message
 from opensomeip.sd import SdConfig, ServiceInstance
 from opensomeip.transport import Endpoint
 from opensomeip.types import MessageId
+
+try:
+    from opensomeip._bridge import get_ext
+except ImportError:
+    get_ext = lambda: None  # noqa: E731  # ty: ignore[invalid-assignment]
 from pydantic import ConfigDict, SkipValidation, validate_call
 from pydantic.dataclasses import dataclass
 
@@ -91,6 +96,18 @@ class SomeIp(Driver):
             raise ValueError(
                 f"Invalid transport_mode: {self.transport_mode!r}. Must be 'TCP' or 'UDP'."
             )
+
+        if get_ext() is None:
+            raise RuntimeError(
+                "opensomeip C++ extension (_opensomeip) is not available. "
+                "The SOME/IP driver requires the native extension for network I/O. "
+                "On macOS, rebuild with the system compiler: "
+                "CC=/usr/bin/clang CXX=/usr/bin/clang++ "
+                "pip install --no-cache-dir --force-reinstall --no-binary=opensomeip opensomeip. "
+                "On other platforms, reinstall opensomeip and ensure the C++ "
+                "build toolchain is available."
+            )
+
         mode = TransportMode.TCP if transport_upper == "TCP" else TransportMode.UDP
 
         local_ep = Endpoint(self.host, self.port)
