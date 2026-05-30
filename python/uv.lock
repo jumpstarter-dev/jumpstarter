@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -49,6 +49,7 @@ members = [
     "jumpstarter-driver-someip",
     "jumpstarter-driver-ssh",
     "jumpstarter-driver-ssh-mitm",
+    "jumpstarter-driver-ssh-mount",
     "jumpstarter-driver-stlink-msd",
     "jumpstarter-driver-tasmota",
     "jumpstarter-driver-tftp",
@@ -85,6 +86,7 @@ docs = [
     { name = "esbonio", specifier = ">=0.16.4" },
     { name = "furo", specifier = ">=2024.8.6" },
     { name = "myst-parser", specifier = ">=5.0.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.33.1" },
     { name = "sphinx", specifier = "<8.1.0" },
     { name = "sphinx-autobuild", specifier = ">=2024.4.16" },
@@ -2022,6 +2024,7 @@ dependencies = [
     { name = "jumpstarter-driver-snmp" },
     { name = "jumpstarter-driver-someip" },
     { name = "jumpstarter-driver-ssh" },
+    { name = "jumpstarter-driver-ssh-mount" },
     { name = "jumpstarter-driver-tftp" },
     { name = "jumpstarter-driver-tmt" },
     { name = "jumpstarter-driver-uboot" },
@@ -2069,6 +2072,7 @@ requires-dist = [
     { name = "jumpstarter-driver-snmp", editable = "packages/jumpstarter-driver-snmp" },
     { name = "jumpstarter-driver-someip", editable = "packages/jumpstarter-driver-someip" },
     { name = "jumpstarter-driver-ssh", editable = "packages/jumpstarter-driver-ssh" },
+    { name = "jumpstarter-driver-ssh-mount", editable = "packages/jumpstarter-driver-ssh-mount" },
     { name = "jumpstarter-driver-tftp", editable = "packages/jumpstarter-driver-tftp" },
     { name = "jumpstarter-driver-tmt", editable = "packages/jumpstarter-driver-tmt" },
     { name = "jumpstarter-driver-uboot", editable = "packages/jumpstarter-driver-uboot" },
@@ -3233,7 +3237,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
-    { name = "opensomeip", specifier = ">=0.1.4,<0.2.0" },
+    { name = "opensomeip", specifier = ">=0.1.5,<0.2.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -3304,6 +3308,38 @@ dev = [
     { name = "pytest", specifier = ">=8.3.3" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "trio", specifier = ">=0.28.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-ssh-mount"
+source = { editable = "packages/jumpstarter-driver-ssh-mount" }
+dependencies = [
+    { name = "click" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-ssh" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.0.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-ssh", editable = "packages/jumpstarter-driver-ssh" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
 [[package]]
@@ -4634,30 +4670,30 @@ wheels = [
 
 [[package]]
 name = "opensomeip"
-version = "0.1.4"
+version = "0.1.5"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/d6/b6/538eea3f2379a3a4d66670c34c1f604f254319935253345db1c71684b8e2/opensomeip-0.1.4.tar.gz", hash = "sha256:0df02f951e84f83ec83e823c184c6ecc64f2e907a2dbe28b2a8b59896a77add3", size = 794093, upload-time = "2026-04-20T12:36:40.307Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d4/dd/f0ff59ae25bdcf28796c811d1559216e54f7a60c25851d3b7c44991ecdf1/opensomeip-0.1.5.tar.gz", hash = "sha256:d1cab1174b1c97b1d4fa8d9dd3d3f72a564535a44ef335ff0407102a2fa18937", size = 801258, upload-time = "2026-05-25T03:24:02.96Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4b/36/d3e7d91837091ceba95b76f64319a790a906d4b56c3d92f140357c0367bd/opensomeip-0.1.4-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:f032065c7ba6e200c0f9694a75784d0147a3decf3637e0d72721d8eb43697bc6", size = 732961, upload-time = "2026-04-20T12:36:07.884Z" },
-    { url = "https://files.pythonhosted.org/packages/0f/3b/90507af794cc5457fb0fd36c5949b2d81a57b8205b071417281fca54b046/opensomeip-0.1.4-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:feadaa029db1b3ff8553aa727c65d762bc55c19def350dc2c4d96f64b9cff436", size = 681384, upload-time = "2026-04-20T12:36:09.458Z" },
-    { url = "https://files.pythonhosted.org/packages/c6/3a/7140743d08352e3243d4c4c6493760ccf696167ae3c686c1588e56d3793d/opensomeip-0.1.4-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:4bf0d01efffd5bbb9a91c49e92f127fd2227e0802fc2590239dd10fdefa8c970", size = 813926, upload-time = "2026-04-20T12:36:11.217Z" },
-    { url = "https://files.pythonhosted.org/packages/36/8a/89d22a127c9745311079408747aa4b4a08d70785c4823bf3267238bfd41a/opensomeip-0.1.4-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:be202f720fc0a4d4470a0ad8e9016d8fc1d8c06992237cac917a18e3acd0be78", size = 863655, upload-time = "2026-04-20T12:36:12.556Z" },
-    { url = "https://files.pythonhosted.org/packages/4e/c8/41e59e532aaefd808daa09643a5bb0e878353691bc48ffe98d800b1ced64/opensomeip-0.1.4-cp311-cp311-win_amd64.whl", hash = "sha256:b8c2bcb3a5e0ad725889d54304105daebb2f94bb1a35bd88bb5760ce60b62c5d", size = 1030868, upload-time = "2026-04-20T12:36:13.835Z" },
-    { url = "https://files.pythonhosted.org/packages/00/c2/fe5fc28bf1370ac37bd2483b0b471685233502e5d87bfa6c8a4ac168faa7/opensomeip-0.1.4-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:62aaeb40247bcf3140d9c5fffddea60f44688d6aa988bff3cb1a7dbaa763af60", size = 741197, upload-time = "2026-04-20T12:36:15.577Z" },
-    { url = "https://files.pythonhosted.org/packages/b1/a1/470a7b136c8820c01a0a5550ce1ded906fc31731a7dfb0ed758872c3b815/opensomeip-0.1.4-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:2057e811d3aa4032debcf29e9e5906e42b3c36e73f7af028b723cfc49b98faf8", size = 682874, upload-time = "2026-04-20T12:36:17.286Z" },
-    { url = "https://files.pythonhosted.org/packages/a6/26/89e9e0ff5c93815599185e2ec566798bd6641a30091f1e85d4447527f4a6/opensomeip-0.1.4-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:58a12bf2d22762d8ff68d927cd10ff5a68e86a964eeaf8ae8da24c3bd06cf96c", size = 812990, upload-time = "2026-04-20T12:36:18.7Z" },
-    { url = "https://files.pythonhosted.org/packages/20/34/5e8bdf637a133d19c89edadf9ebd2aab6ac431102f5b66a2f6939963208d/opensomeip-0.1.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:f1033e3f95a129fbb159781bfd9b563858650b0fc5738d9192efecde6cb7f171", size = 864774, upload-time = "2026-04-20T12:36:20.376Z" },
-    { url = "https://files.pythonhosted.org/packages/d6/c0/e8a8ea8b5f6ce7eb97b260bdea802d7f1b25217db598b97b2566ed48c6c1/opensomeip-0.1.4-cp312-cp312-win_amd64.whl", hash = "sha256:0465bf6169d16e551230bb952a2d96dac6ba3efc874a0d4ca754347a8647b026", size = 1030507, upload-time = "2026-04-20T12:36:22.315Z" },
-    { url = "https://files.pythonhosted.org/packages/c2/01/1ad0f72b76fe5c13881d98ea243b8d9ab011c45b588b1c5904192648c607/opensomeip-0.1.4-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:2882665d95c4cb10fd72e0f1cb29c3b478534e292ee83bcbc5fbf007c79f8f74", size = 741269, upload-time = "2026-04-20T12:36:24.15Z" },
-    { url = "https://files.pythonhosted.org/packages/8a/39/dd42ec0690cecf52f1bdef609d50bd3c8b4dd67c9c2bcae0d184884bb077/opensomeip-0.1.4-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:e1b8884df2cdf61fe18ae3c08f70ba1d0385acbbab817b6ebea740b95addc6d6", size = 682875, upload-time = "2026-04-20T12:36:25.501Z" },
-    { url = "https://files.pythonhosted.org/packages/e1/d1/bbfdac43ecec8a45e7a5a0bdb5a62eaa17c7c516389069f356b856346281/opensomeip-0.1.4-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:cecdcff756005a041c75d5b355a4711fc47f197435a3ea1eacc7ce86069b464f", size = 813238, upload-time = "2026-04-20T12:36:27.257Z" },
-    { url = "https://files.pythonhosted.org/packages/5b/83/8abac36c487cd0cd175e9436ff14c2f9ac47fc19ce45e4199e5d7c5ecd7b/opensomeip-0.1.4-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:e32afac02480fbe6e8ff4c98591167b187bf76b0c02ac461de7264736bdadd5b", size = 864682, upload-time = "2026-04-20T12:36:28.699Z" },
-    { url = "https://files.pythonhosted.org/packages/3a/a4/ec5685374a600353c5ca010631d2587996b4d629daa274d508c81f1e38d2/opensomeip-0.1.4-cp313-cp313-win_amd64.whl", hash = "sha256:68399fdea77eee9e162cc68a0bdc23d11d54ed8f7aaa869ddcf65f9e5b1bdc04", size = 1030448, upload-time = "2026-04-20T12:36:30.57Z" },
-    { url = "https://files.pythonhosted.org/packages/65/1c/99c39167dc5c62906039fe60798b542a7ae9fee79ba5e7e9c86adac4a64e/opensomeip-0.1.4-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:ad9dad9b4f69bac5c2cc824331fb3ccb0e88e371c8c2f3dd9d84e58f6b759b64", size = 741368, upload-time = "2026-04-20T12:36:32.184Z" },
-    { url = "https://files.pythonhosted.org/packages/77/a8/dbd699b49803023b43a9cb79f85eb2b50b41aee43169c25bd119b7207083/opensomeip-0.1.4-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:d22868321e96fc8399c5b65ad1ff4939fe810a09c91077703f60b5f532bb1dc7", size = 684119, upload-time = "2026-04-20T12:36:33.971Z" },
-    { url = "https://files.pythonhosted.org/packages/e6/c4/22d71f217b00f31aeb729ef3116a89a32e246fbed27bb0115710ec26ac9c/opensomeip-0.1.4-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:67669e83704cc24d0d974749af9981514b898251198ffb0ad4461b2080e92c36", size = 815519, upload-time = "2026-04-20T12:36:35.521Z" },
-    { url = "https://files.pythonhosted.org/packages/09/64/3911b01ac097210633a0b410920a5134e31e6d143e89859c69f56b37cc15/opensomeip-0.1.4-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:6c3d7ab24cfb47d6749a700e2fdf62ec9dcc2ebdaf8dd4bbe044c097f30b3f98", size = 864454, upload-time = "2026-04-20T12:36:36.952Z" },
-    { url = "https://files.pythonhosted.org/packages/7d/d7/47129f69599728cf69986b4656557b5f200db987fa454ff3ef2b9c00ac8e/opensomeip-0.1.4-cp314-cp314-win_amd64.whl", hash = "sha256:9c02f737db484e85728c3924e1525e320dff9e19cb5b699978776977a96c4d0d", size = 1050633, upload-time = "2026-04-20T12:36:38.522Z" },
+    { url = "https://files.pythonhosted.org/packages/bd/27/44f39e3af24d116b36d471508354fc228b4253949c547fec0ad9e13e94bf/opensomeip-0.1.5-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:03fe15ca5aaa8b76cec4b03086c6335daf4f61cd1f2f21034a1e3e816602ccbc", size = 780336, upload-time = "2026-05-25T03:23:32.045Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/6e/35ba63ea0a351d5c8f37326ebbe887d41d0f2b3c5669b0dbda0b9df3d2f5/opensomeip-0.1.5-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:50b71444c02236021b73393733650a839691eeaec5e76d7d1134f56bf457231c", size = 721076, upload-time = "2026-05-25T03:23:33.539Z" },
+    { url = "https://files.pythonhosted.org/packages/52/3b/70a99aa781312e52953fc5cc96cda9c77b72faf6d2275c6773ac85efa4e4/opensomeip-0.1.5-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:f794d319f78015e28682809f9fabbf2d182c1f96e5a7e39f2fd3df9169b12a91", size = 855806, upload-time = "2026-05-25T03:23:35.186Z" },
+    { url = "https://files.pythonhosted.org/packages/48/9e/1433a92c34299fe46e63fe84e79224cf3759fbe71e65ed6e0f47e5d2e9e3/opensomeip-0.1.5-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:b89c661d2c8a904f53e9c6b8a8bb276eb7942cb33a08fb51227e312d941945a2", size = 907974, upload-time = "2026-05-25T03:23:36.556Z" },
+    { url = "https://files.pythonhosted.org/packages/bd/c8/e1d3ebf1e7033b7c57c2325e1814e27e4ff4777076742eb2d4090cddf0fe/opensomeip-0.1.5-cp311-cp311-win_amd64.whl", hash = "sha256:7a439d85fc7d44a833e001b389dc2834e2befcda21d1543f91c78a0bc2c365c4", size = 1099325, upload-time = "2026-05-25T03:23:38.105Z" },
+    { url = "https://files.pythonhosted.org/packages/6a/aa/03c5f3971854388cca981615c39ca253514d0998a85536646af6da20ff5e/opensomeip-0.1.5-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:f27cbe3136a22ad3fcb511bcc23a83190a38c921ea359712c3bc781d72b81782", size = 788534, upload-time = "2026-05-25T03:23:39.609Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/ee/606909e273a4dc6935036ce54e37e0c665fcd40cc7331baecafe5498cb16/opensomeip-0.1.5-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:faa4986b7aa9b48c569648bd51bae1a0a86cc43ab17f38d0cdcb3721542d3e0e", size = 722913, upload-time = "2026-05-25T03:23:40.928Z" },
+    { url = "https://files.pythonhosted.org/packages/db/c0/ad9e7e3d1dd8815d502b5834327e8a88e23e6a7824bd7aa11ff95c88fb2d/opensomeip-0.1.5-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:cf346ef44ced5f3dd2ef41194462970cff257b6e2b88562a854f3c70d081e2c0", size = 852075, upload-time = "2026-05-25T03:23:42.582Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/fc/c572cdc67971cc5a827f43d4909f10125ebd2757a3e5b92e71720142f390/opensomeip-0.1.5-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:8e8d7ce15263a9bd7ab6ded815bbd4d034f6191147ee41e9787b44d77b362473", size = 906998, upload-time = "2026-05-25T03:23:44.325Z" },
+    { url = "https://files.pythonhosted.org/packages/35/90/378336bfab0d03ef2ca148e4278aa49fb73beeaef577cea7aa207dd1e07a/opensomeip-0.1.5-cp312-cp312-win_amd64.whl", hash = "sha256:3c75c6fb7537d476e2848791dafe76af989961cc60e58b8d89f8e83472883496", size = 1098836, upload-time = "2026-05-25T03:23:45.666Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/bf/093a47e59ae3ef9b1a9766b2221bbee7bbb509a6dcf7b8b737ace614d483/opensomeip-0.1.5-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:50ad6d81a92bd608e2c7eb327aecdc045d0e6d8d72d46c78a82537eef8c8ba10", size = 788618, upload-time = "2026-05-25T03:23:47.379Z" },
+    { url = "https://files.pythonhosted.org/packages/55/76/1296227cebd9f8b0ba36795513ff664507e523c1cf6165c58ec5d18f9755/opensomeip-0.1.5-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:abae461e9246791c04fd12e5df1fbb87609e08afe6a2849ceb28a46b5f2d6303", size = 723007, upload-time = "2026-05-25T03:23:48.757Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/40/9deeb5d502f6e704914acfd22e7906e7aa945085716ef6100fb102e7db5c/opensomeip-0.1.5-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:ab22ccfdada28bb56f7cf0df8c90505d895789c7b3fa6c77e3770da3ebfe94af", size = 852095, upload-time = "2026-05-25T03:23:50.327Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/09/856ac1e7d7bb3c8541292f45925bf6e8c9d54c627f47deb4804239d0681f/opensomeip-0.1.5-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:9d653e1bb1f6afda056a94a4e68e7500c00da2e0ca9bac60bb2f56035982b664", size = 907331, upload-time = "2026-05-25T03:23:52.105Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/8b/adb5db537d8147070950fe1dc4e90c9c4dc347fc6cae2e82d7de57dcfc5f/opensomeip-0.1.5-cp313-cp313-win_amd64.whl", hash = "sha256:c2a74e7cfb38806267635b3b77fcfeb6b54b45b6e049ad55f1dce4ea70ef34d4", size = 1098803, upload-time = "2026-05-25T03:23:53.586Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/8b/7756b8d103366adf7efe28ff23835abf43485e6c8675f156ebfaee45d7b0/opensomeip-0.1.5-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:da70246ffd63b0ef29f06fced010821f0526435a5d70b59480f0fec7a34b0d2c", size = 788874, upload-time = "2026-05-25T03:23:55.161Z" },
+    { url = "https://files.pythonhosted.org/packages/63/ab/1d614f34c79a49374cc5d06fb4b39336ac8a25e32eff71dd828595a7ad1c/opensomeip-0.1.5-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:c29186d2c77f5e79eb6cd4c1dd4436e43a3fe0e8dc460f1600926d5bcec3bfe2", size = 724379, upload-time = "2026-05-25T03:23:56.777Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/7c/f800d99a3b5d31cb04c461fcd1a00b28eed329cd39d23b5db249729b01d0/opensomeip-0.1.5-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:dd156d826aeffc05c9c88f800bd3481fdfa5c0b071694c7a0ea8c7772fbfccd2", size = 854541, upload-time = "2026-05-25T03:23:58.407Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/10/755d1d528e571b56baad1be0189228375d83fc0ec4695657b6d516b89242/opensomeip-0.1.5-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:3a697cae295abd00932da399eca9cee641232e6f3ddba79021fef172148536af", size = 907205, upload-time = "2026-05-25T03:23:59.727Z" },
+    { url = "https://files.pythonhosted.org/packages/42/31/7bdca6d70743fa1a33f3c4b6916ee9a2ba1bdd48616d314a74aeaef087b7/opensomeip-0.1.5-cp314-cp314-win_amd64.whl", hash = "sha256:500ae7daea767ca9204710706b10582c345efed73cc12057934afc2c8bd359ce", size = 1121617, upload-time = "2026-05-25T03:24:01.571Z" },
 ]
 
 [[package]]
