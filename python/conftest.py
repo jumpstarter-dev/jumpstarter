@@ -27,6 +27,8 @@ else:
     def tmp_config_path(tmp_path, monkeypatch):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "client-config"))
         monkeypatch.setattr(ExporterConfigV1Alpha1, "BASE_PATH", tmp_path / "exporters")
+        # Isolate the legacy system fallback so tests never touch the real /etc.
+        monkeypatch.setattr(ExporterConfigV1Alpha1, "SYSTEM_CONFIG_PATH", tmp_path / "system-exporters")
 
     @pytest.fixture(autouse=True)
     def console_size(monkeypatch):

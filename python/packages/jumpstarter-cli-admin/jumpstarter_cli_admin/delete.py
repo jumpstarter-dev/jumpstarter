@@ -117,14 +117,17 @@ async def delete_exporter(
                 click.echo(f"Deleted exporter '{name}' in namespace '{namespace}'")
             else:
                 click.echo(f"exporter.jumpstarter.dev/{name}")
-            # Save the exporter config
-            if ExporterConfigV1Alpha1.exists(name) and (
-                delete or nointeractive is False and click.confirm("Delete exporter configuration?")
-            ):
-                # Delete the exporter config
-                ExporterConfigV1Alpha1.delete(name)
-                if output is None:
-                    click.echo("Exporter configuration successfully deleted")
+            if ExporterConfigV1Alpha1.user_config_exists(name):
+                if delete or nointeractive is False and click.confirm("Delete exporter configuration?"):
+                    ExporterConfigV1Alpha1.delete(name)
+                    if output is None:
+                        click.echo("Exporter configuration successfully deleted")
+            elif ExporterConfigV1Alpha1.exists(name) and output is None:
+                click.echo(
+                    f"Warning: a system config at {ExporterConfigV1Alpha1.resolve_path(name)} "
+                    "was not removed and may still be used by the exporter.",
+                    err=True,
+                )
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:

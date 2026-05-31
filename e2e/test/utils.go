@@ -599,6 +599,18 @@ func DumpControllerLogs(maxLines int) {
 
 // --- Exporter config helpers ---
 
+// SystemExporterConfigPath returns the production system path for an exporter
+// config (used for deployments where exporters are not a user workload).
+func SystemExporterConfigPath(name string) string {
+	return filepath.Join("/etc/jumpstarter/exporters", name+".yaml")
+}
+
+// UserExporterConfigPath returns the per-user default path for an exporter
+// config (the location the CLI writes to when no explicit path is given).
+func UserExporterConfigPath(name string) string {
+	return filepath.Join(os.Getenv("HOME"), ".config", "jumpstarter", "exporters", name+".yaml")
+}
+
 // MergeExporterConfig merges an overlay YAML into an exporter config file
 // using native Go YAML parsing (no external yq dependency).
 func MergeExporterConfig(exporterConfigPath, overlayFile string) {

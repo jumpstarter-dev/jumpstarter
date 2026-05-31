@@ -8,9 +8,19 @@ from jumpstarter_cli_common.opt import (
 )
 from jumpstarter_cli_common.print import model_print
 
+from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1, ObjectMeta
 
-arg_alias = click.argument("alias", default="default")
+
+def _validate_alias_param(ctx, param, value):
+    try:
+        ExporterConfigV1Alpha1.validate_alias(value)
+    except ConfigurationError as e:
+        raise click.BadParameter(str(e)) from e
+    return value
+
+
+arg_alias = click.argument("alias", default="default", callback=_validate_alias_param)
 
 
 @click.group("exporter")
@@ -29,11 +39,9 @@ def config_exporter():
 @arg_alias
 def create_exporter_config(alias, namespace, name, endpoint, token, output: PathOutputType):
     """Create an exporter config."""
-    try:
-        ExporterConfigV1Alpha1.load(alias)
-    except FileNotFoundError:
-        pass
-    else:
+    # Guard against overwriting an existing user-level config (the write target).
+    # A same-named config in the system location (/etc) is allowed to be shadowed.
+    if ExporterConfigV1Alpha1.user_config_exists(alias):
         raise click.ClickException(f'exporter "{alias}" exists')
 
     config = ExporterConfigV1Alpha1(
@@ -57,9 +65,18 @@ def delete_exporter_config(alias, output: PathOutputType):
         ExporterConfigV1Alpha1.load(alias)
     except FileNotFoundError as err:
         raise click.ClickException(f'exporter "{alias}" does not exist') from err
-    path = ExporterConfigV1Alpha1.delete(alias)
+    try:
+        path = ExporterConfigV1Alpha1.delete(alias)
+    except ConfigurationError as err:
+        raise click.ClickException(str(err)) from err
     if output == OutputMode.PATH:
         click.echo(path)
+    if ExporterConfigV1Alpha1.exists(alias):
+        click.echo(
+            f"Warning: {path} deleted, but a system config at "
+            f"{ExporterConfigV1Alpha1.resolve_path(alias)} still exists and will now be used.",
+            err=True,
+        )
 
 
 @config_exporter.command("edit")

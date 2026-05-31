@@ -379,7 +379,7 @@ class ClientConfigV1Alpha1(BaseSettings):
     @classmethod
     def _get_path(cls, alias: str) -> Path:
         """Get the regular path of a client config given an alias."""
-        return (cls.CLIENT_CONFIGS_PATH / alias).with_suffix(".yaml")
+        return cls.CLIENT_CONFIGS_PATH / f"{alias}.yaml"
 
     @classmethod
     def load(cls, alias: str) -> Self:

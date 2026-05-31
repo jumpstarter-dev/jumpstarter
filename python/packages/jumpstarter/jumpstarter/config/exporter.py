@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import errno
+import os
+import tempfile
 from contextlib import asynccontextmanager, contextmanager, suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional, Self
@@ -9,7 +12,7 @@ import yaml
 from anyio.from_thread import start_blocking_portal
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
-from .common import ObjectMeta
+from .common import CONFIG_PATH, ObjectMeta
 from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.common.exceptions import ConfigurationError, MissingDriverError
@@ -148,7 +151,20 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
 
 
 class ExporterConfigV1Alpha1(BaseModel):
-    BASE_PATH: ClassVar[Path] = Path("/etc/jumpstarter/exporters")
+    """Exporter configuration (jumpstarter.dev/v1alpha1 ExporterConfig).
+
+    Stores credentials, endpoint, driver tree, hooks, and failure-detection
+    settings for a single exporter instance.  The CLI writes new configs to
+    ``BASE_PATH`` (user config dir); ``SYSTEM_CONFIG_PATH`` is kept as a
+    read fallback for production deployments (systemd units, containers).
+    """
+
+    # Default location for exporter configs created via the CLI. Lives under the
+    # user config dir (e.g. ~/.config/jumpstarter/exporters), consistent with clients.
+    BASE_PATH: ClassVar[Path] = CONFIG_PATH / "exporters"
+    # System-wide location, kept as a read fallback so production deployments
+    # (systemd units, containers mounting /etc/jumpstarter) keep working.
+    SYSTEM_CONFIG_PATH: ClassVar[Path] = Path("/etc/jumpstarter/exporters")
 
     alias: str = Field(default="default")
 
@@ -172,15 +188,48 @@ class ExporterConfigV1Alpha1(BaseModel):
     path: Path | None = Field(default=None)
 
     @classmethod
-    def _get_path(cls, alias: str):
-        return (cls.BASE_PATH / alias).with_suffix(".yaml")
+    def validate_alias(cls, alias: str) -> None:
+        if not alias or alias in (".", "..") or any(sep in alias for sep in ("/", "\\")):
+            raise ConfigurationError(
+                f"Invalid exporter alias '{alias}': must not contain path separators or be '.' / '..'"
+            )
 
     @classmethod
-    def exists(cls, alias: str):
+    def _get_path(cls, alias: str) -> Path:
+        cls.validate_alias(alias)
+        return cls.BASE_PATH / f"{alias}.yaml"
+
+    @classmethod
+    def _resolve_path(cls, alias: str) -> Path:
+        """Return an alias's config path, preferring the user dir over the production system location.
+
+        Falls back to the system location only when the user-dir file does not exist. When neither
+        exists, the user-dir path is returned so callers raise a ``FileNotFoundError`` pointing at
+        the current default location.
+        """
+        user_path = cls._get_path(alias)
+        if user_path.exists():
+            return user_path
+        system_path = cls.SYSTEM_CONFIG_PATH / f"{alias}.yaml"
+        if system_path.exists():
+            return system_path
+        return user_path
+
+    @classmethod
+    def user_config_exists(cls, alias: str) -> bool:
         return cls._get_path(alias).exists()
 
     @classmethod
-    def load_path(cls, path: Path):
+    def resolve_path(cls, alias: str) -> Path:
+        return cls._resolve_path(alias)
+
+    @classmethod
+    def exists(cls, alias: str) -> bool:
+        """Return True if a config for the alias exists in either the user or system location."""
+        return cls._resolve_path(alias).exists()
+
+    @classmethod
+    def load_path(cls, path: Path) -> Self:
         with path.open() as f:
             config = cls.model_validate(yaml.safe_load(f))
             config.path = path
@@ -188,38 +237,73 @@ class ExporterConfigV1Alpha1(BaseModel):
 
     @classmethod
     def load(cls, alias: str) -> Self:
-        config = cls.load_path(cls._get_path(alias))
+        """Load the config for an alias, searching the user dir then the system fallback."""
+        config = cls.load_path(cls._resolve_path(alias))
         config.alias = alias
         return config
 
     @classmethod
     def list(cls) -> ExporterConfigListV1Alpha1:
+        """List exporter configs from the user and system locations (user takes precedence)."""
+        # Aliases in the user config dir take precedence over the production system location.
+        aliases: dict[str, None] = {}
+        for base in (cls.BASE_PATH, cls.SYSTEM_CONFIG_PATH):
+            with suppress(FileNotFoundError):
+                for entry in base.iterdir():
+                    if entry.suffix == ".yaml":
+                        aliases.setdefault(entry.stem, None)
         exporters = []
-        with suppress(FileNotFoundError):
-            for entry in cls.BASE_PATH.iterdir():
-                exporters.append(cls.load(entry.stem))
+        for alias in aliases:
+            with suppress(FileNotFoundError):
+                exporters.append(cls.load(alias))
         return ExporterConfigListV1Alpha1(items=exporters)
 
     @classmethod
     def dump_yaml(self, config: Self) -> str:
+        """Serialize a config to a YAML string, omitting internal fields (alias, path)."""
         return yaml.safe_dump(config.model_dump(mode="json", by_alias=True, exclude={"alias", "path"}), sort_keys=False)
 
     @classmethod
     def save(cls, config: Self, path: Optional[str] = None) -> Path:
+        """Save the config to disk, defaulting to the user config dir when no path is given."""
         # Set the config path before saving
         if path is None:
             config.path = cls._get_path(config.alias)
-            config.path.parent.mkdir(parents=True, exist_ok=True)
         else:
             config.path = Path(path)
-        with config.path.open(mode="w") as f:
-            yaml.safe_dump(config.model_dump(mode="json", by_alias=True, exclude={"alias", "path"}), f, sort_keys=False)
+        config.path.parent.mkdir(parents=True, exist_ok=True)
+        temp_fd, temp_path = tempfile.mkstemp(prefix=f".{config.path.name}.", dir=config.path.parent)
+        try:
+            os.fchmod(temp_fd, 0o600)
+            with os.fdopen(temp_fd, "w") as f:
+                yaml.safe_dump(
+                    config.model_dump(mode="json", by_alias=True, exclude={"alias", "path"}), f, sort_keys=False
+                )
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, config.path)
+            os.chmod(config.path, 0o600)
+        finally:
+            try:
+                os.unlink(temp_path)
+            except OSError as e:
+                if e.errno != errno.ENOENT:
+                    raise
         return config.path
 
     @classmethod
     def delete(cls, alias: str) -> Path:
+        """Delete the user-dir config file for an alias and return its path."""
         path = cls._get_path(alias)
-        path.unlink(missing_ok=True)
+        if not path.exists():
+            system_path = cls.SYSTEM_CONFIG_PATH / f"{alias}.yaml"
+            if system_path.exists():
+                raise ConfigurationError(
+                    f"Exporter config '{alias}' exists only in the system location"
+                    f" '{system_path}' and cannot be deleted."
+                )
+            return path
+        path.unlink()
         return path
 
     @asynccontextmanager
