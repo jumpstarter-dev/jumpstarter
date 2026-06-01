@@ -1,3 +1,5 @@
+from typing import Any
+
 import yaml
 from hypothesis import given
 from hypothesis import strategies as st
@@ -9,7 +11,7 @@ from jumpstarter.config.exporter import (
 )
 
 
-def _yaml_safe_load_or_error(raw: str):
+def _yaml_safe_load_or_error(raw: str) -> Any | None:
     try:
         return yaml.safe_load(raw)
     except yaml.YAMLError:
