@@ -315,12 +315,14 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
 
     # DEADLINE_EXCEEDED and CANCELLED are excluded: they indicate client-side
     # timeout or cancellation, not server/network transients worth retrying.
-    _TRANSIENT_GRPC_CODES = frozenset({
-        grpc.StatusCode.UNAVAILABLE,
-        grpc.StatusCode.RESOURCE_EXHAUSTED,
-        grpc.StatusCode.ABORTED,
-        grpc.StatusCode.INTERNAL,
-    })
+    _TRANSIENT_GRPC_CODES = frozenset(
+        {
+            grpc.StatusCode.UNAVAILABLE,
+            grpc.StatusCode.RESOURCE_EXHAUSTED,
+            grpc.StatusCode.ABORTED,
+            grpc.StatusCode.INTERNAL,
+        }
+    )
 
     # UNKNOWN error messages that indicate transient tunnel teardowns.
     # We don't blanket-retry all UNKNOWN errors (they could be permanent
@@ -333,9 +335,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         """Compute exponential-backoff delay, capped by *cap* and *remaining* time."""
         return min(base * (2**attempt), cap, remaining)
 
-    async def _dial_and_connect(
-        self, stream: SocketStream, channel_ready_timeout: float = 10.0
-    ) -> None:
+    async def _dial_and_connect(self, stream: SocketStream, channel_ready_timeout: float = 10.0) -> None:
         """Single attempt; raises on failure for caller-driven retry."""
         response = await self.controller.Dial(jumpstarter_pb2.DialRequest(lease_name=self.name))
         async with connect_router_stream(
@@ -360,7 +360,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         attempt = 0
         while True:
             remaining = deadline - time.monotonic()
-            channel_ready_timeout = max(min(10.0, remaining), 0.5)
+            channel_ready_timeout = max(min(10.0, remaining), 0)
             try:
                 await self._dial_and_connect(stream, channel_ready_timeout=channel_ready_timeout)
                 return
@@ -409,7 +409,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     await sleep(delay)
                     attempt += 1
                     continue
-                if "permission denied" in str(e.details()).lower():
+                if e.code() == grpc.StatusCode.PERMISSION_DENIED:
                     self.lease_transferred = True
                     logger.warning(
                         "Lease %s has been transferred to another client. Your session is no longer valid.",

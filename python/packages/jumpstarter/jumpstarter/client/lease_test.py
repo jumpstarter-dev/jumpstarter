@@ -692,9 +692,7 @@ class TestHandleAsyncTransientRetry:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                raise _make_aio_rpc_error(
-                    grpc.StatusCode.UNKNOWN, "watch channel closed"
-                )
+                raise _make_aio_rpc_error(grpc.StatusCode.UNKNOWN, "watch channel closed")
             return dial_response
 
         lease.controller.Dial = AsyncMock(side_effect=dial_side_effect)
@@ -717,9 +715,7 @@ class TestHandleAsyncTransientRetry:
         lease = _make_lease_for_handle()
 
         lease.controller.Dial = AsyncMock(
-            side_effect=_make_aio_rpc_error(
-                grpc.StatusCode.UNKNOWN, "some unexpected server bug"
-            ),
+            side_effect=_make_aio_rpc_error(grpc.StatusCode.UNKNOWN, "some unexpected server bug"),
         )
 
         with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
@@ -888,9 +884,7 @@ class TestHandleAsyncTransientRetry:
             nonlocal call_count
             call_count += 1
             if call_count <= total_failures:
-                raise _make_aio_rpc_error(
-                    grpc.StatusCode.UNAVAILABLE, "tunnel dropped"
-                )
+                raise _make_aio_rpc_error(grpc.StatusCode.UNAVAILABLE, "tunnel dropped")
             return dial_response
 
         lease.controller.Dial = AsyncMock(side_effect=dial_side_effect)
@@ -918,10 +912,7 @@ class TestHandleAsyncTransientRetry:
         actual_delays = [call.args[0] for call in mock_sleep.call_args_list]
         assert len(actual_delays) == len(expected_delays)
         for actual, expected in zip(actual_delays, expected_delays, strict=True):
-            assert actual == pytest.approx(expected), (
-                f"Expected delay {expected}, got {actual}"
-            )
-
+            assert actual == pytest.approx(expected), f"Expected delay {expected}, got {actual}"
 
     @pytest.mark.anyio
     async def test_failed_precondition_not_ready_retries_then_succeeds(self):
@@ -934,9 +925,7 @@ class TestHandleAsyncTransientRetry:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                raise _make_aio_rpc_error(
-                    grpc.StatusCode.FAILED_PRECONDITION, "exporter not ready"
-                )
+                raise _make_aio_rpc_error(grpc.StatusCode.FAILED_PRECONDITION, "exporter not ready")
             return dial_response
 
         lease.controller.Dial = AsyncMock(side_effect=dial_side_effect)
@@ -960,9 +949,7 @@ class TestHandleAsyncTransientRetry:
         lease.dial_timeout = 0.0  # already expired
 
         lease.controller.Dial = AsyncMock(
-            side_effect=_make_aio_rpc_error(
-                grpc.StatusCode.FAILED_PRECONDITION, "exporter not ready"
-            ),
+            side_effect=_make_aio_rpc_error(grpc.StatusCode.FAILED_PRECONDITION, "exporter not ready"),
         )
 
         with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
@@ -978,15 +965,78 @@ class TestHandleAsyncTransientRetry:
         assert lease.lease_transferred is False
 
         lease.controller.Dial = AsyncMock(
-            side_effect=_make_aio_rpc_error(
-                grpc.StatusCode.PERMISSION_DENIED, "permission denied"
-            ),
+            side_effect=_make_aio_rpc_error(grpc.StatusCode.PERMISSION_DENIED, "permission denied"),
         )
 
         with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
             await lease.handle_async(Mock())
 
         assert lease.lease_transferred is True
+
+    @pytest.mark.anyio
+    async def test_permission_denied_with_custom_details_still_detected(self):
+        """PERMISSION_DENIED with non-standard detail text should still set lease_transferred."""
+        lease = _make_lease_for_handle()
+        assert lease.lease_transferred is False
+
+        lease.controller.Dial = AsyncMock(
+            side_effect=_make_aio_rpc_error(grpc.StatusCode.PERMISSION_DENIED, "lease reassigned to another client"),
+        )
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            await lease.handle_async(Mock())
+
+        assert lease.lease_transferred is True
+
+    @pytest.mark.anyio
+    async def test_unauthenticated_with_permission_text_does_not_set_transferred(self):
+        """UNAUTHENTICATED with 'permission denied' in details should NOT set lease_transferred."""
+        lease = _make_lease_for_handle()
+        assert lease.lease_transferred is False
+
+        lease.controller.Dial = AsyncMock(
+            side_effect=_make_aio_rpc_error(
+                grpc.StatusCode.UNAUTHENTICATED,
+                "permission denied: token expired",
+            ),
+        )
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            await lease.handle_async(Mock())
+
+        assert lease.lease_transferred is False
+
+    @pytest.mark.anyio
+    async def test_channel_ready_timeout_bounded_by_remaining(self):
+        """channel_ready_timeout should decrease as the dial deadline approaches."""
+        lease = _make_lease_for_handle()
+        lease.dial_timeout = 3.0
+
+        call_count = 0
+        captured_timeouts = []
+
+        async def tracking_dial_and_connect(self_inner, stream, channel_ready_timeout=10.0):
+            nonlocal call_count
+            call_count += 1
+            captured_timeouts.append(channel_ready_timeout)
+            if call_count <= 3:
+                raise _make_aio_rpc_error(grpc.StatusCode.FAILED_PRECONDITION, "exporter not ready")
+            # Succeed on 4th attempt (won't normally reach here with 3s timeout)
+
+        with (
+            patch.object(type(lease), "_dial_and_connect", tracking_dial_and_connect),
+            patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock),
+        ):
+            await lease.handle_async(Mock())
+
+        # With a 3s dial_timeout, the first call should have channel_ready_timeout <= 3.0
+        # and subsequent calls should have progressively smaller values
+        assert len(captured_timeouts) >= 2
+        assert all(t <= 10.0 for t in captured_timeouts), f"All timeouts should be <= 10.0, got {captured_timeouts}"
+        # The first timeout should be bounded by remaining (~3.0), not the default 10.0
+        assert captured_timeouts[0] <= 3.1, (
+            f"First timeout should be bounded by dial_timeout (~3.0), got {captured_timeouts[0]}"
+        )
 
 
 class TestRetryDelay:
