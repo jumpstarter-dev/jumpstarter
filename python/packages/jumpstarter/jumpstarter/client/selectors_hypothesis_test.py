@@ -89,6 +89,41 @@ class TestSelectorContainsProperties:
         expr = f"!{key}"
         assert selector_contains(expr, expr) is True
 
+    @given(
+        present_labels=label_pairs_strategy(),
+        absent_key=selector_key,
+    )
+    def test_absent_key_satisfies_not_exists(self, present_labels: dict[str, str], absent_key: str) -> None:
+        if absent_key in present_labels:
+            return
+        selector_str = format_selector(present_labels)
+        requirement = f"!{absent_key}"
+        assert selector_contains(selector_str, requirement) is True
+
+    @given(
+        present_labels=label_pairs_strategy(),
+        absent_key=selector_key,
+        excluded_values=st.lists(selector_value, min_size=1, max_size=3),
+    )
+    def test_absent_key_satisfies_notin(self, present_labels: dict[str, str], absent_key: str, excluded_values: list[str]) -> None:
+        if absent_key in present_labels:
+            return
+        selector_str = format_selector(present_labels)
+        requirement = f"{absent_key} notin ({', '.join(excluded_values)})"
+        assert selector_contains(selector_str, requirement) is True
+
+    @given(
+        present_labels=label_pairs_strategy(),
+        absent_key=selector_key,
+        value=selector_value,
+    )
+    def test_absent_key_satisfies_not_equal(self, present_labels: dict[str, str], absent_key: str, value: str) -> None:
+        if absent_key in present_labels:
+            return
+        selector_str = format_selector(present_labels)
+        requirement = f"{absent_key}!={value}"
+        assert selector_contains(selector_str, requirement) is True
+
     @given(key=selector_key, value=selector_value)
     def test_mismatched_operators_do_not_match(self, key: str, value: str) -> None:
         selector = f"{key} in ({value})"
