@@ -36,6 +36,18 @@ class TestSelectorContains:
     def test_empty_filter_matches_all(self):
         assert selector_contains("board=rpi,firmware in (v2, v3)", "") is True
 
+    def test_match_label_satisfies_in_expression(self):
+        assert selector_contains("board=rpi", "board in (rpi, jetson)") is True
+
+    def test_match_label_does_not_satisfy_in_expression(self):
+        assert selector_contains("board=rpi", "board in (jetson, nano)") is False
+
+    def test_match_label_satisfies_notin_expression(self):
+        assert selector_contains("board=rpi", "board notin (jetson, nano)") is True
+
+    def test_match_label_does_not_satisfy_notin_expression(self):
+        assert selector_contains("board=rpi", "board notin (rpi, nano)") is False
+
     def test_whitespace_tolerance(self):
         """Whitespace around operators should be tolerated (matching Go behavior)."""
         assert selector_contains("board=rpi", "board = rpi") is True
