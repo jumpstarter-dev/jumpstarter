@@ -13,6 +13,7 @@ This means `git diff` after a fuzz run shows exactly what was found, and
 """
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -231,7 +232,26 @@ def _count_existing_examples(text: str, func_name: str) -> int:
     return count
 
 
+def _is_safe_example_args(example_args: str) -> bool:
+    try:
+        ast.parse(f"f({example_args})", mode="eval")
+    except SyntaxError:
+        return False
+    tree = ast.parse(f"f({example_args})", mode="eval")
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Call, ast.Lambda, ast.ListComp, ast.SetComp,
+                             ast.DictComp, ast.GeneratorExp, ast.Await,
+                             ast.JoinedStr, ast.FormattedValue)):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "f"):
+                return False
+    return True
+
+
 def _insert_example(path: Path, func_name: str, example_args: str) -> bool:
+    if not _is_safe_example_args(example_args):
+        print(f"  skipping unsafe example args for {func_name}: {example_args!r}")
+        return False
+
     text = path.read_text()
     decorator = f"@example({example_args})"
 

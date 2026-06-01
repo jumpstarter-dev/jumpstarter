@@ -14,6 +14,7 @@ from fuzz import (
     _discover_python_fuzz_dirs,
     _extract_falsifying_examples,
     _insert_example,
+    _is_safe_example_args,
     parse_duration,
 )
 
@@ -257,3 +258,41 @@ class TestDiscoverGoFuzzTargets:
     def test_returns_empty_when_no_controller_dir(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         assert _discover_go_fuzz_targets() == []
+
+
+class TestIsSafeExampleArgs:
+    def test_simple_keyword_arg(self):
+        assert _is_safe_example_args("value=42") is True
+
+    def test_string_keyword_arg(self):
+        assert _is_safe_example_args("value='hello'") is True
+
+    def test_multiple_keyword_args(self):
+        assert _is_safe_example_args("a=1, b='x'") is True
+
+    def test_empty_string_value(self):
+        assert _is_safe_example_args("operator=''") is True
+
+    def test_nested_call_rejected(self):
+        assert _is_safe_example_args("value=__import__('os')") is False
+
+    def test_lambda_rejected(self):
+        assert _is_safe_example_args("value=lambda: 1") is False
+
+    def test_fstring_rejected(self):
+        assert _is_safe_example_args("value=f'{__import__(\"os\")}'") is False
+
+    def test_list_comprehension_rejected(self):
+        assert _is_safe_example_args("value=[x for x in range(10)]") is False
+
+    def test_syntax_error_rejected(self):
+        assert _is_safe_example_args("value=)(") is False
+
+    def test_plain_literal_list(self):
+        assert _is_safe_example_args("value=[1, 2, 3]") is True
+
+    def test_none_value(self):
+        assert _is_safe_example_args("value=None") is True
+
+    def test_boolean_value(self):
+        assert _is_safe_example_args("value=True") is True
