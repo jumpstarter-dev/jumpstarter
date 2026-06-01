@@ -24,7 +24,7 @@ import sys
 import time
 from pathlib import Path
 
-_FUZZ_FUNC_RE = re.compile(r"^func (Fuzz\w+)\(", re.MULTILINE)
+_FUZZ_FUNC_RE = re.compile(r"^func (Fuzz\w+)\(f \*testing\.F\)", re.MULTILINE)
 
 
 def _discover_go_fuzz_targets() -> list[tuple[str, str]]:
