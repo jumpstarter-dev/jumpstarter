@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from typing import Literal, Optional
 
 from kubernetes_asyncio.client.models import V1Condition, V1ObjectMeta, V1ObjectReference
@@ -37,7 +38,10 @@ class V1Alpha1Lease(JsonBaseModel):
 
     @staticmethod
     def from_dict(dict: dict):
-        selector_data = dict["spec"].get("selector", {})
+        spec = dict["spec"]
+        if not isinstance(spec, Mapping):
+            raise TypeError(f"spec must be a dict, got {type(spec).__name__}")
+        selector_data = spec.get("selector", {})
         return V1Alpha1Lease(
             api_version=dict["apiVersion"],
             kind=dict["kind"],
@@ -70,10 +74,10 @@ class V1Alpha1Lease(JsonBaseModel):
                 ],
             ),
             spec=V1Alpha1LeaseSpec(
-                client=V1ObjectReference(name=dict["spec"]["clientRef"]["name"])
-                if "clientRef" in dict["spec"]
+                client=V1ObjectReference(name=spec["clientRef"]["name"])
+                if "clientRef" in spec
                 else None,
-                duration=dict["spec"]["duration"] if "duration" in dict["spec"] else None,
+                duration=spec["duration"] if "duration" in spec else None,
                 selector=V1Alpha1LeaseSelector(match_labels=selector_data.get("matchLabels", {})),
             ),
         )

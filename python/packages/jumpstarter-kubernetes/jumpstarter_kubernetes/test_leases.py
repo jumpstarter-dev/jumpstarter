@@ -1,3 +1,4 @@
+import pytest
 from kubernetes_asyncio.client.models import V1Condition, V1ObjectMeta, V1ObjectReference
 
 from jumpstarter_kubernetes import V1Alpha1Lease, V1Alpha1LeaseSelector, V1Alpha1LeaseSpec, V1Alpha1LeaseStatus
@@ -152,3 +153,23 @@ def test_lease_from_dict_without_match_labels_name_targeted():
     )
 
     assert lease.spec.selector.match_labels == {}
+
+
+def test_from_dict_raises_type_error_when_spec_is_a_list():
+    with pytest.raises(TypeError):
+        V1Alpha1Lease.from_dict({"spec": []})
+
+
+def test_from_dict_raises_type_error_when_spec_is_a_string():
+    with pytest.raises(TypeError):
+        V1Alpha1Lease.from_dict({"spec": "invalid"})
+
+
+def test_from_dict_raises_type_error_when_spec_is_an_integer():
+    with pytest.raises(TypeError):
+        V1Alpha1Lease.from_dict({"spec": 42})
+
+
+def test_from_dict_raises_type_error_when_spec_is_none():
+    with pytest.raises(TypeError):
+        V1Alpha1Lease.from_dict({"spec": None})
