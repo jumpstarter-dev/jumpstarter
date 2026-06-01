@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -62,34 +63,49 @@ def parse_duration(value: str) -> int:
 def run_hypofuzz(seconds: int) -> bool:
     print(f"Python fuzz (HypoFuzz): coverage-guided for {seconds}s", flush=True)
     workers = max(1, (os.cpu_count() or 2) - 2)
-    proc = subprocess.Popen(
-        [
-            "uv", "run", "hypothesis", "fuzz",
-            "--no-dashboard",
-            "-n", str(workers),
-            "--",
-            *PYTHON_FUZZ_DIRS,
-            "-k", PYTEST_FILTER,
-            "--no-cov",
-        ],
-        cwd="python",
-    )
-    try:
-        proc.wait(timeout=seconds)
-    except subprocess.TimeoutExpired:
-        proc.send_signal(signal.SIGINT)
+    db_path = Path("python") / ".hypothesis" / "examples"
+    db_path.mkdir(parents=True, exist_ok=True)
+
+    max_attempts = 3
+    startup_grace = 60
+    for attempt in range(max_attempts):
+        start = time.monotonic()
+        proc = subprocess.Popen(
+            [
+                "uv", "run", "hypothesis", "fuzz",
+                "--no-dashboard",
+                "-n", str(workers),
+                "--",
+                *PYTHON_FUZZ_DIRS,
+                "-k", PYTEST_FILTER,
+                "--no-cov",
+            ],
+            cwd="python",
+            stderr=subprocess.DEVNULL,
+        )
         try:
-            proc.wait(timeout=10)
+            proc.wait(timeout=seconds)
         except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-        print(f"HypoFuzz: stopped after {seconds}s (budget exhausted)")
+            proc.send_signal(signal.SIGINT)
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+            print(f"HypoFuzz: stopped after {seconds}s (budget exhausted)")
+            return True
+
+        elapsed = time.monotonic() - start
+        if proc.returncode != 0 and elapsed < startup_grace and attempt < max_attempts - 1:
+            print(f"HypoFuzz: crashed during startup (code {proc.returncode}), retrying ({attempt + 1}/{max_attempts})")
+            continue
+
+        if proc.returncode == 0:
+            print("HypoFuzz: completed (no more tests to fuzz)")
+        else:
+            print(f"HypoFuzz: exited with code {proc.returncode} (found failures)")
         return True
 
-    if proc.returncode == 0:
-        print("HypoFuzz: completed (no more tests to fuzz)")
-    else:
-        print(f"HypoFuzz: exited with code {proc.returncode} (found failures)")
     return True
 
 
@@ -192,22 +208,30 @@ def _insert_example(path: Path, func_name: str, example_args: str) -> bool:
     if _count_existing_examples(text, func_name) >= MAX_EXAMPLES_PER_TEST:
         return False
 
-    pattern = re.compile(
-        rf"([ \t]*)(@given\(.*?\))\s*\n([ \t]*def {re.escape(func_name)}\()",
-        re.DOTALL,
-    )
-    m = pattern.search(text)
-    if m:
-        indent = m.group(1)
-        replacement = f"{indent}{decorator}\n{indent}{m.group(2)}\n{m.group(3)}"
-        text = text[:m.start()] + replacement + text[m.end():]
+    def_pattern = re.compile(rf"^([ \t]*)def {re.escape(func_name)}\(", re.MULTILINE)
+    def_match = def_pattern.search(text)
+    if not def_match:
+        return False
+
+    indent = def_match.group(1)
+    before = text[:def_match.start()]
+    lines_before = before.rstrip("\n").splitlines()
+
+    given_start = None
+    depth = 0
+    for i in range(len(lines_before) - 1, -1, -1):
+        stripped = lines_before[i].strip()
+        depth += stripped.count(")") - stripped.count("(")
+        if depth <= 0:
+            if stripped.startswith("@given"):
+                given_start = i
+            break
+
+    if given_start is not None:
+        insert_offset = sum(len(l) + 1 for l in lines_before[:given_start])
+        text = text[:insert_offset] + f"{indent}{decorator}\n" + text[insert_offset:]
     else:
-        pattern = re.compile(rf"([ \t]*)(def {re.escape(func_name)}\()")
-        m = pattern.search(text)
-        if not m:
-            return False
-        indent = m.group(1)
-        text = text[:m.start()] + f"{indent}{decorator}\n{indent}{m.group(2)}" + text[m.end():]
+        text = text[:def_match.start()] + f"{indent}{decorator}\n" + text[def_match.start():]
 
     if "from hypothesis import" in text:
         import_line_match = re.search(r"from hypothesis import (.+)", text)
@@ -222,6 +246,31 @@ def _insert_example(path: Path, func_name: str, example_args: str) -> bool:
 
     path.write_text(text)
     return True
+
+
+def _clean_example_args(raw_args: str) -> str:
+    cleaned = re.sub(r"\s*self=<[^>]*>,?\s*", " ", raw_args)
+    cleaned = " ".join(cleaned.split())
+    cleaned = cleaned.strip(", ")
+    return cleaned
+
+
+def _extract_falsifying_examples(output: str) -> list[tuple[str, str]]:
+    stripped = re.sub(r"^[ \t]*E {2,}", "", output, flags=re.MULTILINE)
+    example_re = re.compile(
+        r"Falsifying example: (\w+)\((.*?)\)$",
+        re.DOTALL | re.MULTILINE,
+    )
+    seen = set()
+    results = []
+    for m in example_re.finditer(stripped):
+        func_name = m.group(1)
+        cleaned = _clean_example_args(m.group(2))
+        key = (func_name, cleaned)
+        if key not in seen:
+            seen.add(key)
+            results.append(key)
+    return results
 
 
 def replay_and_inject_python() -> int:
@@ -239,15 +288,7 @@ def replay_and_inject_python() -> int:
     )
 
     output = result.stdout + "\n" + result.stderr
-    example_re = re.compile(r"Falsifying example: (\w+)\((.+)\)")
-
-    seen = set()
-    regressions = []
-    for m in example_re.finditer(output):
-        key = (m.group(1), m.group(2))
-        if key not in seen:
-            seen.add(key)
-            regressions.append(key)
+    regressions = _extract_falsifying_examples(output)
 
     if not regressions:
         print("No regressions found in Hypothesis database.")
@@ -284,6 +325,10 @@ def run_python(seconds: int) -> bool:
         run_hypothesis_loop(remaining)
 
     replay_and_inject_python()
+
+    db_path = Path("python") / ".hypothesis" / "examples"
+    if db_path.exists():
+        shutil.rmtree(db_path)
     return True
 
 
