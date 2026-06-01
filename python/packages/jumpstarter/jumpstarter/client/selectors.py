@@ -67,18 +67,32 @@ def extract_match_labels_filter(selector: str | None) -> str | None:
     return ",".join(f"{k}={v}" for k, v in match_labels.items())
 
 
+def _selector_key_exists(
+    sel_labels: dict[str, str],
+    sel_exprs: list[tuple[str, str, list[str]]],
+    key: str,
+) -> bool:
+    if key in sel_labels:
+        return True
+    return any(s_key == key for s_key, _, _ in sel_exprs)
+
+
 def _label_satisfies_expression(
-    sel_labels: dict[str, str], key: str, operator: str, values: list[str]
+    sel_labels: dict[str, str],
+    sel_exprs: list[tuple[str, str, list[str]]],
+    key: str,
+    operator: str,
+    values: list[str],
 ) -> bool:
     if operator == "!exists":
-        return key not in sel_labels
+        return not _selector_key_exists(sel_labels, sel_exprs, key)
+    if operator == "exists":
+        return _selector_key_exists(sel_labels, sel_exprs, key)
     if key not in sel_labels:
-        return False
+        return operator in ("notin", "!=")
     label_value = sel_labels[key]
     if operator == "in":
         return label_value in values
-    if operator == "exists":
-        return True
     if operator == "!=":
         return label_value not in values
     if operator == "notin":
@@ -111,7 +125,7 @@ def selector_contains(selector: str, requirements: str) -> bool:
             for s_key, s_op, s_vals in sel_exprs
         )
         if not found:
-            found = _label_satisfies_expression(sel_labels, r_key, r_op, r_vals)
+            found = _label_satisfies_expression(sel_labels, sel_exprs, r_key, r_op, r_vals)
         if not found:
             return False
 

@@ -2,14 +2,14 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from jumpstarter.testing_strategies import arbitrary as ARBITRARY
-
 from .selectors import (
     _label_satisfies_expression,
     extract_match_labels_filter,
     parse_label_selector,
     selector_contains,
 )
+from jumpstarter.testing_strategies import arbitrary as ARBITRARY
+
 
 class TestParseLabelSelectorRobustness:
     @given(arbitrary_input=st.text())
@@ -93,7 +93,7 @@ class TestLabelSatisfiesExpressionRobustness:
         values: list[str],
     ) -> None:
         try:
-            result = _label_satisfies_expression(labels, key, operator, values)
+            result = _label_satisfies_expression(labels, [], key, operator, values)
             assert isinstance(result, bool)
         except ValueError:
             pass
@@ -108,7 +108,7 @@ class TestLabelSatisfiesExpressionNegative:
     def test_unknown_operator_raises_value_error(self, operator: str) -> None:
         labels = {"key": "value"}
         with pytest.raises(ValueError, match="unknown label selector operator"):
-            _label_satisfies_expression(labels, "key", operator, ["value"])
+            _label_satisfies_expression(labels, [], "key", operator, ["value"])
 
     def test_binary_input_raises_type_error(self) -> None:
         with pytest.raises(TypeError):
