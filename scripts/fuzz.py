@@ -117,12 +117,15 @@ def run_hypofuzz(seconds: int) -> bool:
         try:
             proc.wait(timeout=seconds)
         except subprocess.TimeoutExpired:
-            pgid = os.getpgid(proc.pid)
-            os.killpg(pgid, signal.SIGINT)
             try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                os.killpg(pgid, signal.SIGKILL)
+                pgid = os.getpgid(proc.pid)
+                os.killpg(pgid, signal.SIGINT)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(pgid, signal.SIGKILL)
+                    proc.wait()
+            except (ProcessLookupError, OSError):
                 proc.wait()
             print(f"HypoFuzz: stopped after {seconds}s (budget exhausted)")
             return True
