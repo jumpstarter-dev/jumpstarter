@@ -589,7 +589,7 @@ class TestRunGoAll:
         assert result is True
         assert mock_target.call_count == 2
 
-    def test_stops_on_first_failure(self):
+    def test_continues_past_failure(self):
         with (
             patch("fuzz.run_go_target", return_value=False) as mock_target,
             patch("fuzz._discover_go_fuzz_targets", return_value=[
@@ -598,7 +598,7 @@ class TestRunGoAll:
         ):
             result = run_go_all(120)
         assert result is False
-        assert mock_target.call_count == 1
+        assert mock_target.call_count == 2
 
     def test_returns_true_when_no_targets(self):
         with patch("fuzz._discover_go_fuzz_targets", return_value=[]):

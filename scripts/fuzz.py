@@ -458,10 +458,11 @@ def run_go_all(seconds: int) -> bool:
         return True
     per_target = max(10, seconds // len(targets))
     print(f"Go fuzz: {len(targets)} targets, {per_target}s each")
+    all_passed = True
     for name, pkg in targets:
         if not run_go_target(name, pkg, per_target):
-            return False
-    return True
+            all_passed = False
+    return all_passed
 
 
 def _parse_go_corpus_file(path: Path) -> str | None:
@@ -602,12 +603,12 @@ def main() -> int:
     per_slot = max(30, total // slots)
     print(f"Fuzz budget: {args.time} ({total}s) -- {slots} slots, {per_slot}s each")
     run_python(per_slot)
+    all_passed = True
     for name, pkg in go_targets:
         if not run_go_target(name, pkg, per_slot):
-            replay_and_inject_go()
-            return 1
+            all_passed = False
     replay_and_inject_go()
-    return 0
+    return 0 if all_passed else 1
 
 
 if __name__ == "__main__":
