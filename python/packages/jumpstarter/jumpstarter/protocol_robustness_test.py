@@ -8,14 +8,7 @@ from jumpstarter_protocol.jumpstarter.v1 import (
     router_pb2,
 )
 
-ARBITRARY = st.one_of(
-    st.text(),
-    st.integers(),
-    st.floats(),
-    st.none(),
-    st.booleans(),
-    st.binary(),
-)
+from jumpstarter.testing_strategies import arbitrary as ARBITRARY
 
 
 class TestConditionRobustness:

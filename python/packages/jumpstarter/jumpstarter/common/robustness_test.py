@@ -3,18 +3,11 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
+from jumpstarter.testing_strategies import arbitrary as ARBITRARY
+
 from .enums import ExporterStatus, LogSource
 from .metadata import Metadata
 from .oci import OciCredentials, parse_oci_registry
-
-ARBITRARY = st.one_of(
-    st.text(),
-    st.integers(),
-    st.floats(),
-    st.none(),
-    st.booleans(),
-    st.binary(),
-)
 
 ALLOWED_PARSE_OCI_EXCEPTIONS = (TypeError, ValueError)
 

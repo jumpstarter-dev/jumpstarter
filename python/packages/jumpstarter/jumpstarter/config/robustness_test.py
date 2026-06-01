@@ -2,21 +2,14 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
+from jumpstarter.testing_strategies import arbitrary as ARBITRARY
+
 from .exporter import (
     ExporterConfigV1Alpha1DriverInstanceBase,
     HookConfigV1Alpha1,
     HookInstanceConfigV1Alpha1,
 )
 from .tls import TLSConfigV1Alpha1
-
-ARBITRARY = st.one_of(
-    st.text(),
-    st.integers(),
-    st.floats(),
-    st.none(),
-    st.booleans(),
-    st.binary(),
-)
 
 
 class TestTLSConfigRobustness:

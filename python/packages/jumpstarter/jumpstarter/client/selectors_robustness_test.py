@@ -2,20 +2,13 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from jumpstarter.testing_strategies import arbitrary as ARBITRARY
+
 from .selectors import (
     _label_satisfies_expression,
     extract_match_labels_filter,
     parse_label_selector,
     selector_contains,
-)
-
-ARBITRARY = st.one_of(
-    st.text(),
-    st.binary(),
-    st.integers(),
-    st.floats(),
-    st.none(),
-    st.booleans(),
 )
 
 class TestParseLabelSelectorRobustness:
