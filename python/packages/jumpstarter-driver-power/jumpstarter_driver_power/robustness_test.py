@@ -18,11 +18,13 @@ class TestPowerReadingRobustness:
     @given(voltage=ARBITRARY, current=ARBITRARY)
     def test_constructor_never_crashes_on_arbitrary(self, voltage: object, current: object) -> None:
         try:
-            PowerReading(voltage=voltage, current=current)
+            reading = PowerReading(voltage=voltage, current=current)
         except (TypeError, ValueError, ValidationError):
-            pass
+            return
         except Exception as exc:
             raise AssertionError(f"PowerReading constructor crashed: {type(exc).__name__}: {exc}") from exc
+        assert isinstance(reading.voltage, (int, float))
+        assert isinstance(reading.current, (int, float))
 
     @given(voltage=st.floats(), current=st.floats())
     def test_constructor_accepts_floats(self, voltage: float, current: float) -> None:

@@ -50,11 +50,12 @@ class TestV1Alpha1ExporterDeviceRobustness:
     @given(labels=ARBITRARY, uuid_val=ARBITRARY)
     def test_constructor_never_crashes_unexpectedly(self, labels: object, uuid_val: object) -> None:
         try:
-            V1Alpha1ExporterDevice(labels=labels, uuid=uuid_val)
+            device = V1Alpha1ExporterDevice(labels=labels, uuid=uuid_val)
         except (TypeError, ValueError, ValidationError):
-            pass
+            return
         except Exception as exc:
             raise AssertionError(f"V1Alpha1ExporterDevice raised unexpected {type(exc).__name__}: {exc}") from exc
+        assert isinstance(device.labels, dict)
 
 
 class TestV1Alpha1ExporterStatusRobustness:

@@ -23,10 +23,19 @@ class TestParseLabelSelectorRobustness:
     def test_parse_label_selector_never_crashes_on_text(self, arbitrary_input: str) -> None:
         try:
             result = parse_label_selector(arbitrary_input)
-            assert isinstance(result, tuple)
-            assert len(result) == 2
         except Exception as exc:
             raise AssertionError(f"parse_label_selector raised unexpected {type(exc).__name__}: {exc}") from exc
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        labels, exprs = result
+        assert isinstance(labels, dict)
+        assert isinstance(exprs, list)
+        for key, value in labels.items():
+            assert isinstance(key, str)
+            assert isinstance(value, str)
+        for expr in exprs:
+            assert isinstance(expr, tuple)
+            assert len(expr) == 3
 
     @given(arbitrary_input=st.binary())
     def test_parse_label_selector_never_crashes_on_binary(self, arbitrary_input: bytes) -> None:

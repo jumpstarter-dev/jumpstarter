@@ -18,11 +18,13 @@ class TestEntryModeRobustness:
     @given(entry_is_file=ARBITRARY, entry_is_dir=ARBITRARY)
     def test_constructor_never_crashes_on_arbitrary(self, entry_is_file: object, entry_is_dir: object) -> None:
         try:
-            EntryMode(entry_is_file=entry_is_file, entry_is_dir=entry_is_dir)
+            mode = EntryMode(entry_is_file=entry_is_file, entry_is_dir=entry_is_dir)
         except (TypeError, ValueError, ValidationError):
-            pass
+            return
         except Exception as exc:
             raise AssertionError(f"EntryMode constructor crashed: {type(exc).__name__}: {exc}") from exc
+        assert isinstance(mode.entry_is_file, bool)
+        assert isinstance(mode.entry_is_dir, bool)
 
 
 class TestMetadataRobustness:

@@ -26,20 +26,22 @@ class TestMetadataRobustness:
     )
     def test_metadata_constructor_never_crashes_unexpectedly(self, uuid_val: object, labels: object) -> None:
         try:
-            Metadata(uuid=uuid_val, labels=labels)
+            meta = Metadata(uuid=uuid_val, labels=labels)
         except (TypeError, ValueError):
-            pass
+            return
         except Exception as exc:
             raise AssertionError(f"Metadata raised unexpected {type(exc).__name__}: {exc}") from exc
+        assert isinstance(meta.labels, dict)
 
     @given(labels=st.dictionaries(st.text(), ARBITRARY, max_size=5))
     def test_metadata_with_dict_labels_never_crashes(self, labels: dict[str, object]) -> None:
         try:
-            Metadata(labels=labels)
+            meta = Metadata(labels=labels)
         except (TypeError, ValueError):
-            pass
+            return
         except Exception as exc:
             raise AssertionError(f"Metadata raised unexpected {type(exc).__name__}: {exc}") from exc
+        assert isinstance(meta.labels, dict)
 
 
 class TestExporterStatusFromProtoRobustness:
@@ -88,11 +90,12 @@ class TestOciCredentialsRobustness:
     @given(username=ARBITRARY, password=ARBITRARY)
     def test_constructor_never_crashes_unexpectedly(self, username: object, password: object) -> None:
         try:
-            OciCredentials(username=username, password=password)
-        except (TypeError, ValueError):
-            pass
+            creds = OciCredentials(username=username, password=password)
+        except (TypeError, ValueError, ValidationError):
+            return
         except Exception as exc:
             raise AssertionError(f"OciCredentials raised unexpected {type(exc).__name__}: {exc}") from exc
+        assert isinstance(creds.is_authenticated, bool)
 
     @given(username=st.text(), password=st.text())
     def test_constructor_with_text_never_crashes(self, username: str, password: str) -> None:
