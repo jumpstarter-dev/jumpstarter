@@ -1,9 +1,11 @@
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent))
 
 import argparse
+import subprocess
 
 import pytest
 
@@ -15,7 +17,14 @@ from fuzz import (
     _extract_falsifying_examples,
     _insert_example,
     _is_safe_example_args,
+    main,
     parse_duration,
+    replay_and_inject_go,
+    replay_and_inject_python,
+    run_go_all,
+    run_hypofuzz,
+    run_hypothesis_loop,
+    run_python,
 )
 
 
@@ -296,3 +305,325 @@ class TestIsSafeExampleArgs:
 
     def test_boolean_value(self):
         assert _is_safe_example_args("value=True") is True
+
+
+class TestRunHypofuzz:
+    def test_returns_true_on_timeout(self, tmp_path):
+        mock_proc = MagicMock()
+        mock_proc.wait.side_effect = subprocess.TimeoutExpired(cmd="uv", timeout=10)
+        mock_proc.pid = 12345
+        with (
+            patch("fuzz.subprocess.Popen", return_value=mock_proc) as mock_popen,
+            patch("fuzz.os.getpgid", return_value=12345),
+            patch("fuzz.os.killpg"),
+            patch("fuzz._discover_python_fuzz_dirs", return_value=["packages/pkg/mod"]),
+            patch("fuzz.Path.mkdir"),
+        ):
+            mock_proc.wait.side_effect = [
+                subprocess.TimeoutExpired(cmd="uv", timeout=10),
+                None,
+            ]
+            result = run_hypofuzz(10)
+        assert result is True
+        assert mock_popen.called
+
+    def test_returns_true_on_clean_exit(self, tmp_path):
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = None
+        mock_proc.returncode = 0
+        with (
+            patch("fuzz.subprocess.Popen", return_value=mock_proc),
+            patch("fuzz._discover_python_fuzz_dirs", return_value=["packages/pkg/mod"]),
+            patch("fuzz.Path.mkdir"),
+            patch("fuzz.time.monotonic", side_effect=[0.0, 120.0]),
+        ):
+            result = run_hypofuzz(10)
+        assert result is True
+
+    def test_retries_on_early_crash(self, tmp_path):
+        mock_proc = MagicMock()
+        mock_proc.returncode = 1
+        mock_proc.wait.return_value = None
+        mock_proc.stderr = MagicMock()
+        mock_proc.stderr.read.return_value = b"crash output"
+        call_count = [0]
+
+        def side_effect_monotonic():
+            val = call_count[0]
+            call_count[0] += 1
+            return float(val)
+
+        with (
+            patch("fuzz.subprocess.Popen", return_value=mock_proc) as mock_popen,
+            patch("fuzz._discover_python_fuzz_dirs", return_value=["packages/pkg/mod"]),
+            patch("fuzz.Path.mkdir"),
+            patch("fuzz.time.monotonic", side_effect=side_effect_monotonic),
+        ):
+            result = run_hypofuzz(120)
+        assert result is True
+        assert mock_popen.call_count == 3
+
+
+class TestRunHypothesisLoop:
+    def test_runs_all_test_files(self):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        call_count = [0]
+
+        def mock_monotonic():
+            val = call_count[0]
+            call_count[0] += 1
+            return float(val * 10)
+
+        with (
+            patch("fuzz.subprocess.run", return_value=mock_result) as mock_run,
+            patch("fuzz._discover_fuzz_test_files", return_value=["pkg/test_a.py", "pkg/test_b.py"]),
+            patch("fuzz.time.monotonic", side_effect=mock_monotonic),
+        ):
+            result = run_hypothesis_loop(60)
+        assert result is True
+        assert mock_run.call_count >= 2
+
+    def test_records_failures(self):
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        call_count = [0]
+
+        def mock_monotonic():
+            val = call_count[0]
+            call_count[0] += 1
+            return float(val * 10)
+
+        with (
+            patch("fuzz.subprocess.run", return_value=mock_result),
+            patch("fuzz._discover_fuzz_test_files", return_value=["pkg/hypothesis_test.py"]),
+            patch("fuzz.time.monotonic", side_effect=mock_monotonic),
+        ):
+            result = run_hypothesis_loop(60)
+        assert result is True
+
+    def test_stops_when_budget_exhausted(self):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        call_count = [0]
+
+        def mock_monotonic():
+            val = call_count[0]
+            call_count[0] += 1
+            if val < 3:
+                return 0.0
+            return 100.0
+
+        with (
+            patch("fuzz.subprocess.run", return_value=mock_result) as mock_run,
+            patch("fuzz._discover_fuzz_test_files", return_value=["a.py", "b.py", "c.py"]),
+            patch("fuzz.time.monotonic", side_effect=mock_monotonic),
+        ):
+            result = run_hypothesis_loop(30)
+        assert result is True
+        assert mock_run.call_count <= 2
+
+
+class TestRunPython:
+    def test_calls_hypofuzz_then_hypothesis_loop(self):
+        with (
+            patch("fuzz.run_hypofuzz") as mock_hypofuzz,
+            patch("fuzz.run_hypothesis_loop") as mock_loop,
+            patch("fuzz.replay_and_inject_python", return_value=0),
+            patch("fuzz.Path.exists", return_value=False),
+            patch("fuzz.time.monotonic", side_effect=[0.0, 30.0]),
+        ):
+            run_python(120)
+        mock_hypofuzz.assert_called_once()
+        mock_loop.assert_called_once()
+
+    def test_skips_hypothesis_loop_when_no_time_left(self):
+        with (
+            patch("fuzz.run_hypofuzz") as mock_hypofuzz,
+            patch("fuzz.run_hypothesis_loop") as mock_loop,
+            patch("fuzz.replay_and_inject_python", return_value=0),
+            patch("fuzz.Path.exists", return_value=False),
+            patch("fuzz.time.monotonic", side_effect=[0.0, 120.0]),
+        ):
+            run_python(120)
+        mock_hypofuzz.assert_called_once()
+        mock_loop.assert_not_called()
+
+    def test_cleans_hypothesis_database(self, tmp_path):
+        db_path = tmp_path / "examples"
+        db_path.mkdir()
+        (db_path / "data.json").write_text("{}")
+        with (
+            patch("fuzz.run_hypofuzz"),
+            patch("fuzz.run_hypothesis_loop"),
+            patch("fuzz.replay_and_inject_python", return_value=0),
+            patch("fuzz.time.monotonic", side_effect=[0.0, 120.0]),
+            patch("fuzz.Path.__truediv__", return_value=db_path),
+        ):
+            run_python(120)
+
+
+class TestRunGoAll:
+    def test_runs_all_targets(self):
+        with (
+            patch("fuzz.run_go_target", return_value=True) as mock_target,
+            patch("fuzz._discover_go_fuzz_targets", return_value=[
+                ("FuzzA", "./pkg/a/"), ("FuzzB", "./pkg/b/"),
+            ]),
+        ):
+            result = run_go_all(120)
+        assert result is True
+        assert mock_target.call_count == 2
+
+    def test_stops_on_first_failure(self):
+        with (
+            patch("fuzz.run_go_target", return_value=False) as mock_target,
+            patch("fuzz._discover_go_fuzz_targets", return_value=[
+                ("FuzzA", "./pkg/a/"), ("FuzzB", "./pkg/b/"),
+            ]),
+        ):
+            result = run_go_all(120)
+        assert result is False
+        assert mock_target.call_count == 1
+
+
+class TestReplayAndInjectPython:
+    def test_returns_zero_when_no_regressions(self):
+        mock_result = MagicMock()
+        mock_result.stdout = "all passed"
+        mock_result.stderr = ""
+        with (
+            patch("fuzz.subprocess.run", return_value=mock_result),
+            patch("fuzz._discover_python_fuzz_dirs", return_value=["packages/pkg/mod"]),
+        ):
+            count = replay_and_inject_python()
+        assert count == 0
+
+    def test_injects_found_regressions(self, tmp_path):
+        test_file = tmp_path / "hypothesis_test.py"
+        test_file.write_text(
+            "from hypothesis import given\n"
+            "from hypothesis import strategies as st\n"
+            "\n"
+            "class TestFoo:\n"
+            "    @given(x=st.integers())\n"
+            "    def test_bar(self, x):\n"
+            "        assert x >= 0\n"
+        )
+        mock_result = MagicMock()
+        mock_result.stdout = "Falsifying example: test_bar(x=-1)"
+        mock_result.stderr = ""
+        with (
+            patch("fuzz.subprocess.run", return_value=mock_result),
+            patch("fuzz._discover_python_fuzz_dirs", return_value=["packages/pkg/mod"]),
+            patch("fuzz._find_test_file", return_value=test_file),
+        ):
+            count = replay_and_inject_python()
+        assert count == 1
+        assert "@example(x=-1)" in test_file.read_text()
+
+
+class TestReplayAndInjectGo:
+    def test_returns_zero_when_no_corpus(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "controller").mkdir()
+        count = replay_and_inject_go()
+        assert count == 0
+
+    def test_injects_seed_from_corpus_file(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        controller = tmp_path / "controller"
+        pkg_dir = controller / "pkg"
+        testdata_dir = pkg_dir / "testdata"
+        corpus_dir = testdata_dir / "fuzz" / "FuzzTarget"
+        corpus_dir.mkdir(parents=True)
+        corpus_file = corpus_dir / "entry1"
+        corpus_file.write_text("go test fuzz v1\n[]byte(\"hello\")\n")
+        fuzz_file = testdata_dir / "target_fuzz_test.go"
+        fuzz_file.write_text(
+            'package pkg\n\n'
+            'import "testing"\n\n'
+            'func FuzzTarget(f *testing.F) {\n'
+            '\tf.Fuzz(func(t *testing.T, data []byte) {\n'
+            '\t})\n'
+            '}\n'
+        )
+        count = replay_and_inject_go()
+        assert count == 1
+        assert 'f.Add([]byte("hello"))' in fuzz_file.read_text()
+
+
+class TestMain:
+    def test_python_only_mode(self):
+        with (
+            patch("fuzz.run_python") as mock_run,
+            patch("fuzz._discover_go_fuzz_targets", return_value=[]),
+            patch("sys.argv", ["fuzz.py", "--python-only", "--time", "60s"]),
+        ):
+            result = main()
+        assert result == 0
+        mock_run.assert_called_once_with(60)
+
+    def test_go_only_mode(self):
+        with (
+            patch("fuzz.run_go_all", return_value=True) as mock_go,
+            patch("fuzz.replay_and_inject_go", return_value=0),
+            patch("fuzz._discover_go_fuzz_targets", return_value=[
+                ("FuzzA", "./pkg/"),
+            ]),
+            patch("sys.argv", ["fuzz.py", "--go-only", "--time", "60s"]),
+        ):
+            result = main()
+        assert result == 0
+        mock_go.assert_called_once_with(60)
+
+    def test_list_go_targets(self, capsys):
+        with (
+            patch("fuzz._discover_go_fuzz_targets", return_value=[
+                ("FuzzA", "./pkg/a/"), ("FuzzB", "./pkg/b/"),
+            ]),
+            patch("sys.argv", ["fuzz.py", "--list-go-targets"]),
+        ):
+            result = main()
+        assert result == 0
+        output = capsys.readouterr().out
+        assert "FuzzA" in output
+        assert "FuzzB" in output
+
+    def test_single_go_target(self):
+        with (
+            patch("fuzz.run_go_target", return_value=True) as mock_target,
+            patch("fuzz.replay_and_inject_go", return_value=0),
+            patch("fuzz._discover_go_fuzz_targets", return_value=[
+                ("FuzzA", "./pkg/a/"),
+            ]),
+            patch("sys.argv", ["fuzz.py", "--go-target", "FuzzA", "--time", "30s"]),
+        ):
+            result = main()
+        assert result == 0
+        mock_target.assert_called_once_with("FuzzA", "./pkg/a/", 30)
+
+    def test_unknown_go_target_returns_error(self):
+        with (
+            patch("fuzz._discover_go_fuzz_targets", return_value=[
+                ("FuzzA", "./pkg/a/"),
+            ]),
+            patch("sys.argv", ["fuzz.py", "--go-target", "FuzzMissing", "--time", "30s"]),
+        ):
+            result = main()
+        assert result == 1
+
+    def test_default_mode_runs_both(self):
+        with (
+            patch("fuzz.run_python") as mock_python,
+            patch("fuzz.run_go_target", return_value=True) as mock_go_target,
+            patch("fuzz.replay_and_inject_go", return_value=0),
+            patch("fuzz._discover_go_fuzz_targets", return_value=[
+                ("FuzzA", "./pkg/a/"),
+            ]),
+            patch("sys.argv", ["fuzz.py", "--time", "60s"]),
+        ):
+            result = main()
+        assert result == 0
+        mock_python.assert_called_once()
+        mock_go_target.assert_called_once()
