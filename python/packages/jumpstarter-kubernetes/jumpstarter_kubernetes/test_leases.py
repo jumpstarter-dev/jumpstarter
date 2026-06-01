@@ -173,3 +173,13 @@ def test_from_dict_raises_type_error_when_spec_is_an_integer():
 def test_from_dict_raises_type_error_when_spec_is_none():
     with pytest.raises(TypeError):
         V1Alpha1Lease.from_dict({"spec": None})
+
+
+def test_from_dict_raises_type_error_when_spec_is_a_boolean():
+    with pytest.raises(TypeError):
+        V1Alpha1Lease.from_dict({"spec": True})
+
+
+def test_from_dict_does_not_raise_type_error_when_spec_is_an_empty_dict():
+    with pytest.raises(KeyError):
+        V1Alpha1Lease.from_dict({"spec": {}})
