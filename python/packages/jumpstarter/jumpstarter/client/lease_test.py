@@ -4,11 +4,27 @@ import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock, patch
 
+import grpc
 import pytest
+from grpc.aio import AioRpcError
 from rich.console import Console
 
 from jumpstarter.client.exceptions import LeaseError
 from jumpstarter.client.lease import Lease, LeaseAcquisitionSpinner
+
+
+class MockAioRpcError(AioRpcError):
+    """Mock gRPC error for testing that properly inherits from AioRpcError."""
+
+    def __init__(self, status_code, message=""):
+        self._status_code = status_code
+        self._message = message
+
+    def code(self):
+        return self._status_code
+
+    def details(self):
+        return self._message
 
 
 class TestLeaseAcquisitionSpinner:
@@ -554,3 +570,63 @@ class TestMonitorAsyncError:
         callback.assert_called()
         _, remain_arg = callback.call_args[0]
         assert remain_arg == timedelta(0)
+
+
+class TestHandleAsyncUnavailableRetry:
+    """Tests for Lease.handle_async UNAVAILABLE retry behavior."""
+
+    def _make_lease_for_handle(self):
+        lease = object.__new__(Lease)
+        lease.name = "test-lease"
+        lease.dial_timeout = 5.0
+        lease.lease_transferred = False
+        lease.tls_config = Mock()
+        lease.grpc_options = {}
+        lease.controller = Mock()
+        return lease
+
+    @pytest.mark.anyio
+    async def test_handle_async_retries_unavailable_then_succeeds(self):
+        """Dial returns UNAVAILABLE once then succeeds on retry."""
+        lease = self._make_lease_for_handle()
+        dial_call_count = 0
+
+        async def mock_dial(request):
+            nonlocal dial_call_count
+            dial_call_count += 1
+            if dial_call_count == 1:
+                raise MockAioRpcError(grpc.StatusCode.UNAVAILABLE, "temporarily unavailable")
+            return Mock(router_endpoint="endpoint", router_token="token")
+
+        lease.controller.Dial = mock_dial
+
+        with patch("jumpstarter.client.lease.connect_router_stream") as mock_connect:
+            mock_connect.return_value.__aenter__ = AsyncMock()
+            mock_connect.return_value.__aexit__ = AsyncMock(return_value=False)
+            stream = Mock()
+
+            await lease.handle_async(stream)
+
+            assert dial_call_count == 2
+            mock_connect.assert_called_once_with("endpoint", "token", stream, lease.tls_config, lease.grpc_options)
+
+    @pytest.mark.anyio
+    async def test_handle_async_unavailable_exceeds_dial_timeout(self):
+        """Dial returns UNAVAILABLE until dial_timeout is exceeded, then raises."""
+        lease = self._make_lease_for_handle()
+        lease.dial_timeout = 0.5
+        dial_call_count = 0
+
+        async def mock_dial(request):
+            nonlocal dial_call_count
+            dial_call_count += 1
+            raise MockAioRpcError(grpc.StatusCode.UNAVAILABLE, "permanently unavailable")
+
+        lease.controller.Dial = mock_dial
+        stream = Mock()
+
+        with pytest.raises(AioRpcError) as exc_info:
+            await lease.handle_async(stream)
+
+        assert exc_info.value.code() == grpc.StatusCode.UNAVAILABLE
+        assert dial_call_count >= 2
