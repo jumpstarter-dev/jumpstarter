@@ -42,7 +42,7 @@ PYTEST_FILTER = "hypothesis_test or robustness_test"
 
 FUZZ_TEST_PATTERNS = ("hypothesis_test", "robustness_test")
 
-MAX_EXAMPLES_PER_TEST = 1
+MAX_EXAMPLES_PER_TEST = 1  # default: keep one regression per test to minimize noise; override via --max-examples-per-test
 
 HYPOFUZZ_STARTUP_GRACE_SECONDS = 60
 
@@ -558,7 +558,14 @@ def main() -> int:
     parser.add_argument("--go-only", action="store_true")
     parser.add_argument("--go-target", help="run a single Go fuzz target by name")
     parser.add_argument("--list-go-targets", action="store_true", help="print Go targets as JSON for CI matrix")
+    parser.add_argument(
+        "--max-examples-per-test", type=int, default=1,
+        help="max regression examples to inject per test function (default: 1)",
+    )
     args = parser.parse_args()
+
+    global MAX_EXAMPLES_PER_TEST
+    MAX_EXAMPLES_PER_TEST = args.max_examples_per_test
 
     go_targets = _discover_go_fuzz_targets()
 

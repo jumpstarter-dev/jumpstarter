@@ -9,6 +9,7 @@ import subprocess
 
 import pytest
 
+import fuzz as fuzz_module
 from fuzz import (
     _clean_example_args,
     _discover_fuzz_test_files,
@@ -745,3 +746,25 @@ class TestMain:
         assert result == 0
         mock_python.assert_called_once()
         mock_go_target.assert_called_once()
+
+    def test_max_examples_per_test_flag(self):
+        with (
+            patch("fuzz.run_python") as mock_run,
+            patch("fuzz._discover_go_fuzz_targets", return_value=[]),
+            patch("sys.argv", ["fuzz.py", "--python-only", "--time", "60s", "--max-examples-per-test", "5"]),
+        ):
+            result = main()
+        assert result == 0
+        assert fuzz_module.MAX_EXAMPLES_PER_TEST == 5
+        mock_run.assert_called_once_with(60)
+
+    def test_max_examples_per_test_defaults_to_one(self):
+        fuzz_module.MAX_EXAMPLES_PER_TEST = 1
+        with (
+            patch("fuzz.run_python") as mock_run,
+            patch("fuzz._discover_go_fuzz_targets", return_value=[]),
+            patch("sys.argv", ["fuzz.py", "--python-only", "--time", "60s"]),
+        ):
+            result = main()
+        assert result == 0
+        assert fuzz_module.MAX_EXAMPLES_PER_TEST == 1
