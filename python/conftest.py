@@ -2,7 +2,7 @@ import os
 from contextlib import contextmanager
 
 import pytest
-from hypothesis import HealthCheck, settings
+from hypothesis import settings
 
 os.environ["TERM"] = "dumb"
 
@@ -10,7 +10,6 @@ settings.register_profile("ci", max_examples=100)
 settings.register_profile(
     "fuzz",
     max_examples=500,
-    suppress_health_check=[HealthCheck.too_slow],
 )
 settings.load_profile(os.getenv("HYPOTHESIS_PROFILE", "ci"))
 
