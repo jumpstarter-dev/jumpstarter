@@ -307,11 +307,11 @@ class TestStatusMonitorPolling:
         assert not monitor.connection_lost
         assert monitor.current_status == ExporterStatus.LEASE_READY
 
-    async def test_poll_loop_unavailable_below_threshold(self) -> None:
-        """Test that UNAVAILABLE below threshold does not mark connection lost.
+    async def test_poll_loop_unavailable_recovers_after_transient_errors(self) -> None:
+        """Test that UNAVAILABLE does not mark connection lost.
 
-        5 consecutive UNAVAILABLE errors is well below the threshold of 10, so the
-        monitor should recover when a successful response arrives.
+        5 consecutive UNAVAILABLE errors should not mark connection as lost.
+        The monitor retries indefinitely and recovers when the exporter comes back.
         """
         responses = [
             create_status_response(ExporterStatus.AVAILABLE, version=1),
