@@ -36,11 +36,18 @@ jobs:
       - id: targets
         run: echo "go_targets=$(python3 scripts/fuzz.py --list-go-targets)" >> "$GITHUB_OUTPUT"
       - id: duration
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FUZZ_TIME_INPUT: ${{ inputs.fuzz_time }}
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "$EVENT_NAME" = "push" ]; then
             echo "time=6h" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "time=${{ inputs.fuzz_time }}" >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if ! echo "$FUZZ_TIME_INPUT" | grep -qE '^[0-9]+[hms]?([0-9]+[hms]?)*$'; then
+              echo "::error::Invalid fuzz_time format: $FUZZ_TIME_INPUT"
+              exit 1
+            fi
+            echo "time=$FUZZ_TIME_INPUT" >> "$GITHUB_OUTPUT"
           else
             echo "time=5m" >> "$GITHUB_OUTPUT"
           fi
@@ -54,7 +61,9 @@ jobs:
       - uses: astral-sh/setup-uv@v6
 
       - name: Fuzz Python
-        run: python3 scripts/fuzz.py --time ${{ needs.matrix.outputs.fuzz_time }} --python-only
+        env:
+          FUZZ_TIME: ${{ needs.matrix.outputs.fuzz_time }}
+        run: python3 scripts/fuzz.py --time "$FUZZ_TIME" --python-only
 
       - name: Upload Hypothesis examples
         if: failure()
@@ -88,7 +97,10 @@ jobs:
             go-fuzz-${{ matrix.target.name }}-${{ runner.os }}-
 
       - name: Fuzz ${{ matrix.target.name }}
-        run: python3 scripts/fuzz.py --time ${{ needs.matrix.outputs.fuzz_time }} --go-target ${{ matrix.target.name }}
+        env:
+          FUZZ_TIME: ${{ needs.matrix.outputs.fuzz_time }}
+          GO_TARGET: ${{ matrix.target.name }}
+        run: python3 scripts/fuzz.py --time "$FUZZ_TIME" --go-target "$GO_TARGET"
 
       - name: Upload crash reproducers
         if: failure()
