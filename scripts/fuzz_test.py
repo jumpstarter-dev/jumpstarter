@@ -221,6 +221,43 @@ class TestInsertExample:
         assert "@given(value=st.text())" in lines[foo_idx - 1]
 
 
+class TestInsertExamplePreservesFile:
+    def test_preserves_existing_comments_and_whitespace(self, tmp_path):
+        test_file = tmp_path / "test_mod.py"
+        test_file.write_text(
+            "from hypothesis import given\n"
+            "from hypothesis import strategies as st\n"
+            "\n"
+            "# important: this comment must be preserved\n"
+            "\n"
+            "\n"
+            "class TestTarget:\n"
+            "    @given(value=st.text())\n"
+            "    def test_target(self, value):\n"
+            "        # another comment\n"
+            "        pass\n"
+        )
+        result = _insert_example(test_file, "test_target", "value='x'")
+        assert result is True
+        text = test_file.read_text()
+        assert "# important: this comment must be preserved" in text
+        assert "# another comment" in text
+
+    def test_rejects_unsafe_ast_nodes(self, tmp_path):
+        test_file = tmp_path / "test_mod.py"
+        test_file.write_text(
+            "from hypothesis import given\n"
+            "from hypothesis import strategies as st\n"
+            "\n"
+            "class TestTarget:\n"
+            "    @given(value=st.text())\n"
+            "    def test_target(self, value):\n"
+            "        pass\n"
+        )
+        result = _insert_example(test_file, "test_target", "value=__import__('os')")
+        assert result is False
+
+
 class TestDiscoverPythonFuzzDirs:
     @pytest.fixture(autouse=True)
     def _project_root(self, monkeypatch):
