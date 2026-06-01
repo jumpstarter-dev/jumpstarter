@@ -1,5 +1,7 @@
 import warnings
+from unittest.mock import MagicMock, patch
 
+import click.testing
 import pytest
 
 from jumpstarter.client.flasher import _parse_path
@@ -223,7 +225,7 @@ class TestFlasherClientRouting:
 
     def test_flash_single_routes_http_url(self):
         """Verify that an HTTP URL goes through _http_url_adapter, not _local_file_adapter."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
 
         from jumpstarter.client.flasher import FlasherClient
 
@@ -248,7 +250,7 @@ class TestFlasherClientRouting:
 
     def test_flash_single_routes_local_path(self, tmp_path):
         """Verify that a local path goes through _local_file_adapter, not _http_url_adapter."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
 
         from jumpstarter.client.flasher import FlasherClient
 
@@ -275,7 +277,7 @@ class TestFlasherClientRouting:
 
     def test_dump_routes_http_url(self):
         """Verify that dump with an HTTP URL goes through _http_url_adapter."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
 
         from jumpstarter.client.flasher import FlasherClient
 
@@ -298,7 +300,7 @@ class TestFlasherClientRouting:
 
     def test_dump_routes_local_path(self, tmp_path):
         """Verify that dump with a local path goes through _local_file_adapter."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
 
         from jumpstarter.client.flasher import FlasherClient
 
@@ -325,7 +327,7 @@ class TestFlasherClientMultiTarget:
     """Tests for dict-based multi-target flash."""
 
     def test_flash_dict_calls_flash_single_per_entry(self):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
 
         from jumpstarter.client.flasher import FlasherClient
 
@@ -360,7 +362,7 @@ class TestCompressionWarning:
     """Tests that compression parameter warns when used with HTTP URLs."""
 
     def test_flash_http_with_compression_warns(self):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
 
         from jumpstarter.client.flasher import FlasherClient
 
@@ -381,7 +383,7 @@ class TestCompressionWarning:
                 assert "compression parameter is ignored" in str(w[0].message)
 
     def test_flash_local_with_compression_no_warning(self, tmp_path):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
 
         from jumpstarter.client.flasher import FlasherClient
 
@@ -403,7 +405,7 @@ class TestCompressionWarning:
                 assert len(w) == 0
 
     def test_dump_http_with_compression_warns(self):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
 
         from jumpstarter.client.flasher import FlasherClient
 
@@ -422,3 +424,68 @@ class TestCompressionWarning:
                 client.dump("https://example.com/dump.bin", target=None, compression="zstd")
                 assert len(w) == 1
                 assert "compression parameter is ignored" in str(w[0].message)
+
+
+class TestFlasherClientCli:
+    """Tests for FlasherClientInterface.cli() click command group."""
+
+    def _make_client(self):
+        from jumpstarter.client.flasher import FlasherClient
+
+        client = object.__new__(FlasherClient)
+        client.flash = MagicMock()
+        client.dump = MagicMock()
+        client.description = None
+        client.methods_description = {}
+        return client
+
+    def test_flash_with_file_argument(self):
+        client = self._make_client()
+        group = client.cli()
+        runner = click.testing.CliRunner()
+        result = runner.invoke(group, ["flash", "/tmp/image.bin"])
+        assert result.exit_code == 0
+        client.flash.assert_called_once_with("/tmp/image.bin", target=None, compression=None)
+
+    def test_flash_with_target_spec(self):
+        client = self._make_client()
+        group = client.cli()
+        runner = click.testing.CliRunner()
+        result = runner.invoke(group, ["flash", "-t", "boot:/tmp/boot.bin", "-t", "root:/tmp/root.bin"])
+        assert result.exit_code == 0
+        client.flash.assert_called_once()
+        call_args = client.flash.call_args
+        mapping = call_args[0][0]
+        assert mapping == {"boot": "/tmp/boot.bin", "root": "/tmp/root.bin"}
+
+    def test_flash_with_invalid_target_spec_format(self):
+        client = self._make_client()
+        group = client.cli()
+        runner = click.testing.CliRunner()
+        result = runner.invoke(group, ["flash", "-t", "no_colon_here"])
+        assert result.exit_code != 0
+        assert "Invalid target spec" in result.output
+
+    def test_flash_with_no_file_and_no_target(self):
+        client = self._make_client()
+        group = client.cli()
+        runner = click.testing.CliRunner()
+        result = runner.invoke(group, ["flash"])
+        assert result.exit_code != 0
+        assert "FILE argument is required" in result.output
+
+    def test_dump_with_file_and_target(self):
+        client = self._make_client()
+        group = client.cli()
+        runner = click.testing.CliRunner()
+        result = runner.invoke(group, ["dump", "/tmp/output.bin", "--target", "rootfs"])
+        assert result.exit_code == 0
+        client.dump.assert_called_once_with("/tmp/output.bin", target="rootfs", compression=None)
+
+    def test_dump_with_file_only(self):
+        client = self._make_client()
+        group = client.cli()
+        runner = click.testing.CliRunner()
+        result = runner.invoke(group, ["dump", "/tmp/output.bin"])
+        assert result.exit_code == 0
+        client.dump.assert_called_once_with("/tmp/output.bin", target=None, compression=None)
