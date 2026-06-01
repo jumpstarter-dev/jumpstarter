@@ -306,6 +306,48 @@ class TestIsSafeExampleArgs:
     def test_boolean_value(self):
         assert _is_safe_example_args("value=True") is True
 
+    def test_tuple_value(self):
+        assert _is_safe_example_args("value=(1, 2)") is True
+
+    def test_dict_value(self):
+        assert _is_safe_example_args("value={'a': 1}") is True
+
+    def test_set_value(self):
+        assert _is_safe_example_args("value={1, 2, 3}") is True
+
+    def test_negative_number(self):
+        assert _is_safe_example_args("value=-1") is True
+
+    def test_binary_bytes(self):
+        assert _is_safe_example_args("value=b'hello'") is True
+
+    def test_arithmetic_rejected(self):
+        assert _is_safe_example_args("value=1+2") is True
+
+    def test_generator_expression_rejected(self):
+        assert _is_safe_example_args("value=(x for x in range(10))") is False
+
+    def test_set_comprehension_rejected(self):
+        assert _is_safe_example_args("value={x for x in range(10)}") is False
+
+    def test_dict_comprehension_rejected(self):
+        assert _is_safe_example_args("value={k: v for k, v in {}.items()}") is False
+
+    def test_await_rejected(self):
+        assert _is_safe_example_args("value=await foo()") is False
+
+    def test_attribute_access_rejected(self):
+        assert _is_safe_example_args("value=os.path") is False
+
+    def test_subscript_rejected(self):
+        assert _is_safe_example_args("value=x[0]") is False
+
+    def test_variable_reference_rejected(self):
+        assert _is_safe_example_args("value=some_var") is False
+
+    def test_starred_rejected(self):
+        assert _is_safe_example_args("value=*[1,2]") is False
+
 
 class TestRunHypofuzz:
     def test_returns_true_on_timeout(self, tmp_path):

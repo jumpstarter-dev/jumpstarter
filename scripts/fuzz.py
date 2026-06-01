@@ -232,18 +232,45 @@ def _count_existing_examples(text: str, func_name: str) -> int:
     return count
 
 
+_SAFE_AST_NODES = (
+    ast.Expression,
+    ast.keyword,
+    ast.Constant,
+    ast.List,
+    ast.Tuple,
+    ast.Dict,
+    ast.Set,
+    ast.UnaryOp,
+    ast.USub,
+    ast.UAdd,
+    ast.BinOp,
+    ast.Add,
+    ast.Sub,
+    ast.Mult,
+    ast.Div,
+    ast.Mod,
+    ast.Pow,
+    ast.FloorDiv,
+    ast.Load,
+)
+
+
 def _is_safe_example_args(example_args: str) -> bool:
     try:
-        ast.parse(f"f({example_args})", mode="eval")
+        tree = ast.parse(f"f({example_args})", mode="eval")
     except SyntaxError:
         return False
-    tree = ast.parse(f"f({example_args})", mode="eval")
     for node in ast.walk(tree):
-        if isinstance(node, (ast.Call, ast.Lambda, ast.ListComp, ast.SetComp,
-                             ast.DictComp, ast.GeneratorExp, ast.Await,
-                             ast.JoinedStr, ast.FormattedValue)):
-            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "f"):
+        if isinstance(node, ast.Call):
+            if not (isinstance(node.func, ast.Name) and node.func.id == "f"):
                 return False
+            continue
+        if isinstance(node, ast.Name):
+            if node.id != "f":
+                return False
+            continue
+        if not isinstance(node, _SAFE_AST_NODES):
+            return False
     return True
 
 
