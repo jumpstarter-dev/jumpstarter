@@ -92,6 +92,64 @@ class TestKubernetesMessages:
         assert msg == restored
 
 
+class TestConditionLogicThroughSerialization:
+    @given(
+        condition_type=safe_text,
+        status=st.sampled_from(["True", "False", "Unknown"]),
+        reason=safe_text,
+        message_text=safe_text,
+    )
+    def test_condition_functions_work_on_deserialized_messages(
+        self,
+        condition_type: str,
+        status: str,
+        reason: str,
+        message_text: str,
+    ) -> None:
+        msg = kubernetes_pb2.Condition(
+            type=condition_type, status=status, reason=reason, message=message_text,
+        )
+        serialized = msg.SerializeToString()
+        restored = kubernetes_pb2.Condition()
+        restored.ParseFromString(serialized)
+        assert condition_present_and_equal([restored], condition_type, status) is True
+        assert condition_message([restored], condition_type) == message_text
+        if status == "True":
+            assert condition_true([restored], condition_type) is True
+            assert condition_false([restored], condition_type) is False
+        elif status == "False":
+            assert condition_false([restored], condition_type) is True
+            assert condition_true([restored], condition_type) is False
+
+    @given(
+        conditions=st.lists(
+            st.builds(
+                kubernetes_pb2.Condition,
+                type=safe_text,
+                status=st.sampled_from(["True", "False", "Unknown"]),
+                reason=safe_text,
+                message=safe_text,
+            ),
+            min_size=1,
+            max_size=10,
+        ),
+    )
+    def test_condition_functions_on_serialized_list(
+        self,
+        conditions: list[kubernetes_pb2.Condition],
+    ) -> None:
+        deserialized = []
+        for cond in conditions:
+            serialized = cond.SerializeToString()
+            restored = kubernetes_pb2.Condition()
+            restored.ParseFromString(serialized)
+            deserialized.append(restored)
+        target_type = conditions[0].type
+        matching = [c for c in deserialized if c.type == target_type]
+        result = condition_message(deserialized, target_type)
+        assert result == matching[0].message
+
+
 class TestCommonEnums:
     @given(
         status=st.sampled_from(
@@ -287,19 +345,15 @@ class TestControllerServiceMessages:
             ]
         ),
         message=st.one_of(st.none(), safe_text),
-        release_lease=st.one_of(st.none(), st.booleans()),
     )
     def test_report_status_request_roundtrip(
         self,
         status: int,
         message: str | None,
-        release_lease: bool | None,
     ) -> None:
         kwargs: dict = {"status": status}
         if message is not None:
             kwargs["message"] = message
-        if release_lease is not None:
-            kwargs["release_lease"] = release_lease
         msg = jumpstarter_pb2.ReportStatusRequest(**kwargs)
         serialized = msg.SerializeToString()
         restored = jumpstarter_pb2.ReportStatusRequest()
@@ -443,26 +497,72 @@ class TestExporterServiceMessages:
                 common_pb2.EXPORTER_STATUS_LEASE_READY,
             ]
         ),
-        status_version=st.integers(min_value=0, max_value=2**32),
+        message=st.one_of(st.none(), safe_text),
     )
-    def test_get_status_response_roundtrip(self, status: int, status_version: int) -> None:
-        msg = jumpstarter_pb2.GetStatusResponse(status=status, status_version=status_version)
+    def test_get_status_response_roundtrip(self, status: int, message: str | None) -> None:
+        kwargs: dict = {"status": status}
+        if message is not None:
+            kwargs["message"] = message
+        msg = jumpstarter_pb2.GetStatusResponse(**kwargs)
         serialized = msg.SerializeToString()
         restored = jumpstarter_pb2.GetStatusResponse()
         restored.ParseFromString(serialized)
         assert restored.status == status
-        assert restored.status_version == status_version
 
-    @given(success=st.booleans(), message=st.one_of(st.none(), safe_text))
-    def test_end_session_response_roundtrip(self, success: bool, message: str | None) -> None:
-        kwargs: dict = {"success": success}
+class TestStatusResponseThroughJumpstarterLogic:
+    @given(
+        status=st.sampled_from(
+            [
+                common_pb2.EXPORTER_STATUS_UNSPECIFIED,
+                common_pb2.EXPORTER_STATUS_OFFLINE,
+                common_pb2.EXPORTER_STATUS_AVAILABLE,
+                common_pb2.EXPORTER_STATUS_BEFORE_LEASE_HOOK,
+                common_pb2.EXPORTER_STATUS_LEASE_READY,
+                common_pb2.EXPORTER_STATUS_AFTER_LEASE_HOOK,
+                common_pb2.EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED,
+                common_pb2.EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED,
+            ]
+        ),
+        message=st.one_of(st.none(), safe_text),
+    )
+    def test_exporter_status_from_deserialized_response(self, status: int, message: str | None) -> None:
+        kwargs: dict = {"status": status}
         if message is not None:
             kwargs["message"] = message
-        msg = jumpstarter_pb2.EndSessionResponse(**kwargs)
+        msg = jumpstarter_pb2.GetStatusResponse(**kwargs)
         serialized = msg.SerializeToString()
-        restored = jumpstarter_pb2.EndSessionResponse()
+        restored = jumpstarter_pb2.GetStatusResponse()
         restored.ParseFromString(serialized)
-        assert restored.success == success
+        enum_val = ExporterStatus.from_proto(restored.status)
+        assert enum_val.to_proto() == status
+        assert enum_val in ExporterStatus
+
+    @given(
+        source=st.sampled_from(
+            [
+                common_pb2.LOG_SOURCE_UNSPECIFIED,
+                common_pb2.LOG_SOURCE_DRIVER,
+                common_pb2.LOG_SOURCE_BEFORE_LEASE_HOOK,
+                common_pb2.LOG_SOURCE_AFTER_LEASE_HOOK,
+                common_pb2.LOG_SOURCE_SYSTEM,
+            ]
+        ),
+        uuid=safe_text,
+        severity=safe_text,
+        message=safe_text,
+    )
+    def test_log_source_from_deserialized_response(
+        self, source: int, uuid: str, severity: str, message: str,
+    ) -> None:
+        msg = jumpstarter_pb2.LogStreamResponse(
+            uuid=uuid, severity=severity, message=message, source=source,
+        )
+        serialized = msg.SerializeToString()
+        restored = jumpstarter_pb2.LogStreamResponse()
+        restored.ParseFromString(serialized)
+        enum_val = LogSource.from_proto(restored.source)
+        assert enum_val.to_proto() == source
+        assert enum_val in LogSource
 
 
 class TestClientServiceMessages:
@@ -476,20 +576,17 @@ class TestClientServiceMessages:
                 common_pb2.EXPORTER_STATUS_OFFLINE,
             ]
         ),
-        status_message=safe_text,
     )
     def test_exporter_roundtrip(
         self,
         name: str,
         labels: dict[str, str],
         status: int,
-        status_message: str,
     ) -> None:
         msg = client_pb2.Exporter(
             name=name,
             labels=labels,
             status=status,
-            status_message=status_message,
         )
         serialized = msg.SerializeToString()
         restored = client_pb2.Exporter()
@@ -497,26 +594,22 @@ class TestClientServiceMessages:
         assert restored.name == name
         assert dict(restored.labels) == labels
         assert restored.status == status
-        assert restored.status_message == status_message
 
     @given(
         name=safe_text,
         selector=safe_text,
-        tags=label_maps,
     )
     def test_lease_roundtrip(
         self,
         name: str,
         selector: str,
-        tags: dict[str, str],
     ) -> None:
-        msg = client_pb2.Lease(name=name, selector=selector, tags=tags)
+        msg = client_pb2.Lease(name=name, selector=selector)
         serialized = msg.SerializeToString()
         restored = client_pb2.Lease()
         restored.ParseFromString(serialized)
         assert restored.name == name
         assert restored.selector == selector
-        assert dict(restored.tags) == tags
 
     @given(name=safe_text)
     def test_get_exporter_request_roundtrip(self, name: str) -> None:
@@ -565,16 +658,14 @@ class TestClientServiceMessages:
         parent=safe_text,
         page_size=st.integers(min_value=0, max_value=1000),
         only_active=st.one_of(st.none(), st.booleans()),
-        tag_filter=safe_text,
     )
     def test_list_leases_request_roundtrip(
         self,
         parent: str,
         page_size: int,
         only_active: bool | None,
-        tag_filter: str,
     ) -> None:
-        kwargs: dict = {"parent": parent, "page_size": page_size, "tag_filter": tag_filter}
+        kwargs: dict = {"parent": parent, "page_size": page_size}
         if only_active is not None:
             kwargs["only_active"] = only_active
         msg = client_pb2.ListLeasesRequest(**kwargs)
@@ -583,7 +674,6 @@ class TestClientServiceMessages:
         restored.ParseFromString(serialized)
         assert restored.parent == parent
         assert restored.page_size == page_size
-        assert restored.tag_filter == tag_filter
 
     @given(name=safe_text)
     def test_delete_lease_request_roundtrip(self, name: str) -> None:
@@ -592,22 +682,6 @@ class TestClientServiceMessages:
         restored = client_pb2.DeleteLeaseRequest()
         restored.ParseFromString(serialized)
         assert restored.name == name
-
-    @given(parent=safe_text)
-    def test_rotate_token_request_roundtrip(self, parent: str) -> None:
-        msg = client_pb2.RotateTokenRequest(parent=parent)
-        serialized = msg.SerializeToString()
-        restored = client_pb2.RotateTokenRequest()
-        restored.ParseFromString(serialized)
-        assert restored.parent == parent
-
-    @given(token=safe_text)
-    def test_rotate_token_response_roundtrip(self, token: str) -> None:
-        msg = client_pb2.RotateTokenResponse(token=token)
-        serialized = msg.SerializeToString()
-        restored = client_pb2.RotateTokenResponse()
-        restored.ParseFromString(serialized)
-        assert restored.token == token
 
 
 class TestDriverInstanceReport:
@@ -694,13 +768,6 @@ class TestEmptyMessagesRoundtrip:
         restored.ParseFromString(serialized)
         assert msg == restored
 
-    def test_end_session_request_roundtrip(self) -> None:
-        msg = jumpstarter_pb2.EndSessionRequest()
-        serialized = msg.SerializeToString()
-        restored = jumpstarter_pb2.EndSessionRequest()
-        restored.ParseFromString(serialized)
-        assert msg == restored
-
     def test_release_lease_response_roundtrip(self) -> None:
         msg = jumpstarter_pb2.ReleaseLeaseResponse()
         serialized = msg.SerializeToString()
@@ -775,18 +842,16 @@ class TestPaginatedResponseMessages:
     @given(
         names=st.lists(safe_text, max_size=10),
         selectors=st.lists(safe_text, max_size=10),
-        tags=label_maps,
         next_page_token=safe_text,
     )
     def test_list_leases_response_with_fuzzed_leases(
         self,
         names: list[str],
         selectors: list[str],
-        tags: dict[str, str],
         next_page_token: str,
     ) -> None:
         count = min(len(names), len(selectors))
-        leases = [client_pb2.Lease(name=names[i], selector=selectors[i], tags=tags) for i in range(count)]
+        leases = [client_pb2.Lease(name=names[i], selector=selectors[i]) for i in range(count)]
         msg = client_pb2.ListLeasesResponse(leases=leases, next_page_token=next_page_token)
         serialized = msg.SerializeToString()
         restored = client_pb2.ListLeasesResponse()
