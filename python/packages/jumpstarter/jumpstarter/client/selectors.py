@@ -81,7 +81,9 @@ def _label_satisfies_expression(
         return label_value not in values
     if operator == "notin":
         return label_value not in values
-    return False
+    if operator == "!exists":
+        return False
+    raise ValueError(f"unknown label selector operator: {operator!r}")
 
 
 def selector_contains(selector: str, requirements: str) -> bool:

@@ -1,6 +1,8 @@
 """Tests for label selector matching."""
 
-from jumpstarter.client.selectors import selector_contains
+import pytest
+
+from jumpstarter.client.selectors import _label_satisfies_expression, selector_contains
 
 
 class TestSelectorContains:
@@ -40,3 +42,44 @@ class TestSelectorContains:
         assert selector_contains("board=rpi", "board =rpi") is True
         assert selector_contains("board=rpi", "board= rpi") is True
         assert selector_contains("firmware!=v3", "firmware != v3") is True
+
+
+class TestLabelSatisfiesExpressionUnknownOperator:
+    """Tests for _label_satisfies_expression raising ValueError on unknown operators."""
+
+    def test_empty_string_operator_raises_value_error(self):
+        with pytest.raises(ValueError, match="unknown label selector operator"):
+            _label_satisfies_expression({"key": "value"}, "key", "", ["value"])
+
+    def test_invalid_operator_raises_value_error(self):
+        with pytest.raises(ValueError, match="unknown label selector operator"):
+            _label_satisfies_expression({"key": "value"}, "key", "invalid", ["value"])
+
+    def test_equals_operator_raises_value_error(self):
+        with pytest.raises(ValueError, match="unknown label selector operator"):
+            _label_satisfies_expression({"key": "value"}, "key", "=", ["value"])
+
+    def test_not_exists_operator_returns_false_when_key_present(self):
+        assert _label_satisfies_expression({"key": "value"}, "key", "!exists", []) is False
+
+    def test_error_message_includes_operator(self):
+        with pytest.raises(ValueError, match="'bogus'"):
+            _label_satisfies_expression({"key": "value"}, "key", "bogus", ["value"])
+
+    def test_in_operator_still_works(self):
+        assert _label_satisfies_expression({"key": "value"}, "key", "in", ["value"]) is True
+        assert _label_satisfies_expression({"key": "value"}, "key", "in", ["other"]) is False
+
+    def test_notin_operator_still_works(self):
+        assert _label_satisfies_expression({"key": "value"}, "key", "notin", ["other"]) is True
+        assert _label_satisfies_expression({"key": "value"}, "key", "notin", ["value"]) is False
+
+    def test_exists_operator_still_works(self):
+        assert _label_satisfies_expression({"key": "value"}, "key", "exists", []) is True
+
+    def test_not_equal_operator_still_works(self):
+        assert _label_satisfies_expression({"key": "value"}, "key", "!=", ["other"]) is True
+        assert _label_satisfies_expression({"key": "value"}, "key", "!=", ["value"]) is False
+
+    def test_key_not_in_labels_returns_false(self):
+        assert _label_satisfies_expression({}, "missing", "in", ["value"]) is False
