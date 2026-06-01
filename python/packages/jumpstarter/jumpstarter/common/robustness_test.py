@@ -16,6 +16,8 @@ ARBITRARY = st.one_of(
     st.binary(),
 )
 
+ALLOWED_PARSE_OCI_EXCEPTIONS = (TypeError, ValueError)
+
 
 class TestMetadataRobustness:
     @given(
