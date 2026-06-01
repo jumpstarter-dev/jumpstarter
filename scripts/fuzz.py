@@ -69,10 +69,20 @@ def parse_duration(value: str) -> int:
     for suffix, multiplier in [("h", 3600), ("m", 60), ("s", 1)]:
         if suffix in rest:
             parts = rest.split(suffix, 1)
-            total += int(parts[0]) * multiplier
+            try:
+                total += int(parts[0]) * multiplier
+            except ValueError:
+                raise argparse.ArgumentTypeError(
+                    f"invalid duration: {value!r} (expected format like 30m, 2h, 1h30m, or 90)"
+                )
             rest = parts[1]
     if rest.strip():
-        total += int(rest)
+        try:
+            total += int(rest)
+        except ValueError:
+            raise argparse.ArgumentTypeError(
+                f"invalid duration: {value!r} (expected format like 30m, 2h, 1h30m, or 90)"
+            )
     return total
 
 

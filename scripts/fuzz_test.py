@@ -3,7 +3,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from fuzz import _clean_example_args, _extract_falsifying_examples, _insert_example
+import argparse
+
+import pytest
+
+from fuzz import _clean_example_args, _extract_falsifying_examples, _insert_example, parse_duration
 
 
 class TestCleanExampleArgs:
@@ -101,6 +105,40 @@ class TestExtractFalsifyingExamples:
         )
         result = _extract_falsifying_examples(output)
         assert result == [("test_x", "val=99")]
+
+
+class TestParseDuration:
+    def test_minutes_only(self):
+        assert parse_duration("30m") == 1800
+
+    def test_hours_only(self):
+        assert parse_duration("2h") == 7200
+
+    def test_hours_and_minutes(self):
+        assert parse_duration("1h30m") == 5400
+
+    def test_seconds_only_with_suffix(self):
+        assert parse_duration("90s") == 90
+
+    def test_bare_number(self):
+        assert parse_duration("90") == 90
+
+    def test_empty_string(self):
+        assert parse_duration("") == 0
+
+    def test_whitespace_only(self):
+        assert parse_duration("  ") == 0
+
+    def test_all_units(self):
+        assert parse_duration("1h30m45s") == 5445
+
+    def test_malformed_input_raises_argument_type_error(self):
+        with pytest.raises(argparse.ArgumentTypeError):
+            parse_duration("abc")
+
+    def test_malformed_trailing_text_raises_argument_type_error(self):
+        with pytest.raises(argparse.ArgumentTypeError):
+            parse_duration("30mxyz")
 
 
 class TestInsertExample:
