@@ -1,25 +1,9 @@
-import grpc
 import pytest
 from grpc import StatusCode
-from grpc.aio import AioRpcError
 
 from jumpstarter.common.exceptions import ConnectionError
 from jumpstarter.common.grpc import _override_default_grpc_options, translate_grpc_exceptions
-
-
-class MockAioRpcError(AioRpcError):
-    def __init__(self, status_code: StatusCode, message: str = ""):
-        self._code = status_code
-        self._details = message
-        self._debug_error_string = ""
-        self._initial_metadata = grpc.aio.Metadata()
-        self._trailing_metadata = grpc.aio.Metadata()
-
-    def code(self) -> StatusCode:
-        return self._code
-
-    def details(self) -> str:
-        return self._details
+from jumpstarter.conftest import MockAioRpcError
 
 
 def test_default_options_preserve_existing_defaults():

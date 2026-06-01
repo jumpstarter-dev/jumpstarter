@@ -4,32 +4,15 @@ from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-import grpc
 import pytest
 from grpc import StatusCode
 from grpc.aio import AioRpcError
 
 from jumpstarter.client.core import DriverError
 from jumpstarter.common import ExporterStatus, Metadata
+from jumpstarter.conftest import MockAioRpcError
 
 pytestmark = pytest.mark.anyio
-
-
-class MockAioRpcError(AioRpcError):
-    """Mock gRPC error for testing that properly inherits from AioRpcError."""
-
-    def __init__(self, status_code: StatusCode, message: str = ""):
-        self._code = status_code
-        self._details = message
-        self._debug_error_string = ""
-        self._initial_metadata = grpc.aio.Metadata()
-        self._trailing_metadata = grpc.aio.Metadata()
-
-    def code(self) -> StatusCode:
-        return self._code
-
-    def details(self) -> str:
-        return self._details
 
 
 def create_mock_rpc_error(code: StatusCode, details: str = "") -> MockAioRpcError:
