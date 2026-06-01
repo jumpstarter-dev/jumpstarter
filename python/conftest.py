@@ -5,15 +5,19 @@ import pytest
 
 os.environ["TERM"] = "dumb"
 
+HYPOTHESIS_PROFILES = {
+    "ci": {"max_examples": 100},
+    "fuzz": {"max_examples": 500},
+}
+HYPOTHESIS_DEFAULT_PROFILE = "ci"
+
 try:
     from hypothesis import settings as hypothesis_settings
 
-    hypothesis_settings.register_profile("ci", max_examples=100)
-    hypothesis_settings.register_profile(
-        "fuzz",
-        max_examples=500,
-    )
-    hypothesis_settings.load_profile(os.getenv("HYPOTHESIS_PROFILE", "ci"))
+    for name, kwargs in HYPOTHESIS_PROFILES.items():
+        hypothesis_settings.register_profile(name, **kwargs)
+    _profile = os.getenv("HYPOTHESIS_PROFILE", HYPOTHESIS_DEFAULT_PROFILE)
+    hypothesis_settings.load_profile(_profile)
 except ImportError:
     pass
 
