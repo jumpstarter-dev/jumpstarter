@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 import click
 import pytest
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import BaseModel
 
@@ -77,7 +77,6 @@ class TestCreateLeaseDeepExecution:
             )
         config.create_lease.assert_called_once()
 
-    @settings(deadline=None)
     @given(selector=st.text(min_size=1, max_size=100))
     def test_arbitrary_selector_with_mocked_backend(self, selector: str) -> None:
         from jumpstarter_cli.create import create_lease
@@ -100,7 +99,6 @@ class TestCreateLeaseDeepExecution:
         except ALLOWED_EXCEPTIONS:
             pass
 
-    @settings(deadline=None)
     @given(name=st.text(min_size=1, max_size=100))
     def test_arbitrary_exporter_name_with_mocked_backend(self, name: str) -> None:
         from jumpstarter_cli.create import create_lease
@@ -123,7 +121,6 @@ class TestCreateLeaseDeepExecution:
         except ALLOWED_EXCEPTIONS:
             pass
 
-    @settings(deadline=None)
     @given(tags=st.lists(st.text(max_size=50), max_size=5))
     def test_arbitrary_tags_with_mocked_backend(self, tags: list[str]) -> None:
         from jumpstarter_cli.create import create_lease
@@ -179,7 +176,6 @@ class TestDeleteLeasesDeepExecution:
                 output="default",
             )
 
-    @settings(deadline=None)
     @given(names=st.lists(st.text(min_size=1, max_size=50), min_size=1, max_size=5))
     def test_arbitrary_names_with_mocked_backend(self, names: list[str]) -> None:
         from jumpstarter_cli.delete import delete_leases
@@ -234,7 +230,6 @@ class TestGetExportersDeepExecution:
             )
         config.list_exporters.assert_called_once()
 
-    @settings(deadline=None)
     @given(selector=st.text(max_size=100))
     def test_arbitrary_selector(self, selector: str) -> None:
         from jumpstarter_cli.get import get_exporters
@@ -294,7 +289,6 @@ class TestGetLeasesDeepExecution:
                 tag_filter=None,
             )
 
-    @settings(deadline=None)
     @given(selector=st.text(max_size=100))
     def test_arbitrary_selector_with_mocked_backend(self, selector: str) -> None:
         from jumpstarter_cli.get import get_leases
@@ -317,7 +311,6 @@ class TestGetLeasesDeepExecution:
         except ALLOWED_EXCEPTIONS:
             pass
 
-    @settings(deadline=None)
     @given(tag_filter=st.text(max_size=100))
     def test_arbitrary_tag_filter(self, tag_filter: str) -> None:
         from jumpstarter_cli.get import get_leases

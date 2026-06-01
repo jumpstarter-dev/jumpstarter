@@ -8,7 +8,8 @@ os.environ["TERM"] = "dumb"
 HYPOTHESIS_DEFAULT_PROFILE = "ci"
 
 try:
-    from hypothesis import HealthCheck, settings as hypothesis_settings
+    from hypothesis import HealthCheck
+    from hypothesis import settings as hypothesis_settings
 
     HYPOTHESIS_PROFILES = {
         "ci": {

@@ -1,6 +1,6 @@
 import click
 from click.testing import CliRunner
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 ALLOWED_CLI_EXCEPTIONS = (
@@ -13,7 +13,6 @@ ALLOWED_CLI_EXCEPTIONS = (
 
 
 class TestDriverListRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), max_size=10))
     def test_driver_list_never_crashes(self, args: list[str]) -> None:
         from . import driver
@@ -28,7 +27,6 @@ class TestDriverListRobustness:
 
 
 class TestDriverVersionRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), max_size=10))
     def test_driver_version_never_crashes(self, args: list[str]) -> None:
         from . import driver
@@ -43,7 +41,6 @@ class TestDriverVersionRobustness:
 
 
 class TestDriverTopLevelRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), max_size=10))
     def test_driver_never_crashes_on_garbage(self, args: list[str]) -> None:
         from . import driver

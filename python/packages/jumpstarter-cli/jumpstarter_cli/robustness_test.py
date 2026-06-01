@@ -2,7 +2,7 @@ from datetime import timedelta
 
 import click
 from click.testing import CliRunner
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from .common import ACQUISITION_TIMEOUT, DATETIME, DURATION
@@ -129,7 +129,6 @@ class TestDateTimeParamTypeRobustness:
 
 
 class TestCliRunnerRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), max_size=10))
     def test_jmp_never_crashes_on_garbage_args(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -144,7 +143,6 @@ class TestCliRunnerRobustness:
 
 
 class TestCreateLeaseRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_create_lease_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -159,7 +157,6 @@ class TestCreateLeaseRobustness:
 
 
 class TestDeleteLeasesRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_delete_leases_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -174,7 +171,6 @@ class TestDeleteLeasesRobustness:
 
 
 class TestGetExportersRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_get_exporters_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -189,7 +185,6 @@ class TestGetExportersRobustness:
 
 
 class TestGetLeasesRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_get_leases_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -204,7 +199,6 @@ class TestGetLeasesRobustness:
 
 
 class TestShellRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_shell_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -219,7 +213,6 @@ class TestShellRobustness:
 
 
 class TestRunRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_run_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -234,7 +227,6 @@ class TestRunRobustness:
 
 
 class TestLoginRobustness:
-    @settings(deadline=None)
     @given(endpoint=st.text(max_size=100))
     def test_login_never_crashes_on_garbage_endpoint(self, endpoint: str) -> None:
         from .jmp import jmp
@@ -258,7 +250,6 @@ class TestLoginRobustness:
 
 
 class TestAuthStatusRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_auth_status_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -273,7 +264,6 @@ class TestAuthStatusRobustness:
 
 
 class TestAuthRefreshRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_auth_refresh_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -288,7 +278,6 @@ class TestAuthRefreshRobustness:
 
 
 class TestAuthRotateRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_auth_rotate_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -303,7 +292,6 @@ class TestAuthRotateRobustness:
 
 
 class TestConfigClientCreateRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_config_client_create_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -318,7 +306,6 @@ class TestConfigClientCreateRobustness:
 
 
 class TestConfigClientDeleteRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_config_client_delete_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -333,7 +320,6 @@ class TestConfigClientDeleteRobustness:
 
 
 class TestConfigClientListRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), max_size=10))
     def test_config_client_list_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -348,7 +334,6 @@ class TestConfigClientListRobustness:
 
 
 class TestConfigClientUseRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_config_client_use_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -363,7 +348,6 @@ class TestConfigClientUseRobustness:
 
 
 class TestConfigExporterCreateRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_config_exporter_create_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -378,7 +362,6 @@ class TestConfigExporterCreateRobustness:
 
 
 class TestConfigExporterDeleteRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_config_exporter_delete_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -393,7 +376,6 @@ class TestConfigExporterDeleteRobustness:
 
 
 class TestConfigExporterEditRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_config_exporter_edit_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -408,7 +390,6 @@ class TestConfigExporterEditRobustness:
 
 
 class TestConfigExporterListRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), max_size=10))
     def test_config_exporter_list_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -423,7 +404,6 @@ class TestConfigExporterListRobustness:
 
 
 class TestCompletionRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_completion_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp
@@ -438,7 +418,6 @@ class TestCompletionRobustness:
 
 
 class TestUpdateLeaseRobustness:
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=50), min_size=1, max_size=10))
     def test_update_lease_never_crashes(self, args: list[str]) -> None:
         from .jmp import jmp

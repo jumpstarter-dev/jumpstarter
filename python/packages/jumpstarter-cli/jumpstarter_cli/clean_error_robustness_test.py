@@ -1,5 +1,5 @@
 from click.testing import CliRunner
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 TRACEBACK_MARKER = "Traceback (most recent call last)"
@@ -33,7 +33,6 @@ class TestCreateLeaseCleanErrors:
         _assert_no_traceback(result, "create lease (missing selector)")
         assert result.exit_code != 0
 
-    @settings(deadline=None)
     @given(duration=st.text(min_size=1, max_size=30))
     def test_arbitrary_duration_no_traceback(self, duration: str) -> None:
         result = _invoke_jmp(["create", "lease", "--duration", duration, "-l", "x=y"])
@@ -50,7 +49,6 @@ class TestDeleteLeasesCleanErrors:
         result = _invoke_jmp(["delete", "leases", "nonexistent-lease-xyz"])
         _assert_no_traceback(result, "delete leases (nonexistent)")
 
-    @settings(deadline=None)
     @given(name=st.text(min_size=1, max_size=50))
     def test_arbitrary_name_no_traceback(self, name: str) -> None:
         result = _invoke_jmp(["delete", "leases", name])
@@ -62,7 +60,6 @@ class TestGetExportersCleanErrors:
         result = _invoke_jmp(["get", "exporters", "-l", "!!!invalid!!!"])
         _assert_no_traceback(result, "get exporters (invalid selector)")
 
-    @settings(deadline=None)
     @given(selector=st.text(min_size=1, max_size=50))
     def test_arbitrary_selector_no_traceback(self, selector: str) -> None:
         result = _invoke_jmp(["get", "exporters", "-l", selector])
@@ -74,7 +71,6 @@ class TestGetLeasesCleanErrors:
         result = _invoke_jmp(["get", "leases", "-l", "!!!invalid!!!"])
         _assert_no_traceback(result, "get leases (invalid selector)")
 
-    @settings(deadline=None)
     @given(selector=st.text(min_size=1, max_size=50))
     def test_arbitrary_selector_no_traceback(self, selector: str) -> None:
         result = _invoke_jmp(["get", "leases", "-l", selector])
@@ -86,7 +82,6 @@ class TestShellCleanErrors:
         result = _invoke_jmp(["shell"])
         _assert_no_traceback(result, "shell (no config)")
 
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=30), min_size=1, max_size=5))
     def test_arbitrary_args_no_traceback(self, args: list[str]) -> None:
         result = _invoke_jmp(["shell", *args])
@@ -99,7 +94,6 @@ class TestRunCleanErrors:
         _assert_no_traceback(result, "run (no args)")
         assert result.exit_code != 0
 
-    @settings(deadline=None)
     @given(args=st.lists(st.text(max_size=30), min_size=1, max_size=5))
     def test_arbitrary_args_no_traceback(self, args: list[str]) -> None:
         result = _invoke_jmp(["run", *args])
@@ -111,7 +105,6 @@ class TestLoginCleanErrors:
         result = _invoke_jmp(["login"])
         _assert_no_traceback(result, "login (no args)")
 
-    @settings(deadline=None)
     @given(endpoint=st.text(min_size=1, max_size=50))
     def test_arbitrary_endpoint_no_traceback(self, endpoint: str) -> None:
         result = _invoke_jmp(["login", endpoint, "--nointeractive"])
@@ -158,7 +151,6 @@ class TestCompletionCleanErrors:
         _assert_no_traceback(result, "completion (no args)")
         assert result.exit_code != 0
 
-    @settings(deadline=None)
     @given(shell=st.text(min_size=1, max_size=20))
     def test_arbitrary_shell_no_traceback(self, shell: str) -> None:
         result = _invoke_jmp(["completion", shell])
@@ -171,7 +163,6 @@ class TestUpdateLeaseCleanErrors:
         _assert_no_traceback(result, "update lease (no args)")
         assert result.exit_code != 0
 
-    @settings(deadline=None)
     @given(name=st.text(min_size=1, max_size=50))
     def test_arbitrary_name_no_traceback(self, name: str) -> None:
         result = _invoke_jmp(["update", "lease", name])
@@ -184,7 +175,6 @@ class TestUnknownCommandCleanErrors:
         _assert_no_traceback(result, "nonexistent command")
         assert result.exit_code != 0
 
-    @settings(deadline=None)
     @given(cmd=st.text(min_size=1, max_size=30))
     def test_arbitrary_command_no_traceback(self, cmd: str) -> None:
         result = _invoke_jmp([cmd])

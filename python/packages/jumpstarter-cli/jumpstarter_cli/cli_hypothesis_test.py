@@ -4,8 +4,9 @@ import click
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from jumpstarter_cli.common import DURATION, DateTimeParamType, DurationParamType
 from jumpstarter_cli_common.opt import parse_comma_separated
+
+from jumpstarter_cli.common import DURATION, DateTimeParamType, DurationParamType
 
 
 class TestDurationParamTypeWithFuzzedIntegers:

@@ -2,7 +2,7 @@ import pathlib
 
 import jsonschema
 import yaml
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 CRD_BASE = (
@@ -62,7 +62,6 @@ CRD_SCHEMAS = {name: _strip_kubernetes_extensions(_load_crd_schema(name)) for na
 class TestClientCRDRobustness:
     schema = CRD_SCHEMAS["jumpstarter.dev_clients.yaml"]
 
-    @settings(deadline=None)
     @given(instance=st.dictionaries(st.text(max_size=20), ARBITRARY_DICT, max_size=5))
     def test_validate_never_crashes_on_arbitrary_dict(self, instance: dict) -> None:
         try:
@@ -78,7 +77,6 @@ class TestClientCRDRobustness:
 class TestExporterCRDRobustness:
     schema = CRD_SCHEMAS["jumpstarter.dev_exporters.yaml"]
 
-    @settings(deadline=None)
     @given(instance=st.dictionaries(st.text(max_size=20), ARBITRARY_DICT, max_size=5))
     def test_validate_never_crashes_on_arbitrary_dict(self, instance: dict) -> None:
         try:
@@ -94,7 +92,6 @@ class TestExporterCRDRobustness:
 class TestLeaseCRDRobustness:
     schema = CRD_SCHEMAS["jumpstarter.dev_leases.yaml"]
 
-    @settings(deadline=None)
     @given(instance=st.dictionaries(st.text(max_size=20), ARBITRARY_DICT, max_size=5))
     def test_validate_never_crashes_on_arbitrary_dict(self, instance: dict) -> None:
         try:
@@ -110,7 +107,6 @@ class TestLeaseCRDRobustness:
 class TestExporterAccessPolicyCRDRobustness:
     schema = CRD_SCHEMAS["jumpstarter.dev_exporteraccesspolicies.yaml"]
 
-    @settings(deadline=None)
     @given(instance=st.dictionaries(st.text(max_size=20), ARBITRARY_DICT, max_size=5))
     def test_validate_never_crashes_on_arbitrary_dict(self, instance: dict) -> None:
         try:
@@ -126,7 +122,6 @@ class TestExporterAccessPolicyCRDRobustness:
 class TestJumpstarterCRDRobustness:
     schema = CRD_SCHEMAS["operator.jumpstarter.dev_jumpstarters.yaml"]
 
-    @settings(deadline=None)
     @given(instance=st.dictionaries(st.text(max_size=20), ARBITRARY_DICT, max_size=5))
     def test_validate_never_crashes_on_arbitrary_dict(self, instance: dict) -> None:
         try:
@@ -140,7 +135,6 @@ class TestJumpstarterCRDRobustness:
 
 
 class TestAllCRDsRobustness:
-    @settings(deadline=None)
     @given(
         instance=st.dictionaries(st.text(max_size=20), ARBITRARY_DICT, max_size=5),
         crd_name=st.sampled_from(CRD_FILES),
