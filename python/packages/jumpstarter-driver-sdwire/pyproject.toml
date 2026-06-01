@@ -10,7 +10,8 @@ dependencies = [
   "jumpstarter",
   "jumpstarter-driver-opendal",
   "pyusb>=1.2.1",
-  "pyudev>=0.24.3"]
+  "pyudev>=0.24.3",
+]
 
 [project.entry-points."jumpstarter.drivers"]
 SDWire = "jumpstarter_driver_sdwire.driver:SDWire"

@@ -4,7 +4,8 @@ dynamic = ["version", "urls"]
 description = ""
 authors = [
   { name = "Miguel Angel Ajo Pelayo", email = "majopela@redhat.com" },
-  { name = "Nick Cao", email = "ncao@redhat.com" }]
+  { name = "Nick Cao", email = "ncao@redhat.com" },
+]
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
@@ -36,7 +37,8 @@ dev = [
   "pytest-cov>=5.0.0",
   "types-paramiko>=3.5.0.20240928",
   "types-pexpect>=4.9.0.20241208",
-  "websocket-client>=1.8.0"]
+  "websocket-client>=1.8.0",
+]
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"

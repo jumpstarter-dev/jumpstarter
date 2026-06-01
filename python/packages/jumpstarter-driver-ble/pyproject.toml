@@ -11,7 +11,8 @@ dependencies = [
     "click>=8.1.8",
     "jumpstarter",
     "jumpstarter-driver-network",
-    "bleak>=1.1.1"]
+    "bleak>=1.1.1",
+]
 
 [project.entry-points."jumpstarter.drivers"]
 BleWriteNotifyStream = "jumpstarter_driver_ble.driver:BleWriteNotifyStream"

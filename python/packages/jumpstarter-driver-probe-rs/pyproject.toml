@@ -10,7 +10,8 @@ dependencies = [
     "anyio>=4.10.0",
     "click>=8.1.7.2",
     "jumpstarter",
-    "jumpstarter-driver-opendal"]
+    "jumpstarter-driver-opendal",
+]
 
 [project.entry-points."jumpstarter.drivers"]
 ProbeRs = "jumpstarter_driver_probe_rs.driver:ProbeRs"

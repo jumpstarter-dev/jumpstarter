@@ -10,7 +10,8 @@ dependencies = [
     "anyio>=4.10.0",
     "pyusb>=1.2.1",
     "jumpstarter_driver_power",
-    "jumpstarter"]
+    "jumpstarter",
+]
 
 [project.entry-points."jumpstarter.drivers"]
 Ykush = "jumpstarter_driver_yepkit.driver:Ykush"

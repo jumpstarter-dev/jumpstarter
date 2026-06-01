@@ -14,7 +14,8 @@ dependencies = [
     "jumpstarter-driver-network",
     "jumpstarter-driver-opendal",
     "jumpstarter-driver-power",
-    "jumpstarter-driver-pyserial"]
+    "jumpstarter-driver-pyserial",
+]
 
 [project.entry-points."jumpstarter.drivers"]
 Renode = "jumpstarter_driver_renode.driver:Renode"
@@ -54,4 +55,5 @@ name = "pin_jumpstarter"
 dev = [
     "pytest>=8.3.2",
     "pytest-cov>=5.0.0",
-    "pytest-anyio>=0.0.0"]
+    "pytest-anyio>=0.0.0",
+]

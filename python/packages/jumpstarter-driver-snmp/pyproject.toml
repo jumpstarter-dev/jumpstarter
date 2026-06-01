@@ -11,7 +11,8 @@ dependencies = [
     "click>=8.1.8",
     "jumpstarter",
     "jumpstarter-driver-power",
-    "pysnmp==7.1.16"]
+    "pysnmp==7.1.16",
+]
 
 [project.entry-points."jumpstarter.drivers"]
 SNMPServer = "jumpstarter_driver_snmp.driver:SNMPServer"
@@ -22,7 +23,8 @@ dev = [
     "pytest-cov>=6.0.0",
     "pytest-anyio>=0.0.0",
     "pytest-asyncio>=0.0.0",
-    "jumpstarter-testing"]
+    "jumpstarter-testing",
+]
 
 
 [tool.pytest.ini_options]

@@ -12,7 +12,8 @@ dependencies = [
     "anyio>=4.10.0",
     "click>=8.3.1",
     "jumpstarter",
-    "jumpstarter-driver-opendal"]
+    "jumpstarter-driver-opendal",
+]
 
 [project.entry-points."jumpstarter.drivers"]
 StlinkMsdFlasher = "jumpstarter_driver_stlink_msd.driver:StlinkMsdFlasher"
@@ -42,4 +43,5 @@ name = "pin_jumpstarter"
 [dependency-groups]
 dev = [
     "pytest-cov>=6.0.0",
-    "pytest>=8.3.3"]
+    "pytest>=8.3.3",
+]

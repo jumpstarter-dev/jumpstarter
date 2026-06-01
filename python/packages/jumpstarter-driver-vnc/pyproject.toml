@@ -13,7 +13,8 @@ dependencies = [
     "jumpstarter",
     "jumpstarter-driver-composite",
     "jumpstarter-driver-network",
-    "click"]
+    "click",
+]
 
 [project.entry-points."jumpstarter.drivers"]
 vnc = "jumpstarter_driver_vnc.driver:Vnc"
@@ -43,4 +44,5 @@ name = "pin_jumpstarter"
 [dependency-groups]
 dev = [
     "pytest-cov>=6.0.0",
-    "pytest>=8.3.3"]
+    "pytest>=8.3.3",
+]

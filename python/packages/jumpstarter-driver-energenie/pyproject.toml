@@ -21,7 +21,8 @@ EnerGenie = "jumpstarter_driver_energenie.driver:EnerGenie"
 dev = [
     "pytest-cov>=6.0.0",
     "pytest>=8.3.3",
-    "pytest-httpserver>=1.0.0"]
+    "pytest-httpserver>=1.0.0",
+]
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
