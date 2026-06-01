@@ -474,7 +474,7 @@ class TestRunHypofuzz:
             patch("fuzz.time.monotonic", side_effect=side_effect_monotonic),
         ):
             result = run_hypofuzz(120)
-        assert result is True
+        assert result is False
         assert mock_popen.call_count == 3
 
 
@@ -514,7 +514,7 @@ class TestRunHypothesisLoop:
             patch("fuzz.time.monotonic", side_effect=mock_monotonic),
         ):
             result = run_hypothesis_loop(60)
-        assert result is True
+        assert result is False
 
     def test_stops_when_budget_exhausted(self):
         mock_result = MagicMock()

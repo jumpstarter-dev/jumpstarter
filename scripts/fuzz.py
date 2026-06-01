@@ -151,15 +151,16 @@ def run_hypofuzz(seconds: int) -> bool:
 
         if proc.returncode == 0:
             print("HypoFuzz: completed (no more tests to fuzz)")
+            return True
         else:
             print(f"HypoFuzz: exited with code {proc.returncode} (found failures)")
             if is_final_attempt and proc.stderr:
                 stderr_output = proc.stderr.read().decode(errors="replace").strip()
                 if stderr_output:
                     print(f"HypoFuzz stderr:\n{stderr_output}", file=sys.stderr)
-        return True
+        return False
 
-    return True
+    return False
 
 
 def _discover_fuzz_test_files() -> list[str]:
@@ -213,7 +214,7 @@ def run_hypothesis_loop(seconds: int) -> bool:
     if failed_files:
         for f in failed_files:
             print(f"  - {f}")
-    return True
+    return len(failed_files) == 0
 
 
 def _find_test_file(func_name: str) -> Path | None:
@@ -416,18 +417,19 @@ def replay_and_inject_python() -> int:
 
 def run_python(seconds: int) -> bool:
     start = time.monotonic()
-    run_hypofuzz(min(seconds, max(60, seconds // 3)))
+    all_passed = run_hypofuzz(min(seconds, max(60, seconds // 3)))
     elapsed = int(time.monotonic() - start)
     remaining = seconds - elapsed
     if remaining > 30:
-        run_hypothesis_loop(remaining)
+        if not run_hypothesis_loop(remaining):
+            all_passed = False
 
     replay_and_inject_python()
 
     db_path = Path("python") / ".hypothesis" / "examples"
     if db_path.exists():
         shutil.rmtree(db_path)
-    return True
+    return all_passed
 
 
 # --- Go fuzzing ---
@@ -590,8 +592,8 @@ def main() -> int:
 
     if args.python_only:
         print(f"Python fuzz budget: {args.time} ({total}s)")
-        run_python(total)
-        return 0
+        ok = run_python(total)
+        return 0 if ok else 1
 
     if args.go_only:
         print(f"Go fuzz budget: {args.time} ({total}s)")
@@ -602,8 +604,7 @@ def main() -> int:
     slots = 1 + len(go_targets)
     per_slot = max(30, total // slots)
     print(f"Fuzz budget: {args.time} ({total}s) -- {slots} slots, {per_slot}s each")
-    run_python(per_slot)
-    all_passed = True
+    all_passed = run_python(per_slot)
     for name, pkg in go_targets:
         if not run_go_target(name, pkg, per_slot):
             all_passed = False
