@@ -6,12 +6,12 @@ from . import router_pb2 as jumpstarter_dot_v1_dot_router__pb2
 
 
 class RouterServiceStub(object):
-    """StreamService
+    """Router service for multiplexing bidirectional streams between clients and exporters.
     Claims:
     iss: jumpstarter controller
     aud: jumpstarter router
     sub: jumpstarter client/exporter
-    stream: stream id
+    stream: stream id.
     """
 
     def __init__(self, channel):
@@ -28,16 +28,16 @@ class RouterServiceStub(object):
 
 
 class RouterServiceServicer(object):
-    """StreamService
+    """Router service for multiplexing bidirectional streams between clients and exporters.
     Claims:
     iss: jumpstarter controller
     aud: jumpstarter router
     sub: jumpstarter client/exporter
-    stream: stream id
+    stream: stream id.
     """
 
     def Stream(self, request_iterator, context):
-        """Stream connects caller to another caller of the same stream
+        """Stream connects caller to another caller of the same stream.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -60,12 +60,12 @@ def add_RouterServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class RouterService(object):
-    """StreamService
+    """Router service for multiplexing bidirectional streams between clients and exporters.
     Claims:
     iss: jumpstarter controller
     aud: jumpstarter router
     sub: jumpstarter client/exporter
-    stream: stream id
+    stream: stream id.
     """
 
     @staticmethod

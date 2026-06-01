@@ -320,6 +320,9 @@ func (l *Lease) ToProtobuf() *cpb.Lease {
 			Name:      l.Status.ExporterRef.Name,
 		}))
 	}
+	if alias, ok := l.Labels[string(LeaseLabelName)]; ok {
+		lease.Alias = ptr.To(alias)
+	}
 
 	return &lease
 }

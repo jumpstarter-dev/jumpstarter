@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
@@ -32,7 +31,9 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -110,6 +111,56 @@ func (s *ClientService) ListExporters(
 	return jexporters.ToProtobuf(), nil
 }
 
+func (s *ClientService) resolveLeaseByAlias(ctx context.Context, namespace, alias string) (*jumpstarterdevv1alpha1.Lease, error) {
+	aliasReq, err := labels.NewRequirement(
+		string(jumpstarterdevv1alpha1.LeaseLabelName),
+		selection.Equals,
+		[]string{alias},
+	)
+	if err != nil {
+		return nil, err
+	}
+	activeReq, err := labels.NewRequirement(
+		string(jumpstarterdevv1alpha1.LeaseLabelEnded),
+		selection.DoesNotExist,
+		[]string{},
+	)
+	if err != nil {
+		return nil, err
+	}
+	selector := labels.Everything().Add(*aliasReq).Add(*activeReq)
+
+	var jleases jumpstarterdevv1alpha1.LeaseList
+	if err := s.List(ctx, &jleases,
+		kclient.InNamespace(namespace),
+		kclient.MatchingLabelsSelector{Selector: selector},
+		kclient.Limit(2),
+	); err != nil {
+		return nil, err
+	}
+
+	switch len(jleases.Items) {
+	case 0:
+		return nil, apierrors.NewNotFound(schema.GroupResource{Group: "jumpstarter.dev", Resource: "leases"}, alias)
+	case 1:
+		return &jleases.Items[0], nil
+	default:
+		return nil, status.Errorf(codes.FailedPrecondition, "multiple active leases match alias %q", alias)
+	}
+}
+
+func (s *ClientService) resolveLeaseByNameOrAlias(ctx context.Context, namespace, nameOrAlias string) (*jumpstarterdevv1alpha1.Lease, error) {
+	var jlease jumpstarterdevv1alpha1.Lease
+	err := s.Get(ctx, types.NamespacedName{Namespace: namespace, Name: nameOrAlias}, &jlease)
+	if err == nil {
+		return &jlease, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		return nil, err
+	}
+	return s.resolveLeaseByAlias(ctx, namespace, nameOrAlias)
+}
+
 func (s *ClientService) GetLease(ctx context.Context, req *cpb.GetLeaseRequest) (*cpb.Lease, error) {
 	key, err := utils.ParseLeaseIdentifier(req.Name)
 	if err != nil {
@@ -121,8 +172,8 @@ func (s *ClientService) GetLease(ctx context.Context, req *cpb.GetLeaseRequest) 
 		return nil, err
 	}
 
-	var jlease jumpstarterdevv1alpha1.Lease
-	if err := s.Get(ctx, *key, &jlease); err != nil {
+	jlease, err := s.resolveLeaseByNameOrAlias(ctx, key.Namespace, key.Name)
+	if err != nil {
 		return nil, err
 	}
 
@@ -228,24 +279,27 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 		return nil, err
 	}
 
-	// Use provided lease_id if specified, otherwise generate a UUIDv7
-	name := req.LeaseId
-	if name == "" {
-		id, err := uuid.NewV7()
-		if err != nil {
-			return nil, err
-		}
-		name = id.String()
-	}
-
 	jlease, err := jumpstarterdevv1alpha1.LeaseFromProtobuf(req.Lease, types.NamespacedName{
 		Namespace: namespace,
-		Name:      name,
 	}, corev1.LocalObjectReference{
 		Name: jclient.Name,
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if req.LeaseId != "" {
+		// Check for duplicate active alias
+		if _, err := s.resolveLeaseByAlias(ctx, namespace, req.LeaseId); err == nil {
+			return nil, status.Errorf(codes.AlreadyExists, "an active lease with alias %q already exists", req.LeaseId)
+		}
+		jlease.GenerateName = req.LeaseId + "-"
+		if jlease.Labels == nil {
+			jlease.Labels = make(map[string]string)
+		}
+		jlease.Labels[string(jumpstarterdevv1alpha1.LeaseLabelName)] = req.LeaseId
+	} else {
+		jlease.GenerateName = "lease-"
 	}
 
 	if err := s.Create(ctx, jlease); err != nil {
@@ -280,10 +334,11 @@ func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseReq
 		return nil, err
 	}
 
-	var jlease jumpstarterdevv1alpha1.Lease
-	if err := s.Get(ctx, *key, &jlease); err != nil {
+	resolved, err := s.resolveLeaseByNameOrAlias(ctx, key.Namespace, key.Name)
+	if err != nil {
 		return nil, err
 	}
+	jlease := *resolved
 
 	if jlease.Spec.ClientRef.Name != jclient.Name {
 		return nil, fmt.Errorf("UpdateLease permission denied")
@@ -293,7 +348,8 @@ func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseReq
 
 	// Only parse time fields from protobuf if any are being updated
 	if req.Lease.BeginTime != nil || req.Lease.Duration != nil || req.Lease.EndTime != nil {
-		desired, err := jumpstarterdevv1alpha1.LeaseFromProtobuf(req.Lease, *key,
+		resolvedKey := types.NamespacedName{Namespace: jlease.Namespace, Name: jlease.Name}
+		desired, err := jumpstarterdevv1alpha1.LeaseFromProtobuf(req.Lease, resolvedKey,
 			corev1.LocalObjectReference{
 				Name: jclient.Name,
 			},
@@ -369,8 +425,8 @@ func (s *ClientService) DeleteLease(ctx context.Context, req *cpb.DeleteLeaseReq
 		return nil, err
 	}
 
-	var jlease jumpstarterdevv1alpha1.Lease
-	if err := s.Get(ctx, *key, &jlease); err != nil {
+	jlease, err := s.resolveLeaseByNameOrAlias(ctx, key.Namespace, key.Name)
+	if err != nil {
 		return nil, err
 	}
 
@@ -386,7 +442,7 @@ func (s *ClientService) DeleteLease(ctx context.Context, req *cpb.DeleteLeaseReq
 
 	jlease.Spec.Release = true
 
-	if err := s.Patch(ctx, &jlease, original); err != nil {
+	if err := s.Patch(ctx, jlease, original); err != nil {
 		return nil, err
 	}
 

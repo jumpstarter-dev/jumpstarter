@@ -27,15 +27,11 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Registration request sent by an exporter to the controller.
 type RegisterRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// additional context:
-	// - token/authentication mechanism
-	Labels map[string]string `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// standard labels:
-	// jumpstarter.dev/hostname=
-	// jumpstarter.dev/name=
-	Reports       []*DriverInstanceReport `protobuf:"bytes,2,rep,name=reports,proto3" json:"reports,omitempty"`
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Labels        map[string]string       `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Key-value metadata labels.
+	Reports       []*DriverInstanceReport `protobuf:"bytes,2,rep,name=reports,proto3" json:"reports,omitempty"`                                                                         // Driver instance reports for this exporter.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -84,13 +80,14 @@ func (x *RegisterRequest) GetReports() []*DriverInstanceReport {
 	return nil
 }
 
+// Report describing a single driver instance on an exporter.
 type DriverInstanceReport struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
-	Uuid               string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`                                     // a unique id within the exporter
-	ParentUuid         *string                `protobuf:"bytes,2,opt,name=parent_uuid,json=parentUuid,proto3,oneof" json:"parent_uuid,omitempty"` // optional, if device has a parent device
-	Labels             map[string]string      `protobuf:"bytes,3,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Description        *string                `protobuf:"bytes,4,opt,name=description,proto3,oneof" json:"description,omitempty"`                                                                                                             // optional custom driver description for CLI
-	MethodsDescription map[string]string      `protobuf:"bytes,5,rep,name=methods_description,json=methodsDescription,proto3" json:"methods_description,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // method name -> help text for CLI
+	Uuid               string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`                                                                                                                                 // Unique identifier within the exporter.
+	ParentUuid         *string                `protobuf:"bytes,2,opt,name=parent_uuid,json=parentUuid,proto3,oneof" json:"parent_uuid,omitempty"`                                                                                             // Parent device UUID, if this is a child device.
+	Labels             map[string]string      `protobuf:"bytes,3,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`                                                   // Key-value metadata labels.
+	Description        *string                `protobuf:"bytes,4,opt,name=description,proto3,oneof" json:"description,omitempty"`                                                                                                             // Custom driver description for CLI display.
+	MethodsDescription map[string]string      `protobuf:"bytes,5,rep,name=methods_description,json=methodsDescription,proto3" json:"methods_description,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Method name to help text mapping for CLI.
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -160,9 +157,10 @@ func (x *DriverInstanceReport) GetMethodsDescription() map[string]string {
 	return nil
 }
 
+// Registration response returned by the controller.
 type RegisterResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Uuid          string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`
+	Uuid          string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"` // Assigned exporter UUID.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -204,9 +202,10 @@ func (x *RegisterResponse) GetUuid() string {
 	return ""
 }
 
+// Request to unregister an exporter from the controller.
 type UnregisterRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"` // Reason for unregistering.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -248,6 +247,7 @@ func (x *UnregisterRequest) GetReason() string {
 	return ""
 }
 
+// Response to an unregister request.
 type UnregisterResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -284,9 +284,10 @@ func (*UnregisterResponse) Descriptor() ([]byte, []int) {
 	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{4}
 }
 
+// Request to listen for incoming client connections on a lease.
 type ListenRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	LeaseName     string                 `protobuf:"bytes,1,opt,name=lease_name,json=leaseName,proto3" json:"lease_name,omitempty"`
+	LeaseName     string                 `protobuf:"bytes,1,opt,name=lease_name,json=leaseName,proto3" json:"lease_name,omitempty"` // Name of the lease to listen on.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -328,10 +329,11 @@ func (x *ListenRequest) GetLeaseName() string {
 	return ""
 }
 
+// Response containing router connection details for an incoming client.
 type ListenResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	RouterEndpoint string                 `protobuf:"bytes,1,opt,name=router_endpoint,json=routerEndpoint,proto3" json:"router_endpoint,omitempty"`
-	RouterToken    string                 `protobuf:"bytes,2,opt,name=router_token,json=routerToken,proto3" json:"router_token,omitempty"`
+	RouterEndpoint string                 `protobuf:"bytes,1,opt,name=router_endpoint,json=routerEndpoint,proto3" json:"router_endpoint,omitempty"` // The router gRPC endpoint URL.
+	RouterToken    string                 `protobuf:"bytes,2,opt,name=router_token,json=routerToken,proto3" json:"router_token,omitempty"`          // Authentication token for the router.
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -380,6 +382,7 @@ func (x *ListenResponse) GetRouterToken() string {
 	return ""
 }
 
+// Request to subscribe to exporter lease status updates.
 type StatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -416,11 +419,12 @@ func (*StatusRequest) Descriptor() ([]byte, []int) {
 	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{7}
 }
 
+// Lease status update for an exporter.
 type StatusResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Leased        bool                   `protobuf:"varint,1,opt,name=leased,proto3" json:"leased,omitempty"`
-	LeaseName     *string                `protobuf:"bytes,2,opt,name=lease_name,json=leaseName,proto3,oneof" json:"lease_name,omitempty"`
-	ClientName    *string                `protobuf:"bytes,3,opt,name=client_name,json=clientName,proto3,oneof" json:"client_name,omitempty"`
+	Leased        bool                   `protobuf:"varint,1,opt,name=leased,proto3" json:"leased,omitempty"`                                // Whether the exporter is currently leased.
+	LeaseName     *string                `protobuf:"bytes,2,opt,name=lease_name,json=leaseName,proto3,oneof" json:"lease_name,omitempty"`    // Name of the active lease, if any.
+	ClientName    *string                `protobuf:"bytes,3,opt,name=client_name,json=clientName,proto3,oneof" json:"client_name,omitempty"` // Name of the connected client, if any.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -476,9 +480,10 @@ func (x *StatusResponse) GetClientName() string {
 	return ""
 }
 
+// Request to dial an exporter through the router.
 type DialRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	LeaseName     string                 `protobuf:"bytes,1,opt,name=lease_name,json=leaseName,proto3" json:"lease_name,omitempty"`
+	LeaseName     string                 `protobuf:"bytes,1,opt,name=lease_name,json=leaseName,proto3" json:"lease_name,omitempty"` // Name of the lease to connect through.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -520,10 +525,11 @@ func (x *DialRequest) GetLeaseName() string {
 	return ""
 }
 
+// Response containing router connection details for the dialed exporter.
 type DialResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	RouterEndpoint string                 `protobuf:"bytes,1,opt,name=router_endpoint,json=routerEndpoint,proto3" json:"router_endpoint,omitempty"`
-	RouterToken    string                 `protobuf:"bytes,2,opt,name=router_token,json=routerToken,proto3" json:"router_token,omitempty"`
+	RouterEndpoint string                 `protobuf:"bytes,1,opt,name=router_endpoint,json=routerEndpoint,proto3" json:"router_endpoint,omitempty"` // The router gRPC endpoint URL.
+	RouterToken    string                 `protobuf:"bytes,2,opt,name=router_token,json=routerToken,proto3" json:"router_token,omitempty"`          // Authentication token for the router.
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -572,14 +578,13 @@ func (x *DialResponse) GetRouterToken() string {
 	return ""
 }
 
+// An audit event sent from an exporter to the controller.
 type AuditStreamRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// additional context:
-	// - token/authentication mechanism
-	ExporterUuid       string `protobuf:"bytes,1,opt,name=exporter_uuid,json=exporterUuid,proto3" json:"exporter_uuid,omitempty"`
-	DriverInstanceUuid string `protobuf:"bytes,2,opt,name=driver_instance_uuid,json=driverInstanceUuid,proto3" json:"driver_instance_uuid,omitempty"`
-	Severity           string `protobuf:"bytes,3,opt,name=severity,proto3" json:"severity,omitempty"`
-	Message            string `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`
+	state              protoimpl.MessageState `protogen:"open.v1"`
+	ExporterUuid       string                 `protobuf:"bytes,1,opt,name=exporter_uuid,json=exporterUuid,proto3" json:"exporter_uuid,omitempty"`                     // UUID of the exporter.
+	DriverInstanceUuid string                 `protobuf:"bytes,2,opt,name=driver_instance_uuid,json=driverInstanceUuid,proto3" json:"driver_instance_uuid,omitempty"` // UUID of the driver instance.
+	Severity           string                 `protobuf:"bytes,3,opt,name=severity,proto3" json:"severity,omitempty"`                                                 // Severity level of the event.
+	Message            string                 `protobuf:"bytes,4,opt,name=message,proto3" json:"message,omitempty"`                                                   // Human-readable event message.
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -642,11 +647,12 @@ func (x *AuditStreamRequest) GetMessage() string {
 	return ""
 }
 
+// Request to report exporter status to the controller.
 type ReportStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        ExporterStatus         `protobuf:"varint,1,opt,name=status,proto3,enum=jumpstarter.v1.ExporterStatus" json:"status,omitempty"`
-	Message       *string                `protobuf:"bytes,2,opt,name=message,proto3,oneof" json:"message,omitempty"`                                // Optional human-readable status message
-	ReleaseLease  *bool                  `protobuf:"varint,3,opt,name=release_lease,json=releaseLease,proto3,oneof" json:"release_lease,omitempty"` // When true, controller should release the active lease
+	Status        ExporterStatus         `protobuf:"varint,1,opt,name=status,proto3,enum=jumpstarter.v1.ExporterStatus" json:"status,omitempty"`    // Current exporter status.
+	Message       *string                `protobuf:"bytes,2,opt,name=message,proto3,oneof" json:"message,omitempty"`                                // Optional human-readable status message.
+	ReleaseLease  *bool                  `protobuf:"varint,3,opt,name=release_lease,json=releaseLease,proto3,oneof" json:"release_lease,omitempty"` // When true, controller should release the active lease.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -702,6 +708,7 @@ func (x *ReportStatusRequest) GetReleaseLease() bool {
 	return false
 }
 
+// Response to a status report request.
 type ReportStatusResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -738,15 +745,13 @@ func (*ReportStatusResponse) Descriptor() ([]byte, []int) {
 	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{13}
 }
 
+// Response containing the exporter driver report.
 type GetReportResponse struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	Uuid   string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`
-	Labels map[string]string      `protobuf:"bytes,2,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// standard labels:
-	// jumpstarter.dev/hostname=
-	// jumpstarter.dev/name=
-	Reports              []*DriverInstanceReport `protobuf:"bytes,3,rep,name=reports,proto3" json:"reports,omitempty"`
-	AlternativeEndpoints []*Endpoint             `protobuf:"bytes,4,rep,name=alternative_endpoints,json=alternativeEndpoints,proto3" json:"alternative_endpoints,omitempty"`
+	state                protoimpl.MessageState  `protogen:"open.v1"`
+	Uuid                 string                  `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`                                                                               // Exporter UUID.
+	Labels               map[string]string       `protobuf:"bytes,2,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Key-value metadata labels.
+	Reports              []*DriverInstanceReport `protobuf:"bytes,3,rep,name=reports,proto3" json:"reports,omitempty"`                                                                         // Driver instance reports.
+	AlternativeEndpoints []*Endpoint             `protobuf:"bytes,4,rep,name=alternative_endpoints,json=alternativeEndpoints,proto3" json:"alternative_endpoints,omitempty"`                   // Alternative connection endpoints.
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -809,12 +814,13 @@ func (x *GetReportResponse) GetAlternativeEndpoints() []*Endpoint {
 	return nil
 }
 
+// Connection endpoint with TLS credentials.
 type Endpoint struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
-	Endpoint          string                 `protobuf:"bytes,1,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
-	Certificate       string                 `protobuf:"bytes,2,opt,name=certificate,proto3" json:"certificate,omitempty"`
-	ClientCertificate string                 `protobuf:"bytes,3,opt,name=client_certificate,json=clientCertificate,proto3" json:"client_certificate,omitempty"`
-	ClientPrivateKey  string                 `protobuf:"bytes,4,opt,name=client_private_key,json=clientPrivateKey,proto3" json:"client_private_key,omitempty"`
+	Endpoint          string                 `protobuf:"bytes,1,opt,name=endpoint,proto3" json:"endpoint,omitempty"`                                            // The endpoint URL.
+	Certificate       string                 `protobuf:"bytes,2,opt,name=certificate,proto3" json:"certificate,omitempty"`                                      // Server TLS certificate.
+	ClientCertificate string                 `protobuf:"bytes,3,opt,name=client_certificate,json=clientCertificate,proto3" json:"client_certificate,omitempty"` // Client TLS certificate.
+	ClientPrivateKey  string                 `protobuf:"bytes,4,opt,name=client_private_key,json=clientPrivateKey,proto3" json:"client_private_key,omitempty"`  // Client TLS private key.
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
 }
@@ -877,11 +883,12 @@ func (x *Endpoint) GetClientPrivateKey() string {
 	return ""
 }
 
+// Request to invoke a method on a driver instance.
 type DriverCallRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Uuid          string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`
-	Method        string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`
-	Args          []*structpb.Value      `protobuf:"bytes,3,rep,name=args,proto3" json:"args,omitempty"`
+	Uuid          string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`     // UUID of the driver instance.
+	Method        string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"` // Method name to invoke.
+	Args          []*structpb.Value      `protobuf:"bytes,3,rep,name=args,proto3" json:"args,omitempty"`     // Arguments for the method call.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -937,10 +944,11 @@ func (x *DriverCallRequest) GetArgs() []*structpb.Value {
 	return nil
 }
 
+// Response from a driver method invocation.
 type DriverCallResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Uuid          string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`
-	Result        *structpb.Value        `protobuf:"bytes,2,opt,name=result,proto3" json:"result,omitempty"`
+	Uuid          string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`     // UUID of the driver instance.
+	Result        *structpb.Value        `protobuf:"bytes,2,opt,name=result,proto3" json:"result,omitempty"` // Return value from the method call.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -989,11 +997,12 @@ func (x *DriverCallResponse) GetResult() *structpb.Value {
 	return nil
 }
 
+// Request to invoke a streaming method on a driver instance.
 type StreamingDriverCallRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Uuid          string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`
-	Method        string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"`
-	Args          []*structpb.Value      `protobuf:"bytes,3,rep,name=args,proto3" json:"args,omitempty"`
+	Uuid          string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`     // UUID of the driver instance.
+	Method        string                 `protobuf:"bytes,2,opt,name=method,proto3" json:"method,omitempty"` // Method name to invoke.
+	Args          []*structpb.Value      `protobuf:"bytes,3,rep,name=args,proto3" json:"args,omitempty"`     // Arguments for the method call.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1049,10 +1058,11 @@ func (x *StreamingDriverCallRequest) GetArgs() []*structpb.Value {
 	return nil
 }
 
+// Response from a streaming driver method invocation.
 type StreamingDriverCallResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Uuid          string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`
-	Result        *structpb.Value        `protobuf:"bytes,2,opt,name=result,proto3" json:"result,omitempty"`
+	Uuid          string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`     // UUID of the driver instance.
+	Result        *structpb.Value        `protobuf:"bytes,2,opt,name=result,proto3" json:"result,omitempty"` // Return value from the method call.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1101,12 +1111,13 @@ func (x *StreamingDriverCallResponse) GetResult() *structpb.Value {
 	return nil
 }
 
+// A log message from the exporter log stream.
 type LogStreamResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Uuid          string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`
-	Severity      string                 `protobuf:"bytes,2,opt,name=severity,proto3" json:"severity,omitempty"`
-	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
-	Source        *LogSource             `protobuf:"varint,4,opt,name=source,proto3,enum=jumpstarter.v1.LogSource,oneof" json:"source,omitempty"` // New optional field
+	Uuid          string                 `protobuf:"bytes,1,opt,name=uuid,proto3" json:"uuid,omitempty"`                                          // UUID of the driver instance.
+	Severity      string                 `protobuf:"bytes,2,opt,name=severity,proto3" json:"severity,omitempty"`                                  // Log severity level.
+	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`                                    // Log message content.
+	Source        *LogSource             `protobuf:"varint,4,opt,name=source,proto3,enum=jumpstarter.v1.LogSource,oneof" json:"source,omitempty"` // Source of the log message.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1169,6 +1180,7 @@ func (x *LogStreamResponse) GetSource() LogSource {
 	return LogSource_LOG_SOURCE_UNSPECIFIED
 }
 
+// Request to reset the exporter connection.
 type ResetRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1205,6 +1217,7 @@ func (*ResetRequest) Descriptor() ([]byte, []int) {
 	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{21}
 }
 
+// Response to a reset request.
 type ResetResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1241,9 +1254,10 @@ func (*ResetResponse) Descriptor() ([]byte, []int) {
 	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{22}
 }
 
+// Request to retrieve a lease by name.
 type GetLeaseRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // Name of the lease to retrieve.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1285,14 +1299,15 @@ func (x *GetLeaseRequest) GetName() string {
 	return ""
 }
 
+// Response containing lease details.
 type GetLeaseResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Duration      *durationpb.Duration   `protobuf:"bytes,1,opt,name=duration,proto3" json:"duration,omitempty"`
-	Selector      *LabelSelector         `protobuf:"bytes,2,opt,name=selector,proto3" json:"selector,omitempty"`
-	BeginTime     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=begin_time,json=beginTime,proto3,oneof" json:"begin_time,omitempty"`
-	EndTime       *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=end_time,json=endTime,proto3,oneof" json:"end_time,omitempty"`
-	ExporterUuid  *string                `protobuf:"bytes,5,opt,name=exporter_uuid,json=exporterUuid,proto3,oneof" json:"exporter_uuid,omitempty"`
-	Conditions    []*Condition           `protobuf:"bytes,6,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	Duration      *durationpb.Duration   `protobuf:"bytes,1,opt,name=duration,proto3" json:"duration,omitempty"`                                   // Requested lease duration.
+	Selector      *LabelSelector         `protobuf:"bytes,2,opt,name=selector,proto3" json:"selector,omitempty"`                                   // Label selector for matching exporters.
+	BeginTime     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=begin_time,json=beginTime,proto3,oneof" json:"begin_time,omitempty"`          // Lease start time, if active.
+	EndTime       *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=end_time,json=endTime,proto3,oneof" json:"end_time,omitempty"`                // Lease end time, if active.
+	ExporterUuid  *string                `protobuf:"bytes,5,opt,name=exporter_uuid,json=exporterUuid,proto3,oneof" json:"exporter_uuid,omitempty"` // UUID of the assigned exporter, if any.
+	Conditions    []*Condition           `protobuf:"bytes,6,rep,name=conditions,proto3" json:"conditions,omitempty"`                               // Lease status conditions.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1369,10 +1384,11 @@ func (x *GetLeaseResponse) GetConditions() []*Condition {
 	return nil
 }
 
+// Request to create a new lease for an exporter.
 type RequestLeaseRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Duration      *durationpb.Duration   `protobuf:"bytes,1,opt,name=duration,proto3" json:"duration,omitempty"`
-	Selector      *LabelSelector         `protobuf:"bytes,2,opt,name=selector,proto3" json:"selector,omitempty"`
+	Duration      *durationpb.Duration   `protobuf:"bytes,1,opt,name=duration,proto3" json:"duration,omitempty"` // Desired lease duration.
+	Selector      *LabelSelector         `protobuf:"bytes,2,opt,name=selector,proto3" json:"selector,omitempty"` // Label selector for matching exporters.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1421,9 +1437,10 @@ func (x *RequestLeaseRequest) GetSelector() *LabelSelector {
 	return nil
 }
 
+// Response containing the name of the created lease.
 type RequestLeaseResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // Name of the created lease.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1465,9 +1482,10 @@ func (x *RequestLeaseResponse) GetName() string {
 	return ""
 }
 
+// Request to release an active lease.
 type ReleaseLeaseRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // Name of the lease to release.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1509,6 +1527,7 @@ func (x *ReleaseLeaseRequest) GetName() string {
 	return ""
 }
 
+// Response to a release lease request.
 type ReleaseLeaseResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1545,6 +1564,7 @@ func (*ReleaseLeaseResponse) Descriptor() ([]byte, []int) {
 	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{28}
 }
 
+// Request to list all leases.
 type ListLeasesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1581,9 +1601,10 @@ func (*ListLeasesRequest) Descriptor() ([]byte, []int) {
 	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{29}
 }
 
+// Response containing the list of lease names.
 type ListLeasesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Names         []string               `protobuf:"bytes,1,rep,name=names,proto3" json:"names,omitempty"`
+	Names         []string               `protobuf:"bytes,1,rep,name=names,proto3" json:"names,omitempty"` // Names of all leases.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1625,6 +1646,7 @@ func (x *ListLeasesResponse) GetNames() []string {
 	return nil
 }
 
+// Request to retrieve the current exporter status.
 type GetStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1661,12 +1683,13 @@ func (*GetStatusRequest) Descriptor() ([]byte, []int) {
 	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{31}
 }
 
+// Response containing the current exporter status.
 type GetStatusResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	Status         ExporterStatus         `protobuf:"varint,1,opt,name=status,proto3,enum=jumpstarter.v1.ExporterStatus" json:"status,omitempty"`
-	Message        *string                `protobuf:"bytes,2,opt,name=message,proto3,oneof" json:"message,omitempty"`
-	StatusVersion  uint64                 `protobuf:"varint,3,opt,name=status_version,json=statusVersion,proto3" json:"status_version,omitempty"`                                             // Monotonic counter, increments on each status change
-	PreviousStatus *ExporterStatus        `protobuf:"varint,4,opt,name=previous_status,json=previousStatus,proto3,enum=jumpstarter.v1.ExporterStatus,oneof" json:"previous_status,omitempty"` // Previous status for transition tracking
+	Status         ExporterStatus         `protobuf:"varint,1,opt,name=status,proto3,enum=jumpstarter.v1.ExporterStatus" json:"status,omitempty"`                                             // Current exporter status.
+	Message        *string                `protobuf:"bytes,2,opt,name=message,proto3,oneof" json:"message,omitempty"`                                                                         // Human-readable status message.
+	StatusVersion  uint64                 `protobuf:"varint,3,opt,name=status_version,json=statusVersion,proto3" json:"status_version,omitempty"`                                             // Monotonic counter, increments on each status change.
+	PreviousStatus *ExporterStatus        `protobuf:"varint,4,opt,name=previous_status,json=previousStatus,proto3,enum=jumpstarter.v1.ExporterStatus,oneof" json:"previous_status,omitempty"` // Previous status for transition tracking.
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1729,6 +1752,7 @@ func (x *GetStatusResponse) GetPreviousStatus() ExporterStatus {
 	return ExporterStatus_EXPORTER_STATUS_UNSPECIFIED
 }
 
+// Request to end the current exporter session.
 type EndSessionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1765,10 +1789,11 @@ func (*EndSessionRequest) Descriptor() ([]byte, []int) {
 	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{33}
 }
 
+// Response to an end session request.
 type EndSessionResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	Message       *string                `protobuf:"bytes,2,opt,name=message,proto3,oneof" json:"message,omitempty"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`      // Whether the session ended successfully.
+	Message       *string                `protobuf:"bytes,2,opt,name=message,proto3,oneof" json:"message,omitempty"` // Human-readable result message.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

@@ -39,38 +39,34 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// A service where a exporter can connect to make itself available
+// A service where an exporter can connect to make itself available.
 type ControllerServiceClient interface {
-	// Exporter registration
+	// Register an exporter with the controller.
 	Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error)
-	// Exporter disconnection
-	// Disconnecting with bye will invalidate any existing router tokens
-	// we will eventually have a mechanism to tell the router this token
-	// has been invalidated
+	// Unregister an exporter from the controller.
+	// Disconnecting will invalidate any existing router tokens.
 	Unregister(ctx context.Context, in *UnregisterRequest, opts ...grpc.CallOption) (*UnregisterResponse, error)
-	// Exporter status report
-	// Allows exporters to report their own status to the controller
+	// Report exporter status to the controller.
 	ReportStatus(ctx context.Context, in *ReportStatusRequest, opts ...grpc.CallOption) (*ReportStatusResponse, error)
-	// Exporter listening
-	// Returns stream tokens for accepting incoming client connections
+	// Listen for incoming client connections on a lease.
+	// Returns stream tokens for accepting incoming client connections.
 	Listen(ctx context.Context, in *ListenRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ListenResponse], error)
-	// Exporter status
-	// Returns lease status for the exporter
+	// Stream lease status updates for the exporter.
 	Status(ctx context.Context, in *StatusRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StatusResponse], error)
-	// Client connecting
-	// Returns stream token for connecting to the desired exporter
-	// Leases are checked before token issuance
+	// Dial an exporter through the router.
+	// Returns a stream token for connecting to the desired exporter.
+	// Leases are checked before token issuance.
 	Dial(ctx context.Context, in *DialRequest, opts ...grpc.CallOption) (*DialResponse, error)
-	// Audit events from the exporters
-	// audit events are used to track the exporter's activity
+	// Stream audit events from the exporters.
+	// Audit events are used to track the exporter activity.
 	AuditStream(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[AuditStreamRequest, emptypb.Empty], error)
-	// Get Lease
+	// Retrieve a lease by name.
 	GetLease(ctx context.Context, in *GetLeaseRequest, opts ...grpc.CallOption) (*GetLeaseResponse, error)
-	// Request Lease
+	// Request a new lease for an exporter.
 	RequestLease(ctx context.Context, in *RequestLeaseRequest, opts ...grpc.CallOption) (*RequestLeaseResponse, error)
-	// Release Lease
+	// Release an active lease.
 	ReleaseLease(ctx context.Context, in *ReleaseLeaseRequest, opts ...grpc.CallOption) (*ReleaseLeaseResponse, error)
-	// List Leases
+	// List all leases.
 	ListLeases(ctx context.Context, in *ListLeasesRequest, opts ...grpc.CallOption) (*ListLeasesResponse, error)
 }
 
@@ -217,38 +213,34 @@ func (c *controllerServiceClient) ListLeases(ctx context.Context, in *ListLeases
 // All implementations must embed UnimplementedControllerServiceServer
 // for forward compatibility.
 //
-// A service where a exporter can connect to make itself available
+// A service where an exporter can connect to make itself available.
 type ControllerServiceServer interface {
-	// Exporter registration
+	// Register an exporter with the controller.
 	Register(context.Context, *RegisterRequest) (*RegisterResponse, error)
-	// Exporter disconnection
-	// Disconnecting with bye will invalidate any existing router tokens
-	// we will eventually have a mechanism to tell the router this token
-	// has been invalidated
+	// Unregister an exporter from the controller.
+	// Disconnecting will invalidate any existing router tokens.
 	Unregister(context.Context, *UnregisterRequest) (*UnregisterResponse, error)
-	// Exporter status report
-	// Allows exporters to report their own status to the controller
+	// Report exporter status to the controller.
 	ReportStatus(context.Context, *ReportStatusRequest) (*ReportStatusResponse, error)
-	// Exporter listening
-	// Returns stream tokens for accepting incoming client connections
+	// Listen for incoming client connections on a lease.
+	// Returns stream tokens for accepting incoming client connections.
 	Listen(*ListenRequest, grpc.ServerStreamingServer[ListenResponse]) error
-	// Exporter status
-	// Returns lease status for the exporter
+	// Stream lease status updates for the exporter.
 	Status(*StatusRequest, grpc.ServerStreamingServer[StatusResponse]) error
-	// Client connecting
-	// Returns stream token for connecting to the desired exporter
-	// Leases are checked before token issuance
+	// Dial an exporter through the router.
+	// Returns a stream token for connecting to the desired exporter.
+	// Leases are checked before token issuance.
 	Dial(context.Context, *DialRequest) (*DialResponse, error)
-	// Audit events from the exporters
-	// audit events are used to track the exporter's activity
+	// Stream audit events from the exporters.
+	// Audit events are used to track the exporter activity.
 	AuditStream(grpc.ClientStreamingServer[AuditStreamRequest, emptypb.Empty]) error
-	// Get Lease
+	// Retrieve a lease by name.
 	GetLease(context.Context, *GetLeaseRequest) (*GetLeaseResponse, error)
-	// Request Lease
+	// Request a new lease for an exporter.
 	RequestLease(context.Context, *RequestLeaseRequest) (*RequestLeaseResponse, error)
-	// Release Lease
+	// Release an active lease.
 	ReleaseLease(context.Context, *ReleaseLeaseRequest) (*ReleaseLeaseResponse, error)
-	// List Leases
+	// List all leases.
 	ListLeases(context.Context, *ListLeasesRequest) (*ListLeasesResponse, error)
 	mustEmbedUnimplementedControllerServiceServer()
 }
@@ -561,19 +553,24 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// A service a exporter can share locally to be used without a server
-// Channel/Call credentials are used to authenticate the client, and routing to the right exporter
+// A service an exporter can share locally to be used without a server.
+// Channel and call credentials are used to authenticate the client and route to the right exporter.
 type ExporterServiceClient interface {
-	// Exporter registration
+	// Retrieve the exporter driver report.
 	GetReport(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*GetReportResponse, error)
+	// Invoke a method on a driver instance.
 	DriverCall(ctx context.Context, in *DriverCallRequest, opts ...grpc.CallOption) (*DriverCallResponse, error)
+	// Invoke a streaming method on a driver instance.
 	StreamingDriverCall(ctx context.Context, in *StreamingDriverCallRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamingDriverCallResponse], error)
+	// Stream log messages from the exporter.
 	LogStream(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[LogStreamResponse], error)
+	// Reset the exporter connection.
 	Reset(ctx context.Context, in *ResetRequest, opts ...grpc.CallOption) (*ResetResponse, error)
+	// Retrieve the current exporter status.
 	GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error)
-	// End the current session, triggering the afterLease hook
-	// The client should keep the connection open to receive hook logs via LogStream
-	// Returns after the afterLease hook completes
+	// End the current session, triggering the afterLease hook.
+	// The client should keep the connection open to receive hook logs via LogStream.
+	// Returns after the afterLease hook completes.
 	EndSession(ctx context.Context, in *EndSessionRequest, opts ...grpc.CallOption) (*EndSessionResponse, error)
 }
 
@@ -677,19 +674,24 @@ func (c *exporterServiceClient) EndSession(ctx context.Context, in *EndSessionRe
 // All implementations must embed UnimplementedExporterServiceServer
 // for forward compatibility.
 //
-// A service a exporter can share locally to be used without a server
-// Channel/Call credentials are used to authenticate the client, and routing to the right exporter
+// A service an exporter can share locally to be used without a server.
+// Channel and call credentials are used to authenticate the client and route to the right exporter.
 type ExporterServiceServer interface {
-	// Exporter registration
+	// Retrieve the exporter driver report.
 	GetReport(context.Context, *emptypb.Empty) (*GetReportResponse, error)
+	// Invoke a method on a driver instance.
 	DriverCall(context.Context, *DriverCallRequest) (*DriverCallResponse, error)
+	// Invoke a streaming method on a driver instance.
 	StreamingDriverCall(*StreamingDriverCallRequest, grpc.ServerStreamingServer[StreamingDriverCallResponse]) error
+	// Stream log messages from the exporter.
 	LogStream(*emptypb.Empty, grpc.ServerStreamingServer[LogStreamResponse]) error
+	// Reset the exporter connection.
 	Reset(context.Context, *ResetRequest) (*ResetResponse, error)
+	// Retrieve the current exporter status.
 	GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error)
-	// End the current session, triggering the afterLease hook
-	// The client should keep the connection open to receive hook logs via LogStream
-	// Returns after the afterLease hook completes
+	// End the current session, triggering the afterLease hook.
+	// The client should keep the connection open to receive hook logs via LogStream.
+	// Returns after the afterLease hook completes.
 	EndSession(context.Context, *EndSessionRequest) (*EndSessionResponse, error)
 	mustEmbedUnimplementedExporterServiceServer()
 }

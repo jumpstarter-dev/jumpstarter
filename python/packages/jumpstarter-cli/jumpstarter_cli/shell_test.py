@@ -14,6 +14,7 @@ from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentic
 
 from jumpstarter_cli.shell import (
     _attempt_token_recovery,
+    _format_lease_display,
     _monitor_token_expiry,
     _resolve_lease_from_active_async,
     _run_shell_with_lease_async,
@@ -977,3 +978,16 @@ class TestShellWithSignalHandlingLeaseTimeout:
         ):
             with pytest.raises((ExporterOfflineError, BaseExceptionGroup)):
                 await _shell_with_signal_handling(config, None, None, None, timedelta(minutes=1), False, (), None)
+
+
+def test_format_lease_display_includes_alias():
+    lease = _make_lease("demo-x7k2q")
+    lease.alias = "demo"
+    result = _format_lease_display(lease)
+    assert "alias=demo" in result
+
+
+def test_format_lease_display_no_alias():
+    lease = _make_lease("lease-m9p3r")
+    result = _format_lease_display(lease)
+    assert "alias" not in result

@@ -25,6 +25,8 @@ DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
 
 @typing.final
 class RegisterRequest(google.protobuf.message.Message):
+    """Registration request sent by an exporter to the controller."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     @typing.final
@@ -47,16 +49,11 @@ class RegisterRequest(google.protobuf.message.Message):
     REPORTS_FIELD_NUMBER: builtins.int
     @property
     def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
-        """additional context:
-        - token/authentication mechanism
-        """
+        """Key-value metadata labels."""
 
     @property
     def reports(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___DriverInstanceReport]:
-        """standard labels:
-        jumpstarter.dev/hostname=
-        jumpstarter.dev/name=
-        """
+        """Driver instance reports for this exporter."""
 
     def __init__(
         self,
@@ -70,6 +67,8 @@ Global___RegisterRequest: typing_extensions.TypeAlias = RegisterRequest
 
 @typing.final
 class DriverInstanceReport(google.protobuf.message.Message):
+    """Report describing a single driver instance on an exporter."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     @typing.final
@@ -110,16 +109,18 @@ class DriverInstanceReport(google.protobuf.message.Message):
     DESCRIPTION_FIELD_NUMBER: builtins.int
     METHODS_DESCRIPTION_FIELD_NUMBER: builtins.int
     uuid: builtins.str
-    """a unique id within the exporter"""
+    """Unique identifier within the exporter."""
     parent_uuid: builtins.str
-    """optional, if device has a parent device"""
+    """Parent device UUID, if this is a child device."""
     description: builtins.str
-    """optional custom driver description for CLI"""
+    """Custom driver description for CLI display."""
     @property
-    def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]: ...
+    def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+        """Key-value metadata labels."""
+
     @property
     def methods_description(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
-        """method name -> help text for CLI"""
+        """Method name to help text mapping for CLI."""
 
     def __init__(
         self,
@@ -141,10 +142,13 @@ Global___DriverInstanceReport: typing_extensions.TypeAlias = DriverInstanceRepor
 
 @typing.final
 class RegisterResponse(google.protobuf.message.Message):
+    """Registration response returned by the controller."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     UUID_FIELD_NUMBER: builtins.int
     uuid: builtins.str
+    """Assigned exporter UUID."""
     def __init__(
         self,
         *,
@@ -156,10 +160,13 @@ Global___RegisterResponse: typing_extensions.TypeAlias = RegisterResponse
 
 @typing.final
 class UnregisterRequest(google.protobuf.message.Message):
+    """Request to unregister an exporter from the controller."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     REASON_FIELD_NUMBER: builtins.int
     reason: builtins.str
+    """Reason for unregistering."""
     def __init__(
         self,
         *,
@@ -171,6 +178,8 @@ Global___UnregisterRequest: typing_extensions.TypeAlias = UnregisterRequest
 
 @typing.final
 class UnregisterResponse(google.protobuf.message.Message):
+    """Response to an unregister request."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     def __init__(
@@ -181,10 +190,13 @@ Global___UnregisterResponse: typing_extensions.TypeAlias = UnregisterResponse
 
 @typing.final
 class ListenRequest(google.protobuf.message.Message):
+    """Request to listen for incoming client connections on a lease."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     LEASE_NAME_FIELD_NUMBER: builtins.int
     lease_name: builtins.str
+    """Name of the lease to listen on."""
     def __init__(
         self,
         *,
@@ -196,12 +208,16 @@ Global___ListenRequest: typing_extensions.TypeAlias = ListenRequest
 
 @typing.final
 class ListenResponse(google.protobuf.message.Message):
+    """Response containing router connection details for an incoming client."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     ROUTER_ENDPOINT_FIELD_NUMBER: builtins.int
     ROUTER_TOKEN_FIELD_NUMBER: builtins.int
     router_endpoint: builtins.str
+    """The router gRPC endpoint URL."""
     router_token: builtins.str
+    """Authentication token for the router."""
     def __init__(
         self,
         *,
@@ -214,6 +230,8 @@ Global___ListenResponse: typing_extensions.TypeAlias = ListenResponse
 
 @typing.final
 class StatusRequest(google.protobuf.message.Message):
+    """Request to subscribe to exporter lease status updates."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     def __init__(
@@ -224,14 +242,19 @@ Global___StatusRequest: typing_extensions.TypeAlias = StatusRequest
 
 @typing.final
 class StatusResponse(google.protobuf.message.Message):
+    """Lease status update for an exporter."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     LEASED_FIELD_NUMBER: builtins.int
     LEASE_NAME_FIELD_NUMBER: builtins.int
     CLIENT_NAME_FIELD_NUMBER: builtins.int
     leased: builtins.bool
+    """Whether the exporter is currently leased."""
     lease_name: builtins.str
+    """Name of the active lease, if any."""
     client_name: builtins.str
+    """Name of the connected client, if any."""
     def __init__(
         self,
         *,
@@ -250,10 +273,13 @@ Global___StatusResponse: typing_extensions.TypeAlias = StatusResponse
 
 @typing.final
 class DialRequest(google.protobuf.message.Message):
+    """Request to dial an exporter through the router."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     LEASE_NAME_FIELD_NUMBER: builtins.int
     lease_name: builtins.str
+    """Name of the lease to connect through."""
     def __init__(
         self,
         *,
@@ -265,12 +291,16 @@ Global___DialRequest: typing_extensions.TypeAlias = DialRequest
 
 @typing.final
 class DialResponse(google.protobuf.message.Message):
+    """Response containing router connection details for the dialed exporter."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     ROUTER_ENDPOINT_FIELD_NUMBER: builtins.int
     ROUTER_TOKEN_FIELD_NUMBER: builtins.int
     router_endpoint: builtins.str
+    """The router gRPC endpoint URL."""
     router_token: builtins.str
+    """Authentication token for the router."""
     def __init__(
         self,
         *,
@@ -283,6 +313,8 @@ Global___DialResponse: typing_extensions.TypeAlias = DialResponse
 
 @typing.final
 class AuditStreamRequest(google.protobuf.message.Message):
+    """An audit event sent from an exporter to the controller."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     EXPORTER_UUID_FIELD_NUMBER: builtins.int
@@ -290,12 +322,13 @@ class AuditStreamRequest(google.protobuf.message.Message):
     SEVERITY_FIELD_NUMBER: builtins.int
     MESSAGE_FIELD_NUMBER: builtins.int
     exporter_uuid: builtins.str
-    """additional context:
-    - token/authentication mechanism
-    """
+    """UUID of the exporter."""
     driver_instance_uuid: builtins.str
+    """UUID of the driver instance."""
     severity: builtins.str
+    """Severity level of the event."""
     message: builtins.str
+    """Human-readable event message."""
     def __init__(
         self,
         *,
@@ -310,16 +343,19 @@ Global___AuditStreamRequest: typing_extensions.TypeAlias = AuditStreamRequest
 
 @typing.final
 class ReportStatusRequest(google.protobuf.message.Message):
+    """Request to report exporter status to the controller."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     STATUS_FIELD_NUMBER: builtins.int
     MESSAGE_FIELD_NUMBER: builtins.int
     RELEASE_LEASE_FIELD_NUMBER: builtins.int
     status: jumpstarter.v1.common_pb2.ExporterStatus.ValueType
+    """Current exporter status."""
     message: builtins.str
-    """Optional human-readable status message"""
+    """Optional human-readable status message."""
     release_lease: builtins.bool
-    """When true, controller should release the active lease"""
+    """When true, controller should release the active lease."""
     def __init__(
         self,
         *,
@@ -338,6 +374,8 @@ Global___ReportStatusRequest: typing_extensions.TypeAlias = ReportStatusRequest
 
 @typing.final
 class ReportStatusResponse(google.protobuf.message.Message):
+    """Response to a status report request."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     def __init__(
@@ -348,6 +386,8 @@ Global___ReportStatusResponse: typing_extensions.TypeAlias = ReportStatusRespons
 
 @typing.final
 class GetReportResponse(google.protobuf.message.Message):
+    """Response containing the exporter driver report."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     @typing.final
@@ -371,17 +411,19 @@ class GetReportResponse(google.protobuf.message.Message):
     REPORTS_FIELD_NUMBER: builtins.int
     ALTERNATIVE_ENDPOINTS_FIELD_NUMBER: builtins.int
     uuid: builtins.str
+    """Exporter UUID."""
     @property
-    def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]: ...
-    @property
-    def reports(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___DriverInstanceReport]:
-        """standard labels:
-        jumpstarter.dev/hostname=
-        jumpstarter.dev/name=
-        """
+    def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+        """Key-value metadata labels."""
 
     @property
-    def alternative_endpoints(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___Endpoint]: ...
+    def reports(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___DriverInstanceReport]:
+        """Driver instance reports."""
+
+    @property
+    def alternative_endpoints(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___Endpoint]:
+        """Alternative connection endpoints."""
+
     def __init__(
         self,
         *,
@@ -396,6 +438,8 @@ Global___GetReportResponse: typing_extensions.TypeAlias = GetReportResponse
 
 @typing.final
 class Endpoint(google.protobuf.message.Message):
+    """Connection endpoint with TLS credentials."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     ENDPOINT_FIELD_NUMBER: builtins.int
@@ -403,9 +447,13 @@ class Endpoint(google.protobuf.message.Message):
     CLIENT_CERTIFICATE_FIELD_NUMBER: builtins.int
     CLIENT_PRIVATE_KEY_FIELD_NUMBER: builtins.int
     endpoint: builtins.str
+    """The endpoint URL."""
     certificate: builtins.str
+    """Server TLS certificate."""
     client_certificate: builtins.str
+    """Client TLS certificate."""
     client_private_key: builtins.str
+    """Client TLS private key."""
     def __init__(
         self,
         *,
@@ -420,15 +468,21 @@ Global___Endpoint: typing_extensions.TypeAlias = Endpoint
 
 @typing.final
 class DriverCallRequest(google.protobuf.message.Message):
+    """Request to invoke a method on a driver instance."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     UUID_FIELD_NUMBER: builtins.int
     METHOD_FIELD_NUMBER: builtins.int
     ARGS_FIELD_NUMBER: builtins.int
     uuid: builtins.str
+    """UUID of the driver instance."""
     method: builtins.str
+    """Method name to invoke."""
     @property
-    def args(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[google.protobuf.struct_pb2.Value]: ...
+    def args(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[google.protobuf.struct_pb2.Value]:
+        """Arguments for the method call."""
+
     def __init__(
         self,
         *,
@@ -442,13 +496,18 @@ Global___DriverCallRequest: typing_extensions.TypeAlias = DriverCallRequest
 
 @typing.final
 class DriverCallResponse(google.protobuf.message.Message):
+    """Response from a driver method invocation."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     UUID_FIELD_NUMBER: builtins.int
     RESULT_FIELD_NUMBER: builtins.int
     uuid: builtins.str
+    """UUID of the driver instance."""
     @property
-    def result(self) -> google.protobuf.struct_pb2.Value: ...
+    def result(self) -> google.protobuf.struct_pb2.Value:
+        """Return value from the method call."""
+
     def __init__(
         self,
         *,
@@ -462,15 +521,21 @@ Global___DriverCallResponse: typing_extensions.TypeAlias = DriverCallResponse
 
 @typing.final
 class StreamingDriverCallRequest(google.protobuf.message.Message):
+    """Request to invoke a streaming method on a driver instance."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     UUID_FIELD_NUMBER: builtins.int
     METHOD_FIELD_NUMBER: builtins.int
     ARGS_FIELD_NUMBER: builtins.int
     uuid: builtins.str
+    """UUID of the driver instance."""
     method: builtins.str
+    """Method name to invoke."""
     @property
-    def args(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[google.protobuf.struct_pb2.Value]: ...
+    def args(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[google.protobuf.struct_pb2.Value]:
+        """Arguments for the method call."""
+
     def __init__(
         self,
         *,
@@ -484,13 +549,18 @@ Global___StreamingDriverCallRequest: typing_extensions.TypeAlias = StreamingDriv
 
 @typing.final
 class StreamingDriverCallResponse(google.protobuf.message.Message):
+    """Response from a streaming driver method invocation."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     UUID_FIELD_NUMBER: builtins.int
     RESULT_FIELD_NUMBER: builtins.int
     uuid: builtins.str
+    """UUID of the driver instance."""
     @property
-    def result(self) -> google.protobuf.struct_pb2.Value: ...
+    def result(self) -> google.protobuf.struct_pb2.Value:
+        """Return value from the method call."""
+
     def __init__(
         self,
         *,
@@ -504,6 +574,8 @@ Global___StreamingDriverCallResponse: typing_extensions.TypeAlias = StreamingDri
 
 @typing.final
 class LogStreamResponse(google.protobuf.message.Message):
+    """A log message from the exporter log stream."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     UUID_FIELD_NUMBER: builtins.int
@@ -511,10 +583,13 @@ class LogStreamResponse(google.protobuf.message.Message):
     MESSAGE_FIELD_NUMBER: builtins.int
     SOURCE_FIELD_NUMBER: builtins.int
     uuid: builtins.str
+    """UUID of the driver instance."""
     severity: builtins.str
+    """Log severity level."""
     message: builtins.str
+    """Log message content."""
     source: jumpstarter.v1.common_pb2.LogSource.ValueType
-    """New optional field"""
+    """Source of the log message."""
     def __init__(
         self,
         *,
@@ -531,6 +606,8 @@ Global___LogStreamResponse: typing_extensions.TypeAlias = LogStreamResponse
 
 @typing.final
 class ResetRequest(google.protobuf.message.Message):
+    """Request to reset the exporter connection."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     def __init__(
@@ -541,6 +618,8 @@ Global___ResetRequest: typing_extensions.TypeAlias = ResetRequest
 
 @typing.final
 class ResetResponse(google.protobuf.message.Message):
+    """Response to a reset request."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     def __init__(
@@ -551,10 +630,13 @@ Global___ResetResponse: typing_extensions.TypeAlias = ResetResponse
 
 @typing.final
 class GetLeaseRequest(google.protobuf.message.Message):
+    """Request to retrieve a lease by name."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     NAME_FIELD_NUMBER: builtins.int
     name: builtins.str
+    """Name of the lease to retrieve."""
     def __init__(
         self,
         *,
@@ -566,6 +648,8 @@ Global___GetLeaseRequest: typing_extensions.TypeAlias = GetLeaseRequest
 
 @typing.final
 class GetLeaseResponse(google.protobuf.message.Message):
+    """Response containing lease details."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     DURATION_FIELD_NUMBER: builtins.int
@@ -575,16 +659,27 @@ class GetLeaseResponse(google.protobuf.message.Message):
     EXPORTER_UUID_FIELD_NUMBER: builtins.int
     CONDITIONS_FIELD_NUMBER: builtins.int
     exporter_uuid: builtins.str
+    """UUID of the assigned exporter, if any."""
     @property
-    def duration(self) -> google.protobuf.duration_pb2.Duration: ...
+    def duration(self) -> google.protobuf.duration_pb2.Duration:
+        """Requested lease duration."""
+
     @property
-    def selector(self) -> jumpstarter.v1.kubernetes_pb2.LabelSelector: ...
+    def selector(self) -> jumpstarter.v1.kubernetes_pb2.LabelSelector:
+        """Label selector for matching exporters."""
+
     @property
-    def begin_time(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
+    def begin_time(self) -> google.protobuf.timestamp_pb2.Timestamp:
+        """Lease start time, if active."""
+
     @property
-    def end_time(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
+    def end_time(self) -> google.protobuf.timestamp_pb2.Timestamp:
+        """Lease end time, if active."""
+
     @property
-    def conditions(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[jumpstarter.v1.kubernetes_pb2.Condition]: ...
+    def conditions(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[jumpstarter.v1.kubernetes_pb2.Condition]:
+        """Lease status conditions."""
+
     def __init__(
         self,
         *,
@@ -608,14 +703,20 @@ Global___GetLeaseResponse: typing_extensions.TypeAlias = GetLeaseResponse
 
 @typing.final
 class RequestLeaseRequest(google.protobuf.message.Message):
+    """Request to create a new lease for an exporter."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     DURATION_FIELD_NUMBER: builtins.int
     SELECTOR_FIELD_NUMBER: builtins.int
     @property
-    def duration(self) -> google.protobuf.duration_pb2.Duration: ...
+    def duration(self) -> google.protobuf.duration_pb2.Duration:
+        """Desired lease duration."""
+
     @property
-    def selector(self) -> jumpstarter.v1.kubernetes_pb2.LabelSelector: ...
+    def selector(self) -> jumpstarter.v1.kubernetes_pb2.LabelSelector:
+        """Label selector for matching exporters."""
+
     def __init__(
         self,
         *,
@@ -629,10 +730,13 @@ Global___RequestLeaseRequest: typing_extensions.TypeAlias = RequestLeaseRequest
 
 @typing.final
 class RequestLeaseResponse(google.protobuf.message.Message):
+    """Response containing the name of the created lease."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     NAME_FIELD_NUMBER: builtins.int
     name: builtins.str
+    """Name of the created lease."""
     def __init__(
         self,
         *,
@@ -644,10 +748,13 @@ Global___RequestLeaseResponse: typing_extensions.TypeAlias = RequestLeaseRespons
 
 @typing.final
 class ReleaseLeaseRequest(google.protobuf.message.Message):
+    """Request to release an active lease."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     NAME_FIELD_NUMBER: builtins.int
     name: builtins.str
+    """Name of the lease to release."""
     def __init__(
         self,
         *,
@@ -659,6 +766,8 @@ Global___ReleaseLeaseRequest: typing_extensions.TypeAlias = ReleaseLeaseRequest
 
 @typing.final
 class ReleaseLeaseResponse(google.protobuf.message.Message):
+    """Response to a release lease request."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     def __init__(
@@ -669,6 +778,8 @@ Global___ReleaseLeaseResponse: typing_extensions.TypeAlias = ReleaseLeaseRespons
 
 @typing.final
 class ListLeasesRequest(google.protobuf.message.Message):
+    """Request to list all leases."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     def __init__(
@@ -679,11 +790,15 @@ Global___ListLeasesRequest: typing_extensions.TypeAlias = ListLeasesRequest
 
 @typing.final
 class ListLeasesResponse(google.protobuf.message.Message):
+    """Response containing the list of lease names."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     NAMES_FIELD_NUMBER: builtins.int
     @property
-    def names(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]: ...
+    def names(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
+        """Names of all leases."""
+
     def __init__(
         self,
         *,
@@ -695,6 +810,8 @@ Global___ListLeasesResponse: typing_extensions.TypeAlias = ListLeasesResponse
 
 @typing.final
 class GetStatusRequest(google.protobuf.message.Message):
+    """Request to retrieve the current exporter status."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     def __init__(
@@ -705,6 +822,8 @@ Global___GetStatusRequest: typing_extensions.TypeAlias = GetStatusRequest
 
 @typing.final
 class GetStatusResponse(google.protobuf.message.Message):
+    """Response containing the current exporter status."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     STATUS_FIELD_NUMBER: builtins.int
@@ -712,11 +831,13 @@ class GetStatusResponse(google.protobuf.message.Message):
     STATUS_VERSION_FIELD_NUMBER: builtins.int
     PREVIOUS_STATUS_FIELD_NUMBER: builtins.int
     status: jumpstarter.v1.common_pb2.ExporterStatus.ValueType
+    """Current exporter status."""
     message: builtins.str
+    """Human-readable status message."""
     status_version: builtins.int
-    """Monotonic counter, increments on each status change"""
+    """Monotonic counter, increments on each status change."""
     previous_status: jumpstarter.v1.common_pb2.ExporterStatus.ValueType
-    """Previous status for transition tracking"""
+    """Previous status for transition tracking."""
     def __init__(
         self,
         *,
@@ -736,6 +857,8 @@ Global___GetStatusResponse: typing_extensions.TypeAlias = GetStatusResponse
 
 @typing.final
 class EndSessionRequest(google.protobuf.message.Message):
+    """Request to end the current exporter session."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     def __init__(
@@ -746,12 +869,16 @@ Global___EndSessionRequest: typing_extensions.TypeAlias = EndSessionRequest
 
 @typing.final
 class EndSessionResponse(google.protobuf.message.Message):
+    """Response to an end session request."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     SUCCESS_FIELD_NUMBER: builtins.int
     MESSAGE_FIELD_NUMBER: builtins.int
     success: builtins.bool
+    """Whether the session ended successfully."""
     message: builtins.str
+    """Human-readable result message."""
     def __init__(
         self,
         *,

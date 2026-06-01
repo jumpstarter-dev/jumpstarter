@@ -7,7 +7,8 @@ from . import client_pb2 as jumpstarter_dot_client_dot_v1_dot_client__pb2
 
 
 class ClientServiceStub(object):
-    """Missing associated documentation comment in .proto file."""
+    """Client-facing API service for managing exporters and leases.
+    """
 
     def __init__(self, channel):
         """Constructor.
@@ -58,52 +59,61 @@ class ClientServiceStub(object):
 
 
 class ClientServiceServicer(object):
-    """Missing associated documentation comment in .proto file."""
+    """Client-facing API service for managing exporters and leases.
+    """
 
     def GetExporter(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Retrieve a single exporter by resource name.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def ListExporters(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """List exporters in a namespace with optional filtering.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def GetLease(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Retrieve a single lease by resource name.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def ListLeases(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """List leases in a namespace with optional filtering.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def CreateLease(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Create a new lease for an exporter.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def UpdateLease(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Update an existing lease.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def DeleteLease(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Delete a lease by resource name.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def RotateToken(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Rotate the authentication token for the client.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -160,7 +170,8 @@ def add_ClientServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class ClientService(object):
-    """Missing associated documentation comment in .proto file."""
+    """Client-facing API service for managing exporters and leases.
+    """
 
     @staticmethod
     def GetExporter(request,
