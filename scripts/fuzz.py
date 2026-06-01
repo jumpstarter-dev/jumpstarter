@@ -99,6 +99,7 @@ def run_hypofuzz(seconds: int) -> bool:
     max_attempts = 3
     startup_grace = 60
     for attempt in range(max_attempts):
+        is_final_attempt = attempt == max_attempts - 1
         start = time.monotonic()
         proc = subprocess.Popen(
             [
@@ -111,7 +112,7 @@ def run_hypofuzz(seconds: int) -> bool:
                 "--no-cov",
             ],
             cwd="python",
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE if is_final_attempt else subprocess.DEVNULL,
             start_new_session=True,
         )
         try:
@@ -131,7 +132,7 @@ def run_hypofuzz(seconds: int) -> bool:
             return True
 
         elapsed = time.monotonic() - start
-        if proc.returncode != 0 and elapsed < startup_grace and attempt < max_attempts - 1:
+        if proc.returncode != 0 and elapsed < startup_grace and not is_final_attempt:
             print(f"HypoFuzz: crashed during startup (code {proc.returncode}), retrying ({attempt + 1}/{max_attempts})")
             continue
 
@@ -139,6 +140,10 @@ def run_hypofuzz(seconds: int) -> bool:
             print("HypoFuzz: completed (no more tests to fuzz)")
         else:
             print(f"HypoFuzz: exited with code {proc.returncode} (found failures)")
+            if is_final_attempt and proc.stderr:
+                stderr_output = proc.stderr.read().decode(errors="replace").strip()
+                if stderr_output:
+                    print(f"HypoFuzz stderr:\n{stderr_output}", file=sys.stderr)
         return True
 
     return True
