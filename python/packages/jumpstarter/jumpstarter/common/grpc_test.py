@@ -50,3 +50,9 @@ def test_translate_grpc_exceptions_deadline_exceeded_includes_details():
         with translate_grpc_exceptions():
             raise MockAioRpcError(StatusCode.DEADLINE_EXCEEDED, "operation timed out")
     assert "operation timed out" in str(exc_info.value)
+
+
+def test_translate_grpc_exceptions_deadline_exceeded_with_empty_details():
+    with pytest.raises(ConnectionError, match="deadline exceeded"):
+        with translate_grpc_exceptions():
+            raise MockAioRpcError(StatusCode.DEADLINE_EXCEEDED, "")
