@@ -1,4 +1,9 @@
-"""Kubernetes label selector parsing and matching utilities."""
+"""Kubernetes label selector parsing and matching.
+
+Implements label selector semantics as defined by Kubernetes, where negative
+operators (!=, notin, !exists) are satisfied when the label key is absent
+from the resource being matched.
+"""
 
 from __future__ import annotations
 
@@ -101,10 +106,16 @@ def _label_satisfies_expression(
 
 
 def selector_contains(selector: str, requirements: str) -> bool:
-    """Check if selector contains all criteria from requirements.
+    """Check if a selector satisfies all criteria from requirements.
 
-    Returns True if all matchLabels and matchExpressions in `requirements`
-    are present in `selector`.
+    Uses Kubernetes label matching semantics: a requirement is satisfied when
+    the selector's labels and expressions match the requirement's constraints.
+    Negative operators (!=, notin, !exists) are satisfied when the key is
+    absent from the selector, consistent with how Kubernetes evaluates label
+    selectors against resources that lack a given label.
+
+    Returns True if all matchLabels and matchExpressions in ``requirements``
+    are satisfied by ``selector``.
     """
     if not requirements or not requirements.strip():
         return True
