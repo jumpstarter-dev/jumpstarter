@@ -98,7 +98,7 @@ func FuzzNormalizeName(f *testing.F) {
 			t.Errorf("normalizeName(%q) = %q does not end with a 6-char hex hash (got %q)", name, result, hexSuffix)
 		}
 		for _, c := range hexSuffix {
-			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 				t.Errorf("normalizeName(%q) = %q has non-hex char %c in suffix", name, result, c)
 			}
 		}
