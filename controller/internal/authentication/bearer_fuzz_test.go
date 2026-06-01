@@ -2,6 +2,7 @@ package authentication
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc/metadata"
@@ -23,7 +24,20 @@ func FuzzBearerTokenExtraction(f *testing.F) {
 	f.Fuzz(func(t *testing.T, authHeader string) {
 		md := metadata.Pairs("authorization", authHeader)
 		ctx := metadata.NewIncomingContext(context.Background(), md)
-		// BearerTokenFromContext must not panic.
-		_, _ = BearerTokenFromContext(ctx)
+		token, err := BearerTokenFromContext(ctx)
+
+		if len(authHeader) >= 7 && strings.EqualFold(authHeader[:7], "Bearer ") {
+			if err != nil {
+				t.Errorf("BearerTokenFromContext with valid 'Bearer ' prefix %q returned error: %v", authHeader, err)
+			}
+			expected := authHeader[7:]
+			if token != expected {
+				t.Errorf("BearerTokenFromContext(%q) = %q, expected %q", authHeader, token, expected)
+			}
+		} else {
+			if err == nil {
+				t.Errorf("BearerTokenFromContext(%q) should have returned error for non-Bearer header", authHeader)
+			}
+		}
 	})
 }

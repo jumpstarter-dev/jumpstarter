@@ -1,10 +1,16 @@
 package v1alpha1
 
 import (
+	"strings"
 	"testing"
 	"time"
 
+	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 func FuzzParseLabelSelector(f *testing.F) {
@@ -28,9 +34,27 @@ func FuzzParseLabelSelector(f *testing.F) {
 	f.Add("key!=value1,key!=value2")
 
 	f.Fuzz(func(t *testing.T, input string) {
-		// ParseLabelSelector must not panic on any input.
-		// Returning an error is acceptable.
-		_, _ = ParseLabelSelector(input)
+		sel, err := ParseLabelSelector(input)
+		if err != nil {
+			return
+		}
+
+		formatted := metav1.FormatLabelSelector(sel)
+
+		if formatted == "<none>" {
+			return
+		}
+
+		sel2, err := ParseLabelSelector(formatted)
+		if err != nil {
+			t.Errorf("round-trip failed: ParseLabelSelector(%q) succeeded, formatted to %q, but re-parse failed: %v", input, formatted, err)
+			return
+		}
+
+		formatted2 := metav1.FormatLabelSelector(sel2)
+		if formatted != formatted2 {
+			t.Errorf("round-trip not stable: format(%q) = %q, but format(parse(%q)) = %q", input, formatted, formatted, formatted2)
+		}
 	})
 }
 
@@ -58,8 +82,25 @@ func FuzzReconcileLeaseTimeFields(f *testing.F) {
 			duration = &metav1.Duration{Duration: time.Duration(durSec) * time.Second}
 		}
 
-		// ReconcileLeaseTimeFields must not panic.
-		_ = ReconcileLeaseTimeFields(&beginTime, &endTime, &duration)
+		err := ReconcileLeaseTimeFields(&beginTime, &endTime, &duration)
+		if err != nil {
+			return
+		}
+
+		if duration == nil {
+			t.Errorf("ReconcileLeaseTimeFields succeeded but duration is nil")
+			return
+		}
+		if duration.Duration <= 0 {
+			t.Errorf("ReconcileLeaseTimeFields succeeded but duration is non-positive: %v", duration.Duration)
+		}
+
+		if beginTime != nil && endTime != nil {
+			calculated := endTime.Sub(beginTime.Time)
+			if duration.Duration != calculated {
+				t.Errorf("time fields inconsistent: endTime - beginTime = %v but duration = %v", calculated, duration.Duration)
+			}
+		}
 	})
 }
 
@@ -81,7 +122,173 @@ func FuzzValidateLeaseTags(f *testing.F) {
 			maxTags = 100
 		}
 		tags := map[string]string{key: value}
-		// ValidateLeaseTags must not panic.
-		_ = ValidateLeaseTags(tags, maxTags)
+		err := ValidateLeaseTags(tags, maxTags)
+
+		if strings.HasPrefix(key, LeaseTagMetadataPrefix) || strings.HasPrefix(key, "jumpstarter.dev/") {
+			if err == nil {
+				t.Errorf("ValidateLeaseTags accepted reserved prefix key %q", key)
+			}
+		}
+
+		if strings.Contains(key, "/") {
+			if err == nil {
+				t.Errorf("ValidateLeaseTags accepted key with slash: %q", key)
+			}
+		}
+
+		if maxTags == 0 && len(tags) > 0 {
+			if err == nil {
+				t.Errorf("ValidateLeaseTags accepted tags when maxTags=0")
+			}
+		}
+	})
+}
+
+func FuzzLeaseFromProtobuf(f *testing.F) {
+	f.Add("dut=a", int64(3600), int64(0), int64(0), "", false, "team", "devops")
+	f.Add("env=prod", int64(60), int64(1000), int64(0), "my-exporter", true, "", "")
+	f.Add("", int64(300), int64(0), int64(0), "exp1", true, "", "")
+	f.Add("app=test", int64(0), int64(1000), int64(2000), "", false, "", "")
+
+	f.Fuzz(func(t *testing.T, selector string, durSec, beginSec, endSec int64, exporterName string, hasExporter bool, tagKey, tagValue string) {
+		req := &cpb.Lease{Selector: selector}
+
+		if durSec > 0 {
+			req.Duration = durationpb.New(time.Duration(durSec) * time.Second)
+		}
+		if beginSec > 0 {
+			req.BeginTime = timestamppb.New(time.Unix(beginSec, 0))
+		}
+		if endSec > 0 {
+			req.EndTime = timestamppb.New(time.Unix(endSec, 0))
+		}
+		if hasExporter {
+			req.ExporterName = &exporterName
+		}
+		if tagKey != "" && tagValue != "" {
+			req.Tags = map[string]string{tagKey: tagValue}
+		}
+
+		key := types.NamespacedName{Namespace: "default", Name: "test-lease"}
+		clientRef := corev1.LocalObjectReference{Name: "test-client"}
+
+		lease, err := LeaseFromProtobuf(req, key, clientRef)
+		if err != nil {
+			return
+		}
+
+		if lease.Namespace != key.Namespace {
+			t.Errorf("lease namespace = %q, expected %q", lease.Namespace, key.Namespace)
+		}
+		if lease.Name != key.Name {
+			t.Errorf("lease name = %q, expected %q", lease.Name, key.Name)
+		}
+		if lease.Spec.ClientRef.Name != clientRef.Name {
+			t.Errorf("client ref = %q, expected %q", lease.Spec.ClientRef.Name, clientRef.Name)
+		}
+
+		if lease.Spec.Duration == nil || lease.Spec.Duration.Duration <= 0 {
+			t.Errorf("lease duration should be positive after successful LeaseFromProtobuf, got %v", lease.Spec.Duration)
+		}
+
+		if hasExporter && exporterName != "" {
+			if lease.Spec.ExporterRef == nil {
+				t.Error("expected ExporterRef to be set")
+			} else if lease.Spec.ExporterRef.Name != exporterName {
+				t.Errorf("ExporterRef.Name = %q, expected %q", lease.Spec.ExporterRef.Name, exporterName)
+			}
+		}
+	})
+}
+
+func FuzzLeaseToProtobuf(f *testing.F) {
+	f.Add("test-lease", "default", "test-client", int64(3600), "exp1", true)
+	f.Add("lease", "ns", "client", int64(60), "", false)
+
+	f.Fuzz(func(t *testing.T, name, namespace, clientName string, durSec int64, exporterName string, hasExporter bool) {
+		lease := &Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+			},
+			Spec: LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: clientName},
+				Selector:  metav1.LabelSelector{},
+			},
+		}
+
+		if durSec > 0 {
+			lease.Spec.Duration = &metav1.Duration{Duration: time.Duration(durSec) * time.Second}
+		}
+		if hasExporter {
+			lease.Spec.ExporterRef = &corev1.LocalObjectReference{Name: exporterName}
+		}
+
+		pb := lease.ToProtobuf()
+
+		expectedName := "namespaces/" + namespace + "/leases/" + name
+		if pb.Name != expectedName {
+			t.Errorf("protobuf Name = %q, expected %q", pb.Name, expectedName)
+		}
+
+		expectedClient := "namespaces/" + namespace + "/clients/" + clientName
+		if pb.Client == nil || *pb.Client != expectedClient {
+			t.Errorf("protobuf Client = %v, expected %q", pb.Client, expectedClient)
+		}
+
+		if hasExporter && exporterName != "" {
+			if pb.ExporterName == nil || *pb.ExporterName != exporterName {
+				t.Errorf("protobuf ExporterName = %v, expected %q", pb.ExporterName, exporterName)
+			}
+		}
+
+		if durSec > 0 {
+			if pb.Duration == nil {
+				t.Error("expected protobuf Duration to be set")
+			}
+		}
+	})
+}
+
+func FuzzLeaseGetExporterSelector(f *testing.F) {
+	f.Add("app", "myapp")
+	f.Add("env", "prod")
+	f.Add("", "")
+
+	f.Fuzz(func(t *testing.T, labelKey, labelValue string) {
+		lease := &Lease{
+			Spec: LeaseSpec{
+				Selector: metav1.LabelSelector{
+					MatchLabels: map[string]string{labelKey: labelValue},
+				},
+			},
+		}
+
+		_, _ = lease.GetExporterSelector()
+	})
+}
+
+func FuzzLeaseListToProtobuf(f *testing.F) {
+	f.Add("lease1", "lease2", "default", "client1")
+
+	f.Fuzz(func(t *testing.T, name1, name2, namespace, clientName string) {
+		list := &LeaseList{
+			Items: []Lease{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: name1, Namespace: namespace},
+					Spec:       LeaseSpec{ClientRef: corev1.LocalObjectReference{Name: clientName}},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: name2, Namespace: namespace},
+					Spec:       LeaseSpec{ClientRef: corev1.LocalObjectReference{Name: clientName}},
+				},
+			},
+		}
+
+		resp := list.ToProtobuf()
+
+		if len(resp.Leases) != 2 {
+			t.Fatalf("expected 2 leases in protobuf response, got %d", len(resp.Leases))
+		}
 	})
 }
