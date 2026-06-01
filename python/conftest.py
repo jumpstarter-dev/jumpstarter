@@ -3,32 +3,8 @@ from contextlib import contextmanager
 
 import pytest
 from hypothesis import HealthCheck, settings
-from hypothesis.database import DirectoryBasedExampleDatabase
 
 os.environ["TERM"] = "dumb"
-
-_original_start_listening = DirectoryBasedExampleDatabase._start_listening
-
-
-def _robust_start_listening(self):
-    try:
-        _original_start_listening(self)
-    except (FileNotFoundError, OSError):
-        self._observer = None
-
-
-DirectoryBasedExampleDatabase._start_listening = _robust_start_listening
-
-_original_stop_listening = DirectoryBasedExampleDatabase._stop_listening
-
-
-def _robust_stop_listening(self):
-    if self._observer is None:
-        return
-    _original_stop_listening(self)
-
-
-DirectoryBasedExampleDatabase._stop_listening = _robust_stop_listening
 
 settings.register_profile("ci", max_examples=100)
 settings.register_profile(
