@@ -30,10 +30,10 @@ class FakeExporterList(BaseModel):
 
 ALLOWED_EXCEPTIONS = (
     SystemExit,
-    click.exceptions.BadParameter,
-    click.exceptions.UsageError,
-    click.exceptions.MissingParameter,
-    click.exceptions.ClickException,
+    click.BadParameter,
+    click.UsageError,
+    click.MissingParameter,
+    click.ClickException,
     click.Abort,
 )
 

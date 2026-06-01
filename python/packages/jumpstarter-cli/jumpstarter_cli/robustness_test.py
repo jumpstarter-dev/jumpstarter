@@ -10,9 +10,9 @@ from jumpstarter.testing_strategies import ARBITRARY
 
 ALLOWED_CLI_EXCEPTIONS = (
     SystemExit,
-    click.exceptions.BadParameter,
-    click.exceptions.UsageError,
-    click.exceptions.MissingParameter,
+    click.BadParameter,
+    click.UsageError,
+    click.MissingParameter,
     click.Abort,
 )
 
@@ -23,7 +23,7 @@ class TestDurationParamTypeRobustness:
         try:
             result = DURATION.convert(value, None, None)
             assert isinstance(result, timedelta)
-        except click.exceptions.BadParameter:
+        except click.BadParameter:
             pass
         except Exception as exc:
             raise AssertionError(f"DurationParamType.convert raised unexpected {type(exc).__name__}: {exc}") from exc
@@ -33,7 +33,7 @@ class TestDurationParamTypeRobustness:
         try:
             result = DURATION.convert(value, None, None)
             assert isinstance(result, timedelta)
-        except click.exceptions.BadParameter:
+        except click.BadParameter:
             pass
         except OverflowError:
             pass
@@ -45,7 +45,7 @@ class TestDurationParamTypeRobustness:
         try:
             DURATION.convert(value, None, None)
         except (
-            click.exceptions.BadParameter,
+            click.BadParameter,
             TypeError,
             ValueError,
             OverflowError,
@@ -59,7 +59,7 @@ class TestDurationParamTypeRobustness:
         try:
             DURATION.convert(value, None, None)
         except (
-            click.exceptions.BadParameter,
+            click.BadParameter,
             TypeError,
             ValueError,
             OverflowError,
@@ -74,7 +74,7 @@ class TestAcquisitionTimeoutRobustness:
     def test_convert_never_crashes_on_text(self, value: str) -> None:
         try:
             ACQUISITION_TIMEOUT.convert(value, None, None)
-        except click.exceptions.BadParameter:
+        except click.BadParameter:
             pass
         except Exception as exc:
             raise AssertionError(f"ACQUISITION_TIMEOUT.convert raised unexpected {type(exc).__name__}: {exc}") from exc
@@ -83,7 +83,7 @@ class TestAcquisitionTimeoutRobustness:
     def test_convert_never_crashes_on_integers(self, value: int) -> None:
         try:
             ACQUISITION_TIMEOUT.convert(value, None, None)
-        except click.exceptions.BadParameter:
+        except click.BadParameter:
             pass
         except OverflowError:
             pass
@@ -96,7 +96,7 @@ class TestDateTimeParamTypeRobustness:
     def test_convert_never_crashes_on_text(self, value: str) -> None:
         try:
             DATETIME.convert(value, None, None)
-        except click.exceptions.BadParameter:
+        except click.BadParameter:
             pass
         except Exception as exc:
             raise AssertionError(f"DateTimeParamType.convert raised unexpected {type(exc).__name__}: {exc}") from exc
@@ -105,7 +105,7 @@ class TestDateTimeParamTypeRobustness:
     def test_convert_never_crashes_on_integers(self, value: int) -> None:
         try:
             DATETIME.convert(value, None, None)
-        except (click.exceptions.BadParameter, TypeError, ValueError):
+        except (click.BadParameter, TypeError, ValueError):
             pass
         except Exception as exc:
             raise AssertionError(f"DateTimeParamType.convert raised unexpected {type(exc).__name__}: {exc}") from exc
@@ -114,7 +114,7 @@ class TestDateTimeParamTypeRobustness:
     def test_convert_never_crashes_on_arbitrary(self, value: object) -> None:
         try:
             DATETIME.convert(value, None, None)
-        except (click.exceptions.BadParameter, TypeError, ValueError):
+        except (click.BadParameter, TypeError, ValueError):
             pass
         except Exception as exc:
             raise AssertionError(f"DateTimeParamType.convert raised unexpected {type(exc).__name__}: {exc}") from exc

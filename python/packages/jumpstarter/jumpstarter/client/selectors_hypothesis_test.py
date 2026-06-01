@@ -105,7 +105,9 @@ class TestSelectorContainsProperties:
         absent_key=selector_key,
         excluded_values=st.lists(selector_value, min_size=1, max_size=3),
     )
-    def test_absent_key_satisfies_notin(self, present_labels: dict[str, str], absent_key: str, excluded_values: list[str]) -> None:
+    def test_absent_key_satisfies_notin(
+        self, present_labels: dict[str, str], absent_key: str, excluded_values: list[str]
+    ) -> None:
         if absent_key in present_labels:
             return
         selector_str = format_selector(present_labels)
