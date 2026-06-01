@@ -589,6 +589,11 @@ class TestRunGoAll:
         assert result is False
         assert mock_target.call_count == 1
 
+    def test_returns_true_when_no_targets(self):
+        with patch("fuzz._discover_go_fuzz_targets", return_value=[]):
+            result = run_go_all(120)
+        assert result is True
+
 
 class TestReplayAndInjectPython:
     def test_returns_zero_when_no_regressions(self):

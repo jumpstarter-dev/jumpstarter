@@ -448,6 +448,9 @@ def run_go_target(name: str, pkg: str, seconds: int) -> bool:
 
 def run_go_all(seconds: int) -> bool:
     targets = _discover_go_fuzz_targets()
+    if not targets:
+        print("Go fuzz: no targets discovered, skipping")
+        return True
     per_target = max(10, seconds // len(targets))
     print(f"Go fuzz: {len(targets)} targets, {per_target}s each")
     for name, pkg in targets:
