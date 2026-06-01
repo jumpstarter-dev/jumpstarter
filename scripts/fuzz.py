@@ -63,13 +63,27 @@ ADDITIONAL_FUZZ_TEST_NAMES = frozenset({
     "clean_error_test.py",
 })
 
-PYTHON_FUZZ_DIRS = [
-    "packages/jumpstarter/jumpstarter",
-    "packages/jumpstarter-cli/jumpstarter_cli",
-    "packages/jumpstarter-kubernetes/jumpstarter_kubernetes",
-]
-
 MAX_EXAMPLES_PER_TEST = 1
+
+
+def _discover_python_fuzz_dirs() -> list[str]:
+    packages_dir = Path("python/packages")
+    if not packages_dir.is_dir():
+        return []
+    dirs: list[str] = []
+    for pkg in sorted(packages_dir.iterdir()):
+        if not pkg.is_dir():
+            continue
+        for src_dir in pkg.iterdir():
+            if not src_dir.is_dir() or src_dir.name.startswith("."):
+                continue
+            has_fuzz = any(
+                any(pat in f.name for pat in FUZZ_TEST_PATTERNS) or f.name in ADDITIONAL_FUZZ_TEST_NAMES
+                for f in src_dir.rglob("*_test.py")
+            )
+            if has_fuzz:
+                dirs.append(str(src_dir.relative_to("python")))
+    return sorted(dirs)
 
 
 def parse_duration(value: str) -> int:
@@ -114,7 +128,7 @@ def run_hypofuzz(seconds: int) -> bool:
                 "--no-dashboard",
                 "-n", str(workers),
                 "--",
-                *PYTHON_FUZZ_DIRS,
+                *_discover_python_fuzz_dirs(),
                 "-k", PYTEST_FILTER,
                 "--no-cov",
             ],
@@ -151,7 +165,7 @@ def run_hypofuzz(seconds: int) -> bool:
 
 def _discover_fuzz_test_files() -> list[str]:
     files = []
-    for d in PYTHON_FUZZ_DIRS:
+    for d in _discover_python_fuzz_dirs():
         base = Path("python") / d
         for p in base.rglob("*_test.py"):
             name = p.name
@@ -204,7 +218,7 @@ def run_hypothesis_loop(seconds: int) -> bool:
 
 
 def _find_test_file(func_name: str) -> Path | None:
-    for d in PYTHON_FUZZ_DIRS:
+    for d in _discover_python_fuzz_dirs():
         base = Path("python") / d
         for p in base.rglob("*_test.py"):
             try:
@@ -311,7 +325,7 @@ def replay_and_inject_python() -> int:
     result = subprocess.run(
         [
             "uv", "run", "pytest",
-            *PYTHON_FUZZ_DIRS,
+            *_discover_python_fuzz_dirs(),
             "-k", PYTEST_FILTER,
             "--no-cov", "-v", "--tb=long",
         ],

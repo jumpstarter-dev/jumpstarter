@@ -11,6 +11,7 @@ from fuzz import (
     ADDITIONAL_FUZZ_TEST_NAMES,
     _clean_example_args,
     _discover_fuzz_test_files,
+    _discover_python_fuzz_dirs,
     _extract_falsifying_examples,
     _insert_example,
     parse_duration,
@@ -213,3 +214,29 @@ class TestAdditionalFuzzTestNames:
     def test_all_entries_are_test_files(self):
         for name in ADDITIONAL_FUZZ_TEST_NAMES:
             assert name.endswith("_test.py"), f"{name} does not follow *_test.py convention"
+
+
+class TestDiscoverPythonFuzzDirs:
+    @pytest.fixture(autouse=True)
+    def _project_root(self, monkeypatch):
+        monkeypatch.chdir(Path(__file__).resolve().parent.parent)
+
+    def test_includes_core_packages(self):
+        dirs = _discover_python_fuzz_dirs()
+        assert "packages/jumpstarter/jumpstarter" in dirs
+        assert "packages/jumpstarter-cli/jumpstarter_cli" in dirs
+        assert "packages/jumpstarter-kubernetes/jumpstarter_kubernetes" in dirs
+
+    def test_includes_driver_packages_with_robustness_tests(self):
+        dirs = _discover_python_fuzz_dirs()
+        driver_dirs = [d for d in dirs if "driver" in d]
+        assert len(driver_dirs) > 0, "should discover driver packages with fuzz tests"
+
+    def test_returns_sorted_list(self):
+        dirs = _discover_python_fuzz_dirs()
+        assert dirs == sorted(dirs)
+
+    def test_all_dirs_exist(self):
+        dirs = _discover_python_fuzz_dirs()
+        for d in dirs:
+            assert (Path("python") / d).is_dir(), f"{d} does not exist"
