@@ -65,7 +65,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 	BeforeAll(func() {
 		tracker = NewProcessTracker()
 		ns = Namespace()
-		exporterConfigPath = "/etc/jumpstarter/exporters/test-exporter-hooks.yaml"
+		exporterConfigPath = SystemExporterConfigPath("test-exporter-hooks")
 
 		// Create client and exporter for hooks tests
 		MustJmp("admin", "create", "client", "-n", ns, "test-client-hooks",
@@ -80,7 +80,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 			"--issuer", "https://dex.dex.svc.cluster.local:5556",
 			"--username", "test-client-hooks@example.com", "--password", "password", "--unsafe")
 
-		MustJmp("login", "--exporter", "test-exporter-hooks",
+		MustJmp("login", "--exporter-config", SystemExporterConfigPath("test-exporter-hooks"),
 			"--endpoint", Endpoint(), "--namespace", ns, "--name", "test-exporter-hooks",
 			"--issuer", "https://dex.dex.svc.cluster.local:5556",
 			"--username", "test-exporter-hooks@example.com", "--password", "password")

@@ -102,10 +102,11 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 			Expect(err).NotTo(HaveOccurred(), out)
 
 			out, err = Jmp("admin", "create", "exporter", "-n", ns, "test-exporter-legacy",
-				"--save", "--label", "example.com/board=legacy")
+				"--out", SystemExporterConfigPath("test-exporter-legacy"),
+				"--label", "example.com/board=legacy")
 			Expect(err).NotTo(HaveOccurred(), out)
 
-			exporterConfigPath := "/etc/jumpstarter/exporters/test-exporter-legacy.yaml"
+			exporterConfigPath := SystemExporterConfigPath("test-exporter-legacy")
 			overlayPath := filepath.Join(RepoRoot(), "e2e", "exporters", "exporter.yaml")
 			MergeExporterConfig(exporterConfigPath, overlayPath)
 
@@ -159,13 +160,14 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 		})
 
 		It("can login with oidc test-exporter-oidc", func() {
-			out, err := Jmp("login", "--exporter", "test-exporter-oidc", "--name", "test-exporter-oidc",
+			out, err := Jmp("login", "--exporter-config", SystemExporterConfigPath("test-exporter-oidc"),
+				"--name", "test-exporter-oidc",
 				"--endpoint", Endpoint(), "--namespace", Namespace(),
 				"--issuer", "https://dex.dex.svc.cluster.local:5556",
 				"--username", "test-exporter-oidc@example.com", "--password", "password")
 			Expect(err).NotTo(HaveOccurred(), out)
 
-			exporterConfigPath := "/etc/jumpstarter/exporters/test-exporter-oidc.yaml"
+			exporterConfigPath := SystemExporterConfigPath("test-exporter-oidc")
 			overlayPath := filepath.Join(RepoRoot(), "e2e", "exporters", "exporter.yaml")
 			MergeExporterConfig(exporterConfigPath, overlayPath)
 
@@ -178,16 +180,21 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 			ns := Namespace()
 			token := MustKubectl("create", "-n", ns, "token", "test-exporter-sa")
 
+			// test-exporter-sa intentionally uses the default per-user config
+			// location (~/.config/jumpstarter/exporters) to exercise that path,
+			// while oidc/legacy use the production system location.
 			out, err := Jmp("login", "--exporter", "test-exporter-sa",
 				"--endpoint", Endpoint(), "--namespace", ns, "--name", "test-exporter-sa",
 				"--issuer", "https://dex.dex.svc.cluster.local:5556",
 				"--connector-id", "kubernetes", "--token", token)
 			Expect(err).NotTo(HaveOccurred(), out)
 
+			Expect(UserExporterConfigPath("test-exporter-sa")).To(BeAnExistingFile())
+
 			overlayPath := filepath.Join(RepoRoot(), "e2e", "exporters", "exporter.yaml")
-			MergeExporterConfig("/etc/jumpstarter/exporters/test-exporter-oidc.yaml", overlayPath)
-			MergeExporterConfig("/etc/jumpstarter/exporters/test-exporter-sa.yaml", overlayPath)
-			MergeExporterConfig("/etc/jumpstarter/exporters/test-exporter-legacy.yaml", overlayPath)
+			MergeExporterConfig(SystemExporterConfigPath("test-exporter-oidc"), overlayPath)
+			MergeExporterConfig(UserExporterConfigPath("test-exporter-sa"), overlayPath)
+			MergeExporterConfig(SystemExporterConfigPath("test-exporter-legacy"), overlayPath)
 
 			out, err = Jmp("config", "exporter", "list", "-o", "yaml")
 			Expect(err).NotTo(HaveOccurred(), out)

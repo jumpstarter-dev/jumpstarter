@@ -71,9 +71,16 @@ $ jmp config client delete <alias>  # Remove a client config locally
 ## Exporter Configuration
 
 **File**: All valid {term}`exporter` configuration files with a `.yaml` extension  
-**Location**: `/etc/jumpstarter/exporters/*.yaml`  
+**Location**: `~/.config/jumpstarter/exporters/*.yaml` (per-user) or `/etc/jumpstarter/exporters/*.yaml` (system-wide)
+
 **Description**: Defines {term}`exporter` settings including connection details and
-driver configurations.  
+driver configurations.
+
+Exporter configs created via the CLI default to the per-user location. Both the per-user and
+system locations are searched when loading, with the per-user path taking precedence. The user
+config home can be overridden with `JMP_CLIENT_CONFIG_HOME` or `XDG_CONFIG_HOME`. The
+`jmp admin create exporter` and `jmp admin import exporter` commands also accept `--out <file>`
+to write the config to an explicit path.
 
 **Format**:
 ```yaml

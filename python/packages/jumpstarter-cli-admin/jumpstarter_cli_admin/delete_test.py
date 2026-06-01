@@ -176,17 +176,20 @@ EXPORTER_CONFIG = ExporterConfigV1Alpha1(
 
 @patch.object(ExporterConfigV1Alpha1, "delete")
 @patch.object(ExporterConfigV1Alpha1, "exists")
+@patch.object(ExporterConfigV1Alpha1, "user_config_exists")
 @patch.object(ExportersV1Alpha1Api, "delete_exporter")
 @patch.object(ExportersV1Alpha1Api, "_load_kube_config")
 def test_delete_exporter(
     _mock_load_kube_config,
     mock_delete_exporter: AsyncMock,
+    mock_user_config_exists: Mock,
     mock_config_exists: Mock,
     mock_config_delete: Mock,
 ):
     runner = CliRunner()
 
     # Delete exporter object and config does not exist
+    mock_user_config_exists.return_value = False
     mock_config_exists.return_value = False
     result = runner.invoke(delete, ["exporter", EXPORTER_NAME])
     assert result.exit_code == 0
@@ -195,11 +198,13 @@ def test_delete_exporter(
     mock_delete_exporter.assert_called_once_with(EXPORTER_NAME)
     mock_config_delete.assert_not_called()
 
+    mock_user_config_exists.reset_mock()
     mock_config_exists.reset_mock()
     mock_delete_exporter.reset_mock()
     mock_config_delete.reset_mock()
 
     # Delete exporter object and config exists, delete = n
+    mock_user_config_exists.return_value = True
     mock_config_exists.return_value = True
     result = runner.invoke(delete, ["exporter", EXPORTER_NAME], input="n\n")
     assert result.exit_code == 0
@@ -208,11 +213,13 @@ def test_delete_exporter(
     mock_delete_exporter.assert_called_once_with(EXPORTER_NAME)
     mock_config_delete.assert_not_called()
 
+    mock_user_config_exists.reset_mock()
     mock_config_exists.reset_mock()
     mock_delete_exporter.reset_mock()
     mock_config_delete.reset_mock()
 
     # Delete exporter object and config exists, delete = Y
+    mock_user_config_exists.return_value = True
     mock_config_exists.return_value = True
     result = runner.invoke(delete, ["exporter", EXPORTER_NAME], input="Y\n")
     assert result.exit_code == 0
@@ -221,11 +228,13 @@ def test_delete_exporter(
     mock_delete_exporter.assert_called_once_with(EXPORTER_NAME)
     mock_config_delete.assert_called_with(EXPORTER_NAME)
 
+    mock_user_config_exists.reset_mock()
     mock_config_exists.reset_mock()
     mock_delete_exporter.reset_mock()
     mock_config_delete.reset_mock()
 
     # Delete exporter object nointeractive
+    mock_user_config_exists.return_value = True
     mock_config_exists.return_value = True
     result = runner.invoke(delete, ["exporter", EXPORTER_NAME, "--nointeractive"])
     assert result.exit_code == 0
@@ -234,11 +243,13 @@ def test_delete_exporter(
     mock_delete_exporter.assert_called_once_with(EXPORTER_NAME)
     mock_config_delete.assert_not_called()
 
+    mock_user_config_exists.reset_mock()
     mock_config_exists.reset_mock()
     mock_delete_exporter.reset_mock()
     mock_config_delete.reset_mock()
 
     # Delete exporter object output name
+    mock_user_config_exists.return_value = True
     mock_config_exists.return_value = True
     result = runner.invoke(delete, ["exporter", EXPORTER_NAME, "--nointeractive", "--output", "name"])
     assert result.exit_code == 0
@@ -246,6 +257,7 @@ def test_delete_exporter(
     mock_delete_exporter.assert_called_once_with(EXPORTER_NAME)
     mock_config_delete.assert_not_called()
 
+    mock_user_config_exists.reset_mock()
     mock_config_exists.reset_mock()
     mock_delete_exporter.reset_mock()
     mock_config_delete.reset_mock()

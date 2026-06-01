@@ -68,11 +68,11 @@ var _ = Describe("Compat: Old Controller E2E Tests", Label("compat", "old-contro
 
 		It("can create exporter with admin cli", func() {
 			out, err := Jmp("admin", "create", "exporter", "-n", ns, "compat-exporter",
-				"--save", "--label", "example.com/board=compat")
+				"--out", SystemExporterConfigPath("compat-exporter"), "--label", "example.com/board=compat")
 			Expect(err).NotTo(HaveOccurred(), out)
 
 			overlayPath := filepath.Join(RepoRoot(), "e2e", "exporters", "exporter.yaml")
-			MergeExporterConfig("/etc/jumpstarter/exporters/compat-exporter.yaml", overlayPath)
+			MergeExporterConfig(SystemExporterConfigPath("compat-exporter"), overlayPath)
 		})
 
 		It("new exporter registers with old controller", func() {
@@ -145,11 +145,11 @@ var _ = Describe("Compat: Old Controller E2E Tests", Label("compat", "old-contro
 			Expect(err).NotTo(HaveOccurred(), out)
 
 			out, err = Jmp("admin", "create", "exporter", "-n", ns, "compat-exporter-wait",
-				"--save", "--label", "example.com/board=compat-wait")
+				"--out", SystemExporterConfigPath("compat-exporter-wait"), "--label", "example.com/board=compat-wait")
 			Expect(err).NotTo(HaveOccurred(), out)
 
 			overlayPath := filepath.Join(RepoRoot(), "e2e", "exporters", "exporter.yaml")
-			MergeExporterConfig("/etc/jumpstarter/exporters/compat-exporter-wait.yaml", overlayPath)
+			MergeExporterConfig(SystemExporterConfigPath("compat-exporter-wait"), overlayPath)
 
 			// Start client BEFORE exporter
 			clientCmd := JmpCmd("shell", "--client", "compat-client-wait",

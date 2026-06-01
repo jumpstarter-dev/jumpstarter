@@ -74,11 +74,11 @@ var _ = Describe("Compat: Old Client E2E Tests", Label("compat", "old-client"), 
 			Expect(err).NotTo(HaveOccurred(), out)
 
 			out, err = Jmp("admin", "create", "exporter", "-n", ns, "compat-old-exporter",
-				"--save", "--label", "example.com/board=compat-old")
+				"--out", SystemExporterConfigPath("compat-old-exporter"), "--label", "example.com/board=compat-old")
 			Expect(err).NotTo(HaveOccurred(), out)
 
 			overlayPath := filepath.Join(RepoRoot(), "e2e", "exporters", "exporter.yaml")
-			MergeExporterConfig("/etc/jumpstarter/exporters/compat-old-exporter.yaml", overlayPath)
+			MergeExporterConfig(SystemExporterConfigPath("compat-old-exporter"), overlayPath)
 		})
 	})
 
@@ -177,11 +177,11 @@ var _ = Describe("Compat: Old Client E2E Tests", Label("compat", "old-client"), 
 			Expect(err).NotTo(HaveOccurred(), out)
 
 			out, err = Jmp("admin", "create", "exporter", "-n", ns, "compat-old-exporter-wait",
-				"--save", "--label", "example.com/board=compat-old-wait")
+				"--out", SystemExporterConfigPath("compat-old-exporter-wait"), "--label", "example.com/board=compat-old-wait")
 			Expect(err).NotTo(HaveOccurred(), out)
 
 			overlayPath := filepath.Join(RepoRoot(), "e2e", "exporters", "exporter.yaml")
-			MergeExporterConfig("/etc/jumpstarter/exporters/compat-old-exporter-wait.yaml", overlayPath)
+			MergeExporterConfig(SystemExporterConfigPath("compat-old-exporter-wait"), overlayPath)
 
 			// Start client BEFORE exporter
 			clientCmd := JmpCmd("shell", "--client", "compat-old-client-wait",
