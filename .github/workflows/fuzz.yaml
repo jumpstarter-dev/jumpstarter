@@ -3,6 +3,15 @@ name: Fuzz Tests
 on:
   schedule:
     - cron: "17 3 * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - "python/**"
+      - "controller/**"
+      - "protocol/**"
+      - "scripts/fuzz.py"
+      - ".github/workflows/fuzz.yaml"
   workflow_dispatch:
     inputs:
       fuzz_time:
@@ -30,6 +39,7 @@ jobs:
     outputs:
       go_targets: ${{ steps.targets.outputs.go_targets }}
       fuzz_time: ${{ steps.duration.outputs.time }}
+      timeout_minutes: ${{ steps.duration.outputs.timeout_minutes }}
     steps:
       - uses: actions/checkout@v4
       - id: targets
@@ -40,21 +50,44 @@ jobs:
           FUZZ_TIME_INPUT: ${{ inputs.fuzz_time }}
         run: |
           if [ "$EVENT_NAME" = "schedule" ]; then
-            echo "time=2h" >> "$GITHUB_OUTPUT"
+            TIME_VAL="2h"
+          elif [ "$EVENT_NAME" = "push" ]; then
+            TIME_VAL="6h"
           elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             if [ -z "$FUZZ_TIME_INPUT" ] || ! echo "$FUZZ_TIME_INPUT" | grep -qE '^([0-9]+h)([0-9]+m)?([0-9]+s)?$|^([0-9]+m)([0-9]+s)?$|^([0-9]+s)$|^[0-9]+$'; then
               echo "::error::Invalid fuzz_time format: $FUZZ_TIME_INPUT"
               exit 1
             fi
-            echo "time=$FUZZ_TIME_INPUT" >> "$GITHUB_OUTPUT"
+            TIME_VAL="$FUZZ_TIME_INPUT"
           else
-            echo "time=5m" >> "$GITHUB_OUTPUT"
+            TIME_VAL="5m"
           fi
+          echo "time=$TIME_VAL" >> "$GITHUB_OUTPUT"
+          TOTAL_SECONDS=0
+          REMAINING="$TIME_VAL"
+          if echo "$REMAINING" | grep -q 'h'; then
+            HOURS=$(echo "$REMAINING" | sed 's/h.*//')
+            REMAINING=$(echo "$REMAINING" | sed 's/[^h]*h//')
+            TOTAL_SECONDS=$((TOTAL_SECONDS + HOURS * 3600))
+          fi
+          if echo "$REMAINING" | grep -q 'm'; then
+            MINUTES=$(echo "$REMAINING" | sed 's/m.*//')
+            REMAINING=$(echo "$REMAINING" | sed 's/[^m]*m//')
+            TOTAL_SECONDS=$((TOTAL_SECONDS + MINUTES * 60))
+          fi
+          if echo "$REMAINING" | grep -qE '^[0-9]+s?$'; then
+            SECS=$(echo "$REMAINING" | sed 's/s//')
+            if [ -n "$SECS" ]; then
+              TOTAL_SECONDS=$((TOTAL_SECONDS + SECS))
+            fi
+          fi
+          TIMEOUT_MINUTES=$(( (TOTAL_SECONDS + 59) / 60 + 30 ))
+          echo "timeout_minutes=$TIMEOUT_MINUTES" >> "$GITHUB_OUTPUT"
 
   fuzz-python:
     needs: matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: ${{ fromJson(needs.matrix.outputs.timeout_minutes) }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -75,7 +108,7 @@ jobs:
   fuzz-go:
     needs: matrix
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: ${{ fromJson(needs.matrix.outputs.timeout_minutes) }}
     strategy:
       fail-fast: false
       matrix:
