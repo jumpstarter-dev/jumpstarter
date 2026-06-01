@@ -124,22 +124,32 @@ func FuzzValidateLeaseTags(f *testing.F) {
 		tags := map[string]string{key: value}
 		err := ValidateLeaseTags(tags, maxTags)
 
-		if strings.HasPrefix(key, LeaseTagMetadataPrefix) || strings.HasPrefix(key, "jumpstarter.dev/") {
+		if maxTags == 0 && len(tags) > 0 {
 			if err == nil {
-				t.Errorf("ValidateLeaseTags accepted reserved prefix key %q", key)
+				t.Errorf("ValidateLeaseTags accepted tags when maxTags=0")
 			}
+			return
+		}
+
+		if strings.HasPrefix(key, LeaseTagMetadataPrefix) {
+			if err == nil {
+				t.Errorf("ValidateLeaseTags accepted metadata prefix key %q", key)
+			}
+			return
+		}
+
+		if strings.HasPrefix(key, "jumpstarter.dev/") {
+			if err == nil {
+				t.Errorf("ValidateLeaseTags accepted jumpstarter.dev/ prefix key %q", key)
+			}
+			return
 		}
 
 		if strings.Contains(key, "/") {
 			if err == nil {
 				t.Errorf("ValidateLeaseTags accepted key with slash: %q", key)
 			}
-		}
-
-		if maxTags == 0 && len(tags) > 0 {
-			if err == nil {
-				t.Errorf("ValidateLeaseTags accepted tags when maxTags=0")
-			}
+			return
 		}
 	})
 }
