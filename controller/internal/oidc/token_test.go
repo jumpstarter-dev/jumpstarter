@@ -264,3 +264,153 @@ func TestVerifyExporterObjectToken_PermissionDeniedPreservesGRPCCode(t *testing.
 		t.Errorf("expected PermissionDenied, got %v", st.Code())
 	}
 }
+
+func TestVerifyClientObjectToken_PermissionDeniedIncludesClientIdentity(t *testing.T) {
+	authn := &stubAuthenticator{
+		resp: &authenticator.Response{
+			User: &user.DefaultInfo{Name: "test-user"},
+		},
+		ok: true,
+	}
+	attrs := &stubAttributesGetter{
+		attrs: authorizer.AttributesRecord{
+			User:      &user.DefaultInfo{Name: "test-user"},
+			Namespace: "test-namespace",
+			Resource:  "Client",
+			Name:      "my-client",
+		},
+	}
+	authz := &stubAuthorizer{
+		decision: authorizer.DecisionDeny,
+	}
+
+	scheme := runtime.NewScheme()
+	_ = jumpstarterdevv1alpha1.AddToScheme(scheme)
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	_, err := VerifyClientObjectToken(context.Background(), authn, authz, attrs, fakeClient)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %T: %v", err, err)
+	}
+	if st.Code() != codes.PermissionDenied {
+		t.Errorf("expected PermissionDenied code, got %v", st.Code())
+	}
+	if !strings.Contains(err.Error(), "my-client") {
+		t.Errorf("error should contain client name 'my-client', got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "test-namespace") {
+		t.Errorf("error should contain namespace 'test-namespace', got: %s", err.Error())
+	}
+}
+
+func TestVerifyClientObjectToken_GetFailureIncludesClientIdentity(t *testing.T) {
+	authn := &stubAuthenticator{
+		resp: &authenticator.Response{
+			User: &user.DefaultInfo{Name: "test-user"},
+		},
+		ok: true,
+	}
+	attrs := &stubAttributesGetter{
+		attrs: authorizer.AttributesRecord{
+			User:      &user.DefaultInfo{Name: "test-user"},
+			Namespace: "prod-namespace",
+			Resource:  "Client",
+			Name:      "prod-client",
+		},
+	}
+	authz := &stubAuthorizer{
+		decision: authorizer.DecisionAllow,
+	}
+
+	scheme := runtime.NewScheme()
+	_ = jumpstarterdevv1alpha1.AddToScheme(scheme)
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	_, err := VerifyClientObjectToken(context.Background(), authn, authz, attrs, fakeClient)
+	if err == nil {
+		t.Fatal("expected error (client not found), got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %T: %v", err, err)
+	}
+	if st.Code() != codes.NotFound {
+		t.Errorf("expected NotFound code, got %v", st.Code())
+	}
+	if !strings.Contains(err.Error(), "prod-client") {
+		t.Errorf("error should contain client name 'prod-client', got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "prod-namespace") {
+		t.Errorf("error should contain namespace 'prod-namespace', got: %s", err.Error())
+	}
+}
+
+func TestVerifyClientObjectToken_TokenFailureDoesNotIncludeIdentity(t *testing.T) {
+	authn := &stubAuthenticator{
+		err: fmt.Errorf("invalid token"),
+	}
+	attrs := &stubAttributesGetter{}
+	authz := &stubAuthorizer{}
+
+	scheme := runtime.NewScheme()
+	_ = jumpstarterdevv1alpha1.AddToScheme(scheme)
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	_, err := VerifyClientObjectToken(context.Background(), authn, authz, attrs, fakeClient)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if err.Error() != "invalid token" {
+		t.Errorf("expected raw error 'invalid token', got: %s", err.Error())
+	}
+}
+
+func TestVerifyClientObjectToken_AuthorizeErrorPreservesGRPCCode(t *testing.T) {
+	authn := &stubAuthenticator{
+		resp: &authenticator.Response{
+			User: &user.DefaultInfo{Name: "test-user"},
+		},
+		ok: true,
+	}
+	attrs := &stubAttributesGetter{
+		attrs: authorizer.AttributesRecord{
+			User:      &user.DefaultInfo{Name: "test-user"},
+			Namespace: "ns",
+			Resource:  "Client",
+			Name:      "cli",
+		},
+	}
+	authz := &stubAuthorizer{
+		err: status.Errorf(codes.Unavailable, "backend down"),
+	}
+
+	scheme := runtime.NewScheme()
+	_ = jumpstarterdevv1alpha1.AddToScheme(scheme)
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	_, err := VerifyClientObjectToken(context.Background(), authn, authz, attrs, fakeClient)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %T: %v", err, err)
+	}
+	if st.Code() != codes.Unavailable {
+		t.Errorf("expected Unavailable, got %v", st.Code())
+	}
+	if !strings.Contains(err.Error(), "cli") {
+		t.Errorf("error should contain client name, got: %s", err.Error())
+	}
+	if !strings.Contains(err.Error(), "ns") {
+		t.Errorf("error should contain namespace, got: %s", err.Error())
+	}
+}
