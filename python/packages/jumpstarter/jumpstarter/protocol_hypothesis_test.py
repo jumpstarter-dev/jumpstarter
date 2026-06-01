@@ -1,3 +1,4 @@
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from jumpstarter_protocol.jumpstarter.client.v1 import client_pb2
@@ -7,6 +8,14 @@ from jumpstarter_protocol.jumpstarter.v1 import (
     kubernetes_pb2,
     router_pb2,
 )
+
+from jumpstarter.common.condition import (
+    condition_false,
+    condition_message,
+    condition_present_and_equal,
+    condition_true,
+)
+from jumpstarter.common.enums import ExporterStatus, LogSource
 
 safe_text = st.text(min_size=0, max_size=50)
 
@@ -800,3 +809,209 @@ class TestPaginatedResponseMessages:
         restored.ParseFromString(serialized)
         assert len(restored.leases) == 0
         assert restored.next_page_token == ""
+
+
+VALID_EXPORTER_STATUSES = [
+    common_pb2.EXPORTER_STATUS_UNSPECIFIED,
+    common_pb2.EXPORTER_STATUS_OFFLINE,
+    common_pb2.EXPORTER_STATUS_AVAILABLE,
+    common_pb2.EXPORTER_STATUS_BEFORE_LEASE_HOOK,
+    common_pb2.EXPORTER_STATUS_LEASE_READY,
+    common_pb2.EXPORTER_STATUS_AFTER_LEASE_HOOK,
+    common_pb2.EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED,
+    common_pb2.EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED,
+]
+
+VALID_LOG_SOURCES = [
+    common_pb2.LOG_SOURCE_UNSPECIFIED,
+    common_pb2.LOG_SOURCE_DRIVER,
+    common_pb2.LOG_SOURCE_BEFORE_LEASE_HOOK,
+    common_pb2.LOG_SOURCE_AFTER_LEASE_HOOK,
+    common_pb2.LOG_SOURCE_SYSTEM,
+]
+
+condition_strategy = st.builds(
+    kubernetes_pb2.Condition,
+    type=safe_text,
+    status=st.sampled_from(["True", "False", "Unknown"]),
+    reason=safe_text,
+    message=safe_text,
+)
+
+
+class TestConditionLogic:
+    @given(
+        condition_type=safe_text,
+        status=st.sampled_from(["True", "False", "Unknown"]),
+        reason=safe_text,
+        message=safe_text,
+    )
+    def test_condition_present_and_equal_finds_matching_condition(
+        self,
+        condition_type: str,
+        status: str,
+        reason: str,
+        message: str,
+    ) -> None:
+        cond = kubernetes_pb2.Condition(
+            type=condition_type, status=status, reason=reason, message=message,
+        )
+        assert condition_present_and_equal([cond], condition_type, status) is True
+
+    @given(
+        condition_type=safe_text,
+        status=st.sampled_from(["True", "False", "Unknown"]),
+        other_status=st.sampled_from(["True", "False", "Unknown"]),
+    )
+    def test_condition_present_and_equal_rejects_mismatched_status(
+        self,
+        condition_type: str,
+        status: str,
+        other_status: str,
+    ) -> None:
+        if status == other_status:
+            return
+        cond = kubernetes_pb2.Condition(type=condition_type, status=status)
+        assert condition_present_and_equal([cond], condition_type, other_status) is False
+
+    @given(
+        condition_type=safe_text,
+        other_type=safe_text,
+    )
+    def test_condition_present_and_equal_returns_false_for_missing_type(
+        self,
+        condition_type: str,
+        other_type: str,
+    ) -> None:
+        if condition_type == other_type:
+            return
+        cond = kubernetes_pb2.Condition(type=condition_type, status="True")
+        assert condition_present_and_equal([cond], other_type, "True") is False
+
+    @given(condition_type=safe_text)
+    def test_condition_present_and_equal_empty_list_returns_false(
+        self, condition_type: str,
+    ) -> None:
+        assert condition_present_and_equal([], condition_type, "True") is False
+
+    @given(
+        condition_type=safe_text,
+        reason=safe_text,
+        other_reason=safe_text,
+    )
+    def test_condition_present_and_equal_with_reason_filter(
+        self,
+        condition_type: str,
+        reason: str,
+        other_reason: str,
+    ) -> None:
+        if reason == other_reason:
+            return
+        cond = kubernetes_pb2.Condition(
+            type=condition_type, status="True", reason=reason,
+        )
+        assert condition_present_and_equal(
+            [cond], condition_type, "True", reason=reason,
+        ) is True
+        assert condition_present_and_equal(
+            [cond], condition_type, "True", reason=other_reason,
+        ) is False
+
+    @given(
+        condition_type=safe_text,
+        message=safe_text,
+    )
+    def test_condition_message_returns_message_for_matching_type(
+        self,
+        condition_type: str,
+        message: str,
+    ) -> None:
+        cond = kubernetes_pb2.Condition(
+            type=condition_type, status="True", message=message,
+        )
+        assert condition_message([cond], condition_type) == message
+
+    @given(
+        condition_type=safe_text,
+        other_type=safe_text,
+    )
+    def test_condition_message_returns_none_for_missing_type(
+        self,
+        condition_type: str,
+        other_type: str,
+    ) -> None:
+        if condition_type == other_type:
+            return
+        cond = kubernetes_pb2.Condition(type=condition_type, status="True", message="msg")
+        assert condition_message([cond], other_type) is None
+
+    @given(condition_type=safe_text)
+    def test_condition_true_matches_true_status(self, condition_type: str) -> None:
+        cond = kubernetes_pb2.Condition(type=condition_type, status="True")
+        assert condition_true([cond], condition_type) is True
+
+    @given(condition_type=safe_text)
+    def test_condition_true_rejects_false_status(self, condition_type: str) -> None:
+        cond = kubernetes_pb2.Condition(type=condition_type, status="False")
+        assert condition_true([cond], condition_type) is False
+
+    @given(condition_type=safe_text)
+    def test_condition_false_matches_false_status(self, condition_type: str) -> None:
+        cond = kubernetes_pb2.Condition(type=condition_type, status="False")
+        assert condition_false([cond], condition_type) is True
+
+    @given(condition_type=safe_text)
+    def test_condition_false_rejects_true_status(self, condition_type: str) -> None:
+        cond = kubernetes_pb2.Condition(type=condition_type, status="True")
+        assert condition_false([cond], condition_type) is False
+
+    @given(conditions=st.lists(condition_strategy, min_size=2, max_size=10))
+    def test_condition_message_returns_first_match(
+        self, conditions: list[kubernetes_pb2.Condition],
+    ) -> None:
+        target_type = conditions[0].type
+        matching = [c for c in conditions if c.type == target_type]
+        result = condition_message(conditions, target_type)
+        assert result == matching[0].message
+
+
+class TestExporterStatusFromProto:
+    @given(status=st.sampled_from(VALID_EXPORTER_STATUSES))
+    def test_from_proto_roundtrips(self, status: int) -> None:
+        enum_val = ExporterStatus.from_proto(status)
+        assert enum_val.to_proto() == status
+
+    @given(status=st.sampled_from(VALID_EXPORTER_STATUSES))
+    def test_from_proto_is_valid_enum_member(self, status: int) -> None:
+        enum_val = ExporterStatus.from_proto(status)
+        assert enum_val in ExporterStatus
+
+    @given(status=st.sampled_from(VALID_EXPORTER_STATUSES))
+    def test_str_returns_name(self, status: int) -> None:
+        enum_val = ExporterStatus.from_proto(status)
+        assert str(enum_val) == enum_val.name
+
+    def test_invalid_proto_value_raises(self) -> None:
+        with pytest.raises(ValueError):
+            ExporterStatus.from_proto(9999)
+
+
+class TestLogSourceFromProto:
+    @given(source=st.sampled_from(VALID_LOG_SOURCES))
+    def test_from_proto_roundtrips(self, source: int) -> None:
+        enum_val = LogSource.from_proto(source)
+        assert enum_val.to_proto() == source
+
+    @given(source=st.sampled_from(VALID_LOG_SOURCES))
+    def test_from_proto_is_valid_enum_member(self, source: int) -> None:
+        enum_val = LogSource.from_proto(source)
+        assert enum_val in LogSource
+
+    @given(source=st.sampled_from(VALID_LOG_SOURCES))
+    def test_str_returns_name(self, source: int) -> None:
+        enum_val = LogSource.from_proto(source)
+        assert str(enum_val) == enum_val.name
+
+    def test_invalid_proto_value_raises(self) -> None:
+        with pytest.raises(ValueError):
+            LogSource.from_proto(9999)
