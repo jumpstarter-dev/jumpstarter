@@ -161,6 +161,8 @@ def _override_default_grpc_options(grpc_options: dict[str, str | int] | None) ->
         ("grpc.keepalive_timeout_ms", 180000),
         ("grpc.http2.max_pings_without_data", 0),
         ("grpc.keepalive_permit_without_calls", 1),
+        ("grpc.max_receive_message_length", -1),
+        ("grpc.max_send_message_length", -1),
     )
     options = dict(defaults)
     options.update(grpc_options or {})
@@ -179,6 +181,10 @@ def translate_grpc_exceptions():
         if e.code().name == "UNKNOWN":
             # an error returned from our functions
             raise ConnectionError(f"grpc controller responded: {e.details()}") from None
+        if e.code().name == "DEADLINE_EXCEEDED":
+            raise ConnectionError(
+                f"grpc deadline exceeded: {e.details()}"
+            ) from None
         else:
             raise ConnectionError("grpc error") from e
     except grpc.RpcError as e:

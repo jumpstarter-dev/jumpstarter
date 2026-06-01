@@ -4,10 +4,12 @@ from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import grpc
 import pytest
 from grpc import StatusCode
 from grpc.aio import AioRpcError
 
+from jumpstarter.client.core import DriverError
 from jumpstarter.common import ExporterStatus, Metadata
 
 pytestmark = pytest.mark.anyio
@@ -17,14 +19,17 @@ class MockAioRpcError(AioRpcError):
     """Mock gRPC error for testing that properly inherits from AioRpcError."""
 
     def __init__(self, status_code: StatusCode, message: str = ""):
-        self._status_code = status_code
-        self._message = message
+        self._code = status_code
+        self._details = message
+        self._debug_error_string = ""
+        self._initial_metadata = grpc.aio.Metadata()
+        self._trailing_metadata = grpc.aio.Metadata()
 
     def code(self) -> StatusCode:
-        return self._status_code
+        return self._code
 
     def details(self) -> str:
-        return self._message
+        return self._details
 
 
 def create_mock_rpc_error(code: StatusCode, details: str = "") -> MockAioRpcError:
@@ -293,3 +298,33 @@ class TestAsyncDriverClientWaitForHookStatus:
 
         # Should return True (backward compatibility - assume hook complete)
         assert result is True
+
+
+class TestAsyncDriverClientCallAsync:
+    async def test_call_async_deadline_exceeded_raises_driver_error(self) -> None:
+        """Test that call_async raises DriverError on DEADLINE_EXCEEDED."""
+        from jumpstarter.client.core import AsyncDriverClient
+
+        stub = MagicMock()
+        stub.DriverCall = AsyncMock(
+            side_effect=MockAioRpcError(StatusCode.DEADLINE_EXCEEDED, "deadline hit")
+        )
+
+        client = AsyncDriverClient(uuid=uuid4(), labels={}, stub=stub)
+
+        with pytest.raises(DriverError, match="deadline exceeded"):
+            await client.call_async("long_operation")
+
+    async def test_call_async_deadline_exceeded_message_mentions_timeout_config(self) -> None:
+        """Test that DEADLINE_EXCEEDED error message suggests checking timeout configuration."""
+        from jumpstarter.client.core import AsyncDriverClient
+
+        stub = MagicMock()
+        stub.DriverCall = AsyncMock(
+            side_effect=MockAioRpcError(StatusCode.DEADLINE_EXCEEDED, "timeout")
+        )
+
+        client = AsyncDriverClient(uuid=uuid4(), labels={}, stub=stub)
+
+        with pytest.raises(DriverError, match="grpcOptions"):
+            await client.call_async("flash_firmware")

@@ -393,6 +393,11 @@ class AsyncDriverClient(
                     raise DriverInvalidArgument(error_message) from None
                 case StatusCode.UNKNOWN:
                     raise DriverError(error_message) from None
+                case StatusCode.DEADLINE_EXCEEDED:
+                    raise DriverError(
+                        f"gRPC deadline exceeded for '{method}': {e.details()}. "
+                        "Check proxy timeout settings or grpcOptions in your exporter/client config."
+                    ) from None
                 case _:
                     raise DriverError(error_message) from e
 
