@@ -11,8 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "click>=8.0.0",
     "jumpstarter",
-    "jumpstarter-driver-network",
-]
+    "jumpstarter-driver-network"]
 
 [project.optional-dependencies]
 python-api = ["adbutils>=2.8.7"]
@@ -44,7 +43,5 @@ name = "pin_jumpstarter"
 
 [dependency-groups]
 dev = [
-    "hypothesis>=6.127.2",
     "pytest-cov>=6.0.0",
-    "pytest>=8.3.3",
-]
+    "pytest>=8.3.3"]

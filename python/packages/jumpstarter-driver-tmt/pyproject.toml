@@ -12,8 +12,7 @@ dependencies = [
     "anyio>=4.10.0",
     "jumpstarter",
     "jumpstarter-driver-network",
-    "jumpstarter-driver-composite",
-]
+    "jumpstarter-driver-composite"]
 
 [project.entry-points."jumpstarter.drivers"]
 TMT = "jumpstarter_driver_tmt.driver:TMT"
@@ -42,7 +41,5 @@ name = "pin_jumpstarter"
 
 [dependency-groups]
 dev = [
-    "hypothesis>=6.127.2",
     "pytest-cov>=6.0.0",
-    "pytest>=8.3.3",
-]
+    "pytest>=8.3.3"]

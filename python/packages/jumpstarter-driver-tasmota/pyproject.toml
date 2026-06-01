@@ -10,8 +10,7 @@ dependencies = [
     "anyio>=4.10.0",
     "jumpstarter_driver_power",
     "jumpstarter",
-    "paho-mqtt>=2.1.0",
-]
+    "paho-mqtt>=2.1.0"]
 
 [project.entry-points."jumpstarter.drivers"]
 TasmotaPower = "jumpstarter_driver_tasmota.driver:TasmotaPower"
@@ -40,8 +39,6 @@ name = "pin_jumpstarter"
 
 [dependency-groups]
 dev = [
-    "hypothesis>=6.127.2",
     "pytest-cov>=6.0.0",
     "pytest>=8.3.3",
-    "pytest-mqtt>=0.5.0",
-]
+    "pytest-mqtt>=0.5.0"]

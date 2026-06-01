@@ -10,8 +10,7 @@ dependencies = [
     "anyio>=4.10.0",
     "click>=8.1.7.2",
     "jumpstarter",
-    "jumpstarter-driver-opendal",
-]
+    "jumpstarter-driver-opendal"]
 
 [project.entry-points."jumpstarter.drivers"]
 ProbeRs = "jumpstarter_driver_probe_rs.driver:ProbeRs"
@@ -35,7 +34,7 @@ requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = ["hypothesis>=6.127.2", "pytest-cov>=6.0.0", "pytest>=8.3.3"]
+dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
 
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"

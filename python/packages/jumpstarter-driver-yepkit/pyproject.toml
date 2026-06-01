@@ -10,8 +10,7 @@ dependencies = [
     "anyio>=4.10.0",
     "pyusb>=1.2.1",
     "jumpstarter_driver_power",
-    "jumpstarter",
-]
+    "jumpstarter"]
 
 [project.entry-points."jumpstarter.drivers"]
 Ykush = "jumpstarter_driver_yepkit.driver:Ykush"
@@ -37,7 +36,7 @@ requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = ["hypothesis>=6.127.2", "pytest-cov>=6.0.0", "pytest>=8.3.3"]
+dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
 
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"

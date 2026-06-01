@@ -13,8 +13,7 @@ dependencies = [
     "click>=8.3.1",
     "jumpstarter",
     "jumpstarter-driver-opendal",
-    "jumpstarter-driver-pyserial",
-]
+    "jumpstarter-driver-pyserial"]
 
 [project.entry-points."jumpstarter.drivers"]
 PiPicoFlasher = "jumpstarter_driver_pi_pico.driver:PiPicoFlasher"
@@ -42,7 +41,5 @@ name = "pin_jumpstarter"
 
 [dependency-groups]
 dev = [
-    "hypothesis>=6.127.2",
     "pytest-cov>=6.0.0",
-    "pytest>=8.3.3",
-]
+    "pytest>=8.3.3"]

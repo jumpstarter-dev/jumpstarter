@@ -11,8 +11,7 @@ dependencies = [
     "click>=8.1.8",
     "jumpstarter",
     "jumpstarter-driver-network",
-    "bleak>=1.1.1",
-]
+    "bleak>=1.1.1"]
 
 [project.entry-points."jumpstarter.drivers"]
 BleWriteNotifyStream = "jumpstarter_driver_ble.driver:BleWriteNotifyStream"
@@ -36,7 +35,7 @@ requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = ["hypothesis>=6.127.2", "pytest-anyio>=0.0.0", "pytest-cov>=6.0.0", "pytest>=8.3.3"]
+dev = ["pytest-anyio>=0.0.0", "pytest-cov>=6.0.0", "pytest>=8.3.3"]
 
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"
