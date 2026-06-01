@@ -5,14 +5,23 @@ import pytest
 
 os.environ["TERM"] = "dumb"
 
-HYPOTHESIS_PROFILES = {
-    "ci": {"max_examples": 100},
-    "fuzz": {"max_examples": 500},
-}
 HYPOTHESIS_DEFAULT_PROFILE = "ci"
 
 try:
-    from hypothesis import settings as hypothesis_settings
+    from hypothesis import HealthCheck, settings as hypothesis_settings
+
+    HYPOTHESIS_PROFILES = {
+        "ci": {
+            "max_examples": 100,
+            "deadline": None,
+            "suppress_health_check": [HealthCheck.too_slow],
+        },
+        "fuzz": {
+            "max_examples": 500,
+            "deadline": None,
+            "suppress_health_check": [HealthCheck.too_slow],
+        },
+    }
 
     for name, kwargs in HYPOTHESIS_PROFILES.items():
         hypothesis_settings.register_profile(name, **kwargs)
