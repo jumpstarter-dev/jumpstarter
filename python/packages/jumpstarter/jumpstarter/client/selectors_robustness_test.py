@@ -106,7 +106,7 @@ class TestLabelSatisfiesExpressionRobustness:
         try:
             result = _label_satisfies_expression(labels, key, operator, values)
             assert isinstance(result, bool)
-        except ALLOWED_SELECTOR_CONTAINS_EXCEPTIONS:
+        except ValueError:
             pass
         except Exception as exc:
             raise AssertionError(f"_label_satisfies_expression raised unexpected {type(exc).__name__}: {exc}") from exc
