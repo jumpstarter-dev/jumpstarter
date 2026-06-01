@@ -1,9 +1,8 @@
 from hypothesis import given
 from hypothesis import strategies as st
 
-from jumpstarter.testing_strategies import arbitrary as ARBITRARY
-
 from .encoding import Compression, create_decompressor, detect_compression_from_signature
+from jumpstarter.testing_strategies import arbitrary as ARBITRARY
 
 
 class TestDetectCompressionFromSignatureRobustness:

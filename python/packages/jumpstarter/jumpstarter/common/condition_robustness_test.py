@@ -2,8 +2,6 @@ from hypothesis import given
 from hypothesis import strategies as st
 from jumpstarter_protocol import kubernetes_pb2
 
-from jumpstarter.testing_strategies import arbitrary as ARBITRARY
-
 from .condition import (
     condition_false,
     condition_message,
