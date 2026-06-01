@@ -311,3 +311,37 @@ class TestAsyncDriverClientCallAsync:
 
         with pytest.raises(DriverError, match="grpcOptions"):
             await client.call_async("flash_firmware")
+
+
+class TestAsyncDriverClientStreamingCallAsync:
+    async def test_streamingcall_async_deadline_exceeded_raises_driver_error(self) -> None:
+        from jumpstarter.client.core import AsyncDriverClient
+
+        async def raise_deadline_exceeded(_request):
+            raise MockAioRpcError(StatusCode.DEADLINE_EXCEEDED, "deadline hit")
+            yield  # make this an async generator
+
+        stub = MagicMock()
+        stub.StreamingDriverCall = raise_deadline_exceeded
+
+        client = AsyncDriverClient(uuid=uuid4(), labels={}, stub=stub)
+
+        with pytest.raises(DriverError, match="deadline exceeded"):
+            async for _ in client.streamingcall_async("long_stream"):
+                pass
+
+    async def test_streamingcall_async_deadline_exceeded_message_mentions_timeout_config(self) -> None:
+        from jumpstarter.client.core import AsyncDriverClient
+
+        async def raise_deadline_exceeded(_request):
+            raise MockAioRpcError(StatusCode.DEADLINE_EXCEEDED, "timeout")
+            yield  # make this an async generator
+
+        stub = MagicMock()
+        stub.StreamingDriverCall = raise_deadline_exceeded
+
+        client = AsyncDriverClient(uuid=uuid4(), labels={}, stub=stub)
+
+        with pytest.raises(DriverError, match="grpcOptions"):
+            async for _ in client.streamingcall_async("stream_firmware"):
+                pass
