@@ -10,10 +10,34 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+func k8sToGRPCCode(err error) codes.Code {
+	switch {
+	case apierrors.IsNotFound(err):
+		return codes.NotFound
+	case apierrors.IsForbidden(err):
+		return codes.PermissionDenied
+	case apierrors.IsUnauthorized(err):
+		return codes.Unauthenticated
+	case apierrors.IsAlreadyExists(err):
+		return codes.AlreadyExists
+	case apierrors.IsConflict(err):
+		return codes.Aborted
+	case apierrors.IsInvalid(err):
+		return codes.InvalidArgument
+	case apierrors.IsServiceUnavailable(err):
+		return codes.Unavailable
+	case apierrors.IsTimeout(err), apierrors.IsServerTimeout(err):
+		return codes.DeadlineExceeded
+	default:
+		return codes.Internal
+	}
+}
 
 func VerifyOIDCToken(
 	ctx context.Context,
@@ -53,7 +77,7 @@ func VerifyClientObjectToken(
 
 	decision, _, err := authn.Authorize(ctx, attrs)
 	if err != nil {
-		return nil, fmt.Errorf("client %s/%s: %w", clientNamespace, clientName, err)
+		return nil, status.Errorf(status.Code(err), "client %s/%s: %v", clientNamespace, clientName, err)
 	}
 
 	if decision != authorizer.DecisionAllow {
@@ -65,7 +89,7 @@ func VerifyClientObjectToken(
 		Namespace: clientNamespace,
 		Name:      clientName,
 	}, &client); err != nil {
-		return nil, fmt.Errorf("client %s/%s: %w", clientNamespace, clientName, err)
+		return nil, status.Errorf(k8sToGRPCCode(err), "client %s/%s: %v", clientNamespace, clientName, err)
 	}
 
 	return &client, nil
@@ -92,7 +116,7 @@ func VerifyExporterObjectToken(
 
 	decision, _, err := authn.Authorize(ctx, attrs)
 	if err != nil {
-		return nil, fmt.Errorf("exporter %s/%s: %w", exporterNamespace, exporterName, err)
+		return nil, status.Errorf(status.Code(err), "exporter %s/%s: %v", exporterNamespace, exporterName, err)
 	}
 
 	if decision != authorizer.DecisionAllow {
@@ -104,7 +128,7 @@ func VerifyExporterObjectToken(
 		Namespace: exporterNamespace,
 		Name:      exporterName,
 	}, &exporter); err != nil {
-		return nil, fmt.Errorf("exporter %s/%s: %w", exporterNamespace, exporterName, err)
+		return nil, status.Errorf(k8sToGRPCCode(err), "exporter %s/%s: %v", exporterNamespace, exporterName, err)
 	}
 
 	return &exporter, nil
