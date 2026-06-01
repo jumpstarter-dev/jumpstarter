@@ -14,7 +14,7 @@ try:
         max_examples=500,
     )
     hypothesis_settings.load_profile(os.getenv("HYPOTHESIS_PROFILE", "ci"))
-except Exception:
+except ImportError:
     pass
 
 try:
