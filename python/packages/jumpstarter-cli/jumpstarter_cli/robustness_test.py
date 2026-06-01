@@ -6,15 +6,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from .common import ACQUISITION_TIMEOUT, DATETIME, DURATION
-
-ARBITRARY = st.one_of(
-    st.text(),
-    st.integers(),
-    st.floats(),
-    st.none(),
-    st.booleans(),
-    st.binary(),
-)
+from jumpstarter.testing_strategies import ARBITRARY
 
 ALLOWED_CLI_EXCEPTIONS = (
     SystemExit,

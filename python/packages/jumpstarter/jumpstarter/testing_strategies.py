@@ -11,3 +11,5 @@ arbitrary: st.SearchStrategy = st.one_of(
     st.booleans(),
     st.binary(),
 )
+
+ARBITRARY = arbitrary

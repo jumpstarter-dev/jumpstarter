@@ -3,15 +3,7 @@ from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from .common import Capability, EntryMode, Metadata, PresignedRequest
-
-ARBITRARY = st.one_of(
-    st.text(),
-    st.integers(),
-    st.floats(),
-    st.none(),
-    st.booleans(),
-    st.binary(),
-)
+from jumpstarter.testing_strategies import ARBITRARY
 
 
 class TestEntryModeRobustness:

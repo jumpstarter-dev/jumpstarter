@@ -9,15 +9,7 @@ from .opt import (
     parse_comma_separated,
     validate_name,
 )
-
-ARBITRARY = st.one_of(
-    st.text(),
-    st.integers(),
-    st.floats(),
-    st.none(),
-    st.booleans(),
-    st.binary(),
-)
+from jumpstarter.testing_strategies import ARBITRARY
 
 
 class TestLabelsCallbackRobustness:

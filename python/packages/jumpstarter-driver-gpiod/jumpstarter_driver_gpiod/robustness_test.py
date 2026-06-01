@@ -6,15 +6,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from .driver import DigitalInput, DigitalOutput
-
-ARBITRARY = st.one_of(
-    st.text(),
-    st.integers(),
-    st.floats(),
-    st.none(),
-    st.booleans(),
-    st.binary(),
-)
+from jumpstarter.testing_strategies import ARBITRARY
 
 
 class TestDigitalOutputRobustness:

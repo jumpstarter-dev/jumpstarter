@@ -11,15 +11,7 @@ from .bundle import (
     FlasherLogin,
     ObjectMeta,
 )
-
-ARBITRARY = st.one_of(
-    st.text(),
-    st.integers(),
-    st.floats(),
-    st.none(),
-    st.booleans(),
-    st.binary(),
-)
+from jumpstarter.testing_strategies import ARBITRARY
 
 
 class TestFileAddressRobustness:

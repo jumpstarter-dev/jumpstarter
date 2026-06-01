@@ -1,16 +1,7 @@
 from hypothesis import given
-from hypothesis import strategies as st
 
 from .driver import HttpAuthConfig, HttpBasicAuth, HttpEndpointConfig
-
-ARBITRARY = st.one_of(
-    st.text(),
-    st.integers(),
-    st.floats(),
-    st.none(),
-    st.booleans(),
-    st.binary(),
-)
+from jumpstarter.testing_strategies import ARBITRARY
 
 
 class TestHttpEndpointConfigRobustness:

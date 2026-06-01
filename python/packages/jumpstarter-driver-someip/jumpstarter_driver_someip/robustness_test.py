@@ -8,15 +8,7 @@ from .common import (
     SomeIpPayload,
     SomeIpServiceEntry,
 )
-
-ARBITRARY = st.one_of(
-    st.text(),
-    st.integers(),
-    st.floats(),
-    st.none(),
-    st.booleans(),
-    st.binary(),
-)
+from jumpstarter.testing_strategies import ARBITRARY
 
 
 class TestSomeIpPayloadRobustness:
