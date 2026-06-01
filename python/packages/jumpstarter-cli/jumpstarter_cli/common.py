@@ -56,12 +56,13 @@ class DurationParamType(click.ParamType):
 
         try:
             return TypeAdapter(timedelta).validate_python(value)
-        except (ValueError, ValidationError):
+        except (ValueError, ValidationError) as exc:
             self.fail(
                 f"{value!r} is not a valid duration (e.g., '30m', '3h30m', '1d', '1d3h40m', 'PT1H30M', '01:30:00')",
                 param,
                 ctx,
             )
+            raise exc
 
     def convert(self, value, param, ctx):
         if isinstance(value, timedelta):
