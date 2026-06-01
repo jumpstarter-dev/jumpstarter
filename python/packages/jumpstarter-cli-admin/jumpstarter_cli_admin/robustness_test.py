@@ -5,9 +5,9 @@ from hypothesis import strategies as st
 
 ALLOWED_CLI_EXCEPTIONS = (
     SystemExit,
-    click.exceptions.BadParameter,
-    click.exceptions.UsageError,
-    click.exceptions.MissingParameter,
+    click.BadParameter,
+    click.UsageError,
+    click.MissingParameter,
     click.ClickException,
     click.Abort,
     OSError,

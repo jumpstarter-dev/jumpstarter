@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import click
 from hypothesis import given
 from hypothesis import strategies as st
@@ -17,7 +19,7 @@ class TestLabelsCallbackRobustness:
     def test_labels_callback_never_crashes_on_text(self, value: tuple[str]) -> None:
         try:
             _opt_labels_callback(None, None, value)
-        except click.exceptions.BadParameter:
+        except click.BadParameter:
             pass
         except Exception as exc:
             raise AssertionError(f"_opt_labels_callback raised unexpected {type(exc).__name__}: {exc}") from exc
@@ -27,7 +29,7 @@ class TestLabelsCallbackRobustness:
         try:
             result = _opt_labels_callback(None, None, tuple(values))
             assert isinstance(result, dict)
-        except click.exceptions.BadParameter:
+        except click.BadParameter:
             pass
         except Exception as exc:
             raise AssertionError(f"_opt_labels_callback raised unexpected {type(exc).__name__}: {exc}") from exc
@@ -41,7 +43,7 @@ class TestLabelsCallbackRobustness:
     def test_labels_callback_handles_shell_metacharacters(self, value: str) -> None:
         try:
             _opt_labels_callback(None, None, (value,))
-        except click.exceptions.BadParameter:
+        except click.BadParameter:
             pass
         except Exception as exc:
             raise AssertionError(f"_opt_labels_callback raised unexpected {type(exc).__name__}: {exc}") from exc
@@ -53,7 +55,7 @@ class TestParseCommaSeparatedRobustness:
         try:
             result = parse_comma_separated(None, None, value)
             assert isinstance(result, list)
-        except click.exceptions.BadParameter:
+        except click.BadParameter:
             pass
         except Exception as exc:
             raise AssertionError(f"parse_comma_separated raised unexpected {type(exc).__name__}: {exc}") from exc
@@ -63,7 +65,7 @@ class TestParseCommaSeparatedRobustness:
         try:
             result = parse_comma_separated(None, None, values)
             assert isinstance(result, list)
-        except click.exceptions.BadParameter:
+        except click.BadParameter:
             pass
         except Exception as exc:
             raise AssertionError(f"parse_comma_separated raised unexpected {type(exc).__name__}: {exc}") from exc
@@ -75,7 +77,7 @@ class TestParseCommaSeparatedRobustness:
     def test_parse_comma_separated_with_allowed_values(self, value: str, allowed: frozenset[str]) -> None:
         try:
             parse_comma_separated(None, None, value, allowed_values=set(allowed))
-        except click.exceptions.BadParameter:
+        except click.BadParameter:
             pass
         except Exception as exc:
             raise AssertionError(f"parse_comma_separated raised unexpected {type(exc).__name__}: {exc}") from exc
@@ -83,8 +85,8 @@ class TestParseCommaSeparatedRobustness:
     @given(value=ARBITRARY)
     def test_parse_comma_separated_never_crashes_on_arbitrary(self, value: object) -> None:
         try:
-            parse_comma_separated(None, None, value)
-        except (click.exceptions.BadParameter, TypeError, AttributeError):
+            parse_comma_separated(None, None, cast(Any, value))
+        except (click.BadParameter, TypeError, AttributeError):
             pass
         except Exception as exc:
             raise AssertionError(f"parse_comma_separated raised unexpected {type(exc).__name__}: {exc}") from exc
@@ -95,7 +97,7 @@ class TestValidateNameRobustness:
     def test_validate_name_never_crashes_on_text(self, name: str) -> None:
         try:
             validate_name(name)
-        except click.exceptions.UsageError:
+        except click.UsageError:
             pass
         except Exception as exc:
             raise AssertionError(f"validate_name raised unexpected {type(exc).__name__}: {exc}") from exc
@@ -103,8 +105,8 @@ class TestValidateNameRobustness:
     @given(name=ARBITRARY)
     def test_validate_name_never_crashes_on_arbitrary(self, name: object) -> None:
         try:
-            validate_name(name)
-        except (click.exceptions.UsageError, TypeError, AttributeError):
+            validate_name(cast(Any, name))
+        except (click.UsageError, TypeError, AttributeError):
             pass
         except Exception as exc:
             raise AssertionError(f"validate_name raised unexpected {type(exc).__name__}: {exc}") from exc
@@ -131,7 +133,7 @@ class TestValidateTokensRobustness:
     def test_validate_tokens_never_crashes(self, tokens: list[str], allowed: frozenset[str]) -> None:
         try:
             _validate_tokens(tokens, set(allowed), None, None)
-        except click.exceptions.BadParameter:
+        except click.BadParameter:
             pass
         except Exception as exc:
             raise AssertionError(f"_validate_tokens raised unexpected {type(exc).__name__}: {exc}") from exc
