@@ -18,13 +18,6 @@ ARBITRARY = st.one_of(
     st.booleans(),
 )
 
-ALLOWED_PARSE_EXCEPTIONS = ()
-
-ALLOWED_SELECTOR_CONTAINS_EXCEPTIONS = ()
-
-ALLOWED_EXTRACT_EXCEPTIONS = ()
-
-
 class TestParseLabelSelectorRobustness:
     @given(arbitrary_input=st.text())
     def test_parse_label_selector_never_crashes_on_text(self, arbitrary_input: str) -> None:
@@ -32,8 +25,6 @@ class TestParseLabelSelectorRobustness:
             result = parse_label_selector(arbitrary_input)
             assert isinstance(result, tuple)
             assert len(result) == 2
-        except ALLOWED_PARSE_EXCEPTIONS:
-            pass
         except Exception as exc:
             raise AssertionError(f"parse_label_selector raised unexpected {type(exc).__name__}: {exc}") from exc
 
@@ -62,8 +53,6 @@ class TestSelectorContainsRobustness:
         try:
             result = selector_contains(selector, requirements)
             assert isinstance(result, bool)
-        except ALLOWED_SELECTOR_CONTAINS_EXCEPTIONS:
-            pass
         except Exception as exc:
             raise AssertionError(f"selector_contains raised unexpected {type(exc).__name__}: {exc}") from exc
 
@@ -74,8 +63,6 @@ class TestExtractMatchLabelsFilterRobustness:
         try:
             result = extract_match_labels_filter(arbitrary_input)
             assert result is None or isinstance(result, str)
-        except ALLOWED_EXTRACT_EXCEPTIONS:
-            pass
         except Exception as exc:
             raise AssertionError(f"extract_match_labels_filter raised unexpected {type(exc).__name__}: {exc}") from exc
 
