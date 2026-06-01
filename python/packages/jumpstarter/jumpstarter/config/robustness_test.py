@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
@@ -15,7 +17,7 @@ class TestTLSConfigRobustness:
     @given(ca=ARBITRARY, insecure=ARBITRARY)
     def test_constructor_never_crashes_unexpectedly(self, ca: object, insecure: object) -> None:
         try:
-            TLSConfigV1Alpha1(ca=ca, insecure=insecure)
+            cast(Any, TLSConfigV1Alpha1)(ca=ca, insecure=insecure)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
@@ -48,7 +50,7 @@ class TestHookInstanceConfigRobustness:
         on_failure: object,
     ) -> None:
         try:
-            HookInstanceConfigV1Alpha1(
+            cast(Any, HookInstanceConfigV1Alpha1)(
                 script=script,
                 timeout=timeout,
                 onFailure=on_failure,
@@ -61,7 +63,7 @@ class TestHookInstanceConfigRobustness:
     @given(script=st.text(), timeout=st.integers(), on_failure=st.text())
     def test_constructor_with_typed_args_never_crashes(self, script: str, timeout: int, on_failure: str) -> None:
         try:
-            HookInstanceConfigV1Alpha1(
+            cast(Any, HookInstanceConfigV1Alpha1)(
                 script=script,
                 timeout=timeout,
                 onFailure=on_failure,
@@ -76,7 +78,7 @@ class TestHookConfigRobustness:
     @given(before_lease=ARBITRARY, after_lease=ARBITRARY)
     def test_constructor_never_crashes_unexpectedly(self, before_lease: object, after_lease: object) -> None:
         try:
-            HookConfigV1Alpha1(beforeLease=before_lease, afterLease=after_lease)
+            cast(Any, HookConfigV1Alpha1)(beforeLease=before_lease, afterLease=after_lease)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
@@ -91,7 +93,7 @@ class TestDriverInstanceBaseRobustness:
     )
     def test_constructor_never_crashes_on_text(self, type_val: str, description: str | None, config: dict) -> None:
         try:
-            ExporterConfigV1Alpha1DriverInstanceBase(type=type_val, description=description, config=config)
+            cast(Any, ExporterConfigV1Alpha1DriverInstanceBase)(type=type_val, description=description, config=config)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
@@ -108,7 +110,7 @@ class TestDriverInstanceBaseRobustness:
         self, type_val: object, description: object, config: object
     ) -> None:
         try:
-            ExporterConfigV1Alpha1DriverInstanceBase(type=type_val, description=description, config=config)
+            cast(Any, ExporterConfigV1Alpha1DriverInstanceBase)(type=type_val, description=description, config=config)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:

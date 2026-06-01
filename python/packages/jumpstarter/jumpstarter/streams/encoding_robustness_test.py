@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -19,7 +21,7 @@ class TestDetectCompressionFromSignatureRobustness:
     @given(data=ARBITRARY)
     def test_never_crashes_on_arbitrary(self, data: object) -> None:
         try:
-            detect_compression_from_signature(data)
+            cast(Any, detect_compression_from_signature)(data)
         except (
             TypeError,
             # BUG: crashes with AttributeError when given non-bytes input
@@ -37,7 +39,7 @@ class TestCreateDecompressorRobustness:
     @given(compression=ARBITRARY)
     def test_never_crashes_on_arbitrary(self, compression: object) -> None:
         try:
-            create_decompressor(compression)
+            cast(Any, create_decompressor)(compression)
         except (TypeError, ValueError):
             pass
         except Exception as exc:
@@ -46,7 +48,7 @@ class TestCreateDecompressorRobustness:
     @given(compression=st.text())
     def test_never_crashes_on_text(self, compression: str) -> None:
         try:
-            create_decompressor(compression)
+            cast(Any, create_decompressor)(compression)
         except (TypeError, ValueError):
             pass
         except Exception as exc:

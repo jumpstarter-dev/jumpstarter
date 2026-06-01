@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
@@ -10,7 +12,7 @@ class TestDhcpInfoRobustness:
     @given(ip_address=ARBITRARY, gateway=ARBITRARY, netmask=ARBITRARY)
     def test_constructor_never_crashes_on_arbitrary(self, ip_address: object, gateway: object, netmask: object) -> None:
         try:
-            DhcpInfo(ip_address=ip_address, gateway=gateway, netmask=netmask)
+            cast(Any, DhcpInfo)(ip_address=ip_address, gateway=gateway, netmask=netmask)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:

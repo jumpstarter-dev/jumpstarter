@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import pytest
 
 pytest.importorskip("jumpstarter_driver_noyito_relay")
@@ -13,7 +15,7 @@ class TestNoyitoPowerSerialRobustness:
     @given(kwargs=st.dictionaries(st.text(max_size=10), ARBITRARY, max_size=5))
     def test_constructor_never_crashes(self, kwargs: dict) -> None:
         try:
-            NoyitoPowerSerial(**kwargs)
+            cast(Any, NoyitoPowerSerial)(**kwargs)
         except (TypeError, ValueError, OSError, RuntimeError, NotImplementedError):
             pass
         except Exception as exc:
@@ -24,7 +26,7 @@ class TestNoyitoPowerHIDRobustness:
     @given(kwargs=st.dictionaries(st.text(max_size=10), ARBITRARY, max_size=5))
     def test_constructor_never_crashes(self, kwargs: dict) -> None:
         try:
-            NoyitoPowerHID(**kwargs)
+            cast(Any, NoyitoPowerHID)(**kwargs)
         except (TypeError, ValueError, OSError, RuntimeError, NotImplementedError):
             pass
         except Exception as exc:

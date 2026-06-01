@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
@@ -10,7 +12,7 @@ class TestEntryModeRobustness:
     @given(entry_is_file=ARBITRARY, entry_is_dir=ARBITRARY)
     def test_constructor_never_crashes_on_arbitrary(self, entry_is_file: object, entry_is_dir: object) -> None:
         try:
-            mode = EntryMode(entry_is_file=entry_is_file, entry_is_dir=entry_is_dir)
+            mode = cast(Any, EntryMode)(entry_is_file=entry_is_file, entry_is_dir=entry_is_dir)
         except (TypeError, ValueError, ValidationError):
             return
         except Exception as exc:
@@ -36,7 +38,7 @@ class TestMetadataRobustness:
         etag: object,
     ) -> None:
         try:
-            Metadata(
+            cast(Any, Metadata)(
                 content_disposition=content_disposition,
                 content_length=content_length,
                 content_md5=content_md5,
@@ -54,7 +56,7 @@ class TestPresignedRequestRobustness:
     @given(url=ARBITRARY, method=ARBITRARY, headers=ARBITRARY)
     def test_constructor_never_crashes_on_arbitrary(self, url: object, method: object, headers: object) -> None:
         try:
-            PresignedRequest(url=url, method=method, headers=headers)
+            cast(Any, PresignedRequest)(url=url, method=method, headers=headers)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
@@ -103,7 +105,7 @@ class TestCapabilityRobustness:
     )
     def test_constructor_never_crashes_on_arbitrary(self, data: dict) -> None:
         try:
-            Capability(**data)
+            cast(Any, Capability)(**data)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:

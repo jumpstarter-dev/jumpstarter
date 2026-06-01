@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import pytest
 
 pytest.importorskip("jumpstarter_driver_androidemulator")
@@ -14,7 +16,7 @@ class TestAndroidEmulatorRobustness:
     @given(kwargs=st.dictionaries(st.text(max_size=10), ARBITRARY, max_size=5))
     def test_constructor_never_crashes(self, kwargs: dict) -> None:
         try:
-            AndroidEmulator(**kwargs)
+            cast(Any, AndroidEmulator)(**kwargs)
         except (TypeError, ValueError, ConfigurationError, OSError, RuntimeError):
             pass
         except Exception as exc:
@@ -25,7 +27,7 @@ class TestAndroidEmulatorPowerRobustness:
     @given(kwargs=st.dictionaries(st.text(max_size=10), ARBITRARY, max_size=5))
     def test_constructor_never_crashes(self, kwargs: dict) -> None:
         try:
-            AndroidEmulatorPower(**kwargs)
+            cast(Any, AndroidEmulatorPower)(**kwargs)
         except (TypeError, ValueError, ConfigurationError, OSError, RuntimeError):
             pass
         except Exception as exc:

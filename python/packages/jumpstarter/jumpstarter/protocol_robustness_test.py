@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from google.protobuf.message import DecodeError
 from hypothesis import given
 from hypothesis import strategies as st
@@ -28,7 +30,7 @@ class TestConditionRobustness:
         observed_generation: object,
     ) -> None:
         try:
-            kubernetes_pb2.Condition(
+            cast(Any, kubernetes_pb2.Condition)(
                 type=type_val,
                 status=status_val,
                 reason=reason,
@@ -54,7 +56,7 @@ class TestLabelSelectorRequirementRobustness:
         values: object,
     ) -> None:
         try:
-            kubernetes_pb2.LabelSelectorRequirement(key=key, operator=operator, values=values)
+            cast(Any, kubernetes_pb2.LabelSelectorRequirement)(key=key, operator=operator, values=values)
         except (TypeError, ValueError):
             pass
         except Exception as exc:
@@ -74,7 +76,7 @@ class TestLabelSelectorRobustness:
             if match_labels is None:
                 kubernetes_pb2.LabelSelector()
             else:
-                kubernetes_pb2.LabelSelector(match_labels=match_labels)
+                cast(Any, kubernetes_pb2.LabelSelector)(match_labels=match_labels)
         except (TypeError, ValueError):
             pass
         except Exception as exc:
@@ -85,7 +87,7 @@ class TestTimeRobustness:
     @given(seconds=ARBITRARY, nanos=ARBITRARY)
     def test_constructor_never_crashes_unexpectedly(self, seconds: object, nanos: object) -> None:
         try:
-            kubernetes_pb2.Time(seconds=seconds, nanos=nanos)
+            cast(Any, kubernetes_pb2.Time)(seconds=seconds, nanos=nanos)
         except (TypeError, ValueError, OverflowError):
             pass
         except Exception as exc:
@@ -96,7 +98,7 @@ class TestStreamRequestRobustness:
     @given(payload=ARBITRARY, frame_type=ARBITRARY)
     def test_constructor_never_crashes_unexpectedly(self, payload: object, frame_type: object) -> None:
         try:
-            router_pb2.StreamRequest(payload=payload, frame_type=frame_type)
+            cast(Any, router_pb2.StreamRequest)(payload=payload, frame_type=frame_type)
         except (TypeError, ValueError):
             pass
         except Exception as exc:
@@ -115,7 +117,7 @@ class TestRegisterRequestRobustness:
             if labels is None:
                 jumpstarter_pb2.RegisterRequest()
             else:
-                jumpstarter_pb2.RegisterRequest(labels=labels)
+                cast(Any, jumpstarter_pb2.RegisterRequest)(labels=labels)
         except (TypeError, ValueError):
             pass
         except Exception as exc:
@@ -126,7 +128,7 @@ class TestDriverCallRequestRobustness:
     @given(uuid=ARBITRARY, method=ARBITRARY)
     def test_constructor_never_crashes_unexpectedly(self, uuid: object, method: object) -> None:
         try:
-            jumpstarter_pb2.DriverCallRequest(uuid=uuid, method=method)
+            cast(Any, jumpstarter_pb2.DriverCallRequest)(uuid=uuid, method=method)
         except (TypeError, ValueError):
             pass
         except Exception as exc:
@@ -146,7 +148,7 @@ class TestExporterMessageRobustness:
         status_message: object,
     ) -> None:
         try:
-            client_pb2.Exporter(name=name, status=status, status_message=status_message)
+            cast(Any, client_pb2.Exporter)(name=name, status=status, status_message=status_message)
         except (TypeError, ValueError):
             pass
         except Exception as exc:
@@ -160,7 +162,7 @@ class TestLeaseMessageRobustness:
     )
     def test_constructor_never_crashes_unexpectedly(self, name: object, selector: object) -> None:
         try:
-            client_pb2.Lease(name=name, selector=selector)
+            cast(Any, client_pb2.Lease)(name=name, selector=selector)
         except (TypeError, ValueError):
             pass
         except Exception as exc:

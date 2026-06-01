@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
@@ -12,7 +14,7 @@ class TestHostfwdRobustness:
         self, protocol: object, hostaddr: object, hostport: object, guestport: object
     ) -> None:
         try:
-            Hostfwd(protocol=protocol, hostaddr=hostaddr, hostport=hostport, guestport=guestport)
+            cast(Any, Hostfwd)(protocol=protocol, hostaddr=hostaddr, hostport=hostport, guestport=guestport)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
@@ -21,7 +23,7 @@ class TestHostfwdRobustness:
     @given(kwargs=st.dictionaries(st.text(max_size=10), ARBITRARY, max_size=5))
     def test_arbitrary_kwargs_never_crash(self, kwargs: dict) -> None:
         try:
-            Hostfwd(**kwargs)
+            cast(Any, Hostfwd)(**kwargs)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:

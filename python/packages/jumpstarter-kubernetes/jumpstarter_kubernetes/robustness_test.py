@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
@@ -39,7 +41,7 @@ class TestTimeSinceRobustness:
     @given(t_str=ARBITRARY)
     def test_time_since_never_crashes_on_arbitrary(self, t_str: object) -> None:
         try:
-            time_since(t_str)
+            cast(Any, time_since)(t_str)
         except (TypeError, ValueError, AttributeError):
             pass
         except Exception as exc:
@@ -50,7 +52,7 @@ class TestV1Alpha1ExporterDeviceRobustness:
     @given(labels=ARBITRARY, uuid_val=ARBITRARY)
     def test_constructor_never_crashes_unexpectedly(self, labels: object, uuid_val: object) -> None:
         try:
-            device = V1Alpha1ExporterDevice(labels=labels, uuid=uuid_val)
+            device = cast(Any, V1Alpha1ExporterDevice)(labels=labels, uuid=uuid_val)
         except (TypeError, ValueError, ValidationError):
             return
         except Exception as exc:
@@ -73,7 +75,7 @@ class TestV1Alpha1ExporterStatusRobustness:
         exporter_status: object,
     ) -> None:
         try:
-            V1Alpha1ExporterStatus(
+            cast(Any, V1Alpha1ExporterStatus)(
                 credential=credential,
                 devices=devices,
                 endpoint=endpoint,
@@ -105,7 +107,7 @@ class TestV1Alpha1LeaseSelectorRobustness:
     @given(match_labels=ARBITRARY)
     def test_constructor_never_crashes_unexpectedly(self, match_labels: object) -> None:
         try:
-            V1Alpha1LeaseSelector(matchLabels=match_labels)
+            cast(Any, V1Alpha1LeaseSelector)(matchLabels=match_labels)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
@@ -148,7 +150,7 @@ class TestV1Alpha1ClientStatusRobustness:
     @given(credential=ARBITRARY, endpoint=ARBITRARY)
     def test_constructor_never_crashes_unexpectedly(self, credential: object, endpoint: object) -> None:
         try:
-            V1Alpha1ClientStatus(credential=credential, endpoint=endpoint)
+            cast(Any, V1Alpha1ClientStatus)(credential=credential, endpoint=endpoint)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:

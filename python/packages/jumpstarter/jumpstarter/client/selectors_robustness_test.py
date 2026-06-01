@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -33,7 +35,7 @@ class TestParseLabelSelectorRobustness:
     @given(arbitrary_input=st.binary())
     def test_parse_label_selector_never_crashes_on_binary(self, arbitrary_input: bytes) -> None:
         try:
-            parse_label_selector(arbitrary_input)
+            cast(Any, parse_label_selector)(arbitrary_input)
         except TypeError:
             pass
         except Exception as exc:
@@ -42,7 +44,7 @@ class TestParseLabelSelectorRobustness:
     @given(arbitrary_input=ARBITRARY)
     def test_parse_label_selector_never_crashes_on_arbitrary(self, arbitrary_input: object) -> None:
         try:
-            parse_label_selector(arbitrary_input)
+            cast(Any, parse_label_selector)(arbitrary_input)
         except (TypeError, AttributeError):
             pass
         except Exception as exc:
@@ -71,7 +73,7 @@ class TestExtractMatchLabelsFilterRobustness:
     @given(arbitrary_input=ARBITRARY)
     def test_extract_match_labels_filter_never_crashes_on_arbitrary(self, arbitrary_input: object) -> None:
         try:
-            extract_match_labels_filter(arbitrary_input)
+            cast(Any, extract_match_labels_filter)(arbitrary_input)
         except (TypeError, AttributeError):
             pass
         except Exception as exc:
@@ -112,8 +114,8 @@ class TestLabelSatisfiesExpressionNegative:
 
     def test_binary_input_raises_type_error(self) -> None:
         with pytest.raises(TypeError):
-            parse_label_selector(b"key=value")
+            cast(Any, parse_label_selector)(b"key=value")
 
     def test_integer_input_raises_attribute_error(self) -> None:
         with pytest.raises(AttributeError):
-            parse_label_selector(42)
+            cast(Any, parse_label_selector)(42)

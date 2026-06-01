@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
@@ -15,7 +17,7 @@ class TestSomeIpPayloadRobustness:
     @given(data=ARBITRARY)
     def test_constructor_never_crashes_on_arbitrary(self, data: object) -> None:
         try:
-            SomeIpPayload(data=data)
+            cast(Any, SomeIpPayload)(data=data)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
@@ -24,7 +26,7 @@ class TestSomeIpPayloadRobustness:
     @given(data=st.text(max_size=200))
     def test_constructor_never_crashes_on_text(self, data: str) -> None:
         try:
-            SomeIpPayload(data=data)
+            cast(Any, SomeIpPayload)(data=data)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
@@ -52,7 +54,7 @@ class TestSomeIpMessageResponseRobustness:
         payload: object,
     ) -> None:
         try:
-            SomeIpMessageResponse(
+            cast(Any, SomeIpMessageResponse)(
                 service_id=service_id,
                 method_id=method_id,
                 client_id=client_id,
@@ -71,7 +73,7 @@ class TestSomeIpServiceEntryRobustness:
     @given(service_id=ARBITRARY, instance_id=ARBITRARY)
     def test_constructor_never_crashes_on_arbitrary(self, service_id: object, instance_id: object) -> None:
         try:
-            SomeIpServiceEntry(service_id=service_id, instance_id=instance_id)
+            cast(Any, SomeIpServiceEntry)(service_id=service_id, instance_id=instance_id)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
@@ -84,7 +86,7 @@ class TestSomeIpEventNotificationRobustness:
         self, service_id: object, event_id: object, payload: object
     ) -> None:
         try:
-            SomeIpEventNotification(service_id=service_id, event_id=event_id, payload=payload)
+            cast(Any, SomeIpEventNotification)(service_id=service_id, event_id=event_id, payload=payload)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:

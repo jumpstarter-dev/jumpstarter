@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
@@ -10,7 +12,7 @@ class TestListenConfigRobustness:
     @given(host=ARBITRARY, port=ARBITRARY)
     def test_constructor_never_crashes(self, host: object, port: object) -> None:
         try:
-            ListenConfig(host=host, port=port)
+            cast(Any, ListenConfig)(host=host, port=port)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
@@ -19,7 +21,7 @@ class TestListenConfigRobustness:
     @given(kwargs=st.dictionaries(st.text(max_size=10), ARBITRARY, max_size=5))
     def test_arbitrary_kwargs_never_crash(self, kwargs: dict) -> None:
         try:
-            ListenConfig(**kwargs)
+            cast(Any, ListenConfig)(**kwargs)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
@@ -30,7 +32,7 @@ class TestWebConfigRobustness:
     @given(host=ARBITRARY, port=ARBITRARY)
     def test_constructor_never_crashes(self, host: object, port: object) -> None:
         try:
-            WebConfig(host=host, port=port)
+            cast(Any, WebConfig)(host=host, port=port)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
@@ -41,7 +43,7 @@ class TestDirectoriesConfigRobustness:
     @given(kwargs=st.dictionaries(st.text(max_size=10), ARBITRARY, max_size=5))
     def test_constructor_never_crashes(self, kwargs: dict) -> None:
         try:
-            DirectoriesConfig(**kwargs)
+            cast(Any, DirectoriesConfig)(**kwargs)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
@@ -58,7 +60,7 @@ class TestDirectoriesConfigRobustness:
         files: object,
     ) -> None:
         try:
-            DirectoriesConfig(data=data, conf=conf, flows=flows, addons=addons, mocks=mocks, files=files)
+            cast(Any, DirectoriesConfig)(data=data, conf=conf, flows=flows, addons=addons, mocks=mocks, files=files)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:

@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
@@ -10,7 +12,7 @@ class TestPowerReadingRobustness:
     @given(voltage=ARBITRARY, current=ARBITRARY)
     def test_constructor_never_crashes_on_arbitrary(self, voltage: object, current: object) -> None:
         try:
-            reading = PowerReading(voltage=voltage, current=current)
+            reading = cast(Any, PowerReading)(voltage=voltage, current=current)
         except (TypeError, ValueError, ValidationError):
             return
         except Exception as exc:

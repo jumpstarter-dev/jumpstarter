@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -16,7 +18,7 @@ class TestFilterRuleRobustness:
         protocol: object,
     ) -> None:
         try:
-            FilterRule(
+            cast(Any, FilterRule)(
                 action=action,
                 destination=destination,
                 source=source,
@@ -31,7 +33,7 @@ class TestFilterRuleRobustness:
     @given(action=st.sampled_from(["accept", "drop"]), port=ARBITRARY, protocol=ARBITRARY)
     def test_valid_action_with_arbitrary_port_protocol(self, action: str, port: object, protocol: object) -> None:
         try:
-            FilterRule(action=action, port=port, protocol=protocol)
+            cast(Any, FilterRule)(action=action, port=port, protocol=protocol)
         except (TypeError, ValueError):
             pass
         except Exception as exc:
@@ -42,7 +44,7 @@ class TestFilterDirectionRobustness:
     @given(policy=ARBITRARY, rules=ARBITRARY)
     def test_constructor_never_crashes(self, policy: object, rules: object) -> None:
         try:
-            FilterDirection(policy=policy, rules=rules)
+            cast(Any, FilterDirection)(policy=policy, rules=rules)
         except (TypeError, ValueError):
             pass
         except Exception as exc:
@@ -53,7 +55,7 @@ class TestFilterConfigRobustness:
     @given(egress=ARBITRARY, ingress=ARBITRARY)
     def test_constructor_never_crashes(self, egress: object, ingress: object) -> None:
         try:
-            FilterConfig(egress=egress, ingress=ingress)
+            cast(Any, FilterConfig)(egress=egress, ingress=ingress)
         except (TypeError, ValueError):
             pass
         except Exception as exc:

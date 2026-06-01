@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
@@ -17,7 +19,7 @@ class TestUStreamerStateRobustness:
     )
     def test_constructor_never_crashes_on_arbitrary_dict(self, data: dict) -> None:
         try:
-            UStreamerState(**data)
+            cast(Any, UStreamerState)(**data)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
@@ -26,7 +28,7 @@ class TestUStreamerStateRobustness:
     @given(ok=st.booleans())
     def test_constructor_with_valid_nested(self, ok: bool) -> None:
         try:
-            state = UStreamerState(
+            state = cast(Any, UStreamerState)(
                 ok=ok,
                 result={
                     "encoder": {"type": "CPU", "quality": 80},
@@ -49,7 +51,7 @@ class TestUStreamerEncoderRobustness:
     @given(enc_type=ARBITRARY, quality=ARBITRARY)
     def test_encoder_constructor_never_crashes(self, enc_type: object, quality: object) -> None:
         try:
-            UStreamerState.Result.Encoder(type=enc_type, quality=quality)
+            cast(Any, UStreamerState.Result.Encoder)(type=enc_type, quality=quality)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
@@ -64,7 +66,7 @@ class TestUStreamerSourceRobustness:
     )
     def test_source_constructor_never_crashes(self, online: object, desired_fps: object, captured_fps: object) -> None:
         try:
-            UStreamerState.Result.Source(
+            cast(Any, UStreamerState.Result.Source)(
                 online=online,
                 desired_fps=desired_fps,
                 captured_fps=captured_fps,
@@ -80,7 +82,7 @@ class TestUStreamerResolutionRobustness:
     @given(width=ARBITRARY, height=ARBITRARY)
     def test_resolution_constructor_never_crashes(self, width: object, height: object) -> None:
         try:
-            UStreamerState.Result.Source.Resolution(width=width, height=height)
+            cast(Any, UStreamerState.Result.Source.Resolution)(width=width, height=height)
         except (TypeError, ValueError, ValidationError):
             pass
         except Exception as exc:
