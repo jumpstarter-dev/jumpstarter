@@ -181,7 +181,7 @@ class TestParseDuration:
             parse_duration("30mxyz")
 
     def test_trailing_bare_number_after_unit_raises(self):
-        with pytest.raises(argparse.ArgumentTypeError, match="ambiguous"):
+        with pytest.raises(argparse.ArgumentTypeError, match="ambiguous.*explicit units"):
             parse_duration("5m30")
 
     def test_zero_duration_raises_argument_type_error(self):

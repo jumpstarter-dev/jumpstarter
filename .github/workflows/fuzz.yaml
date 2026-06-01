@@ -42,7 +42,7 @@ jobs:
           if [ "$EVENT_NAME" = "schedule" ]; then
             echo "time=2h" >> "$GITHUB_OUTPUT"
           elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            if ! echo "$FUZZ_TIME_INPUT" | grep -qE '^([0-9]+h)?([0-9]+m)?([0-9]+s)?$' || [ -z "$FUZZ_TIME_INPUT" ]; then
+            if [ -z "$FUZZ_TIME_INPUT" ] || ! echo "$FUZZ_TIME_INPUT" | grep -qE '^([0-9]+h)([0-9]+m)?([0-9]+s)?$|^([0-9]+m)([0-9]+s)?$|^([0-9]+s)$|^[0-9]+$'; then
               echo "::error::Invalid fuzz_time format: $FUZZ_TIME_INPUT"
               exit 1
             fi

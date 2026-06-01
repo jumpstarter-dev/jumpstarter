@@ -44,6 +44,8 @@ FUZZ_TEST_PATTERNS = ("hypothesis_test", "robustness_test")
 
 MAX_EXAMPLES_PER_TEST = 1
 
+HYPOFUZZ_STARTUP_GRACE_SECONDS = 60
+
 
 def _discover_python_fuzz_dirs() -> list[str]:
     packages_dir = Path("python/packages")
@@ -83,7 +85,7 @@ def parse_duration(value: str) -> int:
     if rest.strip():
         if has_unit:
             raise argparse.ArgumentTypeError(
-                f"invalid duration: {value!r} (trailing bare number after unit suffix is ambiguous)"
+                f"invalid duration: {value!r} (trailing bare number after unit suffix is ambiguous, use explicit units like 5m30s)"
             )
         try:
             total += int(rest)
@@ -108,7 +110,7 @@ def run_hypofuzz(seconds: int) -> bool:
     db_path.mkdir(parents=True, exist_ok=True)
 
     max_attempts = 3
-    startup_grace = 60
+    startup_grace = HYPOFUZZ_STARTUP_GRACE_SECONDS
     for attempt in range(max_attempts):
         is_final_attempt = attempt == max_attempts - 1
         start = time.monotonic()
@@ -323,16 +325,19 @@ def _insert_example(path: Path, func_name: str, example_args: str) -> bool:
     else:
         text = text[:def_match.start()] + f"{indent}{decorator}\n" + text[def_match.start():]
 
-    if "from hypothesis import" in text:
-        import_line_match = re.search(r"from hypothesis import (.+)", text)
-        if import_line_match and "example" not in import_line_match.group(1):
+    has_example_import = bool(
+        re.search(r"from hypothesis import\b.*\bexample\b", text)
+    )
+    if not has_example_import:
+        import_match = re.search(r"from hypothesis import (.+)", text)
+        if import_match:
             text = text.replace(
-                import_line_match.group(0),
-                f"from hypothesis import example, {import_line_match.group(1)}",
+                import_match.group(0),
+                f"from hypothesis import example, {import_match.group(1)}",
                 1,
             )
-    else:
-        text = f"from hypothesis import example\n{text}"
+        else:
+            text = f"from hypothesis import example\n{text}"
 
     path.write_text(text)
     return True
