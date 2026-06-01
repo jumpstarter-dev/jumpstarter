@@ -108,4 +108,3 @@ class TestDurationParamType:
         param_type = DurationParamType()
         with pytest.raises(click.BadParameter, match="is not a valid duration"):
             param_type.convert(object(), None, None)
-

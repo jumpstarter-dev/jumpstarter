@@ -10,6 +10,7 @@ def _opt_selector_callback(_ctx, _param, value):
     """Combine multiple selector values into a single comma-separated string."""
     return ",".join(value) if value else None
 
+
 opt_selector = click.option(
     "-l",
     "--selector",
@@ -57,8 +58,7 @@ class DurationParamType(click.ParamType):
             return TypeAdapter(timedelta).validate_python(value)
         except (ValueError, ValidationError):
             self.fail(
-                f"{value!r} is not a valid duration "
-                "(e.g., '30m', '3h30m', '1d', '1d3h40m', 'PT1H30M', '01:30:00')",
+                f"{value!r} is not a valid duration (e.g., '30m', '3h30m', '1d', '1d3h40m', 'PT1H30M', '01:30:00')",
                 param,
                 ctx,
             )
