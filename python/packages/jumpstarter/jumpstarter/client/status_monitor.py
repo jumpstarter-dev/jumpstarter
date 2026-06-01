@@ -323,7 +323,6 @@ class StatusMonitor:
 
         deadline_retries = 0
         unavailable_retries = 0
-        unavailable_max_retries = 10
 
         while self._running:
             try:
@@ -392,25 +391,20 @@ class StatusMonitor:
                     break
                 elif e.code() == StatusCode.UNAVAILABLE:
                     unavailable_retries += 1
-                    if unavailable_retries >= unavailable_max_retries:
+                    if unavailable_retries == 1:
+                        logger.warning("GetStatus UNAVAILABLE, exporter may be offline. Retrying...")
+                    elif unavailable_retries % 10 == 0:
                         logger.warning(
-                            "GetStatus UNAVAILABLE %d times consecutively, marking connection as lost",
+                            "GetStatus UNAVAILABLE %d times consecutively, still retrying...",
                             unavailable_retries,
                         )
-                        self._connection_lost = True
-                        self._running = False
-                        self._any_change_event.set()
-                        self._any_change_event = Event()
-                        break
-                    elif unavailable_retries % 5 == 0:
-                        logger.warning("GetStatus UNAVAILABLE %d times consecutively", unavailable_retries)
                     else:
                         logger.debug("GetStatus UNAVAILABLE (attempt %d), retrying...", unavailable_retries)
                 elif e.code() == StatusCode.DEADLINE_EXCEEDED:
                     # DEADLINE_EXCEEDED is a transient error (RPC timed out), not a
                     # permanent connection loss. Keep polling - the shell's own timeout
-                    # on wait_for_any_of is the real deadline. Only UNAVAILABLE indicates
-                    # a true connection loss (server down/disconnected).
+                    # on wait_for_any_of is the real deadline.
+                    unavailable_retries = 0
                     deadline_retries += 1
                     if deadline_retries >= 20:
                         # 20 consecutive timeouts (~100s at 5s/timeout) indicates
