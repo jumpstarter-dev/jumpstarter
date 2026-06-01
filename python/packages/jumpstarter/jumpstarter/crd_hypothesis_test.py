@@ -5,8 +5,19 @@ import yaml
 from hypothesis import given
 from hypothesis import strategies as st
 
+
+def _find_repo_root() -> pathlib.Path:
+    candidate = pathlib.Path(__file__).resolve().parent
+    while candidate != candidate.parent:
+        if (candidate / "controller").is_dir() and (candidate / "python").is_dir():
+            return candidate
+        candidate = candidate.parent
+    msg = "cannot locate repository root containing controller/ and python/ directories"
+    raise FileNotFoundError(msg)
+
+
 CRD_BASE = (
-    pathlib.Path(__file__).resolve().parents[4] / "controller" / "deploy" / "operator" / "config" / "crd" / "bases"
+    _find_repo_root() / "controller" / "deploy" / "operator" / "config" / "crd" / "bases"
 )
 
 safe_text = st.text(min_size=1, max_size=30)
