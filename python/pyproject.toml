@@ -80,6 +80,8 @@ dev = [
     "esbonio>=0.16.5",
     "ty>=0.0.1a8",
     "diff-cover>=10.2.0",
+    "hypothesis[cli]>=6.127.2",
+    "hypofuzz>=24.0.0",
 ]
 
 [tool.ruff]
