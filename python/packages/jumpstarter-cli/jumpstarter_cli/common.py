@@ -36,40 +36,43 @@ class DurationParamType(click.ParamType):
         super().__init__()
         self.minimum = minimum
 
+    def _parse_string(self, value: str, param, ctx) -> timedelta:
+        try:
+            int_value = int(value)
+            try:
+                return timedelta(seconds=int_value)
+            except OverflowError:
+                self.fail(f"{value!r} exceeds the maximum allowed duration", param, ctx)
+        except ValueError:
+            pass
+
+        try:
+            seconds = parse_duration(value)
+            if seconds is not None and isinstance(seconds, (int, float)):
+                return timedelta(seconds=seconds)
+        except (ValueError, TypeError, OverflowError):
+            pass
+
+        try:
+            return TypeAdapter(timedelta).validate_python(value)
+        except (ValueError, ValidationError):
+            self.fail(
+                f"{value!r} is not a valid duration "
+                "(e.g., '30m', '3h30m', '1d', '1d3h40m', 'PT1H30M', '01:30:00')",
+                param,
+                ctx,
+            )
+
     def convert(self, value, param, ctx):
         if isinstance(value, timedelta):
             td = value
         elif isinstance(value, int):
-            # Integer as seconds (backward compatibility)
-            td = timedelta(seconds=value)
-        elif isinstance(value, str):
-            # Try parsing as plain integer first (backward compatibility)
             try:
-                int_value = int(value)
-                td = timedelta(seconds=int_value)
-            except ValueError:
-                # Parse with pytimeparse2 first (supports human-readable formats)
-                td = None
-                try:
-                    seconds = parse_duration(value)
-                    if seconds is not None and isinstance(seconds, (int, float)):
-                        td = timedelta(seconds=seconds)
-                except (ValueError, TypeError):
-                    pass
-
-                # Fall back to pydantic/speedate for ISO 8601 and other formats
-                if td is None:
-                    try:
-                        td = TypeAdapter(timedelta).validate_python(value)
-                    except (ValueError, ValidationError):
-                        self.fail(
-                            (
-                                f"{value!r} is not a valid duration "
-                                "(e.g., '30m', '3h30m', '1d', '1d3h40m', 'PT1H30M', '01:30:00')"
-                            ),
-                            param,
-                            ctx,
-                        )
+                td = timedelta(seconds=value)
+            except OverflowError:
+                self.fail(f"{value!r} exceeds the maximum allowed duration", param, ctx)
+        elif isinstance(value, str):
+            td = self._parse_string(value, param, ctx)
         else:
             self.fail(
                 f"{value!r} is not a valid duration (e.g., '30m', '3h30m', '1d', '1d3h40m')",
@@ -77,12 +80,9 @@ class DurationParamType(click.ParamType):
                 ctx,
             )
 
-        # Validate minimum if specified
         if self.minimum is not None and td < self.minimum:
             min_seconds = int(self.minimum.total_seconds())
-            self.fail(
-                f"{value!r} must be at least {min_seconds} seconds", param, ctx
-            )
+            self.fail(f"{value!r} must be at least {min_seconds} seconds", param, ctx)
 
         return td
 
