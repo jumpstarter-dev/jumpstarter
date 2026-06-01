@@ -85,6 +85,10 @@ def parse_duration(value: str) -> int:
             raise argparse.ArgumentTypeError(
                 f"invalid duration: {value!r} (expected format like 30m, 2h, 1h30m, or 90)"
             )
+    if total <= 0:
+        raise argparse.ArgumentTypeError(
+            f"duration must be positive, got {total}s from {value!r}"
+        )
     return total
 
 

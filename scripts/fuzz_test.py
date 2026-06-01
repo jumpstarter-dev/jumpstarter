@@ -141,11 +141,13 @@ class TestParseDuration:
     def test_bare_number(self):
         assert parse_duration("90") == 90
 
-    def test_empty_string(self):
-        assert parse_duration("") == 0
+    def test_empty_string_raises(self):
+        with pytest.raises(argparse.ArgumentTypeError, match="must be positive"):
+            parse_duration("")
 
-    def test_whitespace_only(self):
-        assert parse_duration("  ") == 0
+    def test_whitespace_only_raises(self):
+        with pytest.raises(argparse.ArgumentTypeError, match="must be positive"):
+            parse_duration("  ")
 
     def test_all_units(self):
         assert parse_duration("1h30m45s") == 5445
@@ -157,6 +159,14 @@ class TestParseDuration:
     def test_malformed_trailing_text_raises_argument_type_error(self):
         with pytest.raises(argparse.ArgumentTypeError):
             parse_duration("30mxyz")
+
+    def test_zero_duration_raises_argument_type_error(self):
+        with pytest.raises(argparse.ArgumentTypeError, match="must be positive"):
+            parse_duration("0s")
+
+    def test_negative_duration_raises_argument_type_error(self):
+        with pytest.raises(argparse.ArgumentTypeError, match="must be positive"):
+            parse_duration("-5m")
 
 
 class TestInsertExample:
