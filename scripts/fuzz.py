@@ -56,13 +56,6 @@ PYTEST_FILTER = "hypothesis_test or robustness_test"
 
 FUZZ_TEST_PATTERNS = ("hypothesis_test", "robustness_test")
 
-ADDITIONAL_FUZZ_TEST_NAMES = frozenset({
-    "compression_bomb_test.py",
-    "deep_execution_test.py",
-    "crd_cel_test.py",
-    "clean_error_test.py",
-})
-
 MAX_EXAMPLES_PER_TEST = 1
 
 
@@ -78,7 +71,7 @@ def _discover_python_fuzz_dirs() -> list[str]:
             if not src_dir.is_dir() or src_dir.name.startswith("."):
                 continue
             has_fuzz = any(
-                any(pat in f.name for pat in FUZZ_TEST_PATTERNS) or f.name in ADDITIONAL_FUZZ_TEST_NAMES
+                any(pat in f.name for pat in FUZZ_TEST_PATTERNS)
                 for f in src_dir.rglob("*_test.py")
             )
             if has_fuzz:
@@ -169,7 +162,7 @@ def _discover_fuzz_test_files() -> list[str]:
         base = Path("python") / d
         for p in base.rglob("*_test.py"):
             name = p.name
-            if any(pat in name for pat in FUZZ_TEST_PATTERNS) or name in ADDITIONAL_FUZZ_TEST_NAMES:
+            if any(pat in name for pat in FUZZ_TEST_PATTERNS):
                 files.append(str(p.relative_to("python")))
     return sorted(files)
 

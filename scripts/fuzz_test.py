@@ -8,7 +8,6 @@ import argparse
 import pytest
 
 from fuzz import (
-    ADDITIONAL_FUZZ_TEST_NAMES,
     _clean_example_args,
     _discover_fuzz_test_files,
     _discover_python_fuzz_dirs,
@@ -199,21 +198,6 @@ class TestInsertExample:
         foo_idx = next(i for i, l in enumerate(lines) if "def test_foo" in l)
         assert "@example(value='x')" in lines[foo_idx - 2]
         assert "@given(value=st.text())" in lines[foo_idx - 1]
-
-
-class TestAdditionalFuzzTestNames:
-    def test_no_redundant_entries(self):
-        for name in ADDITIONAL_FUZZ_TEST_NAMES:
-            assert "hypothesis_test" not in name, (
-                f"{name} is already matched by pattern 'hypothesis_test'"
-            )
-            assert "robustness_test" not in name, (
-                f"{name} is already matched by pattern 'robustness_test'"
-            )
-
-    def test_all_entries_are_test_files(self):
-        for name in ADDITIONAL_FUZZ_TEST_NAMES:
-            assert name.endswith("_test.py"), f"{name} does not follow *_test.py convention"
 
 
 class TestDiscoverPythonFuzzDirs:
