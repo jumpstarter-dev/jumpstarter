@@ -54,6 +54,15 @@ GO_FUZZ_TARGETS = [
 
 PYTEST_FILTER = "hypothesis_test or robustness_test"
 
+FUZZ_TEST_PATTERNS = ("hypothesis_test", "robustness_test")
+
+ADDITIONAL_FUZZ_TEST_NAMES = frozenset({
+    "compression_bomb_test.py",
+    "deep_execution_test.py",
+    "crd_cel_test.py",
+    "clean_error_test.py",
+})
+
 PYTHON_FUZZ_DIRS = [
     "packages/jumpstarter/jumpstarter",
     "packages/jumpstarter-cli/jumpstarter_cli",
@@ -146,14 +155,7 @@ def _discover_fuzz_test_files() -> list[str]:
         base = Path("python") / d
         for p in base.rglob("*_test.py"):
             name = p.name
-            if "hypothesis_test" in name or "robustness_test" in name or name in (
-                "config_yaml_robustness_test.py",
-                "compression_bomb_test.py",
-                "deep_execution_test.py",
-                "method_robustness_test.py",
-                "crd_cel_test.py",
-                "clean_error_test.py",
-            ):
+            if any(pat in name for pat in FUZZ_TEST_PATTERNS) or name in ADDITIONAL_FUZZ_TEST_NAMES:
                 files.append(str(p.relative_to("python")))
     return sorted(files)
 
