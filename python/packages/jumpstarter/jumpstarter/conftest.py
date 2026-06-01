@@ -1,5 +1,4 @@
 import grpc
-import pytest
 from grpc import StatusCode
 from grpc.aio import AioRpcError
 
@@ -17,8 +16,3 @@ class MockAioRpcError(AioRpcError):
 
     def details(self) -> str:
         return self._details
-
-
-@pytest.fixture
-def mock_aio_rpc_error():
-    return MockAioRpcError
