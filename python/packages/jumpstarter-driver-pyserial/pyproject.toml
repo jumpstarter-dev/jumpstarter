@@ -22,7 +22,7 @@ PySerial = "jumpstarter_driver_pyserial.driver:PySerial"
 
 [dependency-groups]
 dev = [
-    "hypothesis>=6.0.0",
+    "hypothesis>=6.127.2",
   "pytest>=8.3.2",
   "pytest-cov>=5.0.0",
   "types-pexpect>=4.9.0.20241208",

@@ -15,7 +15,7 @@ dependencies = ["jumpstarter", "pyserial>=3.5", "click>=8.1.7.2"]
 MockPower = "jumpstarter_driver_power.driver:MockPower"
 
 [dependency-groups]
-dev = ["hypothesis>=6.0.0", "pytest>=8.3.2", "pytest-cov>=5.0.0", "trio>=0.28.0"]
+dev = ["hypothesis>=6.127.2", "pytest>=8.3.2", "pytest-cov>=5.0.0", "trio>=0.28.0"]
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"

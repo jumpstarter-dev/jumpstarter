@@ -18,7 +18,7 @@ SomeIp = "jumpstarter_driver_someip.driver:SomeIp"
 
 [dependency-groups]
 dev = [
-    "hypothesis>=6.0.0",
+    "hypothesis>=6.127.2",
     "pytest-cov>=6.0.0",
     "pytest>=8.3.3",
 ]

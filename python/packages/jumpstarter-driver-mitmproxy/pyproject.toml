@@ -22,7 +22,7 @@ testpaths = [
 ]
 
 [dependency-groups]
-dev = ["hypothesis>=6.0.0", "pytest-cov>=6.0.0", "pytest>=8.3.3", "requests>=2.28.0"]
+dev = ["hypothesis>=6.127.2", "pytest-cov>=6.0.0", "pytest>=8.3.3", "requests>=2.28.0"]
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"

@@ -17,7 +17,7 @@ dependencies = [
 SDWire = "jumpstarter_driver_sdwire.driver:SDWire"
 
 [dependency-groups]
-dev = ["hypothesis>=6.0.0", "pytest>=8.3.2", "pytest-cov>=5.0.0"]
+dev = ["hypothesis>=6.127.2", "pytest>=8.3.2", "pytest-cov>=5.0.0"]
 
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
