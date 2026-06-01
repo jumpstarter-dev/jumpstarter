@@ -134,6 +134,16 @@ class TestExtractFalsifyingExamples:
         result = _extract_falsifying_examples(output)
         assert result == [("test_bar", "x=1")]
 
+    def test_multi_line_with_closing_paren_in_value(self):
+        output = (
+            "Falsifying example: test_qux(\n"
+            "    value='a(b)c',\n"
+            "    other=42,\n"
+            ")"
+        )
+        result = _extract_falsifying_examples(output)
+        assert result == [("test_qux", "value='a(b)c', other=42")]
+
 
 class TestParseDuration:
     def test_minutes_only(self):

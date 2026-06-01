@@ -348,8 +348,8 @@ def _clean_example_args(raw_args: str) -> str:
 def _extract_falsifying_examples(output: str) -> list[tuple[str, str]]:
     stripped = re.sub(r"^[ \t]*E {2,}", "", output, flags=re.MULTILINE)
     example_re = re.compile(
-        r"Falsifying example: (\w+)\((.*?)\)\s*$",
-        re.DOTALL | re.MULTILINE,
+        r"Falsifying example: (\w+)\((.*?)\)\s*(?:\n|\Z)",
+        re.DOTALL,
     )
     seen = set()
     results = []
