@@ -3,6 +3,7 @@ import importlib
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from pydantic import ValidationError
 
 from jumpstarter.common.exceptions import JumpstarterException
 
@@ -18,11 +19,14 @@ ARBITRARY = st.one_of(
 EXPECTED_EXCEPTIONS = (
     TypeError,
     ValueError,
+    ValidationError,
     OSError,
     RuntimeError,
     FileNotFoundError,
     NotImplementedError,
     ImportError,
+    AttributeError,
+    KeyError,
     JumpstarterException,
 )
 
