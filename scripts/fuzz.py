@@ -23,34 +23,19 @@ import sys
 import time
 from pathlib import Path
 
-GO_FUZZ_TARGETS = [
-    ("FuzzParseLabelSelector", "./api/v1alpha1/"),
-    ("FuzzReconcileLeaseTimeFields", "./api/v1alpha1/"),
-    ("FuzzValidateLeaseTags", "./api/v1alpha1/"),
-    ("FuzzLeaseFromProtobuf", "./api/v1alpha1/"),
-    ("FuzzLeaseToProtobuf", "./api/v1alpha1/"),
-    ("FuzzLeaseGetExporterSelector", "./api/v1alpha1/"),
-    ("FuzzLeaseListToProtobuf", "./api/v1alpha1/"),
-    ("FuzzExporterUsernames", "./api/v1alpha1/"),
-    ("FuzzExporterToProtobuf", "./api/v1alpha1/"),
-    ("FuzzExporterListToProtobuf", "./api/v1alpha1/"),
-    ("FuzzClientUsernames", "./api/v1alpha1/"),
-    ("FuzzNormalizeOIDCUsername", "./internal/authorization/"),
-    ("FuzzStripOIDCPrefix", "./internal/authorization/"),
-    ("FuzzNormalizeName", "./internal/authorization/"),
-    ("FuzzBearerTokenExtraction", "./internal/authentication/"),
-    ("FuzzMatchLabels", "./internal/service/"),
-    ("FuzzLoadGrpcConfiguration", "./internal/config/"),
-    ("FuzzParseDuration", "./internal/config/"),
-    ("FuzzParseUnparseExporterIdentifier", "./internal/service/utils/"),
-    ("FuzzParseUnparseLeaseIdentifier", "./internal/service/utils/"),
-    ("FuzzParseUnparseObjectIdentifier", "./internal/service/utils/"),
-    ("FuzzParseNamespaceIdentifier", "./internal/service/utils/"),
-    ("FuzzParseExporterIdentifierRobust", "./internal/service/utils/"),
-    ("FuzzParseLeaseIdentifierRobust", "./internal/service/utils/"),
-    ("FuzzParseClientIdentifier", "./internal/service/utils/"),
-    ("FuzzValidateLeaseTarget", "./internal/service/client/v1/"),
-]
+_FUZZ_FUNC_RE = re.compile(r"^func (Fuzz\w+)\(", re.MULTILINE)
+
+
+def _discover_go_fuzz_targets() -> list[tuple[str, str]]:
+    controller_dir = Path("controller")
+    if not controller_dir.is_dir():
+        return []
+    targets: list[tuple[str, str]] = []
+    for fuzz_file in sorted(controller_dir.rglob("*_fuzz_test.go")):
+        pkg = "./" + str(fuzz_file.parent.relative_to(controller_dir)) + "/"
+        for match in _FUZZ_FUNC_RE.finditer(fuzz_file.read_text()):
+            targets.append((match.group(1), pkg))
+    return sorted(targets)
 
 PYTEST_FILTER = "hypothesis_test or robustness_test"
 
@@ -394,9 +379,10 @@ def run_go_target(name: str, pkg: str, seconds: int) -> bool:
 
 
 def run_go_all(seconds: int) -> bool:
-    per_target = max(10, seconds // len(GO_FUZZ_TARGETS))
-    print(f"Go fuzz: {len(GO_FUZZ_TARGETS)} targets, {per_target}s each")
-    for name, pkg in GO_FUZZ_TARGETS:
+    targets = _discover_go_fuzz_targets()
+    per_target = max(10, seconds // len(targets))
+    print(f"Go fuzz: {len(targets)} targets, {per_target}s each")
+    for name, pkg in targets:
         if not run_go_target(name, pkg, per_target):
             return False
     return True
@@ -498,18 +484,20 @@ def main() -> int:
     parser.add_argument("--list-go-targets", action="store_true", help="print Go targets as JSON for CI matrix")
     args = parser.parse_args()
 
+    go_targets = _discover_go_fuzz_targets()
+
     if args.list_go_targets:
-        targets = [{"name": name, "pkg": pkg} for name, pkg in GO_FUZZ_TARGETS]
+        targets = [{"name": name, "pkg": pkg} for name, pkg in go_targets]
         print(json.dumps(targets))
         return 0
 
     total = parse_duration(args.time)
 
     if args.go_target:
-        match = [(n, p) for n, p in GO_FUZZ_TARGETS if n == args.go_target]
+        match = [(n, p) for n, p in go_targets if n == args.go_target]
         if not match:
             print(f"Unknown Go target: {args.go_target}", file=sys.stderr)
-            print(f"Available: {', '.join(n for n, _ in GO_FUZZ_TARGETS)}", file=sys.stderr)
+            print(f"Available: {', '.join(n for n, _ in go_targets)}", file=sys.stderr)
             return 1
         name, pkg = match[0]
         ok = run_go_target(name, pkg, total)
@@ -527,11 +515,11 @@ def main() -> int:
         replay_and_inject_go()
         return 0 if ok else 1
 
-    slots = 1 + len(GO_FUZZ_TARGETS)
+    slots = 1 + len(go_targets)
     per_slot = max(30, total // slots)
     print(f"Fuzz budget: {args.time} ({total}s) -- {slots} slots, {per_slot}s each")
     run_python(per_slot)
-    for name, pkg in GO_FUZZ_TARGETS:
+    for name, pkg in go_targets:
         if not run_go_target(name, pkg, per_slot):
             replay_and_inject_go()
             return 1

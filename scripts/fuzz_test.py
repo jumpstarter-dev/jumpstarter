@@ -10,6 +10,7 @@ import pytest
 from fuzz import (
     _clean_example_args,
     _discover_fuzz_test_files,
+    _discover_go_fuzz_targets,
     _discover_python_fuzz_dirs,
     _extract_falsifying_examples,
     _insert_example,
@@ -224,3 +225,35 @@ class TestDiscoverPythonFuzzDirs:
         dirs = _discover_python_fuzz_dirs()
         for d in dirs:
             assert (Path("python") / d).is_dir(), f"{d} does not exist"
+
+
+class TestDiscoverGoFuzzTargets:
+    @pytest.fixture(autouse=True)
+    def _project_root(self, monkeypatch):
+        monkeypatch.chdir(Path(__file__).resolve().parent.parent)
+
+    def test_discovers_known_targets(self):
+        targets = _discover_go_fuzz_targets()
+        names = [name for name, _ in targets]
+        assert "FuzzParseLabelSelector" in names
+        assert "FuzzBearerTokenExtraction" in names
+        assert "FuzzMatchLabels" in names
+
+    def test_returns_sorted_list(self):
+        targets = _discover_go_fuzz_targets()
+        assert targets == sorted(targets)
+
+    def test_all_names_start_with_fuzz(self):
+        targets = _discover_go_fuzz_targets()
+        for name, _ in targets:
+            assert name.startswith("Fuzz"), f"{name} does not start with Fuzz"
+
+    def test_all_packages_are_relative(self):
+        targets = _discover_go_fuzz_targets()
+        for _, pkg in targets:
+            assert pkg.startswith("./"), f"{pkg} is not a relative package path"
+            assert pkg.endswith("/"), f"{pkg} does not end with /"
+
+    def test_returns_empty_when_no_controller_dir(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        assert _discover_go_fuzz_targets() == []
