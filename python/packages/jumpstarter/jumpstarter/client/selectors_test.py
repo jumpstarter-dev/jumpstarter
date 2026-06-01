@@ -1,6 +1,85 @@
 """Tests for label selector matching."""
 
-from jumpstarter.client.selectors import selector_contains
+import pytest
+
+from jumpstarter.client.selectors import _label_satisfies_expression, selector_contains
+
+
+class TestLabelSatisfiesExpressionIn:
+    def test_value_present_in_list(self) -> None:
+        assert _label_satisfies_expression({"k": "a"}, "k", "in", ["a", "b"]) is True
+
+    def test_value_absent_from_list(self) -> None:
+        assert _label_satisfies_expression({"k": "c"}, "k", "in", ["a", "b"]) is False
+
+    def test_key_missing(self) -> None:
+        assert _label_satisfies_expression({}, "k", "in", ["a"]) is False
+
+    def test_empty_values_list(self) -> None:
+        assert _label_satisfies_expression({"k": "a"}, "k", "in", []) is False
+
+    def test_key_with_special_characters(self) -> None:
+        assert _label_satisfies_expression({"a/b.c_d-e": "v"}, "a/b.c_d-e", "in", ["v"]) is True
+
+
+class TestLabelSatisfiesExpressionExists:
+    def test_key_present(self) -> None:
+        assert _label_satisfies_expression({"k": "v"}, "k", "exists", []) is True
+
+    def test_key_missing(self) -> None:
+        assert _label_satisfies_expression({}, "k", "exists", []) is False
+
+    def test_key_with_empty_value(self) -> None:
+        assert _label_satisfies_expression({"k": ""}, "k", "exists", []) is True
+
+
+class TestLabelSatisfiesExpressionNotExists:
+    def test_key_missing(self) -> None:
+        assert _label_satisfies_expression({}, "k", "!exists", []) is True
+
+    def test_key_present(self) -> None:
+        assert _label_satisfies_expression({"k": "v"}, "k", "!exists", []) is False
+
+    def test_key_with_empty_value(self) -> None:
+        assert _label_satisfies_expression({"k": ""}, "k", "!exists", []) is False
+
+
+class TestLabelSatisfiesExpressionNotEqual:
+    def test_value_differs(self) -> None:
+        assert _label_satisfies_expression({"k": "a"}, "k", "!=", ["b"]) is True
+
+    def test_value_matches(self) -> None:
+        assert _label_satisfies_expression({"k": "a"}, "k", "!=", ["a"]) is False
+
+    def test_key_missing(self) -> None:
+        assert _label_satisfies_expression({}, "k", "!=", ["a"]) is False
+
+    def test_empty_values_list(self) -> None:
+        assert _label_satisfies_expression({"k": "a"}, "k", "!=", []) is True
+
+
+class TestLabelSatisfiesExpressionNotin:
+    def test_value_absent_from_list(self) -> None:
+        assert _label_satisfies_expression({"k": "c"}, "k", "notin", ["a", "b"]) is True
+
+    def test_value_present_in_list(self) -> None:
+        assert _label_satisfies_expression({"k": "a"}, "k", "notin", ["a", "b"]) is False
+
+    def test_key_missing(self) -> None:
+        assert _label_satisfies_expression({}, "k", "notin", ["a"]) is False
+
+    def test_empty_values_list(self) -> None:
+        assert _label_satisfies_expression({"k": "a"}, "k", "notin", []) is True
+
+
+class TestLabelSatisfiesExpressionUnknownOperator:
+    def test_unknown_operator_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="unknown label selector operator"):
+            _label_satisfies_expression({"k": "v"}, "k", "bogus", ["v"])
+
+    def test_empty_operator_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="unknown label selector operator"):
+            _label_satisfies_expression({"k": "v"}, "k", "", ["v"])
 
 
 class TestSelectorContains:
@@ -29,7 +108,10 @@ class TestSelectorContains:
 
     def test_filter_not_exists(self):
         assert selector_contains("board=rpi,!experimental", "!experimental") is True
-        assert selector_contains("board=rpi", "!experimental") is False
+        assert selector_contains("board=rpi", "!experimental") is True
+
+    def test_filter_not_exists_fails_when_key_present(self):
+        assert selector_contains("experimental=true", "!experimental") is False
 
     def test_empty_filter_matches_all(self):
         assert selector_contains("board=rpi,firmware in (v2, v3)", "") is True
