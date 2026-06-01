@@ -2086,6 +2086,7 @@ dev = [
     { name = "cryptography", version = "44.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "cryptography", version = "45.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "hypothesis" },
+    { name = "jsonschema" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power" },
@@ -2114,6 +2115,7 @@ requires-dist = [
 dev = [
     { name = "cryptography", specifier = ">=43.0.3" },
     { name = "hypothesis", specifier = ">=6.127.2" },
+    { name = "jsonschema", specifier = ">=4.0.0" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
