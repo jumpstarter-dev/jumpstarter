@@ -67,9 +67,7 @@ def extract_match_labels_filter(selector: str | None) -> str | None:
     return ",".join(f"{k}={v}" for k, v in match_labels.items())
 
 
-def _label_satisfies_expression(
-    sel_labels: dict[str, str], key: str, operator: str, values: list[str]
-) -> bool:
+def _label_satisfies_expression(sel_labels: dict[str, str], key: str, operator: str, values: list[str]) -> bool:
     if key not in sel_labels:
         return False
     label_value = sel_labels[key]
@@ -106,10 +104,7 @@ def selector_contains(selector: str, requirements: str) -> bool:
     # All required matchExpressions must be satisfied by selector's
     # matchExpressions or matchLabels
     for r_key, r_op, r_vals in req_exprs:
-        found = any(
-            s_key == r_key and s_op == r_op and set(s_vals) == set(r_vals)
-            for s_key, s_op, s_vals in sel_exprs
-        )
+        found = any(s_key == r_key and s_op == r_op and set(s_vals) == set(r_vals) for s_key, s_op, s_vals in sel_exprs)
         if not found:
             found = _label_satisfies_expression(sel_labels, r_key, r_op, r_vals)
         if not found:
