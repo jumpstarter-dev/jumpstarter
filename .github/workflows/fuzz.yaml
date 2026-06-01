@@ -17,16 +17,9 @@ on:
       fuzz_time:
         description: "Fuzz duration per job (e.g. 30m, 2h, 6h)"
         default: "30m"
-  pull_request:
-    paths:
-      - "python/**"
-      - "controller/**"
-      - "protocol/**"
-      - "scripts/fuzz.py"
-      - ".github/workflows/fuzz.yaml"
 
 concurrency:
-  group: fuzz-${{ github.ref }}
+  group: fuzz-main
   cancel-in-progress: true
 
 permissions:
@@ -59,8 +52,6 @@ jobs:
               exit 1
             fi
             TIME_VAL="$FUZZ_TIME_INPUT"
-          else
-            TIME_VAL="5m"
           fi
           echo "time=$TIME_VAL" >> "$GITHUB_OUTPUT"
           TOTAL_SECONDS=0
