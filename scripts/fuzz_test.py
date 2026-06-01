@@ -124,6 +124,16 @@ class TestExtractFalsifyingExamples:
         result = _extract_falsifying_examples(output)
         assert result == [("test_x", "val=99")]
 
+    def test_closing_paren_in_string_value(self):
+        output = "Falsifying example: test_foo(value='a(b)c')\n"
+        result = _extract_falsifying_examples(output)
+        assert result == [("test_foo", "value='a(b)c'")]
+
+    def test_trailing_whitespace_after_closing_paren(self):
+        output = "Falsifying example: test_bar(x=1)  \n"
+        result = _extract_falsifying_examples(output)
+        assert result == [("test_bar", "x=1")]
+
 
 class TestParseDuration:
     def test_minutes_only(self):
@@ -159,6 +169,10 @@ class TestParseDuration:
     def test_malformed_trailing_text_raises_argument_type_error(self):
         with pytest.raises(argparse.ArgumentTypeError):
             parse_duration("30mxyz")
+
+    def test_trailing_bare_number_after_unit_raises(self):
+        with pytest.raises(argparse.ArgumentTypeError, match="ambiguous"):
+            parse_duration("5m30")
 
     def test_zero_duration_raises_argument_type_error(self):
         with pytest.raises(argparse.ArgumentTypeError, match="must be positive"):

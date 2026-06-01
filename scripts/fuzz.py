@@ -68,8 +68,10 @@ def _discover_python_fuzz_dirs() -> list[str]:
 def parse_duration(value: str) -> int:
     total = 0
     rest = value.strip()
+    has_unit = False
     for suffix, multiplier in [("h", 3600), ("m", 60), ("s", 1)]:
         if suffix in rest:
+            has_unit = True
             parts = rest.split(suffix, 1)
             try:
                 total += int(parts[0]) * multiplier
@@ -79,6 +81,10 @@ def parse_duration(value: str) -> int:
                 )
             rest = parts[1]
     if rest.strip():
+        if has_unit:
+            raise argparse.ArgumentTypeError(
+                f"invalid duration: {value!r} (trailing bare number after unit suffix is ambiguous)"
+            )
         try:
             total += int(rest)
         except ValueError:
@@ -342,14 +348,17 @@ def _clean_example_args(raw_args: str) -> str:
 def _extract_falsifying_examples(output: str) -> list[tuple[str, str]]:
     stripped = re.sub(r"^[ \t]*E {2,}", "", output, flags=re.MULTILINE)
     example_re = re.compile(
-        r"Falsifying example: (\w+)\((.*?)\)$",
+        r"Falsifying example: (\w+)\((.*?)\)\s*$",
         re.DOTALL | re.MULTILINE,
     )
     seen = set()
     results = []
     for m in example_re.finditer(stripped):
         func_name = m.group(1)
-        cleaned = _clean_example_args(m.group(2))
+        raw_args = m.group(2)
+        cleaned = _clean_example_args(raw_args)
+        if not cleaned:
+            continue
         key = (func_name, cleaned)
         if key not in seen:
             seen.add(key)
