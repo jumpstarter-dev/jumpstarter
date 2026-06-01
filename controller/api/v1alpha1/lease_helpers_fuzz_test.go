@@ -264,7 +264,13 @@ func FuzzLeaseGetExporterSelector(f *testing.F) {
 			},
 		}
 
-		_, _ = lease.GetExporterSelector()
+		sel, err := lease.GetExporterSelector()
+		if err != nil {
+			return
+		}
+		if sel == nil {
+			t.Error("GetExporterSelector returned nil selector without error")
+		}
 	})
 }
 
