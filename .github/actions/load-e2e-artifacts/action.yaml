@@ -1,0 +1,36 @@
+name: Load e2e artifacts
+description: Download and load prebuilt controller/operator images and Python wheels for e2e tests
+
+inputs:
+  arch:
+    description: Architecture suffix for container image artifacts (amd64 or arm64)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Download controller image
+      uses: actions/download-artifact@v4
+      with:
+        name: controller-image-${{ inputs.arch }}
+        path: /tmp/artifacts
+
+    - name: Download operator image
+      uses: actions/download-artifact@v4
+      with:
+        name: operator-image-${{ inputs.arch }}
+        path: /tmp/artifacts
+
+    - name: Download python wheels
+      uses: actions/download-artifact@v4
+      with:
+        name: python-wheels
+        path: /tmp/python-wheels
+
+    - name: Load container images and operator manifest
+      shell: bash
+      run: |
+        docker load < /tmp/artifacts/controller-image.tar
+        docker load < /tmp/artifacts/operator-image.tar
+        mkdir -p controller/deploy/operator/dist
+        cp /tmp/artifacts/operator-install.yaml controller/deploy/operator/dist/install.yaml

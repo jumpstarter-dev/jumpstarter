@@ -193,30 +193,10 @@ jobs:
         with:
           go-version: "1.24"
 
-      - name: Download controller image
-        uses: actions/download-artifact@v4
+      - name: Load e2e artifacts
+        uses: ./.github/actions/load-e2e-artifacts
         with:
-          name: controller-image-${{ matrix.arch }}
-          path: /tmp/artifacts
-
-      - name: Download operator image
-        uses: actions/download-artifact@v4
-        with:
-          name: operator-image-${{ matrix.arch }}
-          path: /tmp/artifacts
-
-      - name: Download python wheels
-        uses: actions/download-artifact@v4
-        with:
-          name: python-wheels
-          path: /tmp/python-wheels
-
-      - name: Load container images and operator manifest
-        run: |
-          docker load < /tmp/artifacts/controller-image.tar
-          docker load < /tmp/artifacts/operator-image.tar
-          mkdir -p controller/deploy/operator/dist
-          cp /tmp/artifacts/operator-install.yaml controller/deploy/operator/dist/install.yaml
+          arch: ${{ matrix.arch }}
 
       - name: Install nftables and dnsmasq for dut-network E2E
         run: |
@@ -291,30 +271,10 @@ jobs:
         with:
           go-version: "1.24"
 
-      - name: Download controller image
-        uses: actions/download-artifact@v4
+      - name: Load e2e artifacts
+        uses: ./.github/actions/load-e2e-artifacts
         with:
-          name: controller-image-amd64
-          path: /tmp/artifacts
-
-      - name: Download operator image
-        uses: actions/download-artifact@v4
-        with:
-          name: operator-image-amd64
-          path: /tmp/artifacts
-
-      - name: Download python wheels
-        uses: actions/download-artifact@v4
-        with:
-          name: python-wheels
-          path: /tmp/python-wheels
-
-      - name: Load container images and operator manifest
-        run: |
-          docker load < /tmp/artifacts/controller-image.tar
-          docker load < /tmp/artifacts/operator-image.tar
-          mkdir -p controller/deploy/operator/dist
-          cp /tmp/artifacts/operator-install.yaml controller/deploy/operator/dist/install.yaml
+          arch: amd64
 
       - name: Setup compat environment (old client v0.7.4)
         run: make e2e-compat-setup COMPAT_SCENARIO=old-client
