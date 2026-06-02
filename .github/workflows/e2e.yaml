@@ -242,33 +242,11 @@ jobs:
         env:
           CI: true
 
-      - name: Collect e2e logs
+      - name: Collect and upload e2e logs
         if: always()
-        run: |
-          mkdir -p /tmp/e2e-logs
-          NS=jumpstarter-lab
-          kubectl -n "$NS" logs -l component=controller --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 \
-            || kubectl -n "$NS" logs -l control-plane=controller-manager --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 \
-            || true
-          kubectl -n "$NS" logs -l component=controller --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 \
-            || kubectl -n "$NS" logs -l control-plane=controller-manager --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 \
-            || true
-          kubectl -n "$NS" logs -l component=router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 \
-            || kubectl -n "$NS" logs -l control-plane=controller-router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 \
-            || true
-          kubectl -n "$NS" logs -l component=router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 \
-            || kubectl -n "$NS" logs -l control-plane=controller-router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 \
-            || true
-          kubectl -n "$NS" get pods -o wide > /tmp/e2e-logs/pods.txt 2>&1 || true
-          kubectl -n "$NS" describe pods > /tmp/e2e-logs/pods-describe.txt 2>&1 || true
-
-      - name: Upload e2e logs
-        if: always()
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/collect-e2e-logs
         with:
-          name: e2e-logs-${{ matrix.arch }}
-          path: /tmp/e2e-logs/
-          retention-days: 7
+          artifact-name: e2e-logs-${{ matrix.arch }}
 
   # ============================================================================
   # Compatibility tests: cross-version interop between controller and client/exporter
@@ -302,33 +280,11 @@ jobs:
         env:
           CI: true
 
-      - name: Collect e2e logs
+      - name: Collect and upload e2e logs
         if: always()
-        run: |
-          mkdir -p /tmp/e2e-logs
-          NS=jumpstarter-lab
-          kubectl -n "$NS" logs -l component=controller --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 \
-            || kubectl -n "$NS" logs -l control-plane=controller-manager --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 \
-            || true
-          kubectl -n "$NS" logs -l component=controller --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 \
-            || kubectl -n "$NS" logs -l control-plane=controller-manager --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 \
-            || true
-          kubectl -n "$NS" logs -l component=router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 \
-            || kubectl -n "$NS" logs -l control-plane=controller-router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 \
-            || true
-          kubectl -n "$NS" logs -l component=router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 \
-            || kubectl -n "$NS" logs -l control-plane=controller-router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 \
-            || true
-          kubectl -n "$NS" get pods -o wide > /tmp/e2e-logs/pods.txt 2>&1 || true
-          kubectl -n "$NS" describe pods > /tmp/e2e-logs/pods-describe.txt 2>&1 || true
-
-      - name: Upload e2e logs
-        if: always()
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/collect-e2e-logs
         with:
-          name: e2e-logs-compat-old-controller
-          path: /tmp/e2e-logs/
-          retention-days: 7
+          artifact-name: e2e-logs-compat-old-controller
 
   e2e-compat-old-client:
     needs: [changes, build-controller-image, build-operator-image, build-python-wheels]
@@ -386,30 +342,8 @@ jobs:
         env:
           CI: true
 
-      - name: Collect e2e logs
+      - name: Collect and upload e2e logs
         if: always()
-        run: |
-          mkdir -p /tmp/e2e-logs
-          NS=jumpstarter-lab
-          kubectl -n "$NS" logs -l component=controller --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 \
-            || kubectl -n "$NS" logs -l control-plane=controller-manager --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 \
-            || true
-          kubectl -n "$NS" logs -l component=controller --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 \
-            || kubectl -n "$NS" logs -l control-plane=controller-manager --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 \
-            || true
-          kubectl -n "$NS" logs -l component=router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 \
-            || kubectl -n "$NS" logs -l control-plane=controller-router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 \
-            || true
-          kubectl -n "$NS" logs -l component=router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 \
-            || kubectl -n "$NS" logs -l control-plane=controller-router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 \
-            || true
-          kubectl -n "$NS" get pods -o wide > /tmp/e2e-logs/pods.txt 2>&1 || true
-          kubectl -n "$NS" describe pods > /tmp/e2e-logs/pods-describe.txt 2>&1 || true
-
-      - name: Upload e2e logs
-        if: always()
-        uses: actions/upload-artifact@v4
+        uses: ./.github/actions/collect-e2e-logs
         with:
-          name: e2e-logs-compat-old-client
-          path: /tmp/e2e-logs/
-          retention-days: 7
+          artifact-name: e2e-logs-compat-old-client
