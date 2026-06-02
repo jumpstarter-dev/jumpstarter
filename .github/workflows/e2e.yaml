@@ -242,6 +242,23 @@ jobs:
         env:
           CI: true
 
+      - name: Collect e2e logs
+        if: always()
+        run: |
+          mkdir -p /tmp/e2e-logs
+          kubectl -n jumpstarter-lab logs -l component=controller --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 || true
+          kubectl -n jumpstarter-lab logs -l component=router --tail=-1 > /tmp/e2e-logs/router.log 2>&1 || true
+          kubectl -n jumpstarter-lab get pods -o wide > /tmp/e2e-logs/pods.txt 2>&1 || true
+          kubectl -n jumpstarter-lab describe pods > /tmp/e2e-logs/pods-describe.txt 2>&1 || true
+
+      - name: Upload e2e logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs-${{ matrix.arch }}
+          path: /tmp/e2e-logs/
+          retention-days: 7
+
   # ============================================================================
   # Compatibility tests: cross-version interop between controller and client/exporter
   # ============================================================================
@@ -273,6 +290,23 @@ jobs:
         run: make e2e-compat-run COMPAT_TEST=old-controller
         env:
           CI: true
+
+      - name: Collect e2e logs
+        if: always()
+        run: |
+          mkdir -p /tmp/e2e-logs
+          kubectl -n jumpstarter-lab logs -l component=controller --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 || true
+          kubectl -n jumpstarter-lab logs -l component=router --tail=-1 > /tmp/e2e-logs/router.log 2>&1 || true
+          kubectl -n jumpstarter-lab get pods -o wide > /tmp/e2e-logs/pods.txt 2>&1 || true
+          kubectl -n jumpstarter-lab describe pods > /tmp/e2e-logs/pods-describe.txt 2>&1 || true
+
+      - name: Upload e2e logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs-compat-old-controller
+          path: /tmp/e2e-logs/
+          retention-days: 7
 
   e2e-compat-old-client:
     needs: [changes, build-controller-image, build-operator-image, build-python-wheels]
@@ -329,3 +363,20 @@ jobs:
         run: make e2e-compat-run COMPAT_TEST=old-client
         env:
           CI: true
+
+      - name: Collect e2e logs
+        if: always()
+        run: |
+          mkdir -p /tmp/e2e-logs
+          kubectl -n jumpstarter-lab logs -l component=controller --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 || true
+          kubectl -n jumpstarter-lab logs -l component=router --tail=-1 > /tmp/e2e-logs/router.log 2>&1 || true
+          kubectl -n jumpstarter-lab get pods -o wide > /tmp/e2e-logs/pods.txt 2>&1 || true
+          kubectl -n jumpstarter-lab describe pods > /tmp/e2e-logs/pods-describe.txt 2>&1 || true
+
+      - name: Upload e2e logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs-compat-old-client
+          path: /tmp/e2e-logs/
+          retention-days: 7
