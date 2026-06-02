@@ -18,7 +18,7 @@ runs:
   using: composite
   steps:
     - name: Collect e2e logs
-      if: always()
+      if: failure()
       shell: bash
       run: |
         mkdir -p /tmp/e2e-logs
@@ -47,7 +47,7 @@ runs:
         fi
 
     - name: Upload e2e logs
-      if: always()
+      if: failure()
       uses: actions/upload-artifact@v4
       with:
         name: ${{ inputs.artifact-name }}
