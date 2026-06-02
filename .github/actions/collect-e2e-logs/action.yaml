@@ -38,8 +38,10 @@ runs:
         kubectl -n "$NS" get pods -o wide > /tmp/e2e-logs/pods.txt 2>&1 || true
         kubectl -n "$NS" describe pods > /tmp/e2e-logs/pods-describe.txt 2>&1 || true
         EXPORTER_LOG_DIR="${E2E_EXPORTER_LOG_DIR:-/tmp/e2e-logs/exporters}"
-        if [ -d "$EXPORTER_LOG_DIR" ]; then
+        if [ -d "$EXPORTER_LOG_DIR" ] && [ "$EXPORTER_LOG_DIR" != "/tmp/e2e-logs/exporters" ]; then
           cp -r "$EXPORTER_LOG_DIR" /tmp/e2e-logs/exporters 2>/dev/null || true
+        fi
+        if [ -d /tmp/e2e-logs/exporters ]; then
           echo "Exporter logs collected:"
           ls -la /tmp/e2e-logs/exporters/
         fi
