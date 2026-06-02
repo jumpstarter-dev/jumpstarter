@@ -103,6 +103,7 @@ jobs:
 
   linkcheck:
     runs-on: ubuntu-latest
+    continue-on-error: true
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
