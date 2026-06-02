@@ -620,15 +620,15 @@ func DumpControllerLogs(maxLines int) {
 	tail := strconv.Itoa(maxLines)
 
 	GinkgoWriter.Println("\n--- Controller logs ---")
-	out, err := Kubectl("-n", ns, "logs", "-l", "component=controller", "--tail="+tail)
-	if err != nil {
+	out, _ := Kubectl("-n", ns, "logs", "-l", "component=controller", "--tail="+tail)
+	if strings.TrimSpace(out) == "" {
 		out, _ = Kubectl("-n", ns, "logs", "-l", "control-plane=controller-manager", "--tail="+tail)
 	}
 	GinkgoWriter.Println(out)
 
 	GinkgoWriter.Println("\n--- Router logs ---")
-	out, err = Kubectl("-n", ns, "logs", "-l", "component=router", "--tail="+tail)
-	if err != nil {
+	out, _ = Kubectl("-n", ns, "logs", "-l", "component=router", "--tail="+tail)
+	if strings.TrimSpace(out) == "" {
 		out, _ = Kubectl("-n", ns, "logs", "-l", "control-plane=controller-router", "--tail="+tail)
 	}
 	GinkgoWriter.Println(out)

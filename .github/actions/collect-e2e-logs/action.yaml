@@ -23,18 +23,18 @@ runs:
       run: |
         mkdir -p /tmp/e2e-logs
         NS=${{ inputs.namespace }}
-        kubectl -n "$NS" logs -l component=controller --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 \
-          || kubectl -n "$NS" logs -l control-plane=controller-manager --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 \
-          || true
-        kubectl -n "$NS" logs -l component=controller --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 \
-          || kubectl -n "$NS" logs -l control-plane=controller-manager --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 \
-          || true
-        kubectl -n "$NS" logs -l component=router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 \
-          || kubectl -n "$NS" logs -l control-plane=controller-router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 \
-          || true
-        kubectl -n "$NS" logs -l component=router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 \
-          || kubectl -n "$NS" logs -l control-plane=controller-router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 \
-          || true
+        collect_logs() {
+          local outfile="$1" primary="$2" fallback="$3"
+          shift 3
+          kubectl -n "$NS" logs -l "$primary" "$@" > "$outfile" 2>&1 || true
+          if [ ! -s "$outfile" ]; then
+            kubectl -n "$NS" logs -l "$fallback" "$@" > "$outfile" 2>&1 || true
+          fi
+        }
+        collect_logs /tmp/e2e-logs/controller.log component=controller control-plane=controller-manager --all-containers --prefix --tail=-1
+        collect_logs /tmp/e2e-logs/controller-previous.log component=controller control-plane=controller-manager --all-containers --prefix --previous
+        collect_logs /tmp/e2e-logs/router.log component=router control-plane=controller-router --all-containers --prefix --tail=-1
+        collect_logs /tmp/e2e-logs/router-previous.log component=router control-plane=controller-router --all-containers --prefix --previous
         kubectl -n "$NS" get pods -o wide > /tmp/e2e-logs/pods.txt 2>&1 || true
         kubectl -n "$NS" describe pods > /tmp/e2e-logs/pods-describe.txt 2>&1 || true
         EXPORTER_LOG_DIR="${E2E_EXPORTER_LOG_DIR:-/tmp/e2e-logs/exporters}"
