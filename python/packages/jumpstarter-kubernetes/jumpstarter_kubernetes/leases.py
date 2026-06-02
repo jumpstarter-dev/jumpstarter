@@ -40,7 +40,7 @@ class V1Alpha1Lease(JsonBaseModel):
     def from_dict(dict: dict):
         spec = dict["spec"]
         if not isinstance(spec, Mapping):
-            raise TypeError(f"spec must be a dict, got {type(spec).__name__}")
+            raise TypeError(f"spec must be a dict, got {type(spec).__name__}: {repr(spec)}")
         selector_data = spec.get("selector", {})
         return V1Alpha1Lease(
             api_version=dict["apiVersion"],
