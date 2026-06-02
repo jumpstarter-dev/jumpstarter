@@ -243,7 +243,7 @@ jobs:
           CI: true
 
       - name: Collect and upload e2e logs
-        if: failure()
+        if: always()
         uses: ./.github/actions/collect-e2e-logs
         with:
           artifact-name: e2e-logs-${{ matrix.arch }}
@@ -281,7 +281,7 @@ jobs:
           CI: true
 
       - name: Collect and upload e2e logs
-        if: failure()
+        if: always()
         uses: ./.github/actions/collect-e2e-logs
         with:
           artifact-name: e2e-logs-compat-old-controller
@@ -343,7 +343,7 @@ jobs:
           CI: true
 
       - name: Collect and upload e2e logs
-        if: failure()
+        if: always()
         uses: ./.github/actions/collect-e2e-logs
         with:
           artifact-name: e2e-logs-compat-old-client
