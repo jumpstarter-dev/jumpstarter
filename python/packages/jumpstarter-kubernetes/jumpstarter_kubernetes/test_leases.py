@@ -180,6 +180,6 @@ def test_from_dict_raises_type_error_when_spec_is_a_boolean():
         V1Alpha1Lease.from_dict({"spec": True})
 
 
-def test_from_dict_does_not_raise_type_error_when_spec_is_an_empty_dict():
+def test_from_dict_with_empty_spec_raises_key_error_not_type_error():
     with pytest.raises(KeyError):
         V1Alpha1Lease.from_dict({"spec": {}})
