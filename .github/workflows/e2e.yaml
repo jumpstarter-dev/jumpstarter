@@ -246,12 +246,21 @@ jobs:
         if: always()
         run: |
           mkdir -p /tmp/e2e-logs
-          kubectl -n jumpstarter-lab logs -l component=controller --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 || true
-          kubectl -n jumpstarter-lab logs -l component=controller --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 || true
-          kubectl -n jumpstarter-lab logs -l component=router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 || true
-          kubectl -n jumpstarter-lab logs -l component=router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 || true
-          kubectl -n jumpstarter-lab get pods -o wide > /tmp/e2e-logs/pods.txt 2>&1 || true
-          kubectl -n jumpstarter-lab describe pods > /tmp/e2e-logs/pods-describe.txt 2>&1 || true
+          NS=jumpstarter-lab
+          kubectl -n "$NS" logs -l component=controller --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 \
+            || kubectl -n "$NS" logs -l control-plane=controller-manager --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 \
+            || true
+          kubectl -n "$NS" logs -l component=controller --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 \
+            || kubectl -n "$NS" logs -l control-plane=controller-manager --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 \
+            || true
+          kubectl -n "$NS" logs -l component=router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 \
+            || kubectl -n "$NS" logs -l control-plane=controller-router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 \
+            || true
+          kubectl -n "$NS" logs -l component=router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 \
+            || kubectl -n "$NS" logs -l control-plane=controller-router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 \
+            || true
+          kubectl -n "$NS" get pods -o wide > /tmp/e2e-logs/pods.txt 2>&1 || true
+          kubectl -n "$NS" describe pods > /tmp/e2e-logs/pods-describe.txt 2>&1 || true
 
       - name: Upload e2e logs
         if: always()
@@ -297,12 +306,21 @@ jobs:
         if: always()
         run: |
           mkdir -p /tmp/e2e-logs
-          kubectl -n jumpstarter-lab logs -l component=controller --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 || true
-          kubectl -n jumpstarter-lab logs -l component=controller --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 || true
-          kubectl -n jumpstarter-lab logs -l component=router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 || true
-          kubectl -n jumpstarter-lab logs -l component=router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 || true
-          kubectl -n jumpstarter-lab get pods -o wide > /tmp/e2e-logs/pods.txt 2>&1 || true
-          kubectl -n jumpstarter-lab describe pods > /tmp/e2e-logs/pods-describe.txt 2>&1 || true
+          NS=jumpstarter-lab
+          kubectl -n "$NS" logs -l component=controller --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 \
+            || kubectl -n "$NS" logs -l control-plane=controller-manager --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 \
+            || true
+          kubectl -n "$NS" logs -l component=controller --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 \
+            || kubectl -n "$NS" logs -l control-plane=controller-manager --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 \
+            || true
+          kubectl -n "$NS" logs -l component=router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 \
+            || kubectl -n "$NS" logs -l control-plane=controller-router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 \
+            || true
+          kubectl -n "$NS" logs -l component=router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 \
+            || kubectl -n "$NS" logs -l control-plane=controller-router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 \
+            || true
+          kubectl -n "$NS" get pods -o wide > /tmp/e2e-logs/pods.txt 2>&1 || true
+          kubectl -n "$NS" describe pods > /tmp/e2e-logs/pods-describe.txt 2>&1 || true
 
       - name: Upload e2e logs
         if: always()
@@ -372,12 +390,21 @@ jobs:
         if: always()
         run: |
           mkdir -p /tmp/e2e-logs
-          kubectl -n jumpstarter-lab logs -l component=controller --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 || true
-          kubectl -n jumpstarter-lab logs -l component=controller --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 || true
-          kubectl -n jumpstarter-lab logs -l component=router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 || true
-          kubectl -n jumpstarter-lab logs -l component=router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 || true
-          kubectl -n jumpstarter-lab get pods -o wide > /tmp/e2e-logs/pods.txt 2>&1 || true
-          kubectl -n jumpstarter-lab describe pods > /tmp/e2e-logs/pods-describe.txt 2>&1 || true
+          NS=jumpstarter-lab
+          kubectl -n "$NS" logs -l component=controller --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 \
+            || kubectl -n "$NS" logs -l control-plane=controller-manager --all-containers --prefix --tail=-1 > /tmp/e2e-logs/controller.log 2>&1 \
+            || true
+          kubectl -n "$NS" logs -l component=controller --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 \
+            || kubectl -n "$NS" logs -l control-plane=controller-manager --all-containers --prefix --previous > /tmp/e2e-logs/controller-previous.log 2>&1 \
+            || true
+          kubectl -n "$NS" logs -l component=router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 \
+            || kubectl -n "$NS" logs -l control-plane=controller-router --all-containers --prefix --tail=-1 > /tmp/e2e-logs/router.log 2>&1 \
+            || true
+          kubectl -n "$NS" logs -l component=router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 \
+            || kubectl -n "$NS" logs -l control-plane=controller-router --all-containers --prefix --previous > /tmp/e2e-logs/router-previous.log 2>&1 \
+            || true
+          kubectl -n "$NS" get pods -o wide > /tmp/e2e-logs/pods.txt 2>&1 || true
+          kubectl -n "$NS" describe pods > /tmp/e2e-logs/pods-describe.txt 2>&1 || true
 
       - name: Upload e2e logs
         if: always()
