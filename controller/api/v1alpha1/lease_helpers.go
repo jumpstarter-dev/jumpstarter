@@ -409,4 +409,3 @@ func (l *Lease) Expire(ctx context.Context) {
 	l.Status.Ended = true
 	l.Status.EndTime = &metav1.Time{Time: time.Now()}
 }
-
