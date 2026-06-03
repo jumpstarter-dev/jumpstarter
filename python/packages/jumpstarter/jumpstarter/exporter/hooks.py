@@ -2,6 +2,7 @@
 
 import logging
 import os
+import select
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Literal
@@ -376,12 +377,32 @@ class HookExecutor:
                         # Drain any remaining data from the PTY buffer.
                         # On macOS, PTY output may still be in the kernel buffer
                         # after the subprocess exits and the stop flag is set.
+                        # Use select() with a timeout to poll for readability
+                        # instead of immediately breaking on BlockingIOError,
+                        # giving the macOS PTY kernel buffer time to deliver
+                        # remaining data.
                         # Bound the drain to prevent spinning indefinitely if a
                         # grandchild process holds the PTY slave fd open.
                         try:
                             drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
                             drained = 0
                             while drained < MAX_DRAIN_BYTES and time.monotonic() < drain_deadline:
+                                # Poll for readability with a short timeout.
+                                # This avoids the race where a non-blocking read
+                                # raises BlockingIOError because the macOS PTY
+                                # kernel buffer hasn't delivered the data yet.
+                                remaining = drain_deadline - time.monotonic()
+                                if remaining <= 0:
+                                    break
+                                timeout_s = min(remaining, 0.1)
+                                try:
+                                    readable, _, _ = select.select([parent_fd], [], [], timeout_s)
+                                except (ValueError, OSError):
+                                    # fd closed or invalid
+                                    break
+                                if not readable:
+                                    # Timed out with no data — drain is complete
+                                    break
                                 try:
                                     chunk = os.read(parent_fd, 4096)
                                     if not chunk:
