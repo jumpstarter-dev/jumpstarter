@@ -112,6 +112,58 @@ def test_opendal_tracking_methods(tmp_path, unused_tcp_port):
         client.stop()
 
 
+@pytest.mark.anyio
+async def test_http_server_close_releases_port(tmp_path, unused_tcp_port):
+    """Test that closing the HTTP server properly releases the port for reuse."""
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("hello")
+
+    # First server session
+    with serve(HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)) as client:
+        client.start()
+        url = client.get_url()
+        assert str(unused_tcp_port) in url
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{url}/test.txt") as response:
+                assert response.status == 200
+
+        client.stop()
+
+    # Second server session on the same port should not fail with "address already in use"
+    with serve(HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)) as client:
+        client.start()
+        url = client.get_url()
+        assert str(unused_tcp_port) in url
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{url}/test.txt") as response:
+                assert response.status == 200
+
+        client.stop()
+
+
+@pytest.mark.anyio
+async def test_http_server_port_zero(tmp_path):
+    """Test that using port 0 assigns an OS-chosen port."""
+    test_file = tmp_path / "test.txt"
+    test_file.write_text("hello")
+
+    with serve(HttpServer(root_dir=str(tmp_path), port=0)) as client:
+        client.start()
+        port = client.get_port()
+        assert isinstance(port, int), "Port should be an integer"
+        assert port > 0, "OS should assign a non-zero port"
+        url = client.get_url()
+        assert str(port) in url
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{url}/test.txt") as response:
+                assert response.status == 200
+
+        client.stop()
+
+
 def test_opendal_cleanup_on_close(tmp_path):
     """Test that OpenDAL driver can optionally remove created files on close."""
     from jumpstarter_driver_opendal.driver import Opendal
