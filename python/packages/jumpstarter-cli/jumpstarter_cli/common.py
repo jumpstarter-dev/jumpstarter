@@ -51,29 +51,25 @@ class DurationParamType(click.ParamType):
             seconds = parse_duration(value)
             if seconds is not None and isinstance(seconds, (int, float)):
                 return timedelta(seconds=seconds)
-        except (ValueError, TypeError, OverflowError):
+        except OverflowError:
+            self.fail(f"{value!r} exceeds the maximum allowed duration", param, ctx)
+        except (ValueError, TypeError):
             pass
 
         try:
             return TypeAdapter(timedelta).validate_python(value)
-        except (ValueError, ValidationError) as exc:
+        except (ValueError, ValidationError):
             self.fail(
                 f"{value!r} is not a valid duration (e.g., '30m', '3h30m', '1d', '1d3h40m', 'PT1H30M', '01:30:00')",
                 param,
                 ctx,
             )
-            raise exc
 
     def convert(self, value, param, ctx):
         if isinstance(value, timedelta):
             td = value
-        elif isinstance(value, int):
-            try:
-                td = timedelta(seconds=value)
-            except OverflowError:
-                self.fail(f"{value!r} exceeds the maximum allowed duration", param, ctx)
-        elif isinstance(value, str):
-            td = self._parse_string(value, param, ctx)
+        elif isinstance(value, (str, int)):
+            td = self._parse_string(str(value), param, ctx)
         else:
             self.fail(
                 f"{value!r} is not a valid duration (e.g., '30m', '3h30m', '1d', '1d3h40m')",

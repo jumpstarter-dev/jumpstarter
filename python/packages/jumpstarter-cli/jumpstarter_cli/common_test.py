@@ -104,6 +104,10 @@ class TestDurationParamType:
         with pytest.raises(click.BadParameter, match="exceeds the maximum allowed duration"):
             DURATION.convert("-86400000000000", None, None)
 
+    def test_large_pytimeparse_duration_raises_bad_parameter_not_overflow(self):
+        with pytest.raises(click.BadParameter, match="exceeds the maximum allowed duration"):
+            DURATION.convert("999999999d23h59m59.999999s", None, None)
+
     def test_unsupported_type_raises_click_exception(self):
         param_type = DurationParamType()
         with pytest.raises(click.BadParameter, match="is not a valid duration"):
