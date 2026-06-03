@@ -44,6 +44,7 @@ class DurationParamType(click.ParamType):
                 return timedelta(seconds=int_value)
             except OverflowError:
                 self.fail(f"{value!r} exceeds the maximum allowed duration", param, ctx)
+                raise  # satisfy ty: self.fail is NoReturn but ty cannot verify it
         except ValueError:
             pass
 
@@ -53,6 +54,7 @@ class DurationParamType(click.ParamType):
                 return timedelta(seconds=seconds)
         except OverflowError:
             self.fail(f"{value!r} exceeds the maximum allowed duration", param, ctx)
+            raise  # satisfy ty: self.fail is NoReturn but ty cannot verify it
         except (ValueError, TypeError):
             pass
 
@@ -64,6 +66,7 @@ class DurationParamType(click.ParamType):
                 param,
                 ctx,
             )
+            raise  # satisfy ty: self.fail is NoReturn but ty cannot verify it
 
     def convert(self, value, param, ctx):
         if isinstance(value, timedelta):
