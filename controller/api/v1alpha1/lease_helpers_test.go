@@ -235,6 +235,26 @@ var _ = Describe("ParseLabelSelector", func() {
 			Expect(selector.MatchExpressions[0].Operator).To(Equal(metav1.LabelSelectorOpNotIn))
 			Expect(selector.MatchExpressions[0].Values).To(ConsistOf("value1", "value2"))
 		})
+
+		It("should deduplicate NotIn values when the same key-value pair appears multiple times", func() {
+			selector, err := ParseLabelSelector("key!=value1,key!=value1")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(selector).NotTo(BeNil())
+			Expect(selector.MatchExpressions).To(HaveLen(1))
+			Expect(selector.MatchExpressions[0].Key).To(Equal("key"))
+			Expect(selector.MatchExpressions[0].Operator).To(Equal(metav1.LabelSelectorOpNotIn))
+			Expect(selector.MatchExpressions[0].Values).To(Equal([]string{"value1"}))
+		})
+
+		It("should deduplicate NotIn values with empty strings", func() {
+			selector, err := ParseLabelSelector("key!=,key!=")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(selector).NotTo(BeNil())
+			Expect(selector.MatchExpressions).To(HaveLen(1))
+			Expect(selector.MatchExpressions[0].Key).To(Equal("key"))
+			Expect(selector.MatchExpressions[0].Operator).To(Equal(metav1.LabelSelectorOpNotIn))
+			Expect(selector.MatchExpressions[0].Values).To(Equal([]string{""}))
+		})
 	})
 
 	Context("round-trip compatibility", func() {
@@ -263,6 +283,32 @@ var _ = Describe("ParseLabelSelector", func() {
 			}
 			// Should match because revision is v2, not v3
 			Expect(parsedSelector.Matches(testLabels2)).To(BeTrue())
+		})
+
+		It("should be stable across round-trip with duplicate NotEquals values", func() {
+			selectorStr := "key!=value1,key!=value1"
+			selector1, err := ParseLabelSelector(selectorStr)
+			Expect(err).NotTo(HaveOccurred())
+
+			formatted := metav1.FormatLabelSelector(selector1)
+			selector2, err := ParseLabelSelector(formatted)
+			Expect(err).NotTo(HaveOccurred())
+
+			formatted2 := metav1.FormatLabelSelector(selector2)
+			Expect(formatted2).To(Equal(formatted))
+		})
+
+		It("should be stable across round-trip with duplicate empty-value NotEquals", func() {
+			selectorStr := "key!=,key!="
+			selector1, err := ParseLabelSelector(selectorStr)
+			Expect(err).NotTo(HaveOccurred())
+
+			formatted := metav1.FormatLabelSelector(selector1)
+			selector2, err := ParseLabelSelector(formatted)
+			Expect(err).NotTo(HaveOccurred())
+
+			formatted2 := metav1.FormatLabelSelector(selector2)
+			Expect(formatted2).To(Equal(formatted))
 		})
 
 		It("should match labels correctly for != operator", func() {
