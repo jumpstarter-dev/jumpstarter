@@ -12,7 +12,7 @@
   ],
   "packageRules": [
     {
-      "description": "Group official GitHub Actions (actions/*)",
+      "description": "Group official GitHub Actions",
       "groupName": "github-actions-official",
       "matchManagers": [
         "github-actions"
@@ -22,7 +22,7 @@
       ]
     },
     {
-      "description": "Group Docker GitHub Actions (docker/*)",
+      "description": "Group Docker GitHub Actions",
       "groupName": "github-actions-docker",
       "matchManagers": [
         "github-actions"
@@ -32,7 +32,7 @@
       ]
     },
     {
-      "description": "Group Astral GitHub Actions (astral-sh/*)",
+      "description": "Group Astral GitHub Actions",
       "groupName": "github-actions-astral",
       "matchManagers": [
         "github-actions"
@@ -42,19 +42,35 @@
       ]
     },
     {
-      "description": "Group grpcio, grpcio-tools, and protobuf Python packages for protocol compatibility",
+      "description": "Group Python gRPC and protobuf packages",
       "groupName": "grpc-protobuf",
       "matchManagers": [
         "pep621"
       ],
       "matchPackageNames": [
         "grpcio",
-        "grpcio-tools",
+        "grpcio-reflection",
         "protobuf"
       ]
     },
     {
-      "description": "Group kubernetes and kubernetes-asyncio Python packages to keep sync and async clients aligned",
+      "description": "Group Go gRPC and protobuf modules",
+      "groupName": "grpc-protobuf-go",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "google.golang.org/grpc**",
+        "google.golang.org/protobuf**"
+      ],
+      "matchFileNames": [
+        "controller/go.mod",
+        "controller/deploy/operator/go.mod",
+        "e2e/test/go.mod"
+      ]
+    },
+    {
+      "description": "Group Python Kubernetes clients",
       "groupName": "kubernetes-python",
       "matchManagers": [
         "pep621"
@@ -65,7 +81,7 @@
       ]
     },
     {
-      "description": "Auto-merge patch updates for all dependencies",
+      "description": "Auto-merge patch updates",
       "matchUpdateTypes": [
         "patch"
       ],
@@ -73,7 +89,7 @@
       "automergeType": "pr"
     },
     {
-      "description": "Disable auto-merge for Docker base image updates",
+      "description": "Disable auto-merge for Docker base images",
       "matchManagers": [
         "dockerfile",
         "docker-compose"
@@ -81,7 +97,7 @@
       "automerge": false
     },
     {
-      "description": "Group Kubernetes, controller-runtime, and cert-manager dependencies across all Go modules",
+      "description": "Group Go Kubernetes and controller dependencies",
       "groupName": "kubernetes",
       "matchManagers": [
         "gomod"
@@ -99,7 +115,7 @@
       "automerge": false
     },
     {
-      "description": "Group Go version directive updates across all Go modules",
+      "description": "Group Go version directives",
       "groupName": "golang-version",
       "matchDepTypes": [
         "golang-version"

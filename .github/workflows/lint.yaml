@@ -21,6 +21,7 @@ jobs:
       controller: ${{ steps.filter.outputs.controller }}
       protocol: ${{ steps.filter.outputs.protocol }}
       python: ${{ steps.filter.outputs.python }}
+      renovate: ${{ steps.filter.outputs.renovate }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -35,6 +36,9 @@ jobs:
               - '.github/workflows/lint.yaml'
             python:
               - 'python/**'
+              - '.github/workflows/lint.yaml'
+            renovate:
+              - 'renovate.json'
               - '.github/workflows/lint.yaml'
 
   lint-go:
@@ -98,6 +102,15 @@ jobs:
       - name: Run ty
         working-directory: python
         run: make ty
+
+  validate-renovate:
+    needs: changes
+    if: needs.changes.outputs.renovate == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Renovate config
+        run: npx --yes --package renovate -- renovate-config-validator
 
   typos:
     runs-on: ubuntu-latest
