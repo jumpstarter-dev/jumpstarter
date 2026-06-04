@@ -213,3 +213,14 @@ class TestAutoMergePolicy:
         ]
         for r in patch_automerge:
             assert r.get("automergeType") == "pr", "automergeType must be pr"
+
+    def test_docker_images_not_automerged(self, package_rules):
+        docker_rules = [
+            r
+            for r in package_rules
+            if r.get("automerge") is False
+            and "docker" in json.dumps(r.get("matchManagers", [])).lower()
+        ]
+        assert len(docker_rules) > 0, (
+            "a rule must explicitly disable automerge for Docker image updates"
+        )

@@ -66,6 +66,14 @@
       ],
       "automerge": true,
       "automergeType": "pr"
+    },
+    {
+      "description": "Disable auto-merge for Docker base image updates",
+      "matchManagers": [
+        "dockerfile",
+        "docker-compose"
+      ],
+      "automerge": false
     }
   ]
 }
