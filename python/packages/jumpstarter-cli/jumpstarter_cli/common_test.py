@@ -109,8 +109,8 @@ class TestDurationParamType:
             DURATION.convert("999999999d23h59m59.999999s", None, None)
 
     def test_value_at_timedelta_max_seconds_succeeds(self):
-        td = DURATION.convert("86399999913600", None, None)
-        assert td == timedelta(days=999999999)
+        td = DURATION.convert("86399999999999", None, None)
+        assert td == timedelta(days=999999999, hours=23, minutes=59, seconds=59)
 
     def test_unsupported_type_raises_click_exception(self):
         param_type = DurationParamType()
