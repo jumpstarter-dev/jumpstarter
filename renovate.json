@@ -1,0 +1,83 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "timezone": "Etc/UTC",
+  "schedule": [
+    "before 5am on monday"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "packageRules": [
+    {
+      "description": "Group Kubernetes, controller-runtime, and cert-manager dependencies across all Go modules",
+      "groupName": "kubernetes",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackagePrefixes": [
+        "k8s.io/",
+        "sigs.k8s.io/controller-runtime",
+        "github.com/cert-manager/cert-manager"
+      ],
+      "matchFileNames": [
+        "controller/go.mod",
+        "controller/deploy/operator/go.mod",
+        "e2e/test/go.mod"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Group official GitHub Actions (actions/*)",
+      "groupName": "github-actions-official",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackagePrefixes": [
+        "actions/"
+      ]
+    },
+    {
+      "description": "Group Docker GitHub Actions (docker/*)",
+      "groupName": "github-actions-docker",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackagePrefixes": [
+        "docker/"
+      ]
+    },
+    {
+      "description": "Group Astral GitHub Actions (astral-sh/*)",
+      "groupName": "github-actions-astral",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackagePrefixes": [
+        "astral-sh/"
+      ]
+    },
+    {
+      "description": "Auto-merge patch updates for all dependencies",
+      "matchUpdateTypes": [
+        "patch"
+      ],
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "Do not auto-merge Kubernetes dependencies for minor or major updates",
+      "groupName": "kubernetes",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "major"
+      ],
+      "automerge": false
+    }
+  ]
+}
