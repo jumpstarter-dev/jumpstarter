@@ -61,7 +61,9 @@
       ],
       "matchPackageNames": [
         "google.golang.org/grpc**",
-        "google.golang.org/protobuf**"
+        "google.golang.org/protobuf**",
+        "google.golang.org/genproto**",
+        "github.com/grpc-ecosystem/**"
       ],
       "matchFileNames": [
         "controller/go.mod",
