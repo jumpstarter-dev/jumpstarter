@@ -28,6 +28,12 @@ class TestBaseConfiguration:
     def test_renovate_json_exists(self):
         assert RENOVATE_JSON.exists(), "renovate.json must exist at repository root"
 
+    def test_dependabot_yml_does_not_exist(self):
+        dependabot_yml = REPO_ROOT / ".github" / "dependabot.yml"
+        assert not dependabot_yml.exists(), (
+            "dependabot.yml must not coexist with renovate.json to avoid duplicate PRs"
+        )
+
     def test_valid_json(self):
         with open(RENOVATE_JSON) as f:
             data = json.load(f)
