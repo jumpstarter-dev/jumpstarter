@@ -84,6 +84,20 @@ class TestKubernetesGrouping:
             managers = r.get("matchManagers", [])
             assert "gomod" in managers, "kubernetes group must use gomod manager"
 
+    def test_kubernetes_group_covers_all_go_mod_files(self, kubernetes_rules):
+        expected_files = {
+            "controller/go.mod",
+            "controller/deploy/operator/go.mod",
+            "e2e/test/go.mod",
+        }
+        all_file_names = set()
+        for r in kubernetes_rules:
+            all_file_names.update(r.get("matchFileNames", []))
+        missing = expected_files - all_file_names
+        assert not missing, (
+            f"kubernetes group matchFileNames is missing: {missing}"
+        )
+
     def test_kubernetes_group_not_automerged_for_non_patch(self, package_rules):
         k8s_rules = [r for r in package_rules if r.get("groupName") == "kubernetes"]
         for r in k8s_rules:
