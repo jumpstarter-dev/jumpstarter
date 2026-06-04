@@ -108,6 +108,10 @@ class TestDurationParamType:
         with pytest.raises(click.BadParameter, match="exceeds the maximum allowed duration"):
             DURATION.convert("999999999d23h59m59.999999s", None, None)
 
+    def test_value_at_timedelta_max_seconds_succeeds(self):
+        td = DURATION.convert("86399999913600", None, None)
+        assert td == timedelta(days=999999999)
+
     def test_unsupported_type_raises_click_exception(self):
         param_type = DurationParamType()
         with pytest.raises(click.BadParameter, match="is not a valid duration"):
