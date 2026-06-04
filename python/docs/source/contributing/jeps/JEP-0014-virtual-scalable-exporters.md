@@ -22,7 +22,8 @@ This JEP proposes a Virtual Scalable Exporter subsystem for Jumpstarter that
 manages pools of virtual targets with configurable autoscaling. Each virtual
 target definition declares a minimum and maximum number of instances; the system
 maintains a warm pool of pre-spawned exporters ready for immediate lease
-fulfillment, and scales up or down based on demand. This enables low-latency
+fulfillment — avoiding the 10-60s cold-start latency of VM boot and exporter
+registration — and scales up or down based on demand. This enables low-latency
 lease acquisition, massive scalability, resource efficiency, and simplified
 orchestration of mixed physical/virtual test topologies — while allowing
 administrators to tune the trade-off between responsiveness and resource
@@ -63,10 +64,10 @@ configurable warm pool while autoscaling to meet demand.
   iterate quickly without waiting for scarce hardware.
 
 - **As a** platform engineer, **I want to** declare a virtual target pool with
-  `minInstances: 2, maxInstances: 20`, **so that** there are always warm
+  `minWarmInstances: 2, maxTotalInstances: 20`, **so that** there are always warm
   instances ready while the system scales up on demand and scales down when idle.
 
-- **As a** cost-conscious operator, **I want to** set `minInstances: 0` for
+- **As a** cost-conscious operator, **I want to** set `minWarmInstances: 0` for
   rarely-used target types, **so that** they consume no resources until actually
   requested, accepting a cold-start delay.
 
@@ -95,8 +96,8 @@ metadata:
   namespace: jumpstarter
 spec:
   # Scaling configuration (shared across all pool CRDs)
-  minInstances: 2        # Always keep 2 warm instances ready
-  maxInstances: 20       # Scale up to 20 under load
+  minWarmInstances: 2        # Always keep 2 warm instances ready
+  maxTotalInstances: 20       # Scale up to 20 under load
   
   # Node scheduling (shared across all pool CRDs, optional)
   nodeSelector:
@@ -146,8 +147,8 @@ metadata:
   name: pixel7-emulator
   namespace: jumpstarter
 spec:
-  minInstances: 0        # Fully on-demand (cold-start OK for this target)
-  maxInstances: 10
+  minWarmInstances: 0        # Fully on-demand (cold-start OK for this target)
+  maxTotalInstances: 10
   
   labels:
     device: pixel7
@@ -182,8 +183,8 @@ metadata:
   name: rd1ae-corellium
   namespace: jumpstarter
 spec:
-  minInstances: 1
-  maxInstances: 5
+  minWarmInstances: 1
+  maxTotalInstances: 5
   
   labels:
     board: rd1ae
@@ -214,8 +215,8 @@ driver config at instance creation time. Only fields that vary per instance (lik
 `device_name` using the `{{ .InstanceName }}` template variable) need to be
 specified explicitly in `exporterTemplate`.
 
-A pool with `minInstances: 0` consumes no resources until a lease is
-requested, accepting cold-start latency. A pool with `minInstances: 3`
+A pool with `minWarmInstances: 0` consumes no resources until a lease is
+requested, accepting cold-start latency. A pool with `minWarmInstances: 3`
 always has 3 ready-to-lease instances — leases are fulfilled instantly from
 the warm pool, and the controller scales up if more are needed.
 
@@ -240,7 +241,7 @@ as physical ones, differentiated only by labels.
 
 ### Architecture Overview
 
-```
+```text
                         ┌─────────────────────────┐
                         │  jumpstarter-controller │
                         │  (creates Leases,       │
@@ -291,7 +292,7 @@ Each pool controller watches two key resources to make scaling decisions:
 
 Together these inputs feed the scaling logic: if there are pending leases that
 match this pool and no available instances to serve them, scale up. If there are
-excess idle instances beyond `minInstances` for a sustained period, scale down.
+excess idle instances beyond `minWarmInstances` for a sustained period, scale down.
 
 **Per-Provider Deployments (single image by default):** All provider
 controllers are compiled into a single binary. Each Deployment in the cluster
@@ -350,10 +351,10 @@ service accounts, and Deployment lifecycle.
 **Scaling Logic:** Each pool controller monitors its instances and scales based
 on available (unleased) instances:
 
-- If available instances drop below a threshold (e.g., `minInstances`), scale up.
+- If available instances drop below a threshold (e.g., `minWarmInstances`), scale up.
 - If available instances exceed demand for a cooldown period, scale down (never
-  below `minInstances`).
-- Never exceed `maxInstances`.
+  below `minWarmInstances`).
+- Never exceed `maxTotalInstances` (if set; 0 or omitted means no upper bound).
 
 **Instance Lifecycle:**
 
@@ -379,10 +380,10 @@ Each provider type defines its own CRD. All share a common scaling spec
 # Common fields shared by all *ExporterPool CRDs:
 spec:
   # Scaling (common)
-  minInstances: <int>            # Minimum warm pool size (default: 0)
-  maxInstances: <int>            # Maximum pool size (required)
-  scaleUpThreshold: <int>        # Scale up when available < this (default: minInstances)
+  minWarmInstances: <int>            # Minimum available (unleased) instances (default: 0)
+  maxTotalInstances: <int>            # Maximum total instances, warm + leased (0 or omitted = no limit)
   scaleDownCooldown: <duration>  # Wait before scaling down (default: 5m)
+  recycleStrategy: <string>     # "ExitAndReplace" (default) or "InPlaceReuse"
   
   # Node scheduling (common, optional)
   # Applied to instance Pods — use to target baremetal nodes, nodes with
@@ -489,15 +490,17 @@ for scalable testing. However:
 **Alternatives considered:**
 
 1. **Pool-based with configurable min/max** — Maintain a warm pool of
-   pre-spawned instances; scale between `minInstances` and `maxInstances`.
+   pre-spawned instances; scale between `minWarmInstances` and `maxTotalInstances`.
 2. **Purely on-demand** — Spawn a new instance only when a lease request arrives;
    destroy it when the lease is released.
 
 **Decision:** Pool-based with configurable min/max.
 
-**Rationale:** Purely on-demand provisioning introduces unacceptable latency for
-CI pipelines (VM boot + exporter registration can take 30-120s). A warm pool
-provides instant lease fulfillment for the common case. Setting `minInstances: 0`
+**Rationale:** Purely on-demand provisioning introduces noticeable latency for
+CI pipelines (Pod scheduling + image pull + VM boot + exporter registration
+typically takes 10-15s, and up to 60s with cold image pulls or heavy
+providers). A warm pool
+provides instant lease fulfillment for the common case. Setting `minWarmInstances: 0`
 still allows purely on-demand behavior for rarely-used targets, giving operators
 full control over the trade-off.
 
@@ -571,6 +574,31 @@ the Lease API unchanged, requires no controller modifications, and is
 immediately understandable. Per-lease parameters can be revisited in a future
 JEP if the pool-flavors model proves insufficient.
 
+### DD-5: Built-in scaling vs. HPA / KEDA
+
+**Alternatives considered:**
+
+1. **Built-in scaling logic** — Each pool controller implements its own
+   reconciliation loop that watches pending Leases and owned Exporters to
+   make scaling decisions.
+2. **Kubernetes HPA** — Use the Horizontal Pod Autoscaler with custom metrics
+   (e.g., pending lease count) to scale exporter Pods.
+3. **KEDA** — Use KEDA's event-driven autoscaler with a custom scaler that
+   reads Jumpstarter lease state.
+
+**Decision:** Option 1 — built-in scaling logic.
+
+**Rationale:** Pool controllers need Jumpstarter-specific knowledge that
+generic autoscalers cannot express: label matching between pending Leases and
+pool labels, the graceful disable-before-delete sequence (`enabled: false` ->
+verify no lease assigned -> delete), awareness of exporter readiness states,
+and the `minWarmInstances` invariant. HPA and KEDA operate on numeric metrics
+and target averages — they cannot implement the multi-step graceful shutdown or
+lease-aware matching without a custom controller wrapping them, which would
+negate their simplicity advantage. Exposing pool metrics for HPA/KEDA-driven
+scaling is listed in *Future Possibilities* as a complementary option once the
+core pool controller is stable.
+
 ## Design Details
 
 ### Reconciliation Loop
@@ -578,7 +606,7 @@ JEP if the pool-flavors model proves insufficient.
 Each pool controller runs a continuous reconciliation loop for its CRD,
 triggered by changes to the pool CR, owned Exporters, or matching Leases:
 
-```
+```text
 for each *ExporterPool CR:
   ownedExporters = list Exporters owned by this CR
   currentInstances = count ownedExporters in Ready state
@@ -586,32 +614,32 @@ for each *ExporterPool CR:
   availableInstances = currentInstances - leasedInstances
   pendingLeases = count pending Leases whose labels match this pool's labels
   
-  # Invariant: always maintain minInstances
-  if currentInstances < spec.minInstances:
-    scale up to spec.minInstances
+  # Invariant: always maintain minWarmInstances
+  if currentInstances < spec.minWarmInstances:
+    scale up to spec.minWarmInstances
 
   # Demand-driven scale-up: pending leases that we could serve
-  elif pendingLeases > 0 AND currentInstances < spec.maxInstances:
-    scale up by min(pendingLeases, spec.maxInstances - currentInstances)
+  elif pendingLeases > 0 AND currentInstances < spec.maxTotalInstances:
+    scale up by min(pendingLeases, spec.maxTotalInstances - currentInstances)
 
   # Threshold-based scale-up: available pool running low
-  elif availableInstances < spec.scaleUpThreshold AND currentInstances < spec.maxInstances:
+  elif availableInstances < spec.minWarmInstances AND currentInstances < spec.maxTotalInstances:
     scale up (add instances to restore available pool)
 
   # Scale-down: excess idle instances beyond what we need
-  elif availableInstances > spec.scaleUpThreshold AND cooldown elapsed:
+  elif availableInstances > spec.minWarmInstances AND cooldown elapsed:
     graceful scale down:
       1. set exporter.spec.enabled = false
       2. wait until confirmed no lease was assigned (leaseRef remains empty)
       3. delete Pod and Exporter CR
-    (never below minInstances)
+    (never below minWarmInstances)
 ```
 
 ### Instance States
 
 Each virtual exporter instance transitions through:
 
-```
+```text
 Provisioning → Ready (warm pool) → Leased → Ready
                                               └→ Terminating → (deleted if available instances>min)
 ```
@@ -624,19 +652,29 @@ Provisioning → Ready (warm pool) → Leased → Ready
 ### Component Interaction
 
 1. Administrator creates a `*ExporterPool` CR (e.g., `QEMUExporterPool`).
-2. The corresponding pool controller provisions `minInstances` Pods.
+2. The corresponding pool controller provisions `minWarmInstances` Pods.
 3. Each Pod boots the virtual target and runs the Jumpstarter exporter,
    registering with the existing `jumpstarter-controller`.
 4. Instances appear in the pool as regular exporters with the specified labels.
 5. Users lease them normally — the existing controller handles assignment.
-6. On lease release, the exporter handles internal cleanup. The instance
-   returns to the available pool.
-7. The controller continuously monitors pool utilization and scales accordingly.
+6. On lease release, the instance is recycled. Two strategies are supported:
+   - **Exit-and-replace (default):** The exporter exits after cleanup. The
+     pool controller detects the Pod termination and creates a fresh
+     replacement, ensuring a clean state between leases. The cold-start
+     latency is absorbed by the warm pool — replacement instances are
+     provisioned proactively to maintain `minWarmInstances`.
+   - **In-place reuse:** The exporter handles internal cleanup (e.g., power
+     off the VM, reset state) without exiting. The Pod and exporter process
+     remain running and the instance transitions back to Ready immediately.
+     Useful when cold-start latency is high and the provider guarantees
+     clean state after reset.
+7. The pool controller continuously monitors pool utilization and scales
+   accordingly.
 
 ### Failure Modes
 
 - **Pod crash:** Controller detects the failure via Pod status, replaces the
-  instance, maintains `minInstances` invariant.
+  instance, maintains `minWarmInstances` invariant.
 - **Resource exhaustion:** Cannot scale beyond cluster capacity; pool stays at
   current size, new leases queue as they would for physical targets.
 - **Provider startup failure:** Instance marked as failed, controller retries
@@ -660,16 +698,16 @@ Unit tests should meet the project test coverage requirements.
 ## Acceptance Criteria
 
 - [ ] `QEMUExporterPool` CRD is defined and validated by the operator
-- [ ] Pool controller maintains `minInstances` warm instances for each pool CR
+- [ ] Pool controller maintains `minWarmInstances` warm instances for each pool CR
 - [ ] Pool controller scales up when available pool is depleted (up to
-      `maxInstances`)
+      `maxTotalInstances`)
 - [ ] Pool controller scales down idle instances after cooldown (never below
-      `minInstances`)
+      `minWarmInstances`)
 - [ ] At least one provider (`QEMUExporterPool`) is fully implemented and tested
 - [ ] Virtual instances register as standard exporters and are leasable without
       changes to the existing lease flow
 - [ ] Pod failures are detected and reported in the pool status.
-- [ ] A pool with `minInstances: 0` provisions instances only on demand
+- [ ] A pool with `minWarmInstances: 0` provisions instances only on demand
 - [ ] Pool status subresource reports instance counts and health conditions
 - [ ] Documentation covers pool CRD configuration and provider setup
 - [ ] Shared scaling logic is reusable for new provider CRDs
@@ -713,7 +751,7 @@ Unit tests should meet the project test coverage requirements.
   resource waste (idle VMs) and artificial queuing.
 - **Unified user experience:** Virtual and physical targets are leased through
   the same mechanism — users do not need to learn a separate workflow.
-- **Operator control:** `minInstances` / `maxInstances` give administrators a
+- **Operator control:** `minWarmInstances` / `maxTotalInstances` give administrators a
   simple, declarative knob to tune the cost-vs-responsiveness trade-off per
   target type.
 - **Extensible provider model:** New virtual providers (Renode, Qemu, Corellium, Android,
@@ -726,7 +764,7 @@ Unit tests should meet the project test coverage requirements.
   per-provider CRDs add operational surface area — more components to deploy,
   monitor, and debug.
 - **Resource consumption:** Warm pools consume cluster resources even when not
-  actively leased. Misconfigured `minInstances` can lead to waste.
+  actively leased. Misconfigured `minWarmInstances` can lead to waste.
 - **New CRD proliferation:** Each provider type adds a CRD; clusters with
   many providers will have many CRDs to manage and version.
 
@@ -761,6 +799,14 @@ Unit tests should meet the project test coverage requirements.
 - **LAVA (Linaro Automated Validation Architecture):** Supports virtual DUTs via
   QEMU but with static configuration; no on-demand scaling.
 
+- **Crossplane:** A CNCF project for composing cloud infrastructure as
+  Kubernetes CRDs. While Crossplane shares the CRD-driven provisioning pattern,
+  it targets general-purpose cloud resource composition and has no awareness of
+  Jumpstarter's lease semantics, warm pool management, or exporter registration.
+  Jumpstarter already has its own CRD model (Leases, Exporters) and operator
+  framework; adopting Crossplane would add a heavyweight dependency without
+  replacing the pool-specific scaling and lifecycle logic this JEP requires.
+
 ## Unresolved Questions
 
 - What is the exact scaling algorithm (proportional, step-based, predictive)?
@@ -775,6 +821,14 @@ Unit tests should meet the project test coverage requirements.
   When a Lease referencing one of their managed Exporters is deleted or
   transitions to a released state, the controller triggers scale-down
   evaluation if needed.
+- **Scheduled (future-dated) leases:** The existing `jumpstarter-controller`
+  already supports `Spec.BeginTime` for scheduled leases. The controller does
+  not attempt to acquire an exporter until `BeginTime` arrives; it requeues
+  with a delay. Once `BeginTime` passes and no exporter is available, the
+  controller sets a `Pending` condition (e.g., reason `NotAvailable`). Pool
+  controllers watch for pending leases with matching labels as their scaling
+  input, so they naturally do not scale up for future-dated leases until the
+  controller makes them effective.
 
 ## Future Possibilities
 
@@ -786,6 +840,10 @@ natural follow-ups enabled by the pool infrastructure:
   from Kubernetes Secrets.
 - **Renode provider:** A `RenodeExporterPool` CRD leveraging JEP-0010's Renode
   integration as another virtual provider type.
+- **Composite leases:** Linking multiple exporters (potentially from
+  different pools) into a single logical target — e.g., a QEMU VM paired
+  with a network emulator as one leasable unit. This would require
+  multi-exporter lease semantics and coordinated lifecycle management.
 
 ## Implementation Plan
 
@@ -819,7 +877,7 @@ Build the pool controller binary with the `--provider` flag, define the
 - [ ] Define `QEMUExporterPool` CRD schema (scaling fields, nodeSelector,
       podTemplate, labels, QEMU-specific fields, exporterTemplate)
 - [ ] Implement the pool controller binary with `--provider=qemu` flag
-- [ ] Implement core scaling logic: maintain `minInstances`, scale up when
+- [ ] Implement core scaling logic: maintain `minWarmInstances`, scale up when
       pool is depleted, graceful scale-down (disable → wait → delete)
 - [ ] Instance provisioning: create Pods running the Jumpstarter exporter
       with QEMU provider configuration
