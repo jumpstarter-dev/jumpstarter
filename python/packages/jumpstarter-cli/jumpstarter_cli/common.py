@@ -71,7 +71,7 @@ class DurationParamType(click.ParamType):
     def convert(self, value, param, ctx):
         if isinstance(value, timedelta):
             td = value
-        elif isinstance(value, (str, int)):
+        elif isinstance(value, (str, int, float)):
             td = self._parse_string(str(value), param, ctx)
         else:
             self.fail(
