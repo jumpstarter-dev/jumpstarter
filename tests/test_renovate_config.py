@@ -60,12 +60,11 @@ class TestKubernetesGrouping:
         )
 
     def test_kubernetes_group_matches_k8s_io(self, kubernetes_rules):
-        all_patterns = []
+        all_names = []
         for r in kubernetes_rules:
-            all_patterns.extend(r.get("matchPackagePatterns", []))
-            all_patterns.extend(r.get("matchPackagePrefixes", []))
-        pattern_str = " ".join(all_patterns)
-        assert "k8s.io" in pattern_str, "kubernetes group must match k8s.io packages"
+            all_names.extend(r.get("matchPackageNames", []))
+        names_str = " ".join(all_names)
+        assert "k8s.io" in names_str, "kubernetes group must match k8s.io packages"
 
     def test_kubernetes_group_matches_controller_runtime(self, kubernetes_rules):
         rule_str = json.dumps(kubernetes_rules)
@@ -135,14 +134,14 @@ class TestIndependentGoDeps:
 
     def test_k8s_patterns_do_not_match_grpc(self, kubernetes_rules):
         for r in kubernetes_rules:
-            patterns = r.get("matchPackagePatterns", [])
-            prefixes = r.get("matchPackagePrefixes", [])
             names = r.get("matchPackageNames", [])
             assert "google.golang.org/grpc" not in names
-            for prefix in prefixes:
-                assert not "google.golang.org/grpc".startswith(prefix), (
-                    f"prefix {prefix} matches grpc"
-                )
+            for name in names:
+                if "**" in name:
+                    prefix = name.replace("**", "")
+                    assert not "google.golang.org/grpc".startswith(prefix), (
+                        f"glob pattern {name} matches grpc"
+                    )
 
 
 class TestPythonDependencies:

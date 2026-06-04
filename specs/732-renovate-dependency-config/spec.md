@@ -98,11 +98,58 @@ As a maintainer, I want patch-level updates for stable dependencies to be auto-m
 
 ---
 
+### User Story 7 - gRPC and Protobuf Python Package Grouping (Priority: P1)
+
+As a maintainer, I want grpcio, grpcio-tools, and protobuf Python packages grouped into a single PR so that gRPC protocol compatibility is maintained when any of these packages update.
+
+**Why this priority**: grpcio, grpcio-tools, and protobuf have tight version coupling. Updating them independently can cause build failures or runtime incompatibility in the protocol layer.
+
+**Independent Test**: Can be tested by verifying that the renovate.json packageRules section contains a group matching grpcio, grpcio-tools, and protobuf with matchManagers pep621.
+
+**Acceptance Scenarios**:
+
+1. **Given** the renovate config is loaded, **When** grpcio and protobuf both have updates, **Then** they appear in a single grouped PR titled with "grpc-protobuf".
+2. **Given** the renovate config is loaded, **When** grpcio-tools has an update, **Then** it is included in the same grpc-protobuf group PR.
+
+---
+
+### User Story 8 - Kubernetes Python Package Grouping (Priority: P1)
+
+As a maintainer, I want kubernetes and kubernetes-asyncio Python packages grouped into a single PR so that the synchronous and asynchronous Kubernetes clients stay in sync.
+
+**Why this priority**: kubernetes and kubernetes-asyncio share the same upstream release cycle and API compatibility. Version skew between them causes runtime errors.
+
+**Independent Test**: Can be tested by verifying that the renovate.json packageRules section contains a group matching kubernetes and kubernetes-asyncio with matchManagers pep621.
+
+**Acceptance Scenarios**:
+
+1. **Given** the renovate config is loaded, **When** kubernetes and kubernetes-asyncio both have updates, **Then** they appear in a single grouped PR titled with "kubernetes-python".
+2. **Given** the renovate config is loaded, **When** only kubernetes-asyncio has an update, **Then** it is included in the kubernetes-python group PR.
+
+---
+
+### User Story 9 - Go Version Tracking (Priority: P2)
+
+As a maintainer, I want Renovate to track and update the Go version directive in go.mod files so that the project stays current with Go releases.
+
+**Why this priority**: The go directive in go.mod files controls minimum Go version requirements. Renovate's gomod manager handles this natively and groups updates across modules.
+
+**Independent Test**: Can be tested by verifying that the renovate config includes a group for golang version updates across all go.mod files.
+
+**Acceptance Scenarios**:
+
+1. **Given** the renovate config is loaded, **When** a new Go version is released, **Then** Renovate creates a PR to update the go directive across all go.mod files.
+2. **Given** the renovate config is loaded, **When** the go directive updates, **Then** all three go.mod files are updated in a single PR.
+
+---
+
 ### Edge Cases
 
 - What happens when cert-manager and controller-runtime update simultaneously? They should land in the same kubernetes group PR.
 - What happens when a Go dependency appears in multiple go.mod files but is not a k8s dependency? It should get independent PRs per module unless explicitly grouped.
 - What happens when the devcontainer Dockerfile updates? It should be tracked by the dockerfile manager.
+- What happens when grpcio updates but protobuf does not? They should still be in the same group PR so Renovate evaluates compatibility.
+- What happens when kubernetes updates but kubernetes-asyncio does not? They should still be in the same group PR.
 
 ## Requirements *(mandatory)*
 
@@ -120,17 +167,23 @@ As a maintainer, I want patch-level updates for stable dependencies to be auto-m
 - **FR-010**: Configuration MUST NOT auto-merge minor or major updates for the kubernetes group.
 - **FR-011**: Configuration MUST use a weekly schedule matching the existing dependabot schedule (UTC timezone).
 - **FR-012**: Configuration MUST be valid JSON parseable by standard JSON tools.
+- **FR-013**: Configuration MUST group grpcio, grpcio-tools, and protobuf Python packages into a "grpc-protobuf" group.
+- **FR-014**: Configuration MUST group kubernetes and kubernetes-asyncio Python packages into a "kubernetes-python" group.
+- **FR-015**: Configuration MUST group Go version (go directive) updates across all go.mod files into a "golang-version" group.
 
 ### Verification Commands
 
 - **FR-001**: `test -f renovate.json && echo PASS || echo FAIL`
-- **FR-002**: `python3 -c "import json; c=json.load(open('renovate.json')); rules=[r for r in c.get('packageRules',[]) if r.get('groupName')=='kubernetes']; assert any('k8s.io/*' in str(r.get('matchPackagePatterns',[])+r.get('matchPackagePrefixes',[])) for r in rules); print('PASS')"`
+- **FR-002**: `python3 -c "import json; c=json.load(open('renovate.json')); rules=[r for r in c.get('packageRules',[]) if r.get('groupName')=='kubernetes']; assert any('k8s.io/' in str(r.get('matchPackageNames',[])) for r in rules); print('PASS')"`
 - **FR-003**: `python3 -c "import json; c=json.load(open('renovate.json')); rules=[r for r in c.get('packageRules',[]) if r.get('groupName')=='kubernetes']; assert any('controller-runtime' in str(r) for r in rules); print('PASS')"`
 - **FR-004**: `python3 -c "import json; c=json.load(open('renovate.json')); rules=[r for r in c.get('packageRules',[]) if r.get('groupName')=='kubernetes']; assert any('cert-manager' in str(r) for r in rules); print('PASS')"`
 - **FR-005**: `python3 -c "import json; c=json.load(open('renovate.json')); k8s_rules=[r for r in c.get('packageRules',[]) if r.get('groupName')=='kubernetes']; assert not any('grpc' in str(r) for r in k8s_rules); print('PASS')"`
 - **FR-006**: `python3 -c "import json; c=json.load(open('renovate.json')); print('PASS')"`
 - **FR-007**: `python3 -c "import json; c=json.load(open('renovate.json')); print('PASS')"`
 - **FR-012**: `python3 -c "import json; json.load(open('renovate.json')); print('PASS')"`
+- **FR-013**: `python3 -c "import json; c=json.load(open('renovate.json')); rules=[r for r in c.get('packageRules',[]) if r.get('groupName')=='grpc-protobuf']; assert len(rules)==1; names=rules[0].get('matchPackageNames',[]); assert 'grpcio' in names and 'grpcio-tools' in names and 'protobuf' in names; print('PASS')"`
+- **FR-014**: `python3 -c "import json; c=json.load(open('renovate.json')); rules=[r for r in c.get('packageRules',[]) if r.get('groupName')=='kubernetes-python']; assert len(rules)==1; names=rules[0].get('matchPackageNames',[]); assert 'kubernetes' in names and 'kubernetes-asyncio' in names; print('PASS')"`
+- **FR-015**: `python3 -c "import json; c=json.load(open('renovate.json')); rules=[r for r in c.get('packageRules',[]) if r.get('groupName')=='golang-version']; assert len(rules)==1; print('PASS')"`
 
 ## Success Criteria *(mandatory)*
 
@@ -142,3 +195,6 @@ As a maintainer, I want patch-level updates for stable dependencies to be auto-m
 - **SC-004**: GitHub Actions are grouped by organization in the packageRules.
 - **SC-005**: Patch-level updates have automerge enabled.
 - **SC-006**: The kubernetes group does not have automerge for minor/major updates.
+- **SC-007**: grpcio, grpcio-tools, and protobuf are grouped in a single "grpc-protobuf" rule.
+- **SC-008**: kubernetes and kubernetes-asyncio Python packages are grouped in a single "kubernetes-python" rule.
+- **SC-009**: Go version updates are grouped across all go.mod files.

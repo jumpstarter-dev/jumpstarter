@@ -12,31 +12,13 @@
   ],
   "packageRules": [
     {
-      "description": "Group Kubernetes, controller-runtime, and cert-manager dependencies across all Go modules",
-      "groupName": "kubernetes",
-      "matchManagers": [
-        "gomod"
-      ],
-      "matchPackagePrefixes": [
-        "k8s.io/",
-        "sigs.k8s.io/controller-runtime",
-        "github.com/cert-manager/cert-manager"
-      ],
-      "matchFileNames": [
-        "controller/go.mod",
-        "controller/deploy/operator/go.mod",
-        "e2e/test/go.mod"
-      ],
-      "automerge": false
-    },
-    {
       "description": "Group official GitHub Actions (actions/*)",
       "groupName": "github-actions-official",
       "matchManagers": [
         "github-actions"
       ],
-      "matchPackagePrefixes": [
-        "actions/"
+      "matchPackageNames": [
+        "actions/**"
       ]
     },
     {
@@ -45,8 +27,8 @@
       "matchManagers": [
         "github-actions"
       ],
-      "matchPackagePrefixes": [
-        "docker/"
+      "matchPackageNames": [
+        "docker/**"
       ]
     },
     {
@@ -55,8 +37,8 @@
       "matchManagers": [
         "github-actions"
       ],
-      "matchPackagePrefixes": [
-        "astral-sh/"
+      "matchPackageNames": [
+        "astral-sh/**"
       ]
     },
     {
@@ -83,19 +65,6 @@
       ]
     },
     {
-      "description": "Group Go version directive updates across all Go modules",
-      "groupName": "golang-version",
-      "matchDepTypes": [
-        "golang-version"
-      ],
-      "matchFileNames": [
-        "controller/go.mod",
-        "controller/deploy/operator/go.mod",
-        "e2e/test/go.mod"
-      ],
-      "automerge": false
-    },
-    {
       "description": "Auto-merge patch updates for all dependencies",
       "matchUpdateTypes": [
         "patch"
@@ -108,6 +77,37 @@
       "matchManagers": [
         "dockerfile",
         "docker-compose"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Group Kubernetes, controller-runtime, and cert-manager dependencies across all Go modules",
+      "groupName": "kubernetes",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "k8s.io/**",
+        "sigs.k8s.io/controller-runtime**",
+        "github.com/cert-manager/cert-manager**"
+      ],
+      "matchFileNames": [
+        "controller/go.mod",
+        "controller/deploy/operator/go.mod",
+        "e2e/test/go.mod"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Group Go version directive updates across all Go modules",
+      "groupName": "golang-version",
+      "matchDepTypes": [
+        "golang-version"
+      ],
+      "matchFileNames": [
+        "controller/go.mod",
+        "controller/deploy/operator/go.mod",
+        "e2e/test/go.mod"
       ],
       "automerge": false
     }
