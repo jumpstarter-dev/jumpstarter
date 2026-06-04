@@ -208,6 +208,117 @@ class TestGitHubActionsGrouping:
         assert "astral-sh/" in group_str, "astral-sh/* group must exist"
 
 
+class TestGrpcProtobufGrouping:
+    @pytest.fixture
+    def grpc_protobuf_rules(self, package_rules):
+        return [r for r in package_rules if r.get("groupName") == "grpc-protobuf"]
+
+    def test_grpc_protobuf_group_exists(self, grpc_protobuf_rules):
+        assert len(grpc_protobuf_rules) > 0, "grpc-protobuf group rule must exist"
+
+    def test_grpc_protobuf_group_is_single_rule(self, grpc_protobuf_rules):
+        assert len(grpc_protobuf_rules) == 1, (
+            "grpc-protobuf group must be a single consolidated rule, "
+            f"found {len(grpc_protobuf_rules)}"
+        )
+
+    def test_grpc_protobuf_includes_grpcio(self, grpc_protobuf_rules):
+        names = grpc_protobuf_rules[0].get("matchPackageNames", [])
+        assert "grpcio" in names, "grpc-protobuf group must include grpcio"
+
+    def test_grpc_protobuf_includes_grpcio_tools(self, grpc_protobuf_rules):
+        names = grpc_protobuf_rules[0].get("matchPackageNames", [])
+        assert "grpcio-tools" in names, (
+            "grpc-protobuf group must include grpcio-tools"
+        )
+
+    def test_grpc_protobuf_includes_protobuf(self, grpc_protobuf_rules):
+        names = grpc_protobuf_rules[0].get("matchPackageNames", [])
+        assert "protobuf" in names, "grpc-protobuf group must include protobuf"
+
+    def test_grpc_protobuf_uses_pep621_manager(self, grpc_protobuf_rules):
+        managers = grpc_protobuf_rules[0].get("matchManagers", [])
+        assert "pep621" in managers, "grpc-protobuf group must use pep621 manager"
+
+
+class TestKubernetesPythonGrouping:
+    @pytest.fixture
+    def kubernetes_python_rules(self, package_rules):
+        return [r for r in package_rules if r.get("groupName") == "kubernetes-python"]
+
+    def test_kubernetes_python_group_exists(self, kubernetes_python_rules):
+        assert len(kubernetes_python_rules) > 0, (
+            "kubernetes-python group rule must exist"
+        )
+
+    def test_kubernetes_python_group_is_single_rule(self, kubernetes_python_rules):
+        assert len(kubernetes_python_rules) == 1, (
+            "kubernetes-python group must be a single consolidated rule, "
+            f"found {len(kubernetes_python_rules)}"
+        )
+
+    def test_kubernetes_python_includes_kubernetes(self, kubernetes_python_rules):
+        names = kubernetes_python_rules[0].get("matchPackageNames", [])
+        assert "kubernetes" in names, (
+            "kubernetes-python group must include kubernetes"
+        )
+
+    def test_kubernetes_python_includes_kubernetes_asyncio(self, kubernetes_python_rules):
+        names = kubernetes_python_rules[0].get("matchPackageNames", [])
+        assert "kubernetes-asyncio" in names, (
+            "kubernetes-python group must include kubernetes-asyncio"
+        )
+
+    def test_kubernetes_python_uses_pep621_manager(self, kubernetes_python_rules):
+        managers = kubernetes_python_rules[0].get("matchManagers", [])
+        assert "pep621" in managers, (
+            "kubernetes-python group must use pep621 manager"
+        )
+
+
+class TestGolangVersionTracking:
+    @pytest.fixture
+    def golang_version_rules(self, package_rules):
+        return [r for r in package_rules if r.get("groupName") == "golang-version"]
+
+    def test_golang_version_group_exists(self, golang_version_rules):
+        assert len(golang_version_rules) > 0, (
+            "golang-version group rule must exist"
+        )
+
+    def test_golang_version_group_is_single_rule(self, golang_version_rules):
+        assert len(golang_version_rules) == 1, (
+            "golang-version group must be a single consolidated rule, "
+            f"found {len(golang_version_rules)}"
+        )
+
+    def test_golang_version_matches_golang_version_dep_type(self, golang_version_rules):
+        dep_types = golang_version_rules[0].get("matchDepTypes", [])
+        assert "golang-version" in dep_types, (
+            "golang-version group must match golang-version depType"
+        )
+
+    def test_golang_version_covers_all_go_mod_files(self, golang_version_rules):
+        expected_files = {
+            "controller/go.mod",
+            "controller/deploy/operator/go.mod",
+            "e2e/test/go.mod",
+        }
+        all_file_names = set()
+        for r in golang_version_rules:
+            all_file_names.update(r.get("matchFileNames", []))
+        missing = expected_files - all_file_names
+        assert not missing, (
+            f"golang-version group matchFileNames is missing: {missing}"
+        )
+
+    def test_golang_version_not_automerged(self, golang_version_rules):
+        for r in golang_version_rules:
+            assert r.get("automerge") is not True, (
+                "golang-version group must not automerge"
+            )
+
+
 class TestAutoMergePolicy:
     def test_patch_automerge_rule_exists(self, package_rules):
         patch_automerge = [

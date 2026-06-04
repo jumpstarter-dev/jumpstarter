@@ -60,6 +60,42 @@
       ]
     },
     {
+      "description": "Group grpcio, grpcio-tools, and protobuf Python packages for protocol compatibility",
+      "groupName": "grpc-protobuf",
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchPackageNames": [
+        "grpcio",
+        "grpcio-tools",
+        "protobuf"
+      ]
+    },
+    {
+      "description": "Group kubernetes and kubernetes-asyncio Python packages to keep sync and async clients aligned",
+      "groupName": "kubernetes-python",
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchPackageNames": [
+        "kubernetes",
+        "kubernetes-asyncio"
+      ]
+    },
+    {
+      "description": "Group Go version directive updates across all Go modules",
+      "groupName": "golang-version",
+      "matchDepTypes": [
+        "golang-version"
+      ],
+      "matchFileNames": [
+        "controller/go.mod",
+        "controller/deploy/operator/go.mod",
+        "e2e/test/go.mod"
+      ],
+      "automerge": false
+    },
+    {
       "description": "Auto-merge patch updates for all dependencies",
       "matchUpdateTypes": [
         "patch"
