@@ -92,8 +92,31 @@ class TestDurationParamType:
         td = DURATION.convert(42, None, None)
         assert td == timedelta(seconds=42)
 
+    def test_large_string_integer_raises_bad_parameter_not_overflow(self):
+        with pytest.raises(click.BadParameter, match="exceeds the maximum allowed duration"):
+            DURATION.convert("86400000000000", None, None)
+
+    def test_large_integer_raises_bad_parameter_not_overflow(self):
+        with pytest.raises(click.BadParameter, match="exceeds the maximum allowed duration"):
+            DURATION.convert(86400000000000, None, None)
+
+    def test_large_negative_string_raises_bad_parameter_not_overflow(self):
+        with pytest.raises(click.BadParameter, match="exceeds the maximum allowed duration"):
+            DURATION.convert("-86400000000000", None, None)
+
+    def test_large_pytimeparse_duration_raises_bad_parameter_not_overflow(self):
+        with pytest.raises(click.BadParameter, match="exceeds the maximum allowed duration"):
+            DURATION.convert("999999999d23h59m59.999999s", None, None)
+
+    def test_value_at_timedelta_max_seconds_succeeds(self):
+        td = DURATION.convert("86399999999999", None, None)
+        assert td == timedelta(days=999999999, hours=23, minutes=59, seconds=59)
+
+    def test_float_value_as_seconds(self):
+        td = DURATION.convert(3.5, None, None)
+        assert td == timedelta(seconds=3.5)
+
     def test_unsupported_type_raises_click_exception(self):
         param_type = DurationParamType()
         with pytest.raises(click.BadParameter, match="is not a valid duration"):
             param_type.convert(object(), None, None)
-
