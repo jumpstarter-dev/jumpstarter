@@ -440,31 +440,6 @@ status:
 
 **Changes to existing CRDs:**
 
-**Lease — new `parameters` field:**
-
-Leases gain an optional `parameters` dictionary that allows the requester to
-pass provider-specific hints (e.g., requesting more CPU, RAM, or other
-resources). The semantics of these parameters are entirely defined by the
-virtual provider — the `jumpstarter-controller` passes them through without
-interpretation. Physical exporters ignore this field.
-
-```yaml
-apiVersion: jumpstarter.dev/v1alpha1
-kind: Lease
-metadata:
-  name: my-lease
-spec:
-  selector:
-    matchLabels:
-      board: rpi4
-      virtual: "true"
-  # Provider-specific parameters (opaque dictionary)
-  parameters:
-    cpu: "8"
-    memory: "16Gi"
-    storage: "64Gi"
-```
-
 **Exporter — new `enabled` field:**
 
 Exporters gain an `enabled` boolean field (default: `true`). When set to
@@ -570,6 +545,31 @@ different configuration (QEMU needs machine types and firmware images; Corellium
 needs API credentials and device models) — a generic map loses type safety and
 discoverability. New providers add a new CRD without touching existing ones.
 
+### DD-4: Per-lease parameters vs. pool flavors
+
+**Alternatives considered:**
+
+1. **Per-lease `parameters` dictionary** — Leases carry an opaque
+   `map[string]string` that pool controllers interpret when provisioning
+   instances (e.g., override CPU, memory, or storage). The controller passes
+   parameters through without interpretation; only pool controllers read them.
+2. **Multiple pool flavors** — Administrators create separate pool CRs for
+   different resource profiles (e.g., `rpi4-virtual-small` with 2 CPU / 2 Gi
+   and `rpi4-virtual-large` with 8 CPU / 16 Gi). Users select a profile via
+   label matching at lease time.
+
+**Decision:** Option 2 — multiple pool flavors via separate pool CRs.
+
+**Rationale:** Per-lease parameters add complexity across every layer: the Lease
+CRD gains a new field, the controller must pass it through, pool controllers
+must parse and validate provider-specific keys, driver templates must support
+runtime overrides, and the interaction between parameters and pool defaults
+(override vs. merge) must be defined and tested. All of this for a use case
+that is already satisfied by creating multiple pools with different resource
+profiles and letting users select via labels. The pool-flavors approach keeps
+the Lease API unchanged, requires no controller modifications, and is
+immediately understandable. Per-lease parameters can be revisited in a future
+JEP if the pool-flavors model proves insufficient.
 
 ## Design Details
 
@@ -700,9 +700,6 @@ Unit tests should meet the project test coverage requirements.
   continue to behave exactly as before. The `jumpstarter-controller` must be
   updated to respect this field (skip disabled exporters during lease
   assignment).
-- **Lease `parameters` field:** Optional and ignored by the existing controller
-  for physical exporters. Only pool controllers interpret it. Existing leases
-  without parameters work unchanged.
 - Administrators upgrading to a pool-enabled version see no behavior change
   until they explicitly deploy a `*ExporterPool` resource.
 
@@ -751,6 +748,13 @@ Unit tests should meet the project test coverage requirements.
 - **External orchestration (Terraform/Ansible):** Pushes complexity to the user,
   breaks the single-pane-of-glass experience, and cannot integrate with
   Jumpstarter's lease semantics.
+
+- **Per-lease `parameters` dictionary on the Lease CRD:** Would allow users to
+  pass provider-specific resource hints (CPU, memory, storage) per lease.
+  Rejected because it adds complexity to every layer (Lease CRD, controller
+  pass-through, pool controller parsing, driver template overrides) for a use
+  case already served by creating separate pools with different resource
+  profiles. See DD-4.
 
 ## Prior Art
 
@@ -839,26 +843,6 @@ Add support for additional provider types using the same binary with different
 
 - [ ] `AndroidExporterPool` CRD and reconciler
 - [ ] Provider authoring guide documenting how to add a new `*ExporterPool`
-
-### Phase 4: Lease `parameters`
-
-Add the optional `parameters` dictionary to the Lease CRD, allowing users to
-pass provider-specific resource requests. Pool controllers interpret these
-parameters when provisioning new instances on demand.
-
-**Deliverables:**
-
-- [ ] Add `spec.parameters` field to Lease CRD (optional map[string]string)
-- [ ] Update pool controllers to read parameters from pending Leases when
-      deciding how to provision a new instance (e.g., override CPU/memory)
-- [ ] Define how parameters interact with pool defaults (override vs. merge)
-- [ ] Tests: lease with parameters triggers a customized instance
-- [ ] Documentation on supported parameters per provider
-
-**Why last:** This feature builds on top of a working pool system. It requires
-the pool controller to understand per-lease customization, which adds
-complexity. The system is fully functional without it — parameters are a
-power-user feature for dynamic resource sizing.
 
 ## Implementation History
 
