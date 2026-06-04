@@ -42,7 +42,7 @@ specs/732-renovate-dependency-config/
 
 ```text
 renovate.json              # New: Renovate configuration at repo root
-.github/dependabot.yml     # Existing: Will remain for reference/transition
+.github/dependabot.yml     # Deleted: Replaced by renovate.json
 ```
 
 **Structure Decision**: Single configuration file at repository root. Renovate reads renovate.json from the default branch. No source code changes needed -- this is purely a configuration addition.
@@ -71,6 +71,29 @@ renovate.json              # New: Renovate configuration at repo root
 - astral-sh/* (ruff-action, setup-uv)
 - Individual: crate-ci/typos, dorny/paths-filter, korthout/backport-action, peter-evans/repository-dispatch
 
+## New Requirements (Session 2)
+
+### gRPC/Protobuf Python Grouping
+- grpcio (jumpstarter-protocol), grpcio-tools (build dep), and protobuf (jumpstarter-protocol) must be grouped
+- These packages have tight version coupling for protocol buffer compatibility
+- Use matchPackageNames with pep621 manager
+
+### Kubernetes Python Grouping
+- kubernetes (jumpstarter-kubernetes) and kubernetes-asyncio (jumpstarter-kubernetes) must be grouped
+- Both share upstream release cycle; version skew causes runtime errors
+- Use matchPackageNames with pep621 manager
+
+### Go Version Tracking
+- All three go.mod files declare `go 1.24.0`
+- Renovate's gomod manager natively detects and updates the go directive
+- Group go version updates across all go.mod files using matchDepTypes: ["golang-version"]
+- matchFileNames covers all three go.mod locations
+
+### Implementation approach
+- Add three new packageRules to existing renovate.json
+- Add corresponding test classes to tests/test_renovate_config.py
+- No structural changes needed; purely additive
+
 ## Complexity Tracking
 
-No constitution violations. Single-file configuration change.
+No constitution violations. Single-file configuration change (plus test updates).
