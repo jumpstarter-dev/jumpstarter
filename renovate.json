@@ -42,6 +42,18 @@
       ]
     },
     {
+      "description": "Group remaining GitHub Actions",
+      "groupName": "github-actions-other",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "!actions/**",
+        "!docker/**",
+        "!astral-sh/**"
+      ]
+    },
+    {
       "description": "Group Python gRPC and protobuf packages",
       "groupName": "grpc-protobuf",
       "matchManagers": [
@@ -83,22 +95,6 @@
       ]
     },
     {
-      "description": "Auto-merge patch updates",
-      "matchUpdateTypes": [
-        "patch"
-      ],
-      "automerge": true,
-      "automergeType": "pr"
-    },
-    {
-      "description": "Disable auto-merge for Docker base images",
-      "matchManagers": [
-        "dockerfile",
-        "docker-compose"
-      ],
-      "automerge": false
-    },
-    {
       "description": "Group Go Kubernetes and controller dependencies",
       "groupName": "kubernetes",
       "matchManagers": [
@@ -107,6 +103,7 @@
       "matchPackageNames": [
         "k8s.io/**",
         "sigs.k8s.io/controller-runtime**",
+        "sigs.k8s.io/yaml**",
         "github.com/cert-manager/cert-manager**"
       ],
       "matchFileNames": [
@@ -115,6 +112,59 @@
         "e2e/test/go.mod"
       ],
       "automerge": false
+    },
+    {
+      "description": "Group Go test framework",
+      "groupName": "go-testing",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "github.com/onsi/ginkgo**",
+        "github.com/onsi/gomega**"
+      ]
+    },
+    {
+      "description": "Group Go stdlib extensions",
+      "groupName": "golang-x",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "golang.org/x/**"
+      ]
+    },
+    {
+      "description": "Group Docker base images",
+      "groupName": "docker-base-images",
+      "matchManagers": [
+        "dockerfile",
+        "docker-compose"
+      ],
+      "matchPackageNames": [
+        "**"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Group Python dev tools",
+      "groupName": "python-dev-tools",
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchPackageNames": [
+        "ruff",
+        "sphinx",
+        "sphinx-**"
+      ]
+    },
+    {
+      "description": "Auto-merge patch updates",
+      "matchUpdateTypes": [
+        "patch"
+      ],
+      "automerge": true,
+      "automergeType": "pr"
     },
     {
       "description": "Group Go version directives",
