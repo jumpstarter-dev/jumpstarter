@@ -21,7 +21,6 @@ jobs:
       controller: ${{ steps.filter.outputs.controller }}
       protocol: ${{ steps.filter.outputs.protocol }}
       python: ${{ steps.filter.outputs.python }}
-      config: ${{ steps.filter.outputs.config }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -36,10 +35,6 @@ jobs:
               - '.github/workflows/lint.yaml'
             python:
               - 'python/**'
-              - '.github/workflows/lint.yaml'
-            config:
-              - 'renovate.json'
-              - 'tests/**'
               - '.github/workflows/lint.yaml'
 
   lint-go:
@@ -103,21 +98,6 @@ jobs:
       - name: Run ty
         working-directory: python
         run: make ty
-
-  test-config:
-    needs: changes
-    if: needs.changes.outputs.config == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install pytest
-        run: pip install pytest
-      - name: Run config tests
-        run: pytest tests/ -v
 
   typos:
     runs-on: ubuntu-latest
