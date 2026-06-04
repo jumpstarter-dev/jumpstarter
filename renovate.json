@@ -66,18 +66,6 @@
       ],
       "automerge": true,
       "automergeType": "pr"
-    },
-    {
-      "description": "Do not auto-merge Kubernetes dependencies for minor or major updates",
-      "groupName": "kubernetes",
-      "matchManagers": [
-        "gomod"
-      ],
-      "matchUpdateTypes": [
-        "minor",
-        "major"
-      ],
-      "automerge": false
     }
   ]
 }

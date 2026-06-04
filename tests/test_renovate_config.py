@@ -53,6 +53,12 @@ class TestKubernetesGrouping:
     def test_kubernetes_group_exists(self, kubernetes_rules):
         assert len(kubernetes_rules) > 0, "kubernetes group rule must exist"
 
+    def test_kubernetes_group_is_single_rule(self, kubernetes_rules):
+        assert len(kubernetes_rules) == 1, (
+            "kubernetes group must be a single consolidated rule, "
+            f"found {len(kubernetes_rules)}"
+        )
+
     def test_kubernetes_group_matches_k8s_io(self, kubernetes_rules):
         all_patterns = []
         for r in kubernetes_rules:
