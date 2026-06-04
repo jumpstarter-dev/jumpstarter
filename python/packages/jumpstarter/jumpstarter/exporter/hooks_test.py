@@ -12,6 +12,7 @@ from jumpstarter.exporter.hooks import (
     HookExecutionError,
     HookExecutor,
     _flush_lines,
+    _monotonic,
 )
 
 pytestmark = pytest.mark.anyio
@@ -60,9 +61,13 @@ class _PtyTracker:
 
 
 class _DrainDeadlineClock:
-    """A callable that replaces ``time.monotonic`` to simulate the drain
+    """A callable that replaces ``_monotonic`` to simulate the drain
     deadline being exceeded between the ``while`` condition check and the
-    ``remaining`` calculation."""
+    ``remaining`` calculation.
+
+    Only patches the hooks module's ``_monotonic`` reference, leaving
+    ``time.monotonic`` (used by the asyncio event loop) unaffected.
+    """
 
     def __init__(self, real_monotonic, state: _PtyTracker) -> None:
         self._real = real_monotonic
@@ -832,14 +837,14 @@ class TestHookExecutor:
         """Verify the drain loop exits when the deadline is exceeded between the
         while condition and the remaining-time check (line: if remaining <= 0).
 
-        Patches time.monotonic to simulate a jump past the deadline after the
-        while condition passes but before the remaining check.
+        Patches ``jumpstarter.exporter.hooks._monotonic`` (not ``time.monotonic``
+        globally) to simulate a jump past the deadline after the while condition
+        passes but before the remaining check.  Using the module-level
+        ``_monotonic`` reference avoids breaking the asyncio event loop, which
+        also relies on ``time.monotonic``.
         """
-        import time as time_mod
-
-        original_monotonic = time_mod.monotonic
         state = _PtyTracker()
-        clock = _DrainDeadlineClock(original_monotonic, state)
+        clock = _DrainDeadlineClock(_monotonic, state)
 
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
@@ -851,7 +856,7 @@ class TestHookExecutor:
         with (
             patch("pty.openpty", side_effect=state.tracking_openpty),
             patch("os.read", side_effect=state.os_read_with_drain_data),
-            patch.object(time_mod, "monotonic", side_effect=clock),
+            patch("jumpstarter.exporter.hooks._monotonic", side_effect=clock),
             patch("jumpstarter.exporter.hooks.logger") as mock_logger,
         ):
             result = await executor.execute_before_lease_hook(lease_scope)
