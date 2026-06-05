@@ -9,6 +9,8 @@
 import asyncio
 import os
 import sys
+import tomllib
+from pathlib import Path
 
 from jumpstarter_kubernetes.controller import get_latest_compatible_controller_version
 
@@ -80,7 +82,11 @@ myst_enable_extensions = [
     "substitution",
 ]
 myst_substitutions = {
-    "requires_python": ">=3.11",
+    "requires_python": tomllib.loads(
+        Path(__file__).resolve().parents[2]
+        .joinpath("packages/jumpstarter/pyproject.toml")
+        .read_text()
+    )["project"]["requires-python"],
     "version": "latest",
     "controller_version": get_controller_version(),
     "index_url": get_index_url(),
