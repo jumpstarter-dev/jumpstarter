@@ -1,0 +1,55 @@
+name: Collect e2e logs
+description: Collect controller, router, and pod logs from the e2e kind cluster
+
+inputs:
+  artifact-name:
+    description: Name for the uploaded artifact
+    required: true
+  namespace:
+    description: Kubernetes namespace to collect logs from
+    required: false
+    default: jumpstarter-lab
+  retention-days:
+    description: Number of days to retain the artifact
+    required: false
+    default: "7"
+
+runs:
+  using: composite
+  steps:
+    - name: Collect e2e logs
+      if: always()
+      shell: bash
+      run: |
+        mkdir -p /tmp/e2e-logs
+        NS=${{ inputs.namespace }}
+        collect_logs() {
+          local outfile="$1" primary="$2" fallback="$3"
+          shift 3
+          kubectl -n "$NS" logs -l "$primary" "$@" > "$outfile" 2>&1 || true
+          if [ ! -s "$outfile" ]; then
+            kubectl -n "$NS" logs -l "$fallback" "$@" > "$outfile" 2>&1 || true
+          fi
+        }
+        collect_logs /tmp/e2e-logs/controller.log component=controller control-plane=controller-manager --all-containers --prefix --tail=-1
+        collect_logs /tmp/e2e-logs/controller-previous.log component=controller control-plane=controller-manager --all-containers --prefix --previous
+        collect_logs /tmp/e2e-logs/router.log component=router control-plane=controller-router --all-containers --prefix --tail=-1
+        collect_logs /tmp/e2e-logs/router-previous.log component=router control-plane=controller-router --all-containers --prefix --previous
+        kubectl -n "$NS" get pods -o wide > /tmp/e2e-logs/pods.txt 2>&1 || true
+        kubectl -n "$NS" describe pods > /tmp/e2e-logs/pods-describe.txt 2>&1 || true
+        EXPORTER_LOG_DIR="${E2E_EXPORTER_LOG_DIR:-/tmp/e2e-logs/exporters}"
+        if [ -d "$EXPORTER_LOG_DIR" ] && [ "$EXPORTER_LOG_DIR" != "/tmp/e2e-logs/exporters" ]; then
+          cp -r "$EXPORTER_LOG_DIR" /tmp/e2e-logs/exporters 2>/dev/null || true
+        fi
+        if [ -d /tmp/e2e-logs/exporters ]; then
+          echo "Exporter logs collected:"
+          ls -la /tmp/e2e-logs/exporters/
+        fi
+
+    - name: Upload e2e logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: /tmp/e2e-logs/
+        retention-days: ${{ inputs.retention-days }}

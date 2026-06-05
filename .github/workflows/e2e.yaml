@@ -222,6 +222,12 @@ jobs:
         env:
           CI: true
 
+      - name: Collect and upload e2e logs
+        if: always()
+        uses: ./.github/actions/collect-e2e-logs
+        with:
+          artifact-name: e2e-logs-${{ matrix.arch }}
+
   # ============================================================================
   # Compatibility tests: cross-version interop between controller and client/exporter
   # ============================================================================
@@ -253,6 +259,12 @@ jobs:
         run: make e2e-compat-run COMPAT_TEST=old-controller
         env:
           CI: true
+
+      - name: Collect and upload e2e logs
+        if: always()
+        uses: ./.github/actions/collect-e2e-logs
+        with:
+          artifact-name: e2e-logs-compat-old-controller
 
   e2e-compat-old-client:
     needs: [changes, build-controller-image, build-operator-image, build-python-wheels]
@@ -289,3 +301,9 @@ jobs:
         run: make e2e-compat-run COMPAT_TEST=old-client
         env:
           CI: true
+
+      - name: Collect and upload e2e logs
+        if: always()
+        uses: ./.github/actions/collect-e2e-logs
+        with:
+          artifact-name: e2e-logs-compat-old-client

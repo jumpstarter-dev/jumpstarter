@@ -54,6 +54,15 @@ func Namespace() string {
 	return defaultNamespace
 }
 
+// ExporterLogDir returns the directory where exporter logs are written.
+// Defaults to /tmp/e2e-logs/exporters, overridable via E2E_EXPORTER_LOG_DIR.
+func ExporterLogDir() string {
+	if dir := os.Getenv("E2E_EXPORTER_LOG_DIR"); dir != "" {
+		return dir
+	}
+	return filepath.Join(os.TempDir(), "e2e-logs", "exporters")
+}
+
 // Endpoint returns the controller gRPC endpoint from the ENDPOINT env var.
 func Endpoint() string {
 	return os.Getenv("ENDPOINT")
@@ -270,14 +279,19 @@ func MustReadYAMLField(filePath, field string) string {
 // --- Process management ---
 
 // logBuffer is a thread-safe in-memory buffer for capturing process output.
+// When a file writer is set, writes are teed to disk so logs survive process crashes.
 type logBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mu   sync.Mutex
+	buf  bytes.Buffer
+	file *os.File
 }
 
 func (lb *logBuffer) Write(p []byte) (int, error) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
+	if lb.file != nil {
+		_, _ = lb.file.Write(p)
+	}
 	return lb.buf.Write(p)
 }
 
@@ -290,7 +304,19 @@ func (lb *logBuffer) String() string {
 func (lb *logBuffer) WriteString(s string) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
+	if lb.file != nil {
+		_, _ = lb.file.WriteString(s)
+	}
 	lb.buf.WriteString(s)
+}
+
+func (lb *logBuffer) Close() {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+	if lb.file != nil {
+		_ = lb.file.Close()
+		lb.file = nil
+	}
 }
 
 // ProcessTracker manages background exporter processes.
@@ -307,12 +333,20 @@ func NewProcessTracker() *ProcessTracker {
 	}
 }
 
-// getOrCreateLog returns the in-memory log buffer for the given name.
+// getOrCreateLog returns the log buffer for the given name, creating it
+// if needed. Each buffer tees output to a file under exporterLogDir so
+// that logs are available as CI artifacts even if the test process crashes.
 func (pt *ProcessTracker) getOrCreateLog(name string) *logBuffer {
 	if lb, ok := pt.logs[name]; ok {
 		return lb
 	}
 	lb := &logBuffer{}
+	logDir := ExporterLogDir()
+	_ = os.MkdirAll(logDir, 0o755)
+	f, err := os.Create(filepath.Join(logDir, name+".log"))
+	if err == nil {
+		lb.file = f
+	}
 	pt.logs[name] = lb
 	return lb
 }
@@ -484,9 +518,12 @@ func (pt *ProcessTracker) StopAll() {
 	_ = exec.Command("pkill", "-9", "-f", "jmp run --exporter").Run()
 }
 
-// Cleanup stops all processes.
+// Cleanup stops all processes and closes log files.
 func (pt *ProcessTracker) Cleanup() {
 	pt.StopAll()
+	for _, lb := range pt.logs {
+		lb.Close()
+	}
 }
 
 // IsProcessRunning checks if any tracked process is still running.
@@ -583,15 +620,15 @@ func DumpControllerLogs(maxLines int) {
 	tail := strconv.Itoa(maxLines)
 
 	GinkgoWriter.Println("\n--- Controller logs ---")
-	out, err := Kubectl("-n", ns, "logs", "-l", "component=controller", "--tail="+tail)
-	if err != nil {
+	out, _ := Kubectl("-n", ns, "logs", "-l", "component=controller", "--tail="+tail)
+	if strings.TrimSpace(out) == "" {
 		out, _ = Kubectl("-n", ns, "logs", "-l", "control-plane=controller-manager", "--tail="+tail)
 	}
 	GinkgoWriter.Println(out)
 
 	GinkgoWriter.Println("\n--- Router logs ---")
-	out, err = Kubectl("-n", ns, "logs", "-l", "component=router", "--tail="+tail)
-	if err != nil {
+	out, _ = Kubectl("-n", ns, "logs", "-l", "component=router", "--tail="+tail)
+	if strings.TrimSpace(out) == "" {
 		out, _ = Kubectl("-n", ns, "logs", "-l", "control-plane=controller-router", "--tail="+tail)
 	}
 	GinkgoWriter.Println(out)
