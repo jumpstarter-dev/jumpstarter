@@ -560,6 +560,20 @@ class TestLeaseListFilterBySelector:
             result = leases.filter_by_selector("board=rpi")
         assert [lease.name for lease in result.leases] == ["good"]
 
+    def test_filter_excludes_lease_when_selector_contains_raises(self):
+        leases = LeaseList(
+            leases=[
+                self.create_lease(name="only", selector="board=rpi"),
+            ],
+            next_page_token=None,
+        )
+        with patch(
+            "jumpstarter.client.grpc.selector_contains",
+            side_effect=ValueError("unknown label selector operator: 'bogus'"),
+        ):
+            result = leases.filter_by_selector("board=rpi")
+        assert result.leases == []
+
 
 @pytest.mark.asyncio
 async def test_create_lease_sets_tags_on_protobuf():
