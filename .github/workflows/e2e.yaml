@@ -146,6 +146,8 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
+        with:
+          python-version-file: .py-version
 
       - name: Cache python wheels
         id: cache
@@ -187,6 +189,8 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
+        with:
+          python-version-file: .py-version
 
       - name: Install Go
         uses: actions/setup-go@v5
@@ -257,6 +261,8 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
+        with:
+          python-version-file: .py-version
 
       - name: Install Go
         uses: actions/setup-go@v5
@@ -285,6 +291,8 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
+        with:
+          python-version-file: .py-version
 
       - name: Install Go
         uses: actions/setup-go@v5
