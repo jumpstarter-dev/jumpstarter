@@ -21,7 +21,7 @@ SCENARIOS_DIR = Path(__file__).parent / "scenarios"
 BACKEND_URL = "http://127.0.0.1:9000"
 
 
-# ── Passthrough (no mocks) ────────────────────────────────────
+# -- Passthrough (no mocks) ----------------------------------------
 
 
 class TestPassthrough:
@@ -61,7 +61,7 @@ class TestPassthrough:
         assert data["accepted"] is True
 
 
-# ── Mock overrides ────────────────────────────────────────────
+# -- Mock overrides ------------------------------------------------
 
 
 class TestMockOverride:
@@ -132,7 +132,7 @@ class TestMockOverride:
         assert "GET /api/v1/status" not in mocks
 
 
-# ── Scenario loading ──────────────────────────────────────────
+# -- Scenario loading ----------------------------------------------
 
 
 class TestScenarioLoading:
@@ -195,7 +195,7 @@ class TestScenarioLoading:
             )
             assert resp.json()["source"] == "mock"
 
-        # After exit: mocks cleared → passthrough to real backend
+        # After exit: mocks cleared -> passthrough to real backend
         time.sleep(1)
         resp = http_session.get(
             f"{BACKEND_URL}/api/v1/status", timeout=10,
@@ -203,7 +203,7 @@ class TestScenarioLoading:
         assert resp.json()["source"] == "real-backend"
 
 
-# ── Request capture ───────────────────────────────────────────
+# -- Request capture -----------------------------------------------
 
 
 class TestRequestCapture:
