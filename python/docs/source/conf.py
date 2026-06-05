@@ -30,7 +30,6 @@ extensions = [
     "sphinxcontrib.programoutput",
     "myst_parser",
     "sphinx.ext.autodoc",
-    "sphinx.ext.doctest",
     "sphinx_click",
     "sphinx_substitution_extensions",
     "sphinx_copybutton",
@@ -102,8 +101,6 @@ myst_substitutions = {
     "controller_version": get_controller_version(),
     "index_url": get_index_url(),
 }
-
-doctest_test_doctest_blocks = ""
 
 html_js_files = ["js/theme-toggle.js", "js/mermaid-theme.js", "js/glossary-tooltips.js", "js/asciinema-player.min.js"]
 html_static_path = ["_static"]
