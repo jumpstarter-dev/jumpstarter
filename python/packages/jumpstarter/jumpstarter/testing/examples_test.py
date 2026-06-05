@@ -76,6 +76,13 @@ def test_validate_python_example_valid_syntax(tmp_path):
     validate_python_example(f)
 
 
+def test_validate_python_example_raises_on_syntax_error(tmp_path):
+    f = tmp_path / "broken.py"
+    f.write_text("def foo(\n")
+    with pytest.raises(SyntaxError):
+        validate_python_example(f)
+
+
 def test_validate_python_example_skips_on_missing_import(tmp_path):
     f = tmp_path / "usage.py"
     f.write_text("from nonexistent_package_xyz import something\n")
