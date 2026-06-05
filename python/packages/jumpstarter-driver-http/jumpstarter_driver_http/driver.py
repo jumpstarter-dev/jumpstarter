@@ -22,7 +22,7 @@ class HttpServer(Driver):
 
     root_dir: str = "/var/www"
     host: str | None = field(default=None)
-    port: int = 0
+    port: int = 8080
     timeout: int = field(default=600)
     remove_created_on_close: bool = True  # Clean up temporary web files by default
     app: web.Application = field(init=False, default_factory=web.Application)
