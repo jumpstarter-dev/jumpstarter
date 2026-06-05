@@ -1,7 +1,3 @@
-def test_driver_example_imports_successfully(driver_example_module):
-    assert driver_example_module is not None
-
-
 def test_driver_example_serve_creates_client(driver_example_module):
     assert hasattr(driver_example_module, "GenericDriver")
     assert hasattr(driver_example_module, "GenericClient")
