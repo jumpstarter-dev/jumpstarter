@@ -47,6 +47,8 @@ import (
 	clientsvcv1 "github.com/jumpstarter-dev/jumpstarter-controller/internal/service/client/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
@@ -1148,6 +1150,14 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		server,
 		clientsvcv1.NewClientService(s.Client, *auth.NewAuth(s.Client, s.Authn, s.Authz, s.Attr), s.effectiveMaxTags(), s.Signer),
 	)
+
+	// Register the standard gRPC health checking service (grpc.health.v1.Health).
+	// This is unauthenticated by design so that monitoring tools (Kubernetes
+	// liveness/readiness probes, load balancers, etc.) can call Check/Watch
+	// without credentials.
+	hs := health.NewServer()
+	healthpb.RegisterHealthServer(server, hs)
+	hs.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 
 	// Register reflection service on gRPC server.
 	reflection.Register(server)
