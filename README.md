@@ -91,26 +91,11 @@ See [`protocol/README.md`](protocol/README.md) for details.
 
 ### End-to-End Tests (`e2e/`)
 
-Comprehensive testing infrastructure for the entire Jumpstarter stack:
-- `setup-e2e.sh` - One-time environment setup (auto-installs bats libraries on macOS)
-- `run-e2e.sh` - Quick test runner for iterations
-- `action.yml` - GitHub Actions composite action for CI/CD
-- Full integration tests covering authentication, exporters, and clients
+Comprehensive testing infrastructure for the entire Jumpstarter stack.
 
 Run e2e tests locally:
-```shell
-# First time setup
-make e2e-setup
 
-# Run tests (repeat as needed)
-make e2e        # or: make e2e-run
-
-# Or full setup + run in one command
-make e2e-full
-
-# Clean up e2e environment (delete cluster, certs, etc.)
-make e2e-clean
-```
+See the [Makefile](Makefile) for available targets (`e2e-setup`, `e2e-run`, `e2e-clean`).
 
 ## Development
 
