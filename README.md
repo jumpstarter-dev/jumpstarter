@@ -119,7 +119,7 @@ make e2e-clean
 - Python (for Python components, see [.py-version](.py-version))
 - Go (for controller, see [.go-version](.go-version))
 - Docker/Podman (for container builds)
-- kubectl (for Kubernetes deployment)
+- kubectl (version matching the k8s.io dependencies in [controller/go.mod](controller/go.mod))
 
 ### Building
 
