@@ -84,6 +84,14 @@
       ]
     },
     {
+      "description": "Auto-merge patch updates",
+      "matchUpdateTypes": [
+        "patch"
+      ],
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
       "description": "Group Python gRPC and protobuf packages",
       "groupName": "grpc-protobuf",
       "matchManagers": [
@@ -214,14 +222,6 @@
         "sphinx",
         "sphinx-**"
       ]
-    },
-    {
-      "description": "Auto-merge patch updates",
-      "matchUpdateTypes": [
-        "patch"
-      ],
-      "automerge": true,
-      "automergeType": "pr"
     },
     {
       "description": "Group Go version directives",
