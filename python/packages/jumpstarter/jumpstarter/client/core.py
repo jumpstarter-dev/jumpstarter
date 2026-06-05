@@ -100,6 +100,13 @@ class AsyncDriverClient(
             self.logger.debug("gRPC debug for %s: %s", method, debug)
         return message
 
+    def _format_deadline_error(self, method: str, error: AioRpcError) -> str:
+        details = error.details() or "<no details>"
+        return (
+            f"gRPC deadline exceeded for '{method}': {details}. "
+            "Check proxy timeout settings or grpcOptions in your exporter/client config."
+        )
+
     async def get_status_async(self) -> ExporterStatus | None:
         """Get the current exporter status.
 
@@ -394,10 +401,7 @@ class AsyncDriverClient(
                 case StatusCode.UNKNOWN:
                     raise DriverError(error_message) from None
                 case StatusCode.DEADLINE_EXCEEDED:
-                    raise DriverError(
-                        f"gRPC deadline exceeded for '{method}': {e.details()}. "
-                        "Check proxy timeout settings or grpcOptions in your exporter/client config."
-                    ) from None
+                    raise DriverError(self._format_deadline_error(method, e)) from None
                 case _:
                     raise DriverError(error_message) from e
 
@@ -426,10 +430,7 @@ class AsyncDriverClient(
                 case StatusCode.UNKNOWN:
                     raise DriverError(e.details()) from None
                 case StatusCode.DEADLINE_EXCEEDED:
-                    raise DriverError(
-                        f"gRPC deadline exceeded for '{method}': {e.details()}. "
-                        "Check proxy timeout settings or grpcOptions in your exporter/client config."
-                    ) from None
+                    raise DriverError(self._format_deadline_error(method, e)) from None
                 case _:
                     raise DriverError(e.details()) from e
 
