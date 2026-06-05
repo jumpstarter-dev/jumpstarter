@@ -70,6 +70,18 @@
       ]
     },
     {
+      "description": "Group remaining Go module updates",
+      "groupName": "go-deps-other",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchFileNames": [
+        "controller/go.mod",
+        "controller/deploy/operator/go.mod",
+        "e2e/test/go.mod"
+      ]
+    },
+    {
       "description": "Group Go gRPC and protobuf modules",
       "groupName": "grpc-protobuf-go",
       "matchManagers": [
@@ -175,7 +187,7 @@
       "description": "Group Go version directives",
       "groupName": "golang-version",
       "matchDepTypes": [
-        "golang-version"
+        "golang"
       ],
       "matchFileNames": [
         "controller/go.mod",
