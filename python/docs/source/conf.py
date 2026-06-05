@@ -81,7 +81,15 @@ myst_heading_anchors = 3
 myst_enable_extensions = [
     "substitution",
 ]
+_install_sh = Path(__file__).resolve().parents[2].joinpath("install.sh").read_text()
+_stable_branch = next(
+    line.split('"')[1]
+    for line in _install_sh.splitlines()
+    if line.startswith("DEFAULT_SOURCE=")
+)
+
 myst_substitutions = {
+    "stable_branch": _stable_branch,
     "requires_python": tomllib.loads(
         Path(__file__).resolve().parents[2]
         .joinpath("packages/jumpstarter/pyproject.toml")
