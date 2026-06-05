@@ -152,6 +152,13 @@
       ]
     },
     {
+      "description": "Custom versioning for MicroShift container images",
+      "matchPackageNames": [
+        "ghcr.io/microshift-io/microshift"
+      ],
+      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)_g[a-f0-9]+_\\d+\\.\\d+\\.\\d+_okd_scos\\.(?:(?<prerelease>ec\\.\\d+)|(?<build>\\d+))$"
+    },
+    {
       "description": "Group Docker base images",
       "groupName": "docker-base-images",
       "matchManagers": [
