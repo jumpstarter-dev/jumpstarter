@@ -93,9 +93,7 @@ See [`protocol/README.md`](protocol/README.md) for details.
 
 Comprehensive testing infrastructure for the entire Jumpstarter stack.
 
-Run e2e tests locally:
-
-See the [Makefile](Makefile) for available targets (`e2e-setup`, `e2e-run`, `e2e-clean`).
+See the [Makefile](Makefile) for available targets.
 
 ## Development
 
