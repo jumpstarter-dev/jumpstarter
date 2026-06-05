@@ -18,6 +18,7 @@
   ],
   "customManagers": [
     {
+      "description": "Track .go-version for CI Go toolchain pinning (synced with go.mod directives)",
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)\\.go-version$/"
@@ -30,6 +31,7 @@
       "versioningTemplate": "go-mod-directive"
     },
     {
+      "description": "Track .py-version for CI Python runtime (not the requires-python floor)",
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)\\.py-version$/"

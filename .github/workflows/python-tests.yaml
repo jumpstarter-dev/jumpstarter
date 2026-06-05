@@ -44,6 +44,9 @@ jobs:
     strategy:
       matrix:
         runs-on: [ubuntu-24.04, macos-15]
+        # Floor: oldest Python in supported platforms (RHEL 9 appstream)
+        # Ceiling: newest Python in latest Fedora
+        # Review on each RHEL/Fedora release
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
