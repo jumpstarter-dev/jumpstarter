@@ -29,7 +29,9 @@ def _resolve_model(qualified_name: str) -> type[pydantic.BaseModel]:
 def _validate_section(
     path: Path, section_key: str, section: dict | list, model_class: type[pydantic.BaseModel]
 ) -> None:
-    if section_key == "export" and isinstance(section, dict):
+    if section_key == "export":
+        if not isinstance(section, dict):
+            raise TypeError(f"{path.name}: export section must be a dict, got {type(section).__name__}")
         for _name, entry in section.items():
             model_class.model_validate(entry)
     elif section_key == "hooks":

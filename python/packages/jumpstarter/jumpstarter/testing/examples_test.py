@@ -181,6 +181,13 @@ def test_validate_example_dispatches_bash(tmp_path):
     validate_example(f, "bash")
 
 
+def test_validate_yaml_example_rejects_non_dict_export(tmp_path):
+    f = tmp_path / "bad_export.yaml"
+    f.write_text(_yaml.dump({"export": ["item1", "item2"]}))
+    with pytest.raises(TypeError, match="export"):
+        validate_yaml_example(f)
+
+
 def test_validate_example_raises_on_unsupported_kind(tmp_path):
     f = tmp_path / "script.sh"
     f.write_text("echo hello\n")
