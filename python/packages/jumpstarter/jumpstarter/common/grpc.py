@@ -161,8 +161,6 @@ def _override_default_grpc_options(grpc_options: dict[str, str | int] | None) ->
         ("grpc.keepalive_timeout_ms", 180000),
         ("grpc.http2.max_pings_without_data", 0),
         ("grpc.keepalive_permit_without_calls", 1),
-        ("grpc.max_receive_message_length", -1),
-        ("grpc.max_send_message_length", -1),
     )
     options = dict(defaults)
     options.update(grpc_options or {})
