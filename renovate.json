@@ -178,6 +178,13 @@
       ]
     },
     {
+      "description": "Custom versioning for devfile base-developer-image (track ubi major only)",
+      "matchPackageNames": [
+        "quay.io/devfile/base-developer-image"
+      ],
+      "versioning": "regex:^ubi(?<major>\\d+)-latest$"
+    },
+    {
       "description": "Custom versioning for MicroShift container images",
       "matchPackageNames": [
         "ghcr.io/microshift-io/microshift"
