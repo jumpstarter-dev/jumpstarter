@@ -90,6 +90,9 @@ _stable_branch = next(
 
 myst_substitutions = {
     "stable_branch": _stable_branch,
+    "stable_branch_index": f"[{_stable_branch}](https://pkg.jumpstarter.dev/{_stable_branch})",
+    "stable_branch_install_cmd": f"`./install.sh -s {_stable_branch}`",
+    "stable_branch_code": f"`{_stable_branch}`",
     "requires_python": tomllib.loads(
         Path(__file__).resolve().parents[2]
         .joinpath("packages/jumpstarter/pyproject.toml")

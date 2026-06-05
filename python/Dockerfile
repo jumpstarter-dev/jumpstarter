@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM ghcr.io/astral-sh/uv:0.4.4 AS uv
+FROM --platform=$BUILDPLATFORM ghcr.io/astral-sh/uv:0.11.19 AS uv
 
 FROM --platform=$BUILDPLATFORM fedora:43 AS builder
 RUN dnf install -y make git && \
@@ -11,7 +11,7 @@ RUN dnf install -y python3 ustreamer libusb1 android-tools python3-libgpiod curl
     nftables dnsmasq iproute procps-ng tcpdump && \
     dnf clean all && \
     rm -rf /var/cache/dnf
-COPY --from=ghcr.io/astral-sh/uv:0.4.4 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.19 /uv /uvx /bin/
 
 ARG FLS_VERSION=0.2.0
 RUN ARCH=$(uname -m) && \
