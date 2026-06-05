@@ -12,9 +12,80 @@ from jumpstarter.exporter.hooks import (
     HookExecutionError,
     HookExecutor,
     _flush_lines,
+    _monotonic,
 )
 
 pytestmark = pytest.mark.anyio
+
+
+class _PtyTracker:
+    """Tracks PTY fd and EOF state for drain tests that need to intercept
+    os.read and pty.openpty calls.
+
+    When ``return_drain_data`` is True (default), the first os.read after EOF
+    returns ``b"SHOULD_NOT_APPEAR\\n"``; otherwise it returns ``b""``.
+    """
+
+    def __init__(self, *, return_drain_data: bool = True) -> None:
+        import pty
+
+        self.parent_fd: int | None = None
+        self.eof_seen: bool = False
+        self._drain_data_returned: bool = False
+        self._return_drain_data = return_drain_data
+        self._original_openpty = pty.openpty
+        self._original_os_read = os.read
+
+    def tracking_openpty(self):
+        parent, child = self._original_openpty()
+        self.parent_fd = parent
+        return parent, child
+
+    def os_read_with_drain_data(self, fd, size):
+        if fd != self.parent_fd:
+            return self._original_os_read(fd, size)
+        if not self.eof_seen:
+            try:
+                data = self._original_os_read(fd, size)
+            except (BlockingIOError, OSError):
+                self.eof_seen = True
+                raise
+            if not data:
+                self.eof_seen = True
+                return b""
+            return data
+        if self._return_drain_data and not self._drain_data_returned:
+            self._drain_data_returned = True
+            return b"SHOULD_NOT_APPEAR\n"
+        return b""
+
+
+class _DrainDeadlineClock:
+    """A callable that replaces ``_monotonic`` to simulate the drain
+    deadline being exceeded between the ``while`` condition check and the
+    ``remaining`` calculation.
+
+    Only patches the hooks module's ``_monotonic`` reference, leaving
+    ``time.monotonic`` (used by the asyncio event loop) unaffected.
+    """
+
+    def __init__(self, real_monotonic, state: _PtyTracker) -> None:
+        self._real = real_monotonic
+        self._state = state
+        self._call_count = 0
+        self._deadline: float | None = None
+
+    def __call__(self) -> float:
+        real_time = self._real()
+        if not self._state.eof_seen:
+            return real_time
+        self._call_count += 1
+        if self._call_count == 1:
+            self._deadline = real_time + DRAIN_TIMEOUT_SECONDS
+            return real_time
+        if self._call_count == 2:
+            return self._deadline - 0.001  # type: ignore[operator]
+        return self._deadline + 1.0  # type: ignore[operator]
 
 
 class TestFlushLines:
@@ -691,6 +762,110 @@ class TestHookExecutor:
             assert eof_seen_on_pty
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("DRAIN_CAPTURED" in call for call in info_calls)
+
+    async def test_drain_select_oserror_exits_gracefully(self, lease_scope) -> None:
+        """Verify the drain loop exits gracefully when select.select() raises
+        OSError (e.g. fd closed during drain).
+
+        Patches select.select inside the drain to raise OSError, simulating a
+        closed or invalid fd. The hook should still complete successfully.
+        """
+        import select as select_mod
+
+        original_select = select_mod.select
+        state = _PtyTracker()
+
+        def select_with_oserror(rlist, wlist, xlist, timeout=None):
+            if state.eof_seen and rlist and rlist[0] == state.parent_fd:
+                raise OSError("simulated fd closed during drain")
+            return original_select(rlist, wlist, xlist, timeout)
+
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo SELECT_ERROR_TEST", timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with (
+            patch("pty.openpty", side_effect=state.tracking_openpty),
+            patch("os.read", side_effect=state.os_read_with_drain_data),
+            patch("jumpstarter.exporter.hooks.select.select", side_effect=select_with_oserror),
+            patch("jumpstarter.exporter.hooks.logger") as mock_logger,
+        ):
+            result = await executor.execute_before_lease_hook(lease_scope)
+            assert result is None
+            assert state.eof_seen
+            info_calls = [str(call) for call in mock_logger.info.call_args_list]
+            assert any("SELECT_ERROR_TEST" in call for call in info_calls)
+
+    async def test_drain_select_valueerror_exits_gracefully(self, lease_scope) -> None:
+        """Verify the drain loop exits gracefully when select.select() raises
+        ValueError (e.g. negative fd).
+
+        This covers the except (ValueError, OSError) handler in the drain loop.
+        """
+        import select as select_mod
+
+        original_select = select_mod.select
+        state = _PtyTracker(return_drain_data=False)
+
+        def select_with_valueerror(rlist, wlist, xlist, timeout=None):
+            if state.eof_seen and rlist and rlist[0] == state.parent_fd:
+                raise ValueError("file descriptor cannot be a negative integer (-1)")
+            return original_select(rlist, wlist, xlist, timeout)
+
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo VALUEERROR_TEST", timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with (
+            patch("pty.openpty", side_effect=state.tracking_openpty),
+            patch("os.read", side_effect=state.os_read_with_drain_data),
+            patch("jumpstarter.exporter.hooks.select.select", side_effect=select_with_valueerror),
+            patch("jumpstarter.exporter.hooks.logger") as mock_logger,
+        ):
+            result = await executor.execute_before_lease_hook(lease_scope)
+            assert result is None
+            info_calls = [str(call) for call in mock_logger.info.call_args_list]
+            assert any("VALUEERROR_TEST" in call for call in info_calls)
+
+    async def test_drain_exits_when_deadline_exceeded_before_select(self, lease_scope) -> None:
+        """Verify the drain loop exits when the deadline is exceeded between the
+        while condition and the remaining-time check (line: if remaining <= 0).
+
+        Patches ``jumpstarter.exporter.hooks._monotonic`` (not ``time.monotonic``
+        globally) to simulate a jump past the deadline after the while condition
+        passes but before the remaining check.  Using the module-level
+        ``_monotonic`` reference avoids breaking the asyncio event loop, which
+        also relies on ``time.monotonic``.
+        """
+        state = _PtyTracker()
+        clock = _DrainDeadlineClock(_monotonic, state)
+
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo DEADLINE_TEST", timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with (
+            patch("pty.openpty", side_effect=state.tracking_openpty),
+            patch("os.read", side_effect=state.os_read_with_drain_data),
+            patch("jumpstarter.exporter.hooks._monotonic", side_effect=clock),
+            patch("jumpstarter.exporter.hooks.logger") as mock_logger,
+        ):
+            result = await executor.execute_before_lease_hook(lease_scope)
+            assert result is None
+            info_calls = [str(call) for call in mock_logger.info.call_args_list]
+            assert any("DEADLINE_TEST" in call for call in info_calls)
+            # SHOULD_NOT_APPEAR should not be in output because the drain
+            # exited early due to remaining <= 0 before select could run
+            assert not any("SHOULD_NOT_APPEAR" in call for call in info_calls)
 
     async def test_drain_exception_is_suppressed(self, lease_scope) -> None:
         """Verify that an unexpected exception raised during the drain is caught
