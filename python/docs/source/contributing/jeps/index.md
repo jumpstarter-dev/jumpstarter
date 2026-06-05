@@ -63,3 +63,13 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 | Withdrawn    | Author voluntarily withdrew                      |
 | Active       | Living document, actively maintained (Process JEPs only) |
 | Superseded   | Replaced by a newer JEP                          |
+
+```{toctree}
+:hidden:
+
+JEP-0000-jep-process.md
+JEP-0010-renode-integration.md
+JEP-0011-protobuf-introspection-interface-generation.md
+JEP-0013-observability-telemetry-logs.md
+JEP-0014-virtual-scalable-exporters.md
+```
