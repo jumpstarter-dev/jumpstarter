@@ -125,7 +125,7 @@ jobs:
         if: ${{ matrix.generate_installer && steps.check.outputs.skip != 'true' }}
         uses: actions/setup-go@v5
         with:
-          go-version-file: controller/deploy/operator/go.mod
+          go-version-file: .go-version
 
       - name: Build operator installer manifest
         if: ${{ matrix.generate_installer && steps.check.outputs.skip != 'true' }}

@@ -14,6 +14,20 @@
     "**/vendor/**",
     "**/examples/**"
   ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.go-version$/"
+      ],
+      "matchStrings": [
+        "(?<currentValue>\\d+\\.\\d+\\.\\d+)\\n"
+      ],
+      "depNameTemplate": "go",
+      "datasourceTemplate": "golang-version",
+      "versioningTemplate": "go-mod-directive"
+    }
+  ],
   "packageRules": [
     {
       "description": "Group official GitHub Actions",
@@ -200,6 +214,17 @@
         "controller/go.mod",
         "controller/deploy/operator/go.mod",
         "e2e/test/go.mod"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Group .go-version with Go version directives",
+      "groupName": "golang-version",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "go"
       ],
       "automerge": false
     }

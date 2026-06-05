@@ -54,7 +54,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: controller/go.mod
+          go-version-file: .go-version
 
       - name: Run go linter
         working-directory: controller
