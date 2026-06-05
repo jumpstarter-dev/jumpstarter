@@ -21,7 +21,7 @@ install_jumpstarter() {
         fi
         log_info "Installing from pre-built wheels in ${PREBUILT_WHEELS_DIR} (${whl_count} wheels)..."
         cd python
-        uv venv .venv --python 3.12
+        uv venv .venv --python "$(cat "$REPO_ROOT/.py-version")"
         uv pip install --python .venv/bin/python "${PREBUILT_WHEELS_DIR}"/*.whl
         cd ..
     else
