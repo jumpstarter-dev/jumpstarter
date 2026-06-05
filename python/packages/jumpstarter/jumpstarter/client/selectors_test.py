@@ -89,6 +89,9 @@ class TestLabelSatisfiesExpressionUnknownOperator:
     def test_exists_operator_still_works(self):
         assert _label_satisfies_expression({"key": "value"}, "key", "exists", []) is True
 
+    def test_exists_operator_returns_false_when_key_absent(self):
+        assert _label_satisfies_expression({}, "missing", "exists", []) is False
+
     def test_not_equal_operator_still_works(self):
         assert _label_satisfies_expression({"key": "value"}, "key", "!=", ["other"]) is True
         assert _label_satisfies_expression({"key": "value"}, "key", "!=", ["value"]) is False
