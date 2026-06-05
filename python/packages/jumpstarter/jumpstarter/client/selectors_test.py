@@ -31,7 +31,7 @@ class TestSelectorContains:
 
     def test_filter_not_exists(self):
         assert selector_contains("board=rpi,!experimental", "!experimental") is True
-        assert selector_contains("board=rpi", "!experimental") is False
+        assert selector_contains("board=rpi", "!experimental") is True
 
     def test_empty_filter_matches_all(self):
         assert selector_contains("board=rpi,firmware in (v2, v3)", "") is True
@@ -92,6 +92,9 @@ class TestLabelSatisfiesExpressionUnknownOperator:
     def test_not_equal_operator_still_works(self):
         assert _label_satisfies_expression({"key": "value"}, "key", "!=", ["other"]) is True
         assert _label_satisfies_expression({"key": "value"}, "key", "!=", ["value"]) is False
+
+    def test_not_exists_operator_returns_true_when_key_absent(self):
+        assert _label_satisfies_expression({}, "missing", "!exists", []) is True
 
     def test_key_not_in_labels_returns_false(self):
         assert _label_satisfies_expression({}, "missing", "in", ["value"]) is False
