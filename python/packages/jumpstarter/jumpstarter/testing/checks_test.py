@@ -137,6 +137,38 @@ def test_find_unused_examples_in_docs_returns_empty_for_missing_dir(tmp_path):
     assert find_unused_examples_in_docs(tmp_path / "nonexistent", []) == []
 
 
+def test_discover_example_files_returns_bash(tmp_path):
+    examples = tmp_path / "examples"
+    examples.mkdir()
+    (examples / "usage_cli.bash").write_text("echo hello\n", encoding="utf-8")
+    result = discover_example_files(examples)
+    assert len(result) == 1
+    assert result[0] == (examples / "usage_cli.bash", "bash")
+
+
+def test_discover_example_files_returns_all_kinds(tmp_path):
+    examples = tmp_path / "examples"
+    examples.mkdir()
+    _write_yaml(examples / "config.yaml", {"key": "value"})
+    (examples / "usage.py").write_text("pass\n", encoding="utf-8")
+    (examples / "usage_cli.bash").write_text("echo hello\n", encoding="utf-8")
+    result = discover_example_files(examples)
+    assert len(result) == 3
+    kinds = {kind for _, kind in result}
+    assert kinds == {"yaml", "python", "bash"}
+
+
+def test_find_unused_examples_detects_unreferenced_bash(tmp_path):
+    examples = tmp_path / "examples"
+    examples.mkdir()
+    (examples / "usage_cli.bash").write_text("echo hello\n", encoding="utf-8")
+    readme = tmp_path / "README.md"
+    readme.write_text("no reference here\n", encoding="utf-8")
+    unused = find_unused_examples(examples, readme)
+    assert len(unused) == 1
+    assert unused[0].name == "usage_cli.bash"
+
+
 def test_find_inline_code_blocks_detects_yaml(tmp_path):
     readme = tmp_path / "README.md"
     readme.write_text("```yaml\nkey: value\n```\n", encoding="utf-8")

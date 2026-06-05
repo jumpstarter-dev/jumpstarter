@@ -105,10 +105,16 @@ def instantiate_yaml_example(path: Path) -> None:
             pytest.skip(f"driver '{name}': {exc}")
 
 
+def validate_bash_example(path: Path) -> None:
+    path.read_text(encoding="utf-8")
+
+
 def validate_example(path: Path, kind: str) -> None:
     if kind == "yaml":
         validate_yaml_example(path)
     elif kind == "python":
         validate_python_example(path)
+    elif kind == "bash":
+        validate_bash_example(path)
     else:
-        raise ValueError(f"{path.name}: unsupported example kind '{kind}', expected 'yaml' or 'python'")
+        raise ValueError(f"{path.name}: unsupported example kind '{kind}'")

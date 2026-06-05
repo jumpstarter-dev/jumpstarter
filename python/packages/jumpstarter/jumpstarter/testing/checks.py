@@ -40,6 +40,8 @@ def discover_example_files(
         items.append((f, "yaml"))
     for f in sorted(examples_dir.glob("**/*.py")):
         items.append((f, "python"))
+    for f in sorted(examples_dir.glob("**/*.bash")):
+        items.append((f, "bash"))
     return items
 
 

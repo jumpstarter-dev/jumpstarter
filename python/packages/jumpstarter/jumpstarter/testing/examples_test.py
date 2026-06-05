@@ -168,11 +168,17 @@ def test_validate_yaml_example_rejects_non_dict_hooks(tmp_path):
         validate_yaml_example(f)
 
 
+def test_validate_example_dispatches_bash(tmp_path):
+    f = tmp_path / "usage_cli.bash"
+    f.write_text("#!/bin/bash\necho hello\n")
+    validate_example(f, "bash")
+
+
 def test_validate_example_raises_on_unsupported_kind(tmp_path):
     f = tmp_path / "script.sh"
     f.write_text("echo hello\n")
     with pytest.raises(ValueError, match="unsupported"):
-        validate_example(f, "bash")
+        validate_example(f, "unknown")
 
 
 def test_instantiate_yaml_example_skips_on_missing_driver(tmp_path):
