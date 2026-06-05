@@ -5,6 +5,7 @@ import importlib
 import warnings
 from pathlib import Path
 
+import pydantic
 import yaml
 
 KIND_TO_MODEL: dict[str, str] = {
@@ -19,13 +20,15 @@ SECTION_TO_MODEL: dict[str, str] = {
 }
 
 
-def _resolve_model(qualified_name: str) -> type:
+def _resolve_model(qualified_name: str) -> type[pydantic.BaseModel]:
     module_path, class_name = qualified_name.rsplit(".", 1)
     module = importlib.import_module(module_path)
     return getattr(module, class_name)
 
 
-def _validate_section(path: Path, section_key: str, section: object, model_class: type) -> None:
+def _validate_section(
+    path: Path, section_key: str, section: dict | list, model_class: type[pydantic.BaseModel]
+) -> None:
     if section_key == "export" and isinstance(section, dict):
         for _name, entry in section.items():
             model_class.model_validate(entry)
