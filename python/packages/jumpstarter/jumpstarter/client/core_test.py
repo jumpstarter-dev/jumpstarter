@@ -8,7 +8,7 @@ import pytest
 from grpc import StatusCode
 from grpc.aio import AioRpcError
 
-from jumpstarter.client.core import DriverError
+from jumpstarter.client.core import AsyncDriverClient, DriverError
 from jumpstarter.common import ExporterStatus, Metadata
 from jumpstarter.conftest import MockAioRpcError
 
@@ -286,7 +286,7 @@ class TestAsyncDriverClientWaitForHookStatus:
 class TestAsyncDriverClientCallAsync:
     async def test_call_async_deadline_exceeded_raises_driver_error(self) -> None:
         """Test that call_async raises DriverError on DEADLINE_EXCEEDED."""
-        from jumpstarter.client.core import AsyncDriverClient
+
 
         stub = MagicMock()
         stub.DriverCall = AsyncMock(
@@ -300,7 +300,7 @@ class TestAsyncDriverClientCallAsync:
 
     async def test_call_async_deadline_exceeded_message_mentions_timeout_config(self) -> None:
         """Test that DEADLINE_EXCEEDED error message suggests checking timeout configuration."""
-        from jumpstarter.client.core import AsyncDriverClient
+
 
         stub = MagicMock()
         stub.DriverCall = AsyncMock(
@@ -313,7 +313,7 @@ class TestAsyncDriverClientCallAsync:
             await client.call_async("flash_firmware")
 
     async def test_call_async_deadline_exceeded_with_empty_details(self) -> None:
-        from jumpstarter.client.core import AsyncDriverClient
+
 
         stub = MagicMock()
         stub.DriverCall = AsyncMock(
@@ -328,7 +328,7 @@ class TestAsyncDriverClientCallAsync:
 
 class TestAsyncDriverClientStreamingCallAsync:
     async def test_streamingcall_async_deadline_exceeded_raises_driver_error(self) -> None:
-        from jumpstarter.client.core import AsyncDriverClient
+
 
         async def raise_deadline_exceeded(_request):
             raise MockAioRpcError(StatusCode.DEADLINE_EXCEEDED, "deadline hit")
@@ -344,7 +344,7 @@ class TestAsyncDriverClientStreamingCallAsync:
                 pass
 
     async def test_streamingcall_async_deadline_exceeded_message_mentions_timeout_config(self) -> None:
-        from jumpstarter.client.core import AsyncDriverClient
+
 
         async def raise_deadline_exceeded(_request):
             raise MockAioRpcError(StatusCode.DEADLINE_EXCEEDED, "timeout")
@@ -360,7 +360,7 @@ class TestAsyncDriverClientStreamingCallAsync:
                 pass
 
     async def test_streamingcall_async_deadline_exceeded_with_empty_details(self) -> None:
-        from jumpstarter.client.core import AsyncDriverClient
+
 
         async def raise_deadline_exceeded(_request):
             raise MockAioRpcError(StatusCode.DEADLINE_EXCEEDED, "")
