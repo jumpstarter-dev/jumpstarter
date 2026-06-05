@@ -1,14 +1,4 @@
-"""Automated demo tests for the mitmproxy Jumpstarter driver.
-
-Each test class demonstrates a different capability of the proxy driver.
-Run with::
-
-    cd python/packages/jumpstarter-driver-mitmproxy/demo
-    jmp shell --exporter exporter.yaml -- pytest . -v
-
-The tests require the backend server fixture (started automatically)
-and a running proxy (started automatically via the ``proxy`` fixture).
-"""
+"""Run with: jmp shell --exporter exporter.yaml -- pytest . -v"""
 
 from __future__ import annotations
 
@@ -25,8 +15,6 @@ BACKEND_URL = "http://127.0.0.1:9000"
 
 
 class TestPassthrough:
-    """No mocks configured - requests flow through the proxy to the real backend."""
-
     def test_status_from_real_backend(
         self, backend_server, proxy_client, http_session,
     ):
@@ -65,8 +53,6 @@ class TestPassthrough:
 
 
 class TestMockOverride:
-    """Setting mocks replaces real backend responses."""
-
     def test_mock_replaces_real_response(
         self, backend_server, proxy_client, http_session,
     ):
@@ -111,7 +97,6 @@ class TestMockOverride:
     def test_mock_endpoint_context_manager(
         self, backend_server, proxy_client, http_session,
     ):
-        """mock_endpoint() auto-cleans up after the with block."""
         with proxy_client.mock_endpoint(
             "GET", "/api/v1/status",
             body={
@@ -136,8 +121,6 @@ class TestMockOverride:
 
 
 class TestScenarioLoading:
-    """Load complete YAML scenario files to set up groups of mocks."""
-
     def test_load_happy_path(
         self, backend_server, proxy_client, http_session,
     ):
@@ -185,7 +168,6 @@ class TestScenarioLoading:
     def test_mock_scenario_context_manager(
         self, backend_server, proxy_client, http_session,
     ):
-        """mock_scenario() loads on entry, clears on exit."""
         with proxy_client.mock_scenario(
             str(SCENARIOS_DIR / "happy-path"),
         ):
@@ -207,8 +189,6 @@ class TestScenarioLoading:
 
 
 class TestRequestCapture:
-    """Demonstrate request capture and inspection."""
-
     def test_capture_context_manager(
         self, backend_server, proxy_client, http_session,
     ):
