@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import warnings
 
 import pytest
@@ -14,6 +15,7 @@ from jumpstarter.config.exporter import (
 )
 from jumpstarter.testing.examples import (
     instantiate_yaml_example,
+    validate_bash_example,
     validate_example,
     validate_python_example,
     validate_yaml_example,
@@ -173,6 +175,19 @@ def test_validate_yaml_example_rejects_non_dict_hooks(tmp_path):
     f.write_text(_yaml.dump({"hooks": ["not", "a", "dict"]}))
     with pytest.raises(TypeError, match="hooks"):
         validate_yaml_example(f)
+
+
+def test_validate_bash_example_valid_syntax(tmp_path):
+    f = tmp_path / "valid.bash"
+    f.write_text("#!/bin/bash\necho hello\n")
+    validate_bash_example(f)
+
+
+def test_validate_bash_example_raises_on_syntax_error(tmp_path):
+    f = tmp_path / "broken.bash"
+    f.write_text("#!/bin/bash\nif true\n")
+    with pytest.raises(subprocess.CalledProcessError):
+        validate_bash_example(f)
 
 
 def test_validate_example_dispatches_bash(tmp_path):

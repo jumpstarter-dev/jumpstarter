@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import subprocess
 import warnings
 from pathlib import Path
 
@@ -112,6 +113,7 @@ def instantiate_yaml_example(path: Path) -> None:
 
 def validate_bash_example(path: Path) -> None:
     path.read_text(encoding="utf-8")
+    subprocess.run(["bash", "-n", str(path)], check=True)
 
 
 def validate_example(path: Path, kind: str) -> None:
