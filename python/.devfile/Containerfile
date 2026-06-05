@@ -8,8 +8,8 @@ LABEL summary="devfile jumpstarter developer image"
 LABEL description="Image with developers tools."
 LABEL io.k8s.display-name="jumpstarter-developer-universal"
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv  /bin/uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uvx /bin/uvx
+COPY --from=ghcr.io/astral-sh/uv:0.4.4 /uv  /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.4.4 /uvx /bin/uvx
 
 USER root
 

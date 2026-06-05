@@ -62,8 +62,9 @@ install_dependencies() {
         export PATH="$HOME/.cargo/bin:$PATH"
     fi
 
-    log_info "Installing Python 3.12..."
-    uv python install 3.12
+    PY_VERSION="$(cat "$REPO_ROOT/.py-version")"
+    log_info "Installing Python ${PY_VERSION}..."
+    uv python install "$PY_VERSION"
 
     log_info "Dependencies installed"
 }
@@ -209,7 +210,7 @@ install_old_client() {
     rm -rf "$OLD_JMP_DIR"
 
     # Create a separate venv for old client
-    uv venv "$OLD_JMP_DIR/.venv" --python 3.12
+    uv venv "$OLD_JMP_DIR/.venv" --python "$(cat "$REPO_ROOT/.py-version")"
 
     # Install old packages from PyPI
     uv pip install --python "$OLD_JMP_DIR/.venv/bin/python" \

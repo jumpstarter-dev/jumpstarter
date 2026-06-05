@@ -63,7 +63,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: .go-version
 
       - name: Cache controller image
         id: cache
@@ -106,7 +106,7 @@ jobs:
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: .go-version
 
       - name: Cache operator artifacts
         id: cache
@@ -146,6 +146,8 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
+        with:
+          python-version-file: .py-version
 
       - name: Cache python wheels
         id: cache
@@ -187,11 +189,13 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
+        with:
+          python-version-file: .py-version
 
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: .go-version
 
       - name: Load e2e artifacts
         uses: ./.github/actions/load-e2e-artifacts
@@ -237,11 +241,13 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
+        with:
+          python-version-file: .py-version
 
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: .go-version
 
       - name: Setup compat environment (old controller v0.8.1)
         run: make e2e-compat-setup COMPAT_SCENARIO=old-controller
@@ -265,11 +271,13 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
+        with:
+          python-version-file: .py-version
 
       - name: Install Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: .go-version
 
       - name: Load e2e artifacts
         uses: ./.github/actions/load-e2e-artifacts
