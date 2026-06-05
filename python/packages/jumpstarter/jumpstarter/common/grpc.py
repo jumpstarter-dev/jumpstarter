@@ -176,12 +176,10 @@ def translate_grpc_exceptions():
         yield
     except grpc.aio.AioRpcError as e:
         if e.code().name == "UNAVAILABLE":
-            # tls or other connection errors
             raise ConnectionError(f"grpc error: {e.details()}") from None
-        if e.code().name == "UNKNOWN":
-            # an error returned from our functions
+        elif e.code().name == "UNKNOWN":
             raise ConnectionError(f"grpc controller responded: {e.details()}") from None
-        if e.code().name == "DEADLINE_EXCEEDED":
+        elif e.code().name == "DEADLINE_EXCEEDED":
             raise ConnectionError(
                 f"grpc deadline exceeded: {e.details() or '<no details>'}. "
                 "Check timeout configuration."
