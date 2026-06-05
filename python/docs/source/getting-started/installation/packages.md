@@ -79,7 +79,7 @@ echo 'source ~/.local/jumpstarter/set' >> ~/.bashrc
 
 ##### Prerequisites
 
-- Python 3.11 or higher
+- Python (see [.py-version](https://github.com/jumpstarter-dev/jumpstarter/blob/main/.py-version) for the recommended version)
 - pip3
 - bash shell
 

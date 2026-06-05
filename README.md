@@ -116,8 +116,8 @@ make e2e-clean
 
 ### Prerequisites
 
-- Python 3.11+ (for Python components)
-- Go 1.24+ (for controller)
+- Python (for Python components, see [.py-version](.py-version))
+- Go (for controller, see [.go-version](.go-version))
 - Docker/Podman (for container builds)
 - kubectl (for Kubernetes deployment)
 
