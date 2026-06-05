@@ -295,7 +295,7 @@ class TestAsyncDriverClientCallAsync:
 
         client = AsyncDriverClient(uuid=uuid4(), labels={}, stub=stub)
 
-        with pytest.raises(DriverError, match="deadline exceeded"):
+        with pytest.raises(DriverError, match="deadline exceeded.*long_operation"):
             await client.call_async("long_operation")
 
     async def test_call_async_deadline_exceeded_message_mentions_timeout_config(self) -> None:
@@ -309,7 +309,7 @@ class TestAsyncDriverClientCallAsync:
 
         client = AsyncDriverClient(uuid=uuid4(), labels={}, stub=stub)
 
-        with pytest.raises(DriverError, match="grpcOptions"):
+        with pytest.raises(DriverError, match="deadline exceeded.*flash_firmware.*grpcOptions"):
             await client.call_async("flash_firmware")
 
     async def test_call_async_deadline_exceeded_with_empty_details(self) -> None:
@@ -322,7 +322,7 @@ class TestAsyncDriverClientCallAsync:
 
         client = AsyncDriverClient(uuid=uuid4(), labels={}, stub=stub)
 
-        with pytest.raises(DriverError, match="deadline exceeded"):
+        with pytest.raises(DriverError, match="deadline exceeded.*long_operation"):
             await client.call_async("long_operation")
 
 
@@ -339,7 +339,7 @@ class TestAsyncDriverClientStreamingCallAsync:
 
         client = AsyncDriverClient(uuid=uuid4(), labels={}, stub=stub)
 
-        with pytest.raises(DriverError, match="deadline exceeded"):
+        with pytest.raises(DriverError, match="deadline exceeded.*long_stream"):
             async for _ in client.streamingcall_async("long_stream"):
                 pass
 
@@ -355,7 +355,7 @@ class TestAsyncDriverClientStreamingCallAsync:
 
         client = AsyncDriverClient(uuid=uuid4(), labels={}, stub=stub)
 
-        with pytest.raises(DriverError, match="grpcOptions"):
+        with pytest.raises(DriverError, match="deadline exceeded.*stream_firmware.*grpcOptions"):
             async for _ in client.streamingcall_async("stream_firmware"):
                 pass
 
@@ -371,6 +371,6 @@ class TestAsyncDriverClientStreamingCallAsync:
 
         client = AsyncDriverClient(uuid=uuid4(), labels={}, stub=stub)
 
-        with pytest.raises(DriverError, match="deadline exceeded"):
+        with pytest.raises(DriverError, match="deadline exceeded.*long_stream"):
             async for _ in client.streamingcall_async("long_stream"):
                 pass
