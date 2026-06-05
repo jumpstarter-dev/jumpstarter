@@ -1,8 +1,9 @@
-import asyncio
 import os
 from dataclasses import dataclass, field
 from typing import Optional
 
+import anyio
+import anyio.from_thread
 from aiohttp import web
 from jumpstarter_driver_opendal.driver import Opendal
 
@@ -135,35 +136,13 @@ class HttpServer(Driver):
     def close(self):
         if self.runner:
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We are on the event loop thread (e.g., called from
-                    # Session.__contextmanager__'s finally block). Schedule the
-                    # cleanup coroutine on the running loop and wait for it.
-                    future = asyncio.ensure_future(self._async_cleanup(), loop=loop)
-                    # ensure_future schedules it; we cannot block-wait here
-                    # because we are on the loop thread. Add a callback to log
-                    # errors instead of silently dropping them.
-                    future.add_done_callback(self._cleanup_done_callback)
-                else:
-                    # No event loop running — we can drive one ourselves.
-                    loop.run_until_complete(self._async_cleanup())
-            except RuntimeError:
-                # No event loop at all — create a temporary one.
-                asyncio.run(self._async_cleanup())
+                anyio.from_thread.run(self._async_cleanup)
             except Exception as e:
                 self.logger.warning(f"HTTP server cleanup failed: {e}")
             finally:
                 self.runner = None
                 self._bound_port = 0
         super().close()
-
-    def _cleanup_done_callback(self, future: asyncio.Future):
-        """Log errors from the async cleanup when it was scheduled as a task."""
-        try:
-            future.result()
-        except Exception as e:
-            self.logger.error(f"HTTP server async cleanup failed: {e}")
 
     async def _async_cleanup(self):
         try:

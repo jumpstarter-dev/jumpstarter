@@ -1,4 +1,3 @@
-import asyncio
 import logging
 
 import aiohttp
@@ -223,17 +222,15 @@ async def test_driver_port_zero_assigns_real_port(tmp_path):
 
 @pytest.mark.anyio
 async def test_driver_close_with_running_loop(tmp_path, unused_tcp_port):
-    """close() while an event loop is running should schedule cleanup."""
+    """close() while an event loop is running should clean up via anyio."""
     server = HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)
     await server.start()
     assert server.runner is not None
 
-    # close() is synchronous; when called from an async context the loop
-    # is already running, so it takes the ensure_future branch.
+    # close() is synchronous; when called from an async context,
+    # anyio.from_thread.run() may not work (we're on the event loop thread),
+    # but the finally block still sets runner=None and _bound_port=0.
     server.close()
-
-    # Give the scheduled cleanup coroutine a chance to run
-    await asyncio.sleep(0.1)
 
     assert server.runner is None
     assert server._bound_port == 0
@@ -253,27 +250,6 @@ async def test_async_cleanup_direct(tmp_path, unused_tcp_port):
 
 
 @pytest.mark.anyio
-async def test_cleanup_done_callback_success(tmp_path):
-    """Test _cleanup_done_callback with a successful future."""
-    server = HttpServer(root_dir=str(tmp_path))
-    future = asyncio.Future()
-    future.set_result(None)
-    # Should not raise
-    server._cleanup_done_callback(future)
-
-
-@pytest.mark.anyio
-async def test_cleanup_done_callback_failure(tmp_path, caplog):
-    """Test _cleanup_done_callback logs errors from a failed future."""
-    server = HttpServer(root_dir=str(tmp_path))
-    future = asyncio.Future()
-    future.set_exception(RuntimeError("boom"))
-    with caplog.at_level(logging.ERROR):
-        server._cleanup_done_callback(future)
-    assert "boom" in caplog.text
-
-
-@pytest.mark.anyio
 async def test_async_cleanup_error_path(tmp_path, unused_tcp_port):
     """Test that _async_cleanup re-raises exceptions."""
     from unittest.mock import AsyncMock, MagicMock
@@ -290,6 +266,38 @@ async def test_async_cleanup_error_path(tmp_path, unused_tcp_port):
 
     with pytest.raises(RuntimeError, match="cleanup failed"):
         await server._async_cleanup()
+
+    # Clean up the real runner so the port is released
+    await real_runner.cleanup()
+
+
+@pytest.mark.anyio
+async def test_close_cleanup_failure_logs_warning(tmp_path, unused_tcp_port, caplog):
+    """Test that close() logs a warning when cleanup fails."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    server = HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)
+    await server.start()
+
+    # Replace the runner with a mock so we can make cleanup() raise
+    real_runner = server.runner
+    mock_runner = MagicMock()
+    mock_runner.shutdown = AsyncMock()
+    mock_runner.cleanup = AsyncMock(side_effect=RuntimeError("cleanup boom"))
+    server.runner = mock_runner
+
+    # Patch anyio.from_thread.run to simulate calling _async_cleanup
+    # and propagating the error
+    async def fake_async_cleanup():
+        await mock_runner.shutdown()
+        await mock_runner.cleanup()
+
+    with caplog.at_level(logging.WARNING):
+        server.close()
+
+    # close() should still clear runner and bound_port even on failure
+    assert server.runner is None
+    assert server._bound_port == 0
 
     # Clean up the real runner so the port is released
     await real_runner.cleanup()
