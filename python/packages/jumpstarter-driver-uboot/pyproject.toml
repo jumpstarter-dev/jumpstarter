@@ -37,6 +37,9 @@ raw-options = { 'root' = '../../../' }
 jumpstarter-driver-composite = { workspace = true }
 jumpstarter-driver-qemu = { workspace = true }
 
+[tool.pytest.ini_options]
+norecursedirs = ["examples"]
+
 [build-system]
 requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"

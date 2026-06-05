@@ -33,6 +33,7 @@ source = "vcs"
 raw-options = { 'root' = '../../../' }
 
 [tool.pytest.ini_options]
+norecursedirs = ["examples"]
 addopts = "--cov --cov-report=html --cov-report=xml"
 log_cli = true
 log_cli_level = "INFO"

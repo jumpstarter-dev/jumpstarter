@@ -48,6 +48,9 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 source = "vcs"
 raw-options = { 'root' = '../../../' }
 
+[tool.pytest.ini_options]
+norecursedirs = ["examples"]
+
 [build-system]
 requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"

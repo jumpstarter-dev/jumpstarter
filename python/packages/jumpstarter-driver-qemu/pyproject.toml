@@ -42,6 +42,9 @@ jumpstarter-driver-network = { workspace = true }
 jumpstarter-driver-pyserial = { workspace = true }
 jumpstarter-driver-power = { workspace = true }
 
+[tool.pytest.ini_options]
+norecursedirs = ["examples"]
+
 [build-system]
 requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
