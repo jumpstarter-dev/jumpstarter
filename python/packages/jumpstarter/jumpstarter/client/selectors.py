@@ -68,6 +68,12 @@ def extract_match_labels_filter(selector: str | None) -> str | None:
 
 
 def _label_satisfies_expression(sel_labels: dict[str, str], key: str, operator: str, values: list[str]) -> bool:
+    """Check if a single label expression is satisfied by the given labels.
+
+    Raises:
+        ValueError: If `operator` is not one of the recognized operators
+            ("in", "notin", "exists", "!exists", "!=").
+    """
     if operator == "!exists":
         return key not in sel_labels
     if key not in sel_labels:
