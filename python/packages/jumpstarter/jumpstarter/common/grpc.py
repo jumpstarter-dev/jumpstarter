@@ -183,7 +183,8 @@ def translate_grpc_exceptions():
             raise ConnectionError(f"grpc controller responded: {e.details()}") from None
         if e.code().name == "DEADLINE_EXCEEDED":
             raise ConnectionError(
-                f"grpc deadline exceeded: {e.details()}"
+                f"grpc deadline exceeded: {e.details() or '<no details>'}. "
+                "Check timeout configuration."
             ) from None
         else:
             raise ConnectionError("grpc error") from e
