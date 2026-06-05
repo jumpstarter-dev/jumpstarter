@@ -85,10 +85,11 @@ def _label_satisfies_expression(sel_labels: dict[str, str], key: str, operator: 
 
 
 def selector_contains(selector: str, requirements: str) -> bool:
-    """Check if selector contains all criteria from requirements.
+    """Check if selector satisfies all criteria from requirements.
 
-    Returns True if all matchLabels and matchExpressions in `requirements`
-    are present in `selector`.
+    Returns True if all matchLabels in `requirements` are present in `selector`
+    and all matchExpressions in `requirements` are satisfied by `selector`
+    (either by exact match in matchExpressions or by evaluation against matchLabels).
     """
     if not requirements or not requirements.strip():
         return True
