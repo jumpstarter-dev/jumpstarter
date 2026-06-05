@@ -1,0 +1,255 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "pinDigests": true,
+  "timezone": "Etc/UTC",
+  "schedule": [
+    "before 5am on monday"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "ignorePaths": [
+    "**/vendor/**",
+    "**/examples/**"
+  ],
+  "customManagers": [
+    {
+      "description": "Track .go-version for CI Go toolchain pinning (synced with go.mod directives)",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.go-version$/"
+      ],
+      "matchStrings": [
+        "(?<currentValue>\\d+\\.\\d+\\.\\d+)\\n"
+      ],
+      "depNameTemplate": "go",
+      "datasourceTemplate": "golang-version",
+      "versioningTemplate": "go-mod-directive"
+    },
+    {
+      "description": "Track .py-version for CI Python runtime (not the requires-python floor)",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.py-version$/"
+      ],
+      "matchStrings": [
+        "(?<currentValue>\\d+\\.\\d+)\\n"
+      ],
+      "depNameTemplate": "python",
+      "datasourceTemplate": "python-version",
+      "versioningTemplate": "pep440"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Group official GitHub Actions",
+      "groupName": "github-actions-official",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "actions/**"
+      ]
+    },
+    {
+      "description": "Group Docker GitHub Actions",
+      "groupName": "github-actions-docker",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "docker/**"
+      ]
+    },
+    {
+      "description": "Group Astral GitHub Actions",
+      "groupName": "github-actions-astral",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "astral-sh/**"
+      ]
+    },
+    {
+      "description": "Group remaining GitHub Actions",
+      "groupName": "github-actions-other",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "!actions/**",
+        "!docker/**",
+        "!astral-sh/**"
+      ]
+    },
+    {
+      "description": "Auto-merge patch updates",
+      "matchUpdateTypes": [
+        "patch"
+      ],
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": "Group Python gRPC and protobuf packages",
+      "groupName": "grpc-protobuf",
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchPackageNames": [
+        "grpcio",
+        "grpcio-reflection",
+        "protobuf"
+      ]
+    },
+    {
+      "description": "Group remaining Go module updates",
+      "groupName": "go-deps-other",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchFileNames": [
+        "controller/go.mod",
+        "controller/deploy/operator/go.mod",
+        "e2e/test/go.mod"
+      ]
+    },
+    {
+      "description": "Group Go gRPC and protobuf modules",
+      "groupName": "grpc-protobuf-go",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "google.golang.org/grpc**",
+        "google.golang.org/protobuf**",
+        "google.golang.org/genproto**",
+        "github.com/grpc-ecosystem/**"
+      ],
+      "matchFileNames": [
+        "controller/go.mod",
+        "controller/deploy/operator/go.mod",
+        "e2e/test/go.mod"
+      ]
+    },
+    {
+      "description": "Group Python Kubernetes clients",
+      "groupName": "kubernetes-python",
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchPackageNames": [
+        "kubernetes",
+        "kubernetes-asyncio"
+      ]
+    },
+    {
+      "description": "Group Go Kubernetes and controller dependencies",
+      "groupName": "kubernetes",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "k8s.io/**",
+        "sigs.k8s.io/controller-runtime**",
+        "sigs.k8s.io/yaml**",
+        "github.com/cert-manager/cert-manager**",
+        "github.com/openshift/api**"
+      ],
+      "matchFileNames": [
+        "controller/go.mod",
+        "controller/deploy/operator/go.mod",
+        "e2e/test/go.mod"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Group Go test framework",
+      "groupName": "go-testing",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "github.com/onsi/ginkgo**",
+        "github.com/onsi/gomega**"
+      ]
+    },
+    {
+      "description": "Group Go stdlib extensions",
+      "groupName": "golang-x",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "golang.org/x/**"
+      ]
+    },
+    {
+      "description": "Custom versioning for devfile base-developer-image (track ubi major only)",
+      "matchPackageNames": [
+        "quay.io/devfile/base-developer-image"
+      ],
+      "versioning": "regex:^ubi(?<major>\\d+)-latest$"
+    },
+    {
+      "description": "Custom versioning for MicroShift container images",
+      "matchPackageNames": [
+        "ghcr.io/microshift-io/microshift"
+      ],
+      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)_g[a-f0-9]+_\\d+\\.\\d+\\.\\d+_okd_scos\\.(?:(?<prerelease>ec\\.\\d+)|(?<build>\\d+))$"
+    },
+    {
+      "description": "Group Docker base images",
+      "groupName": "docker-base-images",
+      "matchManagers": [
+        "dockerfile",
+        "docker-compose"
+      ],
+      "matchPackageNames": [
+        "**"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Group Python dev tools",
+      "groupName": "python-dev-tools",
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchPackageNames": [
+        "ruff",
+        "sphinx",
+        "sphinx-**"
+      ]
+    },
+    {
+      "description": "Group Go version directives",
+      "groupName": "golang-version",
+      "matchDepTypes": [
+        "golang"
+      ],
+      "matchFileNames": [
+        "controller/go.mod",
+        "controller/deploy/operator/go.mod",
+        "e2e/test/go.mod"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Group .go-version with Go version directives",
+      "groupName": "golang-version",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "go"
+      ],
+      "automerge": false
+    }
+  ]
+}

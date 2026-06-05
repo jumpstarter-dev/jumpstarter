@@ -1,6 +1,6 @@
-FROM --platform=$BUILDPLATFORM ghcr.io/astral-sh/uv:latest AS uv
+FROM --platform=$BUILDPLATFORM ghcr.io/astral-sh/uv:0.4.4 AS uv
 
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/ubi:latest AS builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/ubi:9.5 AS builder
 RUN dnf install -y make git && \
     dnf clean all && \
     rm -rf /var/cache/dnf

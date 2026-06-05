@@ -47,9 +47,9 @@ install_dependencies() {
         export PATH="$HOME/.cargo/bin:$PATH"
     fi
     
-    # Install Python 3.12
-    log_info "Installing Python 3.12..."
-    uv python install 3.12
+    PY_VERSION="$(cat "$REPO_ROOT/.py-version")"
+    log_info "Installing Python ${PY_VERSION}..."
+    uv python install "$PY_VERSION"
     
     log_info "✓ Dependencies installed"
 }

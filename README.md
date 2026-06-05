@@ -74,8 +74,8 @@ The Kubernetes-native service that provides:
 - Multi-tenant support
 
 **Prerequisites:**
-- Kubernetes v1.11.3+
-- kubectl v1.11.3+
+- Kubernetes (version must match the k8s.io dependencies in [controller/go.mod](controller/go.mod))
+- kubectl (version matching the k8s.io dependencies in [controller/go.mod](controller/go.mod))
 
 See [`controller/README.md`](controller/README.md) for deployment instructions.
 
@@ -116,10 +116,10 @@ make e2e-clean
 
 ### Prerequisites
 
-- Python 3.11+ (for Python components)
-- Go 1.24+ (for controller)
+- Python (for Python components, see [.py-version](.py-version))
+- Go (for controller, see [.go-version](.go-version))
 - Docker/Podman (for container builds)
-- kubectl (for Kubernetes deployment)
+- kubectl (version matching the k8s.io dependencies in [controller/go.mod](controller/go.mod))
 
 ### Building
 
