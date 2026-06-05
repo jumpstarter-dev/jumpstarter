@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from typing import Literal, Optional
 
 from kubernetes_asyncio.client.models import V1Condition, V1ObjectMeta, V1ObjectReference
@@ -36,26 +37,29 @@ class V1Alpha1Lease(JsonBaseModel):
     status: V1Alpha1LeaseStatus
 
     @staticmethod
-    def from_dict(dict: dict):
-        selector_data = dict["spec"].get("selector", {})
+    def from_dict(data: dict):
+        spec = data["spec"]
+        if not isinstance(spec, Mapping):
+            raise TypeError(f"spec must be a dict, got {type(spec).__name__}: {repr(spec)}")
+        selector_data = spec.get("selector", {})
         return V1Alpha1Lease(
-            api_version=dict["apiVersion"],
-            kind=dict["kind"],
+            api_version=data["apiVersion"],
+            kind=data["kind"],
             metadata=V1ObjectMeta(
-                creation_timestamp=dict["metadata"]["creationTimestamp"],
-                generation=dict["metadata"]["generation"],
-                managed_fields=dict["metadata"]["managedFields"],
-                name=dict["metadata"]["name"],
-                namespace=dict["metadata"]["namespace"],
-                resource_version=dict["metadata"]["resourceVersion"],
-                uid=dict["metadata"]["uid"],
+                creation_timestamp=data["metadata"]["creationTimestamp"],
+                generation=data["metadata"]["generation"],
+                managed_fields=data["metadata"]["managedFields"],
+                name=data["metadata"]["name"],
+                namespace=data["metadata"]["namespace"],
+                resource_version=data["metadata"]["resourceVersion"],
+                uid=data["metadata"]["uid"],
             ),
             status=V1Alpha1LeaseStatus(
-                begin_time=dict["status"]["beginTime"] if "beginTime" in dict["status"] else None,
-                end_time=dict["status"]["endTime"] if "endTime" in dict["status"] else None,
-                ended=dict["status"]["ended"],
-                exporter=V1ObjectReference(name=dict["status"]["exporterRef"]["name"])
-                if "exporterRef" in dict["status"]
+                begin_time=data["status"]["beginTime"] if "beginTime" in data["status"] else None,
+                end_time=data["status"]["endTime"] if "endTime" in data["status"] else None,
+                ended=data["status"]["ended"],
+                exporter=V1ObjectReference(name=data["status"]["exporterRef"]["name"])
+                if "exporterRef" in data["status"]
                 else None,
                 conditions=[
                     V1Condition(
@@ -66,14 +70,12 @@ class V1Alpha1Lease(JsonBaseModel):
                         status=cond["status"],
                         type=cond["type"],
                     )
-                    for cond in dict["status"]["conditions"]
+                    for cond in data["status"]["conditions"]
                 ],
             ),
             spec=V1Alpha1LeaseSpec(
-                client=V1ObjectReference(name=dict["spec"]["clientRef"]["name"])
-                if "clientRef" in dict["spec"]
-                else None,
-                duration=dict["spec"]["duration"] if "duration" in dict["spec"] else None,
+                client=V1ObjectReference(name=spec["clientRef"]["name"]) if "clientRef" in spec else None,
+                duration=spec["duration"] if "duration" in spec else None,
                 selector=V1Alpha1LeaseSelector(match_labels=selector_data.get("matchLabels", {})),
             ),
         )
@@ -133,8 +135,8 @@ class V1Alpha1LeaseList(V1Alpha1List[V1Alpha1Lease]):
     kind: Literal["LeaseList"] = Field(default="LeaseList")
 
     @staticmethod
-    def from_dict(dict: dict):
-        return V1Alpha1LeaseList(items=[V1Alpha1Lease.from_dict(c) for c in dict["items"]])
+    def from_dict(data: dict):
+        return V1Alpha1LeaseList(items=[V1Alpha1Lease.from_dict(c) for c in data["items"]])
 
     @classmethod
     def rich_add_columns(cls, table):
