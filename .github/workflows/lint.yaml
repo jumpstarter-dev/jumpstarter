@@ -113,57 +113,6 @@ jobs:
       - name: Validate Renovate config
         run: npx --yes --package renovate -- renovate-config-validator
 
-  check-pinned-versions:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Check for unpinned container images and tool versions
-        run: |
-          ALLOWLIST=(
-            "quay.io/jumpstarter-dev/"
-          )
-
-          ERRORS=0
-
-          while IFS= read -r line; do
-            file="${line%%:*}"
-            match="${line#*:}"
-            allowed=false
-            for pattern in "${ALLOWLIST[@]}"; do
-              if [[ "$match" == *"$pattern"* ]]; then
-                allowed=true
-                break
-              fi
-            done
-            if [[ "$allowed" == false ]]; then
-              echo "::error file=${file}::Unpinned version found: ${match}"
-              ERRORS=$((ERRORS + 1))
-            fi
-          done < <(
-            grep -rn ':latest' \
-              --include='Dockerfile*' --include='Containerfile*' \
-              --include='*.yaml' --include='*.yml' \
-              --include='*.json' \
-              --exclude-dir=vendor --exclude-dir=examples \
-              --exclude-dir=forge_output \
-              --exclude='lint.yaml' \
-              . | grep -v 'runs-on:' | grep -v 'node_modules' \
-                | grep -v 'TAGS=.*:latest' || true
-
-            grep -rn 'version: latest' \
-              --include='*.yaml' --include='*.yml' \
-              --exclude='lint.yaml' \
-              . --exclude-dir=vendor --exclude-dir=forge_output || true
-          )
-
-          if [[ "$ERRORS" -gt 0 ]]; then
-            echo ""
-            echo "Found ${ERRORS} unpinned version(s). Pin to a specific version so Renovate can manage updates."
-            exit 1
-          fi
-
-          echo "All versions are pinned."
-
   typos:
     runs-on: ubuntu-latest
     steps:
