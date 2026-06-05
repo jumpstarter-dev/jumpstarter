@@ -75,7 +75,7 @@ The Kubernetes-native service that provides:
 
 **Prerequisites:**
 - Kubernetes (version must match the k8s.io dependencies in [controller/go.mod](controller/go.mod))
-- kubectl (matching Kubernetes version)
+- kubectl (version matching the k8s.io dependencies in [controller/go.mod](controller/go.mod))
 
 See [`controller/README.md`](controller/README.md) for deployment instructions.
 
