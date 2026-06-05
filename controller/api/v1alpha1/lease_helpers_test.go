@@ -246,6 +246,13 @@ var _ = Describe("ParseLabelSelector", func() {
 			Expect(selector.MatchExpressions[0].Values).To(Equal([]string{"value1"}))
 		})
 
+		It("should deduplicate NotIn values while preserving unique values", func() {
+			selector, err := ParseLabelSelector("key!=value1,key!=value2,key!=value1")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(selector).NotTo(BeNil())
+			Expect(selector.MatchExpressions).To(HaveLen(1))
+			Expect(selector.MatchExpressions[0].Values).To(ConsistOf("value1", "value2"))
+		})
 		It("should deduplicate NotIn values with empty strings", func() {
 			selector, err := ParseLabelSelector("key!=,key!=")
 			Expect(err).NotTo(HaveOccurred())
