@@ -3,6 +3,7 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -126,7 +127,9 @@ func ParseLabelSelector(selectorStr string) (*metav1.LabelSelector, error) {
 			if len(values) != 1 {
 				return nil, fmt.Errorf("invalid selector: != operator requires exactly one value")
 			}
-			notEqualsByKey[key] = append(notEqualsByKey[key], values[0])
+			if !slices.Contains(notEqualsByKey[key], values[0]) {
+				notEqualsByKey[key] = append(notEqualsByKey[key], values[0])
+			}
 		case selection.In:
 			matchExpressions = append(matchExpressions, metav1.LabelSelectorRequirement{
 				Key:      key,
