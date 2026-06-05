@@ -13,6 +13,8 @@ def examples_root():
 def driver_example_module(examples_root):
     path = examples_root / "introduction" / "driver_example.py"
     spec = importlib.util.spec_from_file_location("driver_example", str(path))
+    assert spec is not None
+    assert spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
