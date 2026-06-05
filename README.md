@@ -74,8 +74,8 @@ The Kubernetes-native service that provides:
 - Multi-tenant support
 
 **Prerequisites:**
-- Kubernetes v1.11.3+
-- kubectl v1.11.3+
+- Kubernetes (version must match the k8s.io dependencies in [controller/go.mod](controller/go.mod))
+- kubectl (matching Kubernetes version)
 
 See [`controller/README.md`](controller/README.md) for deployment instructions.
 
