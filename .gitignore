@@ -11,6 +11,7 @@ server-key.pem
 server.csr
 
 # Python
+.python-version
 .venv/
 __pycache__/
 *.pyc

@@ -26,6 +26,18 @@
       "depNameTemplate": "go",
       "datasourceTemplate": "golang-version",
       "versioningTemplate": "go-mod-directive"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.py-version$/"
+      ],
+      "matchStrings": [
+        "(?<currentValue>\\d+\\.\\d+)\\n"
+      ],
+      "depNameTemplate": "python",
+      "datasourceTemplate": "python-version",
+      "versioningTemplate": "pep440"
     }
   ],
   "packageRules": [
