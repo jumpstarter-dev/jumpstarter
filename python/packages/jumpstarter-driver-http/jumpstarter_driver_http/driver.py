@@ -27,6 +27,7 @@ class HttpServer(Driver):
     remove_created_on_close: bool = True  # Clean up temporary web files by default
     app: web.Application = field(init=False, default_factory=web.Application)
     runner: Optional[web.AppRunner] = field(init=False, default=None)
+    _bound_port: int = field(init=False, default=0)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -60,17 +61,30 @@ class HttpServer(Driver):
         Raises:
             HttpServerError: If the server fails to start.
         """
+        # Defense in depth: clean up any stale runner before starting
         if self.runner is not None:
-            self.logger.warning("HTTP server is already running.")
-            return
+            self.logger.warning("Cleaning up stale HTTP server runner before starting.")
+            try:
+                await self.runner.cleanup()
+            except Exception as e:
+                self.logger.warning(f"Failed to clean up stale runner: {e}")
+            self.runner = None
+            self._bound_port = 0
 
         self.runner = web.AppRunner(self.app)
-        if self.runner:
-            await self.runner.setup()
+        await self.runner.setup()
 
         site = web.TCPSite(self.runner, self.host, self.port)
         await site.start()
-        self.logger.info(f"HTTP server started at http://{self.host}:{self.port}")
+
+        # Retrieve the actual bound port (important when port=0)
+        sockets = site._server.sockets
+        if sockets:
+            self._bound_port = int(sockets[0].getsockname()[1])
+        else:
+            self._bound_port = self.port
+
+        self.logger.info(f"HTTP server started at http://{self.host}:{self._bound_port}")
 
     @export
     async def stop(self):
@@ -87,6 +101,7 @@ class HttpServer(Driver):
         await self.runner.cleanup()
         self.logger.info("HTTP server stopped.")
         self.runner = None
+        self._bound_port = 0
 
     @export
     def get_url(self) -> str:
@@ -96,7 +111,7 @@ class HttpServer(Driver):
         Returns:
             str: Base URL of the HTTP server.
         """
-        return f"http://{self.host}:{self.port}"
+        return f"http://{self.host}:{self._bound_port}"
 
     @export
     def get_host(self) -> str | None:
@@ -116,16 +131,17 @@ class HttpServer(Driver):
         Returns:
             int: Port number.
         """
-        return self.port
+        return int(self._bound_port)
 
     def close(self):
         if self.runner:
             try:
-                if anyio.get_current_task():
-                    anyio.from_thread.run(self._async_cleanup)
+                anyio.from_thread.run(self._async_cleanup)
             except Exception as e:
-                self.logger.warning(f"HTTP server cleanup failed synchronously: {e}")
-            self.runner = None
+                self.logger.warning(f"HTTP server cleanup failed: {e}")
+            finally:
+                self.runner = None
+                self._bound_port = 0
         super().close()
 
     async def _async_cleanup(self):
@@ -133,6 +149,7 @@ class HttpServer(Driver):
             if self.runner:
                 await self.runner.shutdown()
                 await self.runner.cleanup()
-                self.logger.info("HTTP server cleanup completed asynchronously.")
+                self.logger.info("HTTP server cleanup completed.")
         except Exception as e:
-            self.logger.error(f"HTTP server cleanup failed asynchronously: {e}")
+            self.logger.error(f"HTTP server cleanup failed: {e}")
+            raise
