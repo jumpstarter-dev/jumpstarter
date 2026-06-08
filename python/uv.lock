@@ -88,7 +88,7 @@ docs = [
     { name = "myst-parser", specifier = ">=5.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.33.1" },
-    { name = "sphinx", specifier = "<8.2.4" },
+    { name = "sphinx", specifier = "<9.1.1" },
     { name = "sphinx-autobuild", specifier = ">=2024.4.16" },
     { name = "sphinx-click", specifier = ">=6.0.0" },
     { name = "sphinx-copybutton", specifier = ">=0.5.2" },
