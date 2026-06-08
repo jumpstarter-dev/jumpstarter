@@ -59,7 +59,7 @@ hatch-pin-jumpstarter = { workspace = true }
 
 [dependency-groups]
 docs = [
-    "sphinx<8.2.4",
+    "sphinx<9.1.1",
     "myst-parser>=5.0.0",
     "sphinxcontrib-mermaid>=2.0.1",
     "furo>=2024.8.6",
