@@ -7,7 +7,7 @@ license = "Apache-2.0"
 authors = [
     { name = "The Jumpstarter Authors" }
 ]
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "click>=8.0.0",
     "jumpstarter",

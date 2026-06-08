@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Android emulator testing example using Jumpstarter ADB tunneling"
 authors = [{ name = "Kirk Brauer", email = "kbrauer@hatci.com" }]
 license = "Apache-2.0"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
   "pytest>=8.3.2",
   "jumpstarter",
