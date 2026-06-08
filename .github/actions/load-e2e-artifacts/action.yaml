@@ -10,19 +10,19 @@ runs:
   using: composite
   steps:
     - name: Download controller image
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
       with:
         name: controller-image-${{ inputs.arch }}
         path: /tmp/artifacts
 
     - name: Download operator image
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
       with:
         name: operator-image-${{ inputs.arch }}
         path: /tmp/artifacts
 
     - name: Download python wheels
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
       with:
         name: python-wheels
         path: /tmp/python-wheels
