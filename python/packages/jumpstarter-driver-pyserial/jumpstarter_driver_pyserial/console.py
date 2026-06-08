@@ -1,6 +1,7 @@
 import sys
 import termios
 import tty
+from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
 
 from anyio import create_task_group
@@ -14,8 +15,9 @@ class ConsoleExit(Exception):
 
 
 class Console:
-    def __init__(self, serial_client: DriverClient):
+    def __init__(self, serial_client: DriverClient, on_power_cycle: Callable[[], Awaitable[None]] | None = None):
         self.serial_client = serial_client
+        self.on_power_cycle = on_power_cycle
 
     def run(self):
         with self.setraw():
@@ -49,14 +51,24 @@ class Console:
     async def __stdin_to_serial(self, stream):
         stdin = FileReadStream(sys.stdin.buffer)
         ctrl_b_count = 0
+        ctrl_bracket_count = 0  # Ctrl-] x3 triggers power cycle
         while True:
             data = await stdin.receive(max_bytes=1)
             if not data:
                 continue
             if data == b"\x02":  # Ctrl-B
                 ctrl_b_count += 1
+                ctrl_bracket_count = 0
                 if ctrl_b_count == 3:
                     raise ConsoleExit
+            elif data == b"\x1d":  # Ctrl-]
+                ctrl_bracket_count += 1
+                ctrl_b_count = 0
+                if ctrl_bracket_count == 3 and self.on_power_cycle is not None:
+                    await self.on_power_cycle()
+                    ctrl_bracket_count = 0
+                    continue
             else:
                 ctrl_b_count = 0
+                ctrl_bracket_count = 0
             await stream.send(data)

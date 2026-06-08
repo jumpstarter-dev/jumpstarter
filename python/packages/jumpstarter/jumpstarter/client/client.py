@@ -134,4 +134,14 @@ async def client_from_channel(
 
         clients[index] = client
 
+    root_client = next(reversed(clients.values()))
+
+    def _iter_all(client):
+        yield client
+        for child in client.children.values():
+            yield from _iter_all(child)
+
+    for c in _iter_all(root_client):
+        c.root = root_client
+
     return clients.popitem(last=True)[1]
