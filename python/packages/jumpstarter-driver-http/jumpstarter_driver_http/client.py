@@ -43,9 +43,9 @@ class HttpServerClient(CompositeClient):
         Get the port number the HTTP server is listening on.
 
         Returns:
-            int: The port number (default is 8080)
+            int: The port number (0 = OS-assigned)
         """
-        return self.call("get_port")
+        return int(self.call("get_port"))
 
     def get_url(self) -> str:
         """
