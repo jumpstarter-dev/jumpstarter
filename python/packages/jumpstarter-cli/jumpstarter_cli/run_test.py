@@ -231,7 +231,7 @@ class TestRunCommandAuthValidation:
     """Integration tests exercising auth validation through the Click CLI layer."""
 
     def _invoke(self, args, mock_serve=True):
-        runner = click.testing.CliRunner()
+        runner = click.testing.CliRunner(mix_stderr=False)
         patches = []
         if mock_serve:
             patches.append(
@@ -272,7 +272,7 @@ class TestRunCommandAuthValidation:
         assert "--tls-grpc-listener requires either --tls-grpc-insecure" in result.output
 
     def test_auto_generated_passphrase_printed_to_stderr(self):
-        runner = click.testing.CliRunner()
+        runner = click.testing.CliRunner(mix_stderr=False)
         mock_serve = MagicMock(return_value=0)
         with (
             patch.object(run_mod, "_serve_with_exc_handling", mock_serve),
