@@ -28,7 +28,7 @@
       ],
       "depNameTemplate": "go",
       "datasourceTemplate": "golang-version",
-      "versioningTemplate": "go-mod-directive"
+      "versioningTemplate": "semver"
     },
     {
       "description": "Track .py-version for CI Python runtime (not the requires-python floor)",
