@@ -6,7 +6,7 @@ tool github.com/onsi/ginkgo/v2/ginkgo
 
 require (
 	github.com/onsi/ginkgo/v2 v2.28.1
-	github.com/onsi/gomega v1.39.1
+	github.com/onsi/gomega v1.41.0
 	go.yaml.in/yaml/v3 v3.0.4
 )
 
