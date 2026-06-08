@@ -22,8 +22,8 @@ else
 fi
 
 # Default values
-INSTALL_DIR="${HOME}/.local/jumpstarter"
-VENV_DIR="${INSTALL_DIR}/venv"
+INSTALL_DIR="${INSTALL_DIR:-${HOME}/.local/jumpstarter}"
+VENV_DIR="${VENV_DIR:-${INSTALL_DIR}/venv}"
 SET_SCRIPT="${INSTALL_DIR}/set"
 DEFAULT_SOURCE="release-0.8"
 
@@ -219,8 +219,8 @@ create_set_script() {
 #!/bin/bash
 # Jumpstarter environment activation script
 
-if [ ! -d "${INSTALL_DIR}/venv" ]; then
-    echo "Error: Jumpstarter virtual environment not found at ${INSTALL_DIR}/venv"
+if [ ! -d "${VENV_DIR}" ]; then
+    echo "Error: Jumpstarter virtual environment not found at ${VENV_DIR}"
     echo "Please run the installer again"
 fi
 
