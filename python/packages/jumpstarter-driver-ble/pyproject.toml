@@ -5,7 +5,7 @@ description = "Bluetooth Low Energy (BLE) driver"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "Andreas Karner", email = "andreas.karner@outlook.com" }]
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
     "anyio>=4.10.0",
     "click>=8.1.8",
