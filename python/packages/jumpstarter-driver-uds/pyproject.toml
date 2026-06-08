@@ -7,7 +7,7 @@ license = "Apache-2.0"
 authors = [
     { name = "Vinicius Zein", email = "vtzein@gmail.com" },
 ]
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
     "jumpstarter",
     "udsoncan>=1.21",

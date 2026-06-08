@@ -5,7 +5,7 @@ description = ""
 authors = [{ name = "Kirk Brauer", email = "kbrauer@hatci.com" }]
 readme = "README.md"
 license = "Apache-2.0"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
   "jumpstarter",
   "pydantic>=2.8.2",
