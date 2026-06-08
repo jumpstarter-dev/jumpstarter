@@ -59,7 +59,7 @@ hatch-pin-jumpstarter = { workspace = true }
 
 [dependency-groups]
 docs = [
-    "sphinx<8.1.0",
+    "sphinx<8.2.4",
     "myst-parser>=5.0.0",
     "sphinxcontrib-mermaid>=2.0.1",
     "furo>=2024.8.6",
@@ -74,7 +74,7 @@ docs = [
     "pyyaml>=6.0",
 ]
 dev = [
-    "ruff==0.15.10",
+    "ruff==0.15.16",
     "typos>=1.23.6",
     "pre-commit>=3.8.0",
     "esbonio>=0.16.5",
