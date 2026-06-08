@@ -14,86 +14,86 @@ function:
 
 Drivers that control the power state and basic operation of devices:
 
-- **[Power](power.md)** (`jumpstarter-driver-power`) - Power control for devices
-- **[gpiod](gpiod.md)** (`jumpstarter-driver-gpiod`) - GPIO hardware control via libgpiod
-- **[Yepkit](yepkit.md)** (`jumpstarter-driver-yepkit`) - Yepkit USB hub hardware control
-- **[DUT Link](dutlink.md)** (`jumpstarter-driver-dutlink`) - [DUT Link Board](https://github.com/jumpstarter-dev/dutlink-board) hardware control
-- **[Energenie PDU](energenie.md)** (`jumpstarter-driver-energenie`) - Energenie PDU control
-- **[Tasmota](tasmota.md)** (`jumpstarter-driver-tasmota`) - Tasmota device control
-- **[HTTP Power](http-power.md)** (`jumpstarter-driver-http-power`) - HTTP-based power control for smart sockets
-- **[Noyito Relay](noyito-relay.md)** (`jumpstarter-driver-noyito-relay`) - NOYITO USB relay board control
+- {doc}`Power <power>` (`jumpstarter-driver-power`) - Power control for devices
+- {doc}`gpiod <gpiod>` (`jumpstarter-driver-gpiod`) - GPIO hardware control via libgpiod
+- {doc}`Yepkit <yepkit>` (`jumpstarter-driver-yepkit`) - Yepkit USB hub hardware control
+- {doc}`DUT Link <dutlink>` (`jumpstarter-driver-dutlink`) - [DUT Link Board](https://github.com/jumpstarter-dev/dutlink-board) hardware control
+- {doc}`Energenie PDU <energenie>` (`jumpstarter-driver-energenie`) - Energenie PDU control
+- {doc}`Tasmota <tasmota>` (`jumpstarter-driver-tasmota`) - Tasmota device control
+- {doc}`HTTP Power <http-power>` (`jumpstarter-driver-http-power`) - HTTP-based power control for smart sockets
+- {doc}`Noyito Relay <noyito-relay>` (`jumpstarter-driver-noyito-relay`) - NOYITO USB relay board control
 
 ### Communication
 
 Drivers that provide various communication interfaces:
 
-- **[ADB](adb.md)** (`jumpstarter-driver-adb`) - Android Debug Bridge tunneling
-- **[BLE](ble.md)** (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
-- **[CAN](can.md)** (`jumpstarter-driver-can`) - Controller Area Network communication
-- **[HTTP](http.md)** (`jumpstarter-driver-http`) - HTTP communication
-- **[mitmproxy](mitmproxy.md)** (`jumpstarter-driver-mitmproxy`) - HTTP/HTTPS interception, mocking, and traffic recording
-- **[DUT Network](dut-network.md)** (`jumpstarter-driver-dut-network`) - DUT network isolation with bridge, DHCP, DNS, and NAT
-- **[Network](network.md)** (`jumpstarter-driver-network`) - Network interfaces and configuration
-- **[PySerial](pyserial.md)** (`jumpstarter-driver-pyserial`) - Serial port communication
-- **[SNMP](snmp.md)** (`jumpstarter-driver-snmp`) - Simple Network Management Protocol
-- **[SSH](ssh.md)** (`jumpstarter-driver-ssh`) - SSH wrapper driver
-- **[SSH MITM](ssh-mitm.md)** (`jumpstarter-driver-ssh-mitm`) - SSH proxy with server-side private key storage
-- **[TFTP](tftp.md)** (`jumpstarter-driver-tftp`) - Trivial File Transfer Protocol
-- **[VNC](vnc.md)** (`jumpstarter-driver-vnc`) - Virtual Network Computing remote desktop
-- **[XCP](xcp.md)** (`jumpstarter-driver-xcp`) - Universal Measurement and Calibration Protocol
+- {doc}`ADB <adb>` (`jumpstarter-driver-adb`) - Android Debug Bridge tunneling
+- {doc}`BLE <ble>` (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
+- {doc}`CAN <can>` (`jumpstarter-driver-can`) - Controller Area Network communication
+- {doc}`HTTP <http>` (`jumpstarter-driver-http`) - HTTP communication
+- {doc}`mitmproxy <mitmproxy>` (`jumpstarter-driver-mitmproxy`) - HTTP/HTTPS interception, mocking, and traffic recording
+- {doc}`DUT Network <dut-network>` (`jumpstarter-driver-dut-network`) - DUT network isolation with bridge, DHCP, DNS, and NAT
+- {doc}`Network <network>` (`jumpstarter-driver-network`) - Network interfaces and configuration
+- {doc}`PySerial <pyserial>` (`jumpstarter-driver-pyserial`) - Serial port communication
+- {doc}`SNMP <snmp>` (`jumpstarter-driver-snmp`) - Simple Network Management Protocol
+- {doc}`SSH <ssh>` (`jumpstarter-driver-ssh`) - SSH wrapper driver
+- {doc}`SSH MITM <ssh-mitm>` (`jumpstarter-driver-ssh-mitm`) - SSH proxy with server-side private key storage
+- {doc}`TFTP <tftp>` (`jumpstarter-driver-tftp`) - Trivial File Transfer Protocol
+- {doc}`VNC <vnc>` (`jumpstarter-driver-vnc`) - Virtual Network Computing remote desktop
+- {doc}`XCP <xcp>` (`jumpstarter-driver-xcp`) - Universal Measurement and Calibration Protocol
 
 ### Storage and Data
 
 Drivers that control storage devices and manage data:
 
-- **[OpenDAL](opendal.md)** (`jumpstarter-driver-opendal`) - Open Data Access Layer
-- **[SD Wire](sdwire.md)** (`jumpstarter-driver-sdwire`) - SD card switching
-- **[iSCSI](iscsi.md)** (`jumpstarter-driver-iscsi`) - iSCSI target server for LUN export
+- {doc}`OpenDAL <opendal>` (`jumpstarter-driver-opendal`) - Open Data Access Layer
+- {doc}`SD Wire <sdwire>` (`jumpstarter-driver-sdwire`) - SD card switching
+- {doc}`iSCSI <iscsi>` (`jumpstarter-driver-iscsi`) - iSCSI target server for LUN export
 
 ### Media
 
 Drivers that handle media streams:
 
-- **[uStreamer](ustreamer.md)** (`jumpstarter-driver-ustreamer`) - Video streaming
+- {doc}`uStreamer <ustreamer>` (`jumpstarter-driver-ustreamer`) - Video streaming
 
 ### Automotive Diagnostics
 
 Drivers for automotive diagnostic protocols:
 
-- **[DoIP](doip.md)** (`jumpstarter-driver-doip`) - Diagnostics over Internet Protocol (ISO 13400)
-- **[UDS](uds.md)** (`jumpstarter-driver-uds`) - Unified Diagnostic Services (ISO 14229)
-- **[UDS over DoIP](uds-doip.md)** (`jumpstarter-driver-uds-doip`) - UDS diagnostics over DoIP transport
-- **[UDS over CAN](uds-can.md)** (`jumpstarter-driver-uds-can`) - UDS diagnostics over CAN/ISO-TP transport
-- **[SOME/IP](someip.md)** (`jumpstarter-driver-someip`) - SOME/IP protocol operations via opensomeip
+- {doc}`DoIP <doip>` (`jumpstarter-driver-doip`) - Diagnostics over Internet Protocol (ISO 13400)
+- {doc}`UDS <uds>` (`jumpstarter-driver-uds`) - Unified Diagnostic Services (ISO 14229)
+- {doc}`UDS over DoIP <uds-doip>` (`jumpstarter-driver-uds-doip`) - UDS diagnostics over DoIP transport
+- {doc}`UDS over CAN <uds-can>` (`jumpstarter-driver-uds-can`) - UDS diagnostics over CAN/ISO-TP transport
+- {doc}`SOME/IP <someip>` (`jumpstarter-driver-someip`) - SOME/IP protocol operations via opensomeip
 
 ### Flashing and Programming
 
 Drivers for flashing firmware and programming devices:
 
-- **[ESP32](esp32.md)** (`jumpstarter-driver-esp32`) - ESP32 flashing via esptool
-- **[Flashers](flashers.md)** (`jumpstarter-driver-flashers`) - Flash memory programming tools
-- **[Pi Pico](pi-pico.md)** (`jumpstarter-driver-pi-pico`) - Raspberry Pi Pico UF2 flashing via BOOTSEL
-- **[Probe-RS](probe-rs.md)** (`jumpstarter-driver-probe-rs`) - Debug probe support
-- **[ST-LINK MSD](stlink-msd.md)** (`jumpstarter-driver-stlink-msd`) - ST-LINK mass storage flasher for STM32
-- **[U-Boot](uboot.md)** (`jumpstarter-driver-uboot`) - Universal Bootloader interface
-- **[RideSX](ridesx.md)** (`jumpstarter-driver-ridesx`) - Flashing and power management for Qualcomm RideSX
+- {doc}`ESP32 <esp32>` (`jumpstarter-driver-esp32`) - ESP32 flashing via esptool
+- {doc}`Flashers <flashers>` (`jumpstarter-driver-flashers`) - Flash memory programming tools
+- {doc}`Pi Pico <pi-pico>` (`jumpstarter-driver-pi-pico`) - Raspberry Pi Pico UF2 flashing via BOOTSEL
+- {doc}`Probe-RS <probe-rs>` (`jumpstarter-driver-probe-rs`) - Debug probe support
+- {doc}`ST-LINK MSD <stlink-msd>` (`jumpstarter-driver-stlink-msd`) - ST-LINK mass storage flasher for STM32
+- {doc}`U-Boot <uboot>` (`jumpstarter-driver-uboot`) - Universal Bootloader interface
+- {doc}`RideSX <ridesx>` (`jumpstarter-driver-ridesx`) - Flashing and power management for Qualcomm RideSX
 
 ### Emulation
 
 Drivers for virtual and emulated targets:
 
-- **[Android Emulator](androidemulator.md)** (`jumpstarter-driver-androidemulator`) - Android emulator lifecycle management with ADB tunneling
-- **[QEMU](qemu.md)** (`jumpstarter-driver-qemu`) - QEMU virtual machine management
-- **[Renode](renode.md)** (`jumpstarter-driver-renode`) - Renode embedded systems emulation
-- **[Corellium](corellium.md)** (`jumpstarter-driver-corellium`) - Corellium virtualization platform
+- {doc}`Android Emulator <androidemulator>` (`jumpstarter-driver-androidemulator`) - Android emulator lifecycle management with ADB tunneling
+- {doc}`QEMU <qemu>` (`jumpstarter-driver-qemu`) - QEMU virtual machine management
+- {doc}`Renode <renode>` (`jumpstarter-driver-renode`) - Renode embedded systems emulation
+- {doc}`Corellium <corellium>` (`jumpstarter-driver-corellium`) - Corellium virtualization platform
 
 ### Utility
 
 General-purpose utility drivers:
 
-- **[Shell](shell.md)** (`jumpstarter-driver-shell`) - Shell command execution
-- **[SSH Mount](ssh-mount.md)** (`jumpstarter-driver-ssh-mount`) - SSHFS remote filesystem mounting
-- **[TMT](tmt.md)** (`jumpstarter-driver-tmt`) - Test Management Tool wrapper
+- {doc}`Shell <shell>` (`jumpstarter-driver-shell`) - Shell command execution
+- {doc}`SSH Mount <ssh-mount>` (`jumpstarter-driver-ssh-mount`) - SSHFS remote filesystem mounting
+- {doc}`TMT <tmt>` (`jumpstarter-driver-tmt`) - Test Management Tool wrapper
 
 ```{toctree}
 :hidden:
