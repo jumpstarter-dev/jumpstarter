@@ -21,7 +21,7 @@ jobs:
       should_run: ${{ steps.filter.outputs.python }}
       renode_driver: ${{ steps.filter.outputs.renode_driver }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
       - uses: dorny/paths-filter@v3
@@ -49,7 +49,7 @@ jobs:
         # Review on each RHEL/Fedora release
         python-version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
 
