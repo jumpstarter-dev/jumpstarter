@@ -145,11 +145,11 @@
       "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)_g[a-f0-9]+_\\d+\\.\\d+\\.\\d+_okd_scos\\.(?:(?<prerelease>ec\\.\\d+)|(?<build>\\d+))$"
     },
     {
-      "description": "Restrict Fedora to stable releases (exclude rawhide)",
+      "description": "Track Fedora stable releases only (latest always points to current stable, never rawhide)",
       "matchPackageNames": [
         "fedora"
       ],
-      "allowedVersions": "<=44"
+      "followTag": "latest"
     },
     {
       "description": "Group Docker base images",
