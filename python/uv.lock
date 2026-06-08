@@ -3208,7 +3208,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.1.8" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
-    { name = "pysnmp", specifier = "==7.1.16" },
+    { name = "pysnmp", specifier = "==7.1.27" },
 ]
 
 [package.metadata.requires-dev]
@@ -4986,11 +4986,11 @@ wheels = [
 
 [[package]]
 name = "pyasn1"
-version = "0.6.1"
+version = "0.6.3"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ba/e9/01f1a64245b89f039897cb0130016d79f77d52669aae6ee7b159a6c4c018/pyasn1-0.6.1.tar.gz", hash = "sha256:6f580d2bdd84365380830acf45550f2511469f673cb4a5ae3857a3170128b034", size = 145322, upload-time = "2024-09-10T22:41:42.55Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5c/5f/6583902b6f79b399c9c40674ac384fd9cd77805f9e6205075f828ef11fb2/pyasn1-0.6.3.tar.gz", hash = "sha256:697a8ecd6d98891189184ca1fa05d1bb00e2f84b5977c481452050549c8a72cf", size = 148685, upload-time = "2026-03-17T01:06:53.382Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c8/f1/d6a797abb14f6283c0ddff96bbdd46937f64122b8c925cab503dd37f8214/pyasn1-0.6.1-py3-none-any.whl", hash = "sha256:0d632f46f2ba09143da3a8afe9e33fb6f92fa2320ab7e886e2d0f7672af84629", size = 83135, upload-time = "2024-09-11T16:00:36.122Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/a0/7d793dce3fa811fe047d6ae2431c672364b462850c6235ae306c0efd025f/pyasn1-0.6.3-py3-none-any.whl", hash = "sha256:a80184d120f0864a52a073acc6fc642847d0be408e7c7252f31390c0f4eadcde", size = 83997, upload-time = "2026-03-17T01:06:52.036Z" },
 ]
 
 [[package]]
@@ -5362,14 +5362,14 @@ wheels = [
 
 [[package]]
 name = "pysnmp"
-version = "7.1.16"
+version = "7.1.27"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyasn1" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a2/b1/c94dac49a002eed96e2cb7aeb1d148b1c98826e5cd1f6e8eebb4a20f8d49/pysnmp-7.1.16.tar.gz", hash = "sha256:51581c70e410e456eb3faa24c42a094c82acfa961d16ad659b57c5818379dfcb", size = 379606, upload-time = "2025-01-15T07:38:12.234Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8d/6e/0d9c8a59ff4d6cb9c2477fe4cd106cb20cd6bbf008a0bca0c45ebb17aaad/pysnmp-7.1.27.tar.gz", hash = "sha256:01ce32d1bb0a14e8e3410a43fb7a8a7b050ec06186dc9ec240fcefa4af8b963c", size = 260310, upload-time = "2026-05-16T07:01:39.64Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6a/96/b723c1a4f0c8fe77ad32d977c4693b0edc9697d37f0dc7c2d90eaf9a7374/pysnmp-7.1.16-py3-none-any.whl", hash = "sha256:e4769afdc7cc6438f07411c242a99a50cdfd7ab5a37c6668accb8f303d8cef73", size = 340997, upload-time = "2025-01-15T07:38:10.9Z" },
+    { url = "https://files.pythonhosted.org/packages/fa/be/d509cf05e5af40715aa4a562ee16d3c303433d451b6f768593e92e6796d7/pysnmp-7.1.27-py3-none-any.whl", hash = "sha256:314ad98d94d9ed445d4bb07721c374ec6ca4158fb41f92b9bc72feb9557513f7", size = 344440, upload-time = "2026-05-16T07:01:37.981Z" },
 ]
 
 [[package]]
