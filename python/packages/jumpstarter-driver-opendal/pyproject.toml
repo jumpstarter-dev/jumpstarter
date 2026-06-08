@@ -15,7 +15,7 @@ dependencies = [
   "click>=8.1.7.2",
 ]
 
-[project.entry-points."jumpstarter.adapters"]
+[project.entry-points."jumpstarter.drivers"]
 Opendal = "jumpstarter_driver_opendal.adapters:OpendalAdapter"
 
 [dependency-groups]
