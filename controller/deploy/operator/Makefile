@@ -172,10 +172,11 @@ run: manifests generate fmt vet ## Run a controller from your host.
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build \
+		--build-arg GO_VERSION=$(shell cat ../../../.go-version) \
 		--build-arg GIT_VERSION=$(GIT_VERSION) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		-t ${IMG} ../../ -f ../../Dockerfile.operator
+		-t ${IMG} ../../ -f ../../Containerfile.operator
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -190,17 +191,17 @@ docker-push: ## Push docker image with the manager.
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
-	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
-	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' ../../Dockerfile.operator > ../../Dockerfile.operator.cross
+	# copy existing Containerfile and insert --platform=${BUILDPLATFORM} into Containerfile.cross, and preserve the original Containerfile
+	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' ../../Containerfile.operator > ../../Containerfile.operator.cross
 	- $(CONTAINER_TOOL) buildx create --name jumpstarter-operator-builder
 	$(CONTAINER_TOOL) buildx use jumpstarter-operator-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) \
 		--build-arg GIT_VERSION=$(GIT_VERSION) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		--tag ${IMG} -f ../../Dockerfile.operator.cross ../../
+		--tag ${IMG} -f ../../Containerfile.operator.cross ../../
 	- $(CONTAINER_TOOL) buildx rm jumpstarter-operator-builder
-	rm ../../Dockerfile.operator.cross
+	rm ../../Containerfile.operator.cross
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
@@ -347,7 +348,7 @@ contribute: bundle ## Update community-operators repos with the current bundle.
 
 .PHONY: bundle-build
 bundle-build: ## Build the bundle image.
-	$(CONTAINER_TOOL) build -f bundle.Dockerfile -t $(BUNDLE_IMG) .
+	$(CONTAINER_TOOL) build -f Containerfile.bundle -t $(BUNDLE_IMG) .
 
 .PHONY: bundle-push
 bundle-push: ## Push the bundle image.

@@ -4,7 +4,12 @@
     "config:recommended",
     "helpers:pinGitHubActionDigests"
   ],
-  "pinDigests": true,
+  // Most container registries prune untagged manifests within weeks, so
+  // pinned digests break reproducibility instead of guaranteeing it and
+  // force an unsustainable biweekly update cycle. Keep tag-based version
+  // pinning only; GitHub Action commit-SHA pinning is handled separately
+  // by helpers:pinGitHubActionDigests and is unaffected.
+  "pinDigests": false,
   "timezone": "Etc/UTC",
   "schedule": [
     "before 5am on monday"
@@ -42,6 +47,18 @@
       "depNameTemplate": "python",
       "datasourceTemplate": "python-version",
       "versioningTemplate": "pep440"
+    },
+    {
+      "description": "Track .uv-version for uv toolchain pinning",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.uv-version$/"
+      ],
+      "matchStrings": [
+        "(?<currentValue>\\d+\\.\\d+\\.\\d+)\\n"
+      ],
+      "depNameTemplate": "astral-sh/uv",
+      "datasourceTemplate": "github-releases"
     }
   ],
   "packageRules": [
@@ -147,7 +164,8 @@
     {
       "description": "Restrict Fedora to stable releases, bump this cap when the next Fedora goes GA",
       "matchPackageNames": [
-        "fedora"
+        "registry.fedoraproject.org/fedora",
+        "registry.fedoraproject.org/fedora-minimal"
       ],
       "allowedVersions": "<=44"
     },
@@ -199,17 +217,5 @@
       ],
       "automerge": false
     },
-    {
-      "description": "Group go-toolset Docker image with Go toolchain",
-      "groupName": "go-toolchain",
-      "matchManagers": [
-        "dockerfile"
-      ],
-      "matchPackageNames": [
-        "registry.access.redhat.com/ubi9/go-toolset"
-      ],
-      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
-      "automerge": false
-    }
   ]
 }

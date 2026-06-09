@@ -32,15 +32,15 @@ jobs:
           # Controller images
           - image_name: jumpstarter-dev/jumpstarter-controller
             label: jumpstarter-controller
-            dockerfile: controller/Dockerfile
+            dockerfile: controller/Containerfile
             context: controller
           - image_name: jumpstarter-dev/jumpstarter-operator
             label: jumpstarter-operator
-            dockerfile: controller/Dockerfile.operator
+            dockerfile: controller/Containerfile.operator
             context: controller
           - image_name: jumpstarter-dev/jumpstarter-operator-bundle
             label: jumpstarter-operator-bundle
-            dockerfile: controller/deploy/operator/bundle.Dockerfile
+            dockerfile: controller/deploy/operator/Containerfile.bundle
             context: controller/deploy/operator
             generate_bundle: true
           - image_name: jumpstarter-dev/microshift/bootc
@@ -50,16 +50,16 @@ jobs:
           # Python images (use repo root context for .git access needed by hatch-vcs)
           - image_name: jumpstarter-dev/jumpstarter
             label: jumpstarter
-            dockerfile: python/Dockerfile
+            dockerfile: python/Containerfile
             context: .
           - image_name: jumpstarter-dev/jumpstarter-utils
             label: jumpstarter-utils
-            dockerfile: python/Dockerfile.utils
+            dockerfile: python/Containerfile.utils
             context: python
           - image_name: jumpstarter-dev/jumpstarter-dev
             label: jumpstarter-dev
             dockerfile: python/.devfile/Containerfile
-            context: python
+            context: .
           - image_name: jumpstarter-dev/jumpstarter-devspace
             label: jumpstarter-devspace
             dockerfile: python/.devfile/Containerfile.client
@@ -69,6 +69,9 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
+
+      - id: go
+        run: echo "version=$(cat .go-version)" >> "$GITHUB_OUTPUT"
 
       - name: Check if this image should be built
         id: check
@@ -191,6 +194,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
+            GO_VERSION=${{ steps.go.outputs.version }}
             GIT_VERSION=${{ env.PEP440_VERSION }}
             GIT_COMMIT=${{ steps.build-args.outputs.git_commit }}
             BUILD_DATE=${{ steps.build-args.outputs.build_date }}

@@ -58,7 +58,7 @@ install_dependencies() {
 
     if ! command -v uv &> /dev/null; then
         log_info "Installing uv..."
-        curl -LsSf https://astral.sh/uv/install.sh | sh
+        curl -LsSf "https://astral.sh/uv/$(cat "$REPO_ROOT/.uv-version")/install.sh" | sh
         export PATH="$HOME/.cargo/bin:$PATH"
     fi
 

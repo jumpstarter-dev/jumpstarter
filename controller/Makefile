@@ -123,6 +123,7 @@ run-router: manifests generate fmt vet ## Run a router from your host.
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build \
+		--build-arg GO_VERSION=$(shell cat ../.go-version) \
 		--build-arg GIT_VERSION=$(GIT_VERSION) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
@@ -141,8 +142,8 @@ docker-push: ## Push docker image with the manager.
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
-	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
-	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
+	# copy existing Containerfile and insert --platform=${BUILDPLATFORM} into Containerfile.cross, and preserve the original Containerfile
+	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Containerfile > Containerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name jumpstarter-controller-builder
 	$(CONTAINER_TOOL) buildx use jumpstarter-controller-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) \
@@ -151,9 +152,9 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 			--build-arg BUILD_DATE=$(BUILD_DATE) \
 			--tag ${DOCKER_REPO}:${DOCKER_TAG} \
 			--tag ${DOCKER_REPO}:latest \
-			-f Dockerfile.cross .
+			-f Containerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm jumpstarter-controller-builder
-	rm Dockerfile.cross
+	rm Containerfile.cross
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.

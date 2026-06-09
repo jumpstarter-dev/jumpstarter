@@ -4,7 +4,8 @@ cd "$(dirname "$0")"
 
 # run only in a container
 if [[ -z "$container" && ! -f /.dockerenv ]]; then
-    exec podman run --rm -it -v $(pwd):/host:Z -w /host fedora:43 "$0" "$@"
+    podman build -t flasher-builder "$(dirname "$0")"
+    exec podman run --rm -it -v $(pwd):/host:Z -w /host flasher-builder "$0" "$@"
 else
 	set -euo pipefail
 	BUILDROOT_DIR="/var/tmp/buildroot"
