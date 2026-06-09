@@ -28,7 +28,7 @@
       ],
       "depNameTemplate": "go",
       "datasourceTemplate": "golang-version",
-      "versioningTemplate": "go-mod-directive"
+      "versioningTemplate": "semver"
     },
     {
       "description": "Track .py-version for CI Python runtime (not the requires-python floor)",
@@ -145,11 +145,11 @@
       "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)_g[a-f0-9]+_\\d+\\.\\d+\\.\\d+_okd_scos\\.(?:(?<prerelease>ec\\.\\d+)|(?<build>\\d+))$"
     },
     {
-      "description": "Track Fedora stable releases only (latest always points to current stable, never rawhide)",
+      "description": "Restrict Fedora to stable releases, bump this cap when the next Fedora goes GA",
       "matchPackageNames": [
         "fedora"
       ],
-      "followTag": "latest"
+      "allowedVersions": "<=44"
     },
     {
       "description": "Group Docker base images",
@@ -176,8 +176,8 @@
       ]
     },
     {
-      "description": "Group Go version directives with Kubernetes deps",
-      "groupName": "kubernetes",
+      "description": "Group Go version directives",
+      "groupName": "go-toolchain",
       "matchDepTypes": [
         "golang"
       ],
@@ -189,8 +189,8 @@
       "automerge": false
     },
     {
-      "description": "Group .go-version with Kubernetes deps",
-      "groupName": "kubernetes",
+      "description": "Group .go-version with Go toolchain",
+      "groupName": "go-toolchain",
       "matchManagers": [
         "custom.regex"
       ],
@@ -200,8 +200,8 @@
       "automerge": false
     },
     {
-      "description": "Group go-toolset Docker image with Kubernetes deps",
-      "groupName": "kubernetes",
+      "description": "Group go-toolset Docker image with Go toolchain",
+      "groupName": "go-toolchain",
       "matchManagers": [
         "dockerfile"
       ],
