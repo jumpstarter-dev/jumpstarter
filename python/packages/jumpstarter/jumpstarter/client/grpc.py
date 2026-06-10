@@ -132,6 +132,7 @@ class Exporter(BaseModel):
 class Lease(BaseModel):
     namespace: str
     name: str
+    alias: str | None = None
     selector: str
     exporter_name: str | None = None
     tags: dict[str, str] = Field(default_factory=dict)
@@ -185,9 +186,12 @@ class Lease(BaseModel):
                 tzinfo=datetime.now().astimezone().tzinfo,
             )
 
+        alias = data.alias if data.HasField("alias") else None
+
         return cls(
             namespace=namespace,
             name=name,
+            alias=alias,
             selector=data.selector,
             exporter_name=data.exporter_name if data.exporter_name else None,
             tags=dict(data.tags) if data.tags else {},
@@ -248,7 +252,7 @@ class Lease(BaseModel):
         tags_str = ",".join(f"{k}={v}" for k, v in sorted(self.tags.items()))
 
         table.add_row(
-            self.name,
+            self.alias or self.name,
             self.selector,
             expires_at_str,
             remaining_str,

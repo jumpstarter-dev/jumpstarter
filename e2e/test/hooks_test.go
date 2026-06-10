@@ -260,7 +260,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring("BEFORE_HOOK:"))
-			Expect(out).To(MatchRegexp(`lease=[0-9a-f-]+`))
+			Expect(out).To(MatchRegexp(`lease=[a-z0-9-]+`))
 			Expect(out).To(MatchRegexp(`client=`))
 		})
 	})
