@@ -20,15 +20,21 @@ DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
 
 @typing.final
 class LabelSelectorRequirement(google.protobuf.message.Message):
+    """A label selector requirement with key, operator, and values."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     KEY_FIELD_NUMBER: builtins.int
     OPERATOR_FIELD_NUMBER: builtins.int
     VALUES_FIELD_NUMBER: builtins.int
     key: builtins.str
+    """The label key that the selector applies to."""
     operator: builtins.str
+    """The operator (In, NotIn, Exists, DoesNotExist) relating the key to values."""
     @property
-    def values(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]: ...
+    def values(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
+        """The set of values for the operator to match against."""
+
     def __init__(
         self,
         *,
@@ -65,9 +71,13 @@ class LabelSelector(google.protobuf.message.Message):
     MATCH_EXPRESSIONS_FIELD_NUMBER: builtins.int
     MATCH_LABELS_FIELD_NUMBER: builtins.int
     @property
-    def match_expressions(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___LabelSelectorRequirement]: ...
+    def match_expressions(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___LabelSelectorRequirement]:
+        """A list of label selector requirements combined by AND."""
+
     @property
-    def match_labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]: ...
+    def match_labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+        """A map of key-value pairs that must match exactly."""
+
     def __init__(
         self,
         *,
@@ -80,14 +90,18 @@ Global___LabelSelector: typing_extensions.TypeAlias = LabelSelector
 
 @typing.final
 class Time(google.protobuf.message.Message):
-    """Reference: https://github.com/kubernetes/kubernetes/blob/v1.31.1/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto"""
+    """Timestamp in seconds and nanoseconds since the Unix epoch.
+    Reference: https://github.com/kubernetes/kubernetes/blob/v1.31.1/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto
+    """
 
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     SECONDS_FIELD_NUMBER: builtins.int
     NANOS_FIELD_NUMBER: builtins.int
     seconds: builtins.int
+    """Seconds since the Unix epoch."""
     nanos: builtins.int
+    """Non-negative fractions of a second at nanosecond resolution."""
     def __init__(
         self,
         *,
@@ -105,6 +119,8 @@ Global___Time: typing_extensions.TypeAlias = Time
 
 @typing.final
 class Condition(google.protobuf.message.Message):
+    """A Kubernetes-style status condition."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     TYPE_FIELD_NUMBER: builtins.int
@@ -114,12 +130,19 @@ class Condition(google.protobuf.message.Message):
     REASON_FIELD_NUMBER: builtins.int
     MESSAGE_FIELD_NUMBER: builtins.int
     type: builtins.str
+    """The type of condition."""
     status: builtins.str
+    """The status of the condition (True, False, Unknown)."""
     observedGeneration: builtins.int
+    """The generation observed by the controller."""
     reason: builtins.str
+    """A machine-readable reason for the condition."""
     message: builtins.str
+    """A human-readable description of the condition."""
     @property
-    def lastTransitionTime(self) -> Global___Time: ...
+    def lastTransitionTime(self) -> Global___Time:
+        """The last time the condition transitioned."""
+
     def __init__(
         self,
         *,
