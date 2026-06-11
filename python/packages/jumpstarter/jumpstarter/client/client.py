@@ -97,7 +97,6 @@ async def client_from_channel(
     stub = MultipathExporterStub([channel])
 
     response = await stub.GetReport(empty_pb2.Empty())
-
     for index, report in enumerate(response.reports):
         topo[index] = []
 
@@ -142,6 +141,6 @@ async def client_from_channel(
             yield from _iter_all(child)
 
     for c in _iter_all(root_client):
-        c.root = root_client
+        object.__setattr__(c, 'root', root_client)
 
     return clients.popitem(last=True)[1]

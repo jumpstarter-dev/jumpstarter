@@ -1,4 +1,5 @@
 import sys
+import time
 from contextlib import contextmanager
 from typing import Optional
 
@@ -8,7 +9,7 @@ from anyio.streams.file import FileReadStream
 from jumpstarter_driver_network.adapters import PexpectAdapter
 from pexpect.fdpexpect import fdspawn
 
-from .console import Console
+from .console import Console, ConsoleStreamDrop
 from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group
 
@@ -126,9 +127,10 @@ class PySerialClient(DriverClient):
         return bytes_read, bytes_sent
 
     def _find_power_client(self):
-        if self.root is None:
+        root = getattr(self, 'root', None)
+        if root is None:
             return None
-        return self._search_power(self.root)
+        return self._search_power(root)
 
     def _search_power(self, client):
         for child in client.children.values():
@@ -163,8 +165,18 @@ class PySerialClient(DriverClient):
             click.echo("\nStarting serial port console ... exit with CTRL+B x 3 times\n")
             if on_power_cycle is not None:
                 click.echo("Power cycle: CTRL+] x 3 times\n")
-            console = Console(serial_client=self, on_power_cycle=on_power_cycle)
-            console.run()
+            retries = 0
+            while retries < 30:
+                console = Console(serial_client=self, on_power_cycle=on_power_cycle)
+                try:
+                    console.run()
+                    break
+                except ConsoleStreamDrop:
+                    click.echo("\r\nSerial connection lost, reconnecting...\n", err=True)
+                    retries += 1
+                    time.sleep(1)
+            else:
+                click.echo("\nSerial connection lost (reconnect attempts exhausted).\n", err=True)
 
         @base.command()
         @click.option(

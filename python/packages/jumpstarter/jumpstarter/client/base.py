@@ -30,7 +30,6 @@ class DriverClient(AsyncDriverClient):
     """
 
     children: dict[str, DriverClient] = field(default_factory=dict)
-    root: DriverClient | None = field(default=None)
 
     portal: BlockingPortal
     stack: ExitStack

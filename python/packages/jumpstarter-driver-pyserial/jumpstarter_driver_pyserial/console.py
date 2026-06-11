@@ -4,13 +4,18 @@ import tty
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
 
-from anyio import create_task_group
+from anyio import EndOfStream, create_task_group
 from anyio.streams.file import FileReadStream, FileWriteStream
 
 from jumpstarter.client import DriverClient
 
 
 class ConsoleExit(Exception):
+    pass
+
+
+class ConsoleStreamDrop(Exception):
+    """Serial stream dropped; caller may reconnect."""
     pass
 
 
@@ -33,20 +38,28 @@ class Console:
             termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, original)
 
     async def __run(self):
-        async with self.serial_client.stream_async(method="connect") as stream:
-            try:
-                async with create_task_group() as tg:
-                    tg.start_soon(self.__serial_to_stdout, stream)
-                    tg.start_soon(self.__stdin_to_serial, stream)
-            except* ConsoleExit:
-                pass
+        try:
+            async with self.serial_client.stream_async(method="connect") as stream:
+                try:
+                    async with create_task_group() as tg:
+                        tg.start_soon(self.__serial_to_stdout, stream)
+                        tg.start_soon(self.__stdin_to_serial, stream)
+                except* ConsoleExit:
+                    pass
+                except* ConsoleStreamDrop:
+                    raise ConsoleStreamDrop() from None
+        except EndOfStream:
+            raise ConsoleStreamDrop() from None
 
     async def __serial_to_stdout(self, stream):
         stdout = FileWriteStream(sys.stdout.buffer)
-        while True:
-            data = await stream.receive()
-            await stdout.send(data)
-            sys.stdout.flush()
+        try:
+            while True:
+                data = await stream.receive()
+                await stdout.send(data)
+                sys.stdout.flush()
+        except EndOfStream:
+            raise ConsoleStreamDrop() from None
 
     async def __stdin_to_serial(self, stream):
         stdin = FileReadStream(sys.stdin.buffer)
