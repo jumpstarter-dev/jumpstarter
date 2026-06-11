@@ -231,7 +231,7 @@ class TestRunCommandAuthValidation:
     """Integration tests exercising auth validation through the Click CLI layer."""
 
     def _invoke(self, args, mock_serve=True):
-        runner = click.testing.CliRunner()
+        runner = click.testing.CliRunner(mix_stderr=False)
         patches = []
         if mock_serve:
             patches.append(
@@ -272,7 +272,7 @@ class TestRunCommandAuthValidation:
         assert "--tls-grpc-listener requires either --tls-grpc-insecure" in result.output
 
     def test_auto_generated_passphrase_printed_to_stderr(self):
-        runner = click.testing.CliRunner()
+        runner = click.testing.CliRunner(mix_stderr=False)
         mock_serve = MagicMock(return_value=0)
         with (
             patch.object(run_mod, "_serve_with_exc_handling", mock_serve),
@@ -289,7 +289,7 @@ class TestRunCommandAuthValidation:
         assert result.exit_code == 0
         assert "Generated random passphrase" in result.stderr
         mock_serve.assert_called_once()
-        forwarded_passphrase = mock_serve.call_args.kwargs["passphrase"]
+        forwarded_passphrase = mock_serve.call_args.kwargs.get("passphrase") or mock_serve.call_args.args[5]
         assert isinstance(forwarded_passphrase, str)
         assert len(forwarded_passphrase) > 0
 
@@ -337,3 +337,12 @@ class TestRunCommandAuthValidation:
         ])
         assert result.exit_code != 0
         assert "require --tls-grpc-listener" in result.output
+
+    def test_auto_generated_passphrase_with_tls_insecure_warns(self):
+        result = self._invoke([
+            "--exporter-config", "/dev/null",
+            "--tls-grpc-listener", "1234",
+            "--tls-grpc-insecure",
+        ])
+        assert result.exit_code == 0
+        assert "authentication is active but TLS is disabled" in result.stderr

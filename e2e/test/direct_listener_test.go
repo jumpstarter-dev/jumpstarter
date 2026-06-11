@@ -207,10 +207,28 @@ var _ = Describe("Direct Listener E2E Tests", Label("direct-listener"), Ordered,
 		out, err := Jmp("shell", "--tls-grpc", fmt.Sprintf("127.0.0.1:%d", listenerPort),
 			"--tls-grpc-insecure", "--passphrase", generatedPassphrase, "--", "j", "power", "on")
 		Expect(err).NotTo(HaveOccurred(), out)
+	})
+
+	It("auto-generated passphrase is enforced (wrong passphrase is rejected)", func() {
+		config := configPath("exporter-direct-listener.yaml")
+		_, stderrBuf := tracker.StartDirectExporterAutoAuth(config, listenerPort)
+
+		// Wait for the auto-generated passphrase message to appear in stderr
+		Eventually(func() string {
+			return stderrBuf.String()
+		}, 15*time.Second, 500*time.Millisecond).Should(ContainSubstring("Generated random passphrase"))
+
+		// Wait for the port to be ready
+		WaitForDirectExporterPort(listenerPort)
 
 		// Verify that a wrong passphrase is rejected
-		_, err = Jmp("shell", "--tls-grpc", fmt.Sprintf("127.0.0.1:%d", listenerPort),
+		_, err := Jmp("shell", "--tls-grpc", fmt.Sprintf("127.0.0.1:%d", listenerPort),
 			"--tls-grpc-insecure", "--passphrase", "wrong-passphrase", "--", "j", "power", "on")
+		Expect(err).To(HaveOccurred())
+
+		// Verify that connecting without a passphrase is also rejected
+		_, err = Jmp("shell", "--tls-grpc", fmt.Sprintf("127.0.0.1:%d", listenerPort),
+			"--tls-grpc-insecure", "--", "j", "power", "on")
 		Expect(err).To(HaveOccurred())
 	})
 
