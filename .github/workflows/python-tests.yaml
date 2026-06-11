@@ -120,7 +120,7 @@ jobs:
 
       - name: Cache Fedora Cloud images
         id: cache-fedora-cloud-images
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: python/packages/jumpstarter-driver-qemu/images
           key: fedora-cloud-43-1.6
