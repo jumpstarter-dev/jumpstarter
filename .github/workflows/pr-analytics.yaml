@@ -18,7 +18,7 @@ jobs:
       issues: write
     steps:
       - name: Run script for analytics
-        uses: AlexSim93/pull-request-analytics-action@cc57ceb92148c5d5879ca578a2b59f99c3cbe231 # v4.6.1
+        uses: AlexSim93/pull-request-analytics-action@2393847d9ed95dbecf321a527f7402aeb3012040 # v4.10.0
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO_FOR_ISSUE: jumpstarter

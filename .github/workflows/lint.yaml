@@ -118,6 +118,6 @@ jobs:
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - name: Run typos
-        uses: crate-ci/typos@a1d64977b4aa1709d6328d518aa753f4899352d8 # v1.42.2
+        uses: crate-ci/typos@37bb98842b0d8c4ffebdb75301a13db0267cef89 # v1.47.2
         with:
           config: ./typos.toml
