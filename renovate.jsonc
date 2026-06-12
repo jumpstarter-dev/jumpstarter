@@ -218,5 +218,13 @@
       ],
       "automerge": false
     },
+    {
+      "description": "Group go-toolset container image with Go toolchain",
+      "groupName": "go-toolchain",
+      "matchPackageNames": [
+        "registry.access.redhat.com/ubi9/go-toolset"
+      ],
+      "automerge": false
+    }
   ]
 }
