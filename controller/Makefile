@@ -126,7 +126,7 @@ docker-build: ## Build docker image with the manager.
 		--build-arg GIT_VERSION=$(GIT_VERSION) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		-t ${IMG} .
+		-t ${IMG} -f Containerfile .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
