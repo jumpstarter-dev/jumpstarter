@@ -80,7 +80,7 @@ jmp mcp serve
 ```
 
 For the full list of available tools and their parameters, see the
-[MCP package reference](../../../reference/package-apis/mcp.md).
+{doc}`MCP package reference </reference/package-apis/mcp>`.
 
 ## Usage Examples
 
