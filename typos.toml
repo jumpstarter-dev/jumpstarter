@@ -5,6 +5,8 @@
 extend-ignore-re = [
     # Ignore hash strings (like 321ba1)
     "[a-f0-9]{6,}",
+    # Ignore base64-encoded strings (e.g. tokens in tests)
+    "[A-Za-z0-9+/]{40,}=*",
 ]
 
 [default.extend-words]
