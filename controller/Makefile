@@ -123,7 +123,6 @@ run-router: manifests generate fmt vet ## Run a router from your host.
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
 	$(CONTAINER_TOOL) build \
-		--build-arg GO_VERSION=$(shell cat ../.go-version) \
 		--build-arg GIT_VERSION=$(GIT_VERSION) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \

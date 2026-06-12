@@ -70,9 +70,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - id: go
-        run: echo "version=$(cat .go-version)" >> "$GITHUB_OUTPUT"
-
       - name: Check if this image should be built
         id: check
         if: github.event_name == 'pull_request'
@@ -194,7 +191,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            GO_VERSION=${{ steps.go.outputs.version }}
             GIT_VERSION=${{ env.PEP440_VERSION }}
             GIT_COMMIT=${{ steps.build-args.outputs.git_commit }}
             BUILD_DATE=${{ steps.build-args.outputs.build_date }}
