@@ -1,6 +1,7 @@
 FROM --platform=$BUILDPLATFORM registry.fedoraproject.org/fedora:44 AS builder
 COPY .uv-version /tmp/.uv-version
-RUN dnf install -y make git && \
+RUN grep -qxE '[0-9]+\.[0-9]+\.[0-9]+' /tmp/.uv-version && \
+    dnf install -y make git && \
     curl -LsSf "https://astral.sh/uv/$(cat /tmp/.uv-version)/install.sh" | sh && \
     mv /root/.local/bin/uv /bin/uv && mv /root/.local/bin/uvx /bin/uvx && \
     dnf clean all && \
@@ -22,7 +23,8 @@ LABEL io.k8s.display-name="jumpstarter-client-developer"
 USER root
 
 COPY .py-version /tmp/.py-version
-RUN PY=$(cat /tmp/.py-version) && \
+RUN grep -qxE '[0-9]+\.[0-9]+' /tmp/.py-version && \
+    PY=$(cat /tmp/.py-version) && \
     rm -rf /usr/bin/python && ln -s "/usr/bin/python${PY}" /usr/bin/python
 
 RUN PY=$(cat /tmp/.py-version) && \

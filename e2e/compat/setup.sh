@@ -58,10 +58,12 @@ install_dependencies() {
 
     if ! command -v uv &> /dev/null; then
         log_info "Installing uv..."
+        grep -qxE '[0-9]+\.[0-9]+\.[0-9]+' "$REPO_ROOT/.uv-version" || { log_error "Invalid .uv-version"; exit 1; }
         curl -LsSf "https://astral.sh/uv/$(cat "$REPO_ROOT/.uv-version")/install.sh" | sh
         export PATH="$HOME/.cargo/bin:$PATH"
     fi
 
+    grep -qxE '[0-9]+\.[0-9]+' "$REPO_ROOT/.py-version" || { log_error "Invalid .py-version"; exit 1; }
     PY_VERSION="$(cat "$REPO_ROOT/.py-version")"
     log_info "Installing Python ${PY_VERSION}..."
     uv python install "$PY_VERSION"
