@@ -5,6 +5,7 @@ import click
 from rich import traceback
 
 from jumpstarter.client import DriverClient
+from jumpstarter.client.base import StubDriverClient
 from jumpstarter.client.decorators import driver_click_group
 
 
@@ -52,6 +53,8 @@ class CompositeClient(DriverClient):
             pass
 
         for k, v in self.children.items():
+            if isinstance(v, StubDriverClient):
+                continue
             if hasattr(v, "cli"):
                 base.add_command(v.cli(), k)
 
