@@ -8,11 +8,11 @@ LABEL summary="devfile jumpstarter developer image"
 LABEL description="Image with developers tools."
 LABEL io.k8s.display-name="jumpstarter-developer-universal"
 
+USER root
+
 COPY .uv-version /tmp/.uv-version
 RUN curl -LsSf "https://astral.sh/uv/$(cat /tmp/.uv-version)/install.sh" | sh && \
     mv /root/.local/bin/uv /bin/uv && mv /root/.local/bin/uvx /bin/uvx
-
-USER root
 
 COPY .py-version /tmp/.py-version
 RUN PY=$(cat /tmp/.py-version) && \
