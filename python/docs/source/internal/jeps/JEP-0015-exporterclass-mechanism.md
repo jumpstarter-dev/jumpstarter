@@ -8,7 +8,7 @@
 | **Status**     | Draft                                                      |
 | **Type**       | Standards Track                                            |
 | **Created**    | 2026-05-10                                                 |
-| **Updated**    | 2026-05-10                                                 |
+| **Updated**    | 2026-05-14                                                 |
 | **Discussion** | [Matrix](https://matrix.to/#/#jumpstarter:matrix.org)      |
 | **Requires**   | JEP-0011 (Protobuf Introspection and Interface Generation) |
 
@@ -16,23 +16,23 @@
 
 ## Abstract
 
-This JEP introduces an opt-in `ExporterClass` custom resource that defines a typed contract between exporters and clients. An ExporterClass specifies required and optional driver interfaces by referencing registered `DriverInterface` CRDs, enabling the controller to structurally validate exporters at registration time. This also enables client-side codegen to produce type-safe device wrappers with named accessors for each interface. The `DriverInterface` CRD links interface names to their canonical proto definitions and driver packages through the `DriverClient` and `DriverImplementation` CRDs respectively. Together, these resources bridge the gap between label-based infrastructure selection and typed API contracts.
+This JEP introduces an opt-in `ExporterClass` custom resource that defines a typed contract between exporters and clients, backed by a `DriverInterface` custom resource that carries the canonical proto definition of each driver interface. An `ExporterClass` specifies required and optional driver interfaces by referencing registered `DriverInterface` CRDs, enabling the controller to structurally validate exporters at registration time. Composite interfaces (e.g. `dutlink`) declare their required child interfaces on `DriverInterface.spec.children`, so `ExporterClass` itself stays a flat list of root-level requirements. Together, these two CRDs bridge the gap between label-based infrastructure selection (which describes hardware) and a typed, versioned API contract (which describes the wire shape an exporter must speak). Authoring per-language client and driver-implementation registry CRDs — the polyglot package-distribution story — is deferred to a separate JEP-0016 (Driver Package Registry) that builds on this JEP's `DriverInterface` as its contract object.
 
 ## Motivation
 
-Today, a client requesting a device lease specifies label selectors — `soc=sa8295p`, `vendor=acme` — and gets an exporter with matching metadata. However, labels describe *infrastructure* (what hardware is connected), not *API contracts* (what driver interfaces are available). A client that receives a lease has no guarantee about which driver interfaces the exporter provides. It must call `GetReport`, walk the driver tree, check for the presence of each interface by name, and handle missing interfaces at runtime. This makes it impossible to write type-safe client code in any language.
+Today, a client requesting a device lease specifies label selectors — `soc=sa8295p`, `vendor=acme` — and gets an exporter with matching metadata. However, labels describe *infrastructure* (what hardware is connected), not *API contracts* (what driver interfaces are available). A client that receives a lease has no guarantee about which driver interfaces the exporter provides. It must call `GetReport`, walk the driver tree, check for the presence of each interface by name, and handle missing interfaces at runtime. There is also no guarantee that two exporters reporting the *same* interface name speak the *same* wire shape — interface drift between versions is invisible to both controller and client.
 
 The consequences are concrete:
 
-- **No compile-time safety.** A test that needs `power.on()`, `serial.connect()`, and `flash.write()` cannot know at compile time whether the leased device provides all three. If the serial driver is missing, the test discovers this at runtime — potentially minutes into a CI pipeline — with an opaque `KeyError` or `AttributeError`.
+- **No compile-time safety.** A test that needs `power.on()`, `serial.connect()`, and `flash.write()` cannot know at lease time whether the leased device provides all three. If the serial driver is missing, the test discovers this at runtime — potentially minutes into a CI pipeline — with an opaque `KeyError` or `AttributeError`.
 
 - **No contract for exporters.** An operator deploying a new exporter for embedded device testing has no way to verify that the exporter's driver configuration satisfies the requirements of the test suites that will lease it. Misconfiguration is discovered when tests fail, not at deployment time.
 
-- **No typed codegen.** Without a formal declaration of which interfaces a device provides, code generation tools cannot produce typed device wrappers with non-nullable accessors. Every interface accessor must be `Optional`, defeating the purpose of typed clients.
+- **No API versioning gate.** Without a controller-side definition of what `jumpstarter.driver.power.v1` actually looks like, an exporter shipping a divergent (or out-of-date) implementation of that interface registers exactly the same as a conformant one. A client written against `v1` may be matched with an exporter whose wire shape no longer matches, and the mismatch only surfaces as a runtime RPC failure.
 
 - **No fleet-level visibility.** There is no aggregated view of how many exporters satisfy a particular exporter profile. An operator cannot answer "how many embedded-linux-board devices are available right now?" without scripting custom `GetReport` queries across the fleet.
 
-The `ExporterClass` bridges the gap between infrastructure selection (labels) and API contracts (interfaces), following the established Kubernetes pattern used by `StorageClass`, `IngressClass`, and `RuntimeClass`.
+The `ExporterClass` bridges the gap between infrastructure selection (labels) and API contracts (interfaces), following the established Kubernetes pattern used by `StorageClass`, `IngressClass`, and `RuntimeClass`. The `DriverInterface` it references is the controller-side canonical definition of each interface at a given version, against which every exporter is structurally validated.
 
 ### User Stories
 
@@ -40,30 +40,48 @@ The `ExporterClass` bridges the gap between infrastructure selection (labels) an
 
 - **As a** platform operator deploying a new exporter rack, **I want to** validate my exporter configuration against the `embedded-linux-board` ExporterClass before connecting it to the controller, **so that** I catch missing drivers or interface mismatches at deployment time rather than when a test fails at 2 AM.
 
-- **As a** test framework developer generating typed clients, **I want** the ExporterClass definition to tell me exactly which interfaces are required vs. optional, **so that** I can generate non-nullable accessors for required interfaces and `Optional` accessors for optional ones.
-
 - **As a** fleet manager responsible for 50+ exporters across three labs, **I want to** see at a glance how many exporters satisfy each ExporterClass and which ones are missing interfaces, **so that** I can plan capacity and prioritize hardware procurement.
 
 - **As a** driver developer adding network support to an existing exporter, **I want to** check whether my updated exporter configuration now satisfies the `embedded-linux-board` ExporterClass (which lists network as optional), **so that** I can verify my work without running the full test suite.
+
+### Contrast with the current `devices` approach
+
+To make the gap concrete: here is how exporter capability advertisement works **today**, and what changes with this JEP.
+
+**Today.** Every exporter calls `ControllerService.Register` with a flat list of `DriverInstanceReport` messages — each carrying a `uuid`, an optional `parent_uuid` linking it into a tree, a `labels` map, and a free-text `description` (see `protocol/proto/jumpstarter/v1/jumpstarter.proto`). The controller stores these reports verbatim into `ExporterStatus.Devices` (`controller/api/v1alpha1/exporter_types.go`):
+
+```go
+type Device struct {
+    Uuid       string            `json:"uuid,omitempty"`
+    ParentUuid *string           `json:"parent_uuid,omitempty"`
+    Labels     map[string]string `json:"labels,omitempty"`
+}
+```
+
+There is no further processing. Clients call the exporter's `ExporterService.GetReport()` at lease time, walk the same flat list, and look for "interfaces" by matching label keys (typically `jumpstarter.dev/<package>`). Lease-time selection (`controller/internal/controller/lease_controller.go`) filters candidates purely by **exporter** labels — never by what's in the device tree. There is no concept of an interface contract, no version pin, no structural check; an exporter that ships `power-v0` is indistinguishable from one that ships `power-v1` if both carry the same label.
+
+**With this JEP.** Each `DriverInstanceReport` additionally carries a `FileDescriptorProto` (per JEP-0011). At registration time the controller stores the tree faithfully into a new `ExporterStatus.Drivers` projection (camelCase JSON; the legacy `Devices` field is retained for one release as a deprecation courtesy) **and** runs validation against any `ExporterClass` the exporter declares or whose label selector matches. The validator looks up each required interface in the cluster's `DriverInterface` registry, walks the runtime tree to verify each required position is filled by a driver whose proto package and structural descriptor match the canonical contract, and writes the result to `status.satisfiedExporterClasses` plus an `ExporterClassCompliance` condition. Lease-time selection (`Lease.spec.exporterClassName`) becomes a simple slice-membership check against the precomputed `satisfiedExporterClasses` list — no per-lease tree walk. The label-only path keeps working unchanged for clients that don't opt in.
+
+The shift, in one line: **what an exporter is** becomes data the controller can validate, not a convention the client has to discover at runtime.
 
 ## Proposal
 
 ### Overview
 
-This proposal introduces four new namespace-scoped Kubernetes CRDs — a **driver-registry** trio (`DriverInterface`, `DriverClient`, `DriverImplementation`) that together describe the interface contracts and their concrete implementations, plus the consumer-facing `ExporterClass` — along with a new `Exporter.spec.exporterClassName` field, a `Lease.spec.exporterClassName` + `exactMatch` pair, and admin CLI tooling.
+This proposal introduces two new namespace-scoped Kubernetes CRDs — `DriverInterface` (the **contract** for a driver interface) and `ExporterClass` (a named exporter profile referencing those contracts) — along with a new `Exporter.spec.exporterClassName` field, a `Lease.spec.exporterClassName` + `exactMatch` pair, and admin CLI tooling.
 
 1. **`DriverInterface`** — the **contract** for a driver interface itself. It names the interface, carries the canonical proto definition (from JEP-0011) including the generated `FileDescriptorProto` descriptor, and — for composite interfaces (e.g., `dutlink`) — declares the named child interfaces every driver implementing it must expose. The `DriverInterface` is defined as a `interface.yaml` partial-CRD manifest committed next to the sibling `.proto` under `interfaces/proto/<package>/` (as prescribed by JEP-0011). The build produces the cluster-applicable CRD with the descriptor filled in. `DriverInterface` CRDs for all bundled drivers ship as part of the standard Jumpstarter installation.
-2. **`DriverClient`** — registers a per-language client-side implementation of a `DriverInterface` (one per `(interface, language)` pair). It carries the language (e.g. `python`, `java`, `rust`, etc.), package name + version, package registry URL, source repo URL, and a language-specific `typeRef` (Python FQN, Java class, Go type, Rust type).
-3. **`DriverImplementation`** — registers each concrete driver-side type that implements a `DriverInterface` (e.g., `DutlinkPower`, `MockPower`). One CRD per driver type, with `typeRef`, language, package, description, and source-link metadata. Short alias `driverimpl`.
-4. **`ExporterClass`** — a named exporter profile. Declares a flat list of top-level interface requirements (composite child structure is owned by each referenced `DriverInterface`, not re-declared here), plus standard Kubernetes label selectors, display metadata (`displayName`, `description`, `vendor`, `arch`), `isBase` for abstract base classes, and `extends` for inheritance.
-5. **Exporter and Lease field additions** — `Exporter.spec.exporterClassName` lets an exporter declare its primary class (mirroring the K8s `*ClassName` convention used by Pod→RuntimeClass, PVC→StorageClass, Ingress→IngressClass). `Lease.spec.exporterClassName` lets a client request a specific class; `Lease.spec.exactMatch` opts out of subclass matching. The lease controller AND-combines the lease's selector and class name.
-6. **`jmp admin` CLI tooling** — `get` / `apply` / `generate` verbs for all four CRDs (`driverinterface`, `driverclient`, `driverimpl`, `exporterclass`), plus user-facing `jmp validate exporter` and `jmp validate client`.
+2. **`ExporterClass`** — a named exporter profile. Declares a flat list of top-level interface requirements (composite child structure is owned by each referenced `DriverInterface`, not re-declared here), plus standard Kubernetes label selectors, display metadata (`displayName`, `description`, `vendor`, `arch`), `isBase` for abstract base classes, and `extends` for inheritance.
+3. **Exporter and Lease field additions** — `Exporter.spec.exporterClassName` lets an exporter declare its primary class (mirroring the K8s `*ClassName` convention used by Pod→RuntimeClass, PVC→StorageClass, Ingress→IngressClass). `Lease.spec.exporterClassName` lets a client request a specific class; `Lease.spec.exactMatch` opts out of subclass matching. The lease controller AND-combines the lease's selector and class name.
+4. **`jmp admin` CLI tooling** — `get` / `apply` / `generate` verbs for `driverinterface` and `exporterclass`, plus the user-facing `jmp validate exporter` command.
 
-The `ExporterClass` is **transparent to clients that don't want it.** Clients that omit `exporterClassName` continue to request leases by labels exactly as today, with ExporterClass enforcement applied as a backstop (label-matching exporters that fail an applicable class's interface validation are excluded with a descriptive error). Clients that opt in by setting `exporterClassName` get typed selection: "give me a `jetson-orin-nx`" (or any subclass) returns a fully-conformant exporter. Client-side codegen, planned as a future JEP, consumes the registry CRDs to produce typed device wrappers — `device.dutlink.power.on()` accessors whose shape is guaranteed by validation.
+The `ExporterClass` is **transparent to clients that don't want it.** Clients that omit `exporterClassName` continue to request leases by labels exactly as today, with `ExporterClass` enforcement applied as a backstop (label-matching exporters that fail an applicable class's interface validation are excluded with a descriptive error). Clients that opt in by setting `exporterClassName` get typed selection: "give me a `jetson-orin-nx`" (or any subclass) returns a fully-conformant exporter.
+
+**Out of scope (deferred to JEP-0016, Driver Package Registry).** The per-language client and driver-implementation registry CRDs (`DriverClient`, `DriverImplementation`) — which catalog *where* in PyPI / Maven Central / crates.io / npm the code that implements each interface lives, and *how* to address it in a given language — are deliberately not part of this JEP. They reference `DriverInterface` but are not required by it; `ExporterClass` validation works against the canonical proto descriptor alone. Splitting the registry into its own JEP keeps this proposal reviewable as a single concern.
 
 ### DriverInterface CRD
 
-A `DriverInterface` is the **contract** for a driver interface: it names the interface, carries the canonical proto definition, and — for composite interfaces — declares the child interfaces that any driver implementing this interface must expose. Concrete client and driver implementations are registered separately via the `DriverClient` and `DriverImplementation` CRDs described in the following two sections.
+A `DriverInterface` is the **contract** for a driver interface: it names the interface, carries the canonical proto definition, and — for composite interfaces — declares the child interfaces that any driver implementing this interface must expose.
 
 A leaf interface (e.g., `jumpstarter-driver-power-v1` — methods only, no nested children):
 
@@ -86,9 +104,7 @@ spec:
   # No children — power is a leaf interface.
 
 status:
-  registeredClients: 1
-  registeredImplementations: 2
-  implementationCount: 15
+  satisfiedExporterCount: 15
   conditions:
     - type: Ready
       status: "True"
@@ -148,9 +164,23 @@ Each `children[*]` entry has three fields: `name` (the accessor slot — compose
 
 **Runtime matching of children to declared slots.** At runtime, each driver's `DriverInstanceReport` already carries a `jumpstarter.dev/name=<slot>` label populated by Jumpstarter's `Driver.report()` method when a child is wired in via `self.children["<slot>"] = …`. This is the existing convention — it's not new to this JEP. ExporterClass validation matches a `DriverInterface.spec.children[*].name` slot to the runtime child whose `jumpstarter.dev/name` label equals that value AND whose `fileDescriptorProto.package` matches the slot's referenced interface package. Strict double-match guarantees the slot is filled by the right interface, not just any child happening to be named `power`.
 
-The `DriverInterface` CRD is **strictly the contract** — proto methods, composition, and display metadata. It deliberately does **not** carry an embedded list of client or driver implementations. Each concrete client (per language) is registered as its own `DriverClient` CRD; each concrete driver-side type is registered as its own `DriverImplementation` CRD. This split gives every implementation a stable Kubernetes name (suitable for permalinks, RBAC scoping, and independent versioning) and keeps the contract object small enough that controllers and admin consoles can list and diff it cheaply.
+The `DriverInterface` CRD is **strictly the contract** — proto methods, composition, and display metadata. It deliberately does **not** carry an embedded list of client or driver implementations; the per-language *implementation registry* is a separate concern, deferred to JEP-0016. Keeping the contract object small enough to list and diff cheaply is part of why the split exists.
 
 **Method-level metadata is not in the CRD.** Admin consoles, codegen, and CLIs render method names, request/response types, streaming semantics, and doc comments directly from `proto.descriptor` — specifically the `source_code_info` field for doc comments, per JEP-0011's contract. The descriptor is the single source of truth for the method surface; nothing about methods is duplicated into CRD fields.
+
+### API Versioning
+
+`DriverInterface` is the controller-side single source of truth for what a versioned interface looks like. This subsection makes the versioning model explicit, since it is the main payoff of putting the contract in a CRD in the first place.
+
+**The proto package is the version identifier.** Per JEP-0011, every interface's `.proto` declares a package of the form `<owner>.driver.<name>.v<N>` — e.g., `jumpstarter.driver.power.v1`. The `DriverInterface` CRD's `spec.proto.package` carries this verbatim, and `metadata.name` is the dots-to-hyphens projection (`jumpstarter-driver-power-v1`). A version bump is a new proto package, a new `.proto`, a new `interface.yaml`, and a new `DriverInterface` CRD — `jumpstarter-driver-power-v2`. The two versions coexist in the cluster; they are independent objects with independent descriptors.
+
+**Conformance is structural, not nominal.** An exporter that wants to be considered as providing `power-v1` MUST report a `DriverInstanceReport` whose `FileDescriptorProto.package` equals `jumpstarter.driver.power.v1` (Check A — presence) AND whose method/message structure matches the canonical descriptor stored in `DriverInterface(jumpstarter-driver-power-v1).spec.proto.descriptor` (Check B — structural compatibility). Both checks run at registration time and are re-run on every relevant update. An exporter that emits the right *package* but a divergent *shape* (a renamed method, a different parameter type, a unary RPC where the contract is server-streaming) fails Check B and is **not** tagged as satisfying any ExporterClass that requires `power-v1`. See *Exporter Validation Algorithm* for the full algorithm and DD-14 for the strictness levels.
+
+**Clients get a contract they can rely on.** "If this exporter satisfies `power-v1`, the wire shape of every method is what the cluster's `DriverInterface(jumpstarter-driver-power-v1)` says it is." A client built against `power-v1` will not be matched to a lease whose exporter only satisfies `power-v2` (a different proto package, a different `DriverInterface`, a different `interfaceRef`); conversely, an exporter that speaks both versions reports two drivers — one per package — and is tagged as satisfying ExporterClasses that require either. The controller never has to guess at a "compatible enough" interpretation; the contract is data, not convention.
+
+**Why this approach.** Encoding the canonical descriptor inline in the CRD (DD-9) removes the need for any network round-trip to an external schema registry during validation, and pins the contract bytes alongside the operator bundle so cluster upgrades migrate the contract version in lock-step. Treating the proto package as the version identifier inherits proto's own well-defined backward/forward-compatibility rules (Buf BSR's WIRE category) — the JEP doesn't need to invent a separate compatibility theory. The two-step Check A + Check B validation (DD-12) keeps "missing version" distinct from "wrong shape of right version" in operator-facing condition messages, which is the difference between "install the driver" and "upgrade the driver."
+
+This is the controller-side equivalent of a Buf BSR–style schema gate, applied at exporter registration time rather than at proto-source review time.
 
 ### DriverInterface manifest (source-tree representation)
 
@@ -217,7 +247,7 @@ Manifest fields:
 
 - `apiVersion` *(required)* — `jumpstarter.dev/v1alpha1`. Versioned in lock-step with Jumpstarter's other CRDs and config files (`ExporterConfig`, `ClientConfig`, `ExporterClass`, etc.); future schema changes bump the apiVersion the same way.
 - `kind` *(required)* — `DriverInterface`. The same kind as the cluster CRD this manifest produces.
-- `metadata.name` *(required)* — the **cluster-side DriverInterface CRD name**. Every cross-reference (`spec.children[*].interfaceRef`, `ExporterClass.spec.interfaces[*].interfaceRef`, `DriverClient.spec.interfaceRef`, `DriverImplementation.spec.interfaceRef`) resolves against this value. Default convention is a straight dots→hyphens conversion of the proto package — `jumpstarter.driver.dutlink.v1` becomes `jumpstarter-driver-dutlink-v1`. Authors of out-of-tree drivers may pick any DNS-safe slug, but the dots→hyphens default keeps the cluster identifier visually parallel to the proto package and unambiguous.
+- `metadata.name` *(required)* — the **cluster-side DriverInterface CRD name**. Every cross-reference (`spec.children[*].interfaceRef`, `ExporterClass.spec.interfaces[*].interfaceRef`) resolves against this value. Default convention is a straight dots→hyphens conversion of the proto package — `jumpstarter.driver.dutlink.v1` becomes `jumpstarter-driver-dutlink-v1`. Authors of out-of-tree drivers may pick any DNS-safe slug, but the dots→hyphens default keeps the cluster identifier visually parallel to the proto package and unambiguous.
 - `spec.proto.package` *(required)* — the proto package. Must match the `package` declaration in the sibling `.proto`; the build target validates the pair.
 - `spec.proto.descriptor` *(absent in source; filled in by the build)* — base64-encoded `FileDescriptorProto`. The source manifest **does not carry this field**. The build target produces it by running `protoc --descriptor_set_out` against the sibling `.proto` and emits it into the generated cluster CRD (in the operator bundle output), exactly the way JEP-0011 treats compiled descriptors as build artifacts. Keeping it out of source means: no large binary blobs in source diffs, no risk of source/proto drift, no need for a "regenerate before committing" rule on authors. The `.proto` is the single committed source of truth for the method surface.
 - `spec.displayName` *(optional)* — short human label.
@@ -229,7 +259,7 @@ Manifest fields:
 
 Why references are by `metadata.name` (the cluster CRD name) rather than by proto package:
 
-- It is the canonical cluster-side identifier. Every cross-reference in the system — ExporterClass, DriverClient, DriverImplementation, child slots — resolves against the same `metadata.name`. Carrying it on the source-tree manifest means cross-references are stable, explicit, and don't depend on any "proto-package → CRD-name" naming convention that tooling has to maintain.
+- It is the canonical cluster-side identifier. Every cross-reference in the system — ExporterClass, child slots, and the JEP-0016 registry CRDs that will reference it — resolves against the same `metadata.name`. Carrying it on the source-tree manifest means cross-references are stable, explicit, and don't depend on any "proto-package → CRD-name" naming convention that tooling has to maintain.
 - It also keeps cross-referencing uniform: `interfaceRef` means the same thing — "a DriverInterface CRD `metadata.name`" — wherever it appears.
 
 `spec.proto.package` exists for the proto/manifest pairing check at build time; it is not used for cross-references.
@@ -247,7 +277,7 @@ The source `interface.yaml` is **not** rewritten in place. Authors edit the `.pr
 The applied artifact is the generated CRD, not the source manifest:
 
 - The operator installs the generated CRDs as part of its Helm chart / OLM bundle — that's how end users get them on the cluster. No `kubectl apply` against `interfaces/proto/...` files.
-- For out-of-tree drivers, `jmp admin generate driverinterface ./interface.yaml` reads the source manifest + sibling `.proto`, runs `protoc --descriptor_set_out`, and prints the complete CRD to stdout (ready for `kubectl apply` or `jmp admin apply driverinterface`). Custom-driver authors commit only the source manifest + `.proto` in their repo; the descriptor is regenerated each time they emit the cluster CRD.
+- For out-of-tree drivers, `jmp admin generate driverinterface ./interface.yaml` reads the source manifest + sibling `.proto`, runs `protoc --descriptor_set_out`, and prints the complete CRD to stdout (ready for `kubectl apply` or `jmp admin apply driverinterface`).
 
 Pairing and consistency rules:
 
@@ -257,113 +287,6 @@ Pairing and consistency rules:
 - The manifest's `spec.proto.package` must equal the `.proto`'s `package` declaration.
 - Every `spec.children[*].interfaceRef` must resolve to some other `interface.yaml` in the tree whose `metadata.name` matches. Cross-file references that don't resolve are errors.
 - The manifest's `metadata.name` must be unique across all `interface.yaml` files in the tree (and within a Kubernetes namespace at apply time).
-
-### DriverClient CRD
-
-A `DriverClient` registers a **client-side proxy** implementation for a `DriverInterface` in a single language. It is **opt-in**: an interface is fully usable without one. Per JEP-0011, every `DriverInterface` carries `spec.proto.descriptor` in the cluster, which is sufficient input for the test author's local codegen tooling to materialize a typed client in their language on demand — so the default path for any driver is "no `DriverClient` CRD, client materialized on the test-author side."
-
-> **Scope note.** The codegen pipeline itself — how `spec.proto.descriptor` becomes a typed client class in any specific language — is **out of scope for JEP-0015** and is the subject of a future codegen JEP (forecast in the *Abstract* and the `GetExporterClassInfo` notes below). JEP-0015 only assumes its existence: that some mechanism, defined elsewhere, lets a test author produce a usable client from the descriptor. The CRD design choices here (especially DD-18) do not depend on any specific codegen implementation, only on the existence of *some* codegen path.
-
-A `DriverClient` is only emitted in two cases (see DD-18):
-
-1. **In-tree convenience pre-generation** — Jumpstarter pre-generates Python clients for bundled drivers and ships them in the standard Python distribution; the in-tree build emits a `DriverClient` per pre-generated client so test authors can `pip install` and import without running codegen.
-2. **Hand-written client override** — a driver author ships a richer client (extra convenience methods, custom semantics, client-side networking logic) and registers it via the language's existing override mechanism (Python: the driver class's `client()` classmethod). The build emits a `DriverClient` whose `typeRef` is the override.
-
-The CRD is what `jmp validate client` checks against when verifying that a test environment has the right client packages installed for a leased exporter's interfaces — but only when one or more `DriverClient` CRDs apply to a given `(interface, language)` pair. When none apply, the validator falls back to the codegen path.
-
-```yaml
-apiVersion: jumpstarter.dev/v1alpha1
-kind: DriverClient
-metadata:
-  # Convention: <interface-name>-<language>
-  name: jumpstarter-driver-power-v1-python
-  namespace: lab-detroit
-spec:
-  interfaceRef: jumpstarter-driver-power-v1
-  language: python
-  package: jumpstarter-driver-power
-  version: "1.0.0"
-  # Language-specific FQN / import path that addresses the client implementation
-  typeRef: jumpstarter_driver_power.client:PowerClient
-  # Package registry base — PyPI, Maven Central, crates.io, npm, the project's own index
-  index: https://pkg.jumpstarter.dev/
-  # Source repository
-  repoUrl: https://github.com/jumpstarter-dev/jumpstarter-driver-power
-  # Direct link to the package's page on its language registry
-  packageUrl: https://pypi.org/project/jumpstarter-driver-power/
-  # Free-form note shown in admin consoles
-  note: Pre-generated Python client bundled with the standard Jumpstarter distribution.
-status:
-  conditions:
-    - type: Ready
-      status: "True"
-```
-
-Required fields: `interfaceRef`, `language`, `package`, `version`, `typeRef`. The `typeRef` field carries the language-specific fully-qualified name (or import path) that addresses the client type — e.g.:
-
-| Language | `typeRef` example                                                        |
-| -------- | ------------------------------------------------------------------------ |
-| Python   | `jumpstarter_driver_power.client:PowerClient`                            |
-| Java     | `dev.jumpstarter.driver.power.PowerClient`                               |
-| Go       | `github.com/jumpstarter-dev/jumpstarter-driver-power/client.PowerClient` |
-| Rust     | `jumpstarter_driver_power::PowerClient`                                  |
-
-The field name is deliberately language-neutral; the schema is the same across languages, and `language` disambiguates how to interpret `typeRef`.
-
-Optional fields:
-
-- `index` — the base URL of the package registry (`https://pkg.jumpstarter.dev/`, `https://repo.maven.apache.org/maven2/`, `https://crates.io/`, …). Used by package managers, not by humans.
-- `repoUrl` — VCS source repository. Language-agnostic.
-- `packageUrl` — direct link to the package's page on its registry (PyPI, Maven Central, crates.io, npm, …). Replaces the prior Python-specific `pypiUrl`; the field is named neutrally so every language's package-registry page has somewhere to go.
-- `note` — free-form caveat surfaced by admin consoles (e.g., "Bundled with the Python client distribution").
-
-Name convention: `<DriverInterface-name>-<language>` for the metadata name. This gives stable IDs for permalinks — e.g., `/driver-clients/jumpstarter-driver-power-v1-python`.
-
-`jmp validate client` (specified later in this JEP) resolves an interface as satisfied via **either** of two paths:
-
-- **Codegen path** (default, applies when no `DriverClient` CRDs match the `(interface, current-language)` pair): the local toolchain materializes a typed client from the cluster's `DriverInterface.spec.proto.descriptor`. Pass when codegen succeeds.
-- **CRD path** (applies when one or more `DriverClient` CRDs exist for `(interface, current-language)`): the named `DriverClient.spec.package` is installed at a compatible `version`, and `typeRef` is importable / resolvable in the current language runtime.
-
-Either path passing satisfies the interface. Validation only fails when both fail (no codegen capability *and* no installed CRD-named package).
-
-### DriverImplementation CRD
-
-A `DriverImplementation` registers one **concrete driver-side type** that implements a `DriverInterface`. Multiple `DriverImplementation` entries per interface are expected — a real driver plus mocks plus alternative hardware drivers all coexist. The CRD ships with the short alias `driverimpl` so `kubectl get driverimpl` and the `jmp admin ... driverimpl` verbs stay terse.
-
-```yaml
-apiVersion: jumpstarter.dev/v1alpha1
-kind: DriverImplementation        # short name: driverimpl
-metadata:
-  # Convention: <interface-name>-<short-id>
-  name: jumpstarter-driver-power-v1-dutlinkpower
-  namespace: lab-detroit
-spec:
-  interfaceRef: jumpstarter-driver-power-v1
-  language: python
-  package: jumpstarter-driver-power
-  version: "1.0.0"
-  # Language-specific FQN / import path of the concrete driver type
-  typeRef: jumpstarter_driver_power.driver:DutlinkPower
-  # One-liner shown in admin consoles
-  description: Power control via the DUT-Link USB MCU.
-  # Direct (deep-linkable) URL to the source code
-  sourceUrl: https://github.com/jumpstarter-dev/jumpstarter-driver-power/blob/main/jumpstarter_driver_power/driver.py#L18
-status:
-  conditions:
-    - type: Ready
-      status: "True"
-```
-
-Required fields: `interfaceRef`, `language`, `package`, `version`, `typeRef`. Same `typeRef` semantics as `DriverClient` — the language-specific FQN of the concrete driver type (Python class, Java class, Go type, Rust type, etc.). `language` disambiguates the syntax.
-
-Optional fields:
-
-- `description` — one-liner suitable for a tooltip or table-row caption.
-- `sourceUrl` — direct, deep-linkable URL to the source file (ideally with a line anchor).
-
-Name convention: `<DriverInterface-name>-<short-id>` — the short ID is the lowercased Kubernetes-safe slug of the terminal segment of `typeRef` (`DutlinkPower` → `dutlinkpower`). Collisions across packages are resolved by a `-<package-shortname>` suffix; this is a recommendation, not a hard rule, since admins are free to name their own CRDs as they see fit.
-
-The controller may optionally cross-check a registered `DriverImplementation` against an exporter's `DriverInstanceReport` — flagging exporters that report a driver `typeRef` not registered as a `DriverImplementation`. This catches out-of-band installs and driver-name drift. It is non-fatal (a `Warning` condition only) and is tracked as an optional later-phase deliverable; see the *Implementation Phases* and *Future Possibilities* sections.
 
 ### ExporterClass CRD
 
@@ -500,37 +423,13 @@ The `extends` chain is resolved at ExporterClass reconciliation time, not at lea
 
 ### Schema Distribution and CLI Workflow
 
-A key operational question is how `DriverInterface`, `DriverClient`, `DriverImplementation`, and `ExporterClass` CRDs are authored, distributed, and applied to clusters. This JEP defines a distribution model that minimizes operator friction by shipping the driver-registry CRDs as part of the standard Jumpstarter installation.
+A key operational question is how `DriverInterface` and `ExporterClass` CRDs are authored, distributed, and applied to clusters. This JEP defines a distribution model that minimizes operator friction by shipping the bundled `DriverInterface` CRDs as part of the standard Jumpstarter installation.
 
-#### CRDs are machine-generated and committed
+#### `DriverInterface` CRDs are machine-generated from source
 
-The three driver-registry CRDs — `DriverInterface`, `DriverClient`, and `DriverImplementation` — are treated as **part of the Jumpstarter platform**, versioned and distributed alongside the operator and bundled drivers. They are **always emitted by tooling, never authored by hand**, but the generated CRDs **are committed to the repo** alongside the source they were generated from so reviewers can see the cluster-side delta in any PR (the same `make manifests`-and-commit pattern used elsewhere in the Kubernetes ecosystem). CI re-runs the generators and `git diff --exit-code`s the output directories to enforce that committed CRDs match the language-native source.
+`DriverInterface` is **always emitted by tooling, never authored by hand** as a complete CRD. Authors maintain only the source `.proto` (per JEP-0011) and the sibling `interface.yaml` partial manifest; the build target compiles the descriptor and emits the complete cluster CRD. Generated CRDs **are committed to the repo** alongside the source they were generated from so reviewers can see the cluster-side delta in any PR (the same `make manifests`-and-commit pattern used elsewhere in the Kubernetes ecosystem). CI re-runs the generator and `git diff --exit-code`s the output directory to enforce that committed CRDs match the source.
 
-The generation inputs are uniform across all three driver-registry CRDs:
-
-- **The interface contract** — committed `.proto` + `interface.yaml` under `interfaces/proto/<package>/` (per JEP-0011 and the *DriverInterface manifest* section above).
-- **The package's native manifest** — `pyproject.toml` for Python; `Cargo.toml` for Rust; `package.json` for Node; `pom.xml`/`build.gradle` for Java. Provides `package`, `version`, `index`, `packageUrl`, `repoUrl`.
-- **Driver/client type discovery** via the language's existing convention. For Python: `[project.entry-points."jumpstarter.drivers"]` for driver classes, plus the existing `client()` classmethod for any hand-written client override. Per-language conventions for Rust/Java/Go/etc. are declared in language-specific follow-on JEPs.
-- **The proto association** — each driver speaks one proto. The proto's `package` (per JEP-0011, the canonical interface identifier) is matched against `DriverInterface.spec.proto.package` to derive `interfaceRef`. **Zero new author-facing declaration is required for the binding** — it falls out of the proto the driver already implements.
-
-#### Clients are codegened by the test author from the cluster's proto descriptor
-
-> **Scope note.** The codegen mechanism itself is **out of scope for JEP-0015** and is the subject of a future codegen JEP. JEP-0015 only assumes that *some* codegen path exists — i.e., that a test author has a way to turn `DriverInterface.spec.proto.descriptor` into a usable client class in their language. The CRD design choices below (and DD-18) depend only on the existence of such a path, not on its concrete shape. The codegen story is referenced here for context because it is what makes the "opt-in `DriverClient`" model work in practice; defining its API surface, language matrix, and tooling is left to the codegen JEP.
-
-Clients live primarily on the **test-author side**, not as published per-language packages. Per JEP-0011, every `DriverInterface` carries `spec.proto.descriptor` in the cluster — that descriptor is sufficient input for the test author's local codegen tooling to materialize a typed client in their language on demand. There is no requirement to publish a per-language client package for a driver, and therefore no requirement to ship a `DriverClient` CRD for the default case.
-
-`DriverClient` is **opt-in**. It is emitted in two situations:
-
-1. **In-tree convenience pre-generation** — Jumpstarter pre-generates Python clients for bundled drivers and ships them with the standard Python distribution as a developer-convenience (so test authors `pip install` and import without running codegen themselves). The in-tree build emits `DriverClient` CRDs pointing at these pre-generated symbols.
-2. **Hand-written client override** — a driver author writes a richer client (e.g., wrapping the codegened stub with extra convenience methods) and registers it via the language's existing override mechanism (Python: the `client()` classmethod). The build emits a `DriverClient` whose `typeRef` is the override.
-
-In all other cases — including the default path for out-of-tree drivers in any language — no `DriverClient` CRD is published. The test author runs codegen locally against the cluster's proto descriptor.
-
-This collapses the third-party authoring task to: write the driver implementation, declare it via the language's normal package mechanism, build, ship. No registry YAML. No per-language client package required.
-
-#### Python in-tree flow
-
-For bundled drivers shipped in this repo, a `make driver-registry` Makefile target orchestrates the generation. It walks `interfaces/proto/**/interface.yaml` and `python/packages/jumpstarter-driver-*/pyproject.toml` and emits cluster-ready CRDs into the operator's bundled-CRDs directories:
+For bundled drivers shipped in this repo, a `make driver-registry` Makefile target walks `interfaces/proto/**/interface.yaml` and emits cluster-ready CRDs into the operator's bundled-CRDs directories:
 
 - Helm chart: `deploy/helm/jumpstarter/charts/jumpstarter-controller/templates/crds/`
 - Operator config: `deploy/operator/config/crd/bases/`
@@ -542,87 +441,32 @@ For each `interface.yaml`:
 2. Compile it via `protoc --descriptor_set_out` to produce the `FileDescriptorProto` bytes (kept in memory; not committed back to source).
 3. Emit a complete `DriverInterface` CRD into the bundle directories. The emitted CRD is the source manifest with `spec.proto.descriptor` populated from step 2.
 
-For each Python package under `python/packages/jumpstarter-driver-*/`:
-
-1. Enumerate `[project.entry-points."jumpstarter.drivers"]` to discover driver classes.
-2. Import each driver class and introspect its associated proto (the `.proto` shipped under the matching `interfaces/proto/<package>/` directory) to derive `interfaceRef` from the proto's `package`.
-3. Emit one `DriverImplementation` per driver class — `typeRef` from the entry-point target; `description` from the class docstring; `sourceUrl` derived from `pyproject.toml [project.urls].repoUrl` + commit hash + module path.
-4. Emit one `DriverClient` per driver class **only when** (a) the driver class declares a `client()` override, OR (b) Jumpstarter pre-generated a Python client for this driver as part of the in-tree convenience build. `typeRef` is the override or the pre-generated symbol respectively. **Otherwise no `DriverClient` is emitted.**
-
 The source `interface.yaml` files are **never modified in place** by the build (per DD-8: descriptors are build artifacts). CI re-runs the build target and `git diff --exit-code`s the generated CRDs directories to catch source/proto/descriptor drift and CRD/source drift in the same step.
 
 Pairing and consistency rules (build errors if violated): every directory containing a `.proto` must also contain a `interface.yaml`, and vice versa; the source manifest must not carry `spec.proto.descriptor` (it's generated-only); the manifest's `spec.proto.package` must equal the proto's `package` declaration; every `spec.children[*].interfaceRef` must resolve to some other `interface.yaml`'s `metadata.name`; `metadata.name` must be unique across the tree. Leaf interfaces still ship a `interface.yaml` (with no `spec.children`); uniformity is the rule.
 
-This target is called by `make manifests` so the driver-registry CRDs are always in sync with the driver code. When Jumpstarter is upgraded, all three CRD kinds are updated alongside the operator to reflect interface and implementation changes in the new version.
+This target is called by `make manifests` so the bundled `DriverInterface` CRDs are always in sync with the committed `.proto` files. When Jumpstarter is upgraded, the bundled CRDs are updated alongside the operator to reflect interface contract changes in the new version.
 
-#### Out-of-tree flow
+#### Out-of-tree drivers
 
-Custom drivers — in any language — follow the **same** conceptual flow as in-tree, with `jmp admin generate ...` standing in for the in-tree Makefile target. The CLI accepts a path to **any** package and reads its native manifest to do the same generation. The CLI dispatches per-language (initially Python only; Rust/Java/etc. land with their respective follow-on JEPs).
+Custom `DriverInterface` definitions — for in-house or vendor-specific drivers — follow the same conceptual flow as in-tree, with `jmp admin generate driverinterface ./path/to/interface.yaml` standing in for the in-tree Makefile target. The CLI reads a source `interface.yaml` + sibling `.proto`, compiles the descriptor, and prints the complete cluster CRD to stdout. Authors then apply it with `kubectl apply -f -` or `jmp admin apply driverinterface`.
 
-Typical author flow for a custom Python driver. Per DD-19, all Jumpstarter-specific artifacts in the driver's repo live under a `.jmp/` magic directory — source under `.jmp/interfaces/` and generated CRDs under `.jmp/crds/`:
-
-```bash
-# DriverInterface (from each committed .jmp/interfaces/<package>/interface.yaml + sibling .proto)
-jmp admin generate driverinterface .jmp/interfaces/com/example/jumpstarter/driver/widget/v1/interface.yaml \
-  > .jmp/crds/driverinterface-widget-v1.yaml
-
-# DriverImplementation (from the package's pyproject.toml + entry points + class introspection)
-jmp admin generate driverimpl ./ > .jmp/crds/driverimpl.yaml
-
-# DriverClient — opt-in (DD-18); often empty for the default codegen path:
-jmp admin generate driverclient ./ > .jmp/crds/driverclient.yaml
-
-# Apply everything to the cluster at once
-jmp admin apply -k .jmp/crds/
-```
-
-For Rust and other languages, the long-term DX target is a language-native build wrapper (e.g., a `cargo-jumpstarter` plugin) that runs the same generator. The wrapper emits CRDs to a transient build-output directory (e.g., `target/jumpstarter/`) and *also* writes them into the stable `.jmp/crds/` directory in the driver's repo; `cargo build && jmp admin apply -k .jmp/crds/` is the full deploy. Committing `.jmp/crds/` is recommended for reviewer visibility and `git clone && apply` deploys but is optional per the polyglot-contract refinement above; committing `.jmp/interfaces/` (proto + `interface.yaml`) is always required. JEP-0015 only ratifies the *contract* (CRD shape) and the `.jmp/` convention; the per-language wrapper is a follow-on JEP.
-
-#### Polyglot contract for other languages
-
-JEP-0015 defines `DriverInterface`, `DriverClient`, and `DriverImplementation` as **language-neutral cluster artifacts**. The Python flow above is concrete; per-language flows for Rust, Java, Go, Node, and others are deferred to language-specific follow-on JEPs. Any such flow MUST satisfy this contract:
-
-- It MUST produce valid `DriverInterface`, `DriverClient`, and `DriverImplementation` CRDs matching the schemas in this JEP.
-- It MUST derive `interfaceRef` by matching the driver's proto package against an installed `DriverInterface.spec.proto.package` — never by introducing a new author-facing declaration of the binding.
-- It SHOULD source `package`, `version`, `index`, `packageUrl`, `repoUrl` from the language's native package manifest (`Cargo.toml`, `package.json`, `pom.xml`, …) rather than introducing a parallel declaration site.
-- It SHOULD treat `DriverClient` as opt-in per DD-18: emit one only for in-tree convenience pre-generation or for hand-written client overrides; rely on the test-author-side codegen path otherwise.
-- It MUST commit the `.proto` and `interface.yaml` source-of-truth files to source control; these are the human-reviewable contract and the input to every regeneration.
-- It SHOULD commit generated CRDs alongside source for reviewer visibility and CI drift checking, but MAY gitignore them for teams that prefer derived-artifact-free repos. The in-tree Jumpstarter monorepo flow always commits them (the operator bundle depends on it); out-of-tree authors choose. The polyglot contract is satisfied as long as the generator is deterministic and the cluster-applied CRDs match what the generator would produce from the committed source. Per DD-19, out-of-tree drivers commit source under `.jmp/interfaces/` and (optionally) generated CRDs under `.jmp/crds/`.
-
-The "language-native source → derived cluster artifact, committed for review, CI-enforced for drift" principle this section applies to `DriverClient` / `DriverImplementation` is the same principle JEP-0011 applies to `.proto` + `interface.yaml`. Consistency across all four CRDs (`DriverInterface`, `DriverClient`, `DriverImplementation`, `ExporterClass`) is intentional, and lets future per-language JEPs hang off both JEP-0011 and JEP-0015 without re-litigating it.
+> **Scope note.** The accompanying per-language *driver implementation* registry — `DriverClient` and `DriverImplementation` CRDs that catalog where in PyPI / Maven / crates.io / npm to fetch the code that satisfies each interface, and how to address it in each language — is **out of scope for JEP-0015** and is the subject of **JEP-0016 (Driver Package Registry)**. JEP-0015's `DriverInterface` is the contract those CRDs reference; ExporterClass validation works against the proto descriptor alone and does not require the registry CRDs to be present.
 
 #### Admin CLI commands
 
-All cluster management operations for the driver-registry CRDs and ExporterClass live under the `jmp admin` subcommand, following the kubectl-style `verb noun` pattern:
+All cluster management operations for `DriverInterface` and `ExporterClass` live under the `jmp admin` subcommand, following the kubectl-style `verb noun` pattern:
 
 ```bash
 # DriverInterface (contract) — generate from a committed interface.yaml + sibling .proto.
-# Out-of-tree authors keep these under .jmp/interfaces/<reverse-DNS-path>/ per DD-19.
-jmp admin get driverinterfaces
-jmp admin apply    driverinterface .jmp/crds/driverinterface-widget-v1.yaml
-jmp admin generate driverinterface .jmp/interfaces/com/example/jumpstarter/driver/widget/v1/interface.yaml \
-  > .jmp/crds/driverinterface-widget-v1.yaml
-
-# DriverImplementation (concrete driver-side type) — generate from a package path; CLI reads
-# the package's native manifest (pyproject.toml, Cargo.toml, …) + introspects driver classes.
-# Short alias: driverimpl
-jmp admin get driverimpls
-jmp admin apply    driverimpl     .jmp/crds/driverimpl.yaml
-jmp admin generate driverimpl     ./ > .jmp/crds/driverimpl.yaml
-
-# DriverClient (per-language client implementation) — opt-in. The generate command emits
-# nothing for the default codegen path; it produces output only when the package declares a
-# pre-generated client (in-tree convenience) or a hand-written client override.
-jmp admin get driverclients
-jmp admin apply    driverclient   .jmp/crds/driverclient.yaml
-jmp admin generate driverclient   ./ > .jmp/crds/driverclient.yaml   # may be empty for default path
-
-# Apply everything in .jmp/crds/ at once
-jmp admin apply -k .jmp/crds/
+jmp admin get      driverinterfaces
+jmp admin apply    driverinterface ./driverinterface-widget-v1.yaml
+jmp admin generate driverinterface ./path/to/interface.yaml \
+  > ./driverinterface-widget-v1.yaml
 
 # ExporterClass
-jmp admin get exporterclasses
-jmp admin apply    exporterclass  embedded-linux-board.yaml
+jmp admin get      exporterclasses
+jmp admin apply    exporterclass   ./embedded-linux-board.yaml
 ```
 
 Exporter validation is a user-facing command under the top-level `jmp` CLI:
@@ -634,163 +478,13 @@ jmp validate exporter /etc/jumpstarter/exporters/my-exporter.yaml
 
 The command loads the exporter configuration, introspects its driver tree to build `DriverInstanceReport` data, and calls the `ValidateExporter` RPC on the controller. The controller resolves which ExporterClasses match the exporter's labels and validates the interface requirements, returning the results. This works through the existing Jumpstarter controller API using the exporter's credentials — no direct Kubernetes cluster access is required.
 
-Client-side validation is also available:
-
-```bash
-# Validate that the local environment can produce a typed client for every interface on the leased exporter
-jmp validate client
-```
-
-The `jmp validate client` command calls the `GetExporterClassInfo` RPC using the client's credentials, then for each interface present on the leased exporter resolves the interface as satisfied via **either** of two paths (per the `DriverClient` CRD section above and DD-18):
-
-- **Codegen path** (default): the local toolchain materializes a typed client in the current language from the cluster's `DriverInterface.spec.proto.descriptor`. Pass when codegen succeeds.
-- **CRD path** (when one or more `DriverClient` CRDs exist for `(interface, current-language)`): the package named in `DriverClient.spec.package` is installed at a compatible `version`, and `typeRef` is importable / resolvable.
-
-Either path passing satisfies the interface; only when both fail does validation fail. This catches mismatches before a test runs — e.g., a CI environment missing both the codegen toolchain and the CRD-named package, or installing a stale package version that doesn't match the registered `DriverClient`.
-
 #### Workflow
 
-1. **Install Jumpstarter** — the operator installation includes `DriverInterface` (and the `DriverClient`/`DriverImplementation` entries that exist) CRDs for all bundled drivers. No additional steps needed for standard interfaces.
-2. **(Optional) Custom drivers** — for third-party drivers, run `jmp admin generate driverinterface ./path/to/interface.yaml` to emit the interface CRD, then `jmp admin generate driverimpl ./` from the package root to introspect the package manifest and emit one CRD per concrete driver class. `jmp admin generate driverclient ./` is only needed if the package ships a pre-generated client or a hand-written client override (DD-18); otherwise test authors materialize the client locally from the cluster's proto descriptor and no `DriverClient` CRD is required. Apply each emitted YAML with the corresponding `jmp admin apply ...` verb.
+1. **Install Jumpstarter** — the operator installation includes `DriverInterface` CRDs for all bundled drivers. No additional steps needed for standard interfaces.
+2. **(Optional) Custom drivers** — for third-party drivers, run `jmp admin generate driverinterface ./path/to/interface.yaml` to emit the interface CRD and apply it with `jmp admin apply driverinterface`. Per-language client and implementation registry CRDs that point at the code implementing the interface are the subject of JEP-0016 and are not required for ExporterClass validation.
 3. **Author ExporterClass** — a lab admin writes an ExporterClass YAML referencing the installed DriverInterfaces by name.
 4. **Apply ExporterClass** — `jmp admin apply exporterclass` or `kubectl apply` registers the ExporterClass.
 5. **Validate** — the controller validates exporters against ExporterClasses at registration time. Operators can also pre-validate with `jmp validate exporter <path>`, which calls the controller's `ValidateExporter` RPC using the exporter's existing credentials.
-
-### Out-of-tree Authoring Walkthrough
-
-This section is **non-normative**. It walks an out-of-tree driver author end-to-end through the workflow JEP-0015 enables — from `mkdir my-driver` to "another lab's `ExporterClass` references my interface and leases against it" — to make the contract concrete and to validate that the polyglot promise holds without expanding the normative surface. The author's repo is *their own*, not the Jumpstarter monorepo; the in-tree flow documented above is a specialization of this same workflow with `make driver-registry` and the operator's bundled-CRDs directories standing in for `jmp admin generate ...` and `.jmp/crds/` (per DD-19).
-
-Python is the inline concrete example because it is the only language for which JEP-0015 specifies a flow today (DD-17). Per-language follow-on JEPs (Rust `cargo-jumpstarter`, Java/Gradle plugin, Go generators) slot into the same shape without redefining the contract.
-
-#### Repo layout
-
-The vendor's repo collects every Jumpstarter-specific artifact under a single `.jmp/` magic directory (per DD-19):
-
-```
-acme-driver/
-  pyproject.toml | Cargo.toml | package.json | …    # package manifest
-  <language source tree>/                            # interface, implementation, optional client override
-  .jmp/                                              # all Jumpstarter-specific artifacts
-    interfaces/
-      com/example/jumpstarter/driver/widget/v1/
-        widget.proto                                 # committed source of truth (JEP-0011)
-        interface.yaml                               # committed source of truth (this JEP)
-      com/example/jumpstarter/driver/relay/v1/
-        relay.proto                                  # multiple interfaces per package supported
-        interface.yaml
-    crds/                                            # generated; committing is per-author choice
-      driverinterface-widget-v1.yaml
-      driverinterface-relay-v1.yaml
-      driverimpl.yaml                                # all DriverImplementations in one file
-      driverclient.yaml                              # only when applicable (DD-18)
-```
-
-Three things are worth highlighting about this layout:
-
-- **One package may declare multiple interfaces.** Each gets its own subdirectory under `.jmp/interfaces/<reverse-DNS-package-path>/` and emits its own `DriverInterface` CRD. A package may also implement multiple driver classes (each emitting a `DriverImplementation`) and ship multiple client overrides (each emitting a `DriverClient`). The walkthrough's `widget` + `relay` example shows this — single-driver examples obscure the multi-interface case that vendor boards routinely require.
-- **`.jmp/interfaces/` is always committed.** `.proto` and `interface.yaml` are source-of-truth artifacts under JEP-0011 and DD-5; CI re-running the generator against them produces deterministic output that must not drift.
-- **`.jmp/crds/` may or may not be committed.** Per DD-19, out-of-tree authors choose — commit for reviewer visibility and `git clone && apply` deploys, or gitignore and regenerate at apply time. The cluster doesn't distinguish the two; only the applied CRDs matter.
-
-#### The seven steps
-
-1. **Scaffold the package.** The author starts from a per-language template. Python: an out-of-tree analogue of [`python/__templates__/create_driver.sh`](../../../../__templates__/create_driver.sh); Rust (future): `cargo generate jumpstarter-driver`; Java (future): a Maven archetype. Scaffolding tools themselves are not specified by JEP-0015 — only the resulting `.jmp/` layout above is.
-
-2. **Declare each interface in source.** The author writes type-annotated methods on a driver class, one per interface. The author **never writes a `.proto` by hand** — per JEP-0011, the build derives the proto from typed source. Each language plugs in its own surface (Python ABCs, Rust traits + attribute macros, Java interfaces + annotations, …); all of them feed the same downstream pipeline.
-
-   Python example:
-
-   ```python
-   # acme_driver/widget.py
-   from abc import ABCMeta, abstractmethod
-   from jumpstarter.driver import Driver, DriverInterface, export
-
-   class WidgetInterface(DriverInterface):
-       @classmethod
-       def client(cls) -> str:
-           return "acme_driver.widget_client:WidgetClient"
-
-       @abstractmethod
-       async def actuate(self, position: int) -> None: ...
-
-       @abstractmethod
-       async def read_status(self) -> WidgetStatus: ...
-
-   class AcmeWidget(WidgetInterface, Driver):
-       @export
-       async def actuate(self, position: int) -> None: ...
-
-       @export
-       async def read_status(self) -> WidgetStatus: ...
-   ```
-
-3. **Build → derives the `.proto`s; author maintains `interface.yaml`s.** Per JEP-0011, the build extracts each interface's `.proto` from typed source and writes it to `.jmp/interfaces/<package>/<name>.proto`. Per JEP-0015, the author maintains a sibling `interface.yaml` — the only YAML the author touches by hand, one per interface, carrying the display fields and (for composite interfaces) the `children` composition. Both files are committed for review. The build's pairing check (per the *DriverInterface manifest* section) enforces that every `.proto` has a matching `interface.yaml` and vice versa.
-
-   Example `interface.yaml` (sibling to `widget.proto`):
-
-   ```yaml
-   apiVersion: jumpstarter.dev/v1alpha1
-   kind: DriverInterface
-   metadata:
-     name: com-example-jumpstarter-driver-widget-v1
-   spec:
-     displayName: Acme Widget
-     description: Custom widget actuator on the Acme diagnostic board.
-     proto:
-       package: com.example.jumpstarter.driver.widget.v1
-   ```
-
-4. **Build → emits the cluster CRDs.** Per DD-17, the build invokes a per-language generator that reads the package's native manifest + driver-class introspection + proto-package matching, and emits one `DriverInterface` per interface, one `DriverImplementation` per driver class, and (per DD-18, only when applicable) one `DriverClient` per override or pre-generated client. All land in `.jmp/crds/`:
-
-   ```bash
-   jmp admin generate driverinterface .jmp/interfaces/com/example/jumpstarter/driver/widget/v1/interface.yaml \
-     > .jmp/crds/driverinterface-widget-v1.yaml
-   jmp admin generate driverinterface .jmp/interfaces/com/example/jumpstarter/driver/relay/v1/interface.yaml \
-     > .jmp/crds/driverinterface-relay-v1.yaml
-   jmp admin generate driverimpl ./ > .jmp/crds/driverimpl.yaml
-   jmp admin generate driverclient ./ > .jmp/crds/driverclient.yaml   # often empty per DD-18
-   ```
-
-   For Rust (future), the same generation runs from `build.rs` or a `cargo-jumpstarter` plugin and writes the same files. The build's transient output directory (`target/jumpstarter/`) is *not* `.jmp/`; `.jmp/` is the stable, potentially-committed mirror that tooling defaults to.
-
-5. **Run locally.** The author wires the driver into an `ExporterConfig` and brings it up with the existing `jmp` CLI against a real or simulated exporter. No cluster involved. JEP-0015 adds typing on top of this flow; it does not replace the existing run/test loop.
-
-6. **Publish + register.** The author publishes the package on its language registry (PyPI / crates.io / Maven Central / npm) and pushes the repo to Git. A lab admin clones the repo (or just pulls `.jmp/`) and runs:
-
-   ```bash
-   jmp admin apply -k .jmp/crds/
-   ```
-
-   All three CRD kinds land at once. From this moment the custom interfaces are referenceable from `ExporterClass` manifests and lease requests in that namespace.
-
-7. **Consume.** Any other lab admin or test author in the same namespace can now:
-   - Reference the new interfaces by `metadata.name` from an `ExporterClass` spec (e.g., `interfaceRef: com-example-jumpstarter-driver-widget-v1`).
-   - On lease, materialize a typed client via the codegen path (default, per DD-18) — or `pip install` / `cargo add` the driver author's package when a `DriverClient` CRD names a pre-generated client.
-   - Pin the driver in an `ExporterConfig`; the controller's validator (Check A + Check B) enforces the contract from registration onward.
-
-   Crucially, **consumers never need to know what language the driver was written in.** The cluster carries the proto descriptor, which is sufficient for codegen in any client language. A Python test author consuming a Rust driver is indistinguishable, from the cluster's perspective, from a Python test author consuming a Python driver.
-
-#### Why this works for any language
-
-No cluster-CRD field is hand-authored by the driver author beyond the small per-interface `interface.yaml`. Every other field traces back to either typed source, the package's native manifest, or driver-class introspection:
-
-| CRD field                                                                                           | Sourced from                                                                                                               |
-| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `DriverInterface.spec.proto.descriptor`                                                             | typed source → `.proto` → `protoc --descriptor_set_out` (JEP-0011)                                                         |
-| `DriverInterface.spec.proto.package` / `metadata.name` / `displayName` / `description` / `children` | hand-authored `interface.yaml`                                                                                             |
-| `DriverImplementation.spec.{package, version, index, packageUrl, repoUrl}`                          | the package's native manifest (`pyproject.toml`, `Cargo.toml`, `package.json`, …)                                          |
-| `DriverImplementation.spec.{language, typeRef, description, sourceUrl}`                             | driver-class introspection (entry-points / equivalent + class docstring)                                                   |
-| `DriverImplementation.spec.interfaceRef`                                                            | proto-package match against an installed `DriverInterface.spec.proto.package` (DD-17 — zero new author-facing declaration) |
-| `DriverClient.*`                                                                                    | same as `DriverImplementation`, only when applicable (DD-18)                                                               |
-
-That is why the polyglot claim holds without re-litigating it per language: the contract is generated end-to-end from source, and every language ships a generator that reads the same inputs and produces the same shape.
-
-#### Polyglot generalization
-
-Per-language follow-on JEPs are the home for concrete macro / build-wrapper definitions — Rust's `cargo-jumpstarter` plugin, a Java/Gradle plugin, Go generators, npm scripts. Those JEPs build on *this* walkthrough rather than redefining the contract. JEP-0015 ratifies (a) the cluster CRD shape, (b) the `.jmp/` layout convention (DD-19), and (c) the generation model (DD-17 + DD-18). Everything else — macro syntax, manifest sections, build-wrapper UX — is per-language.
-
-#### Relationship to in-tree
-
-The in-tree Jumpstarter monorepo flow follows the same workflow with two substitutions: `make driver-registry` stands in for `jmp admin generate ...`, and the operator's bundled-CRDs directories (`deploy/helm/...`, `deploy/operator/config/crd/bases/`) stand in for `.jmp/crds/`. A reader who understands the out-of-tree walkthrough understands the in-tree flow for free.
 
 ### Controller Validation Flow
 
@@ -923,7 +617,7 @@ The controller treats `Drivers` entries with no `parentUuid` as roots and entrie
 
 **Step 0b — Expected-tree composition**
 
-The controller composes the expected tree from the resolved ExporterClass and the driver-registry CRDs:
+The controller composes the expected tree from the resolved ExporterClass and the `DriverInterface` registry:
 
 1. Start from `ExporterClass.status.resolvedInterfaces` — the flat list of required and optional root-level entries (after `extends`-chain merging).
 2. For each entry, resolve its `interfaceRef` to the matching `DriverInterface` CRD and append the DriverInterface's `spec.children` as that entry's children.
@@ -989,14 +683,12 @@ The shape itself is part of the contract. A test that writes `device.dutlink.ser
 
 #### New CRDs
 
-Four new namespace-scoped CRDs are added to the Jumpstarter operator:
+Two new namespace-scoped CRDs are added to the Jumpstarter operator:
 
 - `driverinterfaces.jumpstarter.dev/v1alpha1` — `DriverInterface`
-- `driverclients.jumpstarter.dev/v1alpha1` — `DriverClient`
-- `driverimplementations.jumpstarter.dev/v1alpha1` — `DriverImplementation` (short alias: `driverimpl`)
 - `exporterclasses.jumpstarter.dev/v1alpha1` — `ExporterClass`
 
-All four are namespace-scoped to support multi-tenant lab environments where different teams manage their own device profiles and interface definitions within their namespace. This diverges from the Kubernetes `*Class` convention (where `StorageClass`, `IngressClass`, etc. are cluster-scoped) but better fits Jumpstarter's deployment model, where multiple labs or teams share a single cluster with independent device profiles.
+Both are namespace-scoped to support multi-tenant lab environments where different teams manage their own device profiles and interface definitions within their namespace. This diverges from the Kubernetes `*Class` convention (where `StorageClass`, `IngressClass`, etc. are cluster-scoped) but better fits Jumpstarter's deployment model, where multiple labs or teams share a single cluster with independent device profiles. See DD-1.
 
 The CRDs themselves are additive. The `Exporter` and `Lease` CRDs each gain a single new optional field (described below) to declare and request an ExporterClass.
 
@@ -1147,7 +839,7 @@ message InterfaceValidationResult {
 
 The RPC authenticates using the exporter's existing credentials (the same token used for `Register`). The controller resolves which ExporterClasses match the provided labels and validates the driver reports against each one, returning per-interface results.
 
-A `GetExporterClassInfo` RPC is also added, callable by clients to retrieve the ExporterClass and DriverInterface definitions that apply to a leased exporter. This enables clients to discover which interfaces are available, check for missing client packages, and provides the foundation for a future codegen JEP:
+A `GetExporterClassInfo` RPC is also added, callable by clients to retrieve the ExporterClass and DriverInterface definitions that apply to a leased exporter. This enables clients to discover which interfaces the controller has validated for their leased exporter without needing direct Kubernetes API access:
 
 ```protobuf
 rpc GetExporterClassInfo(GetExporterClassInfoRequest) returns (GetExporterClassInfoResponse);
@@ -1162,51 +854,27 @@ message GetExporterClassInfoResponse {
 }
 
 message DriverInterfaceInfo {
-  string name = 1;                                // e.g., "jumpstarter-driver-power-v1"
-  string display_name = 2;                        // e.g., "Power"
-  string description = 3;                         // markdown-friendly
-  string proto_package = 4;                       // e.g., "jumpstarter.driver.power.v1"
-  bytes  descriptor = 5;                          // canonical FileDescriptorProto
-  repeated DriverClientInfo         clients = 6;          // matching DriverClient CRDs
-  repeated DriverImplementationInfo implementations = 7;  // matching DriverImplementation CRDs
-}
-
-message DriverClientInfo {
-  string name = 1;                 // DriverClient CRD name, e.g., "jumpstarter-driver-power-v1-python"
-  string language = 2;             // e.g., "python", "java", "go", "rust"
-  string package = 3;              // e.g., "jumpstarter-driver-power"
-  string version = 4;              // e.g., "1.0.0"
-  string index = 5;                // e.g., "https://pkg.jumpstarter.dev/"
-  string type_ref = 6;             // language-specific FQN, e.g., "jumpstarter_driver_power.client:PowerClient"
-  string repo_url = 7;             // optional
-  string package_url = 8;          // optional — direct link to the package page on its registry
-  string note = 9;                 // optional
-}
-
-message DriverImplementationInfo {
-  string name = 1;                 // DriverImplementation CRD name
-  string language = 2;
-  string package = 3;
-  string version = 4;
-  string type_ref = 5;             // e.g., "jumpstarter_driver_power.driver:DutlinkPower"
-  string description = 6;          // optional
-  string source_url = 7;           // optional
+  string name = 1;          // e.g., "jumpstarter-driver-power-v1"
+  string display_name = 2;  // e.g., "Power"
+  string description = 3;   // markdown-friendly
+  string proto_package = 4; // e.g., "jumpstarter.driver.power.v1"
+  bytes  descriptor = 5;    // canonical FileDescriptorProto
 }
 ```
 
-The RPC authenticates using the client's credentials. It returns the ExporterClass compliance status and, for each interface in scope, the full set of registered `DriverClient` and `DriverImplementation` entries (mirroring the CRD specs). This lets clients verify they have the correct driver packages installed and gives admin consoles enough data to render the prototype's per-interface "Client implementations" and "Driver classes" surfaces from a single RPC. The detailed design of client-side codegen is deferred to a future codegen JEP. Broader discovery RPCs (`ListDriverInterfaces`, `ListExporterClasses`, etc., scoped to a namespace rather than a single lease) are out of scope for this JEP and tracked in **JEP-0014 (Admin API)**.
+The RPC authenticates using the client's credentials. It returns the ExporterClass compliance status and, for each interface in scope, the canonical `DriverInterface` metadata + descriptor. Per-language client and driver-implementation listings (the `DriverClient` / `DriverImplementation` sides) are added by JEP-0016 (Driver Package Registry); this JEP defines only the contract-level information the controller can return without that registry being present. Broader discovery RPCs (`ListDriverInterfaces`, `ListExporterClasses`, etc., scoped to a namespace rather than a single lease) are out of scope for this JEP and tracked in **JEP-0014 (Admin API)**.
 
 #### Modified CLI
 
-New admin subcommands are added following the kubectl-style `verb noun` pattern: `jmp admin get/apply/generate driverinterface`, `jmp admin get/apply/generate driverclient`, `jmp admin get/apply/generate driverimpl` (short alias for `driverimplementation`), `jmp admin get/apply exporterclass`. New user-facing commands `jmp validate exporter <path>` (exporter validation) and `jmp validate client` (client package validation) are added. No existing CLI commands are modified.
+New admin subcommands are added following the kubectl-style `verb noun` pattern: `jmp admin get/apply/generate driverinterface`, `jmp admin get/apply exporterclass`. A new user-facing command `jmp validate exporter <path>` is added. No existing CLI commands are modified.
 
 ### Discovery and the Admin API
 
-All five resource kinds introduced or referenced by this JEP — `ExporterClass`, `DriverInterface`, `DriverClient`, `DriverImplementation`, and the existing `Exporter` — are Kubernetes CRDs. Any K8s-aware client (kubectl, K8s client SDKs, web consoles that speak the Kubernetes API directly) browses them through the standard Kubernetes API surface and gets watch/list/get semantics for free.
+Both resource kinds introduced by this JEP — `ExporterClass` and `DriverInterface` — plus the existing `Exporter` are Kubernetes CRDs. Any K8s-aware client (kubectl, K8s client SDKs, web consoles that speak the Kubernetes API directly) browses them through the standard Kubernetes API surface and gets watch/list/get semantics for free.
 
 For non-K8s consumers — including the polyglot admin console targeted by the OpenShift Console prototype — a gRPC discovery surface (list/get RPCs scoped to a namespace rather than a single lease) is required. That surface is the subject of **JEP-0014 (Admin API)** and is out of scope here. JEP-0015 guarantees the CRD schemas above are the canonical shape; JEP-0014's discovery RPCs return the same data.
 
-`GetExporterClassInfo` (defined above) is the one per-lease query specified by this JEP. It exists because a leased client needs ExporterClass + DriverInterface + DriverClient + DriverImplementation metadata for *its* exporter without having (or needing) Kubernetes API access.
+`GetExporterClassInfo` (defined above) is the one per-lease query specified by this JEP. It exists because a leased client needs ExporterClass + DriverInterface metadata for *its* exporter without having (or needing) Kubernetes API access.
 
 ### Hardware Considerations
 
@@ -1223,7 +891,7 @@ The following design decisions were made during the development of this JEP. Eac
 **Alternatives considered:**
 
 1. **Cluster-scoped** — follow the Kubernetes `*Class` convention (`StorageClass`, `IngressClass`, `RuntimeClass` are cluster-scoped resources owned by cluster admins).
-2. **Namespace-scoped** — every CRD this JEP introduces (`DriverInterface`, `DriverClient`, `DriverImplementation`, `ExporterClass`) lives in a namespace, matching the existing Jumpstarter CRDs.
+2. **Namespace-scoped** — both CRDs this JEP introduces (`DriverInterface`, `ExporterClass`) live in a namespace, matching the existing Jumpstarter CRDs.
 
 **Decision:** Namespace-scoped.
 
@@ -1244,17 +912,17 @@ Namespace-scoping is therefore the only choice consistent with the controller's 
 
 **Rationale:** The selector mechanism is already in use in the lease controller; reusing it requires no new dependencies and no new mental model for operators. CEL would add a direct `cel-go` dependency for a use case (label matching) where the existing primitives are sufficient. CEL remains a future enhancement (see *Future Possibilities*) if a concrete need for richer expressions appears.
 
-### DD-3: Implementation registry split into three CRDs
+### DD-3: Contract CRD separate from any implementation registry
 
 **Alternatives considered:**
 
-1. **One CRD per implementation kind** — `DriverInterface` (contract) + `DriverClient` (per language) + `DriverImplementation` (per concrete driver type). Cross-references by stable Kubernetes name.
-2. **Single `DriverInterface` with embedded `drivers[]` array** — the original draft. One CRD per interface, listing all client and driver implementations inline.
-3. **One `DriverPackage` CRD per package** — coarser grain. Each package gets one CRD that lists every interface it implements, each interface's client, and each driver class.
+1. **Contract CRD only (`DriverInterface`) in this JEP; implementation registry deferred** — `DriverInterface` carries the proto contract + composition + display metadata; per-language client / driver-implementation registry CRDs are the subject of a separate JEP (JEP-0016, Driver Package Registry).
+2. **One JEP, three CRDs** — `DriverInterface` (contract) + `DriverClient` (per language) + `DriverImplementation` (per concrete driver type), all in this JEP. Cross-references by stable Kubernetes name.
+3. **Single `DriverInterface` with embedded `drivers[]` array** — one CRD per interface, listing all client and driver implementations inline.
 
-**Decision:** Three CRDs (Option 1).
+**Decision:** Option 1 — only the contract CRD (`DriverInterface`) in this JEP.
 
-**Rationale:** Embedding implementations in `DriverInterface` made the CRD large, mixed the contract with the registry, and forced per-class identifiers (FQNs) to be addressed by array position rather than as Kubernetes names. The three-CRD split gives every implementation a stable Kubernetes name suitable for permalinks, RBAC scoping, and independent versioning — and aligns with the K8s pattern of separating a contract (`StorageClass`, `IngressClass`) from a driver registration (`CSIDriver`). One-CRD-per-package muddles concerns when a package implements many interfaces. Per-class granularity for `DriverImplementation` lets admin consoles deep-link each driver type independently.
+**Rationale:** The typed-contract concern (this JEP) and the polyglot driver-package-registry concern (JEP-0016) are independently useful and have very different review surfaces. `ExporterClass` validation works against the proto descriptor alone — it does not need any registry CRD to exist. Bundling the registry into this JEP grew the proposal to ~1,800 lines, mixed two reviewable concerns (typing + versioning vs. per-language packaging + codegen), and forced reviewers to evaluate both at once. Splitting along the contract / implementation seam keeps each JEP focused on a single architectural decision. The implementation registry — when it lands in JEP-0016 — will reference `DriverInterface` by `metadata.name` (as ExporterClass does), so no rework of the contract CRD is required; the registry slots in as additional, independent CRDs whose presence is optional. Option 3 (embedded implementations) was rejected on the grounds raised in earlier drafts: it made the CRD large, mixed the contract with the registry, and forced per-class identifiers to be addressed by array position rather than as Kubernetes names.
 
 ### DD-4: Composition lives on `DriverInterface`, not on `ExporterClass`
 
@@ -1283,7 +951,7 @@ Namespace-scoping is therefore the only choice consistent with the controller's 
 
 **Alternatives considered:**
 
-1. **By cluster name** — every `interfaceRef` in the system (`children[*].interfaceRef`, `ExporterClass.interfaces[*].interfaceRef`, `DriverClient.spec.interfaceRef`, `DriverImplementation.spec.interfaceRef`) resolves against the same `metadata.name` value (which is also the source manifest's `metadata.name`).
+1. **By cluster name** — every `interfaceRef` in the system (`children[*].interfaceRef`, `ExporterClass.interfaces[*].interfaceRef`) resolves against the same `metadata.name` value (which is also the source manifest's `metadata.name`).
 2. **By proto package** — references use the proto package (a universal identifier independent of cluster naming), and the build target maps proto package → cluster name at emit time.
 
 **Decision:** By cluster name.
@@ -1382,24 +1050,7 @@ Namespace-scoping is therefore the only choice consistent with the controller's 
 
 **Rationale:** Both descriptors flow from the same JEP-0011 build pipeline (same `.proto`, same `protoc`), so field numbers are authoritative on the proto side once the pipeline stabilizes. Comparing them strictly while the pipeline is still in flux would produce false-positive churn against in-development drivers. Adding strict field-number comparison in Stable is straightforward once the pipeline ships.
 
-### DD-15: Language-neutral implementation field names (`typeRef`, `packageUrl`)
-
-**Alternatives considered for the implementation identifier:**
-
-1. **`typeRef: string`** — language-specific FQN/import path (Python `module:Class`, Java `package.Class`, Go `package.Type`, Rust `module::Type`).
-2. **`classFqn: string`** — same content, but the field name presumes the implementation is a "class". Awkward in Rust/Go where the natural form is a type/struct/function.
-3. **Per-language split fields** — `python: {module, class}`, `go: {package, symbol}`, etc.
-
-**Alternatives considered for the package-registry URL:**
-
-1. **`packageUrl: string`** — language-agnostic direct link to the package on its registry (PyPI, Maven Central, crates.io, npm, …).
-2. **`pypiUrl: string`** — Python-specific name; awkward for non-Python languages.
-
-**Decision:** `typeRef` and `packageUrl`.
-
-**Rationale:** The CRDs are shared across all languages; the field names must be too. `typeRef` reads naturally for any addressable type or import path, and `language` disambiguates how to interpret the value. `packageUrl` similarly accommodates every registry without leaking Python-specific vocabulary.
-
-### DD-16: Discovery / browse RPCs deferred to JEP-0014 (Admin API)
+### DD-15: Discovery / browse RPCs deferred to JEP-0014 (Admin API)
 
 **Alternatives considered:**
 
@@ -1410,51 +1061,6 @@ Namespace-scoping is therefore the only choice consistent with the controller's 
 
 **Rationale:** JEP-0014 is the Admin API JEP and is the natural home for namespace-scoped discovery RPCs. Defining them here would either duplicate that work or pre-empt JEP-0014's design space. The per-lease `GetExporterClassInfo` is in scope here because it is specific to the lease workflow this JEP introduces.
 
-### DD-17: DriverClient and DriverImplementation CRDs are machine-generated from the package manifest, never hand-authored
-
-**Alternatives considered:**
-
-1. **Fully generated from each language's native package manifest + proto introspection** — `pyproject.toml` / `Cargo.toml` / `package.json` provides package metadata; entry-point or equivalent discovery enumerates driver classes; the proto's `package` is matched against `DriverInterface.spec.proto.package` to derive `interfaceRef`. No committed registry YAML in any package, in-tree or out-of-tree. Generated CRDs are committed to source for reviewer visibility and CI-enforced for drift.
-2. **Hybrid: committed partial YAML + build-filled metadata** — each package commits `driverclient.yaml` / `driverimpl.yaml` carrying `interfaceRef` + `typeRef`; the build fills `version` / urls from the package manifest at emit time.
-3. **Fully committed YAML** — every field hand-authored, including `version` / urls.
-
-**Decision:** Option 1.
-
-**Rationale:** Zero YAML maintenance is the lowest possible barrier to entry for third-party driver authors in any language. A Rust hardware vendor runs `cargo build` and gets every CRD as a build artifact; nothing to keep in sync between source and YAML. The hybrid (Option 2) would force every author — including third-party Rust authors — to maintain a YAML side-file, which directly degrades the seamless `cargo build && publish` flow we want; fully-committed YAML (Option 3) compounds this with `version` / URL drift. The `interfaceRef` binding has a single canonical source — the proto package per JEP-0011 — so inferring it from the driver's proto avoids inventing a new declaration site (no class attribute, no `[tool.jumpstarter]` table, no YAML field). The CRD shapes stay language-neutral; only the per-language adapter that reads each manifest is language-specific, which lets each follow-on per-language JEP plug in cleanly. Finally, this collapses the bundled-vs-third-party workflow split that existed in earlier drafts of this JEP — both paths now run the same generator over different inputs.
-
-### DD-18: `DriverClient` CRD is opt-in; default clients are codegened on the test-author side
-
-**Alternatives considered:**
-
-1. **Opt-in `DriverClient`; default = local codegen against the cluster's proto descriptor** — the CRD exists only for in-tree convenience pre-generation (so `pip install jumpstarter-all` ships a ready-to-import client) or hand-written client overrides. The default path for any out-of-tree driver in any language emits no `DriverClient` at all.
-2. **Always-on `DriverClient`** — emit one CRD per `(driver, language)` pair, even when the client is just a codegen output. Cluster always carries the registry.
-3. **No `DriverClient` CRD at all** — clients are always discovered via codegen or convention; remove the CRD entirely.
-
-**Decision:** Option 1.
-
-**Scope note:** The codegen mechanism that materializes a typed client from `DriverInterface.spec.proto.descriptor` is **out of scope for JEP-0015** and is the subject of a future codegen JEP. This DD only requires that *some* codegen path exists for at least one language; defining its API surface, language matrix, and tooling is the codegen JEP's job. Until that JEP lands, in-tree pre-generation (case 1 above) is the working substitute for Python, and the opt-in `DriverClient` schema accommodates whichever codegen design ultimately emerges.
-
-**Rationale:** The proto descriptor is already in the cluster — every `DriverInterface` carries `spec.proto.descriptor` per JEP-0011 — and that is sufficient input for the test author's local codegen tooling to materialize a typed client in their language. Republishing a per-language CRD for every driver in every language would just duplicate that information and impose a polyglot client-publishing burden that has no payoff in the common case (a Rust hardware vendor with no Python users does not need to ship a Python client package, and a Rust client is materialized on demand by anyone who wants one — no Rust crate to publish for the client either). At the same time, removing the CRD entirely (Option 3) loses two cases that genuinely need a stable cluster-side reference: in-tree pre-generation (so test authors `pip install` and import without running codegen themselves) and hand-written client overrides (richer ergonomics, custom semantics, client-side networking logic). Opt-in retains the CRD where it earns its keep without imposing it on the default path. `jmp validate client` resolves an interface as satisfied when *either* local codegen succeeds or an installed `DriverClient`-named package is loadable, so environments without codegen tooling fall back to CRD-driven validation and environments without registered clients fall back to codegen — both modes degrade gracefully.
-
-### DD-19: Out-of-tree drivers use a `.jmp/` magic directory
-
-**Alternatives considered:**
-
-1. **`.jmp/` magic directory** — every out-of-tree driver repo collects its Jumpstarter-specific artifacts under one dot-prefixed top-level directory. Source-of-truth files live under `.jmp/interfaces/<reverse-DNS-package-path>/{name}.proto` and sibling `interface.yaml`; generated CRDs live under `.jmp/crds/*.yaml`. Tooling defaults to this location (`jmp admin apply -k .jmp/crds/`).
-2. **JEP-0011's `interfaces/proto/` at repo root + a separate `crds/` at repo root** — source-of-truth and generated artifacts live in two separate top-level dirs in the vendor's repo, mirroring the in-tree monorepo layout.
-3. **`.jumpstarter/`** — same convention as Option 1 but full-word dot-prefix, analogous to `.github/` / `.devcontainer/` / `.vscode/`.
-4. **No prescribed convention** — let each language community pick.
-
-**Decision:** `.jmp/` magic directory (Option 1).
-
-**Rationale:** The vendor's repo is not a Jumpstarter project — it is a hardware driver project that *integrates with* Jumpstarter. Collecting Jumpstarter-specific artifacts under one prefix keeps the vendor's repo top-level uncluttered and gives tooling a single canonical path to default to. The dot-prefix follows the established pattern for tool-managed directories (`.github/`, `.devcontainer/`, `.vscode/`). Short form `.jmp/` matches the CLI binary name; the directory is referenced often enough in tooling and prose that the brevity matters more than the self-explanation a longer `.jumpstarter/` would offer (a reader unfamiliar with Jumpstarter reaches the package manifest before they reach `.jmp/` anyway). Option 2 spreads the integration across the vendor's repo top-level and gives tooling nowhere natural to default to. Option 4 forfeits the convention's main payoff — one canonical tooling target — for no real flexibility win, since each language can still organize *within* `.jmp/` as it sees fit.
-
-**Multiple interfaces per package.** A single out-of-tree package commonly declares multiple `DriverInterface`s (a multi-function vendor board), multiple `DriverImplementation`s (one per driver class), and optionally multiple `DriverClient`s. The `.jmp/` layout supports this naturally: one subdirectory under `.jmp/interfaces/` per interface (preserving the reverse-DNS package path), and one or more files under `.jmp/crds/` per CRD kind. The layout under `.jmp/crds/` (one-file-per-CRD vs. one-file-per-kind grouping multiple entries) is per-author choice — both are accepted by `kubectl apply -k`.
-
-**Commit policy.** Source-of-truth files under `.jmp/interfaces/` MUST be committed; they are the human-reviewable contract and the input to every regeneration. Generated CRDs under `.jmp/crds/` SHOULD be committed for reviewer visibility and `git clone && jmp admin apply -k .jmp/crds/` deploys, but committing is per-author preference — the cluster only cares about the applied CRDs, not whether they live in source control. This refinement is reflected in the polyglot-contract bullets under *Schema Distribution and CLI Workflow*.
-
-**Relationship to in-tree.** DD-19 applies to out-of-tree drivers only. The Jumpstarter monorepo retains its existing layout (`interfaces/proto/...` at the repo root, generated CRDs in `deploy/...` per the operator bundle); DD-19 refines but does not replace JEP-0011's prescribed paths for that context.
-
 ## Design Details
 
 ### Architecture
@@ -1464,17 +1070,19 @@ Namespace-scoping is therefore the only choice consistent with the controller's 
 │   DriverInterface CRD  │     │   DriverInterface CRD  │
 │  jumpstarter-driver-   │     │  jumpstarter-driver-   │
 │    power-v1            │     │    serial-v1           │
+│  (proto descriptor +   │     │  (proto descriptor +   │
+│   spec.children)       │     │   spec.children)       │
 └───────────┬────────────┘     └───────────┬────────────┘
             │                              │
             └──────────┬───────────────────┘
-                       │  referenced by
+                       │  referenced by interfaceRef
                        ▼
             ┌────────────────────────┐
             │  ExporterClass CRD     │
             │   embedded-linux-board │
             │   interfaces:          │
-            │     power: dev-j..-v1. │
-            │     serial: dev-j..-v1 │
+            │     dutlink: ...-v1    │
+            │     network: ...-v1    │
             │     ...                │
             └──────────┬─────────────┘
                        │  validated against
@@ -1581,16 +1189,12 @@ No HiL tests are required for this JEP. ExporterClass is a control-plane feature
 
 Specific, testable conditions that must be met for the implementation of this JEP to be considered complete. These are the bar reviewers will hold the implementation PR(s) against.
 
-- [ ] `DriverInterface`, `DriverClient`, `DriverImplementation`, and `ExporterClass` CRDs are installable via the operator's bundled-CRDs directory (`kubectl apply -f <bundle>` succeeds and the API server admits the resources).
+- [ ] `DriverInterface` and `ExporterClass` CRDs are installable via the operator's bundled-CRDs directory (`kubectl apply -f <bundle>` succeeds and the API server admits the resources).
 - [ ] `Exporter.spec.exporterClassName` is accepted by the API server and persisted. Setting it produces an `ExporterClassCompliance` condition on `ExporterStatus` reflecting Check A + Check B results, with reason values drawn from the `MissingInterface` / `InterfaceStructuralMismatch` / `MultipleFailures` set.
 - [ ] `Lease.spec.exporterClassName` and `Lease.spec.exactMatch` are accepted by the API server and honored by the lease controller's candidate filter — verified by the lease-time integration tests under *Test Plan* (subclass-match, exact-match, class + selector AND-combine).
 - [ ] `make driver-registry` walks `interfaces/proto/**/interface.yaml`, validates each manifest against its sibling `.proto`, compiles the descriptor, and emits a complete `DriverInterface` CRD into the operator's bundled-CRDs directories (Helm and OLM). Re-running the target and `git diff --exit-code`-ing the bundled-CRDs directory produces no diff (CI passes).
 - [ ] `jmp admin generate driverinterface ./interface.yaml` emits a complete `DriverInterface` CRD byte-identical to what the build target produces for the same input.
-- [ ] `make driver-registry` also walks `python/packages/jumpstarter-driver-*/pyproject.toml`, discovers driver classes via `[project.entry-points."jumpstarter.drivers"]`, infers `interfaceRef` from each driver's proto association, and emits `DriverImplementation` CRDs (plus `DriverClient` CRDs only when an override or in-tree pre-generated client applies — DD-18) into the operator's bundled-CRDs directories. Re-running the target and `git diff --exit-code`-ing produces no diff.
-- [ ] `jmp admin generate driverimpl ./` (run from any Python package directory) reads the package's `pyproject.toml` + entry points and emits a complete `DriverImplementation` CRD byte-identical to what the build target produces for the same input.
-- [ ] `jmp admin generate driverclient ./` produces no output for a driver class with no `client()` override and no in-tree pre-generation; produces a `DriverClient` CRD pointing at the override / pre-generated symbol when either applies.
-- [ ] `jmp validate client` resolves an interface as satisfied via either the codegen path (local toolchain materializes a typed client from `DriverInterface.spec.proto.descriptor`) or the CRD path (an installed `DriverClient`-named package is loadable); fails only when both paths fail.
-- [ ] `jmp admin {get,apply,generate} {driverinterface,driverclient,driverimpl,exporterclass}` and `jmp validate {exporter,client}` are implemented, documented, and pass their integration tests.
+- [ ] `jmp admin {get,apply,generate} driverinterface` and `jmp admin {get,apply} exporterclass` and `jmp validate exporter` are implemented, documented, and pass their integration tests.
 - [ ] Expected-tree composition (Step 0b of *Exporter Validation Algorithm*) correctly resolves a multi-level composite (a `dutlink-v1` declaring `power`/`serial`/`storage` children). Cycles in `DriverInterface.spec.children` produce a `Degraded` condition on the offending interface; unresolved `interfaceRef`s produce `Degraded` on the parent.
 - [ ] Strict positional matching (Check A) rejects a misplaced driver — a `power-v1` driver at the runtime root does not satisfy a declared `dutlink → power` slot, and the matching `dutlink → power` slot remains "missing". Verified by the strict-positional-match unit test.
 - [ ] Structural compatibility (Check B) catches the canonical drift cases (missing method, parameter-type mismatch, return-type mismatch, streaming-flag mismatch) and reports each with a per-position accessor path (e.g., `device.dutlink.power`).
@@ -1616,7 +1220,7 @@ Specific, testable conditions that must be met for the implementation of this JE
 - Structural validation using `FileDescriptorProto` comparison is implemented and enabled by default (moderate strictness: method names, type structure, streaming semantics).
 - ExporterClass inheritance (`extends`) is implemented and tested.
 - `status.satisfiedExporterCount` is maintained accurately across exporter lifecycle events.
-- At least one downstream JEP (Codegen or Registry) consumes ExporterClass definitions.
+- At least one downstream JEP (JEP-0016 Driver Package Registry, or a codegen JEP) consumes ExporterClass / DriverInterface definitions.
 - Interface version evolution strategy is documented and tested.
 - No breaking changes to the CRD schema for at least one release cycle.
 - Field number comparison added to structural validation (strict mode).
@@ -1627,7 +1231,7 @@ This JEP is **fully backward compatible.** All changes are additive:
 
 - Existing label-only lease requests work unchanged. Clients that don't set `Lease.spec.exporterClassName` continue to get the original `selector`-driven behavior, with ExporterClass enforcement applied as a transparent backstop (the same way it works in JEP-0015's "label-only" flow).
 
-- The `ExporterClass`, `DriverInterface`, `DriverClient`, and `DriverImplementation` CRDs are new resources. They don't modify existing CRDs in a breaking way. Clusters without these CRDs installed behave exactly as before.
+- The `ExporterClass` and `DriverInterface` CRDs are new resources. They don't modify existing CRDs in a breaking way. Clusters without these CRDs installed behave exactly as before.
 
 - `Exporter.spec.exporterClassName` and `Lease.spec.exporterClassName` are **new optional fields**. Manifests authored before this JEP omit them and continue to work — exporters without a declared class fall through to label-only matching; leases without a declared class fall through to selector-only matching.
 
@@ -1635,9 +1239,9 @@ This JEP is **fully backward compatible.** All changes are additive:
 
 - Exporters that don't embed `FileDescriptorProto` (deployments predating JEP-0011's descriptor-in-report path) are not affected by ExporterClass enforcement — they cannot be validated and are treated as non-compliant for ExporterClass purposes, but remain fully functional for label-only leases.
 
-- The `jmp admin` subcommands (`get/apply/generate` for `driverinterface`/`driverclient`/`driverimpl`, `get/apply exporterclass`, `jmp validate exporter`, `jmp validate client`) are new. No existing CLI commands are modified.
+- The `jmp admin` subcommands (`get/apply/generate` for `driverinterface`, `get/apply` for `exporterclass`, `jmp validate exporter`) are new. No existing CLI commands are modified.
 
-- Driver-registry CRDs for bundled drivers are included in the operator installation. Upgrading Jumpstarter automatically updates these CRDs. Existing clusters without them continue to function exactly as before — the feature is fully opt-in.
+- DriverInterface CRDs for bundled drivers are included in the operator installation. Upgrading Jumpstarter automatically updates these CRDs. Existing clusters without them continue to function exactly as before — the feature is fully opt-in.
 
 - `ExporterStatus.Devices` is **deprecated** but retained and populated for one release alongside the new `ExporterStatus.Drivers` field. Out-of-tree consumers that grep for `.status.devices` keep working through the deprecation window. New code (controller, admin consoles, CLI) consumes `Drivers`. The legacy `Device` type keeps its existing JSON tags (including `parent_uuid` snake_case) unchanged; the new `DriverInstance` type uses `parentUuid` (camelCase) and the richer set of fields. The deprecated field is scheduled for removal in the release after first introducing `Drivers`.
 
@@ -1645,17 +1249,18 @@ This JEP is **fully backward compatible.** All changes are additive:
 
 ### Positive
 
-- **Typed device contracts.** Tests can declare the device shape they expect (`embedded-linux-board`, `jetson-orin-nx`) and the lease layer guarantees an exporter that conforms. Codegen for typed clients (a future codegen JEP) becomes feasible because the validator anchors the shape.
+- **Typed device contracts.** Tests can declare the device shape they expect (`embedded-linux-board`, `jetson-orin-nx`) and the lease layer guarantees an exporter that conforms.
+- **Controller-side API versioning.** Each `DriverInterface` is the cluster's single source of truth for what a versioned interface looks like; structural validation gates non-conformant exporters at registration time rather than at the first failing RPC.
 - **Single source of truth per interface.** Composition is declared once on the `DriverInterface` (via `interface.yaml`) and referenced by every consumer. No duplication across ExporterClasses; no convention to keep in sync.
-- **Polyglot-friendly registry.** `DriverClient` and `DriverImplementation` CRDs are language-agnostic (`typeRef`, `language`, `packageUrl`). Adding Java, Go, or Rust support requires no schema changes — only new rows.
-- **Fleet visibility.** `ExporterClass.status.satisfiedExporterCount` and `DriverInterface.status.{registeredClients, registeredImplementations, implementationCount}` give operators an at-a-glance view of capacity and registry depth without scripting.
+- **Fleet visibility.** `ExporterClass.status.satisfiedExporterCount` gives operators an at-a-glance view of capacity per device profile without scripting custom `GetReport` queries.
 - **Backward compatible.** All new fields are optional. Pre-JEP-0015 exporter and lease manifests continue to work via label-only selection, with ExporterClass enforcement applied as a transparent backstop.
 - **Stable cluster identifiers.** Every cross-reference resolves to the same `metadata.name` from source `interface.yaml` to build output to cluster CRD, so renames are reachable by grep and there is no proto-package-to-CRD-name translation step to maintain.
 - **Source-of-truth alignment with JEP-0011.** Compiled `FileDescriptorProto`s are pure build artifacts; the `.proto` is the only committed proto-shaped source. No large base64 blobs in source diffs and no regenerate-before-commit rule on authors.
+- **Reviewable scope.** The proposal is focused on a single concern (typed contract + versioning). Per-language driver-package registry / codegen concerns are deferred to JEP-0016 and can be evaluated independently.
 
 ### Negative
 
-- **Four new CRDs to author and maintain.** Each bundled driver ships a source `interface.yaml`; the build produces three cluster CRDs per driver (`DriverInterface`, `DriverClient`, `DriverImplementation`). Out-of-tree drivers must ship the same set. The build target hides most of the work, but the surface area is real.
+- **Two new CRDs plus a new source manifest.** Each bundled driver ships a source `interface.yaml`; the build produces a cluster `DriverInterface` CRD per driver, and lab admins author one `ExporterClass` per profile. The build target hides most of the work, but the surface area is real.
 - **No direct `kubectl apply -f interface.yaml`.** The source manifest intentionally omits `spec.proto.descriptor`; users go through `jmp admin generate driverinterface` or the operator's bundled CRDs to get a cluster-applicable artifact. Trade-off accepted in DD-8.
 - **`ExporterStatus.Devices` deprecation.** Out-of-tree consumers reading `.status.devices` keep working for one release; after that they must migrate to `.status.drivers`. A migration window is provided but the change is visible.
 - **Tree-shape contract is rigid.** Strict positional matching (DD-13) means a driver that's "morally equivalent" but lives at the wrong tree position does not satisfy a declared slot. This is deliberate (codegen and predictability) but means contract authors must carefully shape their `DriverInterface.spec.children`.
@@ -1691,6 +1296,10 @@ A simpler model considered making all interfaces in an ExporterClass required, w
 
 The Kubernetes `*Class` convention (StorageClass, IngressClass, RuntimeClass) uses cluster-scoped resources. This was considered but rejected for Jumpstarter because namespace-scoping better supports multi-tenant lab environments where different teams need independent control over their device profiles and interface definitions. Lease matching already operates within namespaces, and namespace-scoping provides natural RBAC isolation without additional configuration.
 
+### Bundling the per-language implementation registry into this JEP
+
+Earlier drafts of JEP-0015 also defined `DriverClient` and `DriverImplementation` CRDs (per-language client / driver-side implementation registry) and the associated machine-generation, opt-in / codegen, and `.jmp/` directory model. That bundling grew the proposal to ~1,800 lines and mixed two separable concerns: (1) the typed-contract and versioning surface (this JEP), and (2) the polyglot driver-package distribution surface. The two are independently useful — `ExporterClass` validation works against the proto descriptor alone, without any registry CRD — so the implementation registry has been split out into **JEP-0016 (Driver Package Registry)**, which references this JEP's `DriverInterface` as its contract object. Keeping the concerns separate makes each JEP reviewable on its own merits.
+
 ## Prior Art
 
 - **Kubernetes DRA DeviceClass** (`resource.k8s.io/v1`) — a design influence. Jumpstarter's ExporterClass aligns with the K8s DRA `DeviceClass` in several ways: named CRD, selectors, and the overall pattern of a named class that defines selection criteria for devices. Where Jumpstarter diverges is the `interfaces` section — K8s DRA selects devices by attributes and capacity (e.g., GPU memory, driver name), while Jumpstarter selects exporters by the driver interfaces they provide (e.g., power, serial, ADB). The ExporterClass also uses standard label selectors instead of K8s DRA's CEL-based selectors, is namespace-scoped instead of cluster-scoped, and deliberately excludes driver-specific configuration (which belongs in the exporter's `ExporterConfig`). K8s DRA uses `ResourceClaim`/`ResourceClaimTemplate` for allocation; Jumpstarter uses its own Lease mechanism.
@@ -1723,11 +1332,11 @@ The Kubernetes `*Class` convention (StorageClass, IngressClass, RuntimeClass) us
 
 The following are **not** part of this JEP but are natural extensions enabled by it:
 
+- **JEP-0016 (Driver Package Registry).** The natural follow-on: per-language client and driver-implementation registry CRDs (`DriverClient`, `DriverImplementation`) that catalog where the code implementing each interface lives (PyPI / Maven Central / crates.io / npm), how to address it in each language, and how a test author materializes a typed client. JEP-0016 references this JEP's `DriverInterface` as its contract object; everything else is independent.
+
 - **CEL-based selectors:** The current design uses standard Kubernetes label selectors. If more expressive power is needed (arbitrary boolean logic, string operations, access to structured device attributes), CEL expressions could be added as an alternative selector mechanism. The `cel-go` library is already available as an indirect dependency in the controller's module graph.
 
 - **Polyglot typed device wrappers (future codegen JEP):** The ExporterClass definition provides everything needed to generate typed device classes in any language — `EmbeddedLinuxBoardDevice` with `power: PowerClient`, `serial: SerialClient`, `storage: StorageClient` as non-nullable fields and `network: NetworkClient?` as nullable.
-
-- **Driver registry integration (future Registry JEP):** A registry can catalog which driver packages implement which DriverInterfaces, and which ExporterClasses they satisfy, enabling `jmp registry list exporter-classes` and `jmp registry describe exporter-class embedded-linux-board`. The registry could also serve as an alternative source for `proto.descriptor` resolution, supplementing the inline embedding approach.
 
 - **Capacity planning dashboard:** With `status.satisfiedExporterCount` on every ExporterClass, a web dashboard could show real-time fleet capacity per device profile, utilization rates, and availability trends.
 
@@ -1737,41 +1346,36 @@ The following are **not** part of this JEP but are natural extensions enabled by
 
 - **Interface-spec maturity.** A `maturity` enum on `DriverInterface` (e.g., `Experimental | Beta | Stable | Deprecated`) would let admin consoles flag in-development interfaces distinct from operational `Ready` conditions. Deferred until a concrete consumer needs it.
 
-- **DriverImplementation drift detection.** The controller could surface a `Warning` condition on exporters whose reported driver `typeRef`s don't match any registered `DriverImplementation`. Useful for catching out-of-band driver installs and driver-name drift. Strictly a console-visible signal — never fails the lease.
-
-- **Cluster as a dependency-resolution surface for exporter provisioning.** `DriverImplementation.spec.{package, version, index, packageUrl}` already carries everything an exporter host would need to pull and install the right driver package from its language registry. A future provisioning mechanism could read these CRDs and install drivers automatically on exporters, closing the loop from "lab admin registers a third-party DriverImplementation" to "every exporter that needs that driver has it installed." Out of scope for JEP-0015, which only specifies the *contract*; the resolution-and-install side is a separate concern, likely a future exporter-provisioning or driver-registry JEP.
-
 ## Implementation Phases
 
-| Phase | Deliverable                                                                                                                                                                         | Depends On        |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| 1     | `DriverInterface` + `DriverClient` + `DriverImplementation` CRD definitions, `make driver-registry` build target, bundled YAMLs in Helm/OLM                                         | JEP-0011          |
-| 2     | `ExporterClass` CRD definition + controller validation on registration + lease enforcement                                                                                          | Phase 1           |
-| 3     | `jmp admin` CLI tooling (`get/apply/generate` for `driverinterface`/`driverclient`/`driverimpl`, `get/apply exporterclass`) + `jmp validate exporter` + `jmp validate client`       | Phase 1           |
-| 4     | Structural validation via `FileDescriptorProto` comparison (moderate strictness)                                                                                                    | Phase 2, JEP-0011 |
-| 5     | ExporterClass inheritance (`extends`)                                                                                                                                               | Phase 2           |
-| 6     | Optional: controller cross-check that an exporter's reported driver `typeRef`s match registered `DriverImplementation` CRDs; surface mismatches as `Warning` conditions (non-fatal) | Phase 2           |
+| Phase | Deliverable                                                                                                                                 | Depends On        |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| 1     | `DriverInterface` CRD definition, `interface.yaml` source manifest, `make driver-registry` build target, bundled CRDs in Helm/OLM           | JEP-0011          |
+| 2     | `ExporterClass` CRD definition + controller validation on registration + lease enforcement                                                  | Phase 1           |
+| 3     | `jmp admin` CLI tooling (`get/apply/generate driverinterface`, `get/apply exporterclass`) + `jmp validate exporter`                         | Phase 1           |
+| 4     | Structural validation via `FileDescriptorProto` comparison (moderate strictness)                                                            | Phase 2, JEP-0011 |
+| 5     | ExporterClass inheritance (`extends`)                                                                                                       | Phase 2           |
 
-Phases 1–2 are the minimum viable deliverable: named device contracts with controller-enforced lease matching, requiring no client-side changes. Phase 3 provides admin tooling. Phases 4–5 add the structural depth enabled by JEP-0011's proto introspection. Phase 6 is an optional console-visible drift detector.
+Phases 1–2 are the minimum viable deliverable: named device contracts with controller-enforced lease matching, requiring no client-side changes. Phase 3 provides admin tooling. Phases 4–5 add the structural depth enabled by JEP-0011's proto introspection.
 
 ## Implementation History
 
 - 2026-04-06: JEP drafted as "DeviceClass Mechanism".
 - 2026-04-08: Renamed to "ExporterClass Mechanism" (`DeviceClass` → `ExporterClass`, `InterfaceClass` → `DriverInterface`). Replaced CEL selectors with standard Kubernetes label selectors. Changed CRD scope from cluster-scoped to namespace-scoped. Added schema distribution and CLI workflow section. Added `descriptor` for inline canonical `FileDescriptorProto` storage. Added schema registry prior art (Buf BSR, Confluent, Envoy). Resolved all "must resolve before acceptance" design questions. Moved DriverInterface distribution to Jumpstarter installation (Helm/OLM bundling) instead of manual publishing. Moved admin CLI commands under `jmp admin`. Removed `config` section from ExporterClass (driver configuration belongs in ExporterConfig, not in the typing contract).
 - 2026-05-10: Renumbered from JEP-0012 to JEP-0015 and rebased onto the accepted JEP-0011 (proto-first, build-time descriptor compilation). Removed the JEP-0011 PoC Readiness and Gaps sections — the prior PoC's surface (`@driverinterface` decorator, `build_file_descriptor()` runtime call, `jmp proto export`) no longer matches JEP-0011, and no PoC for the ExporterClass / DriverInterface CRD path currently exists. Rewrote descriptor-flow language to describe `.proto` → `protoc --descriptor_set_out` → DriverInterface `proto.descriptor`, with runtime exposure via gRPC reflection and `DriverInstanceReport.file_descriptor_proto`. Generalized forward references to typed codegen as "a future codegen JEP" and to the driver registry as "a future Registry JEP".
-- 2026-05-10: Split the implementation registry into separate CRDs to support the OpenShift Console prototype. `DriverInterface` now carries only the proto contract plus `displayName`/`description`/status counters. New `DriverClient` CRD registers a per-`(interface, language)` client implementation (`typeRef`, `package`, `version`, `index`, `repoUrl`, `packageUrl`, `note`); `typeRef` is the language-specific FQN / import path so the schema is language-agnostic across Python classes, Java classes, Go types, Rust types, etc., and `packageUrl` is the language-agnostic direct link to the package page on its registry (PyPI, Maven Central, crates.io, npm, …). New `DriverImplementation` CRD (short alias `driverimpl`) registers each concrete driver-side type (`typeRef`, `language`, `package`, `version`, `description`, `sourceUrl`). `ExporterClass` gained `displayName`, `description`, `vendor`, `arch`, `isBase` for console rendering, and `status.resolvedInterfaces` entries now carry `inheritedFrom`. Made explicit that method-level metadata is read from the `FileDescriptorProto`'s `source_code_info` — not duplicated in the CRD. Deferred broader discovery / browse RPCs to JEP-0014 (Admin API) and an interface-spec `maturity` enum to a future iteration.
+- 2026-05-10: Split the implementation registry into separate CRDs to support the OpenShift Console prototype. `DriverInterface` now carries only the proto contract plus `displayName`/`description`/status counters. New `DriverClient` CRD registers a per-`(interface, language)` client implementation; new `DriverImplementation` CRD (short alias `driverimpl`) registers each concrete driver-side type. `ExporterClass` gained `displayName`, `description`, `vendor`, `arch`, `isBase` for console rendering, and `status.resolvedInterfaces` entries now carry `inheritedFrom`. Made explicit that method-level metadata is read from the `FileDescriptorProto`'s `source_code_info` — not duplicated in the CRD. Deferred broader discovery / browse RPCs to JEP-0014 (Admin API) and an interface-spec `maturity` enum to a future iteration.
 - 2026-05-10: Specified the lease-time interaction between ExporterClass, labels, and `extends`. Added `Exporter.spec.exporterClassName` (declared primary class, K8s `*ClassName` convention) and `Lease.spec.exporterClassName` + `Lease.spec.exactMatch`. Lease filtering AND-combines `selector` and `exporterClassName`. By default, requesting a class also matches exporters whose declared class extends it (subclass match); `exactMatch: true` requires an exact declared-class equality. `status.satisfiedExporterClasses` now lists the declared class first, then its ancestors via `extends`, then any inferred memberships. Split the `ExporterClassCompliance` condition (declared-class validation) from the new `ExporterClassMembership` condition (inferred memberships). All new fields are optional — pre-JEP-0015 manifests keep working via label-only lease matching.
 - 2026-05-10: Tightened the exporter validation algorithm to be **two explicit, independent checks** that must both pass: Check A (tree completeness — every required `DriverInterface` has a matching driver somewhere in the `DriverInstanceReport` tree, identified by `FileDescriptorProto.package`) and Check B (structural compatibility — each found driver's `file_descriptor_proto` matches the canonical `DriverInterface.proto.descriptor` for method names, request/response message field types, and streaming semantics). Added distinct `ExporterClassCompliance` condition reasons (`MissingInterface`, `InterfaceStructuralMismatch`, `MultipleFailures`) so operators can tell "missing driver" from "wrong driver version". Expanded the Test Plan to cover each failure mode independently.
 - 2026-05-10: Made the ExporterClass declare the **tree shape** of the expected driver hierarchy, not just a flat set. `ExporterClass.spec.interfaces[*]` gained an optional recursive `children` array; `status.resolvedInterfaces` mirrors the same tree shape; `extends` merges trees by `name` at each level. Check A became a strict **positional** tree-shape match (root entries match root drivers; `children` entries must be direct children of their matched parent), with extras allowed and missing parents transitively flagging missing children. Replaced the dead `ExporterStatus.Devices []Device` projection with `ExporterStatus.Drivers []DriverInstance` — a faithful CRD-side mirror of the wire `DriverInstanceReport` (uuid, parentUuid, labels, description, methodsDescription, fileDescriptorProto) plus controller-computed `interfacePackage` (parsed from the descriptor) and `interfaceRef` (matched DriverInterface CRD name). Renamed the parent-ref JSON tag to `parentUuid` (camelCase) on the new type while leaving the deprecated `Device.parent_uuid` (snake_case) tag untouched. `Devices` is deprecated and retained for one release before removal. Added the `DriverTreeInvalid` condition for reconstruction failures (orphaned parent refs, cycles).
 - 2026-05-10: Moved composition (which child interfaces a composite must expose) from `ExporterClass.spec.interfaces[*].children` onto `DriverInterface.spec.children`, where it belongs as part of the interface contract. `ExporterClass.spec.interfaces` is now a flat list of root-level requirements; the controller composes the expected tree at validation time by walking each ExporterClass entry's `interfaceRef` and recursively expanding `DriverInterface.spec.children`. Runtime children are matched to declared slots by the existing `jumpstarter.dev/name` label populated by `Driver.report()` plus a `fileDescriptorProto.package` match — both must hold for a slot to be considered filled. Inheritance via `extends` reverted to a flat root-level merge by `name`.
 - 2026-05-10: Specified the **DriverInterface manifest** — a YAML file committed alongside each `.proto` under `interfaces/proto/<package>/<interface>.yaml` (same stem) that carries every non-proto interface metadata field: `package`, `displayName`, `description`, and `children`. `interfaceRef` in `children[*]` uses the **proto package** of the referenced interface (universal identifier; the build target maps to CRD name at emit time). This closes the JEP-0011 gap that proto can't express: gRPC services cannot be nested, so composition has to live in a parallel artifact. `make driver-registry` (and `jmp admin generate driverinterface`) read the proto + manifest pair and emit the DriverInterface CRD; mismatched or missing pairs are build errors.
-- 2026-05-10: Refined the DriverInterface manifest: renamed the file from `<interface>.yaml` to the fixed name `interface.yaml` (every interface directory ships one, including leaves — uniform tooling). Added a required `name` field carrying the cluster-side DriverInterface CRD name. Cross-references (`children[*].interfaceRef`, ExporterClass `interfaceRef`, DriverClient `interfaceRef`, DriverImplementation `interfaceRef`) now resolve against this `name` rather than the proto package — the same identifier is used everywhere (source manifest, build output, cluster CRD), so no proto-package-to-CRD-name translation is needed and cross-file references are explicit and stable. The manifest's `package` field is retained for build-time pairing validation against the sibling `.proto`'s `package` declaration.
+- 2026-05-10: Refined the DriverInterface manifest: renamed the file from `<interface>.yaml` to the fixed name `interface.yaml` (every interface directory ships one, including leaves — uniform tooling). Added a required `name` field carrying the cluster-side DriverInterface CRD name. Cross-references (`children[*].interfaceRef`, ExporterClass `interfaceRef`) now resolve against this `name` rather than the proto package — the same identifier is used everywhere (source manifest, build output, cluster CRD), so no proto-package-to-CRD-name translation is needed and cross-file references are explicit and stable. The manifest's `package` field is retained for build-time pairing validation against the sibling `.proto`'s `package` declaration.
 - 2026-05-10: Standardized the default `name` convention to a **straight dots→hyphens conversion of the proto package** — `jumpstarter.driver.dutlink.v1` becomes `jumpstarter-driver-dutlink-v1`. Replaces the prior `dev-<org>-<interface>-<version>` placeholder convention. Keeps the cluster identifier visually parallel to the proto package and unambiguous; authors retain the freedom to override with any DNS-safe slug for out-of-tree drivers. Updated every YAML example, prose reference, and naming description in the JEP to use the new convention.
 - 2026-05-10: Versioned the `interface.yaml` manifest the same way as every other Jumpstarter config and CRD YAML — `apiVersion: jumpstarter.dev/v1alpha1` and `kind: DriverInterface`, with fields organized under `metadata` and `spec`. Moved `name` to `metadata.name`, moved `package` to `spec.proto.package`, and moved `displayName`/`description`/`children` under `spec`. Adopting the standard K8s shape keeps schema evolution and tooling (kubectl, kustomize, pydantic config loaders) uniform across all Jumpstarter YAML kinds.
 - 2026-05-10: Reverted "descriptor committed in `interface.yaml`" to align with JEP-0011's principle that compiled `FileDescriptorProto`s are pure build artifacts, not committed alongside the `.proto`. Source `interface.yaml` is now a **partial `DriverInterface` CRD** that intentionally omits `spec.proto.descriptor`; the build target reads source manifest + sibling `.proto`, compiles the descriptor, and emits a complete CRD into the operator's bundled-CRDs directory (Helm chart / OLM bundle / generated CRDs dir). Source is never rewritten in place. The applied artifact (what the operator installs, what `jmp admin generate driverinterface` prints) is the generated CRD; the committed source is the authoring form. Trades off "`kubectl apply -f interface.yaml` works directly" against not having large base64 binary blobs in source diffs and not requiring authors to regenerate-before-commit — JEP-0011's source-of-truth model wins.
-- 2026-05-10: Aligned the JEP with the template's mandatory-section structure for Standards Track. Promoted the inline four-item "Resolved Design Decisions" subsection to a top-level **Design Decisions** section with 16 explicit `DD-N` entries (alternatives / decision / rationale) covering every significant choice made during the JEP's development. Added a top-level **Acceptance Criteria** section with a checklist of specific, testable conditions for the implementation to be considered done (distinct from Graduation Criteria, which governs the experimental→stable transition). Added a top-level **Consequences** section with Positive / Negative / Risks subsections summarizing the expected outcomes, including the trade-offs accepted in DDs (no direct `kubectl apply`, four CRDs per driver, etc.) and the risks worth tracking (CRD-name collisions, slot-label divergence, validation cost at scale).
-- 2026-05-11: Specified the **CRD generation model** for `DriverClient` and `DriverImplementation`, closing the bundled-vs-third-party workflow split that earlier drafts left ambiguous. Added DD-17: all driver-registry CRDs are machine-generated from the package's native manifest (`pyproject.toml` for Python; `Cargo.toml` / `package.json` / etc. for future polyglot tooling) plus driver-class introspection plus proto-package matching for `interfaceRef` — never hand-authored. Generated CRDs are committed to source control alongside their language-native inputs, with CI enforcing no drift (the same `make manifests`-and-commit pattern used elsewhere in the K8s ecosystem). Added DD-18: `DriverClient` is opt-in. Per JEP-0011 every `DriverInterface` carries `spec.proto.descriptor` in the cluster, which is sufficient input for a test-author-side codegen path to materialize a typed client on demand — so the default for any driver is "no `DriverClient` CRD." A CRD is emitted only for in-tree convenience pre-generation (so test authors `pip install jumpstarter-all` and import without running codegen) or for hand-written client overrides (richer ergonomics, custom client-side logic). `jmp validate client` resolves an interface as satisfied via either the codegen path or the CRD path; failure requires both to fail. Rewrote *Schema Distribution and CLI Workflow* into five subsections (CRDs are machine-generated and committed; clients are codegened on the test-author side; Python in-tree flow; out-of-tree flow; polyglot contract) and updated `jmp admin generate driverimpl/driverclient` invocations to take a package path. **The codegen pipeline itself is explicitly out of scope** — defining it (API surface, language matrix, tooling) is left to a future codegen JEP; JEP-0015 only assumes its existence and is designed so the opt-in `DriverClient` schema accommodates whichever codegen design ultimately lands. Scoped to specifying the Python in-tree flow concretely while declaring a language-neutral CRD contract that future per-language JEPs (Rust/Java/Go) can implement against without re-litigating the model.
-- 2026-05-12: Added the **Out-of-tree Authoring Walkthrough** — a non-normative, language-agnostic section under *Proposal* that traces a third-party driver author end-to-end (scaffold → declare interface in source → build emits `.proto` + `interface.yaml` → build emits cluster CRDs → run locally → publish + register → consume) with Python as the concrete inline example. Introduced **DD-19: out-of-tree drivers use a `.jmp/` magic directory** — every Jumpstarter-specific artifact in a vendor's repo lives under `.jmp/`, with source-of-truth files at `.jmp/interfaces/<reverse-DNS-package-path>/{name}.proto + interface.yaml` and generated CRDs at `.jmp/crds/*.yaml`. The convention supports multiple interfaces/implementations/clients per package, defaults tooling to one canonical path (`jmp admin apply -k .jmp/crds/`), and refines (does not replace) JEP-0011's `interfaces/proto/...` layout for the in-tree monorepo case. **Softened the polyglot-contract commit rule**: source-of-truth files (`.proto`, `interface.yaml`) MUST be committed; generated CRDs SHOULD be committed for reviewer visibility but MAY be gitignored at out-of-tree authors' discretion — the in-tree flow still commits them because the operator bundle depends on it. Distinguished the transient build-output directory (e.g., `target/jumpstarter/`) from the stable `.jmp/crds/` mirror everywhere they appear. Added a *Future Possibilities* bullet for "cluster as a dependency-resolution surface for exporter provisioning" — `DriverImplementation.spec.{package, version, index, packageUrl}` already carries everything an exporter host would need to pull and install the right driver package, leaving the resolution-and-install side as a separate concern (likely a future exporter-provisioning or driver-registry JEP).
+- 2026-05-10: Aligned the JEP with the template's mandatory-section structure for Standards Track. Promoted the inline four-item "Resolved Design Decisions" subsection to a top-level **Design Decisions** section with explicit `DD-N` entries (alternatives / decision / rationale) covering every significant choice. Added a top-level **Acceptance Criteria** section with a checklist of specific, testable conditions for the implementation to be considered done (distinct from Graduation Criteria, which governs the experimental→stable transition). Added a top-level **Consequences** section with Positive / Negative / Risks subsections.
+- 2026-05-11: Specified the **CRD generation model** for `DriverClient` and `DriverImplementation` (machine-generated from the package's native manifest + driver-class introspection + proto-package matching) and made `DriverClient` opt-in. Added Out-of-tree Authoring Walkthrough and `.jmp/` magic directory convention.
+- 2026-05-14: **Refocused JEP-0015 to the typed-contract layer only.** Removed the `DriverClient` and `DriverImplementation` CRDs, the machine-generation pipeline, the `.jmp/` magic directory, the out-of-tree authoring walkthrough, the polyglot contract section, and `jmp validate client` — all of which moved to the new **JEP-0016 (Driver Package Registry)**. Trimmed `GetExporterClassInfo` to return only ExporterClass + DriverInterface contract data (per-language client / implementation listings move with the registry CRDs). Added a *Contrast with the current `devices` approach* subsection in Motivation that explicitly compares today's flat `DriverInstanceReport` / `[]Device` flow against this JEP's typed contract + controller-side validation. Added a dedicated **API Versioning** subsection that names `DriverInterface` as the controller-side single source of truth for what an interface looks like at a given version and ties version bumps to the proto package convention. Renumbered the Design Decisions to remove DD-15 (`typeRef`/`packageUrl` — registry concern), DD-17, DD-18, and DD-19; the surviving DD-3 was rewritten as "Contract CRD separate from any implementation registry" to capture the scope-split rationale.
 
 ## References
 
