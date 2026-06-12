@@ -2,8 +2,17 @@ from jumpstarter_driver_power.driver import MockPower
 from pydantic.dataclasses import dataclass
 
 from .driver import Composite, Proxy
+from jumpstarter.client.base import StubDriverClient
 from jumpstarter.common.utils import serve
 from jumpstarter.driver import Driver, export
+
+
+class MissingClientDriver(Driver):
+    """Test driver that returns a non-existent client class path."""
+
+    @classmethod
+    def client(cls) -> str:
+        return "nonexistent_driver_package.client.NonExistentClient"
 
 
 # Mock serial driver with a connect() method
@@ -82,6 +91,23 @@ def test_proxy_method_forwarding():
 
     data = proxy.read()
     assert data == "data"
+
+
+def test_cli_skips_uninstalled_child_drivers():
+    """Composite CLI should skip stub clients for missing driver packages."""
+    with serve(
+        Composite(
+            children={
+                "power": MockPower(),
+                "missing": MissingClientDriver(),
+            },
+        )
+    ) as client:
+        assert isinstance(client.children["missing"], StubDriverClient)
+
+        cli_group = client.cli()
+        assert "power" in cli_group.commands
+        assert "missing" not in cli_group.commands
 
 
 def test_proxy_in_parent_child():

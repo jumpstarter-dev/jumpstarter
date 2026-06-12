@@ -52,7 +52,12 @@ class CompositeClient(DriverClient):
             pass
 
         for k, v in self.children.items():
-            if hasattr(v, "cli"):
-                base.add_command(v.cli(), k)
+            try:
+                if hasattr(v, "cli"):
+                    base.add_command(v.cli(), k)
+            except ImportError:
+                # Stub clients raise ImportError from __getattr__ instead of
+                # AttributeError, so hasattr() does not catch missing drivers.
+                continue
 
         return base
