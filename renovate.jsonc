@@ -58,7 +58,8 @@
         "(?<currentValue>\\d+\\.\\d+\\.\\d+)\\n"
       ],
       "depNameTemplate": "astral-sh/uv",
-      "datasourceTemplate": "github-releases"
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
     }
   ],
   "packageRules": [
