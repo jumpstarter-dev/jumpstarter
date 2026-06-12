@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 cd "$(dirname "$0")"
 
 # run only in a container
 if [[ -z "$container" && ! -f /.dockerenv ]]; then
     podman build -t flasher-builder "$(dirname "$0")"
-    exec podman run --rm -it -v $(pwd):/host:Z -w /host flasher-builder "$0" "$@"
+    exec podman run --rm -it -v "$(pwd):/host:Z" -w /host flasher-builder "$0" "$@"
 else
-	set -euo pipefail
 	BUILDROOT_DIR="/var/tmp/buildroot"
 
 	dnf install --setopt=install_weak_deps=false -y git make gcc gcc-c++ which file diffutils \
