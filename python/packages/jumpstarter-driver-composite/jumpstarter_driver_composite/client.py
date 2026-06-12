@@ -5,6 +5,7 @@ import click
 from rich import traceback
 
 from jumpstarter.client import DriverClient
+from jumpstarter.client.base import StubDriverClient
 from jumpstarter.client.decorators import driver_click_group
 
 
@@ -52,12 +53,9 @@ class CompositeClient(DriverClient):
             pass
 
         for k, v in self.children.items():
-            try:
-                if hasattr(v, "cli"):
-                    base.add_command(v.cli(), k)
-            except ImportError:
-                # Stub clients raise ImportError from __getattr__ instead of
-                # AttributeError, so hasattr() does not catch missing drivers.
+            if isinstance(v, StubDriverClient):
                 continue
+            if hasattr(v, "cli"):
+                base.add_command(v.cli(), k)
 
         return base

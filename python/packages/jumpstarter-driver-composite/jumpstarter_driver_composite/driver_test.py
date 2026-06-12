@@ -110,6 +110,36 @@ def test_cli_skips_uninstalled_child_drivers():
         assert "missing" not in cli_group.commands
 
 
+def test_cli_all_stubs_produces_empty_group():
+    """Composite CLI with only stub children should produce a valid empty group."""
+    with serve(
+        Composite(
+            children={
+                "missing1": MissingClientDriver(),
+                "missing2": MissingClientDriver(),
+            },
+        )
+    ) as client:
+        cli_group = client.cli()
+        assert cli_group.commands == {}
+
+
+def test_cli_all_installed_registers_all_commands():
+    """Composite CLI with all installed children should register every command."""
+    with serve(
+        Composite(
+            children={
+                "power0": MockPower(),
+                "power1": MockPower(),
+            },
+        )
+    ) as client:
+        cli_group = client.cli()
+        assert "power0" in cli_group.commands
+        assert "power1" in cli_group.commands
+        assert len(cli_group.commands) == len(client.children)
+
+
 def test_proxy_in_parent_child():
     """Test that parent driver can call methods on Proxy child (RideSX scenario)"""
     # Server-side test: verify parent accessing self.children["serial"].method()
