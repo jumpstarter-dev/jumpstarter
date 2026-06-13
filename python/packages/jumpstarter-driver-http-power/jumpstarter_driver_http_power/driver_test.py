@@ -1,6 +1,8 @@
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
+import pytest
+
 from .driver import HttpEndpointConfig, HttpPower
 from jumpstarter.common.utils import serve
 
@@ -76,11 +78,11 @@ def test_drivers_http_power():
             client.on()
             client.off()
 
-            # Test read method
+            # Test read method — parses the JSON the mock /read endpoint returns
             readings = list(client.read())
             assert len(readings) == 1
-            assert readings[0].voltage == 0.0  # Currently returns dummy values
-            assert readings[0].current == 0.0
+            assert readings[0].voltage == 12.0
+            assert readings[0].current == 2.5
 
             # Verify HTTP requests were made
             assert len(server.requests) == 3  # ty: ignore[unresolved-attribute]
@@ -106,3 +108,58 @@ def test_drivers_http_power():
     finally:
         server.shutdown()
         server_thread.join(timeout=1)
+
+
+def _power(power_read):
+    return HttpPower(
+        power_on=HttpEndpointConfig(url="http://x/on"),
+        power_off=HttpEndpointConfig(url="http://x/off"),
+        power_read=power_read,
+    )
+
+
+def test_read_parses_nested_paths():
+    drv = _power(
+        HttpEndpointConfig(
+            url="http://x/read", voltage_path="emeter.voltage", current_path="emeter.current"
+        )
+    )
+    drv._make_http_request = lambda cfg: '{"emeter": {"voltage": 231.0, "current": 0.45}}'
+    reading = next(iter(drv.read()))
+    assert reading.voltage == 231.0
+    assert reading.current == 0.45
+
+
+def test_read_missing_default_key_is_zero():
+    drv = _power(HttpEndpointConfig(url="http://x/read"))
+    drv._make_http_request = lambda cfg: '{"voltage": 230.0}'  # device reports no current
+    reading = next(iter(drv.read()))
+    assert reading.voltage == 230.0
+    assert reading.current == 0.0
+
+
+def test_read_configured_path_missing_raises():
+    drv = _power(HttpEndpointConfig(url="http://x/read", voltage_path="nope.here"))
+    drv._make_http_request = lambda cfg: '{"voltage": 1.0}'
+    with pytest.raises(ValueError, match="not found in read response"):
+        list(drv.read())
+
+
+def test_read_non_numeric_list_index_raises_not_found():
+    drv = _power(HttpEndpointConfig(url="http://x/read", voltage_path="meters.x.voltage"))
+    drv._make_http_request = lambda cfg: '{"meters": [{"voltage": 1.0}]}'
+    with pytest.raises(ValueError, match="not found in read response"):
+        list(drv.read())
+
+
+def test_read_non_json_raises():
+    drv = _power(HttpEndpointConfig(url="http://x/read"))
+    drv._make_http_request = lambda cfg: "OK"
+    with pytest.raises(ValueError, match="did not return JSON"):
+        list(drv.read())
+
+
+def test_read_without_endpoint_raises():
+    drv = _power(None)
+    with pytest.raises(ValueError, match="not configured"):
+        list(drv.read())

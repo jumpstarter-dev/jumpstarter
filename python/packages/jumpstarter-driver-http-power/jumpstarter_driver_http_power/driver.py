@@ -1,5 +1,6 @@
+import json
 from dataclasses import dataclass, field
-from typing import Generator, Optional
+from typing import Any, Generator, Optional
 
 import requests
 from jumpstarter_driver_power.common import PowerReading
@@ -8,11 +9,23 @@ from jumpstarter_driver_power.driver import PowerInterface
 from jumpstarter.driver import Driver, export
 
 
+def _json_path(data: Any, path: str) -> Any:
+    """Walk a dotted path through nested dicts/lists, e.g. 'meters.0.power'."""
+    cur = data
+    for part in path.split("."):
+        cur = cur[int(part)] if isinstance(cur, list) else cur[part]
+    return cur
+
+
 @dataclass(kw_only=True)
 class HttpEndpointConfig:
     url: str = field()
     method: str = field(default='GET')
     data: Optional[str] = field(default=None)
+    # For read endpoints: dotted JSON paths to the values (e.g. "emeter.voltage").
+    # When unset, read() looks for top-level "voltage"/"current" keys.
+    voltage_path: Optional[str] = field(default=None)
+    current_path: Optional[str] = field(default=None)
 
 
 @dataclass(kw_only=True)
@@ -92,20 +105,40 @@ class HttpPower(PowerInterface, Driver):
 
     @export
     def read(self) -> Generator[PowerReading, None, None]:
-        """Read power measurements via HTTP request
+        """Read a power measurement from the configured read endpoint.
 
-        Note: Response parsing for voltage/current is not implemented yet.
-        Returns dummy values for now.
+        Parses the JSON response and pulls voltage/current from the paths set on
+        ``power_read`` (defaulting to top-level ``voltage``/``current`` keys).
+
+        Requires ``power_read`` to be configured; raises ``ValueError`` if it is
+        not, rather than reporting a fake zero measurement.
         """
-        self.logger.info("Reading power measurements via HTTP")
         if self.power_read is None:
-            self.logger.error("Power read endpoint not configured")
-            yield PowerReading(voltage=0.0, current=0.0)
-            return
+            raise ValueError("power_read endpoint is not configured")
 
-        self._make_http_request(self.power_read)
+        self.logger.debug("Reading power measurements via HTTP")
+        text = self._make_http_request(self.power_read)
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"read endpoint did not return JSON: {e}") from e
 
-        # TODO: Parse response_text to extract voltage and current values
-        # For now, return dummy values
-        self.logger.warning("Power reading response parsing not implemented, returning dummy values")
-        yield PowerReading(voltage=0.0, current=0.0)
+        voltage = self._extract_reading(data, self.power_read.voltage_path, "voltage")
+        current = self._extract_reading(data, self.power_read.current_path, "current")
+        yield PowerReading(voltage=voltage, current=current)
+
+    @staticmethod
+    def _extract_reading(data: Any, path: Optional[str], default_key: str) -> float:
+        """Pull one numeric reading. A configured path that's missing is an error;
+        a missing default key just means the device doesn't report it (0.0)."""
+        key = path or default_key
+        try:
+            value = _json_path(data, key)
+        except (KeyError, IndexError, TypeError, ValueError):
+            if path is not None:
+                raise ValueError(f"configured path {key!r} not found in read response") from None
+            return 0.0
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"value at {key!r} is not numeric (got {type(value).__name__})") from None
