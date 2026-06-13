@@ -24,6 +24,7 @@ jumpstarter-driver-http-power = { workspace = true }
 jumpstarter-driver-gpiod = { workspace = true }
 jumpstarter-driver-ridesx = { workspace = true }
 jumpstarter-driver-network = { workspace = true }
+jumpstarter-driver-obd = { workspace = true }
 jumpstarter-driver-opendal = { workspace = true }
 jumpstarter-driver-power = { workspace = true }
 jumpstarter-driver-pi-pico = { workspace = true }
