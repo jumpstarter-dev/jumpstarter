@@ -194,6 +194,14 @@ jobs:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
 
+      - name: Install Python package build dependencies (Python 3.14)
+        run: |
+          sudo apt-get update
+          # Pillow dependencies
+          sudo apt-get install -y libjpeg-dev zlib1g-dev libtiff-dev libfreetype6-dev liblcms2-dev libwebp-dev libopenjp2-7-dev
+          # scipy dependencies
+          sudo apt-get install -y gfortran libopenblas-dev liblapack-dev pkg-config
+
       - name: Install Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
@@ -258,6 +266,14 @@ jobs:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
 
+      - name: Install Python package build dependencies (Python 3.14)
+        run: |
+          sudo apt-get update
+          # Pillow dependencies
+          sudo apt-get install -y libjpeg-dev zlib1g-dev libtiff-dev libfreetype6-dev liblcms2-dev libwebp-dev libopenjp2-7-dev
+          # scipy dependencies
+          sudo apt-get install -y gfortran libopenblas-dev liblapack-dev pkg-config
+
       - name: Install Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
@@ -299,6 +315,14 @@ jobs:
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
+
+      - name: Install Python package build dependencies (Python 3.14)
+        run: |
+          sudo apt-get update
+          # Pillow dependencies
+          sudo apt-get install -y libjpeg-dev zlib1g-dev libtiff-dev libfreetype6-dev liblcms2-dev libwebp-dev libopenjp2-7-dev
+          # scipy dependencies
+          sudo apt-get install -y gfortran libopenblas-dev liblapack-dev pkg-config
 
       - name: Install Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
