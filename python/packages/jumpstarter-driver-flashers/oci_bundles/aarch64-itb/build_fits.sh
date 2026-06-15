@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # run only in a container
-if [[ -z "$container" && ! -f /.dockerenv ]]; then
+if [[ -z "${container:-}" && ! -f /.dockerenv ]]; then
     podman build -t flasher-builder "$(dirname "$0")"
     exec podman run --rm -it -v "$(pwd):/host:Z" -w /host flasher-builder "$0" "$@"
 else
