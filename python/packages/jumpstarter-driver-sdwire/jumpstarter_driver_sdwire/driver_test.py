@@ -90,6 +90,8 @@ class _FakeUSBDev:
         self.bus = 1
         self.address = 2
         self.port_numbers = ()
+        self.idVendor = 0
+        self.idProduct = 0
 
 
 def test_ft200x_requires_explicit_serial(monkeypatch):
@@ -178,8 +180,96 @@ def test_await_storage_device_retries(monkeypatch):
     assert anyio.run(sdwire._await_storage_device, 10) == "/dev/disk6"
 
 
+def _sdwire3_node(serial, disk, address=1):
+    return {
+        "_name": "USB3.0-CRW",
+        "vendor_id": "0x0bda  (Realtek Semiconductor Corp.)",
+        "product_id": "0x0316",
+        "serial_num": serial,
+        "location_id": f"0x02100000 / {address}",
+        "Media": [{"_name": "Ultra HS-SD/MMC", "bsd_name": disk}],
+    }
+
+
+def test_sdwire3_macos_storage_by_serial(monkeypatch):
+    tree = {"SPUSBDataType": [{"_name": "USB31Bus", "_items": [_sdwire3_node("ABC123", "disk4")]}]}
+    _patch_system_profiler(monkeypatch, tree)
+    dev = _FakeUSBDev("ABC123")
+    dev.bus = 2
+    dev.address = 1
+    assert sdwire_driver._find_sdwire3_storage_device_macos(dev, "ABC123") == "/dev/disk4"
+
+
+def test_sdwire3_find_device(monkeypatch):
+    sdwire3 = _FakeUSBDev("ABC123")
+    sdwire3.idVendor = sdwire_driver._SDWIRE3_VID
+    sdwire3.idProduct = sdwire_driver._SDWIRE3_PID
+    sdwire3.bus = 2
+    sdwire3.address = 1
+    sdwire3.port_numbers = (1, 2)
+
+    def fake_find(idVendor, idProduct, find_all):
+        if (idVendor, idProduct) == (sdwire_driver._SDWIRE3_VID, sdwire_driver._SDWIRE3_PID):
+            return iter([sdwire3])
+        return iter([])
+
+    monkeypatch.setattr(sdwire_driver.usb.core, "find", fake_find)
+    monkeypatch.setattr(sdwire_driver, "_usb_serial", lambda dev: "ABC123")
+
+    sdwire = object.__new__(SDWire)
+    sdwire.serial = None
+    sdwire.logger = logging.getLogger("test-sdwire")
+    found = sdwire._find_device()
+    assert found is not None
+    assert found[0] is sdwire3
+    assert found[2] == sdwire_driver._DeviceKind.SDWIRE3
+
+
+def test_sdwire3_host_and_dut(monkeypatch):
+    sdwire = object.__new__(SDWire)
+    sdwire._kind = sdwire_driver._DeviceKind.SDWIRE3
+    sdwire.dev = _FakeUSBDev("ABC123")
+    sdwire.logger = logging.getLogger("test-sdwire")
+
+    calls = []
+
+    def fake_host(dev):
+        calls.append("host")
+
+    def fake_dut(dev):
+        calls.append("dut")
+
+    monkeypatch.setattr(sdwire_driver, "_sdwire3_host", fake_host)
+    monkeypatch.setattr(sdwire_driver, "_sdwire3_dut", fake_dut)
+    monkeypatch.setattr(sdwire_driver.platform, "system", lambda: "Linux")
+
+    sdwire.host()
+    sdwire.dut()
+    assert calls == ["host", "dut"]
+
+
+def test_sdwire3_query(monkeypatch):
+    sdwire = object.__new__(SDWire)
+    sdwire._kind = sdwire_driver._DeviceKind.SDWIRE3
+
+    class _Dev:
+        def is_kernel_driver_active(self, intf):
+            return intf == 0
+
+    sdwire.dev = _Dev()
+    assert sdwire.query() == "host"
+
+    class _DevDut:
+        def is_kernel_driver_active(self, intf):
+            return False
+
+    sdwire.dev = _DevDut()
+    assert sdwire.query() == "dut"
+
+
 def test_dut_aborts_when_eject_fails(monkeypatch):
     sdwire = object.__new__(SDWire)
+    sdwire._kind = sdwire_driver._DeviceKind.FT200X
     sdwire.storage_device = "/dev/disk4"
     sdwire.storage_timeout = 10
     sdwire.logger = logging.getLogger("test-sdwire")
@@ -202,6 +292,7 @@ def test_dut_aborts_when_eject_fails(monkeypatch):
 
 def test_dut_switches_after_successful_eject(monkeypatch):
     sdwire = object.__new__(SDWire)
+    sdwire._kind = sdwire_driver._DeviceKind.FT200X
     sdwire.storage_device = "/dev/disk4"
     sdwire.storage_timeout = 10
     sdwire.logger = logging.getLogger("test-sdwire")
@@ -219,6 +310,7 @@ def test_dut_switches_after_successful_eject(monkeypatch):
 
 def test_dut_aborts_when_disk_unknown(monkeypatch):
     sdwire = object.__new__(SDWire)
+    sdwire._kind = sdwire_driver._DeviceKind.FT200X
     sdwire.storage_timeout = 0  # do not actually wait
     sdwire.logger = logging.getLogger("test-sdwire")
 
@@ -268,6 +360,7 @@ class _FakeHub:
 
 def test_host_selects_before_power_cycle(monkeypatch):
     sdwire = object.__new__(SDWire)
+    sdwire._kind = sdwire_driver._DeviceKind.FT200X
     sdwire.logger = logging.getLogger("test-sdwire")
     sdwire.dev = object()
 
@@ -289,6 +382,7 @@ def test_host_selects_before_power_cycle(monkeypatch):
 
 def test_host_no_power_cycle_off_darwin(monkeypatch):
     sdwire = object.__new__(SDWire)
+    sdwire._kind = sdwire_driver._DeviceKind.FT200X
     sdwire.logger = logging.getLogger("test-sdwire")
     sdwire.dev = object()
 
@@ -351,6 +445,8 @@ def test_power_cycle_skips_when_no_topology_match(monkeypatch):
 
 
 def test_drivers_sdwire():
+    import os
+
     try:
         instance = SDWire()
     except FileNotFoundError:
@@ -363,5 +459,11 @@ def test_drivers_sdwire():
     with serve(instance) as client:
         client.host()
         assert instance.query() == "host"
+        if (
+            instance._kind == sdwire_driver._DeviceKind.SDWIRE3
+            and sdwire_driver.platform.system() == "Darwin"
+            and os.geteuid() != 0
+        ):
+            pytest.skip("SDWire3 DUT switching on macOS requires root")  # ty: ignore[call-non-callable]
         client.dut()
         assert instance.query() == "dut"
