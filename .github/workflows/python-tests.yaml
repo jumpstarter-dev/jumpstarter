@@ -83,6 +83,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgpiod-dev liblgpio-dev
 
+      - name: Install Pillow build dependencies (Linux, Python 3.14)
+        if: runner.os == 'Linux' && matrix.python-version == '3.14'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libjpeg-dev zlib1g-dev libtiff-dev libfreetype6-dev liblcms2-dev libwebp-dev libopenjp2-7-dev
+
       - name: Install nftables and dnsmasq (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -106,6 +112,11 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install qemu
+
+      - name: Install Pillow build dependencies (macOS, Python 3.14)
+        if: runner.os == 'macOS' && matrix.python-version == '3.14'
+        run: |
+          brew install libjpeg libtiff little-cms2 webp
 
       # Homebrew Renode is slow (~5+ minutes per job). Install on macOS only when this run
       # touches the Renode driver, or on workflow_dispatch (full manual run). Linux still
