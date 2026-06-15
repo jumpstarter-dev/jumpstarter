@@ -64,6 +64,7 @@ Drivers for automotive diagnostic protocols:
 - {doc}`UDS <uds>` (`jumpstarter-driver-uds`) - Unified Diagnostic Services (ISO 14229)
 - {doc}`UDS over DoIP <uds-doip>` (`jumpstarter-driver-uds-doip`) - UDS diagnostics over DoIP transport
 - {doc}`UDS over CAN <uds-can>` (`jumpstarter-driver-uds-can`) - UDS diagnostics over CAN/ISO-TP transport
+- {doc}`OBD-II <obd>` (`jumpstarter-driver-obd`) - OBD-II vehicle diagnostics via ELM327
 - {doc}`SOME/IP <someip>` (`jumpstarter-driver-someip`) - SOME/IP protocol operations via opensomeip
 
 ### Flashing and Programming
@@ -115,6 +116,7 @@ iscsi.md
 mitmproxy.md
 network.md
 noyito-relay.md
+obd.md
 opendal.md
 pi-pico.md
 power.md
