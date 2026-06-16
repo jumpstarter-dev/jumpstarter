@@ -4,6 +4,9 @@
     "config:recommended",
     "helpers:pinGitHubActionDigests"
   ],
+  // Pin container image digests for supply-chain safety. Registries that
+  // prune untagged manifests (e.g. Fedora) must opt out via pinDigests:false
+  // in their packageRule to avoid broken builds when the old digest disappears.
   "pinDigests": true,
   "timezone": "Etc/UTC",
   "schedule": [
@@ -42,6 +45,20 @@
       "depNameTemplate": "python",
       "datasourceTemplate": "python-version",
       "versioningTemplate": "pep440"
+    },
+    {
+      "description": "Track .uv-version for uv toolchain pinning",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.uv-version$/"
+      ],
+      "matchStrings": [
+        "(?<currentValue>\\d+\\.\\d+\\.\\d+)\\n"
+      ],
+      "depNameTemplate": "astral-sh/uv",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "versioningTemplate": "semver"
     }
   ],
   "packageRules": [
@@ -147,9 +164,11 @@
     {
       "description": "Restrict Fedora to stable releases, bump this cap when the next Fedora goes GA",
       "matchPackageNames": [
-        "fedora"
+        "registry.fedoraproject.org/fedora",
+        "registry.fedoraproject.org/fedora-minimal"
       ],
-      "allowedVersions": "<=44"
+      "allowedVersions": "<=44",
+      "pinDigests": false
     },
     {
       "description": "Group Docker base images",
@@ -162,6 +181,14 @@
         "**"
       ],
       "automerge": false
+    },
+    {
+      "description": "Group uv toolchain updates (version file + container image)",
+      "groupName": "uv-toolchain",
+      "matchDepNames": [
+        "astral-sh/uv",
+        "ghcr.io/astral-sh/uv"
+      ]
     },
     {
       "description": "Group Python dev tools",
@@ -200,15 +227,11 @@
       "automerge": false
     },
     {
-      "description": "Group go-toolset Docker image with Go toolchain",
+      "description": "Group go-toolset container image with Go toolchain",
       "groupName": "go-toolchain",
-      "matchManagers": [
-        "dockerfile"
-      ],
       "matchPackageNames": [
         "registry.access.redhat.com/ubi9/go-toolset"
       ],
-      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
       "automerge": false
     }
   ]

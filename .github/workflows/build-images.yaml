@@ -32,15 +32,15 @@ jobs:
           # Controller images
           - image_name: jumpstarter-dev/jumpstarter-controller
             label: jumpstarter-controller
-            dockerfile: controller/Dockerfile
+            dockerfile: controller/Containerfile
             context: controller
           - image_name: jumpstarter-dev/jumpstarter-operator
             label: jumpstarter-operator
-            dockerfile: controller/Dockerfile.operator
+            dockerfile: controller/Containerfile.operator
             context: controller
           - image_name: jumpstarter-dev/jumpstarter-operator-bundle
             label: jumpstarter-operator-bundle
-            dockerfile: controller/deploy/operator/bundle.Dockerfile
+            dockerfile: controller/deploy/operator/Containerfile.bundle
             context: controller/deploy/operator
             generate_bundle: true
           - image_name: jumpstarter-dev/microshift/bootc
@@ -50,16 +50,16 @@ jobs:
           # Python images (use repo root context for .git access needed by hatch-vcs)
           - image_name: jumpstarter-dev/jumpstarter
             label: jumpstarter
-            dockerfile: python/Dockerfile
+            dockerfile: python/Containerfile
             context: .
           - image_name: jumpstarter-dev/jumpstarter-utils
             label: jumpstarter-utils
-            dockerfile: python/Dockerfile.utils
+            dockerfile: python/Containerfile.utils
             context: python
           - image_name: jumpstarter-dev/jumpstarter-dev
             label: jumpstarter-dev
             dockerfile: python/.devfile/Containerfile
-            context: python
+            context: .
           - image_name: jumpstarter-dev/jumpstarter-devspace
             label: jumpstarter-devspace
             dockerfile: python/.devfile/Containerfile.client

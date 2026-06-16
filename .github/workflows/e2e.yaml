@@ -70,7 +70,7 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /tmp/controller-image.tar
-          key: controller-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Dockerfile', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/**', 'controller/api/**', 'controller/internal/**') }}
+          key: controller-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Containerfile', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/**', 'controller/api/**', 'controller/internal/**') }}
 
       - name: Build controller image
         if: steps.cache.outputs.cache-hit != 'true'
@@ -115,7 +115,7 @@ jobs:
           path: |
             /tmp/operator-image.tar
             /tmp/operator-install.yaml
-          key: operator-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Dockerfile.operator', 'controller/go.mod', 'controller/go.sum', 'controller/deploy/operator/**', 'controller/api/**', 'controller/internal/**') }}
+          key: operator-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Containerfile.operator', 'controller/go.mod', 'controller/go.sum', 'controller/deploy/operator/**', 'controller/api/**', 'controller/internal/**') }}
 
       - name: Build operator image and installer manifest
         if: steps.cache.outputs.cache-hit != 'true'
@@ -144,9 +144,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - id: uv
+        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
+          version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
 
       - name: Cache python wheels
@@ -187,9 +190,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
+      - id: uv
+        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
+          version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
 
       - name: Install Go
@@ -245,9 +251,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
+      - id: uv
+        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
+          version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
 
       - name: Install Go
@@ -281,9 +290,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
+      - id: uv
+        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
+          version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
 
       - name: Install Go
