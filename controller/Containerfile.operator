@@ -39,7 +39,7 @@ RUN --mount=type=cache,target=/opt/app-root/src/go/pkg/mod,sharing=locked,uid=10
     -ldflags "-X main.version=${GIT_VERSION} -X main.gitCommit=${GIT_COMMIT} -X main.buildDate=${BUILD_DATE}" \
     -o manager cmd/main.go
 
-FROM registry.access.redhat.com/ubi9/ubi-micro:9.5
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.8-1779858820@sha256:b498b3ea26111ab4b81d65139f2ebd2ef9a2abb7a4588b7fdcc54889f95e9caa
 WORKDIR /
 COPY --from=builder /opt/app-root/src/deploy/operator/manager .
 USER 65532:65532
