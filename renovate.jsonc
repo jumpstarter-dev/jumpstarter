@@ -172,6 +172,14 @@
       "allowedVersions": "<=44"
     },
     {
+      "description": "Group uv toolchain updates (version file + container image)",
+      "groupName": "uv-toolchain",
+      "matchDepNames": [
+        "astral-sh/uv",
+        "ghcr.io/astral-sh/uv"
+      ]
+    },
+    {
       "description": "Group Docker base images",
       "groupName": "docker-base-images",
       "matchManagers": [
