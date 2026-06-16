@@ -57,7 +57,6 @@
       ],
       "depNameTemplate": "astral-sh/uv",
       "datasourceTemplate": "github-releases",
-      "extractVersionTemplate": "^v(?<version>.*)$",
       "versioningTemplate": "semver"
     }
   ],
