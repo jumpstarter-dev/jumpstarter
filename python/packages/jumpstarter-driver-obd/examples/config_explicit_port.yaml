@@ -1,0 +1,7 @@
+export:
+  obd:
+    type: jumpstarter_driver_obd.driver.OBD
+    config:
+      port: /dev/ttyUSB0       # Linux
+      # port: /dev/cu.usbserial-XXXX   # macOS
+      baudrate: 38400

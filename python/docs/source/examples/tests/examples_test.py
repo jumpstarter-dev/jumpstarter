@@ -141,7 +141,7 @@ def test_validate_yaml_example_rejects_invalid_exporter_config(tmp_path):
 
 def test_validate_yaml_example_raises_on_unrecognized_kind(tmp_path):
     f = tmp_path / "bad_kind.yaml"
-    f.write_text(_yaml.dump({"apiVersion": "jumpstarter.dev/v1alpha1", "kind": "ExporerConfig"}))
+    f.write_text(_yaml.dump({"apiVersion": "jumpstarter.dev/v1alpha1", "kind": "UnknownKind"}))
     with pytest.raises(ValueError, match="unrecognized kind"):
         validate_yaml_example(f)
 

@@ -26,6 +26,7 @@ source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.
 
 [tool.pytest.ini_options]
 addopts = "--cov --cov-report=html --cov-report=xml"
+norecursedirs = ["examples"]
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_obd"]

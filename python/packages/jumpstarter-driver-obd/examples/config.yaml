@@ -1,0 +1,5 @@
+export:
+  obd:
+    type: jumpstarter_driver_obd.driver.OBD
+    config:
+      port: null

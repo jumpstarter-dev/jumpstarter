@@ -276,7 +276,7 @@ Share state between tests and conditional mock rules:
 :language: python
 ```
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/test_device.py
+```{literalinclude} ../../../../../packages/jumpstarter-driver-mitmproxy/examples/device_test.py
 :language: python
 ```
 
