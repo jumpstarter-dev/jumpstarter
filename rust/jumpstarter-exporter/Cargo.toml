@@ -15,6 +15,7 @@ jumpstarter-config = { path = "../jumpstarter-config" }
 jumpstarter-client = { path = "../jumpstarter-client" }
 tonic.workspace = true
 prost-types.workspace = true
+thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time", "sync", "macros", "net", "io-util", "process", "signal"] }
 tokio-stream = "0.1"
 tracing.workspace = true

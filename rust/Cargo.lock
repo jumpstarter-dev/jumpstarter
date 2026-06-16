@@ -683,6 +683,7 @@ dependencies = [
  "jumpstarter-config",
  "jumpstarter-protocol",
  "prost-types",
+ "thiserror",
  "tokio",
  "tokio-stream",
  "tonic",

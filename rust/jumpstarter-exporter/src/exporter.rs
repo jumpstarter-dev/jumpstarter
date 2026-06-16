@@ -1,40 +1,44 @@
-//! The exporter runtime loop (spec doc 03; increment 1).
+//! The exporter runtime loop (spec doc 03).
 //!
-//! Registers with the controller, consumes the server-streaming `Status` RPC
-//! (push lease notifications), and serves one lease at a time: on a lease, open
-//! `Listen` and bridge each `ListenResponse` from the session socket to the router
-//! (the reverse of the Phase-A client transport). On shutdown, report `OFFLINE`
-//! and `Unregister`.
+//! Registers with the controller, consumes the server-streaming `Status` RPC (push
+//! lease notifications), and serves one lease at a time. Each lease runs through the
+//! [`crate::fsm`] lifecycle, executing the `beforeLease`/`afterLease` [`crate::hooks`]
+//! and bridging the router to the session's main socket (the reverse of the Phase-A
+//! client transport). On shutdown — a signal, or a hook with `on_failure: exit` — it
+//! reports `OFFLINE` and unregisters.
 //!
-//! Deferred to later increments: hooks, the supervisor fork/restart loop, the full
-//! lease-lifecycle FSM, the `_retry_stream` contract (5×1.0 s with the transient
-//! fast-path), standalone TCP, and per-lease driver re-instantiation.
+//! Deferred to later increments: the supervisor fork/restart loop + rapid-failure
+//! breaker, the `_retry_stream` contract (5×1.0 s), standalone TCP, and per-lease
+//! driver re-instantiation.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
-use hyper_util::rt::TokioIo;
 use jumpstarter_client::channel;
 use jumpstarter_client::router;
-use jumpstarter_client::AuthInterceptor;
-use jumpstarter_config::ExporterConfig;
+use jumpstarter_config::{ExporterConfig, HookConfig, TlsConfig};
 use jumpstarter_protocol::v1::controller_service_client::ControllerServiceClient;
 use jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient;
 use jumpstarter_protocol::v1::{
-    ExporterStatus, ListenRequest, RegisterRequest, ReportStatusRequest, StatusRequest,
-    UnregisterRequest,
+    ExporterStatus, ListenRequest, RegisterRequest, StatusRequest, UnregisterRequest,
 };
 use tokio::net::UnixStream;
+use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_stream::StreamExt as _;
-use tonic::service::interceptor::InterceptedService;
-use tonic::transport::{Channel, Endpoint};
 
+use crate::control::{self, uds_channel, Controller};
 use crate::driver_host::DriverHost;
+use crate::fsm::{LeaseLifecycle, LeasePhase};
+use crate::hooks::{self, AfterOutcome, BeforeOutcome, HookContext};
 use crate::Error;
 
-type Controller = ControllerServiceClient<InterceptedService<Channel, AuthInterceptor>>;
+/// Settle delay between leases, avoiding overlapping-session SSL corruption
+/// (`exporter.py:853-855`).
+const INTER_LEASE_SETTLE: Duration = Duration::from_millis(200);
 
 /// Options for [`run`].
 pub struct RunOptions {
@@ -43,7 +47,8 @@ pub struct RunOptions {
     pub config_path: PathBuf,
 }
 
-/// Run the exporter until a shutdown signal (SIGINT/SIGTERM).
+/// Run the exporter until a shutdown signal (SIGINT/SIGTERM) or an `on_failure: exit`
+/// hook.
 pub async fn run(opts: RunOptions) -> Result<(), Error> {
     let config = &opts.config;
     let endpoint = config
@@ -57,7 +62,7 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
     let namespace = config.metadata.namespace.clone().unwrap_or_default();
     let name = config.metadata.name.clone();
 
-    // 1. Host the drivers in a Python subprocess; learn the session socket.
+    // 1. Host the drivers in a Python subprocess; learn the main + hook sockets.
     let host = DriverHost::spawn(&opts.config_path).await?;
 
     // 2. Authenticated controller channel (role "Exporter").
@@ -73,7 +78,7 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
     let mut controller = ControllerServiceClient::new(svc);
 
     // 3. Register: GetReport on the session socket -> Register -> AVAILABLE.
-    let report = ExporterServiceClient::new(uds_channel(host.socket()).await?)
+    let report = ExporterServiceClient::new(uds_channel(host.main_socket()).await?)
         .get_report(())
         .await?
         .into_inner();
@@ -85,7 +90,7 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
             reports: report.reports,
         })
         .await?;
-    report_status(
+    control::report_status(
         &mut controller,
         ExporterStatus::Available,
         "Exporter registered and available",
@@ -93,17 +98,22 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
     .await?;
     tracing::info!(%name, "exporter registered");
 
-    // 4. Consume Status (lease transitions) until a shutdown signal.
+    // 4. Serve leases until a shutdown signal or an `on_failure: exit` hook.
+    let shutdown = Arc::new(Notify::new());
     let outcome = tokio::select! {
-        r = status_loop(controller.clone(), &host, config) => r,
+        r = status_loop(controller.clone(), &host, config, shutdown.clone()) => r,
+        _ = shutdown.notified() => {
+            tracing::info!("exporter shutdown requested by hook");
+            Ok(())
+        }
         _ = shutdown_signal() => {
             tracing::info!("shutdown signal received");
             Ok(())
         }
     };
 
-    // 5. Best-effort unregister.
-    let _ = report_status(
+    // 5. Best-effort offline + unregister.
+    let _ = control::report_status(
         &mut controller,
         ExporterStatus::Offline,
         "Exporter shutting down",
@@ -118,15 +128,23 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
     outcome
 }
 
-/// Consume the Status stream, starting/ending a single lease as transitions
-/// arrive. Reconnects on stream close (the stream doubles as the liveness signal).
+/// An in-flight lease: the lifecycle task plus the channel to signal its end.
+struct ActiveLease {
+    handle: JoinHandle<()>,
+    /// Fired when the controller reports the lease has ended (`leased=false`).
+    end: Arc<Notify>,
+}
+
+/// Consume the `Status` stream, running one lease at a time. The stream doubles as
+/// the liveness signal, so it is reopened on close; an active lease survives a
+/// reconnect.
 async fn status_loop(
     mut controller: Controller,
     host: &DriverHost,
     config: &ExporterConfig,
+    shutdown: Arc<Notify>,
 ) -> Result<(), Error> {
-    let mut lease_task: Option<JoinHandle<()>> = None;
-    let mut lease_name: Option<String> = None;
+    let mut active: Option<ActiveLease> = None;
 
     loop {
         let mut stream = match controller.status(StatusRequest {}).await {
@@ -148,31 +166,37 @@ async fn status_loop(
             };
             let leased = resp.leased && resp.lease_name.as_deref().is_some_and(|s| !s.is_empty());
 
-            if leased && lease_name.is_none() {
-                let name = resp.lease_name.clone().unwrap();
-                tracing::info!(lease = %name, "lease started");
-                lease_task = Some(spawn_lease(
-                    controller.clone(),
-                    name.clone(),
-                    host.socket().to_string(),
-                    config.tls.clone(),
-                ));
-                lease_name = Some(name);
-            } else if !leased && lease_name.is_some() {
-                tracing::info!("lease ended");
-                if let Some(h) = lease_task.take() {
-                    h.abort();
+            match (leased, active.is_some()) {
+                // A new lease while idle: start the lifecycle.
+                (true, false) => {
+                    let lease_name = resp.lease_name.clone().unwrap();
+                    let client_name = resp.client_name.clone().unwrap_or_default();
+                    tracing::info!(lease = %lease_name, client = %client_name, "lease started");
+                    let end = Arc::new(Notify::new());
+                    let handle = spawn_lease(
+                        controller.clone(),
+                        lease_name,
+                        client_name,
+                        host.main_socket().to_string(),
+                        host.hook_socket().to_string(),
+                        config.tls.clone(),
+                        config.hooks.clone(),
+                        end.clone(),
+                        shutdown.clone(),
+                    );
+                    active = Some(ActiveLease { handle, end });
                 }
-                lease_name = None;
-                let _ = report_status(
-                    &mut controller,
-                    ExporterStatus::Available,
-                    "Available for new lease",
-                )
-                .await;
-                // Inter-lease settle, avoids overlapping-session SSL corruption
-                // (exporter.py:853-855).
-                sleep(Duration::from_millis(200)).await;
+                // The active lease ended: signal it and wait for cleanup
+                // (afterLease) to finish before accepting the next lease.
+                (false, true) => {
+                    tracing::info!("lease ended");
+                    let lease = active.take().unwrap();
+                    lease.end.notify_one();
+                    let _ = lease.handle.await;
+                    sleep(INTER_LEASE_SETTLE).await;
+                }
+                // Steady state (still leased, or still idle): nothing to do.
+                _ => {}
             }
         }
 
@@ -181,32 +205,109 @@ async fn status_loop(
     }
 }
 
-/// Per-lease task: open `Listen`, report `LEASE_READY`, and bridge each incoming
-/// `ListenResponse` from the session socket to the router.
+/// Spawn the per-lease lifecycle task.
+#[allow(clippy::too_many_arguments)]
 fn spawn_lease(
     mut controller: Controller,
     lease_name: String,
-    socket: String,
-    tls: jumpstarter_config::TlsConfig,
+    client_name: String,
+    main_socket: String,
+    hook_socket: String,
+    tls: TlsConfig,
+    hooks: HookConfig,
+    end: Arc<Notify>,
+    shutdown: Arc<Notify>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
-        // Report LEASE_READY *before* opening Listen. The controller only permits a
-        // client Dial once the exporter is LEASE_READY, and it sends Listen stream
-        // headers only when it has a ListenResponse to deliver (i.e. after a Dial),
-        // so opening Listen first would deadlock. Any Dial that races ahead is held
-        // in the controller's per-lease Listen queue until we connect.
-        // (No hooks in increment 1 — exporter.py:756-761.)
-        if let Err(e) = report_status(
-            &mut controller,
-            ExporterStatus::LeaseReady,
-            "Ready for commands",
-        )
-        .await
-        {
-            tracing::error!(error = %e, "reporting LEASE_READY failed");
-            return;
+        let ctx = HookContext {
+            hook_socket: &hook_socket,
+            lease_name: &lease_name,
+            client_name: &client_name,
+        };
+        let mut lc = LeaseLifecycle::new();
+        let has_client = Arc::new(AtomicBool::new(false));
+
+        advance(&mut lc, LeasePhase::Starting);
+
+        // --- beforeLease -------------------------------------------------------
+        let before_hook = hooks.before_lease.as_ref();
+        if before_hook.is_some() {
+            advance(&mut lc, LeasePhase::BeforeLease);
+        }
+        match hooks::run_before_lease(&mut controller, before_hook, &ctx).await {
+            BeforeOutcome::Exit => {
+                // beforeLease already reported BEFORE_LEASE_HOOK_FAILED + OFFLINE.
+                advance(&mut lc, LeasePhase::Failed);
+                shutdown.notify_one();
+                return;
+            }
+            BeforeOutcome::Ready => {
+                advance(&mut lc, LeasePhase::Ready);
+                // Serve until the controller ends the lease. Report LEASE_READY (done
+                // by run_before_lease) *before* opening Listen: the controller only
+                // delivers Listen responses after a client Dial, which it only permits
+                // once the exporter is LEASE_READY, so opening Listen first deadlocks.
+                let listen = spawn_listen(
+                    controller.clone(),
+                    lease_name.clone(),
+                    main_socket,
+                    tls,
+                    has_client.clone(),
+                );
+                end.notified().await;
+                listen.abort();
+                advance(&mut lc, LeasePhase::Ending);
+            }
+            BeforeOutcome::EndLease => {
+                advance(&mut lc, LeasePhase::Ending);
+                // Proactively ask the controller to release the lease; it will end the
+                // lease and we observe `leased=false` -> our `end` signal.
+                let _ = control::request_release(
+                    &mut controller,
+                    "Lease released after beforeLease hook failure",
+                )
+                .await;
+                end.notified().await;
+            }
         }
 
+        // --- afterLease (only when a client actually used the board) -----------
+        let after_hook = if has_client.load(Ordering::Relaxed) {
+            hooks.after_lease.as_ref()
+        } else {
+            None
+        };
+        if after_hook.is_some() {
+            advance(&mut lc, LeasePhase::AfterLease);
+            match hooks::run_after_lease(&mut controller, after_hook, &ctx).await {
+                AfterOutcome::Done => {
+                    advance(&mut lc, LeasePhase::Releasing);
+                    advance(&mut lc, LeasePhase::Done);
+                }
+                AfterOutcome::Exit => {
+                    advance(&mut lc, LeasePhase::Failed);
+                    shutdown.notify_one();
+                }
+            }
+        } else {
+            // No afterLease hook to run: report availability for the next lease.
+            hooks::run_after_lease(&mut controller, None, &ctx).await;
+            advance(&mut lc, LeasePhase::Done);
+        }
+    })
+}
+
+/// Open `Listen` and bridge each incoming `ListenResponse` from the session's main
+/// socket to the router (the reverse of the Phase-A client transport). Records the
+/// first connection request so the lifecycle knows the board was used.
+fn spawn_listen(
+    mut controller: Controller,
+    lease_name: String,
+    main_socket: String,
+    tls: TlsConfig,
+    has_client: Arc<AtomicBool>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
         let mut listen = match controller
             .listen(ListenRequest {
                 lease_name: lease_name.clone(),
@@ -229,13 +330,14 @@ fn spawn_lease(
                     break;
                 }
             };
+            has_client.store(true, Ordering::Relaxed);
             tracing::info!(router = %resp.router_endpoint, "handling connection request");
-            let socket = socket.clone();
+            let main_socket = main_socket.clone();
             let tls = tls.clone();
             // One bridge per incoming client connection (multiple concurrent
             // connections per lease are allowed).
             tokio::spawn(async move {
-                match UnixStream::connect(&socket).await {
+                match UnixStream::connect(&main_socket).await {
                     Ok(stream) => {
                         if let Err(e) =
                             router::bridge(stream, &resp.router_endpoint, &resp.router_token, &tls)
@@ -251,36 +353,13 @@ fn spawn_lease(
     })
 }
 
-async fn report_status(
-    controller: &mut Controller,
-    status: ExporterStatus,
-    message: &str,
-) -> Result<(), Error> {
-    let req = ReportStatusRequest {
-        status: status as i32,
-        message: Some(message.to_string()),
-        release_lease: None,
-    };
-    match controller.report_status(req).await {
-        Ok(_) => Ok(()),
-        // Old controllers lack ReportStatus — treat UNIMPLEMENTED as a feature probe.
-        Err(s) if s.code() == tonic::Code::Unimplemented => Ok(()),
-        Err(s) => Err(s.into()),
+/// Advance the lifecycle, logging (but not aborting on) an invalid transition — a
+/// caught transition error here means a control-flow bug in this module, not a
+/// recoverable runtime condition.
+fn advance(lc: &mut LeaseLifecycle, to: LeasePhase) {
+    if let Err(e) = lc.transition(to) {
+        tracing::error!(error = %e, "lease lifecycle bug: invalid transition");
     }
-}
-
-/// Build a tonic channel over a local Unix socket (the session's `ExporterService`).
-async fn uds_channel(path: &str) -> Result<Channel, Error> {
-    let path = path.to_string();
-    let connector = tower::service_fn(move |_: http::Uri| {
-        let path = path.clone();
-        async move { Ok::<_, std::io::Error>(TokioIo::new(UnixStream::connect(path).await?)) }
-    });
-    Endpoint::try_from("http://localhost")
-        .map_err(|e| Error::Config(format!("uds endpoint: {e}")))?
-        .connect_with_connector(connector)
-        .await
-        .map_err(Into::into)
 }
 
 async fn shutdown_signal() {
