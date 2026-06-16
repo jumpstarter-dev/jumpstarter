@@ -183,7 +183,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     path = path_with_query(parsed)
                 else:
                     path, operator, operator_scheme = operator_for_path(path)
-            image_url = self.http.get_url() + "/" + self._filename(path)
 
         # start counting time for the flash operation
         start_time = time.time()
@@ -219,6 +218,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             raise error_queue.get()
 
         with self._services_up():
+            if should_download_to_httpd:
+                image_url = self.http.get_url() + "/" + self._filename(path)
+
             # Retry logic at the highest level - retry entire console setup and flash operation
             for attempt in range(retries + 1):  # +1 for initial attempt
                 try:
