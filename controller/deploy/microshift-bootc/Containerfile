@@ -1,4 +1,4 @@
-FROM ghcr.io/microshift-io/microshift:4.21.0_gbc8e20c07_4.21.0_okd_scos.ec.14
+FROM ghcr.io/microshift-io/microshift:4.21.0_g29f429c21_4.21.0_okd_scos.ec.15@sha256:f8a9d7718a8631d4652505c20f9435556e5132bbf6fc8b17ee96e439ec1816ee
 # Install dependencies for config-svc
 RUN dnf install -y epel-release && \
     dnf install -y python3 iproute python3-flask python3-pip && \
