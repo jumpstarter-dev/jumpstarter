@@ -4,12 +4,10 @@
     "config:recommended",
     "helpers:pinGitHubActionDigests"
   ],
-  // Most container registries prune untagged manifests within weeks, so
-  // pinned digests break reproducibility instead of guaranteeing it and
-  // force an unsustainable biweekly update cycle. Keep tag-based version
-  // pinning only; GitHub Action commit-SHA pinning is handled separately
-  // by helpers:pinGitHubActionDigests and is unaffected.
-  "pinDigests": false,
+  // Pin container image digests for supply-chain safety. Registries that
+  // prune untagged manifests (e.g. Fedora) must opt out via pinDigests:false
+  // in their packageRule to avoid broken builds when the old digest disappears.
+  "pinDigests": true,
   "timezone": "Etc/UTC",
   "schedule": [
     "before 5am on monday"
@@ -169,7 +167,8 @@
         "registry.fedoraproject.org/fedora",
         "registry.fedoraproject.org/fedora-minimal"
       ],
-      "allowedVersions": "<=44"
+      "allowedVersions": "<=44",
+      "pinDigests": false
     },
     {
       "description": "Group Docker base images",
