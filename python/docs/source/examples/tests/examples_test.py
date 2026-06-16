@@ -13,7 +13,7 @@ from jumpstarter.config.exporter import (
     HookConfigV1Alpha1,
     HookInstanceConfigV1Alpha1,
 )
-from jumpstarter.testing.examples import (
+from examples import (
     instantiate_yaml_example,
     validate_bash_example,
     validate_example,

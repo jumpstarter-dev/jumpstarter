@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import yaml as _yaml
 
-from jumpstarter.testing.checks import (
+from checks import (
     _is_referenced,
     discover_example_files,
     find_inline_code_blocks,

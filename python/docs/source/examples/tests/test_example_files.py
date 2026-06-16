@@ -4,16 +4,16 @@ from pathlib import Path
 
 import pytest
 
-from jumpstarter.testing.checks import (
+from checks import (
     discover_example_files,
     find_inline_code_blocks,
     find_unused_examples,
     find_unused_examples_in_docs,
 )
-from jumpstarter.testing.examples import instantiate_yaml_example, validate_example
+from examples import instantiate_yaml_example, validate_example
 
-PACKAGES_DIR = Path(__file__).resolve().parent.parent / "packages"
-DOCS_SOURCE_DIR = Path(__file__).resolve().parent.parent / "docs" / "source"
+PACKAGES_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "packages"
+DOCS_SOURCE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 def _discover_driver_packages() -> list[Path]:
