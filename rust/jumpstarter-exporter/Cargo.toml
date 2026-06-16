@@ -1,0 +1,24 @@
+[package]
+name = "jumpstarter-exporter"
+description = "Jumpstarter exporter runtime: registration, Status/Listen, lease lifecycle, router bridging (drivers hosted by a Python subprocess)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+jumpstarter-protocol = { path = "../jumpstarter-protocol" }
+jumpstarter-config = { path = "../jumpstarter-config" }
+# Reuses the Phase-A channel builder + router byte-bridge. (A shared
+# jumpstarter-transport crate is the planned cleanup — spec 02-exporter-core-plan §3.)
+jumpstarter-client = { path = "../jumpstarter-client" }
+tonic.workspace = true
+prost-types.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time", "sync", "macros", "net", "io-util", "process", "signal"] }
+tokio-stream = "0.1"
+tracing.workspace = true
+# For the local-UDS ExporterService channel (GetReport on the session socket).
+hyper-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
+http = "1"

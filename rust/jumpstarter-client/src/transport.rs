@@ -121,6 +121,6 @@ impl Bridge {
             .client
             .dial(&self.lease_name, self.dial_timeout)
             .await?;
-        router::bridge(stream, &dial, &self.tls).await
+        router::bridge(stream, &dial.router_endpoint, &dial.router_token, &self.tls).await
     }
 }

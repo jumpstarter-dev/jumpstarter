@@ -60,7 +60,7 @@ ecosystem untouched the whole way.
 | 1 | Wire helpers: **`Value` codec ✅**, **router frame rules ✅**, exception↔status tables (live in `jumpstarter-protocol`, pure functions) | none — pure functions | **golden tests** ✅ for the Value codec: 25 fixtures from the real Python `encode_value`, replayed with byte-identical + semantic assertions; router frame classify/build unit-tested |
 | 2 ✅ | `jumpstarter-config`: the three YAML kinds + env overrides + path resolution | config files are read identically by both | round-trip + **bidirectional** differential tests against Python-written fixtures (`tests/roundtrip.rs`); Python also re-parses Rust's output |
 | 3 ✅ | **Transport host** (`jumpstarter-client`): lease lifecycle + **`Dial` + router→local-UDS bridge + `JUMPSTARTER_HOST`** | **the seam above** — Python `j`/driver clients connect unchanged | hermetic FSM/dial/frame unit tests + **live e2e: a real Python `j power on` tunnels through the Rust socket to the exporter** |
-| 4 | Exporter core with Python driver host (subprocess), then stream/resource data plane | tunneled `ExporterService` over UDS; drivers stay Python | Go e2e `hooks`/`dut-network`/`direct-listener` + pytest |
+| 4 🔨 | **Exporter core** (`jumpstarter-exporter`): register + Status/Listen + router bridge + **Python driver-host subprocess** (incr. 1 ✅); hooks/supervisor/FSM/standalone next | tunneled `ExporterService` over UDS; drivers stay Python | **live e2e: a `MockPower` call round-trips through a Rust `jmp run` exporter** |
 
 Each step is shippable on its own and reverts to Python by config if it regresses.
 
@@ -147,6 +147,35 @@ Still open: lease-expiry monitoring/warnings, the `JMP_LEASE` existing-lease wir
 standalone TCP/direct mode, applying config `grpcOptions`, and the remaining step-1
 exception↔status tables. The router bridge currently lives in `jumpstarter-client`
 and can later move to a dedicated `jumpstarter-streams` crate.
+
+## Step 4 (the exporter core) — increment 1 done
+
+The `jumpstarter-exporter` crate is a working exporter shell driven by `jmp run`
+(detailed plan: `rust/docs/02-exporter-core-plan.md`). Per the driver-host boundary
+decision (spec 09 §3.2, option a), it hosts the **real Python drivers in a
+subprocess** (`driver_host.rs` spawns `python session_host.py`, which serves the
+`ExporterService`+`RouterService` for the config on a UDS via
+`ExporterConfig.serve_unix_async`) and owns the controller-facing control plane:
+`GetReport`→`Register`→`ReportStatus(AVAILABLE)`, consuming the `Status` stream, and
+on a lease opening `Listen` and bridging each `ListenResponse` from the session
+socket to the router — the **reverse** of the Phase-A client, reusing `router::bridge`.
+
+**Verified live (2026-06-15):** a real `MockPower.on()` call round-tripped through a
+Rust `jmp run` exporter — client → router → Rust exporter bridge → Python session →
+driver, exit 0.
+
+Two real bugs were found and fixed in the process: (1) an **ordering deadlock** —
+`LEASE_READY` must be reported *before* opening `Listen` (the controller only sends
+Listen stream headers after a Dial, which only happens once the exporter is ready);
+(2) a **bridge deadlock** — the uplink must be spawned *before* awaiting the router
+response stream (the router sends response headers only once it has a frame to
+forward), which also closes a latent Phase-A bug that had survived only because the
+Python peer happened to send first.
+
+Deferred to later increments: hooks (+ dual main/hook socket), the supervisor
+fork/restart loop + rapid-failure breaker, the full JEP-0012 lease-lifecycle FSM, the
+`_retry_stream` contract (5×1.0 s), standalone TCP + passphrase, and per-lease driver
+re-instantiation.
 
 ## Baseline established (2026-06-12)
 

@@ -41,7 +41,7 @@ Generated protobuf code is quarantined in exactly one crate.
 | `jumpstarter-config` | **built** | config-file / env / path-resolution models (07) |
 | `jumpstarter-streams` | planned | router framing + resource encodings data plane (06) |
 | `jumpstarter-client` | **built** | client runtime (04): lease lifecycle + Dial + router→UDS transport host + `jmp shell` orchestration |
-| `jumpstarter-exporter` | planned | exporter runtime FSMs, hooks, supervisor (03) |
+| `jumpstarter-exporter` | **partial** | exporter runtime (03): register + Status/Listen + router bridge + Python driver-host; hooks/supervisor/FSM next |
 | `jumpstarter-driver-host` | planned | driver-shim boundary; Python subprocess host (05) |
 | `jumpstarter-cli` | **partial** | `jmp` bin (08) — `jmp shell` works; more commands + `j` next |
 | `jumpstarter-py` | planned | PyO3 cdylib for Python interop |

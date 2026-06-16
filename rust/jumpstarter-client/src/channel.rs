@@ -81,13 +81,9 @@ pub struct AuthInterceptor {
 }
 
 impl AuthInterceptor {
-    /// Build the interceptor for a given role (`"Client"`/`"Exporter"`).
-    pub fn new(kind: &str, config: &ClientConfig) -> Result<Self, ClientError> {
-        let token = config
-            .token
-            .as_deref()
-            .ok_or_else(|| ClientError::Config("token not set in client config".into()))?;
-        let namespace = config.metadata.namespace.as_deref().unwrap_or("");
+    /// Build the interceptor for a given role (`"Client"`/`"Exporter"`) from the
+    /// identity primitives, so both config types can use it.
+    pub fn new(kind: &str, token: &str, namespace: &str, name: &str) -> Result<Self, ClientError> {
         let parse = |s: &str| {
             s.parse::<MetadataValue<_>>()
                 .map_err(|e| ClientError::Config(format!("invalid metadata value: {e}")))
@@ -96,7 +92,7 @@ impl AuthInterceptor {
             bearer: parse(&format!("Bearer {token}"))?,
             kind: parse(kind)?,
             namespace: parse(namespace)?,
-            name: parse(&config.metadata.name)?,
+            name: parse(name)?,
         })
     }
 }
@@ -121,6 +117,21 @@ pub fn endpoint(config: &ClientConfig) -> Result<Endpoint, ClientError> {
     tls_endpoint(target, &config.tls)
 }
 
+/// Connect an authenticated controller channel from identity primitives. Reusable
+/// by the exporter (role `"Exporter"`) and any config type.
+pub async fn connect_controller(
+    endpoint: &str,
+    tls: &TlsConfig,
+    kind: &str,
+    token: &str,
+    namespace: &str,
+    name: &str,
+) -> Result<InterceptedService<Channel, AuthInterceptor>, ClientError> {
+    let channel = connect_channel(endpoint, tls).await?;
+    let interceptor = AuthInterceptor::new(kind, token, namespace, name)?;
+    Ok(InterceptedService::new(channel, interceptor))
+}
+
 /// Connect an authenticated controller channel from a client config.
 pub async fn connect(
     config: &ClientConfig,
@@ -129,9 +140,20 @@ pub async fn connect(
         .endpoint
         .as_deref()
         .ok_or_else(|| ClientError::Config("endpoint not set in client config".into()))?;
-    let channel = connect_channel(target, &config.tls).await?;
-    let interceptor = AuthInterceptor::new("Client", config)?;
-    Ok(InterceptedService::new(channel, interceptor))
+    let token = config
+        .token
+        .as_deref()
+        .ok_or_else(|| ClientError::Config("token not set in client config".into()))?;
+    let namespace = config.metadata.namespace.as_deref().unwrap_or("");
+    connect_controller(
+        target,
+        &config.tls,
+        "Client",
+        token,
+        namespace,
+        &config.metadata.name,
+    )
+    .await
 }
 
 /// Adds only `authorization: Bearer <token>` — used for router streams, whose
