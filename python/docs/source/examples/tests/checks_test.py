@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import yaml as _yaml
-
 from checks import (
     _is_referenced,
     discover_example_files,

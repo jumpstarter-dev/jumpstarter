@@ -3,13 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from checks import (
     discover_example_files,
     find_inline_code_blocks,
     find_unused_examples,
     find_unused_examples_in_docs,
 )
+
 from examples import instantiate_yaml_example, validate_example
 
 PACKAGES_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "packages"
