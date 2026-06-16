@@ -1,0 +1,52 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: lab
+  name: exp-1
+endpoint: grpc.example.com:8082
+tls:
+  ca: ''
+  insecure: false
+token: etok
+grpcOptions:
+  grpc.keepalive_time_ms: 30000
+description: lab exporter
+export:
+  power:
+    type: jumpstarter_driver_power.driver.MockPower
+    description: power port
+    methods_description: {}
+    config:
+      voltage: 5
+      enabled: true
+      rate: 0.5
+      tags:
+      - a
+      - b
+    children: {}
+  bucket:
+    children:
+      serial:
+        type: jumpstarter_driver_pyserial.driver.PySerial
+        description: null
+        methods_description:
+          read: reads bytes
+        config:
+          url: loop://
+        children: {}
+  alias_ref:
+    ref: power
+hooks:
+  beforeLease:
+    exec: null
+    script: j power on
+    timeout: 30
+    onFailure: endLease
+  afterLease:
+    exec: /bin/bash
+    script: j power off
+    timeout: 120
+    onFailure: warn
+failureDetection:
+  maxRapidFailures: 5
+  rapidFailureWindow: 60

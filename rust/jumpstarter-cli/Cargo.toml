@@ -1,0 +1,18 @@
+[package]
+name = "jumpstarter-cli"
+description = "The Jumpstarter `jmp` command-line interface"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "jmp"
+path = "src/main.rs"
+
+[dependencies]
+jumpstarter-client = { path = "../jumpstarter-client" }
+jumpstarter-config = { path = "../jumpstarter-config" }
+clap.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

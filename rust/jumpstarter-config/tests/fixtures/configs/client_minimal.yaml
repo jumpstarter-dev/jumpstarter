@@ -1,0 +1,16 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ClientConfig
+metadata:
+  namespace: ns
+  name: min
+endpoint: e:1
+tls:
+  ca: ''
+  insecure: false
+token: t
+grpcOptions: {}
+drivers:
+  allow: []
+  unsafe: false
+shell:
+  use_profiles: false

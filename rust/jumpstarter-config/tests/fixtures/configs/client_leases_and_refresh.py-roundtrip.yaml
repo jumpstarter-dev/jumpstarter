@@ -1,0 +1,19 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ClientConfig
+metadata:
+  namespace: lab
+  name: cli
+endpoint: grpc:8082
+tls:
+  ca: ''
+  insecure: false
+token: acc
+refresh_token: ref-token
+grpcOptions: {}
+drivers:
+  allow: []
+  unsafe: false
+shell:
+  use_profiles: false
+leases:
+  acquisition_timeout: 3600

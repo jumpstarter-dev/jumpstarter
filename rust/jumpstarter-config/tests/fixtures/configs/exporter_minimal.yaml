@@ -1,0 +1,19 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: ns
+  name: exp
+endpoint: null
+tls:
+  ca: ''
+  insecure: false
+token: null
+grpcOptions: {}
+description: null
+export: {}
+hooks:
+  beforeLease: null
+  afterLease: null
+failureDetection:
+  maxRapidFailures: 5
+  rapidFailureWindow: 60

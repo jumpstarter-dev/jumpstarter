@@ -1,0 +1,42 @@
+# Jumpstarter Rust core workspace.
+#
+# This is a sibling language root to `python/` and `controller/`. It is being
+# grown incrementally per specs/rust-core/09-rust-core-requirements.md §3.5:
+# crate boundaries follow the spec documents (wire protocol, streams, the two
+# runtime FSMs, the driver boundary, config, CLI), NOT the Python package layout.
+#
+# Only crates that actually build are listed as members; the remaining crates
+# from the §3.5 decomposition are added as they are implemented.
+[workspace]
+resolver = "2"
+members = [
+    "jumpstarter-protocol",
+    "jumpstarter-config",
+    "jumpstarter-client",
+    "jumpstarter-cli",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/jumpstarter-dev/jumpstarter"
+rust-version = "1.85"
+
+# Pinned to the mature 0.12 tonic line. prost 0.13 is the matching codegen
+# runtime. Generated code is quarantined in jumpstarter-protocol so a version
+# bump churns exactly one crate (§3.5 ground rule 2).
+[workspace.dependencies]
+tonic = "0.12"
+tonic-build = "0.12"
+prost = "0.13"
+prost-types = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# serde_yaml is archived upstream (spec open question 18c); serde_yaml_ng is the
+# maintained drop-in fork we pin for config parse/serialize.
+serde_yaml_ng = "0.10"
+thiserror = "2"
+tokio = "1"
+tracing = "0.1"
+clap = { version = "4", features = ["derive"] }

@@ -1,0 +1,270 @@
+[
+  {
+    "decoded": null,
+    "name": "null",
+    "rust_input": null,
+    "value_b64": "CAA="
+  },
+  {
+    "decoded": true,
+    "name": "bool_true",
+    "rust_input": true,
+    "value_b64": "IAE="
+  },
+  {
+    "decoded": false,
+    "name": "bool_false",
+    "rust_input": false,
+    "value_b64": "IAA="
+  },
+  {
+    "decoded": 0.0,
+    "name": "int_zero",
+    "rust_input": 0,
+    "value_b64": "EQAAAAAAAAAA"
+  },
+  {
+    "decoded": 42.0,
+    "name": "int_pos",
+    "rust_input": 42,
+    "value_b64": "EQAAAAAAAEVA"
+  },
+  {
+    "decoded": -7.0,
+    "name": "int_neg",
+    "rust_input": -7,
+    "value_b64": "EQAAAAAAABzA"
+  },
+  {
+    "decoded": 9007199254740992.0,
+    "name": "int_f64_boundary",
+    "rust_input": 9007199254740993,
+    "value_b64": "EQAAAAAAAEBD"
+  },
+  {
+    "decoded": 3.14159,
+    "name": "float_pi",
+    "rust_input": 3.14159,
+    "value_b64": "EW6GG/D5IQlA"
+  },
+  {
+    "decoded": 0.0,
+    "name": "float_zero",
+    "rust_input": 0.0,
+    "value_b64": "EQAAAAAAAAAA"
+  },
+  {
+    "decoded": -2.5,
+    "name": "float_neg",
+    "rust_input": -2.5,
+    "value_b64": "EQAAAAAAAATA"
+  },
+  {
+    "decoded": "",
+    "name": "str_empty",
+    "rust_input": "",
+    "value_b64": "GgA="
+  },
+  {
+    "decoded": "hello",
+    "name": "str_simple",
+    "rust_input": "hello",
+    "value_b64": "GgVoZWxsbw=="
+  },
+  {
+    "decoded": "héllo wörld 日本語 🦀",
+    "name": "str_unicode",
+    "rust_input": "héllo wörld 日本語 🦀",
+    "value_b64": "Ghxow6lsbG8gd8O2cmxkIOaXpeacrOiqniDwn6aA"
+  },
+  {
+    "decoded": "line1\nline2\ttab\"quote\\back",
+    "name": "str_special",
+    "rust_input": "line1\nline2\ttab\"quote\\back",
+    "value_b64": "GhpsaW5lMQpsaW5lMgl0YWIicXVvdGVcYmFjaw=="
+  },
+  {
+    "decoded": "raw bytes",
+    "name": "bytes_utf8",
+    "rust_input": "raw bytes",
+    "value_b64": "GglyYXcgYnl0ZXM="
+  },
+  {
+    "decoded": [],
+    "name": "list_empty",
+    "rust_input": [],
+    "value_b64": "MgA="
+  },
+  {
+    "decoded": [
+      1.0,
+      2.0,
+      3.0
+    ],
+    "name": "list_ints",
+    "rust_input": [
+      1,
+      2,
+      3
+    ],
+    "value_b64": "MiEKCREAAAAAAADwPwoJEQAAAAAAAABACgkRAAAAAAAACEA="
+  },
+  {
+    "decoded": [
+      1.0,
+      "two",
+      true,
+      null,
+      3.5
+    ],
+    "name": "list_mixed",
+    "rust_input": [
+      1,
+      "two",
+      true,
+      null,
+      3.5
+    ],
+    "value_b64": "MiUKCREAAAAAAADwPwoFGgN0d28KAiABCgIIAAoJEQAAAAAAAAxA"
+  },
+  {
+    "decoded": [
+      [
+        1.0,
+        2.0
+      ],
+      [
+        3.0,
+        [
+          4.0,
+          5.0
+        ]
+      ]
+    ],
+    "name": "list_nested",
+    "rust_input": [
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        [
+          4,
+          5
+        ]
+      ]
+    ],
+    "value_b64": "MkMKGDIWCgkRAAAAAAAA8D8KCREAAAAAAAAAQAonMiUKCREAAAAAAAAIQAoYMhYKCREAAAAAAAAQQAoJEQAAAAAAABRA"
+  },
+  {
+    "decoded": [
+      1.0,
+      2.0,
+      3.0
+    ],
+    "name": "tuple_to_list",
+    "rust_input": [
+      1,
+      2,
+      3
+    ],
+    "value_b64": "MiEKCREAAAAAAADwPwoJEQAAAAAAAABACgkRAAAAAAAACEA="
+  },
+  {
+    "decoded": {},
+    "name": "dict_empty",
+    "rust_input": {},
+    "value_b64": "KgA="
+  },
+  {
+    "decoded": {
+      "a": 1.0,
+      "b": "two",
+      "c": true
+    },
+    "name": "dict_simple",
+    "rust_input": {
+      "a": 1,
+      "b": "two",
+      "c": true
+    },
+    "value_b64": "KiUKCgoBYhIFGgN0d28KBwoBYxICIAEKDgoBYRIJEQAAAAAAAPA/"
+  },
+  {
+    "decoded": {
+      "outer": {
+        "inner": [
+          1.0,
+          2.0,
+          {
+            "deep": null
+          }
+        ]
+      }
+    },
+    "name": "dict_nested",
+    "rust_input": {
+      "outer": {
+        "inner": [
+          1,
+          2,
+          {
+            "deep": null
+          }
+        ]
+      }
+    },
+    "value_b64": "KkAKPgoFb3V0ZXISNSozCjEKBWlubmVyEigyJgoJEQAAAAAAAPA/CgkRAAAAAAAAAEAKDioMCgoKBGRlZXASAggA"
+  },
+  {
+    "decoded": {
+      "café": "value",
+      "日本": 42.0
+    },
+    "name": "dict_unicode_keys",
+    "rust_input": {
+      "café": "value",
+      "日本": 42
+    },
+    "value_b64": "KicKEAoFY2Fmw6kSBxoFdmFsdWUKEwoG5pel5pysEgkRAAAAAAAARUA="
+  },
+  {
+    "decoded": {
+      "meta": {
+        "enabled": true,
+        "ratio": 0.75
+      },
+      "name": "device",
+      "nothing": null,
+      "ports": [
+        22.0,
+        80.0,
+        443.0
+      ],
+      "tags": [
+        "a",
+        "b"
+      ]
+    },
+    "name": "complex",
+    "rust_input": {
+      "meta": {
+        "enabled": true,
+        "ratio": 0.75
+      },
+      "name": "device",
+      "nothing": null,
+      "ports": [
+        22,
+        80,
+        443
+      ],
+      "tags": [
+        "a",
+        "b"
+      ]
+    },
+    "value_b64": "KpQBCi0KBG1ldGESJSojChIKBXJhdGlvEgkRAAAAAAAA6D8KDQoHZW5hYmxlZBICIAEKLAoFcG9ydHMSIzIhCgkRAAAAAAAANkAKCREAAAAAAABUQAoJEQAAAAAAsHtAChAKBG5hbWUSCBoGZGV2aWNlCg0KB25vdGhpbmcSAggAChQKBHRhZ3MSDDIKCgMaAWEKAxoBYg=="
+  }
+]

@@ -1,0 +1,27 @@
+[package]
+name = "jumpstarter-client"
+description = "Jumpstarter client runtime: controller channel, lease lifecycle, and (later) router transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+jumpstarter-protocol = { path = "../jumpstarter-protocol" }
+jumpstarter-config = { path = "../jumpstarter-config" }
+tonic = { workspace = true, features = ["tls", "tls-roots"] }
+prost-types.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time", "sync", "macros", "net", "io-util", "process"] }
+tokio-stream = "0.1"
+tracing.workspace = true
+thiserror.workspace = true
+base64 = "0.22"
+# Insecure (skip-verify) TLS: a custom rustls verifier fed to tonic via a connector.
+tokio-rustls = "0.26"
+hyper-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
+http = "1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "test-util", "macros", "time", "process"] }

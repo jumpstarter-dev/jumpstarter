@@ -1,0 +1,20 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ClientConfig
+metadata:
+  namespace: lab
+  name: client-1
+endpoint: grpc.example.com:8082
+tls:
+  ca: CERTDATA
+  insecure: true
+token: tok-123
+grpcOptions:
+  grpc.max_receive_message_length: 16777216
+  grpc.primary_user_agent: jmp
+drivers:
+  allow:
+  - jumpstarter_driver_*
+  - mypkg.*
+  unsafe: false
+shell:
+  use_profiles: false

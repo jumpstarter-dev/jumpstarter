@@ -1,0 +1,16 @@
+[package]
+name = "jumpstarter-config"
+description = "Pure-data models for the Jumpstarter client/exporter/user YAML config files"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# Deliberately depends on neither tonic nor the runtime crates (spec §3.5): config
+# parsing stays byte-for-byte testable against Python-written fixtures with no I/O.
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml_ng.workspace = true
+thiserror.workspace = true
