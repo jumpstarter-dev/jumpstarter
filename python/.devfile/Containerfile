@@ -14,5 +14,7 @@ COPY .py-version /tmp/.py-version
 RUN dnf -y install make git libusbx golang podman && dnf clean all
 
 USER 10001
-RUN uv python install "$(cat /tmp/.py-version)"
-RUN echo "alias python='uv run python'" >> /home/user/.bashrc
+RUN uv python install "$(cat /tmp/.py-version)" && \
+    mkdir -p ~/.local/bin && \
+    ln -s "$(uv python find)" ~/.local/bin/python
+ENV PATH="/home/user/.local/bin:${PATH}"
