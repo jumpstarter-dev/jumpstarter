@@ -47,7 +47,7 @@
         "/(^|/)\\.py-version$/"
       ],
       "matchStrings": [
-        "(?<currentValue>\\d+\\.\\d+)\\n"
+        "(?<currentValue>\\d+\\.\\d+\\.\\d+)\\n"
       ],
       "depNameTemplate": "python",
       "datasourceTemplate": "python-version",
