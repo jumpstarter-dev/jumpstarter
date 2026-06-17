@@ -41,10 +41,8 @@ spec:
             description: ExporterAccessPolicySpec defines the desired state of ExporterAccessPolicy.
             properties:
               exporterSelector:
-                description: |-
-                  A label selector is a label query over a set of resources. The result of matchLabels and
-                  matchExpressions are ANDed. An empty label selector matches all objects. A null
-                  label selector matches no objects.
+                description: ExporterSelector is a label selector that matches the
+                  exporters this policy applies to.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
@@ -94,18 +92,20 @@ spec:
                 items:
                   description: Policy defines an access policy rule for exporter access.
                   properties:
+                    description:
+                      description: Description is a human-readable explanation of
+                        this policy rule.
+                      type: string
                     from:
-                      description: From is the list of client selectors that this policy
-                        applies to.
+                      description: From is the list of client selectors that this
+                        policy applies to.
                       items:
                         description: From defines a source matcher for clients allowed
                           access.
                         properties:
                           clientSelector:
-                            description: |-
-                              A label selector is a label query over a set of resources. The result of matchLabels and
-                              matchExpressions are ANDed. An empty label selector matches all objects. A null
-                              label selector matches no objects.
+                            description: ClientSelector is a label selector that matches
+                              clients this rule applies to.
                             properties:
                               matchExpressions:
                                 description: matchExpressions is a list of label selector

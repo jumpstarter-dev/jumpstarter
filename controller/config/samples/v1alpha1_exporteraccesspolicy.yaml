@@ -10,18 +10,21 @@ spec:
     matchLabels:
       dut: fancy-hardware
   policies:
-    - priority: 20 # Administrators come first, highest priority
+    - description: "Administrators — unrestricted access, highest priority"
+      priority: 20
       from:
         - clientSelector:
             matchLabels:
               client-type: administrator
-    - priority: 10 # Developers come next, maximum 2days
+    - description: "Developers — maximum 24h lease duration"
+      priority: 10
       maximumDuration: 24h
       from:
         - clientSelector:
             matchLabels:
               client-type: developer
-    - priority: 5 # CI comes next, but only spot instances, can be deallocated
+    - description: "CI — spot instances only, maximum 12h, can be preempted"
+      priority: 5
       maximumDuration: 12h
       spotAccess: true
       from:
