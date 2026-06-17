@@ -14,6 +14,7 @@ COPY .py-version /tmp/.py-version
 RUN dnf -y install make git libusbx golang podman && dnf clean all
 
 USER 10001
+ENV UV_PYTHON_PREFERENCE=only-managed
 RUN uv python install "$(cat /tmp/.py-version)" && \
     uv venv /home/user/.venv
 ENV PATH="/home/user/.venv/bin:${PATH}"
