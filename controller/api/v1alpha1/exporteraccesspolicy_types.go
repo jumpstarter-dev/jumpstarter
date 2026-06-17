@@ -28,6 +28,8 @@ type From struct {
 
 // Policy defines an access policy rule for exporter access.
 type Policy struct {
+	// Description is a human-readable explanation of this policy rule.
+	Description string `json:"description,omitempty"`
 	// Priority is the priority of this policy rule. Higher values indicate higher priority.
 	Priority int `json:"priority,omitempty"`
 	// From is the list of client selectors that this policy applies to.
@@ -47,17 +49,15 @@ type ExporterAccessPolicySpec struct {
 }
 
 // ExporterAccessPolicyStatus defines the observed state of ExporterAccessPolicy.
-type ExporterAccessPolicyStatus struct {
-	// Status field for the exporter access policies
-}
+type ExporterAccessPolicyStatus struct{}
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
 // ExporterAccessPolicy is the Schema for the exporteraccesspolicies API.
+// ExporterAccessPolicies are used to define the access policies for the exporters.
+// They help organize, prioritize and restrict access to the exporters by clients.
 type ExporterAccessPolicy struct {
-	// ExporterAccessPolicies are used to define the access policies for the exporters.
-	// they help organize, prioritize and restrict access to the exporters by clients.
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
