@@ -3,6 +3,9 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.21@sha256:ff07b86af50d4d9391d9daf4ff89ce42
 RUN dnf install -y make git && \
     dnf clean all && \
     rm -rf /var/cache/dnf
+COPY .py-version /tmp/.py-version
+RUN uv python install "$(cat /tmp/.py-version)"
+ENV UV_PYTHON_PREFERENCE=only-managed
 ADD . /src
 RUN make -C /src/python build
 
