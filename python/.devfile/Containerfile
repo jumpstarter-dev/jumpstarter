@@ -17,3 +17,8 @@ USER 10001
 RUN uv python install "$(cat /tmp/.py-version)" && \
     uv venv /home/user/.venv
 ENV PATH="/home/user/.venv/bin:${PATH}"
+
+USER root
+RUN chown 10001:0 -R /home/user/{.local,.cache,.venv} && chmod g+rwx -R /home/user/{.local,.cache,.venv}
+
+USER 10001
