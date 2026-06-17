@@ -15,6 +15,5 @@ RUN dnf -y install make git libusbx golang podman && dnf clean all
 
 USER 10001
 RUN uv python install "$(cat /tmp/.py-version)" && \
-    mkdir -p ~/.local/bin && \
-    ln -s "$(uv python find)" ~/.local/bin/python
-ENV PATH="/home/user/.local/bin:${PATH}"
+    uv venv /home/user/.venv
+ENV PATH="/home/user/.venv/bin:${PATH}"
