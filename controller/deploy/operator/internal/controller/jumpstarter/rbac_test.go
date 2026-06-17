@@ -18,17 +18,92 @@ package jumpstarter
 
 import (
 	"context"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/api/v1alpha1"
 )
+
+// errorInjectingClient wraps a client.Client to selectively inject errors
+// into specific operations for testing error handling paths.
+type errorInjectingClient struct {
+	client.Client
+	createErr func(obj client.Object) error
+	deleteErr func(obj client.Object) error
+	updateErr func(obj client.Object) error
+	getErr    func(obj client.Object) error
+}
+
+func (c *errorInjectingClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if c.getErr != nil {
+		if err := c.getErr(obj); err != nil {
+			return err
+		}
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
+
+func (c *errorInjectingClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	if c.createErr != nil {
+		if err := c.createErr(obj); err != nil {
+			return err
+		}
+	}
+	return c.Client.Create(ctx, obj, opts...)
+}
+
+func (c *errorInjectingClient) Delete(ctx context.Context, obj client.Object, opts ...client.DeleteOption) error {
+	if c.deleteErr != nil {
+		if err := c.deleteErr(obj); err != nil {
+			return err
+		}
+	}
+	return c.Client.Delete(ctx, obj, opts...)
+}
+
+func (c *errorInjectingClient) Update(ctx context.Context, obj client.Object, opts ...client.UpdateOption) error {
+	if c.updateErr != nil {
+		if err := c.updateErr(obj); err != nil {
+			return err
+		}
+	}
+	return c.Client.Update(ctx, obj, opts...)
+}
+
+func (c *errorInjectingClient) Scheme() *runtime.Scheme {
+	return c.Client.Scheme()
+}
+
+func (c *errorInjectingClient) RESTMapper() meta.RESTMapper {
+	return c.Client.RESTMapper()
+}
+
+func (c *errorInjectingClient) GroupVersionKindFor(obj runtime.Object) (schema.GroupVersionKind, error) {
+	return c.Client.GroupVersionKindFor(obj)
+}
+
+func (c *errorInjectingClient) IsObjectNamespaced(obj runtime.Object) (bool, error) {
+	return c.Client.IsObjectNamespaced(obj)
+}
+
+func (c *errorInjectingClient) Status() client.SubResourceWriter {
+	return c.Client.Status()
+}
+
+func (c *errorInjectingClient) SubResource(subResource string) client.SubResourceClient {
+	return c.Client.SubResource(subResource)
+}
 
 var _ = Describe("RBAC factory functions", func() {
 	var (
@@ -470,5 +545,222 @@ var _ = Describe("reconcileRoleBinding", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(recreated.RoleRef.Name).To(Equal("different-role"))
 		Expect(recreated.UID).NotTo(Equal(originalUID))
+	})
+})
+
+var _ = Describe("reconcileRoleBinding error paths", func() {
+	var (
+		r   *JumpstarterReconciler
+		js  *operatorv1alpha1.Jumpstarter
+		ctx context.Context
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+
+		js = &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "rbac-err",
+				Namespace: "default",
+			},
+		}
+		err := k8sClient.Get(ctx, types.NamespacedName{Name: js.Name, Namespace: js.Namespace}, &operatorv1alpha1.Jumpstarter{})
+		if errors.IsNotFound(err) {
+			js.Spec = operatorv1alpha1.JumpstarterSpec{
+				BaseDomain: "example.com",
+				Controller: operatorv1alpha1.ControllerConfig{
+					Image:    "quay.io/jumpstarter/jumpstarter:latest",
+					Replicas: 1,
+				},
+				Routers: operatorv1alpha1.RoutersConfig{
+					Image:    "quay.io/jumpstarter/jumpstarter:latest",
+					Replicas: 1,
+				},
+			}
+			Expect(k8sClient.Create(ctx, js)).To(Succeed())
+		}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: js.Name, Namespace: js.Namespace}, js)).To(Succeed())
+	})
+
+	AfterEach(func() {
+		rb := &rbacv1.RoleBinding{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: "rbac-err-router-rolebinding", Namespace: "default"}, rb); err == nil {
+			_ = k8sClient.Delete(ctx, rb)
+		}
+		resource := &operatorv1alpha1.Jumpstarter{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: js.Name, Namespace: js.Namespace}, resource); err == nil {
+			_ = k8sClient.Delete(ctx, resource)
+		}
+	})
+
+	It("should return error when Create fails on the create path", func() {
+		injectedErr := fmt.Errorf("injected create error")
+		ic := &errorInjectingClient{
+			Client: k8sClient,
+			createErr: func(obj client.Object) error {
+				if _, ok := obj.(*rbacv1.RoleBinding); ok {
+					return injectedErr
+				}
+				return nil
+			},
+		}
+		r = &JumpstarterReconciler{Client: ic, Scheme: k8sClient.Scheme()}
+
+		desired := r.createRouterRoleBinding(js)
+		err := r.reconcileRoleBinding(ctx, js, desired)
+		Expect(err).To(MatchError(ContainSubstring("injected create error")))
+
+		// Verify RoleBinding was not created
+		existing := &rbacv1.RoleBinding{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "rbac-err-router-rolebinding",
+			Namespace: "default",
+		}, existing)
+		Expect(errors.IsNotFound(err)).To(BeTrue())
+	})
+
+	It("should return error when Get fails with a non-NotFound error", func() {
+		injectedErr := fmt.Errorf("injected get error")
+		ic := &errorInjectingClient{
+			Client: k8sClient,
+			getErr: func(obj client.Object) error {
+				if _, ok := obj.(*rbacv1.RoleBinding); ok {
+					return injectedErr
+				}
+				return nil
+			},
+		}
+		r = &JumpstarterReconciler{Client: ic, Scheme: k8sClient.Scheme()}
+
+		desired := r.createRouterRoleBinding(js)
+		err := r.reconcileRoleBinding(ctx, js, desired)
+		Expect(err).To(MatchError(ContainSubstring("injected get error")))
+	})
+
+	It("should return error when Delete fails during RoleRef change", func() {
+		// First, create a RoleBinding with the real client
+		r = &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		desired := r.createRouterRoleBinding(js)
+		Expect(r.reconcileRoleBinding(ctx, js, desired)).To(Succeed())
+
+		// Now use an intercepting client that fails on Delete
+		injectedErr := fmt.Errorf("injected delete error")
+		createCalled := false
+		ic := &errorInjectingClient{
+			Client: k8sClient,
+			deleteErr: func(obj client.Object) error {
+				if _, ok := obj.(*rbacv1.RoleBinding); ok {
+					return injectedErr
+				}
+				return nil
+			},
+			createErr: func(obj client.Object) error {
+				if _, ok := obj.(*rbacv1.RoleBinding); ok {
+					createCalled = true
+				}
+				return nil
+			},
+		}
+		r = &JumpstarterReconciler{Client: ic, Scheme: k8sClient.Scheme()}
+
+		// Attempt to reconcile with a changed RoleRef
+		desired2 := r.createRouterRoleBinding(js)
+		desired2.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     "different-role",
+		}
+		err := r.reconcileRoleBinding(ctx, js, desired2)
+		Expect(err).To(MatchError(ContainSubstring("injected delete error")))
+
+		// Verify that Create was NOT called after the failed Delete
+		Expect(createCalled).To(BeFalse(), "Create should not be called when Delete fails")
+
+		// Verify original RoleBinding is still intact
+		existing := &rbacv1.RoleBinding{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "rbac-err-router-rolebinding",
+			Namespace: "default",
+		}, existing)).To(Succeed())
+		Expect(existing.RoleRef.Name).To(Equal("rbac-err-router-role"))
+	})
+
+	It("should return error when Create fails after successful Delete during RoleRef change", func() {
+		// First, create a RoleBinding with the real client
+		r = &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		desired := r.createRouterRoleBinding(js)
+		Expect(r.reconcileRoleBinding(ctx, js, desired)).To(Succeed())
+
+		// Now use an intercepting client that allows Delete but fails on Create
+		injectedErr := fmt.Errorf("injected create-after-delete error")
+		ic := &errorInjectingClient{
+			Client: k8sClient,
+			createErr: func(obj client.Object) error {
+				if _, ok := obj.(*rbacv1.RoleBinding); ok {
+					return injectedErr
+				}
+				return nil
+			},
+		}
+		r = &JumpstarterReconciler{Client: ic, Scheme: k8sClient.Scheme()}
+
+		// Attempt to reconcile with a changed RoleRef
+		desired2 := r.createRouterRoleBinding(js)
+		desired2.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Role",
+			Name:     "different-role",
+		}
+		err := r.reconcileRoleBinding(ctx, js, desired2)
+		Expect(err).To(MatchError(ContainSubstring("injected create-after-delete error")))
+
+		// Verify the old RoleBinding was deleted (Delete succeeded)
+		// and no new one was created (Create failed) -- RoleBinding is absent
+		existing := &rbacv1.RoleBinding{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "rbac-err-router-rolebinding",
+			Namespace: "default",
+		}, existing)
+		Expect(errors.IsNotFound(err)).To(BeTrue(), "RoleBinding should be absent after Delete succeeded but Create failed")
+	})
+
+	It("should return error when Update fails on the update path", func() {
+		// First, create a RoleBinding with the real client
+		r = &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		desired := r.createRouterRoleBinding(js)
+		Expect(r.reconcileRoleBinding(ctx, js, desired)).To(Succeed())
+
+		// Now use an intercepting client that fails on Update
+		injectedErr := fmt.Errorf("injected update error")
+		ic := &errorInjectingClient{
+			Client: k8sClient,
+			updateErr: func(obj client.Object) error {
+				if _, ok := obj.(*rbacv1.RoleBinding); ok {
+					return injectedErr
+				}
+				return nil
+			},
+		}
+		r = &JumpstarterReconciler{Client: ic, Scheme: k8sClient.Scheme()}
+
+		// Reconcile with changed Subjects (same RoleRef) to trigger update path
+		desired2 := r.createRouterRoleBinding(js)
+		desired2.Subjects = []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "changed-sa",
+				Namespace: "default",
+			},
+		}
+		err := r.reconcileRoleBinding(ctx, js, desired2)
+		Expect(err).To(MatchError(ContainSubstring("injected update error")))
+
+		// Verify original RoleBinding is unchanged
+		existing := &rbacv1.RoleBinding{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      "rbac-err-router-rolebinding",
+			Namespace: "default",
+		}, existing)).To(Succeed())
+		Expect(existing.Subjects[0].Name).To(Equal("rbac-err-router-sa"))
 	})
 })
