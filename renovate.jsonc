@@ -168,7 +168,8 @@
       "matchPackageNames": [
         "quay.io/devfile/base-developer-image"
       ],
-      "versioning": "regex:^ubi(?<major>\\d+)-latest$"
+      "versioning": "regex:^ubi(?<major>\\d+)-latest$",
+      "pinDigests": false
     },
     {
       "description": "Custom versioning for MicroShift container images",
