@@ -15,6 +15,8 @@ members = [
     "jumpstarter-client",
     "jumpstarter-exporter",
     "jumpstarter-admin",
+    "jumpstarter-core",
+    "jumpstarter-core-uniffi",
     "jumpstarter-cli",
 ]
 

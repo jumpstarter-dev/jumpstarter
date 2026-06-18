@@ -1,0 +1,292 @@
+[
+  {
+    "name": "null",
+    "input_json": null,
+    "proto_json": "null",
+    "decode_only": false,
+    "note": ""
+  },
+  {
+    "name": "bool_true",
+    "input_json": true,
+    "proto_json": "true",
+    "decode_only": false,
+    "note": ""
+  },
+  {
+    "name": "bool_false",
+    "input_json": false,
+    "proto_json": "false",
+    "decode_only": false,
+    "note": ""
+  },
+  {
+    "name": "str_empty",
+    "input_json": "",
+    "proto_json": "\"\"",
+    "decode_only": false,
+    "note": ""
+  },
+  {
+    "name": "str_unicode",
+    "input_json": "unicode héllo 日本語 🦀",
+    "proto_json": "\"unicode h\\u00e9llo \\u65e5\\u672c\\u8a9e \\ud83e\\udd80\"",
+    "decode_only": false,
+    "note": "non-ascii + multibyte + emoji"
+  },
+  {
+    "name": "str_special",
+    "input_json": "line1\nline2\ttab\"quote\\back",
+    "proto_json": "\"line1\\nline2\\ttab\\\"quote\\\\back\"",
+    "decode_only": false,
+    "note": "json escapes"
+  },
+  {
+    "name": "int_zero",
+    "input_json": 0,
+    "proto_json": "0.0",
+    "decode_only": false,
+    "note": "int -> double"
+  },
+  {
+    "name": "int_pos",
+    "input_json": 42,
+    "proto_json": "42.0",
+    "decode_only": false,
+    "note": "int -> double"
+  },
+  {
+    "name": "int_neg",
+    "input_json": -7,
+    "proto_json": "-7.0",
+    "decode_only": false,
+    "note": "int -> double"
+  },
+  {
+    "name": "float_half",
+    "input_json": 3.5,
+    "proto_json": "3.5",
+    "decode_only": false,
+    "note": ""
+  },
+  {
+    "name": "float_zero",
+    "input_json": 0.0,
+    "proto_json": "0.0",
+    "decode_only": false,
+    "note": ""
+  },
+  {
+    "name": "float_neg",
+    "input_json": -2.5,
+    "proto_json": "-2.5",
+    "decode_only": false,
+    "note": ""
+  },
+  {
+    "name": "int_2_53",
+    "input_json": 9007199254740992,
+    "proto_json": "9007199254740992.0",
+    "decode_only": false,
+    "note": "9007199254740992: exactly representable as f64"
+  },
+  {
+    "name": "int_2_53_plus1",
+    "input_json": 9007199254740993,
+    "proto_json": "9007199254740992.0",
+    "decode_only": false,
+    "note": "9007199254740993 rounds to 9007199254740992.0 in BOTH Python and Rust"
+  },
+  {
+    "name": "int_neg_2_53",
+    "input_json": -9007199254740992,
+    "proto_json": "-9007199254740992.0",
+    "decode_only": false,
+    "note": "negative f64 integer boundary"
+  },
+  {
+    "name": "float_tiny",
+    "input_json": 1e-300,
+    "proto_json": "1e-300",
+    "decode_only": false,
+    "note": "subnormal-ish small float, MessageToJson -> 1e-300"
+  },
+  {
+    "name": "float_huge",
+    "input_json": 1e+300,
+    "proto_json": "1e+300",
+    "decode_only": false,
+    "note": "MessageToJson emits 1e+300"
+  },
+  {
+    "name": "float_eps",
+    "input_json": 2.220446049250313e-16,
+    "proto_json": "2.220446049250313e-16",
+    "decode_only": false,
+    "note": "machine epsilon"
+  },
+  {
+    "name": "list_empty",
+    "input_json": [],
+    "proto_json": "[]",
+    "decode_only": false,
+    "note": ""
+  },
+  {
+    "name": "dict_empty",
+    "input_json": {},
+    "proto_json": "{}",
+    "decode_only": false,
+    "note": ""
+  },
+  {
+    "name": "list_ints",
+    "input_json": [
+      1,
+      2,
+      3
+    ],
+    "proto_json": "[\n1.0,\n2.0,\n3.0\n]",
+    "decode_only": false,
+    "note": ""
+  },
+  {
+    "name": "list_mixed",
+    "input_json": [
+      1,
+      "two",
+      true,
+      null,
+      3.5
+    ],
+    "proto_json": "[\n1.0,\n\"two\",\ntrue,\nnull,\n3.5\n]",
+    "decode_only": false,
+    "note": "mixed-type list"
+  },
+  {
+    "name": "list_nested",
+    "input_json": [
+      [
+        1,
+        2
+      ],
+      [
+        3,
+        [
+          4,
+          5
+        ]
+      ]
+    ],
+    "proto_json": "[\n[\n1.0,\n2.0\n],\n[\n3.0,\n[\n4.0,\n5.0\n]\n]\n]",
+    "decode_only": false,
+    "note": ""
+  },
+  {
+    "name": "dict_simple",
+    "input_json": {
+      "a": 1,
+      "b": "two",
+      "c": true
+    },
+    "proto_json": "{\n\"b\": \"two\",\n\"a\": 1.0,\n\"c\": true\n}",
+    "decode_only": false,
+    "note": ""
+  },
+  {
+    "name": "dict_nested",
+    "input_json": {
+      "outer": {
+        "inner": [
+          1,
+          2,
+          {
+            "deep": null
+          }
+        ]
+      }
+    },
+    "proto_json": "{\n\"outer\": {\n\"inner\": [\n1.0,\n2.0,\n{\n\"deep\": null\n}\n]\n}\n}",
+    "decode_only": false,
+    "note": ""
+  },
+  {
+    "name": "dict_unicode_keys",
+    "input_json": {
+      "café": "value",
+      "日本": 42
+    },
+    "proto_json": "{\n\"\\u65e5\\u672c\": 42.0,\n\"caf\\u00e9\": \"value\"\n}",
+    "decode_only": false,
+    "note": "non-ascii keys"
+  },
+  {
+    "name": "complex",
+    "input_json": {
+      "name": "device",
+      "ports": [
+        22,
+        80,
+        443
+      ],
+      "meta": {
+        "enabled": true,
+        "ratio": 0.75
+      },
+      "tags": [
+        "a",
+        "b"
+      ],
+      "nothing": null
+    },
+    "proto_json": "{\n\"ports\": [\n22.0,\n80.0,\n443.0\n],\n\"meta\": {\n\"ratio\": 0.75,\n\"enabled\": true\n},\n\"nothing\": null,\n\"tags\": [\n\"a\",\n\"b\"\n],\n\"name\": \"device\"\n}",
+    "decode_only": false,
+    "note": "representative driver-call payload"
+  },
+  {
+    "name": "tuple_to_list",
+    "input_json": [
+      1,
+      2,
+      3
+    ],
+    "proto_json": "[\n1.0,\n2.0,\n3.0\n]",
+    "decode_only": false,
+    "note": "Python tuple -> list_value; input_json is [1,2,3]"
+  },
+  {
+    "name": "bytes_utf8",
+    "input_json": "hi",
+    "proto_json": "\"hi\"",
+    "decode_only": false,
+    "note": "pydantic ser_json_bytes='utf8' default: bytes -> the UTF-8 STRING 'hi', NOT base64; input_json is \"hi\""
+  },
+  {
+    "name": "bytes_utf8_longer",
+    "input_json": "raw bytes",
+    "proto_json": "\"raw bytes\"",
+    "decode_only": false,
+    "note": "bytes -> utf8 string 'raw bytes' (not base64)"
+  },
+  {
+    "name": "nan",
+    "input_json": null,
+    "proto_json": "null",
+    "decode_only": true,
+    "note": "pydantic mode=json: NaN -> None -> Value null"
+  },
+  {
+    "name": "inf",
+    "input_json": null,
+    "proto_json": "null",
+    "decode_only": true,
+    "note": "pydantic mode=json: +Inf -> None -> Value null"
+  },
+  {
+    "name": "neg_inf",
+    "input_json": null,
+    "proto_json": "null",
+    "decode_only": true,
+    "note": "pydantic mode=json: -Inf -> None -> Value null"
+  }
+]

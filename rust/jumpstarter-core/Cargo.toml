@@ -1,0 +1,25 @@
+[package]
+name = "jumpstarter-core"
+description = "Binding-agnostic facade for the Jumpstarter Rust core (Python/Kotlin/C bindings wrap this)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# This crate is the stable, FFI-shaped Rust API that every language binding wraps.
+# It owns the value codec application, DriverReport assembly, and the binding-agnostic
+# `ForeignHostApi` seam. It MUST NOT depend on uniffi/cbindgen/jni (enforced by a CI lint):
+# those live only in the per-binding crates (jumpstarter-core-uniffi, jumpstarter-core-capi).
+[dependencies]
+jumpstarter-protocol = { path = "../jumpstarter-protocol" }
+# The facade wraps the runtime crates; it implements the exporter's DriverHostBackend
+# seam over the binding-agnostic ForeignHostApi.
+jumpstarter-exporter = { path = "../jumpstarter-exporter" }
+prost-types.workspace = true
+serde_json.workspace = true
+async-trait = "0.1"
+thiserror.workspace = true
+tonic.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "macros"] }
+tokio-stream = "0.1"

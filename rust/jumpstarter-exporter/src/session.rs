@@ -14,7 +14,6 @@ use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient;
 use jumpstarter_protocol::v1::exporter_service_server::{ExporterService, ExporterServiceServer};
 use jumpstarter_protocol::v1::router_service_server::RouterServiceServer;
 use jumpstarter_protocol::v1::{
@@ -27,9 +26,10 @@ use tokio::sync::{watch, Notify};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::UnixListenerStream;
 use tokio_stream::{Stream, StreamExt as _};
-use tonic::transport::{Channel, Server};
-use tonic::{Request, Response, Status, Streaming};
+use tonic::transport::Server;
+use tonic::{Request, Response, Status};
 
+use crate::backend::{DriverHostBackend, ResponseStream};
 use crate::control::StatusSnapshot;
 use crate::Error;
 
@@ -38,22 +38,20 @@ use crate::Error;
 /// single host owns the whole tree, so Proxy duplicates collapse like
 /// `Session.mapping`).
 pub struct RoutingTable {
-    host: Channel,
+    backend: Arc<dyn DriverHostBackend>,
     driver_uuids: HashSet<String>,
     report: GetReportResponse,
 }
 
 impl RoutingTable {
-    /// Build from the slim host's full-tree `GetReport` (cached for the lease — UUIDs
-    /// are frozen for the host's lifetime, `metadata.py:7-10`).
-    pub async fn build(host: Channel) -> Result<Self, Error> {
-        let report = ExporterServiceClient::new(host.clone())
-            .get_report(())
-            .await?
-            .into_inner();
+    /// Build from the host's full-tree `GetReport` (cached for the lease — UUIDs are
+    /// frozen for the host's lifetime, `metadata.py:7-10`). The backend is the lease's
+    /// driver host: the slim subprocess today, an in-process foreign host later.
+    pub async fn build(backend: Arc<dyn DriverHostBackend>) -> Result<Self, Error> {
+        let report = backend.get_report().await?;
         let driver_uuids = report.reports.iter().map(|r| r.uuid.clone()).collect();
         Ok(Self {
-            host,
+            backend,
             driver_uuids,
             report,
         })
@@ -64,9 +62,10 @@ impl RoutingTable {
         &self.report
     }
 
-    /// The channel to the slim host (for the [`crate::tunnel`] RouterService proxy).
-    pub(crate) fn host_channel(&self) -> Channel {
-        self.host.clone()
+    /// The lease's driver host backend (for the [`crate::tunnel`] RouterService proxy
+    /// and `log_stream`).
+    pub(crate) fn backend(&self) -> Arc<dyn DriverHostBackend> {
+        self.backend.clone()
     }
 
     /// Whether `uuid` is a known driver instance in this lease.
@@ -74,16 +73,12 @@ impl RoutingTable {
         self.driver_uuids.contains(uuid)
     }
 
-    fn host_client(&self) -> ExporterServiceClient<Channel> {
-        ExporterServiceClient::new(self.host.clone())
-    }
-
-    /// Validate a driver UUID, returning the host client it routes to. Unknown UUID →
+    /// Validate a driver UUID, returning the backend it routes to. Unknown UUID →
     /// `UNKNOWN`, matching `session.py:308` (the client distinguishes `NOT_FOUND`; §2.5).
     #[allow(clippy::result_large_err)]
-    fn route(&self, uuid: &str) -> Result<ExporterServiceClient<Channel>, Status> {
+    fn route(&self, uuid: &str) -> Result<Arc<dyn DriverHostBackend>, Status> {
         if self.driver_uuids.contains(uuid) {
-            Ok(self.host_client())
+            Ok(self.backend.clone())
         } else {
             Err(Status::unknown(format!("unknown driver uuid: {uuid}")))
         }
@@ -249,14 +244,16 @@ impl ExporterService for ExporterServer {
         let req = req.into_inner();
         // Route by UUID, then forward the typed response / tonic Status unchanged —
         // the host owns marker lookup, Value marshaling, and exception mapping.
-        self.shared
+        let resp = self
+            .shared
             .require_routing()?
             .route(&req.uuid)?
             .driver_call(req)
-            .await
+            .await?;
+        Ok(Response::new(resp))
     }
 
-    type StreamingDriverCallStream = Streaming<StreamingDriverCallResponse>;
+    type StreamingDriverCallStream = ResponseStream<StreamingDriverCallResponse>;
     async fn streaming_driver_call(
         &self,
         req: Request<StreamingDriverCallRequest>,
@@ -267,8 +264,7 @@ impl ExporterService for ExporterServer {
             .require_routing()?
             .route(&req.uuid)?
             .streaming_driver_call(req)
-            .await?
-            .into_inner();
+            .await?;
         Ok(Response::new(stream))
     }
 
@@ -287,7 +283,7 @@ impl ExporterService for ExporterServer {
 
         // Driver/system logs from the current lease's host (empty when idle).
         let drivers: Self::LogStreamStream = match self.shared.routing() {
-            Some(routing) => Box::pin(routing.host_client().log_stream(()).await?.into_inner()),
+            Some(routing) => routing.backend().log_stream().await?,
             None => Box::pin(tokio_stream::empty()),
         };
 

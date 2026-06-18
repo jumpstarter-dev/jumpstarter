@@ -17,6 +17,7 @@
 //! `_retry_stream` contract (5×1.0 s), and standalone TCP.
 
 pub mod auth;
+pub mod backend;
 pub mod control;
 pub mod driver_host;
 pub mod exporter;
@@ -32,5 +33,5 @@ pub mod tunnel;
 pub type Error = jumpstarter_client::ClientError;
 
 pub use driver_host::SlimHost;
-pub use exporter::{run, RunOptions};
+pub use exporter::{run, run_with_factory, RunOptions};
 pub use standalone::serve_standalone_tcp;

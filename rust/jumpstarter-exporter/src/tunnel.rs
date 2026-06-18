@@ -31,13 +31,14 @@
 
 use std::sync::Arc;
 
-use jumpstarter_protocol::v1::router_service_client::RouterServiceClient;
 use jumpstarter_protocol::v1::router_service_server::RouterService;
 use jumpstarter_protocol::v1::{StreamRequest, StreamResponse};
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt as _;
 use tonic::metadata::{AsciiMetadataValue, MetadataKey, MetadataMap};
 use tonic::{Request, Response, Status, Streaming};
 
+use crate::backend::ResponseStream;
 use crate::session::SharedSession;
 
 /// Metadata keys the host emits on a resource Stream's initial response
@@ -59,7 +60,7 @@ impl RouterServer {
 
 #[tonic::async_trait]
 impl RouterService for RouterServer {
-    type StreamStream = Streaming<StreamResponse>;
+    type StreamStream = ResponseStream<StreamResponse>;
 
     async fn stream(
         &self,
@@ -82,27 +83,35 @@ impl RouterService for RouterServer {
             return Err(Status::unknown(format!("unknown driver uuid: {uuid}")));
         }
 
-        // 2. Forward the client uplink frames to the host verbatim, ending on the
-        //    client's half-close / error (the tonic stream terminates after an Err,
-        //    so `filter_map` drops it and completes).
-        let uplink = request.into_inner().filter_map(|frame| frame.ok());
-        let mut host_req = Request::new(uplink);
-        host_req.metadata_mut().insert("request", request_meta);
+        // 2. Pump the client uplink frames into a bounded channel the backend reads as a
+        //    `ReceiverStream`, ending on the client's half-close / error. The bounded(32)
+        //    channel preserves backpressure: when the host is slow the channel fills, the
+        //    pump stops reading, and HTTP/2 flow control throttles the client.
+        let (tx, rx) = tokio::sync::mpsc::channel::<StreamRequest>(32);
+        let mut frames = request.into_inner();
+        tokio::spawn(async move {
+            while let Some(Ok(frame)) = frames.next().await {
+                if tx.send(frame).await.is_err() {
+                    break;
+                }
+            }
+        });
 
-        // 3. Open the host Stream eagerly. The host sends its initial metadata before
-        //    reading any frame (`session.py:324`), so this returns promptly with the
-        //    resource handle / encoding — no metadata-before-frame deadlock.
-        let host_resp = RouterServiceClient::new(routing.host_channel())
-            .stream(host_req)
+        // 3. Open the host Stream eagerly via the backend. The host sends its initial
+        //    metadata before reading any frame (`session.py:324`), so this returns
+        //    promptly with the resource handle / encoding — no metadata-before-frame
+        //    deadlock.
+        let opened = routing
+            .backend()
+            .open_router_stream(request_meta, ReceiverStream::new(rx))
             .await?;
 
         // 4. Re-emit only the host's resource keys on the client-facing response (set
         //    before returning, so they precede any downlink frame), then relay the
         //    host downlink — including its trailing ABORTED "RouterStream: aclose"
         //    teardown — straight through.
-        let host_meta = host_resp.metadata().clone();
-        let mut response = Response::new(host_resp.into_inner());
-        relay_metadata(&host_meta, response.metadata_mut());
+        let mut response = Response::new(opened.downlink);
+        relay_metadata(&opened.initial_metadata, response.metadata_mut());
         Ok(response)
     }
 }

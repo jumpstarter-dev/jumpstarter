@@ -14,6 +14,7 @@ use jumpstarter_config::{ExporterConfig, YamlConfig};
 use tokio::sync::{watch, Notify};
 use tokio::task::JoinHandle;
 
+use crate::backend::SlimHostBackend;
 use crate::control::{uds_channel, StatusReporter, StatusSnapshot};
 use crate::driver_host::SlimHost;
 use crate::hooks::{self, BeforeOutcome, HookContext};
@@ -32,8 +33,8 @@ pub async fn serve_standalone_tcp(
 
     // The driver tree (Python slim host) + its routing table.
     let host = SlimHost::spawn(config_path).await?;
-    let channel = uds_channel(host.socket()).await?;
-    let routing = RoutingTable::build(channel).await?;
+    let backend = SlimHostBackend::new(uds_channel(host.socket()).await?);
+    let routing = RoutingTable::build(Arc::new(backend)).await?;
 
     // Pin the session watch channels — there is no controller/lease loop. The senders
     // are held for the serving lifetime so receivers never observe `Closed`.

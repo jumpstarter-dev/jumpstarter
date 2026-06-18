@@ -13,7 +13,7 @@
 //! breaker, the `_retry_stream` contract (5×1.0 s), standalone TCP, and Rust-side
 //! LogStream aggregation.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,8 +31,8 @@ use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_stream::StreamExt as _;
 
-use crate::control::{uds_channel, Controller, StatusReporter, StatusSnapshot};
-use crate::driver_host::SlimHost;
+use crate::backend::{DriverHostBackend, HostFactory, HostGuard, SlimHostFactory};
+use crate::control::{Controller, StatusReporter, StatusSnapshot};
 use crate::fsm::{LeaseLifecycle, LeasePhase};
 use crate::hooks::{self, AfterOutcome, BeforeOutcome, HookContext};
 use crate::session::{self, RoutingTable, SharedSession};
@@ -63,7 +63,17 @@ enum EndReason {
 /// Run the exporter until a shutdown signal (SIGINT/SIGTERM) or an `on_failure: exit`
 /// hook.
 pub async fn run(opts: RunOptions) -> Result<(), Error> {
-    let config = &opts.config;
+    let factory = Arc::new(SlimHostFactory::new(opts.config_path));
+    run_with_factory(opts.config, factory).await
+}
+
+/// Run the exporter against any driver-host [`HostFactory`] — the generic entry the
+/// in-process (foreign) host injects. [`run`] is the slim-subprocess wrapper.
+pub async fn run_with_factory(
+    config: ExporterConfig,
+    factory: Arc<dyn HostFactory>,
+) -> Result<(), Error> {
+    let config = &config;
     let endpoint = config
         .endpoint
         .clone()
@@ -91,8 +101,8 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
     //    the first pre-warmed host, so the first lease doesn't pay a cold spawn.
     //    Subsequent hosts are pre-warmed during the previous lease (see `Warm`); each
     //    lease still gets a freshly-spawned, reset host — just spawned ahead of time.
-    let first_host = SlimHost::spawn(&opts.config_path).await?;
-    let registration = RoutingTable::build(uds_channel(first_host.socket()).await?)
+    let (first_backend, first_guard) = factory.provision().await?;
+    let registration = RoutingTable::build(first_backend.clone())
         .await?
         .report()
         .clone();
@@ -141,8 +151,8 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
             end_session_tx,
             &main_uds,
             &hook_uds,
-            first_host,
-            &opts.config_path,
+            (first_backend, first_guard),
+            factory.clone(),
             config,
             hook_log,
             shutdown.clone(),
@@ -178,29 +188,31 @@ struct ActiveLease {
     handle: JoinHandle<()>,
     /// Fired when the controller reports the lease has ended (`leased=false`).
     end: Arc<Notify>,
-    host: SlimHost,
+    /// Held for the lease lifetime; dropped at lease end to tear the host down.
+    _guard: HostGuard,
 }
 
-/// A pre-warmed slim host for the *next* lease: either ready, or still spawning in
-/// the background. Pipelining the spawn (started during the previous lease) hides the
+/// A provisioned host: the backend to route into + its lease guard.
+type ProvisionedHost = (Arc<dyn DriverHostBackend>, HostGuard);
+
+/// A pre-warmed host for the *next* lease: either ready, or still provisioning in the
+/// background. Pipelining provisioning (started during the previous lease) hides the
 /// cold-start latency (interpreter + driver imports) so a lease rarely pays for it.
 enum Warm {
-    Ready(SlimHost),
-    Spawning(JoinHandle<Result<SlimHost, Error>>),
+    Ready(ProvisionedHost),
+    Spawning(JoinHandle<Result<ProvisionedHost, Error>>),
 }
 
 impl Warm {
-    /// Start spawning a fresh host in the background.
-    fn spawn(config_path: PathBuf) -> Self {
-        Warm::Spawning(tokio::spawn(
-            async move { SlimHost::spawn(&config_path).await },
-        ))
+    /// Start provisioning a fresh host in the background.
+    fn spawn(factory: Arc<dyn HostFactory>) -> Self {
+        Warm::Spawning(tokio::spawn(async move { factory.provision().await }))
     }
 
-    /// Take the warmed host (awaiting the in-flight spawn if it hasn't finished yet)
-    /// and immediately kick off warming the *next* one.
-    async fn take(&mut self, config_path: &Path) -> Result<SlimHost, Error> {
-        match std::mem::replace(self, Warm::spawn(config_path.to_path_buf())) {
+    /// Take the warmed host (awaiting the in-flight provisioning if it hasn't finished
+    /// yet) and immediately kick off warming the *next* one.
+    async fn take(&mut self, factory: &Arc<dyn HostFactory>) -> Result<ProvisionedHost, Error> {
+        match std::mem::replace(self, Warm::spawn(factory.clone())) {
             Warm::Ready(host) => Ok(host),
             Warm::Spawning(handle) => handle
                 .await
@@ -220,8 +232,8 @@ async fn status_loop(
     end_session_tx: watch::Sender<Option<Arc<Notify>>>,
     main_uds: &str,
     hook_uds: &str,
-    initial_host: SlimHost,
-    config_path: &Path,
+    initial: ProvisionedHost,
+    factory: Arc<dyn HostFactory>,
     config: &ExporterConfig,
     hook_log: Arc<crate::logbuf::HookLog>,
     shutdown: Arc<Notify>,
@@ -229,7 +241,7 @@ async fn status_loop(
     let mut active: Option<ActiveLease> = None;
     // The first lease reuses the registration host; later leases use one pre-warmed
     // during the previous lease.
-    let mut warm = Warm::Ready(initial_host);
+    let mut warm = Warm::Ready(initial);
 
     loop {
         let mut stream = match controller.status(StatusRequest {}).await {
@@ -260,8 +272,8 @@ async fn status_loop(
                     let client_name = resp.client_name.clone().unwrap_or_default();
                     tracing::info!(lease = %lease_name, client = %client_name, "lease started");
 
-                    let host = warm.take(config_path).await?;
-                    let routing = RoutingTable::build(uds_channel(host.socket()).await?).await?;
+                    let (backend, guard) = warm.take(&factory).await?;
+                    let routing = RoutingTable::build(backend).await?;
                     routing_tx.send_replace(Some(Arc::new(routing)));
 
                     let end = Arc::new(Notify::new());
@@ -281,7 +293,11 @@ async fn status_loop(
                         end_session,
                         shutdown.clone(),
                     );
-                    active = Some(ActiveLease { handle, end, host });
+                    active = Some(ActiveLease {
+                        handle,
+                        end,
+                        _guard: guard,
+                    });
                 }
                 // The active lease ended: signal it, wait for cleanup (afterLease) to
                 // finish, then clear routing and kill the host before the next lease.
@@ -292,7 +308,7 @@ async fn status_loop(
                     let _ = lease.handle.await;
                     routing_tx.send_replace(None);
                     end_session_tx.send_replace(None);
-                    drop(lease.host); // SIGKILLs the slim host subprocess
+                    drop(lease._guard); // tears down the host (SlimHost SIGKILL / foreign close)
                     sleep(INTER_LEASE_SETTLE).await;
                 }
                 // Steady state (still leased, or still idle): nothing to do.
