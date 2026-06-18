@@ -8,6 +8,9 @@
   // prune untagged manifests (e.g. Fedora) must opt out via pinDigests:false
   // in their packageRule to avoid broken builds when the old digest disappears.
   "pinDigests": true,
+  "postUpdateOptions": [
+    "gomodTidy"
+  ],
   "timezone": "Etc/UTC",
   "schedule": [
     "before 5am on monday"
