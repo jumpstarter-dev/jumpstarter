@@ -28,12 +28,17 @@ from anyio import to_thread
 import jumpstarter_core as jc
 
 _log = logging.getLogger("jumpstarter_exporter_host")
+from uuid import uuid4
+
+from jumpstarter.common.resources import ClientStreamResource
+from jumpstarter.driver.base import SUPPORTED_CONTENT_ENCODINGS
 from jumpstarter.driver.decorators import (
     MARKER_DRIVERCALL,
     MARKER_MAGIC,
     MARKER_STREAMCALL,
     MARKER_STREAMING_DRIVERCALL,
 )
+from jumpstarter.streams.common import create_memory_stream
 
 
 def _to_jsonable(value: Any) -> Any:
@@ -197,8 +202,24 @@ class DriverHost:
             handle = next(self._handles)
             self._channels[handle] = {"cm": cm, "stream": stream}
             return jc.OpenStream(handle=handle, initial_metadata=[])
-        # Resource streams (flash/dump) are not yet supported in-process.
-        raise jc.DriverError.Unimplemented("resource streams not yet supported in-process")
+
+        # Resource stream (flash/dump): create a memory pipe, register the far end in the
+        # driver's resource map (a later driver call reads it by uuid), and hand the near
+        # end to the client as the byte channel. Mirrors Driver.Stream's ResourceStreamRequest
+        # branch (base.py:182-200).
+        remote, resource = create_memory_stream()
+        resource_uuid = uuid4()
+        driver.resources[resource_uuid] = resource
+        encoding = req.get("x_jmp_content_encoding")
+        resource_handle = ClientStreamResource(
+            uuid=resource_uuid, x_jmp_content_encoding=encoding
+        ).model_dump_json()
+        metadata = [jc.MetadataEntry(key="resource", value=resource_handle)]
+        if encoding in SUPPORTED_CONTENT_ENCODINGS:
+            metadata.append(jc.MetadataEntry(key="x_jmp_accept_encoding", value=encoding))
+        handle = next(self._handles)
+        self._channels[handle] = {"cm": None, "stream": remote}
+        return jc.OpenStream(handle=handle, initial_metadata=metadata)
 
     async def stream_read(self, handle: int):
         stream = self._channels[handle]["stream"]
@@ -224,14 +245,27 @@ class DriverHost:
                 await send_eof()
             except BaseException:  # noqa: BLE001
                 pass
+            return
+        # Stapled memory streams (resource pipes) have no send_eof: close the send half so
+        # the driver reading the far end sees end-of-stream.
+        send_stream = getattr(stream, "send_stream", None)
+        if send_stream is not None:
+            try:
+                await send_stream.aclose()
+            except BaseException:  # noqa: BLE001
+                pass
 
     async def stream_close(self, handle: int) -> None:
         state = self._channels.pop(handle, None)
-        if state:
-            try:
+        if not state:
+            return
+        try:
+            if state["cm"] is not None:
                 await state["cm"].__aexit__(None, None, None)
-            except BaseException:  # noqa: BLE001
-                pass
+            else:
+                await state["stream"].aclose()
+        except BaseException:  # noqa: BLE001
+            pass
 
 
 class DriverHostFactory:

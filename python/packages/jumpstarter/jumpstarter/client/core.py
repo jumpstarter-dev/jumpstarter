@@ -554,10 +554,17 @@ class AsyncDriverClient(
         content_encoding: str | None = None,
     ):
         if self.session is not None:
-            # Resource (flash/dump) streams over FFI are not implemented yet (the host
-            # adapter also returns Unimplemented). Driver `@exportstream` streams work
-            # via stream_async; resource handles still need the gRPC path.
-            raise DriverMethodNotImplemented("resource streams are not yet supported on the FFI client path")
+            import json
+
+            request = json.dumps({"uuid": str(self.uuid), "x_jmp_content_encoding": content_encoding})
+            chan = await self.session.stream(request)
+            rstream = _FFIByteStream(chan)
+            metadata = ResourceMetadata(**json.loads(chan.initial_metadata()))
+            if metadata.x_jmp_accept_encoding is None:
+                stream = compress_stream(stream, content_encoding)
+            async with forward_stream(ProgressStream(stream=stream), rstream):
+                yield metadata.resource.model_dump(mode="json")
+            return
 
         context = self.stub.Stream(
             metadata=StreamRequestMetadata.model_construct(
