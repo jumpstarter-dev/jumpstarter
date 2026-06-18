@@ -24,5 +24,5 @@ pub mod hooks;
 /// the shared controller-channel and router-bridge paths.
 pub type Error = jumpstarter_client::ClientError;
 
-pub use driver_host::DriverHost;
+pub use driver_host::{DriverHost, SlimHost};
 pub use exporter::{run, RunOptions};
