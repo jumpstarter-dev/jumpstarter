@@ -169,6 +169,19 @@ class AsyncDriverClient(
         """
         if self._get_status_unsupported:
             return None
+        if self.session is not None:
+            import json
+
+            import jumpstarter_core as jc
+
+            try:
+                data = json.loads(await self.session.get_status())
+            except jc.DriverError as e:
+                if isinstance(e, jc.DriverError.Unimplemented):
+                    self._get_status_unsupported = True
+                    return None
+                raise DriverError(f"Failed to get exporter status: {e}") from None
+            return ExporterStatus.from_proto(data["status"])
         try:
             response = await self.stub.GetStatus(jumpstarter_pb2.GetStatusRequest())
             return ExporterStatus.from_proto(response.status)
@@ -564,6 +577,41 @@ class AsyncDriverClient(
 
     @asynccontextmanager
     async def log_stream_async(self, show_all_logs: bool = True):  # noqa: C901
+        def _emit(source, severity, message):
+            is_hook = source in (LogSource.BEFORE_LEASE_HOOK, LogSource.AFTER_LEASE_HOOK)
+            if not (is_hook or show_all_logs):
+                return
+            if "raised by servicer method" in message and "NotImplementedError" in message:
+                return
+            logger_name = {
+                LogSource.BEFORE_LEASE_HOOK: "exporter:beforeLease",
+                LogSource.AFTER_LEASE_HOOK: "exporter:afterLease",
+                LogSource.DRIVER: "exporter:driver",
+            }.get(source, "exporter:system")
+            log_level = getattr(logging, severity or "INFO", logging.INFO)
+            logging.getLogger(logger_name).log(log_level, message)
+
+        async def log_stream_ffi():
+            import json
+
+            import jumpstarter_core as jc
+
+            try:
+                stream = await self.session.log_stream()
+                while True:
+                    item = await stream.next()
+                    if item is None:
+                        break
+                    entry = json.loads(item)
+                    src = entry.get("source")
+                    try:
+                        source = LogSource(src) if src is not None else LogSource.SYSTEM
+                    except ValueError:
+                        source = LogSource.SYSTEM
+                    _emit(source, entry.get("severity"), entry.get("message", ""))
+            except jc.DriverError as e:
+                self.logger.debug("FFI log stream ended: %s", e)
+
         async def log_stream():  # noqa: C901
             reconnect_delay = 0.1  # Start with 100ms delay
             max_reconnect_delay = 2.0  # Max 2 seconds between reconnects
@@ -646,7 +694,7 @@ class AsyncDriverClient(
                 self.logger.debug("Log stream: max reconnects reached, giving up")
 
         async with create_task_group() as tg:
-            tg.start_soon(log_stream)
+            tg.start_soon(log_stream_ffi if self.session is not None else log_stream)
             try:
                 yield
             finally:
