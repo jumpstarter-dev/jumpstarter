@@ -3,41 +3,38 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.21@sha256:ff07b86af50d4d9391d9daf4ff89ce42
 RUN dnf install -y make git && \
     dnf clean all && \
     rm -rf /var/cache/dnf
+COPY .py-version /tmp/.py-version
+RUN uv python install "$(cat /tmp/.py-version)"
+ENV UV_PYTHON_PREFERENCE=only-managed
 ADD . /src
 RUN make -C /src/python build
 
-
-FROM quay.io/devfile/base-developer-image:ubi10-latest@sha256:6b9d2a3b90798e6d92c1c6b05cd2ce733b989cc6f0b3ff4e0820b45ad19fe474
+FROM quay.io/devfile/base-developer-image:ubi10-latest@sha256:6b9d2a3b90798e6d92c1c6b05cd2ce733b989cc6f0b3ff4e0820b45ad19fe474 AS python-base
 LABEL maintainer="jumpstarter.dev"
 
-LABEL name="devfile/udi9/jumpstarter-client"
+LABEL name="devfile/udi10/jumpstarter-client"
 
-#labels for container catalog
 LABEL summary="devfile jumpstarter developer image"
 LABEL description="Devspaces image for consuming jumpstarter as a client"
 LABEL io.k8s.display-name="jumpstarter-client-developer"
 
+COPY --from=ghcr.io/astral-sh/uv:0.11.21@sha256:ff07b86af50d4d9391d9daf4ff89ce427bc544f9aae87057e69a1cc0aa369946 /uv /uvx /bin/
+
 USER root
-
 COPY .py-version /tmp/.py-version
-RUN grep -qxE '[0-9]+\.[0-9]+' /tmp/.py-version && \
-    PY=$(cat /tmp/.py-version) && \
-    rm -rf /usr/bin/python && ln -s "/usr/bin/python${PY}" /usr/bin/python
-
-RUN PY=$(cat /tmp/.py-version) && \
-    dnf -y install make git "python${PY}" libusbx python3-pyusb "python${PY}-pip" golang && dnf clean all
+RUN dnf -y install make git libusbx golang && dnf clean all
 
 USER 10001
+RUN uv python install "$(cat /tmp/.py-version)"
 
+FROM python-base
 RUN --mount=from=builder,source=/src/python/dist,target=/dist \
-    PY=$(cat /tmp/.py-version) && "python${PY}" -m pip install /dist/*.whl
-
-RUN PY=$(cat /tmp/.py-version) && \
-    "python${PY}" -m pip install pytest
+    uv venv /home/user/.venv && \
+    VIRTUAL_ENV=/home/user/.venv uv pip install /dist/*.whl pyusb pytest
+ENV PATH="/home/user/.venv/bin:$PATH"
 
 USER root
-
 RUN mkdir -p /home/user/.config/jumpstarter/clients
-RUN chown 10001:0 -R /home/user/{.config,.local,.cache} && chmod g+rwx -R /home/user/{.config,.local,.cache}
+RUN chown 10001:0 -R /home/user/{.config,.local,.cache,.venv} && chmod g+rwx -R /home/user/{.config,.local,.cache,.venv}
 
 USER 10001

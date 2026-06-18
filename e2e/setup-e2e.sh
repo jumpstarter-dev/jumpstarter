@@ -48,7 +48,7 @@ install_dependencies() {
         export PATH="$HOME/.cargo/bin:$PATH"
     fi
 
-    grep -qxE '[0-9]+\.[0-9]+' "$REPO_ROOT/.py-version" || { log_error "Invalid .py-version"; exit 1; }
+    grep -qxE '[0-9]+\.[0-9]+\.[0-9]+' "$REPO_ROOT/.py-version" || { log_error "Invalid .py-version"; exit 1; }
     PY_VERSION="$(cat "$REPO_ROOT/.py-version")"
     log_info "Installing Python ${PY_VERSION}..."
     uv python install "$PY_VERSION"
