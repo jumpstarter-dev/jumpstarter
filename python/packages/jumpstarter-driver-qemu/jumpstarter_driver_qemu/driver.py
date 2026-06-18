@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import platform
+import shlex
 import shutil
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
@@ -381,6 +382,26 @@ class QemuPower(PowerInterface, Driver):
         Path(self.parent._pty).unlink(missing_ok=True)
         Path(self.parent._pty).symlink_to(pty)
 
+        # Resolve any hostport=0 hostfwd entries to the actual port QEMU chose.
+        # Parse 'info usernet': lines look like "TCP[HOST_FORWARD] fd addr port addr port ..."
+        # Store resolved ports on the parent so get_hostfwd_port() can return them to clients.
+        zero_fwds = {k: v for k, v in self.parent.hostfwd.items() if v.hostport == 0}
+        if zero_fwds:
+            usernet = await qmp.execute("human-monitor-command", {"command-line": "info usernet"})
+            self.logger.debug("info usernet output:\n%s", usernet)
+            for line in usernet.splitlines():
+                parts = line.split()
+                if len(parts) >= 6 and "HOST_FORWARD" in parts[0]:
+                    # parts: Protocol[State] fd hostaddr hostport guestaddr guestport ...
+                    actual_hostaddr, actual_hostport, actual_guestport = parts[2], int(parts[3]), int(parts[5])
+                    for k, v in zero_fwds.items():
+                        if v.hostaddr == actual_hostaddr and v.guestport == actual_guestport:
+                            self.logger.info(
+                                "hostfwd '%s': resolved port 0 -> %s:%d (guest port %d)",
+                                k, actual_hostaddr, actual_hostport, actual_guestport,
+                            )
+                            self.parent._resolved_hostports[k] = actual_hostport
+
         await qmp.execute("system_reset")
         await qmp.disconnect()
 
@@ -410,7 +431,7 @@ class QemuPower(PowerInterface, Driver):
 class Hostfwd(BaseModel):
     protocol: Literal["tcp"] = "tcp"
     hostaddr: str = "127.0.0.1"
-    hostport: int = Field(ge=1, le=65535)
+    hostport: int = Field(ge=0, le=65535)  # 0 = let QEMU pick a free port
     guestport: int = Field(ge=1, le=65535)
 
 
@@ -440,6 +461,8 @@ class Qemu(Driver):
     flash_timeout: int = field(default=30 * 60)  # 30 minutes
 
     _tmp_dir: TemporaryDirectory = field(init=False, default_factory=TemporaryDirectory)
+    # Maps hostfwd key -> actual host port after QEMU resolves port 0 assignments
+    _resolved_hostports: dict[str, int] = field(init=False, default_factory=dict)
 
     @classmethod
     def client(cls) -> str:
@@ -512,6 +535,7 @@ class Qemu(Driver):
                 {
                     "instance-id": str(self.uuid),
                     "local-hostname": self.hostname,
+                    "hostname": self.hostname,
                 }
             )
         )
@@ -528,11 +552,29 @@ class Qemu(Driver):
                             "sudo": "ALL=(ALL) NOPASSWD:ALL",
                         }
                     ],
+                    # runcmd sets the password explicitly for cloud-init implementations
+                    # that do not support plain_text_passwd (e.g. Alpine's tiny-cloud).
+                    # cloud-init ignores runcmd entries it doesn't understand, so this
+                    # is safe to include unconditionally.
+                    # shlex.quote ensures special characters in credentials are safe.
+                    "runcmd": [
+                        f"printf %s {shlex.quote(f'{self.username}:{self.password}')} | chpasswd",
+                    ],
                 }
             )
         )
 
         return tmp
+
+    @export
+    @validate_call(validate_return=True)
+    def get_hostfwd_port(self, key: str) -> int:
+        """Return the actual host port for a hostfwd entry (resolves port 0 assignments)."""
+        if key in self._resolved_hostports:
+            return self._resolved_hostports[key]
+        if key in self.hostfwd:
+            return self.hostfwd[key].hostport
+        raise KeyError(f"hostfwd key {key!r} not found")
 
     @export
     @validate_call(validate_return=True)

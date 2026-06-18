@@ -4,6 +4,7 @@ import sys
 from contextlib import contextmanager
 
 import click
+from fabric import Connection
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_network.adapters import FabricAdapter, NovncAdapter
 
@@ -75,12 +76,25 @@ class QemuClient(CompositeClient):
 
     @contextmanager
     def shell(self):
-        with FabricAdapter(
-            client=self.ssh,
-            user=self.username,
-            connect_kwargs={"password": self.password},
-        ) as conn:
-            yield conn
+        # If the driver has an 'ssh' hostfwd entry, fetch the actual host port
+        # (resolving any port=0 assignment) and connect directly over TCP.
+        # Otherwise fall back to tunnelling through the jumpstarter stream (vsock).
+        try:
+            port = int(self.call("get_hostfwd_port", "ssh"))
+            with Connection(
+                host="127.0.0.1",
+                port=port,
+                user=self.username,
+                connect_kwargs={"password": self.password},
+            ) as conn:
+                yield conn
+        except KeyError:
+            with FabricAdapter(
+                client=self.ssh,
+                user=self.username,
+                connect_kwargs={"password": self.password},
+            ) as conn:
+                yield conn
 
     def cli(self):
         # Get the base group from CompositeClient which includes all child commands

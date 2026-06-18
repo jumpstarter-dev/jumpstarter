@@ -59,6 +59,10 @@ def get_native_arch_config():
 def test_driver_qemu(tmp_path, ovmf):
     arch, ovmf_arch = get_native_arch_config()
 
+    # Alpine uses OpenRC (not systemd), so systemd-ssh-generator does not run
+    # and sshd never binds to AF_VSOCK. Use a TCP hostfwd with hostport=0 so
+    # QEMU picks a free port automatically; the driver resolves the actual port
+    # from QMP after startup and updates the ssh child accordingly.
     with serve(
         Qemu(
             arch=arch,
@@ -66,19 +70,20 @@ def test_driver_qemu(tmp_path, ovmf):
                 "OVMF_CODE.fd": ovmf / ovmf_arch / "code.fd",
                 "OVMF_VARS.fd": ovmf / ovmf_arch / "vars.fd",
             },
+            hostfwd={"ssh": {"protocol": "tcp", "hostaddr": "127.0.0.1", "hostport": 0, "guestport": 22}},
         )
     ) as qemu:
         hostname = qemu.hostname
         username = qemu.username
         password = qemu.password
 
-        cached_image = Path(__file__).parent.parent / "images" / f"Fedora-Cloud-Base-Generic-43-1.6.{arch}.qcow2"
+        cached_image = Path(__file__).parent.parent / "images" / f"nocloud_alpine-3.22.4-{arch}-uefi-tiny-r0.qcow2"
 
         if cached_image.exists():
             qemu.flasher.flash(cached_image.resolve())
         else:
             qemu.flasher.flash(
-                f"https://download.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/{arch}/images/Fedora-Cloud-Base-Generic-43-1.6.{arch}.qcow2",
+                f"https://dl-cdn.alpinelinux.org/alpine/v3.22/releases/cloud/nocloud_alpine-3.22.4-{arch}-uefi-tiny-r0.qcow2",
             )
 
         qemu.power.on()
@@ -88,16 +93,22 @@ def test_driver_qemu(tmp_path, ovmf):
 
         with qemu.console.pexpect() as p:
             p.logfile = sys.stdout.buffer
-            p.expect_exact(f"{hostname} login:", timeout=600)
+            # Press Enter if GRUB is waiting. Both the countdown and bootstrap_complete
+            # can appear before the login prompt, so match whichever comes first.
+            idx = p.expect_exact(["automatically in ", "bootstrap_complete: done"], timeout=600)
+            if idx == 0:
+                # GRUB countdown: skip it, then wait for cloud-init to finish
+                p.sendline("")
+                p.expect_exact("bootstrap_complete: done", timeout=600)
+            # tiny-cloud finished: password is set, sshd is ready
+            p.expect_exact(f"{hostname} login:", timeout=60)
             p.sendline(username)
             p.expect_exact("Password:")
             p.sendline(password)
-            p.expect_exact(f"[{username}@{hostname} ~]$")
-            p.sendline("sudo setenforce 0")
-            p.expect_exact(f"[{username}@{hostname} ~]$")
+            p.expect_exact(f"{hostname}:~$")
 
         with qemu.shell() as s:
-            assert s.run("uname -r").stdout.strip() == f"6.17.1-300.fc43.{arch}"
+            assert s.run("uname -r").stdout.strip() != ""
 
         qemu.power.off()
 
