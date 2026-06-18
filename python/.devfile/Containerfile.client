@@ -9,7 +9,8 @@ ENV UV_PYTHON_PREFERENCE=only-managed
 ADD . /src
 RUN make -C /src/python build
 
-FROM quay.io/devfile/base-developer-image:ubi10-latest@sha256:6b9d2a3b90798e6d92c1c6b05cd2ce733b989cc6f0b3ff4e0820b45ad19fe474 AS python-base
+
+FROM quay.io/devfile/base-developer-image:ubi10-latest AS python-base
 LABEL maintainer="jumpstarter.dev"
 
 LABEL name="devfile/udi10/jumpstarter-client"
