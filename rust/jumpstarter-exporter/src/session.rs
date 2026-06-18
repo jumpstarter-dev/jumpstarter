@@ -240,7 +240,9 @@ impl ExporterService for ExporterServer {
     ) -> Result<Response<EndSessionResponse>, Status> {
         // Signal the active lease task to run afterLease early, then return at once
         // (session.py:381-420). Idle => no lease to end.
-        match self.shared.end_session.borrow().clone() {
+        let signal = self.shared.end_session.borrow().clone();
+        tracing::debug!(active = signal.is_some(), "EndSession RPC received");
+        match signal {
             Some(signal) => {
                 signal.notify_one();
                 Ok(Response::new(EndSessionResponse {

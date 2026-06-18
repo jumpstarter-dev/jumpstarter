@@ -1,18 +1,20 @@
-//! Jumpstarter exporter runtime (spec doc 03; plan in
-//! `rust/docs/02-exporter-core-plan.md`).
+//! Jumpstarter exporter runtime (spec doc 03; native-migration design in
+//! `rust/docs/03-native-exporter-migration.md`).
 //!
-//! A Rust exporter that registers with the controller, consumes the
-//! `Status`/`Listen` streams, and serves one lease at a time by hosting the real
-//! Python drivers in a subprocess (`session_host.py`) and bridging the router to
-//! that session socket (the reverse of the Phase-A client transport host).
+//! A Rust exporter that registers with the controller, consumes the `Status`/`Listen`
+//! streams, and serves one lease at a time. It **serves the client/hook-facing
+//! `ExporterService` + `RouterService` itself** ([`session`] + [`tunnel`]) on its own
+//! main + hook sockets, terminating each client tunnel into that server, and hosts the
+//! real Python drivers in a slim per-lease [`driver_host::SlimHost`] subprocess that
+//! it proxies driver calls into by UUID. The host is [pre-warmed](exporter) so a lease
+//! doesn't pay the spawn cost.
 //!
 //! Each lease runs through the [`fsm`] lease-lifecycle state machine, executing the
-//! `beforeLease`/`afterLease` [`hooks`] against the session's isolated hook socket
-//! and reporting the resulting status sequence to the controller via [`control`].
+//! `beforeLease`/`afterLease` [`hooks`] against the Rust hook socket and reporting the
+//! status sequence both to the controller and the `GetStatus` snapshot via [`control`].
 //!
 //! Still deferred: the supervisor fork/restart loop + rapid-failure breaker, the
-//! `_retry_stream` contract (5×1.0 s), standalone TCP, and per-lease driver
-//! re-instantiation.
+//! `_retry_stream` contract (5×1.0 s), and standalone TCP.
 
 pub mod control;
 pub mod driver_host;
@@ -26,5 +28,5 @@ pub mod tunnel;
 /// the shared controller-channel and router-bridge paths.
 pub type Error = jumpstarter_client::ClientError;
 
-pub use driver_host::{DriverHost, SlimHost};
+pub use driver_host::SlimHost;
 pub use exporter::{run, RunOptions};
