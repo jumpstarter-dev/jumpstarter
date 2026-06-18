@@ -303,14 +303,21 @@ lease-scoped.
   before dropping the host — mirroring Python keeping the socket open post-EndSession
   (`session.py:381-420`).
 
-> **Latency tradeoff (verified inc3).** Spawning a fresh *process* per lease is
-> slower than Python's in-process `device_factory()` re-instantiation: a power-only
-> host spawns in ~300 ms, but a host with a heavy driver import (e.g. `opendal`) can
-> take seconds, and that latency (plus a slow `beforeLease` hook) delays `LEASE_READY`.
-> If it exceeds the controller's lease-readiness window, the controller reclaims the
-> lease before a client connects. This is inherent to the subprocess model (spec 09
-> §3.2 names the extra-hop cost); it is correct, just slower than Python for
-> heavy-import configs. A future optimization could pre-warm the next host during idle.
+> **Latency (inc3) and pre-warming (resolved).** Spawning a fresh *process* per lease
+> is slower than Python's in-process `device_factory()` re-instantiation: a power-only
+> host spawns in ~300 ms, but a heavy driver import (e.g. `opendal`) can take seconds,
+> which — left at lease start — delays `LEASE_READY` past the controller's
+> lease-readiness window and gets the lease reclaimed before a client connects.
+> **Fixed by pre-warming the host pipeline** (`Warm` in `exporter.rs`): the next fresh
+> host is spawned in the background *during* the current lease, and the registration
+> host is reused as the first warm one, so a lease pays only routing setup, not the
+> spawn. Verified: with a **3 s simulated spawn delay**, back-to-back leases still
+> reach `LEASE_READY` in ~250 ms. Each lease still gets a freshly-spawned, `reset()`
+> host — just spawned ahead of time. (A slow `beforeLease` *hook* — Python `j` startup
+> with heavy imports — is a separate cost, addressed later by the native Rust `j`.)
+> Per-driver-instance pre-warmed processes (the user's other option) were considered
+> and deferred: they'd add isolation/parallelism but break server-side cross-driver /
+> composite calls and cross-driver resource handles (§7 inc6 / JEP-0013).
 
 ### 4.4 Per-lease re-instantiation (spawn/kill host per lease)
 

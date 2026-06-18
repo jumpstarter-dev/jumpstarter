@@ -87,16 +87,15 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
     .await?;
     let controller = ControllerServiceClient::new(svc);
 
-    // 2. Registration report from a throwaway host (its fresh UUIDs are discarded; the
-    //    per-lease hosts get their own, rebuilt at lease start — design §3.3, mirroring
-    //    `async with self.session(): pass`, exporter.py:786-787).
-    let registration = {
-        let host = SlimHost::spawn(&opts.config_path).await?;
-        RoutingTable::build(uds_channel(host.socket()).await?)
-            .await?
-            .report()
-            .clone()
-    };
+    // 2. Spawn the first host: use it for the registration `GetReport` AND keep it as
+    //    the first pre-warmed host, so the first lease doesn't pay a cold spawn.
+    //    Subsequent hosts are pre-warmed during the previous lease (see `Warm`); each
+    //    lease still gets a freshly-spawned, reset host — just spawned ahead of time.
+    let first_host = SlimHost::spawn(&opts.config_path).await?;
+    let registration = RoutingTable::build(uds_channel(first_host.socket()).await?)
+        .await?
+        .report()
+        .clone();
 
     // 3. Process-lifetime session server with per-lease swappable routing.
     let (routing_tx, routing_rx) = watch::channel(None);
@@ -141,6 +140,7 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
             end_session_tx,
             &main_uds,
             &hook_uds,
+            first_host,
             &opts.config_path,
             config,
             shutdown.clone(),
@@ -179,6 +179,34 @@ struct ActiveLease {
     host: SlimHost,
 }
 
+/// A pre-warmed slim host for the *next* lease: either ready, or still spawning in
+/// the background. Pipelining the spawn (started during the previous lease) hides the
+/// cold-start latency (interpreter + driver imports) so a lease rarely pays for it.
+enum Warm {
+    Ready(SlimHost),
+    Spawning(JoinHandle<Result<SlimHost, Error>>),
+}
+
+impl Warm {
+    /// Start spawning a fresh host in the background.
+    fn spawn(config_path: PathBuf) -> Self {
+        Warm::Spawning(tokio::spawn(
+            async move { SlimHost::spawn(&config_path).await },
+        ))
+    }
+
+    /// Take the warmed host (awaiting the in-flight spawn if it hasn't finished yet)
+    /// and immediately kick off warming the *next* one.
+    async fn take(&mut self, config_path: &Path) -> Result<SlimHost, Error> {
+        match std::mem::replace(self, Warm::spawn(config_path.to_path_buf())) {
+            Warm::Ready(host) => Ok(host),
+            Warm::Spawning(handle) => handle
+                .await
+                .map_err(|e| Error::Config(format!("pre-warm host task failed: {e}")))?,
+        }
+    }
+}
+
 /// Consume the `Status` stream, running one lease at a time. The stream doubles as
 /// the liveness signal, so it is reopened on close; an active lease survives a
 /// reconnect.
@@ -190,11 +218,15 @@ async fn status_loop(
     end_session_tx: watch::Sender<Option<Arc<Notify>>>,
     main_uds: &str,
     hook_uds: &str,
+    initial_host: SlimHost,
     config_path: &Path,
     config: &ExporterConfig,
     shutdown: Arc<Notify>,
 ) -> Result<(), Error> {
     let mut active: Option<ActiveLease> = None;
+    // The first lease reuses the registration host; later leases use one pre-warmed
+    // during the previous lease.
+    let mut warm = Warm::Ready(initial_host);
 
     loop {
         let mut stream = match controller.status(StatusRequest {}).await {
@@ -217,14 +249,15 @@ async fn status_loop(
             let leased = resp.leased && resp.lease_name.as_deref().is_some_and(|s| !s.is_empty());
 
             match (leased, active.is_some()) {
-                // A new lease while idle: spawn a fresh host, swap in its routing, and
-                // start the lifecycle — all before the beforeLease hook runs.
+                // A new lease while idle: take the pre-warmed host, swap in its routing,
+                // and start the lifecycle — all before the beforeLease hook runs. Taking
+                // the host kicks off pre-warming the next one for the lease after this.
                 (true, false) => {
                     let lease_name = resp.lease_name.clone().unwrap();
                     let client_name = resp.client_name.clone().unwrap_or_default();
                     tracing::info!(lease = %lease_name, client = %client_name, "lease started");
 
-                    let host = SlimHost::spawn(config_path).await?;
+                    let host = warm.take(config_path).await?;
                     let routing = RoutingTable::build(uds_channel(host.socket()).await?).await?;
                     routing_tx.send_replace(Some(Arc::new(routing)));
 

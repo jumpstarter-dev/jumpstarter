@@ -18,6 +18,7 @@ Prints exactly ONE line (the socket path) on stdout, then serves until killed.
 Usage: ``slim_driver_host.py <exporter-config-path>``
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -44,6 +45,11 @@ async def main(config_path: str) -> None:
             # Keep the session's (no-op) driver-call gate permanently permissive; the
             # Rust core owns the real lease lifecycle and status reporting.
             session.update_status(ExporterStatus.LEASE_READY)
+            # Debug knob to simulate a slow spawn (heavy driver imports) so the Rust
+            # core's pre-warm pipeline can be exercised; no effect unless set.
+            delay = float(os.environ.get("JMP_SLIM_HOST_DELAY", "0"))
+            if delay:
+                await anyio.sleep(delay)
             # The Rust core reads exactly this one line to learn where to proxy.
             print(path, flush=True)
             await anyio.sleep_forever()
