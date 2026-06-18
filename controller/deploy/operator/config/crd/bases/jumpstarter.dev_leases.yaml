@@ -254,8 +254,8 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               priority:
-                description: Priority is the effective priority of the lease from the
-                  access policy.
+                description: Priority is the effective priority of the lease from
+                  the access policy.
                 type: integer
               spotAccess:
                 description: SpotAccess indicates whether this lease was granted with

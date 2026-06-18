@@ -326,7 +326,8 @@ var _ = Describe("Lease Controller", func() {
 					},
 					Policies: []jumpstarterdevv1alpha1.Policy{
 						{
-							Priority: 0,
+							Description: "Requires different-client label",
+							Priority:    0,
 							From: []jumpstarterdevv1alpha1.From{
 								{
 									ClientSelector: metav1.LabelSelector{
@@ -358,9 +359,203 @@ var _ = Describe("Lease Controller", func() {
 			Expect(condition).NotTo(BeNil())
 			Expect(condition.Reason).To(Equal("NoAccess"))
 			Expect(condition.Message).To(ContainSubstring("none of them are approved by any policy"))
+			Expect(condition.Message).To(ContainSubstring("Requires different-client label"))
 
 			// Clean up
 			Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
+		})
+	})
+
+	When("trying to lease with multiple policies containing descriptions, none matching client", func() {
+		It("should include all policy descriptions in the unsatisfiable message", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+
+			ctx := context.Background()
+
+			// Create two policies with different descriptions, neither matching testClient
+			policy1 := &jumpstarterdevv1alpha1.ExporterAccessPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-policy-admin",
+					Namespace: "default",
+				},
+				Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"dut": "a"},
+					},
+					Policies: []jumpstarterdevv1alpha1.Policy{
+						{
+							Description: "Administrators only",
+							Priority:    20,
+							From: []jumpstarterdevv1alpha1.From{{
+								ClientSelector: metav1.LabelSelector{
+									MatchLabels: map[string]string{"role": "admin"},
+								},
+							}},
+						},
+					},
+				},
+			}
+			policy2 := &jumpstarterdevv1alpha1.ExporterAccessPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-policy-ci",
+					Namespace: "default",
+				},
+				Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"dut": "a"},
+					},
+					Policies: []jumpstarterdevv1alpha1.Policy{
+						{
+							Description: "CI pipelines only",
+							Priority:    5,
+							From: []jumpstarterdevv1alpha1.From{{
+								ClientSelector: metav1.LabelSelector{
+									MatchLabels: map[string]string{"role": "ci"},
+								},
+							}},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, policy1)).To(Succeed())
+			Expect(k8sClient.Create(ctx, policy2)).To(Succeed())
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).To(BeNil())
+
+			condition := meta.FindStatusCondition(updatedLease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable))
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Reason).To(Equal("NoAccess"))
+			Expect(condition.Message).To(ContainSubstring("Administrators only"))
+			Expect(condition.Message).To(ContainSubstring("CI pipelines only"))
+			Expect(condition.Message).To(ContainSubstring(";"))
+
+			// Clean up
+			Expect(k8sClient.Delete(ctx, policy1)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, policy2)).To(Succeed())
+		})
+	})
+
+	When("trying to lease with policies where some have empty descriptions", func() {
+		It("should only include non-empty descriptions in the unsatisfiable message", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+
+			ctx := context.Background()
+
+			policy := &jumpstarterdevv1alpha1.ExporterAccessPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-policy-mixed",
+					Namespace: "default",
+				},
+				Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"dut": "a"},
+					},
+					Policies: []jumpstarterdevv1alpha1.Policy{
+						{
+							Description: "VIP access rule",
+							Priority:    10,
+							From: []jumpstarterdevv1alpha1.From{{
+								ClientSelector: metav1.LabelSelector{
+									MatchLabels: map[string]string{"role": "vip"},
+								},
+							}},
+						},
+						{
+							// No description
+							Priority: 1,
+							From: []jumpstarterdevv1alpha1.From{{
+								ClientSelector: metav1.LabelSelector{
+									MatchLabels: map[string]string{"role": "other"},
+								},
+							}},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			condition := meta.FindStatusCondition(updatedLease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable))
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Reason).To(Equal("NoAccess"))
+			Expect(condition.Message).To(ContainSubstring("VIP access rule"))
+			// The message should contain "Matching policies:" since at least one description exists
+			Expect(condition.Message).To(ContainSubstring("Matching policies:"))
+
+			// Clean up
+			Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
+		})
+	})
+
+	When("trying to lease with a policy that has descriptions and matches the client", func() {
+		It("should acquire the lease successfully regardless of description", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+
+			ctx := context.Background()
+
+			policy := &jumpstarterdevv1alpha1.ExporterAccessPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-policy-matching",
+					Namespace: "default",
+				},
+				Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"dut": "a"},
+					},
+					Policies: []jumpstarterdevv1alpha1.Policy{
+						{
+							Description: "Standard access for registered clients",
+							Priority:    10,
+							From: []jumpstarterdevv1alpha1.From{{
+								ClientSelector: metav1.LabelSelector{
+									MatchLabels: map[string]string{"name": "client"}, // Matches testClient
+								},
+							}},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, policy)).To(Succeed())
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			Expect(updatedLease.Status.Priority).To(Equal(10))
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeReady),
+			)).To(BeTrue())
+
+			// Clean up
+			Expect(k8sClient.Delete(ctx, policy)).To(Succeed())
+		})
+	})
+
+	When("trying to lease with no policies at all and no matching exporters", func() {
+		It("should show NoAccess message without policy descriptions", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+			lease.Spec.Selector.MatchLabels["dut"] = "does-not-exist"
+
+			ctx := context.Background()
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).To(BeNil())
+
+			condition := meta.FindStatusCondition(updatedLease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable))
+			Expect(condition).NotTo(BeNil())
+			// Without policies, the message should not contain "Matching policies:"
+			Expect(condition.Message).NotTo(ContainSubstring("Matching policies:"))
 		})
 	})
 
@@ -755,9 +950,9 @@ var _ = Describe("orderApprovedExporters", func() {
 				},
 			}
 			ordered := orderApprovedExporters(approvedExporters)
-			Expect(ordered[0].Policy.Priority).To(Equal(int(100)))
-			Expect(ordered[1].Policy.Priority).To(Equal(int(10)))
-			Expect(ordered[2].Policy.Priority).To(Equal(int(5)))
+			Expect(ordered[0].Policy.Priority).To(Equal(100))
+			Expect(ordered[1].Policy.Priority).To(Equal(10))
+			Expect(ordered[2].Policy.Priority).To(Equal(5))
 
 		})
 	})

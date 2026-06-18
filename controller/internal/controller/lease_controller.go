@@ -255,17 +255,27 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			matchingExporters = listed.Items
 		}
 
-		approvedExporters, err := r.attachMatchingPolicies(ctx, lease, matchingExporters)
+		approvedExporters, unmatchedDescriptions, err := r.attachMatchingPolicies(ctx, lease, matchingExporters)
 		if err != nil {
 			return fmt.Errorf("reconcileStatusExporterRef: failed to handle policy approval: %w", err)
 		}
 
 		if len(approvedExporters) == 0 {
-			lease.SetStatusUnsatisfiable(
-				"NoAccess",
-				"While there are %d exporters matching the selector, none of them are approved by any policy for your client",
-				len(matchingExporters),
-			)
+			if len(unmatchedDescriptions) > 0 {
+				desc := strings.Join(unmatchedDescriptions, "; ")
+				if len(desc) > 4096 {
+					desc = desc[:4096] + "..."
+				}
+				lease.SetStatusUnsatisfiable("NoAccess",
+					"While there are %d exporters matching the selector, none of them are approved by any policy for your client. Matching policies: %s",
+					len(matchingExporters), desc,
+				)
+			} else {
+				lease.SetStatusUnsatisfiable("NoAccess",
+					"While there are %d exporters matching the selector, none of them are approved by any policy for your client",
+					len(matchingExporters),
+				)
+			}
 			return nil
 		}
 
@@ -353,14 +363,14 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 // attachMatchingPolicies attaches the matching policies to the list of online exporters
 // if the exporter matches the policy and the client matches the policy's client selector
 // the exporter is approved for leasing
-func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease, onlineExporters []jumpstarterdevv1alpha1.Exporter) ([]ApprovedExporter, error) {
+func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease, onlineExporters []jumpstarterdevv1alpha1.Exporter) ([]ApprovedExporter, []string, error) {
 	var approvedExporters []ApprovedExporter
 
 	var policies jumpstarterdevv1alpha1.ExporterAccessPolicyList
 	if err := r.List(ctx, &policies,
 		client.InNamespace(lease.Namespace),
 	); err != nil {
-		return nil, fmt.Errorf("reconcileStatusExporterRef: failed to list exporter access policies: %w", err)
+		return nil, nil, fmt.Errorf("reconcileStatusExporterRef: failed to list exporter access policies: %w", err)
 	}
 
 	// If there are no policies, we just approve all online exporters
@@ -374,7 +384,7 @@ func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jum
 				},
 			})
 		}
-		return approvedExporters, nil
+		return approvedExporters, nil, nil
 	}
 	// If policies exist: get the client to obtain the metadata necessary for policy matching
 	var jclient jumpstarterdevv1alpha1.Client
@@ -382,23 +392,28 @@ func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jum
 		Namespace: lease.Namespace,
 		Name:      lease.Spec.ClientRef.Name,
 	}, &jclient); err != nil {
-		return nil, fmt.Errorf("reconcileStatusExporterRef: failed to get client: %w", err)
+		return nil, nil, fmt.Errorf("reconcileStatusExporterRef: failed to get client: %w", err)
 	}
+
+	seenDescriptions := make(map[string]bool)
+	var unmatchedDescriptions []string
 
 	for _, exporter := range onlineExporters {
 		for _, policy := range policies.Items {
 			exporterSelector, err := metav1.LabelSelectorAsSelector(&policy.Spec.ExporterSelector)
 			if err != nil {
-				return nil, fmt.Errorf("reconcileStatusExporterRef: failed to convert exporter selector: %w", err)
+				return nil, nil, fmt.Errorf("reconcileStatusExporterRef: failed to convert exporter selector: %w", err)
 			}
 			if exporterSelector.Matches(labels.Set(exporter.Labels)) {
 				for _, p := range policy.Spec.Policies {
+					clientMatched := false
 					for _, from := range p.From {
 						clientSelector, err := metav1.LabelSelectorAsSelector(&from.ClientSelector)
 						if err != nil {
-							return nil, fmt.Errorf("reconcileStatusExporterRef: failed to convert client selector: %w", err)
+							return nil, nil, fmt.Errorf("reconcileStatusExporterRef: failed to convert client selector: %w", err)
 						}
 						if clientSelector.Matches(labels.Set(jclient.Labels)) {
+							clientMatched = true
 							if p.MaximumDuration != nil {
 								// Calculate requested duration (may be from explicit Duration or computed from times)
 								requestedDuration := time.Duration(0)
@@ -420,11 +435,15 @@ func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jum
 							})
 						}
 					}
+					if !clientMatched && p.Description != "" && !seenDescriptions[p.Description] {
+						seenDescriptions[p.Description] = true
+						unmatchedDescriptions = append(unmatchedDescriptions, p.Description)
+					}
 				}
 			}
 		}
 	}
-	return approvedExporters, nil
+	return approvedExporters, unmatchedDescriptions, nil
 }
 
 // ListMatchingExporters returns a list of exporters that match the selector of the lease
