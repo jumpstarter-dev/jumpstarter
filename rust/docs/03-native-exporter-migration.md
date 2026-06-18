@@ -412,6 +412,19 @@ flash cannot OOM (resolves the backpressure and re-chunking majors). HTTP/2 keep
 inner hop match `session.py:32-35` so idle tunnels survive (`specs/rust-core/06-streams-and-router.md`
 §2.4).
 
+**Implementation note (inc2).** `tunnel.rs` realizes this as a *transparent message passthrough*
+rather than an explicit `mpsc(32)` relay: it returns the host's `Streaming<StreamResponse>` directly
+and forwards the client uplink (`filter_map(|f| f.ok())`) as the host call's request body. This is
+simpler and strictly better on two of the contracts above — the host's trailing
+`ABORTED "RouterStream: aclose"` status propagates for free, and client cancellation drops the host
+call via `Drop` — while still preserving message boundaries 1:1 (tonic delivers each protobuf message
+as one stream item, never split or batched). Backpressure is **HTTP/2 flow control** instead of the
+explicit 32-deep channel: because the proxy is pull-driven (each direction is polled by its
+downstream peer with no intermediate buffer), a slow client throttles the host and vice versa.
+Verified empirically: a **500 MB resource upload** round-trips byte-exact while the Rust exporter's
+RSS stays at **~20 MB (3 MB of growth)** — no unbounded buffering. The adversarial inc2 verification
+flagged the absence of an explicit `bounded(32)` loop as an OOM risk; this measurement refutes it.
+
 ---
 
 ## 6. Crate placement and module layout

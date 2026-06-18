@@ -16,6 +16,7 @@ jumpstarter-client = { path = "../jumpstarter-client" }
 tonic.workspace = true
 prost-types.workspace = true
 thiserror.workspace = true
+serde_json.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time", "sync", "macros", "net", "io-util", "process", "signal"] }
 tokio-stream = { version = "0.1", features = ["net"] }
 tracing.workspace = true

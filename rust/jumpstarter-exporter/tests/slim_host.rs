@@ -13,7 +13,8 @@ use jumpstarter_exporter::control::uds_channel;
 use jumpstarter_exporter::session::{self, SessionRouter};
 use jumpstarter_exporter::SlimHost;
 use jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient;
-use jumpstarter_protocol::v1::DriverCallRequest;
+use jumpstarter_protocol::v1::router_service_client::RouterServiceClient;
+use jumpstarter_protocol::v1::{DriverCallRequest, StreamRequest};
 
 const CONFIG: &str = r#"apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
@@ -140,6 +141,107 @@ async fn rust_server_proxies_getreport_and_drivercall() {
         })
         .await;
     assert_eq!(bad.unwrap_err().code(), tonic::Code::Unknown);
+
+    let _ = std::fs::remove_file(&cfg_path);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// inc2: the inner RouterService.Stream proxy relays the host's resource-handle
+/// initial metadata to the client BEFORE the client sends any frame (the resource
+/// handshake + metadata-before-frame deadlock regression, in one).
+#[tokio::test]
+async fn router_stream_relays_resource_initial_metadata() {
+    if std::env::var("JMP_DRIVER_HOST_PYTHON").is_err() {
+        eprintln!("skipping: set JMP_DRIVER_HOST_PYTHON to a python with `jumpstarter` importable");
+        return;
+    }
+
+    let cfg_path =
+        std::env::temp_dir().join(format!("jmp-stream-test-{}.yaml", std::process::id()));
+    std::fs::write(&cfg_path, CONFIG).unwrap();
+
+    let host = SlimHost::spawn(&cfg_path).await.expect("spawn slim host");
+    let router = SessionRouter::build(uds_channel(host.socket()).await.unwrap())
+        .await
+        .expect("build router");
+
+    let dir = std::env::temp_dir().join(format!("jmp-stream-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let main = dir.join("m.sock");
+    let _server = session::serve(router.clone(), &main, &dir.join("h.sock")).expect("serve");
+
+    // The power leaf's uuid; any driver can host a resource handle.
+    let report = ExporterServiceClient::new(uds_channel(main.to_str().unwrap()).await.unwrap())
+        .get_report(())
+        .await
+        .unwrap()
+        .into_inner();
+    let uuid = report
+        .reports
+        .iter()
+        .find(|r| r.parent_uuid.is_some())
+        .expect("a leaf")
+        .uuid
+        .clone();
+
+    // Open a resource Stream with a *pending* uplink (never send a frame), so a
+    // returned response proves the host's initial metadata is relayed before any
+    // client byte. A deadlocked proxy would hang here.
+    let mut req = tonic::Request::new(tokio_stream::pending::<StreamRequest>());
+    let request_json = format!(r#"{{"kind":"resource","uuid":"{uuid}"}}"#);
+    req.metadata_mut()
+        .insert("request", request_json.parse().unwrap());
+
+    let resp = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        RouterServiceClient::new(uds_channel(main.to_str().unwrap()).await.unwrap()).stream(req),
+    )
+    .await
+    .expect("stream() returned before the timeout (no metadata deadlock)")
+    .expect("stream() ok");
+
+    // The host minted a resource handle and sent it as `resource` initial metadata.
+    assert!(
+        resp.metadata().get("resource").is_some(),
+        "expected a `resource` handle in the relayed initial metadata, got {:?}",
+        resp.metadata()
+    );
+
+    let _ = std::fs::remove_file(&cfg_path);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// inc2: an unknown driver uuid on a Stream is rejected at the boundary with UNKNOWN.
+#[tokio::test]
+async fn router_stream_unknown_uuid_is_unknown() {
+    if std::env::var("JMP_DRIVER_HOST_PYTHON").is_err() {
+        eprintln!("skipping: set JMP_DRIVER_HOST_PYTHON to a python with `jumpstarter` importable");
+        return;
+    }
+
+    let cfg_path = std::env::temp_dir().join(format!("jmp-stream-bad-{}.yaml", std::process::id()));
+    std::fs::write(&cfg_path, CONFIG).unwrap();
+    let host = SlimHost::spawn(&cfg_path).await.expect("spawn slim host");
+    let router = SessionRouter::build(uds_channel(host.socket()).await.unwrap())
+        .await
+        .unwrap();
+    let dir = std::env::temp_dir().join(format!("jmp-stream-bad-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let main = dir.join("m.sock");
+    let _server = session::serve(router, &main, &dir.join("h.sock")).unwrap();
+
+    let mut req = tonic::Request::new(tokio_stream::pending::<StreamRequest>());
+    req.metadata_mut().insert(
+        "request",
+        r#"{"kind":"resource","uuid":"00000000-0000-0000-0000-000000000000"}"#
+            .parse()
+            .unwrap(),
+    );
+    let err = RouterServiceClient::new(uds_channel(main.to_str().unwrap()).await.unwrap())
+        .stream(req)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), tonic::Code::Unknown);
 
     let _ = std::fs::remove_file(&cfg_path);
     let _ = std::fs::remove_dir_all(&dir);

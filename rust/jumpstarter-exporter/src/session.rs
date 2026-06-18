@@ -18,6 +18,7 @@ use std::sync::Arc;
 
 use jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient;
 use jumpstarter_protocol::v1::exporter_service_server::{ExporterService, ExporterServiceServer};
+use jumpstarter_protocol::v1::router_service_server::RouterServiceServer;
 use jumpstarter_protocol::v1::{
     DriverCallRequest, DriverCallResponse, EndSessionRequest, EndSessionResponse,
     GetReportResponse, GetStatusRequest, GetStatusResponse, LogStreamResponse, ResetRequest,
@@ -67,6 +68,16 @@ impl SessionRouter {
         ExporterServiceClient::new(self.host.clone())
     }
 
+    /// The channel to the slim host (for the [`crate::tunnel`] RouterService proxy).
+    pub(crate) fn host_channel(&self) -> Channel {
+        self.host.clone()
+    }
+
+    /// Whether `uuid` is a known driver instance in this session.
+    pub(crate) fn knows_uuid(&self, uuid: &str) -> bool {
+        self.driver_uuids.contains(uuid)
+    }
+
     /// Validate a driver UUID at the boundary, returning the host client it routes
     /// to. Unknown/malformed UUID → `UNKNOWN`, matching `session.py:308` (the client
     /// distinguishes `NOT_FOUND`; see design §2.5 / OQ4).
@@ -98,11 +109,15 @@ pub fn serve(
     // Separate sockets, one server: each accepted connection is independent, so the
     // hook/client SSL-frame isolation (session.py:244-257) is preserved.
     let incoming = UnixListenerStream::new(main).merge(UnixListenerStream::new(hook));
-    let service = ExporterServiceServer::new(ExporterServer { router });
+    let exporter = ExporterServiceServer::new(ExporterServer {
+        router: router.clone(),
+    });
+    let router_svc = RouterServiceServer::new(crate::tunnel::RouterServer::new(router));
 
     Ok(tokio::spawn(async move {
         if let Err(e) = Server::builder()
-            .add_service(service)
+            .add_service(exporter)
+            .add_service(router_svc)
             .serve_with_incoming(incoming)
             .await
         {
