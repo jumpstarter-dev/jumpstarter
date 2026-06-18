@@ -10,7 +10,7 @@ ADD . /src
 RUN make -C /src/python build
 
 
-FROM quay.io/devfile/base-developer-image:ubi10-latest
+FROM quay.io/devfile/base-developer-image:ubi10-latest AS python-base
 LABEL maintainer="jumpstarter.dev"
 
 LABEL name="devfile/udi10/jumpstarter-client"
