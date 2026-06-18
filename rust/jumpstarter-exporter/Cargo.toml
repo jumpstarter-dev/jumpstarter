@@ -17,7 +17,7 @@ tonic.workspace = true
 prost-types.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time", "sync", "macros", "net", "io-util", "process", "signal"] }
-tokio-stream = "0.1"
+tokio-stream = { version = "0.1", features = ["net"] }
 tracing.workspace = true
 # For the local-UDS ExporterService channel (GetReport on the session socket).
 hyper-util = "0.1"

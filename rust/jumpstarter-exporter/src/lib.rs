@@ -19,6 +19,7 @@ pub mod driver_host;
 pub mod exporter;
 pub mod fsm;
 pub mod hooks;
+pub mod session;
 
 /// The exporter reuses the client's error taxonomy (RPC / transport / config) for
 /// the shared controller-channel and router-bridge paths.

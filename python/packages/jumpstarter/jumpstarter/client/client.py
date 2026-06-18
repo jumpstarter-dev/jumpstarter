@@ -77,7 +77,12 @@ async def client_from_path(
                 yield await client_from_channel(channel, portal, stack, allow, unsafe)
     else:
         async with grpc.aio.secure_channel(
-            f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
+            f"unix://{path}",
+            grpc.local_channel_credentials(grpc.LocalConnectionType.UDS),
+            # grpcio defaults :authority to the percent-encoded socket path, which a
+            # strict HTTP/2 server (the Rust exporter core) rejects as a malformed
+            # authority. Pin a valid authority; grpcio servers accept it unchanged.
+            options=[("grpc.default_authority", "localhost")],
         ) as channel:
             yield await client_from_channel(channel, portal, stack, allow, unsafe)
 

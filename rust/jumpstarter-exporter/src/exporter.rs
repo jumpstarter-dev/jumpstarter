@@ -20,7 +20,6 @@ use jumpstarter_client::channel;
 use jumpstarter_client::router;
 use jumpstarter_config::{ExporterConfig, HookConfig, TlsConfig};
 use jumpstarter_protocol::v1::controller_service_client::ControllerServiceClient;
-use jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient;
 use jumpstarter_protocol::v1::{
     ExporterStatus, ListenRequest, RegisterRequest, StatusRequest, UnregisterRequest,
 };
@@ -31,9 +30,10 @@ use tokio::time::sleep;
 use tokio_stream::StreamExt as _;
 
 use crate::control::{self, uds_channel, Controller};
-use crate::driver_host::DriverHost;
+use crate::driver_host::SlimHost;
 use crate::fsm::{LeaseLifecycle, LeasePhase};
 use crate::hooks::{self, AfterOutcome, BeforeOutcome, HookContext};
+use crate::session::{self, SessionRouter};
 use crate::Error;
 
 /// Settle delay between leases, avoiding overlapping-session SSL corruption
@@ -62,10 +62,24 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
     let namespace = config.metadata.namespace.clone().unwrap_or_default();
     let name = config.metadata.name.clone();
 
-    // 1. Host the drivers in a Python subprocess; learn the main + hook sockets.
-    let host = DriverHost::spawn(&opts.config_path).await?;
+    // 1. Host the whole driver tree in a slim Python subprocess (one socket), and
+    //    build the per-process UUID routing table from its GetReport.
+    let host = SlimHost::spawn(&opts.config_path).await?;
+    let router = SessionRouter::build(uds_channel(host.socket()).await?).await?;
 
-    // 2. Authenticated controller channel (role "Exporter").
+    // 2. Serve the ExporterService ourselves on a main + hook Unix socket, routing
+    //    driver calls into the host. The server is process-lifetime; `host` and
+    //    `_server` are kept alive for the duration of `run`.
+    let srv_dir = std::env::temp_dir().join(format!("jmp-exp-{}", std::process::id()));
+    std::fs::create_dir_all(&srv_dir)
+        .map_err(|e| Error::Config(format!("creating session socket dir: {e}")))?;
+    let main_uds = srv_dir.join("m.sock");
+    let hook_uds = srv_dir.join("h.sock");
+    let _server = session::serve(router.clone(), &main_uds, &hook_uds)?;
+    let main_uds = main_uds.to_string_lossy().into_owned();
+    let hook_uds = hook_uds.to_string_lossy().into_owned();
+
+    // 3. Authenticated controller channel (role "Exporter").
     let svc = channel::connect_controller(
         &endpoint,
         &config.tls,
@@ -77,17 +91,12 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
     .await?;
     let mut controller = ControllerServiceClient::new(svc);
 
-    // 3. Register: GetReport on the session socket -> Register -> AVAILABLE.
-    let report = ExporterServiceClient::new(uds_channel(host.main_socket()).await?)
-        .get_report(())
-        .await?
-        .into_inner();
-    // RegisterResponse is intentionally discarded — identity stays config-derived
-    // (exporter.py:324-329).
+    // 4. Register from the cached report -> AVAILABLE. (RegisterResponse discarded —
+    //    identity stays config-derived, exporter.py:324-329.)
     controller
         .register(RegisterRequest {
-            labels: report.labels,
-            reports: report.reports,
+            labels: router.report().labels.clone(),
+            reports: router.report().reports.clone(),
         })
         .await?;
     control::report_status(
@@ -98,10 +107,10 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
     .await?;
     tracing::info!(%name, "exporter registered");
 
-    // 4. Serve leases until a shutdown signal or an `on_failure: exit` hook.
+    // 5. Serve leases until a shutdown signal or an `on_failure: exit` hook.
     let shutdown = Arc::new(Notify::new());
     let outcome = tokio::select! {
-        r = status_loop(controller.clone(), &host, config, shutdown.clone()) => r,
+        r = status_loop(controller.clone(), &main_uds, &hook_uds, config, shutdown.clone()) => r,
         _ = shutdown.notified() => {
             tracing::info!("exporter shutdown requested by hook");
             Ok(())
@@ -125,6 +134,7 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
         })
         .await;
     tracing::info!("exporter unregistered");
+    let _ = std::fs::remove_dir_all(&srv_dir);
     outcome
 }
 
@@ -140,7 +150,8 @@ struct ActiveLease {
 /// reconnect.
 async fn status_loop(
     mut controller: Controller,
-    host: &DriverHost,
+    main_uds: &str,
+    hook_uds: &str,
     config: &ExporterConfig,
     shutdown: Arc<Notify>,
 ) -> Result<(), Error> {
@@ -177,8 +188,8 @@ async fn status_loop(
                         controller.clone(),
                         lease_name,
                         client_name,
-                        host.main_socket().to_string(),
-                        host.hook_socket().to_string(),
+                        main_uds.to_string(),
+                        hook_uds.to_string(),
                         config.tls.clone(),
                         config.hooks.clone(),
                         end.clone(),
@@ -297,9 +308,11 @@ fn spawn_lease(
     })
 }
 
-/// Open `Listen` and bridge each incoming `ListenResponse` from the session's main
-/// socket to the router (the reverse of the Phase-A client transport). Records the
-/// first connection request so the lifecycle knows the board was used.
+/// Open `Listen` and terminate each incoming client tunnel into the local Rust
+/// `ExporterService` server's main socket (design §6.3 option B: reuse the byte
+/// bridge, but its target is now our own tonic server instead of the Python
+/// session). Records the first connection request so the lifecycle knows the board
+/// was used.
 fn spawn_listen(
     mut controller: Controller,
     lease_name: String,

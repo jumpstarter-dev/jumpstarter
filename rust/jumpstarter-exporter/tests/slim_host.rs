@@ -10,8 +10,10 @@
 //! ```
 
 use jumpstarter_exporter::control::uds_channel;
+use jumpstarter_exporter::session::{self, SessionRouter};
 use jumpstarter_exporter::SlimHost;
 use jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient;
+use jumpstarter_protocol::v1::DriverCallRequest;
 
 const CONFIG: &str = r#"apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
@@ -83,4 +85,62 @@ async fn slim_host_serves_whole_tree_getreport() {
     );
 
     let _ = std::fs::remove_file(&cfg_path);
+}
+
+/// inc1: the Rust ExporterServiceServer proxies GetReport + DriverCall into the slim
+/// host. Hits the Rust server with a Rust client to isolate the server from
+/// grpcio-client interop.
+#[tokio::test]
+async fn rust_server_proxies_getreport_and_drivercall() {
+    if std::env::var("JMP_DRIVER_HOST_PYTHON").is_err() {
+        eprintln!("skipping: set JMP_DRIVER_HOST_PYTHON to a python with `jumpstarter` importable");
+        return;
+    }
+
+    let cfg_path = std::env::temp_dir().join(format!("jmp-srv-test-{}.yaml", std::process::id()));
+    std::fs::write(&cfg_path, CONFIG).unwrap();
+
+    let host = SlimHost::spawn(&cfg_path).await.expect("spawn slim host");
+    let router = SessionRouter::build(uds_channel(host.socket()).await.unwrap())
+        .await
+        .expect("build router");
+
+    let dir = std::env::temp_dir().join(format!("jmp-srv-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let main = dir.join("m.sock");
+    let hook = dir.join("h.sock");
+    let _server = session::serve(router, &main, &hook).expect("serve");
+
+    let mut client = ExporterServiceClient::new(uds_channel(main.to_str().unwrap()).await.unwrap());
+
+    // GetReport through the Rust server.
+    let report = client.get_report(()).await.expect("GetReport").into_inner();
+    let power = report
+        .reports
+        .iter()
+        .find(|r| r.labels.get("jumpstarter.dev/name").map(String::as_str) == Some("power"))
+        .expect("power leaf");
+
+    // DriverCall power.on through the Rust server -> proxied to the slim host.
+    let resp = client
+        .driver_call(DriverCallRequest {
+            uuid: power.uuid.clone(),
+            method: "on".to_string(),
+            args: vec![],
+        })
+        .await;
+    assert!(resp.is_ok(), "DriverCall(power.on) failed: {resp:?}");
+
+    // Unknown uuid -> UNKNOWN.
+    let bad = client
+        .driver_call(DriverCallRequest {
+            uuid: "00000000-0000-0000-0000-000000000000".to_string(),
+            method: "on".to_string(),
+            args: vec![],
+        })
+        .await;
+    assert_eq!(bad.unwrap_err().code(), tonic::Code::Unknown);
+
+    let _ = std::fs::remove_file(&cfg_path);
+    let _ = std::fs::remove_dir_all(&dir);
 }
