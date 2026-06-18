@@ -102,7 +102,8 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
     let (status_tx, status_rx) = watch::channel(StatusSnapshot::default());
     let (end_session_tx, end_session_rx) = watch::channel(None);
     let status_tx = Arc::new(status_tx);
-    let shared = SharedSession::new(routing_rx, status_rx, end_session_rx);
+    let hook_log = crate::logbuf::HookLog::new();
+    let shared = SharedSession::new(routing_rx, status_rx, end_session_rx, hook_log.clone());
 
     let srv_dir = std::env::temp_dir().join(format!("jmp-exp-{}", std::process::id()));
     std::fs::create_dir_all(&srv_dir)
@@ -143,6 +144,7 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
             first_host,
             &opts.config_path,
             config,
+            hook_log,
             shutdown.clone(),
         ) => r,
         _ = shutdown.notified() => {
@@ -221,6 +223,7 @@ async fn status_loop(
     initial_host: SlimHost,
     config_path: &Path,
     config: &ExporterConfig,
+    hook_log: Arc<crate::logbuf::HookLog>,
     shutdown: Arc<Notify>,
 ) -> Result<(), Error> {
     let mut active: Option<ActiveLease> = None;
@@ -273,6 +276,7 @@ async fn status_loop(
                         hook_uds.to_string(),
                         config.tls.clone(),
                         config.hooks.clone(),
+                        hook_log.clone(),
                         end.clone(),
                         end_session,
                         shutdown.clone(),
@@ -311,6 +315,7 @@ fn spawn_lease(
     hook_socket: String,
     tls: TlsConfig,
     hooks: HookConfig,
+    hook_log: Arc<crate::logbuf::HookLog>,
     end: Arc<Notify>,
     end_session: Arc<Notify>,
     shutdown: Arc<Notify>,
@@ -320,11 +325,27 @@ fn spawn_lease(
             hook_socket: &hook_socket,
             lease_name: &lease_name,
             client_name: &client_name,
+            hook_log,
         };
         let mut lc = LeaseLifecycle::new();
         let has_client = Arc::new(AtomicBool::new(false));
 
         advance(&mut lc, LeasePhase::Starting);
+
+        // Open the router Listen stream *before* running beforeLease so the exporter is
+        // reachable while the hook runs. The controller permits client Dials during
+        // `BeforeLeaseHook`/`AfterLeaseHook` (not just `LeaseReady`) — see
+        // `controller_service.go:checkExporterStatusForDriverCalls` — and the Python
+        // exporter likewise establishes session+Listen before LEASE_READY
+        // (`exporter.py:serve`). This lets a client observe the lease's
+        // `GetStatus`/`LogStream` (including a beforeLease failure) during the hook.
+        let listen = spawn_listen(
+            reporter.controller().clone(),
+            lease_name.clone(),
+            main_socket,
+            tls,
+            has_client.clone(),
+        );
 
         // --- beforeLease -------------------------------------------------------
         let before_hook = hooks.before_lease.as_ref();
@@ -334,22 +355,13 @@ fn spawn_lease(
         let reason = match hooks::run_before_lease(&mut reporter, before_hook, &ctx).await {
             BeforeOutcome::Exit => {
                 // beforeLease already reported BEFORE_LEASE_HOOK_FAILED + OFFLINE.
+                listen.abort();
                 advance(&mut lc, LeasePhase::Failed);
                 shutdown.notify_one();
                 return;
             }
             BeforeOutcome::Ready => {
                 advance(&mut lc, LeasePhase::Ready);
-                // Report LEASE_READY (done by run_before_lease) *before* opening Listen:
-                // the controller only delivers Listen responses after a client Dial,
-                // which it only permits once the exporter is LEASE_READY.
-                let listen = spawn_listen(
-                    reporter.controller().clone(),
-                    lease_name.clone(),
-                    main_socket,
-                    tls,
-                    has_client.clone(),
-                );
                 // Serve until the controller ends the lease OR the client ends it early.
                 let reason = tokio::select! {
                     _ = end.notified() => EndReason::Controller,
@@ -360,6 +372,7 @@ fn spawn_lease(
                 reason
             }
             BeforeOutcome::EndLease => {
+                listen.abort();
                 advance(&mut lc, LeasePhase::Ending);
                 EndReason::EndLease
             }

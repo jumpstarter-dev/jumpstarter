@@ -44,7 +44,12 @@ async fn serve_session(cfg_path: &Path, dir: &Path) -> (SlimHost, PathBuf, Serve
     let (stx, status_rx) = watch::channel(StatusSnapshot::default());
     let (etx, end_rx) = watch::channel(None);
     let server = session::serve(
-        SharedSession::new(routing_rx, status_rx, end_rx),
+        SharedSession::new(
+            routing_rx,
+            status_rx,
+            end_rx,
+            jumpstarter_exporter::logbuf::HookLog::new(),
+        ),
         &main,
         &dir.join("h.sock"),
     )
@@ -282,7 +287,12 @@ async fn end_session_get_status_and_idle_routing_are_hermetic() {
     std::fs::create_dir_all(&dir).unwrap();
     let main = dir.join("m.sock");
     let _server = session::serve(
-        SharedSession::new(routing_rx, status_rx, end_rx),
+        SharedSession::new(
+            routing_rx,
+            status_rx,
+            end_rx,
+            jumpstarter_exporter::logbuf::HookLog::new(),
+        ),
         &main,
         &dir.join("h.sock"),
     )

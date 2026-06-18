@@ -63,37 +63,56 @@ impl StatusSnapshot {
 /// mirrors it into the local [`StatusSnapshot`] (so `GetStatus` answers from the lease
 /// FSM, across leases, without round-tripping the per-lease host).
 pub struct StatusReporter {
-    controller: Controller,
+    /// `None` in standalone (`--tls-grpc-listener`) mode — there is no controller, so
+    /// status is only mirrored into the local snapshot for `GetStatus`/hooks.
+    controller: Option<Controller>,
     snapshot: Arc<watch::Sender<StatusSnapshot>>,
 }
 
 impl StatusReporter {
     pub fn new(controller: Controller, snapshot: Arc<watch::Sender<StatusSnapshot>>) -> Self {
         Self {
-            controller,
+            controller: Some(controller),
+            snapshot,
+        }
+    }
+
+    /// A controller-free reporter for standalone serving: hooks still drive the
+    /// `StatusSnapshot` (so `GetStatus` reflects the lifecycle), but nothing is sent
+    /// to a controller.
+    pub fn standalone(snapshot: Arc<watch::Sender<StatusSnapshot>>) -> Self {
+        Self {
+            controller: None,
             snapshot,
         }
     }
 
     /// The underlying controller client (for `Register`/`Unregister`/`Status`).
+    /// Only valid in controller mode.
     pub fn controller(&mut self) -> &mut Controller {
-        &mut self.controller
+        self.controller
+            .as_mut()
+            .expect("controller() called in standalone mode")
     }
 
-    /// Report a status transition (best-effort to the controller; always recorded
-    /// locally for `GetStatus`).
+    /// Report a status transition (best-effort to the controller when present; always
+    /// recorded locally for `GetStatus`).
     pub async fn report(&mut self, status: ExporterStatus, message: &str) {
-        if let Err(e) = report_status(&mut self.controller, status, message).await {
-            tracing::warn!(error = %e, ?status, "failed to report status to controller");
+        if let Some(controller) = &mut self.controller {
+            if let Err(e) = report_status(controller, status, message).await {
+                tracing::warn!(error = %e, ?status, "failed to report status to controller");
+            }
         }
         self.snapshot.send_modify(|s| s.apply(status, message));
     }
 
     /// Ask the controller to release the active lease, also recording the implied
-    /// `AVAILABLE` locally.
+    /// `AVAILABLE` locally. A no-op against the controller in standalone mode.
     pub async fn request_release(&mut self, message: &str) {
-        if let Err(e) = request_release(&mut self.controller, message).await {
-            tracing::warn!(error = %e, "failed to request lease release");
+        if let Some(controller) = &mut self.controller {
+            if let Err(e) = request_release(controller, message).await {
+                tracing::warn!(error = %e, "failed to request lease release");
+            }
         }
         self.snapshot
             .send_modify(|s| s.apply(ExporterStatus::Available, message));

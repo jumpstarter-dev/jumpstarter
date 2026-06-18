@@ -15,6 +15,23 @@ path = "src/main.rs"
 jumpstarter-client = { path = "../jumpstarter-client" }
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
 jumpstarter-config = { path = "../jumpstarter-config" }
-clap.workspace = true
-tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+jumpstarter-protocol = { path = "../jumpstarter-protocol" }
+jumpstarter-admin = { path = "../jumpstarter-admin" }
+prost-types.workspace = true
+clap = { workspace = true, features = ["derive", "env"] }
+clap_complete = "4"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+serde_yaml_ng.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util"] }
+getrandom = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Display + interaction stack for the resource/config/auth/login commands.
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+base64 = "0.22"
+dialoguer = { version = "0.11", default-features = false, features = ["password"] }
+owo-colors = { version = "4", features = ["supports-colors"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+# Several deps pull rustls with different crypto providers (reqwest=aws-lc-rs,
+# tonic/kube=ring); install one process-default at startup to disambiguate.
+rustls = { version = "0.23", default-features = false, features = ["ring"] }

@@ -98,6 +98,7 @@ pub struct SharedSession {
     routing: watch::Receiver<Option<Arc<RoutingTable>>>,
     status: watch::Receiver<StatusSnapshot>,
     end_session: watch::Receiver<Option<Arc<Notify>>>,
+    hook_log: Arc<crate::logbuf::HookLog>,
 }
 
 impl SharedSession {
@@ -105,11 +106,13 @@ impl SharedSession {
         routing: watch::Receiver<Option<Arc<RoutingTable>>>,
         status: watch::Receiver<StatusSnapshot>,
         end_session: watch::Receiver<Option<Arc<Notify>>>,
+        hook_log: Arc<crate::logbuf::HookLog>,
     ) -> Arc<Self> {
         Arc::new(Self {
             routing,
             status,
             end_session,
+            hook_log,
         })
     }
 
@@ -155,6 +158,71 @@ pub fn serve(
             tracing::error!(error = %e, "session server exited");
         }
     }))
+}
+
+/// Standalone (`--tls-grpc-listener`) serving: bind the client-facing
+/// `ExporterService`+`RouterService` on a **TCP** address (plaintext h2c, guarded by
+/// the passphrase interceptor) and the internal hook `ExporterService`+`RouterService`
+/// on a Unix socket (no auth — only the local hook `j` connects there). The TCP
+/// listener is bound synchronously so the port is open on return. Returns the two
+/// server tasks (TCP, hook).
+pub fn serve_standalone(
+    shared: Arc<SharedSession>,
+    bind: std::net::SocketAddr,
+    hook_path: &Path,
+    passphrase: Option<String>,
+) -> Result<(JoinHandle<()>, JoinHandle<()>), Error> {
+    use tokio_stream::wrappers::TcpListenerStream;
+
+    // Hook socket (internal): unauthenticated, like the controller-mode hook socket.
+    let hook = UnixListener::bind(hook_path)
+        .map_err(|e| Error::Config(format!("binding hook session socket: {e}")))?;
+    let hook_exporter = ExporterServiceServer::new(ExporterServer {
+        shared: shared.clone(),
+    });
+    let hook_router = RouterServiceServer::new(crate::tunnel::RouterServer::new(shared.clone()));
+    let hook_task = tokio::spawn(async move {
+        if let Err(e) = Server::builder()
+            .add_service(hook_exporter)
+            .add_service(hook_router)
+            .serve_with_incoming(UnixListenerStream::new(hook))
+            .await
+        {
+            tracing::error!(error = %e, "standalone hook server exited");
+        }
+    });
+
+    // Client-facing TCP listener with the passphrase interceptor on every RPC.
+    let std_listener = std::net::TcpListener::bind(bind)
+        .map_err(|e| Error::Config(format!("binding TCP listener {bind}: {e}")))?;
+    std_listener
+        .set_nonblocking(true)
+        .map_err(|e| Error::Config(format!("set_nonblocking: {e}")))?;
+    let listener = tokio::net::TcpListener::from_std(std_listener)
+        .map_err(|e| Error::Config(format!("tokio TCP listener: {e}")))?;
+    let interceptor = crate::auth::passphrase_interceptor(passphrase);
+    let exporter = ExporterServiceServer::with_interceptor(
+        ExporterServer {
+            shared: shared.clone(),
+        },
+        interceptor.clone(),
+    );
+    let router = RouterServiceServer::with_interceptor(
+        crate::tunnel::RouterServer::new(shared),
+        interceptor,
+    );
+    let tcp_task = tokio::spawn(async move {
+        if let Err(e) = Server::builder()
+            .add_service(exporter)
+            .add_service(router)
+            .serve_with_incoming(TcpListenerStream::new(listener))
+            .await
+        {
+            tracing::error!(error = %e, "standalone TCP server exited");
+        }
+    });
+
+    Ok((tcp_task, hook_task))
 }
 
 /// The tonic `ExporterService` implementation over the [`SharedSession`].
@@ -209,15 +277,21 @@ impl ExporterService for ExporterServer {
         &self,
         _req: Request<()>,
     ) -> Result<Response<Self::LogStreamStream>, Status> {
-        // inc3: proxy the current lease's host LogStream; nothing when idle (inc-later
-        // aggregates Rust-side with hook-output phase tagging, design §4.1).
-        match self.shared.routing() {
-            Some(routing) => {
-                let stream = routing.host_client().log_stream(()).await?.into_inner();
-                Ok(Response::new(Box::pin(stream)))
-            }
-            None => Ok(Response::new(Box::pin(tokio_stream::empty()))),
-        }
+        use tokio_stream::wrappers::BroadcastStream;
+
+        // Hook output (beforeLease/afterLease): replay the buffer, then stream new
+        // lines — so `--exporter-logs` shows hooks that ran before the client connected.
+        let replay = tokio_stream::iter(self.shared.hook_log.replay().into_iter().map(Ok));
+        let hooks =
+            BroadcastStream::new(self.shared.hook_log.subscribe()).filter_map(|r| r.ok().map(Ok));
+
+        // Driver/system logs from the current lease's host (empty when idle).
+        let drivers: Self::LogStreamStream = match self.shared.routing() {
+            Some(routing) => Box::pin(routing.host_client().log_stream(()).await?.into_inner()),
+            None => Box::pin(tokio_stream::empty()),
+        };
+
+        Ok(Response::new(Box::pin(replay.chain(hooks.merge(drivers)))))
     }
 
     async fn reset(&self, _req: Request<ResetRequest>) -> Result<Response<ResetResponse>, Status> {

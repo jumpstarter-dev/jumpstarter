@@ -1,13 +1,21 @@
-//! The Jumpstarter `jmp` CLI (Rust). Implements `jmp shell` (acquire a lease and
-//! run a shell/command wired to an exporter) and `jmp run` (serve an exporter).
+//! The Jumpstarter `jmp` CLI (Rust core) — the client-side command tree (spec 08).
+//! The `jmp-admin` and `jmp-driver` sub-CLIs and the `j` driver dispatcher stay as
+//! Python today (driver business logic), so they are not part of this binary.
+
+mod clientcfg;
+mod cmderr;
+mod commands;
+mod jwt;
+mod oidc;
+mod output;
+mod parsing;
+mod prompt;
+mod resources;
+mod userconfig;
 
 use std::process::ExitCode;
-use std::time::Duration;
 
-use clap::{Args, Parser, Subcommand};
-use jumpstarter_client::shell::{self, ShellOptions};
-use jumpstarter_config::{paths, ClientConfig, ExporterConfig, UserConfig, YamlConfig};
-use jumpstarter_exporter::RunOptions;
+use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "jmp", version, about = "Jumpstarter CLI (Rust core)")]
@@ -18,120 +26,60 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Manage Jumpstarter Kubernetes objects (admin).
+    Admin(commands::admin::Args),
     /// Acquire a lease and open a shell (or run a command) connected to an exporter.
-    Shell(ShellArgs),
-    /// Serve an exporter (register with the controller and host its drivers).
-    Run(RunArgs),
-}
-
-#[derive(Args)]
-struct RunArgs {
-    /// Exporter config alias (resolved from the user dir, then /etc/jumpstarter/exporters).
-    #[arg(long)]
-    exporter: String,
-}
-
-#[derive(Args)]
-struct ShellArgs {
-    /// Client config alias (defaults to the current client from the user config).
-    #[arg(long)]
-    client: Option<String>,
-    /// Label selector for the exporter (e.g. `board=rk3588`).
-    #[arg(long, short)]
-    selector: Option<String>,
-    /// Specific exporter name (instead of a selector).
-    #[arg(long)]
-    exporter: Option<String>,
-    /// Lease duration, in minutes.
-    #[arg(long, default_value_t = 30)]
-    duration: u64,
-    /// Command to run instead of an interactive shell (after `--`).
-    #[arg(last = true)]
-    command: Vec<String>,
+    Shell(commands::shell::Args),
+    /// Run an exporter locally.
+    Run(commands::run::Args),
+    /// Modify jumpstarter config files.
+    Config(commands::config::Args),
+    /// Create a resource.
+    Create(commands::create::Args),
+    /// Display one or many resources.
+    Get(commands::get::Args),
+    /// Delete resources.
+    Delete(commands::delete::Args),
+    /// Update a resource.
+    Update(commands::update::Args),
+    /// Authentication and token management commands.
+    Auth(commands::auth::Args),
+    /// Login into a Jumpstarter instance.
+    Login(commands::login::Args),
+    /// Get the current Jumpstarter version.
+    Version(commands::version::Args),
+    /// Generate a shell completion script.
+    Completion(commands::completion::Args),
 }
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    init_tracing();
+    // Disambiguate the rustls crypto provider (multiple deps pull different ones).
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let cli = Cli::parse();
+    match cli.command {
+        Command::Admin(args) => commands::admin::run(args).await,
+        Command::Shell(args) => commands::shell::run(args).await,
+        Command::Run(args) => commands::run::run(args).await,
+        Command::Config(args) => commands::config::run(args),
+        Command::Create(args) => commands::create::run(args).await,
+        Command::Get(args) => commands::get::run(args).await,
+        Command::Delete(args) => commands::delete::run(args).await,
+        Command::Update(args) => commands::update::run(args).await,
+        Command::Auth(args) => commands::auth::run(args).await,
+        Command::Login(args) => commands::login::run(args).await,
+        Command::Version(args) => commands::version::run(args),
+        Command::Completion(args) => commands::completion::run::<Cli>(args),
+    }
+}
+
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .with_writer(std::io::stderr)
         .init();
-
-    let cli = Cli::parse();
-    match cli.command {
-        Command::Shell(args) => run_shell(args).await,
-        Command::Run(args) => run_exporter(args).await,
-    }
-}
-
-async fn run_exporter(args: RunArgs) -> ExitCode {
-    let path = paths::resolve_exporter_path(&args.exporter);
-    let config = match ExporterConfig::load(&path) {
-        Ok(config) => config,
-        Err(e) => {
-            eprintln!(
-                "jmp: cannot load exporter '{}' ({}): {e}",
-                args.exporter,
-                path.display()
-            );
-            return ExitCode::from(1);
-        }
-    };
-    match jumpstarter_exporter::run(RunOptions {
-        config,
-        config_path: path,
-    })
-    .await
-    {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("jmp: {e}");
-            ExitCode::from(1)
-        }
-    }
-}
-
-async fn run_shell(args: ShellArgs) -> ExitCode {
-    let config = match resolve_client(args.client) {
-        Ok(config) => config,
-        Err(e) => {
-            eprintln!("jmp: {e}");
-            return ExitCode::from(1);
-        }
-    };
-
-    let opts = ShellOptions {
-        selector: args.selector,
-        exporter_name: args.exporter,
-        duration: Duration::from_secs(args.duration * 60),
-        command: (!args.command.is_empty()).then_some(args.command),
-    };
-
-    match shell::run(&config, opts).await {
-        Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
-        Err(e) => {
-            eprintln!("jmp: {e}");
-            ExitCode::from(1)
-        }
-    }
-}
-
-/// Resolve a client config: an explicit `--client` alias, otherwise the
-/// `current-client` from the user config (`config_home/config.yaml`).
-fn resolve_client(alias: Option<String>) -> Result<ClientConfig, String> {
-    let alias = match alias {
-        Some(alias) => alias,
-        None => {
-            let user = UserConfig::load(paths::user_config_path())
-                .map_err(|e| format!("no --client given and cannot read user config: {e}"))?;
-            user.current_client()
-                .ok_or("no --client given and no current client is set")?
-                .to_string()
-        }
-    };
-    let path = paths::client_config_path(&alias);
-    ClientConfig::load(&path).map_err(|e| format!("cannot load client '{alias}': {e}"))
 }

@@ -17,6 +17,7 @@ tokio-stream = "0.1"
 tracing.workspace = true
 thiserror.workspace = true
 base64 = "0.22"
+regex = "1"
 # Insecure (skip-verify) TLS: a custom rustls verifier fed to tonic via a connector.
 tokio-rustls = "0.26"
 hyper-util = "0.1"

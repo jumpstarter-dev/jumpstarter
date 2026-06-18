@@ -21,6 +21,8 @@ pub struct CreateLeaseParams {
     pub selector: Option<String>,
     pub exporter_name: Option<String>,
     pub duration: Duration,
+    /// Requested begin time (`--begin-time`); the server computes the effective one.
+    pub begin_time: Option<prost_types::Timestamp>,
     /// `lease_id`; reused as the lease name on `NoExporter` re-creation.
     pub lease_id: Option<String>,
     pub tags: BTreeMap<String, String>,

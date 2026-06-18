@@ -16,12 +16,15 @@
 //! Still deferred: the supervisor fork/restart loop + rapid-failure breaker, the
 //! `_retry_stream` contract (5×1.0 s), and standalone TCP.
 
+pub mod auth;
 pub mod control;
 pub mod driver_host;
 pub mod exporter;
 pub mod fsm;
 pub mod hooks;
+pub mod logbuf;
 pub mod session;
+pub mod standalone;
 pub mod tunnel;
 
 /// The exporter reuses the client's error taxonomy (RPC / transport / config) for
@@ -30,3 +33,4 @@ pub type Error = jumpstarter_client::ClientError;
 
 pub use driver_host::SlimHost;
 pub use exporter::{run, RunOptions};
+pub use standalone::serve_standalone_tcp;

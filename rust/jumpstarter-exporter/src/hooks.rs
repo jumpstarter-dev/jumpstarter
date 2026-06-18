@@ -9,16 +9,18 @@
 
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
 use jumpstarter_config::{HookInstanceConfig, OnFailure};
-use jumpstarter_protocol::v1::ExporterStatus;
+use jumpstarter_protocol::v1::{ExporterStatus, LogSource};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::time::timeout;
 
 use crate::control::StatusReporter;
 use crate::driver_host;
+use crate::logbuf::HookLog;
 
 /// Prefix on warn-mode status messages (`common/__init__.py:12`).
 const HOOK_WARNING_PREFIX: &str = "[HOOK_WARNING] ";
@@ -28,6 +30,8 @@ pub struct HookContext<'a> {
     pub hook_socket: &'a str,
     pub lease_name: &'a str,
     pub client_name: &'a str,
+    /// Sink for the hook's output, so a client `--exporter-logs` LogStream sees it.
+    pub hook_log: Arc<HookLog>,
 }
 
 /// The decision a `beforeLease` hook produces.
@@ -74,7 +78,7 @@ pub async fn run_before_lease(
     reporter
         .report(ExporterStatus::BeforeLeaseHook, "Running beforeLease hook")
         .await;
-    match run_hook(hook, ctx).await {
+    match run_hook(hook, ctx, LogSource::BeforeLeaseHook).await {
         HookOutcome::Success => {
             reporter
                 .report(ExporterStatus::LeaseReady, "Ready for commands")
@@ -125,7 +129,7 @@ pub async fn run_after_lease(
     reporter
         .report(ExporterStatus::AfterLeaseHook, "Running afterLease hooks")
         .await;
-    match run_hook(hook, ctx).await {
+    match run_hook(hook, ctx, LogSource::AfterLeaseHook).await {
         HookOutcome::Success => {
             reporter
                 .report(ExporterStatus::Available, "Available for new lease")
@@ -134,6 +138,10 @@ pub async fn run_after_lease(
         }
         HookOutcome::Warn(w) => {
             let msg = format!("{HOOK_WARNING_PREFIX}afterLease hook warning: {w}");
+            // Also emit on the log stream (replay-buffered, so the client reliably
+            // sees it): the status message is overwritten by the subsequent
+            // `request_release` Available report, so a `GetStatus` poll can miss it.
+            ctx.hook_log.push(LogSource::AfterLeaseHook, msg.clone());
             reporter.report(ExporterStatus::Available, &msg).await;
             AfterOutcome::Done
         }
@@ -161,8 +169,12 @@ pub async fn run_after_lease(
 }
 
 /// Execute a hook and map its result through the configured `on_failure` policy.
-async fn run_hook(hook: &HookInstanceConfig, ctx: &HookContext<'_>) -> HookOutcome {
-    match execute(hook, ctx).await {
+async fn run_hook(
+    hook: &HookInstanceConfig,
+    ctx: &HookContext<'_>,
+    source: LogSource,
+) -> HookOutcome {
+    match execute(hook, ctx, source).await {
         Ok(()) => HookOutcome::Success,
         Err(message) => match hook.on_failure {
             OnFailure::Warn => HookOutcome::Warn(message),
@@ -198,7 +210,11 @@ fn build_command(hook: &HookInstanceConfig) -> (String, Vec<String>) {
 /// Spawn the hook subprocess with the env contract, stream its output to the log,
 /// and enforce the timeout. Returns `Err(message)` on non-zero exit, spawn error,
 /// or timeout.
-async fn execute(hook: &HookInstanceConfig, ctx: &HookContext<'_>) -> Result<(), String> {
+async fn execute(
+    hook: &HookInstanceConfig,
+    ctx: &HookContext<'_>,
+    source: LogSource,
+) -> Result<(), String> {
     let (interpreter, args) = build_command(hook);
 
     let mut cmd = Command::new(&interpreter);
@@ -221,9 +237,16 @@ async fn execute(hook: &HookInstanceConfig, ctx: &HookContext<'_>) -> Result<(),
         .map_err(|e| format!("Error executing hook ({interpreter}): {e}"))?;
 
     // Drain stdout/stderr concurrently with waiting so a chatty hook can't fill the
-    // pipe buffer and deadlock against `child.wait()`.
-    let out_drain = child.stdout.take().map(|s| tokio::spawn(log_lines(s)));
-    let err_drain = child.stderr.take().map(|s| tokio::spawn(log_lines(s)));
+    // pipe buffer and deadlock against `child.wait()`. Each line is logged and pushed
+    // to the hook-log buffer (so `--exporter-logs` surfaces it).
+    let out_drain = child
+        .stdout
+        .take()
+        .map(|s| tokio::spawn(log_lines(s, ctx.hook_log.clone(), source)));
+    let err_drain = child
+        .stderr
+        .take()
+        .map(|s| tokio::spawn(log_lines(s, ctx.hook_log.clone(), source)));
 
     let result = match timeout(
         Duration::from_secs(hook.timeout.max(0) as u64),
@@ -256,8 +279,9 @@ async fn execute(hook: &HookInstanceConfig, ctx: &HookContext<'_>) -> Result<(),
     result
 }
 
-/// Read a child stream line by line and forward each line to the log.
-async fn log_lines<R>(reader: R)
+/// Read a child stream line by line, forwarding each to the tracing log and the
+/// hook-log buffer (tagged with `source`).
+async fn log_lines<R>(reader: R, hook_log: Arc<HookLog>, source: LogSource)
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
@@ -265,6 +289,7 @@ where
     while let Ok(Some(line)) = lines.next_line().await {
         if !line.trim().is_empty() {
             tracing::info!(target: "jumpstarter_exporter::hook", "{line}");
+            hook_log.push(source, line);
         }
     }
 }
@@ -287,6 +312,7 @@ mod tests {
             hook_socket: "/tmp/unused.sock",
             lease_name: "lease-1",
             client_name: "client-1",
+            hook_log: HookLog::new(),
         }
     }
 
@@ -328,23 +354,44 @@ mod tests {
     #[tokio::test]
     async fn successful_hook_is_success() {
         assert_eq!(
-            run_hook(&hook("exit 0", OnFailure::Exit), &ctx()).await,
+            run_hook(
+                &hook("exit 0", OnFailure::Exit),
+                &ctx(),
+                LogSource::BeforeLeaseHook
+            )
+            .await,
             HookOutcome::Success
         );
     }
 
     #[tokio::test]
     async fn failing_hook_maps_through_on_failure() {
-        match run_hook(&hook("exit 3", OnFailure::Warn), &ctx()).await {
+        match run_hook(
+            &hook("exit 3", OnFailure::Warn),
+            &ctx(),
+            LogSource::BeforeLeaseHook,
+        )
+        .await
+        {
             HookOutcome::Warn(m) => assert!(m.contains("exit code 3")),
             other => panic!("expected Warn, got {other:?}"),
         }
         assert!(matches!(
-            run_hook(&hook("exit 1", OnFailure::EndLease), &ctx()).await,
+            run_hook(
+                &hook("exit 1", OnFailure::EndLease),
+                &ctx(),
+                LogSource::BeforeLeaseHook
+            )
+            .await,
             HookOutcome::EndLease(_)
         ));
         assert!(matches!(
-            run_hook(&hook("exit 1", OnFailure::Exit), &ctx()).await,
+            run_hook(
+                &hook("exit 1", OnFailure::Exit),
+                &ctx(),
+                LogSource::BeforeLeaseHook
+            )
+            .await,
             HookOutcome::Exit(_)
         ));
     }
@@ -353,7 +400,7 @@ mod tests {
     async fn timeout_is_a_failure() {
         let mut h = hook("sleep 5", OnFailure::Warn);
         h.timeout = 1;
-        match run_hook(&h, &ctx()).await {
+        match run_hook(&h, &ctx(), LogSource::BeforeLeaseHook).await {
             HookOutcome::Warn(m) => assert!(m.contains("timed out")),
             other => panic!("expected timeout Warn, got {other:?}"),
         }

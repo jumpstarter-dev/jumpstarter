@@ -20,6 +20,11 @@ pub enum ClientError {
     /// A lease could not be acquired or was not satisfiable.
     #[error("lease error: {0}")]
     Lease(#[from] LeaseError),
+    /// The exporter reported a terminal error status before it could serve — e.g. a
+    /// `beforeLease` hook failed (`shell.py` raises `ExporterOfflineError`). The
+    /// message is the exporter's own status text, surfaced verbatim.
+    #[error("{0}")]
+    Exporter(String),
 }
 
 impl ClientError {
@@ -28,6 +33,24 @@ impl ClientError {
     /// `_get_with_retry`).
     pub fn is_transient(&self) -> bool {
         matches!(self, ClientError::Rpc(status) if status.code() == tonic::Code::Unavailable)
+    }
+
+    /// A user-facing message matching Python's `translate_grpc_exceptions`
+    /// (`common/grpc.py:171`): `UNKNOWN` (errors raised by controller logic) →
+    /// `grpc controller responded: {details}`, `UNAVAILABLE` → `grpc error:
+    /// {details}`, any other gRPC status → `grpc error`. Non-RPC errors keep their
+    /// own `Display`.
+    pub fn user_message(&self) -> String {
+        match self {
+            ClientError::Rpc(status) => match status.code() {
+                tonic::Code::Unknown => {
+                    format!("grpc controller responded: {}", status.message())
+                }
+                tonic::Code::Unavailable => format!("grpc error: {}", status.message()),
+                _ => "grpc error".to_string(),
+            },
+            other => other.to_string(),
+        }
     }
 }
 
