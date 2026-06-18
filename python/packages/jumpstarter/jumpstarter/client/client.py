@@ -75,12 +75,9 @@ async def client_from_path(
                 path, credentials, grpc_options, interceptors=interceptors
             ) as channel:
                 yield await client_from_channel(channel, portal, stack, allow, unsafe)
-    elif os.environ.get("JMP_CLIENT_FFI"):
-        # Opt-in in-process client path: route driver calls through the Rust core (FFI)
-        # over the local transport socket, instead of grpcio. (Default stays gRPC until
-        # the FFI client covers byte streams / resources / logs.)
-        yield await client_from_host(path, portal, stack, allow, unsafe)
-    else:
+    elif os.environ.get("JMP_CLIENT_GRPC"):
+        # Opt-out escape hatch during the migration: use the legacy grpcio path. Removed
+        # once grpcio is dropped.
         async with grpc.aio.secure_channel(
             f"unix://{path}",
             grpc.local_channel_credentials(grpc.LocalConnectionType.UDS),
@@ -90,6 +87,11 @@ async def client_from_path(
             options=[("grpc.default_authority", "localhost")],
         ) as channel:
             yield await client_from_channel(channel, portal, stack, allow, unsafe)
+    else:
+        # DEFAULT: route the in-lease driver client through the Rust core (FFI) over the
+        # local transport socket — no grpcio. Covers every RPC type (driver_call,
+        # streaming, byte streams, resources, status, logs).
+        yield await client_from_host(path, portal, stack, allow, unsafe)
 
 
 async def client_from_channel(

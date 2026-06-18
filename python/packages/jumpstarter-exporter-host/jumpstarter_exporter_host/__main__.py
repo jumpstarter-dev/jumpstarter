@@ -23,7 +23,14 @@ async def _run(config_path: str) -> None:
     # rather than calling asyncio.get_running_loop() on a non-loop thread (which raises
     # "no running event loop"). Required because the Rust core drives the exporter on
     # its own tokio threads while this loop is blocked awaiting run_exporter.
-    jc.uniffi_set_event_loop(asyncio.get_running_loop())
+    # uniffi_set_event_loop is a module helper not re-exported by the package __init__,
+    # so reach it via the inner module (maturin layout) with a flat-module fallback.
+    set_event_loop = getattr(jc, "uniffi_set_event_loop", None)
+    if set_event_loop is None:
+        from jumpstarter_core import jumpstarter_core as _jc_mod
+
+        set_event_loop = _jc_mod.uniffi_set_event_loop
+    set_event_loop(asyncio.get_running_loop())
 
     factory = DriverHostFactory(config_path)
     await jc.run_exporter(config_path, factory)

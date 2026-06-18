@@ -1,0 +1,22 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "jumpstarter-core"
+version = "0.0.0"
+description = "Jumpstarter Rust core — the in-process FFI runtime (UniFFI extension)"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+
+[project.urls]
+Homepage = "https://jumpstarter.dev"
+Repository = "https://github.com/jumpstarter-dev/jumpstarter"
+
+[tool.maturin]
+# Build the UniFFI cdylib from the binding crate; the generated Python module is
+# jumpstarter_core. UniFFI's Python binding is ctypes, so the wheel is py3-none-<plat>.
+manifest-path = "../../../rust/jumpstarter-core-uniffi/Cargo.toml"
+bindings = "uniffi"
+module-name = "jumpstarter_core"

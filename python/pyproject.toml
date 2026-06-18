@@ -3,6 +3,7 @@ members = ["packages/*", "examples/*"]
 
 [tool.uv.sources]
 jumpstarter = { workspace = true }
+jumpstarter-core = { workspace = true }
 jumpstarter-cli = { workspace = true }
 jumpstarter-cli-admin = { workspace = true }
 jumpstarter-cli-common = { workspace = true }
