@@ -13,8 +13,8 @@ use jumpstarter_protocol::router::{classify, data_frame, goaway_frame, FrameActi
 use jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient;
 use jumpstarter_protocol::v1::router_service_client::RouterServiceClient;
 use jumpstarter_protocol::v1::{
-    DriverCallRequest, EndSessionRequest, StreamRequest, StreamResponse,
-    StreamingDriverCallRequest, StreamingDriverCallResponse,
+    DriverCallRequest, EndSessionRequest, GetStatusRequest, LogStreamResponse, StreamRequest,
+    StreamResponse, StreamingDriverCallRequest, StreamingDriverCallResponse,
 };
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
@@ -161,6 +161,62 @@ impl ClientSession {
             .map_err(err_from_status)?
             .into_inner();
         Ok(resp.success)
+    }
+
+    /// `GetStatus` → JSON `{status, message, status_version, previous_status}` (status as
+    /// the proto enum int; the Python status monitor maps it to `ExporterStatus`).
+    pub async fn get_status(&self) -> Result<String, DriverCallError> {
+        let resp = self
+            .exporter()
+            .get_status(GetStatusRequest {})
+            .await
+            .map_err(err_from_status)?
+            .into_inner();
+        let json = serde_json::json!({
+            "status": resp.status,
+            "message": resp.message,
+            "status_version": resp.status_version,
+            "previous_status": resp.previous_status,
+        });
+        Ok(json.to_string())
+    }
+
+    /// Open the exporter `LogStream` (hook + driver/system logs); pull entries as JSON.
+    pub async fn log_stream(&self) -> Result<Arc<ClientLogStream>, DriverCallError> {
+        let stream = self
+            .exporter()
+            .log_stream(())
+            .await
+            .map_err(err_from_status)?
+            .into_inner();
+        Ok(Arc::new(ClientLogStream {
+            inner: Mutex::new(stream),
+        }))
+    }
+}
+
+/// A `LogStream` of hook + driver/system log entries, pulled JSON-at-a-time.
+pub struct ClientLogStream {
+    inner: Mutex<Streaming<LogStreamResponse>>,
+}
+
+impl ClientLogStream {
+    /// Next log entry as JSON `{uuid, severity, message, source}`, or `None` at end.
+    pub async fn next(&self) -> Result<Option<String>, DriverCallError> {
+        let mut stream = self.inner.lock().await;
+        match stream.next().await {
+            Some(Ok(resp)) => {
+                let json = serde_json::json!({
+                    "uuid": resp.uuid,
+                    "severity": resp.severity,
+                    "message": resp.message,
+                    "source": resp.source,
+                });
+                Ok(Some(json.to_string()))
+            }
+            Some(Err(status)) => Err(err_from_status(status)),
+            None => Ok(None),
+        }
     }
 }
 

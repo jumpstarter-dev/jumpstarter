@@ -354,6 +354,30 @@ impl ClientSession {
     pub async fn end_session(&self) -> Result<bool, DriverError> {
         self.inner.end_session().await.map_err(from_core_err)
     }
+
+    /// GetStatus as JSON `{status, message, status_version, previous_status}`.
+    pub async fn get_status(&self) -> Result<String, DriverError> {
+        self.inner.get_status().await.map_err(from_core_err)
+    }
+
+    /// Open the exporter LogStream.
+    pub async fn log_stream(&self) -> Result<Arc<ClientLogStream>, DriverError> {
+        let inner = self.inner.log_stream().await.map_err(from_core_err)?;
+        Ok(Arc::new(ClientLogStream { inner }))
+    }
+}
+
+/// A LogStream of hook + driver/system log entries, pulled JSON-at-a-time.
+#[derive(uniffi::Object)]
+pub struct ClientLogStream {
+    inner: Arc<jumpstarter_core::ClientLogStream>,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl ClientLogStream {
+    pub async fn next(&self) -> Result<Option<String>, DriverError> {
+        self.inner.next().await.map_err(from_core_err)
+    }
 }
 
 /// A bidirectional router byte stream (driver `@exportstream` / resource).
