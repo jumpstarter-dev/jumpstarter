@@ -17,7 +17,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::time::timeout;
 
-use crate::control::{self, Controller};
+use crate::control::StatusReporter;
 use crate::driver_host;
 
 /// Prefix on warn-mode status messages (`common/__init__.py:12`).
@@ -60,45 +60,50 @@ enum HookOutcome {
 
 /// Run the `beforeLease` hook (or none) and report the resulting status.
 pub async fn run_before_lease(
-    controller: &mut Controller,
+    reporter: &mut StatusReporter,
     hook: Option<&HookInstanceConfig>,
     ctx: &HookContext<'_>,
 ) -> BeforeOutcome {
     let Some(hook) = hook else {
-        report(controller, ExporterStatus::LeaseReady, "Ready for commands").await;
+        reporter
+            .report(ExporterStatus::LeaseReady, "Ready for commands")
+            .await;
         return BeforeOutcome::Ready;
     };
 
-    report(
-        controller,
-        ExporterStatus::BeforeLeaseHook,
-        "Running beforeLease hook",
-    )
-    .await;
+    reporter
+        .report(ExporterStatus::BeforeLeaseHook, "Running beforeLease hook")
+        .await;
     match run_hook(hook, ctx).await {
         HookOutcome::Success => {
-            report(controller, ExporterStatus::LeaseReady, "Ready for commands").await;
+            reporter
+                .report(ExporterStatus::LeaseReady, "Ready for commands")
+                .await;
             BeforeOutcome::Ready
         }
         HookOutcome::Warn(w) => {
             let msg = format!("{HOOK_WARNING_PREFIX}beforeLease hook warning: {w}");
-            report(controller, ExporterStatus::LeaseReady, &msg).await;
+            reporter.report(ExporterStatus::LeaseReady, &msg).await;
             BeforeOutcome::Ready
         }
         HookOutcome::EndLease(e) => {
             let msg = format!("beforeLease hook failed (on_failure=endLease): {e}");
-            report(controller, ExporterStatus::BeforeLeaseHookFailed, &msg).await;
+            reporter
+                .report(ExporterStatus::BeforeLeaseHookFailed, &msg)
+                .await;
             BeforeOutcome::EndLease
         }
         HookOutcome::Exit(e) => {
             let msg = format!("beforeLease hook failed (on_failure=exit, shutting down): {e}");
-            report(controller, ExporterStatus::BeforeLeaseHookFailed, &msg).await;
-            report(
-                controller,
-                ExporterStatus::Offline,
-                "Exporter shutting down due to beforeLease hook failure",
-            )
-            .await;
+            reporter
+                .report(ExporterStatus::BeforeLeaseHookFailed, &msg)
+                .await;
+            reporter
+                .report(
+                    ExporterStatus::Offline,
+                    "Exporter shutting down due to beforeLease hook failure",
+                )
+                .await;
             BeforeOutcome::Exit
         }
     }
@@ -106,63 +111,52 @@ pub async fn run_before_lease(
 
 /// Run the `afterLease` hook (or none) and report the resulting status.
 pub async fn run_after_lease(
-    controller: &mut Controller,
+    reporter: &mut StatusReporter,
     hook: Option<&HookInstanceConfig>,
     ctx: &HookContext<'_>,
 ) -> AfterOutcome {
     let Some(hook) = hook else {
-        report(
-            controller,
-            ExporterStatus::Available,
-            "Available for new lease",
-        )
-        .await;
+        reporter
+            .report(ExporterStatus::Available, "Available for new lease")
+            .await;
         return AfterOutcome::Done;
     };
 
-    report(
-        controller,
-        ExporterStatus::AfterLeaseHook,
-        "Running afterLease hooks",
-    )
-    .await;
+    reporter
+        .report(ExporterStatus::AfterLeaseHook, "Running afterLease hooks")
+        .await;
     match run_hook(hook, ctx).await {
         HookOutcome::Success => {
-            report(
-                controller,
-                ExporterStatus::Available,
-                "Available for new lease",
-            )
-            .await;
+            reporter
+                .report(ExporterStatus::Available, "Available for new lease")
+                .await;
             AfterOutcome::Done
         }
         HookOutcome::Warn(w) => {
             let msg = format!("{HOOK_WARNING_PREFIX}afterLease hook warning: {w}");
-            report(controller, ExporterStatus::Available, &msg).await;
+            reporter.report(ExporterStatus::Available, &msg).await;
             AfterOutcome::Done
         }
         HookOutcome::EndLease(e) => {
             let msg = format!("afterLease hook failed (on_failure=endLease): {e}");
-            report(controller, ExporterStatus::AfterLeaseHookFailed, &msg).await;
+            reporter
+                .report(ExporterStatus::AfterLeaseHookFailed, &msg)
+                .await;
             AfterOutcome::Done
         }
         HookOutcome::Exit(e) => {
             let msg = format!("afterLease hook failed (on_failure=exit, shutting down): {e}");
-            report(controller, ExporterStatus::AfterLeaseHookFailed, &msg).await;
-            report(
-                controller,
-                ExporterStatus::Offline,
-                "Exporter shutting down due to afterLease hook failure",
-            )
-            .await;
+            reporter
+                .report(ExporterStatus::AfterLeaseHookFailed, &msg)
+                .await;
+            reporter
+                .report(
+                    ExporterStatus::Offline,
+                    "Exporter shutting down due to afterLease hook failure",
+                )
+                .await;
             AfterOutcome::Exit
         }
-    }
-}
-
-async fn report(controller: &mut Controller, status: ExporterStatus, message: &str) {
-    if let Err(e) = control::report_status(controller, status, message).await {
-        tracing::warn!(error = %e, ?status, "failed to report status");
     }
 }
 

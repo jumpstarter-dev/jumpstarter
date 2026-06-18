@@ -9,12 +9,48 @@
 //!   cargo test -p jumpstarter-exporter --test slim_host
 //! ```
 
-use jumpstarter_exporter::control::uds_channel;
-use jumpstarter_exporter::session::{self, SessionRouter};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use jumpstarter_exporter::control::{uds_channel, StatusSnapshot};
+use jumpstarter_exporter::session::{self, RoutingTable, SharedSession};
 use jumpstarter_exporter::SlimHost;
 use jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient;
 use jumpstarter_protocol::v1::router_service_client::RouterServiceClient;
-use jumpstarter_protocol::v1::{DriverCallRequest, StreamRequest};
+use jumpstarter_protocol::v1::{
+    DriverCallRequest, EndSessionRequest, GetStatusRequest, StreamRequest,
+};
+use tokio::sync::{watch, Notify};
+
+/// Senders + server task kept alive for a served session (dropping the senders is
+/// harmless — `watch` retains the last value — but we hold them for clarity).
+type ServerKeepAlive = (
+    watch::Sender<Option<Arc<RoutingTable>>>,
+    watch::Sender<StatusSnapshot>,
+    watch::Sender<Option<Arc<Notify>>>,
+    tokio::task::JoinHandle<()>,
+);
+
+/// Spawn a slim host and serve a Rust `SharedSession` routing into it; returns the
+/// host (kept alive), the main socket path, and the keep-alive handles.
+async fn serve_session(cfg_path: &Path, dir: &Path) -> (SlimHost, PathBuf, ServerKeepAlive) {
+    let host = SlimHost::spawn(cfg_path).await.expect("spawn slim host");
+    let routing = RoutingTable::build(uds_channel(host.socket()).await.unwrap())
+        .await
+        .expect("build routing");
+    std::fs::create_dir_all(dir).unwrap();
+    let main = dir.join("m.sock");
+    let (rtx, routing_rx) = watch::channel(Some(Arc::new(routing)));
+    let (stx, status_rx) = watch::channel(StatusSnapshot::default());
+    let (etx, end_rx) = watch::channel(None);
+    let server = session::serve(
+        SharedSession::new(routing_rx, status_rx, end_rx),
+        &main,
+        &dir.join("h.sock"),
+    )
+    .expect("serve");
+    (host, main, (rtx, stx, etx, server))
+}
 
 const CONFIG: &str = r#"apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
@@ -100,17 +136,8 @@ async fn rust_server_proxies_getreport_and_drivercall() {
 
     let cfg_path = std::env::temp_dir().join(format!("jmp-srv-test-{}.yaml", std::process::id()));
     std::fs::write(&cfg_path, CONFIG).unwrap();
-
-    let host = SlimHost::spawn(&cfg_path).await.expect("spawn slim host");
-    let router = SessionRouter::build(uds_channel(host.socket()).await.unwrap())
-        .await
-        .expect("build router");
-
     let dir = std::env::temp_dir().join(format!("jmp-srv-test-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let main = dir.join("m.sock");
-    let hook = dir.join("h.sock");
-    let _server = session::serve(router, &main, &hook).expect("serve");
+    let (_host, main, _keep) = serve_session(&cfg_path, &dir).await;
 
     let mut client = ExporterServiceClient::new(uds_channel(main.to_str().unwrap()).await.unwrap());
 
@@ -159,16 +186,8 @@ async fn router_stream_relays_resource_initial_metadata() {
     let cfg_path =
         std::env::temp_dir().join(format!("jmp-stream-test-{}.yaml", std::process::id()));
     std::fs::write(&cfg_path, CONFIG).unwrap();
-
-    let host = SlimHost::spawn(&cfg_path).await.expect("spawn slim host");
-    let router = SessionRouter::build(uds_channel(host.socket()).await.unwrap())
-        .await
-        .expect("build router");
-
     let dir = std::env::temp_dir().join(format!("jmp-stream-test-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let main = dir.join("m.sock");
-    let _server = session::serve(router.clone(), &main, &dir.join("h.sock")).expect("serve");
+    let (_host, main, _keep) = serve_session(&cfg_path, &dir).await;
 
     // The power leaf's uuid; any driver can host a resource handle.
     let report = ExporterServiceClient::new(uds_channel(main.to_str().unwrap()).await.unwrap())
@@ -221,14 +240,8 @@ async fn router_stream_unknown_uuid_is_unknown() {
 
     let cfg_path = std::env::temp_dir().join(format!("jmp-stream-bad-{}.yaml", std::process::id()));
     std::fs::write(&cfg_path, CONFIG).unwrap();
-    let host = SlimHost::spawn(&cfg_path).await.expect("spawn slim host");
-    let router = SessionRouter::build(uds_channel(host.socket()).await.unwrap())
-        .await
-        .unwrap();
     let dir = std::env::temp_dir().join(format!("jmp-stream-bad-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let main = dir.join("m.sock");
-    let _server = session::serve(router, &main, &dir.join("h.sock")).unwrap();
+    let (_host, main, _keep) = serve_session(&cfg_path, &dir).await;
 
     let mut req = tonic::Request::new(tokio_stream::pending::<StreamRequest>());
     req.metadata_mut().insert(
@@ -244,5 +257,78 @@ async fn router_stream_unknown_uuid_is_unknown() {
     assert_eq!(err.code(), tonic::Code::Unknown);
 
     let _ = std::fs::remove_file(&cfg_path);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// inc3: GetStatus answers from the FSM snapshot, EndSession signals the active
+/// lease, and driver calls are UNKNOWN when idle — none of these touch the slim
+/// host, so this test is fully hermetic (no Python).
+#[tokio::test]
+async fn end_session_get_status_and_idle_routing_are_hermetic() {
+    use jumpstarter_protocol::v1::ExporterStatus;
+
+    let snapshot = StatusSnapshot {
+        status: ExporterStatus::LeaseReady,
+        message: "ready for commands".to_string(),
+        version: 7,
+        previous: Some(ExporterStatus::BeforeLeaseHook),
+    };
+    let (_rtx, routing_rx) = watch::channel(None); // idle: no routing
+    let (_stx, status_rx) = watch::channel(snapshot);
+    let end_session = Arc::new(Notify::new());
+    let (_etx, end_rx) = watch::channel(Some(end_session.clone()));
+
+    let dir = std::env::temp_dir().join(format!("jmp-hermetic-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let main = dir.join("m.sock");
+    let _server = session::serve(
+        SharedSession::new(routing_rx, status_rx, end_rx),
+        &main,
+        &dir.join("h.sock"),
+    )
+    .unwrap();
+    let mut client = ExporterServiceClient::new(uds_channel(main.to_str().unwrap()).await.unwrap());
+
+    // GetStatus reflects the FSM snapshot.
+    let st = client
+        .get_status(GetStatusRequest {})
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(st.status, ExporterStatus::LeaseReady as i32);
+    assert_eq!(st.status_version, 7);
+    assert_eq!(st.message.as_deref(), Some("ready for commands"));
+
+    // EndSession on an active lease succeeds and fires the lease's end signal.
+    let waiter = tokio::spawn({
+        let es = end_session.clone();
+        async move {
+            tokio::time::timeout(std::time::Duration::from_secs(2), es.notified())
+                .await
+                .is_ok()
+        }
+    });
+    let resp = client
+        .end_session(EndSessionRequest {})
+        .await
+        .unwrap()
+        .into_inner();
+    assert!(resp.success);
+    assert!(
+        waiter.await.unwrap(),
+        "EndSession should fire the lease's end_session signal"
+    );
+
+    // Idle (no routing) -> driver calls are UNKNOWN.
+    let err = client
+        .driver_call(DriverCallRequest {
+            uuid: "x".to_string(),
+            method: "on".to_string(),
+            args: vec![],
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), tonic::Code::Unknown);
+
     let _ = std::fs::remove_dir_all(&dir);
 }

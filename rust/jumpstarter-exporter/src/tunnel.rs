@@ -38,7 +38,7 @@ use tokio_stream::StreamExt as _;
 use tonic::metadata::{AsciiMetadataValue, MetadataKey, MetadataMap};
 use tonic::{Request, Response, Status, Streaming};
 
-use crate::session::SessionRouter;
+use crate::session::SharedSession;
 
 /// Metadata keys the host emits on a resource Stream's initial response
 /// (`driver/base.py:189-198`). Only these are relayed, so the client's
@@ -48,12 +48,12 @@ const RELAY_KEYS: [&str; 2] = ["resource", "x_jmp_accept_encoding"];
 
 /// The tonic `RouterService` implementation: a transparent bidi proxy to the host.
 pub struct RouterServer {
-    router: Arc<SessionRouter>,
+    shared: Arc<SharedSession>,
 }
 
 impl RouterServer {
-    pub fn new(router: Arc<SessionRouter>) -> Self {
-        Self { router }
+    pub fn new(shared: Arc<SharedSession>) -> Self {
+        Self { shared }
     }
 }
 
@@ -74,7 +74,11 @@ impl RouterService for RouterServer {
             .cloned()
             .ok_or_else(|| Status::unknown("missing `request` stream metadata"))?;
         let uuid = parse_uuid(&request_meta)?;
-        if !self.router.knows_uuid(&uuid) {
+        let routing = self
+            .shared
+            .routing()
+            .ok_or_else(|| Status::unknown("no active lease"))?;
+        if !routing.knows_uuid(&uuid) {
             return Err(Status::unknown(format!("unknown driver uuid: {uuid}")));
         }
 
@@ -88,7 +92,7 @@ impl RouterService for RouterServer {
         // 3. Open the host Stream eagerly. The host sends its initial metadata before
         //    reading any frame (`session.py:324`), so this returns promptly with the
         //    resource handle / encoding — no metadata-before-frame deadlock.
-        let host_resp = RouterServiceClient::new(self.router.host_channel())
+        let host_resp = RouterServiceClient::new(routing.host_channel())
             .stream(host_req)
             .await?;
 

@@ -303,6 +303,15 @@ lease-scoped.
   before dropping the host — mirroring Python keeping the socket open post-EndSession
   (`session.py:381-420`).
 
+> **Latency tradeoff (verified inc3).** Spawning a fresh *process* per lease is
+> slower than Python's in-process `device_factory()` re-instantiation: a power-only
+> host spawns in ~300 ms, but a host with a heavy driver import (e.g. `opendal`) can
+> take seconds, and that latency (plus a slow `beforeLease` hook) delays `LEASE_READY`.
+> If it exceeds the controller's lease-readiness window, the controller reclaims the
+> lease before a client connects. This is inherent to the subprocess model (spec 09
+> §3.2 names the extra-hop cost); it is correct, just slower than Python for
+> heavy-import configs. A future optimization could pre-warm the next host during idle.
+
 ### 4.4 Per-lease re-instantiation (spawn/kill host per lease)
 
 Fresh drivers per lease is a hard invariant (`device_factory()` per lease,

@@ -1,17 +1,19 @@
-//! The exporter runtime loop (spec doc 03).
+//! The exporter runtime loop (spec doc 03; native-migration §4).
 //!
-//! Registers with the controller, consumes the server-streaming `Status` RPC (push
-//! lease notifications), and serves one lease at a time. Each lease runs through the
-//! [`crate::fsm`] lifecycle, executing the `beforeLease`/`afterLease` [`crate::hooks`]
-//! and bridging the router to the session's main socket (the reverse of the Phase-A
-//! client transport). On shutdown — a signal, or a hook with `on_failure: exit` — it
-//! reports `OFFLINE` and unregisters.
+//! Registers with the controller (via a throwaway host), then consumes the
+//! server-streaming `Status` RPC and serves one lease at a time. Each lease spawns a
+//! **fresh** slim host (fresh drivers — `exporter.py:577-593`) during `Starting`,
+//! swaps its routing into the process-lifetime session server, runs the
+//! [`crate::fsm`] lifecycle + `beforeLease`/`afterLease` [`crate::hooks`], terminates
+//! client tunnels into the Rust server, and kills the host at lease end. A client
+//! `EndSession` ends the lease early (running afterLease). On shutdown — a signal or
+//! an `on_failure: exit` hook — it reports `OFFLINE` and unregisters.
 //!
 //! Deferred to later increments: the supervisor fork/restart loop + rapid-failure
-//! breaker, the `_retry_stream` contract (5×1.0 s), standalone TCP, and per-lease
-//! driver re-instantiation.
+//! breaker, the `_retry_stream` contract (5×1.0 s), standalone TCP, and Rust-side
+//! LogStream aggregation.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,16 +26,16 @@ use jumpstarter_protocol::v1::{
     ExporterStatus, ListenRequest, RegisterRequest, StatusRequest, UnregisterRequest,
 };
 use tokio::net::UnixStream;
-use tokio::sync::Notify;
+use tokio::sync::{watch, Notify};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_stream::StreamExt as _;
 
-use crate::control::{self, uds_channel, Controller};
+use crate::control::{uds_channel, Controller, StatusReporter, StatusSnapshot};
 use crate::driver_host::SlimHost;
 use crate::fsm::{LeaseLifecycle, LeasePhase};
 use crate::hooks::{self, AfterOutcome, BeforeOutcome, HookContext};
-use crate::session::{self, SessionRouter};
+use crate::session::{self, RoutingTable, SharedSession};
 use crate::Error;
 
 /// Settle delay between leases, avoiding overlapping-session SSL corruption
@@ -45,6 +47,17 @@ pub struct RunOptions {
     pub config: ExporterConfig,
     /// Path of the exporter config file (passed to the Python driver host).
     pub config_path: PathBuf,
+}
+
+/// Why a lease's serving phase ended.
+#[derive(Debug, PartialEq, Eq)]
+enum EndReason {
+    /// The controller reported `leased=false`.
+    Controller,
+    /// The client called `EndSession`.
+    EndSession,
+    /// A `beforeLease` hook failed with `on_failure: endLease` (never served).
+    EndLease,
 }
 
 /// Run the exporter until a shutdown signal (SIGINT/SIGTERM) or an `on_failure: exit`
@@ -62,24 +75,7 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
     let namespace = config.metadata.namespace.clone().unwrap_or_default();
     let name = config.metadata.name.clone();
 
-    // 1. Host the whole driver tree in a slim Python subprocess (one socket), and
-    //    build the per-process UUID routing table from its GetReport.
-    let host = SlimHost::spawn(&opts.config_path).await?;
-    let router = SessionRouter::build(uds_channel(host.socket()).await?).await?;
-
-    // 2. Serve the ExporterService ourselves on a main + hook Unix socket, routing
-    //    driver calls into the host. The server is process-lifetime; `host` and
-    //    `_server` are kept alive for the duration of `run`.
-    let srv_dir = std::env::temp_dir().join(format!("jmp-exp-{}", std::process::id()));
-    std::fs::create_dir_all(&srv_dir)
-        .map_err(|e| Error::Config(format!("creating session socket dir: {e}")))?;
-    let main_uds = srv_dir.join("m.sock");
-    let hook_uds = srv_dir.join("h.sock");
-    let _server = session::serve(router.clone(), &main_uds, &hook_uds)?;
-    let main_uds = main_uds.to_string_lossy().into_owned();
-    let hook_uds = hook_uds.to_string_lossy().into_owned();
-
-    // 3. Authenticated controller channel (role "Exporter").
+    // 1. Authenticated controller channel (role "Exporter").
     let svc = channel::connect_controller(
         &endpoint,
         &config.tls,
@@ -89,28 +85,66 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
         &name,
     )
     .await?;
-    let mut controller = ControllerServiceClient::new(svc);
+    let controller = ControllerServiceClient::new(svc);
 
-    // 4. Register from the cached report -> AVAILABLE. (RegisterResponse discarded —
-    //    identity stays config-derived, exporter.py:324-329.)
-    controller
+    // 2. Registration report from a throwaway host (its fresh UUIDs are discarded; the
+    //    per-lease hosts get their own, rebuilt at lease start — design §3.3, mirroring
+    //    `async with self.session(): pass`, exporter.py:786-787).
+    let registration = {
+        let host = SlimHost::spawn(&opts.config_path).await?;
+        RoutingTable::build(uds_channel(host.socket()).await?)
+            .await?
+            .report()
+            .clone()
+    };
+
+    // 3. Process-lifetime session server with per-lease swappable routing.
+    let (routing_tx, routing_rx) = watch::channel(None);
+    let (status_tx, status_rx) = watch::channel(StatusSnapshot::default());
+    let (end_session_tx, end_session_rx) = watch::channel(None);
+    let status_tx = Arc::new(status_tx);
+    let shared = SharedSession::new(routing_rx, status_rx, end_session_rx);
+
+    let srv_dir = std::env::temp_dir().join(format!("jmp-exp-{}", std::process::id()));
+    std::fs::create_dir_all(&srv_dir)
+        .map_err(|e| Error::Config(format!("creating session socket dir: {e}")))?;
+    let main_uds = srv_dir.join("m.sock");
+    let hook_uds = srv_dir.join("h.sock");
+    let _server = session::serve(shared, &main_uds, &hook_uds)?;
+    let main_uds = main_uds.to_string_lossy().into_owned();
+    let hook_uds = hook_uds.to_string_lossy().into_owned();
+
+    // 4. Register from the throwaway report -> AVAILABLE.
+    let mut reporter = StatusReporter::new(controller.clone(), status_tx.clone());
+    reporter
+        .controller()
         .register(RegisterRequest {
-            labels: router.report().labels.clone(),
-            reports: router.report().reports.clone(),
+            labels: registration.labels,
+            reports: registration.reports,
         })
         .await?;
-    control::report_status(
-        &mut controller,
-        ExporterStatus::Available,
-        "Exporter registered and available",
-    )
-    .await?;
+    reporter
+        .report(
+            ExporterStatus::Available,
+            "Exporter registered and available",
+        )
+        .await;
     tracing::info!(%name, "exporter registered");
 
     // 5. Serve leases until a shutdown signal or an `on_failure: exit` hook.
     let shutdown = Arc::new(Notify::new());
     let outcome = tokio::select! {
-        r = status_loop(controller.clone(), &main_uds, &hook_uds, config, shutdown.clone()) => r,
+        r = status_loop(
+            controller.clone(),
+            status_tx,
+            routing_tx,
+            end_session_tx,
+            &main_uds,
+            &hook_uds,
+            &opts.config_path,
+            config,
+            shutdown.clone(),
+        ) => r,
         _ = shutdown.notified() => {
             tracing::info!("exporter shutdown requested by hook");
             Ok(())
@@ -121,14 +155,12 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
         }
     };
 
-    // 5. Best-effort offline + unregister.
-    let _ = control::report_status(
-        &mut controller,
-        ExporterStatus::Offline,
-        "Exporter shutting down",
-    )
-    .await;
-    let _ = controller
+    // 6. Best-effort offline + unregister.
+    reporter
+        .report(ExporterStatus::Offline, "Exporter shutting down")
+        .await;
+    let _ = reporter
+        .controller()
         .unregister(UnregisterRequest {
             reason: "Exporter shutdown".to_string(),
         })
@@ -138,20 +170,27 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
     outcome
 }
 
-/// An in-flight lease: the lifecycle task plus the channel to signal its end.
+/// An in-flight lease: the lifecycle task, the controller-end signal, and the slim
+/// host that serves it (killed when the lease ends, after the task completes).
 struct ActiveLease {
     handle: JoinHandle<()>,
     /// Fired when the controller reports the lease has ended (`leased=false`).
     end: Arc<Notify>,
+    host: SlimHost,
 }
 
 /// Consume the `Status` stream, running one lease at a time. The stream doubles as
 /// the liveness signal, so it is reopened on close; an active lease survives a
 /// reconnect.
+#[allow(clippy::too_many_arguments)]
 async fn status_loop(
     mut controller: Controller,
+    status_tx: Arc<watch::Sender<StatusSnapshot>>,
+    routing_tx: watch::Sender<Option<Arc<RoutingTable>>>,
+    end_session_tx: watch::Sender<Option<Arc<Notify>>>,
     main_uds: &str,
     hook_uds: &str,
+    config_path: &Path,
     config: &ExporterConfig,
     shutdown: Arc<Notify>,
 ) -> Result<(), Error> {
@@ -178,14 +217,23 @@ async fn status_loop(
             let leased = resp.leased && resp.lease_name.as_deref().is_some_and(|s| !s.is_empty());
 
             match (leased, active.is_some()) {
-                // A new lease while idle: start the lifecycle.
+                // A new lease while idle: spawn a fresh host, swap in its routing, and
+                // start the lifecycle — all before the beforeLease hook runs.
                 (true, false) => {
                     let lease_name = resp.lease_name.clone().unwrap();
                     let client_name = resp.client_name.clone().unwrap_or_default();
                     tracing::info!(lease = %lease_name, client = %client_name, "lease started");
+
+                    let host = SlimHost::spawn(config_path).await?;
+                    let routing = RoutingTable::build(uds_channel(host.socket()).await?).await?;
+                    routing_tx.send_replace(Some(Arc::new(routing)));
+
                     let end = Arc::new(Notify::new());
+                    let end_session = Arc::new(Notify::new());
+                    end_session_tx.send_replace(Some(end_session.clone()));
+
                     let handle = spawn_lease(
-                        controller.clone(),
+                        StatusReporter::new(controller.clone(), status_tx.clone()),
                         lease_name,
                         client_name,
                         main_uds.to_string(),
@@ -193,17 +241,21 @@ async fn status_loop(
                         config.tls.clone(),
                         config.hooks.clone(),
                         end.clone(),
+                        end_session,
                         shutdown.clone(),
                     );
-                    active = Some(ActiveLease { handle, end });
+                    active = Some(ActiveLease { handle, end, host });
                 }
-                // The active lease ended: signal it and wait for cleanup
-                // (afterLease) to finish before accepting the next lease.
+                // The active lease ended: signal it, wait for cleanup (afterLease) to
+                // finish, then clear routing and kill the host before the next lease.
                 (false, true) => {
                     tracing::info!("lease ended");
                     let lease = active.take().unwrap();
                     lease.end.notify_one();
                     let _ = lease.handle.await;
+                    routing_tx.send_replace(None);
+                    end_session_tx.send_replace(None);
+                    drop(lease.host); // SIGKILLs the slim host subprocess
                     sleep(INTER_LEASE_SETTLE).await;
                 }
                 // Steady state (still leased, or still idle): nothing to do.
@@ -219,7 +271,7 @@ async fn status_loop(
 /// Spawn the per-lease lifecycle task.
 #[allow(clippy::too_many_arguments)]
 fn spawn_lease(
-    mut controller: Controller,
+    mut reporter: StatusReporter,
     lease_name: String,
     client_name: String,
     main_socket: String,
@@ -227,6 +279,7 @@ fn spawn_lease(
     tls: TlsConfig,
     hooks: HookConfig,
     end: Arc<Notify>,
+    end_session: Arc<Notify>,
     shutdown: Arc<Notify>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
@@ -245,7 +298,7 @@ fn spawn_lease(
         if before_hook.is_some() {
             advance(&mut lc, LeasePhase::BeforeLease);
         }
-        match hooks::run_before_lease(&mut controller, before_hook, &ctx).await {
+        let reason = match hooks::run_before_lease(&mut reporter, before_hook, &ctx).await {
             BeforeOutcome::Exit => {
                 // beforeLease already reported BEFORE_LEASE_HOOK_FAILED + OFFLINE.
                 advance(&mut lc, LeasePhase::Failed);
@@ -254,43 +307,41 @@ fn spawn_lease(
             }
             BeforeOutcome::Ready => {
                 advance(&mut lc, LeasePhase::Ready);
-                // Serve until the controller ends the lease. Report LEASE_READY (done
-                // by run_before_lease) *before* opening Listen: the controller only
-                // delivers Listen responses after a client Dial, which it only permits
-                // once the exporter is LEASE_READY, so opening Listen first deadlocks.
+                // Report LEASE_READY (done by run_before_lease) *before* opening Listen:
+                // the controller only delivers Listen responses after a client Dial,
+                // which it only permits once the exporter is LEASE_READY.
                 let listen = spawn_listen(
-                    controller.clone(),
+                    reporter.controller().clone(),
                     lease_name.clone(),
                     main_socket,
                     tls,
                     has_client.clone(),
                 );
-                end.notified().await;
+                // Serve until the controller ends the lease OR the client ends it early.
+                let reason = tokio::select! {
+                    _ = end.notified() => EndReason::Controller,
+                    _ = end_session.notified() => EndReason::EndSession,
+                };
                 listen.abort();
                 advance(&mut lc, LeasePhase::Ending);
+                reason
             }
             BeforeOutcome::EndLease => {
                 advance(&mut lc, LeasePhase::Ending);
-                // Proactively ask the controller to release the lease; it will end the
-                // lease and we observe `leased=false` -> our `end` signal.
-                let _ = control::request_release(
-                    &mut controller,
-                    "Lease released after beforeLease hook failure",
-                )
-                .await;
-                end.notified().await;
+                EndReason::EndLease
             }
-        }
+        };
 
-        // --- afterLease (only when a client actually used the board) -----------
-        let after_hook = if has_client.load(Ordering::Relaxed) {
+        // --- afterLease (when a client used the board, or the client ended early) ---
+        let run_after = has_client.load(Ordering::Relaxed) || reason == EndReason::EndSession;
+        let after_hook = if run_after {
             hooks.after_lease.as_ref()
         } else {
             None
         };
         if after_hook.is_some() {
             advance(&mut lc, LeasePhase::AfterLease);
-            match hooks::run_after_lease(&mut controller, after_hook, &ctx).await {
+            match hooks::run_after_lease(&mut reporter, after_hook, &ctx).await {
                 AfterOutcome::Done => {
                     advance(&mut lc, LeasePhase::Releasing);
                     advance(&mut lc, LeasePhase::Done);
@@ -298,12 +349,26 @@ fn spawn_lease(
                 AfterOutcome::Exit => {
                     advance(&mut lc, LeasePhase::Failed);
                     shutdown.notify_one();
+                    return;
                 }
             }
         } else {
             // No afterLease hook to run: report availability for the next lease.
-            hooks::run_after_lease(&mut controller, None, &ctx).await;
+            hooks::run_after_lease(&mut reporter, None, &ctx).await;
             advance(&mut lc, LeasePhase::Done);
+        }
+
+        // If we ended the lease ourselves (an EndSession or an endLease hook failure,
+        // not a controller end), proactively release it. We do NOT block on the
+        // controller's `leased=false` here: `status_loop` owns the host and holds it
+        // alive until that signal arrives (or the exporter shuts down), so a client's
+        // tail (GetStatus / LogStream / a still-open stream) keeps working, and a
+        // controller that never confirms the release cannot hang this task — mirroring
+        // Python's self-signalled fallback (exporter.py:405-409).
+        if reason != EndReason::Controller {
+            reporter
+                .request_release("Lease released after session end")
+                .await;
         }
     })
 }
