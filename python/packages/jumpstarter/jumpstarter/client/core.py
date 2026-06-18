@@ -11,6 +11,7 @@ from typing import Any
 
 import anyio
 from anyio import create_task_group
+from anyio.abc import ObjectStream
 from google.protobuf import empty_pb2
 from grpc import StatusCode
 from grpc.aio import AioRpcError
@@ -90,6 +91,29 @@ def _map_ffi_error(method, exc):
     if isinstance(exc, jc.DriverError.InvalidArgument):
         return DriverInvalidArgument(message)
     return DriverError(message)
+
+
+class _FFIByteStream(ObjectStream[bytes]):
+    """Wraps a jumpstarter_core.ClientByteStream as an anyio byte stream (the FFI client
+    path's equivalent of RouterStream over a gRPC context)."""
+
+    def __init__(self, chan):
+        self._chan = chan
+
+    async def send(self, item: bytes) -> None:
+        await self._chan.write(bytes(item))
+
+    async def receive(self) -> bytes:
+        data = await self._chan.read()
+        if data is None:
+            raise anyio.EndOfStream
+        return bytes(data)
+
+    async def send_eof(self) -> None:
+        await self._chan.close()
+
+    async def aclose(self) -> None:
+        await self._chan.close()
 
 
 @dataclass(kw_only=True)
@@ -491,6 +515,16 @@ class AsyncDriverClient(
 
     @asynccontextmanager
     async def stream_async(self, method):
+        if self.session is not None:
+            import json
+
+            request = json.dumps({"uuid": str(self.uuid), "method": method})
+            chan = await self.session.stream(request)
+            metadata = json.loads(chan.initial_metadata())
+            async with MetadataStream(stream=_FFIByteStream(chan), metadata=metadata) as stream:
+                yield stream
+            return
+
         context = self.stub.Stream(
             metadata=StreamRequestMetadata.model_construct(request=DriverStreamRequest(uuid=self.uuid, method=method))
             .model_dump(mode="json", round_trip=True)
@@ -506,6 +540,12 @@ class AsyncDriverClient(
         stream,
         content_encoding: str | None = None,
     ):
+        if self.session is not None:
+            # Resource (flash/dump) streams over FFI are not implemented yet (the host
+            # adapter also returns Unimplemented). Driver `@exportstream` streams work
+            # via stream_async; resource handles still need the gRPC path.
+            raise DriverMethodNotImplemented("resource streams are not yet supported on the FFI client path")
+
         context = self.stub.Stream(
             metadata=StreamRequestMetadata.model_construct(
                 request=ResourceStreamRequest(uuid=self.uuid, x_jmp_content_encoding=content_encoding)
