@@ -58,6 +58,40 @@ class ExporterNotReady(DriverError):
     """
 
 
+def _to_jsonable(value):
+    """Normalize a driver-call arg to a JSON-able form for the FFI client path (matches
+    the legacy ``encode_value`` quirks: non-finite→None, bytes→utf8, tuples→lists,
+    pydantic models→model_dump). Plain values pass through `json.dumps` directly."""
+    import math
+
+    if value is None or isinstance(value, (bool, str, int)):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).decode("utf-8")
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_to_jsonable(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _to_jsonable(v) for k, v in value.items()}
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        return _to_jsonable(model_dump(mode="json"))
+    raise TypeError(f"cannot serialize driver-call arg of type {type(value)!r}")
+
+
+def _map_ffi_error(method, exc):
+    """Map a jumpstarter_core.DriverError to the client exception taxonomy."""
+    import jumpstarter_core as jc
+
+    message = f"{method}: {exc}"
+    if isinstance(exc, (jc.DriverError.Unimplemented, jc.DriverError.NotFound)):
+        return DriverMethodNotImplemented(message)
+    if isinstance(exc, jc.DriverError.InvalidArgument):
+        return DriverInvalidArgument(message)
+    return DriverError(message)
+
+
 @dataclass(kw_only=True)
 class AsyncDriverClient(
     Metadata,
@@ -70,7 +104,10 @@ class AsyncDriverClient(
     Backing implementation of blocking driver client.
     """
 
-    stub: Any
+    stub: Any = None
+    # When set (the FFI client path via client_from_host), driver calls route through the
+    # Rust core (jumpstarter_core.ClientSession) instead of the gRPC stub.
+    session: Any = None
 
     log_level: str = "INFO"
     logger: logging.Logger = field(init=False)
@@ -372,6 +409,18 @@ class AsyncDriverClient(
     async def call_async(self, method, *args):
         """Make DriverCall by method name and arguments"""
 
+        if self.session is not None:
+            import json
+
+            import jumpstarter_core as jc
+
+            args_json = json.dumps([_to_jsonable(arg) for arg in args])
+            try:
+                result_json = await self.session.driver_call(str(self.uuid), method, args_json)
+            except jc.DriverError as e:
+                raise _map_ffi_error(method, e) from None
+            return json.loads(result_json)
+
         request = jumpstarter_pb2.DriverCallRequest(
             uuid=str(self.uuid),
             method=method,
@@ -400,6 +449,23 @@ class AsyncDriverClient(
 
     async def streamingcall_async(self, method, *args):
         """Make StreamingDriverCall by method name and arguments"""
+
+        if self.session is not None:
+            import json
+
+            import jumpstarter_core as jc
+
+            args_json = json.dumps([_to_jsonable(arg) for arg in args])
+            try:
+                stream = await self.session.streaming_driver_call(str(self.uuid), method, args_json)
+                while True:
+                    item = await stream.next()
+                    if item is None:
+                        break
+                    yield json.loads(item)
+            except jc.DriverError as e:
+                raise _map_ffi_error(method, e) from None
+            return
 
         request = jumpstarter_pb2.StreamingDriverCallRequest(
             uuid=str(self.uuid),

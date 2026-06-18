@@ -75,6 +75,11 @@ async def client_from_path(
                 path, credentials, grpc_options, interceptors=interceptors
             ) as channel:
                 yield await client_from_channel(channel, portal, stack, allow, unsafe)
+    elif os.environ.get("JMP_CLIENT_FFI"):
+        # Opt-in in-process client path: route driver calls through the Rust core (FFI)
+        # over the local transport socket, instead of grpcio. (Default stays gRPC until
+        # the FFI client covers byte streams / resources / logs.)
+        yield await client_from_host(path, portal, stack, allow, unsafe)
     else:
         async with grpc.aio.secure_channel(
             f"unix://{path}",
@@ -137,6 +142,60 @@ async def client_from_channel(
             methods_description=getattr(report, "methods_description", {}) or {},
         )
 
+        clients[index] = client
+
+    return clients.popitem(last=True)[1]
+
+
+async def client_from_host(
+    host: str,
+    portal: BlockingPortal,
+    stack: ExitStack,
+    allow: list[str],
+    unsafe: bool,
+) -> DriverClient:
+    """Build a DriverClient tree over the Rust core (FFI, jumpstarter_core.ClientSession)
+    instead of a gRPC channel — the in-process client path. Driver calls route through the
+    Rust core; no grpcio / generated stubs."""
+    import json
+
+    import jumpstarter_core as jc
+
+    session = await jc.ClientSession.connect(str(host))
+    reports = json.loads(await session.get_report())
+
+    topo = defaultdict(list)
+    last_seen = {}
+    by_index = {}
+    clients = OrderedDict()
+
+    for index, report in enumerate(reports):
+        topo[index] = []
+        last_seen[report["uuid"]] = index
+        parent = report.get("parent_uuid")
+        if parent:
+            topo[last_seen[parent]].append(index)
+        by_index[index] = report
+
+    for index in TopologicalSorter(topo).static_order():
+        report = by_index[index]
+        try:
+            client_class = import_class(report["labels"]["jumpstarter.dev/client"], allow, unsafe)
+        except MissingDriverError as e:
+            if not os.environ.get("_JMP_SUPPRESS_DRIVER_WARNINGS"):
+                logger.warning("Driver client '%s' is not available.", e.class_path)
+            client_class = StubDriverClient
+
+        client = client_class(
+            uuid=UUID(report["uuid"]),
+            labels=report["labels"],
+            session=session,
+            portal=portal,
+            stack=stack.enter_context(ExitStack()),
+            children={by_index[k]["labels"]["jumpstarter.dev/name"]: clients[k] for k in topo[index]},
+            description=report.get("description") or None,
+            methods_description=report.get("methods_description") or {},
+        )
         clients[index] = client
 
     return clients.popitem(last=True)[1]
