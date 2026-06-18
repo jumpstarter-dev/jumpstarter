@@ -15,7 +15,7 @@ pub mod foreign;
 pub mod host;
 pub mod report;
 
-pub use client::{ClientResultStream, ClientSession};
+pub use client::{ClientByteStream, ClientResultStream, ClientSession};
 pub use dto::DriverNode;
 pub use error::{CodecError, DriverCallError};
 pub use foreign::ForeignDriverHost;

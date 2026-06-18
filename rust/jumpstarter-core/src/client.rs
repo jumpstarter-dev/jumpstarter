@@ -9,17 +9,26 @@
 use std::sync::Arc;
 
 use jumpstarter_client::exporter_logs::uds_channel;
+use jumpstarter_protocol::router::{classify, data_frame, goaway_frame, FrameAction};
 use jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient;
+use jumpstarter_protocol::v1::router_service_client::RouterServiceClient;
 use jumpstarter_protocol::v1::{
-    DriverCallRequest, EndSessionRequest, StreamingDriverCallRequest, StreamingDriverCallResponse,
+    DriverCallRequest, EndSessionRequest, StreamRequest, StreamResponse,
+    StreamingDriverCallRequest, StreamingDriverCallResponse,
 };
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt as _;
+use tonic::metadata::AsciiMetadataValue;
 use tonic::transport::Channel;
-use tonic::{Code, Status, Streaming};
+use tonic::{Code, Request, Status, Streaming};
 
 use crate::codec;
 use crate::error::DriverCallError;
+
+/// Resource initial-metadata keys the host emits and the client consumes
+/// (`driver/base.py:189-198`); the same allow-list `tunnel.rs` relays.
+const RELAY_KEYS: [&str; 2] = ["resource", "x_jmp_accept_encoding"];
 
 /// Map a wire `tonic::Status` to the driver-call error taxonomy the Python client maps to
 /// its exceptions (`NOT_FOUND`→DriverMethodNotImplemented, `INVALID_ARGUMENT`→
@@ -114,6 +123,35 @@ impl ClientSession {
         }))
     }
 
+    /// Open a router byte stream to a driver `@exportstream`/resource handle. `request_json`
+    /// is the `request` stream metadata (`{uuid, method}` for driver streams or `{uuid,
+    /// x_jmp_content_encoding}` for resources). Returns a duplex [`ClientByteStream`] plus
+    /// the resource initial metadata as JSON.
+    pub async fn stream(&self, request_json: String) -> Result<Arc<ClientByteStream>, DriverCallError> {
+        let meta = AsciiMetadataValue::try_from(request_json)
+            .map_err(|e| DriverCallError::InvalidArgument(e.to_string()))?;
+        let (tx, rx) = mpsc::channel::<StreamRequest>(32);
+        let mut request = Request::new(ReceiverStream::new(rx));
+        request.metadata_mut().insert("request", meta);
+        let response = RouterServiceClient::new(self.channel.clone())
+            .stream(request)
+            .await
+            .map_err(err_from_status)?;
+        // Capture the allow-listed resource keys before consuming the response.
+        let mut initial = serde_json::Map::new();
+        for &key in &RELAY_KEYS {
+            if let Some(value) = response.metadata().get(key).and_then(|v| v.to_str().ok()) {
+                initial.insert(key.to_string(), serde_json::Value::String(value.to_string()));
+            }
+        }
+        let initial_metadata = serde_json::Value::Object(initial).to_string();
+        Ok(Arc::new(ClientByteStream {
+            uplink: tx,
+            downlink: Mutex::new(response.into_inner()),
+            initial_metadata,
+        }))
+    }
+
     /// Signal the exporter to end the session early (runs afterLease).
     pub async fn end_session(&self) -> Result<bool, DriverCallError> {
         let resp = self
@@ -142,5 +180,56 @@ impl ClientResultStream {
             Some(Err(status)) => Err(err_from_status(status)),
             None => Ok(None),
         }
+    }
+}
+
+/// A bidirectional router byte stream (driver `@exportstream` / resource). The Python
+/// client reads/writes raw payloads; Rust owns the DATA/GOAWAY framing.
+pub struct ClientByteStream {
+    uplink: mpsc::Sender<StreamRequest>,
+    downlink: Mutex<Streaming<StreamResponse>>,
+    initial_metadata: String,
+}
+
+impl ClientByteStream {
+    /// The resource initial metadata as a JSON object (`{}` for driver streams).
+    pub fn initial_metadata(&self) -> String {
+        self.initial_metadata.clone()
+    }
+
+    /// Next inbound payload, or `None` at EOF. The trailing `ABORTED "RouterStream:
+    /// aclose"` the host emits on teardown is treated as a normal end-of-stream.
+    pub async fn read(&self) -> Result<Option<Vec<u8>>, DriverCallError> {
+        let mut downlink = self.downlink.lock().await;
+        loop {
+            match downlink.next().await {
+                Some(Ok(frame)) => match classify(frame) {
+                    FrameAction::Payload(bytes) => return Ok(Some(bytes)),
+                    FrameAction::Eof => return Ok(None),
+                    FrameAction::Drop => continue,
+                },
+                Some(Err(status)) => {
+                    if status.code() == Code::Aborted {
+                        return Ok(None);
+                    }
+                    return Err(err_from_status(status));
+                }
+                None => return Ok(None),
+            }
+        }
+    }
+
+    /// Write one payload toward the driver (a DATA frame).
+    pub async fn write(&self, data: Vec<u8>) -> Result<(), DriverCallError> {
+        self.uplink
+            .send(data_frame(data))
+            .await
+            .map_err(|_| DriverCallError::Unknown("router stream closed".to_string()))
+    }
+
+    /// Half-close the uplink (send GOAWAY); the downlink stays open until the driver ends.
+    pub async fn close(&self) -> Result<(), DriverCallError> {
+        let _ = self.uplink.send(goaway_frame()).await;
+        Ok(())
     }
 }

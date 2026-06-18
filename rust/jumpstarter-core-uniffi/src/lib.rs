@@ -345,8 +345,40 @@ impl ClientSession {
         Ok(Arc::new(ClientResultStream { inner }))
     }
 
+    /// Open a router byte stream (driver `@exportstream` / resource handle).
+    pub async fn stream(&self, request_json: String) -> Result<Arc<ClientByteStream>, DriverError> {
+        let inner = self.inner.stream(request_json).await.map_err(from_core_err)?;
+        Ok(Arc::new(ClientByteStream { inner }))
+    }
+
     pub async fn end_session(&self) -> Result<bool, DriverError> {
         self.inner.end_session().await.map_err(from_core_err)
+    }
+}
+
+/// A bidirectional router byte stream (driver `@exportstream` / resource).
+#[derive(uniffi::Object)]
+pub struct ClientByteStream {
+    inner: Arc<jumpstarter_core::ClientByteStream>,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl ClientByteStream {
+    /// The resource initial metadata as a JSON object.
+    pub fn initial_metadata(&self) -> String {
+        self.inner.initial_metadata()
+    }
+
+    pub async fn read(&self) -> Result<Option<Vec<u8>>, DriverError> {
+        self.inner.read().await.map_err(from_core_err)
+    }
+
+    pub async fn write(&self, data: Vec<u8>) -> Result<(), DriverError> {
+        self.inner.write(data).await.map_err(from_core_err)
+    }
+
+    pub async fn close(&self) -> Result<(), DriverError> {
+        self.inner.close().await.map_err(from_core_err)
     }
 }
 
