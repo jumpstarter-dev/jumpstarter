@@ -7,6 +7,7 @@
 //! FFI dependency (no uniffi/cbindgen/jni) — those live only in the per-binding crates,
 //! which implement [`host::ForeignHostApi`] and convert these DTOs to their native types.
 
+pub mod client;
 pub mod codec;
 pub mod dto;
 pub mod error;
@@ -14,6 +15,7 @@ pub mod foreign;
 pub mod host;
 pub mod report;
 
+pub use client::{ClientResultStream, ClientSession};
 pub use dto::DriverNode;
 pub use error::{CodecError, DriverCallError};
 pub use foreign::ForeignDriverHost;

@@ -282,6 +282,87 @@ impl ForeignResultStream for HandleResultStream {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Client side: ClientSession (Rust object Python calls into) — the consumer mirror
+// ---------------------------------------------------------------------------
+
+fn from_core_err(e: DriverCallError) -> DriverError {
+    match e {
+        DriverCallError::Unimplemented(m) => DriverError::Unimplemented(m),
+        DriverCallError::InvalidArgument(m) => DriverError::InvalidArgument(m),
+        DriverCallError::DeadlineExceeded(m) => DriverError::DeadlineExceeded(m),
+        DriverCallError::NotFound(m) => DriverError::NotFound(m),
+        DriverCallError::Unknown(m) => DriverError::Unknown(m),
+    }
+}
+
+/// A connection to an exporter via its `JUMPSTARTER_HOST` transport socket — the Python
+/// driver clients / `j` call these instead of grpcio stubs.
+#[derive(uniffi::Object)]
+pub struct ClientSession {
+    inner: jumpstarter_core::ClientSession,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl ClientSession {
+    /// Connect to the lease holder's transport socket.
+    #[uniffi::constructor]
+    pub async fn connect(host: String) -> Result<Arc<Self>, DriverError> {
+        let inner = jumpstarter_core::ClientSession::connect(host)
+            .await
+            .map_err(from_core_err)?;
+        Ok(Arc::new(Self { inner }))
+    }
+
+    /// GetReport as a JSON array of driver nodes (the client builds its graph from this).
+    pub async fn get_report(&self) -> Result<String, DriverError> {
+        self.inner.get_report().await.map_err(from_core_err)
+    }
+
+    pub async fn driver_call(
+        &self,
+        uuid: String,
+        method_name: String,
+        args_json: String,
+    ) -> Result<String, DriverError> {
+        self.inner
+            .driver_call(uuid, method_name, args_json)
+            .await
+            .map_err(from_core_err)
+    }
+
+    pub async fn streaming_driver_call(
+        &self,
+        uuid: String,
+        method_name: String,
+        args_json: String,
+    ) -> Result<Arc<ClientResultStream>, DriverError> {
+        let inner = self
+            .inner
+            .streaming_driver_call(uuid, method_name, args_json)
+            .await
+            .map_err(from_core_err)?;
+        Ok(Arc::new(ClientResultStream { inner }))
+    }
+
+    pub async fn end_session(&self) -> Result<bool, DriverError> {
+        self.inner.end_session().await.map_err(from_core_err)
+    }
+}
+
+/// A streaming-driver-call result stream, pulled JSON-at-a-time.
+#[derive(uniffi::Object)]
+pub struct ClientResultStream {
+    inner: Arc<jumpstarter_core::ClientResultStream>,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl ClientResultStream {
+    pub async fn next(&self) -> Result<Option<String>, DriverError> {
+        self.inner.next().await.map_err(from_core_err)
+    }
+}
+
 /// A `ForeignByteChannel` backed by a `(host, handle)` pair — drives `stream_*`.
 struct HandleByteChannel {
     host: Arc<dyn DriverHost>,

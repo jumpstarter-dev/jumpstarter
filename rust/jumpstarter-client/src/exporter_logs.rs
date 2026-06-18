@@ -24,7 +24,8 @@ const PASSPHRASE_METADATA_KEY: &str = "x-jumpstarter-passphrase";
 
 /// Build a tonic channel to the local transport proxy's Unix socket (controller
 /// mode). The proxy bridges `ExporterService` RPCs to the exporter via the router.
-pub(crate) async fn uds_channel(socket: String) -> Result<Channel, String> {
+/// Public so the FFI client surface (jumpstarter-core) can connect to `JUMPSTARTER_HOST`.
+pub async fn uds_channel(socket: String) -> Result<Channel, String> {
     let connector = tower::service_fn(move |_: http::Uri| {
         let socket = socket.clone();
         async move { Ok::<_, std::io::Error>(TokioIo::new(UnixStream::connect(socket).await?)) }

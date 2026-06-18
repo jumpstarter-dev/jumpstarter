@@ -13,9 +13,11 @@ rust-version.workspace = true
 # those live only in the per-binding crates (jumpstarter-core-uniffi, jumpstarter-core-capi).
 [dependencies]
 jumpstarter-protocol = { path = "../jumpstarter-protocol" }
-# The facade wraps the runtime crates; it implements the exporter's DriverHostBackend
-# seam over the binding-agnostic ForeignHostApi.
+# The facade wraps the runtime crates: it implements the exporter's DriverHostBackend
+# seam over the binding-agnostic ForeignHostApi (host side), and exposes a ClientSession
+# over the client crate's transport (client side).
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
+jumpstarter-client = { path = "../jumpstarter-client" }
 prost-types.workspace = true
 serde_json.workspace = true
 async-trait = "0.1"

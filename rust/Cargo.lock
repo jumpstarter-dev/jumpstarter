@@ -1265,6 +1265,7 @@ name = "jumpstarter-core"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "jumpstarter-client",
  "jumpstarter-exporter",
  "jumpstarter-protocol",
  "prost-types",
