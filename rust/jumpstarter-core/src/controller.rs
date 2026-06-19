@@ -13,6 +13,7 @@ use jumpstarter_client::lease::{self, AcquiredLease, CreateLeaseParams, LeasePro
 use jumpstarter_client::transport::{self, TransportHost};
 use jumpstarter_client::ControllerClient;
 use jumpstarter_config::{ClientConfig, ObjectMeta, TlsConfig};
+use jumpstarter_protocol::client_v1;
 use tokio::sync::Mutex;
 
 use crate::error::ControllerError;
@@ -92,6 +93,120 @@ impl ControllerSession {
         let host = transport::serve_default(self.inner.clone(), name, self.tls.clone()).await?;
         Ok(Arc::new(LeaseTransport { inner: Mutex::new(Some(host)) }))
     }
+
+    /// List exporters (all pages) as a JSON array — the language binding `json.loads` it.
+    /// `filter` is the full label-selector string. Each entry: `{name, labels, online,
+    /// status}` (status = the enum name, or `null` when unspecified).
+    pub async fn list_exporters_json(&self, filter: Option<String>) -> Result<String, ControllerError> {
+        let exporters = self.inner.list_exporters(filter.as_deref()).await?;
+        let arr: Vec<serde_json::Value> = exporters.iter().map(exporter_to_json).collect();
+        Ok(serde_json::Value::Array(arr).to_string())
+    }
+
+    /// List leases (all pages) as a JSON array. Each entry: `{name, client, exporter,
+    /// selector, exporter_name, tags, conditions:[{type,status}], begin_time_epoch,
+    /// end_time_epoch, duration_seconds}` (timestamps are Unix epoch seconds; the binding
+    /// formats them). `only_active` excludes expired leases.
+    pub async fn list_leases_json(
+        &self,
+        filter: Option<String>,
+        only_active: bool,
+        tag_filter: Option<String>,
+    ) -> Result<String, ControllerError> {
+        let leases = self
+            .inner
+            .list_leases(filter.as_deref(), only_active, tag_filter.as_deref())
+            .await?;
+        let arr: Vec<serde_json::Value> = leases.iter().map(lease_to_json).collect();
+        Ok(serde_json::Value::Array(arr).to_string())
+    }
+
+    /// Create a lease (does not wait for it to become Ready — that's `acquire_lease`).
+    /// Returns the bare created lease name.
+    pub async fn create_lease(
+        &self,
+        duration_secs: u64,
+        selector: Option<String>,
+        exporter_name: Option<String>,
+        tags: BTreeMap<String, String>,
+    ) -> Result<String, ControllerError> {
+        let params = CreateLeaseParams {
+            selector,
+            exporter_name,
+            duration: Duration::from_secs(duration_secs),
+            begin_time: None,
+            lease_id: None,
+            tags,
+        };
+        let lease = self.inner.create_lease_raw(&params).await?;
+        Ok(leaf(&lease.name))
+    }
+}
+
+/// The bare resource name (last path segment) of a `namespaces/x/<kind>/<name>` identifier.
+fn leaf(path: &str) -> String {
+    path.rsplit('/').next().unwrap_or(path).to_string()
+}
+
+fn exporter_status_name(value: i32) -> &'static str {
+    match value {
+        1 => "OFFLINE",
+        2 => "AVAILABLE",
+        3 => "BEFORE_LEASE_HOOK",
+        4 => "LEASE_READY",
+        5 => "AFTER_LEASE_HOOK",
+        6 => "BEFORE_LEASE_HOOK_FAILED",
+        7 => "AFTER_LEASE_HOOK_FAILED",
+        _ => "UNSPECIFIED",
+    }
+}
+
+fn ts_epoch(ts: &prost_types::Timestamp) -> f64 {
+    ts.seconds as f64 + ts.nanos as f64 / 1_000_000_000.0
+}
+
+fn dur_secs(d: &prost_types::Duration) -> f64 {
+    d.seconds as f64 + d.nanos as f64 / 1_000_000_000.0
+}
+
+#[allow(deprecated)] // `online` is deprecated in favor of `status` but still surfaced (matches the CLI).
+fn exporter_to_json(e: &client_v1::Exporter) -> serde_json::Value {
+    let labels: serde_json::Map<String, serde_json::Value> = e
+        .labels
+        .iter()
+        .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+        .collect();
+    serde_json::json!({
+        "name": leaf(&e.name),
+        "labels": labels,
+        "online": e.online,
+        "status": (e.status != 0).then(|| exporter_status_name(e.status)),
+    })
+}
+
+fn lease_to_json(l: &client_v1::Lease) -> serde_json::Value {
+    let conditions: Vec<serde_json::Value> = l
+        .conditions
+        .iter()
+        .map(|c| serde_json::json!({ "type": c.r#type, "status": c.status }))
+        .collect();
+    let tags: serde_json::Map<String, serde_json::Value> = l
+        .tags
+        .iter()
+        .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+        .collect();
+    serde_json::json!({
+        "name": leaf(&l.name),
+        "client": l.client.as_deref().filter(|s| !s.is_empty()).map(leaf),
+        "exporter": l.exporter.as_deref().filter(|s| !s.is_empty()).map(leaf),
+        "selector": l.selector,
+        "exporter_name": l.exporter_name.as_deref().filter(|s| !s.is_empty()),
+        "tags": tags,
+        "conditions": conditions,
+        "begin_time_epoch": l.effective_begin_time.as_ref().map(ts_epoch),
+        "end_time_epoch": l.effective_end_time.as_ref().map(ts_epoch),
+        "duration_seconds": l.duration.as_ref().map(dur_secs),
+    })
 }
 
 /// A live transport listener for one lease. Holds the `jumpstarter-client` `TransportHost`

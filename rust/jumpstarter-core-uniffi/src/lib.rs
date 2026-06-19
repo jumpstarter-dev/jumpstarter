@@ -558,6 +558,40 @@ impl ControllerSession {
         let inner = self.inner.serve_lease(name).await.map_err(from_core_controller_err)?;
         Ok(Arc::new(LeaseTransport { inner }))
     }
+
+    /// List exporters as a JSON array string (`filter` = label selector). Each entry:
+    /// `{name, labels, online, status}`.
+    pub async fn list_exporters(&self, filter: Option<String>) -> Result<String, ControllerError> {
+        self.inner.list_exporters_json(filter).await.map_err(from_core_controller_err)
+    }
+
+    /// List leases as a JSON array string. Each entry: `{name, client, exporter, selector,
+    /// exporter_name, tags, conditions, begin_time_epoch, end_time_epoch, duration_seconds}`.
+    pub async fn list_leases(
+        &self,
+        filter: Option<String>,
+        only_active: bool,
+        tag_filter: Option<String>,
+    ) -> Result<String, ControllerError> {
+        self.inner
+            .list_leases_json(filter, only_active, tag_filter)
+            .await
+            .map_err(from_core_controller_err)
+    }
+
+    /// Create a lease (does not wait for Ready); returns the created lease name.
+    pub async fn create_lease(
+        &self,
+        duration_secs: u64,
+        selector: Option<String>,
+        exporter_name: Option<String>,
+        tags: HashMap<String, String>,
+    ) -> Result<String, ControllerError> {
+        self.inner
+            .create_lease(duration_secs, selector, exporter_name, tags.into_iter().collect())
+            .await
+            .map_err(from_core_controller_err)
+    }
 }
 
 /// A live transport listener for one lease (drop/close tears it down).

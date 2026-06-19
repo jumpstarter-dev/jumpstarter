@@ -6,7 +6,6 @@ import asyncio
 import asyncio.subprocess
 import logging
 import time
-from dataclasses import dataclass
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -98,17 +97,6 @@ def _make_connection(
         created_at=datetime.now(),
         client=client or FakeCompositeClient(),
     )
-
-
-@dataclass
-class FakeCondition:
-    type: str
-    status: str
-
-
-@dataclass
-class FakeLease:
-    conditions: list
 
 
 # ---------------------------------------------------------------------------
@@ -250,23 +238,23 @@ class TestGetDriverMethods:
 
 class TestLeaseStatus:
     def test_ready(self):
-        lease = FakeLease(conditions=[FakeCondition(type="Ready", status="True")])
+        lease = {"conditions": [{"type": "Ready", "status": "True"}]}
         assert _lease_status(lease) == "ready"
 
     def test_pending(self):
-        lease = FakeLease(conditions=[FakeCondition(type="Pending", status="True")])
+        lease = {"conditions": [{"type": "Pending", "status": "True"}]}
         assert _lease_status(lease) == "pending"
 
     def test_unsatisfiable(self):
-        lease = FakeLease(conditions=[FakeCondition(type="Unsatisfiable", status="True")])
+        lease = {"conditions": [{"type": "Unsatisfiable", "status": "True"}]}
         assert _lease_status(lease) == "unsatisfiable"
 
     def test_unknown_when_no_conditions(self):
-        lease = FakeLease(conditions=[])
+        lease = {"conditions": []}
         assert _lease_status(lease) == "unknown"
 
     def test_unknown_when_not_true(self):
-        lease = FakeLease(conditions=[FakeCondition(type="Ready", status="False")])
+        lease = {"conditions": [{"type": "Ready", "status": "False"}]}
         assert _lease_status(lease) == "unknown"
 
 

@@ -169,6 +169,24 @@ async def _get_config() -> ClientConfigV1Alpha1:
     return await _ensure_fresh_token(config)
 
 
+async def _controller_session(config: ClientConfigV1Alpha1):
+    """Connect a Rust-core ControllerSession (FFI) from the client config's connection fields.
+
+    The controller operations (list/create/delete exporters + leases) run on the Rust core,
+    the same path the ``jmp`` CLI uses — no Python gRPC.
+    """
+    import jumpstarter_core as jc
+
+    return await jc.ControllerSession.connect(
+        config.endpoint,
+        config.token,
+        config.tls.ca or "",
+        config.tls.insecure,
+        config.metadata.namespace,
+        config.metadata.name,
+    )
+
+
 def _register_lease_tools(mcp: FastMCP) -> None:
     """Register lease and exporter management tools."""
 
@@ -189,8 +207,9 @@ def _register_lease_tools(mcp: FastMCP) -> None:
             include_online: Include online/offline status (default: True)
         """
         config = await _get_config()
+        session = await _controller_session(config)
         result = await lease_tools.list_exporters(
-            config,
+            session,
             selector=selector,
             include_leases=include_leases,
             include_online=include_online,
@@ -207,7 +226,8 @@ def _register_lease_tools(mcp: FastMCP) -> None:
             selector: Optional label selector to filter leases
         """
         config = await _get_config()
-        result = await lease_tools.list_leases(config, selector=selector)
+        session = await _controller_session(config)
+        result = await lease_tools.list_leases(session, selector=selector)
         return json.dumps(result, indent=2)
 
     @mcp.tool()
@@ -226,8 +246,9 @@ def _register_lease_tools(mcp: FastMCP) -> None:
         if not selector and not exporter_name:
             return json.dumps({"error": "One of selector or exporter_name is required"})
         config = await _get_config()
+        session = await _controller_session(config)
         result = await lease_tools.create_lease(
-            config, duration_seconds=duration_seconds, selector=selector, exporter_name=exporter_name
+            session, duration_seconds=duration_seconds, selector=selector, exporter_name=exporter_name
         )
         return json.dumps(result, indent=2)
 
@@ -239,7 +260,8 @@ def _register_lease_tools(mcp: FastMCP) -> None:
             lease_id: Name of the lease to delete
         """
         config = await _get_config()
-        result = await lease_tools.delete_lease(config, lease_id=lease_id)
+        session = await _controller_session(config)
+        result = await lease_tools.delete_lease(session, lease_id=lease_id)
         return json.dumps(result, indent=2)
 
 
