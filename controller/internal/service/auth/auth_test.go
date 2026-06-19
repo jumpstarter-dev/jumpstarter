@@ -88,6 +88,10 @@ func captureLog(t *testing.T, ctx context.Context) (context.Context, *bytes.Buff
 	return logf.IntoContext(ctx, logger), &buf
 }
 
+// peerAddrUnknown is the expected return value when PeerAddr cannot determine
+// the remote IP (no peer, nil Addr, unparseable address, etc.).
+const peerAddrUnknown = "unknown"
+
 // ---------------------------------------------------------------------------
 // PeerAddr tests
 // ---------------------------------------------------------------------------
@@ -101,7 +105,7 @@ func TestPeerAddr(t *testing.T) {
 		{
 			name:     "no peer in context returns unknown",
 			ctx:      context.Background(),
-			expected: "unknown",
+			expected: peerAddrUnknown,
 		},
 		{
 			name:     "peer with host:port returns host only",
@@ -116,12 +120,12 @@ func TestPeerAddr(t *testing.T) {
 		{
 			name:     "peer with bare address (no port) returns unknown",
 			ctx:      ctxWithPeer("no-port-here"),
-			expected: "unknown",
+			expected: peerAddrUnknown,
 		},
 		{
 			name:     "peer with empty address returns unknown",
 			ctx:      ctxWithPeer(""),
-			expected: "unknown",
+			expected: peerAddrUnknown,
 		},
 	}
 
@@ -423,8 +427,8 @@ func TestPeerAddr_NilAddr(t *testing.T) {
 	})
 	// PeerAddr must not panic when p.Addr is nil and should return "unknown".
 	got := PeerAddr(ctx)
-	if got != "unknown" {
-		t.Errorf("PeerAddr with nil Addr = %q, want 'unknown'", got)
+	if got != peerAddrUnknown {
+		t.Errorf("PeerAddr with nil Addr = %q, want %q", got, peerAddrUnknown)
 	}
 }
 
@@ -439,7 +443,7 @@ func TestPeerAddr_UnixSocket(t *testing.T) {
 	got := PeerAddr(ctx)
 	// A Unix socket path should not be returned; it should return "unknown"
 	// because SplitHostPort will fail on "/var/run/jumpstarter.sock".
-	if got != "unknown" {
-		t.Errorf("PeerAddr for unix socket = %q, want 'unknown'", got)
+	if got != peerAddrUnknown {
+		t.Errorf("PeerAddr for unix socket = %q, want %q", got, peerAddrUnknown)
 	}
 }

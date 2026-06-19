@@ -494,5 +494,9 @@ async def test_serve_tcp_passphrase_correct_no_warning_log(caplog):
                     response = await stub.GetReport(empty_pb2.Empty(), metadata=metadata)
             assert response.uuid == str(driver.uuid)
 
-    auth_warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "authentication failed" in r.message]
-    assert len(auth_warnings) == 0, f"successful auth should not log warnings, got: {[r.message for r in auth_warnings]}"
+    auth_warnings = [
+        r for r in caplog.records if r.levelno == logging.WARNING and "authentication failed" in r.message
+    ]
+    assert len(auth_warnings) == 0, (
+        f"successful auth should not log warnings, got: {[r.message for r in auth_warnings]}"
+    )
