@@ -10,19 +10,63 @@ framing, and dispatches the Python driver tree over FFI. No Python gRPC.
 """
 
 import asyncio
+import json
 import logging
 import os
 import signal
 import sys
 import time
+from pathlib import Path
 
 import anyio
 import click
 from anyio import create_task_group, open_signal_receiver
-from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
 logger = logging.getLogger(__name__)
+
+# Exporter config locations (mirrors jumpstarter.config.exporter, without the pydantic model):
+# the user config dir, then a system dir for systemd units / containers mounting /etc/jumpstarter.
+_SYSTEM_EXPORTERS_PATH = Path("/etc/jumpstarter/exporters")
+
+
+def _user_exporters_path() -> Path:
+    from jumpstarter.common.xdg import xdg_config_home
+    from jumpstarter.config.env import JMP_CLIENT_CONFIG_HOME
+
+    base = Path(os.getenv(JMP_CLIENT_CONFIG_HOME) or (xdg_config_home() / "jumpstarter"))
+    return base / "exporters"
+
+
+def _resolve_exporter_config_path(alias: str | None, path: str | None) -> Path | None:
+    """Resolve ``--exporter <alias>`` / ``--exporter-config <path>`` to a config file path.
+
+    An explicit ``--exporter-config`` path wins; an ``--exporter`` alias is looked up in the user
+    config dir, then the system dir (matching ``ExporterConfigV1Alpha1.resolve_path``). The Rust
+    core (``jc.load_exporter_spec``) parses the file — Python only locates it.
+    """
+    if path:
+        return Path(path)
+    if alias:
+        user = _user_exporters_path() / f"{alias}.yaml"
+        if user.exists():
+            return user
+        system = _SYSTEM_EXPORTERS_PATH / f"{alias}.yaml"
+        if system.exists():
+            return system
+        # Fall back to the user path so the caller surfaces a "does not exist" error against it.
+        return user
+    return None
+
+
+def _failure_detection(config_path: Path) -> tuple[int, int]:
+    """Read ``failureDetection.{maxRapidFailures,rapidFailureWindow}`` from the exporter config,
+    parsing the YAML via the Rust core (``jc.parse_yaml``); falls back to the defaults (5, 60)."""
+    import jumpstarter_core as jc
+
+    data = json.loads(jc.parse_yaml(config_path.read_text()))
+    fd = data.get("failureDetection") or {}
+    return int(fd.get("maxRapidFailures", 5)), int(fd.get("rapidFailureWindow", 60))
 
 
 def _parse_listener_bind(value: str) -> tuple[str, int]:
@@ -72,7 +116,7 @@ def _reap_zombie_processes(capture_child=None):
         logger.warning(f"PARENT: Error during zombie reaping: {e}")
 
 
-def _handle_child(config):
+def _handle_child(config_path):
     """Child process: host the Rust core in-process and serve via FFI, with graceful shutdown."""
 
     async def serve_with_graceful_shutdown():
@@ -107,10 +151,10 @@ def _handle_child(config):
 
             tg.start_soon(signal_handler, tg.cancel_scope)
 
-            config_path = str(config.path)
-            factory = DriverHostFactory(config_path)
+            path = str(config_path)
+            factory = DriverHostFactory(path)
             try:
-                await jc.run_exporter(config_path, factory)
+                await jc.run_exporter(path, factory)
             except* Exception as excgroup:
                 _handle_exporter_exceptions(excgroup)
             tg.cancel_scope.cancel()
@@ -168,9 +212,8 @@ def _handle_parent(pid):
         return 128 + child_exit_signal
 
 
-def _serve_with_exc_handling(config):
-    max_rapid_failures = config.failure_detection.max_rapid_failures
-    rapid_failure_window = config.failure_detection.rapid_failure_window
+def _serve_with_exc_handling(config_path):
+    max_rapid_failures, rapid_failure_window = _failure_detection(config_path)
 
     rapid_failure_count = 0
     while True:
@@ -213,12 +256,18 @@ def _serve_with_exc_handling(config):
                 rapid_failure_count = 0
         else:
             os.setsid() # Become group leader so all spawned subprocesses are reached by parent's signals
-            _handle_child(config)
+            _handle_child(config_path)
             sys.exit(1) # should never happen
 
 
 @click.command("run")
-@opt_config(client=False)
+@click.option("--exporter", "exporter_alias", default=None, help="Alias of an exporter config to run.")
+@click.option(
+    "--exporter-config",
+    "exporter_config",
+    default=None,
+    help="Path to an exporter config file to run.",
+)
 @click.option(
     "--tls-grpc-listener",
     "listener_bind",
@@ -248,9 +297,10 @@ def _serve_with_exc_handling(config):
     help="Require this passphrase from clients connecting via --tls-grpc-listener.",
 )
 @handle_exceptions
-def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase):
+def run(exporter_alias, exporter_config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase):
     """Run an exporter locally."""
-    if config is None:
+    config_path = _resolve_exporter_config_path(exporter_alias, exporter_config)
+    if config_path is None:
         raise click.UsageError("--exporter-config (or --exporter) is required")
     if listener_bind is not None or tls_insecure or tls_cert or tls_key or passphrase:
         # The standalone TCP-listener exporter is owned by the Rust core; it is not yet
@@ -259,6 +309,6 @@ def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase):
             "Standalone listener mode (--tls-grpc-listener / --tls-grpc-insecure / --tls-cert / "
             "--tls-key / --passphrase) is not available via the Python entrypoint yet."
         )
-    if config.path is None:
-        raise click.UsageError("the resolved exporter config has no on-disk path to run")
-    return _serve_with_exc_handling(config)
+    if not config_path.exists():
+        raise click.UsageError(f"exporter config '{config_path}' does not exist")
+    return _serve_with_exc_handling(config_path)

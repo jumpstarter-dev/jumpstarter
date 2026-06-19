@@ -5,8 +5,17 @@ from anyio.from_thread import start_blocking_portal
 
 from jumpstarter.client import client_from_path
 from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
-from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
-from jumpstarter.config.env import JUMPSTARTER_HOST
+from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JUMPSTARTER_HOST
+
+
+def _drivers_from_env() -> tuple[list[str], bool]:
+    """The allowed driver-client packages from ``JMP_DRIVERS_ALLOW`` (comma-separated). The
+    sentinel ``UNSAFE`` enables loading any package. Plain stdlib — the parent shell sets these
+    env vars; no pydantic config model."""
+    allow_str = os.environ.get(JMP_DRIVERS_ALLOW, "")
+    allow = allow_str.split(",") if allow_str else []
+    unsafe = "UNSAFE" in allow
+    return allow, unsafe
 
 
 @asynccontextmanager
@@ -22,14 +31,14 @@ async def env_async(portal, stack):
     if host is None:
         raise EnvironmentVariableNotSetError(f"{JUMPSTARTER_HOST} not set")
 
-    drivers = ClientConfigV1Alpha1Drivers()
+    allow, unsafe = _drivers_from_env()
 
     async with client_from_path(
         host,
         portal,
         stack,
-        allow=drivers.allow,
-        unsafe=drivers.unsafe,
+        allow=allow,
+        unsafe=unsafe,
     ) as client:
         try:
             yield client
