@@ -21,7 +21,7 @@ import (
 // paths) are intentionally stripped to avoid leaking internal details.
 func PeerAddr(ctx context.Context) string {
 	p, ok := peer.FromContext(ctx)
-	if !ok {
+	if !ok || p.Addr == nil {
 		return "unknown"
 	}
 	host, _, err := net.SplitHostPort(p.Addr.String())
