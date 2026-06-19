@@ -1,11 +1,11 @@
 import click
 from jumpstarter_cli_admin import admin
 from jumpstarter_cli_common.alias import AliasedGroup
+from jumpstarter_cli_common.forward import rust_command
 from jumpstarter_cli_common.opt import opt_log_level
 from jumpstarter_cli_common.version import version
 from jumpstarter_cli_driver import driver
 
-from ._forward import rust_command
 from .completion import completion
 from .run import run
 

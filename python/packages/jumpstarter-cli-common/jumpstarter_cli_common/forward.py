@@ -14,12 +14,17 @@ import asyncio
 import click
 
 
-def rust_command(name: str, short_help: str) -> click.Command:
-    """A click command that forwards all of its arguments to ``jmp <name> …`` in the Rust CLI.
+def rust_command(path: str | list[str], short_help: str) -> click.Command:
+    """A click command that forwards all of its arguments to ``jmp <path…> …`` in the Rust CLI.
 
-    ``--help`` is left unhandled by click (``add_help_option=False``) so it passes through to
-    the Rust command, which renders the authoritative help.
+    ``path`` is the Rust command path below ``jmp`` — a single name (``"shell"``) for a
+    top-level command, or a list (``["admin", "create", "client"]``) for a nested one. The
+    leaf segment becomes the click command name. ``--help`` is left unhandled by click
+    (``add_help_option=False``) so it passes through to the Rust command, which renders the
+    authoritative help.
     """
+    segments = [path] if isinstance(path, str) else list(path)
+    name = segments[-1]
 
     @click.command(
         name=name,
@@ -31,6 +36,6 @@ def rust_command(name: str, short_help: str) -> click.Command:
     def _forwarded(args: tuple[str, ...]) -> None:
         import jumpstarter_core as jc
 
-        raise SystemExit(asyncio.run(jc.run_cli(["jmp", name, *args])))
+        raise SystemExit(asyncio.run(jc.run_cli(["jmp", *segments, *args])))
 
     return _forwarded
