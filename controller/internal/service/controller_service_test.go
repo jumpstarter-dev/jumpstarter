@@ -17,6 +17,7 @@ limitations under the License.
 package service
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"sync"
@@ -26,9 +27,12 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 const testRouterToken = "tok"
@@ -1776,5 +1780,34 @@ func TestListenQueueListenLoopDrainsOnSupersession(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("expected 2 drained tokens from listen loop, got %d", count)
+	}
+}
+
+// TestRouterAuthenticateNoTokenLeak verifies that an invalid JWT token value is
+// never written to the log output. This prevents accidental credential leakage
+// in log streams.
+func TestRouterAuthenticateNoTokenLeak(t *testing.T) {
+	const sensitiveToken = "header.payload.signature-secret-value"
+
+	// Capture log output by redirecting the global logr sink to a buffer.
+	var buf bytes.Buffer
+	logf.SetLogger(ctrlzap.New(ctrlzap.UseDevMode(true), ctrlzap.WriteTo(&buf)))
+
+	// Build a context with gRPC metadata carrying the bogus bearer token.
+	md := metadata.Pairs("authorization", "Bearer "+sensitiveToken)
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	svc := &RouterService{}
+
+	// authenticate() must fail because ROUTER_KEY env var is not set /
+	// the token is deliberately invalid.
+	_, err := svc.authenticate(ctx)
+	if err == nil {
+		t.Fatal("expected authenticate to fail with an invalid token, but it succeeded")
+	}
+
+	logged := buf.String()
+	if strings.Contains(logged, sensitiveToken) {
+		t.Errorf("JWT token value was leaked in log output:\n%s", logged)
 	}
 }

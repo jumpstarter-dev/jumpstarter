@@ -21,7 +21,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"slices"
@@ -209,13 +208,8 @@ type wrappedStream struct {
 }
 
 func logContext(ctx context.Context) context.Context {
-	p, ok := peer.FromContext(ctx)
-	if ok {
-		addr := p.Addr.String()
-		if host, _, err := net.SplitHostPort(addr); err == nil {
-			addr = host
-		}
-		return log.IntoContext(ctx, log.FromContext(ctx, "peer", addr))
+	if p, ok := peer.FromContext(ctx); ok && p.Addr != nil {
+		return log.IntoContext(ctx, log.FromContext(ctx, "peer", auth.PeerAddr(ctx)))
 	}
 	return ctx
 }
@@ -615,7 +609,6 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
-		logger.Info("unable to authenticate exporter", "error", err.Error())
 		return err
 	}
 

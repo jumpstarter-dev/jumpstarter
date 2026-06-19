@@ -16,10 +16,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// peerAddr returns the remote IP address from the gRPC peer info stored in ctx,
+// PeerAddr returns the remote IP address from the gRPC peer info stored in ctx,
 // or "unknown" if unavailable. Port number and transport paths (e.g. Unix socket
 // paths) are intentionally stripped to avoid leaking internal details.
-func peerAddr(ctx context.Context) string {
+func PeerAddr(ctx context.Context) string {
 	p, ok := peer.FromContext(ctx)
 	if !ok {
 		return "unknown"
@@ -53,7 +53,7 @@ func NewAuth(
 }
 
 func (s *Auth) AuthClient(ctx context.Context, namespace string) (*jumpstarterdevv1alpha1.Client, error) {
-	logger := log.FromContext(ctx).WithValues("peer", peerAddr(ctx))
+	logger := log.FromContext(ctx).WithValues("peer", PeerAddr(ctx))
 
 	jclient, err := oidc.VerifyClientObjectToken(
 		ctx,
@@ -78,7 +78,7 @@ func (s *Auth) AuthClient(ctx context.Context, namespace string) (*jumpstarterde
 }
 
 func (s *Auth) AuthExporter(ctx context.Context, namespace string) (*jumpstarterdevv1alpha1.Exporter, error) {
-	logger := log.FromContext(ctx).WithValues("peer", peerAddr(ctx))
+	logger := log.FromContext(ctx).WithValues("peer", PeerAddr(ctx))
 
 	jexporter, err := oidc.VerifyExporterObjectToken(
 		ctx,
