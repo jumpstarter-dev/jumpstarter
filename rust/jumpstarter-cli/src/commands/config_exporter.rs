@@ -3,7 +3,6 @@
 //! dir `/etc/jumpstarter/exporters`.
 
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use clap::{Args as ClapArgs, Subcommand};
 use jumpstarter_config::{paths, ExporterConfig, ObjectMeta, YamlConfig};
@@ -30,7 +29,7 @@ enum Command {
     List(ListArgs),
 }
 
-pub fn run(args: Args) -> ExitCode {
+pub fn run(args: Args) -> u8 {
     let result = match args.command {
         Command::Create(a) => create(a),
         Command::Delete(a) => delete(a),
@@ -38,10 +37,10 @@ pub fn run(args: Args) -> ExitCode {
         Command::List(a) => list(a),
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => 0,
         Err(e) => {
             eprintln!("Error: {e}");
-            ExitCode::from(1)
+            1
         }
     }
 }

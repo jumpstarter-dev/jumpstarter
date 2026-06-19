@@ -2,8 +2,6 @@
 //! errors map to exit 2 (click `UsageError`/`BadParameter`), everything else to
 //! exit 1 (click `ClickException`). Both print `Error: <message>` to stderr.
 
-use std::process::ExitCode;
-
 #[derive(Debug)]
 pub enum CmdError {
     /// A usage error (exit 2).
@@ -13,16 +11,17 @@ pub enum CmdError {
 }
 
 impl CmdError {
-    /// Print to stderr and convert to the process exit code.
-    pub fn report(self) -> ExitCode {
+    /// Print to stderr and convert to the process exit code (returned as a `u8` so the
+    /// command tree can be driven both by the binary and by the FFI dispatch).
+    pub fn report(self) -> u8 {
         match self {
             CmdError::Usage(m) => {
                 eprintln!("Error: {m}");
-                ExitCode::from(2)
+                2
             }
             CmdError::Runtime(m) => {
                 eprintln!("Error: {m}");
-                ExitCode::from(1)
+                1
             }
         }
     }

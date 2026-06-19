@@ -1,6 +1,5 @@
 //! `jmp delete leases` (spec 08 §7.4; `delete.py`).
 
-use std::process::ExitCode;
 
 use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 use jumpstarter_client::lease::LeaseProvider;
@@ -24,12 +23,12 @@ enum Command {
     Leases(LeasesArgs),
 }
 
-pub async fn run(args: Args) -> ExitCode {
+pub async fn run(args: Args) -> u8 {
     let result = match args.command {
         Command::Leases(a) => delete_leases(a).await,
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => 0,
         Err(e) => e.report(),
     }
 }

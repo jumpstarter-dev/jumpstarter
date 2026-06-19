@@ -2,7 +2,6 @@
 //! contract field `gitVersion`. Python embeds the interpreter version; a Rust binary
 //! reports its own build instead.
 
-use std::process::ExitCode;
 
 use clap::Args as ClapArgs;
 use serde::Serialize;
@@ -29,7 +28,7 @@ struct VersionInfo {
     git_version: String,
 }
 
-pub fn run(args: Args) -> ExitCode {
+pub fn run(args: Args) -> u8 {
     let version = format!("v{}", env!("CARGO_PKG_VERSION"));
     match args.output {
         Some(VersionFormat::Json) => {
@@ -51,5 +50,5 @@ pub fn run(args: Args) -> ExitCode {
             println!("Jumpstarter {version} from {path}");
         }
     }
-    ExitCode::SUCCESS
+    0
 }

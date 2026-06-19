@@ -3,7 +3,6 @@
 //! invocation and the accepted shells are preserved; other shells are a usage error
 //! (exit 2) via the value enum.
 
-use std::process::ExitCode;
 
 use clap::{Args as ClapArgs, CommandFactory};
 use clap_complete::{generate, Shell};
@@ -23,7 +22,7 @@ pub struct Args {
     shell: CompletionShell,
 }
 
-pub fn run<C: CommandFactory>(args: Args) -> ExitCode {
+pub fn run<C: CommandFactory>(args: Args) -> u8 {
     let shell = match args.shell {
         CompletionShell::Bash => Shell::Bash,
         CompletionShell::Zsh => Shell::Zsh,
@@ -32,5 +31,5 @@ pub fn run<C: CommandFactory>(args: Args) -> ExitCode {
     let mut cmd = C::command();
     let name = cmd.get_name().to_string();
     generate(shell, &mut cmd, name, &mut std::io::stdout());
-    ExitCode::SUCCESS
+    0
 }

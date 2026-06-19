@@ -4,7 +4,6 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use clap::{Args as ClapArgs, Subcommand};
 use jumpstarter_admin::{DynamicObject, JumpstarterAdmin, Kind};
@@ -34,7 +33,7 @@ enum Command {
     Rotate(Rotate),
 }
 
-pub async fn run(args: Args) -> ExitCode {
+pub async fn run(args: Args) -> u8 {
     let result = match args.command {
         Command::Create(a) => a.run().await,
         Command::Delete(a) => a.run().await,
@@ -42,7 +41,7 @@ pub async fn run(args: Args) -> ExitCode {
         Command::Rotate(a) => a.run().await,
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => 0,
         Err(e) => e.report(),
     }
 }

@@ -2,7 +2,6 @@
 //! creates a client/exporter config, runs an OIDC grant, and persists the tokens.
 
 use std::path::PathBuf;
-use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::Args as ClapArgs;
@@ -82,9 +81,9 @@ struct LoginConfigOpts {
     exporter_config: Option<PathBuf>,
 }
 
-pub async fn run(args: Args) -> ExitCode {
+pub async fn run(args: Args) -> u8 {
     match login(args).await {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => 0,
         Err(e) => e.report(),
     }
 }

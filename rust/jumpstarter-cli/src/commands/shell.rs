@@ -4,7 +4,6 @@
 //! (`--tls-grpc`) modes are not yet ported.
 
 use std::io::IsTerminal;
-use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::Args as ClapArgs;
@@ -55,9 +54,9 @@ pub struct Args {
     command: Vec<String>,
 }
 
-pub async fn run(args: Args) -> ExitCode {
+pub async fn run(args: Args) -> u8 {
     match shell_impl(args).await {
-        Ok(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
+        Ok(code) => u8::try_from(code).unwrap_or(1),
         Err(e) => e.report(),
     }
 }

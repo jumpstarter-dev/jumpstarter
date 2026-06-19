@@ -1,6 +1,5 @@
 //! `jmp create lease` (spec 08 §7.1; `create.py`).
 
-use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::{Args as ClapArgs, Subcommand};
@@ -25,12 +24,12 @@ enum Command {
     Lease(LeaseArgs),
 }
 
-pub async fn run(args: Args) -> ExitCode {
+pub async fn run(args: Args) -> u8 {
     let result = match args.command {
         Command::Lease(a) => create_lease(a).await,
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => 0,
         Err(e) => e.report(),
     }
 }

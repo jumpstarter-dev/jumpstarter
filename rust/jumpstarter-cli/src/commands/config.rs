@@ -1,7 +1,6 @@
 //! `jmp config` — local configuration commands (spec 08 §11). Groups the
 //! `client` and `exporter` subgroups.
 
-use std::process::ExitCode;
 
 use clap::{Args as ClapArgs, Subcommand};
 
@@ -21,7 +20,7 @@ enum Command {
     Exporter(config_exporter::Args),
 }
 
-pub fn run(args: Args) -> ExitCode {
+pub fn run(args: Args) -> u8 {
     match args.command {
         Command::Client(a) => config_client::run(a),
         Command::Exporter(a) => config_exporter::run(a),

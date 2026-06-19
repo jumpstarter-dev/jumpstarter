@@ -157,6 +157,17 @@ pub async fn run_exporter(
         .map_err(|e| ExporterError::Runtime(e.to_string()))
 }
 
+/// Run the Rust `jmp` CLI command tree from a forwarded argv (`args[0]` is the program
+/// name), returning the process exit code. The language entrypoint forwards the pure-Rust
+/// commands here — `shell`/`create`/`delete`/`update`/`get`/`admin`/`auth`/`login`/`config`/
+/// `version`/`completion` — and keeps `run` (driver host) and `j` (driver clients) native,
+/// reaching the core through the foreign-trait seam. The CLI prints its own output and never
+/// terminates the host process (errors and `--help`/`--version` map to an exit code here).
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn run_cli(args: Vec<String>) -> u8 {
+    jumpstarter_cli::dispatch(args).await
+}
+
 // ---------------------------------------------------------------------------
 // Adapters: FFI trait -> jumpstarter-core / exporter seams
 // ---------------------------------------------------------------------------

@@ -4,7 +4,6 @@
 
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
-use std::process::ExitCode;
 
 use clap::Args as ClapArgs;
 use jumpstarter_config::{paths, ExporterConfig, YamlConfig};
@@ -35,12 +34,12 @@ pub struct Args {
     passphrase: Option<String>,
 }
 
-pub async fn run(args: Args) -> ExitCode {
+pub async fn run(args: Args) -> u8 {
     match run_impl(args).await {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => 0,
         Err((code, message)) => {
             eprintln!("Error: {message}");
-            ExitCode::from(code)
+            code
         }
     }
 }

@@ -1,6 +1,5 @@
 //! `jmp auth {status,refresh,rotate}` (spec 08 §8.1-8.3; `auth.py`).
 
-use std::process::ExitCode;
 
 use chrono::{TimeZone, Utc};
 use clap::{Args as ClapArgs, Subcommand};
@@ -31,14 +30,14 @@ enum Command {
     Rotate(RefreshArgs),
 }
 
-pub async fn run(args: Args) -> ExitCode {
+pub async fn run(args: Args) -> u8 {
     let result = match args.command {
         Command::Status(a) => status(a),
         Command::Refresh(a) => refresh(a).await,
         Command::Rotate(a) => rotate(a).await,
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => 0,
         Err(e) => e.report(),
     }
 }

@@ -7,6 +7,10 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[lib]
+name = "jumpstarter_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "jmp"
 path = "src/main.rs"

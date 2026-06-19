@@ -1,7 +1,6 @@
 //! `jmp get {exporters,leases}` (spec 08 §7.2-7.3; `get.py`).
 
 use std::collections::HashMap;
-use std::process::ExitCode;
 
 use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 use jumpstarter_client::{selector_contains, ControllerClient};
@@ -29,13 +28,13 @@ enum Command {
     Leases(LeasesArgs),
 }
 
-pub async fn run(args: Args) -> ExitCode {
+pub async fn run(args: Args) -> u8 {
     let result = match args.command {
         Command::Exporters(a) => get_exporters(a).await,
         Command::Leases(a) => get_leases(a).await,
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => 0,
         Err(e) => e.report(),
     }
 }

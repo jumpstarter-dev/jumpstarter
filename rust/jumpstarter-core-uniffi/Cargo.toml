@@ -21,6 +21,8 @@ path = "uniffi-bindgen.rs"
 jumpstarter-core = { path = "../jumpstarter-core" }
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
 jumpstarter-config = { path = "../jumpstarter-config" }
+# The Rust `jmp` CLI command tree, driven from the language entrypoints via `run_cli`.
+jumpstarter-cli = { path = "../jumpstarter-cli" }
 uniffi = { version = "0.29", features = ["tokio", "cli"] }
 async-trait = "0.1"
 thiserror.workspace = true
