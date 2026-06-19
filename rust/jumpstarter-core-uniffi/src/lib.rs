@@ -608,3 +608,123 @@ pub fn dump_yaml(json: String) -> Result<String, YamlError> {
         serde_json::from_str(&json).map_err(|e| YamlError::Parse(e.to_string()))?;
     serde_yaml_ng::to_string(&value).map_err(|e| YamlError::Parse(e.to_string()))
 }
+
+// ---------------------------------------------------------------------------
+// Config records — so Python stops parsing config YAML (the Rust config crate does it)
+// ---------------------------------------------------------------------------
+
+/// One node of the exporter `export` driver tree, flattened from the untagged
+/// `DriverInstance` enum. `instantiate()` stays in Python (it imports driver classes by
+/// dotted path); this only moves the YAML parsing to Rust.
+#[derive(uniffi::Record)]
+pub struct DriverSpecNode {
+    /// Dotted driver class path (empty for proxy/composite nodes).
+    pub r#type: String,
+    /// Set for proxy nodes (the YAML `ref`).
+    pub reference: Option<String>,
+    pub description: Option<String>,
+    pub methods_description: HashMap<String, String>,
+    /// Driver kwargs as a JSON object string (Python `json.loads` → ctor kwargs).
+    pub config_json: String,
+    pub children: HashMap<String, DriverSpecNode>,
+}
+
+/// The exporter's parsed driver tree (the bit `DriverHostFactory` needs).
+#[derive(uniffi::Record)]
+pub struct ExporterSpec {
+    pub description: Option<String>,
+    pub export: HashMap<String, DriverSpecNode>,
+}
+
+fn driver_node_to_spec(node: &jumpstarter_config::DriverInstance) -> DriverSpecNode {
+    use jumpstarter_config::DriverInstance;
+    let children_to_spec = |children: &std::collections::BTreeMap<String, DriverInstance>| {
+        children
+            .iter()
+            .map(|(k, v)| (k.clone(), driver_node_to_spec(v)))
+            .collect()
+    };
+    match node {
+        DriverInstance::Base(b) => DriverSpecNode {
+            r#type: b.r#type.clone(),
+            reference: None,
+            description: b.description.clone(),
+            methods_description: b.methods_description.clone().into_iter().collect(),
+            config_json: serde_json::to_string(&b.config).unwrap_or_else(|_| "{}".to_string()),
+            children: children_to_spec(&b.children),
+        },
+        DriverInstance::Proxy(p) => DriverSpecNode {
+            r#type: String::new(),
+            reference: Some(p.reference.clone()),
+            description: None,
+            methods_description: HashMap::new(),
+            config_json: "{}".to_string(),
+            children: HashMap::new(),
+        },
+        DriverInstance::Composite(c) => DriverSpecNode {
+            r#type: String::new(),
+            reference: None,
+            description: None,
+            methods_description: HashMap::new(),
+            config_json: "{}".to_string(),
+            children: children_to_spec(&c.children),
+        },
+    }
+}
+
+/// Load an exporter config from disk and return its driver tree (Rust parses the YAML).
+#[uniffi::export]
+pub fn load_exporter_spec(config_path: String) -> Result<ExporterSpec, YamlError> {
+    use jumpstarter_config::{ExporterConfig, YamlConfig};
+    let config = ExporterConfig::load(&config_path).map_err(|e| YamlError::Parse(e.to_string()))?;
+    Ok(ExporterSpec {
+        description: config.description.clone(),
+        export: config
+            .export
+            .iter()
+            .map(|(k, v)| (k.clone(), driver_node_to_spec(v)))
+            .collect(),
+    })
+}
+
+/// The connection + driver-policy fields the client lease needs (flat, no pydantic).
+#[derive(uniffi::Record)]
+pub struct ClientConnectionSpec {
+    pub endpoint: Option<String>,
+    pub namespace: Option<String>,
+    pub name: String,
+    pub token: Option<String>,
+    pub ca: String,
+    pub insecure: bool,
+    pub allow: Vec<String>,
+    pub r#unsafe: bool,
+    pub acquisition_timeout: i64,
+}
+
+fn client_connection_from_config(c: &jumpstarter_config::ClientConfig) -> ClientConnectionSpec {
+    ClientConnectionSpec {
+        endpoint: c.endpoint.clone(),
+        namespace: c.metadata.namespace.clone(),
+        name: c.metadata.name.clone(),
+        token: c.token.clone(),
+        ca: c.tls.ca.clone(),
+        insecure: c.tls.insecure,
+        allow: c.drivers.allow.clone(),
+        r#unsafe: c.drivers.r#unsafe,
+        acquisition_timeout: c.leases.acquisition_timeout,
+    }
+}
+
+/// Load a client config from disk and return the lease connection fields (Rust parses YAML).
+#[uniffi::export]
+pub fn load_client_connection(path: String) -> Result<ClientConnectionSpec, YamlError> {
+    use jumpstarter_config::{ClientConfig, YamlConfig};
+    let config = ClientConfig::load(&path).map_err(|e| YamlError::Parse(e.to_string()))?;
+    Ok(client_connection_from_config(&config))
+}
+
+/// The client connection fields from `JMP_*` env vars, if a complete config is present.
+#[uniffi::export]
+pub fn client_connection_from_env() -> Option<ClientConnectionSpec> {
+    jumpstarter_config::client_from_env().map(|c| client_connection_from_config(&c))
+}
