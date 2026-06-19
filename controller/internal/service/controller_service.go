@@ -240,11 +240,12 @@ func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstar
 }
 
 func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
+	ctx = logContext(ctx)
 	logger := log.FromContext(ctx)
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
-		logger.Info("unable to authenticate exporter", "error", err.Error())
+		logger.Info("exporter authentication failed", "error", err.Error())
 		return nil, err
 	}
 
@@ -311,7 +312,7 @@ func (s *ControllerService) Unregister(
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
-		logger.Error(err, "unable to authenticate exporter")
+		logger.Info("unable to authenticate exporter", "error", err.Error())
 		return nil, err
 	}
 
@@ -524,6 +525,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
+		logger.Info("exporter authentication failed", "error", err.Error())
 		return err
 	}
 
@@ -613,7 +615,7 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
-		logger.Error(err, "unable to authenticate exporter")
+		logger.Info("unable to authenticate exporter", "error", err.Error())
 		return err
 	}
 
@@ -747,7 +749,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 
 	client, err := s.authenticateClient(ctx)
 	if err != nil {
-		logger.Error(err, "unable to authenticate client")
+		logger.Info("unable to authenticate client", "error", err.Error())
 		return nil, err
 	}
 
@@ -898,8 +900,12 @@ func (s *ControllerService) GetLease(
 	ctx context.Context,
 	req *pb.GetLeaseRequest,
 ) (*pb.GetLeaseResponse, error) {
+	ctx = logContext(ctx)
+	logger := log.FromContext(ctx)
+
 	client, err := s.authenticateClient(ctx)
 	if err != nil {
+		logger.Info("client authentication failed", "error", err.Error())
 		return nil, err
 	}
 
@@ -977,8 +983,12 @@ func (s *ControllerService) RequestLease(
 	ctx context.Context,
 	req *pb.RequestLeaseRequest,
 ) (*pb.RequestLeaseResponse, error) {
+	ctx = logContext(ctx)
+	logger := log.FromContext(ctx)
+
 	client, err := s.authenticateClient(ctx)
 	if err != nil {
+		logger.Info("client authentication failed", "error", err.Error())
 		return nil, err
 	}
 
@@ -1031,8 +1041,12 @@ func (s *ControllerService) ReleaseLease(
 	ctx context.Context,
 	req *pb.ReleaseLeaseRequest,
 ) (*pb.ReleaseLeaseResponse, error) {
+	ctx = logContext(ctx)
+	logger := log.FromContext(ctx)
+
 	jclient, err := s.authenticateClient(ctx)
 	if err != nil {
+		logger.Info("client authentication failed", "error", err.Error())
 		return nil, err
 	}
 
@@ -1062,8 +1076,12 @@ func (s *ControllerService) ListLeases(
 	ctx context.Context,
 	req *pb.ListLeasesRequest,
 ) (*pb.ListLeasesResponse, error) {
+	ctx = logContext(ctx)
+	logger := log.FromContext(ctx)
+
 	jclient, err := s.authenticateClient(ctx)
 	if err != nil {
+		logger.Info("client authentication failed", "error", err.Error())
 		return nil, err
 	}
 

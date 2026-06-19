@@ -71,7 +71,7 @@ func (s *RouterService) authenticate(ctx context.Context) (string, error) {
 	)
 
 	if err != nil || !parsed.Valid {
-		return "", status.Errorf(codes.InvalidArgument, "invalid jwt token")
+		return "", status.Errorf(codes.Unauthenticated, "invalid jwt token")
 	}
 
 	return parsed.Claims.GetSubject()
@@ -83,7 +83,7 @@ func (s *RouterService) Stream(stream pb.RouterService_StreamServer) error {
 
 	streamName, err := s.authenticate(ctx)
 	if err != nil {
-		logger.Error(err, "failed to authenticate")
+		logger.Info("router authentication failed", "error", err.Error())
 		return err
 	}
 
