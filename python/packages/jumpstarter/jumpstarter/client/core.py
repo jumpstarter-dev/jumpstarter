@@ -21,6 +21,7 @@ from rich.logging import RichHandler
 from jumpstarter.client.status_monitor import StatusMonitor
 from jumpstarter.common import ExporterStatus, LogSource, Metadata
 from jumpstarter.common.exceptions import JumpstarterException
+from jumpstarter.common.jsonable import to_jsonable as _to_jsonable
 from jumpstarter.common.resources import ResourceMetadata
 from jumpstarter.common.serde import decode_value, encode_value
 from jumpstarter.common.streams import (
@@ -59,28 +60,6 @@ class ExporterNotReady(DriverError):
     """
 
 
-def _to_jsonable(value):
-    """Normalize a driver-call arg to a JSON-able form for the FFI client path (matches
-    the legacy ``encode_value`` quirks: non-finite→None, bytes→utf8, tuples→lists,
-    pydantic models→model_dump). Plain values pass through `json.dumps` directly."""
-    import math
-
-    if value is None or isinstance(value, (bool, str, int)):
-        return value
-    if isinstance(value, float):
-        return value if math.isfinite(value) else None
-    if isinstance(value, (bytes, bytearray)):
-        return bytes(value).decode("utf-8")
-    if isinstance(value, (list, tuple, set, frozenset)):
-        return [_to_jsonable(v) for v in value]
-    if isinstance(value, dict):
-        return {str(k): _to_jsonable(v) for k, v in value.items()}
-    model_dump = getattr(value, "model_dump", None)
-    if callable(model_dump):
-        return _to_jsonable(model_dump(mode="json"))
-    raise TypeError(f"cannot serialize driver-call arg of type {type(value)!r}")
-
-
 def _map_ffi_error(method, exc):
     """Map a jumpstarter_core.DriverError to the client exception taxonomy."""
     import jumpstarter_core as jc
@@ -110,7 +89,16 @@ class _FFIByteStream(ObjectStream[bytes]):
         return bytes(data)
 
     async def send_eof(self) -> None:
-        await self._chan.close()
+        # Half-close the send direction only, leaving the receive direction open. This matters
+        # for resource *reads* (host→client): forward_stream's sink→channel copy hits immediate
+        # EOF on the empty sink and calls send_eof; a full close here would tear down the
+        # receive path the driver is still writing into (BrokenResourceError). The local bridge
+        # exposes close_write; the Rust ClientByteStream currently only has a full close.
+        close_write = getattr(self._chan, "close_write", None)
+        if close_write is not None:
+            await close_write()
+        else:
+            await self._chan.close()
 
     async def aclose(self) -> None:
         await self._chan.close()
@@ -484,7 +472,7 @@ class AsyncDriverClient(
 
         return decode_value(response.result)
 
-    async def streamingcall_async(self, method, *args):
+    async def streamingcall_async(self, method, *args):  # noqa: C901 — FFI + grpc branches + status match
         """Make StreamingDriverCall by method name and arguments"""
 
         if self.session is not None:

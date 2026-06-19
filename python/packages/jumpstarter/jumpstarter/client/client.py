@@ -159,11 +159,25 @@ async def client_from_host(
     """Build a DriverClient tree over the Rust core (FFI, jumpstarter_core.ClientSession)
     instead of a gRPC channel — the in-process client path. Driver calls route through the
     Rust core; no grpcio / generated stubs."""
-    import json
-
     import jumpstarter_core as jc
 
     session = await jc.ClientSession.connect(str(host))
+    return await client_from_session(session, portal, stack, allow, unsafe)
+
+
+async def client_from_session(
+    session,
+    portal: BlockingPortal,
+    stack: ExitStack,
+    allow: list[str],
+    unsafe: bool,
+) -> DriverClient:
+    """Build a DriverClient tree from any object presenting the ClientSession interface
+    (``get_report``/``driver_call``/``streaming_driver_call``/``stream``/…). The network path
+    passes a Rust ``jumpstarter_core.ClientSession``; ``serve()`` passes a pure-Python
+    ``LocalSession`` over an in-process driver host — same driver-client code, no transport."""
+    import json
+
     reports = json.loads(await session.get_report())
 
     topo = defaultdict(list)

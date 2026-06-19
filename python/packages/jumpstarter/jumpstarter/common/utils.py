@@ -9,9 +9,7 @@ from typing import TYPE_CHECKING
 
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
-from jumpstarter.client import client_from_path
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_GRPC_INSECURE, JMP_GRPC_PASSPHRASE, JUMPSTARTER_HOST
-from jumpstarter.exporter import Session
 from jumpstarter.utils.env import env
 
 if TYPE_CHECKING:
@@ -22,19 +20,26 @@ __all__ = ["env"]
 
 @asynccontextmanager
 async def serve_async(root_device: "Driver", portal: BlockingPortal, stack: ExitStack):
-    from jumpstarter.common import ExporterStatus
+    """Serve a locally-constructed driver tree to an in-process client.
 
-    with Session(root_device=root_device) as session:
-        async with session.serve_unix_async() as path:
-            # For local testing, set status to LEASE_READY since there's no lease/hook flow
-            session.update_status(ExporterStatus.LEASE_READY)
-            # SAFETY: the root_device instance is constructed locally thus considered trusted
-            async with client_from_path(path, portal, stack, allow=[], unsafe=True) as client:
-                try:
-                    yield client
-                finally:
-                    if hasattr(client, "close"):
-                        client.close()
+    Both ends live in this process, so there is no transport: a ``DriverHost`` adapter wraps
+    the driver tree and a pure-Python ``LocalSession`` presents it through the same
+    ClientSession interface the Rust core exposes. Driver tests therefore exercise the exact
+    FFI-shaped dispatch (introspection, JSON value codec, handle-based streams) used by the
+    real exporter — without grpc, a Unix socket, or the old Python ``Session``.
+    """
+    from jumpstarter.client.client import client_from_session
+    from jumpstarter.exporter.host import DriverHost, LocalSession
+
+    # SAFETY: the root_device instance is constructed locally thus considered trusted
+    host = DriverHost(root_device)
+    session = LocalSession(host)
+    client = await client_from_session(session, portal, stack, allow=[], unsafe=True)
+    try:
+        yield client
+    finally:
+        if hasattr(client, "close"):
+            client.close()
 
 
 @contextmanager
