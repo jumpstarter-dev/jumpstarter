@@ -131,6 +131,7 @@ jobs:
       - name: Install ripgrep
         run: sudo apt-get install -y ripgrep
       - name: Check for non-ASCII characters
+        shell: bash {0}
         run: |
           rg '[^\p{ASCII}]' --glob '!*.cast' --glob '!*.html' --line-number
           status=$?
