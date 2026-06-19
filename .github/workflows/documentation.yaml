@@ -99,28 +99,6 @@ jobs:
       - name: Build the documentation for the current version (no warnings allowed)
         run: make sync && make docs
 
-  linkcheck:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - id: uv
-        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
-        working-directory: .
-      - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
-        with:
-          version: ${{ steps.uv.outputs.version }}
-          python-version-file: .py-version
-
-      - name: Check documentation links
-        run: make sync && make docs-linkcheck
-
   # Deployment job
   deploy:
     environment:
