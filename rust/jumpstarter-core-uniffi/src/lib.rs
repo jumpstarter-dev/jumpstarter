@@ -457,3 +457,124 @@ impl ForeignByteChannel for HandleByteChannel {
         self.host.stream_close(self.handle).await.map_err(to_core_err)
     }
 }
+
+// ---------------------------------------------------------------------------
+// Controller/lease side: the programmatic lease surface (jumpstarter-testing / MCP)
+// ---------------------------------------------------------------------------
+
+/// A controller/lease operation failure surfaced to the language binding.
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum ControllerError {
+    #[error("config error: {0}")]
+    Config(String),
+    #[error("connection error: {0}")]
+    Connection(String),
+    #[error("unsatisfiable: {0}")]
+    Unsatisfiable(String),
+    #[error("timeout: {0}")]
+    Timeout(String),
+    #[error("{0}")]
+    Other(String),
+}
+
+fn from_core_controller_err(e: jumpstarter_core::ControllerError) -> ControllerError {
+    use jumpstarter_core::ControllerError as C;
+    match e {
+        C::Config(m) => ControllerError::Config(m),
+        C::Connection(m) => ControllerError::Connection(m),
+        C::Unsatisfiable(m) => ControllerError::Unsatisfiable(m),
+        C::Timeout(m) => ControllerError::Timeout(m),
+        C::Other(m) => ControllerError::Other(m),
+    }
+}
+
+/// The result of acquiring a lease: the lease name and the assigned exporter name.
+#[derive(uniffi::Record)]
+pub struct AcquiredLease {
+    pub name: String,
+    pub exporter: String,
+}
+
+/// A connected controller session (the language's `Lease` shim drives lease ops through this).
+#[derive(uniffi::Object)]
+pub struct ControllerSession {
+    inner: jumpstarter_core::ControllerSession,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl ControllerSession {
+    /// Connect + authenticate to the controller from explicit connection fields.
+    #[uniffi::constructor]
+    pub async fn connect(
+        endpoint: String,
+        token: Option<String>,
+        ca: String,
+        tls_insecure: bool,
+        namespace: String,
+        name: String,
+    ) -> Result<Arc<Self>, ControllerError> {
+        let inner = jumpstarter_core::ControllerSession::connect(
+            endpoint, token, ca, tls_insecure, namespace, name,
+        )
+        .await
+        .map_err(from_core_controller_err)?;
+        Ok(Arc::new(Self { inner }))
+    }
+
+    /// Acquire a lease (full FSM); returns the lease name + assigned exporter.
+    pub async fn acquire_lease(
+        &self,
+        selector: Option<String>,
+        exporter_name: Option<String>,
+        existing_name: Option<String>,
+        duration_secs: u64,
+        acquisition_timeout_secs: u64,
+    ) -> Result<AcquiredLease, ControllerError> {
+        let acquired = self
+            .inner
+            .acquire_lease(
+                selector,
+                exporter_name,
+                existing_name,
+                duration_secs,
+                acquisition_timeout_secs,
+            )
+            .await
+            .map_err(from_core_controller_err)?;
+        Ok(AcquiredLease {
+            name: acquired.name,
+            exporter: acquired.exporter,
+        })
+    }
+
+    /// Release (delete) a lease by name.
+    pub async fn release_lease(&self, name: String) -> Result<(), ControllerError> {
+        self.inner.release_lease(name).await.map_err(from_core_controller_err)
+    }
+
+    /// Start a transport listener for the lease; the returned handle exposes the
+    /// `JUMPSTARTER_HOST` socket path the language client connects to.
+    pub async fn serve_lease(&self, name: String) -> Result<Arc<LeaseTransport>, ControllerError> {
+        let inner = self.inner.serve_lease(name).await.map_err(from_core_controller_err)?;
+        Ok(Arc::new(LeaseTransport { inner }))
+    }
+}
+
+/// A live transport listener for one lease (drop/close tears it down).
+#[derive(uniffi::Object)]
+pub struct LeaseTransport {
+    inner: Arc<jumpstarter_core::LeaseTransport>,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl LeaseTransport {
+    /// The Unix socket path to export as `JUMPSTARTER_HOST`.
+    pub async fn jumpstarter_host(&self) -> Result<String, ControllerError> {
+        self.inner.jumpstarter_host().await.map_err(from_core_controller_err)
+    }
+
+    /// Stop the listener + remove the socket (idempotent).
+    pub async fn close(&self) {
+        self.inner.close().await;
+    }
+}

@@ -9,6 +9,7 @@
 
 pub mod client;
 pub mod codec;
+pub mod controller;
 pub mod dto;
 pub mod error;
 pub mod foreign;
@@ -16,8 +17,9 @@ pub mod host;
 pub mod report;
 
 pub use client::{ClientByteStream, ClientLogStream, ClientResultStream, ClientSession};
+pub use controller::{ControllerSession, LeaseTransport};
 pub use dto::DriverNode;
-pub use error::{CodecError, DriverCallError};
+pub use error::{CodecError, ControllerError, DriverCallError};
 pub use foreign::ForeignDriverHost;
 pub use host::{
     ForeignByteChannel, ForeignHostApi, ForeignResultStream, ForeignStreamOpen,

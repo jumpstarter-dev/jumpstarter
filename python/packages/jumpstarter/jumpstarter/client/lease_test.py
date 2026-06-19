@@ -1,632 +1,129 @@
-import asyncio
-import logging
-import sys
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, Mock, patch
+"""Tests for the FFI-backed Lease shim (jumpstarter.client.lease).
 
-import grpc
+The controller/lease protocol lives in the Rust core; here we mock
+``jumpstarter_core.ControllerSession`` and assert the Python shim drives it correctly
+(acquire → expose host path → release) and preserves the historic ``Lease`` API. End-to-end
+behavior against a real controller is covered by the e2e env.
+"""
+
+from datetime import timedelta
+
+import jumpstarter_core as jc
 import pytest
-from grpc.aio import AioRpcError
-from rich.console import Console
+from anyio.from_thread import start_blocking_portal
 
 from jumpstarter.client.exceptions import LeaseError
-from jumpstarter.client.lease import Lease, LeaseAcquisitionSpinner
-
-
-class MockAioRpcError(AioRpcError):
-    """Mock gRPC error for testing that properly inherits from AioRpcError."""
-
-    def __init__(self, status_code, message=""):
-        self._status_code = status_code
-        self._message = message
-
-    def code(self):
-        return self._status_code
-
-    def details(self):
-        return self._message
-
-
-class TestLeaseAcquisitionSpinner:
-    """Test cases for LeaseAcquisitionSpinner class."""
-
-    def test_init_with_lease_name(self):
-        """Test spinner initialization with lease name."""
-        spinner = LeaseAcquisitionSpinner("test-lease-123")
-        assert spinner.lease_name == "test-lease-123"
-        assert spinner.console is not None
-        assert spinner.spinner is None
-        assert spinner.start_time is None
-        assert isinstance(spinner._should_show_spinner, bool)
-
-    def test_init_without_lease_name(self):
-        """Test spinner initialization without lease name."""
-        spinner = LeaseAcquisitionSpinner()
-        assert spinner.lease_name is None
-        assert spinner.console is not None
-        assert spinner.spinner is None
-        assert spinner.start_time is None
-
-    def test_is_terminal_available_with_tty(self):
-        """Test terminal detection when TTY is available."""
-        with (
-            patch.object(sys.stdout, "isatty", return_value=True),
-            patch.object(sys.stderr, "isatty", return_value=True),
-        ):
-            spinner = LeaseAcquisitionSpinner()
-            assert spinner._is_terminal_available() is True
-
-    def test_is_terminal_available_without_tty(self):
-        """Test terminal detection when TTY is not available."""
-        with (
-            patch.object(sys.stdout, "isatty", return_value=False),
-            patch.object(sys.stderr, "isatty", return_value=False),
-        ):
-            spinner = LeaseAcquisitionSpinner()
-            assert spinner._is_terminal_available() is False
-
-    def test_is_terminal_available_partial_tty(self):
-        """Test terminal detection when only one stream is TTY."""
-        with (
-            patch.object(sys.stdout, "isatty", return_value=True),
-            patch.object(sys.stderr, "isatty", return_value=False),
-        ):
-            spinner = LeaseAcquisitionSpinner()
-            assert spinner._is_terminal_available() is False
-
-    def test_context_manager_with_console(self):
-        """Test context manager behavior when console is available."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-
-            with patch.object(spinner.console, "status") as mock_status:
-                mock_spinner = Mock()
-                mock_status.return_value = mock_spinner
-
-                with spinner as ctx_spinner:
-                    assert ctx_spinner is spinner
-                    assert spinner.start_time is not None
-                    mock_status.assert_called_once()
-                    mock_spinner.start.assert_called_once()
-
-                mock_spinner.stop.assert_called_once()
-
-    def test_context_manager_without_console(self):
-        """Test context manager behavior when console is not available."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-
-            with patch.object(spinner.console, "status") as mock_status:
-                with spinner as ctx_spinner:
-                    assert ctx_spinner is spinner
-                    assert spinner.start_time is not None
-                    mock_status.assert_not_called()
-
-    def test_update_status_with_console(self):
-        """Test status update when console is available."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-
-            mock_spinner = Mock()
-            spinner.spinner = mock_spinner
-
-            spinner.update_status("Test message")
-
-            assert spinner._current_message == "[blue]Test message[/blue]"
-            mock_spinner.update.assert_called_once()
-            call_args = mock_spinner.update.call_args[0][0]
-            assert "[blue]Test message[/blue]" in call_args
-            assert "[dim](" in call_args
-
-    def test_update_status_without_console(self, caplog):
-        """Test status update when console is not available (should log)."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-
-            with caplog.at_level(logging.INFO):
-                spinner.update_status("Test message")
-
-            assert "Test message" in caplog.text
-            assert spinner._current_message is None
-
-    def test_tick_with_console_and_message(self):
-        """Test tick update when console is available and message exists."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-            spinner._current_message = "[blue]Test message[/blue]"
-
-            mock_spinner = Mock()
-            spinner.spinner = mock_spinner
-
-            spinner.tick()
-
-            mock_spinner.update.assert_called_once()
-            call_args = mock_spinner.update.call_args[0][0]
-            assert "[blue]Test message[/blue]" in call_args
-            assert "[dim](" in call_args
-
-    def test_tick_without_console(self):
-        """Test tick update when console is not available (should not log)."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-            spinner._current_message = "[blue]Test message[/blue]"
-
-            # Should not raise any exceptions or log anything
-            spinner.tick()
-
-    def test_tick_without_message(self):
-        """Test tick update when no current message exists."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-            spinner._current_message = None
-
-            mock_spinner = Mock()
-            spinner.spinner = mock_spinner
-
-            spinner.tick()
-
-            # Should not call update when no message
-            mock_spinner.update.assert_not_called()
-
-    def test_elapsed_time_formatting(self):
-        """Test that elapsed time is formatted correctly."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now() - timedelta(seconds=65)  # 1:05
-            spinner._current_message = "[blue]Test message[/blue]"
-
-            mock_spinner = Mock()
-            spinner.spinner = mock_spinner
-
-            spinner.tick()
-
-            call_args = mock_spinner.update.call_args[0][0]
-            # Should contain time in format like "0:01:05"
-            assert "[dim](" in call_args
-            assert "[/dim]" in call_args
-
-    @pytest.mark.asyncio
-    async def test_integration_with_async_context(self):
-        """Test integration with async context manager."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-
-            with patch.object(spinner.console, "status") as mock_status:
-                mock_spinner = Mock()
-                mock_status.return_value = mock_spinner
-
-                async def test_async_usage():
-                    with spinner as ctx_spinner:
-                        ctx_spinner.update_status("Initial message")
-                        await asyncio.sleep(0.1)  # Small delay
-                        ctx_spinner.tick()
-                        ctx_spinner.update_status("Updated message")
-
-                await test_async_usage()
-
-                # Verify all expected calls were made
-                mock_status.assert_called_once()
-                assert mock_spinner.start.call_count == 1
-                assert mock_spinner.stop.call_count == 1
-                # update_status calls update() for each status update, tick() calls update() once
-                assert mock_spinner.update.call_count == 3  # 2 update_status calls + 1 tick call
-
-    def test_message_preservation_across_ticks(self):
-        """Test that the base message is preserved across multiple ticks."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-
-            # Set up mock before calling update_status
-            mock_spinner = Mock()
-            spinner.spinner = mock_spinner
-
-            spinner.update_status("Waiting for lease: Test condition")
-
-            # Call tick multiple times
-            for _ in range(3):
-                spinner.tick()
-
-            # All calls should preserve the base message
-            assert mock_spinner.update.call_count == 4  # 1 update_status + 3 ticks
-            for call in mock_spinner.update.call_args_list:
-                call_args = call[0][0]
-                assert "[blue]Waiting for lease: Test condition[/blue]" in call_args
-
-    def test_console_initialization(self):
-        """Test that console is properly initialized."""
-        spinner = LeaseAcquisitionSpinner()
-        assert isinstance(spinner.console, Console)
-
-    def test_start_time_initialization_in_context(self):
-        """Test that start_time is set when entering context."""
-        spinner = LeaseAcquisitionSpinner("test-lease")
-        assert spinner.start_time is None
-
-        with spinner:
-            assert spinner.start_time is not None
-            assert isinstance(spinner.start_time, datetime)
-
-    def test_throttling_first_update_logged(self, caplog):
-        """Test that the first update is always logged when console is not available."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-
-            with caplog.at_level(logging.INFO):
-                spinner.update_status("First message")
-
-            assert "First message" in caplog.text
-            assert spinner._last_log_time is not None
-
-    def test_throttling_second_update_within_interval_not_logged(self, caplog):
-        """Test that updates within 5 minutes are not logged."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-            spinner._last_log_time = datetime.now() - timedelta(minutes=2)  # 2 minutes ago
-
-            with caplog.at_level(logging.INFO):
-                spinner.update_status("Second message")
-
-            # Should not log because only 2 minutes have passed
-            assert "Second message" not in caplog.text
-
-    def test_throttling_update_after_interval_logged(self, caplog):
-        """Test that updates after 5 minutes are logged."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-            spinner._last_log_time = datetime.now() - timedelta(minutes=6)  # 6 minutes ago
-
-            with caplog.at_level(logging.INFO):
-                spinner.update_status("After interval message")
-
-            assert "After interval message" in caplog.text
-            assert spinner._last_log_time is not None
-
-    def test_throttling_forced_update_always_logged(self, caplog):
-        """Test that forced updates are always logged regardless of throttle interval."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-            spinner._last_log_time = datetime.now() - timedelta(minutes=1)  # 1 minute ago
-
-            with caplog.at_level(logging.INFO):
-                spinner.update_status("Forced message", force=True)
-
-            assert "Forced message" in caplog.text
-            assert spinner._last_log_time is not None
-
-    def test_throttling_multiple_updates_only_logs_when_needed(self, caplog):
-        """Test that multiple rapid updates only log at appropriate intervals."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=False):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-
-            with caplog.at_level(logging.INFO):
-                # First update should be logged
-                spinner.update_status("Message 1")
-                assert "Message 1" in caplog.text
-
-                # Set last log time to recent
-                spinner._last_log_time = datetime.now() - timedelta(minutes=1)
-
-                # Second update should not be logged (within interval)
-                spinner.update_status("Message 2")
-                assert "Message 2" not in caplog.text
-
-                # Third update should not be logged (within interval)
-                spinner.update_status("Message 3")
-                assert "Message 3" not in caplog.text
-
-                # Set last log time to past the interval
-                spinner._last_log_time = datetime.now() - timedelta(minutes=6)
-
-                # Fourth update should be logged (past interval)
-                spinner.update_status("Message 4")
-                assert "Message 4" in caplog.text
-
-    def test_throttling_not_applied_when_console_available(self):
-        """Test that throttling is not applied when console is available."""
-        with patch.object(LeaseAcquisitionSpinner, "_is_terminal_available", return_value=True):
-            spinner = LeaseAcquisitionSpinner("test-lease")
-            spinner.start_time = datetime.now()
-
-            mock_spinner = Mock()
-            spinner.spinner = mock_spinner
-
-            # Multiple updates should all call update() regardless of throttle
-            spinner.update_status("Message 1")
-            spinner.update_status("Message 2")
-            spinner.update_status("Message 3")
-
-            # All should be called even if we set a recent last_log_time
-            spinner._last_log_time = datetime.now() - timedelta(minutes=1)
-            spinner.update_status("Message 4")
-
-            assert mock_spinner.update.call_count == 4
-
-
-class TestRequestAsyncOwnership:
-    """Tests for lease ownership validation in request_async."""
-
-    def _make_lease(self, *, name="test-lease", client_name="my-client"):
-        lease = object.__new__(Lease)
-        lease.name = name
-        lease.client_name = client_name
-        lease.selector = None
-        lease.get = AsyncMock()
-        return lease
-
-    @pytest.mark.anyio
-    async def test_raises_when_lease_belongs_to_different_client(self):
-        """request_async should raise LeaseError when the lease belongs to another client."""
-        lease = self._make_lease(client_name="my-client")
-        lease.get.return_value = Mock(client="other-client", selector=None)
-
-        with pytest.raises(LeaseError, match="belongs to client 'other-client'"):
-            await lease.request_async()
-
-    @pytest.mark.anyio
-    async def test_skips_check_when_client_name_is_none(self):
-        """request_async should skip ownership check when client_name is not set."""
-        lease = self._make_lease(client_name=None)
-        lease.get.return_value = Mock(client="other-client", selector=None)
-        lease._acquire = AsyncMock(return_value=lease)
-
-        result = await lease.request_async()
+from jumpstarter.client.lease import DirectLease, Lease
+
+
+class FakeTransport:
+    def __init__(self, host):
+        self._host = host
+        self.closed = False
+
+    async def jumpstarter_host(self):
+        return self._host
+
+    async def close(self):
+        self.closed = True
+
+
+class FakeSession:
+    def __init__(self):
+        self.released = []
+        self.served = []
+        self.acquire_calls = []
+
+    async def acquire_lease(self, selector, exporter_name, existing_name, duration_secs, timeout_secs):
+        self.acquire_calls.append((selector, exporter_name, existing_name, duration_secs, timeout_secs))
+        return jc.AcquiredLease(name="lease-xyz", exporter="exp-1")
+
+    async def serve_lease(self, name):
+        transport = FakeTransport(f"/tmp/sock-{name}")
+        self.served.append(transport)
+        return transport
+
+    async def release_lease(self, name):
+        self.released.append(name)
+
+
+@pytest.fixture
+def session(monkeypatch):
+    fake = FakeSession()
+
+    class FakeControllerSession:
+        @staticmethod
+        async def connect(*args, **kwargs):
+            return fake
+
+    monkeypatch.setattr(jc, "ControllerSession", FakeControllerSession)
+    return fake
+
+
+def _lease(portal, **overrides):
+    kwargs = {
+        "endpoint": "controller:443",
+        "namespace": "ns",
+        "token": "tok",
+        "duration": timedelta(minutes=1),
+        "selector": "board=inc1",
+        "allow": [],
+        "unsafe": True,
+        "portal": portal,
+    }
+    kwargs.update(overrides)
+    return Lease(**kwargs)
+
+
+def test_request_acquires_and_populates(session):
+    with start_blocking_portal() as portal:
+        lease = _lease(portal)
+        result = lease.request()
         assert result is lease
+        assert lease.name == "lease-xyz"
+        assert lease.exporter_name == "exp-1"
+        # selector + duration forwarded to the FFI surface
+        sel, _exp, _existing, dur, _to = session.acquire_calls[0]
+        assert sel == "board=inc1"
+        assert dur == 60
 
 
-class TestRefreshChannel:
-    """Tests for Lease.refresh_channel."""
-
-    def _make_lease(self):
-        """Create a Lease with mocked dependencies."""
-        channel = Mock(name="original_channel")
-        lease = object.__new__(Lease)
-        lease.channel = channel
-        lease.namespace = "default"
-        lease.controller = Mock(name="original_controller")
-        lease.svc = Mock(name="original_svc")
-        return lease
-
-    @patch("jumpstarter.client.lease.ClientService")
-    @patch("jumpstarter.client.lease.jumpstarter_pb2_grpc.ControllerServiceStub")
-    def test_replaces_channel_and_stubs(self, mock_stub_cls, mock_svc_cls):
-        lease = self._make_lease()
-        new_channel = Mock(name="new_channel")
-
-        lease.refresh_channel(new_channel)
-
-        assert lease.channel is new_channel
-        mock_stub_cls.assert_called_once_with(new_channel)
-        assert lease.controller is mock_stub_cls.return_value
-        mock_svc_cls.assert_called_once()
+def test_serve_unix_yields_host_and_closes(session):
+    with start_blocking_portal() as portal:
+        lease = _lease(portal)
+        lease.request()
+        with lease.serve_unix() as path:
+            assert path == "/tmp/sock-lease-xyz"
+        assert session.served[0].closed is True
 
 
-class TestNotifyLeaseEnding:
-    """Tests for Lease._notify_lease_ending."""
-
-    def _make_lease(self):
-        lease = object.__new__(Lease)
-        lease.lease_ending_callback = None
-        return lease
-
-    def test_calls_callback_when_set(self):
-        lease = self._make_lease()
-        callback = Mock()
-        lease.lease_ending_callback = callback
-        remaining = timedelta(minutes=3)
-
-        lease._notify_lease_ending(remaining)
-
-        callback.assert_called_once_with(lease, remaining)
-
-    def test_noop_when_no_callback(self):
-        lease = self._make_lease()
-
-        # Should not raise
-        lease._notify_lease_ending(timedelta(0))
+def test_context_manager_releases_when_release_true(session):
+    with start_blocking_portal() as portal:
+        with portal.wrap_async_context_manager(_lease(portal)) as lease:
+            assert lease.name == "lease-xyz"
+        assert session.released == ["lease-xyz"]
 
 
-class TestGetLeaseEndTime:
-    """Tests for Lease._get_lease_end_time."""
-
-    def _make_lease(self):
-        return object.__new__(Lease)
-
-    def test_returns_none_when_no_begin_time(self):
-        lease = self._make_lease()
-        response = Mock(effective_begin_time=None, duration=timedelta(minutes=30), effective_end_time=None)
-
-        assert lease._get_lease_end_time(response) is None
-
-    def test_returns_none_when_no_duration(self):
-        lease = self._make_lease()
-        response = Mock(
-            effective_begin_time=datetime.now(tz=timezone.utc),
-            duration=None,
-            effective_end_time=None,
-        )
-
-        assert lease._get_lease_end_time(response) is None
-
-    def test_returns_effective_end_time_when_present(self):
-        lease = self._make_lease()
-        end_time = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
-        response = Mock(
-            effective_begin_time=datetime(2025, 6, 1, 11, 0, 0, tzinfo=timezone.utc),
-            duration=timedelta(hours=1),
-            effective_end_time=end_time,
-        )
-
-        assert lease._get_lease_end_time(response) is end_time
-
-    def test_returns_effective_end_time_even_without_begin_or_duration(self):
-        lease = self._make_lease()
-        end_time = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
-        response = Mock(
-            effective_begin_time=None,
-            duration=None,
-            effective_end_time=end_time,
-        )
-
-        assert lease._get_lease_end_time(response) is end_time
-
-    def test_calculates_end_time_when_no_effective_end(self):
-        lease = self._make_lease()
-        begin = datetime(2025, 6, 1, 11, 0, 0, tzinfo=timezone.utc)
-        duration = timedelta(hours=2)
-        response = Mock(
-            effective_begin_time=begin,
-            effective_duration=timedelta(hours=1),  # elapsed time, not used for calculation
-            effective_end_time=None,
-            duration=duration,
-        )
-
-        result = lease._get_lease_end_time(response)
-
-        assert result == begin + duration
+def test_context_manager_keeps_preexisting_lease(session):
+    with start_blocking_portal() as portal:
+        with portal.wrap_async_context_manager(_lease(portal, release=False, name="preexisting")):
+            pass
+        assert session.released == []
 
 
-class TestMonitorAsyncError:
-    """Tests for the error handling in monitor_async."""
+def test_acquire_error_maps_to_lease_error(session, monkeypatch):
+    async def boom(*args, **kwargs):
+        raise jc.ControllerError.Unsatisfiable("no matching exporter")
 
-    def _make_lease_for_monitor(self):
-        lease = object.__new__(Lease)
-        lease.name = "test-lease"
-        lease.lease_ending_callback = None
-        lease.get = AsyncMock()
-        return lease
-
-    @pytest.mark.anyio
-    async def test_continues_on_get_failure_without_end_time(self):
-        """When get() fails and we have no end time, monitor retries."""
-        lease = self._make_lease_for_monitor()
-        call_count = 0
-
-        async def failing_get():
-            nonlocal call_count
-            call_count += 1
-            if call_count <= 2:
-                raise Exception("transient error")
-            # Third call: return expired lease to exit the loop
-            end_time = datetime.now(tz=timezone.utc) - timedelta(seconds=10)
-            return Mock(
-                effective_begin_time=end_time - timedelta(hours=1),
-                effective_duration=timedelta(hours=1),
-                effective_end_time=end_time,
-            )
-
-        lease.get = failing_get
-
-        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
-            async with lease.monitor_async():
-                pass
-
-        assert call_count == 3  # two failures + one success
-
-    @pytest.mark.anyio
-    async def test_estimates_expiry_from_last_known_end_time(self, caplog):
-        """When get() fails after we've seen an end time, use cached value."""
-        lease = self._make_lease_for_monitor()
-        callback = Mock()
-        lease.lease_ending_callback = callback
-
-        # End time slightly in the future so the monitor caches it and sleeps
-        future_end = datetime.now(tz=timezone.utc) + timedelta(milliseconds=50)
-        call_count = 0
-
-        async def get_then_fail():
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return Mock(
-                    effective_begin_time=future_end - timedelta(hours=1),
-                    effective_duration=timedelta(hours=1),
-                    effective_end_time=None,
-                    duration=timedelta(hours=1),
-                )
-            raise Exception("server unavailable")
-
-        lease.get = get_then_fail
-
-        with caplog.at_level(logging.WARNING):
-            async with lease.monitor_async():
-                # Keep the body alive long enough for the monitor to loop
-                # through the first get(), sleep, second get() (fails), and
-                # error handler using the cached end time.
-                await asyncio.sleep(0.2)
-
-        # Should have gone through the error handler using cached end time
-        assert call_count >= 2
-        callback.assert_called()
-        _, remain_arg = callback.call_args[0]
-        assert remain_arg == timedelta(0)
+    monkeypatch.setattr(session, "acquire_lease", boom)
+    with start_blocking_portal() as portal:
+        lease = _lease(portal)
+        with pytest.raises(LeaseError):
+            lease.request()
 
 
-class TestHandleAsyncUnavailableRetry:
-    """Tests for Lease.handle_async UNAVAILABLE retry behavior."""
-
-    def _make_lease_for_handle(self):
-        lease = object.__new__(Lease)
-        lease.name = "test-lease"
-        lease.dial_timeout = 5.0
-        lease.lease_transferred = False
-        lease.tls_config = Mock()
-        lease.grpc_options = {}
-        lease.controller = Mock()
-        return lease
-
-    @pytest.mark.anyio
-    async def test_handle_async_retries_unavailable_then_succeeds(self):
-        """Dial returns UNAVAILABLE once then succeeds on retry."""
-        lease = self._make_lease_for_handle()
-        dial_call_count = 0
-
-        async def mock_dial(request):
-            nonlocal dial_call_count
-            dial_call_count += 1
-            if dial_call_count == 1:
-                raise MockAioRpcError(grpc.StatusCode.UNAVAILABLE, "temporarily unavailable")
-            return Mock(router_endpoint="endpoint", router_token="token")
-
-        lease.controller.Dial = mock_dial
-
-        with patch("jumpstarter.client.lease.connect_router_stream") as mock_connect:
-            mock_connect.return_value.__aenter__ = AsyncMock()
-            mock_connect.return_value.__aexit__ = AsyncMock(return_value=False)
-            stream = Mock()
-
-            await lease.handle_async(stream)
-
-            assert dial_call_count == 2
-            mock_connect.assert_called_once_with("endpoint", "token", stream, lease.tls_config, lease.grpc_options)
-
-    @pytest.mark.anyio
-    async def test_handle_async_unavailable_exceeds_dial_timeout(self):
-        """Dial returns UNAVAILABLE until dial_timeout is exceeded, then raises."""
-        lease = self._make_lease_for_handle()
-        lease.dial_timeout = 0.5
-        dial_call_count = 0
-
-        async def mock_dial(request):
-            nonlocal dial_call_count
-            dial_call_count += 1
-            raise MockAioRpcError(grpc.StatusCode.UNAVAILABLE, "permanently unavailable")
-
-        lease.controller.Dial = mock_dial
-        stream = Mock()
-
-        with pytest.raises(AioRpcError) as exc_info:
-            await lease.handle_async(stream)
-
-        assert exc_info.value.code() == grpc.StatusCode.UNAVAILABLE
-        assert dial_call_count >= 2
+def test_direct_lease_serves_address():
+    with start_blocking_portal() as portal:
+        direct = DirectLease(address="exporter.host:1234", portal=portal, allow=[], unsafe=True)
+        with portal.wrap_async_context_manager(direct.serve_unix_async()) as addr:
+            assert addr == "exporter.host:1234"

@@ -329,8 +329,12 @@ class ClientConfigV1Alpha1(BaseSettings):
                 else self.leases.acquisition_timeout
             )
             async with Lease(
-                channel=await self.channel(),
+                endpoint=self.endpoint,
                 namespace=self.metadata.namespace,
+                token=self.token,
+                ca=self.tls.ca,
+                insecure=self.tls.insecure,
+                client_name=self.metadata.name,
                 name=lease_name,
                 selector=selector,
                 requested_exporter_name=exporter_name,
@@ -341,7 +345,6 @@ class ClientConfigV1Alpha1(BaseSettings):
                 release=release_lease,
                 tls_config=self.tls,
                 grpc_options=self.grpcOptions,
-                client_name=self.metadata.name,
                 acquisition_timeout=acquisition_timeout_seconds,
                 dial_timeout=self.leases.dial_timeout,
             ) as lease:

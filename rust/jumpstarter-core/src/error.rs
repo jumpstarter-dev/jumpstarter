@@ -54,6 +54,45 @@ impl DriverCallError {
     }
 }
 
+/// A controller/lease operation failure (the programmatic lease surface — [`crate::controller`]).
+/// Mirrors the meaningful `jumpstarter_client::ClientError`/`LeaseError` cases the Python
+/// `Lease` shim and `jumpstarter-testing` need to distinguish.
+#[derive(Debug, thiserror::Error)]
+pub enum ControllerError {
+    /// Missing/invalid connection config (endpoint/token).
+    #[error("config error: {0}")]
+    Config(String),
+    /// Could not connect to or transport to the controller.
+    #[error("connection error: {0}")]
+    Connection(String),
+    /// The selector cannot be satisfied / is invalid (no matching exporter).
+    #[error("unsatisfiable: {0}")]
+    Unsatisfiable(String),
+    /// Lease acquisition timed out.
+    #[error("timeout: {0}")]
+    Timeout(String),
+    /// Any other controller/lease failure.
+    #[error("{0}")]
+    Other(String),
+}
+
+impl From<jumpstarter_client::ClientError> for ControllerError {
+    fn from(e: jumpstarter_client::ClientError) -> Self {
+        use jumpstarter_client::{ClientError, LeaseError};
+        match e {
+            ClientError::Config(m) => ControllerError::Config(m),
+            ClientError::Transport(t) => ControllerError::Connection(t.to_string()),
+            ClientError::Lease(LeaseError::Unsatisfiable(m) | LeaseError::Invalid(m)) => {
+                ControllerError::Unsatisfiable(m)
+            }
+            ClientError::Lease(LeaseError::Timeout { name, timeout_secs }) => {
+                ControllerError::Timeout(format!("lease {name} not ready within {timeout_secs}s"))
+            }
+            other => ControllerError::Other(other.to_string()),
+        }
+    }
+}
+
 /// A value-codec failure at the FFI seam (malformed JSON crossing the boundary). These
 /// are framework bugs, not driver errors, but are surfaced as `Unknown` to clients.
 #[derive(Debug, thiserror::Error)]
