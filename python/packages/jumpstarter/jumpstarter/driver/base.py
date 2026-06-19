@@ -9,39 +9,24 @@ import os
 from abc import ABCMeta, abstractmethod
 from contextlib import asynccontextmanager
 from dataclasses import field
-from inspect import isasyncgenfunction, iscoroutinefunction
 from itertools import chain
 from typing import Any
 from urllib.parse import urlparse, urlunparse
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import aiohttp
 import yarl
-from anyio import BrokenResourceError, to_thread
-from grpc import StatusCode
-from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
+from anyio import BrokenResourceError
 from pydantic import TypeAdapter
 from pydantic.dataclasses import dataclass
 
-from .decorators import (
-    MARKER_DRIVERCALL,
-    MARKER_MAGIC,
-    MARKER_STREAMCALL,
-    MARKER_STREAMING_DRIVERCALL,
-)
 from jumpstarter.common import LogSource, Metadata
-from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource, Resource, ResourceMetadata
-from jumpstarter.common.serde import decode_value, encode_value
-from jumpstarter.common.streams import (
-    DriverStreamRequest,
-    ResourceStreamRequest,
-)
+from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource, Resource
 from jumpstarter.config.env import JMP_DISABLE_COMPRESSION
 from jumpstarter.exporter.logging import get_logger
 from jumpstarter.streams.aiohttp import AiohttpStreamReaderStream
 from jumpstarter.streams.common import create_memory_stream
 from jumpstarter.streams.encoding import Compression, compress_stream
-from jumpstarter.streams.metadata import MetadataStream
 from jumpstarter.streams.progress import ProgressStream
 
 SUPPORTED_CONTENT_ENCODINGS = (
@@ -59,8 +44,6 @@ SUPPORTED_CONTENT_ENCODINGS = (
 @dataclass(kw_only=True)
 class Driver(
     Metadata,
-    jumpstarter_pb2_grpc.ExporterServiceServicer,
-    router_pb2_grpc.RouterServiceServicer,
     metaclass=ABCMeta,
 ):
     """Base class for drivers
@@ -69,6 +52,12 @@ class Driver(
 
     Regular or streaming driver calls can be marked with the `export` decorator.
     Raw stream constructors can be marked with the `exportstream` decorator.
+
+    The driver tree is introspected (``enumerate``) and dispatched by the in-process Rust
+    core via FFI (``jumpstarter.exporter.host``); drivers no longer implement gRPC servicer
+    methods. The remaining machinery here is the resource-stream resolver (``resource`` /
+    ``_resource_from_client_stream`` / ``_resource_from_presigned``) that the host registers
+    into and driver methods read from.
     """
 
     children: dict[str, Driver] = field(default_factory=dict)
@@ -109,112 +98,6 @@ class Driver(
 
     def extra_labels(self) -> dict[str, str]:
         return {}
-
-    async def DriverCall(self, request, context):
-        """
-        :meta private:
-        """
-        try:
-            method = await self.__lookup_drivercall(request.method, context, MARKER_DRIVERCALL)
-
-            args = [decode_value(arg) for arg in request.args]
-
-            if iscoroutinefunction(method):
-                result = await method(*args)
-            else:
-                result = await to_thread.run_sync(method, *args)
-
-            return jumpstarter_pb2.DriverCallResponse(
-                uuid=str(uuid4()),
-                result=encode_value(result),
-            )
-        except NotImplementedError as e:
-            await context.abort(StatusCode.UNIMPLEMENTED, str(e))
-        except ValueError as e:
-            await context.abort(StatusCode.INVALID_ARGUMENT, str(e))
-        except TimeoutError as e:
-            await context.abort(StatusCode.DEADLINE_EXCEEDED, str(e))
-        except Exception as e:
-            await context.abort(StatusCode.UNKNOWN, str(e))
-
-    async def StreamingDriverCall(self, request, context):
-        """
-        :meta private:
-        """
-        try:
-            method = await self.__lookup_drivercall(request.method, context, MARKER_STREAMING_DRIVERCALL)
-
-            args = [decode_value(arg) for arg in request.args]
-
-            if isasyncgenfunction(method):
-                async for result in method(*args):
-                    yield jumpstarter_pb2.StreamingDriverCallResponse(
-                        uuid=str(uuid4()),
-                        result=encode_value(result),
-                    )
-            else:
-                for result in await to_thread.run_sync(method, *args):
-                    yield jumpstarter_pb2.StreamingDriverCallResponse(
-                        uuid=str(uuid4()),
-                        result=encode_value(result),
-                    )
-        except NotImplementedError as e:
-            await context.abort(StatusCode.UNIMPLEMENTED, str(e))
-        except ValueError as e:
-            await context.abort(StatusCode.INVALID_ARGUMENT, str(e))
-        except TimeoutError as e:
-            await context.abort(StatusCode.DEADLINE_EXCEEDED, str(e))
-        except Exception as e:
-            await context.abort(StatusCode.UNKNOWN, str(e))
-
-    @asynccontextmanager
-    async def Stream(self, request, context):
-        """
-        :meta private:
-        """
-        match request:
-            case DriverStreamRequest(method=driver_method):
-                method = await self.__lookup_drivercall(driver_method, context, MARKER_STREAMCALL)
-
-                async with method() as stream:
-                    yield stream
-
-            case ResourceStreamRequest():
-                remote, resource = create_memory_stream()
-
-                resource_uuid = uuid4()
-
-                self.resources[resource_uuid] = resource
-
-                async with MetadataStream(
-                    stream=remote,
-                    metadata=ResourceMetadata.model_construct(
-                        resource=ClientStreamResource(
-                            uuid=resource_uuid, x_jmp_content_encoding=request.x_jmp_content_encoding
-                        ),
-                        x_jmp_accept_encoding=request.x_jmp_content_encoding
-                        if request.x_jmp_content_encoding in SUPPORTED_CONTENT_ENCODINGS
-                        else None,
-                    ).model_dump(mode="json", round_trip=True),
-                ) as stream:
-                    yield stream
-
-    def report(self, *, parent=None, name=None):
-        """
-        Create DriverInstanceReport
-
-        :meta private:
-        """
-        return jumpstarter_pb2.DriverInstanceReport(
-            uuid=str(self.uuid),
-            parent_uuid=str(parent.uuid) if parent else None,
-            labels=self.labels
-            | self.extra_labels()
-            | ({"jumpstarter.dev/client": self.client()})
-            | ({"jumpstarter.dev/name": name} if name else {}),
-            description=self.description or None,
-            methods_description=self.methods_description or {},
-        )
 
     def enumerate(self, *, root=None, parent=None, name=None):
         """
@@ -355,20 +238,3 @@ class Driver(
             case PresignedRequestResource(headers=headers, url=url, method=method):
                 async with self._resource_from_presigned(headers, url, method, timeout) as stream:
                     yield stream
-
-    async def __lookup_drivercall(self, name, context, marker):
-        """Lookup drivercall by method name
-
-        Methods are checked against magic markers
-        to avoid accidentally calling non-exported
-        methods
-        """
-        method = getattr(self, name, None)
-
-        if method is None:
-            await context.abort(StatusCode.NOT_FOUND, f"method {name} not found on driver")
-
-        if getattr(method, marker, None) != MARKER_MAGIC:
-            await context.abort(StatusCode.NOT_FOUND, f"method {name} missing marker {marker}")
-
-        return method

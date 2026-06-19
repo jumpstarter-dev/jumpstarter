@@ -3,20 +3,16 @@ from __future__ import annotations
 import errno
 import os
 import tempfile
-from contextlib import asynccontextmanager, contextmanager, suppress
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional, Self
 
-import grpc
 import yaml
-from anyio.from_thread import start_blocking_portal
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 from .common import CONFIG_PATH, ObjectMeta
-from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.common.exceptions import ConfigurationError, MissingDriverError
-from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.common.importlib import import_class
 
 if TYPE_CHECKING:
@@ -306,90 +302,11 @@ class ExporterConfigV1Alpha1(BaseModel):
         path.unlink()
         return path
 
-    @asynccontextmanager
-    async def serve_unix_async(self):
-        # dynamic import to avoid circular imports
-        from jumpstarter.common import ExporterStatus
-        from jumpstarter.exporter import Session
-
-        with Session(
-            root_device=ExporterConfigV1Alpha1DriverInstance(
-                type="jumpstarter_driver_composite.driver.Composite",
-                description=self.description,
-                children=self.export,
-            ).instantiate(),
-        ) as session:
-            async with session.serve_unix_async() as path:
-                # For local usage, set status to LEASE_READY since there's no lease/hook flow
-                session.update_status(ExporterStatus.LEASE_READY)
-                yield path
-
-    @contextmanager
-    def serve_unix(self):
-        with start_blocking_portal() as portal:
-            with portal.wrap_async_context_manager(self.serve_unix_async()) as path:
-                yield path
-
-    @asynccontextmanager
-    async def create_exporter(self, *, standalone: bool = False):
-        """Create and manage an exporter instance with proper lifecycle.
-
-        When standalone is True, channel_factory is a no-op (never used);
-        use exporter.serve_standalone_tcp() instead of exporter.serve().
-        """
-        # dynamic import to avoid circular imports
-        from anyio import CancelScope
-
-        from jumpstarter.exporter import Exporter
-
-        async def channel_factory() -> grpc.aio.Channel:
-            if self.endpoint is None or self.token is None:
-                raise ConfigurationError("endpoint or token not set in exporter config")
-            credentials = grpc.composite_channel_credentials(
-                await ssl_channel_credentials(self.endpoint, self.tls),
-                call_credentials("Exporter", self.metadata, self.token),
-            )
-            return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
-
-        async def dummy_channel_factory() -> grpc.aio.Channel:
-            raise RuntimeError("channel_factory must not be called in standalone mode")
-
-        # Create hook executor if hooks are configured
-        hook_executor = None
-        if self.hooks.before_lease or self.hooks.after_lease:
-            from jumpstarter.exporter.hooks import HookExecutor
-
-            hook_executor = HookExecutor(
-                config=self.hooks,
-            )
-
-        exporter = None
-        entered = False
-        try:
-            exporter = Exporter(
-                channel_factory=dummy_channel_factory if standalone else channel_factory,
-                device_factory=ExporterConfigV1Alpha1DriverInstance(
-                    type="jumpstarter_driver_composite.driver.Composite",
-                    description=self.description,
-                    children=self.export,
-                ).instantiate,
-                tls=self.tls,
-                grpc_options=self.grpcOptions,
-                hook_executor=hook_executor,
-            )
-            # Initialize the exporter (registration, etc.)
-            await exporter.__aenter__()
-            entered = True
-            yield exporter
-        finally:
-            # Shield all cleanup operations from abrupt cancellation for clean shutdown
-            if exporter and entered:
-                with CancelScope(shield=True):
-                    await exporter.__aexit__(None, None, None)
-
-    async def serve(self):
-        async with self.create_exporter() as exporter:
-            await exporter.serve()
+    # The gRPC exporter runtime (serve_unix_async / serve_unix / create_exporter / serve) has
+    # been retired: `jmp run` (the Rust binary) re-execs `python -m jumpstarter_exporter_host`,
+    # which hosts the Rust core in-process and serves this config's driver tree via FFI. Local
+    # in-process serving for tests lives in `jumpstarter.common.utils.serve`. This config model
+    # is now data-only (its `export` tree is instantiated by the FFI host factory).
 
 
 class ExporterConfigListV1Alpha1(BaseModel):

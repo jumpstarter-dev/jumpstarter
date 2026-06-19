@@ -1,3 +1,15 @@
+"""``jmp run`` — run an exporter locally, hosting the Rust core in-process via FFI.
+
+This stays a Python entrypoint (``pip install jumpstarter-all`` keeps ``jmp`` working) and
+keeps the previous two-process model: a parent **supervisor** (restart loop, rapid-failure
+detection, signal forwarding, PID-1 zombie reaping) forks a **child** that runs the exporter.
+What changed is only the child's runtime — instead of the retired Python gRPC exporter, the
+child hosts the Rust core in-process and hands off to ``jumpstarter_core.run_exporter``; the
+Rust core owns controller registration, lease lifecycle, hooks, status, gRPC, and router
+framing, and dispatches the Python driver tree over FFI. No Python gRPC.
+"""
+
+import asyncio
 import logging
 import os
 import signal
@@ -6,7 +18,6 @@ import time
 
 import anyio
 import click
-import grpc
 from anyio import create_task_group, open_signal_receiver
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
@@ -31,15 +42,6 @@ def _parse_listener_bind(value: str) -> tuple[str, int]:
     if not (1 <= port <= 65535):
         raise click.BadParameter(f"port must be between 1 and 65535, got {port}", param_hint="'--tls-grpc-listener'")
     return host, port
-
-
-def _tls_server_credentials(cert_path: str, key_path: str) -> grpc.ServerCredentials:
-    """Build gRPC server credentials from PEM cert and key files."""
-    with open(cert_path, "rb") as f:
-        cert_chain = f.read()
-    with open(key_path, "rb") as f:
-        private_key = f.read()
-    return grpc.ssl_server_credentials(((private_key, cert_chain),))
 
 
 def _handle_exporter_exceptions(excgroup):
@@ -70,89 +72,52 @@ def _reap_zombie_processes(capture_child=None):
         logger.warning(f"PARENT: Error during zombie reaping: {e}")
 
 
-def _handle_child(config, parsed_bind=None, tls_insecure=False, tls_cert=None, tls_key=None, passphrase=None):  # noqa: C901
-    """Handle child process with graceful shutdown."""
-    async def serve_with_graceful_shutdown():  # noqa: C901
+def _handle_child(config):
+    """Child process: host the Rust core in-process and serve via FFI, with graceful shutdown."""
+
+    async def serve_with_graceful_shutdown():
         received_signal = 0
-        signal_handled = False
-        exporter = None
 
-        async def signal_handler():
-            nonlocal received_signal, signal_handled
-
+        async def signal_handler(cancel_scope):
             with open_signal_receiver(signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT) as signals:
                 async for sig in signals:
-                    if signal_handled:  # ty: ignore[unresolved-reference]
-                        continue  # Ignore duplicate signals
+                    nonlocal received_signal
                     received_signal = sig
                     logger.info("CHILD: Received %d (%s)", received_signal, signal.Signals(received_signal).name)
+                    # Cancelling the run_exporter task tears the exporter down. (SIGHUP's
+                    # wait-for-lease-exit drain is owned by the Rust core; not yet plumbed
+                    # through the FFI run_exporter entrypoint.)
+                    cancel_scope.cancel()
+                    return
 
-                    if exporter:
-                        # Terminate exporter. SIGHUP waits until current lease is let go. Later SIGTERM still overrides
-                        if received_signal != signal.SIGHUP:
-                            signal_handled = True
-                        exporter.stop(wait_for_lease_exit=received_signal == signal.SIGHUP, should_unregister=True)
+        async with create_task_group() as tg:
+            import jumpstarter_core as jc
 
-                # Start signal handler first, then create exporter
-        async with create_task_group() as signal_tg:
+            from jumpstarter.exporter.host import DriverHostFactory
 
-            # Start signal handler immediately
-            signal_tg.start_soon(signal_handler)
+            # Foreign async callbacks (driver_call / stream_*) run on Rust/tokio worker threads
+            # where asyncio.get_running_loop() raises; register this loop with UniFFI so they
+            # schedule onto it.
+            set_event_loop = getattr(jc, "uniffi_set_event_loop", None)
+            if set_event_loop is None:
+                from jumpstarter_core import jumpstarter_core as _jc_mod
 
-            if parsed_bind is not None:
-                host, port = parsed_bind
-                tls_credentials = None
-                if tls_insecure:
-                    if passphrase:
-                        click.echo(
-                            "WARNING: --passphrase has no effect without TLS; "
-                            "the passphrase will be transmitted in plaintext",
-                            err=True,
-                        )
-                elif tls_cert and tls_key:
-                    tls_credentials = _tls_server_credentials(tls_cert, tls_key)
+                set_event_loop = _jc_mod.uniffi_set_event_loop
+            set_event_loop(asyncio.get_running_loop())
 
-                interceptors = None
-                if passphrase:
-                    from jumpstarter.exporter.auth import PassphraseInterceptor
-                    interceptors = [PassphraseInterceptor(passphrase)]
+            tg.start_soon(signal_handler, tg.cancel_scope)
 
-                exporter_exit_code = None
-                async with config.create_exporter(standalone=True) as exporter:
-                    try:
-                        await exporter.serve_standalone_tcp(
-                            host, port,
-                            tls_credentials=tls_credentials,
-                            interceptors=interceptors,
-                        )
-                    except* Exception as excgroup:
-                        _handle_exporter_exceptions(excgroup)
-                    exporter_exit_code = exporter.exit_code
-            else:
-                # Create exporter and run it (controller mode)
-                exporter_exit_code = None
-                async with config.create_exporter() as exporter:
-                    try:
-                        await exporter.serve()
-                    except* Exception as excgroup:
-                        _handle_exporter_exceptions(excgroup)
+            config_path = str(config.path)
+            factory = DriverHostFactory(config_path)
+            try:
+                await jc.run_exporter(config_path, factory)
+            except* Exception as excgroup:
+                _handle_exporter_exceptions(excgroup)
+            tg.cancel_scope.cancel()
 
-                    # Check if exporter set an exit code (e.g., from hook failure with on_failure='exit')
-                    exporter_exit_code = exporter.exit_code
-
-            # Cancel the signal handler after exporter completes
-            signal_tg.cancel_scope.cancel()
-
-        # Return exit code in priority order:
-        # 1. Signal number if received (for signal-based termination)
-        # 2. Exporter's exit code if set (for hook failure with on_failure='exit')
-        # 3. 0 for immediate restart (normal exit without signal or explicit exit code)
         if received_signal:
             return 128 + received_signal
-        elif exporter_exit_code is not None:
-            return exporter_exit_code
-        else:
-            return 0
+        return 0
 
     sys.exit(anyio.run(serve_with_graceful_shutdown))
 
@@ -203,9 +168,7 @@ def _handle_parent(pid):
         return 128 + child_exit_signal
 
 
-def _serve_with_exc_handling(
-    config, parsed_bind=None, tls_insecure=False, tls_cert=None, tls_key=None, passphrase=None
-):
+def _serve_with_exc_handling(config):
     max_rapid_failures = config.failure_detection.max_rapid_failures
     rapid_failure_window = config.failure_detection.rapid_failure_window
 
@@ -250,7 +213,7 @@ def _serve_with_exc_handling(
                 rapid_failure_count = 0
         else:
             os.setsid() # Become group leader so all spawned subprocesses are reached by parent's signals
-            _handle_child(config, parsed_bind, tls_insecure, tls_cert, tls_key, passphrase)
+            _handle_child(config)
             sys.exit(1) # should never happen
 
 
@@ -287,18 +250,15 @@ def _serve_with_exc_handling(
 @handle_exceptions
 def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase):
     """Run an exporter locally."""
-    if listener_bind is not None and config is None:
-        raise click.UsageError("--exporter-config (or --exporter) is required when using --tls-grpc-listener")
-    if listener_bind is None and (tls_insecure or tls_cert or tls_key or passphrase):
+    if config is None:
+        raise click.UsageError("--exporter-config (or --exporter) is required")
+    if listener_bind is not None or tls_insecure or tls_cert or tls_key or passphrase:
+        # The standalone TCP-listener exporter is owned by the Rust core; it is not yet
+        # exposed through the in-process FFI run_exporter entrypoint.
         raise click.UsageError(
-            "--tls-grpc-insecure, --tls-cert, --tls-key, and --passphrase require --tls-grpc-listener"
+            "Standalone listener mode (--tls-grpc-listener / --tls-grpc-insecure / --tls-cert / "
+            "--tls-key / --passphrase) is not available via the Python entrypoint yet."
         )
-    if listener_bind is not None:
-        if tls_insecure and (tls_cert or tls_key):
-            raise click.UsageError("--tls-grpc-insecure cannot be combined with --tls-cert / --tls-key")
-        if not tls_insecure and not (tls_cert and tls_key):
-            raise click.UsageError(
-                "--tls-grpc-listener requires either --tls-grpc-insecure or --tls-cert and --tls-key"
-            )
-    parsed_bind = _parse_listener_bind(listener_bind) if listener_bind is not None else None
-    return _serve_with_exc_handling(config, parsed_bind, tls_insecure, tls_cert, tls_key, passphrase)
+    if config.path is None:
+        raise click.UsageError("the resolved exporter config has no on-disk path to run")
+    return _serve_with_exc_handling(config)
