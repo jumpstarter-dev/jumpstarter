@@ -133,7 +133,7 @@ jobs:
       - name: Check for non-ASCII characters
         shell: bash {0}
         run: |
-          rg '[^\p{ASCII}]' --glob '!*.cast' --glob '!*.min.js' --line-number
+          rg '[^\p{ASCII}]' --glob '!*.min.js' --line-number
           status=$?
           if [ "$status" -eq 0 ]; then
             echo "::error::Non-ASCII characters found. Replace with ASCII equivalents."
