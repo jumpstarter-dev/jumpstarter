@@ -8,7 +8,6 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal, Optional, Self
 
-import yaml
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 from pydantic import (
     BaseModel,
@@ -24,6 +23,7 @@ from .common import CONFIG_PATH, ObjectMeta
 from .env import JMP_LEASE
 from .shell import ShellConfigV1Alpha1
 from .tls import TLSConfigV1Alpha1
+from jumpstarter.common import _yaml as yaml
 from jumpstarter.common.exceptions import (
     ConnectionError,
     FileNotFoundError,

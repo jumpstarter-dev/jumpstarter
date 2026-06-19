@@ -578,3 +578,33 @@ impl LeaseTransport {
         self.inner.close().await;
     }
 }
+
+// ---------------------------------------------------------------------------
+// Config YAML parsing — so the Python config layer drops pyyaml (parsing in Rust)
+// ---------------------------------------------------------------------------
+
+/// A YAML parse/serialize failure.
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum YamlError {
+    #[error("yaml error: {0}")]
+    Parse(String),
+}
+
+/// Parse a YAML document into a JSON string (the Python config layer then `json.loads` +
+/// validates with pydantic). Replaces `yaml.safe_load`.
+#[uniffi::export]
+pub fn parse_yaml(text: String) -> Result<String, YamlError> {
+    let value: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&text).map_err(|e| YamlError::Parse(e.to_string()))?;
+    serde_json::to_string(&value).map_err(|e| YamlError::Parse(e.to_string()))
+}
+
+/// Serialize a JSON string to a YAML document, preserving key order (serde_yaml_ng::Value is
+/// an order-preserving map, fed from the JSON in document order). Replaces
+/// `yaml.safe_dump(..., sort_keys=False)`.
+#[uniffi::export]
+pub fn dump_yaml(json: String) -> Result<String, YamlError> {
+    let value: serde_yaml_ng::Value =
+        serde_json::from_str(&json).map_err(|e| YamlError::Parse(e.to_string()))?;
+    serde_yaml_ng::to_string(&value).map_err(|e| YamlError::Parse(e.to_string()))
+}

@@ -8,6 +8,7 @@ license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
   "jumpstarter",
+  "pyyaml>=6.0.2",
   "pydantic>=2.8.2",
   "click>=8.1.7.2",
   "authlib>=1.4.1",

@@ -26,3 +26,7 @@ jumpstarter-cli = { path = "../jumpstarter-cli" }
 uniffi = { version = "0.29", features = ["tokio", "cli"] }
 async-trait = "0.1"
 thiserror.workspace = true
+# YAML <-> JSON for the config-parsing FFI (so Python drops pyyaml). serde_yaml_ng::Value is
+# order-preserving (IndexMap), so a JSON->yaml dump keeps the pydantic field order.
+serde_json.workspace = true
+serde_yaml_ng.workspace = true

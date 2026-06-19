@@ -1286,6 +1286,8 @@ dependencies = [
  "jumpstarter-config",
  "jumpstarter-core",
  "jumpstarter-exporter",
+ "serde_json",
+ "serde_yaml_ng",
  "thiserror 2.0.18",
  "uniffi",
 ]

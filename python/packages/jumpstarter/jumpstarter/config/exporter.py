@@ -7,11 +7,11 @@ from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional, Self
 
-import yaml
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 from .common import CONFIG_PATH, ObjectMeta
 from .tls import TLSConfigV1Alpha1
+from jumpstarter.common import _yaml as yaml
 from jumpstarter.common.exceptions import ConfigurationError, MissingDriverError
 from jumpstarter.common.importlib import import_class
 

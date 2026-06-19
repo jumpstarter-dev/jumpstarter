@@ -2,12 +2,12 @@ import os
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal, Optional, Self
 
-import yaml
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
 from pydantic.functional_validators import BeforeValidator
 
 from .client import ClientConfigV1Alpha1
 from .common import CONFIG_PATH
+from jumpstarter.common import _yaml as yaml
 
 
 def _serialize_current_client(v: ClientConfigV1Alpha1 | None) -> str | None:

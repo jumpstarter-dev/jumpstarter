@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [{ name = "Kirk Brauer", email = "kbrauer@hatci.com" }]
 requires-python = ">=3.11"
 license = "Apache-2.0"
-dependencies = ["jumpstarter", "mitmproxy>=10.0"]
+dependencies = ["jumpstarter", "mitmproxy>=10.0", "pyyaml>=6.0.2"]
 
 [project.entry-points."jumpstarter.drivers"]
 MitmproxyDriver = "jumpstarter_driver_mitmproxy.driver:MitmproxyDriver"
