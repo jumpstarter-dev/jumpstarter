@@ -1925,18 +1925,12 @@ wheels = [
 name = "jumpstarter"
 source = { editable = "packages/jumpstarter" }
 dependencies = [
-    { name = "aiohttp" },
     { name = "anyio" },
     { name = "backports-zstd", marker = "python_full_version < '3.14'" },
     { name = "click" },
     { name = "jumpstarter-core" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "pyyaml" },
-    { name = "rich" },
-    { name = "tenacity" },
-    { name = "xdg-base-dirs" },
-    { name = "yarl" },
 ]
 
 [package.dev-dependencies]
@@ -1954,18 +1948,12 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aiohttp", specifier = ">=3.10.5" },
     { name = "anyio", specifier = ">=4.4.0,!=4.6.2" },
     { name = "backports-zstd", marker = "python_full_version < '3.14'", specifier = ">=1.1.0" },
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter-core", editable = "packages/jumpstarter-core" },
     { name = "pydantic", specifier = ">=2.8.2" },
     { name = "pydantic-settings", specifier = ">=2.9.1" },
-    { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "rich", specifier = ">=14.0.0" },
-    { name = "tenacity", specifier = ">=8.2.0" },
-    { name = "xdg-base-dirs", specifier = ">=6.0.2" },
-    { name = "yarl", specifier = ">=1.6.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -2151,6 +2139,7 @@ dependencies = [
     { name = "joserfc" },
     { name = "jumpstarter" },
     { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "rich" },
     { name = "truststore" },
     { name = "yarl" },
@@ -2171,6 +2160,7 @@ requires-dist = [
     { name = "joserfc", specifier = ">=1.0.3" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "pydantic", specifier = ">=2.8.2" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "rich", specifier = ">=14.0.0" },
     { name = "truststore", specifier = ">=0.10.1" },
     { name = "yarl", specifier = ">=1.18.3" },
@@ -2359,6 +2349,7 @@ source = { editable = "packages/jumpstarter-driver-composite" }
 dependencies = [
     { name = "click" },
     { name = "jumpstarter" },
+    { name = "rich" },
 ]
 
 [package.dev-dependencies]
@@ -2372,6 +2363,7 @@ dev = [
 requires-dist = [
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "rich", specifier = ">=14.0.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -2583,6 +2575,7 @@ dev = [
 name = "jumpstarter-driver-flashers"
 source = { editable = "packages/jumpstarter-driver-flashers" }
 dependencies = [
+    { name = "aiohttp" },
     { name = "anyio" },
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-http" },
@@ -2592,6 +2585,8 @@ dependencies = [
     { name = "jumpstarter-driver-tftp" },
     { name = "jumpstarter-driver-uboot" },
     { name = "oras" },
+    { name = "pyyaml" },
+    { name = "yarl" },
 ]
 
 [package.dev-dependencies]
@@ -2602,6 +2597,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.10.5" },
     { name = "anyio", specifier = ">=4.10.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-http", editable = "packages/jumpstarter-driver-http" },
@@ -2611,6 +2607,8 @@ requires-dist = [
     { name = "jumpstarter-driver-tftp", editable = "packages/jumpstarter-driver-tftp" },
     { name = "jumpstarter-driver-uboot", editable = "packages/jumpstarter-driver-uboot" },
     { name = "oras", specifier = ">=0.2.25" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
+    { name = "yarl", specifier = ">=1.6.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -2757,6 +2755,7 @@ dependencies = [
     { name = "jumpstarter" },
     { name = "mitmproxy", version = "11.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "mitmproxy", version = "12.2.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
@@ -2770,6 +2769,7 @@ dev = [
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "mitmproxy", specifier = ">=10.0" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
 ]
 
 [package.metadata.requires-dev]
@@ -2857,9 +2857,11 @@ dev = [
 name = "jumpstarter-driver-opendal"
 source = { editable = "packages/jumpstarter-driver-opendal" }
 dependencies = [
+    { name = "aiohttp" },
     { name = "click" },
     { name = "jumpstarter" },
     { name = "opendal" },
+    { name = "yarl" },
 ]
 
 [package.dev-dependencies]
@@ -2870,9 +2872,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.10.5" },
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "opendal", specifier = ">=0.45.8,<0.46" },
+    { name = "yarl", specifier = ">=1.6.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -3812,6 +3816,7 @@ dependencies = [
     { name = "kubernetes-asyncio" },
     { name = "packaging" },
     { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "semver" },
 ]
 
@@ -3831,6 +3836,7 @@ requires-dist = [
     { name = "kubernetes-asyncio", specifier = ">=31.1.0" },
     { name = "packaging", specifier = ">=25.0" },
     { name = "pydantic", specifier = ">=2.8.2" },
+    { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "semver", specifier = "~=3.0" },
 ]
 
@@ -6349,15 +6355,6 @@ wheels = [
 ]
 
 [[package]]
-name = "tenacity"
-version = "9.1.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0a/d4/2b0cd0fe285e14b36db076e78c93766ff1d529d70408bd1d2a5a84f1d929/tenacity-9.1.2.tar.gz", hash = "sha256:1169d376c297e7de388d18b4481760d478b0e99a777cad3a9c86e556f4b697cb", size = 48036, upload-time = "2025-04-02T08:25:09.966Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/30/643397144bfbfec6f6ef821f36f33e57d35946c44a2352d3c9f0ae847619/tenacity-9.1.2-py3-none-any.whl", hash = "sha256:f77bf36710d8b73a50b2dd155c97b870017ad21afe6ab300326b0371b3b05138", size = 28248, upload-time = "2025-04-02T08:25:07.678Z" },
-]
-
-[[package]]
 name = "toml"
 version = "0.10.2"
 source = { registry = "https://pypi.org/simple" }
@@ -7093,15 +7090,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c9/4a/44d3c295350d776427904d73c189e10aeae66d7f555bb2feee16d1e4ba5a/wsproto-1.2.0.tar.gz", hash = "sha256:ad565f26ecb92588a3e43bc3d96164de84cd9902482b130d0ddbaa9664a85065", size = 53425, upload-time = "2022-08-23T19:58:21.447Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/78/58/e860788190eba3bcce367f74d29c4675466ce8dddfba85f7827588416f01/wsproto-1.2.0-py3-none-any.whl", hash = "sha256:b9acddd652b585d75b20477888c56642fdade28bdfd3579aa24a4d2c037dd736", size = 24226, upload-time = "2022-08-23T19:58:19.96Z" },
-]
-
-[[package]]
-name = "xdg-base-dirs"
-version = "6.0.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/bf/d0/bbe05a15347538aaf9fa5b51ac3b97075dfb834931fcb77d81fbdb69e8f6/xdg_base_dirs-6.0.2.tar.gz", hash = "sha256:950504e14d27cf3c9cb37744680a43bf0ac42efefc4ef4acf98dc736cab2bced", size = 4085, upload-time = "2024-10-19T14:35:08.114Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fc/03/030b47fd46b60fc87af548e57ff59c2ca84b2a1dadbe721bb0ce33896b2e/xdg_base_dirs-6.0.2-py3-none-any.whl", hash = "sha256:3c01d1b758ed4ace150ac960ac0bd13ce4542b9e2cdf01312dcda5012cfebabe", size = 4747, upload-time = "2024-10-19T14:35:05.931Z" },
 ]
 
 [[package]]

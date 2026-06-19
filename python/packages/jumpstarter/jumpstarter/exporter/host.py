@@ -20,7 +20,6 @@ import json
 import logging
 from inspect import isasyncgenfunction, iscoroutinefunction
 from itertools import count
-from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -251,25 +250,49 @@ class DriverHost:
             pass
 
 
+def _instantiate_spec(node):
+    """Instantiate one driver-tree node from a ``jumpstarter_core.DriverSpecNode`` (the Rust
+    core parsed the YAML; this only imports the driver classes by dotted path and constructs
+    them). Mirrors the Python ``ExporterConfigV1Alpha1DriverInstance.instantiate()`` cases:
+    a ``reference`` → Proxy, a ``type`` → the driver class, otherwise a Composite group."""
+    from jumpstarter.common.importlib import import_class
+
+    if node.reference:
+        from jumpstarter_driver_composite.driver import Proxy
+
+        return Proxy(ref=node.reference)
+
+    children = {name: _instantiate_spec(child) for name, child in node.children.items()}
+
+    if node.type:
+        driver_class = import_class(node.type, [], True)
+        return driver_class(
+            description=node.description or None,
+            methods_description=dict(node.methods_description),
+            children=children,
+            **json.loads(node.config_json),
+        )
+
+    from jumpstarter_driver_composite.driver import Composite
+
+    return Composite(children=children)
+
+
 class DriverHostFactory:
-    """Builds a fresh :class:`DriverHost` per lease from an exporter config (the
-    Composite-root ``instantiate()``). ``new_host`` is sync."""
+    """Builds a fresh :class:`DriverHost` per lease. The Rust core parses the exporter config
+    YAML (``jc.load_exporter_spec``); Python only instantiates the driver tree (importing
+    driver classes by dotted path). ``new_host`` is sync."""
 
     def __init__(self, config_path: str):
         self._config_path = config_path
 
     def new_host(self) -> DriverHost:
-        from jumpstarter.config.exporter import (
-            ExporterConfigV1Alpha1,
-            ExporterConfigV1Alpha1DriverInstance,
-        )
+        from jumpstarter.common.importlib import import_class
 
-        config = ExporterConfigV1Alpha1.load_path(Path(self._config_path))
-        root = ExporterConfigV1Alpha1DriverInstance(
-            type="jumpstarter_driver_composite.driver.Composite",
-            description=config.description,
-            children=config.export,
-        ).instantiate()
+        spec = jc.load_exporter_spec(self._config_path)
+        children = {name: _instantiate_spec(node) for name, node in spec.export.items()}
+        composite = import_class("jumpstarter_driver_composite.driver.Composite", [], True)
+        root = composite(description=spec.description or None, methods_description={}, children=children)
         return DriverHost(root)
 
 
