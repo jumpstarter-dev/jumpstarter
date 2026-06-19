@@ -121,7 +121,7 @@ def get_fls_binary(
                 "Set allow_custom_binaries=True in driver configuration to enable."
             )
         logger.warning(
-            f"⚠️  SECURITY: Downloading custom FLS binary from {fls_binary_url}. "
+            f"WARNING:  SECURITY: Downloading custom FLS binary from {fls_binary_url}. "
             "Ensure this URL is trusted and secure."
         )
         return download_fls(fls_binary_url)

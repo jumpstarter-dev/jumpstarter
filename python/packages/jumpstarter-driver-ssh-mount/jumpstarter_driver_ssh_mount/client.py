@@ -262,8 +262,8 @@ class SSHMountClient(CompositeClient):
         try:
             if shell_name.endswith("bash"):
                 ps1 = env.get("PS1", r"\$ ")
-                if "➤" in ps1:
-                    ps1 = ps1.replace("➤", f"{mount_tag}➤")
+                if ">" in ps1:
+                    ps1 = ps1.replace(">", f"{mount_tag}>")
                 else:
                     ps1 = f"[sshfs:{remote_path}] {ps1}"
                 env["PS1"] = ps1
@@ -277,19 +277,19 @@ class SSHMountClient(CompositeClient):
                     "set_color grey; "
                     'printf "%s" (basename $PWD); '
                     "set_color yellow; "
-                    'printf "⚡"; '
+                    'printf "*"; '
                     "set_color white; "
                     f'printf "{mount_tag}"; '
                     "set_color yellow; "
-                    'printf "➤ "; '
+                    'printf "> "; '
                     "set_color normal; "
                     "end"
                 )
                 subprocess.run([shell, "--init-command", fish_fn], env=env)
             elif shell_name == "zsh":
                 ps1 = env.get("PS1", "%# ")
-                if "➤" in ps1:
-                    ps1 = ps1.replace("➤", f"{mount_tag}➤")
+                if ">" in ps1:
+                    ps1 = ps1.replace(">", f"{mount_tag}>")
                 else:
                     ps1 = f"[sshfs:{remote_path}] {ps1}"
                 env["PS1"] = ps1

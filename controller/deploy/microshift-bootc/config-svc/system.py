@@ -231,20 +231,20 @@ def update_login_banner():
             url = f"http://{hostname}:{port}"
             
             # Format URL line to fit properly in the box (62 chars content width)
-            url_line = f"  → {url}"
-            
+            url_line = f"  -> {url}"
+
             banner = f"""
-╔══════════════════════════════════════════════════════════════════╗
-║                                                                  ║
-║  Jumpstarter Controller Community Edition                        ║
-║  Powered by MicroShift                                           ║
-║                                                                  ║
-║  Web Configuration UI:                                           ║
-║  {url_line:<64}║
-║                                                                  ║
-║  Login with:  root / <your-password>                             ║
-║                                                                  ║
-╚══════════════════════════════════════════════════════════════════╝
++------------------------------------------------------------------+
+|                                                                  |
+|  Jumpstarter Controller Community Edition                        |
+|  Powered by MicroShift                                           |
+|                                                                  |
+|  Web Configuration UI:                                           |
+|  {url_line:<64}|
+|                                                                  |
+|  Login with:  root / <your-password>                             |
+|                                                                  |
++------------------------------------------------------------------+
 
 """
             

@@ -777,7 +777,7 @@ def register_api_routes(app):
 </head>
 <body>
     <div class="header">
-        <h1>📋 Pod Logs</h1>
+        <h1>Pod Logs</h1>
         <div class="info">Namespace: {namespace} | Pod: {pod_name}</div>
     </div>
     <pre><div class="log-line">"""

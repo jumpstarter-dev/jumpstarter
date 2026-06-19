@@ -29,5 +29,5 @@ install_jumpstarter() {
         make sync
         cd ..
     fi
-    log_info "✓ Jumpstarter python installed"
+    log_info "[ok] Jumpstarter python installed"
 }

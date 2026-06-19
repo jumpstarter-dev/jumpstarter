@@ -241,7 +241,7 @@ class Driver(
     def _make_url(url: str) -> yarl.URL:
         """Construct a yarl.URL preserving percent-encoding in the path.
 
-        yarl.URL() normalizes %XX sequences (e.g. %40 → @), which breaks
+        yarl.URL() normalizes %XX sequences (e.g. %40 -> @), which breaks
         signed redirect URLs (CloudFront, S3) whose signatures cover the
         encoded form.  Using encoded=True keeps the raw string intact.
         """

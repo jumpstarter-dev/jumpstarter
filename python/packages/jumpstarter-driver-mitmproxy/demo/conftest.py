@@ -33,7 +33,7 @@ def _wait_for_port(host: str, port: int, timeout: float = 10) -> bool:
     return False
 
 
-# ── Backend server ────────────────────────────────────────────
+# -- Backend server --
 
 
 @pytest.fixture(scope="session")
@@ -49,7 +49,7 @@ def backend_server():
     server.shutdown()
 
 
-# ── Proxy ─────────────────────────────────────────────────────
+# -- Proxy --
 
 
 @pytest.fixture(scope="session")

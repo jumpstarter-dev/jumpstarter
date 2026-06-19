@@ -234,9 +234,9 @@ to prevent command injection.
 
 ```
 Renode (composite driver)
-├── RenodePower      → manages Popen lifecycle + RenodeMonitor
-├── RenodeFlasher    → writes firmware, sends LoadELF/LoadBinary
-└── PySerial         → console over PTY terminal
+|-- RenodePower      -> manages Popen lifecycle + RenodeMonitor
+|-- RenodeFlasher    -> writes firmware, sends LoadELF/LoadBinary
+\-- PySerial         -> console over PTY terminal
 ```
 
 ### Monitor Protocol

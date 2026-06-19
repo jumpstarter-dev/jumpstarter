@@ -66,7 +66,7 @@ class StreamSocket:
         self._send_thread.start()
 
     def _forward_recv(self):
-        """Forward: Jumpstarter stream → socket (for paramiko to read)."""
+        """Forward: Jumpstarter stream -> socket (for paramiko to read)."""
         socket_logger = logging.getLogger("SSHMITM.StreamSocket")
         try:
             while self._running:
@@ -84,7 +84,7 @@ class StreamSocket:
             socket_logger.debug("recv loop stopped: %s", exc)
 
     def _forward_send(self):
-        """Forward: socket → Jumpstarter stream (paramiko writes)."""
+        """Forward: socket -> Jumpstarter stream (paramiko writes)."""
         socket_logger = logging.getLogger("SSHMITM.StreamSocket")
         try:
             while self._running:
@@ -331,8 +331,8 @@ class SSHMITM(Driver):
                 except Exception:
                     pass
 
-        t1 = threading.Thread(target=forward, args=(client_channel, dut_channel, "client→dut"), daemon=True)
-        t2 = threading.Thread(target=forward, args=(dut_channel, client_channel, "dut→client"), daemon=True)
+        t1 = threading.Thread(target=forward, args=(client_channel, dut_channel, "client->dut"), daemon=True)
+        t2 = threading.Thread(target=forward, args=(dut_channel, client_channel, "dut->client"), daemon=True)
         t1.start()
         t2.start()
         t1.join()

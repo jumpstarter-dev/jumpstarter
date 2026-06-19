@@ -101,7 +101,7 @@ def test_resolve_oci_credentials_partial_env_falls_through_to_auth_file(monkeypa
     monkeypatch.setenv("OCI_USERNAME", "env-user")
     monkeypatch.delenv("OCI_PASSWORD", raising=False)
 
-    # When auth file has no match, result is unauthenticated — no error
+    # When auth file has no match, result is unauthenticated -- no error
     with patch("jumpstarter.common.oci.read_auth_file_credentials", return_value=OciCredentials()):
         creds = client._resolve_oci_credentials("oci://quay.io/org/image:tag", None, None)
         assert creds.username is None

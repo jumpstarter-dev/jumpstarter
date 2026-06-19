@@ -133,7 +133,7 @@
     {
       // Go modules, .go-version, and go-toolset are all in the "kubernetes"
       // group so that Go toolchain bumps and module updates land in one PR.
-      // The go directive in go.mod (depType "golang") stays here too — no
+      // The go directive in go.mod (depType "golang") stays here too -- no
       // separate go-toolchain group overrides it.
       //
       // Renovate cannot enforce that a module's required Go version is

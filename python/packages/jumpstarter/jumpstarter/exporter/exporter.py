@@ -773,7 +773,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 # Shield from cancellation so the hook can complete even during shutdown
                 await self._cleanup_after_lease(lease_scope)
 
-        # Fallback: clear _lease_context if leased→unleased handler didn't fire
+        # Fallback: clear _lease_context if leased->unleased handler didn't fire
         # (e.g., controller didn't send another leased=False after our release request)
         if self._lease_context is lease_scope:
             self._lease_context = None

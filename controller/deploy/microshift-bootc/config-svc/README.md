@@ -15,20 +15,20 @@ A modular web service for configuring Jumpstarter deployment settings on MicroSh
 
 ```
 config-svc/
-├── __init__.py              # Package initialization
-├── app.py                   # Main application entry point
-├── auth.py                  # Authentication and validation logic
-├── system.py                # System utility functions
-├── api.py                   # API route handlers
-├── routes.py                # Main UI route handlers
-├── templates/               # HTML and CSS templates
-│   ├── index.html          # Main page template
-│   ├── password_required.html  # Password change page
-│   └── styles.css          # Application styles
-├── pyproject.toml          # Project configuration and dependencies
-├── config-svc.service      # Systemd service file
-├── update-banner.service   # Banner update service
-└── update-banner.sh        # Banner update script
+|-- __init__.py              # Package initialization
+|-- app.py                   # Main application entry point
+|-- auth.py                  # Authentication and validation logic
+|-- system.py                # System utility functions
+|-- api.py                   # API route handlers
+|-- routes.py                # Main UI route handlers
+|-- templates/               # HTML and CSS templates
+|   |-- index.html          # Main page template
+|   |-- password_required.html  # Password change page
+|   +-- styles.css          # Application styles
+|-- pyproject.toml          # Project configuration and dependencies
+|-- config-svc.service      # Systemd service file
+|-- update-banner.service   # Banner update service
++-- update-banner.sh        # Banner update script
 ```
 
 ## Module Organization

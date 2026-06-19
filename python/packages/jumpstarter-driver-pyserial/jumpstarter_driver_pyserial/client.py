@@ -235,11 +235,11 @@ class PySerialClient(DriverClient):
                 mode_desc = "read-only"
 
             if no_output:
-                click.echo(f"Fire-and-forget mode ({mode_desc}): stdin→serial, no output (exits at EOF)", err=True)
+                click.echo(f"Fire-and-forget mode ({mode_desc}): stdin->serial, no output (exits at EOF)", err=True)
             elif not output and not input_enabled:
                 click.echo(f"Reading from serial port ({mode_desc})... (Ctrl+C to exit)", err=True)
             elif not output and input_enabled:
-                msg = f"Bidirectional mode ({mode_desc}): stdin→serial, serial→stdout (Ctrl+C to exit)"
+                msg = f"Bidirectional mode ({mode_desc}): stdin->serial, serial->stdout (Ctrl+C to exit)"
                 click.echo(msg, err=True)
             elif output and not input_enabled:
                 click.echo(f"Logging serial output to {output} ({mode_desc})... (Ctrl+C to exit)", err=True)

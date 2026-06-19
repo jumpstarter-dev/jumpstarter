@@ -19,14 +19,14 @@ endpoints:
   - method: GET
     match:
       headers:
-        X-Current-Version: "3.0.0"   # device already on latest → no-op
+        X-Current-Version: "3.0.0"   # device already on latest -> no-op
     status: 200
     body:
       update_available: false
       current_version: "3.0.0"
       latest_version: "3.0.0"
       source: mock
-  - method: GET                       # default → update available
+  - method: GET                       # default -> update available
     status: 200
     body:
       update_available: true

@@ -53,7 +53,7 @@ install_dependencies() {
     log_info "Installing Python ${PY_VERSION}..."
     uv python install "$PY_VERSION"
     
-    log_info "✓ Dependencies installed"
+    log_info "[ok] Dependencies installed"
 }
 
 # Step 2: Install e2e tools (cfssl, cfssljson, yq) as prebuilt binaries
@@ -168,7 +168,7 @@ install_e2e_tools() {
         "yq_${os}_${arch}"
 
     export PATH="$E2E_TOOLS_BIN:$PATH"
-    log_info "✓ e2e tools installed to $E2E_TOOLS_BIN"
+    log_info "[ok] e2e tools installed to $E2E_TOOLS_BIN"
 }
 
 # Step 3: Deploy dex
@@ -208,7 +208,7 @@ deploy_dex() {
         '.jumpstarter-controller.config.authentication.jwt[0].issuer.certificateAuthority = load_str("ca.pem")' \
         "$REPO_ROOT/.e2e/values.kind.yaml"
     
-    log_info "✓ Values file with CA certificate created at .e2e/values.kind.yaml"
+    log_info "[ok] Values file with CA certificate created at .e2e/values.kind.yaml"
     
     # Create OIDC reviewer binding (idempotent)
     log_info "Creating OIDC reviewer cluster role binding..."
@@ -228,7 +228,7 @@ deploy_dex() {
         # this may be unnecessary, but keeping it here for now
         #log_warn "About to add the CA certificate to your macOS login keychain"
         #security add-trusted-cert -d -r trustRoot -k ~/Library/Keychains/login.keychain-db ca.pem
-        #log_info "✓ CA certificate added to macOS login keychain"
+        #log_info "[ok] CA certificate added to macOS login keychain"
         true
     else
         log_warn "About to install the CA certificate system-wide (requires sudo)"
@@ -237,12 +237,12 @@ deploy_dex() {
             # RHEL/Fedora/CentOS
             sudo cp ca.pem /etc/pki/ca-trust/source/anchors/dex.crt
             sudo update-ca-trust
-            log_info "✓ CA certificate installed system-wide (RHEL/Fedora)"
+            log_info "[ok] CA certificate installed system-wide (RHEL/Fedora)"
         else
             # Debian/Ubuntu
             sudo cp ca.pem /usr/local/share/ca-certificates/dex.crt
             sudo update-ca-certificates
-            log_info "✓ CA certificate installed system-wide (Debian/Ubuntu)"
+            log_info "[ok] CA certificate installed system-wide (Debian/Ubuntu)"
         fi
     fi
     
@@ -251,12 +251,12 @@ deploy_dex() {
     if ! grep -q "dex.dex.svc.cluster.local" /etc/hosts 2>/dev/null; then
         log_warn "About to add 'dex.dex.svc.cluster.local' to /etc/hosts (requires sudo)"
         echo "127.0.0.1 dex.dex.svc.cluster.local" | sudo tee -a /etc/hosts
-        log_info "✓ Added dex to /etc/hosts"
+        log_info "[ok] Added dex to /etc/hosts"
     else
-        log_info "✓ dex.dex.svc.cluster.local already in /etc/hosts"
+        log_info "[ok] dex.dex.svc.cluster.local already in /etc/hosts"
     fi
     
-    log_info "✓ Dex deployed"
+    log_info "[ok] Dex deployed"
 }
 
 # Step 4: Deploy jumpstarter controller
@@ -268,7 +268,7 @@ deploy_controller() {
     log_info "Deploying controller with CA certificate using operator..."
     OPERATOR_USE_DEX=true DEX_CA_FILE="$REPO_ROOT/ca.pem" make -C controller deploy
     
-    log_info "✓ Controller deployed"
+    log_info "[ok] Controller deployed"
 }
 
 # Step 5: Install jumpstarter (shared helper)
@@ -322,7 +322,7 @@ setup_test_environment() {
     # Export e2e tools bin so downstream scripts (tests) can find yq, cfssl, etc.
     echo "export PATH=\"$E2E_TOOLS_BIN:\$PATH\"" >> "$REPO_ROOT/.e2e-setup-complete"
     
-    log_info "✓ Test environment ready"
+    log_info "[ok] Test environment ready"
 }
 
 # Main execution
@@ -351,7 +351,7 @@ main() {
     setup_test_environment
     echo ""
     
-    log_info "✓✓✓ Setup complete! ✓✓✓"
+    log_info "[ok] Setup complete! [ok]"
     log_info ""
     log_info "To run tests:"
     log_info "  cd $REPO_ROOT"

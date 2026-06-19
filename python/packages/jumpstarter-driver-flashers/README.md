@@ -143,7 +143,7 @@ This doesn't work with sphinx-click, so we'll just use the raw CLI
 ```shell
 $ jmp shell -l board=ti-03
 INFO:jumpstarter.client.lease:Created lease request for labels {'board': 'ti-03'} for 0:30:00
-jumpstarter ⚡remote ➤ j storage
+jumpstarter *remote > j storage
 Usage: j storage [OPTIONS] COMMAND [ARGS]...
 
   Software-defined flasher interface
@@ -212,7 +212,7 @@ Options:
 
 Example:
 ```
-jumpstarter ⚡remote ➤ j storage flash https://autosd.sig.centos.org/AutoSD-9/nightly/TI/auto-osbuild-am69sk-autosd9-qa-regular-aarch64-1716106242.66b4d866.raw.xz
+jumpstarter *remote > j storage flash https://autosd.sig.centos.org/AutoSD-9/nightly/TI/auto-osbuild-am69sk-autosd9-qa-regular-aarch64-1716106242.66b4d866.raw.xz
 BaseFlasherClient - INFO - Writing image to storage in the background: /AutoSD-9/nightly/TI/auto-osbuild-am69sk-autosd9-qa-regular-aarch64-1716106242.66b4d866.raw.xz
 BaseFlasherClient - INFO - Setting up flasher bundle files in exporter
 BaseFlasherClient - INFO - Writing image from storage, with metadata: md5=None,size=592736176 etag="23546fb0-63045567a5b80"
@@ -266,7 +266,7 @@ Options:
 
 Example
 ```
-jumpstarter ⚡remote ➤ j storage bootloader-shell
+jumpstarter *remote > j storage bootloader-shell
 BaseFlasherClient - INFO - Setting up flasher bundle files in exporter
 SNMPServerClient - INFO - Starting power cycle sequence
 SNMPServerClient - INFO - Waiting 2 seconds...
@@ -291,7 +291,7 @@ Options:
 
 Example
 ```
-jumpstarter ⚡remote ➤ j storage busybox-shell
+jumpstarter *remote > j storage busybox-shell
 BaseFlasherClient - INFO - Setting up flasher bundle files in exporter
 SNMPServerClient - INFO - Starting power cycle sequence
 SNMPServerClient - INFO - Waiting 2 seconds...

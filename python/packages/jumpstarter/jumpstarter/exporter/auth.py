@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 PASSPHRASE_METADATA_KEY = "x-jumpstarter-passphrase"
 
 
-# ── Server-side ──────────────────────────────────────────────────────
+# -- Server-side ------------------------------------------------------
 
 
 class PassphraseInterceptor(grpc.aio.ServerInterceptor):
@@ -49,7 +49,7 @@ def _rejection_handler_for(handler):
     return grpc.unary_unary_rpc_method_handler(_abort_unauthenticated)
 
 
-# ── Client-side ──────────────────────────────────────────────────────
+# -- Client-side ------------------------------------------------------
 
 _ClientCallDetails = collections.namedtuple(
     "_ClientCallDetails",

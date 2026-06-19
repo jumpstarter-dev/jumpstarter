@@ -93,12 +93,12 @@ Here's an example of a composite driver tree:
 
 ```
 MyHarness         # Custom composite driver for the entire target device harness
-├─ TcpNetwork     # TCP Network driver to tunnel port 8000
-├─ MyPower        # Custom power driver to control device power
-├─ SDWire         # SD Wire storage emulator to enable re-flash on demand
-├─ DigitalOutput  # GPIO pin control to send signals to the device
-└─ MyDebugger     # Custom debugger interface composite driver
-   └─ PySerial    # Serial debugger with PySerial
+|-- TcpNetwork     # TCP Network driver to tunnel port 8000
+|-- MyPower        # Custom power driver to control device power
+|-- SDWire         # SD Wire storage emulator to enable re-flash on demand
+|-- DigitalOutput  # GPIO pin control to send signals to the device
+\-- MyDebugger     # Custom debugger interface composite driver
+    \-- PySerial    # Serial debugger with PySerial
 ```
 
 ## Configuration

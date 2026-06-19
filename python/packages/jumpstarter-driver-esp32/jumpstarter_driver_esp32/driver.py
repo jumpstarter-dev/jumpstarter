@@ -181,12 +181,12 @@ class Esp32Flasher(FlasherInterface, Driver):
         EN and IO0 through cross-coupled NPN transistors.
         """
         self._serial.set_dtr(False)
-        self._serial.set_rts(True)   # DTR=1, RTS=0 → EN low, IO0 high (reset)
+        self._serial.set_rts(True)   # DTR=1, RTS=0 -> EN low, IO0 high (reset)
         time.sleep(0.1)
         self._serial.set_dtr(True)
-        self._serial.set_rts(False)  # DTR=0, RTS=1 → EN high, IO0 low (boot select)
+        self._serial.set_rts(False)  # DTR=0, RTS=1 -> EN high, IO0 low (boot select)
         time.sleep(0.05)
-        self._serial.set_dtr(False)  # DTR=1, RTS=1 → EN high, IO0 high (release)
+        self._serial.set_dtr(False)  # DTR=1, RTS=1 -> EN high, IO0 high (release)
 
 
 def _parse_region(partition: str | None) -> tuple[int, int]:

@@ -27,7 +27,7 @@ class RideSXDriver(Driver):
     fls_allow_custom_binaries: bool = field(
         default=False,
         metadata={
-            "help": "⚠️  SECURITY WARNING: Enables downloading custom FLS binaries. Only use in trusted environments."
+            "help": "WARNING:  SECURITY WARNING: Enables downloading custom FLS binaries. Only use in trusted environments."
         }
     )
     fls_custom_binary_url: str | None = field(
@@ -45,7 +45,7 @@ class RideSXDriver(Driver):
         # Security warning for custom binary downloads
         if self.fls_allow_custom_binaries:
             self.logger.warning(
-                "⚠️  SECURITY WARNING: Custom FLS binary downloads are enabled. "
+                "WARNING:  SECURITY WARNING: Custom FLS binary downloads are enabled. "
                 "This allows arbitrary code execution on the exporter host. "
                 "Only use this in trusted environments with verified binary sources."
             )

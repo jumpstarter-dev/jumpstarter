@@ -54,9 +54,9 @@ from jumpstarter.driver import Driver, export, exportstream
 
 logger = logging.getLogger(__name__)
 
-# ── Capture export helpers ───────────────────────────────────
+# -- Capture export helpers --
 
-# Content-type → file extension mapping for captured responses.
+# Content-type -> file extension mapping for captured responses.
 _CONTENT_TYPE_EXTENSIONS: dict[str, str] = {
     "application/json": ".json",
     "application/xml": ".xml",
@@ -177,7 +177,7 @@ def _convert_url_endpoints(endpoints: dict) -> dict:
         else:
             continue
 
-        # Group entries by method → separate addon endpoints
+        # Group entries by method -> separate addon endpoints
         by_method: dict[str, list[dict]] = {}
         for entry in entries:
             method, flat = _flatten_entry(entry)
@@ -188,10 +188,10 @@ def _convert_url_endpoints(endpoints: dict) -> dict:
             if len(method_entries) == 1:
                 converted[new_key] = method_entries[0]
             elif any("match" in e for e in method_entries):
-                # Different match conditions → conditional rules
+                # Different match conditions -> conditional rules
                 converted[new_key] = {"rules": method_entries}
             else:
-                # Same method, no match conditions → sequential replay
+                # Same method, no match conditions -> sequential replay
                 converted[new_key] = {"sequence": method_entries}
 
     return converted
@@ -204,7 +204,7 @@ def _write_captured_file(
     """Write a captured response body to files_dir and set ``file:`` on endpoint.
 
     The file path preserves the URL structure under ``responses/{METHOD}/``,
-    e.g. ``("GET", "/api/v1/status")`` → ``responses/GET/api/v1/status.json``.
+    e.g. ``("GET", "/api/v1/status")`` -> ``responses/GET/api/v1/status.json``.
 
     Returns the relative path for the client to download later.
     """
@@ -251,8 +251,8 @@ def _flatten_query(query: dict) -> dict[str, str]:
 def _query_file_suffix(query: dict) -> str:
     """Build a filename-safe suffix from query parameters.
 
-    Example: ``{"id": ["ch101"]}`` → ``"_id-ch101"``
-             ``{"type": ["audio"], "fmt": ["mp3"]}`` → ``"_type-audio_fmt-mp3"``
+    Example: ``{"id": ["ch101"]}`` -> ``"_id-ch101"``
+             ``{"type": ["audio"], "fmt": ["mp3"]}`` -> ``"_type-audio_fmt-mp3"``
     Returns an empty string if there are no query params.
     """
     if not query:
@@ -350,7 +350,7 @@ class MitmproxyDriver(Driver):
                   body: {ok: true}
     """
 
-    # ── Configuration (from exporter YAML) ──────────────────────
+    # -- Configuration (from exporter YAML) --
 
     listen: ListenConfig | dict = field(default_factory=dict)
     """Proxy listener address (host/port). See :class:`ListenConfig`."""
@@ -385,7 +385,7 @@ class MitmproxyDriver(Driver):
         if not isinstance(self.directories, DirectoriesConfig):
             self.directories = DirectoriesConfig.model_validate(self.directories)
 
-    # ── Internal state (not from config) ────────────────────────
+    # -- Internal state (not from config) --
 
     _process: subprocess.Popen | None = field(
         default=None, init=False, repr=False
@@ -424,7 +424,7 @@ class MitmproxyDriver(Driver):
         """Return the import path of the corresponding client class."""
         return "jumpstarter_driver_mitmproxy.client.MitmproxyClient"
 
-    # ── Lifecycle ───────────────────────────────────────────────
+    # -- Lifecycle --
 
     def close(self):
         """Clean up resources when the session ends.
@@ -757,7 +757,7 @@ class MitmproxyDriver(Driver):
         time.sleep(1)
         return self.start(restart_mode, restart_web, replay_file, port)
 
-    # ── Status ──────────────────────────────────────────────────
+    # -- Status --
 
     @export
     def status(self) -> str:
@@ -813,7 +813,7 @@ class MitmproxyDriver(Driver):
         ) as stream:
             yield stream
 
-    # ── Mock management ─────────────────────────────────────────
+    # -- Mock management --
 
     @export
     def set_mock(self, method: str, path: str, status: int,
@@ -855,7 +855,7 @@ class MitmproxyDriver(Driver):
             "headers": parsed_headers,
         }
         self._write_mock_config()
-        return f"Mock set: {key} → {int(status)}"
+        return f"Mock set: {key} -> {int(status)}"
 
     @export
     def remove_mock(self, method: str, path: str) -> str:
@@ -945,7 +945,7 @@ class MitmproxyDriver(Driver):
 
         self._mock_endpoints[key] = endpoint
         self._write_mock_config()
-        return f"File mock set: {key} → {file_path} ({content_type})"
+        return f"File mock set: {key} -> {file_path} ({content_type})"
 
     @export
     def set_mock_patch(self, method: str, path: str,
@@ -1010,7 +1010,7 @@ class MitmproxyDriver(Driver):
             "latency_ms": int(latency_ms),
         }
         self._write_mock_config()
-        return f"Mock set: {key} → {int(status)} (+{int(latency_ms)}ms)"
+        return f"Mock set: {key} -> {int(status)} (+{int(latency_ms)}ms)"
 
     @export
     def set_mock_sequence(self, method: str, path: str,
@@ -1047,7 +1047,7 @@ class MitmproxyDriver(Driver):
         self._mock_endpoints[key] = {"sequence": sequence}
         self._write_mock_config()
         return (
-            f"Sequence mock set: {key} → "
+            f"Sequence mock set: {key} -> "
             f"{len(sequence)} step(s)"
         )
 
@@ -1059,12 +1059,12 @@ class MitmproxyDriver(Driver):
 
         Template expressions are evaluated per-request::
 
-            {{now_iso}}               → ISO 8601 timestamp
-            {{random_int(10, 99)}}    → random integer
-            {{random_choice(a, b)}}   → random selection
-            {{uuid}}                  → UUID v4
-            {{counter(name)}}         → auto-incrementing counter
-            {{request_path}}          → matched URL path
+            {{now_iso}}               -> ISO 8601 timestamp
+            {{random_int(10, 99)}}    -> random integer
+            {{random_choice(a, b)}}   -> random selection
+            {{uuid}}                  -> UUID v4
+            {{counter(name)}}         -> auto-incrementing counter
+            {{request_path}}          -> matched URL path
 
         Args:
             method: HTTP method.
@@ -1086,7 +1086,7 @@ class MitmproxyDriver(Driver):
             "body_template": template,
         }
         self._write_mock_config()
-        return f"Template mock set: {key} → {int(status)}"
+        return f"Template mock set: {key} -> {int(status)}"
 
     @export
     def set_mock_addon(self, method: str, path: str,
@@ -1119,7 +1119,7 @@ class MitmproxyDriver(Driver):
 
         self._mock_endpoints[key] = endpoint
         self._write_mock_config()
-        return f"Addon mock set: {key} → {addon_name}"
+        return f"Addon mock set: {key} -> {addon_name}"
 
     @export
     def set_mock_conditional(self, method: str, path: str,
@@ -1167,11 +1167,11 @@ class MitmproxyDriver(Driver):
         self._mock_endpoints[key] = {"rules": rules}
         self._write_mock_config()
         return (
-            f"Conditional mock set: {key} → "
+            f"Conditional mock set: {key} -> "
             f"{len(rules)} rule(s)"
         )
 
-    # ── State store ────────────────────────────────────────────
+    # -- State store --
 
     @export
     def set_state(self, key: str, value_json: str) -> str:
@@ -1359,7 +1359,7 @@ class MitmproxyDriver(Driver):
             f"from {filename}"
         )
 
-    # ── Flow file management ────────────────────────────────────
+    # -- Flow file management --
 
     @export
     def list_flow_files(self) -> str:
@@ -1418,7 +1418,7 @@ class MitmproxyDriver(Driver):
                     break
                 yield base64.b64encode(chunk).decode("ascii")
 
-    # ── CA certificate access ───────────────────────────────────
+    # -- CA certificate access --
 
     @export
     def get_ca_cert_path(self) -> str:
@@ -1451,7 +1451,7 @@ class MitmproxyDriver(Driver):
             )
         return cert_path.read_text()
 
-    # ── Capture management ────────────────────────────────────
+    # -- Capture management --
 
     @export
     def get_captured_requests(self) -> str:
@@ -1617,7 +1617,7 @@ class MitmproxyDriver(Driver):
                 )
 
                 # Assemble full entry with deliberate field ordering:
-                #   method → match → delay_ms → response
+                #   method -> match -> delay_ms -> response
                 entry: dict = {"method": method}
 
                 query_match = _flatten_query(query)
@@ -1762,7 +1762,7 @@ class MitmproxyDriver(Driver):
             return
         if not src.exists():
             return
-        # 2 MB raw → ~2.7 MB base64, well under the 4 MB gRPC limit
+        # 2 MB raw -> ~2.7 MB base64, well under the 4 MB gRPC limit
         chunk_size = 2 * 1024 * 1024
         with open(src, "rb") as f:
             while True:
@@ -1823,7 +1823,7 @@ class MitmproxyDriver(Driver):
                      f"after {timeout}s"
         })
 
-    # ── Capture internals ──────────────────────────────────────
+    # -- Capture internals --
 
     def _start_capture_server(self):
         """Create a Unix domain socket for receiving capture events."""
@@ -1967,7 +1967,7 @@ class MitmproxyDriver(Driver):
             return req_path.startswith(path[:-1])
         return req_path == path
 
-    # ── Internal helpers ────────────────────────────────────────
+    # -- Internal helpers --
 
     def _load_startup_mocks(self):
         """Load mock_scenario file and inline mocks at startup.

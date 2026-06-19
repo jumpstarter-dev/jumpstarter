@@ -107,9 +107,9 @@ def auto_detect_cluster_type() -> Literal["kind"] | Literal["minikube"]:
         raise ToolNotInstalledError(
             "kind, minikube, or k3s",
             "Neither Kind nor Minikube is installed. Please install one of them:\n"
-            "  • Kind: https://kind.sigs.k8s.io/docs/user/quick-start/\n"
-            "  • Minikube: https://minikube.sigs.k8s.io/docs/start/\n"
-            "  • k3s (remote): use --k3s <user@host> to install on a remote Linux host"
+            "  * Kind: https://kind.sigs.k8s.io/docs/user/quick-start/\n"
+            "  * Minikube: https://minikube.sigs.k8s.io/docs/start/\n"
+            "  * k3s (remote): use --k3s <user@host> to install on a remote Linux host"
         )
 
 

@@ -118,7 +118,7 @@ def _parse_registries_for_url(oci_url: str) -> tuple[str, ...]:
     if url.startswith("oci://"):
         url = url[len("oci://") :]
 
-    # Strip digest references before parsing — "ubuntu@sha256:abc" would
+    # Strip digest references before parsing -- "ubuntu@sha256:abc" would
     # otherwise have the colon corrupt port/tag disambiguation.
     url = re.sub(r"@sha(256|384|512):[a-fA-F0-9]+", "", url)
 
@@ -134,7 +134,7 @@ def _parse_registries_for_url(oci_url: str) -> tuple[str, ...]:
         if "." not in registry and registry != "localhost":
             return _get_unqualified_search_registries()  # bare image like "ubuntu"
     else:
-        # namespace/image form (e.g. "library/ubuntu") — first segment has
+        # namespace/image form (e.g. "library/ubuntu") -- first segment has
         # no dot and isn't localhost, so it's not a registry hostname.
         if "." not in registry and registry != "localhost":
             if ":" not in registry or not registry.split(":", 1)[1].isdigit():

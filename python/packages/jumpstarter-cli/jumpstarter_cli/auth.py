@@ -143,7 +143,7 @@ async def rotate_token(config):
     remaining = get_token_remaining_seconds(token_str)
     if remaining is not None and remaining < 0:
         raise click.ClickException(
-            "Token is expired. Cannot rotate — recreate the client with 'jmp config client create'."
+            "Token is expired. Cannot rotate -- recreate the client with 'jmp config client create'."
         )
 
     new_token = await config.rotate_token()

@@ -13,7 +13,7 @@ endpoints:
   - method: GET
     match:
       headers:
-        X-Device-Type: automotive   # automotive head-unit → richer response
+        X-Device-Type: automotive   # automotive head-unit -> richer response
     status: 200
     body:
       device_id: DUT-MOCK-999
@@ -37,7 +37,7 @@ endpoints:
   - method: GET
     match:
       query:
-        channel: beta               # opt-in beta channel → newer pre-release
+        channel: beta               # opt-in beta channel -> newer pre-release
     status: 200
     body:
       update_available: true
@@ -45,7 +45,7 @@ endpoints:
       latest_version: "2.6.0-beta"
       channel: beta
       source: mock
-  - method: GET                     # default stable channel → no update
+  - method: GET                     # default stable channel -> no update
     status: 200
     body:
       update_available: false
@@ -57,7 +57,7 @@ endpoints:
   - method: POST
     match:
       body_json:
-        level: critical             # critical alerts → extra acknowledgment
+        level: critical             # critical alerts -> extra acknowledgment
     status: 200
     body:
       accepted: true

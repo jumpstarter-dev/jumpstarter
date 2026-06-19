@@ -34,7 +34,7 @@ class DemoBackendHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):  # noqa: A002
         pass
 
-    # ── routes ────────────────────────────────────────────────
+    # -- routes --
 
     def do_GET(self):  # noqa: N802
         if self.path == "/api/v1/status":
@@ -83,7 +83,7 @@ class DemoBackendHandler(BaseHTTPRequestHandler):
                 "source": "real-backend",
             })
 
-    # ── helpers ───────────────────────────────────────────────
+    # -- helpers --
 
     def _send_json(self, status: int, body: dict):
         payload = json.dumps(body).encode()

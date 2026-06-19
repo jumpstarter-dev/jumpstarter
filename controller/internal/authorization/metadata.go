@@ -48,9 +48,9 @@ func isKubernetesServiceAccount(username string) bool {
 // stripOIDCPrefix removes the OIDC provider prefix and extracts the meaningful resource name.
 // This is only used for external OIDC providers (internal OIDC accepts names as-is).
 // Handles several cases:
-//   - "dex:test-user" → "test-user"
-//   - "dex:system:serviceaccount:namespace:sa-name" → "namespace:sa-name" (Kubernetes service account)
-//   - "test-user" → "test-user" (no prefix)
+//   - "dex:test-user" -> "test-user"
+//   - "dex:system:serviceaccount:namespace:sa-name" -> "namespace:sa-name" (Kubernetes service account)
+//   - "test-user" -> "test-user" (no prefix)
 func stripOIDCPrefix(username string) string {
 	parts := strings.Split(username, ":")
 

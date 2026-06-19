@@ -20,7 +20,7 @@ def driver_click_group(client: "DriverClient", **kwargs: Any) -> Callable:
         def cli(self):
             @driver_click_group(self)
             def base():
-                '''Generic power interface'''  # ← Click uses this by default
+                '''Generic power interface'''  # <- Click uses this by default
                 pass
 
             @base.command()
@@ -66,7 +66,7 @@ def driver_click_command(client: "DriverClient", **kwargs: Any) -> Callable:
             @driver_click_command(self)
             @click.argument("args", nargs=-1)
             def ssh(args):
-                '''Run SSH command'''  # ← Click uses this by default
+                '''Run SSH command'''  # <- Click uses this by default
                 ...
             return ssh
 

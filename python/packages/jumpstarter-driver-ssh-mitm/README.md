@@ -17,7 +17,7 @@ The command name is determined by the key in the `export` section. Use `ssh_mitm
 
 ```yaml
 export:
-  ssh_mitm:  # ← This gives you "j ssh_mitm" command
+  ssh_mitm:  # <- This gives you "j ssh_mitm" command
     type: jumpstarter_driver_ssh.driver.SSHWrapper
     config:
       default_username: root
@@ -39,7 +39,7 @@ Or with inline key:
 
 ```yaml
 export:
-  ssh_mitm:  # ← This gives you "j ssh_mitm" command
+  ssh_mitm:  # <- This gives you "j ssh_mitm" command
     type: jumpstarter_driver_ssh.driver.SSHWrapper
     config:
       default_username: root

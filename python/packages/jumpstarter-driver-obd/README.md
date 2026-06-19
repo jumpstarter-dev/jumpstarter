@@ -15,7 +15,7 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-obd
 - An ELM327 USB adapter (e.g. PremiumCord ELM327 USB)
 - A vehicle with an OBD-II port (petrol cars from 2001+, diesel from 2004+, all US cars from 1996+)
 - **macOS only**: ELM327 USB cables use a CH340 or CP2102 USB-serial chip that may need a kernel
-  extension — install the appropriate driver if the port does not appear after plugging in
+  extension -- install the appropriate driver if the port does not appear after plugging in
 
 ## Configuration
 
@@ -59,7 +59,7 @@ export:
 |-----------|-------------|------|----------|---------|
 | port | Serial port path; `null` to auto-detect an ELM327 adapter | str \| null | no | null |
 | baudrate | ELM327 baud rate | int | no | 38400 |
-| fast | Enable ELM327 fast mode (~100–400 ms faster per query); unreliable on cheap clone adapters, so it is opt-in | bool | no | false |
+| fast | Enable ELM327 fast mode (~100-400 ms faster per query); unreliable on cheap clone adapters, so it is opt-in | bool | no | false |
 
 ## Usage
 

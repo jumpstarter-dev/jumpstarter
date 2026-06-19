@@ -50,11 +50,11 @@ After installation, the following structure is created:
 
 ```
 ~/.local/jumpstarter/
-├── venv/                    # Python virtual environment
-├── bin/                     # Command symlinks
-│   ├── jmp
-│   └── j
-└── set                      # Environment activation script
+|-- venv/                    # Python virtual environment
+|-- bin/                     # Command symlinks
+|   |-- jmp
+|   \-- j
+\-- set                      # Environment activation script
 ```
 
 ##### Activating the Environment

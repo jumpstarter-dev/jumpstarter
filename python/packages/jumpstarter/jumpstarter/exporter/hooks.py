@@ -405,7 +405,7 @@ class HookExecutor:
                                     # fd closed or invalid
                                     break
                                 if not readable:
-                                    # Timed out with no data — drain is complete
+                                    # Timed out with no data -- drain is complete
                                     break
                                 try:
                                     chunk = os.read(parent_fd, 4096)

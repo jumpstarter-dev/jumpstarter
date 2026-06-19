@@ -154,7 +154,7 @@ e2e-clean:
 		echo "Removing exporter configs..."; \
 		rm -rf /etc/jumpstarter/exporters/* 2>/dev/null || true; \
 	fi
-	@echo "✓ E2E test environment cleaned"
+	@echo "[ok] E2E test environment cleaned"
 	@echo ""
 	@echo "Note: You may need to manually remove the dex entry from /etc/hosts:"
 	@echo "  sudo sed -i.bak '/dex.dex.svc.cluster.local/d' /etc/hosts"

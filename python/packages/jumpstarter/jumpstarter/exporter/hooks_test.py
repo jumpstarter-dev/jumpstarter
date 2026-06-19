@@ -1007,7 +1007,7 @@ class TestHookExecutorPRRegressions:
         """Issue D1: No hooks configured should transition directly to LEASE_READY.
 
         When no hooks are configured, run_before_lease_hook should report
-        LEASE_READY immediately, preventing the 'create lease, never use → stuck'
+        LEASE_READY immediately, preventing the 'create lease, never use -> stuck'
         scenario.
         """
         empty_config = HookConfigV1Alpha1()

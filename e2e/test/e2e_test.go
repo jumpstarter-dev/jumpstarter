@@ -298,7 +298,7 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 
 		It("rotated token works for listing exporters", func() {
 			// Verify the rotated token can still authenticate to the controller.
-			// No running exporter process needed — just list the CRDs.
+			// No running exporter process needed -- just list the CRDs.
 			out, err := Jmp("get", "exporters", "--client", "test-client-legacy")
 			Expect(err).NotTo(HaveOccurred(), out)
 		})

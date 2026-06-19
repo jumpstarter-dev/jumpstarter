@@ -204,7 +204,7 @@ def test_upload_file_if_needed_resolves_relative_path(ridesx_client):
 
                 src_arg = mock_write.call_args[0][1]
                 assert Path(src_arg).is_absolute(), (
-                    f"write_from_path got relative path '{src_arg}' — "
+                    f"write_from_path got relative path '{src_arg}' -- "
                     f"opendal Operator(root='/') cannot resolve relative paths"
                 )
         finally:

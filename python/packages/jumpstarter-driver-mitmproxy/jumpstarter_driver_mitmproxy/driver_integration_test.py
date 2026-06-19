@@ -542,7 +542,7 @@ class TestConditionalMocks:
     """Conditional mock rules with real HTTP requests through the proxy."""
 
     def test_conditional_body_json_match(self, client, proxy_port):
-        """POST with matching JSON body → 200, non-matching → 401."""
+        """POST with matching JSON body -> 200, non-matching -> 401."""
         client.set_mock_conditional("POST", "/api/auth", [
             {
                 "match": {"body_json": {"username": "admin",
@@ -558,7 +558,7 @@ class TestConditionalMocks:
         try:
             proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
 
-            # Matching credentials → 200
+            # Matching credentials -> 200
             resp_ok = requests.post(
                 "http://example.com/api/auth",
                 json={"username": "admin", "password": "secret"},
@@ -567,7 +567,7 @@ class TestConditionalMocks:
             assert resp_ok.status_code == 200
             assert resp_ok.json()["token"] == "mock-token-001"
 
-            # Wrong credentials → 401 (fallback)
+            # Wrong credentials -> 401 (fallback)
             resp_fail = requests.post(
                 "http://example.com/api/auth",
                 json={"username": "hacker", "password": "wrong"},
@@ -579,7 +579,7 @@ class TestConditionalMocks:
             client.stop()
 
     def test_conditional_header_match(self, client, proxy_port):
-        """GET with matching header → 200, without → 401."""
+        """GET with matching header -> 200, without -> 401."""
         client.set_mock_conditional("GET", "/api/data", [
             {
                 "match": {"headers": {"Authorization": "Bearer tok123"}},
@@ -594,7 +594,7 @@ class TestConditionalMocks:
         try:
             proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
 
-            # With correct auth header → 200
+            # With correct auth header -> 200
             resp_ok = requests.get(
                 "http://example.com/api/data",
                 headers={"Authorization": "Bearer tok123"},
@@ -603,7 +603,7 @@ class TestConditionalMocks:
             assert resp_ok.status_code == 200
             assert resp_ok.json()["items"] == [1, 2, 3]
 
-            # Without auth header → 401
+            # Without auth header -> 401
             resp_fail = requests.get(
                 "http://example.com/api/data",
                 proxies=proxies, timeout=10,
@@ -613,7 +613,7 @@ class TestConditionalMocks:
             client.stop()
 
     def test_conditional_query_match(self, client, proxy_port):
-        """GET with matching query param → 200, without → default."""
+        """GET with matching query param -> 200, without -> default."""
         client.set_mock_conditional("GET", "/api/search", [
             {
                 "match": {"query": {"q": "hello"}},
@@ -636,7 +636,7 @@ class TestConditionalMocks:
             assert resp_match.status_code == 200
             assert resp_match.json()["results"] == ["hello world"]
 
-            # No query param → fallback
+            # No query param -> fallback
             resp_default = requests.get(
                 "http://example.com/api/search",
                 proxies=proxies, timeout=10,
@@ -665,7 +665,7 @@ class TestConditionalMocks:
         try:
             proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
 
-            # With dynamic header → template response
+            # With dynamic header -> template response
             resp = requests.get(
                 "http://example.com/api/echo",
                 headers={"X-Mode": "dynamic"},
@@ -676,7 +676,7 @@ class TestConditionalMocks:
             assert data["mode"] == "dynamic"
             assert "/api/echo" in data["path"]
 
-            # Without header → static fallback
+            # Without header -> static fallback
             resp_static = requests.get(
                 "http://example.com/api/echo",
                 proxies=proxies, timeout=10,
@@ -759,8 +759,8 @@ class TestAuthScenario:
     """Full auth token flow using conditional rules."""
 
     def test_auth_token_flow(self, client, proxy_port):
-        """Login with credentials → get token → use token for data."""
-        # Auth endpoint: correct creds → token, else 401
+        """Login with credentials -> get token -> use token for data."""
+        # Auth endpoint: correct creds -> token, else 401
         client.set_mock_conditional("POST", "/api/auth", [
             {
                 "match": {"body_json": {"username": "admin",
@@ -771,7 +771,7 @@ class TestAuthScenario:
             {"status": 401, "body": {"error": "unauthorized"}},
         ])
 
-        # Data endpoint: valid token → data, else 401
+        # Data endpoint: valid token -> data, else 401
         client.set_mock_conditional("GET", "/api/data", [
             {
                 "match": {"headers": {
@@ -808,14 +808,14 @@ class TestAuthScenario:
             assert data_resp.status_code == 200
             assert data_resp.json()["items"] == [1, 2, 3]
 
-            # Step 3: Access data without token → 401
+            # Step 3: Access data without token -> 401
             unauth_resp = requests.get(
                 "http://example.com/api/data",
                 proxies=proxies, timeout=10,
             )
             assert unauth_resp.status_code == 401
 
-            # Step 4: Login with wrong credentials → 401
+            # Step 4: Login with wrong credentials -> 401
             bad_login = requests.post(
                 "http://example.com/api/auth",
                 json={"username": "hacker", "password": "nope"},

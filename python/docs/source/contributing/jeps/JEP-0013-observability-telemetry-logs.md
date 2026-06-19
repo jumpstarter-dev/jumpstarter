@@ -121,7 +121,7 @@ exporter-level metrics that a monitoring stack can scrape or receive.
   (see **DD-2**) for significant operations such as flash attempts and outcomes.
 - Exporters maintain local `prometheus_client` counters and open a
   `MetricsStream` to the Jumpstarter Telemetry service over the
-  existing exporter↔control-plane trust boundary. On each Prometheus
+  existing exporter<->control-plane trust boundary. On each Prometheus
   scrape, the Telemetry service fans out to connected exporters and
   serves the merged `/metrics` output (see **DD-3**, **DD-7**), with
   cluster credentials - avoiding per-exporter Loki and metrics secrets.
@@ -195,7 +195,7 @@ service TelemetryService {
   rpc PushLogs(PushLogsRequest) returns (PushLogsResponse);
 }
 
-// Exporter → Telemetry
+// Exporter -> Telemetry
 message MetricsStreamRequest {
   oneof msg {
     MetricsRegister register = 1;          // First message: identify this exporter
@@ -212,7 +212,7 @@ message MetricsScrapeResponse {
   google.protobuf.Timestamp timestamp = 2;
 }
 
-// Telemetry → Exporter
+// Telemetry -> Exporter
 message MetricsStreamResponse {
   oneof msg {
     MetricsScrapeRequest scrape_request = 1;
@@ -415,7 +415,7 @@ are still useful for selection and for tools that only understand metadata.
   pipeline this JEP already establishes (**DD-5**, **DD-7**), so operational
   records (flash started, flash failed, image reference) are queryable,
   filterable, and correlated with surrounding exporter and controller logs
-  using the same correlation fields (`lease_id`, `exporter`, `result`, …)
+  using the same correlation fields (`lease_id`, `exporter`, `result`, ...)
   without a second query domain. Kubernetes `Event` objects **(1)** have a short
   default TTL (~1 h) and still write to etcd on every occurrence;
   `status.conditions` **(2)** is a poor fit for a sequence of operations with
@@ -483,7 +483,7 @@ are still useful for selection and for tools that only understand metadata.
   ```
 
   The `# {key=value,...} value timestamp` suffix is the exemplar. Grafana
-  (≥ 7.4) renders these as clickable dots on metric panels; clicking a dot
+  (>= 7.4) renders these as clickable dots on metric panels; clicking a dot
   reveals the attached keys and can link to a Loki log query (filtered by
   `lease_id`) or a trace view (filtered by `trace_id`).
 
@@ -502,7 +502,7 @@ are still useful for selection and for tools that only understand metadata.
   operators need when investigating a spike.
 
 - **Library support.** Go client support is mature
-  (`prometheus/client_golang` ≥ 1.16). The Python `prometheus_client`
+  (`prometheus/client_golang` >= 1.16). The Python `prometheus_client`
   library is used on the exporter side to maintain local registries
   and produce `generate_latest()` output for the reverse-scrape path
   (see *API / Protocol Changes*). Exemplar support in the Python
@@ -511,9 +511,9 @@ are still useful for selection and for tools that only understand metadata.
   `MetricsScrapeResponse` for the Telemetry service to merge
   server-side.
 
-- **Infrastructure requirements.** Prometheus ≥ 2.26 with
+- **Infrastructure requirements.** Prometheus >= 2.26 with
   `--enable-feature=exemplar-storage` and
-  `--storage.tsdb.max-exemplars` (e.g. 100 000). Grafana ≥ 7.4 for
+  `--storage.tsdb.max-exemplars` (e.g. 100 000). Grafana >= 7.4 for
   exemplar visualization. Perses does not yet support exemplar
   rendering; until it does, operators who want exemplar click-through
   can use Grafana alongside Perses or wait for upstream support.
@@ -561,14 +561,14 @@ are still useful for selection and for tools that only understand metadata.
 | Field         | Format                                                              | Loki label | Description                               |
 | ------------- | ------------------------------------------------------------------- | :--------: | ----------------------------------------- |
 | `ts`          | ISO-8601 (`2026-04-28T10:15:30.123Z`)                               |     no     | Timestamp (Zap default).                  |
-| `level`       | Lower-case string (`debug`, `info`, `warn`, `error`)                |     no     | Log severity (Zap default; Go services map `warn`→`warning` when populating `LogEntry.severity`). |
+| `level`       | Lower-case string (`debug`, `info`, `warn`, `error`)                |     no     | Log severity (Zap default; Go services map `warn`->`warning` when populating `LogEntry.severity`). |
 | `msg`         | Free-form string                                                    |     no     | Human-readable message (Zap default).     |
 | `component`   | Fixed enum (`cli`, `controller`, `router`, `telemetry`, `exporter`) |   **yes**  | Emitting service.                         |
 | `exporter`    | CRD name (when applicable)                                          |   **yes**  | Exporter CRD name; bounded by cluster size.|
 | `lease_id`    | UID string (when applicable)                                        |     no     | Lease UID (high cardinality).             |
-| `operation`   | String (when applicable)                                            |     no     | Operation name (flash, power, …).         |
-| `result`      | String (when applicable)                                            |     no     | Outcome (success, failure, …).            |
-| `driver_type` | Category from predefined set (when applicable)                      |     no     | Driver category (storage, power, …).      |
+| `operation`   | String (when applicable)                                            |     no     | Operation name (flash, power, ...).         |
+| `result`      | String (when applicable)                                            |     no     | Outcome (success, failure, ...).            |
+| `driver_type` | Category from predefined set (when applicable)                      |     no     | Driver category (storage, power, ...).      |
 | `client`      | CRD name (when applicable)                                          |     no     | Client CRD name (high cardinality).       |
 | *`spec.context` keys* | User-defined strings (during active lease)                  |     no     | All `lease.spec.context` entries (e.g. `build_id`, `image_digest`, VCS ref) added as JSON fields. High cardinality, never stream labels. |
 | *`exporterLabels` keys* | Values from Exporter CRD labels (when configured)         |     no     | Operator-defined exporter labels (e.g. `board-type`); see `spec.telemetry.exporterLabels`. |
@@ -633,7 +633,7 @@ are still useful for selection and for tools that only understand metadata.
   cluster's existing log shipping infrastructure. Generic in-cluster
   collectors solve *credentials* but not *semantic* correlation unless
   integrated; alternative (2)'s trust-model advantage - which (4)
-  inherits - reuses the existing exporter→controller relationship and
+  inherits - reuses the existing exporter->controller relationship and
   can inject labels and tenant context in one place. A separate
   Deployment (**4** / **DD-7**) is preferable to overloading the main
   reconciler when load or residency of counters matters.
@@ -814,20 +814,20 @@ long-lived `MetricsStream` to one Telemetry replica.
   pod, which only advances its partial counters for the label
   sets it has seen. Prometheus scrapes all pods (or separate
   `PodMonitor` targets). In PromQL,
-  `sum by (exporter, operation, result, driver_type) (…)` after dropping
+  `sum by (exporter, operation, result, driver_type) (...)` after dropping
   `pod` / `instance` matches the global total, as long as each real
   event is applied at most once in the system (counters are
   additive; increments are partitioned by traffic).
 3. **Strong consistency** (Raft, Redis as source of truth for
-  counters) - higher operating cost than this JEP’s v1 scope.
+  counters) - higher operating cost than this JEP's v1 scope.
 4. **Multiple replicas with persistent exporter connections** - each exporter
    opens a single long-lived `MetricsStream` to one replica (persistent by stream).
    Each replica only caches metric snapshots for its connected
    exporters. Prometheus scrapes all replicas (via `PodMonitor`);
-   `sum by (exporter, operation, result, driver_type) (…)` after
+   `sum by (exporter, operation, result, driver_type) (...)` after
    dropping `pod` / `instance` yields the exact global total with no
-   double-counting, because each exporter’s metrics appear on exactly
-   one replica’s `/metrics` output. On replica failure the exporter
+   double-counting, because each exporter's metrics appear on exactly
+   one replica's `/metrics` output. On replica failure the exporter
    reconnects to a survivor and the next scrape returns its full
    current counter state - no data is lost.
 
@@ -931,10 +931,10 @@ endpoints; this DD only governs the *recommended* dashboard experience.
 | Field / label                    | Prom label | Prom exemplar | Loki stream | Log line | Notes                                               |
 | -------------------------------- | :--------: | :-----------: | :---------: | :------: | --------------------------------------------------- |
 | `exporter`                       | yes        | -             | yes         | yes      | CRD name; bounded by cluster size.                  |
-| `operation`                      | yes        | -             | no          | yes      | Small fixed enum (flash, power, …).                 |
-| `result`                         | yes        | -             | no          | yes      | Small fixed enum (success, failure, …).             |
-| `driver_type`                    | yes        | -             | no          | yes      | Category from a predefined set in core (storage, power, …). |
-| `error_type`                     | yes        | -             | no          | yes      | Failure class (timeout, device_error, …); on errors. |
+| `operation`                      | yes        | -             | no          | yes      | Small fixed enum (flash, power, ...).                 |
+| `result`                         | yes        | -             | no          | yes      | Small fixed enum (success, failure, ...).             |
+| `driver_type`                    | yes        | -             | no          | yes      | Category from a predefined set in core (storage, power, ...). |
+| `error_type`                     | yes        | -             | no          | yes      | Failure class (timeout, device_error, ...); on errors. |
 | `direction`                      | yes        | -             | no          | yes      | tx / rx; for byte-counter and stream metrics only.  |
 | `component`                      | no         | -             | yes         | yes      | Fixed set (cli, controller, router, telemetry, exporter).|
 | `namespace`                      | no         | -             | yes         | yes      | K8s namespace; bounded.                             |
@@ -955,7 +955,7 @@ Unbounded identifiers (`lease_id`, `client`, `image_digest`, `trace_id`, and
 any operator-defined `spec.context` keys) must not be used as Prometheus metric
 labels or Loki stream labels. They belong inside structured log line JSON
 and Prometheus exemplars (see below), where Loki filter expressions
-(`| json | lease_id = "…"`) and dashboard exemplar overlays can surface them
+(`| json | lease_id = "..."`) and dashboard exemplar overlays can surface them
 without inflating the label index or TSDB series count.
 
 Rules of thumb for this JEP:
@@ -1042,7 +1042,7 @@ and be fixed before "Implemented".*
 | -------------------------------------------- | --------- | -------------------------------------------- | ----------------------------------------- |
 | `jumpstarter_operations_total`               | counter   | `exporter`, `operation`, `result`, `driver_type`  | Total operations performed.               |
 | `jumpstarter_operation_duration_seconds`      | histogram | `exporter`, `operation`, `result`, `driver_type`  | Duration of each operation.               |
-| `jumpstarter_operation_errors_total`          | counter   | `exporter`, `operation`, `driver_type`, `error_type` | Errors by class (timeout, device, …).  |
+| `jumpstarter_operation_errors_total`          | counter   | `exporter`, `operation`, `driver_type`, `error_type` | Errors by class (timeout, device, ...).  |
 | `jumpstarter_stream_bytes_total`             | counter   | `exporter`, `driver_type`, `direction`            | Bytes transferred (tx/rx) on streams.     |
 | `jumpstarter_active_sessions`                | gauge     | `exporter`                                   | Currently active lease sessions.          |
 | `jumpstarter_lease_acquisitions_total`        | counter   | `result`                                     | Lease acquire attempts (controller).      |
@@ -1302,7 +1302,7 @@ run one *alongside* and scrape the same targets if they choose.
 
 ### Common open-source backends (direct integration; no mandatory OTel)
 
-This JEP’s target wire protocols and components are Prometheus and
+This JEP's target wire protocols and components are Prometheus and
 Loki (and, if trace export is ever added, Tempo or Jaeger with
 native ingest or HTTP - not OTLP as a *Jumpstarter* requirement; see
 **DD-6**). OpenTelemetry is a parallel ecosystem: teams can run a
@@ -1317,7 +1317,7 @@ on the OTel SDK in application code.
   the same projects, but this JEP refers to the open-source components by name.
 - Loki (Grafana Labs, AGPL) for log storage and querying; it pairs with
   Perses (see **DD-10**) for search and with Promtail, Grafana
-  Agent, or Grafana Alloy to ship logs, or with application push to Loki’s HTTP API as
+  Agent, or Grafana Alloy to ship logs, or with application push to Loki's HTTP API as
   already discussed in the control-plane path.
 - Traces (optional, future work) - if adopted, Grafana Tempo and Jaeger
   are typical stores; use W3C Trace Context in RPC metadata for
@@ -1349,7 +1349,7 @@ can tune metrics, logging, and exemplar behavior without editing code.
 | `spec.telemetry.loki.tls.insecureSkipVerify` | `bool`  | `false`                                          | Disable TLS certificate verification (development/testing only).                               |
 | `spec.telemetry.exporterLabels`           | `[]string` | `[]`                                             | Exporter-level label keys (e.g. `board-type`) copied from Exporter CRD labels into log JSON fields and exemplar candidates. |
 | `spec.telemetry.metrics.exemplarKeys`     | `[]string` | `["client", "lease_id"]`                         | Allowlist of keys to include in exemplars (including `spec.context` and `exporterLabels` keys). Only listed keys are emitted; unlisted keys are omitted even if present. |
-| `spec.telemetry.metrics.driverTypeEnum`   | `[]string` | `["power", "storage", "network", "serial", …]`  | Allowed `driver_type` label values. Drivers reporting an unlisted type are mapped to `other`.   |
+| `spec.telemetry.metrics.driverTypeEnum`   | `[]string` | `["power", "storage", "network", "serial", ...]`  | Allowed `driver_type` label values. Drivers reporting an unlisted type are mapped to `other`.   |
 | `spec.telemetry.metrics.serviceMonitor`   | `bool`     | `true`                                           | Create `ServiceMonitor` CRDs for Prometheus autodiscovery.                                     |
 | `spec.telemetry.metrics.prometheusRules`  | `bool`     | `false`                                          | Deploy starter `PrometheusRule` CRDs (opt-in).                                                 |
 | `spec.telemetry.metrics.scrapeTimeout`    | `duration` | `7s`                                             | Max time to wait for parallel exporter responses during a `/metrics` fan-out. Should be set lower than the Prometheus-side `scrape_timeout` to leave headroom for HTTP transport. |
@@ -1452,7 +1452,7 @@ and should only be used in development or testing environments.
   documented set of series after a known operation.
 - If the control-plane forward path is implemented: with a test Loki and
   a Prometheus-compatible sink (or mock), assert that records arrive with expected
-  correlation fields (`lease_id`, `exporter`, …) and that exporter pods do not require
+  correlation fields (`lease_id`, `exporter`, ...) and that exporter pods do not require
   Loki or cluster-scrape credentials in their spec.
 - If Telemetry runs with >1 replica: one test verifies that
   `sum` by business labels (dropping `pod`/`instance`) matches expected totals with persistent exporter connections (see **DD-8**).
@@ -1492,15 +1492,15 @@ constraints make this impractical, at minimum:
 - **Loki mock or single-binary**: a lightweight Loki instance (or a mock
   HTTP/gRPC endpoint that validates the Loki push API contract) receives logs
   from the Telemetry service and asserts expected fields, stream labels,
-  and `spec.context` propagation across the full exporter → Telemetry →
+  and `spec.context` propagation across the full exporter -> Telemetry ->
   Loki path.
 - **Prometheus scrape**: the existing Go/Ginkgo E2E test suite performs
   direct HTTP scrapes of the `/metrics` endpoints on Controller, Router,
   and Telemetry services - no separate Prometheus instance required. The
   test parses the OpenMetrics response and asserts that documented
   series, labels, and exemplars appear after a known operation sequence.
-- **Correlation round-trip**: an E2E test runs a lease lifecycle (create →
-  flash → power-cycle → release) and verifies that the same `lease_id`
+- **Correlation round-trip**: an E2E test runs a lease lifecycle (create ->
+  flash -> power-cycle -> release) and verifies that the same `lease_id`
   and `exporter` values appear in both scraped metrics (label or
   exemplar) and ingested log entries, confirming cross-signal
   correlation.
@@ -1661,7 +1661,7 @@ all subsequent phases have E2E coverage from the start.
   relevant as ecosystem and operator-side *optional* plumbing;
   this JEP intentionally does not adopt them in-process by default (**DD-6**).
 - Other HiL / test systems often separate "run metadata" (like Jenkins build
-  id) from device state; similar separation maps well to this JEP’s lease
+  id) from device state; similar separation maps well to this JEP's lease
   context + events.
 
 ## Unresolved Questions

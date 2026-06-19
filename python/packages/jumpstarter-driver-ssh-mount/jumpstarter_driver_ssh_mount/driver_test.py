@@ -843,7 +843,7 @@ def test_subshell_bash_inserts_mount_tag():
     )
 
     with serve(instance) as client:
-        jmp_ps1 = "\\w ⚡exporter ➤ "
+        jmp_ps1 = "\\w *exporter > "
         with patch.dict(os.environ, {"SHELL": "/bin/bash", "PS1": jmp_ps1}):
             with patch('subprocess.run') as mock_run:
                 mock_run.return_value = MagicMock(returncode=0)
@@ -851,7 +851,7 @@ def test_subshell_bash_inserts_mount_tag():
 
                 mock_run.assert_called_once()
                 env_passed = mock_run.call_args[1].get("env", {})
-                assert "(mount)➤" in env_passed.get("PS1", "")
+                assert "(mount)>" in env_passed.get("PS1", "")
                 assert "sshfs" not in env_passed.get("PS1", "")
 
 
@@ -876,7 +876,7 @@ def test_subshell_zsh_inserts_mount_tag():
     )
 
     with serve(instance) as client:
-        jmp_ps1 = "%~ ⚡exporter ➤ "
+        jmp_ps1 = "%~ *exporter > "
         with patch.dict(os.environ, {"SHELL": "/bin/zsh", "PS1": jmp_ps1}):
             with patch('subprocess.run') as mock_run:
                 mock_run.return_value = MagicMock(returncode=0)
@@ -888,7 +888,7 @@ def test_subshell_zsh_inserts_mount_tag():
                 assert "--no-rcs" in call_args
                 assert "-i" in call_args
                 env_passed = mock_run.call_args[1].get("env", {})
-                assert "(mount)➤" in env_passed.get("PS1", "")
+                assert "(mount)>" in env_passed.get("PS1", "")
 
 
 def test_create_temp_identity_file_failure():

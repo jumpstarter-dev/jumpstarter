@@ -129,7 +129,7 @@ def launch_shell(
 
     if shell_name.endswith("bash"):
         env = common_env | {
-            "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}⚡{ANSI_WHITE}{context} {ANSI_YELLOW}➤{ANSI_RESET} ",
+            "PS1": f"{ANSI_GRAY}{PROMPT_CWD} {ANSI_YELLOW}*{ANSI_WHITE}{context} {ANSI_YELLOW}>{ANSI_RESET} ",
         }
         cmd = [shell]
         if not use_profiles:
@@ -142,11 +142,11 @@ def launch_shell(
             "set_color grey; "
             'printf "%s" (basename $PWD); '
             "set_color yellow; "
-            'printf "⚡"; '
+            'printf "*"; '
             "set_color white; "
             f'printf "{context}"; '
             "set_color yellow; "
-            'printf "➤ "; '
+            'printf "> "; '
             "set_color normal; "
             "end"
         )
@@ -155,7 +155,7 @@ def launch_shell(
 
     elif shell_name == "zsh":
         env = common_env | {
-            "PS1": f"%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f ",
+            "PS1": f"%F{{8}}%1~ %F{{yellow}}*%F{{white}}{context} %F{{yellow}}>%f ",
         }
         if "HISTFILE" not in env:
             env["HISTFILE"] = os.path.join(os.path.expanduser("~"), ".zsh_history")

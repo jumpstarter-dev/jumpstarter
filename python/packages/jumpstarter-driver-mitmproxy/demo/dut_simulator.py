@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 import requests
 import requests.exceptions
 
-# ── ANSI colours ──────────────────────────────────────────────
+# -- ANSI colours --
 _GREEN = "\033[92m"
 _YELLOW = "\033[93m"
 _RED = "\033[91m"
@@ -132,7 +132,7 @@ def main():
     try:
         while True:
             cycle += 1
-            print(f"{_DIM}── cycle {cycle} ──{_RESET}")
+            print(f"{_DIM}-- cycle {cycle} --{_RESET}")
             run_cycle(session, args.backend)
             print()
             time.sleep(args.interval)

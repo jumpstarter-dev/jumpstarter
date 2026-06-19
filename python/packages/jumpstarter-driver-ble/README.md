@@ -47,7 +47,7 @@ The ble driver client comes with a CLI tool that can be used to interact with
 the target device.
 
 ```console
-jumpstarter ⚡ local ➤ j ble
+jumpstarter * local > j ble
 Usage: j ble [OPTIONS] COMMAND [ARGS]...
 
   ble client

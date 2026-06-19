@@ -108,7 +108,7 @@ class MitmproxyClient(DriverClient):
     methods on ``MitmproxyDriver`` via Jumpstarter's RPC mechanism.
     """
 
-    # ── Lifecycle ───────────────────────────────────────────────
+    # -- Lifecycle --
 
     def start(self, mode: str = "mock", web_ui: bool = False,
               replay_file: str = "", port: int = 0) -> str:
@@ -148,7 +148,7 @@ class MitmproxyClient(DriverClient):
         """
         return self.call("restart", mode, web_ui, replay_file, port)
 
-    # ── Status ──────────────────────────────────────────────────
+    # -- Status --
 
     def status(self) -> dict:
         """Get proxy status as a dict.
@@ -169,7 +169,7 @@ class MitmproxyClient(DriverClient):
         info = self.status()
         return info.get("web_ui_address")
 
-    # ── CLI (jmp shell) ────────────────────────────────────────
+    # -- CLI (jmp shell) --
 
     def cli(self):  # noqa: C901
         @driver_click_group(self)
@@ -177,7 +177,7 @@ class MitmproxyClient(DriverClient):
             """Mitmproxy driver"""
             pass
 
-        # ── Lifecycle commands ─────────────────────────────────
+        # -- Lifecycle commands --
 
         @base.command("start")
         @click.option(
@@ -214,7 +214,7 @@ class MitmproxyClient(DriverClient):
             click.echo(self.restart(mode=mode or "", web_ui=web_ui,
                                     replay_file=replay_file, port=port))
 
-        # ── Status command ─────────────────────────────────────
+        # -- Status command --
 
         @base.command("status")
         def status_cmd():
@@ -237,7 +237,7 @@ class MitmproxyClient(DriverClient):
             if info.get("flow_file"):
                 click.echo(f"  Flow:    {info.get('flow_file')}")
 
-        # ── Mock management commands ───────────────────────────
+        # -- Mock management commands --
 
         @base.group("mock")
         def mock_group():
@@ -290,7 +290,7 @@ class MitmproxyClient(DriverClient):
                 self.load_mock_scenario_content(local_path.name, content)
             )
 
-        # ── Flow file commands ─────────────────────────────────
+        # -- Flow file commands --
 
         @base.group("flow")
         def flow_group():
@@ -322,7 +322,7 @@ class MitmproxyClient(DriverClient):
             dest.write_bytes(data)
             click.echo(f"Flow file saved to: {dest.resolve()}")
 
-        # ── Capture commands ───────────────────────────────────
+        # -- Capture commands --
 
         @base.group("capture", invoke_without_command=True)
         @click.option(
@@ -438,7 +438,7 @@ class MitmproxyClient(DriverClient):
             # Clean up spool files after successful export
             click.echo(self.clean_capture_spool())
 
-        # ── Web UI forwarding ──────────────────────────────────
+        # -- Web UI forwarding --
 
         @base.command("web")
         @click.option("--address", default="localhost", show_default=True)
@@ -504,7 +504,7 @@ class MitmproxyClient(DriverClient):
                         _signal.SIGINT, lambda *_: _os._exit(0),
                     )
 
-        # ── CA certificate ─────────────────────────────────────
+        # -- CA certificate --
 
         @base.command("cert")
         @click.argument("output", default="mitmproxy-ca-cert.pem")
@@ -522,7 +522,7 @@ class MitmproxyClient(DriverClient):
 
         return base
 
-    # ── Mock management ─────────────────────────────────────────
+    # -- Mock management --
 
     def set_mock(self, method: str, path: str, status: int = 200,
                  body: dict | list | str = "",
@@ -584,7 +584,7 @@ class MitmproxyClient(DriverClient):
         """
         return json.loads(self.call("list_mocks"))
 
-    # ── V2: File, latency, sequence, template, addon ────────
+    # -- V2: File, latency, sequence, template, addon --
 
     def set_mock_file(self, method: str, path: str,
                       file_path: str,
@@ -774,7 +774,7 @@ class MitmproxyClient(DriverClient):
         """
         return self.call("load_mock_scenario_content", filename, content)
 
-    # ── V2: Conditional mocks ──────────────────────────────────
+    # -- V2: Conditional mocks --
 
     def set_mock_conditional(self, method: str, path: str,
                              rules: list[dict]) -> str:
@@ -843,7 +843,7 @@ class MitmproxyClient(DriverClient):
         finally:
             self.remove_mock(method, path)
 
-    # ── State store ────────────────────────────────────────────
+    # -- State store --
 
     def set_state(self, key: str, value: Any) -> str:
         """Set a key in the shared state store.
@@ -886,7 +886,7 @@ class MitmproxyClient(DriverClient):
         """
         return json.loads(self.call("get_all_state"))
 
-    # ── Flow file management ────────────────────────────────────
+    # -- Flow file management --
 
     def list_flow_files(self) -> list[dict]:
         """List recorded flow files on the exporter.
@@ -914,7 +914,7 @@ class MitmproxyClient(DriverClient):
             chunks.append(base64.b64decode(b64_chunk))
         return b"".join(chunks)
 
-    # ── CA certificate ──────────────────────────────────────────
+    # -- CA certificate --
 
     def get_ca_cert_path(self) -> str:
         """Get the path to the mitmproxy CA certificate on the exporter.
@@ -950,7 +950,7 @@ class MitmproxyClient(DriverClient):
             raise RuntimeError(result)
         return result
 
-    # ── Capture management ──────────────────────────────────────
+    # -- Capture management --
 
     def get_captured_requests(self) -> list[dict]:
         """Return all captured requests.
@@ -1127,7 +1127,7 @@ class MitmproxyClient(DriverClient):
         finally:
             ctx._freeze()
 
-    # ── Context managers ────────────────────────────────────────
+    # -- Context managers --
 
     @contextmanager
     def session(
@@ -1283,7 +1283,7 @@ class MitmproxyClient(DriverClient):
         finally:
             self.stop()
 
-    # ── Convenience methods ─────────────────────────────────────
+    # -- Convenience methods --
 
     def mock_error(self, method: str, path: str,
                    status: int = 503,
@@ -1322,7 +1322,7 @@ class MitmproxyClient(DriverClient):
         )
 
 
-# ── CLI helpers ────────────────────────────────────────────────
+# -- CLI helpers --
 
 
 # Fixed column widths (characters), totalling 54 plus the variable-width PATH:

@@ -22,13 +22,13 @@ Mock config entry::
 File layout::
 
     mock-files/
-    └── audio/
-        └── segments/
-            ├── silence_6s_128k.aac   ← default fallback segment
-            ├── tone_6s_128k.aac      ← test tone segment
-            ├── ch101_001.aac         ← real content segments
-            ├── ch101_002.aac
-            └── ...
+    \-- audio/
+        \-- segments/
+            |-- silence_6s_128k.aac   <- default fallback segment
+            |-- tone_6s_128k.aac      <- test tone segment
+            |-- ch101_001.aac         <- real content segments
+            |-- ch101_002.aac
+            \-- ...
 
 If real segment files aren't available, the addon generates a
 minimal silent AAC segment so the client's audio stack still
@@ -176,7 +176,7 @@ class Handler:
             "#EXT-X-VERSION:3",
             f"#EXT-X-TARGETDURATION:{int(segment_duration)}",
             f"#EXT-X-MEDIA-SEQUENCE:{seq_base}",
-            # No #EXT-X-ENDLIST → live stream
+            # No #EXT-X-ENDLIST -> live stream
         ]
 
         # Sliding window of 3 segments

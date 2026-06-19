@@ -75,7 +75,7 @@ def test_rotate_client_out_file(mock_get_config, mock_rotate, _mock_kube, mock_c
     runner = CliRunner()
     result = runner.invoke(rotate, ["client", "my-client", "--out", "/tmp/test-config.yaml"])
     assert result.exit_code == 0
-    # Click resolve_path=True resolves /tmp → /private/tmp on macOS
+    # Click resolve_path=True resolves /tmp -> /private/tmp on macOS
     call_args = mock_config_cls.save.call_args
     assert call_args[0][0] is mock_client_config
     assert call_args[0][1].endswith("/tmp/test-config.yaml")

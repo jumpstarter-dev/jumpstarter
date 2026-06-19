@@ -40,7 +40,7 @@ from urllib.parse import parse_qs, urlparse
 
 from mitmproxy import ctx, http
 
-# ── Helpers ──────────────────────────────────────────────────
+# -- Helpers --
 
 
 def _resolve_dotted_path(obj, path: str):
@@ -51,8 +51,8 @@ def _resolve_dotted_path(obj, path: str):
 
     Examples::
 
-        _resolve_dotted_path({"a": {"b": 1}}, "a.b")  # → 1
-        _resolve_dotted_path({"x": [10, 20]}, "x.1")  # → 20
+        _resolve_dotted_path({"a": {"b": 1}}, "a.b")  # -> 1
+        _resolve_dotted_path({"x": [10, 20]}, "x.1")  # -> 20
     """
     for part in path.split("."):
         if isinstance(obj, dict):
@@ -130,29 +130,29 @@ def _apply_patches(body_bytes, patches, flow, state):
     return json.dumps(body).encode()
 
 
-# ── Template engine (lightweight, no dependencies) ──────────
+# -- Template engine (lightweight, no dependencies) --
 
 
 class TemplateEngine:
     """Simple template expression evaluator for dynamic mock bodies.
 
     Supported expressions:
-        {{now_iso}}                    → Current ISO 8601 timestamp
-        {{now_epoch}}                  → Current Unix timestamp
-        {{random_int(min, max)}}       → Random integer in range
-        {{random_float(min, max)}}     → Random float in range
-        {{random_choice(a, b, c)}}     → Random selection from list
-        {{uuid}}                       → Random UUID v4
-        {{counter(name)}}              → Auto-incrementing counter
-        {{env(VAR_NAME)}}              → Environment variable (allowlisted only)
-        {{request_path}}               → The matched request path
-        {{request_header(name)}}       → Value of a request header
-        {{request_body}}               → Raw request body text
-        {{request_body_json(key)}}     → JSON field from request body
-        {{request_query(param)}}       → Query parameter value
-        {{request_path_segment(idx)}}  → URL path segment by index
-        {{state(key)}}                 → Value from shared state store
-        {{state(key, default)}}        → Value with fallback default
+        {{now_iso}}                    -> Current ISO 8601 timestamp
+        {{now_epoch}}                  -> Current Unix timestamp
+        {{random_int(min, max)}}       -> Random integer in range
+        {{random_float(min, max)}}     -> Random float in range
+        {{random_choice(a, b, c)}}     -> Random selection from list
+        {{uuid}}                       -> Random UUID v4
+        {{counter(name)}}              -> Auto-incrementing counter
+        {{env(VAR_NAME)}}              -> Environment variable (allowlisted only)
+        {{request_path}}               -> The matched request path
+        {{request_header(name)}}       -> Value of a request header
+        {{request_body}}               -> Raw request body text
+        {{request_body_json(key)}}     -> JSON field from request body
+        {{request_query(param)}}       -> Query parameter value
+        {{request_path_segment(idx)}}  -> URL path segment by index
+        {{state(key)}}                 -> Value from shared state store
+        {{state(key, default)}}        -> Value with fallback default
     """
 
     # Class-level counter state, intentionally shared across instances.
@@ -372,7 +372,7 @@ class TemplateEngine:
         return args
 
 
-# ── Custom addon loader ─────────────────────────────────────
+# -- Custom addon loader --
 
 
 class AddonRegistry:
@@ -439,7 +439,7 @@ class AddonRegistry:
         return self.get_handler(name)
 
 
-# ── Capture client ──────────────────────────────────────────
+# -- Capture client --
 
 CAPTURE_SOCKET = "/opt/jumpstarter/mitmproxy/capture.sock"
 CAPTURE_SPOOL_DIR = "/opt/jumpstarter/mitmproxy/capture-spool"
@@ -496,7 +496,7 @@ class CaptureClient:
             self._sock = None
 
 
-# ── Main addon ──────────────────────────────────────────────
+# -- Main addon --
 
 
 class MitmproxyMockAddon:
@@ -553,7 +553,7 @@ class MitmproxyMockAddon:
         self._spool_counter = 0
         self._load_config()
 
-    # ── Config loading ──────────────────────────────────────
+    # -- Config loading --
 
     def _load_config(self):
         """Load or reload config if the file has changed on disk."""
@@ -617,7 +617,7 @@ class MitmproxyMockAddon:
         except Exception as e:
             ctx.log.error(f"Failed to load state: {e}")
 
-    # ── Request matching ────────────────────────────────────
+    # -- Request matching --
 
     def _find_endpoint(
         self, method: str, path: str, flow: http.HTTPFlow,
@@ -767,7 +767,7 @@ class MitmproxyMockAddon:
                     return False
         return True
 
-    # ── Response generation ─────────────────────────────────
+    # -- Response generation --
 
     async def request(self, flow: http.HTTPFlow):
         """Main request hook: find and apply mock responses."""
@@ -867,7 +867,7 @@ class MitmproxyMockAddon:
 
         ctx.log.info(
             f"Mock: {flow.request.method} {flow.request.path} "
-            f"→ {status} ({len(body)} bytes)"
+            f"-> {status} ({len(body)} bytes)"
         )
 
         flow.response = http.Response.make(status, body, resp_headers)
@@ -1035,7 +1035,7 @@ class MitmproxyMockAddon:
                 {"Content-Type": "application/json"},
             )
 
-    # ── File serving ────────────────────────────────────────
+    # -- File serving --
 
     def _read_file(self, relative_path: str) -> bytes | None:
         """Read a file from the files directory.
@@ -1068,7 +1068,7 @@ class MitmproxyMockAddon:
             ctx.log.error(f"Failed to read {file_path}: {e}")
             return None
 
-    # ── WebSocket handling ──────────────────────────────────
+    # -- WebSocket handling --
 
     def websocket_message(self, flow: http.HTTPFlow):
         """Route WebSocket messages to custom addons if configured."""
@@ -1271,7 +1271,7 @@ class MitmproxyMockAddon:
 
             ctx.log.debug(
                 f"{flow.request.method} {flow.request.pretty_url} "
-                f"→ {flow.response.status_code}"
+                f"-> {flow.response.status_code}"
             )
             event = self._build_capture_event(
                 flow, flow.response.status_code,
@@ -1284,6 +1284,6 @@ class MitmproxyMockAddon:
         self._capture_client.send_event(event)
 
 
-# ── Entry point ─────────────────────────────────────────────
+# -- Entry point --
 
 addons = [MitmproxyMockAddon()]

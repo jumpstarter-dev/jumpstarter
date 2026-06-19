@@ -23,15 +23,15 @@ Mock config entry::
 File layout::
 
     mock-files/
-    └── video/
-        ├── frames/            ← default fallback frames
-        │   ├── frame_000.jpg
-        │   ├── frame_001.jpg
-        │   └── ...
-        ├── rear/              ← camera-specific frames
-        │   ├── frame_000.jpg
-        │   └── ...
-        └── test_pattern.jpg   ← single-image fallback
+    \-- video/
+        |-- frames/            <- default fallback frames
+        |   |-- frame_000.jpg
+        |   |-- frame_001.jpg
+        |   \-- ...
+        |-- rear/              <- camera-specific frames
+        |   |-- frame_000.jpg
+        |   \-- ...
+        \-- test_pattern.jpg   <- single-image fallback
 
 If no frame files exist, the addon generates a minimal JPEG test
 pattern so the client's video pipeline still exercises its
@@ -46,7 +46,7 @@ from pathlib import Path
 
 from mitmproxy import ctx, http
 
-# ── Minimal JPEG generator (no PIL needed) ──────────────────
+# -- Minimal JPEG generator (no PIL needed) --
 
 # A tiny valid JPEG: 8x8 pixels, solid gray.
 # This is the smallest valid JFIF file that any decoder will accept.
@@ -138,7 +138,7 @@ def _generate_test_pattern_jpeg(
         return MINIMAL_JPEG
 
 
-# ── MJPEG streaming handler ─────────────────────────────────
+# -- MJPEG streaming handler --
 
 
 class Handler:
