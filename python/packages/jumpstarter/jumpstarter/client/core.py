@@ -16,7 +16,6 @@ from typing import Any
 import anyio
 from anyio import create_task_group
 from anyio.abc import ObjectStream
-from rich.logging import RichHandler
 
 from jumpstarter.common import ExporterStatus, LogSource, Metadata
 from jumpstarter.common.exceptions import JumpstarterException
@@ -119,7 +118,8 @@ class AsyncDriverClient(Metadata):
 
         # add default handler
         if not self.logger.handlers:
-            handler = RichHandler(show_path=False)
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter("%(name)s: %(message)s"))
             self.logger.addHandler(handler)
 
     async def get_status_async(self) -> ExporterStatus | None:

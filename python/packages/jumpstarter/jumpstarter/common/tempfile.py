@@ -6,7 +6,8 @@ from tempfile import TemporaryDirectory
 
 from anyio import create_task_group, create_tcp_listener, create_unix_listener
 from anyio.abc import SocketAttribute
-from xdg_base_dirs import xdg_runtime_dir
+
+from jumpstarter.common.xdg import xdg_runtime_dir
 
 
 @contextmanager
