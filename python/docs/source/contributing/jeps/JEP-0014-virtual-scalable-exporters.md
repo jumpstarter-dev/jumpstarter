@@ -69,7 +69,7 @@ applies regardless of backend:
 For example, a target that needs GPU or specialized I/O can run functional
 checks cheaply on a QEMU class in CI, validate higher-fidelity behavior on a
 cloud-backed virtual device, and use real hardware as ground truth. The
-`VirtualTargetClass` / `*VirtualTarget` abstraction makes this ladder explicit
+The `VirtualTargetClass` abstraction makes this ladder explicit
 without changing the lease experience.
 
 ### User Stories
@@ -109,38 +109,33 @@ VirtualTargetClass  ←── referenced by ──  ExporterSet
                                               ▼
                                          Exporter ──► Pod
                               (exporter sidecar + target runtime)
-
-# API-backed / static / multi-device cases may also use:
-VirtualTargetClass  ←── referenced by ──  *VirtualTarget (typed claim)
-                                              ↑
-ExporterSet ──► Exporter ────────────────────┘
 ```
 
-- **`VirtualTargetClass`** — cluster-scoped configuration for a backend
-  (`provisioner`, credentials, scheduling, binding mode, device parameters).
-  Admins own classes; claim authors never touch credentials.
-- **`*VirtualTarget`** — optional strongly-typed claim for backends where each
-  instance has distinct identity (API-backed devices, static benches). Not
-  required for homogeneous container-backed pools.
-- **`ExporterSet`** — generic scaling resource with `selector` + inline
-  `template`. References a `VirtualTargetClass` (or optionally a `*VirtualTarget`
-  claim). One mental model for all backends.
+- **`VirtualTargetClass`** — **namespaced** configuration for a backend
+  (`provisioner`, nested `parameters`, credentials, scheduling, binding mode).
+  Lives in the same namespace as referencing `ExporterSet` resources. Admins own
+  classes; `ExporterSet` authors never touch credentials.
+- **`ExporterSet`** — namespaced generic scaling resource with `selector` + inline
+  `template`. References a `VirtualTargetClass` by name in the **same
+  namespace**. Optional nested `parameters` deep-merge over the class defaults.
+  One mental model for all backends.
 - **`Exporter`** — the minimum leased unit. Exposes drivers that connect to the
-  virtual target provisioned from the class (or claim).
+  virtual target provisioned from the class.
 
 ### Core Concept: ExporterSet with Kubernetes-Native Scaling
 
 `ExporterSet` is a generic CRD (ReplicaSet + HPA analog) with familiar scaling
-vocabulary. Provider typing lives in `VirtualTargetClass` and `*VirtualTarget`,
-not in the pool CRD itself.
+vocabulary. Provider typing lives in `VirtualTargetClass`, not in the pool CRD
+itself.
 
-**Example: VirtualTargetClass (cluster-scoped, StorageClass analog)**
+**Example: VirtualTargetClass (namespaced backend profile)**
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: VirtualTargetClass
 metadata:
   name: qemu-rpi4
+  namespace: jumpstarter
 spec:
   provisioner: qemu.jumpstarter.dev
   bindingMode: Immediate              # warm pool; WaitForFirstConsumer = on-demand
@@ -155,32 +150,15 @@ spec:
     resources:
       limits:
         devices.kubevirt.io/kvm: "1"
-  parameters:
+  parameters:                        # nested object; provisioner interprets
     machineType: virt
-    firmware: registry.example.com/firmware/rpi4:latest
-    cpu: 4
-    memory: 4Gi
-    storage: 16Gi
-```
-
-**Example: QEMUVirtualTarget (optional typed claim)**
-
-For homogeneous QEMU pools, admins configure `VirtualTargetClass` + `ExporterSet`
-only (see *End-to-End Flow*). A per-instance claim is optional — useful for
-static benches or when per-instance sizing differs from the class defaults:
-
-```yaml
-apiVersion: jumpstarter.dev/v1alpha1
-kind: QEMUVirtualTarget
-metadata:
-  name: rpi4-target-01
-  namespace: jumpstarter
-spec:
-  virtualTargetClassName: qemu-rpi4
-  resources:
-    cpu: 8                           # override class default
-    memory: 8Gi
-    storage: 32Gi
+    firmware:
+      url: registry.example.com/firmware/rpi4:latest
+      digest: sha256:abc...
+    resources:
+      cpu: 4
+      memory: 4Gi
+      storage: 16Gi
 ```
 
 **Example: ExporterSet (generic scaling resource)**
@@ -197,7 +175,10 @@ spec:
   minAvailableReplicas: 2            # PDB-style warm buffer (ready & unleased)
   scaleDownCooldown: 5m
   recycleStrategy: ExitAndReplace    # or InPlaceReuse
-  virtualTargetClassName: qemu-rpi4  # references VirtualTargetClass above
+  virtualTargetClassName: qemu-rpi4  # same-namespace VirtualTargetClass name
+  parameters:                        # optional; deep-merged over class parameters
+    resources:
+      memory: 8Gi                    # override only memory; cpu/storage inherited
   selector:
     matchLabels:
       board: rpi4
@@ -222,42 +203,37 @@ status:
 # scale subresource: specReplicasPath=.spec.maxReplicas
 ```
 
-**Example: Corellium VirtualTargetClass + claim**
+**Example: Corellium VirtualTargetClass**
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: VirtualTargetClass
 metadata:
   name: corellium-kronos
+  namespace: jumpstarter
 spec:
   provisioner: corellium.jumpstarter.dev
   credentialsSecretRef:
-    name: corellium-creds
-    namespace: jumpstarter
+    name: corellium-creds              # Secret in same namespace
   bindingMode: WaitForFirstConsumer  # provision on lease
   reclaimPolicy: Delete
   parameters:
-    apiHost: app.corellium.com
-    projectId: "778f00af-5e9b-40e6-8e7f-c4f14b632e9c"
----
-apiVersion: jumpstarter.dev/v1alpha1
-kind: CorelliumVirtualTarget
-metadata:
-  name: rd1ae-kronos-01
-  namespace: jumpstarter
-spec:
-  virtualTargetClassName: corellium-kronos
-  deviceFlavor: kronos
-  deviceOs: "1.1.1"
-  deviceBuild: "Critical Application Monitor (Baremetal)"
-  consoleName: "Primary Compute Non-Secure"
+    api:
+      host: app.corellium.com
+      projectId: "778f00af-5e9b-40e6-8e7f-c4f14b632e9c"
+    device:
+      flavor: kronos
+      os: "1.1.1"
+      build: "Critical Application Monitor (Baremetal)"
 ```
 
 The Corellium driver (`jumpstarter_driver_corellium.driver.Corellium`) manages
 the full virtual instance lifecycle through the Corellium REST API — it creates
-instances on power-on and destroys them on power-off. The provisioner injects
-API credentials from `VirtualTargetClass.credentialsSecretRef` into the
-exporter Pod; claim authors never see credentials.
+instances on power-on and destroys them on power-off. Device parameters live in
+`VirtualTargetClass.spec.parameters` and may be overridden per pool via
+`ExporterSet.spec.parameters` (deep-merged). The provisioner injects API
+credentials from `VirtualTargetClass.credentialsSecretRef` into the exporter
+Pod; `ExporterSet` authors never see credentials.
 
 **Example: Android ExporterSet**
 
@@ -271,6 +247,7 @@ spec:
   minReplicas: 0
   maxReplicas: 10
   minAvailableReplicas: 0            # fully on-demand
+  virtualTargetClassName: android-pixel7
   selector:
     matchLabels:
       device: pixel7
@@ -282,10 +259,6 @@ spec:
         api-level: "34"
         virtual: "true"
     spec:
-      virtualTargetRef:
-        apiVersion: jumpstarter.dev/v1alpha1
-        kind: AndroidVirtualTarget
-        name: pixel7-template
       drivers:
         - type: jumpstarter_driver_android.driver.AdbDriver
         - type: jumpstarter_driver_power.driver.EmulatorPower
@@ -300,7 +273,11 @@ needed.
 ### Container-Backed Targets: Sidecar Pattern
 
 For container-backed provisioners (`qemu.jumpstarter.dev`, Android emulator, etc.),
-the provisioner renders each instance Pod from independently shipped artifacts:
+the provisioner renders each instance Pod from independently shipped artifacts.
+The sketch below uses **native sidecar init containers** (`restartPolicy: Always`,
+[KEP-753](https://github.com/kubernetes/enhancements/issues/753)) as the
+**proposed** co-location model — **init containers vs. lifecycle hooks** is
+unresolved; see *Unresolved Questions*.
 
 ```yaml
 # rendered by qemu.jumpstarter.dev provisioner
@@ -339,7 +316,8 @@ Benefits:
 The exporter sidecar communicates with the target-runtime container via Unix
 sockets on a shared `emptyDir` volume (QMP for QEMU control, serial console,
 launcher socket for dynamic argv). API-backed provisioners (`corellium`, `ec2`)
-skip the runtime container and connect out to external APIs.
+and off-cluster provisioners (`qemu-baremetal.jumpstarter.dev`) skip the
+in-cluster runtime container — see *External and Off-Cluster Provisioning*.
 
 ### User Experience
 
@@ -364,10 +342,19 @@ as physical ones, differentiated only by labels.
 
 ### End-to-End Flow (QEMU Example)
 
-This section walks through a complete QEMU warm-pool scenario: what each actor
-does, which CRDs are involved, and how control passes between components. It
-uses the **reference graph** (not a strict ownership tree) for relationships
-between resources:
+This section walks through a complete **in-cluster QEMU warm-pool** scenario:
+what each actor does, which CRDs are involved, and how control passes between
+components. The flow uses only **two admin-configured CRDs** — no per-instance
+claim resources:
+
+| Admin CRD | Role in this flow |
+| --- | --- |
+| `VirtualTargetClass` | Backend profile: provisioner, scheduling, nested `parameters` |
+| `ExporterSet` | Pool scaling, labels, drivers, optional parameter overrides |
+
+Everything else (`Exporter`, `Lease`, `Pod`) is created and managed by
+controllers at runtime. Relationships use a **reference graph** (not a strict
+ownership tree):
 
 ```text
 VirtualTargetClass  ←── referenced by ──  ExporterSet
@@ -377,12 +364,10 @@ VirtualTargetClass  ←── referenced by ──  ExporterSet
                               (exporter sidecar + QEMU runtime)
 ```
 
-For **homogeneous QEMU pools** (same CPU/RAM/disk for every replica, no
-per-lease parameterization), configuration flows through `VirtualTargetClass` +
-`ExporterSet` only. The provisioner materializes Pods from those two resources;
-per-instance `QEMUVirtualTarget` claims are **not** required in this case (they
-remain useful for API-backed backends, static benches, or future multi-device
-exporters — see *Future Possibilities*).
+Homogeneous QEMU pools configure **`VirtualTargetClass` + `ExporterSet` only**.
+The provisioner deep-merges parameters, materializes Pods, and registers
+`Exporter` CRs. **OS images are not pre-selected by the pool** — lessees flash
+and boot what they need after leasing (see Phase 4 and DD-7).
 
 #### Actors
 
@@ -409,20 +394,21 @@ exporters — see *Future Possibilities*).
 - Operator ensures `jumpstarter-controller` is running (existing behavior).
 
 **Result:** Provisioner controller is watching for `ExporterSet` CRs whose
-templates reference QEMU virtual targets (via `virtualTargetClassName` or
-`*VirtualTarget` claims).
+`virtualTargetClassName` references a class handled by that provisioner.
 
-#### Phase 1 — Define the virtual target profile (admin)
+#### Phase 1 — Define the virtual target profile (admin, two CRs)
 
 **Admin actions:**
 
-1. Create a cluster-scoped `VirtualTargetClass` describing the QEMU backend:
+1. Create a `VirtualTargetClass` describing the QEMU backend (same namespace as
+   the `ExporterSet` that will reference it):
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: VirtualTargetClass
 metadata:
   name: qemu-rpi4
+  namespace: jumpstarter
 spec:
   provisioner: qemu.jumpstarter.dev
   bindingMode: Immediate
@@ -439,14 +425,17 @@ spec:
         devices.kubevirt.io/kvm: "1"
   parameters:
     machineType: virt
-    firmware: registry.example.com/firmware/rpi4:latest
-    cpu: 4
-    memory: 4Gi
-    storage: 16Gi
+    firmware:
+      url: registry.example.com/firmware/rpi4:latest
+      digest: sha256:abc...
+    resources:
+      cpu: 4
+      memory: 4Gi
+      storage: 16Gi
 ```
 
-2. Create an `ExporterSet` that references the class and declares scaling +
-   lease-matching labels:
+2. Create an `ExporterSet` in the **same namespace** that references the class
+   by name and declares scaling + lease-matching labels:
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
@@ -461,6 +450,9 @@ spec:
   scaleDownCooldown: 5m
   recycleStrategy: ExitAndReplace
   virtualTargetClassName: qemu-rpi4
+  parameters:
+    resources:
+      memory: 8Gi
   selector:
     matchLabels:
       board: rpi4
@@ -481,7 +473,8 @@ spec:
 
 **User actions:** None.
 
-**Controller actions:** None yet (waiting for `ExporterSet` to be observed).
+**Controller actions:** None yet — exporter-set controller waits until
+`ExporterSet` exists and resolves `virtualTargetClassName` to the class above.
 
 #### Phase 2 — Warm pool provisioning (exporter-set controller)
 
@@ -489,7 +482,9 @@ spec:
 
 **Exporter-set controller actions (reconcile loop):**
 
-1. Read `ExporterSet` spec and referenced `VirtualTargetClass`.
+1. Resolve `ExporterSet.spec.virtualTargetClassName` to `VirtualTargetClass`
+   `qemu-rpi4` in the same namespace; compute merged parameters (deep-merge of
+   class + set overrides).
 2. Count owned `Exporter` CRs: `replicas`, `readyReplicas`, `leasedReplicas`,
    `availableReplicas` (= ready − leased).
 3. If `availableReplicas < minAvailableReplicas` and `replicas < maxReplicas`,
@@ -499,11 +494,12 @@ spec:
    - Render a Kubernetes Pod (sidecar pattern):
      - **Exporter sidecar** (native sidecar, `restartPolicy: Always`) — starts
        first, registers with `jumpstarter-controller`.
-     - **QEMU runtime container** — started by provisioner; exporter talks to
-       it via Unix sockets on a shared `emptyDir` (QMP, serial, launcher).
+     - **QEMU runtime container** — baseline virt machine from merged
+       `parameters` (CPU, memory, firmware blob); **empty disk** ready for
+       user flash at lease time.
+     - Exporter talks to runtime via Unix sockets on a shared `emptyDir` (QMP,
+       serial, launcher).
    - Apply scheduling from `VirtualTargetClass.scheduling` to the Pod.
-   - Apply device parameters from `VirtualTargetClass.parameters` when
-     constructing the QEMU command line.
 4. Update `ExporterSet.status` (`replicas`, `readyReplicas`, `availableReplicas`,
    `leasedReplicas`, conditions).
 
@@ -550,9 +546,13 @@ jmp lease -l board=rpi4,virtual=true
 **Result:** User holds an active lease on `rpi4-virtual-aaa`. Pool still
 maintains warm capacity via background scale-up.
 
-#### Phase 4 — User session (user + exporter sidecar)
+#### Phase 4 — User session: flash, boot, test (user + exporter sidecar)
 
-**User actions** (via leased client — same as physical targets):
+The warm pool provides **instant lease assignment**; image selection happens
+**after** lease — same workflow as a physical bench (DD-7). The pool does not
+pre-flash an OS onto instances.
+
+**User actions** (via leased client):
 
 ```python
 with env() as client:
@@ -565,7 +565,7 @@ with env() as client:
 **Exporter sidecar actions:**
 
 - `storage.flash` writes the image to shared storage (or tells QEMU runtime via
-  QMP/`blockdev-add` in sidecar mode).
+  QMP/`blockdev-add`).
 - `power.on` sends QEMU start via QMP or launcher socket on shared volume.
 - Serial/network drivers proxy to the QEMU runtime container.
 
@@ -590,9 +590,10 @@ jmp delete-lease <lease-id>    # or lease TTL expires
 2. Apply `recycleStrategy`:
    - **ExitAndReplace (default):** exporter sidecar exits after cleanup → Pod
      terminates → controller deletes `Exporter` CR → creates a fresh replacement
-     to maintain `minAvailableReplicas`.
+     with empty baseline storage to maintain `minAvailableReplicas` (next lessee
+     flashes again).
    - **InPlaceReuse:** exporter resets QEMU state in place → same Pod returns
-     to Ready without restart.
+     to Ready without restart (lessee may re-flash before next session).
 3. If `availableReplicas > minAvailableReplicas` for longer than
    `scaleDownCooldown`, gracefully scale down an excess replica:
    - Set `Exporter.spec.enabled: false`
@@ -625,29 +626,48 @@ warm exporter remains.
 **Result:** Pool grows to meet demand, then shrinks back after cooldown when
 leases are released.
 
-#### Summary: who touches which CRD
+#### Summary: CRDs and runtime objects
 
-| CRD | Created by | Observed by | User-visible? |
+**Admin-configured (2 CRDs — the full pool definition):**
+
+| CRD | Scope | Created by | Observed by | Relationship |
+| --- | --- | --- | --- | --- |
+| `VirtualTargetClass` | Namespaced | Admin | Exporter-set controller | Referenced by `ExporterSet` (same namespace) |
+| `ExporterSet` | Namespaced | Admin | Exporter-set controller | References class; owns runtime objects below |
+
+**Platform and runtime (created by controllers):**
+
+| Resource | Created by | Observed by | User-visible? |
 | --- | --- | --- | --- |
 | `Jumpstarter` | Admin | Operator | No |
-| `VirtualTargetClass` | Admin | Exporter-set controller | No |
-| `ExporterSet` | Admin | Exporter-set controller | No (admin/kubectl) |
 | `Exporter` | Exporter-set controller | Jumpstarter-controller, exporter-set controller | Indirectly (via lease) |
 | `Lease` | User (via CLI) | Jumpstarter-controller, exporter-set controller | Yes |
 | `Pod` | Exporter-set controller | Kubernetes, exporter-set controller | No |
 
-#### QEMU vs API-backed backends
+#### QEMU vs API-backed vs off-cluster backends
 
-The flow above applies to **container-backed** provisioners (`qemu.jumpstarter.dev`).
-For **API-backed** backends (e.g. `corellium.jumpstarter.dev`):
+The flow above applies to **in-cluster container-backed** provisioners
+(`qemu.jumpstarter.dev`). Other provisioner strings reuse the same
+`ExporterSet` + `jumpstarter-controller` lease flow with different placement:
 
-- `VirtualTargetClass` holds `credentialsSecretRef` and API parameters.
-- A typed `*VirtualTarget` claim (e.g. `CorelliumVirtualTarget`) may be created
-  per instance when the backend provisions an external device with its own
-  lifecycle and identity.
+| Topology | Example provisioner | Where the target runs |
+| --- | --- | --- |
+| In-cluster container | `qemu.jumpstarter.dev` | Pod on Kubernetes (sidecar + runtime) |
+| API-backed cloud | `corellium.jumpstarter.dev` | External SaaS API; lightweight exporter Pod |
+| Off-cluster bare metal | `qemu-baremetal.jumpstarter.dev` | QEMU/emulator on lab hosts outside the cluster |
+
+For **API-backed** backends:
+
+- `VirtualTargetClass` holds `credentialsSecretRef` and shared backend
+  `parameters`.
+- Per-pool overrides are expressed via `ExporterSet.spec.parameters`
+  (deep-merged over the class).
 - The exporter Pod is lighter (API client only; no QEMU runtime container).
 
-The `ExporterSet` + `jumpstarter-controller` lease flow is identical.
+For **off-cluster** backends, see *External and Off-Cluster Provisioning*.
+
+The `ExporterSet` + `jumpstarter-controller` lease flow is identical for all
+topologies.
 
 ### Architecture Overview
 
@@ -664,7 +684,7 @@ The `ExporterSet` + `jumpstarter-controller` lease flow is identical.
                   ┌────────────────────────────────────┐
                   │          Kubernetes API            │
                   │  (Lease, Exporter, ExporterSet,   │
-                  │   VirtualTargetClass, *VirtualTarget)│
+                  │   VirtualTargetClass)              │
                   └─┬──────────────┬──────────────┬────┘
                     │              │              │
          watches    │   watches    │   watches    │
@@ -748,8 +768,8 @@ based on available (unleased) replicas:
 
 **Instance Lifecycle:**
 
-1. `ExporterSet` controller creates an Exporter + `*VirtualTarget` from the set
-   template (provisioner renders the Pod).
+1. `ExporterSet` controller creates an `Exporter` from the set template
+   (provisioner renders the Pod).
 2. The Pod starts the virtual target (sidecar pattern for container backends, or
    API call for external backends) and runs the Jumpstarter exporter, registering
    with the controller like any other exporter.
@@ -763,11 +783,13 @@ based on available (unleased) replicas:
 
 | CRD | Scope | Role |
 | --- | --- | --- |
-| `VirtualTargetClass` | Cluster | StorageClass analog — provisioner, credentials, scheduling, binding |
-| `QEMUVirtualTarget` | Namespaced | Typed claim for QEMU backends |
-| `CorelliumVirtualTarget` | Namespaced | Typed claim for Corellium backends |
-| `AndroidVirtualTarget` | Namespaced | Typed claim for Android emulator backends |
+| `VirtualTargetClass` | Namespaced | Backend profile — provisioner, credentials, scheduling, binding, nested `parameters` |
 | `ExporterSet` | Namespaced | Generic scaling resource (ReplicaSet + HPA analog) |
+
+**Reference rule:** `ExporterSet.spec.virtualTargetClassName` must name a
+`VirtualTargetClass` in the **same namespace**. Cross-namespace references are
+rejected at admission. `credentialsSecretRef.name` must refer to a Secret in that
+same namespace.
 
 **VirtualTargetClass (common fields):**
 
@@ -775,10 +797,9 @@ based on available (unleased) replicas:
 spec:
   provisioner: <string>              # e.g. qemu.jumpstarter.dev
   credentialsSecretRef:              # optional; for API-backed provisioners
-    name: <string>
-    namespace: <string>
-  parameters:                        # opaque to orchestration; provisioner-specific
-    <key>: <value>
+    name: <string>                   # Secret in same namespace as this class
+  parameters:                        # nested YAML object; provisioner-specific
+    <key>: <nested value>
   bindingMode: Immediate | WaitForFirstConsumer
   reclaimPolicy: Delete | Retain
   scheduling:                        # inherited by rendered exporter Pods
@@ -800,6 +821,9 @@ spec:
   minAvailableReplicas: <int>        # warm buffer: ready & unleased (default: 0)
   scaleDownCooldown: <duration>      # default: 5m
   recycleStrategy: ExitAndReplace | InPlaceReuse
+  virtualTargetClassName: <string>   # VirtualTargetClass name in same namespace
+  parameters:                       # optional nested overrides (deep-merged with class)
+    <key>: <nested value>
   selector:
     matchLabels:
       <key>: <value>
@@ -807,8 +831,61 @@ spec:
     metadata:
       labels: { ... }
     spec:
-      virtualTargetRef: { ... }      # reference or inline *VirtualTarget spec
       drivers: [ ... ]
+```
+
+### Dictionary-Based Parameters
+
+Both `VirtualTargetClass` and `ExporterSet` expose a `spec.parameters` field
+carrying provisioner-specific configuration as a **nested YAML object** (maps,
+lists, and scalars) — not a flat `map[string]string`. This reads like normal
+exporter/driver config rather than CSI's intentionally opaque string map.
+
+**CRD representation:** The field is schemaless at the API level
+(`type: object` with `x-kubernetes-preserve-unknown-fields: true`, or
+`apiextensionsv1.JSON` in Go). OpenAPI does not validate nested structure at
+`kubectl apply` time.
+
+**Validation:** The active provisioner validates merged parameters during
+reconcile and sets `ExporterSet` status conditions on error. Optional future:
+`VirtualTargetClass.spec.parametersSchemaRef` pointing to a JSON Schema
+ConfigMap per provisioner.
+
+**Merge semantics:** When provisioning an instance, the controller computes:
+
+```text
+mergedParameters = deepMerge(VirtualTargetClass.spec.parameters,
+                             ExporterSet.spec.parameters)
+```
+
+- **Maps** merge recursively — set keys override class keys at the same path.
+- **Scalars and lists** in `ExporterSet.spec.parameters` replace the class
+  value at that path entirely (lists are not concatenated).
+
+**Example:**
+
+```yaml
+# VirtualTargetClass.spec.parameters
+resources:
+  cpu: 4
+  memory: 4Gi
+  storage: 16Gi
+firmware:
+  url: registry.example.com/firmware/rpi4:v1
+  digest: sha256:abc...
+
+# ExporterSet.spec.parameters (override memory only)
+resources:
+  memory: 8Gi
+
+# mergedParameters passed to provisioner
+resources:
+  cpu: 4              # inherited from class
+  memory: 8Gi         # overridden by set
+  storage: 16Gi       # inherited from class
+firmware:             # unchanged — set did not specify firmware
+  url: registry.example.com/firmware/rpi4:v1
+  digest: sha256:abc...
 ```
 
 **Status subresource (ExporterSet):**
@@ -833,10 +910,11 @@ status:
 
 ```text
 VirtualTargetClass.provisioner →
-  qemu.jumpstarter.dev        →  k8s container (+ OS OCI image volume)
-  ec2.jumpstarter.dev         →  AWS API
-  corellium.jumpstarter.dev   →  Corellium REST API
-# one typed *VirtualTarget claim interface; backend is pluggable
+  qemu.jumpstarter.dev           →  k8s Pod (sidecar + runtime container)
+  qemu-baremetal.jumpstarter.dev →  QEMU on off-cluster lab hosts (SSH/API)
+  ec2.jumpstarter.dev            →  AWS API
+  corellium.jumpstarter.dev      →  Corellium REST API
+# backend is pluggable via provisioner string
 ```
 
 **Changes to existing CRDs:**
@@ -867,7 +945,7 @@ The graceful scale-down sequence becomes:
 1. `ExporterSet` controller sets `enabled: false` on the target exporter.
 2. Controller waits to confirm no lease was assigned (watches for
    `status.leaseRef` to remain empty).
-3. Controller deletes the Pod, Exporter CR, and associated `*VirtualTarget`.
+3. Controller deletes the Pod and Exporter CR.
 
 ### Hardware Considerations
 
@@ -882,6 +960,119 @@ for scalable testing. However:
   differently on virtual targets — the system should expose labels indicating
   whether a target is physical or virtual so users can filter when fidelity
   matters.
+
+### External and Off-Cluster Provisioning
+
+Provisioners are **not** limited to in-cluster Pods. The same
+`VirtualTargetClass` + `ExporterSet` model applies whether the virtual target
+runs as a Kubernetes Pod, on a cloud virtual-device API, or on **bare-metal lab
+hosts** outside the cluster. `VirtualTargetClass.provisioner` selects the
+backend implementation; `credentialsSecretRef` and nested `parameters` carry
+everything the provisioner needs to reach remote infrastructure (API tokens,
+SSH keys, host lists, board profiles).
+
+**Design intent:** Scale a **logical pool** of exporters through familiar
+`ExporterSet` semantics while placing workloads where fidelity or hardware
+requires it — e.g. a high-fidelity automotive emulator that needs bare-metal
+KVM, GPU passthrough, or vendor-specific tooling unavailable in the cluster.
+
+**What stays the same:**
+
+- Users lease with labels (`jmp lease -l board=sa8295,fidelity=high`) — no
+  awareness of placement.
+- Each pool member registers as a standard `Exporter` CR with
+  `jumpstarter-controller`.
+- Lessees flash and boot images via existing drivers after lease (see DD-7).
+
+**What differs per provisioner:**
+
+- **In-cluster (`qemu.jumpstarter.dev`):** exporter-set controller creates Pod +
+  sidecar; scheduling from `VirtualTargetClass.scheduling`.
+- **API-backed (`corellium.jumpstarter.dev`):** exporter Pod is a thin API
+  client; cloud device lifecycle managed externally.
+- **Off-cluster (`qemu-baremetal.jumpstarter.dev`):** exporter-set controller
+  provisions exporter + QEMU (or vendor emulator) on remote hosts via SSH or a
+  lab agent API; may run exporter as a local process on the host rather than a
+  Pod. The controller still owns `Exporter` CRs in the cluster for lease
+  assignment.
+
+**Automotive example — Qualcomm reference board on bare metal:**
+
+An automotive team runs SA8295-class targets on dedicated lab servers for
+higher-fidelity behavior than in-cluster QEMU. The cluster hosts
+orchestration only; emulators run on the bench network.
+
+```yaml
+apiVersion: jumpstarter.dev/v1alpha1
+kind: VirtualTargetClass
+metadata:
+  name: qcom-sa8295-baremetal
+  namespace: jumpstarter
+spec:
+  provisioner: qemu-baremetal.jumpstarter.dev
+  credentialsSecretRef:
+    name: automotive-lab-ssh
+  bindingMode: Immediate
+  parameters:
+    hosts:
+      - name: bench-01.automotive.example.com
+        arch: aarch64
+        slots: 2                       # concurrent instances per host
+      - name: bench-02.automotive.example.com
+        arch: aarch64
+        slots: 2
+    runtime:
+      binary: /usr/bin/qemu-system-aarch64
+      kvm: true
+    board:
+      soc: sa8295
+---
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterSet
+metadata:
+  name: qcom-sa8295-hifi
+  namespace: jumpstarter
+spec:
+  minReplicas: 0
+  maxReplicas: 4
+  minAvailableReplicas: 1
+  virtualTargetClassName: qcom-sa8295-baremetal
+  parameters:
+    board:
+      fidelity: high                   # deep-merged over class board defaults
+  selector:
+    matchLabels:
+      board: sa8295
+      fidelity: high
+      virtual: "true"
+  template:
+    metadata:
+      labels:
+        board: sa8295
+        fidelity: high
+        virtual: "true"
+    spec:
+      drivers:
+        - type: jumpstarter_driver_power.driver.QemuPower
+        - type: jumpstarter_driver_network.driver.TcpNetwork
+          config:
+            port: 22
+        - type: jumpstarter_driver_serial.driver.QemuSerial
+```
+
+**Provisioner actions (off-cluster):**
+
+1. Read merged `parameters` and `credentialsSecretRef`.
+2. Select a host with free capacity (`slots`).
+3. Deploy or attach exporter + runtime on the host (SSH, systemd, or lab agent).
+4. Create an `Exporter` CR in the cluster with template labels; register with
+   `jumpstarter-controller`.
+5. On scale-down or failure, tear down the remote instance and delete the
+   `Exporter` CR.
+
+Physical reference boards on the same lab network can coexist in the pool —
+users distinguish them with labels (`virtual=false` vs `virtual=true`) without
+changing the lease workflow.
 
 ## Design Decisions
 
@@ -925,27 +1116,33 @@ independent restarts, and explicit `--provisioner` selection. Adding a new
 backend means adding a Deployment manifest with a different flag — no new image
 build required.
 
-### DD-3: Pluggable provisioner vs. CRD-per-pool
+### DD-3: Pluggable provisioner vs. CRD-per-pool vs. typed claims
 
 **Alternatives considered:**
 
 1. **CRD per provider pool** (`QEMUExporterPool`, `AndroidExporterPool`, etc.)
    — provider typing at the pool CRD level.
-2. **Generic `ExporterSet` + pluggable `VirtualTargetClass.provisioner`** —
-   orchestration generic; device backend selected by provisioner string; typed
-   `*VirtualTarget` claims retain strong typing.
-3. **Fully generic opaque config** — single CRD with `provider.config` map.
+2. **Generic `ExporterSet` + pluggable `VirtualTargetClass.provisioner` +
+   nested `parameters`** — orchestration generic; backend selected by provisioner
+   string; device config as nested YAML on class + set (deep-merge).
+3. **Typed `*VirtualTarget` CRDs per provider** (`QEMUVirtualTarget`,
+   `CorelliumVirtualTarget`, etc.) — strong schema per backend, referenced from
+   `ExporterSet`.
+4. **Fully generic opaque config** — single CRD with flat `provider.config` map.
 
 **Decision:** Option 2 — generic `ExporterSet` + pluggable provisioner on
-`VirtualTargetClass`, with typed `*VirtualTarget` claims.
+`VirtualTargetClass` with **dictionary-based nested `parameters`**. Reject
+options 1 and 3.
 
 **Rationale:** Separating orchestration (scaling, lease matching, graceful
-shutdown) from provisioning (QEMU container, Corellium API, EC2) lets each
-provisioner implement backend-appropriate scaling logic while exposing an
+shutdown) from provisioning (QEMU container, Corellium API, off-cluster hosts)
+lets each provisioner implement backend-appropriate scaling while exposing an
 identical scaling surface (`minReplicas`/`maxReplicas`/`minAvailableReplicas`).
-Typed `*VirtualTarget` claims preserve schema validation per provider without
-proliferating pool CRDs. New backends add a claim kind + provisioner string, not
-pool-tier changes.
+Nested `parameters` on `VirtualTargetClass` and optional `ExporterSet` overrides
+replace per-provider claim CRDs — homogeneous pools need only two admin CRDs.
+Typed `*VirtualTarget` claims add maintenance overhead without benefit when
+pools share one backend profile (2026-06 team review). New backends add a
+provisioner string and parameter conventions, not pool-tier or claim-kind changes.
 
 ### DD-4: Per-lease parameters vs. pool flavors
 
@@ -990,18 +1187,61 @@ in *Future Possibilities*.
 
 1. **Inline credentials in every `ExporterSet`** — simple but duplicates secrets
    across pools sharing the same backend account.
-2. **`VirtualTargetClass` (StorageClass analog)** — cluster-scoped class holds
-   credentials, parameters, scheduling; claims reference the class.
+2. **`VirtualTargetClass` (namespaced backend profile)** — class in the same
+   namespace as the referencing `ExporterSet` holds credentials, nested
+   `parameters`, and scheduling; `ExporterSet.spec.virtualTargetClassName`
+   references the class by local name.
 3. **Separate `ProviderConfig` CRD** — lighter-weight credential sharing without
    full class semantics.
 
-**Decision:** Option 2 — `VirtualTargetClass` with optional future
+**Decision:** Option 2 — **namespaced** `VirtualTargetClass` with optional future
 `ProviderConfig` for multi-account credential reuse.
 
-**Rationale:** The CSI StorageClass/PVC pattern is well understood by cluster
-admins. `bindingMode` and `reclaimPolicy` map naturally to warm-pool vs.
-on-demand and expensive external target retention. Credentials never appear on
-namespaced claims.
+**Rationale:** Unlike CSI `StorageClass` (cluster-scoped), `VirtualTargetClass`
+is **namespaced** so teams define isolated backend profiles, credentials, and
+scheduling per namespace without cluster-admin involvement. `ExporterSet` may
+only reference a class in the **same namespace**; `credentialsSecretRef` points
+to a Secret in that namespace — credentials never appear on `ExporterSet`.
+`bindingMode` and `reclaimPolicy` still map to warm-pool vs. on-demand and
+external target retention. The StorageClass/PVC *separation of class and consumer*
+is retained; only scope differs.
+
+### DD-7: Instance TTL and image refresh (deferred)
+
+**Alternatives considered:**
+
+1. **`ExporterSet.spec.ttl` with image refresh** — declarative `maxAge`,
+   `maxIdleAge`, and `imageRefreshPolicy` on the pool CRD; controller recycles
+   instances and re-pulls container/firmware images to keep warm pools fresh.
+2. **Manual / CronJob pool flush** — operators restart pools or delete Pods on a
+   schedule outside Jumpstarter.
+3. **Admin-pinned images in `parameters`** — declare expected OS/firmware refs on
+   `VirtualTargetClass` / `ExporterSet`; provisioner always boots those images.
+4. **User flash at lease time (v1)** — warm pool instances are provisioned with
+   baseline runtime only; the lessee flashes and boots the image they want via
+   existing drivers (`storage.flash`, power cycle) — same workflow as physical
+   targets.
+5. **Separate lifecycle controller (future)** — a cross-cutting controller that
+   periodically visits **physical and virtual** exporters and flashes the
+   expected image, without virtual-only fields on `ExporterSet`.
+
+**Decision:** Reject options 1–3 for v1 — **no TTL, image-refresh, or
+admin-pinned boot images on `ExporterSet` / `VirtualTargetClass`**. Option 4
+matches current Jumpstarter behavior: users flash and boot what they need after
+leasing. Option 5 remains the preferred direction for automated image hygiene
+later.
+
+**Rationale:** Time-based Pod recycle and provisioner-driven image re-pull are
+virtual-pool mechanics that **physical exporters do not share**. Physical machines
+have no `maxAge`; their OS changes when someone flashes them, not when a pool
+controller rotates Pods. Putting TTL or pinned boot images on `ExporterSet` alone
+would split the lease experience. In v1, virtual targets in the warm pool behave
+like physical benches: the lessee selects and flashes the desired image. A future
+**separate lifecycle controller** can watch `Exporter` resources regardless of
+origin and apply uniform policies — e.g. periodic flash of a lab-defined expected
+image to idle exporters, scheduled maintenance windows — combining long-lived
+(non-refreshed) exporter instances with automated image updates when operators
+choose to enable them.
 
 ## Design Details
 
@@ -1012,6 +1252,7 @@ changes to the set CR, owned Exporters, or matching Leases:
 
 ```text
 for each ExporterSet CR:
+  mergedParameters = deepMerge(class.parameters, set.parameters)
   ownedExporters = list Exporters owned by this CR
   replicas = count ownedExporters in Ready state
   leasedReplicas = count ownedExporters with an active LeaseRef
@@ -1031,7 +1272,7 @@ for each ExporterSet CR:
     graceful scale down:
       1. set exporter.spec.enabled = false
       2. wait until leaseRef remains empty
-      3. delete Pod, Exporter CR, and *VirtualTarget
+      3. delete Pod and Exporter CR
     (never below minAvailableReplicas)
 ```
 
@@ -1047,13 +1288,12 @@ Provisioning → Ready (warm pool) → Leased → Ready
 - **Provisioning:** Pod starting, virtual target provisioning, exporter registering.
 - **Ready:** Exporter registered and available for lease.
 - **Leased:** Exporter assigned to an active lease.
-- **Terminating:** Instance being deleted (scale-down).
+- **Terminating:** Instance being deleted (scale-down or failure replace).
 
 ### Component Interaction
 
 1. Administrator creates `VirtualTargetClass` and `ExporterSet` resources.
-2. The provisioner controller provisions `minAvailableReplicas` Exporters (each
-   owning a `*VirtualTarget`).
+2. The provisioner controller provisions `minAvailableReplicas` Exporters.
 3. Each instance Pod boots the virtual target and runs the Jumpstarter exporter,
    registering with the existing `jumpstarter-controller`.
 4. Instances appear as regular exporters with labels from `spec.template.metadata`.
@@ -1088,11 +1328,12 @@ Unit tests should meet the project test coverage requirements.
 - End-to-end lease lifecycle with QEMU provisioner in a test cluster
 - Mixed physical/virtual lease orchestration
 - Provisioner failure and recovery scenarios
-- `VirtualTargetClass` credential injection and claim binding
+- Parameter deep-merge and provisioner-side validation
+- `VirtualTargetClass` credential injection
 
 ## Acceptance Criteria
 
-- [ ] `VirtualTargetClass`, `QEMUVirtualTarget`, and `ExporterSet` CRDs defined
+- [ ] `VirtualTargetClass` and `ExporterSet` CRDs defined
 - [ ] `ExporterSet` controller maintains `minAvailableReplicas` warm buffer
 - [ ] Controller scales up when available pool is depleted (up to `maxReplicas`)
 - [ ] Controller scales down idle replicas after cooldown (never below
@@ -1104,8 +1345,9 @@ Unit tests should meet the project test coverage requirements.
 - [ ] An `ExporterSet` with `minAvailableReplicas: 0` provisions on demand only
 - [ ] Status subresource reports Deployment-style counters and health conditions
 - [ ] `scale` subresource enables `kubectl scale` interoperability
-- [ ] Documentation covers `VirtualTargetClass`, `*VirtualTarget`, and
-      `ExporterSet` configuration
+- [ ] `parameters` deep-merge produces correct merged config for provisioner
+- [ ] Provisioner validates merged `parameters` and surfaces errors via conditions
+- [ ] Documentation covers `VirtualTargetClass` and `ExporterSet` configuration
 
 ## Graduation Criteria
 
@@ -1117,18 +1359,18 @@ Unit tests should meet the project test coverage requirements.
 
 ### Stable
 
-- At least two provisioners implemented (e.g., `qemu.jumpstarter.dev` +
-  `corellium.jumpstarter.dev`)
+- QEMU reference provisioner (`qemu.jumpstarter.dev`) production-ready; at least
+  one additional topology validated (e.g. off-cluster bare metal or API-backed)
 - Production usage by at least one team for >1 month
 - Performance benchmarks documented (cold-start latency, scaling responsiveness)
-- Provisioner authoring guide published (how to add a new provisioner + claim kind)
+- Provisioner authoring guide published (how to add a new provisioner)
 
 ## Backward Compatibility
 
 - Existing physical-only workflows are unaffected; lease requests without
   virtual-specific labels continue to work as before.
 - No changes to the existing gRPC protocol for physical exporters.
-- New CRDs (`VirtualTargetClass`, `*VirtualTarget`, `ExporterSet`) are additive.
+- New CRDs (`VirtualTargetClass`, `ExporterSet`) are additive.
 - **Exporter `enabled` field:** Defaults to `true`, so all existing Exporters
   continue to behave exactly as before.
 - Administrators upgrading see no behavior change until they explicitly deploy
@@ -1143,14 +1385,14 @@ Unit tests should meet the project test coverage requirements.
 - **Unified user experience:** Virtual and physical targets leased the same way.
 - **Kubernetes-native UX:** `minReplicas`/`maxReplicas`/`minAvailableReplicas`,
   Deployment-style status, `kubectl scale` — familiar to cluster admins.
-- **Pluggable backends:** New provisioners add a claim kind + provisioner string.
-- **Credential separation:** `VirtualTargetClass` keeps secrets off namespaced claims.
+- **Pluggable backends:** New provisioners add a provisioner string.
+- **Credential separation:** `VirtualTargetClass` keeps secrets off `ExporterSet` resources.
 - **Fidelity ladder:** Same lease flow across sim, cloud virtual, and hardware tiers.
 
 ### Negative
 
-- **Increased CRD surface:** `VirtualTargetClass`, typed `*VirtualTarget`,
-  and `ExporterSet` add more resources to manage than a single pool CRD per provider.
+- **Increased CRD surface:** `VirtualTargetClass` and `ExporterSet` add more
+  resources to manage than a single pool CRD per provider.
 - **Resource consumption:** Warm pools consume cluster resources when idle.
 - **Sidecar complexity:** Container-backed provisioners require multi-container
   Pod orchestration and shared-volume protocols.
@@ -1168,6 +1410,10 @@ Unit tests should meet the project test coverage requirements.
 - **Per-lease `parameters` dictionary:** See DD-4.
 - **CRD-per-pool without VirtualTarget separation:** Couples scaling and provider
   config; rejected in favor of generic `ExporterSet` + pluggable provisioner.
+- **Typed `*VirtualTarget` CRDs per provider:** Rejected at 2026-06 team review;
+  see DD-3. Dictionary `parameters` on class + set suffice for homogeneous pools.
+- **`ExporterSet.spec.ttl` and image refresh:** Rejected for v1; see DD-7. Would
+  create virtual-only lifecycle semantics unlike physical exporters.
 
 ## Prior Art
 
@@ -1175,13 +1421,18 @@ Unit tests should meet the project test coverage requirements.
 - **Crossplane:** General-purpose cloud composition; no Jumpstarter lease semantics.
   Useful reference for external API integration (e.g., Corellium) but does not
   replace pool-specific scaling logic.
-- **CSI (StorageClass/PVC):** Pattern adopted for `VirtualTargetClass`/`*VirtualTarget`.
+- **CSI (StorageClass/PVC):** Class/consumer separation adopted; scope is
+  namespaced rather than cluster-scoped (see DD-6).
 - **KubeVirt:** VM orchestration with pre-mounted images; Jumpstarter differs by
   flash-at-runtime model and exporter-as-sidecar pattern.
 
 ## Unresolved Questions
 
 - What is the exact scaling algorithm (proportional, step-based, predictive)?
+- **Pod initialization for container-backed provisioners:** Native sidecar init
+  containers (`restartPolicy: Always`, KEP-753) vs. lifecycle hooks vs. other
+  co-location patterns for exporter + target-runtime. The sidecar sketch in this
+  JEP is provisional; resolve in the QEMU provisioner implementation PR.
 
 ### Resolved
 
@@ -1212,12 +1463,26 @@ stays open to them:
 - **HPA/KEDA metric exposure** — complementary external autoscaling once core
   provisioner controllers are stable.
 - **Renode provider** — `renode.jumpstarter.dev` provisioner leveraging JEP-0010.
+- **Additional cloud/container provisioners** — `corellium.jumpstarter.dev`,
+  `android.jumpstarter.dev`, `ec2.jumpstarter.dev` (no typed claim CRDs).
 - **Composite leases** — multiple exporters linked into one logical lease.
+- **Cross-cutting lifecycle controller** — periodic flash of lab-defined expected
+  images to idle **physical and virtual** exporters (see DD-7); long-lived pool
+  instances combined with optional automated image updates, not virtual-only TTL
+  on `ExporterSet`.
 
 ## Implementation Plan
 
 The implementation is broken into phases. Each phase delivers a usable
-increment and can be merged independently.
+increment and can be merged independently. **v1 focuses on the QEMU reference
+implementation**; additional provisioners and lifecycle automation are deferred.
+
+| Phase | Scope | Status |
+| --- | --- | --- |
+| 1 | Exporter `enabled` field | Near-term |
+| 2 | `VirtualTargetClass` + `ExporterSet` CRDs; nested `parameters`; `qemu.jumpstarter.dev` | Near-term (v1) |
+| 3 | External/off-cluster provisioning (`qemu-baremetal.jumpstarter.dev`) | Near-term |
+| 4+ | Lifecycle controller, Corellium/Android, etc. | Deferred — see *Future phases* |
 
 ### Phase 1: Exporter `enabled` field
 
@@ -1232,34 +1497,64 @@ Add the `enabled` boolean field to the Exporter CRD and update the
 - [ ] Unit tests for the filtering logic
 - [ ] Integration test: disable an exporter, verify it gets no new leases
 
-### Phase 2: Core CRDs and QEMU provisioner
+### Phase 2: Core CRDs and QEMU reference provisioner
 
-Define `VirtualTargetClass`, `QEMUVirtualTarget`, and `ExporterSet` CRDs.
-Implement the `qemu.jumpstarter.dev` provisioner with sidecar Pod rendering and
-core reconciliation loop.
+Define namespaced `VirtualTargetClass` and `ExporterSet` CRDs. Implement
+**only** the `qemu.jumpstarter.dev` in-cluster provisioner — the reference
+implementation for the 2-CRD model, parameter deep-merge, warm pool, and
+flash-at-lease workflow (DD-7).
 
 **Deliverables:**
 
-- [ ] Define `VirtualTargetClass`, `QEMUVirtualTarget`, `ExporterSet` CRD schemas
+- [ ] Define `VirtualTargetClass` and `ExporterSet` CRD schemas (namespaced;
+      nested `parameters` with schemaless object fields; same-namespace reference
+      rule)
+- [ ] Implement parameter deep-merge and provisioner-side validation
 - [ ] Implement exporter-set controller binary with `--provisioner=qemu.jumpstarter.dev`
-- [ ] Sidecar Pod rendering (exporter native sidecar + QEMU runtime container)
+- [ ] Sidecar Pod rendering (provisional init-container model — see Unresolved
+      Questions)
 - [ ] Core scaling logic: `minAvailableReplicas`, demand-driven scale-up, graceful
       scale-down
 - [ ] Deployment-style status + `scale` subresource
 - [ ] Watch Leases and Exporters for scaling decisions
 - [ ] Add `exporterSets` section to `Jumpstarter` operator CR
-- [ ] Integration test: deploy `ExporterSet`, lease, release, observe scaling
+- [ ] Integration test: deploy `ExporterSet`, lease, flash, boot, release,
+      observe scaling
 
-### Phase 3: Additional provisioners
+### Phase 3: External / off-cluster provisioning
 
-Add Corellium and Android provisioners using the same binary with different
-`--provisioner` flags.
+Extend the exporter-set controller with an off-cluster QEMU provisioner to
+validate the pluggable backend model beyond in-cluster Pods. Documents and
+implements the flow in *External and Off-Cluster Provisioning*.
 
 **Deliverables:**
 
-- [ ] `corellium.jumpstarter.dev` provisioner + `CorelliumVirtualTarget` CRD
-- [ ] `android.jumpstarter.dev` provisioner + `AndroidVirtualTarget` CRD
+- [ ] `qemu-baremetal.jumpstarter.dev` provisioner (or equivalent off-cluster
+      stub) using the same binary with `--provisioner=qemu-baremetal.jumpstarter.dev`
+- [ ] Remote host selection, SSH/agent deploy, and `Exporter` CR registration from
+      off-cluster instances
+- [ ] Example `VirtualTargetClass` + `ExporterSet` manifests for lab bare-metal
+      (automotive profile)
+- [ ] Integration test or documented manual test plan for off-cluster scale-up
+      and lease
+
+### Future phases (deferred)
+
+The following are **explicitly out of v1** scope. They reuse the same
+`VirtualTargetClass` + `ExporterSet` CRDs and nested `parameters` — no typed
+claim CRDs.
+
+**Additional provisioners**
+
+- [ ] `corellium.jumpstarter.dev` — API-backed cloud virtual devices
+- [ ] `android.jumpstarter.dev` — in-cluster Android emulator pools
+- [ ] `ec2.jumpstarter.dev` — AWS-backed targets
 - [ ] Provisioner authoring guide
+
+**Cross-cutting lifecycle controller (DD-7)**
+
+- [ ] Separate controller for periodic flash / maintenance on **physical and
+      virtual** exporters — not `ExporterSet.spec.ttl`
 
 ## Implementation History
 
@@ -1267,6 +1562,8 @@ Add Corellium and Android provisioners using the same binary with different
 - 2026-06-03: JEP proposed
 - 2026-06-18: Revised per review — ExporterSet, VirtualTargetClass, pluggable
   provisioner model; added end-to-end flow section
+- 2026-06-18: Team review — dictionary `parameters`, removed typed VirtualTarget
+  CRDs, namespaced `VirtualTargetClass`, deferred TTL (DD-7)
 
 ## References
 
