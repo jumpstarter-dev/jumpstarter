@@ -387,7 +387,11 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring("!nonexistent"))
 
-			out, err = Jmp("get", "leases", "--selector", "example.com/board=sa,!production")
+			out, err = Jmp("get", "leases", "--selector", "example.com/board=sa,!production", "-o", "yaml")
+			Expect(err).NotTo(HaveOccurred(), out)
+			Expect(out).To(ContainSubstring("example.com/board=sa"))
+
+			out, err = Jmp("get", "leases", "--selector", "example.com/board=sa,!example.com/board")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(Equal("No resources found."))
 
