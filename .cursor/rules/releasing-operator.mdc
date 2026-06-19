@@ -122,7 +122,7 @@ multiple channel heads found in graph: jumpstarter-operator.vA, jumpstarter-oper
 **Rule**: `REPLACES` must always point to the _most recently published_ version in the channel, forming a linear chain. When release candidates are published to the channel before the final release, the chain must include them:
 
 ```
-v0.8.0 → v0.8.1-rc.1 → v0.8.1
+v0.8.0 -> v0.8.1-rc.1 -> v0.8.1
 ```
 
 The `skipRange` (e.g. `>=0.8.0 <0.8.1`) allows users on any intermediate version to upgrade directly, but `replaces` must still form a valid graph with a single head.

@@ -10,25 +10,25 @@ The Jumpstarter operator is a Kubernetes operator that manages Jumpstarter deplo
 
 ```
 controller/
-├── deploy/
-│   ├── operator/                    # Operator code
-│   │   ├── api/v1alpha1/           # CRD type definitions
-│   │   │   └── jumpstarter_types.go # Main types file
-│   │   ├── internal/controller/     # Controller logic
-│   │   │   └── jumpstarter/
-│   │   │       ├── jumpstarter_controller.go  # Main reconciler
-│   │   │       ├── endpoints/       # Endpoint handling (routes, ingress, etc.)
-│   │   │       └── rbac.go          # RBAC reconciliation
-│   │   ├── config/                  # Kustomize configurations
-│   │   │   ├── crd/bases/          # Generated CRD YAML
-│   │   │   └── samples/            # Sample CR files
-│   │   ├── bundle/                  # OLM bundle manifests
-│   │   ├── test/e2e/               # E2E tests
-│   │   └── Makefile                # Operator-specific make targets
-├── api/                            # Jumpstarter core CRDs (Client, Exporter, Lease, etc.)
-├── internal/                       # Controller business logic
-│   └── config/                     # Config structs used by controller
-└── Makefile                        # Top-level controller make targets
+|-- deploy/
+|   |-- operator/                    # Operator code
+|   |   |-- api/v1alpha1/           # CRD type definitions
+|   |   |   \-- jumpstarter_types.go # Main types file
+|   |   |-- internal/controller/     # Controller logic
+|   |   |   \-- jumpstarter/
+|   |   |       |-- jumpstarter_controller.go  # Main reconciler
+|   |   |       |-- endpoints/       # Endpoint handling (routes, ingress, etc.)
+|   |   |       \-- rbac.go          # RBAC reconciliation
+|   |   |-- config/                  # Kustomize configurations
+|   |   |   |-- crd/bases/          # Generated CRD YAML
+|   |   |   \-- samples/            # Sample CR files
+|   |   |-- bundle/                  # OLM bundle manifests
+|   |   |-- test/e2e/               # E2E tests
+|   |   \-- Makefile                # Operator-specific make targets
+|-- api/                            # Jumpstarter core CRDs (Client, Exporter, Lease, etc.)
+|-- internal/                       # Controller business logic
+|   \-- config/                     # Config structs used by controller
+\-- Makefile                        # Top-level controller make targets
 ```
 
 ## Key Files

@@ -1,1 +1,118 @@
-../../.cursor/rules/creating-new-drivers.mdc
+---
+description: when the user is requesting to create, improve or document a new driver
+alwaysApply: false
+---
+# Creating New Drivers
+
+When asked to create a new driver, follow these steps:
+
+## 1. Use the Driver Creation Script
+Always use the provided script: `./python/__templates__/create_driver.sh`
+
+## 2. Required Information
+Before creating a driver, ask the user for:
+- **Driver Package Name**: The package name (e.g., `mydriver`, `custom-power`, `device-controller`)
+  - Should be lowercase with hyphens for multi-word names
+  - Examples from existing drivers: `network`, `iscsi`, `ridesx`, `opendal`, `shell`, `gpiod`, `http-power`, `tasmota`, `tftp`, `uboot`, `snmp`, `sdwire`, `probe-rs`, `can`, `composite`, `corellium`, `dutlink`, `energenie`, `flashers`, `http`, `power`, `pyserial`, `qemu`, `ustreamer`, `yepkit`
+- **Driver Class Name**: The main driver class in CamelCase (e.g., `MyDriver`, `CustomPower`, `DeviceController`)
+  - Should be descriptive and end with appropriate suffix based on functionality
+  - Examples: `TcpNetwork`, `ISCSI`, `RideSXDriver`, `Opendal`, `Shell`, `HttpPower`, `TasmotaPower`, `Tftp`, `UbootConsole`, `SNMPServer`, `SDWire`, `ProbeRs`, `Can`, `Composite`, `Corellium`, `Dutlink`, `EnerGenie`, `QemuFlasher`, `UStreamer`, `Ykush`
+- **Author Name**: Full name of the author
+- **Author Email**: Email address of the author
+
+## 3. Command Format
+```bash
+./python/__templates__/create_driver.sh <driver_package> <DriverClass> "<Author Name>" "<author@email.com>"
+```
+Always try to obtain the Author Name and Email from git, by checking the git configuration.
+## 4. Examples
+```bash
+# Network driver
+./python/__templates__/create_driver.sh network TcpNetwork "John Doe" "john@example.com"
+
+# Power management driver
+./python/__templates__/create_driver.sh custom-power CustomPowerDriver "Jane Smith" "jane@example.com"
+
+# Device control driver
+./python/__templates__/create_driver.sh device-controller DeviceController "Bob Wilson" "bob@example.com"
+```
+
+## 5. After Creation
+Once the driver is created:
+1. Navigate to the new driver directory: `python/packages/jumpstarter-driver-<driver_package>/`
+2. **Register the package in the workspace** by adding an entry to `python/pyproject.toml` under `[tool.uv.sources]`:
+   ```toml
+   jumpstarter-driver-<driver_package> = { workspace = true }
+   ```
+   Insert it alphabetically among the other `jumpstarter-driver-*` entries.
+3. **Add the package to `jumpstarter-all`** by adding it to the `dependencies` list in `python/packages/jumpstarter-all/pyproject.toml`:
+   ```toml
+   "jumpstarter-driver-<driver_package>",
+   ```
+   Insert it alphabetically among the other `jumpstarter-driver-*` entries.
+4. Review the generated files and customize as needed
+5. Implement the driver logic in `driver.py`
+6. Add tests in `driver_test.py`
+7. Update the README.md with specific documentation
+8. Test the driver: `make pkg-test-<driver_package>`
+
+## 6. Driver Naming Conventions
+- **Package names**: lowercase with hyphens (e.g., `my-driver`)
+- **Class names**: CamelCase with descriptive suffixes:
+  - Power drivers: `*Power` (e.g., `TasmotaPower`, `HttpPower`)
+  - Network drivers: `*Network` (e.g., `TcpNetwork`, `UdpNetwork`)
+  - Flasher drivers: `*Flasher` (e.g., `QemuFlasher`)
+  - Console drivers: `*Console` (e.g., `UbootConsole`)
+  - Server drivers: `*Server` (e.g., `HttpServer`, `SNMPServer`)
+  - Generic drivers: descriptive name (e.g., `ISCSI`, `Shell`, `Tftp`)
+
+## 7. Directory Structure
+The script creates:
+```
+python/packages/jumpstarter-driver-<driver_package>/
+|-- jumpstarter_driver_<driver_package>/
+|   |-- __init__.py
+|   |-- client.py
+|   |-- driver.py
+|   \-- driver_test.py
+|-- examples/
+|   \-- exporter.yaml
+|-- .gitignore
+|-- pyproject.toml
+\-- README.md
+```
+
+## 8. Documentation
+The script automatically creates:
+- A README.md with basic documentation
+- A symlink in `python/docs/source/reference/package-apis/drivers/` pointing to the README
+- Template files for all necessary components
+- A good example of documentation is in `python/docs/source/reference/package-apis/drivers/gpiod.md` and also `python/docs/source/reference/package-apis/drivers/pyserial.md`
+
+## Code Style and Testing
+
+- Follow existing code style (validate with `make lint`, fix with `make lint-fix`)
+- Perform static type checking with `make ty-pkg-${package_name}`
+- Add comprehensive tests and update documentation
+- Verify all tests pass (`make pkg-test-${package_name}` or `make test`)
+
+## Contributing Guidelines
+
+- Focus on a single issue per driver
+- Use clear, descriptive commit messages
+- Reference issue numbers when applicable
+- Follow conventional commit format when possible
+- Ensure all tests pass before submitting PRs
+
+# Driver client CLIs
+
+Some drivers implement known classes that provide a CLI interface for the driver, but other
+clients implement their own CLI interface that will appear in the `j` command inside a `jmp shell`.
+
+Good examples can be found in `python/packages/jumpstarter-driver-shell/jumpstarter_driver_shell/client.py`, `python/packages/jumpstarter-driver-pyserial/jumpstarter_driver_pyserial/client.py` or `python/packages/jumpstarter-driver-probe-rs/jumpstarter_driver_probe_rs/client.py`.
+
+# Composite drivers
+
+Drives which have children drivers should be composite drivers, and the client interface should
+inherit from `CompositeClient` in jumpstarter_driver_composite.client, also the pyproject.toml should
+have a dependency on `jumpstarter-driver-composite`.

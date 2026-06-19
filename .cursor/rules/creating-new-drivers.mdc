@@ -70,16 +70,16 @@ Once the driver is created:
 The script creates:
 ```
 python/packages/jumpstarter-driver-<driver_package>/
-├── jumpstarter_driver_<driver_package>/
-│   ├── __init__.py
-│   ├── client.py
-│   ├── driver.py
-│   └── driver_test.py
-├── examples/
-│   └── exporter.yaml
-├── .gitignore
-├── pyproject.toml
-└── README.md
+|-- jumpstarter_driver_<driver_package>/
+|   |-- __init__.py
+|   |-- client.py
+|   |-- driver.py
+|   \-- driver_test.py
+|-- examples/
+|   \-- exporter.yaml
+|-- .gitignore
+|-- pyproject.toml
+\-- README.md
 ```
 
 ## 8. Documentation

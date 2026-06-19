@@ -10,18 +10,18 @@ This project follows a monorepo structure with a top-level `pyproject.toml` that
 
 ```
 jumpstarter/
-├── python/                 # Python workspace root
-│   ├── pyproject.toml      # Main workspace configuration
-│   ├── packages/           # All Python packages
-│   ├── examples/           # Example applications
-│   ├── docs/               # Documentation (Sphinx)
-│   │   └── source/
-│   │       └── internal/   # JEPs (rendered as part of docs)
-│   │           └── jeps/   # Jumpstarter Enhancement Proposals
-│   └── __templates__/      # Templates for creating new drivers
-├── controller/             # Controller components
-├── protocol/               # Protocol definitions
-└── .cursor/                # Cursor AI rules
+|-- python/                 # Python workspace root
+|   |-- pyproject.toml      # Main workspace configuration
+|   |-- packages/           # All Python packages
+|   |-- examples/           # Example applications
+|   |-- docs/               # Documentation (Sphinx)
+|   |   \-- source/
+|   |       \-- internal/   # JEPs (rendered as part of docs)
+|   |           \-- jeps/   # Jumpstarter Enhancement Proposals
+|   \-- __templates__/      # Templates for creating new drivers
+|-- controller/             # Controller components
+|-- protocol/               # Protocol definitions
+\-- .cursor/                # Cursor AI rules
 ```
 
 ## Workspace Configuration
@@ -69,16 +69,16 @@ Each package follows this structure:
 
 ```
 python/packages/jumpstarter-driver-<name>/
-├── jumpstarter_driver_<name>/    # Main Python package
-│   ├── __init__.py
-│   ├── driver.py                 # Driver implementation
-│   ├── client.py                 # Client implementation
-│   └── driver_test.py           # Tests
-├── examples/                     # Example configurations
-│   └── exporter.yaml
-├── pyproject.toml               # Package configuration
-├── README.md                    # Package documentation
-└── .gitignore
+|-- jumpstarter_driver_<name>/    # Main Python package
+|   |-- __init__.py
+|   |-- driver.py                 # Driver implementation
+|   |-- client.py                 # Client implementation
+|   \-- driver_test.py           # Tests
+|-- examples/                     # Example configurations
+|   \-- exporter.yaml
+|-- pyproject.toml               # Package configuration
+|-- README.md                    # Package documentation
+\-- .gitignore
 ```
 
 ## Package Configuration
@@ -95,14 +95,14 @@ Each package's `pyproject.toml` includes:
 
 ```
 python/examples/
-├── automotive/                  # Automotive testing example
-│   ├── jumpstarter_example_automotive/
-│   ├── pyproject.toml
-│   └── README.md
-└── soc-pytest/                 # SoC testing example
-    ├── jumpstarter_example_soc_pytest/
-    ├── pyproject.toml
-    └── README.md
+|-- automotive/                  # Automotive testing example
+|   |-- jumpstarter_example_automotive/
+|   |-- pyproject.toml
+|   \-- README.md
+\-- soc-pytest/                 # SoC testing example
+    |-- jumpstarter_example_soc_pytest/
+    |-- pyproject.toml
+    \-- README.md
 ```
 
 ## Development Workflow
