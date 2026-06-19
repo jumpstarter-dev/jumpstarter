@@ -10,7 +10,7 @@
 <body>
     <div class="container">
         <div class="banner">
-            <div class="banner-text">Jumpstarter Controller Community Edition • Powered by MicroShift</div>
+            <div class="banner-text">Jumpstarter Controller Community Edition - Powered by MicroShift</div>
             <div class="logos">
                 <a href="https://jumpstarter.dev/" target="_blank" rel="noopener noreferrer" class="logo-link" title="Jumpstarter - Remote device management and testing">
                     <img src="https://jumpstarter.dev/main/_static/logo-light-theme.svg" alt="Jumpstarter" class="jumpstarter-logo" />
@@ -249,7 +249,7 @@
                         form.style.opacity = '1';
                     } else {
                         // Operator not ready - disable form and show status
-                        statusContainer.innerHTML = '<div class="info" style="background: #fff3cd; border: 1px solid #ffc107; margin-bottom: 15px;"><strong>⏳ ' + data.message + '</strong><br><span style="font-size: 13px;">The configuration form will be available once the operator is ready. Checking status every 5 seconds...</span></div>';
+                        statusContainer.innerHTML = '<div class="info" style="background: #fff3cd; border: 1px solid #ffc107; margin-bottom: 15px;"><strong>' + data.message + '</strong><br><span style="font-size: 13px;">The configuration form will be available once the operator is ready. Checking status every 5 seconds...</span></div>';
                         baseDomainInput.disabled = true;
                         imageInput.disabled = true;
                         submitBtn.disabled = true;
@@ -424,19 +424,19 @@
                     const networkInfo = data.network.interfaces.map(iface => iface.name + ': ' + iface.ip).join('<br>');
                     
                     // Build info boxes
-                    let infoBoxes = '<div class="info"><strong>💾 Disk Usage</strong><br><div style="margin-top: 10px;">Root: ' + data.disk.used + ' / ' + data.disk.total + ' (' + data.disk.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + diskColor + '; width: ' + data.disk.percent + '%; height: 100%;"></div></div>Available: ' + data.disk.available + '</div></div>';
+                    let infoBoxes = '<div class="info"><strong>Disk Usage</strong><br><div style="margin-top: 10px;">Root: ' + data.disk.used + ' / ' + data.disk.total + ' (' + data.disk.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + diskColor + '; width: ' + data.disk.percent + '%; height: 100%;"></div></div>Available: ' + data.disk.available + '</div></div>';
                     
                     // Add LVM PV info if available
                     if (data.lvm) {
                         const lvmColor = data.lvm.percent > 80 ? '#f44336' : '#2196f3';
-                        infoBoxes += '<div class="info"><strong>💿 LVM Physical Volume</strong><br><div style="margin-top: 10px;">PV: ' + data.lvm.pv_device + '<br>VG: ' + data.lvm.vg_name + '<br>Used: ' + data.lvm.used + ' / ' + data.lvm.total + ' (' + data.lvm.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + lvmColor + '; width: ' + data.lvm.percent + '%; height: 100%;"></div></div>Free: ' + data.lvm.free + '</div></div>';
+                        infoBoxes += '<div class="info"><strong>LVM Physical Volume</strong><br><div style="margin-top: 10px;">PV: ' + data.lvm.pv_device + '<br>VG: ' + data.lvm.vg_name + '<br>Used: ' + data.lvm.used + ' / ' + data.lvm.total + ' (' + data.lvm.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + lvmColor + '; width: ' + data.lvm.percent + '%; height: 100%;"></div></div>Free: ' + data.lvm.free + '</div></div>';
                     }
                     
-                    infoBoxes += '<div class="info"><strong>🧠 Memory</strong><br><div style="margin-top: 10px;">Used: ' + data.memory.used + ' / ' + data.memory.total + ' (' + data.memory.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + memoryColor + '; width: ' + data.memory.percent + '%; height: 100%;"></div></div>Available: ' + data.memory.available + '</div></div>';
-                    infoBoxes += '<div class="info"><strong>⚙️ CPU</strong><br><div style="margin-top: 10px;">Cores: ' + data.cpu.cores + '<br>Usage: ' + data.cpu.usage + '%<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + cpuColor + '; width: ' + data.cpu.usage + '%; height: 100%;"></div></div></div></div>';
-                    infoBoxes += '<div class="info"><strong>🖥️ System</strong><br><div style="margin-top: 10px;">Kernel: ' + data.system.kernel + '<br>Uptime: ' + data.system.uptime + '<br>Hostname: ' + data.system.hostname + '</div></div>';
-                    infoBoxes += '<div class="info"><strong>🌐 Network</strong><br><div style="margin-top: 10px;">' + networkInfo + '</div></div>';
-                    infoBoxes += '<div class="info"><strong>📊 Load Average</strong><br><div style="margin-top: 10px;">1 min: ' + data.system.load_1 + '<br>5 min: ' + data.system.load_5 + '<br>15 min: ' + data.system.load_15 + '</div></div>';
+                    infoBoxes += '<div class="info"><strong>Memory</strong><br><div style="margin-top: 10px;">Used: ' + data.memory.used + ' / ' + data.memory.total + ' (' + data.memory.percent + '%)<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + memoryColor + '; width: ' + data.memory.percent + '%; height: 100%;"></div></div>Available: ' + data.memory.available + '</div></div>';
+                    infoBoxes += '<div class="info"><strong>CPU</strong><br><div style="margin-top: 10px;">Cores: ' + data.cpu.cores + '<br>Usage: ' + data.cpu.usage + '%<br><div style="background: #e0e0e0; height: 10px; border-radius: 5px; margin-top: 5px; overflow: hidden;"><div style="background: ' + cpuColor + '; width: ' + data.cpu.usage + '%; height: 100%;"></div></div></div></div>';
+                    infoBoxes += '<div class="info"><strong>System</strong><br><div style="margin-top: 10px;">Kernel: ' + data.system.kernel + '<br>Uptime: ' + data.system.uptime + '<br>Hostname: ' + data.system.hostname + '</div></div>';
+                    infoBoxes += '<div class="info"><strong>Network</strong><br><div style="margin-top: 10px;">' + networkInfo + '</div></div>';
+                    infoBoxes += '<div class="info"><strong>Load Average</strong><br><div style="margin-top: 10px;">1 min: ' + data.system.load_1 + '<br>5 min: ' + data.system.load_5 + '<br>15 min: ' + data.system.load_15 + '</div></div>';
                     
                     container.innerHTML = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">' + infoBoxes + '</div>';
                 })
@@ -519,13 +519,13 @@
                     
                     let html = '<div class="info">';
                     if (data.status) {
-                        html += '<strong>📦 BootC Status</strong><br><div style="margin-top: 10px;">';
+                        html += '<strong>BootC Status</strong><br><div style="margin-top: 10px;">';
                         html += '<pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; white-space: pre-wrap;">' + 
                                 data.status.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
                         html += '</div>';
                     }
                     if (data.upgrade_check) {
-                        html += '<strong>🔄 Upgrade Check</strong><br><div style="margin-top: 10px;">';
+                        html += '<strong>Upgrade Check</strong><br><div style="margin-top: 10px;">';
                         html += '<pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; white-space: pre-wrap;">' + 
                                 data.upgrade_check.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
                         html += '</div>';
@@ -747,8 +747,8 @@
                             <td>${pod.restarts}</td>
                             <td>${pod.age}</td>
                             <td>
-                                <a href="/logs/${pod.namespace}/${pod.name}" target="_blank" class="action-icon" title="View Logs">📋</a>
-                                <a href="#" onclick="restartPod('${pod.namespace}', '${pod.name}'); return false;" class="action-icon" title="Restart Pod">🔄</a>
+                                <a href="/logs/${pod.namespace}/${pod.name}" target="_blank" class="action-icon" title="View Logs">Logs</a>
+                                <a href="#" onclick="restartPod('${pod.namespace}', '${pod.name}'); return false;" class="action-icon" title="Restart Pod">Restart</a>
                             </td>
                         </tr>
                     `).join('');
