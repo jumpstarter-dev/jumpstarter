@@ -8,7 +8,7 @@
 | **Status**        | Draft                                                          |
 | **Type**          | Standards Track                                                |
 | **Created**       | 2026-06-03                                                     |
-| **Updated**       | 2026-06-18                                                     |
+| **Updated**       | 2026-06-19                                                     |
 | **Discussion**    | https://github.com/jumpstarter-dev/jumpstarter/issues/41       |
 | **Requires**      |                                                                |
 | **Supersedes**    |                                                                |
@@ -68,8 +68,7 @@ applies regardless of backend:
 
 For example, a target that needs GPU or specialized I/O can run functional
 checks cheaply on a QEMU class in CI, validate higher-fidelity behavior on a
-cloud-backed virtual device, and use real hardware as ground truth. The
-The `VirtualTargetClass` abstraction makes this ladder explicit
+cloud-backed virtual device, and use real hardware as ground truth. The `VirtualTargetClass` abstraction makes this ladder explicit
 without changing the lease experience.
 
 ### User Stories
@@ -112,7 +111,7 @@ VirtualTargetClass  ←── referenced by ──  ExporterSet
 ```
 
 - **`VirtualTargetClass`** — **namespaced** configuration for a backend
-  (`provisioner`, nested `parameters`, credentials, scheduling, binding mode).
+  (`provisioner`, nested `parameters`, credentials, scheduling, reclaim policy).
   Lives in the same namespace as referencing `ExporterSet` resources. Admins own
   classes; `ExporterSet` authors never touch credentials.
 - **`ExporterSet`** — namespaced generic scaling resource with `selector` + inline
@@ -138,7 +137,6 @@ metadata:
   namespace: jumpstarter
 spec:
   provisioner: qemu.jumpstarter.dev
-  bindingMode: Immediate              # warm pool; WaitForFirstConsumer = on-demand
   reclaimPolicy: Delete
   scheduling:                         # inherited by rendered exporter Pods
     nodeSelector:
@@ -147,9 +145,9 @@ spec:
       - key: jumpstarter.dev/kvm
         operator: Exists
         effect: NoSchedule
-    resources:
-      limits:
-        devices.kubevirt.io/kvm: "1"
+  resources:                          # inherited by rendered exporter Pod containers
+    limits:
+      devices.kubevirt.io/kvm: "1"
   parameters:                        # nested object; provisioner interprets
     machineType: virt
     firmware:
@@ -174,7 +172,7 @@ spec:
   maxReplicas: 20
   minAvailableReplicas: 2            # PDB-style warm buffer (ready & unleased)
   scaleDownCooldown: 5m
-  recycleStrategy: ExitAndReplace    # or InPlaceReuse
+  reclaimPolicy: Delete               # or Recycle (reset in place)
   virtualTargetClassName: qemu-rpi4  # same-namespace VirtualTargetClass name
   parameters:                        # optional; deep-merged over class parameters
     resources:
@@ -215,7 +213,6 @@ spec:
   provisioner: corellium.jumpstarter.dev
   credentialsSecretRef:
     name: corellium-creds              # Secret in same namespace
-  bindingMode: WaitForFirstConsumer  # provision on lease
   reclaimPolicy: Delete
   parameters:
     api:
@@ -374,8 +371,8 @@ and boot what they need after leasing (see Phase 4 and DD-7).
 | Actor | Component | Responsibility |
 | --- | --- | --- |
 | **Administrator** | Human / GitOps | Cluster bootstrap, class + set CRs |
-| **Jumpstarter operator** | `Jumpstarter` CR | Deploys `jumpstarter-controller`, routers, exporter-set controllers |
-| **Exporter-set controller** | `qemu.jumpstarter.dev` Deployment | Reconciles `ExporterSet`, creates Exporters/Pods, scales pool |
+| **Jumpstarter operator** | `Jumpstarter` CR | Deploys `jumpstarter-controller`, routers, provisioner controllers |
+| **Provisioner controller** | `qemu.jumpstarter.dev` Deployment | Reconciles `ExporterSet`, creates Exporters/Pods, scales pool |
 | **Jumpstarter controller** | Existing controller | Assigns `Lease` → `Exporter`, unchanged lease semantics |
 | **User** | CLI / CI (`jmp lease`, drivers) | Requests leases, flashes images, runs tests |
 
@@ -389,11 +386,11 @@ and boot what they need after leasing (see Phase 4 and DD-7).
 
 **Controller actions:**
 
-- Operator creates the exporter-set controller Deployment
+- Operator creates the provisioner controller Deployment
   (`--provisioner=qemu.jumpstarter.dev`).
 - Operator ensures `jumpstarter-controller` is running (existing behavior).
 
-**Result:** Provisioner controller is watching for `ExporterSet` CRs whose
+**Result:** The provisioner controller is watching for `ExporterSet` CRs whose
 `virtualTargetClassName` references a class handled by that provisioner.
 
 #### Phase 1 — Define the virtual target profile (admin, two CRs)
@@ -411,7 +408,6 @@ metadata:
   namespace: jumpstarter
 spec:
   provisioner: qemu.jumpstarter.dev
-  bindingMode: Immediate
   reclaimPolicy: Delete
   scheduling:
     nodeSelector:
@@ -420,9 +416,9 @@ spec:
       - key: jumpstarter.dev/kvm
         operator: Exists
         effect: NoSchedule
-    resources:
-      limits:
-        devices.kubevirt.io/kvm: "1"
+  resources:
+    limits:
+      devices.kubevirt.io/kvm: "1"
   parameters:
     machineType: virt
     firmware:
@@ -448,7 +444,7 @@ spec:
   maxReplicas: 20
   minAvailableReplicas: 2
   scaleDownCooldown: 5m
-  recycleStrategy: ExitAndReplace
+  reclaimPolicy: Delete
   virtualTargetClassName: qemu-rpi4
   parameters:
     resources:
@@ -473,14 +469,14 @@ spec:
 
 **User actions:** None.
 
-**Controller actions:** None yet — exporter-set controller waits until
+**Controller actions:** None yet — provisioner controller waits until
 `ExporterSet` exists and resolves `virtualTargetClassName` to the class above.
 
-#### Phase 2 — Warm pool provisioning (exporter-set controller)
+#### Phase 2 — Warm pool provisioning (provisioner controller)
 
 **Trigger:** `ExporterSet` CR created or updated; `minAvailableReplicas: 2`.
 
-**Exporter-set controller actions (reconcile loop):**
+**Provisioner controller actions (reconcile loop):**
 
 1. Resolve `ExporterSet.spec.virtualTargetClassName` to `VirtualTargetClass`
    `qemu-rpi4` in the same namespace; compute merged parameters (deep-merge of
@@ -536,7 +532,7 @@ jmp lease -l board=rpi4,virtual=true
    lease name.
 4. Return connection details to the user (existing flow).
 
-**Exporter-set controller actions:**
+**Provisioner controller actions:**
 
 - Observes `leasedReplicas` increased, `availableReplicas` decreased.
 - If `availableReplicas < minAvailableReplicas`, begins scale-up (create another
@@ -584,15 +580,15 @@ jmp delete-lease <lease-id>    # or lease TTL expires
 1. Clear `Exporter.status.leaseRef` on `rpi4-virtual-aaa`.
 2. Mark lease as released.
 
-**Exporter-set controller actions:**
+**Provisioner controller actions:**
 
 1. Observe exporter is unleased; update `availableReplicas` / `leasedReplicas`.
-2. Apply `recycleStrategy`:
-   - **ExitAndReplace (default):** exporter sidecar exits after cleanup → Pod
+2. Apply `reclaimPolicy`:
+   - **Delete (default):** exporter sidecar exits after cleanup → Pod
      terminates → controller deletes `Exporter` CR → creates a fresh replacement
      with empty baseline storage to maintain `minAvailableReplicas` (next lessee
      flashes again).
-   - **InPlaceReuse:** exporter resets QEMU state in place → same Pod returns
+   - **Recycle:** exporter resets QEMU state in place → same Pod returns
      to Ready without restart (lessee may re-flash before next session).
 3. If `availableReplicas > minAvailableReplicas` for longer than
    `scaleDownCooldown`, gracefully scale down an excess replica:
@@ -616,7 +612,7 @@ warm exporter remains.
 - Sets `Pending` condition on the other two leases (existing behavior when no
   exporter is available).
 
-**Exporter-set controller actions:**
+**Provisioner controller actions:**
 
 1. Sees pending leases matching `spec.selector` with no available exporters.
 2. Scales up: creates new `Exporter` + Pod instances (up to `maxReplicas`).
@@ -632,17 +628,17 @@ leases are released.
 
 | CRD | Scope | Created by | Observed by | Relationship |
 | --- | --- | --- | --- | --- |
-| `VirtualTargetClass` | Namespaced | Admin | Exporter-set controller | Referenced by `ExporterSet` (same namespace) |
-| `ExporterSet` | Namespaced | Admin | Exporter-set controller | References class; owns runtime objects below |
+| `VirtualTargetClass` | Namespaced | Admin | Provisioner controller | Referenced by `ExporterSet` (same namespace) |
+| `ExporterSet` | Namespaced | Admin | Provisioner controller | References class; owns runtime objects below |
 
 **Platform and runtime (created by controllers):**
 
 | Resource | Created by | Observed by | User-visible? |
 | --- | --- | --- | --- |
 | `Jumpstarter` | Admin | Operator | No |
-| `Exporter` | Exporter-set controller | Jumpstarter-controller, exporter-set controller | Indirectly (via lease) |
-| `Lease` | User (via CLI) | Jumpstarter-controller, exporter-set controller | Yes |
-| `Pod` | Exporter-set controller | Kubernetes, exporter-set controller | No |
+| `Exporter` | Provisioner controller | Jumpstarter-controller, provisioner controller | Indirectly (via lease) |
+| `Lease` | User (via CLI) | Jumpstarter-controller, provisioner controller | Yes |
+| `Pod` | Provisioner controller | Kubernetes, provisioner controller | No |
 
 #### QEMU vs API-backed vs off-cluster backends
 
@@ -693,8 +689,8 @@ topologies.
                     │              │              │
   ┌─────────────────▼┐ ┌───────────▼──────────┐┌──▼──────────────────────┐
   │ qemu provisioner │ │ android provisioner  │ │ corellium provisioner   │
-  │ (ExporterSet     │ │ (ExporterSet         │ │ (ExporterSet            │
-  │  controller)     │ │  controller)         │ │  controller)            │
+  │  controller      │ │  controller          │ │  controller             │
+  │                  │ │                      │ │                         │
   └────────┬─────────┘ └──────────┬──────────┘ └────────────┬────────────┘
            │                      │                         │
            │ manages              │ manages                 │ manages
@@ -712,19 +708,21 @@ topologies.
 
 **Scaling Inputs — Watches on Leases and Exporters:**
 
-Each `ExporterSet` controller watches two key resources to make scaling decisions:
+Each provisioner controller watches two key resources to make scaling decisions:
 
 1. **Leases** — The controller watches for pending Leases whose label selectors
-   match the set's selector. Pending leases with no available exporter signal
-   demand and trigger scale-up.
+   would be satisfied by Exporters carrying the set's `template.metadata.labels`.
+   Pending leases with no available exporter signal demand and trigger scale-up.
 2. **Exporters** — The controller watches owned Exporter objects to track which
    instances are available (no active lease) vs. occupied (leased). This
    determines the current pool utilization.
 
-Together these inputs feed the scaling logic: if there are pending leases that
-match this set and no available instances to serve them, scale up. If there are
-excess idle instances beyond `minAvailableReplicas` for a sustained period, scale
-down.
+The matching is straightforward: the `ExporterSet` creates Exporters with the
+labels declared in `spec.template.metadata.labels`. The `jumpstarter-controller`
+assigns Leases to Exporters whose labels satisfy the Lease's selector — existing
+lease semantics, unchanged. The provisioner controller knows its template labels
+and can therefore determine which pending Leases would match its Exporters,
+using that as the demand signal for scale-up.
 
 **Per-Provisioner Deployments (single image by default):** All provisioner
 controllers are compiled into a single binary. Each Deployment in the cluster
@@ -756,7 +754,7 @@ spec:
         image: quay.io/jumpstarter-dev/exporter-set-controller-corellium:latest
 ```
 
-**Scaling Logic:** Each `ExporterSet` controller monitors its instances and scales
+**Scaling Logic:** Each provisioner controller monitors its instances and scales
 based on available (unleased) replicas:
 
 - If `availableReplicas` drops below `minAvailableReplicas`, scale up.
@@ -768,14 +766,14 @@ based on available (unleased) replicas:
 
 **Instance Lifecycle:**
 
-1. `ExporterSet` controller creates an `Exporter` from the set template
+1. Provisioner controller creates an `Exporter` from the set template
    (provisioner renders the Pod).
 2. The Pod starts the virtual target (sidecar pattern for container backends, or
    API call for external backends) and runs the Jumpstarter exporter, registering
    with the controller like any other exporter.
 3. The instance becomes available in the pool for lease assignment.
 4. When a lease is released, the exporter handles cleanup/reset per
-   `recycleStrategy`. The instance returns to the available pool or is replaced.
+   `reclaimPolicy`. The instance returns to the available pool or is replaced.
 
 ### API / Protocol Changes
 
@@ -783,13 +781,20 @@ based on available (unleased) replicas:
 
 | CRD | Scope | Role |
 | --- | --- | --- |
-| `VirtualTargetClass` | Namespaced | Backend profile — provisioner, credentials, scheduling, binding, nested `parameters` |
+| `VirtualTargetClass` | Namespaced | Backend profile — provisioner, credentials, scheduling, reclaim policy, nested `parameters` |
 | `ExporterSet` | Namespaced | Generic scaling resource (ReplicaSet + HPA analog) |
 
 **Reference rule:** `ExporterSet.spec.virtualTargetClassName` must name a
 `VirtualTargetClass` in the **same namespace**. Cross-namespace references are
 rejected at admission. `credentialsSecretRef.name` must refer to a Secret in that
 same namespace.
+
+**RBAC:** Both `VirtualTargetClass` and `ExporterSet` are administrator-facing
+resources. Standard Kubernetes RBAC controls who can create, update, and delete
+them. `VirtualTargetClass` carries credential references and backend
+configuration; `ExporterSet` controls resource consumption via scaling bounds.
+Namespace-scoped RBAC roles allow teams to manage their own virtual target pools
+without cluster-admin privileges.
 
 **VirtualTargetClass (common fields):**
 
@@ -800,16 +805,15 @@ spec:
     name: <string>                   # Secret in same namespace as this class
   parameters:                        # nested YAML object; provisioner-specific
     <key>: <nested value>
-  bindingMode: Immediate | WaitForFirstConsumer
-  reclaimPolicy: Delete | Retain
+  reclaimPolicy: Delete | Recycle    # Delete = destroy & replace; Recycle = reset in place
   scheduling:                        # inherited by rendered exporter Pods
     nodeSelector:
       <key>: <value>
     nodeAffinity: { ... }
     tolerations: [ ... ]
-    resources:
-      limits:
-        devices.kubevirt.io/kvm: "1"
+  resources:                         # inherited by rendered exporter Pod containers
+    limits:
+      devices.kubevirt.io/kvm: "1"
 ```
 
 **ExporterSet (common fields):**
@@ -820,7 +824,7 @@ spec:
   maxReplicas: <int>                 # ceiling (0 or omitted = no limit)
   minAvailableReplicas: <int>        # warm buffer: ready & unleased (default: 0)
   scaleDownCooldown: <duration>      # default: 5m
-  recycleStrategy: ExitAndReplace | InPlaceReuse
+  reclaimPolicy: Delete | Recycle    # overrides class default; Delete = destroy & replace
   virtualTargetClassName: <string>   # VirtualTargetClass name in same namespace
   parameters:                       # optional nested overrides (deep-merged with class)
     <key>: <nested value>
@@ -954,8 +958,9 @@ for scalable testing. However:
 
 - Virtual targets must faithfully emulate the interfaces exposed by physical
   hardware (serial, network, storage, power) through the existing driver model.
-- Container-backed provisioners require `/dev/kvm` or equivalent; scheduling is
-  expressed on `VirtualTargetClass.scheduling`.
+- Container-backed provisioners require `/dev/kvm` or equivalent; node
+  placement is expressed on `VirtualTargetClass.scheduling` and device resource
+  limits on `VirtualTargetClass.resources`.
 - Timing-sensitive tests (USB/IP latency, boot ROM timeouts) may behave
   differently on virtual targets — the system should expose labels indicating
   whether a target is physical or virtual so users can filter when fidelity
@@ -986,11 +991,11 @@ KVM, GPU passthrough, or vendor-specific tooling unavailable in the cluster.
 
 **What differs per provisioner:**
 
-- **In-cluster (`qemu.jumpstarter.dev`):** exporter-set controller creates Pod +
+- **In-cluster (`qemu.jumpstarter.dev`):** provisioner controller creates Pod +
   sidecar; scheduling from `VirtualTargetClass.scheduling`.
 - **API-backed (`corellium.jumpstarter.dev`):** exporter Pod is a thin API
   client; cloud device lifecycle managed externally.
-- **Off-cluster (`qemu-baremetal.jumpstarter.dev`):** exporter-set controller
+- **Off-cluster (`qemu-baremetal.jumpstarter.dev`):** provisioner controller
   provisions exporter + QEMU (or vendor emulator) on remote hosts via SSH or a
   lab agent API; may run exporter as a local process on the host rather than a
   Pod. The controller still owns `Exporter` CRs in the cluster for lease
@@ -1012,7 +1017,7 @@ spec:
   provisioner: qemu-baremetal.jumpstarter.dev
   credentialsSecretRef:
     name: automotive-lab-ssh
-  bindingMode: Immediate
+  reclaimPolicy: Delete
   parameters:
     hosts:
       - name: bench-01.automotive.example.com
@@ -1092,8 +1097,7 @@ CI pipelines (Pod scheduling + image pull + VM boot + exporter registration
 typically takes 10-15s, and up to 60s with cold image pulls or heavy
 provisioners). A warm pool provides instant lease fulfillment for the common
 case. Setting `minAvailableReplicas: 0` still allows purely on-demand behavior
-for rarely-used targets. `VirtualTargetClass.bindingMode: WaitForFirstConsumer`
-maps to on-demand provisioning; `Immediate` maps to warm pools.
+for rarely-used targets — no separate binding-mode field is needed.
 
 ### DD-2: Provisioner controller deployment model
 
@@ -1202,9 +1206,9 @@ is **namespaced** so teams define isolated backend profiles, credentials, and
 scheduling per namespace without cluster-admin involvement. `ExporterSet` may
 only reference a class in the **same namespace**; `credentialsSecretRef` points
 to a Secret in that namespace — credentials never appear on `ExporterSet`.
-`bindingMode` and `reclaimPolicy` still map to warm-pool vs. on-demand and
-external target retention. The StorageClass/PVC *separation of class and consumer*
-is retained; only scope differs.
+`reclaimPolicy` controls instance lifecycle after lease release.
+The StorageClass/PVC *separation of class and consumer* is retained; only scope
+differs.
 
 ### DD-7: Instance TTL and image refresh (deferred)
 
@@ -1247,7 +1251,7 @@ choose to enable them.
 
 ### Reconciliation Loop
 
-Each `ExporterSet` controller runs a continuous reconciliation loop, triggered by
+Each provisioner controller runs a continuous reconciliation loop, triggered by
 changes to the set CR, owned Exporters, or matching Leases:
 
 ```text
@@ -1257,15 +1261,19 @@ for each ExporterSet CR:
   replicas = count ownedExporters in Ready state
   leasedReplicas = count ownedExporters with an active LeaseRef
   availableReplicas = replicas - leasedReplicas
-  pendingLeases = count pending Leases matching spec.selector
-  
+  pendingLeases = count pending Leases matching template labels
+  belowCeiling = (spec.maxReplicas == 0) OR (replicas < spec.maxReplicas)
+
   # Invariant: maintain minAvailableReplicas warm buffer
-  if availableReplicas < spec.minAvailableReplicas AND replicas < spec.maxReplicas:
+  if availableReplicas < spec.minAvailableReplicas AND belowCeiling:
     scale up to restore availableReplicas
 
   # Demand-driven scale-up
-  elif pendingLeases > 0 AND replicas < spec.maxReplicas:
-    scale up by min(pendingLeases, spec.maxReplicas - replicas)
+  elif pendingLeases > 0 AND belowCeiling:
+    deficit = pendingLeases
+    if spec.maxReplicas > 0:
+      deficit = min(deficit, spec.maxReplicas - replicas)
+    scale up by deficit
 
   # Scale-down: excess idle replicas
   elif availableReplicas > spec.minAvailableReplicas AND cooldown elapsed:
@@ -1278,17 +1286,37 @@ for each ExporterSet CR:
 
 ### Instance States
 
-Each virtual exporter instance transitions through:
+Each virtual exporter instance transitions through the following states. The
+path after lease release depends on the effective `reclaimPolicy`.
+
+**`reclaimPolicy: Delete` (default)** — destroy and replace:
 
 ```text
-Provisioning → Ready (warm pool) → Leased → Ready
-                                              └→ Terminating → (deleted if available>min)
+Provisioning ──► Ready (warm pool) ──► Leased ──► Terminating ──► (deleted)
+                   ▲                                                  │
+                   └── new instance Provisioning ◄────────────────────┘
+                       (if available < minAvailableReplicas)
+```
+
+**`reclaimPolicy: Recycle`** — reset in place:
+
+```text
+Provisioning ──► Ready (warm pool) ──► Leased ──► Ready
+                   │                                 │
+                   └─────── (available for lease) ◄──┘
+```
+
+Both strategies share a common scale-down path when
+`availableReplicas > minAvailableReplicas` beyond the cooldown period:
+
+```text
+Ready (idle, excess) ──► enabled=false ──► Terminating ──► (deleted)
 ```
 
 - **Provisioning:** Pod starting, virtual target provisioning, exporter registering.
 - **Ready:** Exporter registered and available for lease.
 - **Leased:** Exporter assigned to an active lease.
-- **Terminating:** Instance being deleted (scale-down or failure replace).
+- **Terminating:** Instance being deleted (scale-down, reclaim, or failure replace).
 
 ### Component Interaction
 
@@ -1298,12 +1326,12 @@ Provisioning → Ready (warm pool) → Leased → Ready
    registering with the existing `jumpstarter-controller`.
 4. Instances appear as regular exporters with labels from `spec.template.metadata`.
 5. Users lease them normally — the existing controller handles assignment.
-6. On lease release, the instance is recycled per `recycleStrategy`:
-   - **Exit-and-replace (default):** Exporter exits; controller replaces the
-     instance proactively to maintain `minAvailableReplicas`.
-   - **In-place reuse:** Exporter resets internal state without exiting; Pod
-     remains running and transitions back to Ready immediately.
-7. The `ExporterSet` controller continuously monitors utilization and scales.
+6. On lease release, the instance is reclaimed per `reclaimPolicy`:
+   - **Delete (default):** Exporter exits; controller replaces the instance
+     proactively to maintain `minAvailableReplicas`.
+   - **Recycle:** Exporter resets internal state without exiting; Pod remains
+     running and transitions back to Ready immediately.
+7. The provisioner controller continuously monitors utilization and scales.
 
 ### Failure Modes
 
@@ -1510,7 +1538,7 @@ flash-at-lease workflow (DD-7).
       nested `parameters` with schemaless object fields; same-namespace reference
       rule)
 - [ ] Implement parameter deep-merge and provisioner-side validation
-- [ ] Implement exporter-set controller binary with `--provisioner=qemu.jumpstarter.dev`
+- [ ] Implement provisioner controller binary with `--provisioner=qemu.jumpstarter.dev`
 - [ ] Sidecar Pod rendering (provisional init-container model — see Unresolved
       Questions)
 - [ ] Core scaling logic: `minAvailableReplicas`, demand-driven scale-up, graceful
@@ -1523,7 +1551,7 @@ flash-at-lease workflow (DD-7).
 
 ### Phase 3: External / off-cluster provisioning
 
-Extend the exporter-set controller with an off-cluster QEMU provisioner to
+Extend the provisioner controller with an off-cluster QEMU provisioner to
 validate the pluggable backend model beyond in-cluster Pods. Documents and
 implements the flow in *External and Off-Cluster Provisioning*.
 
@@ -1564,6 +1592,9 @@ claim CRDs.
   provisioner model; added end-to-end flow section
 - 2026-06-18: Team review — dictionary `parameters`, removed typed VirtualTarget
   CRDs, namespaced `VirtualTargetClass`, deferred TTL (DD-7)
+- 2026-06-19: Coherence pass — removed `bindingMode`, unified `reclaimPolicy`
+  (Delete/Recycle) on both CRDs, split `scheduling`/`resources`, standardized
+  "provisioner controller" terminology, added per-strategy state diagrams, RBAC note
 
 ## References
 
