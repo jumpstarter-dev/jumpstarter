@@ -11,6 +11,8 @@ license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
   "jumpstarter",
+  "aiohttp>=3.10.5",
+  "yarl>=1.6.0",
   "opendal>=0.45.8,<0.46",
   "click>=8.1.7.2",
 ]

@@ -14,8 +14,6 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 from uuid import UUID
 
-import aiohttp
-import yarl
 from anyio import BrokenResourceError
 from pydantic import TypeAdapter
 from pydantic.dataclasses import dataclass
@@ -24,7 +22,6 @@ from jumpstarter.common import LogSource, Metadata
 from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource, Resource
 from jumpstarter.config.env import JMP_DISABLE_COMPRESSION
 from jumpstarter.exporter.logging import get_logger
-from jumpstarter.streams.aiohttp import AiohttpStreamReaderStream
 from jumpstarter.streams.common import create_memory_stream
 from jumpstarter.streams.encoding import Compression, compress_stream
 from jumpstarter.streams.progress import ProgressStream
@@ -121,13 +118,15 @@ class Driver(
                 del self.resources[resource_uuid]
 
     @staticmethod
-    def _make_url(url: str) -> yarl.URL:
+    def _make_url(url: str):
         """Construct a yarl.URL preserving percent-encoding in the path.
 
         yarl.URL() normalizes %XX sequences (e.g. %40 → @), which breaks
         signed redirect URLs (CloudFront, S3) whose signatures cover the
         encoded form.  Using encoded=True keeps the raw string intact.
         """
+        import yarl
+
         return yarl.URL(url, encoded=True)
 
     @staticmethod
@@ -145,6 +144,8 @@ class Driver(
         cls, headers: dict[str, str], original_url: str, redirect_url: str
     ) -> dict[str, str]:
         """Strip auth headers when a redirect crosses origins."""
+        import yarl
+
         orig = yarl.URL(original_url)
         dest = yarl.URL(redirect_url)
         if (orig.scheme, orig.host, orig.port) == (dest.scheme, dest.host, dest.port):
@@ -156,9 +157,13 @@ class Driver(
 
     @asynccontextmanager
     async def _presigned_get(
-        self, url: str, headers: dict[str, str], timeout: aiohttp.ClientTimeout, max_redirects: int = 10
+        self, url: str, headers: dict[str, str], timeout, max_redirects: int = 10
     ):
         """GET with manual redirect following to preserve percent-encoding in URLs."""
+        import aiohttp
+
+        from jumpstarter.streams.aiohttp import AiohttpStreamReaderStream
+
         current_url = url
         current_headers = headers
         for _ in range(max_redirects + 1):
@@ -181,6 +186,8 @@ class Driver(
 
     @asynccontextmanager
     async def _resource_from_presigned(self, headers, url: str, method: str, timeout: int):
+        import aiohttp
+
         client_timeout = aiohttp.ClientTimeout(total=timeout)
         try:
             match method:
