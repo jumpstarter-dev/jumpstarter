@@ -54,7 +54,6 @@ jumpstarter-driver-xcp = { workspace = true }
 jumpstarter-imagehash = { workspace = true }
 jumpstarter-kubernetes = { workspace = true }
 jumpstarter-mcp = { workspace = true }
-jumpstarter-protocol = { workspace = true }
 jumpstarter-testing = { workspace = true }
 hatch-pin-jumpstarter = { workspace = true }
 
@@ -85,11 +84,9 @@ dev = [
 
 [tool.ruff]
 target-version = "py311"
-exclude = ["packages/jumpstarter-protocol"]
 line-length = 120
 
 [tool.ruff.lint]
-exclude = ["packages/jumpstarter-protocol"]
 extend-select = ["I", "C", "E", "F", "W", "B", "ERA"]
 
 [tool.ruff.lint.isort]

@@ -16,6 +16,7 @@ members = [
     "jumpstarter-cli-admin",
     "jumpstarter-cli-common",
     "jumpstarter-cli-driver",
+    "jumpstarter-core",
     "jumpstarter-driver-adb",
     "jumpstarter-driver-androidemulator",
     "jumpstarter-driver-ble",
@@ -69,7 +70,6 @@ members = [
     "jumpstarter-imagehash",
     "jumpstarter-kubernetes",
     "jumpstarter-mcp",
-    "jumpstarter-protocol",
     "jumpstarter-testing",
 ]
 
@@ -1516,18 +1516,6 @@ wheels = [
 ]
 
 [[package]]
-name = "googleapis-common-protos"
-version = "1.70.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "protobuf" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/39/24/33db22342cf4a2ea27c9955e6713140fedd51e8b141b5ce5260897020f1a/googleapis_common_protos-1.70.0.tar.gz", hash = "sha256:0e1b44e0ea153e6594f9f394fef15193a68aaaea2d843f83e2742717ca753257", size = 145903, upload-time = "2025-04-14T10:17:02.924Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/86/f1/62a193f0227cf15a920390abe675f386dec35f7ae3ffe6da582d3ade42c7/googleapis_common_protos-1.70.0-py3-none-any.whl", hash = "sha256:b8bfcca8c25a2bb253e0e0b0adaf8c00773e5e6af6fd92397576680b807e0fd8", size = 294530, upload-time = "2025-04-14T10:17:01.271Z" },
-]
-
-[[package]]
 name = "gpiod"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1941,7 +1929,7 @@ dependencies = [
     { name = "anyio" },
     { name = "backports-zstd", marker = "python_full_version < '3.14'" },
     { name = "click" },
-    { name = "jumpstarter-protocol" },
+    { name = "jumpstarter-core" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
@@ -1970,7 +1958,7 @@ requires-dist = [
     { name = "anyio", specifier = ">=4.4.0,!=4.6.2" },
     { name = "backports-zstd", marker = "python_full_version < '3.14'", specifier = ">=1.1.0" },
     { name = "click", specifier = ">=8.1.7.2" },
-    { name = "jumpstarter-protocol", editable = "packages/jumpstarter-protocol" },
+    { name = "jumpstarter-core", editable = "packages/jumpstarter-core" },
     { name = "pydantic", specifier = ">=2.8.2" },
     { name = "pydantic-settings", specifier = ">=2.9.1" },
     { name = "pyyaml", specifier = ">=6.0.2" },
@@ -2038,7 +2026,6 @@ dependencies = [
     { name = "jumpstarter-driver-yepkit" },
     { name = "jumpstarter-imagehash" },
     { name = "jumpstarter-kubernetes" },
-    { name = "jumpstarter-protocol" },
     { name = "jumpstarter-testing" },
 ]
 
@@ -2086,7 +2073,6 @@ requires-dist = [
     { name = "jumpstarter-driver-yepkit", editable = "packages/jumpstarter-driver-yepkit" },
     { name = "jumpstarter-imagehash", editable = "packages/jumpstarter-imagehash" },
     { name = "jumpstarter-kubernetes", editable = "packages/jumpstarter-kubernetes" },
-    { name = "jumpstarter-protocol", editable = "packages/jumpstarter-protocol" },
     { name = "jumpstarter-testing", editable = "packages/jumpstarter-testing" },
 ]
 
@@ -2227,6 +2213,11 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.0.0" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
+
+[[package]]
+name = "jumpstarter-core"
+version = "0.0.0"
+source = { editable = "packages/jumpstarter-core" }
 
 [[package]]
 name = "jumpstarter-driver-adb"
@@ -3877,38 +3868,6 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-cli-common", editable = "packages/jumpstarter-cli-common" },
     { name = "mcp", specifier = ">=1.0.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
-    { name = "pytest-cov", specifier = ">=5.0.0" },
-]
-
-[[package]]
-name = "jumpstarter-protocol"
-source = { editable = "packages/jumpstarter-protocol" }
-dependencies = [
-    { name = "googleapis-common-protos" },
-    { name = "grpcio" },
-    { name = "protobuf" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "googleapis-common-protos", specifier = ">=1.69.1" },
-    { name = "grpcio", specifier = ">=1.66.1" },
-    { name = "protobuf", specifier = ">=6.30.1" },
 ]
 
 [package.metadata.requires-dev]

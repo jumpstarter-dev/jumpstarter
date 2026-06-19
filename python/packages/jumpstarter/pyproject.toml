@@ -12,7 +12,6 @@ license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
     "jumpstarter-core",
-    "jumpstarter-protocol",
     "pyyaml>=6.0.2",
     "anyio>=4.4.0,!=4.6.2",
     "aiohttp>=3.10.5",
