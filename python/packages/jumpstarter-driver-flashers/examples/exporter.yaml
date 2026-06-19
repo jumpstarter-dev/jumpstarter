@@ -8,6 +8,9 @@ token: "<token>"
 export:
   storage:
     type: "jumpstarter_driver_flashers.driver.TIJ784S4Flasher"
+    config:
+      # CA certificate file path for HTTPS when flashing from a URL with a custom CA
+      # cacert: "/etc/pki/tls/certs/internal-ca.crt"
     children:
       serial:
         ref: "serial"

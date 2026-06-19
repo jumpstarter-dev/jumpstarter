@@ -23,6 +23,7 @@ class BaseFlasher(Driver):
     cache_dir: str = field(default="/var/lib/jumpstarter/flasher")
     tftp_dir: str = field(default="/var/lib/tftpboot")
     http_dir: str = field(default="/var/www/html")
+    cacert: str | None = field(default=None)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -68,6 +69,14 @@ class BaseFlasher(Driver):
     async def get_default_target(self):
         """Return the default target"""
         return self.default_target
+
+    @export
+    async def get_cacert(self) -> str | None:
+        """Return the CA certificate contents if configured"""
+        if not self.cacert:
+            return None
+        with open(self.cacert) as f:
+            return f.read()
 
     @export
     async def setup_flasher_bundle(self, force_flash_bundle: str | None = None):
