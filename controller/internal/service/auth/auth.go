@@ -17,7 +17,8 @@ import (
 )
 
 // peerAddr returns the remote IP address from the gRPC peer info stored in ctx,
-// or "unknown" if unavailable.
+// or "unknown" if unavailable. Port number and transport paths (e.g. Unix socket
+// paths) are intentionally stripped to avoid leaking internal details.
 func peerAddr(ctx context.Context) string {
 	p, ok := peer.FromContext(ctx)
 	if !ok {
@@ -25,7 +26,7 @@ func peerAddr(ctx context.Context) string {
 	}
 	host, _, err := net.SplitHostPort(p.Addr.String())
 	if err != nil {
-		return p.Addr.String()
+		return "unknown"
 	}
 	return host
 }

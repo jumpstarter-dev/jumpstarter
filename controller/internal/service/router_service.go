@@ -78,7 +78,7 @@ func (s *RouterService) authenticate(ctx context.Context) (string, error) {
 }
 
 func (s *RouterService) Stream(stream pb.RouterService_StreamServer) error {
-	ctx := stream.Context()
+	ctx := logContext(stream.Context())
 	logger := log.FromContext(ctx)
 
 	streamName, err := s.authenticate(ctx)
