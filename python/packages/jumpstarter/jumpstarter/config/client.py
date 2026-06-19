@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 import errno
 import os
 import tempfile
 from contextlib import asynccontextmanager, contextmanager
-from datetime import datetime, timedelta
-from functools import wraps
+from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal, Optional, Self
 
-import grpc
 import yaml
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 from pydantic import (
@@ -25,48 +22,18 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from .common import CONFIG_PATH, ObjectMeta
 from .env import JMP_LEASE
-from .grpc import call_credentials
 from .shell import ShellConfigV1Alpha1
 from .tls import TLSConfigV1Alpha1
-from jumpstarter.client.grpc import ClientService, Exporter
 from jumpstarter.common.exceptions import (
-    ConfigurationError,
     ConnectionError,
     FileNotFoundError,
 )
-from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
-
-
-def _blocking_compat(f):
-    @wraps(f)
-    def wrapper(*args, **kwargs):
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(f(*args, **kwargs))
-        else:
-            return f(*args, **kwargs)
-
-    return wrapper
 
 
 def _attach_config_if_expired_token(exc: ConnectionError, config: ClientConfigV1Alpha1) -> None:
     """Attach config to a ConnectionError so re-auth can use it. No-op if not token-expired."""
     if "token is expired" in str(exc):
         exc.set_config(config)
-
-
-def _handle_connection_error(f):
-    @wraps(f)
-    async def wrapper(*args, **kwargs):
-        try:
-            return await f(*args, **kwargs)
-        except ConnectionError as e:
-            # args[0] is self for instance methods
-            _attach_config_if_expired_token(e, args[0])
-            raise
-
-    return wrapper
 
 
 class ClientConfigV1Alpha1Drivers(BaseSettings):
@@ -132,17 +99,6 @@ class ClientConfigV1Alpha1(BaseSettings):
 
     leases: ClientConfigV1Alpha1Lease = Field(default_factory=ClientConfigV1Alpha1Lease)
 
-    async def channel(self) -> grpc.aio.Channel:
-        if self.endpoint is None or self.token is None:
-            raise ConfigurationError("endpoint or token not set in client config")
-
-        credentials = grpc.composite_channel_credentials(
-            await ssl_channel_credentials(self.endpoint, self.tls),
-            call_credentials("Client", self.metadata, self.token),
-        )
-
-        return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
-
     @contextmanager
     def lease(
         self,
@@ -157,153 +113,6 @@ class ClientConfigV1Alpha1(BaseSettings):
             ) as lease:
                 yield lease
 
-    @_blocking_compat
-    @_handle_connection_error
-    async def get_exporter(
-        self,
-        name: str,
-    ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await svc.GetExporter(name=name)
-
-    async def _collect_all_leases(self, svc, page_size=100, only_active=True, filter=None, tag_filter=None):
-        from jumpstarter.client.grpc import LeaseList
-
-        all_leases = []
-        page_token = None
-        while True:
-            page = await svc.ListLeases(
-                page_size=page_size,
-                page_token=page_token,
-                filter=filter,
-                only_active=only_active,
-                tag_filter=tag_filter,
-            )
-            all_leases.extend(page.leases)
-            if not page.next_page_token:
-                break
-            page_token = page.next_page_token
-        return LeaseList(leases=all_leases, next_page_token=None)
-
-    @_blocking_compat
-    @_handle_connection_error
-    async def list_exporters(
-        self,
-        filter: str | None = None,
-        include_leases: bool = False,
-        include_online: bool = False,
-        include_status: bool = False,
-        page_size: int = 100,
-    ):
-        from jumpstarter.client.grpc import ExporterList
-
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        all_exporters = []
-        page_token = None
-        while True:
-            page = await svc.ListExporters(
-                page_size=page_size,
-                page_token=page_token,
-                filter=filter,
-            )
-            all_exporters.extend(page.exporters)
-            if not page.next_page_token:
-                break
-            page_token = page.next_page_token
-        result = ExporterList(exporters=all_exporters, next_page_token=None)
-        result.include_online = include_online
-        result.include_status = include_status
-
-        if not include_leases:
-            return result
-
-        leases_response = await self._collect_all_leases(svc, page_size=page_size)
-        lease_map = {}
-        for lease in leases_response.leases:
-            if lease.exporter and lease.effective_begin_time:
-                if lease.conditions:
-                    latest_condition = lease.conditions[-1]
-                    if latest_condition.type == "Ready" and latest_condition.status == "True":
-                        lease_map[lease.exporter] = lease
-
-        exporters_with_leases = []
-        for exporter in result.exporters:
-            lease = lease_map.get(exporter.name)
-            exporter_with_lease = Exporter(
-                namespace=exporter.namespace,
-                name=exporter.name,
-                labels=exporter.labels,
-                online=exporter.online,
-                lease=lease,
-            )
-            exporters_with_leases.append(exporter_with_lease)
-        result.include_leases = True
-        result.exporters = exporters_with_leases
-        return result
-
-    @_blocking_compat
-    @_handle_connection_error
-    async def create_lease(
-        self,
-        duration: timedelta,
-        selector: str | None = None,
-        exporter_name: str | None = None,
-        begin_time: datetime | None = None,
-        lease_id: str | None = None,
-        tags: dict[str, str] | None = None,
-    ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await svc.CreateLease(
-            selector=selector,
-            exporter_name=exporter_name,
-            duration=duration,
-            begin_time=begin_time,
-            lease_id=lease_id,
-            tags=tags,
-        )
-
-    @_blocking_compat
-    @_handle_connection_error
-    async def delete_lease(
-        self,
-        name: str,
-    ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        await svc.DeleteLease(
-            name=name,
-        )
-
-    @_blocking_compat
-    @_handle_connection_error
-    async def list_leases(
-        self,
-        filter: str | None = None,
-        only_active: bool = True,
-        page_size: int = 100,
-        tag_filter: str | None = None,
-    ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await self._collect_all_leases(
-            svc, page_size=page_size, only_active=only_active, filter=filter, tag_filter=tag_filter,
-        )
-
-    @_blocking_compat
-    @_handle_connection_error
-    async def update_lease(
-        self,
-        name: str,
-        duration: timedelta | None = None,
-        begin_time: datetime | None = None,
-        client: str | None = None,
-    ):
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await svc.UpdateLease(name=name, duration=duration, begin_time=begin_time, client=client)
-
-    @_blocking_compat
-    @_handle_connection_error
-    async def rotate_token(self) -> str:
-        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await svc.RotateToken()
 
     @asynccontextmanager
     async def lease_async(
