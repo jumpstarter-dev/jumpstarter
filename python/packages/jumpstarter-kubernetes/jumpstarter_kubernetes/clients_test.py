@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from kubernetes_asyncio.client.exceptions import ApiException
-from kubernetes_asyncio.client.models import V1ConfigMap, V1ObjectMeta, V1Secret
+from kubernetes_asyncio.client.models import V1ConfigMap, V1ObjectMeta
 
 from jumpstarter_kubernetes import V1Alpha1Client, V1Alpha1ClientStatus
 from jumpstarter_kubernetes.clients import ClientsV1Alpha1Api
@@ -321,92 +321,3 @@ async def test_get_ca_bundle_other_api_error():
         await api.get_ca_bundle()
 
     assert exc_info.value.status == 403
-
-
-@pytest.mark.asyncio
-async def test_get_client_config_includes_ca_bundle():
-    """Test get_client_config includes CA bundle from ConfigMap"""
-    api = ClientsV1Alpha1Api(namespace="test-namespace")
-    api.api = AsyncMock()
-    api.core_api = AsyncMock()
-
-    # Mock client response
-    client_dict = {
-        "apiVersion": "jumpstarter.dev/v1alpha1",
-        "kind": "Client",
-        "metadata": {
-            "creationTimestamp": "2021-10-01T00:00:00Z",
-            "generation": 1,
-            "name": "test-client",
-            "namespace": "test-namespace",
-            "resourceVersion": "1",
-            "uid": "test-uid",
-        },
-        "status": {
-            "credential": {"name": "test-secret"},
-            "endpoint": "https://test-endpoint:8082",
-        },
-    }
-    api.api.get_namespaced_custom_object = AsyncMock(return_value=client_dict)
-
-    # Mock secret with token
-    token = "test-token-value"
-    mock_secret = V1Secret(data={"token": base64.b64encode(token.encode()).decode()})
-    api.core_api.read_namespaced_secret = AsyncMock(return_value=mock_secret)
-
-    # Mock ConfigMap with CA certificate
-    ca_cert_pem = "-----BEGIN CERTIFICATE-----\nMIIBtest\n-----END CERTIFICATE-----"
-    mock_configmap = V1ConfigMap(data={"ca.crt": ca_cert_pem})
-    api.core_api.read_namespaced_config_map = AsyncMock(return_value=mock_configmap)
-
-    config = await api.get_client_config("test-client", allow=[], unsafe=False)
-
-    # Verify CA bundle is included and base64-encoded
-    expected_ca = base64.b64encode(ca_cert_pem.encode("utf-8")).decode("utf-8")
-    assert config.tls.ca == expected_ca
-    assert config.endpoint == "https://test-endpoint:8082"
-    assert config.token == token
-
-
-@pytest.mark.asyncio
-async def test_get_client_config_without_ca_bundle():
-    """Test get_client_config works when CA ConfigMap doesn't exist"""
-    api = ClientsV1Alpha1Api(namespace="test-namespace")
-    api.api = AsyncMock()
-    api.core_api = AsyncMock()
-
-    # Mock client response
-    client_dict = {
-        "apiVersion": "jumpstarter.dev/v1alpha1",
-        "kind": "Client",
-        "metadata": {
-            "creationTimestamp": "2021-10-01T00:00:00Z",
-            "generation": 1,
-            "name": "test-client",
-            "namespace": "test-namespace",
-            "resourceVersion": "1",
-            "uid": "test-uid",
-        },
-        "status": {
-            "credential": {"name": "test-secret"},
-            "endpoint": "https://test-endpoint:8082",
-        },
-    }
-    api.api.get_namespaced_custom_object = AsyncMock(return_value=client_dict)
-
-    # Mock secret with token
-    token = "test-token-value"
-    mock_secret = V1Secret(data={"token": base64.b64encode(token.encode()).decode()})
-    api.core_api.read_namespaced_secret = AsyncMock(return_value=mock_secret)
-
-    # Mock ConfigMap not found
-    api.core_api.read_namespaced_config_map = AsyncMock(
-        side_effect=ApiException(status=404, reason="Not Found")
-    )
-
-    config = await api.get_client_config("test-client", allow=[], unsafe=False)
-
-    # Verify CA bundle is empty
-    assert config.tls.ca == ""
-    assert config.endpoint == "https://test-endpoint:8082"
-    assert config.token == token

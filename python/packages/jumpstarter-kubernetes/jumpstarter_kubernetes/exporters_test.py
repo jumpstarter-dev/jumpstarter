@@ -1,12 +1,8 @@
-import base64
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
-import pytest
-from kubernetes_asyncio.client.exceptions import ApiException
-from kubernetes_asyncio.client.models import V1ConfigMap, V1ObjectMeta, V1ObjectReference, V1Secret
+from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 
 from jumpstarter_kubernetes.exporters import (
-    ExportersV1Alpha1Api,
     V1Alpha1Exporter,
     V1Alpha1ExporterDevice,
     V1Alpha1ExporterStatus,
@@ -270,97 +266,3 @@ def test_exporter_list_rich_add_names():
     names = []
     exporter_list.rich_add_names(names)
     assert names == ["exporter.jumpstarter.dev/test-exporter"]
-
-
-# Tests for get_exporter_config with CA bundle
-
-
-@pytest.mark.asyncio
-async def test_get_exporter_config_includes_ca_bundle():
-    """Test get_exporter_config includes CA bundle from ConfigMap"""
-    api = ExportersV1Alpha1Api(namespace="test-namespace")
-    api.api = AsyncMock()
-    api.core_api = AsyncMock()
-
-    # Mock exporter response
-    exporter_dict = {
-        "apiVersion": "jumpstarter.dev/v1alpha1",
-        "kind": "Exporter",
-        "metadata": {
-            "creationTimestamp": "2021-10-01T00:00:00Z",
-            "generation": 1,
-            "name": "test-exporter",
-            "namespace": "test-namespace",
-            "resourceVersion": "1",
-            "uid": "test-uid",
-        },
-        "status": {
-            "credential": {"name": "test-secret"},
-            "endpoint": "https://test-endpoint:8082",
-            "devices": [],
-        },
-    }
-    api.api.get_namespaced_custom_object = AsyncMock(return_value=exporter_dict)
-
-    # Mock secret with token
-    token = "test-token-value"
-    mock_secret = V1Secret(data={"token": base64.b64encode(token.encode()).decode()})
-    api.core_api.read_namespaced_secret = AsyncMock(return_value=mock_secret)
-
-    # Mock ConfigMap with CA certificate
-    ca_cert_pem = "-----BEGIN CERTIFICATE-----\nMIIBtest\n-----END CERTIFICATE-----"
-    mock_configmap = V1ConfigMap(data={"ca.crt": ca_cert_pem})
-    api.core_api.read_namespaced_config_map = AsyncMock(return_value=mock_configmap)
-
-    config = await api.get_exporter_config("test-exporter")
-
-    # Verify CA bundle is included and base64-encoded
-    expected_ca = base64.b64encode(ca_cert_pem.encode("utf-8")).decode("utf-8")
-    assert config.tls.ca == expected_ca
-    assert config.endpoint == "https://test-endpoint:8082"
-    assert config.token == token
-
-
-@pytest.mark.asyncio
-async def test_get_exporter_config_without_ca_bundle():
-    """Test get_exporter_config works when CA ConfigMap doesn't exist"""
-    api = ExportersV1Alpha1Api(namespace="test-namespace")
-    api.api = AsyncMock()
-    api.core_api = AsyncMock()
-
-    # Mock exporter response
-    exporter_dict = {
-        "apiVersion": "jumpstarter.dev/v1alpha1",
-        "kind": "Exporter",
-        "metadata": {
-            "creationTimestamp": "2021-10-01T00:00:00Z",
-            "generation": 1,
-            "name": "test-exporter",
-            "namespace": "test-namespace",
-            "resourceVersion": "1",
-            "uid": "test-uid",
-        },
-        "status": {
-            "credential": {"name": "test-secret"},
-            "endpoint": "https://test-endpoint:8082",
-            "devices": [],
-        },
-    }
-    api.api.get_namespaced_custom_object = AsyncMock(return_value=exporter_dict)
-
-    # Mock secret with token
-    token = "test-token-value"
-    mock_secret = V1Secret(data={"token": base64.b64encode(token.encode()).decode()})
-    api.core_api.read_namespaced_secret = AsyncMock(return_value=mock_secret)
-
-    # Mock ConfigMap not found
-    api.core_api.read_namespaced_config_map = AsyncMock(
-        side_effect=ApiException(status=404, reason="Not Found")
-    )
-
-    config = await api.get_exporter_config("test-exporter")
-
-    # Verify CA bundle is empty
-    assert config.tls.ca == ""
-    assert config.endpoint == "https://test-endpoint:8082"
-    assert config.token == token

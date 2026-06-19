@@ -1,5 +1,4 @@
 import asyncio
-import base64
 from typing import Literal
 
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
@@ -10,9 +9,6 @@ from .json import JsonBaseModel
 from .list import V1Alpha1List
 from .serialize import SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
-from jumpstarter.config.common import ObjectMeta
-from jumpstarter.config.exporter import ExporterConfigV1Alpha1
-from jumpstarter.config.tls import TLSConfigV1Alpha1
 
 CREATE_EXPORTER_DELAY = 1
 CREATE_EXPORTER_COUNT = 10
@@ -181,26 +177,6 @@ class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
             count += 1
             await asyncio.sleep(CREATE_EXPORTER_DELAY)
         raise Exception("Timeout waiting for exporter credentials")
-
-    async def get_exporter_config(self, name: str) -> ExporterConfigV1Alpha1:
-        """Get an exporter config for a specified exporter name"""
-        exporter = await self.get_exporter(name)
-        secret = await self.core_api.read_namespaced_secret(exporter.status.credential.name, self.namespace)
-        endpoint = exporter.status.endpoint
-        token = base64.b64decode(secret.data["token"]).decode("utf8")
-        # Get CA bundle from ConfigMap (base64-encoded)
-        ca_bundle = await self.get_ca_bundle()
-        return ExporterConfigV1Alpha1(
-            alias=name,
-            metadata=ObjectMeta(
-                namespace=exporter.metadata.namespace,
-                name=exporter.metadata.name,
-            ),
-            endpoint=endpoint,
-            token=token,
-            export={},
-            tls=TLSConfigV1Alpha1(ca=ca_bundle),
-        )
 
     async def delete_exporter(self, name: str):
         """Delete an exporter object"""

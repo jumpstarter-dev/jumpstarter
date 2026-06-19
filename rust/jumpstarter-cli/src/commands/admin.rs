@@ -29,6 +29,8 @@ enum Command {
     Delete(Delete),
     /// Display Jumpstarter Kubernetes objects.
     Get(Get),
+    /// Import configs from a Kubernetes cluster.
+    Import(Import),
     /// Rotate credentials.
     Rotate(Rotate),
 }
@@ -38,6 +40,7 @@ pub async fn run(args: Args) -> u8 {
         Command::Create(a) => a.run().await,
         Command::Delete(a) => a.run().await,
         Command::Get(a) => a.run().await,
+        Command::Import(a) => a.run().await,
         Command::Rotate(a) => a.run().await,
     };
     match result {
@@ -300,6 +303,97 @@ impl Delete {
                     println!("{} configuration successfully deleted", cap(noun));
                 }
             }
+        }
+        Ok(())
+    }
+}
+
+// ---- import ---------------------------------------------------------------
+
+#[derive(ClapArgs)]
+struct Import {
+    #[command(subcommand)]
+    command: ImportKind,
+}
+
+#[derive(Subcommand)]
+enum ImportKind {
+    Client(ImportArgs),
+    Exporter(ImportArgs),
+}
+
+#[derive(ClapArgs)]
+struct ImportArgs {
+    #[arg(default_value = "default")]
+    name: String,
+    #[command(flatten)]
+    cluster: ClusterOpts,
+    #[arg(long)]
+    out: Option<PathBuf>,
+    #[arg(short = 'a', long)]
+    allow: Option<String>,
+    #[arg(long = "unsafe")]
+    unsafe_drivers: bool,
+    #[arg(short = 'k', long = "insecure-tls")]
+    insecure_tls: bool,
+    #[arg(long)]
+    nointeractive: bool,
+    #[arg(short = 'o', long = "output", value_enum)]
+    output: Option<ListFormat>,
+}
+
+impl Import {
+    async fn run(self) -> Result<(), CmdError> {
+        let (kind, a) = match self.command {
+            ImportKind::Client(a) => (Kind::Client, a),
+            ImportKind::Exporter(a) => (Kind::Exporter, a),
+        };
+        let noun = kind_noun(kind);
+        // Refuse to clobber an existing local config (unless writing to an explicit --out).
+        if a.out.is_none() {
+            let path = match kind {
+                Kind::Client => paths::client_config_path(&a.name),
+                Kind::Exporter => paths::exporter_user_path(&a.name),
+                Kind::Lease => unreachable!(),
+            };
+            if path.exists() {
+                return Err(CmdError::Usage(format!(
+                    "a {noun} with the name '{}' already exists",
+                    a.name
+                )));
+            }
+        }
+
+        let admin = a.cluster.connect().await?;
+        if a.output.is_none() {
+            println!("Fetching {noun} credentials from cluster");
+        }
+        let (endpoint, token) = admin.credentials(kind, &a.name).await.map_err(runtime)?;
+        let ca = admin.ca_bundle().await.map_err(runtime)?;
+        let allow_list: Vec<String> = match &a.allow {
+            Some(s) if !s.is_empty() => s.split(',').map(String::from).collect(),
+            _ => Vec::new(),
+        };
+        let path = save_config(
+            kind,
+            &a.cluster.namespace,
+            &a.name,
+            &endpoint,
+            &token,
+            &ca,
+            allow_list,
+            a.unsafe_drivers,
+            a.insecure_tls,
+            a.out.as_deref(),
+        )?;
+        if a.output.is_none() {
+            println!(
+                "{} configuration successfully saved to {}",
+                cap(noun),
+                path.display()
+            );
+        } else {
+            println!("{}", path.display());
         }
         Ok(())
     }

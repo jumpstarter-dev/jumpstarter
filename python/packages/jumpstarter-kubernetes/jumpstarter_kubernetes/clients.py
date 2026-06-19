@@ -11,9 +11,6 @@ from .json import JsonBaseModel
 from .list import V1Alpha1List
 from .serialize import SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
-from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
-from jumpstarter.config.common import ObjectMeta
-from jumpstarter.config.tls import TLSConfigV1Alpha1
 
 logger = logging.getLogger(__name__)
 
@@ -141,26 +138,6 @@ class ClientsV1Alpha1Api(AbstractAsyncCustomObjectApi):
             namespace=self.namespace, group="jumpstarter.dev", plural="clients", version="v1alpha1", name=name
         )
         return V1Alpha1Client.from_dict(result)
-
-    async def get_client_config(self, name: str, allow: list[str], unsafe=False) -> ClientConfigV1Alpha1:
-        """Get a client config for a specified client name"""
-        client = await self.get_client(name)
-        secret = await self.core_api.read_namespaced_secret(client.status.credential.name, self.namespace)
-        endpoint = client.status.endpoint
-        token = base64.b64decode(secret.data["token"]).decode("utf8")
-        # Get CA bundle from ConfigMap (base64-encoded)
-        ca_bundle = await self.get_ca_bundle()
-        return ClientConfigV1Alpha1(
-            alias=name,
-            metadata=ObjectMeta(
-                namespace=client.metadata.namespace,
-                name=client.metadata.name,
-            ),
-            endpoint=endpoint,
-            token=token,
-            drivers=ClientConfigV1Alpha1Drivers(allow=allow, unsafe=unsafe),
-            tls=TLSConfigV1Alpha1(ca=ca_bundle),
-        )
 
     async def rotate_client_token(self, name: str) -> str:
         """Rotate the internal token for a client by deleting its secret and waiting for regeneration."""
