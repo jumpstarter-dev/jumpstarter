@@ -7,7 +7,6 @@ from jumpstarter_cli_driver import driver
 
 from ._forward import rust_command
 from .completion import completion
-from .login import login
 from .run import run
 
 
@@ -26,11 +25,11 @@ jmp.add_command(rust_command("update", "Update a resource."))
 jmp.add_command(rust_command("get", "Display one or many resources."))
 jmp.add_command(rust_command("auth", "Authentication and token management commands."))
 jmp.add_command(rust_command("config", "Modify jumpstarter config files."))
+jmp.add_command(rust_command("login", "Login to a Jumpstarter instance."))
 
 # Native Python commands (driver-dependent, or not yet ported).
 jmp.add_command(completion)
 jmp.add_command(run)
-jmp.add_command(login)
 
 jmp.add_command(driver)
 jmp.add_command(admin)
