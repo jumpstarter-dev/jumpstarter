@@ -21,6 +21,7 @@ pub struct Args {
 #[derive(Subcommand)]
 enum Command {
     /// Create a lease.
+    #[command(visible_alias = "leases")]
     Lease(LeaseArgs),
 }
 

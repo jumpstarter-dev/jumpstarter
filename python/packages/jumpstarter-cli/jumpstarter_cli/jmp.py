@@ -5,16 +5,12 @@ from jumpstarter_cli_common.opt import opt_log_level
 from jumpstarter_cli_common.version import version
 from jumpstarter_cli_driver import driver
 
+from ._forward import rust_command
 from .auth import auth
 from .completion import completion
 from .config import config
-from .create import create
-from .delete import delete
-from .get import get
 from .login import login
 from .run import run
-from .shell import shell
-from .update import update
 
 
 @click.group(cls=AliasedGroup)
@@ -23,13 +19,17 @@ def jmp():
     """The Jumpstarter CLI"""
 
 
+# Controller/lease commands run on the Rust core (forwarded via FFI). The Python entrypoint
+# stays for consistency; Rust does the parsing/output/exit codes.
+jmp.add_command(rust_command("shell", "Acquire a lease and open a shell connected to an exporter."))
+jmp.add_command(rust_command("create", "Create a resource."))
+jmp.add_command(rust_command("delete", "Delete resources."))
+jmp.add_command(rust_command("update", "Update a resource."))
+jmp.add_command(rust_command("get", "Display one or many resources."))
+
+# Native Python commands (driver-dependent or not yet ported).
 jmp.add_command(auth)
 jmp.add_command(completion)
-jmp.add_command(create)
-jmp.add_command(delete)
-jmp.add_command(update)
-jmp.add_command(get)
-jmp.add_command(shell)
 jmp.add_command(run)
 jmp.add_command(login)
 jmp.add_command(config)

@@ -20,6 +20,7 @@ pub struct Args {
 #[derive(Subcommand)]
 enum Command {
     /// Update a lease.
+    #[command(visible_alias = "leases")]
     Lease(LeaseArgs),
 }
 
