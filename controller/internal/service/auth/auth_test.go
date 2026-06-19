@@ -89,7 +89,7 @@ func captureLog(t *testing.T, ctx context.Context) (context.Context, *bytes.Buff
 }
 
 // peerAddrUnknown is the expected return value when PeerAddr cannot determine
-// the remote IP (no peer, nil Addr, unparseable address, etc.).
+// the remote IP (no peer, nil Addr, unparsable address, etc.).
 const peerAddrUnknown = "unknown"
 
 // ---------------------------------------------------------------------------

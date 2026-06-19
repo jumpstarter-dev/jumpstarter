@@ -20,6 +20,9 @@ import (
 	"bytes"
 	"context"
 	"net"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -1991,19 +1994,27 @@ func TestLogContext_UnixSocket_ReturnsUnknownPeer(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestControllerServiceAuthMethodsDoNotLogAuthFailures(t *testing.T) {
-	// The RPC methods that call authenticateClient/authenticateExporter
-	// should NOT contain log lines for auth failures — those are handled
-	// by the auth package. We verify the important invariant by scanning
-	// the method bodies in the source. This test breaks if someone adds
-	// a duplicate auth-failure log.
-	//
-	// Methods that authenticate: Register, Unregister, ReportStatus, Listen,
-	// Status, Dial, GetLease, RequestLease, ReleaseLease, ListLeases.
-	//
-	// The only logging after authenticateClient/authenticateExporter should
-	// be for real operational events (not auth failures).
-	//
-	// This is a design-level test and is already covered by code review.
-	// Keeping it as a documentation marker.
-	t.Log("Verify: auth-failure logging lives exclusively in auth/auth.go, not in controller_service.go RPC methods")
+	// Auth-failure logging lives exclusively in auth/auth.go.
+	// The RPC methods in controller_service.go must NOT duplicate those
+	// log lines. We enforce this by scanning the source for forbidden
+	// auth-failure log strings.
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("failed to resolve test file path")
+	}
+	svcPath := filepath.Join(filepath.Dir(thisFile), "controller_service.go")
+	b, err := os.ReadFile(svcPath)
+	if err != nil {
+		t.Fatalf("failed to read controller_service.go: %v", err)
+	}
+	src := string(b)
+	for _, forbidden := range []string{
+		"client authentication failed",
+		"exporter authentication failed",
+		"unable to authenticate",
+	} {
+		if strings.Contains(src, forbidden) {
+			t.Errorf("found duplicate auth-failure logging in controller_service.go: %q", forbidden)
+		}
+	}
 }
