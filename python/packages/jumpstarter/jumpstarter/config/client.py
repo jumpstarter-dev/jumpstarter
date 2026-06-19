@@ -66,12 +66,6 @@ class ClientConfigV1Alpha1Lease(BaseSettings):
         description="Timeout in seconds for lease acquisition",
         ge=5,  # Must be at least 5 seconds (polling interval)
     )
-    dial_timeout: float = Field(
-        default=30.0,
-        description="Timeout in seconds for Dial retry loop when exporter not ready",
-        gt=0,
-        exclude=True,  # Internal field, not serialized to config files
-    )
 
 
 class ClientConfigV1Alpha1(BaseSettings):
@@ -152,10 +146,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 allow=self.drivers.allow,
                 unsafe=self.drivers.unsafe,
                 release=release_lease,
-                tls_config=self.tls,
-                grpc_options=self.grpcOptions,
                 acquisition_timeout=acquisition_timeout_seconds,
-                dial_timeout=self.leases.dial_timeout,
             ) as lease:
                 yield lease
 
@@ -240,23 +231,6 @@ class ClientConfigV1Alpha1(BaseSettings):
         return config.path
 
     @classmethod
-    def dump_yaml(cls, config: Self) -> str:
-        """Return YAML suitable for display"""
-        payload = config.model_dump(
-            mode="json",
-            exclude={"path", "alias", "refresh_token"},
-            exclude_none=True,
-        )
-        # Backward compatibility: exclude 'leases' section when it only has default values
-        default_leases = ClientConfigV1Alpha1Lease().model_dump(mode="json", exclude_none=True)
-        if payload.get("leases") == default_leases:
-            payload.pop("leases", None)
-        return yaml.safe_dump(
-            payload,
-            sort_keys=False,
-        )
-
-    @classmethod
     def exists(cls, alias: str) -> bool:
         """Check if a client config exists by alias."""
         return cls._get_path(alias).exists()
@@ -312,16 +286,6 @@ class ClientConfigListV1Alpha1(BaseModel):
             indent=4,
             by_alias=True,
             exclude={"items": {"__all__": {"refresh_token"}}},
-        )
-
-    def dump_yaml(self):
-        return yaml.safe_dump(
-            self.model_dump(
-                mode="json",
-                by_alias=True,
-                exclude={"items": {"__all__": {"refresh_token"}}},
-            ),
-            indent=2,
         )
 
     model_config = ConfigDict(arbitrary_types_allowed=True, populate_by_name=True)

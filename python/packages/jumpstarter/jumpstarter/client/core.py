@@ -45,12 +45,6 @@ class DriverInvalidArgument(DriverError, ValueError):
     """
 
 
-class ExporterNotReady(DriverError):
-    """
-    Raised when the exporter is not ready to accept driver calls
-    """
-
-
 def _map_ffi_error(method, exc):
     """Map a jumpstarter_core.DriverError to the client exception taxonomy."""
     import jumpstarter_core as jc

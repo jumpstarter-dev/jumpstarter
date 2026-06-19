@@ -26,42 +26,8 @@ from anyio.from_thread import BlockingPortal
 
 from .exceptions import LeaseError
 from jumpstarter.client import client_from_path
-from jumpstarter.config.tls import TLSConfigV1Alpha1
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(kw_only=True)
-class DirectLease(ContextManagerMixin, AsyncContextManagerMixin):
-    """Lease-like object for direct connection to an exporter (no controller).
-
-    Used when connecting via ``jmp shell --tls-grpc host:port``. Yields the address from
-    ``serve_unix_async()`` so the client connects directly; no Dial, no listener.
-    """
-
-    address: str  # host:port
-    portal: BlockingPortal
-    allow: list[str]
-    unsafe: bool
-    tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
-    grpc_options: dict[str, Any] = field(default_factory=dict)
-    insecure: bool = False
-    passphrase: str | None = None
-
-    name: str = field(default="direct", init=False)
-    exporter_name: str = field(default="direct", init=False)
-    release: bool = field(default=False, init=False)
-    lease_ended: bool = field(default=False, init=False)
-
-    @asynccontextmanager
-    async def serve_unix_async(self):
-        """Yield the TCP address (no listener); client connects directly."""
-        yield self.address
-
-    @asynccontextmanager
-    async def monitor_async(self, threshold: timedelta = timedelta(minutes=5)):
-        """No-op monitor for direct connection (no lease to monitor)."""
-        yield
 
 
 @dataclass(kw_only=True)
@@ -86,11 +52,6 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     portal: BlockingPortal
     acquisition_timeout: int = field(default=7200)  # seconds
 
-    # Kept for call-site signature compatibility (unused on the FFI path).
-    tls_config: TLSConfigV1Alpha1 = field(default_factory=TLSConfigV1Alpha1)
-    grpc_options: dict[str, Any] = field(default_factory=dict)
-    dial_timeout: float = field(default=30.0)
-
     # Runtime state.
     exporter_name: str = field(default="remote", init=False)
     lease_ending_callback: Callable[[Self, timedelta], None] | None = field(default=None, init=False)
@@ -112,13 +73,6 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                 self.client_name or "",
             )
         return self._session
-
-    def refresh_channel(self, channel):
-        """No-op on the FFI path (no Python gRPC channel); kept for signature compatibility.
-
-        Token refresh is handled by the caller re-resolving the config; the next controller
-        op opens a fresh session.
-        """
 
     async def request_async(self) -> Self:
         import jumpstarter_core as jc

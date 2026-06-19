@@ -13,7 +13,7 @@ import pytest
 from anyio.from_thread import start_blocking_portal
 
 from jumpstarter.client.exceptions import LeaseError
-from jumpstarter.client.lease import DirectLease, Lease
+from jumpstarter.client.lease import Lease
 
 
 class FakeTransport:
@@ -122,8 +122,3 @@ def test_acquire_error_maps_to_lease_error(session, monkeypatch):
             lease.request()
 
 
-def test_direct_lease_serves_address():
-    with start_blocking_portal() as portal:
-        direct = DirectLease(address="exporter.host:1234", portal=portal, allow=[], unsafe=True)
-        with portal.wrap_async_context_manager(direct.serve_unix_async()) as addr:
-            assert addr == "exporter.host:1234"

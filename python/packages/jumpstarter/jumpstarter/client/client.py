@@ -11,7 +11,6 @@ from jumpstarter.client import DriverClient
 from jumpstarter.client.base import StubDriverClient
 from jumpstarter.common.exceptions import MissingDriverError
 from jumpstarter.common.importlib import import_class
-from jumpstarter.config.tls import TLSConfigV1Alpha1
 
 logger = logging.getLogger(__name__)
 
@@ -23,19 +22,11 @@ async def client_from_path(
     stack: ExitStack,
     allow: list[str],
     unsafe: bool,
-    *,
-    tls_config: TLSConfigV1Alpha1 | None = None,
-    grpc_options: dict | None = None,
-    insecure: bool = False,
-    passphrase: str | None = None,
 ):
     """Create a DriverClient connected to a leased exporter over the local transport socket.
 
     The in-lease driver client routes through the Rust core (FFI, ``jumpstarter_core``) — no
     Python gRPC. ``path`` is the ``JUMPSTARTER_HOST`` Unix socket served by the lease transport.
-    The ``tls_config``/``grpc_options``/``insecure``/``passphrase`` keywords are accepted for
-    call-site compatibility but unused on the FFI path (TLS/auth to the controller live in the
-    Rust core).
     """
     yield await client_from_host(str(path), portal, stack, allow, unsafe)
 

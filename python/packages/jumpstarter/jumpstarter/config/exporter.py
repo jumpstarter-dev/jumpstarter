@@ -137,11 +137,6 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
                 return Proxy(ref=self.root.ref)
 
     @classmethod
-    def from_path(cls, path: str) -> ExporterConfigV1Alpha1DriverInstance:
-        with open(path) as f:
-            return cls.model_validate(yaml.safe_load(f))
-
-    @classmethod
     def from_str(cls, config: str) -> ExporterConfigV1Alpha1DriverInstance:
         return cls.model_validate(yaml.safe_load(config))
 
@@ -253,11 +248,6 @@ class ExporterConfigV1Alpha1(BaseModel):
             with suppress(FileNotFoundError):
                 exporters.append(cls.load(alias))
         return ExporterConfigListV1Alpha1(items=exporters)
-
-    @classmethod
-    def dump_yaml(self, config: Self) -> str:
-        """Serialize a config to a YAML string, omitting internal fields (alias, path)."""
-        return yaml.safe_dump(config.model_dump(mode="json", by_alias=True, exclude={"alias", "path"}), sort_keys=False)
 
     @classmethod
     def save(cls, config: Self, path: Optional[str] = None) -> Path:

@@ -149,8 +149,8 @@ export:
     assert reloaded_config.hooks.before_lease.script == config.hooks.before_lease.script
     assert reloaded_config.hooks.after_lease.script == config.hooks.after_lease.script
 
-    # Test that the YAML uses camelCase
-    yaml_output = ExporterConfigV1Alpha1.dump_yaml(config)
+    # Test that the saved YAML uses camelCase
+    yaml_output = path.read_text()
     assert "beforeLease:" in yaml_output
     assert "afterLease:" in yaml_output
     assert "before_lease:" not in yaml_output
