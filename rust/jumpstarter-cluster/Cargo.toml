@@ -17,3 +17,5 @@ regex = "1"
 tempfile = "3"
 shlex = "1"
 home = "0.5"
+semver = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }

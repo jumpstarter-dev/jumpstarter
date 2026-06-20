@@ -98,6 +98,52 @@ struct Create {
 enum CreateKind {
     Client(CreateArgs),
     Exporter(CreateArgs),
+    /// Create a local Kubernetes cluster (kind/minikube) for running Jumpstarter.
+    Cluster(CreateClusterArgs),
+}
+
+#[derive(ClapArgs)]
+struct CreateClusterArgs {
+    #[arg(default_value = "jumpstarter-lab")]
+    name: String,
+    #[arg(long, num_args(0..=1), default_missing_value = "kind")]
+    kind: Option<String>,
+    #[arg(long, num_args(0..=1), default_missing_value = "minikube")]
+    minikube: Option<String>,
+    #[arg(long)]
+    k3s: Option<String>,
+    #[arg(long = "force-recreate")]
+    force_recreate: bool,
+    #[arg(long = "kind-extra-args", default_value = "")]
+    kind_extra_args: String,
+    #[arg(long = "minikube-extra-args", default_value = "")]
+    minikube_extra_args: String,
+    #[arg(long = "extra-certs")]
+    extra_certs: Option<PathBuf>,
+    #[arg(long = "skip-install")]
+    skip_install: bool,
+    #[arg(long = "operator-installer")]
+    operator_installer: Option<String>,
+    #[arg(short = 'n', long, default_value = "jumpstarter-lab")]
+    namespace: String,
+    #[arg(short = 'i', long)]
+    ip: Option<String>,
+    #[arg(short = 'b', long)]
+    basedomain: Option<String>,
+    #[arg(short = 'g', long = "grpc-endpoint")]
+    grpc_endpoint: Option<String>,
+    #[arg(short = 'r', long = "router-endpoint")]
+    router_endpoint: Option<String>,
+    #[arg(short = 'v', long)]
+    version: Option<String>,
+    #[arg(long)]
+    kubeconfig: Option<PathBuf>,
+    #[arg(long)]
+    context: Option<String>,
+    #[arg(long)]
+    nointeractive: bool,
+    #[arg(short = 'o', long = "output", value_enum)]
+    output: Option<ListFormat>,
 }
 
 #[derive(ClapArgs)]
@@ -131,6 +177,7 @@ impl Create {
         let (kind, a) = match self.command {
             CreateKind::Client(a) => (Kind::Client, a),
             CreateKind::Exporter(a) => (Kind::Exporter, a),
+            CreateKind::Cluster(a) => return create_cluster(a).await,
         };
         let admin = a.cluster.connect().await?;
         let labels = parse_labels(&a.labels)?;
@@ -251,6 +298,22 @@ struct Delete {
 enum DeleteKind {
     Client(DeleteArgs),
     Exporter(DeleteArgs),
+    /// Delete a local Kubernetes cluster (auto-detects kind/minikube).
+    Cluster(DeleteClusterArgs),
+}
+
+#[derive(ClapArgs)]
+struct DeleteClusterArgs {
+    #[arg(default_value = "jumpstarter-lab")]
+    name: String,
+    #[arg(long, num_args(0..=1), default_missing_value = "kind")]
+    kind: Option<String>,
+    #[arg(long, num_args(0..=1), default_missing_value = "minikube")]
+    minikube: Option<String>,
+    #[arg(long)]
+    force: bool,
+    #[arg(short = 'o', long = "output", value_enum)]
+    output: Option<NameOutput>,
 }
 
 #[derive(ClapArgs)]
@@ -278,6 +341,7 @@ impl Delete {
         let (kind, a) = match self.command {
             DeleteKind::Client(a) => (Kind::Client, a),
             DeleteKind::Exporter(a) => (Kind::Exporter, a),
+            DeleteKind::Cluster(a) => return delete_cluster(a).await,
         };
         let admin = a.cluster.connect().await?;
         admin.delete(kind, &a.name).await.map_err(runtime)?;
@@ -528,6 +592,130 @@ impl Printable for ClusterTable {
         };
         items.iter().map(|c| format!("cluster/{}", c.name)).collect()
     }
+}
+
+/// Reports cluster-provisioning progress to the terminal; `quiet` suppresses the
+/// status lines (for `-o json`/`name`), `force` auto-confirms destructive ops.
+struct CliProgress {
+    quiet: bool,
+    force: bool,
+}
+
+impl jumpstarter_cluster::Progress for CliProgress {
+    fn progress(&self, m: &str) {
+        if !self.quiet {
+            println!("{m}");
+        }
+    }
+    fn success(&self, m: &str) {
+        if !self.quiet {
+            println!("{m}");
+        }
+    }
+    fn warning(&self, m: &str) {
+        eprintln!("{m}");
+    }
+    fn error(&self, m: &str) {
+        eprintln!("{m}");
+    }
+    fn confirm(&self, prompt: &str) -> bool {
+        if self.force {
+            return true;
+        }
+        use std::io::Write;
+        print!("{prompt} [y/N]: ");
+        let _ = std::io::stdout().flush();
+        let mut line = String::new();
+        if std::io::stdin().read_line(&mut line).is_err() {
+            return false;
+        }
+        matches!(line.trim().to_lowercase().as_str(), "y" | "yes")
+    }
+}
+
+async fn create_cluster(a: CreateClusterArgs) -> Result<(), CmdError> {
+    let cluster_type =
+        jumpstarter_cluster::validate_cluster_type_selection(a.kind.as_deref(), a.minikube.as_deref(), a.k3s.as_deref())
+            .map_err(runtime)?;
+    let quiet = a.output.is_some();
+    let progress = CliProgress { quiet, force: a.nointeractive };
+    if !quiet {
+        if a.kind.is_none() && a.minikube.is_none() && a.k3s.is_none() {
+            println!("Auto-detected {cluster_type} as the cluster type");
+        }
+        if a.skip_install {
+            println!("Creating {cluster_type} cluster \"{}\"...", a.name);
+        } else {
+            println!("Creating {cluster_type} cluster \"{}\" and installing Jumpstarter...", a.name);
+        }
+    }
+
+    // Auto-detect a compatible operator version when installing (`create.py:120-124`).
+    let version: Option<String> = if !a.skip_install && a.version.is_none() {
+        Some(
+            jumpstarter_cluster::get_latest_compatible_controller_version(Some(env!("CARGO_PKG_VERSION")))
+                .await
+                .map_err(runtime)?,
+        )
+    } else {
+        a.version.clone()
+    };
+
+    let kind = a.kind.clone().unwrap_or_else(|| "kind".to_string());
+    let minikube = a.minikube.clone().unwrap_or_else(|| "minikube".to_string());
+    let extra_certs = a.extra_certs.as_ref().map(|p| p.to_string_lossy().into_owned());
+    let kubeconfig = a.kubeconfig.as_ref().map(|p| p.to_string_lossy().into_owned());
+
+    let opts = jumpstarter_cluster::CreateOptions {
+        cluster_type: &cluster_type,
+        force_recreate: a.force_recreate,
+        cluster_name: &a.name,
+        kind_extra_args: &a.kind_extra_args,
+        minikube_extra_args: &a.minikube_extra_args,
+        kind: &kind,
+        minikube: &minikube,
+        extra_certs: extra_certs.as_deref(),
+        install_jumpstarter: !a.skip_install,
+        namespace: &a.namespace,
+        version: version.as_deref(),
+        kubeconfig: kubeconfig.as_deref(),
+        context: a.context.as_deref(),
+        ip: a.ip.clone(),
+        basedomain: a.basedomain.clone(),
+        grpc_endpoint: a.grpc_endpoint.clone(),
+        router_endpoint: a.router_endpoint.clone(),
+        operator_installer: a.operator_installer.as_deref(),
+        k3s_ssh_host: a.k3s.as_deref(),
+    };
+    jumpstarter_cluster::create_cluster_and_install(opts, &progress).await.map_err(runtime)?;
+
+    if !quiet {
+        if a.skip_install {
+            println!("Cluster \"{}\" is ready for Jumpstarter installation.", a.name);
+        } else {
+            println!("Cluster \"{}\" created and Jumpstarter installed successfully!", a.name);
+        }
+    }
+    Ok(())
+}
+
+async fn delete_cluster(a: DeleteClusterArgs) -> Result<(), CmdError> {
+    let cluster_type: Option<String> = if a.kind.is_some() {
+        Some("kind".to_string())
+    } else if a.minikube.is_some() {
+        Some("minikube".to_string())
+    } else {
+        None
+    };
+    let quiet = a.output.is_some();
+    let progress = CliProgress { quiet, force: a.force };
+    jumpstarter_cluster::delete_cluster_by_name(&a.name, cluster_type.as_deref(), a.force, &progress)
+        .await
+        .map_err(runtime)?;
+    if let Some(NameOutput::Name) = a.output {
+        println!("{}", a.name);
+    }
+    Ok(())
 }
 
 // ---- rotate ---------------------------------------------------------------

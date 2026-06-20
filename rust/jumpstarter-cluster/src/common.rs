@@ -2,6 +2,13 @@
 
 use crate::error::{ClusterError, Result};
 
+// NodePorts the operator exposes + the kind host-port mappings (`cluster/common.py`).
+pub const GRPC_NODEPORT: u16 = 30010;
+pub const ROUTER_NODEPORT: u16 = 30011;
+pub const LOGIN_NODEPORT: u16 = 30014;
+pub const KIND_GRPC_HOST_PORT: u16 = 8082;
+pub const KIND_ROUTER_HOST_PORT: u16 = 8083;
+
 /// Whether a binary resolves in `PATH` (the Rust analog of `shutil.which`).
 pub fn tool_installed(bin: &str) -> bool {
     which::which(bin).is_ok()

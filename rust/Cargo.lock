@@ -1257,6 +1257,8 @@ version = "0.0.0"
 dependencies = [
  "home",
  "regex",
+ "reqwest",
+ "semver",
  "serde",
  "serde_json",
  "shlex",
