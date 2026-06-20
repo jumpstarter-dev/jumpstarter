@@ -48,7 +48,6 @@ dependencies = [
   "jumpstarter-driver-vnc",
   "jumpstarter-driver-yepkit",
   "jumpstarter-imagehash",
-  "jumpstarter-kubernetes",
   "jumpstarter-testing",
 ]
 

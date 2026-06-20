@@ -13,4 +13,4 @@ def create():
 # crate) and installs the Jumpstarter operator.
 create.add_command(rust_command(["admin", "create", "client"], "Create a client object in the cluster."))
 create.add_command(rust_command(["admin", "create", "exporter"], "Create an exporter object in the cluster."))
-create.add_command(rust_command(["admin", "create", "cluster"], "Create a local cluster (kind/minikube) for Jumpstarter."))
+create.add_command(rust_command(["admin", "create", "cluster"], "Create a local kind/minikube cluster."))
