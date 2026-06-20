@@ -19,6 +19,7 @@ members = [
     "jumpstarter-core",
     "jumpstarter-core-uniffi",
     "jumpstarter-cli",
+    "jumpstarter-mcp",
 ]
 
 [workspace.package]

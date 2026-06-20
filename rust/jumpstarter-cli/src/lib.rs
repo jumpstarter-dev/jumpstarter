@@ -46,6 +46,8 @@ enum Command {
     Auth(commands::auth::Args),
     /// Login into a Jumpstarter instance.
     Login(commands::login::Args),
+    /// MCP server for AI agent interaction with Jumpstarter hardware.
+    Mcp(commands::mcp::Args),
     /// Get the current Jumpstarter version.
     Version(commands::version::Args),
     /// Generate a shell completion script.
@@ -82,6 +84,7 @@ async fn run_command(command: Command) -> u8 {
         Command::Update(args) => commands::update::run(args).await,
         Command::Auth(args) => commands::auth::run(args).await,
         Command::Login(args) => commands::login::run(args).await,
+        Command::Mcp(args) => commands::mcp::run(args).await,
         Command::Version(args) => commands::version::run(args),
         Command::Completion(args) => commands::completion::run::<Cli>(args),
     }

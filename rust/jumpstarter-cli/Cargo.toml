@@ -22,6 +22,7 @@ jumpstarter-config = { path = "../jumpstarter-config" }
 jumpstarter-protocol = { path = "../jumpstarter-protocol" }
 jumpstarter-admin = { path = "../jumpstarter-admin" }
 jumpstarter-cluster = { path = "../jumpstarter-cluster" }
+jumpstarter-mcp = { path = "../jumpstarter-mcp" }
 prost-types.workspace = true
 clap = { workspace = true, features = ["derive", "env"] }
 clap_complete = "4"
