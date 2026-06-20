@@ -1,0 +1,19 @@
+[package]
+name = "jumpstarter-cluster"
+description = "Jumpstarter local dev-cluster provisioning (jmp admin {create,delete,get} cluster): kind/minikube/k3s + operator install"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+tokio = { workspace = true, features = ["process", "fs", "io-util", "macros", "rt-multi-thread", "time", "net"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+which = "6"
+regex = "1"
+tempfile = "3"
+shlex = "1"
+home = "0.5"

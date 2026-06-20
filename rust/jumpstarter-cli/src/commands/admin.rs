@@ -412,6 +412,10 @@ enum GetKind {
     Client(GetArgs),
     Exporter(GetArgs),
     Lease(GetArgs),
+    /// Get information about a specific local cluster (or list all).
+    Cluster(GetClusterArgs),
+    /// List all Kubernetes clusters with Jumpstarter status.
+    Clusters(GetClustersArgs),
 }
 
 #[derive(ClapArgs)]
@@ -426,12 +430,43 @@ struct GetArgs {
     output: Option<ListFormat>,
 }
 
+#[derive(ClapArgs)]
+struct GetClusterArgs {
+    name: Option<String>,
+    /// Filter clusters by type.
+    #[arg(long = "type", default_value = "all")]
+    ty: String,
+    #[arg(long, default_value = "kubectl")]
+    kubectl: String,
+    #[arg(long, default_value = "minikube")]
+    minikube: String,
+    #[arg(short = 'o', long = "output", value_enum)]
+    output: Option<ListFormat>,
+}
+
+#[derive(ClapArgs)]
+struct GetClustersArgs {
+    #[arg(long = "type", default_value = "all")]
+    ty: String,
+    #[arg(long, default_value = "kubectl")]
+    kubectl: String,
+    #[arg(long, default_value = "minikube")]
+    minikube: String,
+    #[arg(short = 'o', long = "output", value_enum)]
+    output: Option<ListFormat>,
+}
+
 impl Get {
     async fn run(self) -> Result<(), CmdError> {
         let (kind, a) = match self.command {
             GetKind::Client(a) => (Kind::Client, a),
             GetKind::Exporter(a) => (Kind::Exporter, a),
             GetKind::Lease(a) => (Kind::Lease, a),
+            GetKind::Cluster(a) => return get_cluster(a).await,
+            GetKind::Clusters(a) => {
+                let list = jumpstarter_cluster::list_clusters(&a.ty, &a.kubectl, &a.minikube).await;
+                return output::print(&ClusterTable::Many(list), ListFormat::resolve(a.output)).map_err(runtime);
+            }
         };
         let admin = a.cluster.connect().await?;
         let items = match &a.name {
@@ -440,6 +475,58 @@ impl Get {
         };
         let list = ResourceList { kind, items, devices: a.devices };
         output::print(&list, ListFormat::resolve(a.output)).map_err(runtime)
+    }
+}
+
+async fn get_cluster(a: GetClusterArgs) -> Result<(), CmdError> {
+    match &a.name {
+        Some(name) => {
+            let info = jumpstarter_cluster::get_cluster_info(name, &a.kubectl, &a.minikube).await;
+            // A "not found" context is an error (`get.py:47-48`).
+            if info.error.as_deref().map(|e| e.contains("not found")).unwrap_or(false) {
+                return Err(CmdError::Runtime(format!("Kubernetes context \"{name}\" not found")));
+            }
+            output::print(&ClusterTable::One(info), ListFormat::resolve(a.output)).map_err(runtime)
+        }
+        None => {
+            let list = jumpstarter_cluster::list_clusters(&a.ty, &a.kubectl, &a.minikube).await;
+            output::print(&ClusterTable::Many(list), ListFormat::resolve(a.output)).map_err(runtime)
+        }
+    }
+}
+
+/// A cluster get result: a single `ClusterInfo` (so `-o json` is the bare object,
+/// matching Python `get cluster <name>`) or the full `ClusterList`.
+enum ClusterTable {
+    One(jumpstarter_cluster::ClusterInfo),
+    Many(jumpstarter_cluster::ClusterList),
+}
+
+impl serde::Serialize for ClusterTable {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            ClusterTable::One(c) => c.serialize(s),
+            ClusterTable::Many(l) => l.serialize(s),
+        }
+    }
+}
+
+impl Printable for ClusterTable {
+    fn headers(&self) -> Vec<String> {
+        jumpstarter_cluster::ClusterInfo::columns()
+    }
+    fn rows(&self) -> Vec<Vec<String>> {
+        match self {
+            ClusterTable::One(c) => vec![c.row_cells()],
+            ClusterTable::Many(l) => l.items.iter().map(|c| c.row_cells()).collect(),
+        }
+    }
+    fn names(&self) -> Vec<String> {
+        let items: Vec<&jumpstarter_cluster::ClusterInfo> = match self {
+            ClusterTable::One(c) => vec![c],
+            ClusterTable::Many(l) => l.items.iter().collect(),
+        };
+        items.iter().map(|c| format!("cluster/{}", c.name)).collect()
     }
 }
 
