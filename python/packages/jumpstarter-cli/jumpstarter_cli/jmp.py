@@ -26,6 +26,7 @@ jmp.add_command(rust_command("get", "Display one or many resources."))
 jmp.add_command(rust_command("auth", "Authentication and token management commands."))
 jmp.add_command(rust_command("config", "Modify jumpstarter config files."))
 jmp.add_command(rust_command("login", "Login to a Jumpstarter instance."))
+jmp.add_command(rust_command("mcp", "MCP server for AI agent interaction with Jumpstarter hardware."))
 
 # Native Python commands (driver-dependent, or not yet ported).
 jmp.add_command(completion)
@@ -34,14 +35,6 @@ jmp.add_command(run)
 jmp.add_command(driver)
 jmp.add_command(admin)
 jmp.add_command(version)
-
-try:
-    from jumpstarter_mcp.cli import mcp
-except ModuleNotFoundError as exc:
-    if exc.name != "jumpstarter_mcp":
-        raise
-else:
-    jmp.add_command(mcp)
 
 if __name__ == "__main__":
     jmp()

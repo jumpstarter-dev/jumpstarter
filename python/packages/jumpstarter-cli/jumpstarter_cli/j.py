@@ -43,12 +43,6 @@ async def _run_introspect(argv):
 
 
 async def j_async():
-    # `j introspect ...` is a machine-readable side channel (JSON to stdout), intercepted
-    # before the normal driver-client CLI passthrough.
-    if len(sys.argv) >= 2 and sys.argv[1] == "introspect":
-        await _run_introspect(sys.argv[2:])
-        return
-
     @async_handle_exceptions
     async def cli():
         try:
@@ -88,6 +82,11 @@ async def j_async():
 
 def j():
     traceback.install()
+    # `j introspect ...` is a machine-readable side channel (JSON to stdout) used by the Rust
+    # MCP server; handle it before the normal driver-client CLI passthrough.
+    if len(sys.argv) >= 2 and sys.argv[1] == "introspect":
+        run(_run_introspect, sys.argv[2:])
+        return
     run(j_async)
 
 

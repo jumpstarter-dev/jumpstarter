@@ -56,7 +56,6 @@ jumpstarter-oci = { workspace = true }
 jumpstarter-fls = { workspace = true }
 jumpstarter-storage = { workspace = true }
 jumpstarter-ipaddr = { workspace = true }
-jumpstarter-mcp = { workspace = true }
 jumpstarter-testing = { workspace = true }
 hatch-pin-jumpstarter = { workspace = true }
 

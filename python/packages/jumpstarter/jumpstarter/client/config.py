@@ -3,10 +3,10 @@
 
 The Rust core owns config parsing/serialization (``jumpstarter_core.parse_yaml`` /
 ``dump_yaml``) and the lease lifecycle (the FFI ``Lease`` shim over ``ControllerSession``).
-This module is just the stdlib glue the remaining Python consumers (``jumpstarter-testing``,
-``jumpstarter-mcp``) need: resolve which client config to use (an explicit alias, the
-``JUMPSTARTER_*`` env, or the user config's ``current-client``), read its connection fields,
-write a refreshed token back, and open a lease.
+This module is just the stdlib glue the remaining Python consumer (``jumpstarter-testing``)
+needs: resolve which client config to use (an explicit alias, the ``JUMPSTARTER_*`` env, or
+the user config's ``current-client``), read its connection fields, write a refreshed token
+back, and open a lease.
 """
 
 from __future__ import annotations
