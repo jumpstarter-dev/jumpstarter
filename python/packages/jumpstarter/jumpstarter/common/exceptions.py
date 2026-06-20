@@ -45,12 +45,6 @@ class ConnectionError(JumpstarterException):
     pass
 
 
-class ExporterOfflineError(ConnectionError):
-    """Raised when the connection to the exporter is lost during a lease."""
-
-    pass
-
-
 class ConfigurationError(JumpstarterException):
     """Raised when a configuration error exists."""
 
@@ -66,12 +60,6 @@ class ArgumentError(JumpstarterException):
 
 class FileNotFoundError(JumpstarterException, FileNotFoundError):
     """Raised when a file is not found."""
-
-    pass
-
-
-class ReauthenticationFailed(JumpstarterException):
-    """Raised when a re-authentication fails."""
 
     pass
 
