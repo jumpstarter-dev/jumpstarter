@@ -34,15 +34,22 @@ pub fn resolve_client_config() -> Result<ClientConfig, String> {
 
 /// Resolve config and connect a controller session on the Rust core.
 pub async fn connect() -> Result<ControllerSession, String> {
+    connect_with_config().await.map(|(session, _)| session)
+}
+
+/// Like [`connect`], but also returns the resolved config (for its driver allow-list /
+/// unsafe flag, which the connection tools propagate to the `j` subprocess environment).
+pub async fn connect_with_config() -> Result<(ControllerSession, ClientConfig), String> {
     let cfg = resolve_client_config()?;
-    ControllerSession::connect(
-        cfg.endpoint.unwrap_or_default(),
-        cfg.token,
-        cfg.tls.ca,
+    let session = ControllerSession::connect(
+        cfg.endpoint.clone().unwrap_or_default(),
+        cfg.token.clone(),
+        cfg.tls.ca.clone(),
         cfg.tls.insecure,
-        cfg.metadata.namespace.unwrap_or_default(),
-        cfg.metadata.name,
+        cfg.metadata.namespace.clone().unwrap_or_default(),
+        cfg.metadata.name.clone(),
     )
     .await
-    .map_err(|e| format!("Failed to connect to controller: {e}"))
+    .map_err(|e| format!("Failed to connect to controller: {e}"))?;
+    Ok((session, cfg))
 }
