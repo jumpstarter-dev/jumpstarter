@@ -120,3 +120,79 @@ impl ClientConfig {
         }
     }
 }
+
+// Ported from the deleted Python `config/client_config_test.py` (the
+// ClientConfigV1Alpha1 model is owned by Rust now): YAML parsing, the
+// exclude_none / leases-default-drop save format, and round-trip.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::YamlConfig;
+
+    const TOKEN: &str = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz";
+
+    fn from_file_yaml() -> String {
+        format!(
+            "apiVersion: jumpstarter.dev/v1alpha1\n\
+             kind: ClientConfig\n\
+             metadata:\n  namespace: default\n  name: testclient\n\
+             endpoint: jumpstarter.my-lab.com:1443\n\
+             token: {TOKEN}\n\
+             drivers:\n  allow:\n  - jumpstarter.drivers.*\n  - vendorpackage.*\n  unsafe: false\n"
+        )
+    }
+
+    #[test]
+    fn parses_fields_from_yaml() {
+        let c = ClientConfig::from_yaml(&from_file_yaml()).unwrap();
+        assert_eq!(c.metadata.namespace.as_deref(), Some("default"));
+        assert_eq!(c.metadata.name, "testclient");
+        assert_eq!(c.endpoint.as_deref(), Some("jumpstarter.my-lab.com:1443"));
+        assert_eq!(c.token.as_deref(), Some(TOKEN));
+        assert_eq!(c.drivers.allow, vec!["jumpstarter.drivers.*", "vendorpackage.*"]);
+        assert!(!c.drivers.r#unsafe);
+    }
+
+    #[test]
+    fn round_trips_through_yaml() {
+        let c = ClientConfig::from_yaml(&from_file_yaml()).unwrap();
+        let reparsed = ClientConfig::from_yaml(&c.to_yaml().unwrap()).unwrap();
+        assert_eq!(c, reparsed);
+    }
+
+    #[test]
+    fn save_omits_none_fields_and_default_leases() {
+        // A minimal config: no endpoint/token, all-default leases.
+        let c = ClientConfig::new(ObjectMeta::new("c1").with_namespace("default"));
+        let yaml = c.to_yaml().unwrap();
+        // exclude_none: absent optionals are not serialized.
+        assert!(!yaml.contains("token:"), "token should be omitted when None:\n{yaml}");
+        assert!(!yaml.contains("endpoint:"), "endpoint should be omitted when None:\n{yaml}");
+        assert!(!yaml.contains("refresh_token:"));
+        // leases is dropped entirely when it holds only defaults (v0.7.x compat).
+        assert!(!yaml.contains("leases:"), "default leases block should be dropped:\n{yaml}");
+        // camelCase keys are preserved.
+        assert!(yaml.contains("apiVersion:"));
+        assert!(yaml.contains("grpcOptions:"));
+    }
+
+    #[test]
+    fn save_keeps_non_default_leases() {
+        let mut c = ClientConfig::new(ObjectMeta::new("c1"));
+        c.leases.acquisition_timeout = 99;
+        let yaml = c.to_yaml().unwrap();
+        assert!(yaml.contains("leases:"), "non-default leases must be kept:\n{yaml}");
+        assert!(yaml.contains("acquisition_timeout: 99"));
+    }
+
+    #[test]
+    fn drivers_default_to_empty_and_safe() {
+        let c = ClientConfig::from_yaml(
+            "apiVersion: jumpstarter.dev/v1alpha1\nkind: ClientConfig\nmetadata:\n  name: c\n",
+        )
+        .unwrap();
+        assert!(c.drivers.allow.is_empty());
+        assert!(!c.drivers.r#unsafe);
+        assert_eq!(c.leases.acquisition_timeout, 7200);
+    }
+}

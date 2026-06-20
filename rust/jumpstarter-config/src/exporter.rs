@@ -187,3 +187,112 @@ impl ExporterConfig {
         }
     }
 }
+
+// Ported from the deleted Python `config/exporter_test.py`: the `export` driver
+// tree (the untagged Base/Composite union), `beforeLease`/`afterLease` hooks, and
+// round-trip.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::YamlConfig;
+
+    const EXPORTER_YAML: &str = "apiVersion: jumpstarter.dev/v1alpha1\n\
+kind: ExporterConfig\n\
+metadata:\n  namespace: default\n  name: test\n\
+endpoint: jumpstarter.my-lab.com:1443\n\
+token: a-token\n\
+tls:\n  ca: cacertificatedata\n  insecure: true\n\
+export:\n\
+\x20 power:\n\
+\x20   type: jumpstarter_driver_power.driver.PduPower\n\
+\x20   config:\n\
+\x20     host: 192.168.1.111\n\
+\x20     port: 1234\n\
+\x20     auth:\n\
+\x20       username: admin\n\
+\x20       password: secret\n\
+\x20 serial:\n\
+\x20   type: jumpstarter_driver_pyserial.driver.Pyserial\n\
+\x20   config:\n\
+\x20     port: /dev/ttyUSB0\n\
+\x20     baudrate: 115200\n\
+\x20 nested:\n\
+\x20   children:\n\
+\x20     custom:\n\
+\x20       type: vendorpackage.CustomDriver\n\
+\x20       config:\n\
+\x20         hello: world\n";
+
+    #[test]
+    fn parses_driver_tree() {
+        let c = ExporterConfig::from_yaml(EXPORTER_YAML).unwrap();
+        assert_eq!(c.metadata.name, "test");
+        assert_eq!(c.tls.ca, "cacertificatedata");
+        assert!(c.tls.insecure);
+        assert_eq!(c.export.len(), 3);
+
+        // power: a concrete Base driver with kwargs.
+        let DriverInstance::Base(power) = &c.export["power"] else {
+            panic!("power should be a Base driver, got {:?}", c.export["power"]);
+        };
+        assert_eq!(power.r#type, "jumpstarter_driver_power.driver.PduPower");
+        assert_eq!(power.config["host"], serde_json::json!("192.168.1.111"));
+        assert_eq!(power.config["port"], serde_json::json!(1234));
+        assert_eq!(power.config["auth"], serde_json::json!({"username": "admin", "password": "secret"}));
+
+        // nested: a Base node carrying a `custom` child (Python treats a node with
+        // children-and-no-type structurally; here it has children only).
+        let custom = match &c.export["nested"] {
+            DriverInstance::Base(b) => &b.children,
+            DriverInstance::Composite(comp) => &comp.children,
+            other => panic!("unexpected nested variant: {other:?}"),
+        };
+        let DriverInstance::Base(inner) = &custom["custom"] else {
+            panic!("custom should be a Base driver");
+        };
+        assert_eq!(inner.r#type, "vendorpackage.CustomDriver");
+        assert_eq!(inner.config["hello"], serde_json::json!("world"));
+    }
+
+    #[test]
+    fn round_trips_driver_tree() {
+        let c = ExporterConfig::from_yaml(EXPORTER_YAML).unwrap();
+        let reparsed = ExporterConfig::from_yaml(&c.to_yaml().unwrap()).unwrap();
+        assert_eq!(c, reparsed);
+    }
+
+    #[test]
+    fn parses_before_and_after_lease_hooks() {
+        let yaml = "apiVersion: jumpstarter.dev/v1alpha1\n\
+kind: ExporterConfig\n\
+metadata:\n  namespace: default\n  name: test-hooks\n\
+endpoint: jumpstarter.my-lab.com:1443\n\
+token: t\n\
+hooks:\n\
+\x20 beforeLease:\n\
+\x20   script: |\n\
+\x20     echo pre\n\
+\x20     j power on\n\
+\x20   timeout: 600\n\
+\x20 afterLease:\n\
+\x20   script: |\n\
+\x20     echo post\n\
+\x20     j power off\n\
+\x20   timeout: 600\n\
+export:\n\
+\x20 power:\n\
+\x20   type: jumpstarter_driver_power.driver.PduPower\n";
+        let c = ExporterConfig::from_yaml(yaml).unwrap();
+        let before = c.hooks.before_lease.as_ref().expect("beforeLease");
+        let after = c.hooks.after_lease.as_ref().expect("afterLease");
+        assert_eq!(before.script, "echo pre\nj power on\n");
+        assert_eq!(before.timeout, 600);
+        assert_eq!(after.script, "echo post\nj power off\n");
+
+        // The save round-trip keeps the camelCase hook keys.
+        let out = c.to_yaml().unwrap();
+        assert!(out.contains("beforeLease:"), "{out}");
+        assert!(out.contains("afterLease:"), "{out}");
+        assert!(!out.contains("before_lease:"));
+    }
+}

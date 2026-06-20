@@ -55,3 +55,45 @@ impl UserConfig {
         self.config.current_client.as_deref()
     }
 }
+
+// Ported from the deleted Python `config/user_config_test.py`: `current-client`
+// serializes as the bare alias (or null), and round-trips.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::YamlConfig;
+
+    #[test]
+    fn empty_serializes_current_client_as_null() {
+        let u = UserConfig::empty();
+        let yaml = u.to_yaml().unwrap();
+        assert!(yaml.contains("current-client: null"), "{yaml}");
+        assert!(yaml.contains("apiVersion:"));
+        assert_eq!(u.current_client(), None);
+    }
+
+    #[test]
+    fn parses_and_exposes_current_client_alias() {
+        let yaml = "apiVersion: jumpstarter.dev/v1alpha1\n\
+kind: UserConfig\n\
+config:\n  current-client: my-client\n";
+        let u = UserConfig::from_yaml(yaml).unwrap();
+        assert_eq!(u.current_client(), Some("my-client"));
+    }
+
+    #[test]
+    fn round_trips() {
+        let mut u = UserConfig::empty();
+        u.config.current_client = Some("c1".to_string());
+        let reparsed = UserConfig::from_yaml(&u.to_yaml().unwrap()).unwrap();
+        assert_eq!(u, reparsed);
+        assert_eq!(reparsed.current_client(), Some("c1"));
+    }
+
+    #[test]
+    fn missing_current_client_defaults_to_none() {
+        let yaml = "apiVersion: jumpstarter.dev/v1alpha1\nkind: UserConfig\nconfig: {}\n";
+        let u = UserConfig::from_yaml(yaml).unwrap();
+        assert_eq!(u.current_client(), None);
+    }
+}
