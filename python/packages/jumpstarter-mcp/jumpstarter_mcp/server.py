@@ -19,7 +19,7 @@ from jumpstarter_mcp.tools import commands as cmd_tools
 from jumpstarter_mcp.tools import connections as conn_tools
 from jumpstarter_mcp.tools import leases as lease_tools
 
-from jumpstarter.config.client import ClientConfigV1Alpha1
+from jumpstarter.client.config import ClientConnection
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ When generating Python examples for the user, ALWAYS use the env() helper
 from jumpstarter.utils.env. This assumes the script runs under a jumpstarter
 shell where JUMPSTARTER_HOST is already set (via jmp_get_env or `j shell`).
 
-NEVER use ClientConfigV1Alpha1, lease(), or connect() in examples - those
+NEVER use ClientConnection, lease(), or connect() in examples - those
 are for standalone automation, not interactive use.
 
 Canonical pattern:
@@ -87,31 +87,12 @@ method signatures for code examples.
 """
 
 
-def _load_config() -> ClientConfigV1Alpha1:
-    """Load client config using the same resolution as jmp CLI."""
-    from pydantic import ValidationError
-
-    from jumpstarter.config.user import UserConfigV1Alpha1
-
-    config = None
-    try:
-        config = ClientConfigV1Alpha1()
-    except ValidationError:
-        pass
-
-    if config is None:
-        config = UserConfigV1Alpha1.load_or_create().config.current_client
-
-    if config is None:
-        raise RuntimeError(
-            "No jumpstarter client config found. "
-            "Run 'jmp config client use <name>' or set JUMPSTARTER_* environment variables."
-        )
-
-    return config
+def _load_config() -> ClientConnection:
+    """Resolve the client config the same way the jmp CLI does (env, else current-client)."""
+    return ClientConnection.resolve()
 
 
-async def _ensure_fresh_token(config: ClientConfigV1Alpha1) -> ClientConfigV1Alpha1:
+async def _ensure_fresh_token(config: ClientConnection) -> ClientConnection:
     """Refresh the access token if it is expired or about to expire.
 
     Uses the stored refresh_token to obtain a new access token via OIDC.
@@ -151,11 +132,7 @@ async def _ensure_fresh_token(config: ClientConfigV1Alpha1) -> ClientConfigV1Alp
     try:
         oidc = Config(issuer=issuer, client_id="jumpstarter-cli")
         tokens = await oidc.refresh_token_grant(refresh_token)
-        config.token = tokens["access_token"]
-        new_refresh = tokens.get("refresh_token")
-        if new_refresh is not None:
-            config.refresh_token = new_refresh
-        ClientConfigV1Alpha1.save(config)
+        config.save_token(tokens["access_token"], tokens.get("refresh_token"))
         logger.info("Access token refreshed successfully")
     except Exception:
         logger.warning("Token refresh failed - downstream call will likely fail", exc_info=True)
@@ -163,13 +140,13 @@ async def _ensure_fresh_token(config: ClientConfigV1Alpha1) -> ClientConfigV1Alp
     return config
 
 
-async def _get_config() -> ClientConfigV1Alpha1:
+async def _get_config() -> ClientConnection:
     """Load client config and ensure the access token is fresh."""
     config = _load_config()
     return await _ensure_fresh_token(config)
 
 
-async def _controller_session(config: ClientConfigV1Alpha1):
+async def _controller_session(config: ClientConnection):
     """Connect a Rust-core ControllerSession (FFI) from the client config's connection fields.
 
     The controller operations (list/create/delete exporters + leases) run on the Rust core,
@@ -180,10 +157,10 @@ async def _controller_session(config: ClientConfigV1Alpha1):
     return await jc.ControllerSession.connect(
         config.endpoint,
         config.token,
-        config.tls.ca or "",
-        config.tls.insecure,
-        config.metadata.namespace,
-        config.metadata.name,
+        config.ca,
+        config.insecure,
+        config.namespace,
+        config.name,
     )
 
 

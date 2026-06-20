@@ -439,11 +439,10 @@ class TestEnsureFreshToken:
         config.token = _make_jwt_payload(exp=future_exp)
         config.refresh_token = "some-refresh-token"
 
-        with patch("jumpstarter_mcp.server.ClientConfigV1Alpha1") as mock_cls:
-            result = await _ensure_fresh_token(config)
+        result = await _ensure_fresh_token(config)
 
         assert result is config
-        mock_cls.save.assert_not_called()
+        config.save_token.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_expired_token_no_refresh_token_skips(self):
@@ -454,6 +453,7 @@ class TestEnsureFreshToken:
 
         result = await _ensure_fresh_token(config)
         assert result is config
+        config.save_token.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_expired_token_refreshes_successfully(self):
@@ -462,23 +462,17 @@ class TestEnsureFreshToken:
         config.token = _make_jwt_payload(exp=past_exp)
         config.refresh_token = "old-refresh"
 
-        new_access = "new-access-token"
-        new_refresh = "new-refresh-token"
         mock_oidc = AsyncMock()
         mock_oidc.refresh_token_grant.return_value = {
-            "access_token": new_access,
-            "refresh_token": new_refresh,
+            "access_token": "new-access-token",
+            "refresh_token": "new-refresh-token",
         }
 
-        with (
-            patch("jumpstarter_mcp.server.ClientConfigV1Alpha1") as mock_cls,
-            patch("jumpstarter_cli_common.oidc.Config", return_value=mock_oidc),
-        ):
+        with patch("jumpstarter_cli_common.oidc.Config", return_value=mock_oidc):
             result = await _ensure_fresh_token(config)
 
-        assert result.token == new_access
-        assert result.refresh_token == new_refresh
-        mock_cls.save.assert_called_once_with(config)
+        assert result is config
+        config.save_token.assert_called_once_with("new-access-token", "new-refresh-token")
 
     @pytest.mark.asyncio
     async def test_expired_token_refresh_updates_only_access_when_no_new_refresh(self):
@@ -488,38 +482,28 @@ class TestEnsureFreshToken:
         config.refresh_token = "old-refresh"
 
         mock_oidc = AsyncMock()
-        mock_oidc.refresh_token_grant.return_value = {
-            "access_token": "new-access",
-        }
+        mock_oidc.refresh_token_grant.return_value = {"access_token": "new-access"}
 
-        with (
-            patch("jumpstarter_mcp.server.ClientConfigV1Alpha1"),
-            patch("jumpstarter_cli_common.oidc.Config", return_value=mock_oidc),
-        ):
-            result = await _ensure_fresh_token(config)
+        with patch("jumpstarter_cli_common.oidc.Config", return_value=mock_oidc):
+            await _ensure_fresh_token(config)
 
-        assert result.token == "new-access"
-        assert result.refresh_token == "old-refresh"
+        config.save_token.assert_called_once_with("new-access", None)
 
     @pytest.mark.asyncio
     async def test_expired_token_refresh_failure_returns_config_unchanged(self):
         past_exp = int(time.time()) - 60
-        original_token = _make_jwt_payload(exp=past_exp)
         config = MagicMock()
-        config.token = original_token
+        config.token = _make_jwt_payload(exp=past_exp)
         config.refresh_token = "old-refresh"
 
         mock_oidc = AsyncMock()
         mock_oidc.refresh_token_grant.side_effect = RuntimeError("OIDC server down")
 
-        with (
-            patch("jumpstarter_mcp.server.ClientConfigV1Alpha1") as mock_cls,
-            patch("jumpstarter_cli_common.oidc.Config", return_value=mock_oidc),
-        ):
+        with patch("jumpstarter_cli_common.oidc.Config", return_value=mock_oidc):
             result = await _ensure_fresh_token(config)
 
         assert result is config
-        mock_cls.save.assert_not_called()
+        config.save_token.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_near_expiry_triggers_refresh(self):
@@ -531,25 +515,27 @@ class TestEnsureFreshToken:
         mock_oidc = AsyncMock()
         mock_oidc.refresh_token_grant.return_value = {"access_token": "refreshed"}
 
-        with (
-            patch("jumpstarter_mcp.server.ClientConfigV1Alpha1"),
-            patch("jumpstarter_cli_common.oidc.Config", return_value=mock_oidc),
-        ):
-            result = await _ensure_fresh_token(config)
+        with patch("jumpstarter_cli_common.oidc.Config", return_value=mock_oidc):
+            await _ensure_fresh_token(config)
 
-        assert result.token == "refreshed"
+        config.save_token.assert_called_once_with("refreshed", None)
 
     @pytest.mark.asyncio
-    async def test_token_without_exp_claim_skips_refresh(self):
+    async def test_token_without_exp_claim_attempts_refresh(self):
+        # A token with no exp claim can't be judged still-valid, so a refresh is attempted;
+        # when it fails the config is returned unchanged and nothing is persisted.
         config = MagicMock()
         config.token = _make_jwt_payload(exp=None)
         config.refresh_token = "some-refresh"
 
-        with patch("jumpstarter_mcp.server.ClientConfigV1Alpha1") as mock_cls:
+        mock_oidc = AsyncMock()
+        mock_oidc.refresh_token_grant.side_effect = RuntimeError("OIDC server down")
+
+        with patch("jumpstarter_cli_common.oidc.Config", return_value=mock_oidc):
             result = await _ensure_fresh_token(config)
 
         assert result is config
-        mock_cls.save.assert_not_called()
+        config.save_token.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -16,7 +16,7 @@ import anyio.from_thread
 from anyio.from_thread import BlockingPortal
 
 from jumpstarter.client.client import client_from_path
-from jumpstarter.config.client import ClientConfigV1Alpha1
+from jumpstarter.client.config import ClientConnection
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,7 @@ class ConnectionManager:
 
     async def connect(
         self,
-        config: ClientConfigV1Alpha1,
+        config: ClientConnection,
         lease_name: str | None = None,
         selector: str | None = None,
         exporter_name: str | None = None,
@@ -192,7 +192,7 @@ class ConnectionManager:
 
     async def _setup_connection(
         self,
-        config: ClientConfigV1Alpha1,
+        config: ClientConnection,
         lease,
         portal: BlockingPortal,
         connection_id: str,

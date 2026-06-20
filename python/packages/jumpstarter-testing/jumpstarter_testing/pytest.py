@@ -4,8 +4,8 @@ from typing import ClassVar
 
 import pytest
 
+from jumpstarter.client.config import ClientConnection
 from jumpstarter.common.utils import env
-from jumpstarter.config.client import ClientConfigV1Alpha1
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class JumpstarterTest:
                 yield client
         except RuntimeError:
             selector = getattr(self, "selector", None)
-            config = ClientConfigV1Alpha1.load("default")
+            config = ClientConnection.load("default")
             with config.lease(selector=selector) as lease:
                 with lease.connect() as client:
                     yield client
