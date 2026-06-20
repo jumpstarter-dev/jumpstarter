@@ -6,10 +6,10 @@ from unittest.mock import patch
 import click
 import pytest
 from jumpstarter_driver_pyserial.driver import PySerial
+from jumpstarter_oci import OciCredentials
 from pydantic import SecretStr
 
 from .driver import RideSXDriver
-from jumpstarter.common.oci import OciCredentials
 from jumpstarter.common.utils import serve
 
 
@@ -61,7 +61,7 @@ def test_validate_partition_mappings(ridesx_client):
 
 def test_flash_oci_auto_success(ridesx_client):
     """Test successful flash_oci_auto call"""
-    with patch("jumpstarter.common.oci.resolve_oci_credentials", return_value=OciCredentials()):
+    with patch("jumpstarter_oci.resolve_oci_credentials", return_value=OciCredentials()):
         with patch.object(ridesx_client, "call") as mock_call:
             mock_call.side_effect = [
                 None,  # boot_to_fastboot call
@@ -89,7 +89,7 @@ def test_flash_oci_auto_error_cases(ridesx_client):
         ridesx_client.flash_oci_auto("quay.io/org/image:tag")
 
     # No device found
-    with patch("jumpstarter.common.oci.resolve_oci_credentials", return_value=OciCredentials()):
+    with patch("jumpstarter_oci.resolve_oci_credentials", return_value=OciCredentials()):
         with patch.object(ridesx_client, "call") as mock_call:
             mock_call.return_value = {"status": "no_device_found", "device_id": None}
 
@@ -100,7 +100,7 @@ def test_flash_oci_auto_error_cases(ridesx_client):
 def test_flash_oci_auto_passes_authenticated_credentials(ridesx_client):
     """Authenticated credentials should pass username and plain password to flash_oci_image."""
     creds = OciCredentials(username="myuser", password=SecretStr("mypass"))
-    with patch("jumpstarter.common.oci.resolve_oci_credentials", return_value=creds):
+    with patch("jumpstarter_oci.resolve_oci_credentials", return_value=creds):
         with patch.object(ridesx_client, "call") as mock_call:
             mock_call.side_effect = [
                 None,  # boot_to_fastboot

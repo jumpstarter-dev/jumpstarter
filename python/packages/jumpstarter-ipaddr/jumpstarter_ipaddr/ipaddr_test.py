@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from jumpstarter.common.ipaddr import get_minikube_ip
+from .ipaddr import get_minikube_ip
 
 
 class TestIPAddressDetection:

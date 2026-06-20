@@ -6,8 +6,8 @@ import anyio
 import anyio.from_thread
 from aiohttp import web
 from jumpstarter_driver_opendal.driver import Opendal
+from jumpstarter_ipaddr import get_ip_address
 
-from jumpstarter.common.ipaddr import get_ip_address
 from jumpstarter.driver import Driver, export
 
 

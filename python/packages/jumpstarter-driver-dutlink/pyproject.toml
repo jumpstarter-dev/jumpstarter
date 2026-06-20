@@ -12,6 +12,7 @@ license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
   "jumpstarter",
+  "jumpstarter-storage",
   "jumpstarter-driver-composite",
   "jumpstarter-driver-pyserial",
   "jumpstarter-driver-opendal",

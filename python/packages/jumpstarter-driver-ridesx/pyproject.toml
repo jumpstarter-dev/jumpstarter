@@ -8,6 +8,8 @@ authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
 requires-python = ">=3.11"
 dependencies = [
     "jumpstarter",
+    "jumpstarter-oci",
+    "jumpstarter-fls",
     "jumpstarter-driver-composite",
     "jumpstarter-driver-opendal",
     "jumpstarter-driver-power",

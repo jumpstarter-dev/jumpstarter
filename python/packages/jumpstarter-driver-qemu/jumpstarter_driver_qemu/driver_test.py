@@ -10,10 +10,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import requests
+from jumpstarter_oci import OciCredentials
 
 from jumpstarter_driver_qemu.driver import Qemu, QemuFlasher
 
-from jumpstarter.common.oci import OciCredentials
 from jumpstarter.common.utils import serve
 
 
@@ -315,7 +315,7 @@ async def test_flash_oci_no_credentials():
     # Ensure OCI env vars are not set so driver doesn't pick them up
     env_clean = {k: v for k, v in os.environ.items() if k not in ("OCI_USERNAME", "OCI_PASSWORD")}
     with patch.dict(os.environ, env_clean, clear=True):
-        with patch("jumpstarter.common.oci.read_auth_file_credentials", return_value=OciCredentials()):
+        with patch("jumpstarter_oci.oci.read_auth_file_credentials", return_value=OciCredentials()):
             with patch("jumpstarter_driver_qemu.driver.get_fls_binary", return_value="fls"):
                 with patch(
                     "asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_process

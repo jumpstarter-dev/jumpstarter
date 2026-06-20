@@ -7,9 +7,9 @@ from pathlib import Path
 from typing import Dict
 
 from jumpstarter_driver_opendal.driver import Opendal
+from jumpstarter_fls import get_fls_binary
 
 from jumpstarter.common.exceptions import ConfigurationError
-from jumpstarter.common.fls import get_fls_binary
 from jumpstarter.driver import Driver, export
 
 

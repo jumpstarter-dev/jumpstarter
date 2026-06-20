@@ -21,11 +21,11 @@ from anyio.streams.file import FileReadStream, FileWriteStream
 from jumpstarter_driver_network.driver import TcpNetwork, UnixNetwork, VsockNetwork
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
 from jumpstarter_driver_pyserial.driver import PySerial
+from jumpstarter_fls import get_fls_binary
 from pydantic import BaseModel, ByteSize, Field, TypeAdapter, ValidationError, validate_call
 from qemu.qmp import QMPClient
 from qemu.qmp.protocol import ConnectError, Runstate
 
-from jumpstarter.common.fls import get_fls_binary
 from jumpstarter.driver import Driver, FlasherInterface, export
 from jumpstarter.streams.encoding import AutoDecompressIterator
 
@@ -104,7 +104,7 @@ class QemuFlasher(FlasherInterface, Driver):
         if not oci_url.startswith("oci://"):
             raise ValueError(f"OCI URL must start with oci://, got: {oci_url}")
 
-        from jumpstarter.common.oci import resolve_oci_credentials
+        from jumpstarter_oci import resolve_oci_credentials
 
         creds = resolve_oci_credentials(oci_url, username=oci_username, password=oci_password)
 

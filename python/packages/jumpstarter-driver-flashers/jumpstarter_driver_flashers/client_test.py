@@ -93,23 +93,22 @@ def test_resolve_oci_credentials_partial_env_falls_through_to_auth_file(monkeypa
     """Partial env vars should fall through to auth file lookup, not error."""
     from unittest.mock import patch
 
+    from jumpstarter_oci import OciCredentials
     from pydantic import SecretStr
-
-    from jumpstarter.common.oci import OciCredentials
 
     client = MockFlasherClient()
     monkeypatch.setenv("OCI_USERNAME", "env-user")
     monkeypatch.delenv("OCI_PASSWORD", raising=False)
 
     # When auth file has no match, result is unauthenticated — no error
-    with patch("jumpstarter.common.oci.read_auth_file_credentials", return_value=OciCredentials()):
+    with patch("jumpstarter_oci.oci.read_auth_file_credentials", return_value=OciCredentials()):
         creds = client._resolve_oci_credentials("oci://quay.io/org/image:tag", None, None)
         assert creds.username is None
         assert creds.password is None
 
     # When auth file has a match, those credentials are used
     with patch(
-        "jumpstarter.common.oci.read_auth_file_credentials",
+        "jumpstarter_oci.oci.read_auth_file_credentials",
         return_value=OciCredentials(username="fileuser", password=SecretStr("filepass")),
     ):
         creds = client._resolve_oci_credentials("oci://quay.io/org/image:tag", None, None)
@@ -121,13 +120,13 @@ def test_resolve_oci_credentials_normalizes_empty_strings(monkeypatch):
     """Empty-string username/password should be treated as absent and fall through."""
     from unittest.mock import patch
 
-    from jumpstarter.common.oci import OciCredentials
+    from jumpstarter_oci import OciCredentials
 
     client = MockFlasherClient()
     monkeypatch.delenv("OCI_USERNAME", raising=False)
     monkeypatch.delenv("OCI_PASSWORD", raising=False)
 
-    with patch("jumpstarter.common.oci.read_auth_file_credentials", return_value=OciCredentials()) as mock_auth:
+    with patch("jumpstarter_oci.oci.read_auth_file_credentials", return_value=OciCredentials()) as mock_auth:
         creds = client._resolve_oci_credentials("oci://quay.io/org/image:tag", "", "")
         assert creds.username is None
         assert creds.password is None

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
-    from jumpstarter.common.oci import OciCredentials
+    from jumpstarter_oci import OciCredentials
 
 import click
 import pexpect
@@ -33,13 +33,13 @@ from jumpstarter_driver_opendal.client import (
 )
 from jumpstarter_driver_opendal.common import PathBuf
 from jumpstarter_driver_pyserial.client import Console
+from jumpstarter_fls import get_fls_github_url
 from opendal import Metadata, Operator
 
 from jumpstarter_driver_flashers.bundle import FlasherBundleManifestV1Alpha1
 
 from jumpstarter.client.decorators import driver_click_group
 from jumpstarter.common.exceptions import ArgumentError, JumpstarterException
-from jumpstarter.common.fls import get_fls_github_url
 
 
 class FlashError(JumpstarterException):
@@ -1305,7 +1305,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
     def _resolve_oci_credentials(
         self, path: PathBuf, username: str | None, password: str | None
     ) -> "OciCredentials":
-        from jumpstarter.common.oci import OciCredentials, resolve_oci_credentials
+        from jumpstarter_oci import OciCredentials, resolve_oci_credentials
 
         if username is not None or password is not None or str(path).startswith("oci://"):
             try:

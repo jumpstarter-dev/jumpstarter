@@ -37,7 +37,7 @@ def test_get_fls_github_url_explicit_arch(arch, version, expected_binary):
 
 
 def test_get_fls_binary_with_custom_url():
-    with patch("jumpstarter.common.fls.download_fls", return_value="/tmp/custom-fls") as mock_download:
+    with patch("jumpstarter_fls.fls.download_fls", return_value="/tmp/custom-fls") as mock_download:
         result = get_fls_binary(fls_binary_url="https://example.com/fls", allow_custom_binaries=True)
 
         mock_download.assert_called_once_with("https://example.com/fls")
@@ -51,8 +51,8 @@ def test_get_fls_binary_custom_url_security_check():
 
 
 def test_get_fls_binary_with_version():
-    with patch("jumpstarter.common.fls.download_fls", return_value="/tmp/fls-0.1.9") as mock_download:
-        with patch("jumpstarter.common.fls.get_fls_github_url", return_value="https://github.com/...") as mock_url:
+    with patch("jumpstarter_fls.fls.download_fls", return_value="/tmp/fls-0.1.9") as mock_download:
+        with patch("jumpstarter_fls.fls.get_fls_github_url", return_value="https://github.com/...") as mock_url:
             result = get_fls_binary(fls_version="0.1.9")
 
             mock_url.assert_called_once_with("0.1.9")

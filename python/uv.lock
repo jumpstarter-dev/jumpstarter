@@ -67,8 +67,12 @@ members = [
     "jumpstarter-example-automotive",
     "jumpstarter-example-soc-pytest",
     "jumpstarter-example-xcp-ecu",
+    "jumpstarter-fls",
     "jumpstarter-imagehash",
+    "jumpstarter-ipaddr",
     "jumpstarter-mcp",
+    "jumpstarter-oci",
+    "jumpstarter-storage",
     "jumpstarter-testing",
 ]
 
@@ -1928,7 +1932,11 @@ dependencies = [
     { name = "jumpstarter-driver-ustreamer" },
     { name = "jumpstarter-driver-vnc" },
     { name = "jumpstarter-driver-yepkit" },
+    { name = "jumpstarter-fls" },
     { name = "jumpstarter-imagehash" },
+    { name = "jumpstarter-ipaddr" },
+    { name = "jumpstarter-oci" },
+    { name = "jumpstarter-storage" },
     { name = "jumpstarter-testing" },
 ]
 
@@ -1974,7 +1982,11 @@ requires-dist = [
     { name = "jumpstarter-driver-ustreamer", editable = "packages/jumpstarter-driver-ustreamer" },
     { name = "jumpstarter-driver-vnc", editable = "packages/jumpstarter-driver-vnc" },
     { name = "jumpstarter-driver-yepkit", editable = "packages/jumpstarter-driver-yepkit" },
+    { name = "jumpstarter-fls", editable = "packages/jumpstarter-fls" },
     { name = "jumpstarter-imagehash", editable = "packages/jumpstarter-imagehash" },
+    { name = "jumpstarter-ipaddr", editable = "packages/jumpstarter-ipaddr" },
+    { name = "jumpstarter-oci", editable = "packages/jumpstarter-oci" },
+    { name = "jumpstarter-storage", editable = "packages/jumpstarter-storage" },
     { name = "jumpstarter-testing", editable = "packages/jumpstarter-testing" },
 ]
 
@@ -2386,6 +2398,7 @@ dependencies = [
     { name = "jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power" },
     { name = "jumpstarter-driver-pyserial" },
+    { name = "jumpstarter-storage" },
     { name = "pyudev" },
     { name = "pyusb" },
 ]
@@ -2405,6 +2418,7 @@ requires-dist = [
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
+    { name = "jumpstarter-storage", editable = "packages/jumpstarter-storage" },
     { name = "pyudev", specifier = ">=0.24.3" },
     { name = "pyusb", specifier = ">=1.2.1" },
 ]
@@ -2492,6 +2506,8 @@ dependencies = [
     { name = "jumpstarter-driver-pyserial" },
     { name = "jumpstarter-driver-tftp" },
     { name = "jumpstarter-driver-uboot" },
+    { name = "jumpstarter-fls" },
+    { name = "jumpstarter-oci" },
     { name = "oras" },
     { name = "pyyaml" },
     { name = "yarl" },
@@ -2514,6 +2530,8 @@ requires-dist = [
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
     { name = "jumpstarter-driver-tftp", editable = "packages/jumpstarter-driver-tftp" },
     { name = "jumpstarter-driver-uboot", editable = "packages/jumpstarter-driver-uboot" },
+    { name = "jumpstarter-fls", editable = "packages/jumpstarter-fls" },
+    { name = "jumpstarter-oci", editable = "packages/jumpstarter-oci" },
     { name = "oras", specifier = ">=0.2.25" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "yarl", specifier = ">=1.6.0" },
@@ -2563,6 +2581,7 @@ dependencies = [
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-opendal" },
+    { name = "jumpstarter-ipaddr" },
     { name = "yarl" },
 ]
 
@@ -2579,6 +2598,7 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
+    { name = "jumpstarter-ipaddr", editable = "packages/jumpstarter-ipaddr" },
     { name = "yarl", specifier = ">=1.18.3" },
 ]
 
@@ -2930,6 +2950,8 @@ dependencies = [
     { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power" },
     { name = "jumpstarter-driver-pyserial" },
+    { name = "jumpstarter-fls" },
+    { name = "jumpstarter-oci" },
     { name = "pyyaml" },
     { name = "qemu-qmp" },
 ]
@@ -2948,6 +2970,8 @@ requires-dist = [
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
+    { name = "jumpstarter-fls", editable = "packages/jumpstarter-fls" },
+    { name = "jumpstarter-oci", editable = "packages/jumpstarter-oci" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "qemu-qmp", specifier = ">=0.0.3" },
 ]
@@ -3004,6 +3028,8 @@ dependencies = [
     { name = "jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power" },
     { name = "jumpstarter-driver-pyserial" },
+    { name = "jumpstarter-fls" },
+    { name = "jumpstarter-oci" },
 ]
 
 [package.dev-dependencies]
@@ -3020,6 +3046,8 @@ requires-dist = [
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
+    { name = "jumpstarter-fls", editable = "packages/jumpstarter-fls" },
+    { name = "jumpstarter-oci", editable = "packages/jumpstarter-oci" },
 ]
 
 [package.metadata.requires-dev]
@@ -3035,6 +3063,7 @@ source = { editable = "packages/jumpstarter-driver-sdwire" }
 dependencies = [
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-opendal" },
+    { name = "jumpstarter-storage" },
     { name = "pyudev" },
     { name = "pyusb" },
 ]
@@ -3049,6 +3078,7 @@ dev = [
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
+    { name = "jumpstarter-storage", editable = "packages/jumpstarter-storage" },
     { name = "pyudev", specifier = ">=0.24.3" },
     { name = "pyusb", specifier = ">=1.2.1" },
 ]
@@ -3315,6 +3345,7 @@ dependencies = [
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-opendal" },
+    { name = "jumpstarter-ipaddr" },
 ]
 
 [package.dev-dependencies]
@@ -3332,6 +3363,7 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
+    { name = "jumpstarter-ipaddr", editable = "packages/jumpstarter-ipaddr" },
 ]
 
 [package.metadata.requires-dev]
@@ -3689,6 +3721,24 @@ requires-dist = [
 ]
 
 [[package]]
+name = "jumpstarter-fls"
+source = { editable = "packages/jumpstarter-fls" }
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
 name = "jumpstarter-imagehash"
 source = { editable = "packages/jumpstarter-imagehash" }
 dependencies = [
@@ -3707,6 +3757,24 @@ requires-dist = [
     { name = "imagehash", specifier = ">=4.3.1" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
 ]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-ipaddr"
+source = { editable = "packages/jumpstarter-ipaddr" }
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
 
 [package.metadata.requires-dev]
 dev = [
@@ -3747,6 +3815,50 @@ dev = [
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-anyio", specifier = ">=0.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-oci"
+source = { editable = "packages/jumpstarter-oci" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.8.2" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-storage"
+source = { editable = "packages/jumpstarter-storage" }
+dependencies = [
+    { name = "anyio" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "anyio", specifier = ">=4.10.0" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 

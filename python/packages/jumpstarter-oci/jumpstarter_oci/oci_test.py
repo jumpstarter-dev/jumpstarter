@@ -39,14 +39,14 @@ class TestParseOciRegistry:
     def test_bare_image_name_defaults_to_docker_hub(self):
         # "ubuntu:latest" has no slash — defaults to first unqualified-search-registry
         with patch(
-            "jumpstarter.common.oci._get_unqualified_search_registries",
+            "jumpstarter_oci.oci._get_unqualified_search_registries",
             return_value=["docker.io"],
         ):
             assert parse_oci_registry("oci://ubuntu:latest") == "docker.io"
 
     def test_bare_image_uses_configured_registry(self):
         with patch(
-            "jumpstarter.common.oci._get_unqualified_search_registries",
+            "jumpstarter_oci.oci._get_unqualified_search_registries",
             return_value=["registry.example.com", "docker.io"],
         ):
             assert parse_oci_registry("oci://ubuntu:latest") == "registry.example.com"
@@ -89,7 +89,7 @@ class TestReadAuthFileCredentials:
         config_path.write_text(_make_auth_json({"quay.io": {"auth": _encode_auth("myuser", "mypass")}}))
 
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[config_path],
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
@@ -101,7 +101,7 @@ class TestReadAuthFileCredentials:
         auth_path.write_text(_make_auth_json({"ghcr.io": {"auth": _encode_auth("ghuser", "ghtoken")}}))
 
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[auth_path],
         ):
             result = read_auth_file_credentials("oci://ghcr.io/org/repo:v1")
@@ -116,7 +116,7 @@ class TestReadAuthFileCredentials:
         )
 
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[auth_path],
         ):
             result = read_auth_file_credentials("oci://docker.io/library/ubuntu:22.04")
@@ -128,7 +128,7 @@ class TestReadAuthFileCredentials:
         auth_path.write_text(_make_auth_json({"quay.io": {"auth": _encode_auth("user", "pass")}}))
 
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[auth_path],
         ):
             result = read_auth_file_credentials("oci://ghcr.io/org/repo:v1")
@@ -137,7 +137,7 @@ class TestReadAuthFileCredentials:
 
     def test_returns_none_when_no_auth_files_exist(self):
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[Path("/nonexistent/path/auth.json")],
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
@@ -152,7 +152,7 @@ class TestReadAuthFileCredentials:
         good_file.write_text(_make_auth_json({"quay.io": {"auth": _encode_auth("user", "pass")}}))
 
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[bad_file, good_file],
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
@@ -165,7 +165,7 @@ class TestReadAuthFileCredentials:
         auth_path.write_text(_make_auth_json({"quay.io": {"username": "altuser", "password": "altpass"}}))
 
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[auth_path],
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
@@ -178,7 +178,7 @@ class TestReadAuthFileCredentials:
         auth_path.write_text(_make_auth_json({"quay.io": {"username": "user", "password": "   "}}))
 
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[auth_path],
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
@@ -193,7 +193,7 @@ class TestReadAuthFileCredentials:
         second.write_text(_make_auth_json({"quay.io": {"auth": _encode_auth("second_user", "second_pass")}}))
 
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[first, second],
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
@@ -206,7 +206,7 @@ class TestReadAuthFileCredentials:
         auth_path.write_text(_make_auth_json({"quay.io": {"auth": _encode_auth("user", "pass:with:colons")}}))
 
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[auth_path],
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
@@ -218,7 +218,7 @@ class TestReadAuthFileCredentials:
         auth_path.write_text(_make_auth_json({"registry.local:5000": {"auth": _encode_auth("user", "pass")}}))
 
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[auth_path],
         ):
             result = read_auth_file_credentials("oci://registry.local:5000/myrepo:latest")
@@ -230,7 +230,7 @@ class TestReadAuthFileCredentials:
         auth_path.write_text(json.dumps({"auths": {}}))
 
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[auth_path],
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
@@ -244,7 +244,7 @@ class TestResolveOciCredentials:
         auth_path.write_text(_make_auth_json({"quay.io": {"auth": _encode_auth("fileuser", "filepass")}}))
 
         with patch.dict(os.environ, {"OCI_USERNAME": "envuser", "OCI_PASSWORD": "envpass"}):
-            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]):
+            with patch("jumpstarter_oci.oci._get_auth_file_paths", return_value=[auth_path]):
                 result = resolve_oci_credentials("oci://quay.io/org/image:latest")
                 assert result.username == "envuser"
                 assert result.password.get_secret_value() == "envpass"
@@ -255,7 +255,7 @@ class TestResolveOciCredentials:
 
         env_clean = {k: v for k, v in os.environ.items() if k not in ("OCI_USERNAME", "OCI_PASSWORD")}
         with patch.dict(os.environ, env_clean, clear=True):
-            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]):
+            with patch("jumpstarter_oci.oci._get_auth_file_paths", return_value=[auth_path]):
                 result = resolve_oci_credentials("oci://quay.io/org/image:latest")
                 assert result.username == "fileuser"
                 assert result.password.get_secret_value() == "filepass"
@@ -269,7 +269,7 @@ class TestResolveOciCredentials:
         env_partial = {k: v for k, v in os.environ.items() if k != "OCI_PASSWORD"}
         env_partial["OCI_USERNAME"] = "partialuser"
         with patch.dict(os.environ, env_partial, clear=True):
-            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]):
+            with patch("jumpstarter_oci.oci._get_auth_file_paths", return_value=[auth_path]):
                 result = resolve_oci_credentials("oci://quay.io/org/image:latest")
                 assert result.username == "fileuser"
                 assert result.password.get_secret_value() == "filepass"
@@ -282,7 +282,7 @@ class TestResolveOciCredentials:
         env_partial = {k: v for k, v in os.environ.items() if k != "OCI_USERNAME"}
         env_partial["OCI_PASSWORD"] = "partialpass"
         with patch.dict(os.environ, env_partial, clear=True):
-            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]):
+            with patch("jumpstarter_oci.oci._get_auth_file_paths", return_value=[auth_path]):
                 result = resolve_oci_credentials("oci://quay.io/org/image:latest")
                 assert result.username == "fileuser"
                 assert result.password.get_secret_value() == "filepass"
@@ -296,7 +296,7 @@ class TestResolveOciCredentials:
         env["OCI_USERNAME"] = "  "
         env["OCI_PASSWORD"] = "  "
         with patch.dict(os.environ, env, clear=True):
-            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]):
+            with patch("jumpstarter_oci.oci._get_auth_file_paths", return_value=[auth_path]):
                 result = resolve_oci_credentials("oci://quay.io/org/image:latest")
                 assert result.username == "fileuser"
                 assert result.password.get_secret_value() == "filepass"
@@ -304,7 +304,7 @@ class TestResolveOciCredentials:
     def test_returns_none_when_no_source(self):
         env_clean = {k: v for k, v in os.environ.items() if k not in ("OCI_USERNAME", "OCI_PASSWORD")}
         with patch.dict(os.environ, env_clean, clear=True):
-            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[]):
+            with patch("jumpstarter_oci.oci._get_auth_file_paths", return_value=[]):
                 result = resolve_oci_credentials("oci://quay.io/org/image:latest")
                 assert result.username is None
                 assert result.password is None
@@ -315,7 +315,7 @@ class TestParseOciRegistryDigest:
 
     def test_bare_image_with_digest(self):
         with patch(
-            "jumpstarter.common.oci._get_unqualified_search_registries",
+            "jumpstarter_oci.oci._get_unqualified_search_registries",
             return_value=["docker.io"],
         ):
             assert parse_oci_registry("oci://ubuntu@sha256:abc123") == "docker.io"
@@ -395,7 +395,7 @@ class TestInvalidBase64Auth:
         auth_path.write_text(_make_auth_json({"quay.io": {"auth": "not-valid-base64!!!"}}))
 
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[auth_path],
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
@@ -411,7 +411,7 @@ class TestInvalidBase64Auth:
         )
 
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[auth_path],
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
@@ -425,7 +425,7 @@ class TestInvalidBase64Auth:
         auth_path.write_text(_make_auth_json({"quay.io": {"auth": auth_b64}}))
 
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[auth_path],
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
@@ -439,7 +439,7 @@ class TestInvalidBase64Auth:
         auth_path.write_text(_make_auth_json({"quay.io": {"auth": auth_b64}}))
 
         with patch(
-            "jumpstarter.common.oci._get_auth_file_paths",
+            "jumpstarter_oci.oci._get_auth_file_paths",
             return_value=[auth_path],
         ):
             result = read_auth_file_credentials("oci://quay.io/org/image:latest")
@@ -501,7 +501,7 @@ class TestOciCredentials:
 
         env_clean = {k: v for k, v in os.environ.items() if k not in ("OCI_USERNAME", "OCI_PASSWORD")}
         with patch.dict(os.environ, env_clean, clear=True):
-            with patch("jumpstarter.common.oci._get_auth_file_paths", return_value=[auth_path]):
+            with patch("jumpstarter_oci.oci._get_auth_file_paths", return_value=[auth_path]):
                 result = resolve_oci_credentials("oci://quay.io/org/image:latest")
                 assert isinstance(result, OciCredentials)
                 assert result.is_authenticated
@@ -518,7 +518,7 @@ class TestUnqualifiedSearchRegistries:
 
     def test_falls_back_to_docker_io_when_no_config(self, tmp_path):
         with patch(
-            "jumpstarter.common.oci._get_registries_conf_paths",
+            "jumpstarter_oci.oci._get_registries_conf_paths",
             return_value=[tmp_path / "nonexistent.conf"],
         ):
             result = _get_unqualified_search_registries()
@@ -529,7 +529,7 @@ class TestUnqualifiedSearchRegistries:
         conf.write_text('unqualified-search-registries = ["quay.io", "docker.io"]\n')
 
         with patch(
-            "jumpstarter.common.oci._get_registries_conf_paths",
+            "jumpstarter_oci.oci._get_registries_conf_paths",
             return_value=[conf],
         ):
             result = _get_unqualified_search_registries()
@@ -543,7 +543,7 @@ class TestUnqualifiedSearchRegistries:
         good.write_text('unqualified-search-registries = ["registry.example.com"]\n')
 
         with patch(
-            "jumpstarter.common.oci._get_registries_conf_paths",
+            "jumpstarter_oci.oci._get_registries_conf_paths",
             return_value=[bad, good],
         ):
             result = _get_unqualified_search_registries()
@@ -554,7 +554,7 @@ class TestUnqualifiedSearchRegistries:
         conf.write_text('[registries.search]\nregistries = ["old-format"]\n')
 
         with patch(
-            "jumpstarter.common.oci._get_registries_conf_paths",
+            "jumpstarter_oci.oci._get_registries_conf_paths",
             return_value=[conf],
         ):
             result = _get_unqualified_search_registries()
@@ -573,7 +573,7 @@ class TestParseRegistriesForUrl:
 
     def test_bare_image_returns_all_configured(self):
         with patch(
-            "jumpstarter.common.oci._get_unqualified_search_registries",
+            "jumpstarter_oci.oci._get_unqualified_search_registries",
             return_value=("quay.io", "docker.io"),
         ):
             result = _parse_registries_for_url("oci://ubuntu:latest")
@@ -581,7 +581,7 @@ class TestParseRegistriesForUrl:
 
     def test_bare_image_no_tag_returns_all_configured(self):
         with patch(
-            "jumpstarter.common.oci._get_unqualified_search_registries",
+            "jumpstarter_oci.oci._get_unqualified_search_registries",
             return_value=("registry.example.com",),
         ):
             result = _parse_registries_for_url("oci://myimage")
@@ -589,7 +589,7 @@ class TestParseRegistriesForUrl:
 
     def test_namespace_image_returns_all_configured(self):
         with patch(
-            "jumpstarter.common.oci._get_unqualified_search_registries",
+            "jumpstarter_oci.oci._get_unqualified_search_registries",
             return_value=("quay.io", "docker.io"),
         ):
             result = _parse_registries_for_url("oci://library/ubuntu")
@@ -608,11 +608,11 @@ class TestBareImageCredentialLookup:
 
         with (
             patch(
-                "jumpstarter.common.oci._get_unqualified_search_registries",
+                "jumpstarter_oci.oci._get_unqualified_search_registries",
                 return_value=["quay.io", "docker.io"],
             ),
             patch(
-                "jumpstarter.common.oci._get_auth_file_paths",
+                "jumpstarter_oci.oci._get_auth_file_paths",
                 return_value=[auth_path],
             ),
         ):
@@ -633,11 +633,11 @@ class TestBareImageCredentialLookup:
 
         with (
             patch(
-                "jumpstarter.common.oci._get_unqualified_search_registries",
+                "jumpstarter_oci.oci._get_unqualified_search_registries",
                 return_value=["quay.io", "docker.io"],
             ),
             patch(
-                "jumpstarter.common.oci._get_auth_file_paths",
+                "jumpstarter_oci.oci._get_auth_file_paths",
                 return_value=[auth_path],
             ),
         ):
@@ -651,11 +651,11 @@ class TestBareImageCredentialLookup:
 
         with (
             patch(
-                "jumpstarter.common.oci._get_unqualified_search_registries",
+                "jumpstarter_oci.oci._get_unqualified_search_registries",
                 return_value=["quay.io", "docker.io"],
             ),
             patch(
-                "jumpstarter.common.oci._get_auth_file_paths",
+                "jumpstarter_oci.oci._get_auth_file_paths",
                 return_value=[auth_path],
             ),
         ):

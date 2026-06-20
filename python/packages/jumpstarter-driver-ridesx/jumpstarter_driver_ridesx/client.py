@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional
 
 if TYPE_CHECKING:
-    from jumpstarter.common.oci import OciCredentials
+    from jumpstarter_oci import OciCredentials
 
 import click
 from jumpstarter_driver_composite.client import CompositeClient
@@ -282,7 +282,7 @@ class RideSXClient(FlasherClient, CompositeClient):
 
     def _read_oci_credentials(self, oci_url: str) -> OciCredentials:
         """Read OCI registry credentials from environment variables or auth files."""
-        from jumpstarter.common.oci import resolve_oci_credentials
+        from jumpstarter_oci import resolve_oci_credentials
 
         return resolve_oci_credentials(oci_url)
 

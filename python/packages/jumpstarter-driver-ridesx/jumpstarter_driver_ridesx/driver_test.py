@@ -454,7 +454,7 @@ def test_power_rescue(ridesx_power_driver):
 
 
 # Flash OCI Image Tests
-# Note: FLS download utilities are tested in jumpstarter.common.fls_test
+# Note: FLS download utilities are tested in jumpstarter_fls/fls_test.py
 
 
 def test_flash_oci_image_success(temp_storage_dir, ridesx_driver):

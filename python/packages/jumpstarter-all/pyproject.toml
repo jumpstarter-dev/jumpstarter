@@ -48,6 +48,10 @@ dependencies = [
   "jumpstarter-driver-vnc",
   "jumpstarter-driver-yepkit",
   "jumpstarter-imagehash",
+  "jumpstarter-oci",
+  "jumpstarter-fls",
+  "jumpstarter-storage",
+  "jumpstarter-ipaddr",
   "jumpstarter-testing",
 ]
 

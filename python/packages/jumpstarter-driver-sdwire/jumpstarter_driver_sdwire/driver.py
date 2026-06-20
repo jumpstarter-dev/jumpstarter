@@ -6,8 +6,8 @@ import pyudev
 import usb.core
 import usb.util
 from jumpstarter_driver_opendal.driver import StorageMuxFlasherInterface
+from jumpstarter_storage import read_from_storage_device, write_to_storage_device
 
-from jumpstarter.common.storage import read_from_storage_device, write_to_storage_device
 from jumpstarter.driver import Driver, export
 
 

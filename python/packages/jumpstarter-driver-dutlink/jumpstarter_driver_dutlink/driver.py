@@ -12,9 +12,9 @@ from jumpstarter_driver_composite.driver import CompositeInterface
 from jumpstarter_driver_opendal.driver import StorageMuxFlasherInterface
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
 from jumpstarter_driver_pyserial.driver import PySerial
+from jumpstarter_storage import read_from_storage_device, write_to_storage_device
 from serial.serialutil import SerialException
 
-from jumpstarter.common.storage import read_from_storage_device, write_to_storage_device
 from jumpstarter.driver import Driver, export
 
 

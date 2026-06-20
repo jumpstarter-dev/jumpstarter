@@ -13,6 +13,8 @@ dependencies = [
     "oras>=0.2.25",
     "anyio>=4.10.0",
     "jumpstarter",
+    "jumpstarter-oci",
+    "jumpstarter-fls",
     "aiohttp>=3.10.5",
     "yarl>=1.6.0",
     "pyyaml>=6.0.2",
