@@ -230,4 +230,18 @@ mod tests {
         assert!(!selector_contains(sel, "region in (us)")); // not set-equal
         assert!(!selector_contains(sel, "missing=1"));
     }
+
+    // Ported from the deleted Python `client/selectors_test.py`: a `!exists`
+    // requirement and whitespace tolerance around `=`.
+    #[test]
+    fn contains_not_exists_requirement() {
+        assert!(selector_contains("board=rpi,!experimental", "!experimental"));
+        assert!(!selector_contains("board=rpi", "!experimental"));
+    }
+
+    #[test]
+    fn contains_tolerates_whitespace_around_equals() {
+        assert!(selector_contains("board=rpi", "board = rpi"));
+        assert!(selector_contains("board=rpi", "board =rpi"));
+    }
 }
