@@ -570,3 +570,93 @@ fn cap(s: &str) -> String {
         None => String::new(),
     }
 }
+
+// Ported from the deleted Python kubernetes get_client_config/get_exporter_config
+// tests (CA-bundle inclusion) + the admin create/import `--save` behavior: the
+// config written from fetched credentials carries the endpoint, token, CA, and
+// driver allow-list.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jumpstarter_config::YamlConfig;
+
+    #[test]
+    fn save_config_writes_client_with_ca_and_drivers() {
+        let dir = std::env::temp_dir().join(format!("jmp-admin-test-client-{}", std::process::id()));
+        let path = dir.join("c1.yaml");
+        let _ = std::fs::remove_file(&path);
+        save_config(
+            Kind::Client,
+            "ns1",
+            "c1",
+            "grpc.example.com:1443",
+            "tok-123",
+            "ca-bundle-data",
+            vec!["vendorpackage.*".to_string()],
+            false,
+            true,
+            Some(&path),
+        )
+        .unwrap();
+
+        let cfg = ClientConfig::load(&path).unwrap();
+        assert_eq!(cfg.metadata.namespace.as_deref(), Some("ns1"));
+        assert_eq!(cfg.metadata.name, "c1");
+        assert_eq!(cfg.endpoint.as_deref(), Some("grpc.example.com:1443"));
+        assert_eq!(cfg.token.as_deref(), Some("tok-123"));
+        assert_eq!(cfg.tls.ca, "ca-bundle-data");
+        assert!(cfg.tls.insecure);
+        assert_eq!(cfg.drivers.allow, vec!["vendorpackage.*"]);
+        assert!(!cfg.drivers.r#unsafe);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_config_unsafe_via_allow_sentinel() {
+        let dir = std::env::temp_dir().join(format!("jmp-admin-test-unsafe-{}", std::process::id()));
+        let path = dir.join("c2.yaml");
+        let _ = std::fs::remove_file(&path);
+        save_config(
+            Kind::Client,
+            "ns",
+            "c2",
+            "ep:1443",
+            "t",
+            "",
+            vec!["UNSAFE".to_string()],
+            false,
+            false,
+            Some(&path),
+        )
+        .unwrap();
+        let cfg = ClientConfig::load(&path).unwrap();
+        assert!(cfg.drivers.r#unsafe, "UNSAFE in the allow-list implies unsafe");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_config_writes_exporter_with_ca() {
+        let dir = std::env::temp_dir().join(format!("jmp-admin-test-exporter-{}", std::process::id()));
+        let path = dir.join("e1.yaml");
+        let _ = std::fs::remove_file(&path);
+        save_config(
+            Kind::Exporter,
+            "ns",
+            "e1",
+            "grpc.example.com:1443",
+            "etok",
+            "exporter-ca",
+            Vec::new(),
+            false,
+            false,
+            Some(&path),
+        )
+        .unwrap();
+        let cfg = ExporterConfig::load(&path).unwrap();
+        assert_eq!(cfg.metadata.name, "e1");
+        assert_eq!(cfg.endpoint.as_deref(), Some("grpc.example.com:1443"));
+        assert_eq!(cfg.token.as_deref(), Some("etok"));
+        assert_eq!(cfg.tls.ca, "exporter-ca");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
