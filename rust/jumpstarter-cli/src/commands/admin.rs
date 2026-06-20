@@ -419,6 +419,9 @@ struct GetArgs {
     name: Option<String>,
     #[command(flatten)]
     cluster: ClusterOpts,
+    /// Display the devices hosted by the exporter(s).
+    #[arg(short = 'd', long)]
+    devices: bool,
     #[arg(short = 'o', long = "output", value_enum)]
     output: Option<ListFormat>,
 }
@@ -435,7 +438,8 @@ impl Get {
             Some(name) => vec![admin.get(kind, name).await.map_err(runtime)?],
             None => admin.list(kind).await.map_err(runtime)?,
         };
-        output::print(&ResourceList { kind, items }, ListFormat::resolve(a.output)).map_err(runtime)
+        let list = ResourceList { kind, items, devices: a.devices };
+        output::print(&list, ListFormat::resolve(a.output)).map_err(runtime)
     }
 }
 
@@ -500,6 +504,8 @@ impl Rotate {
 struct ResourceList {
     kind: Kind,
     items: Vec<DynamicObject>,
+    /// `get exporter --devices`: one row per hosted device.
+    devices: bool,
 }
 
 impl serde::Serialize for ResourceList {
@@ -509,35 +515,147 @@ impl serde::Serialize for ResourceList {
     }
 }
 
+/// A JSON string field at `ptr` in `data`, or `""`.
+fn jstr(data: &serde_json::Value, ptr: &str) -> String {
+    data.pointer(ptr).and_then(|v| v.as_str()).unwrap_or("").to_string()
+}
+
+/// `k:v,k:v` rendering of a JSON-object label map, keys sorted.
+fn join_labels(map: Option<&serde_json::Value>) -> String {
+    map.and_then(|v| v.as_object())
+        .map(|m| {
+            let mut kv: Vec<String> =
+                m.iter().map(|(k, v)| format!("{k}:{}", v.as_str().unwrap_or_default())).collect();
+            kv.sort();
+            kv.join(",")
+        })
+        .unwrap_or_default()
+}
+
+/// Humanize an elapsed duration in seconds (`datetime.time_since`).
+fn age_from_secs(secs: i64) -> String {
+    let secs = secs.max(0);
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        let (m, s) = (secs / 60, secs % 60);
+        if s > 0 { format!("{m}m{s}s") } else { format!("{m}m") }
+    } else if secs < 86400 {
+        let (h, m) = (secs / 3600, (secs % 3600) / 60);
+        if m > 0 && h < 2 { format!("{h}h{m}m") } else { format!("{h}h") }
+    } else if secs < 2_592_000 {
+        let (d, h) = (secs / 86400, (secs % 86400) / 3600);
+        if h > 0 { format!("{d}d{h}h") } else { format!("{d}d") }
+    } else if secs < 31_536_000 {
+        let days = secs / 86400;
+        let (mo, d) = (days / 30, days % 30);
+        if d > 0 { format!("{mo}mo{d}d") } else { format!("{mo}mo") }
+    } else {
+        let days = secs / 86400;
+        let (y, mo) = (days / 365, (days % 365) / 30);
+        if mo > 0 { format!("{y}y{mo}mo") } else { format!("{y}y") }
+    }
+}
+
+/// Humanize the age since a Kubernetes `creationTimestamp`.
+fn humanize_age(o: &DynamicObject) -> String {
+    match o.metadata.creation_timestamp.as_ref().map(|t| t.0) {
+        Some(created) => age_from_secs(chrono::Utc::now().signed_duration_since(created).num_seconds()),
+        None => String::new(),
+    }
+}
+
+fn exporter_status(data: &serde_json::Value) -> String {
+    let s = jstr(data, "/status/exporterStatus");
+    if s.is_empty() { "Unknown".to_string() } else { s }
+}
+
+fn client_row(name: &str, data: &serde_json::Value) -> Vec<String> {
+    vec![name.to_string(), jstr(data, "/status/endpoint")]
+}
+
+fn exporter_rows(name: &str, data: &serde_json::Value, age: &str, devices: bool) -> Vec<Vec<String>> {
+    let status = exporter_status(data);
+    let endpoint = jstr(data, "/status/endpoint");
+    let device_list = data.pointer("/status/devices").and_then(|v| v.as_array());
+    if devices {
+        device_list
+            .map(|ds| {
+                ds.iter()
+                    .map(|d| {
+                        let labels = join_labels(d.pointer("/labels"));
+                        let uuid = d.pointer("/uuid").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        vec![name.to_string(), status.clone(), endpoint.clone(), age.to_string(), labels, uuid]
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        let count = device_list.map(|a| a.len()).unwrap_or(0);
+        vec![vec![name.to_string(), status, endpoint, count.to_string(), age.to_string()]]
+    }
+}
+
+fn lease_row(name: &str, data: &serde_json::Value, age: &str) -> Vec<String> {
+    let selectors = {
+        let s = join_labels(data.pointer("/spec/selector/matchLabels"));
+        if s.is_empty() { "*".to_string() } else { s }
+    };
+    let ended = data.pointer("/status/ended").and_then(|v| v.as_bool()).unwrap_or(false);
+    let reason = data
+        .pointer("/status/conditions")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.last())
+        .map(|c| c.pointer("/reason").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string())
+        .unwrap_or_else(|| "Unknown".to_string());
+    vec![
+        name.to_string(),
+        jstr(data, "/spec/client/name"),
+        selectors,
+        jstr(data, "/status/exporter/name"),
+        jstr(data, "/spec/duration"),
+        if ended { "Ended".to_string() } else { "InProgress".to_string() },
+        reason,
+        jstr(data, "/status/beginTime"),
+        jstr(data, "/status/endTime"),
+        age.to_string(),
+    ]
+}
+
+impl ResourceList {
+    /// The rows for one object (exporter `--devices` yields one row per device).
+    fn rows_for(&self, o: &DynamicObject) -> Vec<Vec<String>> {
+        let name = o.metadata.name.clone().unwrap_or_default();
+        let age = humanize_age(o);
+        match self.kind {
+            Kind::Client => vec![client_row(&name, &o.data)],
+            Kind::Exporter => exporter_rows(&name, &o.data, &age, self.devices),
+            Kind::Lease => vec![lease_row(&name, &o.data, &age)],
+        }
+    }
+}
+
 impl Printable for ResourceList {
     fn headers(&self) -> Vec<String> {
-        ["NAME", "LABELS"].iter().map(|s| s.to_string()).collect()
+        let h: &[&str] = match self.kind {
+            Kind::Client => &["NAME", "ENDPOINT"],
+            Kind::Exporter if self.devices => &["NAME", "STATUS", "ENDPOINT", "AGE", "LABELS", "UUID"],
+            Kind::Exporter => &["NAME", "STATUS", "ENDPOINT", "DEVICES", "AGE"],
+            Kind::Lease => &[
+                "NAME", "CLIENT", "SELECTOR", "EXPORTER", "DURATION", "STATUS", "REASON", "BEGIN", "END", "AGE",
+            ],
+        };
+        h.iter().map(|s| s.to_string()).collect()
     }
     fn rows(&self) -> Vec<Vec<String>> {
-        self.items
-            .iter()
-            .map(|o| {
-                let name = o.metadata.name.clone().unwrap_or_default();
-                let labels = o
-                    .metadata
-                    .labels
-                    .as_ref()
-                    .map(|m| {
-                        let mut kv: Vec<String> =
-                            m.iter().map(|(k, v)| format!("{k}={v}")).collect();
-                        kv.sort();
-                        kv.join(",")
-                    })
-                    .unwrap_or_default();
-                vec![name, labels]
-            })
-            .collect()
+        self.items.iter().flat_map(|o| self.rows_for(o)).collect()
     }
     fn names(&self) -> Vec<String> {
-        let _ = self.kind;
+        let noun = kind_noun(self.kind);
         self.items
             .iter()
-            .filter_map(|o| o.metadata.name.clone())
+            .filter_map(|o| o.metadata.name.as_ref())
+            .map(|n| format!("{noun}.jumpstarter.dev/{n}"))
             .collect()
     }
 }
@@ -548,6 +666,7 @@ fn print_object(obj: &DynamicObject, output: Option<ListFormat>) -> Result<(), C
             let list = ResourceList {
                 kind: Kind::Client,
                 items: vec![obj.clone()],
+                devices: false,
             };
             output::print(&list, ListFormat::resolve(output)).map_err(runtime)
         }
@@ -658,5 +777,89 @@ mod tests {
         assert_eq!(cfg.token.as_deref(), Some("etok"));
         assert_eq!(cfg.tls.ca, "exporter-ca");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // Ported from the deleted Python admin get tests (jumpstarter-kubernetes rich
+    // table output): the typed columns for client/exporter/lease + `--devices`.
+    #[test]
+    fn age_matches_python_time_since() {
+        assert_eq!(age_from_secs(30), "30s");
+        assert_eq!(age_from_secs(60), "1m");
+        assert_eq!(age_from_secs(90), "1m30s");
+        assert_eq!(age_from_secs(3600), "1h");
+        assert_eq!(age_from_secs(3660), "1h1m"); // h < 2 keeps the minutes
+        assert_eq!(age_from_secs(7200), "2h"); // h >= 2 drops the minutes
+        assert_eq!(age_from_secs(90_000), "1d1h");
+        assert_eq!(age_from_secs(86_400), "1d");
+    }
+
+    #[test]
+    fn client_row_is_name_and_endpoint() {
+        let data = serde_json::json!({"status": {"endpoint": "grpc.example.com:1443"}});
+        assert_eq!(client_row("c1", &data), vec!["c1", "grpc.example.com:1443"]);
+        // No status → empty endpoint.
+        assert_eq!(client_row("c2", &serde_json::json!({})), vec!["c2", ""]);
+    }
+
+    #[test]
+    fn exporter_row_summary_and_devices() {
+        let data = serde_json::json!({"status": {
+            "exporterStatus": "Online",
+            "endpoint": "grpc.example.com:1443",
+            "devices": [
+                {"uuid": "u1", "labels": {"jumpstarter.dev/name": "power"}},
+                {"uuid": "u2", "labels": {}},
+            ],
+        }});
+        // Summary row: NAME, STATUS, ENDPOINT, DEVICES(count), AGE.
+        assert_eq!(
+            exporter_rows("e1", &data, "5m", false),
+            vec![vec!["e1", "Online", "grpc.example.com:1443", "2", "5m"]]
+        );
+        // --devices: one row per device with LABELS + UUID.
+        let rows = exporter_rows("e1", &data, "5m", true);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0], vec!["e1", "Online", "grpc.example.com:1443", "5m", "jumpstarter.dev/name:power", "u1"]);
+        assert_eq!(rows[1], vec!["e1", "Online", "grpc.example.com:1443", "5m", "", "u2"]);
+    }
+
+    #[test]
+    fn exporter_status_defaults_to_unknown() {
+        assert_eq!(exporter_status(&serde_json::json!({"status": {}})), "Unknown");
+        assert_eq!(exporter_rows("e", &serde_json::json!({}), "1s", false)[0][1], "Unknown");
+    }
+
+    #[test]
+    fn lease_row_columns() {
+        let data = serde_json::json!({
+            "spec": {
+                "client": {"name": "client-a"},
+                "selector": {"matchLabels": {"board": "rpi"}},
+                "duration": "30m0s",
+            },
+            "status": {
+                "ended": true,
+                "exporter": {"name": "exp-1"},
+                "beginTime": "2026-01-01T00:00:00Z",
+                "endTime": "2026-01-01T00:30:00Z",
+                "conditions": [{"reason": "Released"}],
+            },
+        });
+        assert_eq!(
+            lease_row("l1", &data, "2d"),
+            vec![
+                "l1", "client-a", "board:rpi", "exp-1", "30m0s", "Ended", "Released",
+                "2026-01-01T00:00:00Z", "2026-01-01T00:30:00Z", "2d",
+            ]
+        );
+    }
+
+    #[test]
+    fn lease_row_defaults_empty_selector_to_star_and_in_progress() {
+        let data = serde_json::json!({"spec": {}, "status": {}});
+        let row = lease_row("l2", &data, "1m");
+        assert_eq!(row[2], "*"); // empty selector
+        assert_eq!(row[5], "InProgress"); // not ended
+        assert_eq!(row[6], "Unknown"); // no conditions
     }
 }
