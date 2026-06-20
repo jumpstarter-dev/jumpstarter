@@ -626,3 +626,53 @@ fn warn_exporter_only_flags(is_exporter: bool, allow: &str, unsafe_drivers: Opti
         }
     }
 }
+
+// Ported from the deleted Python `jumpstarter_cli/login_test.py`: `[client@]endpoint`
+// parsing and the http-without-opt-in rejection.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_supports_client_and_endpoint() {
+        let (client, endpoint) = parse_login_argument("my-client@login.example.com").unwrap();
+        assert_eq!(client.as_deref(), Some("my-client"));
+        assert_eq!(endpoint, "login.example.com");
+    }
+
+    #[test]
+    fn parse_without_client_is_endpoint_only() {
+        let (client, endpoint) = parse_login_argument("login.example.com").unwrap();
+        assert_eq!(client, None);
+        assert_eq!(endpoint, "login.example.com");
+    }
+
+    #[test]
+    fn parse_trims_client_and_endpoint() {
+        let (client, endpoint) = parse_login_argument("  my-client  @  login.example.com  ").unwrap();
+        assert_eq!(client.as_deref(), Some("my-client"));
+        assert_eq!(endpoint, "login.example.com");
+    }
+
+    #[test]
+    fn parse_rejects_empty_target() {
+        assert!(parse_login_argument("   ").is_err());
+    }
+
+    #[test]
+    fn parse_rejects_empty_client_name() {
+        assert!(parse_login_argument("@login.example.com").is_err());
+    }
+
+    #[test]
+    fn parse_rejects_whitespace_only_endpoint() {
+        assert!(parse_login_argument("my-client@   ").is_err());
+    }
+
+    #[tokio::test]
+    async fn fetch_auth_config_rejects_http_without_opt_in() {
+        // The scheme check returns before any network access.
+        let err = fetch_auth_config("http://login.example.com", false).await.unwrap_err();
+        assert!(format!("{err:?}").contains("HTTP"), "{err:?}");
+    }
+}
