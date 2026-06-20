@@ -20,7 +20,35 @@ from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
 from jumpstarter.utils.env import env_async
 
 
+async def _run_introspect(argv):
+    """``j introspect <drivers|explore|driver-methods> [args...]`` — build the client from
+    JUMPSTARTER_HOST and emit machine-readable JSON to stdout (consumed by the Rust MCP
+    server's explore/drivers/driver_methods tools)."""
+    import json
+
+    from jumpstarter_cli.introspect import dispatch
+
+    try:
+        async with BlockingPortal() as portal:
+            with ExitStack() as stack:
+                async with env_async(portal, stack) as client:
+                    result = await to_thread.run_sync(lambda: dispatch(client, argv))
+    except BaseException as exc:  # noqa: BLE001 — always emit a JSON error, never a traceback
+        msg = str(exc)
+        if isinstance(exc, BaseExceptionGroup):
+            leaves = leaf_exceptions(exc)
+            msg = "; ".join(str(e) for e in leaves) if leaves else msg
+        result = {"error": msg}
+    print(json.dumps(result, indent=2, default=str))
+
+
 async def j_async():
+    # `j introspect ...` is a machine-readable side channel (JSON to stdout), intercepted
+    # before the normal driver-client CLI passthrough.
+    if len(sys.argv) >= 2 and sys.argv[1] == "introspect":
+        await _run_introspect(sys.argv[2:])
+        return
+
     @async_handle_exceptions
     async def cli():
         try:

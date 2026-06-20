@@ -120,6 +120,23 @@ fn default_timeout() -> u64 {
     120
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ExploreArgs {
+    /// ID of the active connection.
+    pub connection_id: String,
+    /// Optional path to drill into (e.g. ["storage"] to see storage subcommands).
+    #[serde(default)]
+    pub command_path: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DriverMethodsArgs {
+    /// ID of the active connection.
+    pub connection_id: String,
+    /// Path to the driver in the children tree (e.g. ["power"] or ["storage"]).
+    pub driver_path: Vec<String>,
+}
+
 fn internal(msg: impl std::fmt::Display) -> McpError {
     McpError::internal_error(msg.to_string(), None)
 }
@@ -190,6 +207,41 @@ async fn run_j(
         result["timeout_seconds"] = json!(timeout_seconds);
     }
     json_result(result)
+}
+
+/// Shell out to `j introspect <sub> [extra...]` (the Python driver-client introspection side
+/// channel) and return its JSON stdout. The driver clients are Python, so their Click trees +
+/// method signatures can only be inspected in-process by `j`.
+async fn j_introspect(
+    env: &connections::ConnEnv,
+    sub: &str,
+    extra: &[String],
+) -> Result<CallToolResult, McpError> {
+    let j_path = match which::which("j") {
+        Ok(p) => p,
+        Err(_) => return json_result(json!({"error": "j CLI binary not found in PATH"})),
+    };
+    let mut cmd = tokio::process::Command::new(&j_path);
+    cmd.arg("introspect")
+        .arg(sub)
+        .args(extra)
+        .env("JUMPSTARTER_HOST", &env.socket_path)
+        .env("JMP_DRIVERS_ALLOW", env.drivers_allow())
+        .env("_JMP_SUPPRESS_DRIVER_WARNINGS", "1")
+        .stdin(Stdio::null())
+        .kill_on_drop(true);
+    let output = match tokio::time::timeout(Duration::from_secs(60), cmd.output()).await {
+        Ok(Ok(o)) => o,
+        Ok(Err(e)) => return json_result(json!({"error": format!("failed to run j introspect: {e}")})),
+        Err(_) => return json_result(json!({"error": "j introspect timed out"})),
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if stdout.trim().is_empty() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return json_result(json!({"error": format!("j introspect produced no output: {}", stderr.trim())}));
+    }
+    // stdout is already JSON from `j introspect`.
+    Ok(CallToolResult::success(vec![Content::text(stdout.into_owned())]))
 }
 
 /// The Jumpstarter MCP server. Holds the rmcp tool router; each tool resolves the client
@@ -370,6 +422,49 @@ impl Jumpstarter {
             "python_example": "from jumpstarter.utils.env import env\n\nwith env() as client:\n    client.power.on()\n    client.power.off()\n",
             "note": "Run shell commands or Python scripts with these env vars set. The env() helper reads JUMPSTARTER_HOST automatically.",
         }))
+    }
+
+    #[tool(
+        description = "Explore available CLI commands for a connected device. Walks the Click \
+                       command tree (names, help, params, nested subcommands). Pass command_path \
+                       to drill into a subtree (e.g. [\"storage\"])."
+    )]
+    async fn jmp_explore(&self, Parameters(args): Parameters<ExploreArgs>) -> Result<CallToolResult, McpError> {
+        let env = match self.manager.env(&args.connection_id).await {
+            Ok(e) => e,
+            Err(e) => return json_result(json!({"error": e})),
+        };
+        j_introspect(&env, "explore", &args.command_path.unwrap_or_default()).await
+    }
+
+    #[tool(
+        description = "List all driver objects in the connected device's driver tree (path, \
+                       Python class, description, method names)."
+    )]
+    async fn jmp_drivers(
+        &self,
+        Parameters(args): Parameters<ConnectionIdArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let env = match self.manager.env(&args.connection_id).await {
+            Ok(e) => e,
+            Err(e) => return json_result(json!({"error": e})),
+        };
+        j_introspect(&env, "drivers", &[]).await
+    }
+
+    #[tool(
+        description = "Inspect methods on a specific driver client: signatures, docstrings, \
+                       parameters, and ready-to-use call examples."
+    )]
+    async fn jmp_driver_methods(
+        &self,
+        Parameters(args): Parameters<DriverMethodsArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let env = match self.manager.env(&args.connection_id).await {
+            Ok(e) => e,
+            Err(e) => return json_result(json!({"error": e})),
+        };
+        j_introspect(&env, "driver-methods", &args.driver_path).await
     }
 }
 
