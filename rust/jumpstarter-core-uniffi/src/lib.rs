@@ -138,6 +138,16 @@ pub trait DriverHostFactory: Send + Sync {
 // Exported entry point
 // ---------------------------------------------------------------------------
 
+/// Why [`run_exporter`] returned — the Python host uses this to decide whether to restart the
+/// exporter (`Completed`) or terminate the process (`Shutdown`, e.g. an `on_failure: exit` hook).
+#[derive(uniffi::Enum)]
+pub enum ExporterExit {
+    /// Terminate, do NOT restart (a shutdown signal or an `on_failure: exit` hook).
+    Shutdown,
+    /// Restartable (the serve loop returned on its own, e.g. the controller stream ended).
+    Completed,
+}
+
 /// Run the exporter in-process against a Python `DriverHostFactory`. Python awaits this on
 /// its event loop for the process lifetime; the whole Rust runtime (controller gRPC,
 /// session server, lease FSM, hooks) runs inside the call, calling back into the foreign
@@ -146,15 +156,19 @@ pub trait DriverHostFactory: Send + Sync {
 pub async fn run_exporter(
     config_path: String,
     factory: Arc<dyn DriverHostFactory>,
-) -> Result<(), ExporterError> {
+) -> Result<ExporterExit, ExporterError> {
     use jumpstarter_config::{ExporterConfig, YamlConfig};
 
     let config = ExporterConfig::load(&config_path)
         .map_err(|e| ExporterError::Config(format!("loading exporter config: {e}")))?;
     let host_factory: Arc<dyn HostFactory> = Arc::new(UniffiHostFactory { inner: factory });
-    jumpstarter_exporter::run_with_factory(config, host_factory)
+    let exit = jumpstarter_exporter::run_with_factory(config, host_factory)
         .await
-        .map_err(|e| ExporterError::Runtime(e.to_string()))
+        .map_err(|e| ExporterError::Runtime(e.to_string()))?;
+    Ok(match exit {
+        jumpstarter_exporter::ExporterExit::Shutdown => ExporterExit::Shutdown,
+        jumpstarter_exporter::ExporterExit::Completed => ExporterExit::Completed,
+    })
 }
 
 /// Run the Rust `jmp` CLI command tree from a forwarded argv (`args[0]` is the program

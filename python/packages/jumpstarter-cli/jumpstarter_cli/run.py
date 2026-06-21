@@ -116,11 +116,18 @@ def _reap_zombie_processes(capture_child=None):
         logger.warning(f"PARENT: Error during zombie reaping: {e}")
 
 
+# Child exit code signalling a terminal exporter shutdown (a shutdown signal or an
+# `on_failure: exit` hook) that the parent must NOT restart — distinct from a clean exit
+# code 0, which means "recoverable exit, restart the child".
+_EXPORTER_SHUTDOWN_EXIT_CODE = 99
+
+
 def _handle_child(config_path):
     """Child process: host the Rust core in-process and serve via FFI, with graceful shutdown."""
 
     async def serve_with_graceful_shutdown():
         received_signal = 0
+        exit_kind = None
 
         async def signal_handler(cancel_scope):
             with open_signal_receiver(signal.SIGINT, signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT) as signals:
@@ -154,13 +161,17 @@ def _handle_child(config_path):
             path = str(config_path)
             factory = DriverHostFactory(path)
             try:
-                await jc.run_exporter(path, factory)
+                exit_kind = await jc.run_exporter(path, factory)
             except* Exception as excgroup:
                 _handle_exporter_exceptions(excgroup)
             tg.cancel_scope.cancel()
 
         if received_signal:
             return 128 + received_signal
+        # A shutdown signal or an `on_failure: exit` hook is terminal — tell the parent NOT to
+        # restart. A clean run_exporter return (Completed) otherwise means a recoverable exit.
+        if exit_kind == jc.ExporterExit.SHUTDOWN:
+            return _EXPORTER_SHUTDOWN_EXIT_CODE
         return 0
 
     sys.exit(anyio.run(serve_with_graceful_shutdown))
@@ -201,10 +212,11 @@ def _handle_parent(pid):
     if os.WIFEXITED(status):
         child_exit_code = os.WEXITSTATUS(status)
         if child_exit_code == 0:
-            return None  # restart child (unexpected exit/exception)
-        else:
-            # Child already encodes signals as 128+N; pass through directly
-            return child_exit_code
+            return None  # restart child (recoverable exit/exception)
+        if child_exit_code == _EXPORTER_SHUTDOWN_EXIT_CODE:
+            return 0  # terminal shutdown (on_failure=exit hook or signal): exit cleanly, no restart
+        # Child already encodes signals as 128+N; pass through directly
+        return child_exit_code
     else:
         # Child killed by unhandled signal - terminate
         child_exit_signal = os.WTERMSIG(status) if os.WIFSIGNALED(status) else 0

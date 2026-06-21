@@ -33,5 +33,5 @@ pub mod tunnel;
 pub type Error = jumpstarter_client::ClientError;
 
 pub use driver_host::SlimHost;
-pub use exporter::{run, run_with_factory, RunOptions};
+pub use exporter::{run, run_with_factory, ExporterExit, RunOptions};
 pub use standalone::serve_standalone_tcp;

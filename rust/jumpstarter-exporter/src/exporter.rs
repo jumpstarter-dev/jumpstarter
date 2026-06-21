@@ -60,11 +60,21 @@ enum EndReason {
     EndLease,
 }
 
+/// Why the exporter's serve loop returned, so the host can decide whether to restart it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExporterExit {
+    /// A shutdown signal (SIGINT/SIGTERM) or an `on_failure: exit` hook — terminate,
+    /// do NOT restart.
+    Shutdown,
+    /// The serve loop returned on its own (e.g. the controller stream ended) — restartable.
+    Completed,
+}
+
 /// Run the exporter until a shutdown signal (SIGINT/SIGTERM) or an `on_failure: exit`
 /// hook.
 pub async fn run(opts: RunOptions) -> Result<(), Error> {
     let factory = Arc::new(SlimHostFactory::new(opts.config_path));
-    run_with_factory(opts.config, factory).await
+    run_with_factory(opts.config, factory).await.map(|_| ())
 }
 
 /// Run the exporter against any driver-host [`HostFactory`] — the generic entry the
@@ -72,7 +82,7 @@ pub async fn run(opts: RunOptions) -> Result<(), Error> {
 pub async fn run_with_factory(
     config: ExporterConfig,
     factory: Arc<dyn HostFactory>,
-) -> Result<(), Error> {
+) -> Result<ExporterExit, Error> {
     let config = &config;
     let endpoint = config
         .endpoint
@@ -143,7 +153,7 @@ pub async fn run_with_factory(
 
     // 5. Serve leases until a shutdown signal or an `on_failure: exit` hook.
     let shutdown = Arc::new(Notify::new());
-    let outcome = tokio::select! {
+    let outcome: Result<ExporterExit, Error> = tokio::select! {
         r = status_loop(
             controller.clone(),
             status_tx,
@@ -156,14 +166,14 @@ pub async fn run_with_factory(
             config,
             hook_log,
             shutdown.clone(),
-        ) => r,
+        ) => r.map(|()| ExporterExit::Completed),
         _ = shutdown.notified() => {
             tracing::info!("exporter shutdown requested by hook");
-            Ok(())
+            Ok(ExporterExit::Shutdown)
         }
         _ = shutdown_signal() => {
             tracing::info!("shutdown signal received");
-            Ok(())
+            Ok(ExporterExit::Shutdown)
         }
     };
 
