@@ -20,7 +20,8 @@ use tokio::sync::{mpsc, Mutex};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt as _;
 use tonic::metadata::AsciiMetadataValue;
-use tonic::transport::Channel;
+use tonic::service::interceptor::InterceptedService;
+use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Request, Status, Streaming};
 
 use crate::codec;
@@ -44,21 +45,70 @@ fn err_from_status(status: Status) -> DriverCallError {
     }
 }
 
-/// A connection to an exporter via its local `JUMPSTARTER_HOST` transport socket.
+/// Attaches the `x-jumpstarter-passphrase` metadata to each request when connected to a
+/// standalone exporter (`jmp shell --tls-grpc --passphrase`); a no-op for the UDS path.
+#[derive(Clone)]
+struct PassphraseInterceptor {
+    passphrase: Option<AsciiMetadataValue>,
+}
+
+impl tonic::service::Interceptor for PassphraseInterceptor {
+    fn call(&mut self, mut request: Request<()>) -> Result<Request<()>, Status> {
+        if let Some(passphrase) = &self.passphrase {
+            request
+                .metadata_mut()
+                .insert("x-jumpstarter-passphrase", passphrase.clone());
+        }
+        Ok(request)
+    }
+}
+
+/// A connection to an exporter — either via its local `JUMPSTARTER_HOST` transport socket
+/// (lease/local mode), or directly to a standalone exporter's TCP gRPC (`jmp shell --tls-grpc`).
 pub struct ClientSession {
     channel: Channel,
+    passphrase: Option<AsciiMetadataValue>,
 }
 
 impl ClientSession {
-    /// Connect to the transport socket the lease holder serves (the `JUMPSTARTER_HOST`
-    /// env value `jmp shell`/`jmp run` set).
+    /// Connect to the `JUMPSTARTER_HOST` the shell set: a UDS transport-socket path, or a bare
+    /// `host:port` for a standalone exporter (direct mode). Direct mode reads
+    /// `JMP_GRPC_INSECURE`/`JMP_GRPC_PASSPHRASE` from the env (`jmp shell --tls-grpc` sets them).
     pub async fn connect(host: String) -> Result<Self, DriverCallError> {
-        let channel = uds_channel(host).await.map_err(DriverCallError::Unknown)?;
-        Ok(Self { channel })
+        // A UDS transport socket is a filesystem path; a direct target is a bare `host:port`.
+        if host.contains('/') {
+            let channel = uds_channel(host).await.map_err(DriverCallError::Unknown)?;
+            return Ok(Self { channel, passphrase: None });
+        }
+        // Direct mode: connect to the standalone exporter's plaintext-h2c gRPC (the only
+        // standalone exporter mode today). The passphrase is attached per-RPC by the interceptor.
+        let insecure = std::env::var("JMP_GRPC_INSECURE").is_ok_and(|v| v == "1" || v == "true");
+        if !insecure {
+            return Err(DriverCallError::Unknown(
+                "direct exporter connection over TLS is not yet supported (use --tls-grpc-insecure)"
+                    .to_string(),
+            ));
+        }
+        let channel = Endpoint::from_shared(format!("http://{host}"))
+            .map_err(|e| DriverCallError::Unknown(e.to_string()))?
+            .connect()
+            .await
+            .map_err(|e| DriverCallError::Unknown(format!("connecting to direct exporter {host}: {e}")))?;
+        let passphrase = std::env::var(jumpstarter_config::env::JMP_GRPC_PASSPHRASE)
+            .ok()
+            .filter(|p| !p.is_empty())
+            .and_then(|p| AsciiMetadataValue::try_from(p).ok());
+        Ok(Self { channel, passphrase })
     }
 
-    fn exporter(&self) -> ExporterServiceClient<Channel> {
-        ExporterServiceClient::new(self.channel.clone())
+    fn auth(&self) -> PassphraseInterceptor {
+        PassphraseInterceptor {
+            passphrase: self.passphrase.clone(),
+        }
+    }
+
+    fn exporter(&self) -> ExporterServiceClient<InterceptedService<Channel, PassphraseInterceptor>> {
+        ExporterServiceClient::with_interceptor(self.channel.clone(), self.auth())
     }
 
     /// `GetReport` → a JSON array of the driver tree (uuid/parent/labels/methods), which
@@ -133,7 +183,7 @@ impl ClientSession {
         let (tx, rx) = mpsc::channel::<StreamRequest>(32);
         let mut request = Request::new(ReceiverStream::new(rx));
         request.metadata_mut().insert("request", meta);
-        let response = RouterServiceClient::new(self.channel.clone())
+        let response = RouterServiceClient::with_interceptor(self.channel.clone(), self.auth())
             .stream(request)
             .await
             .map_err(err_from_status)?;
