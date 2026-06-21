@@ -12,6 +12,7 @@ resolver = "2"
 members = [
     "jumpstarter-protocol",
     "jumpstarter-config",
+    "jumpstarter-auth",
     "jumpstarter-client",
     "jumpstarter-exporter",
     "jumpstarter-admin",

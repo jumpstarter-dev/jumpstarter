@@ -1281,16 +1281,29 @@ dependencies = [
 ]
 
 [[package]]
-name = "jumpstarter-cli"
+name = "jumpstarter-auth"
 version = "0.0.0"
 dependencies = [
  "base64",
  "chrono",
+ "getrandom 0.2.17",
+ "jumpstarter-config",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "jumpstarter-cli"
+version = "0.0.0"
+dependencies = [
+ "chrono",
  "clap",
  "clap_complete",
  "dialoguer",
- "getrandom 0.2.17",
  "jumpstarter-admin",
+ "jumpstarter-auth",
  "jumpstarter-client",
  "jumpstarter-cluster",
  "jumpstarter-config",
@@ -1299,7 +1312,6 @@ dependencies = [
  "jumpstarter-protocol",
  "owo-colors",
  "prost-types",
- "reqwest",
  "rustls",
  "serde",
  "serde_json",
@@ -1410,6 +1422,7 @@ dependencies = [
 name = "jumpstarter-mcp"
 version = "0.0.0"
 dependencies = [
+ "jumpstarter-auth",
  "jumpstarter-config",
  "jumpstarter-core",
  "rmcp",

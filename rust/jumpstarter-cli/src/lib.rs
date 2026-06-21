@@ -7,8 +7,6 @@
 mod clientcfg;
 mod cmderr;
 mod commands;
-mod jwt;
-mod oidc;
 mod output;
 mod parsing;
 mod prompt;

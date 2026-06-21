@@ -1,0 +1,22 @@
+[package]
+name = "jumpstarter-auth"
+description = "Shared OIDC client + local JWT decoding (jumpstarter_cli_common/oidc.py), used by the CLI and the MCP server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# The Rust equivalent of the Python `jumpstarter_cli_common.oidc` shared module: OIDC
+# discovery + grants (refresh/password/token-exchange/authorization-code) and signature-free
+# JWT claim reading. Kept out of jumpstarter-core (the lean binding facade) so both the CLI
+# and the MCP server can share it without a dependency cycle.
+[dependencies]
+jumpstarter-config = { path = "../jumpstarter-config" }
+serde = { workspace = true }
+serde_json.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+getrandom = "0.2"
+tokio = { workspace = true, features = ["net", "io-util", "rt", "macros"] }

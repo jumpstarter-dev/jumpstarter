@@ -12,6 +12,7 @@ rust-version.workspace = true
 [dependencies]
 jumpstarter-core = { path = "../jumpstarter-core" }
 jumpstarter-config = { path = "../jumpstarter-config" }
+jumpstarter-auth = { path = "../jumpstarter-auth" }
 rmcp = { version = "1", features = ["server", "macros", "transport-io"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-std", "process", "sync", "time"] }
 serde = { workspace = true }

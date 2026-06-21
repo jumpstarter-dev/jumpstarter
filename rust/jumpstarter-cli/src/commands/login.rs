@@ -10,9 +10,11 @@ use jumpstarter_config::{
     YamlConfig,
 };
 
+use jumpstarter_auth::jwt;
+use jumpstarter_auth::oidc::OidcConfig;
+
 use crate::cmderr::{runtime, CmdError};
-use crate::oidc::OidcConfig;
-use crate::{jwt, prompt, userconfig};
+use crate::{prompt, userconfig};
 
 #[derive(ClapArgs)]
 pub struct Args {
@@ -455,7 +457,7 @@ async fn fetch_auth_config(endpoint: &str, insecure: bool) -> Result<serde_json:
     };
     let url = format!("{}/v1/auth/config", base.trim_end_matches('/'));
     // Honor SSL_CERT_FILE (custom CA) like Python, with a 30s request budget.
-    let client = crate::oidc::build_http_client(insecure).map_err(runtime)?;
+    let client = jumpstarter_auth::oidc::build_http_client(insecure).map_err(runtime)?;
     let resp = client
         .get(&url)
         .timeout(Duration::from_secs(30))

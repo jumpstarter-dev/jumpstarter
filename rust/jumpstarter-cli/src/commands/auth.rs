@@ -7,10 +7,11 @@ use jumpstarter_client::ControllerClient;
 use jumpstarter_config::YamlConfig;
 use owo_colors::{OwoColorize, Stream::Stdout};
 
+use jumpstarter_auth::jwt;
+use jumpstarter_auth::oidc::OidcConfig;
+
 use crate::clientcfg::ConfigOpts;
 use crate::cmderr::{grpc, runtime, CmdError};
-use crate::jwt;
-use crate::oidc::OidcConfig;
 
 const TOKEN_EXPIRY_WARNING_SECONDS: i64 = 300;
 
