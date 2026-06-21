@@ -186,6 +186,23 @@ def _wait_for_child(pid, child_info):
     return status
 
 
+def _interpret_child_status(status):
+    """Map a child wait() status to the parent's action: ``None`` = restart the child,
+    otherwise the process exit code to terminate with."""
+    if os.WIFEXITED(status):
+        child_exit_code = os.WEXITSTATUS(status)
+        if child_exit_code == 0:
+            return None  # restart child (recoverable exit/exception)
+        if child_exit_code == _EXPORTER_SHUTDOWN_EXIT_CODE:
+            return 0  # terminal shutdown (on_failure=exit hook or signal): exit cleanly, no restart
+        # Child already encodes signals as 128+N; pass through directly.
+        return child_exit_code
+    # Child killed by an unhandled signal — terminate.
+    child_exit_signal = os.WTERMSIG(status) if os.WIFSIGNALED(status) else 0
+    click.echo(f"Child killed by unhandled signal: {child_exit_signal}", err=True)
+    return 128 + child_exit_signal
+
+
 def _handle_parent(pid):
     """Handle parent process waiting for child and signal forwarding."""
     child_info = {'pid': pid, 'status': None}
@@ -208,20 +225,7 @@ def _handle_parent(pid):
     status = _wait_for_child(pid, child_info)
     if status is None:
         return None
-
-    if os.WIFEXITED(status):
-        child_exit_code = os.WEXITSTATUS(status)
-        if child_exit_code == 0:
-            return None  # restart child (recoverable exit/exception)
-        if child_exit_code == _EXPORTER_SHUTDOWN_EXIT_CODE:
-            return 0  # terminal shutdown (on_failure=exit hook or signal): exit cleanly, no restart
-        # Child already encodes signals as 128+N; pass through directly
-        return child_exit_code
-    else:
-        # Child killed by unhandled signal - terminate
-        child_exit_signal = os.WTERMSIG(status) if os.WIFSIGNALED(status) else 0
-        click.echo(f"Child killed by unhandled signal: {child_exit_signal}", err=True)
-        return 128 + child_exit_signal
+    return _interpret_child_status(status)
 
 
 def _serve_with_exc_handling(config_path):
@@ -272,6 +276,34 @@ def _serve_with_exc_handling(config_path):
             sys.exit(1) # should never happen
 
 
+def _serve_standalone(config_path, bind, passphrase):
+    """Serve the exporter on a TCP listener (controller-less), hosting drivers in-process via
+    the same FFI host as the controller-mediated path. One-shot — beforeLease → serve →
+    afterLease → exit — with no fork/restart supervisor (a standalone exporter is not meant to
+    auto-recover; the Rust core handles SIGTERM/SIGINT and the client EndSession)."""
+
+    async def serve():
+        import jumpstarter_core as jc
+
+        from jumpstarter.exporter.host import DriverHostFactory
+
+        # Foreign async callbacks run on Rust/tokio worker threads where
+        # asyncio.get_running_loop() raises; register this loop with UniFFI so they schedule
+        # onto it (mirrors _handle_child).
+        set_event_loop = getattr(jc, "uniffi_set_event_loop", None)
+        if set_event_loop is None:
+            from jumpstarter_core import jumpstarter_core as _jc_mod
+
+            set_event_loop = _jc_mod.uniffi_set_event_loop
+        set_event_loop(asyncio.get_running_loop())
+
+        path = str(config_path)
+        factory = DriverHostFactory(path)
+        await jc.run_exporter_standalone(path, bind, passphrase, factory)
+
+    anyio.run(serve)
+
+
 @click.command("run")
 @click.option("--exporter", "exporter_alias", default=None, help="Alias of an exporter config to run.")
 @click.option(
@@ -314,13 +346,20 @@ def run(exporter_alias, exporter_config, listener_bind, tls_insecure, tls_cert, 
     config_path = _resolve_exporter_config_path(exporter_alias, exporter_config)
     if config_path is None:
         raise click.UsageError("--exporter-config (or --exporter) is required")
-    if listener_bind is not None or tls_insecure or tls_cert or tls_key or passphrase:
-        # The standalone TCP-listener exporter is owned by the Rust core; it is not yet
-        # exposed through the in-process FFI run_exporter entrypoint.
+    standalone = listener_bind is not None
+    if not standalone and (tls_insecure or tls_cert or tls_key or passphrase):
         raise click.UsageError(
-            "Standalone listener mode (--tls-grpc-listener / --tls-grpc-insecure / --tls-cert / "
-            "--tls-key / --passphrase) is not available via the Python entrypoint yet."
+            "--tls-grpc-insecure, --tls-cert, --tls-key, and --passphrase require --tls-grpc-listener"
         )
     if not config_path.exists():
         raise click.UsageError(f"exporter config '{config_path}' does not exist")
+    if standalone:
+        if tls_cert or tls_key or not tls_insecure:
+            # The Rust standalone listener serves plaintext h2c; TLS-cert mode is not yet ported.
+            raise click.UsageError(
+                "--tls-grpc-listener currently requires --tls-grpc-insecure "
+                "(TLS-cert listener mode is not yet supported)"
+            )
+        host, port = _parse_listener_bind(listener_bind)
+        return _serve_standalone(config_path, f"{host}:{port}", passphrase)
     return _serve_with_exc_handling(config_path)

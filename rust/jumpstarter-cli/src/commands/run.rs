@@ -80,7 +80,12 @@ async fn run_impl(args: Args) -> Result<(), (u8, String)> {
                 "--tls-grpc-listener currently requires --tls-grpc-insecure (TLS-cert mode not yet supported)",
             );
         }
-        return jumpstarter_exporter::serve_standalone_tcp(&path, addr, args.passphrase)
+        // The Rust-native `jmp run` hosts drivers via the slim subprocess host (the
+        // in-process FFI host belongs to the Python entrypoint).
+        let factory = std::sync::Arc::new(jumpstarter_exporter::backend::SlimHostFactory::new(
+            path.clone(),
+        ));
+        return jumpstarter_exporter::serve_standalone_tcp(&path, addr, args.passphrase, factory)
             .await
             .map_err(|e| (1u8, e.to_string()));
     }

@@ -14,9 +14,8 @@ use jumpstarter_config::{ExporterConfig, YamlConfig};
 use tokio::sync::{watch, Notify};
 use tokio::task::JoinHandle;
 
-use crate::backend::SlimHostBackend;
-use crate::control::{uds_channel, StatusReporter, StatusSnapshot};
-use crate::driver_host::SlimHost;
+use crate::backend::{HostFactory, HostGuard};
+use crate::control::{StatusReporter, StatusSnapshot};
 use crate::hooks::{self, BeforeOutcome, HookContext};
 use crate::session::{self, RoutingTable, SharedSession};
 use crate::Error;
@@ -27,14 +26,15 @@ pub async fn serve_standalone_tcp(
     config_path: &Path,
     bind: SocketAddr,
     passphrase: Option<String>,
+    factory: Arc<dyn HostFactory>,
 ) -> Result<(), Error> {
     let config = ExporterConfig::load(config_path)
         .map_err(|e| Error::Config(format!("loading exporter config: {e}")))?;
 
-    // The driver tree (Python slim host) + its routing table.
-    let host = SlimHost::spawn(config_path).await?;
-    let backend = SlimHostBackend::new(uds_channel(host.socket()).await?);
-    let routing = RoutingTable::build(Arc::new(backend)).await?;
+    // The driver tree (provisioned via the host factory — the in-process FFI host, same as
+    // the controller-connected path) + its routing table. `guard` keeps the host alive.
+    let (backend, guard) = factory.provision().await?;
+    let routing = RoutingTable::build(backend).await?;
 
     // Pin the session watch channels — there is no controller/lease loop. The senders
     // are held for the serving lifetime so receivers never observe `Closed`.
@@ -68,7 +68,7 @@ pub async fn serve_standalone_tcp(
     if hooks::run_before_lease(&mut reporter, config.hooks.before_lease.as_ref(), &ctx).await
         == BeforeOutcome::Exit
     {
-        cleanup(tcp_task, hook_task, host, &hook_dir);
+        cleanup(tcp_task, hook_task, guard, &hook_dir);
         return Err(Error::Config(
             "beforeLease hook failed (on_failure=exit)".to_string(),
         ));
@@ -79,7 +79,7 @@ pub async fn serve_standalone_tcp(
     // afterLease on shutdown (the e2e checks the exporter's stderr for its output).
     hooks::run_after_lease(&mut reporter, config.hooks.after_lease.as_ref(), &ctx).await;
 
-    cleanup(tcp_task, hook_task, host, &hook_dir);
+    cleanup(tcp_task, hook_task, guard, &hook_dir);
     Ok(())
 }
 
@@ -104,9 +104,9 @@ async fn wait_for_shutdown(end_session: &Notify) {
     }
 }
 
-fn cleanup(tcp: JoinHandle<()>, hook: JoinHandle<()>, host: SlimHost, hook_dir: &Path) {
+fn cleanup(tcp: JoinHandle<()>, hook: JoinHandle<()>, guard: HostGuard, hook_dir: &Path) {
     tcp.abort();
     hook.abort();
-    drop(host);
+    drop(guard);
     let _ = std::fs::remove_dir_all(hook_dir);
 }

@@ -171,6 +171,31 @@ pub async fn run_exporter(
     })
 }
 
+/// Run the exporter in standalone (controller-less) mode: serve the driver tree directly on
+/// `bind` (`host:port`, plaintext h2c) until a termination signal or a client `EndSession`,
+/// requiring `passphrase` from clients when set. Runs the before/afterLease hooks once. The
+/// driver host is the same in-process foreign host as [`run_exporter`].
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn run_exporter_standalone(
+    config_path: String,
+    bind: String,
+    passphrase: Option<String>,
+    factory: Arc<dyn DriverHostFactory>,
+) -> Result<(), ExporterError> {
+    let addr: std::net::SocketAddr = bind
+        .parse()
+        .map_err(|e| ExporterError::Config(format!("invalid listener bind '{bind}': {e}")))?;
+    let host_factory: Arc<dyn HostFactory> = Arc::new(UniffiHostFactory { inner: factory });
+    jumpstarter_exporter::serve_standalone_tcp(
+        std::path::Path::new(&config_path),
+        addr,
+        passphrase,
+        host_factory,
+    )
+    .await
+    .map_err(|e| ExporterError::Runtime(e.to_string()))
+}
+
 /// Run the Rust `jmp` CLI command tree from a forwarded argv (`args[0]` is the program
 /// name), returning the process exit code. The language entrypoint forwards the pure-Rust
 /// commands here — `shell`/`create`/`delete`/`update`/`get`/`admin`/`auth`/`login`/`config`/
