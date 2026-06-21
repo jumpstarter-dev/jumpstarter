@@ -30,3 +30,5 @@ thiserror.workspace = true
 # order-preserving (IndexMap), so a JSON->yaml dump keeps the pydantic field order.
 serde_json.workspace = true
 serde_yaml_ng.workspace = true
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

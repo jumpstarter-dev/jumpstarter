@@ -175,6 +175,18 @@ pub async fn run_exporter(
 /// `bind` (`host:port`, plaintext h2c) until a termination signal or a client `EndSession`,
 /// requiring `passphrase` from clients when set. Runs the before/afterLease hooks once. The
 /// driver host is the same in-process foreign host as [`run_exporter`].
+/// Install a stderr tracing subscriber (honoring `RUST_LOG`, default `info`) so the
+/// standalone exporter's hook output reaches its own stderr — once a client disconnects
+/// (e.g. on shutdown) there is no LogStream consumer, so stderr is the only place the
+/// afterLease hook output can surface. Idempotent.
+fn init_exporter_tracing() {
+    use tracing_subscriber::EnvFilter;
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_writer(std::io::stderr)
+        .try_init();
+}
+
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn run_exporter_standalone(
     config_path: String,
@@ -182,6 +194,7 @@ pub async fn run_exporter_standalone(
     passphrase: Option<String>,
     factory: Arc<dyn DriverHostFactory>,
 ) -> Result<(), ExporterError> {
+    init_exporter_tracing();
     let addr: std::net::SocketAddr = bind
         .parse()
         .map_err(|e| ExporterError::Config(format!("invalid listener bind '{bind}': {e}")))?;
