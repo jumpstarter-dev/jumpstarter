@@ -103,6 +103,11 @@ impl Default for FailureDetectionConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DriverInstanceBase {
     pub r#type: String,
+    /// Hosting runtime for this driver subtree (`python`, `rust`, …). The exporter hub
+    /// spawns one driver-host per top-level `export:` entry in this runtime. Defaults by
+    /// inference from `type` (see [`DriverInstanceBase::effective_runtime`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default)]
@@ -112,6 +117,23 @@ pub struct DriverInstanceBase {
     pub config: serde_json::Map<String, serde_json::Value>,
     #[serde(default)]
     pub children: BTreeMap<String, DriverInstance>,
+}
+
+impl DriverInstanceBase {
+    /// The effective hosting runtime for this driver: the explicit `runtime:` if set, else
+    /// inferred from `type`. Native drivers are referenced as `rust:<registered-name>`;
+    /// everything else is a Python import path (`pkg.mod.Class`). All current drivers are
+    /// Python, so the inferred default is `python`.
+    pub fn effective_runtime(&self) -> &str {
+        if let Some(rt) = self.runtime.as_deref() {
+            return rt;
+        }
+        if self.r#type.starts_with("rust:") {
+            "rust"
+        } else {
+            "python"
+        }
+    }
 }
 
 /// A composite node that only groups children (`exporter.py:93-94`).
@@ -294,5 +316,37 @@ export:\n\
         assert!(out.contains("beforeLease:"), "{out}");
         assert!(out.contains("afterLease:"), "{out}");
         assert!(!out.contains("before_lease:"));
+    }
+
+    #[test]
+    fn infers_and_overrides_runtime() {
+        let yaml = "apiVersion: jumpstarter.dev/v1alpha1\n\
+kind: ExporterConfig\n\
+metadata:\n  namespace: default\n  name: rt\n\
+endpoint: e:1\n\
+token: t\n\
+export:\n\
+\x20 py:\n\
+\x20   type: jumpstarter_driver_power.driver.MockPower\n\
+\x20 native:\n\
+\x20   type: rust:echo\n\
+\x20 forced:\n\
+\x20   type: jumpstarter_driver_power.driver.MockPower\n\
+\x20   runtime: rust\n";
+        let c = ExporterConfig::from_yaml(yaml).unwrap();
+        let rt = |k: &str| match &c.export[k] {
+            DriverInstance::Base(b) => b.effective_runtime(),
+            other => panic!("{k} should be Base, got {other:?}"),
+        };
+        // A dotted import path infers to python; a `rust:` type infers to rust; an explicit
+        // `runtime:` overrides the inference.
+        assert_eq!(rt("py"), "python");
+        assert_eq!(rt("native"), "rust");
+        assert_eq!(rt("forced"), "rust");
+
+        // The optional `runtime:` round-trips and is omitted when absent.
+        let out = c.to_yaml().unwrap();
+        assert!(out.contains("runtime: rust"), "{out}");
+        assert_eq!(ExporterConfig::from_yaml(&out).unwrap(), c);
     }
 }
