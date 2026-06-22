@@ -62,6 +62,7 @@ class TestLeaseEndDuringHook:
         from jumpstarter.exporter.hooks import HookExecutor
 
         hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
             after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
         )
         hook_executor = HookExecutor(config=hook_config)
@@ -301,9 +302,16 @@ class TestBeforeLeaseHookSafetyTimeout:
         forces the event set and cleanup proceeds normally."""
         from unittest.mock import patch
 
+        from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
+        from jumpstarter.exporter.hooks import HookExecutor
+
         lease_ctx = make_lease_context()
         # Deliberately do NOT set before_lease_hook to simulate the race condition
-        exporter = make_exporter(lease_ctx)
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=60),
+        )
+        hook_executor = HookExecutor(config=hook_config)
+        exporter = make_exporter(lease_ctx, hook_executor)
 
         statuses = []
 
@@ -365,33 +373,34 @@ class TestBeforeLeaseHookSafetyTimeout:
         )
 
 
-class TestHandleLeaseFinally:
-    async def test_finally_sets_before_lease_hook_on_early_cancel(self):
-        """When conn_tg is cancelled before before_lease_hook.set() is
-        reached (no hook executor path), the finally block must ensure
-        the event is set so _cleanup_after_lease can proceed."""
+class TestCleanupWithoutBeforeLeaseHook:
+    async def test_cleanup_does_not_wait_without_before_lease_hook(self):
+        """When only afterLease is configured, cleanup must not wait on
+        before_lease_hook because there is no real beforeLease hook."""
+        from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
+        from jumpstarter.exporter.hooks import HookExecutor
+
         lease_ctx = make_lease_context()
-        # Verify the event starts unset
-        assert not lease_ctx.before_lease_hook.is_set()
-
-        exporter = make_exporter(lease_ctx)
-        # Mock methods needed by handle_lease
-        exporter.uuid = "test-uuid"
-        exporter.labels = {}
-        exporter.tls = None
-        exporter.grpc_options = None
-
-        # We test just the finally-block behavior by calling
-        # _cleanup_after_lease with an unset event: the primary fix is
-        # in handle_lease's finally, but we can verify _cleanup_after_lease
-        # handles the unset event via the safety timeout.
-        # A more direct test: simulate what the finally block does.
-        if not lease_ctx.before_lease_hook.is_set():
-            lease_ctx.before_lease_hook.set()
-
-        assert lease_ctx.before_lease_hook.is_set(), (
-            "before_lease_hook must be set after the finally-block logic"
+        hook_config = HookConfigV1Alpha1(
+            after_lease=HookInstanceConfigV1Alpha1(script="echo cleanup", timeout=10),
         )
+        hook_executor = HookExecutor(config=hook_config)
+        exporter = make_exporter(lease_ctx, hook_executor)
+
+        statuses = []
+
+        async def track_status(status, message=""):
+            statuses.append(status)
+
+        exporter._report_status = AsyncMock(side_effect=track_status)
+
+        with anyio.fail_after(2.5):
+            await exporter._cleanup_after_lease(lease_ctx)
+
+        assert not lease_ctx.before_lease_hook.is_set()
+        assert ExporterStatus.AFTER_LEASE_HOOK in statuses
+        assert ExporterStatus.AVAILABLE in statuses
+        assert lease_ctx.after_lease_hook_done.is_set()
 
 
 class TestIdempotentLeaseEnd:
