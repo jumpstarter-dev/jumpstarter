@@ -25,7 +25,7 @@ use jumpstarter_core::{
     DriverCallError, ForeignByteChannel, ForeignDriverHost, ForeignHostApi, ForeignResultStream,
     ForeignStreamOpen,
 };
-use jumpstarter_exporter::backend::{DriverHostBackend, HostFactory, HostGuard};
+use jumpstarter_exporter::backend::{DriverBackend, HostFactory, HostGuard};
 
 // ---------------------------------------------------------------------------
 // FFI types
@@ -253,7 +253,7 @@ struct UniffiHostFactory {
 impl HostFactory for UniffiHostFactory {
     async fn provision(
         &self,
-    ) -> Result<(Arc<dyn DriverHostBackend>, HostGuard), jumpstarter_exporter::Error> {
+    ) -> Result<(Arc<dyn DriverBackend>, Box<dyn HostGuard>), jumpstarter_exporter::Error> {
         let host = self
             .inner
             .new_host()
@@ -261,7 +261,7 @@ impl HostFactory for UniffiHostFactory {
         let api: Arc<dyn ForeignHostApi> = Arc::new(UniffiHostApi {
             inner: host.clone(),
         });
-        let backend: Arc<dyn DriverHostBackend> = Arc::new(ForeignDriverHost::new(api));
+        let backend: Arc<dyn DriverBackend> = Arc::new(ForeignDriverHost::new(api));
         // Hold the DriverHost Arc as the lease guard so the foreign tree's lifetime is
         // explicit (dropped at lease end alongside the backend).
         Ok((backend, Box::new(host)))

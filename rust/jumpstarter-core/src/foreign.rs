@@ -1,7 +1,7 @@
 //! `ForeignDriverHost` — the in-process driver host.
 //!
 //! Adapts a binding-agnostic [`ForeignHostApi`] (implemented in Python/Kotlin/C) to the
-//! exporter's proto-typed [`DriverHostBackend`] seam, so the Rust exporter serves driver
+//! exporter's proto-typed [`DriverBackend`] seam, so the Rust exporter serves driver
 //! calls/streams by calling the foreign host *in process* instead of proxying gRPC to a
 //! subprocess. This is the replacement for `SlimHostBackend` — same behavior, no second
 //! process and no second gRPC stack.
@@ -14,9 +14,7 @@
 
 use std::sync::Arc;
 
-use jumpstarter_exporter::backend::{
-    DriverHostBackend, FrameUplink, ResponseStream, RouterStreamOpen,
-};
+use jumpstarter_transport::{DriverBackend, FrameUplink, ResponseStream, RouterStreamOpen};
 use jumpstarter_protocol::v1::{
     DriverCallRequest, DriverCallResponse, FrameType, GetReportResponse, LogStreamResponse,
     StreamResponse, StreamingDriverCallRequest, StreamingDriverCallResponse,
@@ -36,7 +34,7 @@ use crate::report::assemble_report;
 /// result or one stream frame, and the foreign side is GIL-bounded anyway.
 const PUMP_BUFFER: usize = 16;
 
-/// Wraps a [`ForeignHostApi`] as a [`DriverHostBackend`].
+/// Wraps a [`ForeignHostApi`] as a [`DriverBackend`].
 pub struct ForeignDriverHost {
     api: Arc<dyn ForeignHostApi>,
 }
@@ -60,7 +58,7 @@ fn status_from(e: DriverCallError) -> Status {
 }
 
 #[tonic::async_trait]
-impl DriverHostBackend for ForeignDriverHost {
+impl DriverBackend for ForeignDriverHost {
     async fn get_report(&self) -> Result<GetReportResponse, Status> {
         let nodes = self.api.describe().await.map_err(status_from)?;
         Ok(assemble_report(&nodes))

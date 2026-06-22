@@ -1374,8 +1374,8 @@ dependencies = [
  "async-trait",
  "jumpstarter-client",
  "jumpstarter-config",
- "jumpstarter-exporter",
  "jumpstarter-protocol",
+ "jumpstarter-transport",
  "prost-types",
  "serde_json",
  "thiserror 2.0.18",
@@ -1393,6 +1393,7 @@ dependencies = [
  "jumpstarter-config",
  "jumpstarter-core",
  "jumpstarter-exporter",
+ "jumpstarter-transport",
  "serde_json",
  "serde_yaml_ng",
  "thiserror 2.0.18",
@@ -1410,6 +1411,7 @@ dependencies = [
  "jumpstarter-client",
  "jumpstarter-config",
  "jumpstarter-protocol",
+ "jumpstarter-transport",
  "prost-types",
  "serde_json",
  "thiserror 2.0.18",
@@ -1446,6 +1448,15 @@ dependencies = [
  "serde_json",
  "tonic",
  "tonic-build",
+]
+
+[[package]]
+name = "jumpstarter-transport"
+version = "0.0.0"
+dependencies = [
+ "jumpstarter-protocol",
+ "tokio-stream",
+ "tonic",
 ]
 
 [[package]]

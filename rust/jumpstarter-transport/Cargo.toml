@@ -1,0 +1,18 @@
+[package]
+name = "jumpstarter-transport"
+description = "The isometric driver-call transport seam (DriverBackend) shared by the Jumpstarter client and exporter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# This crate is the shared seam below BOTH jumpstarter-client and jumpstarter-exporter:
+# it owns `DriverBackend` (where a driver's calls are served — a subprocess over gRPC/UDS,
+# the router, a direct exporter, or — later — an in-process foreign host) plus the
+# channel-backed `ChannelBackend` impl. It depends only on the wire protocol + tonic, so the
+# client can consume `DriverBackend` without depending on the exporter.
+[dependencies]
+jumpstarter-protocol = { path = "../jumpstarter-protocol" }
+tonic.workspace = true
+tokio-stream = { version = "0.1", features = ["sync"] }

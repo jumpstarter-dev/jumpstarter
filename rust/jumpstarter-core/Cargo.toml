@@ -13,10 +13,13 @@ rust-version.workspace = true
 # those live only in the per-binding crates (jumpstarter-core-uniffi, jumpstarter-core-capi).
 [dependencies]
 jumpstarter-protocol = { path = "../jumpstarter-protocol" }
-# The facade wraps the runtime crates: it implements the exporter's DriverHostBackend
-# seam over the binding-agnostic ForeignHostApi (host side), and exposes a ClientSession
-# over the client crate's transport (client side).
-jumpstarter-exporter = { path = "../jumpstarter-exporter" }
+# The facade implements the shared `DriverBackend` seam over the binding-agnostic per-driver
+# `Driver` (host side) and exposes a `ClientSession` over the client crate's transport (client
+# side). It depends on `jumpstarter-transport` (the seam), NOT on `jumpstarter-exporter` — so a
+# client consumer never compiles the exporter runtime (subprocess spawn, hooks, session server,
+# signals). The exporter is pulled only by `jumpstarter-core-uniffi` / the CLI — i.e. things that
+# actually run an exporter (local development).
+jumpstarter-transport = { path = "../jumpstarter-transport" }
 jumpstarter-client = { path = "../jumpstarter-client" }
 jumpstarter-config = { path = "../jumpstarter-config" }
 prost-types.workspace = true

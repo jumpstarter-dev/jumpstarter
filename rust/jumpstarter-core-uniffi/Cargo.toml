@@ -20,6 +20,7 @@ path = "uniffi-bindgen.rs"
 [dependencies]
 jumpstarter-core = { path = "../jumpstarter-core" }
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
+jumpstarter-transport = { path = "../jumpstarter-transport" }
 jumpstarter-config = { path = "../jumpstarter-config" }
 # The Rust `jmp` CLI command tree, driven from the language entrypoints via `run_cli`.
 jumpstarter-cli = { path = "../jumpstarter-cli" }

@@ -104,7 +104,7 @@ async fn wait_for_shutdown(end_session: &Notify) {
     }
 }
 
-fn cleanup(tcp: JoinHandle<()>, hook: JoinHandle<()>, guard: HostGuard, hook_dir: &Path) {
+fn cleanup(tcp: JoinHandle<()>, hook: JoinHandle<()>, guard: Box<dyn HostGuard>, hook_dir: &Path) {
     tcp.abort();
     hook.abort();
     drop(guard);

@@ -12,7 +12,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use jumpstarter_exporter::backend::SlimHostBackend;
+use jumpstarter_exporter::backend::ChannelBackend;
 use jumpstarter_exporter::control::{uds_channel, StatusSnapshot};
 use jumpstarter_exporter::session::{self, RoutingTable, SharedSession};
 use jumpstarter_exporter::SlimHost;
@@ -36,7 +36,7 @@ type ServerKeepAlive = (
 /// host (kept alive), the main socket path, and the keep-alive handles.
 async fn serve_session(cfg_path: &Path, dir: &Path) -> (SlimHost, PathBuf, ServerKeepAlive) {
     let host = SlimHost::spawn(cfg_path).await.expect("spawn slim host");
-    let backend = SlimHostBackend::new(uds_channel(host.socket()).await.unwrap());
+    let backend = ChannelBackend::new(uds_channel(host.socket()).await.unwrap());
     let routing = RoutingTable::build(Arc::new(backend))
         .await
         .expect("build routing");

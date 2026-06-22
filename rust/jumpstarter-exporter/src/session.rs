@@ -29,7 +29,7 @@ use tokio_stream::{Stream, StreamExt as _};
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
-use crate::backend::{DriverHostBackend, ResponseStream};
+use crate::backend::{DriverBackend, ResponseStream};
 use crate::control::StatusSnapshot;
 use crate::Error;
 
@@ -38,7 +38,7 @@ use crate::Error;
 /// single host owns the whole tree, so Proxy duplicates collapse like
 /// `Session.mapping`).
 pub struct RoutingTable {
-    backend: Arc<dyn DriverHostBackend>,
+    backend: Arc<dyn DriverBackend>,
     driver_uuids: HashSet<String>,
     report: GetReportResponse,
 }
@@ -47,7 +47,7 @@ impl RoutingTable {
     /// Build from the host's full-tree `GetReport` (cached for the lease — UUIDs are
     /// frozen for the host's lifetime, `metadata.py:7-10`). The backend is the lease's
     /// driver host: the slim subprocess today, an in-process foreign host later.
-    pub async fn build(backend: Arc<dyn DriverHostBackend>) -> Result<Self, Error> {
+    pub async fn build(backend: Arc<dyn DriverBackend>) -> Result<Self, Error> {
         let report = backend.get_report().await?;
         let driver_uuids = report.reports.iter().map(|r| r.uuid.clone()).collect();
         Ok(Self {
@@ -64,7 +64,7 @@ impl RoutingTable {
 
     /// The lease's driver host backend (for the [`crate::tunnel`] RouterService proxy
     /// and `log_stream`).
-    pub(crate) fn backend(&self) -> Arc<dyn DriverHostBackend> {
+    pub(crate) fn backend(&self) -> Arc<dyn DriverBackend> {
         self.backend.clone()
     }
 
@@ -76,7 +76,7 @@ impl RoutingTable {
     /// Validate a driver UUID, returning the backend it routes to. Unknown UUID →
     /// `UNKNOWN`, matching `session.py:308` (the client distinguishes `NOT_FOUND`; §2.5).
     #[allow(clippy::result_large_err)]
-    fn route(&self, uuid: &str) -> Result<Arc<dyn DriverHostBackend>, Status> {
+    fn route(&self, uuid: &str) -> Result<Arc<dyn DriverBackend>, Status> {
         if self.driver_uuids.contains(uuid) {
             Ok(self.backend.clone())
         } else {

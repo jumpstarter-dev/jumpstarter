@@ -13,6 +13,7 @@ members = [
     "jumpstarter-protocol",
     "jumpstarter-config",
     "jumpstarter-auth",
+    "jumpstarter-transport",
     "jumpstarter-client",
     "jumpstarter-exporter",
     "jumpstarter-admin",

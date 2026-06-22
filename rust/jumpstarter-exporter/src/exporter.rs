@@ -31,7 +31,7 @@ use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_stream::StreamExt as _;
 
-use crate::backend::{DriverHostBackend, HostFactory, HostGuard, SlimHostFactory};
+use crate::backend::{DriverBackend, HostFactory, HostGuard, SlimHostFactory};
 use crate::control::{Controller, StatusReporter, StatusSnapshot};
 use crate::fsm::{LeaseLifecycle, LeasePhase};
 use crate::hooks::{self, AfterOutcome, BeforeOutcome, HookContext};
@@ -199,11 +199,11 @@ struct ActiveLease {
     /// Fired when the controller reports the lease has ended (`leased=false`).
     end: Arc<Notify>,
     /// Held for the lease lifetime; dropped at lease end to tear the host down.
-    _guard: HostGuard,
+    _guard: Box<dyn HostGuard>,
 }
 
 /// A provisioned host: the backend to route into + its lease guard.
-type ProvisionedHost = (Arc<dyn DriverHostBackend>, HostGuard);
+type ProvisionedHost = (Arc<dyn DriverBackend>, Box<dyn HostGuard>);
 
 /// A pre-warmed host for the *next* lease: either ready, or still provisioning in the
 /// background. Pipelining provisioning (started during the previous lease) hides the
