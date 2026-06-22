@@ -23,6 +23,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let uds = parse_serve(std::env::args().skip(1).collect())
         .ok_or("usage: jmp-rust-host --serve <uds>  (single-entry config on stdin)")?;
 
+    // Exit if the hub dies before it can SIGKILL us (POSIX parent-death watchdog).
+    jumpstarter_exporter::exit_when_orphaned();
+
     // The hub streams the single-entry config YAML on stdin (closed with EOF).
     let mut config_yaml = String::new();
     std::io::stdin().read_to_string(&mut config_yaml)?;

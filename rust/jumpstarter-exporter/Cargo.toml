@@ -27,3 +27,5 @@ tracing.workspace = true
 hyper-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
 http = "1"
+# POSIX `kill(2)` liveness probe for the host-side parent-death watchdog (portable across Linux/macOS/BSD).
+libc = "0.2"

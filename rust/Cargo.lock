@@ -1441,6 +1441,7 @@ dependencies = [
  "jumpstarter-config",
  "jumpstarter-protocol",
  "jumpstarter-transport",
+ "libc",
  "prost-types",
  "serde_json",
  "thiserror 2.0.18",

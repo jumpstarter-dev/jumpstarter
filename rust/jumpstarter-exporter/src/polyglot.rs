@@ -170,6 +170,10 @@ async fn spawn_entry_host(
         .stdin(Stdio::piped())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
+        // The host watches *this hub's pid* (not its own parent) so it self-reaps if the hub dies
+        // ungracefully — robust even when the host is reparented to init. See the host watchdogs:
+        // `jumpstarter.exporter_host` (Python) and `jumpstarter_exporter::exit_when_orphaned`.
+        .env("JMP_HUB_PID", std::process::id().to_string())
         .kill_on_drop(true);
     let mut child = command
         .spawn()

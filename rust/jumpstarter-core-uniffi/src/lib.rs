@@ -239,6 +239,10 @@ pub async fn serve_driver_host(
     use jumpstarter_exporter::session::{self, RoutingTable, SharedSession};
 
     init_exporter_tracing();
+    // NOTE: the parent-death watchdog for a *Python* host lives in the Python host itself
+    // (`jumpstarter.exporter_host`), not here: terminating a Python process from this embedded
+    // Rust core is fragile (CPython finalization deadlocks on exit). The native `jmp-rust-host`
+    // — a real Rust process — uses `jumpstarter_exporter::exit_when_orphaned()` directly.
     let host_factory: Arc<dyn HostFactory> = Arc::new(UniffiHostFactory { inner: factory });
     let (backend, _guard) = host_factory
         .provision()
