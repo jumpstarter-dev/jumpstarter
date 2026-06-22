@@ -8,18 +8,16 @@ import logging
 import os
 from abc import ABCMeta, abstractmethod
 from contextlib import asynccontextmanager
-from dataclasses import field
+from dataclasses import dataclass, field
 from itertools import chain
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 from uuid import UUID
 
 from anyio import BrokenResourceError
-from pydantic import TypeAdapter
-from pydantic.dataclasses import dataclass
 
 from jumpstarter.common import LogSource, Metadata
-from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource, Resource
+from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource, parse_resource
 from jumpstarter.config.env import JMP_DISABLE_COMPRESSION
 from jumpstarter.exporter.logging import get_logger
 from jumpstarter.streams.common import create_memory_stream
@@ -237,7 +235,7 @@ class Driver(
 
     @asynccontextmanager
     async def resource(self, handle: str, timeout: int = 7200):
-        handle = TypeAdapter(Resource).validate_python(handle)
+        handle = parse_resource(handle)
         match handle:
             case ClientStreamResource(uuid=uuid, x_jmp_content_encoding=content_encoding):
                 async with self._resource_from_client_stream(uuid, content_encoding) as stream:

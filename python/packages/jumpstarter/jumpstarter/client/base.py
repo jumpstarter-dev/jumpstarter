@@ -5,18 +5,16 @@ Base classes for drivers and driver clients
 from __future__ import annotations
 
 from contextlib import ExitStack, contextmanager
-from dataclasses import field
+from dataclasses import dataclass, field
 
 from anyio.from_thread import BlockingPortal
-from pydantic import ConfigDict
-from pydantic.dataclasses import dataclass
 
 from .core import AsyncDriverClient
 from jumpstarter.common.importlib import _format_missing_driver_message
 from jumpstarter.streams.blocking import BlockingStream
 
 
-@dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
+@dataclass(kw_only=True)
 class DriverClient(AsyncDriverClient):
     """Base class for driver clients
 
@@ -106,7 +104,7 @@ class DriverClient(AsyncDriverClient):
         self.close()
 
 
-@dataclass(kw_only=True, config=ConfigDict(arbitrary_types_allowed=True))
+@dataclass(kw_only=True)
 class StubDriverClient(DriverClient):
     """Stub client for drivers that are not installed.
 

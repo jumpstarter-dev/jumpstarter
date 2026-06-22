@@ -2,7 +2,7 @@
 
 import logging
 from contextlib import ExitStack
-from unittest.mock import MagicMock, create_autospec
+from unittest.mock import create_autospec
 from uuid import uuid4
 
 import pytest
@@ -26,7 +26,6 @@ def create_stub_client(class_path: str) -> StubDriverClient:
     return StubDriverClient(
         uuid=uuid4(),
         labels={"jumpstarter.dev/client": class_path},
-        stub=MagicMock(),
         portal=create_autospec(BlockingPortal, instance=True),
         stack=ExitStack(),
     )
