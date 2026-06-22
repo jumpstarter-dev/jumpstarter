@@ -1,38 +1,130 @@
-//! Native `j` — the client-side driver CLI entrypoint.
+//! Native `j` — the client-side driver CLI, the client-side mirror of the polyglot exporter hub.
 //!
-//! `j <driver> <cmd> <args>` drives a leased exporter's drivers. This is the client-side mirror
-//! of the polyglot exporter hub: the goal is for `j` to route each driver to its *client*
-//! language (Python client classes via `jumpstarter.client_host`, native Rust clients in-process),
-//! so a pure-native-client set needs no Python.
-//!
-//! This first increment is a thin native launcher: it finds the venv's python (the sibling of the
-//! `j` binary, as a wheel installs `venv/bin/j` next to `venv/bin/python`) and delegates the whole
-//! invocation to the Python driver-client CLI, preserving its rich per-driver click CLIs verbatim.
-//! A later increment connects natively, reads the report, and routes per-driver by client language.
+//! `j <driver> <cmd> <args>` drives a leased exporter's drivers. Native `j` connects via
+//! `ClientSession`, reads the report, and **routes each driver to its client language** (from the
+//! `jumpstarter.dev/client` label): a native Rust client runs **in-process** (no Python), while a
+//! Python client class is delegated to the Python driver-client CLI (`python -m jumpstarter_cli.j`),
+//! preserving its rich click CLI verbatim. A pure-native-client set needs no Python at all.
 
 use std::process::Command;
 
-fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let python = find_python();
+use jumpstarter_core::ClientSession;
+use serde_json::Value as Json;
 
-    // Inherit stdio so an interactive `j shell`/driver CLI works; propagate the exit code.
-    match Command::new(&python)
-        .arg("-m")
-        .arg("jumpstarter_cli.j")
-        .args(&args)
-        .status()
-    {
-        Ok(status) => std::process::exit(status.code().unwrap_or(1)),
-        Err(e) => {
-            eprintln!("Error: cannot launch the python driver-client CLI ({python}): {e}");
-            std::process::exit(1);
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+
+    // Non-driver invocations (no args, a global flag, the `introspect` MCP side channel) go to the
+    // Python driver-client CLI, which owns the top-level help + introspection.
+    let first = args.first().map(String::as_str).unwrap_or("");
+    if first.is_empty() || first.starts_with('-') || first == "introspect" {
+        delegate_to_python(&args);
+    }
+
+    // A driver invocation: connect to route it to the owning client's language. Without a lease
+    // (no JUMPSTARTER_HOST), let the Python CLI emit its "use inside a jmp shell" message.
+    let host = match std::env::var("JUMPSTARTER_HOST") {
+        Ok(h) => h,
+        Err(_) => delegate_to_python(&args),
+    };
+    let session = match ClientSession::connect(host).await {
+        Ok(s) => s,
+        Err(e) => fail(&format!("connecting to exporter: {e}")),
+    };
+    let report = match session.get_report().await {
+        Ok(r) => r,
+        Err(e) => fail(&format!("fetching driver report: {e}")),
+    };
+
+    match client_for(&report, first) {
+        // A native (Rust) client → drive it in-process, no Python.
+        Some((uuid, label)) if label.starts_with("rust:") => {
+            std::process::exit(run_native_client(&label, &session, &uuid, &args[1..]).await);
+        }
+        // A Python client (or an unknown driver name) → the Python driver-client CLI.
+        _ => {
+            drop(session);
+            delegate_to_python(&args);
         }
     }
 }
 
-/// The python interpreter to run the driver-client CLI with: `JMP_DRIVER_HOST_PYTHON` wins, else
-/// the venv python sibling of this binary (`venv/bin/j` → `venv/bin/python3`), else `python3`.
+/// The `(uuid, client-label)` of the top-level driver named `name`, from the report JSON.
+fn client_for(report: &str, name: &str) -> Option<(String, String)> {
+    let nodes: Vec<Json> = serde_json::from_str(report).ok()?;
+    nodes.iter().find_map(|n| {
+        let labels = n.get("labels")?;
+        if labels.get("jumpstarter.dev/name").and_then(Json::as_str) == Some(name) {
+            let uuid = n.get("uuid")?.as_str()?.to_string();
+            let client = labels.get("jumpstarter.dev/client")?.as_str()?.to_string();
+            Some((uuid, client))
+        } else {
+            None
+        }
+    })
+}
+
+/// Built-in native (Rust) clients — the example set. A real deployment would register clients per
+/// driver (the client-side analog of the native driver registry); this proves the routing.
+async fn run_native_client(
+    label: &str,
+    session: &ClientSession,
+    uuid: &str,
+    args: &[String],
+) -> i32 {
+    match label.strip_prefix("rust:").unwrap_or(label) {
+        // The native PowerClient: `j <driver> on|off` → a unary driver call.
+        "powerclient" => match args.first().map(String::as_str) {
+            Some(cmd @ ("on" | "off")) => {
+                match session
+                    .driver_call(uuid.to_string(), cmd.to_string(), "[]".to_string())
+                    .await
+                {
+                    Ok(_) => {
+                        println!("{cmd}");
+                        0
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {e}");
+                        1
+                    }
+                }
+            }
+            _ => {
+                eprintln!("usage: j <driver> on|off");
+                2
+            }
+        },
+        other => {
+            eprintln!("Error: no native client `rust:{other}` is registered");
+            1
+        }
+    }
+}
+
+/// Delegate the whole invocation to the Python driver-client CLI (`python -m jumpstarter_cli.j`).
+fn delegate_to_python(args: &[String]) -> ! {
+    let python = find_python();
+    match Command::new(&python)
+        .arg("-m")
+        .arg("jumpstarter_cli.j")
+        .args(args)
+        .status()
+    {
+        Ok(status) => std::process::exit(status.code().unwrap_or(1)),
+        Err(e) => fail(&format!(
+            "cannot launch the python driver-client CLI ({python}): {e}"
+        )),
+    }
+}
+
+fn fail(msg: &str) -> ! {
+    eprintln!("Error: {msg}");
+    std::process::exit(1);
+}
+
+/// `JMP_DRIVER_HOST_PYTHON` wins, else the venv python sibling of this binary, else `python3`.
 fn find_python() -> String {
     if let Ok(p) = std::env::var("JMP_DRIVER_HOST_PYTHON") {
         return p;

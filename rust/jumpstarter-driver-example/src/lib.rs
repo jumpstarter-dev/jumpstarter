@@ -40,14 +40,44 @@ impl Driver for MockPower {
     }
 }
 
+/// A native power driver whose *client* is also native (`rust:powerclient`), so `j <name> on`
+/// drives it with **no Python at all** — the client-side mirror of the polyglot story.
+pub struct MockPowerNativeClient;
+
+#[async_trait]
+impl Driver for MockPowerNativeClient {
+    fn client(&self) -> String {
+        // A native (Rust) client class — `j` drives this in-process, no Python.
+        "rust:powerclient".to_string()
+    }
+
+    fn methods(&self) -> HashMap<String, String> {
+        HashMap::from([
+            ("on".to_string(), "turn the (mock) power on".to_string()),
+            ("off".to_string(), "turn the (mock) power off".to_string()),
+        ])
+    }
+
+    async fn call(&self, method: &str, _args: Vec<Json>) -> Result<Json, DriverCallError> {
+        match method {
+            "on" | "off" => Ok(Json::Null),
+            other => Err(DriverCallError::Unimplemented(format!(
+                "MockPower (rust) has no method {other}"
+            ))),
+        }
+    }
+}
+
 /// Look up a native driver by the name after the `rust:` prefix in its `type:`. A real driver
-/// crate would register here (or via `inventory`); the example keeps a small match.
+/// crate would register here (or via `inventory`); the example keeps a small match. `power`
+/// advertises the Python `PowerClient`; `powerrs` advertises the native `rust:powerclient`.
 pub fn make_driver(
     name: &str,
     _config: &serde_json::Map<String, Json>,
 ) -> Option<Arc<dyn Driver>> {
     match name {
         "power" => Some(Arc::new(MockPower)),
+        "powerrs" => Some(Arc::new(MockPowerNativeClient)),
         _ => None,
     }
 }

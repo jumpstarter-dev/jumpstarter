@@ -15,13 +15,14 @@ path = "src/lib.rs"
 name = "jmp"
 path = "src/main.rs"
 
-# The native `j` client entrypoint (a thin launcher today; routes per-driver by client language
-# in a later increment). Tiny — no extra deps beyond std.
+# The native `j` client entrypoint: connects via ClientSession, reads the report, and routes each
+# driver to its client language (native Rust in-process, Python via the Python driver-client CLI).
 [[bin]]
 name = "j"
 path = "src/bin/j.rs"
 
 [dependencies]
+jumpstarter-core = { path = "../jumpstarter-core" }
 jumpstarter-client = { path = "../jumpstarter-client" }
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
 jumpstarter-config = { path = "../jumpstarter-config" }
