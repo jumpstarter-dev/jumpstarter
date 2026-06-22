@@ -80,19 +80,21 @@ async fn federates_python_and_rust_drivers_in_one_exporter() {
     assert_eq!(py.parent_uuid, rs.parent_uuid);
     assert!(py.parent_uuid.is_some());
 
-    // Drive each driver through the federated backend by UUID — the call is routed to its own
-    // host (a Python subprocess and the native Rust subprocess), and both succeed.
-    for leaf in [py, rs] {
-        let name = leaf.labels.get("jumpstarter.dev/name").cloned().unwrap();
-        let resp = backend
-            .driver_call(DriverCallRequest {
-                uuid: leaf.uuid.clone(),
-                method: "on".to_string(),
-                args: vec![],
-            })
-            .await;
-        assert!(resp.is_ok(), "driver_call(on) on `{name}` failed: {resp:?}");
-    }
+    // Drive both drivers through the federated backend *concurrently* by UUID. Each call is
+    // routed to its own host — a Python `jumpstarter.exporter_host` subprocess and the native
+    // `jmp-rust-host` subprocess — so the two run in genuinely separate OS processes (separate
+    // GILs / runtimes): there is no cross-driver serialization. Both must succeed.
+    let call = |uuid: String| {
+        let backend = backend.clone();
+        async move {
+            backend
+                .driver_call(DriverCallRequest { uuid, method: "on".to_string(), args: vec![] })
+                .await
+        }
+    };
+    let (py_resp, rs_resp) = tokio::join!(call(py.uuid.clone()), call(rs.uuid.clone()));
+    assert!(py_resp.is_ok(), "concurrent driver_call(on) on pypower failed: {py_resp:?}");
+    assert!(rs_resp.is_ok(), "concurrent driver_call(on) on rustpower failed: {rs_resp:?}");
 
     let _ = std::fs::remove_file(&cfg);
 }
