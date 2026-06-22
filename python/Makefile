@@ -1,5 +1,13 @@
 PKG_TARGETS = $(subst packages/,,$(wildcard packages/*))
 
+# Maturin-backed packages built from the Rust workspace: the FFI extension
+# (jumpstarter-core -> the `jumpstarter_core` module) and the native jmp/j
+# binaries (jumpstarter-cli-bin). uv caches their built wheels, so a change to
+# any Rust crate under rust/ is NOT picked up by a plain `uv sync` — use
+# `make sync-native` to force maturin to rebuild them.
+NATIVE_PKGS = jumpstarter-core jumpstarter-cli-bin
+REINSTALL_NATIVE = $(foreach pkg,$(NATIVE_PKGS),--reinstall-package $(pkg))
+
 # Help target
 .PHONY: help
 help:
@@ -10,6 +18,7 @@ help:
 	@echo "  build              - Build all packages"
 	@echo "  protobuf-gen       - Generate code from protobuf definitions"
 	@echo "  sync               - Sync all packages and extras"
+	@echo "  sync-native        - Rebuild Rust/maturin packages (FFI + native jmp/j) and sync"
 	@echo ""
 	@echo "Documentation targets:"
 	@echo "  docs               - Build HTML documentation with warnings as errors"
@@ -106,8 +115,17 @@ protobuf-gen:
 		-e 's|^from jumpstarter\.v1 import|from . import|g' \
 		{} \; -exec rm {}.bak \;
 
+# `--group dev` is uv's default group, but request it explicitly so a full dev/IDE
+# environment (pytest, ruff, ty, per-package test plugins + type stubs) is guaranteed
+# even if a user's uv config overrides the default groups.
 sync:
-	uv sync --all-packages --all-extras
+	uv sync --all-packages --all-extras --group dev
+
+# Force-rebuild the Rust/maturin packages (FFI extension + native jmp/j binaries)
+# from current Rust source, then sync everything else. Use after editing any crate
+# under rust/ — a plain `make sync` reuses uv's cached wheels and won't recompile.
+sync-native:
+	uv sync --all-packages --all-extras --group dev $(REINSTALL_NATIVE)
 
 clean-venv:
 	-rm -rf ./.venv
@@ -137,7 +155,7 @@ lint-fix:
 	uv run ruff check --fix
 
 .PHONY: default help docs docs-all docs-serve docs-serve-all docs-clean docs-test \
-	docs-check-grpc docs-test-grpc docs-linkcheck docs-generate-grpc pkg-test-all pkg-ty-all build generate sync \
+	docs-check-grpc docs-test-grpc docs-linkcheck docs-generate-grpc pkg-test-all pkg-ty-all build generate sync sync-native \
 	clean clean-venv clean-build clean-test clean-all test test-all ty-all docs \
 	lint lint-fix \
 	pkg-ty-jumpstarter \

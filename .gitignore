@@ -12,6 +12,9 @@ server.csr
 
 # Python
 .python-version
+# Match both a real venv dir and a `.venv` symlink -> python/.venv (IDE/devcontainer
+# auto-discovery convenience for this nested-venv monorepo).
+.venv
 .venv/
 __pycache__/
 *.pyc
