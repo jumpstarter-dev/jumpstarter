@@ -11,12 +11,11 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
-  "jumpstarter-cli-admin",
-  "jumpstarter-cli-driver",
-  # The native `jmp` binary (maturin bin wheel). maturin can't host a binary *and* a Python
-  # console script in one package, so `jmp` ships from -bin and `j` (Python) stays here.
+  # The native `jmp` + `j` binaries (maturin bin wheel). This package is the thin Python
+  # `jumpstarter_cli.j` driver-client CLI that native `j` delegates to for Python clients.
+  # anyio + click (used by `j` and every driver client) come transitively via `jumpstarter`.
   "jumpstarter-cli-bin",
-  "pytimeparse2>=1.7.1",
+  "jumpstarter",
 ]
 
 [dependency-groups]

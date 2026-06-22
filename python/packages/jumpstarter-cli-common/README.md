@@ -1,1 +1,0 @@
-# Jumpstarter CLI Common Utils

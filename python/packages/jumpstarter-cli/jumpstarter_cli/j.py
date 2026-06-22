@@ -7,14 +7,14 @@ import click
 from anyio import create_task_group, get_cancelled_exc_class, run, to_thread
 from anyio.from_thread import BlockingPortal
 from click.exceptions import Exit as ClickExit
-from jumpstarter_cli_common.exceptions import (
+
+from jumpstarter_cli._errors import (
     ClickExceptionRed,
     async_handle_exceptions,
     find_exception_in_group,
     leaf_exceptions,
 )
-from jumpstarter_cli_common.signal import signal_handler
-from rich import traceback
+from jumpstarter_cli._signal import signal_handler
 
 from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
 from jumpstarter.utils.env import env_async
@@ -81,7 +81,6 @@ async def j_async():
 
 
 def j():
-    traceback.install()
     # `j introspect ...` is a machine-readable side channel (JSON to stdout) used by the Rust
     # MCP server; handle it before the normal driver-client CLI passthrough.
     if len(sys.argv) >= 2 and sys.argv[1] == "introspect":

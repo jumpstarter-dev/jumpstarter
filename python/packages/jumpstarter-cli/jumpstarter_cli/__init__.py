@@ -1,10 +1,7 @@
-import os
+"""The thin Python `j` driver-client CLI that the native `j` binary delegates to
+for Python-implemented driver clients (``python -m jumpstarter_cli.j``).
 
-import truststore
-
-# if we are running in MacOS avoid injecting system certificates to avoid
-# https://github.com/jumpstarter-dev/jumpstarter/issues/362
-# also allow to force the system certificates injection with
-# the JUMPSTARTER_FORCE_SYSTEM_CERTS environment variable set to "1"
-if os.uname().sysname != "Darwin" or os.environ.get("JUMPSTARTER_FORCE_SYSTEM_CERTS") == "1":
-    truststore.inject_into_ssl()
+The controller/exporter transport (and its TLS) is handled by the Rust core via
+the ``jumpstarter_core`` FFI client, so this package no longer injects system
+certificates into Python's ``ssl`` module (the former ``truststore`` use).
+"""

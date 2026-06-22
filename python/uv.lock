@@ -13,10 +13,7 @@ members = [
     "jumpstarter",
     "jumpstarter-all",
     "jumpstarter-cli",
-    "jumpstarter-cli-admin",
     "jumpstarter-cli-bin",
-    "jumpstarter-cli-common",
-    "jumpstarter-cli-driver",
     "jumpstarter-core",
     "jumpstarter-driver-adb",
     "jumpstarter-driver-androidemulator",
@@ -367,19 +364,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/5a/b0/1367933a8532ee6ff8d63537de4f1177af4bff9f3e829baf7331f595bb24/attrs-25.3.0.tar.gz", hash = "sha256:75d7cefc7fb576747b2c81b4442d4d4a1ce0900973527c011d1030fd3bf4af1b", size = 812032, upload-time = "2025-03-13T11:10:22.779Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/77/06/bb80f5f86020c4551da315d78b3ab75e8228f89f0162f2c3a819e407941a/attrs-25.3.0-py3-none-any.whl", hash = "sha256:427318ce031701fea540783410126f03899a97ffc6f61596ad581ac2e40e3bc3", size = 63815, upload-time = "2025-03-13T11:10:21.14Z" },
-]
-
-[[package]]
-name = "authlib"
-version = "1.6.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cryptography", version = "44.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "cryptography", version = "45.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a2/9d/b1e08d36899c12c8b894a44a5583ee157789f26fc4b176f8e4b6217b56e1/authlib-1.6.0.tar.gz", hash = "sha256:4367d32031b7af175ad3a323d571dc7257b7099d55978087ceae4a0d88cd3210", size = 158371, upload-time = "2025-05-23T00:21:45.011Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/84/29/587c189bbab1ccc8c86a03a5d0e13873df916380ef1be461ebe6acebf48d/authlib-1.6.0-py2.py3-none-any.whl", hash = "sha256:91685589498f79e8655e8a8947431ad6288831d643f11c55c2143ffcc738048d", size = 239981, upload-time = "2025-05-23T00:21:43.075Z" },
 ]
 
 [[package]]
@@ -1744,19 +1728,6 @@ wheels = [
 ]
 
 [[package]]
-name = "joserfc"
-version = "1.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cryptography", version = "44.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "cryptography", version = "45.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f3/fc/9508fedffd72b36914f05e3a9265dcb6e6cea109f03d1063fa64ffcf4e47/joserfc-1.1.0.tar.gz", hash = "sha256:a8f3442b04c233f742f7acde0d0dcd926414e9542a6337096b2b4e5f435f36c1", size = 182360, upload-time = "2025-05-24T04:26:38.159Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/38/71/adcebc3239c8ea80f076f051b4c29c5667ccc451b321e1d46f94bf0f7936/joserfc-1.1.0-py3-none-any.whl", hash = "sha256:9493512cfffb9bc3001e8f609fe0eb7e95b71f3d3b374ede93de94b4b6b520f5", size = 62611, upload-time = "2025-05-24T04:26:36.681Z" },
-]
-
-[[package]]
 name = "jsonschema"
 version = "4.24.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1834,9 +1805,6 @@ source = { editable = "packages/jumpstarter-all" }
 dependencies = [
     { name = "jumpstarter" },
     { name = "jumpstarter-cli" },
-    { name = "jumpstarter-cli-admin" },
-    { name = "jumpstarter-cli-common" },
-    { name = "jumpstarter-cli-driver" },
     { name = "jumpstarter-driver-ble" },
     { name = "jumpstarter-driver-can" },
     { name = "jumpstarter-driver-composite" },
@@ -1884,9 +1852,6 @@ dependencies = [
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-cli", editable = "packages/jumpstarter-cli" },
-    { name = "jumpstarter-cli-admin", editable = "packages/jumpstarter-cli-admin" },
-    { name = "jumpstarter-cli-common", editable = "packages/jumpstarter-cli-common" },
-    { name = "jumpstarter-cli-driver", editable = "packages/jumpstarter-cli-driver" },
     { name = "jumpstarter-driver-ble", editable = "packages/jumpstarter-driver-ble" },
     { name = "jumpstarter-driver-can", editable = "packages/jumpstarter-driver-can" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
@@ -1934,10 +1899,8 @@ requires-dist = [
 name = "jumpstarter-cli"
 source = { editable = "packages/jumpstarter-cli" }
 dependencies = [
-    { name = "jumpstarter-cli-admin" },
+    { name = "jumpstarter" },
     { name = "jumpstarter-cli-bin" },
-    { name = "jumpstarter-cli-driver" },
-    { name = "pytimeparse2" },
 ]
 
 [package.dev-dependencies]
@@ -1950,37 +1913,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "jumpstarter-cli-admin", editable = "packages/jumpstarter-cli-admin" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-cli-bin", editable = "packages/jumpstarter-cli-bin" },
-    { name = "jumpstarter-cli-driver", editable = "packages/jumpstarter-cli-driver" },
-    { name = "pytimeparse2", specifier = ">=1.7.1" },
 ]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
-    { name = "pytest-cov", specifier = ">=5.0.0" },
-]
-
-[[package]]
-name = "jumpstarter-cli-admin"
-source = { editable = "packages/jumpstarter-cli-admin" }
-dependencies = [
-    { name = "jumpstarter-cli-common" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "jumpstarter-cli-common", editable = "packages/jumpstarter-cli-common" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1994,80 +1929,6 @@ dev = [
 name = "jumpstarter-cli-bin"
 version = "0.0.0"
 source = { editable = "packages/jumpstarter-cli-bin" }
-
-[[package]]
-name = "jumpstarter-cli-common"
-source = { editable = "packages/jumpstarter-cli-common" }
-dependencies = [
-    { name = "authlib" },
-    { name = "click" },
-    { name = "joserfc" },
-    { name = "jumpstarter" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "rich" },
-    { name = "truststore" },
-    { name = "yarl" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "authlib", specifier = ">=1.4.1" },
-    { name = "click", specifier = ">=8.1.7.2" },
-    { name = "joserfc", specifier = ">=1.0.3" },
-    { name = "jumpstarter", editable = "packages/jumpstarter" },
-    { name = "pydantic", specifier = ">=2.8.2" },
-    { name = "pyyaml", specifier = ">=6.0.2" },
-    { name = "rich", specifier = ">=14.0.0" },
-    { name = "truststore", specifier = ">=0.10.1" },
-    { name = "yarl", specifier = ">=1.18.3" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
-    { name = "pytest-cov", specifier = ">=5.0.0" },
-]
-
-[[package]]
-name = "jumpstarter-cli-driver"
-source = { editable = "packages/jumpstarter-cli-driver" }
-dependencies = [
-    { name = "click" },
-    { name = "jumpstarter-cli-common" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "click", specifier = ">=8.1.7.2" },
-    { name = "jumpstarter-cli-common", editable = "packages/jumpstarter-cli-common" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
-    { name = "pytest-cov", specifier = ">=5.0.0" },
-]
 
 [[package]]
 name = "jumpstarter-core"
@@ -5240,15 +5101,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pytimeparse2"
-version = "1.7.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/19/10/cc63fecd69905eb4d300fe71bd580e4a631483e9f53fdcb8c0ad345ce832/pytimeparse2-1.7.1.tar.gz", hash = "sha256:98668cdcba4890e1789e432e8ea0059ccf72402f13f5d52be15bdfaeb3a8b253", size = 10431, upload-time = "2023-05-11T21:40:55.774Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/17/9e/85abf91ef5df452f56498927affdb7128194d15644084f6c6722477c305b/pytimeparse2-1.7.1-py3-none-any.whl", hash = "sha256:a162ea6a7707fd0bb82dd99556efb783935f51885c8bdced0fce3fffe85ab002", size = 6136, upload-time = "2023-05-11T21:40:46.051Z" },
-]
-
-[[package]]
 name = "pytz"
 version = "2026.1.post1"
 source = { registry = "https://pypi.org/simple" }
@@ -6182,15 +6034,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/38/04/1cd43f72c241fedcf0d9a18d0783953ee301eac9e5d9db1df0f0f089d9af/trove_classifiers-2025.5.9.12.tar.gz", hash = "sha256:7ca7c8a7a76e2cd314468c677c69d12cc2357711fcab4a60f87994c1589e5cb5", size = 16940, upload-time = "2025-05-09T12:04:48.829Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/92/ef/c6deb083748be3bcad6f471b6ae983950c161890bf5ae1b2af80cc56c530/trove_classifiers-2025.5.9.12-py3-none-any.whl", hash = "sha256:e381c05537adac78881c8fa345fd0e9970159f4e4a04fcc42cfd3129cca640ce", size = 14119, upload-time = "2025-05-09T12:04:46.38Z" },
-]
-
-[[package]]
-name = "truststore"
-version = "0.10.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/0f/a7/b7a43228762966a13598a404f3dfb4803ea29a906f449d8b0e73ed0bcd30/truststore-0.10.1.tar.gz", hash = "sha256:eda021616b59021812e800fa0a071e51b266721bef3ce092db8a699e21c63539", size = 26101, upload-time = "2025-02-07T18:57:38.201Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/bc/df/8ad635bdcfa8214c399e5614f7c2121dced47defb755a85ea1fa702ffb1c/truststore-0.10.1-py3-none-any.whl", hash = "sha256:b64e6025a409a43ebdd2807b0c41c8bff49ea7ae6550b5087ac6df6619352d4c", size = 18496, upload-time = "2025-02-07T18:57:36.348Z" },
 ]
 
 [[package]]

@@ -9,9 +9,6 @@ requires-python = ">=3.11"
 dependencies = [
   "jumpstarter",
   "jumpstarter-cli",
-  "jumpstarter-cli-admin",
-  "jumpstarter-cli-common",
-  "jumpstarter-cli-driver",
   "jumpstarter-driver-ble",
   "jumpstarter-driver-can",
   "jumpstarter-driver-composite",

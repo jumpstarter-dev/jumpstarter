@@ -3,15 +3,14 @@
 This section provides reference documentation for Jumpstarter's command-line
 interfaces. The documentation covers:
 
-- [`jmp`](jmp.md): Main command-line interface for Jumpstarter
 - [`j`](j.md): Shorthand utility for quick interactions with Jumpstarter
 
-These references support all three operation modes of Jumpstarter: local,
-direct, and distributed.
+The `jmp` command-line interface is a native binary; run `jmp --help` for its
+reference. These references support all three operation modes of Jumpstarter:
+local, direct, and distributed.
 
 ```{toctree}
 :maxdepth: 1
 :hidden:
-jmp.md
 j.md
 ```

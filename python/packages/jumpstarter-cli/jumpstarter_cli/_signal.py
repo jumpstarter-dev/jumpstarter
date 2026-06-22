@@ -1,3 +1,8 @@
+"""SIGINT/SIGTERM handling for the `j` driver-client CLI.
+
+Inlined from the retired `jumpstarter-cli-common` package (its `signal.py`).
+"""
+
 import signal
 
 import click
