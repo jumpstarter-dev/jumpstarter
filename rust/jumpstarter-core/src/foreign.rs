@@ -1,6 +1,6 @@
-//! `ForeignDriverHost` — the in-process driver host.
+//! `ForeignDriver` — the in-process driver host.
 //!
-//! Adapts a binding-agnostic [`ForeignHostApi`] (implemented in Python/Kotlin/C) to the
+//! Adapts a binding-agnostic [`DriverApi`] (implemented in Python/Kotlin/C) to the
 //! exporter's proto-typed [`DriverBackend`] seam, so the Rust exporter serves driver
 //! calls/streams by calling the foreign host *in process* instead of proxying gRPC to a
 //! subprocess. This is the replacement for `SlimHostBackend` — same behavior, no second
@@ -27,20 +27,20 @@ use tonic::Status;
 
 use crate::codec;
 use crate::error::DriverCallError;
-use crate::host::ForeignHostApi;
+use crate::host::DriverApi;
 use crate::report::assemble_report;
 
 /// Channel buffer for the in-process result/frame pumps. Small: each item is one driver
 /// result or one stream frame, and the foreign side is GIL-bounded anyway.
 const PUMP_BUFFER: usize = 16;
 
-/// Wraps a [`ForeignHostApi`] as a [`DriverBackend`].
-pub struct ForeignDriverHost {
-    api: Arc<dyn ForeignHostApi>,
+/// Wraps a [`DriverApi`] as a [`DriverBackend`].
+pub struct ForeignDriver {
+    api: Arc<dyn DriverApi>,
 }
 
-impl ForeignDriverHost {
-    pub fn new(api: Arc<dyn ForeignHostApi>) -> Self {
+impl ForeignDriver {
+    pub fn new(api: Arc<dyn DriverApi>) -> Self {
         Self { api }
     }
 }
@@ -58,7 +58,7 @@ fn status_from(e: DriverCallError) -> Status {
 }
 
 #[tonic::async_trait]
-impl DriverBackend for ForeignDriverHost {
+impl DriverBackend for ForeignDriver {
     async fn get_report(&self) -> Result<GetReportResponse, Status> {
         let nodes = self.api.describe().await.map_err(status_from)?;
         Ok(assemble_report(&nodes))
@@ -221,7 +221,7 @@ fn to_metadata(entries: Vec<(String, String)>) -> MetadataMap {
 mod tests {
     use super::*;
     use crate::dto::DriverNode;
-    use crate::host::{ForeignByteChannel, ForeignResultStream, ForeignStreamOpen};
+    use crate::host::{DriverByteChannel, DriverResultStream, DriverStreamOpen};
     use jumpstarter_protocol::value;
     use jumpstarter_protocol::v1::StreamRequest;
     use serde_json::json;
@@ -233,7 +233,7 @@ mod tests {
     struct MockHost;
 
     #[async_trait::async_trait]
-    impl ForeignHostApi for MockHost {
+    impl DriverApi for MockHost {
         async fn describe(&self) -> Result<Vec<DriverNode>, DriverCallError> {
             Ok(vec![DriverNode::root(
                 "u1",
@@ -261,7 +261,7 @@ mod tests {
             _uuid: String,
             _method_name: String,
             _args_json: String,
-        ) -> Result<Arc<dyn ForeignResultStream>, DriverCallError> {
+        ) -> Result<Arc<dyn DriverResultStream>, DriverCallError> {
             Ok(Arc::new(Countdown {
                 remaining: Mutex::new(3),
             }))
@@ -270,8 +270,8 @@ mod tests {
         async fn open_stream(
             &self,
             _request_json: String,
-        ) -> Result<ForeignStreamOpen, DriverCallError> {
-            Ok(ForeignStreamOpen {
+        ) -> Result<DriverStreamOpen, DriverCallError> {
+            Ok(DriverStreamOpen {
                 channel: Arc::new(OneShot {
                     sent: Mutex::new(false),
                 }),
@@ -284,7 +284,7 @@ mod tests {
         remaining: Mutex<u32>,
     }
     #[async_trait::async_trait]
-    impl ForeignResultStream for Countdown {
+    impl DriverResultStream for Countdown {
         async fn next(&self) -> Result<Option<String>, DriverCallError> {
             let mut r = self.remaining.lock().unwrap();
             if *r == 0 {
@@ -300,7 +300,7 @@ mod tests {
         sent: Mutex<bool>,
     }
     #[async_trait::async_trait]
-    impl ForeignByteChannel for OneShot {
+    impl DriverByteChannel for OneShot {
         async fn read(&self) -> Result<Option<Vec<u8>>, DriverCallError> {
             let mut sent = self.sent.lock().unwrap();
             if *sent {
@@ -321,8 +321,8 @@ mod tests {
         }
     }
 
-    fn host() -> ForeignDriverHost {
-        ForeignDriverHost::new(Arc::new(MockHost))
+    fn host() -> ForeignDriver {
+        ForeignDriver::new(Arc::new(MockHost))
     }
 
     #[tokio::test]

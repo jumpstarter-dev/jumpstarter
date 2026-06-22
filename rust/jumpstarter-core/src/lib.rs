@@ -5,7 +5,7 @@
 //! ([`codec`]), `DriverReport` assembly ([`report`]), the driver-call error taxonomy
 //! ([`error`]), and the binding-agnostic foreign-host seam ([`host`]). It carries **no**
 //! FFI dependency (no uniffi/cbindgen/jni) — those live only in the per-binding crates,
-//! which implement [`host::ForeignHostApi`] and convert these DTOs to their native types.
+//! which implement [`host::DriverApi`] and convert these DTOs to their native types.
 
 pub mod client;
 pub mod codec;
@@ -20,8 +20,8 @@ pub use client::{ClientByteStream, ClientLogStream, ClientResultStream, ClientSe
 pub use controller::{ControllerSession, LeaseTransport};
 pub use dto::DriverNode;
 pub use error::{CodecError, ControllerError, DriverCallError};
-pub use foreign::ForeignDriverHost;
+pub use foreign::ForeignDriver;
 pub use host::{
-    ForeignByteChannel, ForeignHostApi, ForeignResultStream, ForeignStreamOpen,
+    DriverByteChannel, DriverApi, DriverResultStream, DriverStreamOpen,
 };
 pub use report::assemble_report;

@@ -1,10 +1,10 @@
 //! The binding-agnostic foreign-host seam.
 //!
-//! `ForeignHostApi` is the JSON/bytes-based interface a foreign host (Python now,
+//! `DriverApi` is the JSON/bytes-based interface a foreign host (Python now,
 //! Kotlin/C later) provides. Each per-binding crate implements it thinly:
 //! `jumpstarter-core-uniffi` backs it with a UniFFI `#[uniffi::export(with_foreign)]`
 //! `DriverHost`; `jumpstarter-core-capi` backs it with a C function-pointer vtable.
-//! The exporter routes a lease's driver tree through a `dyn ForeignHostApi`, so neither
+//! The exporter routes a lease's driver tree through a `dyn DriverApi`, so neither
 //! the exporter nor this facade knows or cares which language implements it.
 //!
 //! Note: the driver-call parameter is `method_name`, not `method` — a foreign-trait
@@ -21,7 +21,7 @@ use crate::error::DriverCallError;
 /// The driver-level surface a foreign host exposes. Args/results are plain JSON strings
 /// (Rust applies the proto-`Value` codec — see [`crate::codec`]).
 #[async_trait]
-pub trait ForeignHostApi: Send + Sync {
+pub trait DriverApi: Send + Sync {
     /// Introspect the whole driver tree as a flat node list (Rust assembles the proto
     /// report from this).
     async fn describe(&self) -> Result<Vec<DriverNode>, DriverCallError>;
@@ -40,16 +40,16 @@ pub trait ForeignHostApi: Send + Sync {
         uuid: String,
         method_name: String,
         args_json: String,
-    ) -> Result<Arc<dyn ForeignResultStream>, DriverCallError>;
+    ) -> Result<Arc<dyn DriverResultStream>, DriverCallError>;
 
     /// Open a bidirectional byte channel to an `@exportstream`/resource handle. The
     /// JSON request carries the target uuid + kind (`common/streams.py:14-33`).
-    async fn open_stream(&self, request_json: String) -> Result<ForeignStreamOpen, DriverCallError>;
+    async fn open_stream(&self, request_json: String) -> Result<DriverStreamOpen, DriverCallError>;
 }
 
 /// A pull-style stream of JSON results for `streaming_driver_call`.
 #[async_trait]
-pub trait ForeignResultStream: Send + Sync {
+pub trait DriverResultStream: Send + Sync {
     /// Next JSON result, or `None` at end of stream.
     async fn next(&self) -> Result<Option<String>, DriverCallError>;
 }
@@ -57,7 +57,7 @@ pub trait ForeignResultStream: Send + Sync {
 /// A bidirectional byte plane for one router `Stream`. Rust owns the wire framing
 /// (DATA/GOAWAY); this carries only raw payloads.
 #[async_trait]
-pub trait ForeignByteChannel: Send + Sync {
+pub trait DriverByteChannel: Send + Sync {
     /// Next inbound payload, or `None` at EOF (Rust emits GOAWAY).
     async fn read(&self) -> Result<Option<Vec<u8>>, DriverCallError>;
     /// Write one payload toward the driver (awaits the host's bounded pipe → backpressure).
@@ -68,10 +68,10 @@ pub trait ForeignByteChannel: Send + Sync {
     async fn close(&self) -> Result<(), DriverCallError>;
 }
 
-/// Result of [`ForeignHostApi::open_stream`]: the byte channel plus the resource
+/// Result of [`DriverApi::open_stream`]: the byte channel plus the resource
 /// initial-metadata to relay before any downlink frame (`["resource",
 /// "x_jmp_accept_encoding"]`; empty for driver streams).
-pub struct ForeignStreamOpen {
-    pub channel: Arc<dyn ForeignByteChannel>,
+pub struct DriverStreamOpen {
+    pub channel: Arc<dyn DriverByteChannel>,
     pub initial_metadata: Vec<(String, String)>,
 }

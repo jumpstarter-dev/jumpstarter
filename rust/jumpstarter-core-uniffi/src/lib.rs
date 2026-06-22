@@ -3,7 +3,7 @@
 //!
 //! Thin per-binding layer over [`jumpstarter_core`]: declares the foreign [`DriverHost`]
 //! trait Python implements and the exported [`run_exporter`] entry Python awaits, then
-//! adapts them to the binding-agnostic `jumpstarter_core::{ForeignHostApi, ...}` and the
+//! adapts them to the binding-agnostic `jumpstarter_core::{DriverApi, ...}` and the
 //! exporter's `HostFactory`. No business logic here — codec/report/framing live in
 //! `jumpstarter-core`.
 //!
@@ -22,8 +22,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use jumpstarter_core::{
-    DriverCallError, ForeignByteChannel, ForeignDriverHost, ForeignHostApi, ForeignResultStream,
-    ForeignStreamOpen,
+    DriverCallError, DriverByteChannel, ForeignDriver, DriverApi, DriverResultStream,
+    DriverStreamOpen,
 };
 use jumpstarter_exporter::backend::{DriverBackend, HostFactory, HostGuard};
 
@@ -258,23 +258,23 @@ impl HostFactory for UniffiHostFactory {
             .inner
             .new_host()
             .map_err(|e| jumpstarter_exporter::Error::Config(format!("new_host failed: {e}")))?;
-        let api: Arc<dyn ForeignHostApi> = Arc::new(UniffiHostApi {
+        let api: Arc<dyn DriverApi> = Arc::new(UniffiHostApi {
             inner: host.clone(),
         });
-        let backend: Arc<dyn DriverBackend> = Arc::new(ForeignDriverHost::new(api));
+        let backend: Arc<dyn DriverBackend> = Arc::new(ForeignDriver::new(api));
         // Hold the DriverHost Arc as the lease guard so the foreign tree's lifetime is
         // explicit (dropped at lease end alongside the backend).
         Ok((backend, Box::new(host)))
     }
 }
 
-/// Wraps a foreign `DriverHost` as `jumpstarter_core::ForeignHostApi`.
+/// Wraps a foreign `DriverHost` as `jumpstarter_core::DriverApi`.
 struct UniffiHostApi {
     inner: Arc<dyn DriverHost>,
 }
 
 #[async_trait]
-impl ForeignHostApi for UniffiHostApi {
+impl DriverApi for UniffiHostApi {
     async fn describe(&self) -> Result<Vec<jumpstarter_core::DriverNode>, DriverCallError> {
         let nodes = self.inner.describe().await.map_err(to_core_err)?;
         Ok(nodes.into_iter().map(to_core_node).collect())
@@ -297,7 +297,7 @@ impl ForeignHostApi for UniffiHostApi {
         uuid: String,
         method_name: String,
         args_json: String,
-    ) -> Result<Arc<dyn ForeignResultStream>, DriverCallError> {
+    ) -> Result<Arc<dyn DriverResultStream>, DriverCallError> {
         let handle = self
             .inner
             .streaming_open(uuid, method_name, args_json)
@@ -309,9 +309,9 @@ impl ForeignHostApi for UniffiHostApi {
         }))
     }
 
-    async fn open_stream(&self, request_json: String) -> Result<ForeignStreamOpen, DriverCallError> {
+    async fn open_stream(&self, request_json: String) -> Result<DriverStreamOpen, DriverCallError> {
         let opened = self.inner.open_stream(request_json).await.map_err(to_core_err)?;
-        let channel: Arc<dyn ForeignByteChannel> = Arc::new(HandleByteChannel {
+        let channel: Arc<dyn DriverByteChannel> = Arc::new(HandleByteChannel {
             host: self.inner.clone(),
             handle: opened.handle,
         });
@@ -320,21 +320,21 @@ impl ForeignHostApi for UniffiHostApi {
             .into_iter()
             .map(|e| (e.key, e.value))
             .collect();
-        Ok(ForeignStreamOpen {
+        Ok(DriverStreamOpen {
             channel,
             initial_metadata,
         })
     }
 }
 
-/// A `ForeignResultStream` backed by a `(host, handle)` pair — drives `streaming_next`.
+/// A `DriverResultStream` backed by a `(host, handle)` pair — drives `streaming_next`.
 struct HandleResultStream {
     host: Arc<dyn DriverHost>,
     handle: u64,
 }
 
 #[async_trait]
-impl ForeignResultStream for HandleResultStream {
+impl DriverResultStream for HandleResultStream {
     async fn next(&self) -> Result<Option<String>, DriverCallError> {
         let item = self.host.streaming_next(self.handle).await.map_err(to_core_err)?;
         if item.is_none() {
@@ -482,14 +482,14 @@ impl ClientResultStream {
     }
 }
 
-/// A `ForeignByteChannel` backed by a `(host, handle)` pair — drives `stream_*`.
+/// A `DriverByteChannel` backed by a `(host, handle)` pair — drives `stream_*`.
 struct HandleByteChannel {
     host: Arc<dyn DriverHost>,
     handle: u64,
 }
 
 #[async_trait]
-impl ForeignByteChannel for HandleByteChannel {
+impl DriverByteChannel for HandleByteChannel {
     async fn read(&self) -> Result<Option<Vec<u8>>, DriverCallError> {
         self.host.stream_read(self.handle).await.map_err(to_core_err)
     }

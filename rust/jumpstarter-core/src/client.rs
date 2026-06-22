@@ -4,7 +4,7 @@
 //! Python `AsyncDriverClient`'s gRPC calls so the Python driver clients (and `j`) can
 //! route through the Rust core (FFI) instead of grpcio + generated stubs. Rust owns the
 //! value codec and the wire protocol; args/results cross as plain JSON. This is the
-//! consumer mirror of [`crate::foreign::ForeignDriverHost`].
+//! consumer mirror of [`crate::foreign::ForeignDriver`].
 
 use std::sync::Arc;
 
