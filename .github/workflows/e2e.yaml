@@ -48,7 +48,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-24.04
+          - os: arc-runner-kubevirt-small
             arch: amd64
           - os: ubuntu-24.04-arm
             arch: arm64
@@ -91,7 +91,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-24.04
+          - os: arc-runner-kubevirt-small
             arch: amd64
           - os: ubuntu-24.04-arm
             arch: arm64
@@ -136,7 +136,7 @@ jobs:
   build-python-wheels:
     needs: changes
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    runs-on: ubuntu-24.04
+    runs-on: arc-runner-kubevirt-small
     timeout-minutes: 15
     steps:
       - name: Checkout repository
@@ -180,7 +180,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-24.04
+          - os: arc-runner-kubevirt-large
             arch: amd64
           - os: ubuntu-24.04-arm
             arch: arm64
@@ -245,7 +245,7 @@ jobs:
   e2e-compat-old-controller:
     needs: changes
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
+    runs-on: arc-runner-kubevirt-large
     timeout-minutes: 60
     steps:
       - name: Checkout repository
@@ -284,7 +284,7 @@ jobs:
   e2e-compat-old-client:
     needs: [changes, build-controller-image, build-operator-image, build-python-wheels]
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
+    runs-on: arc-runner-kubevirt-large
     timeout-minutes: 60
     steps:
       - name: Checkout repository
