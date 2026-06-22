@@ -182,10 +182,31 @@ impl JumpstarterAdmin {
         Ok(self.api(kind).list(&ListParams::default()).await?.items)
     }
 
+    /// Delete a Client/Exporter and its credential secret. The controller garbage-collects the
+    /// secret via an owner reference, but that is asynchronous; the Python admin deleted it
+    /// explicitly, so callers (and the e2e) see it gone immediately.
+    ///
+    /// Order matters: delete the **object first**, then the secret. The controller reconciles a
+    /// still-present object — for a connected exporter it would **recreate** the secret in the
+    /// window between deleting the secret and deleting the object. Deleting the object first stops
+    /// that reconciliation; the explicit secret delete then makes it gone synchronously
+    /// (best-effort — it may already be GC'd, or the object may carry no credential).
     pub async fn delete(&self, kind: Kind, name: &str) -> Result<(), AdminError> {
+        let secret = self.get(kind, name).await.ok().and_then(|obj| {
+            obj.data
+                .pointer("/status/credential/name")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        });
         self.api(kind)
             .delete(name, &DeleteParams::default())
             .await?;
+        if let Some(secret) = secret {
+            let _ = self
+                .secrets()
+                .delete(&secret, &DeleteParams::default())
+                .await;
+        }
         Ok(())
     }
 
