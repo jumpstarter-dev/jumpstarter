@@ -42,6 +42,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
 
@@ -163,22 +164,17 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile ConfigMaps before deployments so we can compute the config hash
-	// and use it as a pod template annotation to trigger rolling restarts when config changes
-	if err := r.reconcileConfigMaps(ctx, &jumpstarter); err != nil {
-		log.Error(err, "Failed to reconcile ConfigMaps")
-		return ctrl.Result{}, err
-	}
-
-	// Compute the configmap content hash for use as a pod template annotation.
-	// When the configmap content changes (e.g. OIDC auth config), the hash changes,
-	// which updates the pod template annotation and triggers a rolling restart of the
-	// controller deployment so it picks up the new configuration.
-	configMapHash, err := r.computeConfigMapHash(&jumpstarter)
+	// Build the desired controller ConfigMap once and compute its hash up front.
+	// The hash is embedded in the controller pod template annotation so that a config
+	// change (e.g. OIDC CA rotation) triggers a rolling restart without waiting for the
+	// next full reconcile cycle. Building here avoids calling buildConfig twice and
+	// guarantees the hash and the content that is later written are identical.
+	desiredConfigMap, err := r.createConfigMap(ctx, &jumpstarter)
 	if err != nil {
-		log.Error(err, "Failed to compute configmap hash")
+		log.Error(err, "Failed to build controller ConfigMap")
 		return ctrl.Result{}, err
 	}
+	configMapHash := configMapDataHash(desiredConfigMap)
 
 	// Reconcile Controller Deployment
 	if err := r.reconcileControllerDeployment(ctx, &jumpstarter, configMapHash); err != nil {
@@ -195,6 +191,12 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Reconcile Services
 	if err := r.reconcileServices(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Services")
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile ConfigMaps (after deployments and services, before secrets)
+	if err := r.reconcileConfigMaps(ctx, &jumpstarter, desiredConfigMap); err != nil {
+		log.Error(err, "Failed to reconcile ConfigMaps")
 		return ctrl.Result{}, err
 	}
 
@@ -483,13 +485,12 @@ func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstart
 	return nil
 }
 
-// reconcileConfigMaps reconciles all configmaps
-func (r *JumpstarterReconciler) reconcileConfigMaps(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
+// reconcileConfigMaps reconciles all configmaps.
+// desiredConfigMap is the pre-built desired state, already resolved (including any
+// JWT CA Secret/ConfigMap references). Callers must build it via createConfigMap before
+// calling this function so that the config hash and the written content are identical.
+func (r *JumpstarterReconciler) reconcileConfigMaps(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, desiredConfigMap *corev1.ConfigMap) error {
 	log := logf.FromContext(ctx)
-	desiredConfigMap, err := r.createConfigMap(jumpstarter)
-	if err != nil {
-		return fmt.Errorf("failed to create configmap: %w", err)
-	}
 
 	existingConfigMap := &corev1.ConfigMap{}
 	existingConfigMap.Name = desiredConfigMap.Name
@@ -637,17 +638,11 @@ func generateRandomKey(length int) (string, error) {
 
 // updateStatus is implemented in status.go
 
-// computeConfigMapHash computes a SHA-256 hash of the configmap data for use as a pod
-// template annotation. This ensures that when config changes (e.g. OIDC auth), the
-// controller pods are restarted to pick up the new configuration.
-func (r *JumpstarterReconciler) computeConfigMapHash(jumpstarter *operatorv1alpha1.Jumpstarter) (string, error) {
-	cm, err := r.createConfigMap(jumpstarter)
-	if err != nil {
-		return "", err
-	}
-
+// configMapDataHash computes a deterministic SHA-256 hash over the Data keys and values
+// of a ConfigMap. Used as a pod template annotation to trigger rolling restarts when
+// the controller config changes (e.g. OIDC CA rotation).
+func configMapDataHash(cm *corev1.ConfigMap) string {
 	h := sha256.New()
-	// Sort keys for deterministic hashing
 	keys := make([]string, 0, len(cm.Data))
 	for k := range cm.Data {
 		keys = append(keys, k)
@@ -657,7 +652,7 @@ func (r *JumpstarterReconciler) computeConfigMapHash(jumpstarter *operatorv1alph
 		h.Write([]byte(k))
 		h.Write([]byte(cm.Data[k]))
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // createControllerDeployment creates a deployment for the controller
@@ -1067,9 +1062,12 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 }
 
 // createConfigMap creates a configmap for jumpstarter configuration
-func (r *JumpstarterReconciler) createConfigMap(jumpstarter *operatorv1alpha1.Jumpstarter) (*corev1.ConfigMap, error) {
+func (r *JumpstarterReconciler) createConfigMap(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) (*corev1.ConfigMap, error) {
 	// Build config struct from spec
-	cfg := r.buildConfig(jumpstarter)
+	cfg, err := r.buildConfig(ctx, jumpstarter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build config: %w", err)
+	}
 
 	// Marshal to YAML
 	configYAML, err := yaml.Marshal(cfg)
@@ -1102,8 +1100,10 @@ func (r *JumpstarterReconciler) createConfigMap(jumpstarter *operatorv1alpha1.Ju
 	}, nil
 }
 
-// buildConfig builds the controller configuration struct from the CR spec
-func (r *JumpstarterReconciler) buildConfig(jumpstarter *operatorv1alpha1.Jumpstarter) config.Config {
+// buildConfig builds the controller configuration struct from the CR spec.
+// It resolves any CA certificate references from Kubernetes Secrets or ConfigMaps
+// and inlines the PEM content so the controller ConfigMap is self-contained.
+func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) (config.Config, error) {
 	cfg := config.Config{
 		Provisioning: config.Provisioning{
 			Enabled: jumpstarter.Spec.Authentication.AutoProvisioning.Enabled,
@@ -1116,9 +1116,14 @@ func (r *JumpstarterReconciler) buildConfig(jumpstarter *operatorv1alpha1.Jumpst
 		},
 	}
 
-	// Authentication configuration
+	// Authentication configuration — resolve any Secret/ConfigMap CA references.
+	resolvedJWT, err := r.resolveJWTAuthenticators(ctx, jumpstarter)
+	if err != nil {
+		return config.Config{}, err
+	}
+
 	auth := config.Authentication{
-		JWT: jumpstarter.Spec.Authentication.JWT,
+		JWT: resolvedJWT,
 	}
 
 	// Internal authentication
@@ -1182,7 +1187,67 @@ func (r *JumpstarterReconciler) buildConfig(jumpstarter *operatorv1alpha1.Jumpst
 		}
 	}
 
-	return cfg
+	return cfg, nil
+}
+
+// resolveJWTAuthenticators converts the CRD-level JWTAuthenticatorConfig list into
+// the standard apiserverv1beta1.JWTAuthenticator list consumed by the controller.
+// For each entry that carries a certificateAuthoritySecret or certificateAuthorityConfigMap
+// reference, the operator fetches the referenced resource and inlines the PEM content
+// into Issuer.CertificateAuthority, overriding any value already set on the field.
+func (r *JumpstarterReconciler) resolveJWTAuthenticators(
+	ctx context.Context,
+	jumpstarter *operatorv1alpha1.Jumpstarter,
+) ([]apiserverv1beta1.JWTAuthenticator, error) {
+	log := logf.FromContext(ctx)
+	result := make([]apiserverv1beta1.JWTAuthenticator, 0, len(jumpstarter.Spec.Authentication.JWT))
+
+	for i, jwtCfg := range jumpstarter.Spec.Authentication.JWT {
+		authn := jwtCfg.JWTAuthenticator // copy the embedded struct
+
+		// Secret reference takes precedence over ConfigMap reference.
+		switch {
+		case jwtCfg.CertificateAuthoritySecret != nil:
+			ref := jwtCfg.CertificateAuthoritySecret
+			key := ref.Key
+			if key == "" {
+				key = "tls.crt"
+			}
+			var secret corev1.Secret
+			if err := r.Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: jumpstarter.Namespace}, &secret); err != nil {
+				return nil, fmt.Errorf("jwt[%d]: failed to fetch certificateAuthoritySecret %s/%s: %w", i, jumpstarter.Namespace, ref.Name, err)
+			}
+			pemBytes, ok := secret.Data[key]
+			if !ok {
+				return nil, fmt.Errorf("jwt[%d]: key %q not found in Secret %s/%s", i, key, jumpstarter.Namespace, ref.Name)
+			}
+			authn.Issuer.CertificateAuthority = string(pemBytes)
+			log.V(1).Info("Resolved CA from Secret",
+				"jwt_index", i, "secret", jumpstarter.Namespace+"/"+ref.Name, "key", key)
+
+		case jwtCfg.CertificateAuthorityConfigMap != nil:
+			ref := jwtCfg.CertificateAuthorityConfigMap
+			key := ref.Key
+			if key == "" {
+				key = "ca.crt"
+			}
+			var cm corev1.ConfigMap
+			if err := r.Get(ctx, client.ObjectKey{Name: ref.Name, Namespace: jumpstarter.Namespace}, &cm); err != nil {
+				return nil, fmt.Errorf("jwt[%d]: failed to fetch certificateAuthorityConfigMap %s/%s: %w", i, jumpstarter.Namespace, ref.Name, err)
+			}
+			pemStr, ok := cm.Data[key]
+			if !ok {
+				return nil, fmt.Errorf("jwt[%d]: key %q not found in ConfigMap %s/%s", i, key, jumpstarter.Namespace, ref.Name)
+			}
+			authn.Issuer.CertificateAuthority = pemStr
+			log.V(1).Info("Resolved CA from ConfigMap",
+				"jwt_index", i, "configmap", jumpstarter.Namespace+"/"+ref.Name, "key", key)
+		}
+
+		result = append(result, authn)
+	}
+
+	return result, nil
 }
 
 // buildRouter builds the router configuration with entries for all replicas
@@ -1455,8 +1520,100 @@ func defaultRouterResources(spec corev1.ResourceRequirements) corev1.ResourceReq
 	return spec
 }
 
+// Index field names used to look up Jumpstarter CRs from referenced CA resources.
+const (
+	// indexCASecret is the field index that maps each Jumpstarter CR to the
+	// "namespace/name" keys of Secrets referenced as JWT CA certificates.
+	indexCASecret = ".spec.authentication.jwt.certificateAuthoritySecret"
+	// indexCAConfigMap is the field index that maps each Jumpstarter CR to the
+	// "namespace/name" keys of ConfigMaps referenced as JWT CA certificates.
+	indexCAConfigMap = ".spec.authentication.jwt.certificateAuthorityConfigMap"
+)
+
 // SetupWithManager sets up the controller with the Manager.
+// In addition to watching owned resources, it watches any Secrets and ConfigMaps
+// referenced as JWT CA certificates so that CA rotations are picked up automatically.
 func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Index Jumpstarter CRs by the Secrets they reference as CA certificates.
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&operatorv1alpha1.Jumpstarter{},
+		indexCASecret,
+		func(obj client.Object) []string {
+			jumpstarter := obj.(*operatorv1alpha1.Jumpstarter)
+			var keys []string
+			for _, jwtCfg := range jumpstarter.Spec.Authentication.JWT {
+				if ref := jwtCfg.CertificateAuthoritySecret; ref != nil {
+					keys = append(keys, jumpstarter.Namespace+"/"+ref.Name)
+				}
+			}
+			return keys
+		},
+	); err != nil {
+		return fmt.Errorf("failed to set up %s index: %w", indexCASecret, err)
+	}
+
+	// Index Jumpstarter CRs by the ConfigMaps they reference as CA certificates.
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&operatorv1alpha1.Jumpstarter{},
+		indexCAConfigMap,
+		func(obj client.Object) []string {
+			jumpstarter := obj.(*operatorv1alpha1.Jumpstarter)
+			var keys []string
+			for _, jwtCfg := range jumpstarter.Spec.Authentication.JWT {
+				if ref := jwtCfg.CertificateAuthorityConfigMap; ref != nil {
+					keys = append(keys, jumpstarter.Namespace+"/"+ref.Name)
+				}
+			}
+			return keys
+		},
+	); err != nil {
+		return fmt.Errorf("failed to set up %s index: %w", indexCAConfigMap, err)
+	}
+
+	// mapSecretToJumpstarters returns a reconcile request for every Jumpstarter
+	// CR that references the changed Secret as a JWT CA certificate.
+	mapSecretToJumpstarters := func(ctx context.Context, obj client.Object) []ctrl.Request {
+		secret := obj.(*corev1.Secret)
+		key := secret.Namespace + "/" + secret.Name
+
+		var jumpstarterList operatorv1alpha1.JumpstarterList
+		if err := mgr.GetClient().List(ctx, &jumpstarterList, client.MatchingFields{
+			indexCASecret: key,
+		}); err != nil {
+			logf.FromContext(ctx).Error(err, "Failed to list Jumpstarters for Secret CA ref", "secret", key)
+			return nil
+		}
+
+		requests := make([]ctrl.Request, len(jumpstarterList.Items))
+		for i, js := range jumpstarterList.Items {
+			requests[i] = ctrl.Request{NamespacedName: client.ObjectKeyFromObject(&js)}
+		}
+		return requests
+	}
+
+	// mapConfigMapToJumpstarters returns a reconcile request for every Jumpstarter
+	// CR that references the changed ConfigMap as a JWT CA certificate.
+	mapConfigMapToJumpstarters := func(ctx context.Context, obj client.Object) []ctrl.Request {
+		cm := obj.(*corev1.ConfigMap)
+		key := cm.Namespace + "/" + cm.Name
+
+		var jumpstarterList operatorv1alpha1.JumpstarterList
+		if err := mgr.GetClient().List(ctx, &jumpstarterList, client.MatchingFields{
+			indexCAConfigMap: key,
+		}); err != nil {
+			logf.FromContext(ctx).Error(err, "Failed to list Jumpstarters for ConfigMap CA ref", "configmap", key)
+			return nil
+		}
+
+		requests := make([]ctrl.Request, len(jumpstarterList.Items))
+		for i, js := range jumpstarterList.Items {
+			requests[i] = ctrl.Request{NamespacedName: client.ObjectKeyFromObject(&js)}
+		}
+		return requests
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&operatorv1alpha1.Jumpstarter{}).
 		Named("jumpstarter").
@@ -1465,6 +1622,10 @@ func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.ConfigMap{}).
 		Owns(&rbacv1.Role{}).
 		Owns(&rbacv1.RoleBinding{}).
-		// Note: Secrets and ServiceAccounts are intentionally NOT owned to prevent deletion
+		// Note: Secrets and ServiceAccounts are intentionally NOT owned to prevent deletion.
+		// However, we do watch Secrets and ConfigMaps referenced as JWT CA certificates so
+		// that CA rotations are picked up automatically and the ConfigMap is updated.
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(mapSecretToJumpstarters)).
+		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(mapConfigMapToJumpstarters)).
 		Complete(r)
 }

@@ -41,6 +41,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/yaml"
+	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
@@ -1923,6 +1924,167 @@ spec:
 		AfterAll(func() {
 			DeleteTestNamespace(externalIssuerTestNamespace)
 			_ = deleteSelfSignedClusterIssuer(clusterIssuerName)
+		})
+	})
+
+	Context("JWT CA Secret/ConfigMap reference", Ordered, func() {
+		var jwtCATestNamespace string
+
+		const fakePEM = `-----BEGIN CERTIFICATE-----
+MIIBpDCCAQmgAwIBAgIUFakeCAForE2ETest1234567890FakeCAForE2ETest12wCg
+YIKoZIzj0EAwIwETEPMA0GA1UEAxMGdGVzdENBMB4XDTI1MDEwMTAwMDAwMFoXDTI2
+MDEwMTAwMDAwMFowETEPMA0GA1UEAxMGdGVzdENBMHYwEAYHKoZIzj0CAQYFK4EE
+ACIDYgAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAo0IwQDAdBgNVHQ4EFgQU
+FakeCAForE2ETest12340DgYDVR0PAQH/BAQDAgGGMA8GA1UdEwEB/wQFMAMBAf8w
+CgYIKoZIzj0EAwIDaAAwZQIwFakeSignatureFakeSignatureFakeSignatureFake
+SignatureFakeSignatureFakeSignatureFakeSignatureFakeSignatureFakeSig==
+-----END CERTIFICATE-----
+`
+
+		const rotatedPEM = `-----BEGIN CERTIFICATE-----
+MIIBpDCCAQmgAwIBAgIURotatedCAForE2ETest1234567890RotatedCAForE2wCg
+YIKoZIzj0EAwIwGDEWMBQGA1UEAxMNcm90YXRlZC10ZXN0Q0EwHhcNMjUwMTAxMDAw
+MDAwWhcNMjYwMTAxMDAwMDAwWjAYMRYwFAYDVQQDEw1yb3RhdGVkLXRlc3RDQTB2MB
+AGByqGSM49AgEGBSuBBAAiA2IABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAo0Iw
+QDAdBgNVHQ4EFgQURotatedCAForE2ETest1234560DgYDVR0PAQH/BAQDAgGGMA8G
+A1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDaAAwZQIwRotatedSignatureRotate
+dSignatureRotatedSignatureRotatedSignatureRotatedSignatureRotatedSig==
+-----END CERTIFICATE-----
+`
+
+		strPtr := func(s string) *string { return &s }
+
+		BeforeAll(func() {
+			jwtCATestNamespace = CreateTestNamespace()
+		})
+
+		AfterAll(func() {
+			DeleteTestNamespace(jwtCATestNamespace)
+		})
+
+		It("should inline CA PEM from a Secret reference into the controller ConfigMap", func() {
+			image := os.Getenv("IMG")
+			if image == "" {
+				image = defaultControllerImage
+			}
+
+			By("creating a CA Secret in the test namespace")
+			caSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "jwt-ca-secret",
+					Namespace: jwtCATestNamespace,
+				},
+				Data: map[string][]byte{
+					"tls.crt": []byte(fakePEM),
+				},
+			}
+			Expect(k8sClient.Create(ctx, caSecret)).To(Succeed())
+
+			By("creating a Jumpstarter CR with certificateAuthoritySecret")
+			js := &operatorv1alpha1.Jumpstarter{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "jwt-ca-test",
+					Namespace: jwtCATestNamespace,
+				},
+				Spec: operatorv1alpha1.JumpstarterSpec{
+					BaseDomain: "apps-crc.testing",
+					Controller: operatorv1alpha1.ControllerConfig{
+						Image:           image,
+						ImagePullPolicy: corev1.PullIfNotPresent,
+						Replicas:        1,
+						GRPC: operatorv1alpha1.GRPCConfig{
+							Endpoints: []operatorv1alpha1.Endpoint{
+								{Address: fmt.Sprintf("grpc.%s:8082", jwtCATestNamespace)},
+							},
+						},
+					},
+					Routers: operatorv1alpha1.RoutersConfig{
+						Image:           image,
+						ImagePullPolicy: corev1.PullIfNotPresent,
+						Replicas:        1,
+						GRPC: operatorv1alpha1.GRPCConfig{
+							Endpoints: []operatorv1alpha1.Endpoint{
+								{Address: fmt.Sprintf("router.%s:8083", jwtCATestNamespace)},
+							},
+						},
+					},
+					Authentication: operatorv1alpha1.AuthenticationConfig{
+						Internal: operatorv1alpha1.InternalAuthConfig{Enabled: true},
+						JWT: []operatorv1alpha1.JWTAuthenticatorConfig{
+							{
+								JWTAuthenticator: apiserverv1beta1.JWTAuthenticator{
+									Issuer: apiserverv1beta1.Issuer{
+										URL:       "https://issuer.example.com",
+										Audiences: []string{"jumpstarter-cli"},
+									},
+									ClaimMappings: apiserverv1beta1.ClaimMappings{
+										Username: apiserverv1beta1.PrefixedClaimOrExpression{
+											Claim:  "preferred_username",
+											Prefix: strPtr("oidc:"),
+										},
+									},
+								},
+								CertificateAuthoritySecret: &operatorv1alpha1.SecretKeySelector{
+									Name: "jwt-ca-secret",
+									Key:  "tls.crt",
+								},
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, js)).To(Succeed())
+
+			By("waiting for the controller ConfigMap to contain the inlined CA PEM")
+			Eventually(func(g Gomega) {
+				cm := &corev1.ConfigMap{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter-controller",
+					Namespace: jwtCATestNamespace,
+				}, cm)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(cm.Data).To(HaveKey("config"))
+				g.Expect(cm.Data["config"]).To(ContainSubstring("FakeCAForE2ETest"))
+			}, 2*time.Minute).Should(Succeed())
+		})
+
+		It("should update the controller ConfigMap when the CA Secret is rotated", func() {
+			By("reading the current ConfigMap content")
+			cm := &corev1.ConfigMap{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "jumpstarter-controller",
+				Namespace: jwtCATestNamespace,
+			}, cm)).To(Succeed())
+			originalConfig := cm.Data["config"]
+
+			By("rotating the CA Secret")
+			secret := &corev1.Secret{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "jwt-ca-secret",
+				Namespace: jwtCATestNamespace,
+			}, secret)).To(Succeed())
+			secret.Data["tls.crt"] = []byte(rotatedPEM)
+			Expect(k8sClient.Update(ctx, secret)).To(Succeed())
+
+			By("waiting for the controller ConfigMap to contain the rotated CA PEM")
+			Eventually(func(g Gomega) {
+				updatedCM := &corev1.ConfigMap{}
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter-controller",
+					Namespace: jwtCATestNamespace,
+				}, updatedCM)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(updatedCM.Data["config"]).NotTo(Equal(originalConfig),
+					"ConfigMap should have been updated after CA rotation")
+				// Use a unique marker from inside the rotated PEM (single line) rather than
+				// the full multi-line block — YAML block scalars indent every line so a
+				// full-block ContainSubstring won't match.
+				g.Expect(updatedCM.Data["config"]).NotTo(ContainSubstring("FakeCAForE2ETest"),
+					"Old CA content should be gone after rotation")
+				g.Expect(updatedCM.Data["config"]).To(ContainSubstring("RotatedCAForE2ETest"))
+			}, 2*time.Minute).Should(Succeed())
 		})
 	})
 })

@@ -15,6 +15,10 @@ ANDed = "ANDed"
 Ded = "Ded"  # suffix of ANDed in generated CRD docs
 ORed = "ORed"
 
+# UE and Fo appear as substrings inside base64-encoded certificate data in tests
+UE = "UE"
+Fo = "Fo"
+
 # mosquitto is the name of an MQTT broker, not a typo of "mosquito"
 mosquitto = "mosquitto"
 
