@@ -42,6 +42,13 @@ use crate::Error;
 /// (`exporter.py:853-855`).
 const INTER_LEASE_SETTLE: Duration = Duration::from_millis(200);
 
+/// How long to keep `LEASE_READY` observable when the controller ended the lease *during*
+/// beforeLease (a lease whose duration expired while a slow beforeLease ran). The hook
+/// finishes and reports `LEASE_READY` only after the lease is already dead; without this grace
+/// the exporter would race straight to `AVAILABLE`, which a client still polling `GetStatus`
+/// reads as a lost connection. Must exceed the client's `GetStatus` poll interval (150 ms).
+const LEASE_READY_GRACE: Duration = Duration::from_millis(500);
+
 /// Options for [`run`].
 pub struct RunOptions {
     pub config: ExporterConfig,
@@ -378,7 +385,27 @@ fn spawn_lease(
         if before_hook.is_some() {
             advance(&mut lc, LeasePhase::BeforeLease);
         }
-        let reason = match hooks::run_before_lease(&mut reporter, before_hook, &ctx).await {
+        // Run beforeLease while watching for the controller ending the lease *during* the hook
+        // (its duration expiring under a slow beforeLease). We do not cancel the hook — before/
+        // afterLease still run — but we note it so that, once the hook finishes and reports
+        // LEASE_READY, we hold that status briefly for any client still polling for it.
+        let end_fut = end.notified();
+        tokio::pin!(end_fut);
+        let mut ended_during_before = false;
+        // Scope `before_fut` so its `&mut reporter` borrow is released before the afterLease
+        // section reuses `reporter`.
+        let before_outcome = {
+            let before_fut = hooks::run_before_lease(&mut reporter, before_hook, &ctx);
+            tokio::pin!(before_fut);
+            loop {
+                tokio::select! {
+                    biased;
+                    outcome = &mut before_fut => break outcome,
+                    _ = &mut end_fut, if !ended_during_before => ended_during_before = true,
+                }
+            }
+        };
+        let reason = match before_outcome {
             BeforeOutcome::Exit => {
                 // beforeLease already reported BEFORE_LEASE_HOOK_FAILED + OFFLINE.
                 listen.abort();
@@ -388,14 +415,25 @@ fn spawn_lease(
             }
             BeforeOutcome::Ready => {
                 advance(&mut lc, LeasePhase::Ready);
-                // Serve until the controller ends the lease OR the client ends it early.
-                let reason = tokio::select! {
-                    _ = end.notified() => EndReason::Controller,
-                    _ = end_session.notified() => EndReason::EndSession,
-                };
-                listen.abort();
-                advance(&mut lc, LeasePhase::Ending);
-                reason
+                if ended_during_before {
+                    // The lease already timed out during the slow beforeLease; the LEASE_READY
+                    // we just reported is for an already-dead lease. Hold it briefly so a client
+                    // still polling GetStatus observes LEASE_READY instead of racing to AVAILABLE
+                    // (which it reads as "Connection to exporter lost"), then end the lease.
+                    sleep(LEASE_READY_GRACE).await;
+                    listen.abort();
+                    advance(&mut lc, LeasePhase::Ending);
+                    EndReason::Controller
+                } else {
+                    // Serve until the controller ends the lease OR the client ends it early.
+                    let reason = tokio::select! {
+                        _ = &mut end_fut => EndReason::Controller,
+                        _ = end_session.notified() => EndReason::EndSession,
+                    };
+                    listen.abort();
+                    advance(&mut lc, LeasePhase::Ending);
+                    reason
+                }
             }
             BeforeOutcome::EndLease => {
                 listen.abort();
