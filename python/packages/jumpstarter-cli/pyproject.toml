@@ -27,10 +27,9 @@ dev = [
   "pytest-cov>=5.0.0",
 ]
 
-[project.scripts]
-# `jmp` is now the native Rust binary (jumpstarter-cli-bin). `j` stays a Python entrypoint —
-# it loads Python driver-client classes against JUMPSTARTER_HOST.
-j = "jumpstarter_cli.j:j"
+# No console scripts: both `jmp` and `j` are native binaries (jumpstarter-cli-bin). This package
+# is the pure-Python `jumpstarter_cli` lib — native `j` delegates Python-client drivers to it via
+# `python -m jumpstarter_cli.j`.
 
 [tool.hatch.build.targets.wheel]
 packages = ["jumpstarter_cli"]
