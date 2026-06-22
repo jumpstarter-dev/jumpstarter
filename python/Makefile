@@ -80,13 +80,40 @@ docs-test: docs-generate-crds docs-generate-grpc
 docs-linkcheck: docs-generate-crds docs-generate-grpc
 	uv run --isolated --all-packages --group docs $(MAKE) -C docs linkcheck
 
+ifdef LOGS_DIR
+pkg-test-%: packages/%
+	@mkdir -p $(LOGS_DIR)
+	@rm -f $(LOGS_DIR)/$*.failed
+	@bash -c 'set -o pipefail; \
+	PYTHONUNBUFFERED=1 uv run --isolated --directory $< pytest 2>&1 | tee $(LOGS_DIR)/$*.log; \
+	rc=$$?; \
+	if [ $$rc -ne 0 ] && [ $$rc -ne 5 ]; then \
+		touch $(LOGS_DIR)/$*.failed; \
+	fi; \
+	true'
+else
 pkg-test-%: packages/%
 	uv run --isolated --directory $< pytest || [ $$? -eq 5 ]
+endif
 
 pkg-ty-%: packages/%
 	uv run --isolated --directory $< ty check .
 
 pkg-test-all: $(addprefix pkg-test-,$(PKG_TARGETS))
+
+ifdef LOGS_DIR
+test-report:
+	@failed=0; \
+	for f in $(LOGS_DIR)/*.failed; do \
+		[ -f "$$f" ] || continue; \
+		pkg=$$(basename "$$f" .failed); \
+		echo ""; \
+		echo "========== FAILED: $$pkg =========="; \
+		cat "$(LOGS_DIR)/$$pkg.log"; \
+		failed=1; \
+	done; \
+	[ $$failed -eq 0 ] && echo "All package tests passed." || exit 1
+endif
 
 pkg-ty-all: $(addprefix pkg-ty-,$(PKG_TARGETS))
 
@@ -126,7 +153,11 @@ clean-docs:
 
 clean: clean-docs clean-venv clean-build clean-test
 
+ifdef LOGS_DIR
+test: pkg-test-all docs-test docs-test-grpc test-report
+else
 test: pkg-test-all docs-test docs-test-grpc
+endif
 
 ty: pkg-ty-all
 
@@ -138,7 +169,7 @@ lint-fix:
 
 .PHONY: default help docs docs-all docs-serve docs-serve-all docs-clean docs-test \
 	docs-check-grpc docs-test-grpc docs-linkcheck docs-generate-grpc pkg-test-all pkg-ty-all build generate sync \
-	clean clean-venv clean-build clean-test clean-all test test-all ty-all docs \
+	clean clean-venv clean-build clean-test clean-all test test-report test-all ty-all docs \
 	lint lint-fix \
 	pkg-ty-jumpstarter \
 	pkg-ty-jumpstarter-cli-admin \

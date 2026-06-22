@@ -77,7 +77,7 @@ jobs:
           sudo chmod 0666 /dev/kvm /dev/vhost-vsock /dev/vhost-net
 
           sudo apt-get update
-          sudo apt-get install -y qemu-system-arm qemu-system-x86
+          sudo apt-get install -y qemu-system-arm qemu-system-x86 rpm2cpio cpio
 
       - name: Install libgpiod-dev (Linux)
         if: runner.os == 'Linux'
@@ -138,9 +138,18 @@ jobs:
       - name: Run pytest
         working-directory: python
         env:
-          PYTEST_ADDOPTS: "--cov-report=xml"
+          PYTEST_ADDOPTS: "--cov-report=xml --log-level=CRITICAL --log-cli-level=CRITICAL"
         run: |
-          make test
+          make test -j4 LOGS_DIR=${{ runner.temp }}/test-logs
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: test-logs-${{ matrix.runs-on }}-py${{ matrix.python-version }}
+          path: ${{ runner.temp }}/test-logs/
+          if-no-files-found: ignore
+          retention-days: 7
 
       # Diff-coverage is only checked on Linux. Several packages (e.g.
       # jumpstarter-driver-dut-network) are Linux-only, so their tests are
@@ -156,7 +165,7 @@ jobs:
             echo "::error::No coverage.xml files found"
             exit 1
           fi
-          uv run diff-cover $coverage_files --compare-branch=origin/${{ github.base_ref }} --fail-under=80 --exclude '*_pb2.py' '*_pb2_grpc.py' '**/conftest.py'
+          uv run diff-cover $coverage_files --compare-branch=origin/${{ github.base_ref }} --fail-under=80 --exclude '*_pb2.py' '*_pb2_grpc.py' '**/conftest.py' '**/test_*.py' '**/*_test.py'
 
   # https://github.com/orgs/community/discussions/26822
   pytest:
