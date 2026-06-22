@@ -35,3 +35,6 @@ serde_json.workspace = true
 serde_yaml_ng.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# The native CLI installs a process-default rustls CryptoProvider at startup; the FFI extension
+# (loaded into Python) must do the same before its first TLS handshake (controller/exporter).
+rustls = { version = "0.23", default-features = false, features = ["ring"] }

@@ -20,6 +20,19 @@ uniffi::setup_scaffolding!();
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Install the process-default rustls `CryptoProvider` (ring) once. The native `jmp` binary does
+/// this at startup (`jumpstarter_cli::init_tracing`); the FFI extension is loaded into a host
+/// process (Python) that doesn't, so every FFI entry point that opens a TLS connection
+/// (controller/exporter/client) must ensure it first — otherwise rustls panics with
+/// "Could not automatically determine the process-level CryptoProvider".
+fn ensure_crypto_provider() {
+    use std::sync::Once;
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
+
 use async_trait::async_trait;
 use jumpstarter_core::{
     DriverCallError, DriverByteChannel, ForeignDriver, DriverApi, DriverResultStream,
@@ -157,6 +170,7 @@ pub async fn run_exporter(
     config_path: String,
     factory: Arc<dyn DriverHostFactory>,
 ) -> Result<ExporterExit, ExporterError> {
+    ensure_crypto_provider();
     use jumpstarter_config::{ExporterConfig, YamlConfig};
 
     let config = ExporterConfig::load(&config_path)
@@ -194,6 +208,7 @@ pub async fn run_exporter_standalone(
     passphrase: Option<String>,
     factory: Arc<dyn DriverHostFactory>,
 ) -> Result<(), ExporterError> {
+    ensure_crypto_provider();
     init_exporter_tracing();
     let addr: std::net::SocketAddr = bind
         .parse()
@@ -261,6 +276,7 @@ pub async fn serve_driver_host(
 /// process lifetime; returns why it ended (restart vs terminate), like [`run_exporter`].
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn run_exporter_polyglot(config_path: String) -> Result<ExporterExit, ExporterError> {
+    ensure_crypto_provider();
     use jumpstarter_config::{ExporterConfig, YamlConfig};
 
     init_exporter_tracing();
@@ -442,6 +458,7 @@ impl ClientSession {
     /// Connect to the lease holder's transport socket.
     #[uniffi::constructor]
     pub async fn connect(host: String) -> Result<Arc<Self>, DriverError> {
+        ensure_crypto_provider();
         let inner = jumpstarter_core::ClientSession::connect(host)
             .await
             .map_err(from_core_err)?;
@@ -636,6 +653,7 @@ impl ControllerSession {
         namespace: String,
         name: String,
     ) -> Result<Arc<Self>, ControllerError> {
+        ensure_crypto_provider();
         let inner = jumpstarter_core::ControllerSession::connect(
             endpoint, token, ca, tls_insecure, namespace, name,
         )
@@ -747,6 +765,7 @@ impl LeasedExporter {
         existing_name: Option<String>,
         duration_secs: u64,
     ) -> Result<Arc<Self>, ControllerError> {
+        ensure_crypto_provider();
         use jumpstarter_config::{ClientConfig, YamlConfig};
         let cfg = ClientConfig::load(&config_path).map_err(|e| ControllerError::Config(e.to_string()))?;
         let session = jumpstarter_core::ControllerSession::connect(
