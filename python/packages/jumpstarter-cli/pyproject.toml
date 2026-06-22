@@ -13,6 +13,9 @@ requires-python = ">=3.11"
 dependencies = [
   "jumpstarter-cli-admin",
   "jumpstarter-cli-driver",
+  # The native `jmp` binary (maturin bin wheel). maturin can't host a binary *and* a Python
+  # console script in one package, so `jmp` ships from -bin and `j` (Python) stays here.
+  "jumpstarter-cli-bin",
   "pytimeparse2>=1.7.1",
 ]
 
@@ -25,7 +28,8 @@ dev = [
 ]
 
 [project.scripts]
-jmp = "jumpstarter_cli.jmp:jmp"
+# `jmp` is now the native Rust binary (jumpstarter-cli-bin). `j` stays a Python entrypoint —
+# it loads Python driver-client classes against JUMPSTARTER_HOST.
 j = "jumpstarter_cli.j:j"
 
 [tool.hatch.build.targets.wheel]

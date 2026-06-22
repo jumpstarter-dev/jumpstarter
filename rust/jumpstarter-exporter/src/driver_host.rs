@@ -30,9 +30,28 @@ const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
 
 type StdoutLines = tokio::io::Lines<BufReader<ChildStdout>>;
 
-/// The Python interpreter to invoke for the driver host and `.py` hooks.
+/// The Python interpreter to invoke for the per-driver Python host and `.py` hooks.
+///
+/// `JMP_DRIVER_HOST_PYTHON` wins (the Python `jmp run` sets it to `sys.executable`). Otherwise,
+/// the native `jmp` binary is installed alongside its venv's python (`venv/bin/jmp` +
+/// `venv/bin/python3`), so prefer that sibling — a wheel-installed native `jmp` then spawns
+/// per-driver Python hosts in its own environment without the venv being activated. Falls back
+/// to `python3` on `PATH`.
 pub(crate) fn python_interpreter() -> String {
-    std::env::var(PYTHON_ENV).unwrap_or_else(|_| "python3".to_string())
+    if let Ok(p) = std::env::var(PYTHON_ENV) {
+        return p;
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            for name in ["python3", "python"] {
+                let candidate = dir.join(name);
+                if candidate.is_file() {
+                    return candidate.to_string_lossy().into_owned();
+                }
+            }
+        }
+    }
+    "python3".to_string()
 }
 
 /// A running slim driver host (`slim_driver_host.py`): the whole driver tree on a

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "jumpstarter-cli-bin"
+version = "0.0.0"
+description = "Jumpstarter native `jmp` CLI binary (Rust)"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+
+[project.urls]
+Homepage = "https://jumpstarter.dev"
+Repository = "https://github.com/jumpstarter-dev/jumpstarter"
+
+[tool.maturin]
+# Build the native `jmp` binary from the Rust CLI crate and drop it into the wheel's
+# scripts dir (`*.data/scripts/jmp`), so `pip install jumpstarter-cli-bin` provides `jmp`
+# as a standalone Rust binary — no Python needed to launch it. `bindings = "bin"` makes
+# the wheel `py3-none-<platform>` (platform-specific, but a plain script payload).
+manifest-path = "../../../rust/jumpstarter-cli/Cargo.toml"
+bindings = "bin"

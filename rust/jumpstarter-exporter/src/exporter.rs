@@ -31,7 +31,7 @@ use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio_stream::StreamExt as _;
 
-use crate::backend::{DriverBackend, HostFactory, HostGuard, SlimHostFactory};
+use crate::backend::{DriverBackend, HostFactory, HostGuard};
 use crate::control::{Controller, StatusReporter, StatusSnapshot};
 use crate::fsm::{LeaseLifecycle, LeasePhase};
 use crate::hooks::{self, AfterOutcome, BeforeOutcome, HookContext};
@@ -78,9 +78,10 @@ pub enum ExporterExit {
 }
 
 /// Run the exporter until a shutdown signal (SIGINT/SIGTERM) or an `on_failure: exit`
-/// hook.
+/// hook. Drivers are hosted via the polyglot hub: one subprocess per top-level `export:`
+/// entry, in the entry's `runtime` (Python or native Rust).
 pub async fn run(opts: RunOptions) -> Result<(), Error> {
-    let factory = Arc::new(SlimHostFactory::new(opts.config_path));
+    let factory = Arc::new(crate::polyglot::PolyglotHostFactory::new(opts.config_path));
     run_with_factory(opts.config, factory).await.map(|_| ())
 }
 
