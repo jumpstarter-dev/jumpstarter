@@ -1,5 +1,5 @@
-//! `jmp admin {create,delete,get,rotate}` — Kubernetes management of Jumpstarter
-//! Client/Exporter/Lease resources (`jumpstarter-cli-admin`). Backed by
+//! `jmp admin {create,delete,get,import,rotate,version}` — Kubernetes management of
+//! Jumpstarter Client/Exporter/Lease resources (`jumpstarter-cli-admin`). Backed by
 //! `jumpstarter-admin` (kube-rs). The `cluster` subcommands are not ported.
 
 use std::collections::BTreeMap;
@@ -33,6 +33,8 @@ enum Command {
     Import(Import),
     /// Rotate credentials.
     Rotate(Rotate),
+    /// Get the current Jumpstarter version.
+    Version(super::version::Args),
 }
 
 pub async fn run(args: Args) -> u8 {
@@ -42,6 +44,8 @@ pub async fn run(args: Args) -> u8 {
         Command::Get(a) => a.run().await,
         Command::Import(a) => a.run().await,
         Command::Rotate(a) => a.run().await,
+        // `version` mirrors the top-level `jmp version` (the Python `jmp-admin version`).
+        Command::Version(a) => return super::version::run(a),
     };
     match result {
         Ok(()) => 0,
