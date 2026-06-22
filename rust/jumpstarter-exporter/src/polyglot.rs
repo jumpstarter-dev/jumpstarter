@@ -189,7 +189,10 @@ async fn spawn_entry_host(
 
 /// Dial a driver host's UDS, retrying until it answers `GetReport` (the host binds its socket
 /// asynchronously after spawn), or `timeout` elapses.
-async fn dial_with_retry(uds: &PathBuf, timeout: Duration) -> Result<Arc<dyn DriverBackend>, Error> {
+async fn dial_with_retry(
+    uds: &std::path::Path,
+    timeout: Duration,
+) -> Result<Arc<dyn DriverBackend>, Error> {
     let uds = uds.to_string_lossy().into_owned();
     let deadline = Instant::now() + timeout;
     loop {
