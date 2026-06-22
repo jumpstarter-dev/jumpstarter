@@ -73,7 +73,7 @@ class TestTcpdumpConfig:
                  patch(f"{_DRIVER_MODULE}.dnsmasq") as mock_dnsmasq:
                 mock_sys.platform = "linux"
 
-                def which_side_effect(cmd):
+                def which_side_effect(cmd, **kwargs):
                     if cmd == "tcpdump":
                         return None
                     return "/usr/bin/fake"
@@ -108,7 +108,7 @@ class TestTcpdumpConfig:
              patch(f"{_DRIVER_MODULE}.dnsmasq") as mock_dnsmasq:
             mock_sys.platform = "linux"
 
-            def which_side_effect(cmd):
+            def which_side_effect(cmd, **kwargs):
                 if cmd == "tcpdump":
                     return None
                 return "/usr/bin/fake"

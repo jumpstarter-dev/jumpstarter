@@ -1,6 +1,7 @@
 import asyncio
 import asyncio.subprocess
 import ipaddress
+import os
 import shutil
 import socket
 import subprocess
@@ -173,16 +174,18 @@ class DutNetwork(Driver):
         if sys.platform != "linux":
             raise RuntimeError("DutNetwork driver requires Linux (network namespaces, nftables)")
 
+        search_path = os.environ.get("PATH", "") + os.pathsep + "/usr/sbin" + os.pathsep + "/sbin"
+
         missing = []
-        if not shutil.which("ip"):
+        if not shutil.which("ip", path=search_path):
             missing.append("ip (iproute2)")
-        if not shutil.which("nft") and not self._nat_disabled():
+        if not shutil.which("nft", path=search_path) and not self._nat_disabled():
             missing.append("nft (nftables)")
-        if not shutil.which("dnsmasq") and self.dhcp_enabled:
+        if not shutil.which("dnsmasq", path=search_path) and self.dhcp_enabled:
             missing.append("dnsmasq")
-        if not shutil.which("sysctl") and not self._nat_disabled():
+        if not shutil.which("sysctl", path=search_path) and not self._nat_disabled():
             missing.append("sysctl")
-        if not shutil.which("tcpdump") and self.enable_tcpdump:
+        if not shutil.which("tcpdump", path=search_path) and self.enable_tcpdump:
             missing.append("tcpdump")
 
         if missing:

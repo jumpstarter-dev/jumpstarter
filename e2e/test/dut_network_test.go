@@ -121,11 +121,12 @@ var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, func() 
 		setupNetworkNamespaces()
 
 		configPath := filepath.Join(exporterDir, "exporter-dut-network.yaml")
-		tracker.StartDirectExporter(configPath, listenerPort, "", false)
+		tracker.StartDirectExporter(configPath, listenerPort, "", true)
 		WaitForDirectExporterReady(listenerPort, "")
 	})
 
 	AfterAll(func() {
+		tracker.DumpLogs(50)
 		tracker.StopAll()
 		teardownNetworkNamespaces()
 

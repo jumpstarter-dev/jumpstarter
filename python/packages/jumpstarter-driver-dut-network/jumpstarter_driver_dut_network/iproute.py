@@ -1,12 +1,20 @@
 """Interface management via iproute2 commands with NetworkManager awareness."""
 
 import logging
+import os
 import shutil
 import subprocess
 
 from ._privilege import sudo_cmd
 
 logger = logging.getLogger(__name__)
+
+_SBIN_PATH = os.environ.get("PATH", "") + os.pathsep + "/usr/sbin" + os.pathsep + "/sbin"
+
+
+def _resolve_tool(name: str) -> str:
+    """Resolve a tool name to its full path, searching /usr/sbin and /sbin."""
+    return shutil.which(name, path=_SBIN_PATH) or name
 
 
 def _run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
@@ -81,7 +89,7 @@ def remove_ip_alias(interface: str, ip: str, prefix_len: int) -> None:
 
 def get_interface_forwarding(iface: str) -> str:
     """Return the current per-interface forwarding value ("0" or "1")."""
-    result = _run(["sysctl", "-n", f"net.ipv4.conf.{iface}.forwarding"], check=False)
+    result = _run([_resolve_tool("sysctl"), "-n", f"net.ipv4.conf.{iface}.forwarding"], check=False)
     return result.stdout.strip() or "0"
 
 
@@ -94,7 +102,7 @@ def set_interface_forwarding(iface: str, enabled: bool) -> None:
     """
     value = "1" if enabled else "0"
     logger.info("Setting net.ipv4.conf.%s.forwarding=%s", iface, value)
-    _run_priv(["sysctl", "-w", f"net.ipv4.conf.{iface}.forwarding={value}"])
+    _run_priv([_resolve_tool("sysctl"), "-w", f"net.ipv4.conf.{iface}.forwarding={value}"])
 
 
 def detect_upstream_interface() -> str | None:

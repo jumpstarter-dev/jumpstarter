@@ -33,7 +33,7 @@ class RenodeMonitor:
         """Register a machine name so its prompt is recognised."""
         self._expected_prompts.add(name.encode())
 
-    async def connect(self, host: str, port: int, timeout: float = 10) -> None:
+    async def connect(self, host: str, port: int, timeout: float = 45) -> None:
         """Connect to the Renode monitor, retrying until the prompt appears."""
         with fail_after(timeout):
             while True:

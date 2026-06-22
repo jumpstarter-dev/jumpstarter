@@ -42,8 +42,9 @@ jobs:
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.runs-on }}
     strategy:
+      fail-fast: false
       matrix:
-        runs-on: [ubuntu-24.04, macos-15]
+        runs-on: [arc-runner-kubevirt-small, macos-15]
         # Floor: oldest Python in supported platforms (RHEL 9 appstream)
         # Ceiling: newest Python in latest Fedora
         # Review on each RHEL/Fedora release
@@ -61,48 +62,44 @@ jobs:
           version: ${{ steps.uv.outputs.version }}
           python-version: ${{ matrix.python-version }}
 
-      - name: Install Qemu (Linux)
+      - name: Setup Linux dependencies
         if: runner.os == 'Linux'
         run: |
+          # udev rules and kernel modules (idempotent)
           echo <<EOF | sudo tee /etc/udev/rules.d/99-kvm.rules
           KERNEL=="kvm", GROUP="kvm", MODE="0666"
           KERNEL=="vhost-vsock", GROUP="kvm", MODE="0666"
           KERNEL=="vhost-net", GROUP="kvm", MODE="0666"
           EOF
-
           sudo udevadm control --reload-rules
-
-          sudo modprobe vhost_vsock
-          sudo modprobe vhost_net
-          sudo chmod 0666 /dev/kvm /dev/vhost-vsock /dev/vhost-net
-
-          sudo apt-get update
-          sudo apt-get install -y qemu-system-arm qemu-system-x86
-
-      - name: Install libgpiod-dev (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgpiod-dev liblgpio-dev
-
-      - name: Install nftables and dnsmasq (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y nftables dnsmasq-base isc-dhcp-client dnsutils
-
-      - name: Load kernel modules for DUT network tests (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          for mod in veth bridge nf_nat nf_conntrack nft_masq nft_nat nft_chain_nat; do
+          for mod in vhost_vsock vhost_net veth bridge nf_nat nf_conntrack nft_masq nft_nat nft_chain_nat; do
             sudo modprobe "$mod" 2>/dev/null || true
           done
+          sudo chmod 0666 /dev/kvm /dev/vhost-vsock /dev/vhost-net 2>/dev/null || true
 
-      - name: Install Renode (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          wget https://github.com/renode/renode/releases/download/v1.16.1/renode_1.16.1_amd64.deb -O /tmp/renode.deb
-          sudo apt-get install -y /tmp/renode.deb
+          # collect missing packages
+          pkgs=()
+          command -v qemu-system-arm &>/dev/null  || pkgs+=(qemu-system-arm)
+          command -v qemu-system-x86_64 &>/dev/null || pkgs+=(qemu-system-x86)
+          dpkg -s libgpiod-dev &>/dev/null         || pkgs+=(libgpiod-dev)
+          dpkg -s liblgpio-dev &>/dev/null          || pkgs+=(liblgpio-dev)
+          command -v nft &>/dev/null                || pkgs+=(nftables)
+          command -v dnsmasq &>/dev/null            || pkgs+=(dnsmasq-base)
+          command -v dhclient &>/dev/null           || pkgs+=(isc-dhcp-client)
+          command -v dig &>/dev/null                || pkgs+=(dnsutils)
+          command -v renode &>/dev/null              || pkgs+=(renode)
+          command -v rpm2cpio &>/dev/null            || pkgs+=(rpm2cpio)
+          command -v cpio &>/dev/null                || pkgs+=(cpio)
+
+          if [ ${#pkgs[@]} -gt 0 ]; then
+            # add renode repo if needed
+            if [[ " ${pkgs[*]} " == *" renode "* ]]; then
+              wget -qO /tmp/renode.deb https://github.com/renode/renode/releases/download/v1.16.1/renode_1.16.1_amd64.deb
+              pkgs=("${pkgs[@]/renode//tmp/renode.deb}")
+            fi
+            sudo apt-get update
+            sudo apt-get install -y "${pkgs[@]}"
+          fi
 
       - name: Install Qemu (macOS)
         if: runner.os == 'macOS'
@@ -138,9 +135,18 @@ jobs:
       - name: Run pytest
         working-directory: python
         env:
-          PYTEST_ADDOPTS: "--cov-report=xml"
+          PYTEST_ADDOPTS: "--cov-report=xml --log-level=CRITICAL --log-cli-level=CRITICAL"
         run: |
-          make test
+          make test -j4 LOGS_DIR=${{ runner.temp }}/test-logs
+
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: test-logs-${{ matrix.runs-on }}-py${{ matrix.python-version }}
+          path: ${{ runner.temp }}/test-logs/
+          if-no-files-found: ignore
+          retention-days: 7
 
       # Diff-coverage is only checked on Linux. Several packages (e.g.
       # jumpstarter-driver-dut-network) are Linux-only, so their tests are
@@ -156,7 +162,7 @@ jobs:
             echo "::error::No coverage.xml files found"
             exit 1
           fi
-          uv run diff-cover $coverage_files --compare-branch=origin/${{ github.base_ref }} --fail-under=80 --exclude '*_pb2.py' '*_pb2_grpc.py' '**/conftest.py'
+          uv run diff-cover $coverage_files --compare-branch=origin/${{ github.base_ref }} --fail-under=80 --exclude '*_pb2.py' '*_pb2_grpc.py' '**/conftest.py' '**/test_*.py' '**/*_test.py'
 
   # https://github.com/orgs/community/discussions/26822
   pytest:

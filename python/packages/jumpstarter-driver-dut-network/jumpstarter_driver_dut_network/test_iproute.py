@@ -96,24 +96,28 @@ class TestNetworkManagerAwareness:
 class TestGetInterfaceForwarding:
     def test_returns_current_value(self):
         fake = subprocess.CompletedProcess(args=[], returncode=0, stdout="1\n")
-        with patch.object(iproute, "_run", return_value=fake):
+        with patch.object(iproute, "_resolve_tool", return_value="sysctl"), \
+             patch.object(iproute, "_run", return_value=fake):
             assert iproute.get_interface_forwarding("eth0") == "1"
 
     def test_returns_zero_on_failure(self):
         fake = subprocess.CompletedProcess(args=[], returncode=1, stdout="")
-        with patch.object(iproute, "_run", return_value=fake):
+        with patch.object(iproute, "_resolve_tool", return_value="sysctl"), \
+             patch.object(iproute, "_run", return_value=fake):
             assert iproute.get_interface_forwarding("eth0") == "0"
 
     def test_uses_correct_sysctl_key(self):
         fake = subprocess.CompletedProcess(args=[], returncode=0, stdout="0\n")
-        with patch.object(iproute, "_run", return_value=fake) as mock_run:
+        with patch.object(iproute, "_resolve_tool", return_value="sysctl"), \
+             patch.object(iproute, "_run", return_value=fake) as mock_run:
             iproute.get_interface_forwarding("eth0")
             mock_run.assert_called_once_with(
                 ["sysctl", "-n", "net.ipv4.conf.eth0.forwarding"], check=False
             )
 
     def test_set_interface_forwarding(self):
-        with patch.object(iproute, "_run_priv") as mock:
+        with patch.object(iproute, "_resolve_tool", return_value="sysctl"), \
+             patch.object(iproute, "_run_priv") as mock:
             iproute.set_interface_forwarding("eth0", True)
             mock.assert_called_once_with(
                 ["sysctl", "-w", "net.ipv4.conf.eth0.forwarding=1"]
