@@ -15,6 +15,12 @@ path = "src/lib.rs"
 name = "jmp"
 path = "src/main.rs"
 
+# The native `j` client entrypoint (a thin launcher today; routes per-driver by client language
+# in a later increment). Tiny — no extra deps beyond std.
+[[bin]]
+name = "j"
+path = "src/bin/j.rs"
+
 [dependencies]
 jumpstarter-client = { path = "../jumpstarter-client" }
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
