@@ -7,7 +7,7 @@ codec, report assembly, gRPC and router framing). It implements the ``jumpstarte
 
 ``LocalSession`` bridges that same ``DriverHost`` to the ``jumpstarter_core.ClientSession``
 interface *without* a network/transport, so ``serve()`` runs driver tests through the same
-FFI-shaped dispatch (no old Python exporter, no grpc). The ``jc.*`` types here are plain
+FFI-shaped dispatch (no old Python exporter, no grpc). The ``jumpstarter_core.*`` types here are plain
 data carriers — the local path makes no FFI runtime calls.
 
 Streams are handle-based: ``streaming_open``/``open_stream`` register the iterator/byte
@@ -23,8 +23,15 @@ from itertools import count
 from typing import Any
 from uuid import uuid4
 
-import jumpstarter_core as jc
 from anyio import to_thread
+from jumpstarter_core import (
+    DriverError,
+    DriverNode,
+    MetadataEntry,
+    OpenStream,
+    load_exporter_spec,
+    load_exporter_spec_str,
+)
 
 from jumpstarter.common.jsonable import to_jsonable as _to_jsonable
 from jumpstarter.common.resources import ClientStreamResource
@@ -44,22 +51,22 @@ def _lookup(driver, name: str, marker: str):
     """Resolve an ``@export``/``@exportstream`` method by name, validating its marker."""
     method = getattr(driver, name, None)
     if method is None or getattr(method, marker, None) != MARKER_MAGIC:
-        raise jc.DriverError.NotFound(f"method {name} not found on driver")
+        raise DriverError.NotFound(f"method {name} not found on driver")
     return method
 
 
 def _raise_mapped(exc: BaseException) -> None:
     """Map a driver exception to the typed ``DriverError`` (UniFFI panics on any undeclared
     exception, so this catch must be total)."""
-    if isinstance(exc, jc.DriverError):
+    if isinstance(exc, DriverError):
         raise exc
     if isinstance(exc, NotImplementedError):
-        raise jc.DriverError.Unimplemented(str(exc))
+        raise DriverError.Unimplemented(str(exc))
     if isinstance(exc, ValueError):
-        raise jc.DriverError.InvalidArgument(str(exc))
+        raise DriverError.InvalidArgument(str(exc))
     if isinstance(exc, TimeoutError):
-        raise jc.DriverError.DeadlineExceeded(str(exc))
-    raise jc.DriverError.Unknown(str(exc))
+        raise DriverError.DeadlineExceeded(str(exc))
+    raise DriverError.Unknown(str(exc))
 
 
 class DriverHost:
@@ -79,10 +86,10 @@ class DriverHost:
     def _driver(self, uuid: str):
         driver = self._by_uuid.get(uuid)
         if driver is None:
-            raise jc.DriverError.NotFound(f"unknown driver uuid: {uuid}")
+            raise DriverError.NotFound(f"unknown driver uuid: {uuid}")
         return driver
 
-    async def describe(self) -> list[jc.DriverNode]:
+    async def describe(self) -> list[DriverNode]:
         _log.debug("describe: introspecting driver tree")
         nodes = []
         for (uuid, parent, name, driver) in self._root.enumerate():
@@ -95,7 +102,7 @@ class DriverHost:
             if node_name:
                 labels["jumpstarter.dev/name"] = node_name
             nodes.append(
-                jc.DriverNode(
+                DriverNode(
                     uuid=str(uuid),
                     parent_uuid=str(parent.uuid) if parent else None,
                     labels=labels,
@@ -165,7 +172,7 @@ class DriverHost:
                 except BaseException:  # noqa: BLE001
                     pass
 
-    async def open_stream(self, request_json: str) -> jc.OpenStream:
+    async def open_stream(self, request_json: str) -> OpenStream:
         req = json.loads(request_json)
         uuid = req["uuid"]
         driver = self._driver(uuid)
@@ -179,7 +186,7 @@ class DriverHost:
                 _raise_mapped(exc)
             handle = next(self._handles)
             self._channels[handle] = {"cm": cm, "stream": stream}
-            return jc.OpenStream(handle=handle, initial_metadata=[])
+            return OpenStream(handle=handle, initial_metadata=[])
 
         # Resource stream (flash/dump): memory pipe + register the far end in the driver's
         # resource map (a later driver call reads it by uuid).
@@ -190,12 +197,12 @@ class DriverHost:
         resource_handle = ClientStreamResource(
             uuid=resource_uuid, x_jmp_content_encoding=encoding
         ).model_dump_json()
-        metadata = [jc.MetadataEntry(key="resource", value=resource_handle)]
+        metadata = [MetadataEntry(key="resource", value=resource_handle)]
         if encoding in SUPPORTED_CONTENT_ENCODINGS:
-            metadata.append(jc.MetadataEntry(key="x_jmp_accept_encoding", value=encoding))
+            metadata.append(MetadataEntry(key="x_jmp_accept_encoding", value=encoding))
         handle = next(self._handles)
         self._channels[handle] = {"cm": None, "stream": remote}
-        return jc.OpenStream(handle=handle, initial_metadata=metadata)
+        return OpenStream(handle=handle, initial_metadata=metadata)
 
     async def stream_read(self, handle: int):
         state = self._channels.get(handle)
@@ -287,7 +294,7 @@ def _instantiate_spec(node):
 
 class DriverHostFactory:
     """Builds a fresh :class:`DriverHost` per lease. The Rust core parses the exporter config
-    YAML (``jc.load_exporter_spec``); Python only instantiates the driver tree (importing
+    YAML (``load_exporter_spec``); Python only instantiates the driver tree (importing
     driver classes by dotted path). ``new_host`` is sync."""
 
     def __init__(self, config_path: str = None):
@@ -305,9 +312,9 @@ class DriverHostFactory:
 
     def new_host(self) -> DriverHost:
         if self._config_yaml is not None:
-            spec = jc.load_exporter_spec_str(self._config_yaml)
+            spec = load_exporter_spec_str(self._config_yaml)
         else:
-            spec = jc.load_exporter_spec(self._config_path)
+            spec = load_exporter_spec(self._config_path)
         # One top-level `export:` entry per host (the polyglot hub spawns one host per entry).
         # Serve that entry's subtree directly as the root — the hub re-parents it under the
         # synthesized Composite root — so no redundant Composite wrapper is instantiated here.
@@ -394,7 +401,7 @@ class LocalSession:
 
     async def get_status(self) -> str:
         # No lease/hook lifecycle locally; the client treats Unimplemented as "ready".
-        raise jc.DriverError.Unimplemented("get_status not supported in local serve()")
+        raise DriverError.Unimplemented("get_status not supported in local serve()")
 
     async def log_stream(self):
-        raise jc.DriverError.Unimplemented("log_stream not supported in local serve()")
+        raise DriverError.Unimplemented("log_stream not supported in local serve()")

@@ -2,6 +2,7 @@ from contextlib import ExitStack, asynccontextmanager, contextmanager
 from typing import TYPE_CHECKING
 
 from anyio.from_thread import BlockingPortal, start_blocking_portal
+from jumpstarter_core import LeasedExporter
 
 from jumpstarter.utils.env import env
 
@@ -31,14 +32,12 @@ async def lease_async(
     import os
     from pathlib import Path
 
-    import jumpstarter_core as jc
-
     from jumpstarter.client import client_from_path
     from jumpstarter.common.xdg import xdg_config_home
     from jumpstarter.config.env import JMP_CLIENT_CONFIG_HOME
 
     home = Path(os.getenv(JMP_CLIENT_CONFIG_HOME) or (xdg_config_home() / "jumpstarter"))
-    exporter = await jc.LeasedExporter.acquire(
+    exporter = await LeasedExporter.acquire(
         str(home / "clients" / f"{alias}.yaml"), selector, None, None, duration_secs
     )
     try:

@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import anyio
+import jumpstarter_core
 from anyio import create_task_group
 from anyio.abc import ObjectStream
 
@@ -47,12 +48,10 @@ class DriverInvalidArgument(DriverError, ValueError):
 
 def _map_ffi_error(method, exc):
     """Map a jumpstarter_core.DriverError to the client exception taxonomy."""
-    import jumpstarter_core as jc
-
     message = f"{method}: {exc}"
-    if isinstance(exc, (jc.DriverError.Unimplemented, jc.DriverError.NotFound)):
+    if isinstance(exc, (jumpstarter_core.DriverError.Unimplemented, jumpstarter_core.DriverError.NotFound)):
         return DriverMethodNotImplemented(message)
-    if isinstance(exc, jc.DriverError.InvalidArgument):
+    if isinstance(exc, jumpstarter_core.DriverError.InvalidArgument):
         return DriverInvalidArgument(message)
     return DriverError(message)
 
@@ -122,12 +121,10 @@ class AsyncDriverClient(Metadata):
             return None
         import json
 
-        import jumpstarter_core as jc
-
         try:
             data = json.loads(await self.session.get_status())
-        except jc.DriverError as e:
-            if isinstance(e, jc.DriverError.Unimplemented):
+        except jumpstarter_core.DriverError as e:
+            if isinstance(e, jumpstarter_core.DriverError.Unimplemented):
                 self._get_status_unsupported = True
                 return None
             raise DriverError(f"Failed to get exporter status: {e}") from None
@@ -137,20 +134,16 @@ class AsyncDriverClient(Metadata):
         """Make DriverCall by method name and arguments"""
         import json
 
-        import jumpstarter_core as jc
-
         args_json = json.dumps([_to_jsonable(arg) for arg in args])
         try:
             result_json = await self.session.driver_call(str(self.uuid), method, args_json)
-        except jc.DriverError as e:
+        except jumpstarter_core.DriverError as e:
             raise _map_ffi_error(method, e) from None
         return json.loads(result_json)
 
     async def streamingcall_async(self, method, *args):
         """Make StreamingDriverCall by method name and arguments"""
         import json
-
-        import jumpstarter_core as jc
 
         args_json = json.dumps([_to_jsonable(arg) for arg in args])
         try:
@@ -160,7 +153,7 @@ class AsyncDriverClient(Metadata):
                 if item is None:
                     break
                 yield json.loads(item)
-        except jc.DriverError as e:
+        except jumpstarter_core.DriverError as e:
             raise _map_ffi_error(method, e) from None
 
     @asynccontextmanager
@@ -207,8 +200,6 @@ class AsyncDriverClient(Metadata):
         async def log_stream_ffi():
             import json
 
-            import jumpstarter_core as jc
-
             try:
                 stream = await self.session.log_stream()
                 while True:
@@ -222,7 +213,7 @@ class AsyncDriverClient(Metadata):
                     except ValueError:
                         source = LogSource.SYSTEM
                     _emit(source, entry.get("severity"), entry.get("message", ""))
-            except jc.DriverError as e:
+            except jumpstarter_core.DriverError as e:
                 self.logger.debug("FFI log stream ended: %s", e)
 
         async with create_task_group() as tg:

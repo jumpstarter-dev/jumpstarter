@@ -6,6 +6,7 @@ from graphlib import TopologicalSorter
 from uuid import UUID
 
 from anyio.from_thread import BlockingPortal
+from jumpstarter_core import ClientSession
 
 from jumpstarter.client import DriverClient
 from jumpstarter.client.base import StubDriverClient
@@ -41,9 +42,7 @@ async def client_from_host(
     """Build a DriverClient tree over the Rust core (FFI, jumpstarter_core.ClientSession)
     instead of a gRPC channel — the in-process client path. Driver calls route through the
     Rust core; no grpcio / generated stubs."""
-    import jumpstarter_core as jc
-
-    session = await jc.ClientSession.connect(str(host))
+    session = await ClientSession.connect(str(host))
     return await client_from_session(session, portal, stack, allow, unsafe)
 
 
