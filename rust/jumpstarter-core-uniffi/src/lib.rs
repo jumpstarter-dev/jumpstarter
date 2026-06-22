@@ -717,6 +717,98 @@ impl ControllerSession {
     }
 }
 
+/// A fully self-managed leased exporter: resolve a client config, acquire a lease, and serve
+/// it on a local transport in one call. This is the **auto-acquire-lease** capability shared
+/// by every language test runtime — Python/Kotlin/Swift consume this uniffi object directly
+/// (a future C binding wraps the same core composition), so test authors get "give me a
+/// leased exporter from my config" without re-implementing the lease lifecycle per language.
+/// `release()` tears down the transport and releases the lease.
+#[derive(uniffi::Object)]
+pub struct LeasedExporter {
+    session: jumpstarter_core::ControllerSession,
+    // Held so the listener stays up for the lease's lifetime; closed by `release`.
+    _transport: Arc<jumpstarter_core::LeaseTransport>,
+    name: String,
+    host: String,
+    exporter: String,
+    allow: Vec<String>,
+    unsafe_drivers: bool,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl LeasedExporter {
+    /// Resolve the client config at `config_path`, acquire a lease (optionally constrained by
+    /// `selector`/`exporter_name`, or joining `existing_name`), and serve it on a local socket.
+    #[uniffi::constructor]
+    pub async fn acquire(
+        config_path: String,
+        selector: Option<String>,
+        exporter_name: Option<String>,
+        existing_name: Option<String>,
+        duration_secs: u64,
+    ) -> Result<Arc<Self>, ControllerError> {
+        use jumpstarter_config::{ClientConfig, YamlConfig};
+        let cfg = ClientConfig::load(&config_path).map_err(|e| ControllerError::Config(e.to_string()))?;
+        let session = jumpstarter_core::ControllerSession::connect(
+            cfg.endpoint.clone().unwrap_or_default(),
+            cfg.token.clone(),
+            cfg.tls.ca.clone(),
+            cfg.tls.insecure,
+            cfg.metadata.namespace.clone().unwrap_or_else(|| "default".to_string()),
+            cfg.metadata.name.clone(),
+        )
+        .await
+        .map_err(from_core_controller_err)?;
+        let acquired = session
+            .acquire_lease(
+                selector,
+                exporter_name,
+                existing_name,
+                duration_secs,
+                cfg.leases.acquisition_timeout as u64,
+            )
+            .await
+            .map_err(from_core_controller_err)?;
+        let transport = session.serve_lease(acquired.name.clone()).await.map_err(from_core_controller_err)?;
+        let host = transport.jumpstarter_host().await.map_err(from_core_controller_err)?;
+        // Preserve the `"UNSAFE" in allow` sentinel so the client tree's driver-allow policy matches.
+        let unsafe_drivers = cfg.drivers.r#unsafe || cfg.drivers.allow.iter().any(|d| d == "UNSAFE");
+        Ok(Arc::new(Self {
+            session,
+            _transport: transport,
+            name: acquired.name,
+            host,
+            exporter: acquired.exporter,
+            allow: cfg.drivers.allow.clone(),
+            unsafe_drivers,
+        }))
+    }
+
+    /// The `JUMPSTARTER_HOST` socket path the language client connects to.
+    pub fn jumpstarter_host(&self) -> String {
+        self.host.clone()
+    }
+
+    /// The assigned exporter name.
+    pub fn exporter_name(&self) -> String {
+        self.exporter.clone()
+    }
+
+    /// The driver allow-list + unsafe flag for building the client tree.
+    pub fn allow(&self) -> Vec<String> {
+        self.allow.clone()
+    }
+    pub fn unsafe_drivers(&self) -> bool {
+        self.unsafe_drivers
+    }
+
+    /// Tear down the transport and release the lease. Call once on test teardown.
+    pub async fn release(&self) -> Result<(), ControllerError> {
+        self._transport.close().await;
+        self.session.release_lease(self.name.clone()).await.map_err(from_core_controller_err)
+    }
+}
+
 /// A live transport listener for one lease (drop/close tears it down).
 #[derive(uniffi::Object)]
 pub struct LeaseTransport {
