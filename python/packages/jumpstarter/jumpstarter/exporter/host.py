@@ -283,13 +283,26 @@ class DriverHostFactory:
     YAML (``jc.load_exporter_spec``); Python only instantiates the driver tree (importing
     driver classes by dotted path). ``new_host`` is sync."""
 
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: str = None):
         self._config_path = config_path
+        self._config_yaml = None
+
+    @classmethod
+    def from_yaml(cls, config_yaml: str) -> "DriverHostFactory":
+        """Build from in-memory config YAML (the polyglot hub passes per-entry configs over
+        stdin, so no temp file is written)."""
+        factory = cls.__new__(cls)
+        factory._config_path = None
+        factory._config_yaml = config_yaml
+        return factory
 
     def new_host(self) -> DriverHost:
         from jumpstarter.common.importlib import import_class
 
-        spec = jc.load_exporter_spec(self._config_path)
+        if self._config_yaml is not None:
+            spec = jc.load_exporter_spec_str(self._config_yaml)
+        else:
+            spec = jc.load_exporter_spec(self._config_path)
         children = {name: _instantiate_spec(node) for name, node in spec.export.items()}
         composite = import_class("jumpstarter_driver_composite.driver.Composite", [], True)
         root = composite(description=spec.description or None, methods_description={}, children=children)

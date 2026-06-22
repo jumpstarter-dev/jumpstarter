@@ -97,20 +97,18 @@ impl HostFactory for PolyglotHostFactory {
 
         for (index, (name, instance)) in config.export.iter().enumerate() {
             let runtime = entry_runtime(instance);
-            let cfg_path = dir.join(format!("{index}.yaml"));
             let uds = dir.join(format!("{index}.sock"));
 
-            // A single-entry config (drop hooks — the hub runs lease hooks, not the host).
+            // A single-entry config (drop hooks — the hub runs lease hooks, not the host),
+            // streamed to the host on stdin (no temp file on disk).
             let mut entry_config = config.clone();
             entry_config.export = BTreeMap::from([(name.clone(), instance.clone())]);
             entry_config.hooks = HookConfig::default();
             let yaml = entry_config
                 .to_yaml()
                 .map_err(|e| Error::Config(format!("serializing entry config: {e}")))?;
-            std::fs::write(&cfg_path, yaml)
-                .map_err(|e| Error::Config(format!("writing entry config: {e}")))?;
 
-            let host = spawn_entry_host(&runtime, &cfg_path, &uds)?;
+            let host = spawn_entry_host(&runtime, &yaml, &uds).await?;
             hosts.push(host);
 
             let backend = dial_with_retry(&uds, HOST_READY_TIMEOUT).await?;
@@ -134,18 +132,23 @@ impl HostFactory for PolyglotHostFactory {
 }
 
 /// Spawn a driver host for one entry in the given runtime, serving the entry's subtree on
-/// `uds`. Python entries run `python -m jumpstarter_exporter_host <config> --serve <uds>`
-/// (the embedded `jumpstarter_core` serves the seam); native Rust hosts arrive in #62.
-fn spawn_entry_host(runtime: &str, cfg_path: &PathBuf, uds: &PathBuf) -> Result<EntryHost, Error> {
+/// `uds`. Python entries run `python -m jumpstarter.exporter_host --serve <uds>` with the
+/// single-entry config streamed on stdin (the embedded `jumpstarter_core` serves the seam);
+/// native Rust hosts arrive in #62.
+async fn spawn_entry_host(
+    runtime: &str,
+    yaml: &str,
+    uds: &std::path::Path,
+) -> Result<EntryHost, Error> {
     match runtime {
         "python" => {
             let python = python_interpreter();
-            let child = Command::new(&python)
+            let mut child = Command::new(&python)
                 .arg("-m")
                 .arg("jumpstarter.exporter_host")
-                .arg(cfg_path)
                 .arg("--serve")
                 .arg(uds)
+                .stdin(Stdio::piped())
                 .stdout(Stdio::inherit())
                 .stderr(Stdio::inherit())
                 .kill_on_drop(true)
@@ -153,6 +156,15 @@ fn spawn_entry_host(runtime: &str, cfg_path: &PathBuf, uds: &PathBuf) -> Result<
                 .map_err(|e| {
                     Error::Config(format!("spawning python driver host ({python}): {e}"))
                 })?;
+            // Stream the single-entry config to the host on stdin, then close it (EOF).
+            if let Some(mut stdin) = child.stdin.take() {
+                use tokio::io::AsyncWriteExt as _;
+                stdin
+                    .write_all(yaml.as_bytes())
+                    .await
+                    .map_err(|e| Error::Config(format!("writing config to driver host: {e}")))?;
+                let _ = stdin.shutdown().await;
+            }
             Ok(EntryHost { _child: child })
         }
         other => Err(Error::Config(format!(

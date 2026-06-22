@@ -834,14 +834,27 @@ fn driver_node_to_spec(node: &jumpstarter_config::DriverInstance) -> DriverSpecN
 pub fn load_exporter_spec(config_path: String) -> Result<ExporterSpec, YamlError> {
     use jumpstarter_config::{ExporterConfig, YamlConfig};
     let config = ExporterConfig::load(&config_path).map_err(|e| YamlError::Parse(e.to_string()))?;
-    Ok(ExporterSpec {
+    Ok(exporter_spec(&config))
+}
+
+/// Parse an exporter config from a YAML string and return its driver tree — the polyglot hub
+/// hands each per-entry config to its host process directly (no temp files on disk).
+#[uniffi::export]
+pub fn load_exporter_spec_str(yaml: String) -> Result<ExporterSpec, YamlError> {
+    use jumpstarter_config::{ExporterConfig, YamlConfig};
+    let config = ExporterConfig::from_yaml(&yaml).map_err(|e| YamlError::Parse(e.to_string()))?;
+    Ok(exporter_spec(&config))
+}
+
+fn exporter_spec(config: &jumpstarter_config::ExporterConfig) -> ExporterSpec {
+    ExporterSpec {
         description: config.description.clone(),
         export: config
             .export
             .iter()
             .map(|(k, v)| (k.clone(), driver_node_to_spec(v)))
             .collect(),
-    })
+    }
 }
 
 /// The connection + driver-policy fields the client lease needs (flat, no pydantic).
