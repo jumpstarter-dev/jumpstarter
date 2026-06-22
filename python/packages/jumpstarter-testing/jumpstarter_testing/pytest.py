@@ -4,7 +4,7 @@ from typing import ClassVar
 
 import pytest
 
-from jumpstarter.client.config import ClientConnection
+from jumpstarter.client.lease import Lease
 from jumpstarter.common.utils import env
 
 log = logging.getLogger(__name__)
@@ -57,8 +57,7 @@ class JumpstarterTest:
                 yield client
         except RuntimeError:
             selector = getattr(self, "selector", None)
-            config = ClientConnection.load("default")
-            with config.lease(selector=selector) as lease:
+            with Lease.acquire(alias="default", selector=selector) as lease:
                 with lease.connect() as client:
                     yield client
         # BUG workaround: make sure that grpc servers get the client/lease release properly
