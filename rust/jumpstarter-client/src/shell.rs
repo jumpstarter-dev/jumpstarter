@@ -100,6 +100,15 @@ pub async fn run(config: &ClientConfig, opts: ShellOptions) -> Result<i32, Clien
     )
     .await?;
 
+    // The exporter name labels the shell prompt + the lifecycle messages (`shell.py`
+    // passes `lease.exporter_name` to `launch_shell`); fall back to the lease name.
+    let context = if acquired.exporter.is_empty() {
+        acquired.name.clone()
+    } else {
+        acquired.exporter.clone()
+    };
+    eprintln!("Acquired lease {} on exporter {context}", acquired.name);
+
     let host =
         transport::serve_default(client.clone(), acquired.name.clone(), config.tls.clone()).await?;
     let socket = host.jumpstarter_host();
@@ -121,29 +130,34 @@ pub async fn run(config: &ClientConfig, opts: ShellOptions) -> Result<i32, Clien
     // command, so a beforeLease failure surfaces as a clear error instead of the
     // child's opaque connection timeout (`shell.py`: wait for LEASE_READY /
     // BEFORE_LEASE_HOOK_FAILED via the status monitor, before running the command).
+    eprintln!("Waiting for beforeLease hook to complete...");
     if let Err(e) = wait_for_lease_ready(&socket).await {
         log_task.abort();
         if release {
+            eprintln!("Releasing lease {}", acquired.name);
             let _ = client.delete_lease(&acquired.name).await;
         }
         drop(host);
         return Err(e);
     }
 
-    let result = spawn_child(&opts.command, &socket, &drivers_allow, insecure, None).await;
+    let result = spawn_child(&opts.command, &socket, &context, &drivers_allow, insecure, None).await;
 
     // End the session so the afterLease hook runs while the log stream is still open,
     // and wait for it to finish before releasing the lease (`shell.py`: EndSession +
     // wait-for-afterLease, then release). Only for leases we created; a reused lease
     // (`--lease`) is left intact for reconnection.
     if release {
+        eprintln!("Running afterLease hook (Ctrl+C to skip)...");
         end_session_and_wait(&socket).await;
+        eprintln!("afterLease hook completed");
     }
     // Brief flush window for trailing afterLease lines, then stop streaming.
     tokio::time::sleep(Duration::from_millis(200)).await;
     log_task.abort();
 
     if release {
+        eprintln!("Releasing lease {}", acquired.name);
         let _ = client.delete_lease(&acquired.name).await;
     }
     drop(host);
@@ -314,7 +328,7 @@ pub async fn run_direct(
         None
     };
 
-    let result = spawn_child(command, address, "UNSAFE", insecure, passphrase).await;
+    let result = spawn_child(command, address, address, "UNSAFE", insecure, passphrase).await;
 
     if let Some(task) = log_task {
         // Brief flush window for any trailing (afterLease) lines before aborting.
@@ -326,12 +340,13 @@ pub async fn run_direct(
 
 /// Spawn the shell/command with the `JUMPSTARTER_HOST` env contract
 /// (`common/utils.py:launch_shell`). `host` is the bare socket path (controller/
-/// local mode) or `host:port` (direct mode); `passphrase` sets
-/// `JMP_GRPC_PASSPHRASE` for a standalone exporter. Reused by the CLI's direct and
-/// local-exporter shell paths.
+/// local mode) or `host:port` (direct mode); `context` labels the decorated prompt
+/// (the exporter name); `passphrase` sets `JMP_GRPC_PASSPHRASE` for a standalone
+/// exporter. Reused by the CLI's direct and local-exporter shell paths.
 pub async fn spawn_child(
     command: &Option<Vec<String>>,
     host: &str,
+    context: &str,
     drivers_allow: &str,
     insecure: bool,
     passphrase: Option<&str>,
@@ -342,10 +357,8 @@ pub async fn spawn_child(
             c.args(&argv[1..]);
             c
         }
-        _ => {
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-            tokio::process::Command::new(shell)
-        }
+        // An interactive shell gets a jumpstarter-decorated prompt (`{cwd} ⚡{context} ➤`).
+        _ => decorated_shell(context),
     };
 
     cmd.env("JUMPSTARTER_HOST", host)
@@ -365,4 +378,45 @@ pub async fn spawn_child(
 
     // Signal-terminated child -> 2 (matches `j`'s cancellation exit code).
     Ok(status.code().unwrap_or(2))
+}
+
+/// Build the interactive `$SHELL` command with a jumpstarter-decorated prompt —
+/// gray cwd, yellow `⚡`, white exporter name, yellow `➤` — suppressing rc/profile
+/// files so the prompt actually takes effect (`common/utils.py:launch_shell`).
+/// bash/zsh/fish each get their native prompt syntax; any other shell just inherits
+/// the env contract with its default prompt.
+fn decorated_shell(context: &str) -> tokio::process::Command {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    let shell_name = std::path::Path::new(&shell)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("sh")
+        .to_string();
+    let mut c = tokio::process::Command::new(&shell);
+    if shell_name.ends_with("bash") {
+        // `\[..\]` wraps non-printing escapes; `\W` is the basename of $PWD.
+        c.arg("--norc").arg("--noprofile").env(
+            "PS1",
+            format!("\\[\\e[90m\\]\\W \\[\\e[93m\\]⚡\\[\\e[97m\\]{context} \\[\\e[93m\\]➤\\[\\e[0m\\] "),
+        );
+    } else if shell_name == "zsh" {
+        c.arg("--no-rcs")
+            .args(["-o", "inc_append_history", "-o", "share_history"])
+            .env(
+                "PS1",
+                format!("%F{{8}}%1~ %F{{yellow}}⚡%F{{white}}{context} %F{{yellow}}➤%f "),
+            );
+        if std::env::var_os("HISTFILE").is_none() {
+            if let Some(home) = std::env::var_os("HOME") {
+                c.env("HISTFILE", std::path::Path::new(&home).join(".zsh_history"));
+            }
+        }
+    } else if shell_name == "fish" {
+        c.arg("--init-command").arg(format!(
+            "function fish_prompt; set_color grey; printf \"%s\" (basename $PWD); \
+             set_color yellow; printf \"⚡\"; set_color white; printf \"{context}\"; \
+             set_color yellow; printf \"➤ \"; set_color normal; end"
+        ));
+    }
+    c
 }
