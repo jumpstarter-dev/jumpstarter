@@ -26,8 +26,6 @@ use crate::error::DriverCallError;
 
 const CLIENT_LABEL: &str = "jumpstarter.dev/client";
 const NAME_LABEL: &str = "jumpstarter.dev/name";
-/// The Composite the hub strips and re-roots (same shape a Python single-entry host produces).
-const COMPOSITE_CLIENT: &str = "jumpstarter_driver_composite.client.CompositeClient";
 
 /// A native Rust driver — the author-facing surface, mirroring a Python `@export` driver. The
 /// core serves it directly: it assembles the report from [`Driver::client`]/[`Driver::methods`]
@@ -47,9 +45,10 @@ pub trait Driver: Send + Sync {
     async fn call(&self, method: &str, args: Vec<Json>) -> Result<Json, DriverCallError>;
 }
 
-/// Serves a single native [`Driver`] over the proto [`DriverBackend`] seam. The driver is wrapped
-/// in a Composite root (the same shape a Python single-entry host produces) so the hub's
-/// `RoutingBackend` stitches native and Python entries uniformly.
+/// Serves a single native [`Driver`] over the proto [`DriverBackend`] seam. The driver is the
+/// host's root entry (`parent_uuid == None`, carrying its `jumpstarter.dev/name` label) — the
+/// same shape a Python single-entry host produces — so the hub's `RoutingBackend` re-parents
+/// native and Python entries uniformly under its synthesized root.
 pub struct NativeDriverBackend {
     driver: Arc<dyn Driver>,
     driver_uuid: String,
@@ -59,27 +58,17 @@ pub struct NativeDriverBackend {
 impl NativeDriverBackend {
     /// Serve `driver` as the top-level entry named `entry_name`.
     pub fn new(entry_name: &str, driver: Arc<dyn Driver>) -> Self {
-        let root_uuid = uuid::Uuid::new_v4().to_string();
         let driver_uuid = uuid::Uuid::new_v4().to_string();
-        let reports = vec![
-            DriverInstanceReport {
-                uuid: root_uuid.clone(),
-                parent_uuid: None,
-                labels: HashMap::from([(CLIENT_LABEL.to_string(), COMPOSITE_CLIENT.to_string())]),
-                description: None,
-                methods_description: HashMap::new(),
-            },
-            DriverInstanceReport {
-                uuid: driver_uuid.clone(),
-                parent_uuid: Some(root_uuid),
-                labels: HashMap::from([
-                    (CLIENT_LABEL.to_string(), driver.client()),
-                    (NAME_LABEL.to_string(), entry_name.to_string()),
-                ]),
-                description: None,
-                methods_description: driver.methods(),
-            },
-        ];
+        let reports = vec![DriverInstanceReport {
+            uuid: driver_uuid.clone(),
+            parent_uuid: None,
+            labels: HashMap::from([
+                (CLIENT_LABEL.to_string(), driver.client()),
+                (NAME_LABEL.to_string(), entry_name.to_string()),
+            ]),
+            description: None,
+            methods_description: driver.methods(),
+        }];
         Self {
             driver,
             driver_uuid,
@@ -163,30 +152,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn serves_wrapped_report() {
+    async fn serves_driver_as_root() {
         let report = backend().get_report().await.unwrap();
-        // A Composite root (no parent) + the driver leaf carrying its name + client labels.
-        assert_eq!(report.reports.len(), 2);
+        // The driver is the host root (no parent), carrying its name + client labels — no wrapper.
+        assert_eq!(report.reports.len(), 1);
         let root = report.reports.iter().find(|r| r.parent_uuid.is_none()).unwrap();
-        assert_eq!(root.labels[CLIENT_LABEL], COMPOSITE_CLIENT);
-        let leaf = report.reports.iter().find(|r| r.parent_uuid.is_some()).unwrap();
-        assert_eq!(leaf.parent_uuid.as_deref(), Some(root.uuid.as_str()));
-        assert_eq!(leaf.labels[NAME_LABEL], "thing");
-        assert_eq!(leaf.labels[CLIENT_LABEL], "pkg.client.EchoClient");
-        assert_eq!(leaf.methods_description["echo"], "echo the first argument");
+        assert_eq!(root.labels[NAME_LABEL], "thing");
+        assert_eq!(root.labels[CLIENT_LABEL], "pkg.client.EchoClient");
+        assert_eq!(root.methods_description["echo"], "echo the first argument");
     }
 
     #[tokio::test]
     async fn dispatches_calls_with_the_codec() {
         let backend = backend();
-        let uuid = backend
-            .report
-            .reports
-            .iter()
-            .find(|r| r.parent_uuid.is_some())
-            .unwrap()
-            .uuid
-            .clone();
+        let uuid = backend.driver_uuid.clone();
 
         let resp = backend
             .driver_call(DriverCallRequest {
