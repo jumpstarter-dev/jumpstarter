@@ -22,6 +22,8 @@ jumpstarter-core = { path = "../jumpstarter-core" }
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
 jumpstarter-config = { path = "../jumpstarter-config" }
 jumpstarter-transport = { path = "../jumpstarter-transport" }
+jumpstarter-driver-macros = { path = "../jumpstarter-driver-macros" }
 async-trait = "0.1"
+clap = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "sync", "signal"] }

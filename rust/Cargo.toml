@@ -22,6 +22,7 @@ members = [
     "jumpstarter-core-uniffi",
     "jumpstarter-cli",
     "jumpstarter-mcp",
+    "jumpstarter-driver-macros",
     "jumpstarter-driver-example",
 ]
 

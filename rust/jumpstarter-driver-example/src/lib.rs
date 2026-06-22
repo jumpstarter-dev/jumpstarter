@@ -11,6 +11,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use jumpstarter_core::driver::Driver;
 use jumpstarter_core::error::DriverCallError;
+use jumpstarter_core::ClientSession;
+use jumpstarter_driver_macros::DriverClient;
 use serde_json::Value as Json;
 
 /// A native power driver advertising the Python `PowerClient`, so `j <name> on|off` works.
@@ -78,6 +80,38 @@ pub fn make_driver(
     match name {
         "power" => Some(Arc::new(MockPower)),
         "powerrs" => Some(Arc::new(MockPowerNativeClient)),
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Native (Rust) client — the client-side analog, via clap + #[derive(DriverClient)].
+// ---------------------------------------------------------------------------
+
+/// The native client for `rust:powerclient` (the `powerrs` driver). A clap CLI whose subcommands
+/// are driver calls: `j <driver> on` → `driver_call("on")`. The `DriverClient` derive writes the
+/// dispatch + `run`; the author only declares the command surface — the Rust analog of a Python
+/// `DriverClient`'s click group.
+#[derive(clap::Parser, DriverClient)]
+#[command(name = "")]
+#[client(class = "rust:powerclient")]
+pub enum PowerClient {
+    /// Turn the power on.
+    On,
+    /// Turn the power off.
+    Off,
+}
+
+/// The native-client registry native `j` consults: run the native (Rust) client for `class` if one
+/// is registered here, else `None` (the driver's client is a Python client, handled elsewhere).
+pub async fn run_client(
+    class: &str,
+    args: &[String],
+    session: &ClientSession,
+    uuid: &str,
+) -> Option<i32> {
+    match class {
+        PowerClient::CLIENT_CLASS => Some(PowerClient::run(args, session, uuid).await),
         _ => None,
     }
 }

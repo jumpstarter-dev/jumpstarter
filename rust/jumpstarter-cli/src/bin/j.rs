@@ -38,9 +38,12 @@ async fn main() {
     };
 
     match client_for(&report, first) {
-        // A native (Rust) client → drive it in-process, no Python.
+        // A native (Rust) client → drive it in-process via the native client registry, no Python.
         Some((uuid, label)) if label.starts_with("rust:") => {
-            std::process::exit(run_native_client(&label, &session, &uuid, &args[1..]).await);
+            match jumpstarter_driver_example::run_client(&label, &args[1..], &session, &uuid).await {
+                Some(code) => std::process::exit(code),
+                None => fail(&format!("no native client is registered for `{label}`")),
+            }
         }
         // A Python client (or an unknown driver name) → the Python driver-client CLI.
         _ => {
@@ -63,44 +66,6 @@ fn client_for(report: &str, name: &str) -> Option<(String, String)> {
             None
         }
     })
-}
-
-/// Built-in native (Rust) clients — the example set. A real deployment would register clients per
-/// driver (the client-side analog of the native driver registry); this proves the routing.
-async fn run_native_client(
-    label: &str,
-    session: &ClientSession,
-    uuid: &str,
-    args: &[String],
-) -> i32 {
-    match label.strip_prefix("rust:").unwrap_or(label) {
-        // The native PowerClient: `j <driver> on|off` → a unary driver call.
-        "powerclient" => match args.first().map(String::as_str) {
-            Some(cmd @ ("on" | "off")) => {
-                match session
-                    .driver_call(uuid.to_string(), cmd.to_string(), "[]".to_string())
-                    .await
-                {
-                    Ok(_) => {
-                        println!("{cmd}");
-                        0
-                    }
-                    Err(e) => {
-                        eprintln!("Error: {e}");
-                        1
-                    }
-                }
-            }
-            _ => {
-                eprintln!("usage: j <driver> on|off");
-                2
-            }
-        },
-        other => {
-            eprintln!("Error: no native client `rust:{other}` is registered");
-            1
-        }
-    }
 }
 
 /// Delegate the whole invocation to the Python driver-client CLI (`python -m jumpstarter_cli.j`).
