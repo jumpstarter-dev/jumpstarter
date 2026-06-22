@@ -140,37 +140,51 @@ async fn spawn_entry_host(
     yaml: &str,
     uds: &std::path::Path,
 ) -> Result<EntryHost, Error> {
-    match runtime {
+    // Build the host command for the entry's runtime. Every host reads its single-entry config on
+    // stdin and serves the driver-host seam on `--serve <uds>`; the hub never embeds a runtime.
+    let mut command = match runtime {
+        // Python: `python -m jumpstarter.exporter_host` in the venv (JMP_DRIVER_HOST_PYTHON).
         "python" => {
-            let python = python_interpreter();
-            let mut child = Command::new(&python)
-                .arg("-m")
+            let mut c = Command::new(python_interpreter());
+            c.arg("-m")
                 .arg("jumpstarter.exporter_host")
                 .arg("--serve")
-                .arg(uds)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .kill_on_drop(true)
-                .spawn()
-                .map_err(|e| {
-                    Error::Config(format!("spawning python driver host ({python}): {e}"))
-                })?;
-            // Stream the single-entry config to the host on stdin, then close it (EOF).
-            if let Some(mut stdin) = child.stdin.take() {
-                use tokio::io::AsyncWriteExt as _;
-                stdin
-                    .write_all(yaml.as_bytes())
-                    .await
-                    .map_err(|e| Error::Config(format!("writing config to driver host: {e}")))?;
-                let _ = stdin.shutdown().await;
-            }
-            Ok(EntryHost { _child: child })
+                .arg(uds);
+            c
         }
-        other => Err(Error::Config(format!(
-            "driver runtime `{other}` is not yet supported (native Rust hosts land in a later step)"
-        ))),
+        // Native Rust: the `jmp-rust-host` binary (JMP_RUST_DRIVER_HOST overrides the path).
+        "rust" => {
+            let host_bin = std::env::var("JMP_RUST_DRIVER_HOST")
+                .unwrap_or_else(|_| "jmp-rust-host".to_string());
+            let mut c = Command::new(host_bin);
+            c.arg("--serve").arg(uds);
+            c
+        }
+        other => {
+            return Err(Error::Config(format!(
+                "driver runtime `{other}` is not supported (expected `python` or `rust`)"
+            )))
+        }
+    };
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true);
+    let mut child = command
+        .spawn()
+        .map_err(|e| Error::Config(format!("spawning {runtime} driver host: {e}")))?;
+
+    // Stream the single-entry config to the host on stdin, then close it (EOF).
+    if let Some(mut stdin) = child.stdin.take() {
+        use tokio::io::AsyncWriteExt as _;
+        stdin
+            .write_all(yaml.as_bytes())
+            .await
+            .map_err(|e| Error::Config(format!("writing config to driver host: {e}")))?;
+        let _ = stdin.shutdown().await;
     }
+    Ok(EntryHost { _child: child })
 }
 
 /// Dial a driver host's UDS, retrying until it answers `GetReport` (the host binds its socket

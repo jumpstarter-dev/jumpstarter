@@ -1405,6 +1405,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "jumpstarter-driver-example"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "jumpstarter-config",
+ "jumpstarter-core",
+ "jumpstarter-exporter",
+ "jumpstarter-transport",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "jumpstarter-exporter"
 version = "0.0.0"
 dependencies = [
