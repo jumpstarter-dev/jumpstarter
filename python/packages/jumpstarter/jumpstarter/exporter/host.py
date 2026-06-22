@@ -65,8 +65,12 @@ def _raise_mapped(exc: BaseException) -> None:
 class DriverHost:
     """A lease's driver host: the whole instantiated driver tree, dispatched by UUID."""
 
-    def __init__(self, root):
+    def __init__(self, root, root_name: str | None = None):
         self._root = root
+        # The polyglot host serves one top-level `export:` entry directly as the root; its name
+        # (the entry key) rides on the root node's `jumpstarter.dev/name` label so the hub can
+        # re-parent it. `serve()` builds a root from a local driver and passes no name.
+        self._root_name = root_name
         self._by_uuid = {str(uuid): driver for (uuid, _p, _n, driver) in root.enumerate()}
         self._handles = count(1)
         self._result_streams: dict[int, tuple[str, Any]] = {}
@@ -85,8 +89,11 @@ class DriverHost:
             labels = dict(driver.labels)
             labels.update(driver.extra_labels())
             labels["jumpstarter.dev/client"] = driver.client()
-            if name:
-                labels["jumpstarter.dev/name"] = name
+            # Children take their name from the parent's child-key; the root entry takes the
+            # configured entry name (so the hub re-parents it under the synthesized root).
+            node_name = name or (self._root_name if parent is None else None)
+            if node_name:
+                labels["jumpstarter.dev/name"] = node_name
             nodes.append(
                 jc.DriverNode(
                     uuid=str(uuid),
@@ -297,16 +304,17 @@ class DriverHostFactory:
         return factory
 
     def new_host(self) -> DriverHost:
-        from jumpstarter.common.importlib import import_class
-
         if self._config_yaml is not None:
             spec = jc.load_exporter_spec_str(self._config_yaml)
         else:
             spec = jc.load_exporter_spec(self._config_path)
-        children = {name: _instantiate_spec(node) for name, node in spec.export.items()}
-        composite = import_class("jumpstarter_driver_composite.driver.Composite", [], True)
-        root = composite(description=spec.description or None, methods_description={}, children=children)
-        return DriverHost(root)
+        # One top-level `export:` entry per host (the polyglot hub spawns one host per entry).
+        # Serve that entry's subtree directly as the root — the hub re-parents it under the
+        # synthesized Composite root — so no redundant Composite wrapper is instantiated here.
+        (name, node), *rest = spec.export.items()
+        if rest:  # defensive: the hub never sends more than one entry
+            raise ValueError(f"driver host expected a single export entry, got {1 + len(rest)}")
+        return DriverHost(_instantiate_spec(node), root_name=name)
 
 
 # --------------------------------------------------------------------------------------

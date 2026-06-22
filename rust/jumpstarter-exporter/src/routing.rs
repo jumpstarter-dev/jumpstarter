@@ -3,10 +3,9 @@
 //! The exporter hub spawns one driver host per top-level `export:` entry (each serving that
 //! entry's cohesive subtree) and federates them through a [`RoutingBackend`]: a single
 //! [`DriverBackend`] that the per-lease [`crate::session::RoutingTable`] routes into,
-//! unchanged. The hub owns the tree shape that Python used to build — it synthesizes the root
-//! `Composite` (which the Python exporter wraps every tree in), drops each child host's own
-//! wrapper root, re-parents each entry under the hub root, and dispatches every call/stream to
-//! the owning entry's backend by UUID. Distinct entries dispatch concurrently.
+//! unchanged. The hub owns the tree shape: it synthesizes the root `Composite`, re-parents each
+//! child host's entry root (which the host serves directly) under it, and dispatches every
+//! call/stream to the owning entry's backend by UUID. Distinct entries dispatch concurrently.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -23,9 +22,8 @@ use tonic::Status;
 
 use crate::backend::{DriverBackend, FrameUplink, ResponseStream, RouterStreamOpen};
 
-/// The `jumpstarter.dev/client` of the synthetic root: the same `Composite` the Python
-/// exporter roots every driver tree in (`exporter/host.py:294-295`), so the client builds an
-/// identical tree.
+/// The `jumpstarter.dev/client` of the hub's synthetic root `Composite`, so the client builds a
+/// `CompositeClient` root with the entries as children (the standard single-exporter tree shape).
 const COMPOSITE_CLIENT: &str = "jumpstarter_driver_composite.client.CompositeClient";
 const CLIENT_LABEL: &str = "jumpstarter.dev/client";
 
@@ -72,22 +70,11 @@ impl RoutingBackend {
 
         for entry in entries {
             let sub = entry.backend.get_report().await?;
-            // The child host wraps its single entry in its own `Composite` root (the standard
-            // exporter instantiation). Find that wrapper so we can drop it and re-root.
-            let host_root: Option<String> = sub
-                .reports
-                .iter()
-                .find(|r| r.parent_uuid.is_none())
-                .map(|r| r.uuid.clone());
-
+            // Each child host serves its single entry's subtree directly — the entry node is the
+            // host's root (`parent_uuid == None`), carrying its `jumpstarter.dev/name` label.
+            // Re-parent that root under the hub's synthesized root; everything else is unchanged.
             for mut node in sub.reports {
-                if Some(&node.uuid) == host_root.as_ref() {
-                    // Drop the child's wrapper root — the hub root replaces it.
-                    continue;
-                }
-                if node.parent_uuid == host_root {
-                    // Re-parent the entry's top node(s) under the hub root, preserving the
-                    // `jumpstarter.dev/name` label the child host already set.
+                if node.parent_uuid.is_none() {
                     node.parent_uuid = Some(root_uuid.clone());
                 }
                 routes.insert(node.uuid.clone(), entry.backend.clone());
@@ -213,12 +200,10 @@ mod tests {
     }
 
     impl MockEntry {
-        /// One entry: a wrapper `Composite` root + the named entry leaf (+ optional grandchild).
-        fn new(wrapper: &str, entry_uuid: &str, name: &str, grandchild: Option<&str>) -> Self {
-            let mut reports = vec![
-                node(wrapper, None, None, COMPOSITE_CLIENT),
-                node(entry_uuid, Some(wrapper), Some(name), "pkg.client.Thing"),
-            ];
+        /// One entry served directly as the host root: the named entry node (`parent_uuid ==
+        /// None`, carrying its name label) + an optional grandchild.
+        fn new(entry_uuid: &str, name: &str, grandchild: Option<&str>) -> Self {
+            let mut reports = vec![node(entry_uuid, None, Some(name), "pkg.client.Thing")];
             if let Some(gc) = grandchild {
                 reports.push(node(gc, Some(entry_uuid), Some("inner"), "pkg.client.Inner"));
             }
@@ -266,8 +251,8 @@ mod tests {
     }
 
     async fn routing() -> (RoutingBackend, Arc<MockEntry>, Arc<MockEntry>) {
-        let power = Arc::new(MockEntry::new("w1", "power-uuid", "power", None));
-        let serial = Arc::new(MockEntry::new("w2", "serial-uuid", "serial", Some("gc-uuid")));
+        let power = Arc::new(MockEntry::new("power-uuid", "power", None));
+        let serial = Arc::new(MockEntry::new("serial-uuid", "serial", Some("gc-uuid")));
         let backend = RoutingBackend::build(
             "root-uuid".to_string(),
             Some("the lab".to_string()),
@@ -294,7 +279,8 @@ mod tests {
         let by_uuid: HashMap<_, _> =
             report.reports.iter().map(|r| (r.uuid.as_str(), r)).collect();
 
-        // Exactly one root, the synthetic Composite — the child wrappers (w1/w2) are dropped.
+        // Exactly one root: the synthetic Composite (each host serves its entry directly, so
+        // there are no per-host wrapper roots to drop).
         let roots: Vec<_> = report
             .reports
             .iter()
@@ -304,8 +290,6 @@ mod tests {
         assert_eq!(roots[0].uuid, "root-uuid");
         assert_eq!(roots[0].labels[CLIENT_LABEL], COMPOSITE_CLIENT);
         assert_eq!(roots[0].description.as_deref(), Some("the lab"));
-        assert!(!by_uuid.contains_key("w1"));
-        assert!(!by_uuid.contains_key("w2"));
 
         // Each entry is re-parented under the hub root, keeping its name label.
         assert_eq!(by_uuid["power-uuid"].parent_uuid.as_deref(), Some("root-uuid"));

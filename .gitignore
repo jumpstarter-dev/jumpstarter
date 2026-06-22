@@ -35,3 +35,9 @@ python/docs/source/reference/grpc/*.md
 .specify/
 .envrc
 specs/
+
+# Test / coverage artifacts (generated at the repo root by pytest/e2e runs)
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
