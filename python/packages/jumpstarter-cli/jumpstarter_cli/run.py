@@ -144,24 +144,18 @@ def _handle_child(config_path):
         async with create_task_group() as tg:
             import jumpstarter_core as jc
 
-            from jumpstarter.exporter.host import DriverHostFactory
-
-            # Foreign async callbacks (driver_call / stream_*) run on Rust/tokio worker threads
-            # where asyncio.get_running_loop() raises; register this loop with UniFFI so they
-            # schedule onto it.
-            set_event_loop = getattr(jc, "uniffi_set_event_loop", None)
-            if set_event_loop is None:
-                from jumpstarter_core import jumpstarter_core as _jc_mod
-
-                set_event_loop = _jc_mod.uniffi_set_event_loop
-            set_event_loop(asyncio.get_running_loop())
-
             tg.start_soon(signal_handler, tg.cancel_scope)
 
+            # The polyglot hub spawns one driver-host subprocess per top-level export entry; those
+            # must run in this same venv (jumpstarter_core + drivers importable), so default the
+            # host interpreter to ours (an explicit JMP_DRIVER_HOST_PYTHON still wins).
+            os.environ.setdefault("JMP_DRIVER_HOST_PYTHON", sys.executable)
+
             path = str(config_path)
-            factory = DriverHostFactory(path)
             try:
-                exit_kind = await jc.run_exporter(path, factory)
+                # The hub federates the per-entry hosts by UUID — no in-process factory here;
+                # each per-entry host provides its own (jumpstarter.exporter_host).
+                exit_kind = await jc.run_exporter_polyglot(path)
             except* Exception as excgroup:
                 _handle_exporter_exceptions(excgroup)
             tg.cancel_scope.cancel()

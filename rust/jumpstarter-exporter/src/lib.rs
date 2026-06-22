@@ -24,6 +24,7 @@ pub mod exporter;
 pub mod fsm;
 pub mod hooks;
 pub mod logbuf;
+pub mod polyglot;
 pub mod routing;
 pub mod session;
 pub mod standalone;

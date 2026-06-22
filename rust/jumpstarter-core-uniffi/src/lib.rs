@@ -209,6 +209,77 @@ pub async fn run_exporter_standalone(
     .map_err(|e| ExporterError::Runtime(e.to_string()))
 }
 
+/// Serve **one** driver host on a private `uds` for the polyglot hub: provision the foreign
+/// driver tree (the single-entry `factory`), then serve the driver-level
+/// `ExporterService`+`RouterService` on the socket until the process is killed. No controller,
+/// lease, or hooks — the hub owns those. Each per-entry `jumpstarter_exporter_host` subprocess
+/// awaits this; the hub dials the socket and federates the entries.
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn serve_driver_host(
+    uds: String,
+    factory: Arc<dyn DriverHostFactory>,
+) -> Result<(), ExporterError> {
+    use jumpstarter_exporter::control::StatusSnapshot;
+    use jumpstarter_exporter::logbuf::HookLog;
+    use jumpstarter_exporter::session::{self, RoutingTable, SharedSession};
+
+    init_exporter_tracing();
+    let host_factory: Arc<dyn HostFactory> = Arc::new(UniffiHostFactory { inner: factory });
+    let (backend, _guard) = host_factory
+        .provision()
+        .await
+        .map_err(|e| ExporterError::Runtime(e.to_string()))?;
+    let routing = RoutingTable::build(backend)
+        .await
+        .map_err(|e| ExporterError::Runtime(e.to_string()))?;
+
+    // Pin the session watch channels — there is no lease loop here (the host serves one fixed
+    // driver tree for its lifetime); the senders are held so receivers never observe `Closed`.
+    let (_rtx, routing_rx) = tokio::sync::watch::channel(Some(Arc::new(routing)));
+    let (_stx, status_rx) = tokio::sync::watch::channel(StatusSnapshot::default());
+    let (_etx, end_rx) = tokio::sync::watch::channel(None);
+    let shared = SharedSession::new(routing_rx, status_rx, end_rx, HookLog::new());
+
+    let hook_uds = format!("{uds}.hook");
+    let server = session::serve(
+        shared,
+        std::path::Path::new(&uds),
+        std::path::Path::new(&hook_uds),
+    )
+    .map_err(|e| ExporterError::Runtime(e.to_string()))?;
+
+    // Serve until the hub SIGKILLs us at lease end (or a signal terminates the process).
+    let _ = server.await;
+    drop(_guard);
+    Ok(())
+}
+
+/// Run the exporter as the **polyglot hub**: register with the controller and, per lease, spawn
+/// one driver host per top-level `export:` entry (a Python `jumpstarter_exporter_host`
+/// subprocess today; native Rust later), federating them by UUID. The hub embeds no language
+/// runtime — a pure-native driver set spawns no Python at all. Python awaits this for the
+/// process lifetime; returns why it ended (restart vs terminate), like [`run_exporter`].
+#[uniffi::export(async_runtime = "tokio")]
+pub async fn run_exporter_polyglot(config_path: String) -> Result<ExporterExit, ExporterError> {
+    use jumpstarter_config::{ExporterConfig, YamlConfig};
+
+    init_exporter_tracing();
+    let config = ExporterConfig::load(&config_path)
+        .map_err(|e| ExporterError::Config(format!("loading exporter config: {e}")))?;
+    let factory: Arc<dyn HostFactory> = Arc::new(
+        jumpstarter_exporter::polyglot::PolyglotHostFactory::new(std::path::PathBuf::from(
+            config_path,
+        )),
+    );
+    let exit = jumpstarter_exporter::run_with_factory(config, factory)
+        .await
+        .map_err(|e| ExporterError::Runtime(e.to_string()))?;
+    Ok(match exit {
+        jumpstarter_exporter::ExporterExit::Shutdown => ExporterExit::Shutdown,
+        jumpstarter_exporter::ExporterExit::Completed => ExporterExit::Completed,
+    })
+}
+
 /// Run the Rust `jmp` CLI command tree from a forwarded argv (`args[0]` is the program
 /// name), returning the process exit code. The language entrypoint forwards the pure-Rust
 /// commands here — `shell`/`create`/`delete`/`update`/`get`/`admin`/`auth`/`login`/`config`/
