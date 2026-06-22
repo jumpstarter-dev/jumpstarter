@@ -169,4 +169,7 @@ cython_debug/
 
 # Ruff cache
 .ruff_cache/
+
+# Per-package uv cache (parallel test isolation)
+.uv-cache/
 mitmproxy-ca-cert.pem
