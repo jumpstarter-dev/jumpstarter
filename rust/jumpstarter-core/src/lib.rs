@@ -10,6 +10,7 @@
 pub mod client;
 pub mod codec;
 pub mod controller;
+pub mod driver;
 pub mod dto;
 pub mod error;
 pub mod foreign;
@@ -18,6 +19,7 @@ pub mod report;
 
 pub use client::{ClientByteStream, ClientLogStream, ClientResultStream, ClientSession};
 pub use controller::{ControllerSession, LeaseTransport};
+pub use driver::{Driver, NativeDriverBackend};
 pub use dto::DriverNode;
 pub use error::{CodecError, ControllerError, DriverCallError};
 pub use foreign::ForeignDriver;

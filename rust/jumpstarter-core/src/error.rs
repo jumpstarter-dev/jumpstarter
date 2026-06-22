@@ -54,6 +54,21 @@ impl DriverCallError {
     }
 }
 
+/// The single mapping of a driver-call error to the `tonic::Status` remote clients observe — the
+/// same code+message table the Python `context.abort(...)` produced. Used by every backend that
+/// serves a driver (the foreign-host adapter and native Rust drivers).
+impl From<DriverCallError> for tonic::Status {
+    fn from(e: DriverCallError) -> Self {
+        match e {
+            DriverCallError::Unimplemented(m) => tonic::Status::unimplemented(m),
+            DriverCallError::InvalidArgument(m) => tonic::Status::invalid_argument(m),
+            DriverCallError::DeadlineExceeded(m) => tonic::Status::deadline_exceeded(m),
+            DriverCallError::NotFound(m) => tonic::Status::not_found(m),
+            DriverCallError::Unknown(m) => tonic::Status::unknown(m),
+        }
+    }
+}
+
 /// A controller/lease operation failure (the programmatic lease surface — [`crate::controller`]).
 /// Mirrors the meaningful `jumpstarter_client::ClientError`/`LeaseError` cases the Python
 /// `Lease` shim and `jumpstarter-testing` need to distinguish.

@@ -27,5 +27,7 @@ serde_json.workspace = true
 async-trait = "0.1"
 thiserror.workspace = true
 tonic.workspace = true
+# Mint uuids for native Rust drivers served via NativeDriverBackend.
+uuid = { version = "1", features = ["v4"] }
 tokio = { workspace = true, features = ["rt", "sync", "macros"] }
 tokio-stream = "0.1"
