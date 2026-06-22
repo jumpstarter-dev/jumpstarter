@@ -3,8 +3,8 @@
 //! Adapts a binding-agnostic [`DriverApi`] (implemented in Python/Kotlin/C) to the
 //! exporter's proto-typed [`DriverBackend`] seam, so the Rust exporter serves driver
 //! calls/streams by calling the foreign host *in process* instead of proxying gRPC to a
-//! subprocess. This is the replacement for `SlimHostBackend` — same behavior, no second
-//! process and no second gRPC stack.
+//! subprocess. This is the in-process counterpart to the subprocess `ChannelBackend` — same
+//! behavior, no second process and no second gRPC stack.
 //!
 //! Rust owns everything mechanical here: the value codec (`args`/`result` proto `Value`
 //! ⇄ JSON via [`crate::codec`]), `DriverReport` assembly (via [`crate::report`]), the

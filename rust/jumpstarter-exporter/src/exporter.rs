@@ -326,7 +326,7 @@ async fn status_loop(
                     let _ = lease.handle.await;
                     routing_tx.send_replace(None);
                     end_session_tx.send_replace(None);
-                    drop(lease._guard); // tears down the host (SlimHost SIGKILL / foreign close)
+                    drop(lease._guard); // tears down the per-driver hosts (subprocess SIGKILL / foreign close)
                     sleep(INTER_LEASE_SETTLE).await;
                 }
                 // Steady state (still leased, or still idle): nothing to do.

@@ -4,10 +4,9 @@
 //! A Rust exporter that registers with the controller, consumes the `Status`/`Listen`
 //! streams, and serves one lease at a time. It **serves the client/hook-facing
 //! `ExporterService` + `RouterService` itself** ([`session`] + [`tunnel`]) on its own
-//! main + hook sockets, terminating each client tunnel into that server, and hosts the
-//! real Python drivers in a slim per-lease [`driver_host::SlimHost`] subprocess that
-//! it proxies driver calls into by UUID. The host is [pre-warmed](exporter) so a lease
-//! doesn't pay the spawn cost.
+//! main + hook sockets, terminating each client tunnel into that server, and hosts each
+//! driver in its own subprocess ([`polyglot`] — one host per driver, Python or native
+//! Rust) that it routes driver calls into by UUID ([`routing`]).
 //!
 //! Each lease runs through the [`fsm`] lease-lifecycle state machine, executing the
 //! `beforeLease`/`afterLease` [`hooks`] against the Rust hook socket and reporting the
@@ -34,6 +33,5 @@ pub mod tunnel;
 /// the shared controller-channel and router-bridge paths.
 pub type Error = jumpstarter_client::ClientError;
 
-pub use driver_host::SlimHost;
 pub use exporter::{run, run_with_factory, ExporterExit, RunOptions};
 pub use standalone::serve_standalone_tcp;
