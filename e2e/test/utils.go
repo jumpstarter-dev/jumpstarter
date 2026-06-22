@@ -439,7 +439,8 @@ func (pt *ProcessTracker) StartDirectExporter(configFile string, port int, passp
 
 	var stderrBuf *logBuffer
 	if captureStderr {
-		stderrBuf = pt.getOrCreateLog("direct-exporter-stderr")
+		logName := "direct-exporter-stderr-" + strconv.Itoa(port)
+		stderrBuf = pt.getOrCreateLog(logName)
 		cmd.Stderr = stderrBuf
 	}
 
