@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import anyio
 import pytest
+from jumpstarter_testing.eventually import eventually
 
 from .driver import BleWriteNotifyStream, _ble_notify_handler
 from jumpstarter.common.utils import serve
@@ -76,7 +77,11 @@ def test_ble_driver_connect_stream():
             with client.stream() as stream:
                 # Send data through the stream
                 stream.send(b"hello")
-                mock_client.write_gatt_char.assert_called()
+
+                # stream.send() only guarantees data was written to the
+                # gRPC transport, not that the server has called
+                # write_gatt_char yet — poll until it has.
+                eventually(mock_client.write_gatt_char.assert_called)
 
                 # Verify start_notify was called for the notify characteristic
                 mock_client.start_notify.assert_called_once()

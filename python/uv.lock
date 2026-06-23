@@ -2340,6 +2340,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "jumpstarter-testing" },
     { name = "pytest" },
     { name = "pytest-anyio" },
     { name = "pytest-cov" },
@@ -2356,6 +2357,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "jumpstarter-testing", editable = "packages/jumpstarter-testing" },
     { name = "pytest", specifier = ">=8.3.3" },
     { name = "pytest-anyio", specifier = ">=0.0.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
