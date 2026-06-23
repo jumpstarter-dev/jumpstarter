@@ -16,6 +16,15 @@ dependencies = [
     "click>=8.1.7.2",
 ]
 
+[project.optional-dependencies]
+# Presigned-resource fetching (`Driver._resource_from_presigned` in driver/base.py) downloads a
+# presigned HTTP URL server-side; aiohttp/yarl are imported lazily, so the base install stays lean
+# and only users of the presigned path need this extra.
+presigned = [
+    "aiohttp>=3.9.0",
+    "yarl>=1.9.0",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.3.2",
@@ -26,6 +35,9 @@ dev = [
     # pydantic is no longer a runtime dependency (the value codec + config parsing
     # live in the Rust core); the jsonable parity test still pins its output.
     "pydantic>=2.8.2",
+    # The presigned extra's deps — the base_test / streams.aiohttp doctest collection import them.
+    "aiohttp>=3.9.0",
+    "yarl>=1.9.0",
     "jumpstarter-driver-power",
     "jumpstarter-driver-network",
     "jumpstarter-driver-composite",

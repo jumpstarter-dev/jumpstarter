@@ -13,6 +13,7 @@ dependencies = [
     "jumpstarter-driver-composite",
     "jumpstarter-driver-opendal",
     "yarl>=1.18.3",
+    "aiohttp>=3.9.0",
 ]
 
 [project.entry-points."jumpstarter.drivers"]

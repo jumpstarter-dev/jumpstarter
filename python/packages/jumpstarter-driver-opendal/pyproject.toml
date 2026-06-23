@@ -15,6 +15,7 @@ dependencies = [
   "yarl>=1.6.0",
   "opendal>=0.45.8,<0.46",
   "click>=8.1.7.2",
+  "pydantic>=2.8.2",
 ]
 
 [project.entry-points."jumpstarter.adapters"]

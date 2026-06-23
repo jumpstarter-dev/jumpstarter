@@ -24,6 +24,7 @@ dependencies = [
     "jumpstarter-driver-tftp",
     "jumpstarter-driver-power",
     "jumpstarter-driver-uboot",
+    "pydantic>=2.8.2",
 ]
 
 [project.entry-points."jumpstarter.drivers"]

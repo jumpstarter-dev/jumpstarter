@@ -21,3 +21,9 @@ Repository = "https://github.com/jumpstarter-dev/jumpstarter"
 # the wheel `py3-none-<platform>` (platform-specific, but a plain script payload).
 manifest-path = "../../../rust/jumpstarter-cli/Cargo.toml"
 bindings = "bin"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.2",
+    "pytest-cov>=6.0.0",
+]

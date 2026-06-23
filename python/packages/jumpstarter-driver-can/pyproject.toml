@@ -10,7 +10,7 @@ authors = [
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = ["jumpstarter", "python-can>=4.5.0", "can-isotp>=2.0.6"]
+dependencies = ["jumpstarter", "python-can>=4.5.0", "can-isotp>=2.0.6", "pydantic>=2.8.2"]
 
 [project.entry-points."jumpstarter.drivers"]
 Can = "jumpstarter_driver_can.driver:Can"

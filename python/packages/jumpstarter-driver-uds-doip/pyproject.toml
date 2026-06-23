@@ -13,6 +13,7 @@ dependencies = [
     "jumpstarter-driver-uds",
     "doipclient>=1.1.0",
     "udsoncan>=1.21",
+    "pydantic>=2.8.2",
 ]
 
 [project.entry-points."jumpstarter.drivers"]

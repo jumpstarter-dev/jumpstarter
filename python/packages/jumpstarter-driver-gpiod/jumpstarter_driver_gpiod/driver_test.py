@@ -46,7 +46,7 @@ def setup_gpiod_mocks(mock_gpiod, line_number=18, line_name=None):
 def digital_output_client():
     """Create a DigitalOutputClient instance with mocked dependencies"""
     # Mock the required attributes
-    client = DigitalOutputClient(stub=MagicMock(), portal=MagicMock(), stack=MagicMock())
+    client = DigitalOutputClient(session=MagicMock(), portal=MagicMock(), stack=MagicMock())
     client.uuid = "test-uuid"  # ty: ignore[invalid-assignment]
     return client
 
@@ -55,7 +55,7 @@ def digital_output_client():
 def digital_input_client():
     """Create a DigitalInputClient instance with mocked dependencies"""
     # Mock the required attributes
-    client = DigitalInputClient(stub=MagicMock(), portal=MagicMock(), stack=MagicMock())
+    client = DigitalInputClient(session=MagicMock(), portal=MagicMock(), stack=MagicMock())
     client.uuid = "test-uuid"  # ty: ignore[invalid-assignment]
     return client
 

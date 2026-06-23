@@ -10,7 +10,7 @@ authors = [
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = ["jumpstarter", "pillow>=10.4.0"]
+dependencies = ["jumpstarter", "pillow>=10.4.0", "pydantic>=2.8.2", "aiohttp>=3.9.0"]
 
 [project.entry-points."jumpstarter.drivers"]
 UStreamer = "jumpstarter_driver_ustreamer.driver:UStreamer"

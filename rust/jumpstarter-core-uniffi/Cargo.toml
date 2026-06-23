@@ -12,6 +12,11 @@ rust-version.workspace = true
 [lib]
 crate-type = ["cdylib", "lib"]
 name = "jumpstarter_core"
+# The lib is deliberately named `jumpstarter_core` (the Python module name), which collides with the
+# `jumpstarter-core` dependency's lib of the same name. That's fine for the cdylib/rlib, but rustdoc's
+# doctest harness gets two `--extern jumpstarter_core` and errors E0464. This crate is binding
+# scaffolding with no doctests, so disable them (unit tests still run).
+doctest = false
 
 [[bin]]
 name = "uniffi-bindgen"

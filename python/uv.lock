@@ -1714,8 +1714,15 @@ dependencies = [
     { name = "jumpstarter-core" },
 ]
 
+[package.optional-dependencies]
+presigned = [
+    { name = "aiohttp" },
+    { name = "yarl" },
+]
+
 [package.dev-dependencies]
 dev = [
+    { name = "aiohttp" },
     { name = "cryptography", version = "44.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "cryptography", version = "45.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "jumpstarter-driver-composite" },
@@ -1726,17 +1733,22 @@ dev = [
     { name = "pytest-anyio" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
+    { name = "yarl" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", marker = "extra == 'presigned'", specifier = ">=3.9.0" },
     { name = "anyio", specifier = ">=4.4.0,!=4.6.2" },
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter-core", editable = "packages/jumpstarter-core" },
+    { name = "yarl", marker = "extra == 'presigned'", specifier = ">=1.9.0" },
 ]
+provides-extras = ["presigned"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "aiohttp", specifier = ">=3.9.0" },
     { name = "cryptography", specifier = ">=43.0.3" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
@@ -1746,6 +1758,7 @@ dev = [
     { name = "pytest-anyio", specifier = ">=0.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.0.0" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
+    { name = "yarl", specifier = ">=1.9.0" },
 ]
 
 [[package]]
@@ -1881,10 +1894,38 @@ name = "jumpstarter-cli-bin"
 version = "0.0.0"
 source = { editable = "packages/jumpstarter-cli-bin" }
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
 [[package]]
 name = "jumpstarter-core"
 version = "0.0.0"
 source = { editable = "packages/jumpstarter-core" }
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
 
 [[package]]
 name = "jumpstarter-driver-adb"
@@ -2000,6 +2041,7 @@ source = { editable = "packages/jumpstarter-driver-can" }
 dependencies = [
     { name = "can-isotp" },
     { name = "jumpstarter" },
+    { name = "pydantic" },
     { name = "python-can" },
 ]
 
@@ -2013,6 +2055,7 @@ dev = [
 requires-dist = [
     { name = "can-isotp", specifier = ">=2.0.6" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "pydantic", specifier = ">=2.8.2" },
     { name = "python-can", specifier = ">=4.5.0" },
 ]
 
@@ -2028,6 +2071,7 @@ source = { editable = "packages/jumpstarter-driver-composite" }
 dependencies = [
     { name = "click" },
     { name = "jumpstarter" },
+    { name = "pydantic" },
     { name = "rich" },
 ]
 
@@ -2042,6 +2086,7 @@ dev = [
 requires-dist = [
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "pydantic", specifier = ">=2.8.2" },
     { name = "rich", specifier = ">=14.0.0" },
 ]
 
@@ -2098,6 +2143,7 @@ source = { editable = "packages/jumpstarter-driver-doip" }
 dependencies = [
     { name = "doipclient" },
     { name = "jumpstarter" },
+    { name = "pydantic" },
 ]
 
 [package.dev-dependencies]
@@ -2110,6 +2156,7 @@ dev = [
 requires-dist = [
     { name = "doipclient", specifier = ">=1.1.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "pydantic", specifier = ">=2.8.2" },
 ]
 
 [package.metadata.requires-dev]
@@ -2268,6 +2315,7 @@ dependencies = [
     { name = "jumpstarter-fls" },
     { name = "jumpstarter-oci" },
     { name = "oras" },
+    { name = "pydantic" },
     { name = "pyyaml" },
     { name = "yarl" },
 ]
@@ -2292,6 +2340,7 @@ requires-dist = [
     { name = "jumpstarter-fls", editable = "packages/jumpstarter-fls" },
     { name = "jumpstarter-oci", editable = "packages/jumpstarter-oci" },
     { name = "oras", specifier = ">=0.2.25" },
+    { name = "pydantic", specifier = ">=2.8.2" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "yarl", specifier = ">=1.6.0" },
 ]
@@ -2336,6 +2385,7 @@ dev = [
 name = "jumpstarter-driver-http"
 source = { editable = "packages/jumpstarter-driver-http" }
 dependencies = [
+    { name = "aiohttp" },
     { name = "anyio" },
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-composite" },
@@ -2353,6 +2403,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.9.0" },
     { name = "anyio", specifier = ">=4.10.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
@@ -2406,6 +2457,7 @@ dependencies = [
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-opendal" },
+    { name = "pydantic" },
     { name = "requests" },
     { name = "rtslib-fb" },
 ]
@@ -2424,6 +2476,7 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
+    { name = "pydantic", specifier = ">=2.8.2" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "rtslib-fb" },
 ]
@@ -2442,6 +2495,7 @@ dependencies = [
     { name = "jumpstarter" },
     { name = "mitmproxy", version = "11.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "mitmproxy", version = "12.2.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "pydantic" },
     { name = "pyyaml" },
 ]
 
@@ -2456,6 +2510,7 @@ dev = [
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "mitmproxy", specifier = ">=10.0" },
+    { name = "pydantic", specifier = ">=2.8.2" },
     { name = "pyyaml", specifier = ">=6.0.2" },
 ]
 
@@ -2574,6 +2629,7 @@ dependencies = [
     { name = "click" },
     { name = "jumpstarter" },
     { name = "opendal" },
+    { name = "pydantic" },
     { name = "yarl" },
 ]
 
@@ -2589,6 +2645,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "opendal", specifier = ">=0.45.8,<0.46" },
+    { name = "pydantic", specifier = ">=2.8.2" },
     { name = "yarl", specifier = ">=1.6.0" },
 ]
 
@@ -2636,6 +2693,7 @@ source = { editable = "packages/jumpstarter-driver-power" }
 dependencies = [
     { name = "click" },
     { name = "jumpstarter" },
+    { name = "pydantic" },
     { name = "pyserial" },
 ]
 
@@ -2650,6 +2708,7 @@ dev = [
 requires-dist = [
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "pydantic", specifier = ">=2.8.2" },
     { name = "pyserial", specifier = ">=3.5" },
 ]
 
@@ -2737,6 +2796,7 @@ dependencies = [
     { name = "jumpstarter-driver-pyserial" },
     { name = "jumpstarter-fls" },
     { name = "jumpstarter-oci" },
+    { name = "pydantic" },
     { name = "pyyaml" },
     { name = "qemu-qmp" },
 ]
@@ -2757,6 +2817,7 @@ requires-dist = [
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
     { name = "jumpstarter-fls", editable = "packages/jumpstarter-fls" },
     { name = "jumpstarter-oci", editable = "packages/jumpstarter-oci" },
+    { name = "pydantic", specifier = ">=2.8.2" },
     { name = "pyyaml", specifier = ">=6.0.2" },
     { name = "qemu-qmp", specifier = ">=0.0.3" },
 ]
@@ -2815,6 +2876,7 @@ dependencies = [
     { name = "jumpstarter-driver-pyserial" },
     { name = "jumpstarter-fls" },
     { name = "jumpstarter-oci" },
+    { name = "pydantic" },
 ]
 
 [package.dev-dependencies]
@@ -2833,6 +2895,7 @@ requires-dist = [
     { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
     { name = "jumpstarter-fls", editable = "packages/jumpstarter-fls" },
     { name = "jumpstarter-oci", editable = "packages/jumpstarter-oci" },
+    { name = "pydantic", specifier = ">=2.8.2" },
 ]
 
 [package.metadata.requires-dev]
@@ -2944,6 +3007,7 @@ source = { editable = "packages/jumpstarter-driver-someip" }
 dependencies = [
     { name = "jumpstarter" },
     { name = "opensomeip" },
+    { name = "pydantic" },
 ]
 
 [package.dev-dependencies]
@@ -2956,6 +3020,7 @@ dev = [
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "opensomeip", specifier = ">=0.1.5,<0.2.0" },
+    { name = "pydantic", specifier = ">=2.8.2" },
 ]
 
 [package.metadata.requires-dev]
@@ -3197,6 +3262,7 @@ dependencies = [
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-composite" },
     { name = "pexpect" },
+    { name = "pydantic" },
 ]
 
 [package.dev-dependencies]
@@ -3215,6 +3281,7 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "pexpect", specifier = ">=4.9.0" },
+    { name = "pydantic", specifier = ">=2.8.2" },
 ]
 
 [package.metadata.requires-dev]
@@ -3232,6 +3299,7 @@ name = "jumpstarter-driver-uds"
 source = { editable = "packages/jumpstarter-driver-uds" }
 dependencies = [
     { name = "jumpstarter" },
+    { name = "pydantic" },
     { name = "udsoncan" },
 ]
 
@@ -3244,6 +3312,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "pydantic", specifier = ">=2.8.2" },
     { name = "udsoncan", specifier = ">=1.21" },
 ]
 
@@ -3261,6 +3330,7 @@ dependencies = [
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-can" },
     { name = "jumpstarter-driver-uds" },
+    { name = "pydantic" },
     { name = "python-can" },
     { name = "udsoncan" },
 ]
@@ -3277,6 +3347,7 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-can", editable = "packages/jumpstarter-driver-can" },
     { name = "jumpstarter-driver-uds", editable = "packages/jumpstarter-driver-uds" },
+    { name = "pydantic", specifier = ">=2.8.2" },
     { name = "python-can", specifier = ">=4.5.0" },
     { name = "udsoncan", specifier = ">=1.21" },
 ]
@@ -3294,6 +3365,7 @@ dependencies = [
     { name = "doipclient" },
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-uds" },
+    { name = "pydantic" },
     { name = "udsoncan" },
 ]
 
@@ -3308,6 +3380,7 @@ requires-dist = [
     { name = "doipclient", specifier = ">=1.1.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-uds", editable = "packages/jumpstarter-driver-uds" },
+    { name = "pydantic", specifier = ">=2.8.2" },
     { name = "udsoncan", specifier = ">=1.21" },
 ]
 
@@ -3321,8 +3394,10 @@ dev = [
 name = "jumpstarter-driver-ustreamer"
 source = { editable = "packages/jumpstarter-driver-ustreamer" }
 dependencies = [
+    { name = "aiohttp" },
     { name = "jumpstarter" },
     { name = "pillow" },
+    { name = "pydantic" },
 ]
 
 [package.dev-dependencies]
@@ -3333,8 +3408,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.9.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "pillow", specifier = ">=10.4.0" },
+    { name = "pydantic", specifier = ">=2.8.2" },
 ]
 
 [package.metadata.requires-dev]
@@ -3380,6 +3457,7 @@ name = "jumpstarter-driver-xcp"
 source = { editable = "packages/jumpstarter-driver-xcp" }
 dependencies = [
     { name = "jumpstarter" },
+    { name = "pydantic" },
     { name = "pyxcp" },
 ]
 
@@ -3392,6 +3470,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "pydantic", specifier = ">=2.8.2" },
     { name = "pyxcp", specifier = ">=0.27.0" },
 ]
 
@@ -3556,6 +3635,7 @@ source = { editable = "packages/jumpstarter-ipaddr" }
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
+    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -3564,6 +3644,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-asyncio", specifier = ">=0.0.0" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 

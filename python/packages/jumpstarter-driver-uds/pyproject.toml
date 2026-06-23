@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "jumpstarter",
     "udsoncan>=1.21",
+    "pydantic>=2.8.2",
 ]
 
 [dependency-groups]
