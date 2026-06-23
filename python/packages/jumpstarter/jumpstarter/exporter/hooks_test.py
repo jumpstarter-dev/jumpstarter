@@ -7,6 +7,7 @@ import pytest
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
 from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
 from jumpstarter.exporter.hooks import (
+    DRAIN_MAX_EMPTY_POLLS,
     DRAIN_TIMEOUT_SECONDS,
     MAX_DRAIN_BYTES,
     HookExecutionError,
@@ -904,6 +905,7 @@ class TestHookExecutor:
     async def test_drain_constants_are_reasonable(self) -> None:
         assert MAX_DRAIN_BYTES == 256 * 1024
         assert DRAIN_TIMEOUT_SECONDS == 2.0
+        assert DRAIN_MAX_EMPTY_POLLS == 10
 
     async def test_exec_default_is_none(self) -> None:
         """Test that the default exec is None (auto-detect)."""
