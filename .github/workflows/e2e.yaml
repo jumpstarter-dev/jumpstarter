@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should_run: ${{ steps.filter.outputs.e2e }}
+      e2e-matrix: ${{ steps.matrix.outputs.e2e-matrix }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -37,6 +38,16 @@ jobs:
               - '!python/**/*.md'
               - '.github/workflows/e2e.yaml'
               - 'Makefile'
+      - name: Compute e2e architecture matrix
+        id: matrix
+        run: |
+          # PRs: run only amd64 e2e tests to save CI time.
+          # Merge queue, push to main, and workflow_dispatch run both architectures.
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo 'e2e-matrix=[{"os": "ubuntu-24.04", "arch": "amd64"}]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'e2e-matrix=[{"os": "ubuntu-24.04", "arch": "amd64"}, {"os": "ubuntu-24.04-arm", "arch": "arm64"}]' >> "$GITHUB_OUTPUT"
+          fi
 
   # ===========================================================================
   # Build jobs: container images and Python wheels built in parallel
@@ -47,11 +58,7 @@ jobs:
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     strategy:
       matrix:
-        include:
-          - os: ubuntu-24.04
-            arch: amd64
-          - os: ubuntu-24.04-arm
-            arch: arm64
+        include: ${{ fromJson(needs.changes.outputs.e2e-matrix) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -90,11 +97,7 @@ jobs:
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     strategy:
       matrix:
-        include:
-          - os: ubuntu-24.04
-            arch: amd64
-          - os: ubuntu-24.04-arm
-            arch: arm64
+        include: ${{ fromJson(needs.changes.outputs.e2e-matrix) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -176,14 +179,10 @@ jobs:
   # ===========================================================================
 
   e2e-tests:
-    needs: [build-controller-image, build-operator-image, build-python-wheels]
+    needs: [changes, build-controller-image, build-operator-image, build-python-wheels]
     strategy:
       matrix:
-        include:
-          - os: ubuntu-24.04
-            arch: amd64
-          - os: ubuntu-24.04-arm
-            arch: arm64
+        include: ${{ fromJson(needs.changes.outputs.e2e-matrix) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
