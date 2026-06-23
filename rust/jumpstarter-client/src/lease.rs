@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use jumpstarter_protocol::v1::Condition;
 use tokio::time::{sleep, timeout};
+use tracing::{debug, trace};
 
 use crate::condition;
 use crate::error::{ClientError, LeaseError};
@@ -90,9 +91,16 @@ pub async fn acquire<P: LeaseProvider>(
     // ---- request: establish the lease name -------------------------------
     let name = match existing_name {
         Some(existing) => {
+            debug!(lease = %existing, "verifying existing lease (JMP_LEASE/--lease)");
             let view = provider.get_lease(&existing).await?;
             if let Some(cn) = client_name {
                 if view.client != cn {
+                    debug!(
+                        lease = %existing,
+                        owner = %view.client,
+                        current = %cn,
+                        "existing lease owned by another client"
+                    );
                     return Err(LeaseError::WrongOwner {
                         name: existing,
                         owner: view.client,
@@ -104,27 +112,60 @@ pub async fn acquire<P: LeaseProvider>(
             match &params.selector {
                 Some(sel) if &view.selector != sel => {
                     // Mismatched selector: create a brand-new lease.
+                    debug!(
+                        lease = %existing,
+                        existing_selector = %view.selector,
+                        requested_selector = %sel,
+                        "existing lease selector mismatch; creating a fresh lease"
+                    );
                     let mut fresh = params.clone();
                     fresh.lease_id = None;
-                    provider.create_lease(&fresh).await?
+                    let name = provider.create_lease(&fresh).await?;
+                    debug!(lease = %name, "created lease");
+                    name
                 }
-                _ => existing,
+                _ => {
+                    debug!(lease = %existing, "reusing existing lease");
+                    existing
+                }
             }
         }
-        None => provider.create_lease(&params).await?,
+        None => {
+            debug!(
+                selector = ?params.selector,
+                exporter = ?params.exporter_name,
+                "creating lease"
+            );
+            let name = provider.create_lease(&params).await?;
+            debug!(lease = %name, "created lease");
+            name
+        }
     };
 
     // ---- _acquire: poll conditions under the acquisition budget ----------
     // `CreateLease(lease_id=name)` returns the same name, so `name` is stable
     // across NoExporter re-creation and is safe to report on timeout.
+    debug!(
+        lease = %name,
+        budget_secs = timing.acquisition_timeout.as_secs(),
+        poll_interval = ?timing.poll_interval,
+        "polling lease conditions until Ready"
+    );
     let poll = poll_until_ready(provider, &name, &params, timing.poll_interval);
     match timeout(timing.acquisition_timeout, poll).await {
         Ok(result) => result,
-        Err(_elapsed) => Err(LeaseError::Timeout {
-            name,
-            timeout_secs: timing.acquisition_timeout.as_secs(),
+        Err(_elapsed) => {
+            debug!(
+                lease = %name,
+                timeout_secs = timing.acquisition_timeout.as_secs(),
+                "lease acquisition timed out before Ready"
+            );
+            Err(LeaseError::Timeout {
+                name,
+                timeout_secs: timing.acquisition_timeout.as_secs(),
+            }
+            .into())
         }
-        .into()),
     }
 }
 
@@ -141,10 +182,20 @@ async fn get_with_retry<P: LeaseProvider>(
             Ok(view) => return Ok(view),
             Err(e) if e.is_transient() => {
                 let secs = (1u64 << attempt.min(7)).min(120);
+                debug!(
+                    lease = %name,
+                    attempt,
+                    secs,
+                    error = %e,
+                    "retrying GetLease after transient error"
+                );
                 sleep(Duration::from_secs(secs)).await;
                 attempt = attempt.saturating_add(1);
             }
-            Err(e) => return Err(e),
+            Err(e) => {
+                debug!(lease = %name, error = %e, "GetLease failed with a non-transient error");
+                return Err(e);
+            }
         }
     }
 }
@@ -158,8 +209,18 @@ async fn poll_until_ready<P: LeaseProvider>(
     loop {
         let view = get_with_retry(provider, name).await?;
         let conds = &view.conditions;
+        trace!(
+            lease_name = %name,
+            conditions = ?conds,
+            "polled lease conditions"
+        );
 
         if condition::is_true(conds, "Ready") {
+            debug!(
+                lease_name = %name,
+                exporter = %view.exporter,
+                "lease Ready"
+            );
             return Ok(AcquiredLease {
                 name: name.to_string(),
                 exporter: view.exporter,
@@ -173,12 +234,23 @@ async fn poll_until_ready<P: LeaseProvider>(
             // Old controllers mark offline-but-matching exporters as
             // Unsatisfiable/NoExporter — transient, re-create with the same id.
             if condition::present_and_equal(conds, "Unsatisfiable", "True", Some("NoExporter")) {
+                debug!(
+                    lease_name = %name,
+                    reason = "NoExporter",
+                    delay = ?poll_interval,
+                    "lease Unsatisfiable/NoExporter (transient); re-creating with same id"
+                );
                 sleep(poll_interval).await;
                 let mut recreate = params.clone();
                 recreate.lease_id = Some(name.to_string());
                 provider.create_lease(&recreate).await?;
                 continue;
             }
+            debug!(
+                lease_name = %name,
+                message = %msg,
+                "lease terminal: Unsatisfiable"
+            );
             return Err(LeaseError::Unsatisfiable(msg).into());
         }
 
@@ -186,17 +258,25 @@ async fn poll_until_ready<P: LeaseProvider>(
             let msg = condition::message(conds, "Invalid", None)
                 .unwrap_or_default()
                 .to_string();
+            debug!(
+                lease_name = %name,
+                message = %msg,
+                "lease terminal: Invalid"
+            );
             return Err(LeaseError::Invalid(msg).into());
         }
 
         if condition::is_false(conds, "Pending") {
+            debug!(lease_name = %name, "lease terminal: NotPending");
             return Err(LeaseError::NotPending(name.to_string()).into());
         }
 
         if condition::present_and_equal(conds, "Ready", "False", Some("Released")) {
+            debug!(lease_name = %name, "lease terminal: Released");
             return Err(LeaseError::Released(name.to_string()).into());
         }
 
+        trace!(lease_name = %name, delay = ?poll_interval, "lease still Pending; sleeping before next poll");
         sleep(poll_interval).await;
     }
 }

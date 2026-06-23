@@ -8,7 +8,7 @@
 //! shuts down. Hook subprocesses post origin-typed `Hook(..)` facts back to the runner.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use jumpstarter_client::router;
 use jumpstarter_config::{HookConfig, TlsConfig};
@@ -151,48 +151,92 @@ impl LeaseEffects for ControllerEffects {
         let main_socket = self.main_socket.clone();
         let tls = self.tls.clone();
         tokio::spawn(async move {
-            let mut listen = match controller
-                .listen(ListenRequest {
-                    lease_name: lease_name.clone(),
-                })
-                .await
-            {
-                Ok(r) => r.into_inner(),
-                Err(e) => {
-                    tracing::error!(error = %e, "opening Listen stream failed");
-                    return;
-                }
-            };
-            tracing::info!(lease = %lease_name, "awaiting connection requests");
-            while let Some(item) = listen.next().await {
-                let resp = match item {
-                    Ok(r) => r,
-                    Err(e) => {
-                        tracing::warn!(error = %e, "Listen stream error");
-                        break;
-                    }
-                };
-                sink.send(ClientSignal::Connected);
-                tracing::info!(router = %resp.router_endpoint, "handling connection request");
-                let main_socket = main_socket.clone();
-                let tls = tls.clone();
-                tokio::spawn(async move {
-                    match UnixStream::connect(&main_socket).await {
-                        Ok(stream) => {
-                            if let Err(e) = router::bridge(
-                                stream,
-                                &resp.router_endpoint,
-                                &resp.router_token,
-                                &tls,
-                            )
-                            .await
-                            {
-                                tracing::warn!(error = %e, "router bridge failed");
+            // Reconnect resiliently: a controller restart / network blip drops the Listen stream,
+            // and without this the lease would be permanently unreachable for new clients for the
+            // rest of its life. Distinguish a CLEAN end (the controller closed the stream because
+            // the lease ended → stop) from a transient error (reconnect with bounded backoff). A
+            // consecutive-failure budget stops a doomed loop (lease gone *and* controller
+            // unreachable) so the task can't leak after the lease is over.
+            const MAX_BACKOFF: Duration = Duration::from_secs(2);
+            const GIVE_UP_AFTER: Duration = Duration::from_secs(60);
+            let mut backoff = Duration::from_millis(100);
+            let mut failing_since: Option<Instant> = None;
+            loop {
+                let mut clean_end = false;
+                let mut made_progress = false;
+                match controller
+                    .listen(ListenRequest {
+                        lease_name: lease_name.clone(),
+                    })
+                    .await
+                {
+                    Ok(stream) => {
+                        let mut listen = stream.into_inner();
+                        tracing::info!(lease = %lease_name, "awaiting connection requests");
+                        loop {
+                            match listen.next().await {
+                                Some(Ok(resp)) => {
+                                    made_progress = true;
+                                    sink.send(ClientSignal::Connected);
+                                    tracing::debug!(lease = %lease_name, router_endpoint = %resp.router_endpoint, "accepted connection request");
+                                    let main_socket = main_socket.clone();
+                                    let tls = tls.clone();
+                                    let bridge_lease = lease_name.clone();
+                                    tokio::spawn(async move {
+                                        match UnixStream::connect(&main_socket).await {
+                                            Ok(stream) => {
+                                                if let Err(e) = router::bridge(
+                                                    stream,
+                                                    &resp.router_endpoint,
+                                                    &resp.router_token,
+                                                    &tls,
+                                                )
+                                                .await
+                                                {
+                                                    tracing::warn!(lease = %bridge_lease, error = %e, "router bridge failed");
+                                                } else {
+                                                    tracing::debug!(lease = %bridge_lease, "router bridge completed");
+                                                }
+                                            }
+                                            Err(e) => tracing::warn!(lease = %bridge_lease, error = %e, "connecting to session socket failed"),
+                                        }
+                                    });
+                                }
+                                Some(Err(e)) => {
+                                    tracing::warn!(lease = %lease_name, error = %e, "Listen stream error; reconnecting");
+                                    break;
+                                }
+                                None => {
+                                    // The controller closed the stream cleanly — the lease ended.
+                                    tracing::debug!(lease = %lease_name, "Listen stream closed by controller; lease ended");
+                                    clean_end = true;
+                                    break;
+                                }
                             }
                         }
-                        Err(e) => tracing::warn!(error = %e, "connecting to session socket failed"),
                     }
-                });
+                    Err(e) => {
+                        tracing::warn!(lease = %lease_name, error = %e, "opening Listen stream failed; retrying");
+                    }
+                }
+
+                if clean_end {
+                    return;
+                }
+                // Transient failure: a round that delivered connections resets the budget;
+                // otherwise enforce the consecutive-failure deadline so a doomed loop can't leak.
+                if made_progress {
+                    backoff = Duration::from_millis(100);
+                    failing_since = None;
+                } else {
+                    let since = *failing_since.get_or_insert_with(Instant::now);
+                    if since.elapsed() >= GIVE_UP_AFTER {
+                        tracing::error!(lease = %lease_name, "Listen stream unrecoverable after 60s; giving up");
+                        return;
+                    }
+                }
+                tokio::time::sleep(backoff).await;
+                backoff = (backoff * 2).min(MAX_BACKOFF);
             }
         });
     }
@@ -213,6 +257,7 @@ impl LeaseEffects for ControllerEffects {
         let hook_log = self.hook_log.clone();
         let mut reporter = self.reporter.clone();
         tokio::spawn(async move {
+            tracing::debug!(lease = %lease_name, client = %client_name, "beforeLease hook effect started");
             // Posts BeforeDone on Drop (incl. a panic unwind) so the runner never hangs.
             let mut done = HookDonePost::before(sink);
             let hctx = HookContext {
@@ -249,6 +294,7 @@ impl LeaseEffects for ControllerEffects {
                     HookResult::Failed
                 }
             };
+            tracing::debug!(lease = %lease_name, client = %client_name, ?result, "beforeLease hook effect finished");
             done.post(result);
         });
     }
@@ -264,6 +310,7 @@ impl LeaseEffects for ControllerEffects {
         let hook_log = self.hook_log.clone();
         let mut reporter = self.reporter.clone();
         tokio::spawn(async move {
+            tracing::debug!(lease = %lease_name, client = %client_name, "afterLease hook effect started");
             // Posts AfterDone on Drop (incl. a panic unwind) so the runner never hangs.
             let mut done = HookDonePost::after(sink);
             let hctx = HookContext {
@@ -300,6 +347,7 @@ impl LeaseEffects for ControllerEffects {
                     HookResult::Failed
                 }
             };
+            tracing::debug!(lease = %lease_name, client = %client_name, ?result, "afterLease hook effect finished");
             done.post(result);
         });
     }

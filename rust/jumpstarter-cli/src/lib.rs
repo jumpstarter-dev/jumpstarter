@@ -52,6 +52,27 @@ enum Command {
     Completion(commands::completion::Args),
 }
 
+impl Command {
+    /// Static name of the selected subcommand, for log context.
+    fn name(&self) -> &'static str {
+        match self {
+            Command::Admin(_) => "admin",
+            Command::Shell(_) => "shell",
+            Command::Run(_) => "run",
+            Command::Config(_) => "config",
+            Command::Create(_) => "create",
+            Command::Get(_) => "get",
+            Command::Delete(_) => "delete",
+            Command::Update(_) => "update",
+            Command::Auth(_) => "auth",
+            Command::Login(_) => "login",
+            Command::Mcp(_) => "mcp",
+            Command::Version(_) => "version",
+            Command::Completion(_) => "completion",
+        }
+    }
+}
+
 /// Install the process-wide rustls crypto provider (multiple deps pull different ones).
 /// Idempotent; safe to call from both the binary and the FFI entrypoint.
 pub fn install_crypto_provider() {
@@ -71,6 +92,7 @@ pub fn init_tracing() {
 }
 
 async fn run_command(command: Command) -> u8 {
+    tracing::debug!(command = command.name(), "dispatching jmp command");
     match command {
         Command::Admin(args) => commands::admin::run(args).await,
         Command::Shell(args) => commands::shell::run(args).await,

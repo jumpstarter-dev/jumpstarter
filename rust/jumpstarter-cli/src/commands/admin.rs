@@ -21,6 +21,8 @@ pub struct Args {
     command: Command,
 }
 
+// One-shot CLI dispatch enum (parsed once at startup), so the variant-size spread doesn't matter.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand)]
 enum Command {
     /// Create Jumpstarter Kubernetes objects.
@@ -565,6 +567,7 @@ async fn get_cluster(a: GetClusterArgs) -> Result<(), CmdError> {
 
 /// A cluster get result: a single `ClusterInfo` (so `-o json` is the bare object,
 /// matching Python `get cluster <name>`) or the full `ClusterList`.
+#[allow(clippy::large_enum_variant)]
 enum ClusterTable {
     One(jumpstarter_cluster::ClusterInfo),
     Many(jumpstarter_cluster::ClusterList),

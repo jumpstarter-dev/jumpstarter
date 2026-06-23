@@ -13,6 +13,7 @@ use std::time::{Duration, SystemTime};
 
 use jumpstarter_config::TlsConfig;
 use tokio::net::{UnixListener, UnixStream};
+use tracing::debug;
 
 use crate::dial::DEFAULT_DIAL_TIMEOUT;
 use crate::error::ClientError;
@@ -78,13 +79,17 @@ pub async fn serve(
     });
 
     let task = tokio::spawn(async move {
+        let mut conn_id: u64 = 0;
         loop {
             match listener.accept().await {
                 Ok((stream, _)) => {
+                    conn_id = conn_id.wrapping_add(1);
+                    let conn = conn_id;
                     let ctx = ctx.clone();
+                    debug!(lease_name = %ctx.lease_name, conn, "transport connection accepted");
                     tokio::spawn(async move {
-                        if let Err(e) = ctx.handle(stream).await {
-                            tracing::warn!("router bridge failed: {e}");
+                        if let Err(e) = ctx.handle(conn, stream).await {
+                            tracing::warn!(lease_name = %ctx.lease_name, conn, error = %e, "router bridge failed");
                         }
                     });
                 }
@@ -116,11 +121,25 @@ struct Bridge {
 }
 
 impl Bridge {
-    async fn handle(&self, stream: UnixStream) -> Result<(), ClientError> {
+    async fn handle(&self, conn: u64, stream: UnixStream) -> Result<(), ClientError> {
+        debug!(
+            lease_name = %self.lease_name,
+            conn,
+            dial_timeout = ?self.dial_timeout,
+            "dialing exporter for transport connection"
+        );
         let dial = self
             .client
             .dial(&self.lease_name, self.dial_timeout)
             .await?;
-        router::bridge(stream, &dial.router_endpoint, &dial.router_token, &self.tls).await
+        debug!(
+            lease_name = %self.lease_name,
+            conn,
+            endpoint = %dial.router_endpoint,
+            "dial succeeded; opening router bridge"
+        );
+        let result = router::bridge(stream, &dial.router_endpoint, &dial.router_token, &self.tls).await;
+        debug!(lease_name = %self.lease_name, conn, ok = result.is_ok(), "router bridge closed");
+        result
     }
 }

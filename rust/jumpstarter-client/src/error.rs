@@ -47,7 +47,16 @@ impl ClientError {
                     format!("grpc controller responded: {}", status.message())
                 }
                 tonic::Code::Unavailable => format!("grpc error: {}", status.message()),
-                _ => "grpc error".to_string(),
+                // The controller revokes a lease (PermissionDenied) when it is transferred to
+                // another client — give the user an actionable explanation rather than a bare code.
+                tonic::Code::PermissionDenied => {
+                    "lease has been transferred to another client; your session is no longer valid"
+                        .to_string()
+                }
+                // Richer than Python's bare "grpc error": keep the code + server message so the
+                // actual failure (DeadlineExceeded, ResourceExhausted, FailedPrecondition, …) is
+                // never swallowed.
+                code => format!("grpc error ({code:?}): {}", status.message()),
             },
             other => other.to_string(),
         }

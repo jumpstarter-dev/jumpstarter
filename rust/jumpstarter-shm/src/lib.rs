@@ -58,6 +58,7 @@ const FLAGS_OFF: usize = 128;
 const HDR: usize = 192;
 
 const FLAG_CLOSED: u64 = 1; // producer signalled end-of-stream
+const FLAG_ABORTED: u64 = 2; // producer ended abnormally (panic/teardown) — stream is truncated
 
 /// A unidirectional SPSC shared-memory byte ring backed by an `mmap`'d file.
 pub struct Ring {
@@ -127,9 +128,13 @@ impl Ring {
         unsafe { self.base.add(HDR) }
     }
 
-    /// Bytes currently buffered (producer view of what's unconsumed).
+    /// Bytes currently buffered (producer view of what's unconsumed). Clamped against the
+    /// untrusted shared header: a peer process could corrupt head/tail, so a `tail < head`
+    /// inconsistency must not report a bogus ~`u64::MAX` length (which would drive OOB elsewhere).
     pub fn len(&self) -> usize {
-        (self.tail().load(Ordering::Acquire) - self.head().load(Ordering::Acquire)) as usize
+        let t = self.tail().load(Ordering::Acquire);
+        let h = self.head().load(Ordering::Acquire);
+        t.wrapping_sub(h).min(self.cap as u64) as usize
     }
     pub fn is_empty(&self) -> bool {
         self.len() == 0
@@ -143,7 +148,14 @@ impl Ring {
     pub fn try_write(&self, buf: &[u8]) -> usize {
         let t = self.tail().load(Ordering::Relaxed);
         let h = self.head().load(Ordering::Acquire);
-        let free = self.cap - (t - h) as usize;
+        // The header is shared with another process and therefore untrusted: use `wrapping_sub`
+        // and refuse to write if `used` exceeds capacity (an impossible state from corruption or
+        // a broken SPSC invariant) rather than underflow `free` and run the copy past the mapping.
+        let used = t.wrapping_sub(h);
+        if used > self.cap as u64 {
+            return 0;
+        }
+        let free = self.cap - used as usize;
         let n = buf.len().min(free);
         if n == 0 {
             return 0;
@@ -165,7 +177,9 @@ impl Ring {
     pub fn try_read(&self, out: &mut [u8]) -> usize {
         let h = self.head().load(Ordering::Relaxed);
         let t = self.tail().load(Ordering::Acquire);
-        let avail = (t - h) as usize;
+        // Untrusted shared header (see `try_write`): clamp `avail` to capacity so a corrupted or
+        // racing tail can't drive an out-of-bounds read.
+        let avail = t.wrapping_sub(h).min(self.cap as u64) as usize;
         let n = out.len().min(avail);
         if n == 0 {
             return 0;
@@ -191,6 +205,19 @@ impl Ring {
     /// Consumer: true once the producer has closed AND all produced bytes have been read.
     pub fn is_closed(&self) -> bool {
         self.flags().load(Ordering::Acquire) & FLAG_CLOSED != 0 && self.is_empty()
+    }
+
+    /// Producer: mark the stream ABORTED — it ended abnormally (the producer thread panicked or
+    /// was torn down mid-transfer), so the bytes delivered so far are truncated, not a clean EOF.
+    /// Also sets `FLAG_CLOSED` so the consumer unblocks instead of spinning forever.
+    pub fn abort(&self) {
+        self.flags()
+            .fetch_or(FLAG_ABORTED | FLAG_CLOSED, Ordering::Release);
+    }
+
+    /// Consumer: whether the producer aborted (a truncated stream) rather than closing cleanly.
+    pub fn is_aborted(&self) -> bool {
+        self.flags().load(Ordering::Acquire) & FLAG_ABORTED != 0
     }
 
     /// Throughput-test helper: write the whole buffer, busy-spinning while the ring is full.

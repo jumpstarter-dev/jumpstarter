@@ -120,6 +120,30 @@ impl SharedSession {
         self.routing()
             .ok_or_else(|| Status::unknown("no active lease"))
     }
+
+    /// Gate driver calls on the FSM being in a phase where the board is reachable — matching the
+    /// Python controller contract (`checkExporterStatusForDriverCalls`): DriverCall /
+    /// StreamingDriverCall are only valid in `LEASE_READY` (client calls) or the
+    /// `BEFORE_LEASE_HOOK` / `AFTER_LEASE_HOOK` phases (a hook's `j` runs against the hook socket).
+    /// Any other phase returns `FAILED_PRECONDITION` rather than dispatching into a not-yet-ready
+    /// or already-tearing-down host.
+    #[allow(clippy::result_large_err)]
+    fn require_ready(&self) -> Result<(), Status> {
+        use jumpstarter_protocol::v1::ExporterStatus;
+        let status = self.status.borrow().status;
+        if matches!(
+            status,
+            ExporterStatus::LeaseReady
+                | ExporterStatus::BeforeLeaseHook
+                | ExporterStatus::AfterLeaseHook
+        ) {
+            Ok(())
+        } else {
+            Err(Status::failed_precondition(format!(
+                "exporter not ready for driver calls (status: {status:?})"
+            )))
+        }
+    }
 }
 
 /// Bind the `ExporterService` + `RouterService` on the main and hook Unix sockets and
@@ -251,12 +275,13 @@ struct ExporterServer {
 impl ExporterService for ExporterServer {
     async fn get_report(&self, _req: Request<()>) -> Result<Response<GetReportResponse>, Status> {
         // The cached full-tree report of the current lease (empty when idle).
-        Ok(Response::new(
-            self.shared
-                .routing()
-                .map(|r| r.report.clone())
-                .unwrap_or_default(),
-        ))
+        let report = self
+            .shared
+            .routing()
+            .map(|r| r.report.clone())
+            .unwrap_or_default();
+        tracing::debug!(drivers = report.reports.len(), "GetReport");
+        Ok(Response::new(report))
     }
 
     async fn driver_call(
@@ -264,14 +289,24 @@ impl ExporterService for ExporterServer {
         req: Request<DriverCallRequest>,
     ) -> Result<Response<DriverCallResponse>, Status> {
         let req = req.into_inner();
+        tracing::debug!(uuid = %req.uuid, method = %req.method, "DriverCall");
+        self.shared.require_ready()?;
         // Route by UUID, then forward the typed response / tonic Status unchanged —
         // the host owns marker lookup, Value marshaling, and exception mapping.
-        let resp = self
+        let resp = match self
             .shared
             .require_routing()?
             .route(&req.uuid)?
             .driver_call(req)
-            .await?;
+            .await
+        {
+            Ok(resp) => resp,
+            Err(status) => {
+                tracing::debug!(error = %status, "DriverCall routed error");
+                return Err(status);
+            }
+        };
+        tracing::trace!(uuid = %resp.uuid, "DriverCall routed result");
         Ok(Response::new(resp))
     }
 
@@ -281,12 +316,22 @@ impl ExporterService for ExporterServer {
         req: Request<StreamingDriverCallRequest>,
     ) -> Result<Response<Self::StreamingDriverCallStream>, Status> {
         let req = req.into_inner();
-        let stream = self
+        tracing::debug!(uuid = %req.uuid, method = %req.method, "StreamingDriverCall");
+        self.shared.require_ready()?;
+        let stream = match self
             .shared
             .require_routing()?
             .route(&req.uuid)?
             .streaming_driver_call(req)
-            .await?;
+            .await
+        {
+            Ok(stream) => stream,
+            Err(status) => {
+                tracing::debug!(error = %status, "StreamingDriverCall routed error");
+                return Err(status);
+            }
+        };
+        tracing::trace!("StreamingDriverCall routed result");
         Ok(Response::new(stream))
     }
 
@@ -297,6 +342,9 @@ impl ExporterService for ExporterServer {
     ) -> Result<Response<Self::LogStreamStream>, Status> {
         use tokio_stream::wrappers::BroadcastStream;
 
+        let leased = self.shared.routing().is_some();
+        tracing::debug!(leased, "LogStream client attached");
+
         // Hook output (beforeLease/afterLease): replay the buffer, then stream new
         // lines — so `--exporter-logs` shows hooks that ran before the client connected.
         let replay = tokio_stream::iter(self.shared.hook_log.replay().into_iter().map(Ok));
@@ -305,7 +353,15 @@ impl ExporterService for ExporterServer {
 
         // Driver/system logs from the current lease's host (empty when idle).
         let drivers: Self::LogStreamStream = match self.shared.routing() {
-            Some(routing) => routing.backend().log_stream().await?,
+            Some(routing) => match routing.backend().log_stream().await {
+                Ok(stream) => stream,
+                Err(status) => {
+                    // Previously this error was returned silently; surface it so an operator
+                    // sees why driver/system logs are missing from `--exporter-logs`.
+                    tracing::warn!(error = %status, "driver host log_stream failed");
+                    return Err(status);
+                }
+            },
             None => Box::pin(tokio_stream::empty()),
         };
 

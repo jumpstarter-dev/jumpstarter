@@ -1312,6 +1312,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1326,6 +1327,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -1353,6 +1355,7 @@ dependencies = [
  "serde_json",
  "serde_yaml_ng",
  "tokio",
+ "tracing",
  "tracing-subscriber",
 ]
 
@@ -1390,6 +1393,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tracing",
  "which",
 ]
 
@@ -1430,6 +1434,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
+ "tracing",
  "uuid",
 ]
 
@@ -1566,6 +1571,7 @@ dependencies = [
  "jumpstarter-protocol",
  "tokio-stream",
  "tonic",
+ "tracing",
 ]
 
 [[package]]

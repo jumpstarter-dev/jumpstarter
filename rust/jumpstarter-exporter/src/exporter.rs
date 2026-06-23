@@ -100,11 +100,13 @@ pub async fn run_with_factory(
     //    the first pre-warmed host, so the first lease doesn't pay a cold spawn.
     //    Subsequent hosts are pre-warmed during the previous lease (see `Warm`); each
     //    lease still gets a freshly-spawned, reset host — just spawned ahead of time.
+    tracing::debug!(%name, "provisioning first driver host for registration");
     let (first_backend, first_guard) = factory.provision().await?;
     let registration = RoutingTable::build(first_backend.clone())
         .await?
         .report()
         .clone();
+    tracing::debug!(%name, drivers = registration.reports.len(), "first host provisioned; registering with controller");
 
     // 3. Process-lifetime session server with per-lease swappable routing.
     let (routing_tx, routing_rx) = watch::channel(None);
@@ -263,6 +265,12 @@ async fn status_loop(
                 }
             };
             let leased = resp.leased && resp.lease_name.as_deref().is_some_and(|s| !s.is_empty());
+            tracing::debug!(
+                leased,
+                lease = ?resp.lease_name,
+                client = ?resp.client_name,
+                "Status update"
+            );
 
             match (leased, active.is_some()) {
                 // A new lease while idle: take the pre-warmed host, swap in its routing,
@@ -273,8 +281,24 @@ async fn status_loop(
                     let client_name = resp.client_name.clone().unwrap_or_default();
                     tracing::info!(lease = %lease_name, client = %client_name, "lease started");
 
-                    let (backend, guard) = warm.take(&factory).await?;
-                    let routing = RoutingTable::build(backend).await?;
+                    // Provision the per-lease host + routing. A failure here (driver-host import
+                    // error, transient spawn) must NOT tear down the exporter for every future
+                    // lease: log it and skip *this* lease — the controller re-drives the lease via
+                    // the Status stream, and `warm.take` has already kicked off a fresh host.
+                    let (backend, guard) = match warm.take(&factory).await {
+                        Ok(h) => h,
+                        Err(e) => {
+                            tracing::error!(lease = %lease_name, error = %e, "provisioning host for lease failed; skipping this lease");
+                            continue;
+                        }
+                    };
+                    let routing = match RoutingTable::build(backend).await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            tracing::error!(lease = %lease_name, error = %e, "building routing for lease failed; skipping this lease");
+                            continue;
+                        }
+                    };
                     routing_tx.send_replace(Some(Arc::new(routing)));
 
                     let end = Arc::new(Notify::new());
@@ -336,12 +360,30 @@ async fn status_loop(
                     tracing::info!("lease ended");
                     let lease = active.take().unwrap();
                     lease.end.notify_one(); // -> pump -> Controller(Ended) fact -> runner
-                    let _ = lease.handle.await;
+                    // Bound the wait for the runner to finish its teardown (afterLease etc.): a
+                    // hung runner must not wedge the Status loop — and hence the whole exporter —
+                    // forever. The runner should finish within the afterLease hook budget; abort
+                    // and proceed with host teardown if it overruns.
+                    let lease_grace = Duration::from_secs(
+                        config
+                            .hooks
+                            .after_lease
+                            .as_ref()
+                            .map(|h| h.timeout.max(0) as u64)
+                            .unwrap_or(0)
+                            + 60,
+                    );
+                    let mut handle = lease.handle;
+                    if tokio::time::timeout(lease_grace, &mut handle).await.is_err() {
+                        tracing::error!(grace = ?lease_grace, "lease runner did not finish in time; aborting it");
+                        handle.abort();
+                    }
                     lease.pump.abort();
                     routing_tx.send_replace(None);
                     end_session_tx.send_replace(None);
                     drop(lease._guard); // tears down the per-driver hosts (subprocess SIGKILL / foreign close)
                     sleep(INTER_LEASE_SETTLE).await;
+                    tracing::info!("exporter available for next lease");
                 }
                 // Steady state (still leased, or still idle): nothing to do.
                 _ => {}

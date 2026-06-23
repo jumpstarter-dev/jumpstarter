@@ -65,6 +65,7 @@ impl ConnectionManager {
 
     /// Acquire/reuse a lease, serve its transport socket, and register the connection.
     /// Returns the connection summary JSON.
+    #[allow(clippy::too_many_arguments)]
     pub async fn connect(
         &self,
         session: ControllerSession,
@@ -76,14 +77,36 @@ impl ConnectionManager {
         duration_secs: u64,
     ) -> Result<Value, String> {
         let should_release = lease_id.is_none();
+        tracing::info!(
+            lease_id = ?lease_id,
+            selector = ?selector,
+            exporter = ?exporter_name,
+            duration_secs,
+            "connect"
+        );
+        let acquire_started = Instant::now();
         let acquired = session
-            .acquire_lease(selector, exporter_name, lease_id, duration_secs, ACQUISITION_TIMEOUT_SECS)
+            .acquire_lease(selector.clone(), exporter_name.clone(), lease_id, duration_secs, ACQUISITION_TIMEOUT_SECS)
             .await
             .map_err(|e| e.to_string())?;
+        tracing::debug!(
+            lease = %acquired.name,
+            exporter = %acquired.exporter,
+            elapsed = ?acquire_started.elapsed(),
+            "lease acquired; serving transport"
+        );
         let transport = session.serve_lease(acquired.name.clone()).await.map_err(|e| e.to_string())?;
         let socket_path = transport.jumpstarter_host().await.map_err(|e| e.to_string())?;
+        tracing::debug!(lease = %acquired.name, socket = %socket_path, "transport served");
 
         let id = format!("{:08x}", self.counter.fetch_add(1, Ordering::Relaxed) + 1);
+        tracing::info!(
+            connection_id = %id,
+            lease = %acquired.name,
+            exporter = %acquired.exporter,
+            socket = %socket_path,
+            "connected"
+        );
         let info = json!({
             "connection_id": id,
             "lease_name": acquired.name,
@@ -114,8 +137,11 @@ impl ConnectionManager {
             .await
             .remove(id)
             .ok_or_else(|| format!("No connection with id {id}"))?;
+        tracing::info!(connection_id = %id, lease = %conn.lease_name, "disconnect");
         if conn.should_release {
-            let _ = conn.session.release_lease(conn.lease_name.clone()).await;
+            if let Err(e) = conn.session.release_lease(conn.lease_name.clone()).await {
+                tracing::warn!(connection_id = %id, lease = %conn.lease_name, error = %e, "lease release failed on disconnect");
+            }
         }
         Ok(json!({"connection_id": id, "status": "disconnected"}))
     }

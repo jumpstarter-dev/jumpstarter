@@ -12,6 +12,8 @@
 //! host, so the bulk DATA payloads move through shared memory while gRPC keeps only the control
 //! handshake (initial metadata, EOF, trailing status).
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -34,6 +36,9 @@ fn backoff(idle: &mut u32) {
 /// terminated by the channel closing once the producer marks EOF and the ring is empty.
 pub struct RingReader {
     rx: mpsc::Receiver<Vec<u8>>,
+    /// Set when the producer ABORTED (truncated stream) rather than closing cleanly. Read it
+    /// after `recv()` returns `None` to distinguish truncation from a clean EOF.
+    aborted: Arc<AtomicBool>,
 }
 
 impl RingReader {
@@ -42,6 +47,8 @@ impl RingReader {
     /// ring fills and the cross-process producer is throttled).
     pub fn spawn(ring: Ring, chunk: usize, cap: usize) -> Self {
         let (tx, rx) = mpsc::channel(cap);
+        let aborted = Arc::new(AtomicBool::new(false));
+        let aborted_thread = aborted.clone();
         std::thread::Builder::new()
             .name("shm-ring-reader".into())
             .spawn(move || {
@@ -58,6 +65,11 @@ impl RingReader {
                             break; // async consumer dropped
                         }
                     } else if ring.is_closed() {
+                        // The producer marked EOF; if it ABORTED, flag the truncation so the async
+                        // consumer surfaces an error instead of treating it as a clean end.
+                        if ring.is_aborted() {
+                            aborted_thread.store(true, Ordering::Release);
+                        }
                         break; // producer EOF + ring drained
                     } else {
                         backoff(&mut idle);
@@ -65,12 +77,19 @@ impl RingReader {
                 }
             })
             .expect("spawn shm-ring-reader");
-        Self { rx }
+        Self { rx, aborted }
     }
 
     /// Next chunk, or `None` at EOF (producer closed and the ring drained).
     pub async fn recv(&mut self) -> Option<Vec<u8>> {
         self.rx.recv().await
+    }
+
+    /// Whether the producer ABORTED the stream (truncated). Meaningful once `recv()` has returned
+    /// `None`: `true` => the stream ended abnormally and the bytes received are incomplete;
+    /// `false` => a clean EOF.
+    pub fn aborted(&self) -> bool {
+        self.aborted.load(Ordering::Acquire)
     }
 }
 
@@ -88,11 +107,26 @@ impl RingWriter {
         std::thread::Builder::new()
             .name("shm-ring-writer".into())
             .spawn(move || {
+                // Guarantee the ring is terminated on EVERY exit path: a clean `close()` on normal
+                // completion, or `abort()` if this thread unwinds (panic) — otherwise the panic
+                // would skip the close and the cross-process consumer would spin forever waiting
+                // for an EOF that never comes.
+                struct Terminate(Ring);
+                impl Drop for Terminate {
+                    fn drop(&mut self) {
+                        if std::thread::panicking() {
+                            self.0.abort();
+                        } else {
+                            self.0.close();
+                        }
+                    }
+                }
+                let ring = Terminate(ring);
                 while let Some(chunk) = rx.blocking_recv() {
                     let mut buf = &chunk[..];
                     let mut idle = 0u32;
                     while !buf.is_empty() {
-                        let n = ring.try_write(buf);
+                        let n = ring.0.try_write(buf);
                         if n == 0 {
                             backoff(&mut idle);
                         } else {
@@ -101,7 +135,7 @@ impl RingWriter {
                         }
                     }
                 }
-                ring.close(); // channel closed => mark EOF for the consumer
+                // `Terminate::drop` marks the ring EOF (clean close) for the consumer.
             })
             .expect("spawn shm-ring-writer");
         Self { tx: Some(tx) }
@@ -170,5 +204,30 @@ mod tests {
         // the benchmark harness, not here.
         eprintln!("bridge throughput: {got} bytes in {secs:.3}s = {gibs:.2} GiB/s");
         assert_eq!(got, total);
+    }
+
+    /// A producer that ABORTS mid-stream (the panic/teardown case) must surface as a truncation:
+    /// the reader unblocks (no infinite spin) and `aborted()` reports the abnormal end.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn reader_surfaces_producer_abort() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ring");
+        let cap = 4096;
+        let prod = Ring::create(&path, cap).unwrap();
+        let cons = Ring::open(&path, cap).unwrap();
+        let mut reader = RingReader::spawn(cons, 1024, 8);
+
+        prod.spin_write_all(b"partial");
+        prod.abort(); // simulate the writer thread panicking / being torn down mid-transfer
+
+        let mut got = Vec::new();
+        while let Some(c) = reader.recv().await {
+            got.extend_from_slice(&c);
+        }
+        assert_eq!(got, b"partial");
+        assert!(
+            reader.aborted(),
+            "reader must report the producer abort (truncated stream), not a clean EOF"
+        );
     }
 }

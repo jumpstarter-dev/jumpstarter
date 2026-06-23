@@ -16,3 +16,4 @@ rust-version.workspace = true
 jumpstarter-protocol = { path = "../jumpstarter-protocol" }
 tonic.workspace = true
 tokio-stream = { version = "0.1", features = ["sync"] }
+tracing.workspace = true

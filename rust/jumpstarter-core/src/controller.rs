@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use jumpstarter_client::lease::{self, AcquiredLease, CreateLeaseParams, LeaseProvider, LeaseTiming};
 use jumpstarter_client::transport::{self, TransportHost};
@@ -69,6 +69,7 @@ impl ControllerSession {
             poll_interval: Duration::from_secs(5),
             acquisition_timeout: Duration::from_secs(acquisition_timeout_secs),
         };
+        let started = Instant::now();
         let acquired = lease::acquire(
             &self.inner,
             params,
@@ -77,6 +78,13 @@ impl ControllerSession {
             timing,
         )
         .await?;
+        tracing::info!(
+            lease = %acquired.name,
+            client = %self.client_name,
+            exporter = %acquired.exporter,
+            elapsed = ?started.elapsed(),
+            "lease acquired"
+        );
         Ok(acquired)
     }
 

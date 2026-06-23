@@ -51,6 +51,7 @@ async fn install_cert_manager(kubeconfig: Option<&str>, context: Option<&str>, p
         return Err(ClusterError::Operation("Failed to install cert-manager".to_string()));
     }
     progress.progress("Waiting for cert-manager to be ready...");
+    tracing::debug!(deployment = "cert-manager-webhook", namespace = "cert-manager", "waiting for cert-manager webhook to become available");
     let code = run_command_streamed(&with(
         &base,
         &[
@@ -64,8 +65,10 @@ async fn install_cert_manager(kubeconfig: Option<&str>, context: Option<&str>, p
     ))
     .await?;
     if code != 0 {
+        tracing::warn!(deployment = "cert-manager-webhook", code, "cert-manager did not become ready");
         return Err(ClusterError::Operation("cert-manager did not become ready".to_string()));
     }
+    tracing::info!("cert-manager installed");
     progress.success("cert-manager installed");
     Ok(())
 }
@@ -94,6 +97,7 @@ async fn install_operator(
         .await?;
     }
     progress.progress("Waiting for operator to be ready...");
+    tracing::debug!(deployment = OPERATOR_DEPLOYMENT, namespace = OPERATOR_NAMESPACE, "waiting for operator deployment to become available");
     let code = run_command_streamed(&with(
         &base,
         &[
@@ -107,8 +111,10 @@ async fn install_operator(
     ))
     .await?;
     if code != 0 {
+        tracing::warn!(deployment = OPERATOR_DEPLOYMENT, code, "operator did not become ready");
         return Err(ClusterError::Operation("Operator did not become ready".to_string()));
     }
+    tracing::info!(deployment = OPERATOR_DEPLOYMENT, "operator is ready");
     progress.success("Operator is ready");
     Ok(())
 }
@@ -178,16 +184,20 @@ async fn wait_for_jumpstarter_ready(
     for deployment in ["jumpstarter-controller", "jumpstarter-router-0"] {
         // Wait for the deployment to be created by the operator.
         let mut created = false;
-        for _ in 0..max_polls {
+        for attempt in 1..=max_polls {
+            tracing::debug!(deployment, %namespace, attempt, of = max_polls, "polling for deployment to be created");
             if run_command(&with(&base, &["get", "deployment", deployment, "-n", namespace])).await?.ok() {
+                tracing::info!(deployment, attempt, "deployment created by operator");
                 created = true;
                 break;
             }
             tokio::time::sleep(Duration::from_secs(poll_interval)).await;
         }
         if !created {
+            tracing::warn!(deployment, %namespace, polls = max_polls, "timed out waiting for deployment to be created");
             return Err(ClusterError::Operation(format!("Timeout waiting for deployment/{deployment} to be created")));
         }
+        tracing::debug!(deployment, timeout, "waiting for deployment to become available");
         let code = run_command_streamed(&with(
             &base,
             &[
@@ -201,8 +211,10 @@ async fn wait_for_jumpstarter_ready(
         ))
         .await?;
         if code != 0 {
+            tracing::warn!(deployment, code, "deployment did not become ready");
             return Err(ClusterError::Operation(format!("deployment/{deployment} did not become ready")));
         }
+        tracing::info!(deployment, "deployment is available");
     }
     progress.success("Jumpstarter is ready");
     Ok(())

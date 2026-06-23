@@ -68,6 +68,7 @@ pub async fn serve_standalone_tcp(
     if hooks::run_before_lease(&mut reporter, config.hooks.before_lease.as_ref(), &ctx).await
         == BeforeOutcome::Exit
     {
+        tracing::warn!("beforeLease hook failed (on_failure=exit); shutting down standalone exporter");
         cleanup(tcp_task, hook_task, guard, &hook_dir);
         return Err(Error::Config(
             "beforeLease hook failed (on_failure=exit)".to_string(),
@@ -75,11 +76,13 @@ pub async fn serve_standalone_tcp(
     }
 
     wait_for_shutdown(&end_session).await;
+    tracing::info!("standalone exporter shutting down; running afterLease hook");
 
     // afterLease on shutdown (the e2e checks the exporter's stderr for its output).
     hooks::run_after_lease(&mut reporter, config.hooks.after_lease.as_ref(), &ctx).await;
 
     cleanup(tcp_task, hook_task, guard, &hook_dir);
+    tracing::info!("standalone exporter stopped");
     Ok(())
 }
 
@@ -105,6 +108,7 @@ async fn wait_for_shutdown(end_session: &Notify) {
 }
 
 fn cleanup(tcp: JoinHandle<()>, hook: JoinHandle<()>, guard: Box<dyn HostGuard>, hook_dir: &Path) {
+    tracing::debug!("tearing down standalone exporter (aborting listeners + driver host)");
     tcp.abort();
     hook.abort();
     drop(guard);

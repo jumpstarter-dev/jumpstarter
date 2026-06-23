@@ -13,6 +13,7 @@ use std::time::Duration;
 use jumpstarter_protocol::v1::DialResponse;
 use tokio::time::{sleep, Instant};
 use tonic::{Code, Status};
+use tracing::debug;
 
 use crate::error::ClientError;
 
@@ -52,19 +53,44 @@ where
     let deadline = Instant::now() + dial_timeout;
     let mut attempt = 0u32;
     loop {
+        let rem = deadline.saturating_duration_since(Instant::now());
+        let d = backoff(attempt, rem);
+        debug!(attempt, delay = ?d, remaining = ?rem, "dialing");
         match attempt_fn().await {
-            Ok(resp) => return Ok(resp),
+            Ok(resp) => {
+                debug!(attempt, "dial succeeded");
+                return Ok(resp);
+            }
             Err(status) => {
                 if is_retryable(&status) {
                     let remaining = deadline.saturating_duration_since(Instant::now());
                     if remaining.is_zero() {
+                        debug!(
+                            attempt,
+                            code = ?status.code(),
+                            "dial timed out: budget exhausted while retrying"
+                        );
                         return Err(status.into());
                     }
+                    debug!(
+                        attempt,
+                        code = ?status.code(),
+                        delay = ?backoff(attempt, remaining),
+                        "dial retry"
+                    );
                     sleep(backoff(attempt, remaining)).await;
                     attempt = attempt.saturating_add(1);
                     continue;
                 }
                 // permission denied (lease transferred) / offline / anything else.
+                if status.code() == tonic::Code::PermissionDenied {
+                    tracing::warn!(
+                        attempt,
+                        "dial rejected: lease transferred to another client; session no longer valid"
+                    );
+                } else {
+                    debug!(attempt, code = ?status.code(), "dial failed: terminal/non-retryable status");
+                }
                 return Err(status.into());
             }
         }

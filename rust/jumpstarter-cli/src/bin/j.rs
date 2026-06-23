@@ -13,12 +13,17 @@ use serde_json::Value as Json;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
+    // Wire tracing/RUST_LOG consistently with the `jmp` binary (`main.rs`); without this the
+    // native `j` entrypoint emitted no logs even with RUST_LOG set.
+    jumpstarter_cli::init_tracing();
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     // Non-driver invocations (no args, a global flag, the `introspect` MCP side channel) go to the
     // Python driver-client CLI, which owns the top-level help + introspection.
     let first = args.first().map(String::as_str).unwrap_or("");
+    tracing::debug!(driver = first, args = ?args, "j dispatch entry");
     if first.is_empty() || first.starts_with('-') || first == "introspect" {
+        tracing::debug!(driver = first, "delegating non-driver invocation to python driver-client CLI");
         delegate_to_python(&args);
     }
 
@@ -26,20 +31,31 @@ async fn main() {
     // (no JUMPSTARTER_HOST), let the Python CLI emit its "use inside a jmp shell" message.
     let host = match std::env::var("JUMPSTARTER_HOST") {
         Ok(h) => h,
-        Err(_) => delegate_to_python(&args),
+        Err(_) => {
+            tracing::debug!("JUMPSTARTER_HOST unset; delegating to python driver-client CLI");
+            delegate_to_python(&args)
+        }
     };
+    tracing::debug!(driver = first, "connecting ClientSession to route driver");
     let session = match ClientSession::connect(host).await {
         Ok(s) => s,
-        Err(e) => fail(&format!("connecting to exporter: {e}")),
+        Err(e) => {
+            tracing::error!(error = %e, "connecting to exporter failed");
+            fail(&format!("connecting to exporter: {e}"))
+        }
     };
     let report = match session.get_report().await {
         Ok(r) => r,
-        Err(e) => fail(&format!("fetching driver report: {e}")),
+        Err(e) => {
+            tracing::error!(error = %e, "fetching driver report failed");
+            fail(&format!("fetching driver report: {e}"))
+        }
     };
 
     match client_for(&report, first) {
         // A native (Rust) client → drive it in-process via the native client registry, no Python.
         Some((uuid, label)) if label.starts_with("rust:") => {
+            tracing::debug!(driver = first, %uuid, %label, "routing to native rust client");
             match jumpstarter_driver_example::run_client(&label, &args[1..], &session, &uuid).await {
                 Some(code) => std::process::exit(code),
                 None => fail(&format!("no native client is registered for `{label}`")),
@@ -47,6 +63,7 @@ async fn main() {
         }
         // A Python client (or an unknown driver name) → the Python driver-client CLI.
         _ => {
+            tracing::debug!(driver = first, "no native client; delegating to python driver-client CLI");
             drop(session);
             delegate_to_python(&args);
         }

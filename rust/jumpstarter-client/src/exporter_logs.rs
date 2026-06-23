@@ -107,7 +107,10 @@ async fn stream_controller_once(socket: &str, show_all_logs: bool) -> bool {
                 received = true;
                 print_log(&resp, show_all_logs);
             }
-            Err(_) => break,
+            Err(status) => {
+                tracing::debug!(code = ?status.code(), error = %status, "controller log stream item errored; ending stream");
+                break;
+            }
         }
     }
     received
@@ -160,7 +163,10 @@ async fn stream_direct(
         match item {
             // Direct mode only streams when `--exporter-logs` is set, so show all.
             Ok(resp) => print_log(&resp, true),
-            Err(_) => break,
+            Err(status) => {
+                tracing::debug!(code = ?status.code(), error = %status, "direct log stream item errored; ending stream");
+                break;
+            }
         }
     }
     Ok(())

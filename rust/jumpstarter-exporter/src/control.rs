@@ -13,6 +13,23 @@ use tonic::transport::{Channel, Endpoint};
 
 use crate::Error;
 
+/// Latches the first time the controller answers `ReportStatus` with `UNIMPLEMENTED`, so the
+/// "controller does not support ReportStatus" warning is logged once per process instead of on
+/// every status transition (`exporter.py:360-366` warned here; status updates are then skipped).
+static REPORT_UNIMPLEMENTED_WARNED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Warn once that the controller rejected `ReportStatus` as `UNIMPLEMENTED` (subsequent calls
+/// are silent), so the log isn't spammed on every transition against an old controller.
+fn warn_report_unimplemented_once(status: ExporterStatus) {
+    if !REPORT_UNIMPLEMENTED_WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        tracing::warn!(
+            ?status,
+            "ReportStatus unsupported by controller; status updates will be skipped"
+        );
+    }
+}
+
 /// The authenticated `ControllerService` client (role `"Exporter"`). Cheaply
 /// cloneable — clones share the underlying channel.
 pub type Controller = ControllerServiceClient<InterceptedService<Channel, AuthInterceptor>>;
@@ -130,7 +147,9 @@ impl StatusReporter {
                 release_lease: None,
             };
             match controller.report_status(request).await {
-                Ok(_) => {}
+                Ok(_) => {
+                    tracing::debug!(?status, message, "reported status");
+                }
                 Err(s)
                     if matches!(
                         s.code(),
@@ -139,7 +158,9 @@ impl StatusReporter {
                 {
                     return ReportOutcome::Rejected(s.message().to_string());
                 }
-                Err(s) if s.code() == tonic::Code::Unimplemented => {}
+                Err(s) if s.code() == tonic::Code::Unimplemented => {
+                    warn_report_unimplemented_once(status);
+                }
                 Err(s) => {
                     tracing::warn!(error = %s, ?status, "report_status failed (transient); proceeding");
                 }
@@ -192,8 +213,18 @@ async fn report(
         release_lease,
     };
     match controller.report_status(request).await {
-        Ok(_) => Ok(()),
-        Err(s) if s.code() == tonic::Code::Unimplemented => Ok(()),
+        Ok(_) => {
+            if release_lease == Some(true) {
+                tracing::debug!(message, "requested lease release");
+            } else {
+                tracing::debug!(?status, message, "reported status");
+            }
+            Ok(())
+        }
+        Err(s) if s.code() == tonic::Code::Unimplemented => {
+            warn_report_unimplemented_once(status);
+            Ok(())
+        }
         Err(s) => Err(s.into()),
     }
 }

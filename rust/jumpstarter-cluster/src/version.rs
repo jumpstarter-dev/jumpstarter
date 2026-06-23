@@ -29,16 +29,23 @@ pub async fn get_latest_compatible_controller_version(client_version: Option<&st
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|e| ClusterError::Version(e.to_string()))?;
+    tracing::debug!(url = QUAY_TAGS_URL, client_version = ?client_version, "fetching controller version tags from quay");
     let resp = client
         .get(QUAY_TAGS_URL)
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .map_err(|e| ClusterError::Version(format!("Failed to fetch controller versions: {e}")))?;
+        .map_err(|e| {
+            tracing::warn!(error = %e, "failed to fetch controller versions");
+            ClusterError::Version(format!("Failed to fetch controller versions: {e}"))
+        })?;
     let data: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| ClusterError::Version(format!("Failed to fetch controller versions: {e}")))?;
+        .map_err(|e| {
+            tracing::warn!(error = %e, "failed to parse controller versions response");
+            ClusterError::Version(format!("Failed to fetch controller versions: {e}"))
+        })?;
 
     let tags = data
         .get("tags")
@@ -62,13 +69,27 @@ pub async fn get_latest_compatible_controller_version(client_version: Option<&st
         }
     }
 
+    tracing::debug!(
+        compatible = compatible.len(),
+        fallback = fallback.len(),
+        "selecting newest controller version"
+    );
     let newest = |mut v: Vec<(Version, String)>| {
         v.sort();
         v.pop().map(|(_, tag)| tag)
     };
-    newest(compatible)
-        .or_else(|| newest(fallback))
-        .ok_or_else(|| ClusterError::Version("No valid controller versions found in the repository".to_string()))
+    match newest(compatible).or_else(|| newest(fallback)) {
+        Some(tag) => {
+            tracing::info!(version = %tag, "selected controller version");
+            Ok(tag)
+        }
+        None => {
+            tracing::warn!("no valid controller versions found in the repository");
+            Err(ClusterError::Version(
+                "No valid controller versions found in the repository".to_string(),
+            ))
+        }
+    }
 }
 
 #[cfg(test)]

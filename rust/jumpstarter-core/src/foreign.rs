@@ -112,6 +112,7 @@ impl DriverBackend for ForeignDriver {
     ) -> Result<ResponseStream<StreamingDriverCallResponse>, Status> {
         let args_json = codec::args_to_json(&req.args).map_err(|e| status_from(e.into()))?;
         let uuid = req.uuid.clone();
+        tracing::debug!(method = %req.method, uuid = %uuid, "streaming_driver_call open");
         let results = self
             .api
             .streaming_driver_call(req.uuid, req.method, args_json)
@@ -123,20 +124,28 @@ impl DriverBackend for ForeignDriver {
             loop {
                 match results.next().await {
                     Ok(Some(result_json)) => {
+                        tracing::trace!(uuid = %uuid, "streaming_driver_call item");
                         let item = match codec::json_result_to_value(&result_json) {
                             Ok(value) => Ok(StreamingDriverCallResponse {
                                 uuid: uuid.clone(),
                                 result: Some(value),
                             }),
-                            Err(e) => Err(status_from(e.into())),
+                            Err(e) => {
+                                tracing::debug!(uuid = %uuid, error = %e, "streaming_driver_call result encode failed");
+                                Err(status_from(e.into()))
+                            }
                         };
                         let is_err = item.is_err();
                         if tx.send(item).await.is_err() || is_err {
                             break;
                         }
                     }
-                    Ok(None) => break,
+                    Ok(None) => {
+                        tracing::trace!(uuid = %uuid, "streaming_driver_call EOF");
+                        break;
+                    }
                     Err(e) => {
+                        tracing::debug!(uuid = %uuid, error = %e, "streaming_driver_call driver error");
                         let _ = tx.send(Err(status_from(e))).await;
                         break;
                     }
@@ -158,6 +167,7 @@ impl DriverBackend for ForeignDriver {
         // The requested wire codec (None for driver `@exportstream` → pure passthrough). Rust
         // ALWAYS supports the four codecs, so a recognized request is always accepted.
         let codec = parse_codec(&request_json);
+        tracing::trace!(request = %request_json, codec = ?codec, "router stream open");
         let opened = self
             .api
             .open_stream(request_json)
@@ -183,34 +193,53 @@ impl DriverBackend for ForeignDriver {
                             up_fed = true;
                             match d.decompress(&frame.payload) {
                                 Ok(raw) => {
-                                    if !raw.is_empty() && write_chan.write(raw).await.is_err() {
-                                        break;
+                                    tracing::trace!(bytes = raw.len(), "uplink decompressed chunk");
+                                    if !raw.is_empty() {
+                                        if let Err(e) = write_chan.write(raw).await {
+                                            tracing::debug!(error = %e, "uplink write to driver failed");
+                                            break;
+                                        }
                                     }
                                 }
                                 // A codec error is unrecoverable for this stream — break the pump and
                                 // let the channel close propagate as the normal teardown.
-                                Err(_) => break,
+                                Err(e) => {
+                                    tracing::error!(error = %e, "uplink decompress failed; tearing down stream");
+                                    break;
+                                }
                             }
                         }
                         None => {
-                            if write_chan.write(frame.payload).await.is_err() {
+                            tracing::trace!(bytes = frame.payload.len(), "uplink passthrough chunk");
+                            if let Err(e) = write_chan.write(frame.payload).await {
+                                tracing::debug!(error = %e, "uplink write to driver failed");
                                 break;
                             }
                         }
                     },
                     Ok(FrameType::Goaway) => {
+                        tracing::trace!("uplink GOAWAY; half-closing");
                         // Drain the decompressor tail (gzip residual) BEFORE half-closing, so the
                         // driver sees the complete raw payload — but only if data actually flowed.
                         if up_fed {
                             if let Some(d) = dec.take() {
-                                if let Ok(tail) = d.finish() {
-                                    if !tail.is_empty() {
-                                        let _ = write_chan.write(tail).await;
+                                match d.finish() {
+                                    Ok(tail) => {
+                                        if !tail.is_empty() {
+                                            if let Err(e) = write_chan.write(tail).await {
+                                                tracing::debug!(error = %e, "uplink tail write to driver failed");
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::debug!(error = %e, "uplink decompressor finish failed");
                                     }
                                 }
                             }
                         }
-                        let _ = write_chan.close_write().await;
+                        if let Err(e) = write_chan.close_write().await {
+                            tracing::debug!(error = %e, "uplink close_write failed");
+                        }
                         break;
                     }
                     // PING / unknown are dropped without forwarding (router.rs::classify).

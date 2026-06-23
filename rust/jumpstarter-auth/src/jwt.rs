@@ -56,7 +56,7 @@ pub fn remaining_seconds(token: &str) -> Option<i64> {
 /// within `threshold_secs`. Mirrors the Python MCP check
 /// (`remaining is None or remaining <= threshold`).
 pub fn is_stale(token: &str, threshold_secs: i64) -> bool {
-    remaining_seconds(token).map_or(true, |remaining| remaining <= threshold_secs)
+    remaining_seconds(token).is_none_or(|remaining| remaining <= threshold_secs)
 }
 
 #[cfg(test)]

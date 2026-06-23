@@ -66,18 +66,55 @@ pub trait YamlConfig: Serialize + DeserializeOwned + Sized {
         Self::from_yaml(&raw)
     }
 
-    /// Serialize and write a config file with `0o600` permissions (unix).
+    /// Serialize and write a config file **atomically** with `0o600` permissions (unix).
+    ///
+    /// The config file holds bearer tokens, so it must never be observed partially written or
+    /// briefly world-readable: write to a temp file in the *same* directory (so the rename is
+    /// atomic on one filesystem), created `0o600` from the start, flush + `fsync`, then rename
+    /// onto the destination. On any failure the temp file is cleaned up.
     fn save(&self, path: impl AsRef<Path>) -> Result<(), ConfigError> {
+        use std::io::Write as _;
+
         let path = path.as_ref();
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+        let parent = match path.parent() {
+            Some(p) if !p.as_os_str().is_empty() => p,
+            _ => Path::new("."),
+        };
+        std::fs::create_dir_all(parent)?;
+        let yaml = self.to_yaml()?;
+
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("config");
+        let tmp = parent.join(format!(".{file_name}.tmp.{}", std::process::id()));
+
+        let write_result = (|| -> std::io::Result<()> {
+            let mut opts = std::fs::OpenOptions::new();
+            opts.write(true).create(true).truncate(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                opts.mode(0o600);
+            }
+            let mut f = opts.open(&tmp)?;
+            f.write_all(yaml.as_bytes())?;
+            f.flush()?;
+            f.sync_all()?;
+            drop(f);
+            #[cfg(unix)]
+            {
+                // Re-assert 0o600 even if the temp pre-existed with looser perms.
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+            }
+            std::fs::rename(&tmp, path)
+        })();
+
+        if write_result.is_err() {
+            let _ = std::fs::remove_file(&tmp); // best-effort cleanup
         }
-        std::fs::write(path, self.to_yaml()?)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-        }
+        write_result?;
         Ok(())
     }
 }

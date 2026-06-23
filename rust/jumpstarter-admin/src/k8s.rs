@@ -38,6 +38,14 @@ pub enum Kind {
     Lease,
 }
 
+/// True when a kube error is a 404 / NotFound API response — the only error a
+/// poll loop should swallow (a resource not yet/no longer present). Any other
+/// error means the API call genuinely failed and must not be mistaken for a
+/// timeout.
+fn is_not_found(err: &kube::Error) -> bool {
+    matches!(err, kube::Error::Api(resp) if resp.code == 404 || resp.reason == "NotFound")
+}
+
 impl Kind {
     fn kind(self) -> &'static str {
         match self {
@@ -116,7 +124,17 @@ impl JumpstarterAdmin {
     /// PEM is base64-encoded here to match the Python implementation.
     pub async fn ca_bundle(&self) -> Result<String, AdminError> {
         let api: Api<ConfigMap> = Api::namespaced(self.client.clone(), &self.namespace);
+        tracing::debug!(
+            namespace = %self.namespace,
+            configmap = CA_CONFIGMAP_NAME,
+            "fetching CA bundle ConfigMap"
+        );
         let Some(cm) = api.get_opt(CA_CONFIGMAP_NAME).await? else {
+            tracing::warn!(
+                namespace = %self.namespace,
+                configmap = CA_CONFIGMAP_NAME,
+                "CA bundle ConfigMap absent; generated config tls.ca will be empty"
+            );
             return Ok(String::new());
         };
         let ca_crt = cm
@@ -126,8 +144,14 @@ impl JumpstarterAdmin {
             .map(String::as_str)
             .unwrap_or_default();
         if ca_crt.is_empty() {
+            tracing::warn!(
+                namespace = %self.namespace,
+                configmap = CA_CONFIGMAP_NAME,
+                "CA bundle ConfigMap has no 'ca.crt'; generated config tls.ca will be empty"
+            );
             Ok(String::new())
         } else {
+            tracing::debug!(len = ca_crt.len(), "retrieved CA certificate from ConfigMap");
             Ok(base64::engine::general_purpose::STANDARD.encode(ca_crt.as_bytes()))
         }
     }
@@ -158,16 +182,31 @@ impl JumpstarterAdmin {
             data,
         };
         let api = self.api(kind);
+        tracing::debug!(kind = kind.kind(), %name, namespace = %self.namespace, "creating resource");
         api.create(&PostParams::default(), &obj).await?;
 
         // Poll until the controller fills in status.credential.
-        for _ in 0..POLL_ATTEMPTS {
+        for attempt in 1..=POLL_ATTEMPTS {
+            tracing::debug!(
+                kind = kind.kind(),
+                %name,
+                attempt,
+                of = POLL_ATTEMPTS,
+                "polling for issued credential"
+            );
             let current = api.get(name).await?;
             if current.data.pointer("/status/credential").is_some() {
+                tracing::debug!(kind = kind.kind(), %name, attempt, "credential issued");
                 return Ok(current);
             }
             tokio::time::sleep(POLL_DELAY).await;
         }
+        tracing::warn!(
+            kind = kind.kind(),
+            %name,
+            attempts = POLL_ATTEMPTS,
+            "timed out waiting for credential to be issued"
+        );
         Err(AdminError::Other(format!(
             "timeout waiting for {} '{name}' credentials",
             kind.kind().to_lowercase()
@@ -175,10 +214,12 @@ impl JumpstarterAdmin {
     }
 
     pub async fn get(&self, kind: Kind, name: &str) -> Result<DynamicObject, AdminError> {
+        tracing::debug!(kind = kind.kind(), %name, namespace = %self.namespace, "get resource");
         Ok(self.api(kind).get(name).await?)
     }
 
     pub async fn list(&self, kind: Kind) -> Result<Vec<DynamicObject>, AdminError> {
+        tracing::debug!(kind = kind.kind(), namespace = %self.namespace, "list resources");
         Ok(self.api(kind).list(&ListParams::default()).await?.items)
     }
 
@@ -198,14 +239,25 @@ impl JumpstarterAdmin {
                 .and_then(|v| v.as_str())
                 .map(String::from)
         });
+        tracing::debug!(kind = kind.kind(), %name, namespace = %self.namespace, "deleting resource");
         self.api(kind)
             .delete(name, &DeleteParams::default())
             .await?;
         if let Some(secret) = secret {
-            let _ = self
+            tracing::debug!(kind = kind.kind(), %name, %secret, "deleting credential secret (best-effort)");
+            // Best-effort: a 404/NotFound means the controller already GC'd it. Any other
+            // error is a real failure worth surfacing rather than silently dropping.
+            if let Err(e) = self
                 .secrets()
                 .delete(&secret, &DeleteParams::default())
-                .await;
+                .await
+            {
+                if is_not_found(&e) {
+                    tracing::debug!(%secret, "credential secret already gone");
+                } else {
+                    tracing::warn!(%secret, error = %e, "failed to delete credential secret");
+                }
+            }
         }
         Ok(())
     }
@@ -230,6 +282,7 @@ impl JumpstarterAdmin {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+        tracing::debug!(%name, secret = cred, "reading credential token");
         let token = self.read_token(cred).await?;
         Ok((endpoint, token))
     }
@@ -256,16 +309,48 @@ impl JumpstarterAdmin {
             .ok_or_else(|| AdminError::Other(format!("{name} has no credential secret")))?
             .to_string();
 
+        tracing::debug!(kind = kind.kind(), %name, secret = %secret_name, "rotating token: deleting credential secret");
         self.secrets()
             .delete(&secret_name, &DeleteParams::default())
             .await?;
 
-        for _ in 0..POLL_ATTEMPTS {
-            if let Ok(token) = self.read_token(&secret_name).await {
-                return Ok(token);
+        for attempt in 1..=POLL_ATTEMPTS {
+            tracing::debug!(
+                %name,
+                secret = %secret_name,
+                attempt,
+                of = POLL_ATTEMPTS,
+                "polling for regenerated token"
+            );
+            match self.read_token(&secret_name).await {
+                Ok(token) => {
+                    tracing::debug!(%name, attempt, "token regenerated");
+                    return Ok(token);
+                }
+                // The secret not existing yet (NotFound), or existing without a populated
+                // `token` key yet (AdminError::Other), is the expected transient state while
+                // the controller regenerates it — keep polling.
+                Err(AdminError::Kube(e)) if is_not_found(&e) => {
+                    tracing::debug!(%name, attempt, "secret not regenerated yet");
+                }
+                Err(AdminError::Other(msg)) => {
+                    tracing::debug!(%name, attempt, reason = %msg, "secret present but token not populated yet");
+                }
+                // Any other error is a genuine API failure — surface the real message rather
+                // than masking it as a timeout.
+                Err(e) => {
+                    tracing::error!(%name, secret = %secret_name, error = %e, "reading regenerated token failed");
+                    return Err(e);
+                }
             }
             tokio::time::sleep(POLL_DELAY).await;
         }
+        tracing::warn!(
+            %name,
+            secret = %secret_name,
+            attempts = POLL_ATTEMPTS,
+            "timed out waiting for token regeneration"
+        );
         Err(AdminError::Other(format!(
             "timeout waiting for '{name}' token regeneration"
         )))

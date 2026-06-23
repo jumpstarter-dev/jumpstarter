@@ -8,7 +8,13 @@ use serde::Deserialize;
 /// `_get_ssl_context`, the `SSL_CERT_FILE` env var (its PEM is added as an extra
 /// trust root so HTTPS to a custom-CA endpoint works without `-k`).
 pub fn build_http_client(insecure: bool) -> Result<reqwest::Client, String> {
-    let mut builder = reqwest::Client::builder().danger_accept_invalid_certs(insecure);
+    // Strict timeouts so token discovery/refresh can't hang forever on a stalled IdP — this runs
+    // on the hot path of MCP `ensure_fresh_token()` (before every controller connect) and
+    // `jmp auth refresh`/`login`.
+    let mut builder = reqwest::Client::builder()
+        .danger_accept_invalid_certs(insecure)
+        .timeout(std::time::Duration::from_secs(30))
+        .connect_timeout(std::time::Duration::from_secs(10));
     if !insecure {
         if let Ok(path) = std::env::var("SSL_CERT_FILE") {
             if let Ok(pem) = std::fs::read(&path) {
@@ -80,12 +86,14 @@ impl OidcConfig {
             "{}/.well-known/openid-configuration",
             self.issuer.trim_end_matches('/')
         );
+        tracing::debug!(issuer = %self.issuer, url = %url, "OIDC discovery");
         let resp = self
             .http_client()?
             .get(&url)
             .send()
             .await
             .map_err(|e| format!("OIDC discovery failed: {e}"))?;
+        tracing::debug!(status = %resp.status(), "OIDC discovery response");
         if !resp.status().is_success() {
             return Err(format!(
                 "OIDC discovery at {url} returned HTTP {}",
@@ -103,6 +111,17 @@ impl OidcConfig {
         token_endpoint: &str,
         params: &[(&str, &str)],
     ) -> Result<Tokens, String> {
+        let grant_type = params
+            .iter()
+            .find(|(k, _)| *k == "grant_type")
+            .map(|(_, v)| *v)
+            .unwrap_or("unknown");
+        tracing::debug!(
+            issuer = %self.issuer,
+            grant_type,
+            token_endpoint = %token_endpoint,
+            "OIDC token request"
+        );
         let resp = self
             .http_client()?
             .post(token_endpoint)
@@ -110,6 +129,7 @@ impl OidcConfig {
             .send()
             .await
             .map_err(|e| format!("token request failed: {e}"))?;
+        tracing::debug!(status = %resp.status(), grant_type, "OIDC token response");
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();

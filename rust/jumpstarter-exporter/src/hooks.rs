@@ -181,6 +181,12 @@ pub(crate) async fn run_hook(
     ctx: &HookContext<'_>,
     source: LogSource,
 ) -> HookOutcome {
+    tracing::info!(
+        ?source,
+        lease = %ctx.lease_name,
+        client = %ctx.client_name,
+        "running lease hook"
+    );
     match execute(hook, ctx, source).await {
         Ok(()) => HookOutcome::Success,
         Err(message) => match hook.on_failure {
@@ -200,8 +206,11 @@ fn build_command(hook: &HookInstanceConfig) -> (String, Vec<String>) {
 
     let interpreter = hook.exec.clone().unwrap_or_else(|| {
         if is_file && Path::new(script).extension().and_then(|e| e.to_str()) == Some("py") {
-            driver_host::python_interpreter()
+            let py = driver_host::python_interpreter();
+            tracing::debug!(interpreter = %py, "auto-detected python interpreter for hook script");
+            py
         } else {
+            tracing::debug!(interpreter = "/bin/sh", "auto-detected sh interpreter for hook");
             "/bin/sh".to_string()
         }
     });
@@ -224,6 +233,14 @@ async fn execute(
 ) -> Result<(), String> {
     let (interpreter, args) = build_command(hook);
 
+    tracing::debug!(
+        ?source,
+        interpreter = %interpreter,
+        args = ?args,
+        socket = %ctx.hook_socket,
+        "spawning hook subprocess"
+    );
+
     let mut cmd = Command::new(&interpreter);
     cmd.args(&args)
         // Hook environment contract (hooks.py:123-139).
@@ -242,6 +259,8 @@ async fn execute(
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("Error executing hook ({interpreter}): {e}"))?;
+    let pid = child.id();
+    tracing::debug!(?source, pid, "hook subprocess spawned");
 
     // Drain stdout/stderr concurrently with waiting so a chatty hook can't fill the
     // pipe buffer and deadlock against `child.wait()`. Each line is logged and pushed
@@ -261,16 +280,23 @@ async fn execute(
     )
     .await
     {
-        Ok(Ok(status)) if status.success() => Ok(()),
-        Ok(Ok(status)) => Err(format!(
-            "Hook failed with exit code {}",
-            status
-                .code()
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "terminated by signal".to_string())
-        )),
+        Ok(Ok(status)) if status.success() => {
+            tracing::debug!(?source, pid, code = status.code(), "hook subprocess exited");
+            Ok(())
+        }
+        Ok(Ok(status)) => {
+            tracing::debug!(?source, pid, code = status.code(), "hook subprocess exited non-zero");
+            Err(format!(
+                "Hook failed with exit code {}",
+                status
+                    .code()
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "terminated by signal".to_string())
+            ))
+        }
         Ok(Err(e)) => Err(format!("Error executing hook: {e}")),
         Err(_) => {
+            tracing::debug!(?source, pid, timeout = hook.timeout, "hook subprocess timed out; killing");
             let _ = child.start_kill();
             Err(format!("Hook timed out after {} seconds", hook.timeout))
         }
@@ -293,10 +319,21 @@ where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
 {
     let mut lines = BufReader::new(reader).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        if !line.trim().is_empty() {
-            tracing::info!(target: "jumpstarter_exporter::hook", "{line}");
-            hook_log.push(source, line);
+    loop {
+        match lines.next_line().await {
+            Ok(Some(line)) => {
+                if !line.trim().is_empty() {
+                    tracing::info!(target: "jumpstarter_exporter::hook", "{line}");
+                    hook_log.push(source, line);
+                }
+            }
+            Ok(None) => break,
+            Err(e) => {
+                // Previously this read error was silently swallowed (the `while let Ok(..)`
+                // loop just stopped), losing the tail of a hook's output without trace.
+                tracing::warn!(error = %e, ?source, "reading hook output stream failed");
+                break;
+            }
         }
     }
 }

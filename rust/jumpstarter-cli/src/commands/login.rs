@@ -340,8 +340,18 @@ async fn login(args: Args) -> Result<(), CmdError> {
     // Stored refresh token short-circuit.
     if let Some(rt) = stored_refresh.as_deref() {
         if args.token.is_none() && args.username.is_none() && args.password.is_none() {
+            tracing::debug!(
+                issuer = %oidc.issuer,
+                client_id = %oidc.client_id,
+                "attempting stored refresh_token grant"
+            );
             match oidc.refresh_token_grant(rt).await {
                 Ok(tokens) => {
+                    tracing::debug!(
+                        save_path = %save_path.display(),
+                        got_refresh = tokens.refresh_token.is_some(),
+                        "refresh_token grant succeeded; persisting token"
+                    );
                     let c = client_config.as_mut().unwrap();
                     c.token = Some(tokens.access_token);
                     if let Some(new_rt) = tokens.refresh_token {
@@ -353,23 +363,31 @@ async fn login(args: Args) -> Result<(), CmdError> {
                 }
                 Err(e) => {
                     if args.nointeractive {
+                        tracing::warn!(error = %e, "refresh_token grant failed in non-interactive mode");
                         return Err(CmdError::Runtime(format!(
                             "Failed to refresh access token: {e}"
                         )));
                     }
-                    // fall through to an interactive grant
+                    // fall through to an interactive grant (previously silent).
+                    tracing::debug!(
+                        error = %e,
+                        "stored refresh_token grant failed; falling through to interactive grant"
+                    );
                 }
             }
         }
     }
 
     let tokens = if let Some(token) = &args.token {
+        tracing::debug!(connector_id = ?args.connector_id, "selected token-exchange grant");
         oidc.token_exchange_grant(token, args.connector_id.as_deref())
             .await
             .map_err(runtime)?
     } else if let (Some(u), Some(p)) = (&args.username, &args.password) {
+        tracing::debug!(username = %u, "selected password grant");
         oidc.password_grant(u, p).await.map_err(runtime)?
     } else {
+        tracing::debug!(callback_port = ?args.callback_port, "selected authorization-code (browser) grant");
         oidc.authorization_code_grant(args.callback_port)
             .await
             .map_err(runtime)?
@@ -377,12 +395,18 @@ async fn login(args: Args) -> Result<(), CmdError> {
 
     // ---- persist ------------------------------------------------------------
     if let Some(c) = client_config.as_mut() {
+        tracing::debug!(
+            save_path = %save_path.display(),
+            got_refresh = tokens.refresh_token.is_some(),
+            "persisting client config token"
+        );
         c.token = Some(tokens.access_token);
         if let Some(rt) = tokens.refresh_token {
             c.refresh_token = Some(rt);
         }
         c.save(&save_path).map_err(runtime)?;
     } else if let Some(c) = exporter_config.as_mut() {
+        tracing::debug!(save_path = %save_path.display(), "persisting exporter config token");
         c.token = Some(tokens.access_token);
         // exporter configs do not store refresh tokens
         c.save(&save_path).map_err(runtime)?;

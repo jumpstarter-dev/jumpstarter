@@ -20,3 +20,4 @@ base64 = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 getrandom = "0.2"
 tokio = { workspace = true, features = ["net", "io-util", "rt", "macros"] }
+tracing.workspace = true

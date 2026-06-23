@@ -145,6 +145,8 @@ async fn spawn_entry_host(
     yaml: &str,
     uds: &std::path::Path,
 ) -> Result<EntryHost, Error> {
+    let uds_disp = uds.to_string_lossy();
+    tracing::info!(runtime, entry = %uds_disp, uds = %uds_disp, "spawning driver host");
     // Build the host command for the entry's runtime. Every host reads its single-entry config on
     // stdin and serves the driver-host seam on `--serve <uds>`; the hub never embeds a runtime.
     let mut command = match runtime {
@@ -183,6 +185,7 @@ async fn spawn_entry_host(
     let mut child = command
         .spawn()
         .map_err(|e| Error::Config(format!("spawning {runtime} driver host: {e}")))?;
+    tracing::debug!(runtime, uds = %uds_disp, pid = child.id(), "driver host process spawned");
 
     // Stream the single-entry config to the host on stdin, then close it (EOF).
     if let Some(mut stdin) = child.stdin.take() {
@@ -204,23 +207,46 @@ async fn dial_with_retry(
 ) -> Result<Arc<dyn DriverBackend>, Error> {
     let uds = uds.to_string_lossy().into_owned();
     let deadline = Instant::now() + timeout;
+    // The last connect / get_report failure, surfaced in the timeout error (and per-retry
+    // at debug). Previously both were swallowed (`if let Ok` / `.is_ok()`), so a 30s timeout
+    // gave only a generic message with no clue why the host never answered. The deadline read
+    // is only reachable after a failure has set this, so the initial value is a fallback only.
+    #[allow(unused_assignments)]
+    let mut last_error: Option<String> = None;
+    let mut attempt: u64 = 0;
     loop {
-        if let Ok(channel) = crate::control::uds_channel(&uds).await {
-            // The hub↔driver-host byte plane always rides shared memory (the only supported
-            // transport): `ShmChannelBackend` routes bulk router-stream bytes through an SPSC ring,
-            // eliminating the second gRPC hop the polyglot model would otherwise add. Control RPCs
-            // (get_report/driver_call/…) still ride the inner gRPC channel over this same UDS.
-            let backend: Arc<dyn DriverBackend> =
-                Arc::new(crate::shm_backend::ShmChannelBackend::new(channel));
-            if backend.get_report().await.is_ok() {
-                tracing::debug!(%uds, "driver host ready");
-                return Ok(backend);
+        attempt += 1;
+        match crate::control::uds_channel(&uds).await {
+            Ok(channel) => {
+                // The hub↔driver-host byte plane always rides shared memory (the only supported
+                // transport): `ShmChannelBackend` routes bulk router-stream bytes through an SPSC ring,
+                // eliminating the second gRPC hop the polyglot model would otherwise add. Control RPCs
+                // (get_report/driver_call/…) still ride the inner gRPC channel over this same UDS.
+                let backend: Arc<dyn DriverBackend> =
+                    Arc::new(crate::shm_backend::ShmChannelBackend::new(channel));
+                match backend.get_report().await {
+                    Ok(_) => {
+                        tracing::debug!(%uds, attempt, "driver host ready");
+                        return Ok(backend);
+                    }
+                    Err(e) => {
+                        let msg = e.to_string();
+                        tracing::debug!(%uds, attempt, error = %msg, "driver host get_report not ready; retrying");
+                        last_error = Some(msg);
+                    }
+                }
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                tracing::debug!(%uds, attempt, error = %msg, "driver host dial failed; retrying");
+                last_error = Some(msg);
             }
         }
         if Instant::now() >= deadline {
             return Err(Error::Config(format!(
-                "driver host on {uds} did not start serving within {}s",
-                timeout.as_secs()
+                "driver host on {uds} did not start serving within {}s (last error: {})",
+                timeout.as_secs(),
+                last_error.as_deref().unwrap_or("none")
             )));
         }
         tokio::time::sleep(Duration::from_millis(100)).await;

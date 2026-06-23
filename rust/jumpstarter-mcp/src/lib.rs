@@ -164,6 +164,12 @@ async fn run_j(
         Ok(p) => p,
         Err(_) => return json_result(json!({"error": "j CLI binary not found in PATH"})),
     };
+    tracing::info!(
+        command = ?command,
+        timeout_seconds,
+        socket = %env.socket_path,
+        "run_j spawn"
+    );
     let mut cmd = tokio::process::Command::new(&j_path);
     cmd.args(command)
         .env("JUMPSTARTER_HOST", &env.socket_path)
@@ -189,9 +195,18 @@ async fn run_j(
         tokio::time::timeout(Duration::from_secs(timeout_seconds), drain).await.is_err()
     };
     if timed_out {
-        let _ = child.start_kill();
+        tracing::warn!(command = ?command, timeout_seconds, "run_j timed out; killing child");
+        if let Err(e) = child.start_kill() {
+            tracing::debug!(error = %e, "run_j start_kill failed (child likely already exited)");
+        }
     }
     let status = child.wait().await.ok();
+    tracing::info!(
+        command = ?command,
+        exit_code = ?status.and_then(|s| s.code()),
+        timed_out,
+        "run_j complete"
+    );
 
     let full_command: Vec<String> = std::iter::once(j_path.display().to_string())
         .chain(command.iter().cloned())

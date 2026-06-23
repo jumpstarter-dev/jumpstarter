@@ -279,10 +279,16 @@ pub async fn run_exporter(
     let exit = jumpstarter_exporter::run_with_factory(config, host_factory)
         .await
         .map_err(|e| ExporterError::Runtime(e.to_string()))?;
-    Ok(match exit {
+    let exit = match exit {
         jumpstarter_exporter::ExporterExit::Shutdown => ExporterExit::Shutdown,
         jumpstarter_exporter::ExporterExit::Completed => ExporterExit::Completed,
-    })
+    };
+    let reason = match &exit {
+        ExporterExit::Shutdown => "shutdown",
+        ExporterExit::Completed => "completed",
+    };
+    tracing::info!(reason, "run_exporter returned");
+    Ok(exit)
 }
 
 /// Run the exporter in standalone (controller-less) mode: serve the driver tree directly on

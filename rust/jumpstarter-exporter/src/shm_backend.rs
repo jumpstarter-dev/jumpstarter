@@ -151,6 +151,19 @@ impl DriverBackend for ShmChannelBackend {
                                     return;
                                 }
                             }
+                            // If the SHM producer ABORTED (panicked / torn down mid-transfer) the
+                            // byte stream is truncated — surface a real error to the client rather
+                            // than the clean GOAWAY below, so a partial flash/resource isn't
+                            // mistaken for a complete one.
+                            if reader.aborted() {
+                                tracing::error!("shm downlink ring aborted; stream truncated");
+                                let _ = tx
+                                    .send(Err(Status::data_loss(
+                                        "RouterStream: shm downlink truncated (producer aborted)",
+                                    )))
+                                    .await;
+                                return;
+                            }
                             // Ring EOF: forward a real trailing error if the host sent one over gRPC;
                             // otherwise synthesize the clean GOAWAY + ABORTED "aclose" the non-SHM
                             // downlink ends with, so the client sees identical end-of-stream framing.

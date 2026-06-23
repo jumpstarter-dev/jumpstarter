@@ -35,3 +35,4 @@ tonic.workspace = true
 uuid = { version = "1", features = ["v4"] }
 tokio = { workspace = true, features = ["rt", "sync", "macros"] }
 tokio-stream = "0.1"
+tracing.workspace = true

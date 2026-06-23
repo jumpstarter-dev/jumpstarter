@@ -123,6 +123,7 @@ impl ClientSession {
     /// `GetReport` → a JSON array of the driver tree (uuid/parent/labels/methods), which
     /// the Python client uses to build its client object graph.
     pub async fn get_report(&self) -> Result<String, DriverCallError> {
+        tracing::debug!(method = "GetReport", "rpc");
         let report = self
             .exporter()
             .get_report(())
@@ -152,6 +153,7 @@ impl ClientSession {
         method: String,
         args_json: String,
     ) -> Result<String, DriverCallError> {
+        tracing::debug!(method = %method, uuid = %uuid, "rpc");
         let args = codec::json_args_to_values(&args_json)?;
         let resp = self
             .exporter()
@@ -170,15 +172,19 @@ impl ClientSession {
         method: String,
         args_json: String,
     ) -> Result<Arc<ClientResultStream>, DriverCallError> {
+        tracing::debug!(method = %method, uuid = %uuid, "rpc");
         let args = codec::json_args_to_values(&args_json)?;
+        let label = format!("{uuid}/{method}");
         let stream = self
             .exporter()
             .streaming_driver_call(StreamingDriverCallRequest { uuid, method, args })
             .await
             .map_err(err_from_status)?
             .into_inner();
+        tracing::debug!(stream = %label, "streaming_driver_call stream opened");
         Ok(Arc::new(ClientResultStream {
             inner: Mutex::new(stream),
+            label,
         }))
     }
 
@@ -187,6 +193,7 @@ impl ClientSession {
     /// x_jmp_content_encoding}` for resources). Returns a duplex [`ClientByteStream`] plus
     /// the resource initial metadata as JSON.
     pub async fn stream(&self, request_json: String) -> Result<Arc<ClientByteStream>, DriverCallError> {
+        tracing::debug!(method = "Stream", request = %request_json, "rpc");
         let meta = AsciiMetadataValue::try_from(request_json)
             .map_err(|e| DriverCallError::InvalidArgument(e.to_string()))?;
         // Deep uplink buffer + large message limits so bulk resource/flash transfers pipeline
@@ -217,6 +224,7 @@ impl ClientSession {
 
     /// Signal the exporter to end the session early (runs afterLease).
     pub async fn end_session(&self) -> Result<bool, DriverCallError> {
+        tracing::debug!(method = "EndSession", "rpc");
         let resp = self
             .exporter()
             .end_session(EndSessionRequest {})
@@ -229,6 +237,7 @@ impl ClientSession {
     /// `GetStatus` → JSON `{status, message, status_version, previous_status}` (status as
     /// the proto enum int; the Python status monitor maps it to `ExporterStatus`).
     pub async fn get_status(&self) -> Result<String, DriverCallError> {
+        tracing::debug!(method = "GetStatus", "rpc");
         let resp = self
             .exporter()
             .get_status(GetStatusRequest {})
@@ -246,6 +255,7 @@ impl ClientSession {
 
     /// Open the exporter `LogStream` (hook + driver/system logs); pull entries as JSON.
     pub async fn log_stream(&self) -> Result<Arc<ClientLogStream>, DriverCallError> {
+        tracing::debug!(method = "LogStream", "rpc");
         let stream = self
             .exporter()
             .log_stream(())
@@ -286,6 +296,8 @@ impl ClientLogStream {
 /// A streaming-driver-call result stream, pulled JSON-at-a-time.
 pub struct ClientResultStream {
     inner: Mutex<Streaming<StreamingDriverCallResponse>>,
+    /// `uuid/method` of the originating call, for stream-item logging.
+    label: String,
 }
 
 impl ClientResultStream {
@@ -293,11 +305,20 @@ impl ClientResultStream {
     pub async fn next(&self) -> Result<Option<String>, DriverCallError> {
         let mut stream = self.inner.lock().await;
         match stream.next().await {
-            Some(Ok(resp)) => Ok(Some(codec::value_result_to_json(
-                &resp.result.unwrap_or_default(),
-            )?)),
-            Some(Err(status)) => Err(err_from_status(status)),
-            None => Ok(None),
+            Some(Ok(resp)) => {
+                tracing::trace!(stream = %self.label, "streaming_driver_call item");
+                Ok(Some(codec::value_result_to_json(
+                    &resp.result.unwrap_or_default(),
+                )?))
+            }
+            Some(Err(status)) => {
+                tracing::debug!(stream = %self.label, error = %status, "streaming_driver_call stream error");
+                Err(err_from_status(status))
+            }
+            None => {
+                tracing::debug!(stream = %self.label, "streaming_driver_call stream EOF");
+                Ok(None)
+            }
         }
     }
 }

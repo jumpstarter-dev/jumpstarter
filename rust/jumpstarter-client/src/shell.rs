@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use jumpstarter_config::ClientConfig;
 use jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient;
 use jumpstarter_protocol::v1::{EndSessionRequest, ExporterStatus, GetStatusRequest};
+use tracing::{debug, info, trace, warn};
 
 use crate::error::ClientError;
 use crate::lease::{acquire, CreateLeaseParams, LeaseProvider, LeaseTiming};
@@ -107,6 +108,7 @@ pub async fn run(config: &ClientConfig, opts: ShellOptions) -> Result<i32, Clien
     } else {
         acquired.exporter.clone()
     };
+    info!(lease = %acquired.name, exporter = %context, "acquired lease");
     eprintln!("Acquired lease {} on exporter {context}", acquired.name);
 
     // Exporter context for the shell (#53): fetch the exporter's labels so the child can read
@@ -115,18 +117,21 @@ pub async fn run(config: &ClientConfig, opts: ShellOptions) -> Result<i32, Clien
     let exporter_labels = if acquired.exporter.is_empty() {
         String::new()
     } else {
+        debug!(exporter = %acquired.exporter, "fetching exporter labels");
         match client.get_exporter(&acquired.exporter).await {
             Ok(e) => {
                 let mut pairs: Vec<(String, String)> = e.labels.into_iter().collect();
                 pairs.sort();
-                pairs
+                let labels = pairs
                     .into_iter()
                     .map(|(k, v)| format!("{k}={v}"))
                     .collect::<Vec<_>>()
-                    .join(",")
+                    .join(",");
+                debug!(exporter = %acquired.exporter, labels = %labels, "fetched exporter labels");
+                labels
             }
             Err(e) => {
-                tracing::warn!(exporter = %acquired.exporter, error = %e, "could not fetch exporter labels");
+                warn!(exporter = %acquired.exporter, error = %e, "could not fetch exporter labels");
                 String::new()
             }
         }
@@ -160,14 +165,19 @@ pub async fn run(config: &ClientConfig, opts: ShellOptions) -> Result<i32, Clien
     // BEFORE_LEASE_HOOK_FAILED via the status monitor, before running the command).
     eprintln!("Waiting for beforeLease hook to complete...");
     if let Err(e) = wait_for_lease_ready(&socket).await {
+        warn!(lease = %acquired.name, error = %e, "beforeLease wait failed; tearing down session");
         log_task.abort();
         if release {
+            debug!(lease = %acquired.name, "releasing lease after beforeLease failure");
             eprintln!("Releasing lease {}", acquired.name);
-            let _ = client.delete_lease(&acquired.name).await;
+            if let Err(err) = client.delete_lease(&acquired.name).await {
+                warn!(lease = %acquired.name, error = %err, "failed to release lease");
+            }
         }
         drop(host);
         return Err(e);
     }
+    debug!(lease = %acquired.name, "beforeLease hook complete (lease ready)");
 
     let result = spawn_child(
         &opts.command,
@@ -185,8 +195,10 @@ pub async fn run(config: &ClientConfig, opts: ShellOptions) -> Result<i32, Clien
     // wait-for-afterLease, then release). Only for leases we created; a reused lease
     // (`--lease`) is left intact for reconnection.
     if release {
+        debug!(lease = %acquired.name, "ending session and running afterLease hook");
         eprintln!("Running afterLease hook (Ctrl+C to skip)...");
         end_session_and_wait(&socket).await;
+        debug!(lease = %acquired.name, "afterLease hook completed");
         eprintln!("afterLease hook completed");
     }
     // Brief flush window for trailing afterLease lines, then stop streaming.
@@ -194,8 +206,11 @@ pub async fn run(config: &ClientConfig, opts: ShellOptions) -> Result<i32, Clien
     log_task.abort();
 
     if release {
+        debug!(lease = %acquired.name, "releasing lease");
         eprintln!("Releasing lease {}", acquired.name);
-        let _ = client.delete_lease(&acquired.name).await;
+        if let Err(err) = client.delete_lease(&acquired.name).await {
+            warn!(lease = %acquired.name, error = %err, "failed to release lease");
+        }
     }
     drop(host);
 
@@ -239,7 +254,9 @@ async fn wait_for_lease_ready(socket: &str) -> Result<(), ClientError> {
     // state; a later drop/return-to-Available means the lease ended.
     let mut client = ExporterServiceClient::new(channel);
 
-    let deadline = Instant::now() + Duration::from_secs(120);
+    // beforeLease hooks can be slow (their own timeout defaults higher than 120s); give the wait
+    // a generous budget so a legitimately slow hook isn't cut off.
+    let deadline = Instant::now() + Duration::from_secs(300);
     while Instant::now() < deadline {
         let resp =
             match tokio::time::timeout(RPC_TIMEOUT, client.get_status(GetStatusRequest {})).await {
@@ -281,7 +298,12 @@ async fn wait_for_lease_ready(socket: &str) -> Result<(), ClientError> {
         // BeforeLeaseHook / transitional — keep polling on the same connection.
         tokio::time::sleep(Duration::from_millis(150)).await;
     }
-    Ok(())
+    // The budget elapsed without ever reaching LEASE_READY: do NOT silently proceed to run the
+    // command as if the lease were ready — surface a clear timeout.
+    warn!("timed out waiting for beforeLease hook to complete; the lease never became ready");
+    Err(ClientError::Exporter(
+        "Timed out waiting for beforeLease hook to complete".to_string(),
+    ))
 }
 
 /// Ask the exporter to end the session (running the `afterLease` hook) and poll
@@ -298,15 +320,30 @@ async fn end_session_and_wait(socket: &str) {
         RPC_TIMEOUT,
         crate::exporter_logs::uds_channel(socket.to_string()),
     );
-    let Ok(Ok(channel)) = connect.await else {
-        return;
+    let channel = match connect.await {
+        Ok(Ok(ch)) => ch,
+        Ok(Err(e)) => {
+            debug!(error = %e, "end_session: could not connect to exporter; skipping afterLease wait");
+            return;
+        }
+        Err(_elapsed) => {
+            debug!("end_session: connect to exporter timed out; skipping afterLease wait");
+            return;
+        }
     };
     let mut client = ExporterServiceClient::new(channel);
 
     match tokio::time::timeout(RPC_TIMEOUT, client.end_session(EndSessionRequest {})).await {
-        Ok(Ok(_)) => {}
+        Ok(Ok(_)) => debug!("EndSession requested; waiting for afterLease to complete"),
         // EndSession unsupported/unreachable — nothing to wait for.
-        _ => return,
+        Ok(Err(status)) => {
+            debug!(code = ?status.code(), "EndSession RPC errored; skipping afterLease wait");
+            return;
+        }
+        Err(_elapsed) => {
+            warn!("EndSession timed out; skipping afterLease wait");
+            return;
+        }
     }
 
     // afterLease can be slow (hooks have their own timeouts); bound the overall wait
@@ -315,7 +352,9 @@ async fn end_session_and_wait(socket: &str) {
     // warning is delivered on the log stream (the status message is overwritten by the
     // trailing `request_release` Available report, so a poll here can miss it) — the
     // `spawn_controller` log task renders it as `Warning: …`.
-    let deadline = Instant::now() + Duration::from_secs(120);
+    // afterLease hooks can be slow; match the beforeLease budget so a legitimately slow cleanup
+    // hook isn't cut off (the lease is released either way once this returns).
+    let deadline = Instant::now() + Duration::from_secs(300);
     while Instant::now() < deadline {
         let status =
             match tokio::time::timeout(RPC_TIMEOUT, client.get_status(GetStatusRequest {})).await {
@@ -323,18 +362,30 @@ async fn end_session_and_wait(socket: &str) {
                     .unwrap_or(ExporterStatus::Unspecified),
                 // Session/tunnel gone or RPC timed out — afterLease is done (or the
                 // exporter exited); stop waiting.
-                _ => break,
+                _ => {
+                    debug!("end_session: status stream gone; afterLease assumed complete");
+                    break;
+                }
             };
-        if matches!(
-            status,
-            ExporterStatus::Available
-                | ExporterStatus::Offline
-                | ExporterStatus::AfterLeaseHookFailed
-                | ExporterStatus::BeforeLeaseHookFailed
-        ) {
-            break;
+        trace!(?status, "end_session: polled exporter status");
+        match status {
+            // afterLease ran but the hook failed: previously indistinguishable from
+            // a clean completion — surface it so a failed afterLease is diagnosable.
+            ExporterStatus::AfterLeaseHookFailed | ExporterStatus::BeforeLeaseHookFailed => {
+                warn!(?status, "afterLease hook reported a terminal failed status");
+                break;
+            }
+            // Clean: the exporter returned to Available/Offline (afterLease done).
+            ExporterStatus::Available | ExporterStatus::Offline => {
+                debug!(?status, "afterLease hook completed; exporter idle");
+                break;
+            }
+            _ => {}
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    if Instant::now() >= deadline {
+        warn!("afterLease wait timed out (300s); releasing lease anyway");
     }
 }
 

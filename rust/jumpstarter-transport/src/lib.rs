@@ -29,6 +29,7 @@ use tokio_stream::Stream;
 use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 use tonic::transport::Channel;
 use tonic::{Request, Status};
+use tracing::{debug, trace};
 
 /// A boxed server-streaming response of `T` items.
 pub type ResponseStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + Send>>;
@@ -104,11 +105,17 @@ impl ChannelBackend {
     ) -> Result<RouterStreamOpen, Status> {
         let mut host_req = Request::new(uplink);
         host_req.metadata_mut().insert("request", request_meta);
+        // 64 MiB encode/decode cap bounds the per-frame size on the router tunnel.
         let mut client = RouterServiceClient::new(self.channel.clone())
             .max_decoding_message_size(64 * 1024 * 1024)
             .max_encoding_message_size(64 * 1024 * 1024);
+        debug!(max_message_bytes = 64 * 1024 * 1024, "opening router stream");
         let host_resp = client.stream(host_req).await?;
         let initial_metadata = host_resp.metadata().clone();
+        debug!(
+            metadata_keys = initial_metadata.len(),
+            "router stream opened; received initial metadata"
+        );
         let downlink = Box::pin(host_resp.into_inner());
         Ok(RouterStreamOpen {
             initial_metadata,
@@ -120,10 +127,12 @@ impl ChannelBackend {
 #[tonic::async_trait]
 impl DriverBackend for ChannelBackend {
     async fn get_report(&self) -> Result<GetReportResponse, Status> {
+        trace!(rpc = "GetReport", "channel backend RPC dispatch");
         Ok(self.exporter().get_report(()).await?.into_inner())
     }
 
     async fn driver_call(&self, req: DriverCallRequest) -> Result<DriverCallResponse, Status> {
+        trace!(rpc = "DriverCall", uuid = %req.uuid, method = %req.method, "channel backend RPC dispatch");
         Ok(self.exporter().driver_call(req).await?.into_inner())
     }
 
@@ -131,6 +140,7 @@ impl DriverBackend for ChannelBackend {
         &self,
         req: StreamingDriverCallRequest,
     ) -> Result<ResponseStream<StreamingDriverCallResponse>, Status> {
+        trace!(rpc = "StreamingDriverCall", uuid = %req.uuid, method = %req.method, "channel backend RPC dispatch");
         let stream = self.exporter().streaming_driver_call(req).await?.into_inner();
         Ok(Box::pin(stream))
     }
@@ -140,12 +150,14 @@ impl DriverBackend for ChannelBackend {
         request_meta: AsciiMetadataValue,
         uplink: FrameUplink,
     ) -> Result<RouterStreamOpen, Status> {
+        trace!(rpc = "Stream", "channel backend RPC dispatch (router stream open)");
         // Forward uplink frames + the `request` metadata to the driver eagerly; it sends
         // its initial metadata before reading any frame, so this returns promptly.
         self.open_router_stream_impl(request_meta, uplink).await
     }
 
     async fn log_stream(&self) -> Result<ResponseStream<LogStreamResponse>, Status> {
+        trace!(rpc = "LogStream", "channel backend RPC dispatch");
         let stream = self.exporter().log_stream(()).await?.into_inner();
         Ok(Box::pin(stream))
     }

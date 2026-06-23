@@ -82,6 +82,12 @@ async fn run_impl(args: Args) -> Result<(), (u8, String)> {
         }
         // The native `jmp run` hosts drivers via the polyglot hub: one subprocess per
         // top-level export entry (Python or native Rust).
+        tracing::info!(
+            mode = "standalone-tcp",
+            %addr,
+            config_path = %path.display(),
+            "jmp run starting (standalone TCP listener)"
+        );
         let factory = std::sync::Arc::new(
             jumpstarter_exporter::polyglot::PolyglotHostFactory::new(path.clone()),
         );
@@ -97,6 +103,12 @@ async fn run_impl(args: Args) -> Result<(), (u8, String)> {
             format!("cannot load exporter '{}': {e}", path.display()),
         )
     })?;
+    tracing::info!(
+        mode = "controller",
+        exporter = %config.metadata.name,
+        config_path = %path.display(),
+        "jmp run starting (controller-mediated)"
+    );
     jumpstarter_exporter::run(RunOptions {
         config,
         config_path: path,

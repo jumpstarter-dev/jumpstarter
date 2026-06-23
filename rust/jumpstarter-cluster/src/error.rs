@@ -47,6 +47,10 @@ pub enum ClusterError {
     /// The user declined a confirmation prompt.
     #[error("Operation cancelled")]
     Cancelled,
+
+    /// A command exceeded its time budget and was killed.
+    #[error("Command timed out after {seconds}s ({program})")]
+    Timeout { program: String, seconds: u64 },
 }
 
 impl ClusterError {
