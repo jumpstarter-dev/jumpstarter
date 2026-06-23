@@ -20,6 +20,8 @@ jobs:
     outputs:
       should_run: ${{ steps.filter.outputs.python }}
       renode_driver: ${{ steps.filter.outputs.renode_driver }}
+      python-versions: ${{ steps.matrix.outputs.python-versions }}
+      runners: ${{ steps.matrix.outputs.runners }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -36,6 +38,19 @@ jobs:
               - '.github/workflows/python-tests.yaml'
             renode_driver:
               - 'python/packages/jumpstarter-driver-renode/**'
+      - name: Compute test matrix
+        id: matrix
+        run: |
+          # PRs: test only Python 3.12 on Linux to save CI time.
+          # Merge queue, push to main, and workflow_dispatch run the full matrix
+          # (all Python versions on both Linux and macOS).
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo 'python-versions=["3.12"]' >> "$GITHUB_OUTPUT"
+            echo 'runners=["ubuntu-24.04"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'python-versions=["3.11", "3.12", "3.13"]' >> "$GITHUB_OUTPUT"
+            echo 'runners=["ubuntu-24.04", "macos-15"]' >> "$GITHUB_OUTPUT"
+          fi
 
   pytest-matrix:
     needs: changes
@@ -43,11 +58,13 @@ jobs:
     runs-on: ${{ matrix.runs-on }}
     strategy:
       matrix:
-        runs-on: [ubuntu-24.04, macos-15]
+        runs-on: ${{ fromJson(needs.changes.outputs.runners) }}
         # Floor: oldest Python in supported platforms (RHEL 9 appstream)
         # Ceiling: newest Python in latest Fedora
         # Review on each RHEL/Fedora release
-        python-version: ["3.11", "3.12", "3.13"]
+        # PRs run only 3.12 on Linux; merge queue / push run all versions
+        # on both Linux and macOS.
+        python-version: ${{ fromJson(needs.changes.outputs.python-versions) }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
