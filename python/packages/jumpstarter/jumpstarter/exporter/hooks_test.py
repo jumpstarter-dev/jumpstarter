@@ -484,8 +484,8 @@ class TestHookExecutor:
             assert any("DEBIAN_FRONTEND=noninteractive" in call for call in info_calls)
             assert any("GIT_TERMINAL_PROMPT=0" in call for call in info_calls)
 
-    async def test_before_lease_hook_exit_shuts_down_immediately_without_releasing(self, lease_scope) -> None:
-        """Test that beforeLease hook failure with on_failure=exit shuts down immediately without releasing lease."""
+    async def test_before_lease_hook_exit_sets_skip_flag(self, lease_scope) -> None:
+        """Test that beforeLease hook failure with on_failure=exit sets skip_after_lease_hook flag."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
         )
@@ -493,7 +493,6 @@ class TestHookExecutor:
 
         mock_report_status = AsyncMock()
         mock_shutdown = MagicMock()
-        mock_request_lease_release = AsyncMock()
 
         assert lease_scope.skip_after_lease_hook is False
 
@@ -501,14 +500,10 @@ class TestHookExecutor:
             lease_scope,
             mock_report_status,
             mock_shutdown,
-            mock_request_lease_release,
         )
 
         assert lease_scope.skip_after_lease_hook is True
-        # Immediate shutdown — does not wait for lease to end
-        mock_shutdown.assert_called_once_with(exit_code=1, wait_for_lease_exit=False, should_unregister=True)
-        # Lease is NOT released — it stays active so the client can observe the failure
-        mock_request_lease_release.assert_not_called()
+        mock_shutdown.assert_called_once_with(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
 
     async def test_before_lease_hook_endlease_sets_skip_flag_and_releases_lease(self, lease_scope) -> None:
         """Test that beforeLease hook failure with on_failure=endLease sets skip_after_lease_hook and releases lease."""
@@ -1151,8 +1146,8 @@ class TestHookExecutorPRRegressions:
             f"AVAILABLE should NOT be reported when beforeLease exits, got: {status_calls}"
         )
 
-        # Shutdown should have been called with immediate exit (not waiting for lease)
-        mock_shutdown.assert_called_once_with(exit_code=1, wait_for_lease_exit=False, should_unregister=True)
+        # Shutdown should have been called with correct args
+        mock_shutdown.assert_called_once_with(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
 
     async def test_after_hook_exit_reports_failed_calls_shutdown(self, lease_scope) -> None:
         """Issue E3: afterLease fail+exit should report FAILED and call shutdown.

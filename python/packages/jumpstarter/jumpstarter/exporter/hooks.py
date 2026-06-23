@@ -668,12 +668,10 @@ class HookExecutor:
             logger.info("beforeLease hook completed successfully")
 
         except HookExecutionError as e:
-            lease_scope.skip_after_lease_hook = True
             if e.should_shutdown_exporter():
-                # on_failure='exit' - shut down immediately without releasing the lease.
-                # The lease stays active so the client can observe the failure status;
-                # it will expire naturally on the controller.
+                # on_failure='exit' - defer shutdown until client handles the failure
                 logger.error("beforeLease hook failed with on_failure='exit': %s", e)
+                lease_scope.skip_after_lease_hook = True
                 await report_status(
                     ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                     f"beforeLease hook failed (on_failure=exit, shutting down): {e}",
@@ -682,12 +680,13 @@ class HookExecutor:
                     ExporterStatus.OFFLINE,
                     "Exporter shutting down due to beforeLease hook failure",
                 )
-                # Immediate shutdown: cancels the task group right away
-                shutdown(exit_code=1, wait_for_lease_exit=False, should_unregister=True)
+                # Defer shutdown: sets _stop_requested=True, actual stop after lease cleanup
+                shutdown(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
             else:
                 # on_failure='endLease' - report failure, release in finally block
-                should_release = True
                 logger.error("beforeLease hook failed with on_failure='endLease': %s", e)
+                lease_scope.skip_after_lease_hook = True
+                should_release = True
                 await report_status(
                     ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                     f"beforeLease hook failed (on_failure=endLease): {e}",
