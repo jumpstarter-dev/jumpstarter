@@ -85,7 +85,7 @@ pkg-test-%: packages/%
 	@mkdir -p $(LOGS_DIR)
 	@rm -f $(LOGS_DIR)/$*.failed
 	@bash -c 'set -o pipefail; \
-	UV_CACHE_DIR="$(CURDIR)/.uv-cache/$*" PYTHONUNBUFFERED=1 uv run --isolated --directory $< pytest 2>&1 | tee $(LOGS_DIR)/$*.log; \
+	PYTHONUNBUFFERED=1 uv run --isolated --directory $< pytest 2>&1 | tee $(LOGS_DIR)/$*.log; \
 	rc=$$?; \
 	if [ $$rc -ne 0 ] && [ $$rc -ne 5 ]; then \
 		touch $(LOGS_DIR)/$*.failed; \
@@ -93,7 +93,7 @@ pkg-test-%: packages/%
 	true'
 else
 pkg-test-%: packages/%
-	UV_CACHE_DIR="$(CURDIR)/.uv-cache/$*" uv run --isolated --directory $< pytest || [ $$? -eq 5 ]
+	uv run --isolated --directory $< pytest || [ $$? -eq 5 ]
 endif
 
 pkg-ty-%: packages/%
