@@ -166,7 +166,42 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 			WaitForExporter("test-exporter-hooks")
 		})
 
-		It("B3: beforeLease onFailure=exit shuts down exporter", func() {
+		It("B3: beforeLease onFailure=endLease releases lease and accepts new one", func() {
+			startHooksExporter("exporter-hooks-before-fail-endLease.yaml")
+
+			// First lease: shell should fail because beforeLease hook fails
+			out, err := Jmp("shell", "--client", "test-client-hooks",
+				"--selector", "example.com/board=hooks", "j", "power", "on")
+			Expect(err).To(HaveOccurred())
+			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Connection to exporter lost)`))
+
+			// The exporter should release the lease and return to Available
+			WaitForExporter("test-exporter-hooks")
+
+			// Second lease: should also fail (hook still configured to fail),
+			// but this proves the exporter accepted a new lease after recovery
+			out2, err2 := Jmp("shell", "--client", "test-client-hooks",
+				"--selector", "example.com/board=hooks", "j", "power", "on")
+			Expect(err2).To(HaveOccurred())
+			Expect(out2).To(MatchRegexp(`(beforeLease hook fail|Connection to exporter lost)`))
+
+			// Exporter should recover again
+			WaitForExporter("test-exporter-hooks")
+		})
+
+		It("B4: beforeLease fail+endLease does NOT run afterLease hook", func() {
+			startHooksExporter("exporter-hooks-before-fail-endLease-with-after.yaml")
+
+			out, err := Jmp("shell", "--client", "test-client-hooks",
+				"--selector", "example.com/board=hooks", "j", "power", "on")
+			Expect(err).To(HaveOccurred())
+			Expect(out).NotTo(ContainSubstring("AFTER_SHOULD_NOT_RUN"))
+
+			// Exporter should still be alive and return to Available
+			WaitForExporter("test-exporter-hooks")
+		})
+
+		It("B5: beforeLease onFailure=exit shuts down exporter", func() {
 			startHooksExporterSingle("exporter-hooks-before-fail-exit.yaml")
 
 			out, err := Jmp("shell", "--client", "test-client-hooks",

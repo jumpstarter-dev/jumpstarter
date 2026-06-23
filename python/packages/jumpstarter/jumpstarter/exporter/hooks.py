@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Literal
 
 import anyio
+from anyio import CancelScope
 
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus, LogSource
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JUMPSTARTER_HOST
@@ -586,6 +587,17 @@ class HookExecutor:
             LogSource.AFTER_LEASE_HOOK,
         )
 
+    async def _safe_release_lease(
+        self,
+        request_lease_release: Callable[[], Awaitable[None]] | None,
+    ) -> None:
+        """Call request_lease_release if provided, logging any errors."""
+        if request_lease_release:
+            try:
+                await request_lease_release()
+            except Exception as e:
+                logger.error("Failed to request lease release: %s", e, exc_info=True)
+
     async def run_before_lease_hook(
         self,
         lease_scope: "LeaseContext",
@@ -608,6 +620,7 @@ class HookExecutor:
             shutdown: Callback to trigger exporter shutdown (accepts optional exit_code kwarg)
             request_lease_release: Async callback to request lease release from controller
         """
+        should_release = False
         try:
             # Wait for lease scope to be fully populated by handle_lease
             # This is necessary because handle_lease and run_before_lease_hook run concurrently
@@ -670,13 +683,14 @@ class HookExecutor:
                 # Defer shutdown: sets _stop_requested=True, actual stop after lease cleanup
                 shutdown(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
             else:
-                # on_failure='endLease' - report failure, session stays alive for client
+                # on_failure='endLease' - report failure, release in finally block
                 logger.error("beforeLease hook failed with on_failure='endLease': %s", e)
+                lease_scope.skip_after_lease_hook = True
+                should_release = True
                 await report_status(
                     ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                     f"beforeLease hook failed (on_failure=endLease): {e}",
                 )
-                # No request_lease_release - client will discover failure and release
 
         except Exception as e:
             logger.error("beforeLease hook failed with unexpected error: %s", e, exc_info=True)
@@ -689,6 +703,14 @@ class HookExecutor:
         finally:
             # Always set the event to unblock connections
             lease_scope.before_lease_hook.set()
+
+            # Release lease for endLease failure mode.
+            # Shielded from cancellation to ensure the release completes
+            # even if the task group is being torn down.
+            if should_release:
+                with CancelScope(shield=True):
+                    await anyio.sleep(1.0)
+                    await self._safe_release_lease(request_lease_release)
 
     async def run_after_lease_hook(
         self,
