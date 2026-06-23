@@ -243,7 +243,10 @@ jobs:
 
   e2e-compat-old-controller:
     needs: changes
-    if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
+    # Skip on PRs — compat tests run in merge queue, push to main, and workflow_dispatch.
+    if: >-
+      github.event_name != 'pull_request'
+      && (needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -282,7 +285,10 @@ jobs:
 
   e2e-compat-old-client:
     needs: [changes, build-controller-image, build-operator-image, build-python-wheels]
-    if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
+    # Skip on PRs — compat tests run in merge queue, push to main, and workflow_dispatch.
+    if: >-
+      github.event_name != 'pull_request'
+      && (needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
