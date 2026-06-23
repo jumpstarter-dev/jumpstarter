@@ -21,6 +21,16 @@ from system import update_login_banner
 # Create Flask app
 app = Flask(__name__)
 
+
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Content-Security-Policy'] = "default-src 'self'"
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
+
+
 # Register all routes
 register_ui_routes(app)
 register_api_routes(app)
