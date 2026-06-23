@@ -109,6 +109,34 @@ pub async fn run(config: &ClientConfig, opts: ShellOptions) -> Result<i32, Clien
     };
     eprintln!("Acquired lease {} on exporter {context}", acquired.name);
 
+    // Exporter context for the shell (#53): fetch the exporter's labels so the child can read
+    // `JMP_EXPORTER`/`JMP_LEASE`/`JMP_EXPORTER_LABELS` via `env_with_metadata()`. A fetch failure is
+    // non-fatal (empty labels), mirroring `lease.py::_fetch_exporter_labels`.
+    let exporter_labels = if acquired.exporter.is_empty() {
+        String::new()
+    } else {
+        match client.get_exporter(&acquired.exporter).await {
+            Ok(e) => {
+                let mut pairs: Vec<(String, String)> = e.labels.into_iter().collect();
+                pairs.sort();
+                pairs
+                    .into_iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            }
+            Err(e) => {
+                tracing::warn!(exporter = %acquired.exporter, error = %e, "could not fetch exporter labels");
+                String::new()
+            }
+        }
+    };
+    let lease_env = LeaseEnv {
+        exporter: acquired.exporter.clone(),
+        lease: acquired.name.clone(),
+        labels: exporter_labels,
+    };
+
     let host =
         transport::serve_default(client.clone(), acquired.name.clone(), config.tls.clone()).await?;
     let socket = host.jumpstarter_host();
@@ -141,7 +169,16 @@ pub async fn run(config: &ClientConfig, opts: ShellOptions) -> Result<i32, Clien
         return Err(e);
     }
 
-    let result = spawn_child(&opts.command, &socket, &context, &drivers_allow, insecure, None).await;
+    let result = spawn_child(
+        &opts.command,
+        &socket,
+        &context,
+        &drivers_allow,
+        insecure,
+        None,
+        Some(&lease_env),
+    )
+    .await;
 
     // End the session so the afterLease hook runs while the log stream is still open,
     // and wait for it to finish before releasing the lease (`shell.py`: EndSession +
@@ -328,7 +365,7 @@ pub async fn run_direct(
         None
     };
 
-    let result = spawn_child(command, address, address, "UNSAFE", insecure, passphrase).await;
+    let result = spawn_child(command, address, address, "UNSAFE", insecure, passphrase, None).await;
 
     if let Some(task) = log_task {
         // Brief flush window for any trailing (afterLease) lines before aborting.
@@ -338,11 +375,22 @@ pub async fn run_direct(
     result
 }
 
+/// The exporter-context env the shell exports for a remote lease (#53): `JMP_EXPORTER`,
+/// `JMP_LEASE`, and `JMP_EXPORTER_LABELS` (a sorted, comma-joined `k=v` list). Code inside the shell
+/// reads these via `jumpstarter.utils.env.env_with_metadata()` / `ExporterMetadata.from_env()`.
+/// `None` in direct mode (no controller lease).
+pub struct LeaseEnv {
+    pub exporter: String,
+    pub lease: String,
+    pub labels: String,
+}
+
 /// Spawn the shell/command with the `JUMPSTARTER_HOST` env contract
 /// (`common/utils.py:launch_shell`). `host` is the bare socket path (controller/
 /// local mode) or `host:port` (direct mode); `context` labels the decorated prompt
 /// (the exporter name); `passphrase` sets `JMP_GRPC_PASSPHRASE` for a standalone
-/// exporter. Reused by the CLI's direct and local-exporter shell paths.
+/// exporter. `lease_env` exports the exporter-context vars for a remote lease (#53).
+/// Reused by the CLI's direct and local-exporter shell paths.
 pub async fn spawn_child(
     command: &Option<Vec<String>>,
     host: &str,
@@ -350,6 +398,7 @@ pub async fn spawn_child(
     drivers_allow: &str,
     insecure: bool,
     passphrase: Option<&str>,
+    lease_env: Option<&LeaseEnv>,
 ) -> Result<i32, ClientError> {
     let mut cmd = match command {
         Some(argv) if !argv.is_empty() => {
@@ -369,6 +418,15 @@ pub async fn spawn_child(
     }
     if let Some(p) = passphrase.filter(|p| !p.is_empty()) {
         cmd.env(jumpstarter_config::env::JMP_GRPC_PASSPHRASE, p);
+    }
+    if let Some(le) = lease_env {
+        cmd.env("JMP_EXPORTER", &le.exporter);
+        if !le.lease.is_empty() {
+            cmd.env("JMP_LEASE", &le.lease);
+        }
+        if !le.labels.is_empty() {
+            cmd.env("JMP_EXPORTER_LABELS", &le.labels);
+        }
     }
 
     let status = cmd

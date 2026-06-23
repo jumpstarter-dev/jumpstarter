@@ -39,7 +39,10 @@ pub struct HookContext<'a> {
 pub enum BeforeOutcome {
     /// Proceed to `Ready` (LEASE_READY reported).
     Ready,
-    /// End the lease without serving (`on_failure: endLease`); afterLease still runs.
+    /// End the lease without serving (`on_failure: endLease`). The client never reached
+    /// `LEASE_READY`, so it never connected (`has_client` stays false) → afterLease is skipped, and
+    /// the lease is released (`request_release`, since the end reason isn't `Controller`). Matches
+    /// the Python behaviour from #823 (release the lease + skip afterLease on beforeLease endLease).
     EndLease,
     /// Shut the exporter down (`on_failure: exit`); skip afterLease.
     Exit,
