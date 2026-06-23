@@ -2,10 +2,6 @@ name: Python Tests
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - release-*
   pull_request:
   merge_group:
 
@@ -42,7 +38,7 @@ jobs:
         id: matrix
         run: |
           # PRs: test only Python 3.12 on Linux to save CI time.
-          # Merge queue, push to main, and workflow_dispatch run the full matrix
+          # Merge queue and workflow_dispatch run the full matrix
           # (all Python versions on both Linux and macOS).
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             echo 'python-versions=["3.12"]' >> "$GITHUB_OUTPUT"
@@ -62,7 +58,7 @@ jobs:
         # Floor: oldest Python in supported platforms (RHEL 9 appstream)
         # Ceiling: newest Python in latest Fedora
         # Review on each RHEL/Fedora release
-        # PRs run only 3.12 on Linux; merge queue / push run all versions
+        # PRs run only 3.12 on Linux; merge queue runs all versions
         # on both Linux and macOS.
         python-version: ${{ fromJson(needs.changes.outputs.python-versions) }}
     steps:

@@ -2,9 +2,6 @@ name: End-to-end tests
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
   pull_request:
   merge_group:
 
@@ -42,7 +39,7 @@ jobs:
         id: matrix
         run: |
           # PRs: run only amd64 e2e tests to save CI time.
-          # Merge queue, push to main, and workflow_dispatch run both architectures.
+          # Merge queue and workflow_dispatch run both architectures.
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             echo 'e2e-matrix=[{"os": "ubuntu-24.04", "arch": "amd64"}]' >> "$GITHUB_OUTPUT"
           else
@@ -55,7 +52,7 @@ jobs:
 
   build-controller-image:
     needs: changes
-    if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     strategy:
       matrix:
         include: ${{ fromJson(needs.changes.outputs.e2e-matrix) }}
@@ -94,7 +91,7 @@ jobs:
 
   build-operator-image:
     needs: changes
-    if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     strategy:
       matrix:
         include: ${{ fromJson(needs.changes.outputs.e2e-matrix) }}
@@ -138,7 +135,7 @@ jobs:
 
   build-python-wheels:
     needs: changes
-    if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -243,7 +240,7 @@ jobs:
 
   e2e-compat-old-controller:
     needs: changes
-    # Skip on PRs — compat tests run in merge queue, push to main, and workflow_dispatch.
+    # Skip on PRs — compat tests run in merge queue and workflow_dispatch.
     if: >-
       github.event_name != 'pull_request'
       && (needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch')
@@ -285,7 +282,7 @@ jobs:
 
   e2e-compat-old-client:
     needs: [changes, build-controller-image, build-operator-image, build-python-wheels]
-    # Skip on PRs — compat tests run in merge queue, push to main, and workflow_dispatch.
+    # Skip on PRs — compat tests run in merge queue and workflow_dispatch.
     if: >-
       github.event_name != 'pull_request'
       && (needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch')
