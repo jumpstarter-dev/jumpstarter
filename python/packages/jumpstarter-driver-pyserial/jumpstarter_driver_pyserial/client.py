@@ -1,14 +1,15 @@
 import sys
+import time
 from contextlib import contextmanager
 from typing import Optional
 
 import click
-from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file
+from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file, sleep, to_thread
 from anyio.streams.file import FileReadStream
 from jumpstarter_driver_network.adapters import PexpectAdapter
 from pexpect.fdpexpect import fdspawn
 
-from .console import Console
+from .console import Console, ConsoleStreamDrop
 from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group
 
@@ -125,6 +126,31 @@ class PySerialClient(DriverClient):
 
         return bytes_read, bytes_sent
 
+    def _find_power_client(self):
+        root = getattr(self, 'root', None)
+        if root is None:
+            return None
+        return self._search_power(root)
+
+    def _search_power(self, client):
+        for child in client.children.values():
+            if hasattr(child, "cycle") or (hasattr(child, "on") and hasattr(child, "off")):
+                return child
+            result = self._search_power(child)
+            if result is not None:
+                return result
+        return None
+
+    def _make_power_cycle(self, power_client):
+        async def _cycle():
+            if hasattr(power_client, "cycle"):
+                await to_thread.run_sync(power_client.cycle)
+            else:
+                await to_thread.run_sync(power_client.off)
+                await sleep(2)
+                await to_thread.run_sync(power_client.on)
+        return _cycle
+
     def cli(self):  # noqa: C901
         @driver_click_group(self)
         def base():
@@ -134,9 +160,23 @@ class PySerialClient(DriverClient):
         @base.command()
         def start_console():
             """Start serial port console"""
+            power_client = self._find_power_client()
+            on_power_cycle = self._make_power_cycle(power_client) if power_client is not None else None
             click.echo("\nStarting serial port console ... exit with CTRL+B x 3 times\n")
-            console = Console(serial_client=self)
-            console.run()
+            if on_power_cycle is not None:
+                click.echo("Power cycle: CTRL+] x 3 times\n")
+            retries = 0
+            while retries < 30:
+                console = Console(serial_client=self, on_power_cycle=on_power_cycle)
+                try:
+                    console.run()
+                    break
+                except ConsoleStreamDrop:
+                    click.echo("\r\nSerial connection lost, reconnecting...\n", err=True)
+                    retries += 1
+                    time.sleep(1)
+            else:
+                click.echo("\nSerial connection lost (reconnect attempts exhausted).\n", err=True)
 
         @base.command()
         @click.option(
