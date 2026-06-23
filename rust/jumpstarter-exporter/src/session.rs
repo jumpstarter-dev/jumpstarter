@@ -141,10 +141,22 @@ pub fn serve(
     let exporter = ExporterServiceServer::new(ExporterServer {
         shared: shared.clone(),
     });
-    let router = RouterServiceServer::new(crate::tunnel::RouterServer::new(shared));
+    let router = RouterServiceServer::new(crate::tunnel::RouterServer::new(shared))
+        .max_decoding_message_size(64 * 1024 * 1024)
+        .max_encoding_message_size(64 * 1024 * 1024);
 
     Ok(tokio::spawn(async move {
         if let Err(e) = Server::builder()
+            // Match the client's enlarged HTTP/2 windows (see `uds_channel`): the server's
+            // receive window gates a client→exporter bulk write (resource/flash), so the h2
+            // default (~64 KiB) would otherwise cap inbound throughput to a few MiB/s.
+            .initial_stream_window_size(8 * 1024 * 1024)
+            .initial_connection_window_size(16 * 1024 * 1024)
+            // SETTINGS_MAX_FRAME_SIZE tells the *client* the largest DATA frame it may send us;
+            // the 16 KiB default means a 512 MiB resource write is ~32k frames (per-frame framing
+            // CPU on the sender, independent of app chunk size). Raise it 64×.
+            .max_frame_size(1024 * 1024)
+            .tcp_nodelay(true)
             .add_service(exporter)
             .add_service(router)
             .serve_with_incoming(incoming)
@@ -202,12 +214,22 @@ pub fn serve_standalone(
         },
         interceptor.clone(),
     );
-    let router = RouterServiceServer::with_interceptor(
-        crate::tunnel::RouterServer::new(shared),
+    // Set the large message limits on the inner server *before* wrapping with the interceptor
+    // (`with_interceptor` returns an `InterceptedService`, which has no `max_*` setters).
+    let router = tonic::service::interceptor::InterceptedService::new(
+        RouterServiceServer::new(crate::tunnel::RouterServer::new(shared))
+            .max_decoding_message_size(64 * 1024 * 1024)
+            .max_encoding_message_size(64 * 1024 * 1024),
         interceptor,
     );
     let tcp_task = tokio::spawn(async move {
         if let Err(e) = Server::builder()
+            // Large h2 windows + frame size + nodelay for bulk resource/flash throughput
+            // (see the controller-mode server above).
+            .initial_stream_window_size(8 * 1024 * 1024)
+            .initial_connection_window_size(16 * 1024 * 1024)
+            .max_frame_size(1024 * 1024)
+            .tcp_nodelay(true)
             .add_service(exporter)
             .add_service(router)
             .serve_with_incoming(TcpListenerStream::new(listener))

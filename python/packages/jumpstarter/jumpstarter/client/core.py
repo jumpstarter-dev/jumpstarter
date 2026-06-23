@@ -23,7 +23,6 @@ from jumpstarter.common.exceptions import JumpstarterException
 from jumpstarter.common.jsonable import to_jsonable as _to_jsonable
 from jumpstarter.common.resources import ResourceMetadata
 from jumpstarter.streams.common import forward_stream
-from jumpstarter.streams.encoding import compress_stream
 from jumpstarter.streams.metadata import MetadataStream
 from jumpstarter.streams.progress import ProgressStream
 
@@ -174,12 +173,14 @@ class AsyncDriverClient(Metadata):
     ):
         import json
 
+        # `content_encoding` reaches the Rust core via this request JSON; Rust owns the wire
+        # codec entirely now (it always advertises `x_jmp_accept_encoding` for a supported
+        # encoding and compresses the WRITE source on its client seam), so Python NEVER wraps
+        # the stream — it forwards the caller's raw bytes as-is.
         request = json.dumps({"uuid": str(self.uuid), "x_jmp_content_encoding": content_encoding})
         chan = await self.session.stream(request)
         rstream = _FFIByteStream(chan)
         metadata = ResourceMetadata(**json.loads(chan.initial_metadata()))
-        if metadata.x_jmp_accept_encoding is None:
-            stream = compress_stream(stream, content_encoding)
         async with forward_stream(ProgressStream(stream=stream), rstream):
             yield metadata.resource.model_dump(mode="json")
 

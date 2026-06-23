@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from inspect import isasyncgenfunction, iscoroutinefunction
 from itertools import count
 from typing import Any
@@ -29,13 +30,19 @@ from jumpstarter_core import (
     DriverNode,
     MetadataEntry,
     OpenStream,
+    StreamCompressor,
+    StreamDecompressor,
     load_exporter_spec,
     load_exporter_spec_str,
 )
 
+# The foreign-trait base classes the Rust core dispatches into. UniFFI 0.31 checks the
+# Python impl with a nominal ``isinstance`` (0.29 duck-typed), so these must be subclassed.
+from jumpstarter_core import DriverHost as _CoreDriverHost
+from jumpstarter_core import DriverHostFactory as _CoreDriverHostFactory
+
 from jumpstarter.common.jsonable import to_jsonable as _to_jsonable
 from jumpstarter.common.resources import ClientStreamResource
-from jumpstarter.driver.base import SUPPORTED_CONTENT_ENCODINGS
 from jumpstarter.driver.decorators import (
     MARKER_DRIVERCALL,
     MARKER_MAGIC,
@@ -69,7 +76,7 @@ def _raise_mapped(exc: BaseException) -> None:
     raise DriverError.Unknown(str(exc))
 
 
-class DriverHost:
+class DriverHost(_CoreDriverHost):
     """A lease's driver host: the whole instantiated driver tree, dispatched by UUID."""
 
     def __init__(self, root, root_name: str | None = None):
@@ -193,13 +200,16 @@ class DriverHost:
         remote, resource = create_memory_stream()
         resource_uuid = uuid4()
         driver.resources[resource_uuid] = resource
+        # The Rust core owns the wire codec and is the source of truth for the
+        # `x_jmp_accept_encoding` negotiation (it injects the accept header into the initial
+        # metadata when a supported encoding is requested). The host only builds the resource
+        # handle; `x_jmp_content_encoding` rides along but is ignored by the driver (Rust already
+        # (de)compressed the bytes).
         encoding = req.get("x_jmp_content_encoding")
         resource_handle = ClientStreamResource(
             uuid=resource_uuid, x_jmp_content_encoding=encoding
         ).model_dump_json()
         metadata = [MetadataEntry(key="resource", value=resource_handle)]
-        if encoding in SUPPORTED_CONTENT_ENCODINGS:
-            metadata.append(MetadataEntry(key="x_jmp_accept_encoding", value=encoding))
         handle = next(self._handles)
         self._channels[handle] = {"cm": None, "stream": remote}
         return OpenStream(handle=handle, initial_metadata=metadata)
@@ -292,7 +302,7 @@ def _instantiate_spec(node):
     return Composite(children=children)
 
 
-class DriverHostFactory:
+class DriverHostFactory(_CoreDriverHostFactory):
     """Builds a fresh :class:`DriverHost` per lease. The Rust core parses the exporter config
     YAML (``load_exporter_spec``); Python only instantiates the driver tree (importing
     driver classes by dotted path). ``new_host`` is sync."""
@@ -341,22 +351,79 @@ class _LocalResultStream:
         return item
 
 
+_KNOWN_CODECS = frozenset({"gzip", "xz", "bz2", "zstd"})
+
+
+def _resource_codec(request_json: str) -> str | None:
+    """The resource wire codec to apply on the in-process byte plane, or ``None`` for a driver
+    ``@exportstream`` / an unrecognized encoding / ``JMP_DISABLE_COMPRESSION=1`` — mirroring the
+    Rust host seam's ``parse_codec`` (``foreign.rs``)."""
+    if os.environ.get("JMP_DISABLE_COMPRESSION") == "1":
+        return None
+    try:
+        enc = json.loads(request_json).get("x_jmp_content_encoding")
+    except (ValueError, TypeError, AttributeError):
+        return None
+    return enc if enc in _KNOWN_CODECS else None
+
+
 class _LocalByteStream:
-    def __init__(self, host: DriverHost, opened):
+    """In-process resource byte channel for ``serve()``. Production decompresses the uplink /
+    compresses the downlink in the Rust host seam (``foreign.rs``); this path has no such seam, so
+    it drives the SAME Rust codecs over FFI — a compressed resource flashed under ``serve()`` reaches
+    the driver as RAW bytes, exactly like production. ``codec=None`` is a transparent passthrough."""
+
+    def __init__(self, host: DriverHost, opened, codec: str | None = None):
         self._host = host
         self._handle = opened.handle
         self._meta = {e.key: e.value for e in opened.initial_metadata}
+        # Uplink (client->driver, flash) DECOMPRESSES; downlink (driver->client, dump) COMPRESSES.
+        self._dec = StreamDecompressor(codec) if codec else None
+        self._comp = StreamCompressor(codec) if codec else None
+        self._comp_done = False
+        # Whether data actually flowed each way. A flash has an empty downlink and a dump an empty
+        # uplink; an unfed codec must NOT be finalized (no spurious footer — a downlink footer on a
+        # flash would be written back into the read-only source by the bidirectional forward_stream).
+        self._dec_fed = False
+        self._comp_fed = False
 
     def initial_metadata(self) -> str:
         return json.dumps(self._meta)
 
     async def read(self):
-        return await self._host.stream_read(self._handle)
+        if self._comp is None:
+            return await self._host.stream_read(self._handle)
+        if self._comp_done:
+            return None
+        # Pull raw driver bytes, compressing, until we have output or hit EOF (skip the encoder's
+        # buffering-only empty chunks); flush the compressor footer once at EOF.
+        while True:
+            raw = await self._host.stream_read(self._handle)
+            if raw is None:
+                self._comp_done = True
+                if not self._comp_fed:
+                    return None  # empty downlink (flash) → emit nothing
+                tail = bytes(self._comp.finish())
+                return tail if tail else None
+            self._comp_fed = True
+            out = bytes(self._comp.compress(bytes(raw)))
+            if out:
+                return out
 
     async def write(self, data) -> None:
-        await self._host.stream_write(self._handle, bytes(data))
+        if self._dec is None:
+            await self._host.stream_write(self._handle, bytes(data))
+            return
+        self._dec_fed = True
+        out = bytes(self._dec.decompress(bytes(data)))
+        if out:
+            await self._host.stream_write(self._handle, out)
 
     async def close_write(self) -> None:
+        if self._dec is not None and self._dec_fed:
+            tail = bytes(self._dec.finish())
+            if tail:
+                await self._host.stream_write(self._handle, tail)
         await self._host.stream_close_write(self._handle)
 
     async def close(self) -> None:
@@ -394,7 +461,7 @@ class LocalSession:
 
     async def stream(self, request_json: str):
         opened = await self._host.open_stream(request_json)
-        return _LocalByteStream(self._host, opened)
+        return _LocalByteStream(self._host, opened, _resource_codec(request_json))
 
     async def end_session(self) -> bool:
         return True

@@ -104,7 +104,9 @@ impl ChannelBackend {
     ) -> Result<RouterStreamOpen, Status> {
         let mut host_req = Request::new(uplink);
         host_req.metadata_mut().insert("request", request_meta);
-        let mut client = RouterServiceClient::new(self.channel.clone());
+        let mut client = RouterServiceClient::new(self.channel.clone())
+            .max_decoding_message_size(64 * 1024 * 1024)
+            .max_encoding_message_size(64 * 1024 * 1024);
         let host_resp = client.stream(host_req).await?;
         let initial_metadata = host_resp.metadata().clone();
         let downlink = Box::pin(host_resp.into_inner());

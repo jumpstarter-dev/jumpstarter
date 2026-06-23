@@ -5,7 +5,6 @@ Base classes for drivers and driver clients
 from __future__ import annotations
 
 import logging
-import os
 from abc import ABCMeta, abstractmethod
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -18,22 +17,9 @@ from anyio import BrokenResourceError
 
 from jumpstarter.common import LogSource, Metadata
 from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource, parse_resource
-from jumpstarter.config.env import JMP_DISABLE_COMPRESSION
 from jumpstarter.exporter.logging import get_logger
 from jumpstarter.streams.common import create_memory_stream
-from jumpstarter.streams.encoding import Compression, compress_stream
 from jumpstarter.streams.progress import ProgressStream
-
-SUPPORTED_CONTENT_ENCODINGS = (
-    {}
-    if os.environ.get(JMP_DISABLE_COMPRESSION) == "1"
-    else {
-        Compression.GZIP,
-        Compression.XZ,
-        Compression.BZ2,
-        Compression.ZSTD,
-    }
-)
 
 
 @dataclass(kw_only=True)
@@ -109,9 +95,12 @@ class Driver(
 
     @asynccontextmanager
     async def _resource_from_client_stream(self, resource_uuid: UUID, content_encoding):
+        # The Rust core owns the wire codec: it has already DECOMPRESSED the uplink (flash) and
+        # will COMPRESS the downlink (dump), so the driver always reads/writes RAW bytes.
+        # `content_encoding` is ignored here (it travels to Rust via the request JSON).
         async with self.resources[resource_uuid] as stream:
             try:
-                yield compress_stream(stream, content_encoding)
+                yield stream
             finally:
                 del self.resources[resource_uuid]
 

@@ -1,19 +1,16 @@
-import bz2
-import lzma
-import sys
-import zlib
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Callable, Mapping
+from typing import Any
 
-from anyio import ClosedResourceError, EndOfStream
-from anyio.abc import AnyByteStream, ObjectStream
-
-if sys.version_info >= (3, 14):
-    from compression import zstd
-else:
-    from backports import zstd
+# NOTE: The on-the-wire resource-stream codec (the symmetric `compress_stream` /
+# `CompressedStream` / `ZlibCompressedStream`) now lives entirely in the Rust core
+# (`jumpstarter-compression`, driven from `jumpstarter-core`'s host + client seams). Python no
+# longer (de)compresses the tunnel byte plane. What remains here is the driver-internal,
+# CONTENT-based decompression facade (signature sniffing of resource payloads that may
+# themselves be compressed archives, e.g. the qemu driver's `.gz`/`.xz` disk images) plus the
+# `Compression` StrEnum the driver CLIs pass through to `resource_async(content_encoding=...)`.
+# These are orthogonal to the wire codec and can legitimately stack with it.
 
 
 class Compression(StrEnum):
@@ -60,95 +57,15 @@ def detect_compression_from_signature(data: bytes) -> Compression | None:
 
 
 def create_decompressor(compression: Compression) -> Any:
-    """Create a decompressor object for the given compression type."""
-    match compression:
-        case Compression.GZIP:
-            return zlib.decompressobj(wbits=47)  # Auto-detect gzip/zlib
-        case Compression.XZ:
-            return lzma.LZMADecompressor()
-        case Compression.BZ2:
-            return bz2.BZ2Decompressor()
-        case Compression.ZSTD:
-            return zstd.ZstdDecompressor()
+    """Create a streaming decompressor for the given compression type.
 
+    Backed by the Rust core codec (``jumpstarter_core.StreamDecompressor``) so Python needs no
+    third-party compression library — notably no ``backports.zstd`` on Python < 3.14. The one Rust
+    codec serves every language binding. The returned object exposes ``decompress(chunk) -> bytes``
+    and ``finish() -> bytes`` (the EOF residual)."""
+    from jumpstarter_core import StreamDecompressor
 
-@dataclass(kw_only=True)
-class CompressedStream(ObjectStream[bytes]):
-    stream: AnyByteStream
-    decompressor: Any
-    compressor: Any
-
-    async def send(self, item: bytes) -> None:
-        if self.compressor is None:
-            raise ClosedResourceError
-
-        await self.stream.send(self.compressor.compress(item))
-
-    async def receive(self) -> bytes:
-        return self.decompressor.decompress(await self.stream.receive())
-
-    async def send_eof(self) -> None:
-        await self._flush()
-        await self.stream.send_eof()
-
-    async def aclose(self) -> None:
-        await self._flush()
-        await self.stream.aclose()
-
-    async def _flush(self) -> None:
-        if self.compressor is None:
-            return
-
-        await self.stream.send(self.compressor.flush())
-        self.compressor = None
-
-    @property
-    def extra_attributes(self) -> Mapping[Any, Callable[[], Any]]:
-        return self.stream.extra_attributes
-
-
-@dataclass(kw_only=True)
-class ZlibCompressedStream(CompressedStream):
-    async def receive(self) -> bytes:
-        if self.decompressor is None:
-            raise EndOfStream
-
-        try:
-            return self.decompressor.decompress(await self.stream.receive())
-        except EndOfStream:
-            data = self.decompressor.flush()
-            self.decompressor = None
-            return data
-
-
-def compress_stream(stream: AnyByteStream, compression: Compression | None) -> AnyByteStream:
-    match compression:
-        case None:
-            return stream
-        case Compression.GZIP:
-            return ZlibCompressedStream(
-                stream=stream,
-                compressor=zlib.compressobj(wbits=31),
-                decompressor=zlib.decompressobj(wbits=47),
-            )
-        case Compression.XZ:
-            return CompressedStream(
-                stream=stream,
-                compressor=lzma.LZMACompressor(),
-                decompressor=lzma.LZMADecompressor(),
-            )
-        case Compression.BZ2:
-            return CompressedStream(
-                stream=stream,
-                compressor=bz2.BZ2Compressor(),
-                decompressor=bz2.BZ2Decompressor(),
-            )
-        case Compression.ZSTD:
-            return CompressedStream(
-                stream=stream,
-                compressor=zstd.ZstdCompressor(),
-                decompressor=zstd.ZstdDecompressor(),
-            )
+    return StreamDecompressor(str(compression))
 
 
 @dataclass(kw_only=True)
@@ -158,6 +75,10 @@ class AutoDecompressIterator(AsyncIterator[bytes]):
     This wraps an async iterator of bytes and transparently decompresses
     gzip, xz, bz2, or zstd compressed data based on file signature detection.
     Uncompressed data passes through unchanged.
+
+    This is CONTENT-based sniffing of a resource payload a driver reads off the wire (e.g. the
+    qemu driver decompressing a `.gz`/`.xz` disk image). It is orthogonal to — and may stack
+    with — the Rust-owned wire `content_encoding` codec; do not conflate the two.
     """
 
     source: AsyncIterator[bytes]
@@ -168,16 +89,13 @@ class AutoDecompressIterator(AsyncIterator[bytes]):
     _exhausted: bool = field(init=False, default=False)
 
     def _call_decompressor(self, method_name: str, *args) -> bytes:
-        """Call decompressor method with error handling.
+        """Call a decompressor method (``decompress``/``finish``) with error handling."""
+        from jumpstarter_core import CodecError
 
-        Args:
-            method_name: decompressor method to call
-            *args: Arguments to the method
-        """
         try:
             method = getattr(self._decompressor, method_name)
-            return method(*args)
-        except (zlib.error, lzma.LZMAError, OSError, zstd.ZstdError) as e:
+            return bytes(method(*args))
+        except CodecError as e:
             raise RuntimeError(
                 f"Failed to decompress {self._compression}: {e}"
             ) from e
@@ -223,9 +141,9 @@ class AutoDecompressIterator(AsyncIterator[bytes]):
             chunk = await self.source.__anext__()
         except StopAsyncIteration:
             self._exhausted = True
-            # Flush any remaining data from decompressor (gzip needs this)
-            if self._decompressor is not None and hasattr(self._decompressor, "flush"):
-                remaining = self._call_decompressor("flush")
+            # Flush the decompressor's EOF residual (e.g. gzip's final block).
+            if self._decompressor is not None:
+                remaining = self._call_decompressor("finish")
                 self._decompressor = None
                 if remaining:
                     return remaining

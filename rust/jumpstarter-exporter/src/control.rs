@@ -165,6 +165,13 @@ pub async fn uds_channel(path: &str) -> Result<Channel, Error> {
     });
     Endpoint::try_from("http://localhost")
         .map_err(|e| Error::Config(format!("uds endpoint: {e}")))?
+        // Match the host server's enlarged HTTP/2 windows (see `session.rs`): this is the
+        // hub→host UDS hop. The hub is the h2 *client* here, so these are its *receive*
+        // windows — they gate the host→hub downlink (bulk read/dump + the router tunnel's
+        // return path). The h2 default (~64 KiB) would otherwise cap that direction to a
+        // few MiB/s with a WINDOW_UPDATE round-trip every 64 KiB.
+        .initial_stream_window_size(8 * 1024 * 1024)
+        .initial_connection_window_size(16 * 1024 * 1024)
         .connect_with_connector(connector)
         .await
         .map_err(Into::into)

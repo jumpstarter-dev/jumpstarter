@@ -89,15 +89,24 @@ impl ClientSession {
                     .to_string(),
             ));
         }
-        let channel = Endpoint::from_shared(format!("http://{host}"))
+        let endpoint = Endpoint::from_shared(format!("http://{host}"))
             .map_err(|e| DriverCallError::Unknown(e.to_string()))?
-            .connect()
+            // Large HTTP/2 windows so bulk resource/flash transfers aren't window-gated.
+            .initial_stream_window_size(8 * 1024 * 1024)
+            .initial_connection_window_size(16 * 1024 * 1024);
+        // Connect on the multi-threaded IO runtime so the connection driver doesn't run on
+        // async-compat's single thread (see `jumpstarter_client::io_runtime`).
+        let channel = jumpstarter_client::io_runtime()
+            .spawn(async move { endpoint.connect().await })
             .await
+            .map_err(|e| DriverCallError::Unknown(format!("connect task panicked: {e}")))?
             .map_err(|e| DriverCallError::Unknown(format!("connecting to direct exporter {host}: {e}")))?;
         let passphrase = std::env::var(jumpstarter_config::env::JMP_GRPC_PASSPHRASE)
             .ok()
             .filter(|p| !p.is_empty())
             .and_then(|p| AsciiMetadataValue::try_from(p).ok());
+        // The client always speaks plain gRPC; the shared-memory byte plane is contained entirely in
+        // the hub↔driver-host hop (the hub bridges the ring to/from this gRPC stream).
         Ok(Self { channel, passphrase })
     }
 
@@ -180,10 +189,14 @@ impl ClientSession {
     pub async fn stream(&self, request_json: String) -> Result<Arc<ClientByteStream>, DriverCallError> {
         let meta = AsciiMetadataValue::try_from(request_json)
             .map_err(|e| DriverCallError::InvalidArgument(e.to_string()))?;
-        let (tx, rx) = mpsc::channel::<StreamRequest>(32);
+        // Deep uplink buffer + large message limits so bulk resource/flash transfers pipeline
+        // and aren't capped by tonic's 4 MiB default message size (allows multi-MiB chunks).
+        let (tx, rx) = mpsc::channel::<StreamRequest>(256);
         let mut request = Request::new(ReceiverStream::new(rx));
         request.metadata_mut().insert("request", meta);
         let response = RouterServiceClient::with_interceptor(self.channel.clone(), self.auth())
+            .max_decoding_message_size(64 * 1024 * 1024)
+            .max_encoding_message_size(64 * 1024 * 1024)
             .stream(request)
             .await
             .map_err(err_from_status)?;
@@ -290,7 +303,14 @@ impl ClientResultStream {
 }
 
 /// A bidirectional router byte stream (driver `@exportstream` / resource). The Python
-/// client reads/writes raw payloads; Rust owns the DATA/GOAWAY framing.
+/// client reads/writes raw payloads; Rust owns the DATA/GOAWAY framing. The byte plane is plain
+/// gRPC here — any shared-memory acceleration lives entirely in the hub↔driver-host hop.
+///
+/// Resource compression (gzip/xz/bz2/zstd) is NOT applied here: the client forwards the
+/// (already-compressed) resource bytes verbatim, and the Rust host (`foreign.rs`) decompresses the
+/// uplink / compresses the downlink so the language driver always sees RAW bytes. Keeping the codec
+/// host-only means exactly one transform per byte path — a client-side mirror would double-transform
+/// and deliver still-compressed bytes to the driver.
 pub struct ClientByteStream {
     uplink: mpsc::Sender<StreamRequest>,
     downlink: Mutex<Streaming<StreamResponse>>,
@@ -333,7 +353,7 @@ impl ClientByteStream {
             .map_err(|_| DriverCallError::Unknown("router stream closed".to_string()))
     }
 
-    /// Half-close the uplink (send GOAWAY); the downlink stays open until the driver ends.
+    /// Half-close the uplink (the gRPC GOAWAY); the downlink stays open until the driver ends.
     pub async fn close(&self) -> Result<(), DriverCallError> {
         let _ = self.uplink.send(goaway_frame()).await;
         Ok(())

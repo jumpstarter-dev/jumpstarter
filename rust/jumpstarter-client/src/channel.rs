@@ -54,7 +54,11 @@ fn tls_endpoint(target: &str, tls: &TlsConfig) -> Result<Endpoint, ClientError> 
         // Defaults from `_override_default_grpc_options` (common/grpc.py).
         .http2_keep_alive_interval(Duration::from_secs(20))
         .keep_alive_timeout(Duration::from_secs(180))
-        .keep_alive_while_idle(true);
+        .keep_alive_while_idle(true)
+        // Large HTTP/2 flow-control windows: this is the network hop to the router, so the
+        // default ~64 KiB-in-flight-per-RTT caps a resource/flash tunnel at a few MiB/s.
+        .initial_stream_window_size(8 * 1024 * 1024)
+        .initial_connection_window_size(16 * 1024 * 1024);
     Ok(endpoint)
 }
 
@@ -64,9 +68,13 @@ async fn connect_channel(target: &str, tls: &TlsConfig) -> Result<Channel, Clien
     if is_insecure(tls) {
         crate::insecure::connect(target).await
     } else {
-        tls_endpoint(target, tls)?
-            .connect()
+        let endpoint = tls_endpoint(target, tls)?;
+        // Connect on the multi-threaded IO runtime so this channel's connection driver runs
+        // there, not on async-compat's single thread (see `crate::io_runtime`).
+        crate::io_runtime()
+            .spawn(async move { endpoint.connect().await })
             .await
+            .map_err(|e| ClientError::Config(format!("connect task panicked: {e}")))?
             .map_err(Into::into)
     }
 }

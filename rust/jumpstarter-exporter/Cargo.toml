@@ -14,12 +14,16 @@ jumpstarter-config = { path = "../jumpstarter-config" }
 jumpstarter-transport = { path = "../jumpstarter-transport" }
 # Reuses the Phase-A channel builder + router byte-bridge.
 jumpstarter-client = { path = "../jumpstarter-client" }
+# Shared-memory byte ring for the local hub<->host bulk byte plane (opt-in via JMP_SHM_TUNNEL).
+jumpstarter-shm = { path = "../jumpstarter-shm", features = ["bridge"] }
 tonic.workspace = true
 prost-types.workspace = true
 thiserror.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time", "sync", "macros", "net", "io-util", "process", "signal"] }
 tokio-stream = { version = "0.1", features = ["net", "sync"] }
+# Concurrent host provisioning at startup (spawn + dial all per-driver hosts at once).
+futures = "0.3"
 # Mint the synthetic root Composite's uuid when federating per-entry driver hosts.
 uuid = { version = "1", features = ["v4"] }
 tracing.workspace = true

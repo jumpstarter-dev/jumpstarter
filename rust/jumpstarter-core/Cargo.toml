@@ -22,6 +22,10 @@ jumpstarter-protocol = { path = "../jumpstarter-protocol" }
 jumpstarter-transport = { path = "../jumpstarter-transport" }
 jumpstarter-client = { path = "../jumpstarter-client" }
 jumpstarter-config = { path = "../jumpstarter-config" }
+# Rust is the sole owner of resource-stream (de)compression for the byte plane (gzip/xz/bz2/zstd);
+# the host seam (foreign.rs) and the client seam (client.rs) drive these streaming codecs so Python
+# never touches the wire codec.
+jumpstarter-compression = { path = "../jumpstarter-compression" }
 prost-types.workspace = true
 serde_json.workspace = true
 async-trait = "0.1"

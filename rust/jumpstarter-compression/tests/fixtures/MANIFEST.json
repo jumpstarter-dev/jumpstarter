@@ -1,0 +1,49 @@
+{
+  "inputs": {
+    "random": {
+      "len": 262144,
+      "sha256": "69388d838bfd22412714356c7fb6eb9a3920994c901e910ee5c947f9762011cd"
+    },
+    "zeros": {
+      "len": 262144,
+      "sha256": "8a39d2abd3999ab73c34db2476849cddf303ce389b35826850f9a700589b4a90"
+    }
+  },
+  "python": "3.12.3",
+  "vectors": {
+    "random.bz2": {
+      "len": 263730,
+      "sha256": "26bd00478fe64163c23b6e1209835f38b70e2f6f3589b7826fdc34e391541afd"
+    },
+    "random.gzip": {
+      "len": 262242,
+      "sha256": "92ca3b928343d824a6174cee7b5103a9c8c0f34d66bce843c8b486d4b8b3c1f5"
+    },
+    "random.xz": {
+      "len": 262216,
+      "sha256": "798d081e8d5004adf1ab8092c088f7995a0c19a96916dbccffcc9282f19fa391"
+    },
+    "random.zstd": {
+      "len": 262159,
+      "sha256": "d4c9f888e32d01c430ec984347698854b8ae076b644c63ec9aa7d4c404473679"
+    },
+    "zeros.bz2": {
+      "len": 45,
+      "sha256": "90d3ef744c823c39ca04f29956ed3dafe319bc86154743c995058e9aae1226d3"
+    },
+    "zeros.gzip": {
+      "len": 289,
+      "sha256": "72687806b9caa0c5bc058334c8131972ca170a5937b670ee299c73f8d1e764ab"
+    },
+    "zeros.xz": {
+      "len": 172,
+      "sha256": "a18312ccbfac98ddde79957ed019d882d04f1c7514ee653188daa81b899815e7"
+    },
+    "zeros.zstd": {
+      "len": 26,
+      "sha256": "5e98359ff5a55da3516833d2e13e8192b96e7576a105872f8cfb5405062f8bcd"
+    }
+  },
+  "zlib": "1.2.12",
+  "zstd_default_level": 3
+}

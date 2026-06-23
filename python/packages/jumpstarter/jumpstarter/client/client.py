@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from collections import OrderedDict, defaultdict
@@ -7,6 +8,7 @@ from uuid import UUID
 
 from anyio.from_thread import BlockingPortal
 from jumpstarter_core import ClientSession
+from jumpstarter_core.jumpstarter_core import uniffi_set_event_loop
 
 from jumpstarter.client import DriverClient
 from jumpstarter.client.base import StubDriverClient
@@ -42,6 +44,11 @@ async def client_from_host(
     """Build a DriverClient tree over the Rust core (FFI, jumpstarter_core.ClientSession)
     instead of a gRPC channel — the in-process client path. Driver calls route through the
     Rust core; no grpcio / generated stubs."""
+    # Register this (the BlockingPortal's) event loop with UniFFI so the completion of each
+    # awaited Rust async method is delivered straight onto it. Without this, high-frequency
+    # awaits (the resource/flash serving loop: thousands of ClientByteStream.write calls) pay a
+    # ~ms wake latency each, capping flash throughput at a few MiB/s (the host already does this).
+    uniffi_set_event_loop(asyncio.get_running_loop())
     session = await ClientSession.connect(str(host))
     return await client_from_session(session, portal, stack, allow, unsafe)
 

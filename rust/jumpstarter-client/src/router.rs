@@ -19,9 +19,10 @@ use tokio_stream::StreamExt as _;
 use crate::channel;
 use crate::error::ClientError;
 
-/// Read chunk size for the uplink (matches the spirit of the Python 32-item
-/// object-stream buffers; the exact value is not wire-visible).
-const CHUNK: usize = 32 * 1024;
+/// Read chunk size for the uplink. Larger = fewer tunneled `StreamRequest` gRPC
+/// messages per MiB (less per-message prost/h2 framing overhead) for bulk
+/// resource/flash transfers; the exact value is not wire-visible.
+const CHUNK: usize = 1024 * 1024;
 
 /// Bridge `local` with a `RouterService.Stream` tunnel at `endpoint`, authenticated
 /// with the per-stream `token`. Used by both the client (local socket → router) and
@@ -44,9 +45,11 @@ where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let svc = channel::connect_router(endpoint, token, tls).await?;
-    let mut router = RouterServiceClient::new(svc);
+    let mut router = RouterServiceClient::new(svc)
+        .max_decoding_message_size(64 * 1024 * 1024)
+        .max_encoding_message_size(64 * 1024 * 1024);
 
-    let (tx, rx) = mpsc::channel::<StreamRequest>(32);
+    let (tx, rx) = mpsc::channel::<StreamRequest>(256);
     let outbound = ReceiverStream::new(rx);
 
     let (mut read_half, mut write_half) = tokio::io::split(local);

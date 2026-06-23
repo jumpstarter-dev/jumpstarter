@@ -2,48 +2,30 @@ import bz2
 import gzip
 import lzma
 import os
-import sys
-from io import BytesIO
 
 import pytest
-from anyio import EndOfStream, create_memory_object_stream
-from anyio.streams.stapled import StapledObjectStream
 
-if sys.version_info >= (3, 14):
-    from compression import zstd
-else:
-    from backports import zstd
-
+# NOTE: the on-the-wire `compress_stream` codec moved entirely into the Rust core
+# (`jumpstarter-compression`); its round-trip tests now live there (golden.rs / lib.rs). What
+# remains in this module — and is tested here — is the driver-internal CONTENT-sniffing facade
+# (`AutoDecompressIterator`, signature detection) and the `Compression` StrEnum.
 from .encoding import (
     COMPRESSION_SIGNATURES,
     AutoDecompressIterator,
     Compression,
-    compress_stream,
     detect_compression_from_signature,
 )
 
 pytestmark = pytest.mark.anyio
 
 
-def create_buffer(size):
-    tx, rx = create_memory_object_stream[bytes](size)
-    return StapledObjectStream(tx, rx)
+def _zstd_compress(data: bytes) -> bytes:
+    """Produce a standard zstd frame via the Rust FFI codec — so the test needs no Python zstd
+    library (the qemu content-sniffing path it exercises also decompresses through that codec)."""
+    from jumpstarter_core import StreamCompressor
 
-
-@pytest.mark.parametrize("compression", [None, "gzip", "xz", "bz2", "zstd"])
-async def test_compress_stream(compression):
-    stream = compress_stream(create_buffer(128), compression)
-
-    await stream.send(b"hello")
-    await stream.send_eof()
-
-    result = BytesIO()
-    while True:
-        try:
-            result.write(await stream.receive())
-        except EndOfStream:
-            break
-    assert result.getvalue() == b"hello"
+    c = StreamCompressor("zstd")
+    return bytes(c.compress(data)) + bytes(c.finish())
 
 
 def _get_signature(compression: Compression) -> bytes:
@@ -93,7 +75,7 @@ class TestDetectCompressionFromSignature:
         assert detect_compression_from_signature(compressed) == Compression.BZ2
 
     def test_detect_from_real_zstd_data(self):
-        compressed = zstd.compress(b"test data")
+        compressed = _zstd_compress(b"test data")
         assert detect_compression_from_signature(compressed) == Compression.ZSTD
 
 
@@ -138,7 +120,7 @@ class TestAutoDecompressIterator:
     async def test_decompress_zstd(self):
         """Zstd compressed data should be decompressed."""
         original = b"hello world, this is zstd compressed data"
-        compressed = zstd.compress(original)
+        compressed = _zstd_compress(original)
         await self._decompress_and_check(compressed, original)
 
     async def test_small_chunks(self):

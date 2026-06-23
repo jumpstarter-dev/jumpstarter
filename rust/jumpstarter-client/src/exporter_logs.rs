@@ -30,10 +30,19 @@ pub async fn uds_channel(socket: String) -> Result<Channel, String> {
         let socket = socket.clone();
         async move { Ok::<_, std::io::Error>(TokioIo::new(UnixStream::connect(socket).await?)) }
     });
-    Endpoint::try_from("http://localhost")
+    let endpoint = Endpoint::try_from("http://localhost")
         .map_err(|e| e.to_string())?
-        .connect_with_connector(connector)
+        // Large HTTP/2 flow-control windows so a bulk resource/flash transfer isn't gated to
+        // ~64 KiB-in-flight per round-trip (the h2 default); over the client→router→exporter
+        // hops that default caps throughput at a few MiB/s regardless of chunk size.
+        .initial_stream_window_size(8 * 1024 * 1024)
+        .initial_connection_window_size(16 * 1024 * 1024);
+    // Connect on the multi-threaded IO runtime so this channel's connection driver runs there
+    // (not async-compat's single thread) — see `crate::io_runtime`.
+    crate::io_runtime()
+        .spawn(async move { endpoint.connect_with_connector(connector).await })
         .await
+        .map_err(|e| e.to_string())?
         .map_err(|e| e.to_string())
 }
 

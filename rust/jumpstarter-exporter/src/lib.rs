@@ -26,6 +26,7 @@ pub mod logbuf;
 pub mod polyglot;
 pub mod routing;
 pub mod session;
+pub mod shm_backend;
 pub mod standalone;
 pub mod tunnel;
 

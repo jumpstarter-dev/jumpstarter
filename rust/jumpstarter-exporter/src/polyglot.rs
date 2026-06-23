@@ -18,7 +18,7 @@ use std::time::{Duration, Instant, SystemTime};
 use jumpstarter_config::{ExporterConfig, HookConfig, YamlConfig};
 use tokio::process::{Child, Command};
 
-use crate::backend::{ChannelBackend, DriverBackend, HostFactory, HostGuard};
+use crate::backend::{DriverBackend, HostFactory, HostGuard};
 use crate::driver_host::python_interpreter;
 use crate::routing::{HostedEntry, RoutingBackend};
 use crate::Error;
@@ -92,30 +92,35 @@ impl HostFactory for PolyglotHostFactory {
             .map_err(|e| Error::Config(format!("loading exporter config: {e}")))?;
         let dir = host_dir()?;
 
-        let mut hosts: Vec<EntryHost> = Vec::new();
-        let mut entries: Vec<HostedEntry> = Vec::new();
-
-        for (index, (name, instance)) in config.export.iter().enumerate() {
+        // Build a provisioning future per entry, then run them all **concurrently**. Each entry's
+        // (spawn Python host + dial its UDS until it serves) is independent and I/O-bound, so the
+        // wall-clock collapses from the sum of all hosts to the slowest single host — the dominant
+        // cost of exporter startup (registration spawns the whole tree to assemble `GetReport`).
+        let provisions = config.export.iter().enumerate().map(|(index, (name, instance))| {
             let runtime = entry_runtime(instance);
             let uds = dir.join(format!("{index}.sock"));
-
             // A single-entry config (drop hooks — the hub runs lease hooks, not the host),
             // streamed to the host on stdin (no temp file on disk).
             let mut entry_config = config.clone();
             entry_config.export = BTreeMap::from([(name.clone(), instance.clone())]);
             entry_config.hooks = HookConfig::default();
-            let yaml = entry_config
-                .to_yaml()
-                .map_err(|e| Error::Config(format!("serializing entry config: {e}")))?;
-
-            let host = spawn_entry_host(&runtime, &yaml, &uds).await?;
+            let name = name.clone();
+            async move {
+                let yaml = entry_config
+                    .to_yaml()
+                    .map_err(|e| Error::Config(format!("serializing entry config: {e}")))?;
+                let host = spawn_entry_host(&runtime, &yaml, &uds).await?;
+                let backend = dial_with_retry(&uds, HOST_READY_TIMEOUT).await?;
+                Ok::<(EntryHost, HostedEntry), Error>((host, HostedEntry { name, backend }))
+            }
+        });
+        // try_join_all preserves input order and short-circuits on the first error.
+        let provisioned = futures::future::try_join_all(provisions).await?;
+        let mut hosts: Vec<EntryHost> = Vec::with_capacity(provisioned.len());
+        let mut entries: Vec<HostedEntry> = Vec::with_capacity(provisioned.len());
+        for (host, entry) in provisioned {
             hosts.push(host);
-
-            let backend = dial_with_retry(&uds, HOST_READY_TIMEOUT).await?;
-            entries.push(HostedEntry {
-                name: name.clone(),
-                backend,
-            });
+            entries.push(entry);
         }
 
         let root_uuid = uuid::Uuid::new_v4().to_string();
@@ -201,10 +206,15 @@ async fn dial_with_retry(
     let deadline = Instant::now() + timeout;
     loop {
         if let Ok(channel) = crate::control::uds_channel(&uds).await {
-            let backend = ChannelBackend::new(channel);
+            // The hub↔driver-host byte plane always rides shared memory (the only supported
+            // transport): `ShmChannelBackend` routes bulk router-stream bytes through an SPSC ring,
+            // eliminating the second gRPC hop the polyglot model would otherwise add. Control RPCs
+            // (get_report/driver_call/…) still ride the inner gRPC channel over this same UDS.
+            let backend: Arc<dyn DriverBackend> =
+                Arc::new(crate::shm_backend::ShmChannelBackend::new(channel));
             if backend.get_report().await.is_ok() {
                 tracing::debug!(%uds, "driver host ready");
-                return Ok(Arc::new(backend));
+                return Ok(backend);
             }
         }
         if Instant::now() >= deadline {

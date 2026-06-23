@@ -1,0 +1,44 @@
+[package]
+name = "jumpstarter-compression"
+description = "Streaming compression codecs (gzip/xz/bz2/zstd) for the Jumpstarter resource byte plane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# This crate lives apart from jumpstarter-core deliberately: it pulls heavy native
+# build deps (libbz2 / liblzma source builds) that should not be forced onto every
+# core consumer's compile unless the exporter byte plane is actually built. core
+# depends on it directly, so the split is organizational and keeps the golden
+# fixtures + wire-compat tests self-contained.
+[dependencies]
+# gzip via pure-Rust miniz_oxide backend (DEFAULT features => no zlib C link).
+# Keeps the build lean and cross-compiles cleanly. Used for the gzip container
+# (GzEncoder / MultiGzDecoder) which matches Python zlib wbits=31 / wbits=47.
+flate2 = "1"
+# xz/lzma container. Maintained successor to xz2; `static` bundles liblzma source
+# so no system liblzma is required (justified over xz2 by maintenance + bundling).
+# Default CHECK_CRC64 matches Python lzma.LZMACompressor().
+liblzma = { version = "0.3", features = ["static"] }
+# bz2 container. No production-quality pure-Rust bz2 ENCODER exists, so the C lib
+# is unavoidable (libbz2 is bundled from source by default in 0.5+). Level 9 matches
+# Python bz2.BZ2Compressor() ('BZh9' header). 0.5+ returns a clean io::Error on
+# truncated/corrupt input instead of aborting the process the way 0.4 did — that abort
+# was a DoS: malformed client resource bytes hitting the host decompression seam would
+# kill the driver-host process.
+bzip2 = "0.6"
+# zstd container. bindgen-free, bundles libzstd. Level 3 matches the Python
+# backports/stdlib ZstdCompressor() default (single frame, no checksum).
+zstd = "0.13"
+
+# NOTE: async-compression is intentionally NOT pulled — it would add a
+# tokio/futures-io surface and pin codec sub-versions. We only need synchronous
+# one-shot-per-chunk streaming, which the raw *Encoder/*Decoder types give us
+# with zero async deps, keeping this crate runtime-agnostic.
+
+# sha2 is test-only: it verifies golden fixtures round-trip to the manifest's
+# sha256. Already present in the workspace lockfile (transitive), so no new
+# resolved version is introduced.
+[dev-dependencies]
+sha2 = "0.10"

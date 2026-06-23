@@ -122,10 +122,15 @@ pub async fn connect(target: &str) -> Result<Channel, ClientError> {
         .map_err(|e| ClientError::Config(format!("invalid endpoint {target}: {e}")))?
         .http2_keep_alive_interval(Duration::from_secs(20))
         .keep_alive_timeout(Duration::from_secs(180))
-        .keep_alive_while_idle(true);
+        .keep_alive_while_idle(true)
+        // Large HTTP/2 windows so bulk resource/flash transfers aren't window-gated.
+        .initial_stream_window_size(8 * 1024 * 1024)
+        .initial_connection_window_size(16 * 1024 * 1024);
 
-    endpoint
-        .connect_with_connector(connector)
+    // Connect on the multi-threaded IO runtime (see `crate::io_runtime`).
+    crate::io_runtime()
+        .spawn(async move { endpoint.connect_with_connector(connector).await })
         .await
+        .map_err(|e| ClientError::Config(format!("connect task panicked: {e}")))?
         .map_err(Into::into)
 }

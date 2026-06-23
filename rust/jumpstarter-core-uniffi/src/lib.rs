@@ -40,6 +40,9 @@ use jumpstarter_core::{
 };
 use jumpstarter_exporter::backend::{DriverBackend, HostFactory, HostGuard};
 
+mod bytebuf;
+use bytebuf::Bytes;
+
 // ---------------------------------------------------------------------------
 // FFI types
 // ---------------------------------------------------------------------------
@@ -68,6 +71,102 @@ pub enum ExporterError {
     Config(String),
     #[error("runtime error: {0}")]
     Runtime(String),
+}
+
+// ---------------------------------------------------------------------------
+// Resource-stream codec (FFI)
+//
+// The real exporter decompresses resource uplinks / compresses downlinks in Rust at the host seam
+// (`foreign.rs`). The in-process `serve()` path (Python `LocalSession`) has no such Rust seam, so it
+// drives these same Rust codecs over FFI — so a compressed resource flashed under `serve()` reaches
+// the driver as RAW bytes, exactly like production, with one codec implementation shared by all
+// languages. Stateful (streaming): feed chunks, then call `finish()` once at EOF.
+// ---------------------------------------------------------------------------
+
+/// Error from a streaming codec.
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum CodecError {
+    #[error("unsupported codec: {0}")]
+    Unsupported(String),
+    #[error("codec stream already finished")]
+    Finished,
+    #[error("codec error: {0}")]
+    Io(String),
+}
+
+/// A streaming compressor for one resource codec (`gzip`/`xz`/`bz2`/`zstd`).
+#[derive(uniffi::Object)]
+pub struct StreamCompressor {
+    inner: std::sync::Mutex<Option<jumpstarter_compression::Compressor>>,
+}
+
+#[uniffi::export]
+impl StreamCompressor {
+    /// Build a compressor for the wire codec string, or `Unsupported` if unrecognized.
+    #[uniffi::constructor]
+    pub fn new(codec: String) -> Result<Arc<Self>, CodecError> {
+        let c = jumpstarter_compression::Codec::from_wire(&codec)
+            .ok_or(CodecError::Unsupported(codec))?;
+        Ok(Arc::new(Self {
+            inner: std::sync::Mutex::new(Some(jumpstarter_compression::Compressor::new(c))),
+        }))
+    }
+
+    /// Compress one chunk; returns whatever compressed bytes are now available (may be empty).
+    pub fn compress(&self, chunk: Bytes) -> Result<Bytes, CodecError> {
+        let mut guard = self.inner.lock().expect("codec mutex poisoned");
+        let c = guard.as_mut().ok_or(CodecError::Finished)?;
+        c.compress(&chunk.0)
+            .map(Bytes::from)
+            .map_err(|e| CodecError::Io(e.to_string()))
+    }
+
+    /// Emit the terminal footer; the compressor is consumed (further calls return `Finished`).
+    pub fn finish(&self) -> Result<Bytes, CodecError> {
+        let mut guard = self.inner.lock().expect("codec mutex poisoned");
+        let c = guard.take().ok_or(CodecError::Finished)?;
+        c.finish()
+            .map(Bytes::from)
+            .map_err(|e| CodecError::Io(e.to_string()))
+    }
+}
+
+/// A streaming decompressor for one resource codec (`gzip`/`xz`/`bz2`/`zstd`).
+#[derive(uniffi::Object)]
+pub struct StreamDecompressor {
+    inner: std::sync::Mutex<Option<jumpstarter_compression::Decompressor>>,
+}
+
+#[uniffi::export]
+impl StreamDecompressor {
+    /// Build a decompressor for the wire codec string, or `Unsupported` if unrecognized.
+    #[uniffi::constructor]
+    pub fn new(codec: String) -> Result<Arc<Self>, CodecError> {
+        let c = jumpstarter_compression::Codec::from_wire(&codec)
+            .ok_or(CodecError::Unsupported(codec))?;
+        Ok(Arc::new(Self {
+            inner: std::sync::Mutex::new(Some(jumpstarter_compression::Decompressor::new(c))),
+        }))
+    }
+
+    /// Decompress one chunk; returns whatever decompressed bytes are now available (may be empty).
+    /// A malformed stream surfaces a clean `CodecError::Io` (never aborts the process).
+    pub fn decompress(&self, chunk: Bytes) -> Result<Bytes, CodecError> {
+        let mut guard = self.inner.lock().expect("codec mutex poisoned");
+        let d = guard.as_mut().ok_or(CodecError::Finished)?;
+        d.decompress(&chunk.0)
+            .map(Bytes::from)
+            .map_err(|e| CodecError::Io(e.to_string()))
+    }
+
+    /// Surface any trailing decompressed bytes at EOF; the decompressor is consumed.
+    pub fn finish(&self) -> Result<Bytes, CodecError> {
+        let mut guard = self.inner.lock().expect("codec mutex poisoned");
+        let d = guard.take().ok_or(CodecError::Finished)?;
+        d.finish()
+            .map(Bytes::from)
+            .map_err(|e| CodecError::Io(e.to_string()))
+    }
 }
 
 /// A flat driver-tree node (one per `@export` driver instance).
@@ -129,10 +228,11 @@ pub trait DriverHost: Send + Sync {
     /// Open a byte channel to an `@exportstream`/resource handle; returns the handle +
     /// the resource initial metadata.
     async fn open_stream(&self, request_json: String) -> Result<OpenStream, DriverError>;
-    /// Next inbound payload for the channel, or `None` at EOF.
-    async fn stream_read(&self, handle: u64) -> Result<Option<Vec<u8>>, DriverError>;
-    /// Write one payload toward the driver.
-    async fn stream_write(&self, handle: u64, data: Vec<u8>) -> Result<(), DriverError>;
+    /// Next inbound payload for the channel, or `None` at EOF. `Bytes` (not `Vec<u8>`)
+    /// so the byte plane crosses the FFI in bulk, not one bounds-checked byte at a time.
+    async fn stream_read(&self, handle: u64) -> Result<Option<Bytes>, DriverError>;
+    /// Write one payload toward the driver (bulk-marshalled — see `stream_read`).
+    async fn stream_write(&self, handle: u64, data: Bytes) -> Result<(), DriverError>;
     /// Signal client→driver EOF.
     async fn stream_close_write(&self, handle: u64) -> Result<(), DriverError>;
     /// Tear down the channel.
@@ -548,12 +648,16 @@ impl ClientByteStream {
         self.inner.initial_metadata()
     }
 
-    pub async fn read(&self) -> Result<Option<Vec<u8>>, DriverError> {
-        self.inner.read().await.map_err(from_core_err)
+    pub async fn read(&self) -> Result<Option<Bytes>, DriverError> {
+        self.inner
+            .read()
+            .await
+            .map(|opt| opt.map(Bytes))
+            .map_err(from_core_err)
     }
 
-    pub async fn write(&self, data: Vec<u8>) -> Result<(), DriverError> {
-        self.inner.write(data).await.map_err(from_core_err)
+    pub async fn write(&self, data: Bytes) -> Result<(), DriverError> {
+        self.inner.write(data.0).await.map_err(from_core_err)
     }
 
     pub async fn close(&self) -> Result<(), DriverError> {
@@ -583,11 +687,15 @@ struct HandleByteChannel {
 #[async_trait]
 impl DriverByteChannel for HandleByteChannel {
     async fn read(&self) -> Result<Option<Vec<u8>>, DriverCallError> {
-        self.host.stream_read(self.handle).await.map_err(to_core_err)
+        self.host
+            .stream_read(self.handle)
+            .await
+            .map(|opt| opt.map(Vec::from))
+            .map_err(to_core_err)
     }
     async fn write(&self, data: Vec<u8>) -> Result<(), DriverCallError> {
         self.host
-            .stream_write(self.handle, data)
+            .stream_write(self.handle, Bytes(data))
             .await
             .map_err(to_core_err)
     }
