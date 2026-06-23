@@ -586,6 +586,17 @@ class HookExecutor:
             LogSource.AFTER_LEASE_HOOK,
         )
 
+    async def _safe_release_lease(
+        self,
+        request_lease_release: Callable[[], Awaitable[None]] | None,
+    ) -> None:
+        """Call request_lease_release if provided, logging any errors."""
+        if request_lease_release:
+            try:
+                await request_lease_release()
+            except Exception as e:
+                logger.error("Failed to request lease release: %s", e, exc_info=True)
+
     async def run_before_lease_hook(
         self,
         lease_scope: "LeaseContext",
@@ -679,11 +690,7 @@ class HookExecutor:
                 )
                 # Delay to give client time to poll the final status before releasing
                 await anyio.sleep(1.0)
-                if request_lease_release:
-                    try:
-                        await request_lease_release()
-                    except Exception as release_err:
-                        logger.error("Failed to request lease release: %s", release_err, exc_info=True)
+                await self._safe_release_lease(request_lease_release)
 
         except Exception as e:
             logger.error("beforeLease hook failed with unexpected error: %s", e, exc_info=True)
