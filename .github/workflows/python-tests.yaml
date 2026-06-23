@@ -53,6 +53,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Free up runner disk space
+        uses: mathio/gha-cleanup@aca3d43a05bf564f5fc69acb929a65b01797f22b # v1.1.2
+        with:
+          remove-browsers: true
+          verbose: true
+
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv

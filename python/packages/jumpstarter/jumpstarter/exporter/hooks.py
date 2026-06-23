@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 MAX_DRAIN_BYTES = 256 * 1024
 DRAIN_TIMEOUT_SECONDS = 2.0
+DRAIN_MAX_EMPTY_POLLS = 10
 
 # Module-level reference to time.monotonic so tests can patch it without
 # affecting the asyncio event loop (which also uses time.monotonic).
@@ -391,6 +392,7 @@ class HookExecutor:
                         try:
                             drain_deadline = _monotonic() + DRAIN_TIMEOUT_SECONDS
                             drained = 0
+                            consecutive_empty = 0
                             while drained < MAX_DRAIN_BYTES and _monotonic() < drain_deadline:
                                 # Poll for readability with a short timeout.
                                 # This avoids the race where a non-blocking read
@@ -406,8 +408,16 @@ class HookExecutor:
                                     # fd closed or invalid
                                     break
                                 if not readable:
-                                    # Timed out with no data — drain is complete
-                                    break
+                                    # On macOS, data may not be available on the
+                                    # first select() call even though the subprocess
+                                    # has already written and exited.  Keep retrying
+                                    # until we see several consecutive empty polls,
+                                    # which indicates the buffer is truly drained.
+                                    consecutive_empty += 1
+                                    if consecutive_empty >= DRAIN_MAX_EMPTY_POLLS:
+                                        break
+                                    continue
+                                consecutive_empty = 0
                                 try:
                                     chunk = os.read(parent_fd, 4096)
                                     if not chunk:
