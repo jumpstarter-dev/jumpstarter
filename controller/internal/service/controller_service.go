@@ -323,12 +323,14 @@ func (s *ControllerService) Unregister(
 	original := client.MergeFrom(exporter.DeepCopy())
 	exporter.Status.Devices = nil
 
+	applyUnregisterStatus(exporter, req.GetReason())
+
 	if err := s.Client.Status().Patch(ctx, exporter, original); err != nil {
 		logger.Error(err, "unable to update exporter status")
 		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
 	}
 
-	logger.Info("exporter unregistered, updated as unavailable")
+	logger.Info("exporter unregistered, marked offline")
 
 	return &pb.UnregisterResponse{}, nil
 }
@@ -456,6 +458,23 @@ func protoStatusToString(status pb.ExporterStatus) string {
 	default:
 		return jumpstarterdevv1alpha1.ExporterStatusUnspecified
 	}
+}
+
+func applyUnregisterStatus(exporter *jumpstarterdevv1alpha1.Exporter, reason string) {
+	exporter.Status.ExporterStatusValue = jumpstarterdevv1alpha1.ExporterStatusOffline
+	statusMessage := reason
+	if statusMessage == "" {
+		statusMessage = "Exporter unregistered"
+	}
+	exporter.Status.StatusMessage = statusMessage
+	syncOnlineConditionWithStatus(exporter)
+	meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+		Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: exporter.Generation,
+		Reason:             "Unregister",
+		Message:            "Exporter unregistered from the controller and became offline.",
+	})
 }
 
 // syncOnlineConditionWithStatus updates the Online condition based on ExporterStatusValue.
