@@ -2,7 +2,6 @@ import logging
 from dataclasses import dataclass
 
 import click
-from rich import traceback
 
 from jumpstarter.client import DriverClient
 from jumpstarter.client.base import StubDriverClient
@@ -10,6 +9,10 @@ from jumpstarter.client.decorators import driver_click_group
 
 
 def _opt_log_level_callback(ctx, param, value):
+    # Deferred: `rich.traceback` pulls ~40ms of pygments/rich at import; importing it here (only
+    # when the log-level option is processed) keeps it off the hot path of building a client tree.
+    from rich import traceback
+
     traceback.install()
 
     # Set the log level

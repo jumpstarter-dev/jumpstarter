@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import functools
 from abc import ABCMeta, abstractmethod
 from collections.abc import Generator
 from contextlib import closing
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from urllib.parse import ParseResult, urlparse
 from uuid import UUID
 
@@ -14,14 +15,47 @@ import click
 from anyio import EndOfStream
 from anyio.abc import ObjectStream
 from opendal import Operator
-from pydantic import ConfigDict, validate_call
 
 from .adapter import OpendalAdapter
-from .common import Capability, HashAlgo, Metadata, Mode, PathBuf, PresignedRequest
 from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group
 from jumpstarter.common.exceptions import ArgumentError
 from jumpstarter.streams.encoding import Compression
+
+if TYPE_CHECKING:
+    from .common import Capability, HashAlgo, Metadata, Mode, PathBuf, PresignedRequest
+
+
+def _validate_call(_fn=None, *, validate_return=False, arbitrary_types=False):
+    """Lazy `pydantic.validate_call`: defer importing pydantic (and the result-model classes in
+    `.common`) until the decorated method is first *called*. Merely importing this client — e.g. as
+    an unused sibling while a `j`/test client tree is built — then pays no pydantic import (~25ms ×
+    every invocation). Behavior is identical to `@validate_call` once a method actually runs."""
+
+    def decorate(fn):
+        validated = None
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            nonlocal validated
+            if validated is None:
+                # Make the result-model classes resolvable for return-type validation (the hints
+                # are PEP 563 strings; pydantic resolves them from the function's module globals),
+                # then build the real validator once and cache it.
+                from . import common
+
+                g = fn.__globals__
+                for _name in ("Capability", "HashAlgo", "Metadata", "Mode", "PathBuf", "PresignedRequest"):
+                    g.setdefault(_name, getattr(common, _name))
+                from pydantic import ConfigDict, validate_call
+
+                _config = ConfigDict(arbitrary_types_allowed=True) if arbitrary_types else None
+                validated = validate_call(validate_return=validate_return, config=_config)(fn)
+            return validated(*args, **kwargs)
+
+        return wrapper
+
+    return decorate(_fn) if callable(_fn) else decorate
 
 
 @dataclass(kw_only=True)
@@ -95,7 +129,7 @@ class OpendalFile:
     def __read(self, handle):
         return self.client.call("file_read", self.fd, handle)
 
-    @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
+    @_validate_call(validate_return=True, arbitrary_types=True)
     def write_from_path(self, path: PathBuf, operator: Operator | None = None):
         """
         Write into remote file with content from local file
@@ -109,7 +143,7 @@ class OpendalFile:
         with OpendalAdapter(client=self.client, operator=operator, path=path, original_url=original_url) as handle:
             return self.__write(handle)
 
-    @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
+    @_validate_call(validate_return=True, arbitrary_types=True)
     def read_into_path(self, path: PathBuf, operator: Operator | None = None):
         """
         Read content from remote file into local file
@@ -120,14 +154,14 @@ class OpendalFile:
         with OpendalAdapter(client=self.client, operator=operator, path=path, mode="wb") as handle:
             return self.__read(handle)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def write_bytes(self, data: bytes) -> None:
         buf = BytesIO(data)
         with self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream:
             with self.client.portal.wrap_async_context_manager(self.client.resource_async(stream)) as handle:
                 self.__write(handle)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def read_bytes(self) -> bytes:
         buf = BytesIO()
         with self.client.portal.wrap_async_context_manager(BytesIOStream(buf=buf)) as stream:
@@ -135,7 +169,7 @@ class OpendalFile:
                 self.__read(handle)
         return buf.getvalue()
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def seek(self, pos: int, whence: int = 0) -> int:
         """
         Change the cursor position to the given byte offset.
@@ -152,14 +186,14 @@ class OpendalFile:
         """
         return self.client.call("file_seek", self.fd, pos, whence)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def tell(self) -> int:
         """
         Return the current cursor position
         """
         return self.client.call("file_tell", self.fd)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def close(self) -> None:
         """
         Close the file
@@ -167,28 +201,28 @@ class OpendalFile:
         return self.client.call("file_close", self.fd)
 
     @property
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def closed(self) -> bool:
         """
         Check if the file is closed
         """
         return self.client.call("file_closed", self.fd)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def readable(self) -> bool:
         """
         Check if the file is readable
         """
         return self.client.call("file_readable", self.fd)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def seekable(self) -> bool:
         """
         Check if the file is seekable
         """
         return self.client.call("file_seekable", self.fd)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def writable(self) -> bool:
         """
         Check if the file is writable
@@ -197,7 +231,7 @@ class OpendalFile:
 
 
 class OpendalClient(DriverClient):
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def write_bytes(self, /, path: PathBuf, data: bytes) -> None:
         """
         Write data into path
@@ -207,7 +241,7 @@ class OpendalClient(DriverClient):
         with closing(self.open(path, "wb")) as f:
             f.write_bytes(data)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def read_bytes(self, /, path: PathBuf) -> bytes:
         """
         Read data from path
@@ -219,7 +253,7 @@ class OpendalClient(DriverClient):
         with closing(self.open(path, "rb")) as f:
             return f.read_bytes()
 
-    @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
+    @_validate_call(validate_return=True, arbitrary_types=True)
     def write_from_path(self, dst: PathBuf, src: PathBuf, operator: Operator | None = None) -> None:
         """
         Write data from src into dst
@@ -232,7 +266,7 @@ class OpendalClient(DriverClient):
         with closing(self.open(dst, "wb")) as f:
             f.write_from_path(src, operator)
 
-    @validate_call(validate_return=True, config=ConfigDict(arbitrary_types_allowed=True))
+    @_validate_call(validate_return=True, arbitrary_types=True)
     def read_into_path(self, src: PathBuf, dst: PathBuf, operator: Operator | None = None) -> None:
         """
         Read data into dst from src
@@ -245,7 +279,7 @@ class OpendalClient(DriverClient):
         with closing(self.open(src, "rb")) as f:
             f.read_into_path(dst, operator)
 
-    @validate_call
+    @_validate_call
     def open(self, /, path: PathBuf, mode: Mode) -> OpendalFile:
         """
         Open a file-like reader for the given path
@@ -256,7 +290,7 @@ class OpendalClient(DriverClient):
         """
         return OpendalFile(client=self, fd=self.call("open", path, mode))
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def stat(self, /, path: PathBuf) -> Metadata:
         """
         Get current path's metadata
@@ -267,7 +301,7 @@ class OpendalClient(DriverClient):
         """
         return self.call("stat", path)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def hash(self, /, path: PathBuf, algo: HashAlgo = "sha256") -> str:
         """
         Get current path's hash
@@ -278,7 +312,7 @@ class OpendalClient(DriverClient):
         """
         return self.call("hash", path, algo)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def copy(self, /, source: PathBuf, target: PathBuf):
         """
         Copy source to target
@@ -290,7 +324,7 @@ class OpendalClient(DriverClient):
         """
         self.call("copy", source, target)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def rename(self, /, source: PathBuf, target: PathBuf):
         """
         Rename source to target
@@ -304,7 +338,7 @@ class OpendalClient(DriverClient):
         """
         self.call("rename", source, target)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def remove_all(self, /, path: PathBuf):
         """
         Remove all file under path
@@ -316,7 +350,7 @@ class OpendalClient(DriverClient):
         """
         self.call("remove_all", path)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def create_dir(self, /, path: PathBuf):
         """
         Create a dir at given path
@@ -332,7 +366,7 @@ class OpendalClient(DriverClient):
         """
         self.call("create_dir", path)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def delete(self, /, path: PathBuf):
         """
         Delete given path
@@ -348,7 +382,7 @@ class OpendalClient(DriverClient):
         """
         self.call("delete", path)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def exists(self, /, path: PathBuf) -> bool:
         """
         Check if given path exists
@@ -361,7 +395,7 @@ class OpendalClient(DriverClient):
         """
         return self.call("exists", path)
 
-    @validate_call
+    @_validate_call
     def list(self, /, path: PathBuf) -> Generator[str, None, None]:
         """
         List files and directories under given path
@@ -373,7 +407,7 @@ class OpendalClient(DriverClient):
         """
         yield from self.streamingcall("list", path)
 
-    @validate_call
+    @_validate_call
     def scan(self, /, path: PathBuf) -> Generator[str, None, None]:
         """
         List files and directories under given path recursively
@@ -385,28 +419,28 @@ class OpendalClient(DriverClient):
         """
         yield from self.streamingcall("scan", path)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def presign_stat(self, /, path: PathBuf, expire_second: int) -> PresignedRequest:
         """
         Presign an operation for stat (HEAD) which expires after expire_second seconds
         """
         return self.call("presign_stat", path, expire_second)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def presign_read(self, /, path: PathBuf, expire_second: int) -> PresignedRequest:
         """
         Presign an operation for read (GET) which expires after expire_second seconds
         """
         return self.call("presign_read", path, expire_second)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def presign_write(self, /, path: PathBuf, expire_second: int) -> PresignedRequest:
         """
         Presign an operation for write (PUT) which expires after expire_second seconds
         """
         return self.call("presign_write", path, expire_second)
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def capability(self, /) -> Capability:
         """
         Get capabilities of the underlying storage
@@ -419,7 +453,7 @@ class OpendalClient(DriverClient):
         """
         return self.call("capability")
 
-    @validate_call(validate_return=True)
+    @_validate_call(validate_return=True)
     def get_created_resources(self) -> set[str]:
         """
         Get set of all paths that have been created during this session.
@@ -597,7 +631,7 @@ class FlasherClientInterface(metaclass=ABCMeta):
                         raise click.ClickException(f"Invalid target spec '{spec}', expected name:file")
                     name, img = spec.split(":", 1)
                     mapping[name] = img
-                self.flash(cast(dict[str, PathBuf], mapping), compression=compression)
+                self.flash(cast("dict[str, PathBuf]", mapping), compression=compression)
                 return
 
             if not file:

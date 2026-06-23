@@ -7,11 +7,20 @@ from anyio.abc import ObjectStream
 from opendal import AsyncFile, Metadata, Operator
 from opendal.exceptions import Error
 
+import os
+
 from jumpstarter.client import DriverClient
 from jumpstarter.client.adapters import blocking
 from jumpstarter.common.resources import PresignedRequestResource
 from jumpstarter.streams.encoding import Compression
 from jumpstarter.streams.progress import ProgressAttribute
+
+# Resource-stream read chunk. The byte plane's throughput is per-chunk-overhead-bound (one FFI
+# crossing + Python async hop per chunk on both client and host), so a small chunk caps a bulk
+# flash regardless of transport: 64 KiB ≈ 345 MiB/s, 1 MiB ≈ 670 (and ≈ 2 GiB/s with the
+# shared-memory tunnel). 1 MiB amortizes that overhead while staying modest in memory; override
+# with `JMP_RESOURCE_CHUNK` (bytes) for memory-constrained hosts or many concurrent streams.
+_RESOURCE_CHUNK = int(os.environ.get("JMP_RESOURCE_CHUNK", str(1024 * 1024)))
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -33,7 +42,7 @@ class AsyncFileStream(ObjectStream[bytes]):
         if not await self.file.readable():
             raise EndOfStream
         try:
-            item = await self.file.read(size=65536)
+            item = await self.file.read(size=_RESOURCE_CHUNK)
         except Error as e:
             raise BrokenResourceError from e
         if len(item) == 0:

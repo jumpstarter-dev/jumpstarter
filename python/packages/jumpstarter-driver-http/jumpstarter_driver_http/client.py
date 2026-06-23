@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from jumpstarter_driver_composite.client import CompositeClient
-from jumpstarter_driver_opendal.common import PathBuf
-from opendal import Operator
 from yarl import URL
+
+if TYPE_CHECKING:
+    from jumpstarter_driver_opendal.common import PathBuf
+    from opendal import Operator
 
 
 @dataclass(kw_only=True)

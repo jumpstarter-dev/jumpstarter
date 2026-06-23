@@ -1,11 +1,18 @@
+# `annotations` keeps the `PowerReading` return hint a string, so importing this client doesn't
+# pull pydantic (~25ms via `.common`) — that cost is deferred to `read()`, which actually uses it.
+from __future__ import annotations
+
 import time
 from collections.abc import Generator
+from typing import TYPE_CHECKING
 
 import click
 
-from .common import PowerReading
 from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group
+
+if TYPE_CHECKING:
+    from .common import PowerReading
 
 
 class PowerClient(DriverClient):
@@ -31,6 +38,7 @@ class PowerClient(DriverClient):
 
     def read(self) -> Generator[PowerReading, None, None]:
         """Read power data from the device."""
+        from .common import PowerReading
 
         for v in self.streamingcall("read"):
             yield PowerReading.model_validate(v, strict=True)
