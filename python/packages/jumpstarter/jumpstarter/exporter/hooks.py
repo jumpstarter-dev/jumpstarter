@@ -670,13 +670,20 @@ class HookExecutor:
                 # Defer shutdown: sets _stop_requested=True, actual stop after lease cleanup
                 shutdown(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
             else:
-                # on_failure='endLease' - report failure, session stays alive for client
+                # on_failure='endLease' - report failure and release the lease
                 logger.error("beforeLease hook failed with on_failure='endLease': %s", e)
+                lease_scope.skip_after_lease_hook = True
                 await report_status(
                     ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                     f"beforeLease hook failed (on_failure=endLease): {e}",
                 )
-                # No request_lease_release - client will discover failure and release
+                # Delay to give client time to poll the final status before releasing
+                await anyio.sleep(1.0)
+                if request_lease_release:
+                    try:
+                        await request_lease_release()
+                    except Exception as release_err:
+                        logger.error("Failed to request lease release: %s", release_err, exc_info=True)
 
         except Exception as e:
             logger.error("beforeLease hook failed with unexpected error: %s", e, exc_info=True)

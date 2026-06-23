@@ -505,8 +505,8 @@ class TestHookExecutor:
         assert lease_scope.skip_after_lease_hook is True
         mock_shutdown.assert_called_once_with(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
 
-    async def test_before_lease_hook_endlease_does_not_set_skip_flag(self, lease_scope) -> None:
-        """Test that beforeLease hook failure with on_failure=endLease does NOT set skip_after_lease_hook."""
+    async def test_before_lease_hook_endlease_sets_skip_flag_and_releases_lease(self, lease_scope) -> None:
+        """Test that beforeLease hook failure with on_failure=endLease sets skip_after_lease_hook and releases lease."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="endLease"),
         )
@@ -514,14 +514,18 @@ class TestHookExecutor:
 
         mock_report_status = AsyncMock()
         mock_shutdown = MagicMock()
+        mock_request_lease_release = AsyncMock()
 
         await executor.run_before_lease_hook(
             lease_scope,
             mock_report_status,
             mock_shutdown,
+            mock_request_lease_release,
         )
 
-        assert lease_scope.skip_after_lease_hook is False
+        assert lease_scope.skip_after_lease_hook is True
+        mock_request_lease_release.assert_called_once()
+        mock_shutdown.assert_not_called()
 
     async def test_pty_output_drained_after_stop_flag_set(self) -> None:
         """Test that PTY drain captures data remaining after the stop flag is set.
