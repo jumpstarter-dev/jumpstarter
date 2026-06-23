@@ -1487,6 +1487,7 @@ dependencies = [
  "hyper-util",
  "jumpstarter-client",
  "jumpstarter-config",
+ "jumpstarter-fsm",
  "jumpstarter-protocol",
  "jumpstarter-shm",
  "jumpstarter-transport",
@@ -1500,6 +1501,25 @@ dependencies = [
  "tower 0.5.3",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "jumpstarter-fsm"
+version = "0.0.0"
+dependencies = [
+ "async-stream",
+ "jumpstarter-fsm-macros",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
+name = "jumpstarter-fsm-macros"
+version = "0.0.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

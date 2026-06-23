@@ -10,6 +10,8 @@ rust-version.workspace = true
 [dependencies]
 jumpstarter-protocol = { path = "../jumpstarter-protocol" }
 jumpstarter-config = { path = "../jumpstarter-config" }
+# Typestate FSM core that drives the lease lifecycle (lease_fsm + lease_runner).
+jumpstarter-fsm = { path = "../jumpstarter-fsm" }
 # The shared driver-call seam (`DriverBackend` + `ChannelBackend`), also consumed by the client.
 jumpstarter-transport = { path = "../jumpstarter-transport" }
 # Reuses the Phase-A channel builder + router byte-bridge.

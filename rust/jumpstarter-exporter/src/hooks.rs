@@ -2,10 +2,12 @@
 //!
 //! A hook is a `beforeLease`/`afterLease` script run as a subprocess against the
 //! session's dedicated **hook socket** (so `j` commands don't contend with client
-//! traffic on the main socket). [`run_before_lease`]/[`run_after_lease`] own the
-//! observable status sequence — `BEFORE_LEASE_HOOK` → `LEASE_READY`,
-//! `AFTER_LEASE_HOOK` → `AVAILABLE`, and the `*_HOOK_FAILED`/`OFFLINE` failure
-//! projections — so the FSM (`crate::fsm`) stays purely structural.
+//! traffic on the main socket). [`run_hook`] executes a hook and maps its `on_failure`
+//! policy; the lease runner ([`crate::lease_runner`]) calls it via
+//! [`crate::controller_effects`], reporting the `*_HOOK_FAILED`/`OFFLINE` failure statuses,
+//! while the FSM projection drives the clean-phase `BEFORE_LEASE_HOOK` → `LEASE_READY`,
+//! `AFTER_LEASE_HOOK` → `AVAILABLE` sequence. (`run_before_lease`/`run_after_lease` remain
+//! for standalone serving.)
 
 use std::path::Path;
 use std::process::Stdio;
@@ -56,9 +58,11 @@ pub enum AfterOutcome {
     Exit,
 }
 
-/// The raw result of running a hook, after applying its `on_failure` policy.
+/// The raw result of running a hook, after applying its `on_failure` policy. Exposed to the
+/// lease runner's `ControllerEffects`, which runs the hook subprocess and reports the failure
+/// statuses itself (the runner drives the clean-phase statuses via the FSM projection).
 #[derive(Debug, PartialEq, Eq)]
-enum HookOutcome {
+pub(crate) enum HookOutcome {
     Success,
     Warn(String),
     EndLease(String),
@@ -172,7 +176,7 @@ pub async fn run_after_lease(
 }
 
 /// Execute a hook and map its result through the configured `on_failure` policy.
-async fn run_hook(
+pub(crate) async fn run_hook(
     hook: &HookInstanceConfig,
     ctx: &HookContext<'_>,
     source: LogSource,

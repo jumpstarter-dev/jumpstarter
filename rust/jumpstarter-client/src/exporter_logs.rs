@@ -8,7 +8,7 @@
 //! cases `show_all_logs` mirrors Python: hook logs (before/afterLease) are always
 //! shown; driver/system logs only when `--exporter-logs` is set.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use hyper_util::rt::TokioIo;
 use jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient;
@@ -51,32 +51,66 @@ pub async fn uds_channel(socket: String) -> Result<Channel, String> {
 /// aborted. `show_all_logs` gates driver/system logs; hook logs are always shown.
 pub fn spawn_controller(socket: String, show_all_logs: bool) -> JoinHandle<()> {
     tokio::spawn(async move {
-        // Reconnect a few times so a brief mid-session stream drop (e.g. around
-        // afterLease) doesn't lose the tail (`core.py:log_stream` reconnect loop).
-        let mut attempts = 0;
-        while attempts < 10 {
-            match uds_channel(socket.clone()).await {
-                Ok(channel) => {
-                    let mut client = ExporterServiceClient::new(channel);
-                    match client.log_stream(()).await {
-                        Ok(stream) => {
-                            let mut stream = stream.into_inner();
-                            while let Some(item) = stream.next().await {
-                                match item {
-                                    Ok(resp) => print_log(&resp, show_all_logs),
-                                    Err(_) => break,
-                                }
-                            }
-                        }
-                        Err(e) => tracing::debug!(error = %e, "log stream rpc failed"),
-                    }
-                }
-                Err(e) => tracing::debug!(error = %e, "log stream connect failed"),
+        // The shell aborts this task at session end, so retry resiliently — not just through a
+        // brief mid-session drop (e.g. around afterLease) but through the whole exporter
+        // *restart window*. The exporter can be briefly unreachable for several seconds after a
+        // restart; the previous fixed 10-attempt (~1 s) cap gave up inside that window, so a
+        // lease whose hooks ran after the cap was exhausted lost all of its streamed output.
+        //
+        // Strict policy: exponential backoff capped at `MAX_BACKOFF`, reset whenever a stream
+        // delivers at least one line (progress), and a hard `GIVE_UP_AFTER` budget on a run of
+        // *consecutive* failures so a truly-gone exporter can't spin forever.
+        const MAX_BACKOFF: Duration = Duration::from_secs(1);
+        const GIVE_UP_AFTER: Duration = Duration::from_secs(60);
+        let mut backoff = Duration::from_millis(50);
+        let mut failing_since: Option<Instant> = None;
+        loop {
+            if stream_controller_once(&socket, show_all_logs).await {
+                // Made progress: reset the backoff and the consecutive-failure budget.
+                backoff = Duration::from_millis(50);
+                failing_since = None;
+                continue;
             }
-            attempts += 1;
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            let since = *failing_since.get_or_insert_with(Instant::now);
+            if since.elapsed() >= GIVE_UP_AFTER {
+                tracing::debug!("exporter log stream gave up after 60s of consecutive failures");
+                break;
+            }
+            tokio::time::sleep(backoff).await;
+            backoff = (backoff * 2).min(MAX_BACKOFF);
         }
     })
+}
+
+/// Connect once and stream until the stream ends. Returns whether at least one log line was
+/// received, so the reconnect loop can reset its backoff on progress.
+async fn stream_controller_once(socket: &str, show_all_logs: bool) -> bool {
+    let channel = match uds_channel(socket.to_string()).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::debug!(error = %e, "log stream connect failed");
+            return false;
+        }
+    };
+    let mut client = ExporterServiceClient::new(channel);
+    let mut stream = match client.log_stream(()).await {
+        Ok(s) => s.into_inner(),
+        Err(e) => {
+            tracing::debug!(error = %e, "log stream rpc failed");
+            return false;
+        }
+    };
+    let mut received = false;
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(resp) => {
+                received = true;
+                print_log(&resp, show_all_logs);
+            }
+            Err(_) => break,
+        }
+    }
+    received
 }
 
 /// Spawn a background task that streams the direct exporter's logs to stderr until

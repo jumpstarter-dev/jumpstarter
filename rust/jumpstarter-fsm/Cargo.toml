@@ -1,0 +1,24 @@
+# Typestate FSM core for the Jumpstarter runtime lifecycles.
+#
+# Dependency discipline (mirrors jumpstarter-core): this crate is a pure, binding-agnostic
+# core and MUST NOT depend on tonic, jumpstarter-protocol, or tokio process/net features.
+# It carries only the typestate carrier, the Fsm trait, and the signal mailbox so that both
+# the exporter and the (future) client lifecycle machines can reuse it and unit-test it in
+# isolation.
+[package]
+name = "jumpstarter-fsm"
+description = "Typestate finite-state-machine core: Handle carrier, Fsm trait, and the signal mailbox (Outcome/CommitGuard/SignalSink) for the Jumpstarter runtime lifecycles"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+jumpstarter-fsm-macros = { path = "../jumpstarter-fsm-macros" }
+tokio = { workspace = true, features = ["sync", "macros"] }
+tokio-stream = "0.1"
+async-stream = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["sync", "macros", "rt", "rt-multi-thread", "time"] }

@@ -59,9 +59,20 @@ impl StatusSnapshot {
     }
 }
 
+/// Whether the controller accepted a reported status transition (DD-7). The lease runner
+/// must not advance into a state whose status report was `Rejected`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReportOutcome {
+    Accepted,
+    Rejected(String),
+}
+
 /// The single status choke point: reports a status transition to the controller AND
 /// mirrors it into the local [`StatusSnapshot`] (so `GetStatus` answers from the lease
-/// FSM, across leases, without round-tripping the per-lease host).
+/// FSM, across leases, without round-tripping the per-lease host). Cheaply cloneable — clones
+/// share the controller channel and the snapshot sender, so the runner and a spawned hook
+/// effect can both report.
+#[derive(Clone)]
 pub struct StatusReporter {
     /// `None` in standalone (`--tls-grpc-listener`) mode — there is no controller, so
     /// status is only mirrored into the local snapshot for `GetStatus`/hooks.
@@ -104,6 +115,38 @@ impl StatusReporter {
             }
         }
         self.snapshot.send_modify(|s| s.apply(status, message));
+    }
+
+    /// Report a status transition and surface whether the controller accepted it (DD-7). On
+    /// an explicit `FAILED_PRECONDITION`/`ABORTED` the transition is `Rejected` and the local
+    /// snapshot is left unchanged (the FSM must not advance). `UNIMPLEMENTED` (feature probe)
+    /// and transient transport errors are treated as `Accepted` so a blip never tears down a
+    /// healthy lease — matching the resilience of the best-effort [`Self::report`].
+    pub async fn try_report(&mut self, status: ExporterStatus, message: &str) -> ReportOutcome {
+        if let Some(controller) = &mut self.controller {
+            let request = ReportStatusRequest {
+                status: status as i32,
+                message: Some(message.to_string()),
+                release_lease: None,
+            };
+            match controller.report_status(request).await {
+                Ok(_) => {}
+                Err(s)
+                    if matches!(
+                        s.code(),
+                        tonic::Code::FailedPrecondition | tonic::Code::Aborted
+                    ) =>
+                {
+                    return ReportOutcome::Rejected(s.message().to_string());
+                }
+                Err(s) if s.code() == tonic::Code::Unimplemented => {}
+                Err(s) => {
+                    tracing::warn!(error = %s, ?status, "report_status failed (transient); proceeding");
+                }
+            }
+        }
+        self.snapshot.send_modify(|s| s.apply(status, message));
+        ReportOutcome::Accepted
     }
 
     /// Ask the controller to release the active lease, also recording the implied

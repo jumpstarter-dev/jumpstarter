@@ -1,0 +1,16 @@
+[package]
+name = "jumpstarter-fsm-macros"
+description = "Derive macro (#[derive(StateMachine)]) for the typestate FSM core in jumpstarter-fsm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"

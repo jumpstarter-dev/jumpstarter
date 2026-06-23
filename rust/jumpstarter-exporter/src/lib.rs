@@ -8,7 +8,8 @@
 //! driver in its own subprocess ([`polyglot`] — one host per driver, Python or native
 //! Rust) that it routes driver calls into by UUID ([`routing`]).
 //!
-//! Each lease runs through the [`fsm`] lease-lifecycle state machine, executing the
+//! Each lease is **driven** by the [`lease_fsm`] typestate state machine via the
+//! [`lease_runner`] (its effects backed by [`controller_effects`]), executing the
 //! `beforeLease`/`afterLease` [`hooks`] against the Rust hook socket and reporting the
 //! status sequence both to the controller and the `GetStatus` snapshot via [`control`].
 //!
@@ -18,10 +19,12 @@
 pub mod auth;
 pub mod backend;
 pub mod control;
+pub mod controller_effects;
 pub mod driver_host;
 pub mod exporter;
-pub mod fsm;
 pub mod hooks;
+pub mod lease_fsm;
+pub mod lease_runner;
 pub mod logbuf;
 pub mod polyglot;
 pub mod routing;
