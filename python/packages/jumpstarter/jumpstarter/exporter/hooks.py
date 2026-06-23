@@ -586,6 +586,17 @@ class HookExecutor:
             LogSource.AFTER_LEASE_HOOK,
         )
 
+    async def _safe_release_lease(
+        self,
+        request_lease_release: Callable[[], Awaitable[None]] | None,
+    ) -> None:
+        """Call request_lease_release if provided, logging any errors."""
+        if request_lease_release:
+            try:
+                await request_lease_release()
+            except Exception as e:
+                logger.error("Failed to request lease release: %s", e, exc_info=True)
+
     async def run_before_lease_hook(
         self,
         lease_scope: "LeaseContext",
@@ -656,7 +667,7 @@ class HookExecutor:
 
         except HookExecutionError as e:
             if e.should_shutdown_exporter():
-                # on_failure='exit' - defer shutdown until client handles the failure
+                # on_failure='exit' - release the lease, then defer shutdown
                 logger.error("beforeLease hook failed with on_failure='exit': %s", e)
                 lease_scope.skip_after_lease_hook = True
                 await report_status(
@@ -667,6 +678,12 @@ class HookExecutor:
                     ExporterStatus.OFFLINE,
                     "Exporter shutting down due to beforeLease hook failure",
                 )
+                # Release the lease so the controller sends leased=False,
+                # which unblocks the serve() loop to check _stop_requested.
+                # Without this, the exporter hangs waiting for a lease end
+                # that never comes.
+                await anyio.sleep(1.0)
+                await self._safe_release_lease(request_lease_release)
                 # Defer shutdown: sets _stop_requested=True, actual stop after lease cleanup
                 shutdown(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
             else:

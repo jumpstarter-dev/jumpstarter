@@ -484,8 +484,8 @@ class TestHookExecutor:
             assert any("DEBIAN_FRONTEND=noninteractive" in call for call in info_calls)
             assert any("GIT_TERMINAL_PROMPT=0" in call for call in info_calls)
 
-    async def test_before_lease_hook_exit_sets_skip_flag(self, lease_scope) -> None:
-        """Test that beforeLease hook failure with on_failure=exit sets skip_after_lease_hook flag."""
+    async def test_before_lease_hook_exit_sets_skip_flag_and_releases_lease(self, lease_scope) -> None:
+        """Test that beforeLease hook failure with on_failure=exit sets skip flag and releases lease."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
         )
@@ -493,6 +493,7 @@ class TestHookExecutor:
 
         mock_report_status = AsyncMock()
         mock_shutdown = MagicMock()
+        mock_request_lease_release = AsyncMock()
 
         assert lease_scope.skip_after_lease_hook is False
 
@@ -500,9 +501,34 @@ class TestHookExecutor:
             lease_scope,
             mock_report_status,
             mock_shutdown,
+            mock_request_lease_release,
         )
 
         assert lease_scope.skip_after_lease_hook is True
+        mock_request_lease_release.assert_called_once()
+        mock_shutdown.assert_called_once_with(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
+
+    async def test_before_lease_hook_exit_handles_release_error(self, lease_scope) -> None:
+        """Test that beforeLease hook with on_failure=exit handles release errors gracefully."""
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        mock_report_status = AsyncMock()
+        mock_shutdown = MagicMock()
+        mock_request_lease_release = AsyncMock(side_effect=RuntimeError("controller unavailable"))
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+            mock_request_lease_release,
+        )
+
+        assert lease_scope.skip_after_lease_hook is True
+        mock_request_lease_release.assert_called_once()
+        # shutdown should still be called even if release fails
         mock_shutdown.assert_called_once_with(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
 
     async def test_before_lease_hook_endlease_does_not_set_skip_flag(self, lease_scope) -> None:
