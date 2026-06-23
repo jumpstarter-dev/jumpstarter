@@ -92,10 +92,58 @@ spec:
                       JWT authentication configuration.
                       Enables authentication using external JWT tokens from OIDC providers.
                       Supports multiple JWT authenticators for different identity providers.
+                      Each entry may optionally reference a CA certificate from a Kubernetes
+                      Secret or ConfigMap instead of inlining the PEM content.
                     items:
-                      description: JWTAuthenticator provides the configuration for
-                        a single JWT authenticator.
+                      description: |-
+                        JWTAuthenticatorConfig extends the standard Kubernetes JWTAuthenticator with
+                        support for referencing CA certificates from Kubernetes Secrets or ConfigMaps.
+                        The operator resolves the reference at reconcile time and injects the PEM content
+                        into the controller ConfigMap, so CA rotations are picked up automatically.
                       properties:
+                        certificateAuthorityConfigMap:
+                          description: |-
+                            CertificateAuthorityConfigMap references a Kubernetes ConfigMap containing the
+                            CA certificate PEM for the OIDC issuer. The operator reads the specified key and
+                            injects the PEM content as the certificateAuthority for this authenticator.
+                            When the ConfigMap changes, the operator reconciles and updates the ConfigMap.
+                          properties:
+                            key:
+                              default: ca.crt
+                              description: |-
+                                Key within the ConfigMap that holds the PEM-encoded CA certificate.
+                                Defaults to "ca.crt", which is the standard key used by kube-root-ca.crt
+                                and cert-manager CA bundles.
+                              type: string
+                            name:
+                              description: Name of the ConfigMap containing the CA
+                                certificate.
+                              minLength: 1
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        certificateAuthoritySecret:
+                          description: |-
+                            CertificateAuthoritySecret references a Kubernetes Secret containing the CA
+                            certificate PEM for the OIDC issuer. The operator reads the specified key and
+                            injects the PEM content as the certificateAuthority for this authenticator.
+                            When the Secret changes, the operator reconciles and updates the ConfigMap.
+                            Takes precedence over CertificateAuthorityConfigMap when both are set.
+                          properties:
+                            key:
+                              default: tls.crt
+                              description: |-
+                                Key within the Secret that holds the PEM-encoded CA certificate.
+                                Defaults to "tls.crt", which is the standard key used by cert-manager.
+                              type: string
+                            name:
+                              description: Name of the Secret containing the CA certificate.
+                              minLength: 1
+                              type: string
+                          required:
+                          - name
+                          type: object
                         claimMappings:
                           description: claimMappings points claims of a token to be
                             treated as user attributes.

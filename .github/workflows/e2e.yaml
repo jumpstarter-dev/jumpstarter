@@ -21,7 +21,7 @@ jobs:
     outputs:
       should_run: ${{ steps.filter.outputs.e2e }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
@@ -56,7 +56,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
 
@@ -70,7 +70,7 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: /tmp/controller-image.tar
-          key: controller-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Dockerfile', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/**', 'controller/api/**', 'controller/internal/**') }}
+          key: controller-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Containerfile', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/**', 'controller/api/**', 'controller/internal/**') }}
 
       - name: Build controller image
         if: steps.cache.outputs.cache-hit != 'true'
@@ -99,7 +99,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
 
@@ -115,7 +115,7 @@ jobs:
           path: |
             /tmp/operator-image.tar
             /tmp/operator-install.yaml
-          key: operator-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Dockerfile.operator', 'controller/go.mod', 'controller/go.sum', 'controller/deploy/operator/**', 'controller/api/**', 'controller/internal/**') }}
+          key: operator-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Containerfile.operator', 'controller/go.mod', 'controller/go.sum', 'controller/deploy/operator/**', 'controller/api/**', 'controller/internal/**') }}
 
       - name: Build operator image and installer manifest
         if: steps.cache.outputs.cache-hit != 'true'
@@ -140,13 +140,16 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
 
+      - id: uv
+        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
+          version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
 
       - name: Cache python wheels
@@ -185,11 +188,14 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
+      - id: uv
+        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
+          version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
 
       - name: Install Go
@@ -243,11 +249,14 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
+      - id: uv
+        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
+          version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
 
       - name: Install Go
@@ -279,11 +288,14 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout repository
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
+      - id: uv
+        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
+          version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
 
       - name: Install Go

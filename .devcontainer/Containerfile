@@ -1,0 +1,11 @@
+FROM mcr.microsoft.com/devcontainers/base:2.1.10-bookworm@sha256:aba0f2e0730af481edf2db5582a80c0ed2591bee78ec177f7fa7a38e8f5e1105
+
+ENV PYTHONUNBUFFERED=True
+ENV UV_LINK_MODE=copy
+
+WORKDIR /opt
+
+COPY --from=ghcr.io/astral-sh/uv:0.11.23@sha256:d0a0a753ab981624b49c97abc98821c1c09f4ca69d1ef5cee69c501be3d88479 /uv /uvx /bin/
+COPY ./.py-version ./.python-version
+
+RUN apt-get update && apt-get install -y iperf3 libusb-dev

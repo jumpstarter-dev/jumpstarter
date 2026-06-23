@@ -1,5 +1,7 @@
 import os
 import platform
+import shutil
+import subprocess
 
 import pytest
 import requests
@@ -10,25 +12,45 @@ from jumpstarter_driver_qemu.driver import Qemu
 from .driver import UbootConsole
 from jumpstarter.common.utils import serve
 
+UBOOT_RPM_URL = "https://kojipkgs.fedoraproject.org/packages/uboot-tools/2025.10/1.fc43/noarch/uboot-images-armv8-2025.10-1.fc43.noarch.rpm"
+
 
 @pytest.fixture(scope="session")
 def uboot_image(tmpdir_factory):
     tmp_path = tmpdir_factory.mktemp("uboot-images")
+    rpm_path = tmp_path / "uboot-images-armv8.rpm"
+    bin_path = tmp_path / "u-boot.bin"
 
-    url = "https://kojipkgs.fedoraproject.org/packages/uboot-tools/2025.10/1.fc43/noarch/uboot-images-armv8-2025.10-1.fc43.noarch.rpm"
+    print(f"\nDownloading u-boot RPM from {UBOOT_RPM_URL}")
+    try:
+        with requests.get(UBOOT_RPM_URL, stream=True, timeout=120) as r:
+            r.raise_for_status()
+            total = int(r.headers.get("content-length", 0))
+            downloaded = 0
+            with rpm_path.open("wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+                    downloaded += len(chunk)
+            print(f"Downloaded {downloaded} bytes (expected {total})")
+    except requests.RequestException as e:
+        raise AssertionError(f"Failed to download u-boot RPM: {e}") from e
 
-    with requests.get(url, stream=True) as r:
-        r.raise_for_status()
-        with (tmp_path / "uboot-images-armv8.rpm").open("wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
+    print("Extracting u-boot.bin from RPM...")
+    if shutil.which("rpm2cpio") and shutil.which("cpio"):
+        subprocess.run(
+            f"rpm2cpio {rpm_path} | cpio -idm --quiet ./usr/share/uboot/qemu_arm64/u-boot.bin",
+            shell=True, cwd=str(tmp_path), check=True,
+        )
+        extracted = tmp_path / "usr" / "share" / "uboot" / "qemu_arm64" / "u-boot.bin"
+        extracted.rename(bin_path)
+    else:
+        with rpmfile.open(rpm_path) as rpm:
+            fd = rpm.extractfile("./usr/share/uboot/qemu_arm64/u-boot.bin")
+            with bin_path.open("wb") as f:
+                f.write(fd.read())
+    print(f"Extracted u-boot.bin ({bin_path.size()} bytes)")
 
-    with rpmfile.open(tmp_path / "uboot-images-armv8.rpm") as rpm:
-        fd = rpm.extractfile("./usr/share/uboot/qemu_arm64/u-boot.bin")
-        with (tmp_path / "u-boot.bin").open("wb") as f:
-            f.write(fd.read())
-
-    yield tmp_path / "u-boot.bin"
+    yield bin_path
 
 
 @pytest.mark.xfail(

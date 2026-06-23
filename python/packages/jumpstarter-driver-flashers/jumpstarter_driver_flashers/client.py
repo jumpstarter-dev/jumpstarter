@@ -38,6 +38,7 @@ from opendal import Metadata, Operator
 
 from jumpstarter_driver_flashers.bundle import FlasherBundleManifestV1Alpha1
 
+from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_group
 from jumpstarter.common.exceptions import ArgumentError, JumpstarterException
 
@@ -183,7 +184,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                     path = path_with_query(parsed)
                 else:
                     path, operator, operator_scheme = operator_for_path(path)
-            image_url = self.http.get_url() + "/" + self._filename(path)
 
         # start counting time for the flash operation
         start_time = time.time()
@@ -219,6 +219,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             raise error_queue.get()
 
         with self._services_up():
+            if should_download_to_httpd:
+                image_url = self.http.get_url() + "/" + self._filename(path)
+
             # Retry logic at the highest level - retry entire console setup and flash operation
             for attempt in range(retries + 1):  # +1 for initial attempt
                 try:
@@ -529,13 +532,46 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             else:
                 self.logger.info("Leaving target powered on")
 
+    def _store_cacert_on_dut(self, console, manifest, cacert_content) -> str:
+        """Serve CA certificate via HTTP and download to DUT.
+
+        Writes the certificate to the exporter's HTTP storage and has the DUT
+        fetch it via curl, avoiding slow serial console transfer on boards
+        with CPS limits (e.g. NXP).
+
+        Args:
+            console: Console object for device interaction
+            manifest: Flasher manifest containing login prompt
+            cacert_content: CA certificate content (str or bytes)
+
+        Returns:
+            Path to stored CA certificate on the DUT
+        """
+        stored_cacert = "/tmp/cacert.crt"
+        cacert_bytes = cacert_content.encode() if isinstance(cacert_content, str) else cacert_content
+        self.http.storage.write_bytes("cacert.crt", cacert_bytes)
+        cacert_url = self.http.get_url() + "/cacert.crt"
+        self.logger.info(f"Downloading CA certificate to DUT from {cacert_url}")
+        console.sendline(f"curl -fsSL {cacert_url} -o {stored_cacert}")
+        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+        console.sendline("echo $?")
+        console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
+        try:
+            lines = console.before.decode(errors="ignore").strip().splitlines()
+            exit_code = int(lines[-1]) if lines else -1
+        except (IndexError, ValueError) as e:
+            raise FlashRetryableError("Failed to download CA certificate, could not parse exit code") from e
+        if exit_code != 0:
+            raise FlashRetryableError(f"Failed to download CA certificate from {cacert_url}, exit code: {exit_code}")
+        return stored_cacert
+
     def _setup_flasher_ssl(self, console, manifest, cacert_file: str | None) -> str | None:
         """Setup SSL configuration for the flasher.
 
         Args:
             console: Console object for device interaction
             manifest: Flasher manifest containing login prompt
-            cacert_file: Path to CA certificate file
+            cacert_file: Path to CA certificate file on the client filesystem
 
         Returns:
             Path to stored CA certificate in the DUT flasher, or None if no certificate was provided
@@ -545,21 +581,20 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         """
 
         if cacert_file:
-            cacert = b""
             try:
                 with open(cacert_file, "rb") as f:
                     cacert = f.read()
             except OSError as e:
                 self.logger.error(f"Error reading CA certificate file: {e}")
                 raise RuntimeError(f"Error reading CA certificate file: {e}") from e
-            self.logger.info("Storing the CA certificate in the remote DUT flasher")
-            # write the contents of cacert to /tmp/cacert.crt on the remote target through console
-            stored_cacert = "/tmp/cacert.crt"
-            console.sendline(f"cat > {stored_cacert} << EOF")
-            console.sendline(cacert)
-            console.sendline("\nEOF")
-            console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
-            return stored_cacert
+            return self._store_cacert_on_dut(console, manifest, cacert)
+
+        try:
+            cacert_content = self.call("get_cacert")
+        except DriverMethodNotImplemented:
+            cacert_content = None
+        if cacert_content:
+            return self._store_cacert_on_dut(console, manifest, cacert_content)
 
         return None
 

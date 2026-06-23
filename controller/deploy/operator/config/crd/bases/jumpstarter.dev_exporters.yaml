@@ -132,12 +132,14 @@ spec:
                 description: Devices is the list of driver instances currently reported
                   by the exporter.
                 items:
-                  description: Device represents a driver instance reported by an exporter.
+                  description: Device represents a driver instance reported by an
+                    exporter.
                   properties:
                     labels:
                       additionalProperties:
                         type: string
-                      description: Labels are key-value pairs associated with the device.
+                      description: Labels are key-value pairs associated with the
+                        device.
                       type: object
                     parent_uuid:
                       description: ParentUuid is the UUID of the parent device, if
@@ -150,8 +152,8 @@ spec:
                   type: object
                 type: array
               endpoint:
-                description: Endpoint is the gRPC endpoint URL where the exporter is
-                  reachable.
+                description: Endpoint is the gRPC endpoint URL where the exporter
+                  is reachable.
                 type: string
               exporterStatus:
                 description: ExporterStatusValue is the current operational status
@@ -188,7 +190,7 @@ spec:
                 x-kubernetes-map-type: atomic
               statusMessage:
                 description: StatusMessage is an optional human-readable message describing
-                  the current state.
+                  the current state
                 type: string
             type: object
         type: object

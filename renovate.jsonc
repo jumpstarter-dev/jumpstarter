@@ -4,7 +4,13 @@
     "config:recommended",
     "helpers:pinGitHubActionDigests"
   ],
+  // Pin container image digests for supply-chain safety. Registries that
+  // prune untagged manifests (e.g. Fedora) must opt out via pinDigests:false
+  // in their packageRule to avoid broken builds when the old digest disappears.
   "pinDigests": true,
+  "postUpdateOptions": [
+    "gomodTidy"
+  ],
   "timezone": "Etc/UTC",
   "schedule": [
     "before 5am on monday"
@@ -18,7 +24,14 @@
   ],
   "customManagers": [
     {
-      "description": "Track .go-version for CI Go toolchain pinning (synced with go.mod directives)",
+      // .go-version tracks go-toolset Docker tags, not golang-version releases.
+      // Red Hat's go-toolset image is the Go version ceiling: it may lag behind
+      // upstream Go releases by days or weeks, so .go-version must not outrun it
+      // or container builds will reference a tag that does not exist yet.
+      // The ubi10 registry enumerates Go-versioned tags (1.26.3, 1.25.8, ...)
+      // alongside UBI-versioned tags (10.2, 10.1, ...); the versioning regex
+      // selects only the Go-versioned ones.
+      "description": "Track .go-version against go-toolset image tags (go-toolset is the Go version ceiling)",
       "customType": "regex",
       "managerFilePatterns": [
         "/(^|/)\\.go-version$/"
@@ -26,9 +39,9 @@
       "matchStrings": [
         "(?<currentValue>\\d+\\.\\d+\\.\\d+)\\n"
       ],
-      "depNameTemplate": "go",
-      "datasourceTemplate": "golang-version",
-      "versioningTemplate": "semver"
+      "depNameTemplate": "registry.access.redhat.com/ubi10/go-toolset",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$"
     },
     {
       "description": "Track .py-version for CI Python runtime (not the requires-python floor)",
@@ -37,11 +50,24 @@
         "/(^|/)\\.py-version$/"
       ],
       "matchStrings": [
-        "(?<currentValue>\\d+\\.\\d+)\\n"
+        "(?<currentValue>\\d+\\.\\d+\\.\\d+)\\n"
       ],
       "depNameTemplate": "python",
       "datasourceTemplate": "python-version",
       "versioningTemplate": "pep440"
+    },
+    {
+      "description": "Track .uv-version for uv toolchain pinning",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.uv-version$/"
+      ],
+      "matchStrings": [
+        "(?<currentValue>\\d+\\.\\d+\\.\\d+)\\n"
+      ],
+      "depNameTemplate": "astral-sh/uv",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
     }
   ],
   "packageRules": [
@@ -108,6 +134,16 @@
       ]
     },
     {
+      // Go modules, .go-version, and go-toolset are all in the "kubernetes"
+      // group so that Go toolchain bumps and module updates land in one PR.
+      // The go directive in go.mod (depType "golang") stays here too — no
+      // separate go-toolchain group overrides it.
+      //
+      // Renovate cannot enforce that a module's required Go version is
+      // available as a go-toolset image. If a module update raises the go
+      // directive beyond what go-toolset provides, the PR's CI will fail,
+      // which is the intended signal to wait for Red Hat to publish a
+      // newer go-toolset tag.
       "description": "Group all Go module updates (any dep can bump the Go toolchain)",
       "groupName": "kubernetes",
       "matchManagers": [
@@ -135,7 +171,8 @@
       "matchPackageNames": [
         "quay.io/devfile/base-developer-image"
       ],
-      "versioning": "regex:^ubi(?<major>\\d+)-latest$"
+      "versioning": "regex:^ubi(?<major>\\d+)-latest$",
+      "pinDigests": false
     },
     {
       "description": "Custom versioning for MicroShift container images",
@@ -147,9 +184,11 @@
     {
       "description": "Restrict Fedora to stable releases, bump this cap when the next Fedora goes GA",
       "matchPackageNames": [
-        "fedora"
+        "registry.fedoraproject.org/fedora",
+        "registry.fedoraproject.org/fedora-minimal"
       ],
-      "allowedVersions": "<=44"
+      "allowedVersions": "<=44",
+      "pinDigests": false
     },
     {
       "description": "Group Docker base images",
@@ -164,6 +203,14 @@
       "automerge": false
     },
     {
+      "description": "Group uv toolchain updates (version file + container image)",
+      "groupName": "uv-toolchain",
+      "matchDepNames": [
+        "astral-sh/uv",
+        "ghcr.io/astral-sh/uv"
+      ]
+    },
+    {
       "description": "Group Python dev tools",
       "groupName": "python-dev-tools",
       "matchManagers": [
@@ -176,39 +223,28 @@
       ]
     },
     {
-      "description": "Group Go version directives",
-      "groupName": "go-toolchain",
-      "matchDepTypes": [
-        "golang"
-      ],
-      "matchFileNames": [
-        "controller/go.mod",
-        "controller/deploy/operator/go.mod",
-        "e2e/test/go.mod"
-      ],
-      "automerge": false
-    },
-    {
-      "description": "Group .go-version with Go toolchain",
-      "groupName": "go-toolchain",
-      "matchManagers": [
-        "custom.regex"
-      ],
-      "matchDepNames": [
-        "go"
-      ],
-      "automerge": false
-    },
-    {
-      "description": "Group go-toolset Docker image with Go toolchain",
-      "groupName": "go-toolchain",
+      "description": "Group go-toolset image with Go modules so version bumps are atomic",
+      "groupName": "kubernetes",
       "matchManagers": [
         "dockerfile"
       ],
       "matchPackageNames": [
-        "registry.access.redhat.com/ubi9/go-toolset"
+        "registry.access.redhat.com/ubi10/go-toolset"
       ],
       "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
+      "allowedVersions": "/^\\d+\\.\\d+\\.\\d+$/",
+      "automerge": false
+    },
+    {
+      "description": "Group .go-version with Go modules (tracks go-toolset, see customManagers)",
+      "groupName": "kubernetes",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "registry.access.redhat.com/ubi10/go-toolset"
+      ],
+      "allowedVersions": "/^\\d+\\.\\d+\\.\\d+$/",
       "automerge": false
     }
   ]

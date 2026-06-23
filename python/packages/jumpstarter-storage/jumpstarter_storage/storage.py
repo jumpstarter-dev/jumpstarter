@@ -9,12 +9,12 @@ from anyio.streams.file import FileReadStream, FileWriteStream
 
 
 async def wait_for_storage_device(  # noqa: C901
-    storage_device: os.PathLike,
+    storage_device: str | os.PathLike,
     mode: Literal["wb", "rb"],
     timeout: int = 10,
     *,
     logger: Logger | None = None,
-) -> os.PathLike:
+) -> str | os.PathLike:
     with fail_after(timeout):
         while True:
             # https://stackoverflow.com/a/2774125
@@ -50,7 +50,7 @@ async def wait_for_storage_device(  # noqa: C901
 
 
 async def write_to_storage_device(
-    storage_device: os.PathLike,
+    storage_device: str | os.PathLike,
     resource: AnyByteStream,
     timeout: int = 10,
     fsync_timeout: int = 900,
@@ -100,7 +100,7 @@ async def write_to_storage_device(
 
 
 async def read_from_storage_device(
-    storage_device: os.PathLike,
+    storage_device: str | os.PathLike,
     resource: AnyByteStream,
     timeout: int = 10,
     *,

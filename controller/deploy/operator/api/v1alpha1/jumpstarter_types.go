@@ -360,11 +360,65 @@ type AuthenticationConfig struct {
 	// JWT authentication configuration.
 	// Enables authentication using external JWT tokens from OIDC providers.
 	// Supports multiple JWT authenticators for different identity providers.
-	JWT []apiserverv1beta1.JWTAuthenticator `json:"jwt,omitempty"`
+	// Each entry may optionally reference a CA certificate from a Kubernetes
+	// Secret or ConfigMap instead of inlining the PEM content.
+	JWT []JWTAuthenticatorConfig `json:"jwt,omitempty"`
 
 	// Automatic user provisioning configuration, this is useful for creating
 	// users authenticated by external identity providers in Jumpstarter.
 	AutoProvisioning AutoProvisioningConfig `json:"autoProvisioning,omitempty"`
+}
+
+// JWTAuthenticatorConfig extends the standard Kubernetes JWTAuthenticator with
+// support for referencing CA certificates from Kubernetes Secrets or ConfigMaps.
+// The operator resolves the reference at reconcile time and injects the PEM content
+// into the controller ConfigMap, so CA rotations are picked up automatically.
+type JWTAuthenticatorConfig struct {
+	apiserverv1beta1.JWTAuthenticator `json:",inline"`
+
+	// CertificateAuthoritySecret references a Kubernetes Secret containing the CA
+	// certificate PEM for the OIDC issuer. The operator reads the specified key and
+	// injects the PEM content as the certificateAuthority for this authenticator.
+	// When the Secret changes, the operator reconciles and updates the ConfigMap.
+	// Takes precedence over CertificateAuthorityConfigMap when both are set.
+	// +optional
+	CertificateAuthoritySecret *SecretKeySelector `json:"certificateAuthoritySecret,omitempty"`
+
+	// CertificateAuthorityConfigMap references a Kubernetes ConfigMap containing the
+	// CA certificate PEM for the OIDC issuer. The operator reads the specified key and
+	// injects the PEM content as the certificateAuthority for this authenticator.
+	// When the ConfigMap changes, the operator reconciles and updates the ConfigMap.
+	// +optional
+	CertificateAuthorityConfigMap *ConfigMapKeySelector `json:"certificateAuthorityConfigMap,omitempty"`
+}
+
+// SecretKeySelector references a key within a Kubernetes Secret.
+type SecretKeySelector struct {
+	// Name of the Secret containing the CA certificate.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// Key within the Secret that holds the PEM-encoded CA certificate.
+	// Defaults to "tls.crt", which is the standard key used by cert-manager.
+	// +kubebuilder:default=tls.crt
+	// +optional
+	Key string `json:"key,omitempty"`
+}
+
+// ConfigMapKeySelector references a key within a Kubernetes ConfigMap.
+type ConfigMapKeySelector struct {
+	// Name of the ConfigMap containing the CA certificate.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// Key within the ConfigMap that holds the PEM-encoded CA certificate.
+	// Defaults to "ca.crt", which is the standard key used by kube-root-ca.crt
+	// and cert-manager CA bundles.
+	// +kubebuilder:default=ca.crt
+	// +optional
+	Key string `json:"key,omitempty"`
 }
 
 // AutoProvisioningConfig defines auto provisioning configuration.

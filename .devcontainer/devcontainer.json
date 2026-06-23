@@ -2,7 +2,7 @@
 	"name": "uv",
 	"build": {
 		"context": "..",
-		"dockerfile": "Dockerfile"
+		"dockerfile": "Containerfile"
 	},
 	"postCreateCommand": "cd python && make sync",
 	"postStartCommand": "cd python && uv python pin $(cat ../.py-version) && uv run pre-commit install",
