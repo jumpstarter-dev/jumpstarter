@@ -99,7 +99,7 @@ endif
 pkg-ty-%: packages/%
 	uv run --isolated --directory $< ty check .
 
-pkg-test-all: $(addprefix pkg-test-,$(PKG_TARGETS))
+pkg-test-all: sync $(addprefix pkg-test-,$(PKG_TARGETS))
 
 ifdef LOGS_DIR
 test-report:
