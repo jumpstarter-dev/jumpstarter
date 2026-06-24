@@ -137,7 +137,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         bearer_token: str | None = None,
         retries: int = 3,
         method: str = "fls",
-        fls_version: str = "",
+        fls_version: str = "0.3.0",
         fls_binary_url: str | None = None,
         oci_username: str | None = None,
         oci_password: str | None = None,
@@ -1528,7 +1528,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         @click.option(
             "--fls-version",
             type=str,
-            default="",
+            default="0.3.0",
             help="Download an specific fls version from the github releases",
         )
         @click.option(
