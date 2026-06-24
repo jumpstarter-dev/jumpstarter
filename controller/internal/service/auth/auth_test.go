@@ -75,16 +75,12 @@ func ctxWithPeer(addr string) context.Context {
 
 // captureLog sets up a buffer-backed logger and returns the buffer and a
 // context enriched with that logger. The caller can inspect buf.String()
-// after the code under test runs. A t.Cleanup is registered to restore the
-// original global logger.
+// after the code under test runs. It does NOT mutate the global logf.Log,
+// so tests are isolated from each other and safe for t.Parallel().
 func captureLog(t *testing.T, ctx context.Context) (context.Context, *bytes.Buffer) {
 	t.Helper()
-	original := logf.Log
-	t.Cleanup(func() { logf.SetLogger(original) })
-
 	var buf bytes.Buffer
 	logger := ctrlzap.New(ctrlzap.UseDevMode(true), ctrlzap.WriteTo(&buf))
-	logf.SetLogger(logger)
 	return logf.IntoContext(ctx, logger), &buf
 }
 
@@ -414,6 +410,52 @@ func TestAuthClient_ErrorLogIncludesNoDuplicateTokenInMessage(t *testing.T) {
 	// The log should never contain the word "Bearer" or raw token material.
 	if strings.Contains(logged, "Bearer") {
 		t.Errorf("log should not contain raw bearer prefix:\n%s", logged)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Token leak tests — verify that sensitive token values never appear in logs.
+// Replicates the TestRouterAuthenticateNoTokenLeak pattern from
+// controller_service_test.go for the auth package.
+// ---------------------------------------------------------------------------
+
+func TestAuthClient_NoTokenLeak(t *testing.T) {
+	const sensitiveToken = "header.payload.signature-secret-value"
+
+	// The stub error does NOT include the token — this mirrors the real
+	// oidc.VerifyClientObjectToken which returns generic error messages.
+	authn := &stubAuthenticator{err: fmt.Errorf("token verification failed")}
+	attr := &stubAttributesGetter{}
+	authz := &stubAuthorizer{}
+
+	ctx := ctxWithPeer("10.0.0.1:1234")
+	ctx, buf := captureLog(t, ctx)
+
+	a := newAuth(authn, authz, attr)
+	_, _ = a.AuthClient(ctx, "default")
+
+	logged := buf.String()
+	if strings.Contains(logged, sensitiveToken) {
+		t.Errorf("JWT token value leaked in auth log output:\n%s", logged)
+	}
+}
+
+func TestAuthExporter_NoTokenLeak(t *testing.T) {
+	const sensitiveToken = "header.payload.signature-secret-value"
+
+	authn := &stubAuthenticator{err: fmt.Errorf("token verification failed")}
+	attr := &stubAttributesGetter{}
+	authz := &stubAuthorizer{}
+
+	ctx := ctxWithPeer("10.0.0.1:1234")
+	ctx, buf := captureLog(t, ctx)
+
+	a := newAuth(authn, authz, attr)
+	_, _ = a.AuthExporter(ctx, "default")
+
+	logged := buf.String()
+	if strings.Contains(logged, sensitiveToken) {
+		t.Errorf("JWT token value leaked in auth log output:\n%s", logged)
 	}
 }
 
