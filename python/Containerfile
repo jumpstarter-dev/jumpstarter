@@ -12,7 +12,7 @@ RUN dnf install -y python3 ustreamer libusb1 android-tools python3-libgpiod curl
     dnf clean all && \
     rm -rf /var/cache/dnf
 
-ARG FLS_VERSION=0.2.0
+ARG FLS_VERSION=0.3.0
 RUN ARCH=$(uname -m) && \
     SUFFIX="linux" && \
     if [ "$ARCH" = "aarch64" ]; then SUFFIX="linux-musl"; fi && \
