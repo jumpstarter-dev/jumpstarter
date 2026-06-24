@@ -93,6 +93,7 @@ async def _try_refresh_token(config, lease) -> bool:
             issuer=issuer,
             client_id="jumpstarter-cli",
             offline_access=True,
+            insecure_tls=getattr(config.tls, "insecure", False),
         )
 
         tokens = await oidc.refresh_token_grant(refresh_token)
@@ -115,7 +116,7 @@ async def _try_refresh_token(config, lease) -> bool:
         # Restore old token so the monitor doesn't think we succeeded
         config.token = old_token
         config.refresh_token = old_refresh_token
-        logger.debug("Token refresh failed: %s", e)
+        logger.info("Token refresh failed: %s", e)
         return False
 
 
@@ -199,7 +200,7 @@ async def _handle_token_refresh(config, lease, remaining, warn_state, token_stat
     """Try to recover the token and update warning state accordingly."""
     recovery_msg = await _attempt_token_recovery(config, lease)
     if recovery_msg:
-        click.echo(click.style(f"\n{recovery_msg}", fg="green"))
+        logger.debug(recovery_msg)
         warn_state["expiry"] = False
         warn_state["refresh_failed"] = False
         warn_state["token_expired"] = False
@@ -240,14 +241,7 @@ async def _monitor_token_expiry(config, lease, cancel_scope, token_state=None) -
             if remaining <= _TOKEN_REFRESH_THRESHOLD_SECONDS:
                 await _handle_token_refresh(config, lease, remaining, warn_state, token_state)
             elif remaining <= TOKEN_EXPIRY_WARNING_SECONDS and not warn_state["expiry"]:
-                duration = format_duration(remaining)
-                click.echo(
-                    click.style(
-                        f"\nToken expires in {duration}. Will attempt auto-refresh.",
-                        fg="yellow",
-                        bold=True,
-                    )
-                )
+                logger.debug("Token expires in %s, will attempt auto-refresh", format_duration(remaining))
                 warn_state["expiry"] = True
 
             # Check more frequently as we approach expiry
