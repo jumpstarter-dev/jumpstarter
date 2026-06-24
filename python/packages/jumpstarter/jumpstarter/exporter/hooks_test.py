@@ -953,44 +953,23 @@ class TestHookExecutor:
             result = await executor.execute_before_lease_hook(lease_scope)
             assert result is None
 
-    async def test_reader_exits_on_stop_flag_when_no_data(self, lease_scope) -> None:
-        """Verify the reader exits via the stop flag when os.read raises
-        BlockingIOError (no data available) and reader_stop is True.
+    async def test_reader_exits_on_stop_flag_when_grandchild_holds_pty(self, lease_scope) -> None:
+        """Verify the reader exits via the stop flag when a grandchild
+        process holds the PTY slave open after the direct child exits.
 
-        This covers the grandchild scenario where the PTY slave is held
-        open after the direct child exits: the main loop gets
-        BlockingIOError because no new data is being written, and the
-        stop flag causes it to exit cleanly.
+        The backgrounded sleep inherits the PTY slave fd, preventing EOF
+        on the master. The reader gets BlockingIOError (no data from the
+        silent grandchild) and exits once reader_stop is set.
         """
-        state = _PtyTracker(return_drain_data=False)
-
-        def os_read_blocking_after_eof(fd, size):
-            if fd != state.parent_fd:
-                return state._original_os_read(fd, size)
-            if not state.eof_seen:
-                try:
-                    data = state._original_os_read(fd, size)
-                except (BlockingIOError, OSError):
-                    state.eof_seen = True
-                    raise
-                if not data:
-                    state.eof_seen = True
-                    raise BlockingIOError("simulated grandchild holding PTY open")
-                return data
-            raise BlockingIOError("simulated grandchild holding PTY open")
-
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
-                script="echo STOP_FLAG_TEST", timeout=10,
+                script="echo STOP_FLAG_TEST; sleep 300 &",
+                timeout=10,
             ),
         )
         executor = HookExecutor(config=hook_config)
 
-        with (
-            patch("pty.openpty", side_effect=state.tracking_openpty),
-            patch("os.read", side_effect=os_read_blocking_after_eof),
-            patch("jumpstarter.exporter.hooks.logger") as mock_logger,
-        ):
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
             result = await executor.execute_before_lease_hook(lease_scope)
             assert result is None
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
