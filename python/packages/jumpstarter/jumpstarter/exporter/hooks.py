@@ -23,8 +23,6 @@ logger = logging.getLogger(__name__)
 
 MAX_DRAIN_BYTES = 256 * 1024
 DRAIN_TIMEOUT_SECONDS = 2.0
-DRAIN_MAX_EMPTY_POLLS = 10
-
 # Module-level reference to time.monotonic so tests can patch it without
 # affecting the asyncio event loop (which also uses time.monotonic).
 _monotonic = time.monotonic
@@ -305,7 +303,7 @@ class HookExecutor:
                         stdout=child_fd,
                         stderr=child_fd,
                         env=hook_env,
-                        start_new_session=True,  # Equivalent to os.setsid()
+                        process_group=0,
                         close_fds=True,  # Close inherited fds to prevent interference with gRPC connections
                     )
                 except Exception as e:
@@ -335,20 +333,12 @@ class HookExecutor:
 
                     start_time = _monotonic()
                     try:
-                        while not pty_state.reader_stop:
+                        while True:
                             try:
-                                # Wait for fd to be readable with timeout
                                 with anyio.move_on_after(0.1):
                                     await anyio.wait_readable(parent_fd)
 
-                                # Check stop flag immediately after timeout
-                                # (main task may have signaled us to stop)
-                                if pty_state.reader_stop:
-                                    logger.debug("read_pty_output: stop flag set, exiting")
-                                    break
-
                                 read_count += 1
-                                # Log heartbeat every 2 seconds
                                 elapsed = _monotonic() - start_time
                                 if elapsed - last_heartbeat >= 2.0:
                                     logger.debug(
@@ -356,27 +346,24 @@ class HookExecutor:
                                     )
                                     last_heartbeat = elapsed
 
-                                # Read available data (non-blocking)
                                 try:
                                     chunk = os.read(parent_fd, 4096)
                                     if not chunk:
-                                        # EOF
                                         logger.debug("read_pty_output: EOF received")
                                         break
                                     buffer += chunk
                                 except BlockingIOError:
-                                    # No data available right now, continue loop
+                                    if pty_state.reader_stop:
+                                        logger.debug("read_pty_output: stop flag set and no data, exiting")
+                                        break
                                     continue
                                 except OSError as e:
-                                    # PTY closed or error
                                     logger.debug("read_pty_output: OSError on read: %s", e)
                                     break
 
-                                # Process complete lines
                                 buffer = _flush_lines(buffer, output_lines)
 
                             except OSError as e:
-                                # PTY closed or read error
                                 logger.debug("read_pty_output: OSError in loop: %s", e)
                                 break
                     finally:
@@ -392,12 +379,7 @@ class HookExecutor:
                         try:
                             drain_deadline = _monotonic() + DRAIN_TIMEOUT_SECONDS
                             drained = 0
-                            consecutive_empty = 0
                             while drained < MAX_DRAIN_BYTES and _monotonic() < drain_deadline:
-                                # Poll for readability with a short timeout.
-                                # This avoids the race where a non-blocking read
-                                # raises BlockingIOError because the macOS PTY
-                                # kernel buffer hasn't delivered the data yet.
                                 remaining = drain_deadline - _monotonic()
                                 if remaining <= 0:
                                     break
@@ -405,19 +387,9 @@ class HookExecutor:
                                 try:
                                     readable, _, _ = select.select([parent_fd], [], [], timeout_s)
                                 except (ValueError, OSError):
-                                    # fd closed or invalid
                                     break
                                 if not readable:
-                                    # On macOS, data may not be available on the
-                                    # first select() call even though the subprocess
-                                    # has already written and exited.  Keep retrying
-                                    # until we see several consecutive empty polls,
-                                    # which indicates the buffer is truly drained.
-                                    consecutive_empty += 1
-                                    if consecutive_empty >= DRAIN_MAX_EMPTY_POLLS:
-                                        break
-                                    continue
-                                consecutive_empty = 0
+                                    break
                                 try:
                                     chunk = os.read(parent_fd, 4096)
                                     if not chunk:
