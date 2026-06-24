@@ -58,6 +58,22 @@ class PowerClient(DriverClient):
             click.echo(f"Power cycling with {wait} seconds wait time...")
             self.cycle(wait)
 
+        @base.command()
+        @click.option("--count", "-n", default=1, help="Number of readings (0 = infinite)", show_default=True)
+        @click.option("--interval", "-i", default=1.0, help="Seconds between readings", show_default=True)
+        def read(count, interval):
+            """Read power measurements"""
+            i = 0
+            while count == 0 or i < count:
+                for reading in self.read():
+                    click.echo(
+                        f"voltage={reading.voltage} V  current={reading.current} A  "
+                        f"apparent_power={reading.apparent_power} VA"
+                    )
+                i += 1
+                if (count == 0 or i < count) and interval > 0:
+                    time.sleep(interval)
+
         return base
 
 
