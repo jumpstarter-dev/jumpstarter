@@ -42,7 +42,7 @@ jobs:
           # (all Python versions on both Linux and macOS).
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             echo 'python-versions=["3.11", "3.12", "3.13"]' >> "$GITHUB_OUTPUT"
-            echo 'runners=["ubuntu-24.04", "macos-15"]' >> "$GITHUB_OUTPUT"
+            echo 'runners=["macos-15"]' >> "$GITHUB_OUTPUT"
           else
             echo 'python-versions=["3.11", "3.12", "3.13"]' >> "$GITHUB_OUTPUT"
             echo 'runners=["ubuntu-24.04", "macos-15"]' >> "$GITHUB_OUTPUT"
@@ -53,14 +53,11 @@ jobs:
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.runs-on }}
     strategy:
+      fail-fast: false
       matrix:
         runs-on: ${{ fromJson(needs.changes.outputs.runners) }}
-        # Floor: oldest Python in supported platforms (RHEL 9 appstream)
-        # Ceiling: newest Python in latest Fedora
-        # Review on each RHEL/Fedora release
-        # PRs run only 3.12 on Linux; merge queue runs all versions
-        # on both Linux and macOS.
         python-version: ${{ fromJson(needs.changes.outputs.python-versions) }}
+        run-index: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
