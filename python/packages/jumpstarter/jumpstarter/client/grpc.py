@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections import OrderedDict
 from dataclasses import InitVar, dataclass, field
 from datetime import datetime, timedelta
@@ -15,6 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer
 from jumpstarter.client.selectors import extract_match_labels_filter, selector_contains
 from jumpstarter.common import ExporterStatus
 from jumpstarter.common.grpc import translate_grpc_exceptions
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -370,7 +373,13 @@ class LeaseList(BaseModel):
         """
         if not filter_selector:
             return self
-        filtered = [lease for lease in self.leases if selector_contains(lease.selector, filter_selector)]
+        filtered = []
+        for lease in self.leases:
+            try:
+                if selector_contains(lease.selector, filter_selector):
+                    filtered.append(lease)
+            except ValueError:
+                logger.warning("skipping lease %s: unable to evaluate selector %r", lease.name, lease.selector)
         return LeaseList(leases=filtered, next_page_token=None)
 
     def filter_by_client(self, client_name: str) -> LeaseList:
