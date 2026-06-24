@@ -1802,7 +1802,7 @@ func withCapturedLog(t *testing.T) (*bytes.Buffer, context.Context) {
 // TestRouterAuthenticateNoTokenLeak verifies that when the router's Stream
 // method logs an authentication failure, the raw JWT token value never appears
 // in the log output. This exercises the same code path as the real Stream
-// method: authenticate → fail → logger.Info("router authentication failed").
+// method: authenticate -> fail -> logger.Info("router authentication failed").
 func TestRouterAuthenticateNoTokenLeak(t *testing.T) {
 	const sensitiveToken = "header.payload.signature-secret-value"
 
@@ -1870,13 +1870,21 @@ func TestRouterAuthenticateReturnsUnauthenticated(t *testing.T) {
 	}
 }
 
-// TestRouterAuthenticateMissingMetadata verifies the error when no
-// authorization header is present.
+// TestRouterAuthenticateMissingMetadata verifies that when no authorization
+// metadata is present, authenticate() returns codes.Unauthenticated.
 func TestRouterAuthenticateMissingMetadata(t *testing.T) {
 	svc := &RouterService{}
 	_, err := svc.authenticate(context.Background())
 	if err == nil {
 		t.Fatal("expected error for missing metadata, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %T: %v", err, err)
+	}
+	if st.Code() != codes.Unauthenticated {
+		t.Errorf("expected codes.Unauthenticated, got %v", st.Code())
 	}
 }
 
