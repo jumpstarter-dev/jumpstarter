@@ -389,7 +389,7 @@ class HookExecutor:
                                 except (ValueError, OSError):
                                     break
                                 if not readable:
-                                    break
+                                    continue
                                 try:
                                     chunk = os.read(parent_fd, 4096)
                                     if not chunk:
