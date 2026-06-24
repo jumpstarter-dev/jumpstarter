@@ -23,18 +23,18 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Exporter status information
+// Exporter status information.
 type ExporterStatus int32
 
 const (
-	ExporterStatus_EXPORTER_STATUS_UNSPECIFIED              ExporterStatus = 0 // Unspecified exporter status
-	ExporterStatus_EXPORTER_STATUS_OFFLINE                  ExporterStatus = 1 // Exporter is offline
-	ExporterStatus_EXPORTER_STATUS_AVAILABLE                ExporterStatus = 2 // Exporter is available to be leased
-	ExporterStatus_EXPORTER_STATUS_BEFORE_LEASE_HOOK        ExporterStatus = 3 // Exporter is executing before lease hook(s)
-	ExporterStatus_EXPORTER_STATUS_LEASE_READY              ExporterStatus = 4 // Exporter is leased and ready to accept commands
-	ExporterStatus_EXPORTER_STATUS_AFTER_LEASE_HOOK         ExporterStatus = 5 // Exporter is executing after lease hook(s)
-	ExporterStatus_EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED ExporterStatus = 6 // Exporter before lease hook failed
-	ExporterStatus_EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED  ExporterStatus = 7 // Exporter after lease hook failed
+	ExporterStatus_EXPORTER_STATUS_UNSPECIFIED              ExporterStatus = 0 // Unspecified exporter status.
+	ExporterStatus_EXPORTER_STATUS_OFFLINE                  ExporterStatus = 1 // Exporter is offline.
+	ExporterStatus_EXPORTER_STATUS_AVAILABLE                ExporterStatus = 2 // Exporter is available to be leased.
+	ExporterStatus_EXPORTER_STATUS_BEFORE_LEASE_HOOK        ExporterStatus = 3 // Exporter is executing before lease hook(s).
+	ExporterStatus_EXPORTER_STATUS_LEASE_READY              ExporterStatus = 4 // Exporter is leased and ready to accept commands.
+	ExporterStatus_EXPORTER_STATUS_AFTER_LEASE_HOOK         ExporterStatus = 5 // Exporter is executing after lease hook(s).
+	ExporterStatus_EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED ExporterStatus = 6 // Exporter before lease hook failed.
+	ExporterStatus_EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED  ExporterStatus = 7 // Exporter after lease hook failed.
 )
 
 // Enum value maps for ExporterStatus.
@@ -88,15 +88,15 @@ func (ExporterStatus) EnumDescriptor() ([]byte, []int) {
 	return file_jumpstarter_v1_common_proto_rawDescGZIP(), []int{0}
 }
 
-// Source of log stream messages
+// Source of log stream messages.
 type LogSource int32
 
 const (
-	LogSource_LOG_SOURCE_UNSPECIFIED       LogSource = 0 // Unspecified log source
-	LogSource_LOG_SOURCE_DRIVER            LogSource = 1 // Driver/device logs
-	LogSource_LOG_SOURCE_BEFORE_LEASE_HOOK LogSource = 2 // beforeLease hook execution logs
-	LogSource_LOG_SOURCE_AFTER_LEASE_HOOK  LogSource = 3 // afterLease hook execution logs
-	LogSource_LOG_SOURCE_SYSTEM            LogSource = 4 // System/exporter logs
+	LogSource_LOG_SOURCE_UNSPECIFIED       LogSource = 0 // Unspecified log source.
+	LogSource_LOG_SOURCE_DRIVER            LogSource = 1 // Driver/device logs.
+	LogSource_LOG_SOURCE_BEFORE_LEASE_HOOK LogSource = 2 // beforeLease hook execution logs.
+	LogSource_LOG_SOURCE_AFTER_LEASE_HOOK  LogSource = 3 // afterLease hook execution logs.
+	LogSource_LOG_SOURCE_SYSTEM            LogSource = 4 // System/exporter logs.
 )
 
 // Enum value maps for LogSource.

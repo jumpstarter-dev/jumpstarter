@@ -141,6 +141,8 @@ message Lease {
   optional string exporter_name = 12 [(google.api.field_behavior) = IMMUTABLE];
   // The set of tags associated with the lease.
   map<string, string> tags = 13 [(google.api.field_behavior) = IMMUTABLE];
+  // The user-provided alias for this lease (from lease_id at creation time).
+  optional string alias = 14 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request to retrieve an exporter.

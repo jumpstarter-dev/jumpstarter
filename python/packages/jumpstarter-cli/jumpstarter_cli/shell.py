@@ -497,6 +497,8 @@ async def _shell_with_signal_handling(  # noqa: C901
 
 def _format_lease_display(lease) -> str:
     parts = []
+    if getattr(lease, "alias", None):
+        parts.append(f"alias={lease.alias}")
     if lease.exporter:
         parts.append(f"exporter={lease.exporter}")
     if lease.selector:

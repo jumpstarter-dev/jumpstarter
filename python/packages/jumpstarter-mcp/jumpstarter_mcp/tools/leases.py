@@ -55,7 +55,7 @@ async def list_leases(
     result = await config.list_leases(filter=selector, only_active=not show_all)
     leases = []
     for lease in result.leases:
-        leases.append({
+        entry = {
             "name": lease.name,
             "client": lease.client,
             "exporter": lease.exporter,
@@ -64,7 +64,10 @@ async def list_leases(
             "begin_time": lease.effective_begin_time.isoformat() if lease.effective_begin_time else None,
             "end_time": lease.effective_end_time.isoformat() if lease.effective_end_time else None,
             "duration": str(lease.duration) if lease.duration else None,
-        })
+        }
+        if getattr(lease, "alias", None):
+            entry["alias"] = lease.alias
+        leases.append(entry)
     return leases
 
 

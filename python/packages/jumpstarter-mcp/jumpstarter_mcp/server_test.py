@@ -26,7 +26,7 @@ from jumpstarter_mcp.server import (
     _setup_logging,
     create_server,
 )
-from jumpstarter_mcp.tools.leases import _lease_status
+from jumpstarter_mcp.tools.leases import _lease_status, list_leases
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -268,6 +268,40 @@ class TestLeaseStatus:
     def test_unknown_when_not_true(self):
         lease = FakeLease(conditions=[FakeCondition(type="Ready", status="False")])
         assert _lease_status(lease) == "unknown"
+
+
+# ---------------------------------------------------------------------------
+# list_leases (unit, mocked config)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FakeLeaseEntry:
+    name: str
+    client: str
+    exporter: str
+    selector: str
+    conditions: list
+    effective_begin_time: datetime | None = None
+    effective_end_time: datetime | None = None
+    duration: None = None
+    alias: str | None = None
+
+
+@dataclass
+class FakeLeaseListResult:
+    leases: list
+
+
+@pytest.mark.asyncio
+async def test_list_leases_includes_alias_when_present():
+    lease_with = FakeLeaseEntry(name="demo-x7k2q", client="c", exporter="e", selector="s", conditions=[], alias="demo")
+    lease_without = FakeLeaseEntry(name="lease-m9p3r", client="c", exporter="e", selector="s", conditions=[])
+    config = AsyncMock()
+    config.list_leases.return_value = FakeLeaseListResult(leases=[lease_with, lease_without])
+    result = await list_leases(config)
+    assert result[0]["alias"] == "demo"
+    assert "alias" not in result[1]
 
 
 # ---------------------------------------------------------------------------

@@ -574,4 +574,44 @@ var _ = Describe("Lease.ToProtobuf", func() {
 
 		Expect(pb.Tags).To(BeEmpty())
 	})
+
+	It("should populate alias from lease-name label", func() {
+		lease := &Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "demo-x7k2q",
+				Namespace: "default",
+				Labels: map[string]string{
+					string(LeaseLabelName): "demo",
+				},
+			},
+			Spec: LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+				Duration:  &metav1.Duration{Duration: time.Hour},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"board": "rpi4"}},
+			},
+		}
+
+		pb := lease.ToProtobuf()
+
+		Expect(pb.Alias).NotTo(BeNil())
+		Expect(*pb.Alias).To(Equal("demo"))
+	})
+
+	It("should not set alias when lease-name label is absent", func() {
+		lease := &Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "lease-m9p3r",
+				Namespace: "default",
+			},
+			Spec: LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+				Duration:  &metav1.Duration{Duration: time.Hour},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"board": "rpi4"}},
+			},
+		}
+
+		pb := lease.ToProtobuf()
+
+		Expect(pb.Alias).To(BeNil())
+	})
 })

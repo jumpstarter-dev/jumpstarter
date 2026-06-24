@@ -82,6 +82,7 @@ type LeaseLabel string
 const (
 	LeaseLabelEnded        LeaseLabel = "jumpstarter.dev/lease-ended"
 	LeaseLabelEndedValue   string     = "true"
+	LeaseLabelName         LeaseLabel = "jumpstarter.dev/lease-name"
 	LeaseTagMetadataPrefix string     = "metadata.jumpstarter.dev/"
 )
 
