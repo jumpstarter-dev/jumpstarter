@@ -58,7 +58,9 @@ class _PtyTracker:
         if not self.eof_seen:
             try:
                 data = self._original_os_read(fd, size)
-            except (BlockingIOError, OSError):
+            except BlockingIOError:
+                raise
+            except OSError:
                 self.eof_seen = True
                 raise
             if not data:
