@@ -450,22 +450,19 @@ class HookExecutor:
                 await anyio.sleep(0)
 
                 with anyio.move_on_after(timeout) as cancel_scope:
-                    # Run output reading and process waiting concurrently
                     async with anyio.create_task_group() as tg:
                         logger.debug("Task group created, starting tasks...")
                         tg.start_soon(read_pty_output)
                         logger.debug("Waiting for subprocess to complete...")
                         returncode = await wait_for_process()
                         logger.debug("Subprocess completed with code: %s", returncode)
-                        # Give a brief moment for any final output to be read
-                        await anyio.sleep(0.2)
-                        # Signal the read task to stop via the dedicated stop flag.
-                        # The read task checks this flag after each 0.1s timeout
-                        # and also receives EOF when the subprocess exits.
-                        # Note: pty_state.parent_fd_open stays True so the finally block
-                        # properly closes parent_fd.
+                        # After the subprocess exits, the PTY slave has no
+                        # more writers. The reader will get EOF and exit.
+                        # Set reader_stop after a grace period to handle
+                        # grandchild processes that hold the PTY slave open.
+                        await anyio.sleep(DRAIN_TIMEOUT_SECONDS)
                         pty_state.reader_stop = True
-                        logger.debug("Stop flag set, waiting for read task to exit")
+                        logger.debug("Reader grace period expired, stop flag set")
                         # Don't cancel - let the task exit naturally via EOF or flag check
                         # Cancellation can cause unexpected side effects on gRPC connections
 
