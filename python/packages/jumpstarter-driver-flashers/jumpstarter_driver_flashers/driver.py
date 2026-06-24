@@ -79,6 +79,16 @@ class BaseFlasher(Driver):
             return f.read()
 
     @export
+    async def setup_fls_binary(self):
+        """Copy local fls binary to HTTP server root for DUT download"""
+        fls_path = Path("/usr/local/bin/fls-aarch64")
+        if not fls_path.exists():
+            fls_path = Path("/usr/local/bin/fls")
+        if not fls_path.exists():
+            raise ConfigurationError("fls binary not found at /usr/local/bin/fls-aarch64 or /usr/local/bin/fls")
+        await self.http.storage.copy_exporter_file(fls_path, "fls")
+
+    @export
     async def setup_flasher_bundle(self, force_flash_bundle: str | None = None):
         """Setup flasher bundle
 

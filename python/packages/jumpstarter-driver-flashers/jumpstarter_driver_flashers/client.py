@@ -39,7 +39,7 @@ from jumpstarter_driver_flashers.bundle import FlasherBundleManifestV1Alpha1
 
 from jumpstarter.client.core import DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_group
-from jumpstarter.common.exceptions import ArgumentError, JumpstarterException
+from jumpstarter.common.exceptions import ArgumentError, ConfigurationError, JumpstarterException
 from jumpstarter.common.fls import get_fls_github_url
 
 
@@ -305,6 +305,11 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # CancelledError is a special case that should be treated as non-retryable
         if isinstance(exception, CancelledError):
             return FlashNonRetryableError("Operation cancelled")
+
+        # ConfigurationError is deterministic and should not be retried
+        config_error = self._find_exception_in_chain(exception, ConfigurationError)
+        if config_error is not None:
+            return FlashNonRetryableError(str(config_error))
 
         # Unknown exception - log full stack trace and wrap as retryable
         self.logger.exception(
@@ -701,9 +706,13 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             self._download_fls_binary(console, prompt, fls_binary_url, f"Failed to download FLS from {fls_binary_url}")
         elif fls_version != "":
             self.logger.info(f"Downloading FLS version {fls_version} from GitHub releases")
-            # Download fls binary to the target device (always aarch64 for target devices)
             fls_url = get_fls_github_url(fls_version, arch="aarch64")
             self._download_fls_binary(console, prompt, fls_url, f"Failed to download FLS from {fls_url}")
+        else:
+            self.logger.info("Serving FLS binary from exporter container")
+            self.call("setup_fls_binary")
+            fls_url = self.http.get_url() + "/fls"
+            self._download_fls_binary(console, prompt, fls_url, "Failed to download FLS from exporter")
 
         # Flash the image
         creds_file = None
