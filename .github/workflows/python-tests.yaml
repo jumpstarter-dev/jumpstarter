@@ -56,6 +56,11 @@ jobs:
     needs: changes
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.runs-on }}
+    env:
+      # Building packages like grpcio and scipy from source (required for
+      # Python 3.14 until upstream ships wheels) can exceed the default 300s
+      # uv lock timeout. 30 minutes gives enough headroom.
+      UV_LOCK_TIMEOUT: 1800
     strategy:
       matrix:
         runs-on: ${{ fromJson(needs.changes.outputs.runners) }}
