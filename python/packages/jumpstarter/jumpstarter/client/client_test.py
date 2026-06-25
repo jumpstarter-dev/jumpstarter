@@ -4,9 +4,12 @@ from contextlib import ExitStack
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
+import grpc
 import pytest
+from grpc.aio import AioRpcError
 
-from jumpstarter.client.client import _is_tcp_address
+from jumpstarter.client.client import _is_tcp_address, client_from_path
+from jumpstarter.common.exceptions import ExporterUnreachableError
 
 pytestmark = pytest.mark.anyio
 
@@ -282,3 +285,68 @@ class TestClientFromChannel:
 
         assert client.description == "Test driver description"
         assert client.methods_description == {"method1": "Does something"}
+
+
+class MockAioRpcError(AioRpcError):
+    def __init__(self, status_code, message=""):
+        self._status_code = status_code
+        self._message = message
+        self._code = status_code
+        self._details = message
+        self._debug_error_string = ""
+
+    def code(self):
+        return self._status_code
+
+    def details(self):
+        return self._message
+
+
+class TestClientFromPathExporterUnreachable:
+    """Tests for client_from_path converting gRPC errors to ExporterUnreachableError."""
+
+    async def test_unavailable_raises_exporter_unreachable(self):
+        """GetReport failing with UNAVAILABLE is converted to ExporterUnreachableError."""
+        mock_portal = MagicMock()
+        mock_stack = ExitStack()
+
+        with patch(
+            "jumpstarter.client.client.client_from_channel",
+            side_effect=MockAioRpcError(grpc.StatusCode.UNAVAILABLE, "connection refused"),
+        ):
+            with pytest.raises(ExporterUnreachableError, match="did not respond"):
+                async with client_from_path(
+                    "/tmp/test.sock", mock_portal, mock_stack, allow=[], unsafe=True
+                ):
+                    pass
+
+    async def test_deadline_exceeded_raises_exporter_unreachable(self):
+        """GetReport failing with DEADLINE_EXCEEDED is converted to ExporterUnreachableError."""
+        mock_portal = MagicMock()
+        mock_stack = ExitStack()
+
+        with patch(
+            "jumpstarter.client.client.client_from_channel",
+            side_effect=MockAioRpcError(grpc.StatusCode.DEADLINE_EXCEEDED, "timed out"),
+        ):
+            with pytest.raises(ExporterUnreachableError, match="did not respond"):
+                async with client_from_path(
+                    "/tmp/test.sock", mock_portal, mock_stack, allow=[], unsafe=True
+                ):
+                    pass
+
+    async def test_other_grpc_errors_propagate_unchanged(self):
+        """Non-connection gRPC errors are not converted to ExporterUnreachableError."""
+        mock_portal = MagicMock()
+        mock_stack = ExitStack()
+
+        with patch(
+            "jumpstarter.client.client.client_from_channel",
+            side_effect=MockAioRpcError(grpc.StatusCode.INTERNAL, "internal error"),
+        ):
+            with pytest.raises(MockAioRpcError):
+                async with client_from_path(
+                    "/tmp/test.sock", mock_portal, mock_stack, allow=[], unsafe=True
+                ):
+                    pass
+

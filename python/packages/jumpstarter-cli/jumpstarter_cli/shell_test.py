@@ -27,7 +27,7 @@ from jumpstarter_cli.shell import (
 
 from jumpstarter.client.grpc import Lease, LeaseList
 from jumpstarter.common import ExporterStatus
-from jumpstarter.common.exceptions import ExporterOfflineError
+from jumpstarter.common.exceptions import ExporterOfflineError, ExporterUnreachableError
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
 
@@ -66,7 +66,9 @@ class _DummyConfig:
     @asynccontextmanager
     async def lease_async(self, selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
         self.captured = (selector, exporter_name, lease_name, duration, acquisition_timeout)
-        yield Mock()
+        m = Mock()
+        m.connect_retry_timeout = 0.0
+        yield m
 
 
 def test_shell_passes_exporter_name_to_lease_async():
@@ -99,6 +101,7 @@ async def test_shell_warns_when_expired_token_prevents_cleanup_on_normal_exit():
     lease.name = "expired-lease"
     lease.lease_ended = False
     lease.lease_transferred = False
+    lease.connect_retry_timeout = 0.0
 
     config = _DummyConfig()
 
@@ -922,15 +925,15 @@ class TestRunShellWithLeaseAsync:
         assert not monitor._connection_lost
 
 
-class TestShellWithSignalHandlingLeaseTimeout:
-    async def test_exits_gracefully_when_lease_ended_and_exception_group(self):
-        """BaseExceptionGroup with lease_ended=True should produce exit code 0."""
-        lease = Mock()
-        lease.release = True
-        lease.name = "timeout-lease"
-        lease.lease_ended = True
-        lease.lease_transferred = False
+class TestShellWithSignalHandlingExceptionGroup:
+    """Tests for _shell_with_signal_handling's outer BaseExceptionGroup handler.
 
+    This handler catches exceptions from the lease context —
+    i.e. unrecoverable task-group failures.  We patch _run_shell_with_lease_async
+    directly to isolate this layer.
+    """
+
+    def _make_config_with_lease(self, lease):
         config = _DummyConfig()
 
         @asynccontextmanager
@@ -938,13 +941,23 @@ class TestShellWithSignalHandlingLeaseTimeout:
             yield lease
 
         config.lease_async = lease_async
+        return config
 
-        async def fake_run_shell(*_args):
+    async def test_exits_gracefully_when_lease_ended(self):
+        """When the lease expired naturally, a task-group failure exits with code 0."""
+        lease = Mock()
+        lease.release = True
+        lease.name = "timeout-lease"
+        lease.lease_ended = True
+        lease.lease_transferred = False
+        config = self._make_config_with_lease(lease)
+
+        async def fake_run(*_):
             raise BaseExceptionGroup("test", [RuntimeError("simulated cancellation")])
 
         with (
             patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
-            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run_shell),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run),
         ):
             exit_code = await _shell_with_signal_handling(
                 config, None, None, None, timedelta(minutes=1), False, (), None
@@ -952,11 +965,132 @@ class TestShellWithSignalHandlingLeaseTimeout:
 
         assert exit_code == 0
 
-    async def test_raises_offline_error_when_lease_not_ended_and_exception_group(self):
-        """BaseExceptionGroup with lease_ended=False should raise ExporterOfflineError."""
+    async def test_raises_offline_error_when_lease_active_and_task_group_fails(self):
+        """An active lease that hits a task-group failure surfaces ExporterOfflineError.
+
+        _shell_with_signal_handling's outer create_task_group always wraps the raised
+        exception in a BaseExceptionGroup (anyio behaviour).  The caller
+        (handle_exceptions_with_reauthentication) unwraps it for the user, so we check
+        that ExporterOfflineError is present inside the group.
+        """
+        from jumpstarter_cli_common.exceptions import find_exception_in_group
+
         lease = Mock()
         lease.release = True
         lease.name = "active-lease"
+        lease.lease_ended = False
+        lease.lease_transferred = False
+        config = self._make_config_with_lease(lease)
+
+        async def fake_run(*_):
+            raise BaseExceptionGroup("test", [RuntimeError("connection broken")])
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run),
+        ):
+            with pytest.raises(BaseExceptionGroup) as exc_info:
+                await _shell_with_signal_handling(
+                    config, None, None, None, timedelta(minutes=1), False, (), None
+                )
+
+        assert isinstance(exc_info.value, BaseExceptionGroup)
+        offline_exc = find_exception_in_group(exc_info.value, ExporterOfflineError)
+        assert offline_exc is not None
+        assert "Connection to exporter lost" in str(offline_exc)
+
+
+class TestRetryLoopTimeout:
+    """Tests for the connect_timeout bounded retry in _shell_with_signal_handling."""
+
+    async def test_retries_then_raises_on_timeout(self):
+        """ExporterUnreachableError retries until connect_timeout expires, then raises."""
+        lease = Mock()
+        lease.release = True
+        lease.name = "test-lease"
+        lease.exporter_name = "test-exporter"
+        lease.connect_timeout = 0.3
+        lease.lease_ended = False
+        lease.lease_transferred = False
+
+        config = _DummyConfig()
+        state = {"call_count": 0}
+
+        @asynccontextmanager
+        async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+            yield lease
+
+        config.lease_async = lease_async
+
+        async def fake_run(*_):
+            state["call_count"] += 1
+            raise ExporterUnreachableError("exporter dead")
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run),
+        ):
+            with pytest.raises((ExporterUnreachableError, BaseExceptionGroup)) as exc_info:
+                await _shell_with_signal_handling(
+                    config, None, None, None, timedelta(minutes=1), False, (), None
+                )
+
+        exc = exc_info.value
+        if isinstance(exc, BaseExceptionGroup):
+            from jumpstarter_cli_common.exceptions import find_exception_in_group
+
+            exc = find_exception_in_group(exc, ExporterUnreachableError)
+            assert exc is not None
+        assert "after 0s of retrying" in str(exc)
+        assert state["call_count"] >= 1
+
+    async def test_retries_when_wrapped_in_exception_group(self):
+        """ExporterUnreachableError wrapped in BaseExceptionGroup is also retried."""
+        lease = Mock()
+        lease.release = True
+        lease.name = "test-lease"
+        lease.exporter_name = "test-exporter"
+        lease.connect_timeout = 10.0
+        lease.lease_ended = False
+        lease.lease_transferred = False
+
+        config = _DummyConfig()
+        state = {"call_count": 0}
+
+        @asynccontextmanager
+        async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+            yield lease
+
+        config.lease_async = lease_async
+
+        async def fake_run(*_):
+            state["call_count"] += 1
+            if state["call_count"] < 3:
+                raise BaseExceptionGroup(
+                    "task group", [ExporterUnreachableError("exporter dead")]
+                )
+            return 0
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run),
+        ):
+            exit_code = await _shell_with_signal_handling(
+                config, None, None, None, timedelta(minutes=1), False, (), None
+            )
+
+        assert exit_code == 0
+        assert state["call_count"] == 3
+
+    async def test_retry_succeeds_before_timeout(self):
+        """ExporterUnreachableError retries and succeeds when exporter comes back."""
+        state = {"call_count": 0}
+
+        lease = Mock()
+        lease.release = True
+        lease.name = "test-lease"
+        lease.exporter_name = "test-exporter"
+        lease.connect_timeout = 10.0
         lease.lease_ended = False
         lease.lease_transferred = False
 
@@ -968,12 +1102,19 @@ class TestShellWithSignalHandlingLeaseTimeout:
 
         config.lease_async = lease_async
 
-        async def fake_run_shell(*_args):
-            raise BaseExceptionGroup("test", [RuntimeError("connection broken")])
+        async def fake_run(*_):
+            state["call_count"] += 1
+            if state["call_count"] < 3:
+                raise ExporterUnreachableError("exporter dead")
+            return 0
 
         with (
             patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
-            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run_shell),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run),
         ):
-            with pytest.raises((ExporterOfflineError, BaseExceptionGroup)):
-                await _shell_with_signal_handling(config, None, None, None, timedelta(minutes=1), False, (), None)
+            exit_code = await _shell_with_signal_handling(
+                config, None, None, None, timedelta(minutes=1), False, (), None
+            )
+
+        assert exit_code == 0
+        assert state["call_count"] == 3
