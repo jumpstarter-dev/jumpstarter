@@ -177,6 +177,11 @@ pub struct DriverNode {
     pub labels: HashMap<String, String>,
     pub description: Option<String>,
     pub methods_description: HashMap<String, String>,
+    /// Serialized, self-contained `FileDescriptorSet` for this driver's interface (from the host's
+    /// `descriptor_builder` introspection): the interface file plus its transitive well-known-type
+    /// dependency files (e.g. `google/protobuf/empty.proto`), deps-first. Enables on-demand native
+    /// gRPC service. `None` = no native surface for this driver.
+    pub descriptor_set: Option<Vec<u8>>,
 }
 
 /// One resource initial-metadata entry to relay.
@@ -438,6 +443,7 @@ fn to_core_node(n: DriverNode) -> jumpstarter_core::DriverNode {
         labels: n.labels,
         description: n.description,
         methods_description: n.methods_description,
+        descriptor_set: n.descriptor_set,
     }
 }
 
@@ -458,7 +464,14 @@ impl HostFactory for UniffiHostFactory {
         let api: Arc<dyn DriverApi> = Arc::new(UniffiHostApi {
             inner: host.clone(),
         });
-        let backend: Arc<dyn DriverBackend> = Arc::new(ForeignDriver::new(api));
+        let foreign = ForeignDriver::new(api);
+        // Introspect the driver tree NOW (at host startup) so the native gRPC interface is instantly
+        // ready to serve — no first-call latency, and any descriptor problems surface here. Failure
+        // is non-fatal (the native side is best-effort; legacy dispatch is unaffected).
+        if let Err(e) = foreign.prepare().await {
+            tracing::warn!(error = %e, "native interface introspection failed at startup");
+        }
+        let backend: Arc<dyn DriverBackend> = Arc::new(foreign);
         // Hold the DriverHost Arc as the lease guard so the foreign tree's lifetime is
         // explicit (dropped at lease end alongside the backend).
         Ok((backend, Box::new(host)))
@@ -588,6 +601,23 @@ impl ClientSession {
     ) -> Result<String, DriverError> {
         self.inner
             .driver_call(uuid, method_name, args_json)
+            .await
+            .map_err(from_core_err)
+    }
+
+    /// Opaque **native** per-driver unary gRPC call — the client side of the native calls surface.
+    /// `path` is the full method path (`/jumpstarter.driver.power.v1.PowerInterface/On`), `body` the
+    /// encoded request message; the Python custom gRPC channel serializes the stock `protoc` stub's
+    /// request into `body` and feeds the response bytes back to the stub. The `uuid` rides as the
+    /// `x-jumpstarter-driver-uuid` header so the exporter demux routes to the right instance.
+    pub async fn native_unary(
+        &self,
+        uuid: String,
+        path: String,
+        body: Vec<u8>,
+    ) -> Result<Vec<u8>, DriverError> {
+        self.inner
+            .native_unary(uuid, path, body)
             .await
             .map_err(from_core_err)
     }

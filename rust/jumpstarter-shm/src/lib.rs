@@ -27,6 +27,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(feature = "bridge")]
 pub mod bridge;
+#[cfg(feature = "bridge")]
+pub mod duplex;
 
 /// Wire contract for the local shared-memory byte plane, shared by the client (`jumpstarter-core`),
 /// the hub, and the host (`jumpstarter-exporter`) so all three agree without a cross-crate dep.

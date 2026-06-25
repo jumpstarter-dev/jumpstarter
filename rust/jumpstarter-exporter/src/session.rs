@@ -16,22 +16,30 @@ use std::sync::Arc;
 
 use jumpstarter_protocol::v1::exporter_service_server::{ExporterService, ExporterServiceServer};
 use jumpstarter_protocol::v1::router_service_server::RouterServiceServer;
+use jumpstarter_core::legacy::LegacyDispatch;
 use jumpstarter_protocol::v1::{
     DriverCallRequest, DriverCallResponse, EndSessionRequest, EndSessionResponse,
     GetReportResponse, GetStatusRequest, GetStatusResponse, LogStreamResponse, ResetRequest,
     ResetResponse, StreamingDriverCallRequest, StreamingDriverCallResponse,
 };
+use jumpstarter_transport::demux::{Demux, Router as DemuxRouter};
 use tokio::net::UnixListener;
 use tokio::sync::{watch, Notify};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::UnixListenerStream;
 use tokio_stream::{Stream, StreamExt as _};
+use tonic::service::Routes;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
 use crate::backend::{DriverBackend, ResponseStream};
 use crate::control::StatusSnapshot;
 use crate::Error;
+
+/// tonic's default per-message size limit (4 MiB) — used for the standalone hook socket, which
+/// (unlike the bulk client/TCP path) carries no large resource/flash frames and kept tonic's
+/// default before the demux wiring; named so `session_routes` preserves that exactly.
+const DEFAULT_MAX_MESSAGE_SIZE: usize = 4 * 1024 * 1024;
 
 /// A single lease's driver routing: the slim host channel, its cached full-tree
 /// `GetReport`, and the set of valid driver UUIDs (all routing to the one host; a
@@ -41,6 +49,9 @@ pub struct RoutingTable {
     backend: Arc<dyn DriverBackend>,
     driver_uuids: HashSet<String>,
     report: GetReportResponse,
+    /// The server-side legacy `DriverCall` compatibility shim, built once from this lease's driver
+    /// descriptors — translates an old client's `DriverCall` into the native dispatch.
+    legacy: Arc<LegacyDispatch>,
 }
 
 impl RoutingTable {
@@ -50,10 +61,12 @@ impl RoutingTable {
     pub async fn build(backend: Arc<dyn DriverBackend>) -> Result<Self, Error> {
         let report = backend.get_report().await?;
         let driver_uuids = report.reports.iter().map(|r| r.uuid.clone()).collect();
+        let legacy = Arc::new(LegacyDispatch::from_reports(&report.reports));
         Ok(Self {
             backend,
             driver_uuids,
             report,
+            legacy,
         })
     }
 
@@ -66,6 +79,11 @@ impl RoutingTable {
     /// and `log_stream`).
     pub(crate) fn backend(&self) -> Arc<dyn DriverBackend> {
         self.backend.clone()
+    }
+
+    /// The legacy `DriverCall` compatibility shim for this lease.
+    pub(crate) fn legacy(&self) -> Arc<LegacyDispatch> {
+        self.legacy.clone()
     }
 
     /// Whether `uuid` is a known driver instance in this lease.
@@ -114,36 +132,55 @@ impl SharedSession {
     pub(crate) fn routing(&self) -> Option<Arc<RoutingTable>> {
         self.routing.borrow().clone()
     }
+}
 
-    #[allow(clippy::result_large_err)]
-    fn require_routing(&self) -> Result<Arc<RoutingTable>, Status> {
-        self.routing()
-            .ok_or_else(|| Status::unknown("no active lease"))
-    }
+/// Routes a native per-driver gRPC call (`/jumpstarter.driver.*.v1.*`) to its backend by the
+/// `x-jumpstarter-driver-uuid` header, for the [`Demux`] catch-all fallback.
+///
+/// This is the native-gRPC counterpart of [`ExporterServer::driver_call`]'s typed routing: both
+/// resolve a uuid against the current lease's [`RoutingTable`]. Resolution mirrors `route()` —
+/// `None` when idle (no lease) or the uuid is unknown — and the demux turns that `None` into a
+/// `NOT_FOUND` at the wire boundary, so an unknown/idle native call is rejected rather than 404ing.
+/// Readiness gating (`require_ready`) is left to the demux/host: an opaque native call carries no
+/// typed phase contract, and a not-yet-ready host simply rejects it.
+struct SessionRouter(Arc<SharedSession>);
 
-    /// Gate driver calls on the FSM being in a phase where the board is reachable — matching the
-    /// Python controller contract (`checkExporterStatusForDriverCalls`): DriverCall /
-    /// StreamingDriverCall are only valid in `LEASE_READY` (client calls) or the
-    /// `BEFORE_LEASE_HOOK` / `AFTER_LEASE_HOOK` phases (a hook's `j` runs against the hook socket).
-    /// Any other phase returns `FAILED_PRECONDITION` rather than dispatching into a not-yet-ready
-    /// or already-tearing-down host.
-    #[allow(clippy::result_large_err)]
-    fn require_ready(&self) -> Result<(), Status> {
-        use jumpstarter_protocol::v1::ExporterStatus;
-        let status = self.status.borrow().status;
-        if matches!(
-            status,
-            ExporterStatus::LeaseReady
-                | ExporterStatus::BeforeLeaseHook
-                | ExporterStatus::AfterLeaseHook
-        ) {
-            Ok(())
-        } else {
-            Err(Status::failed_precondition(format!(
-                "exporter not ready for driver calls (status: {status:?})"
-            )))
-        }
+impl DemuxRouter for SessionRouter {
+    fn backend(&self, uuid: &str) -> Option<Arc<dyn DriverBackend>> {
+        self.0.routing().and_then(|rt| rt.route(uuid).ok())
     }
+}
+
+/// Build the combined service tree for a session socket: the typed [`ExporterService`] +
+/// [`RouterService`] as named gRPC routes, with the native [`Demux`] mounted as the **fallback**
+/// so any unknown method path (a native `jumpstarter.driver.*.v1.*` call) routes to the
+/// per-driver backend instead of returning tonic's default `UNIMPLEMENTED`.
+///
+/// Returns a [`Routes`] (re-wrapped from the combined `axum::Router`) so callers keep using
+/// `Server::builder()`'s h2 tuning + `add_routes(..).serve_with_incoming(..)`. The typed services
+/// are added via tonic's `Routes` (which registers them at `/{service}/*rest`); we then swap that
+/// router's default fallback for the demux. `route_max_*` carries the large message limits onto
+/// the typed `RouterService` (bulk resource/flash frames) exactly as before.
+fn session_routes(shared: Arc<SharedSession>, route_max_message_size: usize) -> Routes {
+    let exporter = ExporterServiceServer::new(ExporterServer {
+        shared: shared.clone(),
+    });
+    let router = RouterServiceServer::new(crate::tunnel::RouterServer::new(shared.clone()))
+        .max_decoding_message_size(route_max_message_size)
+        .max_encoding_message_size(route_max_message_size);
+
+    // Build the typed routes the normal way, then drop down to the underlying `axum::Router` to
+    // override its fallback (tonic's default is the `UNIMPLEMENTED` handler) with the native demux.
+    // `Demux<R>` itself is the `tower::Service` axum's `fallback_service` wants, so we mount it
+    // directly (no extra accessor on the transport crate needed). `Routes: From<axum::Router>` lets
+    // us re-wrap it so `Server::builder().add_routes(..)` still applies the h2 tuning.
+    let mut builder = Routes::builder();
+    builder.add_service(exporter).add_service(router);
+    let axum_router = builder
+        .routes()
+        .into_axum_router()
+        .fallback_service(Demux::new(SessionRouter(shared)));
+    Routes::from(axum_router)
 }
 
 /// Bind the `ExporterService` + `RouterService` on the main and hook Unix sockets and
@@ -162,12 +199,8 @@ pub fn serve(
     // Separate sockets, one server: each accepted connection is independent, so the
     // hook/client SSL-frame isolation (session.py:244-257) is preserved.
     let incoming = UnixListenerStream::new(main).merge(UnixListenerStream::new(hook));
-    let exporter = ExporterServiceServer::new(ExporterServer {
-        shared: shared.clone(),
-    });
-    let router = RouterServiceServer::new(crate::tunnel::RouterServer::new(shared))
-        .max_decoding_message_size(64 * 1024 * 1024)
-        .max_encoding_message_size(64 * 1024 * 1024);
+    // Typed ExporterService/RouterService + the native per-driver demux as the catch-all fallback.
+    let routes = session_routes(shared, 64 * 1024 * 1024);
 
     Ok(tokio::spawn(async move {
         if let Err(e) = Server::builder()
@@ -181,8 +214,7 @@ pub fn serve(
             // CPU on the sender, independent of app chunk size). Raise it 64×.
             .max_frame_size(1024 * 1024)
             .tcp_nodelay(true)
-            .add_service(exporter)
-            .add_service(router)
+            .add_routes(routes)
             .serve_with_incoming(incoming)
             .await
         {
@@ -205,17 +237,15 @@ pub fn serve_standalone(
 ) -> Result<(JoinHandle<()>, JoinHandle<()>), Error> {
     use tokio_stream::wrappers::TcpListenerStream;
 
-    // Hook socket (internal): unauthenticated, like the controller-mode hook socket.
+    // Hook socket (internal): unauthenticated, like the controller-mode hook socket. Typed
+    // services + the native demux fallback (the hook `j` may issue native per-driver calls).
+    // Keep the default message limits the hook socket used before (no large-frame bulk path here).
     let hook = UnixListener::bind(hook_path)
         .map_err(|e| Error::Config(format!("binding hook session socket: {e}")))?;
-    let hook_exporter = ExporterServiceServer::new(ExporterServer {
-        shared: shared.clone(),
-    });
-    let hook_router = RouterServiceServer::new(crate::tunnel::RouterServer::new(shared.clone()));
+    let hook_routes = session_routes(shared.clone(), DEFAULT_MAX_MESSAGE_SIZE);
     let hook_task = tokio::spawn(async move {
         if let Err(e) = Server::builder()
-            .add_service(hook_exporter)
-            .add_service(hook_router)
+            .add_routes(hook_routes)
             .serve_with_incoming(UnixListenerStream::new(hook))
             .await
         {
@@ -231,21 +261,15 @@ pub fn serve_standalone(
         .map_err(|e| Error::Config(format!("set_nonblocking: {e}")))?;
     let listener = tokio::net::TcpListener::from_std(std_listener)
         .map_err(|e| Error::Config(format!("tokio TCP listener: {e}")))?;
-    let interceptor = crate::auth::passphrase_interceptor(passphrase);
-    let exporter = ExporterServiceServer::with_interceptor(
-        ExporterServer {
-            shared: shared.clone(),
-        },
-        interceptor.clone(),
+    // Typed services + the native demux fallback, with the passphrase interceptor applied as a
+    // server-wide `Layer` (rather than per-typed-service `with_interceptor`). Layering wraps the
+    // whole `Routes` — typed routes *and* the native demux fallback — so native per-driver calls
+    // are passphrase-gated identically; the large message limits are set on the typed
+    // `RouterService` inside `session_routes` (before the layer), matching the prior behavior.
+    let interceptor = tonic::service::interceptor::interceptor(
+        crate::auth::passphrase_interceptor(passphrase),
     );
-    // Set the large message limits on the inner server *before* wrapping with the interceptor
-    // (`with_interceptor` returns an `InterceptedService`, which has no `max_*` setters).
-    let router = tonic::service::interceptor::InterceptedService::new(
-        RouterServiceServer::new(crate::tunnel::RouterServer::new(shared))
-            .max_decoding_message_size(64 * 1024 * 1024)
-            .max_encoding_message_size(64 * 1024 * 1024),
-        interceptor,
-    );
+    let routes = session_routes(shared, 64 * 1024 * 1024);
     let tcp_task = tokio::spawn(async move {
         if let Err(e) = Server::builder()
             // Large h2 windows + frame size + nodelay for bulk resource/flash throughput
@@ -254,8 +278,8 @@ pub fn serve_standalone(
             .initial_connection_window_size(16 * 1024 * 1024)
             .max_frame_size(1024 * 1024)
             .tcp_nodelay(true)
-            .add_service(exporter)
-            .add_service(router)
+            .layer(interceptor)
+            .add_routes(routes)
             .serve_with_incoming(TcpListenerStream::new(listener))
             .await
         {
@@ -284,29 +308,23 @@ impl ExporterService for ExporterServer {
         Ok(Response::new(report))
     }
 
+    // --- legacy backwards-compat shim (old clients only) ---------------------------------------
+    // New clients invoke drivers via the native per-interface demux (the `Demux` fallback). The two
+    // handlers below serve OLD clients' generic `DriverCall`/`StreamingDriverCall` by translating
+    // them into that same native dispatch (`LegacyDispatch`), so there is no separate legacy path in
+    // the backends. A missing lease is `UNKNOWN`; the native dispatch underneath does the rest.
+
     async fn driver_call(
         &self,
         req: Request<DriverCallRequest>,
     ) -> Result<Response<DriverCallResponse>, Status> {
         let req = req.into_inner();
-        tracing::debug!(uuid = %req.uuid, method = %req.method, "DriverCall");
-        self.shared.require_ready()?;
-        // Route by UUID, then forward the typed response / tonic Status unchanged —
-        // the host owns marker lookup, Value marshaling, and exception mapping.
-        let resp = match self
+        tracing::debug!(uuid = %req.uuid, method = %req.method, "DriverCall (legacy shim)");
+        let routing = self
             .shared
-            .require_routing()?
-            .route(&req.uuid)?
-            .driver_call(req)
-            .await
-        {
-            Ok(resp) => resp,
-            Err(status) => {
-                tracing::debug!(error = %status, "DriverCall routed error");
-                return Err(status);
-            }
-        };
-        tracing::trace!(uuid = %resp.uuid, "DriverCall routed result");
+            .routing()
+            .ok_or_else(|| Status::unknown("no active lease"))?;
+        let resp = routing.legacy().driver_call(&*routing.backend(), req).await?;
         Ok(Response::new(resp))
     }
 
@@ -316,22 +334,15 @@ impl ExporterService for ExporterServer {
         req: Request<StreamingDriverCallRequest>,
     ) -> Result<Response<Self::StreamingDriverCallStream>, Status> {
         let req = req.into_inner();
-        tracing::debug!(uuid = %req.uuid, method = %req.method, "StreamingDriverCall");
-        self.shared.require_ready()?;
-        let stream = match self
+        tracing::debug!(uuid = %req.uuid, method = %req.method, "StreamingDriverCall (legacy shim)");
+        let routing = self
             .shared
-            .require_routing()?
-            .route(&req.uuid)?
-            .streaming_driver_call(req)
-            .await
-        {
-            Ok(stream) => stream,
-            Err(status) => {
-                tracing::debug!(error = %status, "StreamingDriverCall routed error");
-                return Err(status);
-            }
-        };
-        tracing::trace!("StreamingDriverCall routed result");
+            .routing()
+            .ok_or_else(|| Status::unknown("no active lease"))?;
+        let stream = routing
+            .legacy()
+            .streaming_driver_call(routing.backend(), req)
+            .await?;
         Ok(Response::new(stream))
     }
 
@@ -405,5 +416,160 @@ impl ExporterService for ExporterServer {
                 message: Some("No active lease context".to_string()),
             })),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::ResponseStream;
+    use bytes::Bytes;
+    use jumpstarter_protocol::v1::{DriverInstanceReport, GetReportResponse};
+    use jumpstarter_transport::demux::{BytesCodec, DRIVER_UUID_KEY};
+    use jumpstarter_transport::transport::{connect_channel, InProcessTransport, Transport};
+    use std::str::FromStr;
+    use tonic::metadata::MetadataMap;
+
+    const DRIVER_UUID: &str = "driver-under-test";
+    const NATIVE_PATH: &str = "/jumpstarter.driver.power.v1.PowerInterface/Echo";
+
+    /// A stub driver host: reports a single driver (so the [`RoutingTable`] knows its uuid) and
+    /// echoes any opaque native unary call back through `forward_unary`. Every other backend method
+    /// is unreachable — the native path must not touch them.
+    struct EchoBackend;
+
+    #[tonic::async_trait]
+    impl DriverBackend for EchoBackend {
+        async fn get_report(&self) -> Result<GetReportResponse, Status> {
+            Ok(GetReportResponse {
+                reports: vec![DriverInstanceReport {
+                    uuid: DRIVER_UUID.to_string(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            })
+        }
+        async fn open_router_stream(
+            &self,
+            _request_meta: tonic::metadata::AsciiMetadataValue,
+            _uplink: crate::backend::FrameUplink,
+        ) -> Result<crate::backend::RouterStreamOpen, Status> {
+            unreachable!()
+        }
+        async fn log_stream(
+            &self,
+        ) -> Result<ResponseStream<jumpstarter_protocol::v1::LogStreamResponse>, Status> {
+            unreachable!()
+        }
+        async fn forward_unary(
+            &self,
+            path: &str,
+            _metadata: MetadataMap,
+            body: Bytes,
+        ) -> Result<(MetadataMap, Bytes, MetadataMap), Status> {
+            // The opaque body is echoed verbatim, and the method path is carried back in the
+            // initial metadata (which the demux propagates) so the test can confirm the demux
+            // forwarded the *exact* path it received.
+            let mut initial = MetadataMap::new();
+            initial.insert("x-echoed-path", path.parse().unwrap());
+            Ok((initial, body, MetadataMap::new()))
+        }
+    }
+
+    /// A `SharedSession` whose routing points at `backend` and whose FSM reads `LEASE_READY`.
+    /// The `watch::Sender`s are leaked into a returned `Box` so the receivers stay live for the
+    /// session's lifetime.
+    async fn ready_session(backend: Arc<dyn DriverBackend>) -> Arc<SharedSession> {
+        let routing = RoutingTable::build(backend).await.expect("build routing");
+        let (routing_tx, routing_rx) = watch::channel(Some(Arc::new(routing)));
+        let snapshot = StatusSnapshot {
+            status: jumpstarter_protocol::v1::ExporterStatus::LeaseReady,
+            ..StatusSnapshot::default()
+        };
+        let (status_tx, status_rx) = watch::channel(snapshot);
+        let (end_tx, end_rx) = watch::channel(None);
+        // Keep the senders alive for the test's duration.
+        Box::leak(Box::new((routing_tx, status_tx, end_tx)));
+        SharedSession::new(routing_rx, status_rx, end_rx, crate::logbuf::HookLog::new())
+    }
+
+    /// A native per-driver method path (`/jumpstarter.driver.*.v1.*`) — unknown to the typed
+    /// `ExporterService`/`RouterService` — is served by the demux fallback, routed by the
+    /// `x-jumpstarter-driver-uuid` header to the lease's backend, and echoed back. This proves the
+    /// native fallback is genuinely wired into the live session server (no `UNIMPLEMENTED`/404).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn native_unary_routes_through_session_router() {
+        let shared = ready_session(Arc::new(EchoBackend)).await;
+        let routes = session_routes(shared, 64 * 1024 * 1024);
+
+        let transport = InProcessTransport::new();
+        let incoming = transport.incoming();
+        let server = tokio::spawn(async move {
+            Server::builder()
+                .add_routes(routes)
+                .serve_with_incoming(incoming)
+                .await
+        });
+
+        let channel = connect_channel(&transport).await.expect("dial session");
+        let mut client = tonic::client::Grpc::new(channel);
+        client.ready().await.expect("client ready");
+
+        let payload = Bytes::from_static(b"\x08\x01opaque-native-proto");
+        let mut request = Request::new(payload.clone());
+        request
+            .metadata_mut()
+            .insert(DRIVER_UUID_KEY, DRIVER_UUID.parse().unwrap());
+        let path = http::uri::PathAndQuery::from_str(NATIVE_PATH).unwrap();
+        let response = client
+            .unary(request, path, BytesCodec)
+            .await
+            .expect("native unary forwarded through session demux");
+
+        // The forwarded path is echoed in a trailer, and the opaque body round-trips unchanged.
+        assert_eq!(
+            response
+                .metadata()
+                .get("x-echoed-path")
+                .and_then(|v| v.to_str().ok()),
+            Some(NATIVE_PATH)
+        );
+        assert_eq!(response.into_inner(), payload);
+
+        server.abort();
+    }
+
+    /// A native call for a uuid the lease does not own is rejected (the demux turns the router's
+    /// `None` into `NOT_FOUND`) rather than reaching a backend — confirming header-keyed routing.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn native_unary_unknown_uuid_rejected() {
+        let shared = ready_session(Arc::new(EchoBackend)).await;
+        let routes = session_routes(shared, 64 * 1024 * 1024);
+
+        let transport = InProcessTransport::new();
+        let incoming = transport.incoming();
+        let server = tokio::spawn(async move {
+            Server::builder()
+                .add_routes(routes)
+                .serve_with_incoming(incoming)
+                .await
+        });
+
+        let channel = connect_channel(&transport).await.expect("dial session");
+        let mut client = tonic::client::Grpc::new(channel);
+        client.ready().await.expect("client ready");
+
+        let mut request = Request::new(Bytes::new());
+        request
+            .metadata_mut()
+            .insert(DRIVER_UUID_KEY, "no-such-driver".parse().unwrap());
+        let path = http::uri::PathAndQuery::from_str(NATIVE_PATH).unwrap();
+        let err = client
+            .unary(request, path, BytesCodec)
+            .await
+            .expect_err("unknown driver uuid must be rejected");
+        assert_eq!(err.code(), tonic::Code::NotFound);
+
+        server.abort();
     }
 }

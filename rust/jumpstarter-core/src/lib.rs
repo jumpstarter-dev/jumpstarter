@@ -8,20 +8,25 @@
 //! which implement [`host::DriverApi`] and convert these DTOs to their native types.
 
 pub mod client;
-pub mod codec;
 pub mod controller;
 pub mod driver;
 pub mod dto;
+pub mod dynamic;
+pub mod dynamic_backend;
 pub mod error;
 pub mod foreign;
 pub mod host;
+pub mod legacy;
+pub mod native_table;
 pub mod report;
 
 pub use client::{ClientByteStream, ClientLogStream, ClientResultStream, ClientSession};
 pub use controller::{ControllerSession, LeaseTransport};
 pub use driver::{Driver, NativeDriverBackend};
 pub use dto::DriverNode;
-pub use error::{CodecError, ControllerError, DriverCallError};
+pub use dynamic::{decode_response, encode_request, DynamicMethod};
+pub use dynamic_backend::{export_name_for, DynamicBackend, DRIVER_UUID_KEY};
+pub use error::{ControllerError, DriverCallError};
 pub use foreign::ForeignDriver;
 pub use host::{
     DriverByteChannel, DriverApi, DriverResultStream, DriverStreamOpen,

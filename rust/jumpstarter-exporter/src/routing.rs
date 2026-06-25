@@ -10,14 +10,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use jumpstarter_protocol::v1::{
-    DriverCallRequest, DriverCallResponse, DriverInstanceReport, GetReportResponse,
-    LogStreamResponse, StreamingDriverCallRequest, StreamingDriverCallResponse,
-};
+use jumpstarter_protocol::v1::{DriverInstanceReport, GetReportResponse, LogStreamResponse};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt as _;
-use tonic::metadata::AsciiMetadataValue;
+use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 use tonic::Status;
 
 use crate::backend::{DriverBackend, FrameUplink, ResponseStream, RouterStreamOpen};
@@ -66,6 +63,8 @@ impl RoutingBackend {
             labels: HashMap::from([(CLIENT_LABEL.to_string(), COMPOSITE_CLIENT.to_string())]),
             description,
             methods_description: HashMap::new(),
+            // The synthesized composite root is not a real driver — no native interface.
+            descriptor_set: None,
         }];
 
         for entry in entries {
@@ -127,15 +126,50 @@ impl DriverBackend for RoutingBackend {
         Ok(self.report.clone())
     }
 
-    async fn driver_call(&self, req: DriverCallRequest) -> Result<DriverCallResponse, Status> {
-        self.route(&req.uuid)?.driver_call(req).await
+    /// Route an opaque **native** unary call to the owning entry by the `x-jumpstarter-driver-uuid`
+    /// metadata header, then forward to that entry's backend (its `ChannelBackend`/`ForeignDriver`
+    /// does the actual native dispatch). Without this override the federated hub would hit the
+    /// default "not supported".
+    async fn forward_unary(
+        &self,
+        path: &str,
+        metadata: MetadataMap,
+        body: bytes::Bytes,
+    ) -> Result<(MetadataMap, bytes::Bytes, MetadataMap), Status> {
+        let uuid = metadata
+            .get(jumpstarter_transport::demux::DRIVER_UUID_KEY)
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| {
+                Status::invalid_argument(format!(
+                    "native call missing `{}` metadata",
+                    jumpstarter_transport::demux::DRIVER_UUID_KEY
+                ))
+            })?
+            .to_string();
+        self.route(&uuid)?.forward_unary(path, metadata, body).await
     }
 
-    async fn streaming_driver_call(
+    /// Route an opaque native **server-streaming** call to the owning entry by the
+    /// `x-jumpstarter-driver-uuid` header (the streaming analogue of `forward_unary`), then forward
+    /// to that entry's backend. Without this override the federated hub would hit the default
+    /// (forward_unary-as-one-item), which truncates a genuinely streaming method to its first item.
+    async fn forward_stream(
         &self,
-        req: StreamingDriverCallRequest,
-    ) -> Result<ResponseStream<StreamingDriverCallResponse>, Status> {
-        self.route(&req.uuid)?.streaming_driver_call(req).await
+        path: &str,
+        metadata: MetadataMap,
+        body: bytes::Bytes,
+    ) -> Result<(MetadataMap, ResponseStream<bytes::Bytes>), Status> {
+        let uuid = metadata
+            .get(jumpstarter_transport::demux::DRIVER_UUID_KEY)
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| {
+                Status::invalid_argument(format!(
+                    "native call missing `{}` metadata",
+                    jumpstarter_transport::demux::DRIVER_UUID_KEY
+                ))
+            })?
+            .to_string();
+        self.route(&uuid)?.forward_stream(path, metadata, body).await
     }
 
     async fn open_router_stream(
@@ -189,6 +223,7 @@ mod tests {
             labels,
             description: None,
             methods_description: HashMap::new(),
+            descriptor_set: None,
         }
     }
 
@@ -222,21 +257,20 @@ mod tests {
         async fn get_report(&self) -> Result<GetReportResponse, Status> {
             Ok(self.report.clone())
         }
-        async fn driver_call(
+        async fn forward_unary(
             &self,
-            req: DriverCallRequest,
-        ) -> Result<DriverCallResponse, Status> {
-            self.called.lock().unwrap().push(req.uuid.clone());
-            Ok(DriverCallResponse {
-                uuid: req.uuid,
-                result: None,
-            })
-        }
-        async fn streaming_driver_call(
-            &self,
-            _req: StreamingDriverCallRequest,
-        ) -> Result<ResponseStream<StreamingDriverCallResponse>, Status> {
-            Ok(Box::pin(tokio_stream::empty()))
+            _path: &str,
+            metadata: MetadataMap,
+            _body: bytes::Bytes,
+        ) -> Result<(MetadataMap, bytes::Bytes, MetadataMap), Status> {
+            // Record the driver uuid the hub routed by (the demux header), proving the routing.
+            let uuid = metadata
+                .get(jumpstarter_transport::demux::DRIVER_UUID_KEY)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default()
+                .to_string();
+            self.called.lock().unwrap().push(uuid);
+            Ok((MetadataMap::new(), bytes::Bytes::new(), MetadataMap::new()))
         }
         async fn open_router_stream(
             &self,
@@ -299,26 +333,24 @@ mod tests {
         assert_eq!(by_uuid["gc-uuid"].parent_uuid.as_deref(), Some("serial-uuid"));
     }
 
+    /// A native unary call carrying the driver uuid in the demux header.
+    fn native_call(uuid: &str) -> (MetadataMap, bytes::Bytes) {
+        let mut md = MetadataMap::new();
+        md.insert(
+            jumpstarter_transport::demux::DRIVER_UUID_KEY,
+            uuid.parse().unwrap(),
+        );
+        (md, bytes::Bytes::new())
+    }
+
     #[tokio::test]
     async fn routes_driver_calls_to_the_owning_entry() {
         let (backend, power, serial) = routing().await;
 
-        backend
-            .driver_call(DriverCallRequest {
-                uuid: "power-uuid".to_string(),
-                method: "on".to_string(),
-                args: vec![],
-            })
-            .await
-            .unwrap();
-        backend
-            .driver_call(DriverCallRequest {
-                uuid: "gc-uuid".to_string(),
-                method: "x".to_string(),
-                args: vec![],
-            })
-            .await
-            .unwrap();
+        let (md, body) = native_call("power-uuid");
+        backend.forward_unary("/p.S/On", md, body).await.unwrap();
+        let (md, body) = native_call("gc-uuid");
+        backend.forward_unary("/p.S/X", md, body).await.unwrap();
 
         assert_eq!(*power.called.lock().unwrap(), vec!["power-uuid"]);
         // The grandchild routes to the serial entry that owns its subtree.
@@ -329,22 +361,16 @@ mod tests {
     async fn unknown_uuid_and_root_are_unknown() {
         let (backend, _p, _s) = routing().await;
         // An unknown uuid is UNKNOWN.
+        let (md, body) = native_call("nope");
         let err = backend
-            .driver_call(DriverCallRequest {
-                uuid: "nope".to_string(),
-                method: "on".to_string(),
-                args: vec![],
-            })
+            .forward_unary("/p.S/On", md, body)
             .await
             .unwrap_err();
         assert_eq!(err.code(), tonic::Code::Unknown);
-        // The synthetic root has no methods → also UNKNOWN (it isn't in the routes).
+        // The synthetic root is not a real driver (not in the routes) → also UNKNOWN.
+        let (md, body) = native_call("root-uuid");
         let err = backend
-            .driver_call(DriverCallRequest {
-                uuid: "root-uuid".to_string(),
-                method: "x".to_string(),
-                args: vec![],
-            })
+            .forward_unary("/p.S/X", md, body)
             .await
             .unwrap_err();
         assert_eq!(err.code(), tonic::Code::Unknown);

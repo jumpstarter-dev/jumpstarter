@@ -1,5 +1,8 @@
 //! The driver-call transport seam — `DriverBackend`.
 //!
+//! Also home to the native-gRPC [`Transport`](transport::Transport) trait + its variants
+//! (in-process / SHM-ring duplex / network), the "tonic over swappable IO" core abstraction.
+//!
 //! A `DriverBackend` is *where a driver's calls are served*, abstracted over transport so the
 //! exact same caller (the exporter's per-lease router on one side, a client session on the
 //! other) drives a driver whether it lives:
@@ -16,13 +19,18 @@
 //! per-driver `Driver` (JSON/bytes) is adapted *to* this trait by `ForeignDriver`, which is
 //! where the value codec is applied.
 
+pub mod demux;
+pub mod transport;
+
 use std::pin::Pin;
+use std::str::FromStr;
+
+use bytes::Bytes;
 
 use jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient;
 use jumpstarter_protocol::v1::router_service_client::RouterServiceClient;
 use jumpstarter_protocol::v1::{
-    DriverCallRequest, DriverCallResponse, GetReportResponse, LogStreamResponse, StreamRequest,
-    StreamResponse, StreamingDriverCallRequest, StreamingDriverCallResponse,
+    GetReportResponse, LogStreamResponse, StreamRequest, StreamResponse,
 };
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::Stream;
@@ -57,15 +65,6 @@ pub trait DriverBackend: Send + Sync {
     /// The full-tree `GetReport` (cached by the caller for the lease lifetime).
     async fn get_report(&self) -> Result<GetReportResponse, Status>;
 
-    /// Invoke a unary driver call.
-    async fn driver_call(&self, req: DriverCallRequest) -> Result<DriverCallResponse, Status>;
-
-    /// Invoke a server-streaming driver call.
-    async fn streaming_driver_call(
-        &self,
-        req: StreamingDriverCallRequest,
-    ) -> Result<ResponseStream<StreamingDriverCallResponse>, Status>;
-
     /// Open a router `Stream` (driver `@exportstream` or resource handle): forward the
     /// client uplink + the `request` metadata to the driver, returning the driver's initial
     /// metadata and downlink. Frame boundaries are preserved 1:1.
@@ -77,6 +76,49 @@ pub trait DriverBackend: Send + Sync {
 
     /// The driver/system `LogStream` (merged into the client log stream).
     async fn log_stream(&self) -> Result<ResponseStream<LogStreamResponse>, Status>;
+
+    /// Forward an **opaque** native per-driver unary gRPC call to this backend.
+    ///
+    /// This is the unary half of the native-gRPC demux: the core proxies a per-driver method
+    /// (`jumpstarter.driver.*.v1.*`) it has **no proto knowledge of** — it never deserializes
+    /// `body`, just relays the raw message bytes + metadata to the same method `path` on the
+    /// backend and returns the response (initial metadata, message bytes, trailers) verbatim. It
+    /// generalizes [`open_router_stream`](DriverBackend::open_router_stream)'s transparent proxy
+    /// from `RouterService.Stream` to arbitrary unary methods. The default impl declines; a
+    /// channel-backed host overrides it.
+    async fn forward_unary(
+        &self,
+        path: &str,
+        metadata: MetadataMap,
+        body: Bytes,
+    ) -> Result<(MetadataMap, Bytes, MetadataMap), Status> {
+        let _ = (path, metadata, body);
+        Err(Status::unimplemented(
+            "native unary forwarding not supported by this backend",
+        ))
+    }
+
+    /// Forward an **opaque** native per-driver **server-streaming** gRPC call to this backend.
+    ///
+    /// This is the streaming half of the native-gRPC demux. Because the demux is opaque (it has
+    /// no proto knowledge and cannot tell unary from server-streaming apart from the path), it
+    /// frames **every** native call as server-streaming on the wire — a unary method is just a
+    /// one-message stream, which a unary client reads identically. So this method serves both:
+    /// the default presents a [`forward_unary`](DriverBackend::forward_unary) as a one-item stream
+    /// (correct for unary methods on a backend that only implements the unary half), and a
+    /// genuinely server-streaming backend ([`ChannelBackend`], the core's dynamic backend)
+    /// overrides it to relay N messages. Returns the initial metadata + the response message
+    /// stream; tonic frames the trailing `grpc-status` itself.
+    async fn forward_stream(
+        &self,
+        path: &str,
+        metadata: MetadataMap,
+        body: Bytes,
+    ) -> Result<(MetadataMap, ResponseStream<Bytes>), Status> {
+        let (initial, message, _trailers) = self.forward_unary(path, metadata, body).await?;
+        let stream: ResponseStream<Bytes> = Box::pin(tokio_stream::once(Ok(message)));
+        Ok((initial, stream))
+    }
 }
 
 /// A [`DriverBackend`] backed by a tonic [`Channel`] to an `ExporterService` + `RouterService`
@@ -131,20 +173,6 @@ impl DriverBackend for ChannelBackend {
         Ok(self.exporter().get_report(()).await?.into_inner())
     }
 
-    async fn driver_call(&self, req: DriverCallRequest) -> Result<DriverCallResponse, Status> {
-        trace!(rpc = "DriverCall", uuid = %req.uuid, method = %req.method, "channel backend RPC dispatch");
-        Ok(self.exporter().driver_call(req).await?.into_inner())
-    }
-
-    async fn streaming_driver_call(
-        &self,
-        req: StreamingDriverCallRequest,
-    ) -> Result<ResponseStream<StreamingDriverCallResponse>, Status> {
-        trace!(rpc = "StreamingDriverCall", uuid = %req.uuid, method = %req.method, "channel backend RPC dispatch");
-        let stream = self.exporter().streaming_driver_call(req).await?.into_inner();
-        Ok(Box::pin(stream))
-    }
-
     async fn open_router_stream(
         &self,
         request_meta: AsciiMetadataValue,
@@ -160,6 +188,65 @@ impl DriverBackend for ChannelBackend {
         trace!(rpc = "LogStream", "channel backend RPC dispatch");
         let stream = self.exporter().log_stream(()).await?.into_inner();
         Ok(Box::pin(stream))
+    }
+
+    async fn forward_unary(
+        &self,
+        path: &str,
+        metadata: MetadataMap,
+        body: Bytes,
+    ) -> Result<(MetadataMap, Bytes, MetadataMap), Status> {
+        trace!(rpc = "forward_unary", %path, "channel backend opaque native dispatch");
+        // A raw tonic client over the same channel, carrying opaque proto via the identity
+        // `BytesCodec` — no per-method types, so the core never decodes the per-driver message.
+        let mut grpc = tonic::client::Grpc::new(self.channel.clone())
+            .max_decoding_message_size(64 * 1024 * 1024)
+            .max_encoding_message_size(64 * 1024 * 1024);
+        grpc.ready().await.map_err(|e| {
+            Status::unavailable(format!("native forward: backend not ready: {e}"))
+        })?;
+        let path = http::uri::PathAndQuery::from_str(path)
+            .map_err(|e| Status::internal(format!("native forward: bad method path: {e}")))?;
+        // Carry the inbound metadata (driver uuid header included) verbatim to the backend method.
+        let mut request = Request::new(body);
+        *request.metadata_mut() = metadata;
+        let response = grpc.unary(request, path, demux::BytesCodec).await?;
+        // tonic's unary client path merges the backend's response trailers into the response
+        // metadata (`client_streaming`: `parts.merge(trailers)`), so there is no separate trailer
+        // map to split out here — the merged map is returned as `initial` and `trailers` is empty.
+        // The demux re-emits `initial` on its outgoing response; tonic's server frames the
+        // grpc-status trailer itself, so an `Ok` here proxies cleanly.
+        let (initial, message, _extensions) = response.into_parts();
+        Ok((initial, message, MetadataMap::new()))
+    }
+
+    async fn forward_stream(
+        &self,
+        path: &str,
+        metadata: MetadataMap,
+        body: Bytes,
+    ) -> Result<(MetadataMap, ResponseStream<Bytes>), Status> {
+        trace!(rpc = "forward_stream", %path, "channel backend opaque native server-streaming dispatch");
+        // The server-streaming analogue of `forward_unary`: a raw `server_streaming` client over
+        // the same channel + `BytesCodec`, relaying the host's response message stream opaquely.
+        // It also serves unary methods (the host sends one message), so the hub→host hop never
+        // needs to know whether a method streams.
+        let mut grpc = tonic::client::Grpc::new(self.channel.clone())
+            .max_decoding_message_size(64 * 1024 * 1024)
+            .max_encoding_message_size(64 * 1024 * 1024);
+        grpc.ready().await.map_err(|e| {
+            Status::unavailable(format!("native forward: backend not ready: {e}"))
+        })?;
+        let path = http::uri::PathAndQuery::from_str(path)
+            .map_err(|e| Status::internal(format!("native forward: bad method path: {e}")))?;
+        let mut request = Request::new(body);
+        *request.metadata_mut() = metadata;
+        let response = grpc
+            .server_streaming(request, path, demux::BytesCodec)
+            .await?;
+        let initial = response.metadata().clone();
+        let stream: ResponseStream<Bytes> = Box::pin(response.into_inner());
+        Ok((initial, stream))
     }
 }
 

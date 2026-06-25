@@ -59,24 +59,25 @@ fn frame_type_tags_match_wire() {
     assert_eq!(v1::FrameType::Goaway as i32, 0x07);
 }
 
-/// A representative message round-trips through prost encode/decode, and the
-/// `google.protobuf.Value` arg field is wired up (spec §2.4 marshaling boundary).
+/// A `DriverInstanceReport` round-trips through prost encode/decode, including the optional
+/// `descriptor_set` bytes — the native per-interface gRPC surface (each driver ships its
+/// self-contained `FileDescriptorSet`, which the client/core decode to build native routes). The
+/// former generic `DriverCall`/`google.protobuf.Value` messages were removed in the native cutover.
 #[test]
-fn driver_call_request_roundtrips() {
+fn driver_instance_report_with_descriptor_set_roundtrips() {
     use prost::Message;
 
-    let req = v1::DriverCallRequest {
+    let report = v1::DriverInstanceReport {
         uuid: "abc-123".to_string(),
-        method: "on".to_string(),
-        args: vec![prost_types::Value {
-            kind: Some(prost_types::value::Kind::NumberValue(42.0)),
-        }],
+        parent_uuid: Some("root".to_string()),
+        descriptor_set: Some(vec![0x0a, 0x05, b'h', b'e', b'l', b'l', b'o']),
+        ..Default::default()
     };
 
-    let bytes = req.encode_to_vec();
-    let decoded = v1::DriverCallRequest::decode(bytes.as_slice()).expect("decode");
+    let bytes = report.encode_to_vec();
+    let decoded = v1::DriverInstanceReport::decode(bytes.as_slice()).expect("decode");
 
     assert_eq!(decoded.uuid, "abc-123");
-    assert_eq!(decoded.method, "on");
-    assert_eq!(decoded.args.len(), 1);
+    assert_eq!(decoded.parent_uuid.as_deref(), Some("root"));
+    assert_eq!(decoded.descriptor_set.as_deref(), Some(&[0x0a, 0x05, b'h', b'e', b'l', b'l', b'o'][..]));
 }

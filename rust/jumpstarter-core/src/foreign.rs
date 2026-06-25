@@ -14,10 +14,16 @@
 
 use std::sync::Arc;
 
+use prost::Message as _;
+use prost_reflect::prost_types::{FileDescriptorProto, FileDescriptorSet};
+use prost_reflect::DescriptorPool;
+use tokio::sync::OnceCell;
+
 use jumpstarter_transport::{DriverBackend, FrameUplink, ResponseStream, RouterStreamOpen};
+
+use crate::dynamic_backend::DynamicBackend;
 use jumpstarter_protocol::v1::{
-    DriverCallRequest, DriverCallResponse, FrameType, GetReportResponse, LogStreamResponse,
-    StreamResponse, StreamingDriverCallRequest, StreamingDriverCallResponse,
+    FrameType, GetReportResponse, LogStreamResponse, StreamResponse,
 };
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -27,7 +33,6 @@ use tonic::Status;
 
 use jumpstarter_compression::{Codec, Compressor, Decompressor};
 
-use crate::codec;
 use crate::error::DriverCallError;
 use crate::host::DriverApi;
 use crate::report::assemble_report;
@@ -65,11 +70,76 @@ const PUMP_BUFFER: usize = 16;
 /// Wraps a [`DriverApi`] as a [`DriverBackend`].
 pub struct ForeignDriver {
     api: Arc<dyn DriverApi>,
+    /// The native-gRPC dispatcher, built lazily from the host's per-driver descriptors on the first
+    /// native call (the legacy `driver_call` path doesn't need it).
+    native: OnceCell<DynamicBackend>,
 }
 
 impl ForeignDriver {
     pub fn new(api: Arc<dyn DriverApi>) -> Self {
-        Self { api }
+        Self {
+            api,
+            native: OnceCell::new(),
+        }
+    }
+
+    /// Eagerly introspect + build the on-demand native dispatcher **at startup**, so the native
+    /// interface is instantly ready (no first-call latency, and descriptors are validated up front).
+    /// Called once when the host is provisioned; [`forward_unary`](Self::forward_unary) reuses the
+    /// cached result. Best-effort: a driver whose descriptor is malformed or has unresolved imports
+    /// is logged and skipped (its native methods then return `UNIMPLEMENTED`) rather than failing
+    /// the whole host.
+    pub async fn prepare(&self) -> Result<(), Status> {
+        self.native().await.map(|_| ())
+    }
+
+    /// Build (once) the [`DynamicBackend`] from the host's per-driver descriptors. Idempotent +
+    /// cached via the `OnceCell`; built eagerly by [`prepare`](Self::prepare) at startup.
+    async fn native(&self) -> Result<&DynamicBackend, Status> {
+        self.native
+            .get_or_try_init(|| async {
+                let nodes = self.api.describe().await.map_err(status_from)?;
+                // Each node carries a *self-contained* `FileDescriptorSet` (the interface file plus
+                // its transitive well-known-type dependency files, deps-first). Collect every `file`
+                // entry across all nodes into one set, deduped by file name and preserving deps-first
+                // order, then build the pool ONCE so cross-file imports (e.g.
+                // `google/protobuf/empty.proto`) resolve. Best-effort: an undecodable set is logged +
+                // skipped rather than failing the whole host.
+                let mut files: Vec<FileDescriptorProto> = Vec::new();
+                let mut seen = std::collections::HashSet::new();
+                for node in &nodes {
+                    let Some(bytes) = &node.descriptor_set else {
+                        continue;
+                    };
+                    let set = match FileDescriptorSet::decode(bytes.as_slice()) {
+                        Ok(set) => set,
+                        Err(e) => {
+                            tracing::warn!(uuid = %node.uuid, error = %e, "skipping undecodable driver descriptor set");
+                            continue;
+                        }
+                    };
+                    // Multiple instances of one interface (and shared well-known-type files) repeat
+                    // the same file name — register each file at most once, keeping the first
+                    // occurrence's position so dependencies still precede their dependents.
+                    for file in set.file {
+                        if seen.insert(file.name().to_string()) {
+                            files.push(file);
+                        }
+                    }
+                }
+                let pool = match DescriptorPool::from_file_descriptor_set(FileDescriptorSet { file: files }) {
+                    Ok(pool) => pool,
+                    Err(e) => {
+                        // A bad/unresolvable set leaves the host with no native surface (legacy
+                        // dispatch is unaffected) rather than failing provisioning.
+                        tracing::warn!(error = %e, "native interface build failed (unresolved import?); no native surface");
+                        DescriptorPool::new()
+                    }
+                };
+                tracing::info!(native_files = pool.files().len(), "native interface ready");
+                Ok(DynamicBackend::from_pool(&pool, None, self.api.clone()))
+            })
+            .await
     }
 }
 
@@ -92,68 +162,30 @@ impl DriverBackend for ForeignDriver {
         Ok(assemble_report(&nodes))
     }
 
-    async fn driver_call(&self, req: DriverCallRequest) -> Result<DriverCallResponse, Status> {
-        let args_json = codec::args_to_json(&req.args).map_err(|e| status_from(e.into()))?;
-        let result_json = self
-            .api
-            .driver_call(req.uuid.clone(), req.method, args_json)
-            .await
-            .map_err(status_from)?;
-        let result = codec::json_result_to_value(&result_json).map_err(|e| status_from(e.into()))?;
-        Ok(DriverCallResponse {
-            uuid: req.uuid,
-            result: Some(result),
-        })
-    }
-
-    async fn streaming_driver_call(
+    /// Serve an opaque **native** per-driver unary call in-process: build (once) the on-demand
+    /// dynamic dispatcher from this host's descriptors and route the call through it — decoding the
+    /// proto request against the method descriptor, invoking the `@export` method via `driver_call`,
+    /// and encoding the response. No generated servicer; the descriptor is the only schema.
+    async fn forward_unary(
         &self,
-        req: StreamingDriverCallRequest,
-    ) -> Result<ResponseStream<StreamingDriverCallResponse>, Status> {
-        let args_json = codec::args_to_json(&req.args).map_err(|e| status_from(e.into()))?;
-        let uuid = req.uuid.clone();
-        tracing::debug!(method = %req.method, uuid = %uuid, "streaming_driver_call open");
-        let results = self
-            .api
-            .streaming_driver_call(req.uuid, req.method, args_json)
-            .await
-            .map_err(status_from)?;
-
-        let (tx, rx) = mpsc::channel::<Result<StreamingDriverCallResponse, Status>>(PUMP_BUFFER);
-        tokio::spawn(async move {
-            loop {
-                match results.next().await {
-                    Ok(Some(result_json)) => {
-                        tracing::trace!(uuid = %uuid, "streaming_driver_call item");
-                        let item = match codec::json_result_to_value(&result_json) {
-                            Ok(value) => Ok(StreamingDriverCallResponse {
-                                uuid: uuid.clone(),
-                                result: Some(value),
-                            }),
-                            Err(e) => {
-                                tracing::debug!(uuid = %uuid, error = %e, "streaming_driver_call result encode failed");
-                                Err(status_from(e.into()))
-                            }
-                        };
-                        let is_err = item.is_err();
-                        if tx.send(item).await.is_err() || is_err {
-                            break;
-                        }
-                    }
-                    Ok(None) => {
-                        tracing::trace!(uuid = %uuid, "streaming_driver_call EOF");
-                        break;
-                    }
-                    Err(e) => {
-                        tracing::debug!(uuid = %uuid, error = %e, "streaming_driver_call driver error");
-                        let _ = tx.send(Err(status_from(e))).await;
-                        break;
-                    }
-                }
-            }
-        });
-        Ok(Box::pin(ReceiverStream::new(rx)))
+        path: &str,
+        metadata: MetadataMap,
+        body: bytes::Bytes,
+    ) -> Result<(MetadataMap, bytes::Bytes, MetadataMap), Status> {
+        self.native().await?.forward_unary(path, metadata, body).await
     }
+
+    /// The server-streaming half: an `@export` async generator served natively, one output message
+    /// per yielded result. Routed through the same on-demand [`DynamicBackend`] as the unary path.
+    async fn forward_stream(
+        &self,
+        path: &str,
+        metadata: MetadataMap,
+        body: bytes::Bytes,
+    ) -> Result<(MetadataMap, ResponseStream<bytes::Bytes>), Status> {
+        self.native().await?.forward_stream(path, metadata, body).await
+    }
+
 
     async fn open_router_stream(
         &self,
@@ -367,9 +399,7 @@ mod tests {
     use super::*;
     use crate::dto::DriverNode;
     use crate::host::{DriverByteChannel, DriverResultStream, DriverStreamOpen};
-    use jumpstarter_protocol::value;
     use jumpstarter_protocol::v1::StreamRequest;
-    use serde_json::json;
     use std::collections::HashMap;
     use std::sync::Mutex;
 
@@ -476,45 +506,6 @@ mod tests {
         assert_eq!(report.reports.len(), 1);
         assert_eq!(report.reports[0].uuid, "u1");
         assert_eq!(report.reports[0].description.as_deref(), Some("mock"));
-    }
-
-    #[tokio::test]
-    async fn driver_call_round_trips_the_codec() {
-        let req = DriverCallRequest {
-            uuid: "u1".to_string(),
-            method: "echo".to_string(),
-            args: value::encode_args(&[json!("on"), json!(42)]),
-        };
-        let resp = host().driver_call(req).await.unwrap();
-        // Echo returns the args array as the result; ints collapse to f64 on the wire.
-        let result = value::decode_value(resp.result.as_ref().unwrap());
-        assert_eq!(result, json!(["on", 42.0]));
-    }
-
-    #[tokio::test]
-    async fn driver_call_maps_errors_to_status() {
-        let req = DriverCallRequest {
-            uuid: "u1".to_string(),
-            method: "boom".to_string(),
-            args: vec![],
-        };
-        let status = host().driver_call(req).await.unwrap_err();
-        assert_eq!(status.code(), tonic::Code::Unimplemented);
-    }
-
-    #[tokio::test]
-    async fn streaming_call_yields_each_result() {
-        let req = StreamingDriverCallRequest {
-            uuid: "u1".to_string(),
-            method: "count".to_string(),
-            args: vec![],
-        };
-        let mut stream = host().streaming_driver_call(req).await.unwrap();
-        let mut values = Vec::new();
-        while let Some(item) = stream.next().await {
-            values.push(value::decode_value(item.unwrap().result.as_ref().unwrap()));
-        }
-        assert_eq!(values, vec![json!(2.0), json!(1.0), json!(0.0)]);
     }
 
     #[tokio::test]
@@ -784,5 +775,170 @@ mod tests {
             original,
             "host seam did not deliver the original bytes from Python zstd"
         );
+    }
+
+    // --- native descriptor-set flow (the missing link): a self-contained FileDescriptorSet that
+    // imports google/protobuf/empty.proto must build a pool and route native calls --------------
+
+    /// A foreign host that advertises a PowerInterface descriptor whose On/Off/Read methods use
+    /// `google.protobuf.Empty` — i.e. the descriptor *imports* `google/protobuf/empty.proto`, the
+    /// case the old per-FDP path could not resolve. Records the driver calls it receives so the
+    /// test can assert the native `On` reached the driver.
+    struct PowerDescHost {
+        descriptor_set: Vec<u8>,
+        calls: Arc<Mutex<Vec<(String, String, String)>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DriverApi for PowerDescHost {
+        async fn describe(&self) -> Result<Vec<DriverNode>, DriverCallError> {
+            Ok(vec![DriverNode {
+                uuid: "power-1".into(),
+                parent_uuid: None,
+                labels: HashMap::from([(
+                    "jumpstarter.dev/client".to_string(),
+                    "pkg.PowerClient".to_string(),
+                )]),
+                description: Some("mock power".into()),
+                methods_description: HashMap::new(),
+                descriptor_set: Some(self.descriptor_set.clone()),
+            }])
+        }
+        async fn driver_call(
+            &self,
+            uuid: String,
+            method_name: String,
+            args_json: String,
+        ) -> Result<String, DriverCallError> {
+            self.calls.lock().unwrap().push((uuid, method_name, args_json));
+            Ok("null".into()) // On() returns Empty
+        }
+        async fn streaming_driver_call(
+            &self,
+            _uuid: String,
+            _method_name: String,
+            _args_json: String,
+        ) -> Result<Arc<dyn DriverResultStream>, DriverCallError> {
+            unreachable!()
+        }
+        async fn open_stream(
+            &self,
+            _request_json: String,
+        ) -> Result<DriverStreamOpen, DriverCallError> {
+            unreachable!()
+        }
+    }
+
+    /// Build the exact self-contained `FileDescriptorSet` the Python host produces for
+    /// `PowerInterface`: the interface file (package `jumpstarter.interfaces.power.v1`, service
+    /// `PowerInterface` with `On`/`Off` Empty→Empty unary) **plus** the `google/protobuf/empty.proto`
+    /// dependency file it imports, ordered deps-first. Serialized to bytes (what crosses the FFI).
+    fn power_descriptor_set_bytes() -> Vec<u8> {
+        use prost_reflect::prost_types::field_descriptor_proto::{Label, Type};
+        use prost_reflect::prost_types::{
+            DescriptorProto, FieldDescriptorProto, MethodDescriptorProto, ServiceDescriptorProto,
+        };
+
+        // The well-known empty.proto file (package google.protobuf, message Empty, no fields).
+        let empty_file = FileDescriptorProto {
+            name: Some("google/protobuf/empty.proto".into()),
+            package: Some("google.protobuf".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Empty".into()),
+                ..Default::default()
+            }],
+            syntax: Some("proto3".into()),
+            ..Default::default()
+        };
+
+        // The interface file, importing empty.proto (the case the bare-FDP path couldn't resolve).
+        let unary = |name: &str| MethodDescriptorProto {
+            name: Some(name.into()),
+            input_type: Some(".google.protobuf.Empty".into()),
+            output_type: Some(".google.protobuf.Empty".into()),
+            ..Default::default()
+        };
+        // A SetVoltage method with a real request message so we also exercise a non-Empty path.
+        let set_voltage_req = DescriptorProto {
+            name: Some("SetVoltageRequest".into()),
+            field: vec![FieldDescriptorProto {
+                name: Some("millivolts".into()),
+                number: Some(1),
+                label: Some(Label::Optional as i32),
+                r#type: Some(Type::Int64 as i32),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let power_file = FileDescriptorProto {
+            name: Some("power.proto".into()),
+            package: Some("jumpstarter.interfaces.power.v1".into()),
+            dependency: vec!["google/protobuf/empty.proto".into()],
+            message_type: vec![set_voltage_req],
+            service: vec![ServiceDescriptorProto {
+                name: Some("PowerInterface".into()),
+                method: vec![
+                    unary("On"),
+                    unary("Off"),
+                    MethodDescriptorProto {
+                        name: Some("SetVoltage".into()),
+                        input_type: Some(
+                            ".jumpstarter.interfaces.power.v1.SetVoltageRequest".into(),
+                        ),
+                        output_type: Some(".google.protobuf.Empty".into()),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            syntax: Some("proto3".into()),
+            ..Default::default()
+        };
+
+        // deps-first: empty.proto precedes the file that imports it.
+        FileDescriptorSet {
+            file: vec![empty_file, power_file],
+        }
+        .encode_to_vec()
+    }
+
+    /// END-TO-END the new link: a self-contained descriptor SET (importing empty.proto) flows from
+    /// `describe()` → `ForeignDriver::native()` (decode set, merge deps-first, build ONE pool) →
+    /// `DynamicBackend` → a native `/…/PowerInterface/On` unary call reaches the driver. The old
+    /// per-FDP path skipped this descriptor (unresolved `google/protobuf/empty.proto` import).
+    #[tokio::test]
+    async fn native_descriptor_set_resolves_empty_import_and_routes_on() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let host = ForeignDriver::new(Arc::new(PowerDescHost {
+            descriptor_set: power_descriptor_set_bytes(),
+            calls: calls.clone(),
+        }));
+
+        // Eager prepare must succeed (the import resolves now) and leave the native surface ready.
+        host.prepare().await.expect("native interface built from descriptor set");
+
+        // A native unary On call (Empty request → empty body) routed via the uuid header.
+        let mut md = MetadataMap::new();
+        md.insert(
+            crate::dynamic_backend::DRIVER_UUID_KEY,
+            "power-1".parse().unwrap(),
+        );
+        let (_resp_md, resp_body, _trailers) = host
+            .forward_unary(
+                "/jumpstarter.interfaces.power.v1.PowerInterface/On",
+                md,
+                bytes::Bytes::new(),
+            )
+            .await
+            .expect("native On call dispatches");
+
+        // On() returns Empty → empty response body.
+        assert!(resp_body.is_empty(), "Empty response must be empty bytes");
+
+        // The mock driver was driven: uuid from header, @export name `on`, no args.
+        let (uuid, method, args) = calls.lock().unwrap().last().cloned().unwrap();
+        assert_eq!(uuid, "power-1");
+        assert_eq!(method, "on");
+        assert_eq!(args, "[]");
     }
 }

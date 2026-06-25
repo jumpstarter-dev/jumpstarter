@@ -62,6 +62,11 @@ message DriverInstanceReport {
   map<string, string> labels = 3; // Key-value metadata labels.
   optional string description = 4; // Custom driver description for CLI display.
   map<string, string> methods_description = 5; // Method name to help text mapping for CLI.
+  // Self-contained, serialized google.protobuf.FileDescriptorSet for this driver instance's native
+  // per-interface gRPC service (the interface file plus its transitive well-known-type dependency
+  // files, ordered deps-first). Lets a client build a descriptor pool and encode/decode native
+  // requests on-demand with no generated stub. Absent when the driver has no introspected interface.
+  optional bytes descriptor_set = 6;
 }
 
 // Registration response returned by the controller.
@@ -132,9 +137,13 @@ message ReportStatusResponse {}
 service ExporterService {
   // Retrieve the exporter driver report.
   rpc GetReport(google.protobuf.Empty) returns (GetReportResponse);
-  // Invoke a method on a driver instance.
+  // New clients invoke driver methods via the native per-interface gRPC services described by each
+  // driver's descriptor (routed opaquely by the `x-jumpstarter-driver-uuid` header). The two RPCs
+  // below are a **server-side backwards-compatibility shim** for OLD clients only: the exporter
+  // translates them into the same native dispatch. New clients should not use them.
+  // [DEPRECATED — legacy] Invoke a method on a driver instance.
   rpc DriverCall(DriverCallRequest) returns (DriverCallResponse);
-  // Invoke a streaming method on a driver instance.
+  // [DEPRECATED — legacy] Invoke a streaming method on a driver instance.
   rpc StreamingDriverCall(StreamingDriverCallRequest) returns (stream StreamingDriverCallResponse);
   // Stream log messages from the exporter.
   rpc LogStream(google.protobuf.Empty) returns (stream LogStreamResponse);
@@ -164,27 +173,28 @@ message Endpoint {
   string client_private_key = 4; // Client TLS private key.
 }
 
-// Request to invoke a method on a driver instance.
+// [Legacy] Request to invoke a method on a driver instance (backwards-compat shim for old clients;
+// the exporter translates it into the native per-interface call).
 message DriverCallRequest {
   string uuid = 1; // UUID of the driver instance.
   string method = 2; // Method name to invoke.
   repeated google.protobuf.Value args = 3; // Arguments for the method call.
 }
 
-// Response from a driver method invocation.
+// [Legacy] Response from a driver method invocation.
 message DriverCallResponse {
   string uuid = 1; // UUID of the driver instance.
   google.protobuf.Value result = 2; // Return value from the method call.
 }
 
-// Request to invoke a streaming method on a driver instance.
+// [Legacy] Request to invoke a streaming method on a driver instance.
 message StreamingDriverCallRequest {
   string uuid = 1; // UUID of the driver instance.
   string method = 2; // Method name to invoke.
   repeated google.protobuf.Value args = 3; // Arguments for the method call.
 }
 
-// Response from a streaming driver method invocation.
+// [Legacy] Response from a streaming driver method invocation.
 message StreamingDriverCallResponse {
   string uuid = 1; // UUID of the driver instance.
   google.protobuf.Value result = 2; // Return value from the method call.

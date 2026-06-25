@@ -14,11 +14,50 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use tokio::sync::mpsc;
 
 use crate::Ring;
+
+/// Spawn the dedicated OS thread that pumps `rx`'s byte chunks into `ring` (busy-spin with backoff
+/// while full), guaranteeing the ring is terminated on EVERY exit path: a clean `close()` on normal
+/// completion, or `abort()` if the thread unwinds (panic) — otherwise the panic would skip the close
+/// and the cross-process consumer would spin forever waiting for an EOF that never comes. Shared by
+/// [`RingWriter`] and the [`crate::duplex`] write half.
+pub(crate) fn spawn_writer_thread(ring: Ring, mut rx: mpsc::Receiver<Vec<u8>>) {
+    std::thread::Builder::new()
+        .name("shm-ring-writer".into())
+        .spawn(move || {
+            struct Terminate(Ring);
+            impl Drop for Terminate {
+                fn drop(&mut self) {
+                    if std::thread::panicking() {
+                        self.0.abort();
+                    } else {
+                        self.0.close();
+                    }
+                }
+            }
+            let ring = Terminate(ring);
+            while let Some(chunk) = rx.blocking_recv() {
+                let mut buf = &chunk[..];
+                let mut idle = 0u32;
+                while !buf.is_empty() {
+                    let n = ring.0.try_write(buf);
+                    if n == 0 {
+                        backoff(&mut idle);
+                    } else {
+                        idle = 0;
+                        buf = &buf[n..];
+                    }
+                }
+            }
+            // `Terminate::drop` marks the ring EOF (clean close) for the consumer.
+        })
+        .expect("spawn shm-ring-writer");
+}
 
 /// Spin a bounded number of times, then yield the core with a short sleep. `idle` is the caller's
 /// running idle count, reset to 0 by the caller whenever it makes progress.
@@ -85,6 +124,12 @@ impl RingReader {
         self.rx.recv().await
     }
 
+    /// Poll for the next chunk (the `poll_read` building block for the duplex `AsyncRead` half).
+    /// `Ready(None)` at EOF — check [`aborted`](Self::aborted) to distinguish truncation.
+    pub fn poll_recv(&mut self, cx: &mut Context<'_>) -> Poll<Option<Vec<u8>>> {
+        self.rx.poll_recv(cx)
+    }
+
     /// Whether the producer ABORTED the stream (truncated). Meaningful once `recv()` has returned
     /// `None`: `true` => the stream ended abnormally and the bytes received are incomplete;
     /// `false` => a clean EOF.
@@ -103,41 +148,8 @@ pub struct RingWriter {
 impl RingWriter {
     /// Start pumping into `ring`. `cap` is the channel depth (backpressure from a slow ring).
     pub fn spawn(ring: Ring, cap: usize) -> Self {
-        let (tx, mut rx) = mpsc::channel::<Vec<u8>>(cap);
-        std::thread::Builder::new()
-            .name("shm-ring-writer".into())
-            .spawn(move || {
-                // Guarantee the ring is terminated on EVERY exit path: a clean `close()` on normal
-                // completion, or `abort()` if this thread unwinds (panic) — otherwise the panic
-                // would skip the close and the cross-process consumer would spin forever waiting
-                // for an EOF that never comes.
-                struct Terminate(Ring);
-                impl Drop for Terminate {
-                    fn drop(&mut self) {
-                        if std::thread::panicking() {
-                            self.0.abort();
-                        } else {
-                            self.0.close();
-                        }
-                    }
-                }
-                let ring = Terminate(ring);
-                while let Some(chunk) = rx.blocking_recv() {
-                    let mut buf = &chunk[..];
-                    let mut idle = 0u32;
-                    while !buf.is_empty() {
-                        let n = ring.0.try_write(buf);
-                        if n == 0 {
-                            backoff(&mut idle);
-                        } else {
-                            idle = 0;
-                            buf = &buf[n..];
-                        }
-                    }
-                }
-                // `Terminate::drop` marks the ring EOF (clean close) for the consumer.
-            })
-            .expect("spawn shm-ring-writer");
+        let (tx, rx) = mpsc::channel::<Vec<u8>>(cap);
+        spawn_writer_thread(ring, rx);
         Self { tx: Some(tx) }
     }
 

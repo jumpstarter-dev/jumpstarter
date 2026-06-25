@@ -27,6 +27,11 @@ jumpstarter-config = { path = "../jumpstarter-config" }
 # never touches the wire codec.
 jumpstarter-compression = { path = "../jumpstarter-compression" }
 prost-types.workspace = true
+# Dynamic gRPC dispatch: decode/encode opaque per-interface request/response messages
+# straight from their protobuf descriptors (no per-driver generated servicer). 0.14 is
+# the prost-0.13-compatible line (matches `prost`/`prost-types` above).
+prost-reflect = "0.14"
+prost.workspace = true
 serde_json.workspace = true
 async-trait = "0.1"
 thiserror.workspace = true
@@ -36,3 +41,14 @@ uuid = { version = "1", features = ["v4"] }
 tokio = { workspace = true, features = ["rt", "sync", "macros"] }
 tokio-stream = "0.1"
 tracing.workspace = true
+# The native demux `forward_unary` seam carries opaque per-driver proto messages as raw bytes;
+# `DynamicBackend` names `bytes::Bytes` in that signature (already transitive via tonic/transport).
+bytes = "1"
+
+[dev-dependencies]
+# End-to-end native-dispatch test: stand up the transport-crate `Demux` over `InProcessTransport`
+# and drive it with a raw `tonic` client. axum/tower/http mirror the demux's own wiring (tonic
+# re-exports axum 0.7); they are test-only so the facade itself stays free of the server stack.
+axum = { version = "0.7", default-features = false }
+tower = { version = "0.5", features = ["util"] }
+http = "1"

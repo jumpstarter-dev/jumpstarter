@@ -20,8 +20,7 @@
 
 use jumpstarter_protocol::v1::router_service_client::RouterServiceClient;
 use jumpstarter_protocol::v1::{
-    DriverCallRequest, DriverCallResponse, FrameType, GetReportResponse, LogStreamResponse,
-    StreamRequest, StreamResponse, StreamingDriverCallRequest, StreamingDriverCallResponse,
+    FrameType, GetReportResponse, LogStreamResponse, StreamRequest, StreamResponse,
 };
 use jumpstarter_shm::bridge::{RingReader, RingWriter};
 use jumpstarter_shm::wire::{RING_CAP, RING_CHUNK, SHM_DOWN_KEY, SHM_UP_KEY};
@@ -57,15 +56,31 @@ impl DriverBackend for ShmChannelBackend {
         self.inner.get_report().await
     }
 
-    async fn driver_call(&self, req: DriverCallRequest) -> Result<DriverCallResponse, Status> {
-        self.inner.driver_call(req).await
+    /// Opaque native unary calls are a control-plane RPC, not a bulk byte stream, so they ride the
+    /// inner gRPC [`ChannelBackend`] over the host UDS exactly like `driver_call` — only the router
+    /// byte stream uses the ring. Without this delegation a native call to a federated host would
+    /// hit the trait default ("not supported"), since the hub routes every entry through this
+    /// backend.
+    async fn forward_unary(
+        &self,
+        path: &str,
+        metadata: tonic::metadata::MetadataMap,
+        body: bytes::Bytes,
+    ) -> Result<(tonic::metadata::MetadataMap, bytes::Bytes, tonic::metadata::MetadataMap), Status>
+    {
+        self.inner.forward_unary(path, metadata, body).await
     }
 
-    async fn streaming_driver_call(
+    /// Native server-streaming is a control-plane RPC, not a bulk byte stream, so it rides the inner
+    /// gRPC [`ChannelBackend`] over the host UDS exactly like `forward_unary` — only the router byte
+    /// stream uses the ring.
+    async fn forward_stream(
         &self,
-        req: StreamingDriverCallRequest,
-    ) -> Result<ResponseStream<StreamingDriverCallResponse>, Status> {
-        self.inner.streaming_driver_call(req).await
+        path: &str,
+        metadata: tonic::metadata::MetadataMap,
+        body: bytes::Bytes,
+    ) -> Result<(tonic::metadata::MetadataMap, ResponseStream<bytes::Bytes>), Status> {
+        self.inner.forward_stream(path, metadata, body).await
     }
 
     async fn log_stream(&self) -> Result<ResponseStream<LogStreamResponse>, Status> {

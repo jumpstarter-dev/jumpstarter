@@ -108,16 +108,3 @@ impl From<jumpstarter_client::ClientError> for ControllerError {
     }
 }
 
-/// A value-codec failure at the FFI seam (malformed JSON crossing the boundary). These
-/// are framework bugs, not driver errors, but are surfaced as `Unknown` to clients.
-#[derive(Debug, thiserror::Error)]
-pub enum CodecError {
-    #[error("encoding driver-call value to/from JSON: {0}")]
-    Json(#[from] serde_json::Error),
-}
-
-impl From<CodecError> for DriverCallError {
-    fn from(e: CodecError) -> Self {
-        DriverCallError::Unknown(e.to_string())
-    }
-}

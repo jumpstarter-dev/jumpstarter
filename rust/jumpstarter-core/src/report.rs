@@ -19,6 +19,10 @@ pub fn assemble_report(nodes: &[DriverNode]) -> GetReportResponse {
             labels: node.labels.clone(),
             description: node.description.clone(),
             methods_description: node.methods_description.clone(),
+            // Carry the native interface descriptors to the client so it can encode/decode native
+            // calls on-demand (the client builds a descriptor pool from these). `None` for a driver
+            // with no introspected interface (legacy dispatch only).
+            descriptor_set: node.descriptor_set.clone(),
         })
         .collect();
     // Only `reports` comes from the driver tree; `uuid`/`labels`/`alternative_endpoints`
@@ -53,6 +57,7 @@ mod tests {
                 labels: labels("pkg.Power"),
                 description: None,
                 methods_description: HashMap::new(),
+                descriptor_set: None,
             },
             DriverNode {
                 uuid: "c2".into(),
@@ -60,6 +65,7 @@ mod tests {
                 labels: labels("pkg.Inner"),
                 description: None,
                 methods_description: HashMap::new(),
+                descriptor_set: None,
             },
         ];
 

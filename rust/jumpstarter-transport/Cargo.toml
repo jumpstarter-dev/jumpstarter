@@ -14,6 +14,25 @@ rust-version.workspace = true
 # client can consume `DriverBackend` without depending on the exporter.
 [dependencies]
 jumpstarter-protocol = { path = "../jumpstarter-protocol" }
+# The SHM-ring duplex backs the `Transport` `Shm` variant (native-gRPC local IPC, no UDS).
+jumpstarter-shm = { path = "../jumpstarter-shm", features = ["bridge"] }
 tonic.workspace = true
+# The opaque native-gRPC demux carries per-driver proto messages as raw bytes (the core has no
+# per-method types), so the identity `BytesCodec` works over `Bytes` directly. Already transitively
+# present via tonic/prost; pinned here so the demux can name it.
+bytes = "1"
+# `axum::Router` provides the catch-all `fallback_service` the native demux mounts to accept ANY
+# `jumpstarter.driver.*.v1.*` method path. tonic re-exports axum 0.7, so this matches its router.
+axum = { version = "0.7", default-features = false }
+tokio = { workspace = true, features = ["rt", "sync", "io-util", "macros"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
+# `TokioIo` adapts a tokio AsyncRead+AsyncWrite duplex into the hyper IO tonic's client connector
+# wants (the server side takes the tokio IO directly via `serve_with_incoming`).
+hyper-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
+http = "1"
+tempfile = "3"
 tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }

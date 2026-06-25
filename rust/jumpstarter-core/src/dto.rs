@@ -20,10 +20,19 @@ pub struct DriverNode {
     pub labels: HashMap<String, String>,
     pub description: Option<String>,
     pub methods_description: HashMap<String, String>,
+    /// Serialized `google.protobuf.FileDescriptorSet` for this instance's interface, produced by
+    /// the host's introspection (`descriptor_builder`). The set is **self-contained**: it carries
+    /// the interface's own `FileDescriptorProto` *plus* its transitive well-known-type dependency
+    /// files (e.g. `google/protobuf/empty.proto`), ordered deps-first, so the Rust core can build a
+    /// descriptor pool with no external imports to resolve. It describes the per-interface native
+    /// gRPC service + message types, so the core can serve the driver natively **on-demand** (no
+    /// generated servicer) and the client can encode/decode native requests. `None` if the host
+    /// didn't introspect this driver (it then has no native surface — legacy dispatch only).
+    pub descriptor_set: Option<Vec<u8>>,
 }
 
 impl DriverNode {
-    /// Convenience constructor for a root node (no parent).
+    /// Convenience constructor for a root node (no parent, no descriptor).
     pub fn root(
         uuid: impl Into<String>,
         labels: HashMap<String, String>,
@@ -36,6 +45,7 @@ impl DriverNode {
             labels,
             description,
             methods_description,
+            descriptor_set: None,
         }
     }
 }

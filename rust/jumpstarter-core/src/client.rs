@@ -6,6 +6,7 @@
 //! value codec and the wire protocol; args/results cross as plain JSON. This is the
 //! consumer mirror of [`crate::foreign::ForeignDriver`].
 
+use std::pin::Pin;
 use std::sync::Arc;
 
 use jumpstarter_client::exporter_logs::uds_channel;
@@ -13,18 +14,17 @@ use jumpstarter_protocol::router::{classify, data_frame, goaway_frame, FrameActi
 use jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient;
 use jumpstarter_protocol::v1::router_service_client::RouterServiceClient;
 use jumpstarter_protocol::v1::{
-    DriverCallRequest, EndSessionRequest, GetStatusRequest, LogStreamResponse, StreamRequest,
-    StreamResponse, StreamingDriverCallRequest, StreamingDriverCallResponse,
+    EndSessionRequest, GetStatusRequest, LogStreamResponse, StreamRequest, StreamResponse,
 };
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, OnceCell};
 use tokio_stream::wrappers::ReceiverStream;
-use tokio_stream::StreamExt as _;
+use tokio_stream::{Stream, StreamExt as _};
 use tonic::metadata::AsciiMetadataValue;
 use tonic::service::interceptor::InterceptedService;
 use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Request, Status, Streaming};
 
-use crate::codec;
+use crate::dynamic::{decode_response, encode_request};
 use crate::error::DriverCallError;
 
 /// Resource initial-metadata keys the host emits and the client consumes
@@ -63,11 +63,16 @@ impl tonic::service::Interceptor for PassphraseInterceptor {
     }
 }
 
+use crate::native_table::{build_native_table, NativeTable};
+
 /// A connection to an exporter — either via its local `JUMPSTARTER_HOST` transport socket
 /// (lease/local mode), or directly to a standalone exporter's TCP gRPC (`jmp shell --tls-grpc`).
 pub struct ClientSession {
     channel: Channel,
     passphrase: Option<AsciiMetadataValue>,
+    /// Lazily-built (on first `driver_call`) native dispatch table. Cached for the session — the
+    /// driver tree + its descriptors are fixed for a lease's lifetime.
+    native: OnceCell<NativeTable>,
 }
 
 impl ClientSession {
@@ -78,7 +83,11 @@ impl ClientSession {
         // A UDS transport socket is a filesystem path; a direct target is a bare `host:port`.
         if host.contains('/') {
             let channel = uds_channel(host).await.map_err(DriverCallError::Unknown)?;
-            return Ok(Self { channel, passphrase: None });
+            return Ok(Self {
+                channel,
+                passphrase: None,
+                native: OnceCell::new(),
+            });
         }
         // Direct mode: connect to the standalone exporter's plaintext-h2c gRPC (the only
         // standalone exporter mode today). The passphrase is attached per-RPC by the interceptor.
@@ -107,7 +116,11 @@ impl ClientSession {
             .and_then(|p| AsciiMetadataValue::try_from(p).ok());
         // The client always speaks plain gRPC; the shared-memory byte plane is contained entirely in
         // the hub↔driver-host hop (the hub bridges the ring to/from this gRPC stream).
-        Ok(Self { channel, passphrase })
+        Ok(Self {
+            channel,
+            passphrase,
+            native: OnceCell::new(),
+        })
     }
 
     fn auth(&self) -> PassphraseInterceptor {
@@ -146,7 +159,33 @@ impl ClientSession {
         serde_json::to_string(&nodes).map_err(|e| DriverCallError::Unknown(e.to_string()))
     }
 
+    /// Build (once) the native dispatch table from the descriptors `GetReport` ships. Each driver
+    /// instance's `descriptor_set` is a self-contained `FileDescriptorSet`; we merge them all into
+    /// one `DescriptorPool` (deduping shared well-known-type files), then index every
+    /// `(uuid, @export-name)` to its method's path + input/output descriptors. A driver whose node
+    /// has no descriptor set contributes nothing (legacy dispatch only). Cached for the session.
+    async fn native_table(&self) -> Result<&NativeTable, DriverCallError> {
+        self.native
+            .get_or_try_init(|| async {
+                let report = self
+                    .exporter()
+                    .get_report(())
+                    .await
+                    .map_err(err_from_status)?
+                    .into_inner();
+                Ok(build_native_table(&report.reports))
+            })
+            .await
+    }
+
     /// Invoke a unary driver call: `args_json` is a JSON array, returns the JSON result.
+    ///
+    /// **Native-primary** (decision #10 — the Python API is unchanged; the bridging happens here):
+    /// when the driver's interface descriptor is known, the args are encoded into the native request
+    /// message and dispatched through [`native_unary`](Self::native_unary); the response message is
+    /// decoded back to the JSON result. Native is the **only** path: every driver ships a
+    /// descriptor (the host introspects each driver's `@export` surface), so a missing route is a
+    /// hard error, not a fallback.
     pub async fn driver_call(
         &self,
         uuid: String,
@@ -154,18 +193,61 @@ impl ClientSession {
         args_json: String,
     ) -> Result<String, DriverCallError> {
         tracing::debug!(method = %method, uuid = %uuid, "rpc");
-        let args = codec::json_args_to_values(&args_json)?;
+
+        let table = self.native_table().await?;
+        let route = table.get(&(uuid.clone(), method.clone())).ok_or_else(|| {
+            DriverCallError::Unimplemented(format!(
+                "no native route for {uuid}/{method}: the driver ships no descriptor for this method"
+            ))
+        })?;
+        tracing::debug!(method = %method, uuid = %uuid, path = %route.path, "native driver_call");
+        let body = encode_request(&route.input, &args_json)?;
         let resp = self
-            .exporter()
-            .driver_call(DriverCallRequest { uuid, method, args })
+            .native_unary(uuid.clone(), route.path.clone(), body)
+            .await?;
+        decode_response(&route.output, &resp)
+    }
+
+    /// Invoke an opaque **native** per-driver unary gRPC call — the client side of the native calls
+    /// surface. `path` is the full gRPC method path (`/jumpstarter.driver.power.v1.PowerInterface/On`),
+    /// `body` the encoded request message bytes; `uuid` is attached as the `x-jumpstarter-driver-uuid`
+    /// header so the exporter demux routes to the right driver instance. Returns the response message
+    /// bytes. The core never deserializes the per-driver proto — the language stub owns
+    /// (de)serialization; this just carries the opaque message + the auth/uuid metadata.
+    pub async fn native_unary(
+        &self,
+        uuid: String,
+        path: String,
+        body: Vec<u8>,
+    ) -> Result<Vec<u8>, DriverCallError> {
+        use std::str::FromStr;
+        tracing::debug!(path = %path, uuid = %uuid, "native rpc");
+        let path = tonic::codegen::http::uri::PathAndQuery::from_str(&path)
+            .map_err(|e| DriverCallError::Unknown(format!("invalid method path {path:?}: {e}")))?;
+        let mut grpc =
+            tonic::client::Grpc::new(InterceptedService::new(self.channel.clone(), self.auth()));
+        grpc.ready()
             .await
-            .map_err(err_from_status)?
-            .into_inner();
-        Ok(codec::value_result_to_json(&resp.result.unwrap_or_default())?)
+            .map_err(|e| DriverCallError::Unknown(format!("native channel not ready: {e}")))?;
+        let mut req = Request::new(bytes::Bytes::from(body));
+        let uuid_val = AsciiMetadataValue::from_str(&uuid)
+            .map_err(|e| DriverCallError::Unknown(format!("invalid driver uuid {uuid:?}: {e}")))?;
+        req.metadata_mut()
+            .insert("x-jumpstarter-driver-uuid", uuid_val);
+        let resp = grpc
+            .unary(req, path, jumpstarter_transport::demux::BytesCodec)
+            .await
+            .map_err(err_from_status)?;
+        Ok(resp.into_inner().to_vec())
     }
 
     /// Invoke a streaming driver call; results are pulled JSON-at-a-time from the returned
     /// [`ClientResultStream`].
+    ///
+    /// Native is the **only** path (the streaming mirror of [`driver_call`](Self::driver_call)):
+    /// the `(uuid, method)` route encodes the request, opens the call over
+    /// [`native_server_stream`](Self::native_server_stream), and decodes each response message back
+    /// to the JSON result. A missing route is a hard error, not a fallback.
     pub async fn streaming_driver_call(
         &self,
         uuid: String,
@@ -173,19 +255,62 @@ impl ClientSession {
         args_json: String,
     ) -> Result<Arc<ClientResultStream>, DriverCallError> {
         tracing::debug!(method = %method, uuid = %uuid, "rpc");
-        let args = codec::json_args_to_values(&args_json)?;
         let label = format!("{uuid}/{method}");
-        let stream = self
-            .exporter()
-            .streaming_driver_call(StreamingDriverCallRequest { uuid, method, args })
-            .await
-            .map_err(err_from_status)?
-            .into_inner();
-        tracing::debug!(stream = %label, "streaming_driver_call stream opened");
+
+        let table = self.native_table().await?;
+        let route = table.get(&(uuid.clone(), method.clone())).ok_or_else(|| {
+            DriverCallError::Unimplemented(format!(
+                "no native route for {uuid}/{method}: the driver ships no descriptor for this method"
+            ))
+        })?;
+        tracing::debug!(method = %method, uuid = %uuid, path = %route.path, "native streaming_driver_call");
+        let body = encode_request(&route.input, &args_json)?;
+        let output = route.output.clone();
+        let native = self
+            .native_server_stream(uuid.clone(), route.path.clone(), body)
+            .await?;
+        let mapped = native.map(move |item| match item {
+            Ok(bytes) => decode_response(&output, &bytes),
+            Err(status) => Err(err_from_status(status)),
+        });
         Ok(Arc::new(ClientResultStream {
-            inner: Mutex::new(stream),
+            inner: Mutex::new(Box::pin(mapped)),
             label,
         }))
+    }
+
+    /// Invoke an opaque **native** per-driver **server-streaming** gRPC call — the client side of
+    /// the native streaming surface, the streaming mirror of [`native_unary`](Self::native_unary).
+    /// `path` is the full gRPC method path, `body` the encoded request message; `uuid` rides the
+    /// `x-jumpstarter-driver-uuid` header so the exporter demux routes to the right instance.
+    /// Returns the raw response-message stream (opaque proto bytes the caller decodes).
+    pub async fn native_server_stream(
+        &self,
+        uuid: String,
+        path: String,
+        body: Vec<u8>,
+    ) -> Result<Streaming<bytes::Bytes>, DriverCallError> {
+        use std::str::FromStr;
+        tracing::debug!(path = %path, uuid = %uuid, "native streaming rpc");
+        let path = tonic::codegen::http::uri::PathAndQuery::from_str(&path)
+            .map_err(|e| DriverCallError::Unknown(format!("invalid method path {path:?}: {e}")))?;
+        let mut grpc =
+            tonic::client::Grpc::new(InterceptedService::new(self.channel.clone(), self.auth()))
+                .max_decoding_message_size(64 * 1024 * 1024)
+                .max_encoding_message_size(64 * 1024 * 1024);
+        grpc.ready()
+            .await
+            .map_err(|e| DriverCallError::Unknown(format!("native channel not ready: {e}")))?;
+        let mut req = Request::new(bytes::Bytes::from(body));
+        let uuid_val = AsciiMetadataValue::from_str(&uuid)
+            .map_err(|e| DriverCallError::Unknown(format!("invalid driver uuid {uuid:?}: {e}")))?;
+        req.metadata_mut()
+            .insert("x-jumpstarter-driver-uuid", uuid_val);
+        let resp = grpc
+            .server_streaming(req, path, jumpstarter_transport::demux::BytesCodec)
+            .await
+            .map_err(err_from_status)?;
+        Ok(resp.into_inner())
     }
 
     /// Open a router byte stream to a driver `@exportstream`/resource handle. `request_json`
@@ -293,9 +418,16 @@ impl ClientLogStream {
     }
 }
 
-/// A streaming-driver-call result stream, pulled JSON-at-a-time.
+/// A boxed stream of already-decoded JSON results — the inner type of [`ClientResultStream`], so the
+/// native and legacy producers can both target one concrete stream type.
+type JsonResultStream = Pin<Box<dyn Stream<Item = Result<String, DriverCallError>> + Send>>;
+
+/// A streaming-driver-call result stream, pulled JSON-at-a-time. The inner stream yields the
+/// **already-decoded** JSON result per item, so the native (descriptor-decoded message bytes) and
+/// legacy (`Value` codec) sources share one type and FFI surface — the producer in
+/// [`ClientSession::streaming_driver_call`] does the per-item decode.
 pub struct ClientResultStream {
-    inner: Mutex<Streaming<StreamingDriverCallResponse>>,
+    inner: Mutex<JsonResultStream>,
     /// `uuid/method` of the originating call, for stream-item logging.
     label: String,
 }
@@ -305,15 +437,13 @@ impl ClientResultStream {
     pub async fn next(&self) -> Result<Option<String>, DriverCallError> {
         let mut stream = self.inner.lock().await;
         match stream.next().await {
-            Some(Ok(resp)) => {
+            Some(Ok(json)) => {
                 tracing::trace!(stream = %self.label, "streaming_driver_call item");
-                Ok(Some(codec::value_result_to_json(
-                    &resp.result.unwrap_or_default(),
-                )?))
+                Ok(Some(json))
             }
-            Some(Err(status)) => {
-                tracing::debug!(stream = %self.label, error = %status, "streaming_driver_call stream error");
-                Err(err_from_status(status))
+            Some(Err(e)) => {
+                tracing::debug!(stream = %self.label, error = %e, "streaming_driver_call stream error");
+                Err(e)
             }
             None => {
                 tracing::debug!(stream = %self.label, "streaming_driver_call stream EOF");
@@ -378,5 +508,218 @@ impl ClientByteStream {
     pub async fn close(&self) -> Result<(), DriverCallError> {
         let _ = self.uplink.send(goaway_frame()).await;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod native_unary_tests {
+    use super::*;
+    use jumpstarter_protocol::v1::{GetReportResponse, LogStreamResponse};
+    use prost::Message as _;
+    use jumpstarter_transport::demux::{Demux, SingleBackend};
+    use jumpstarter_transport::transport::{connect_channel, InProcessTransport, Transport};
+    use jumpstarter_transport::{DriverBackend, FrameUplink, ResponseStream, RouterStreamOpen};
+    use std::sync::Arc;
+    use tonic::metadata::MetadataMap;
+
+    /// A backend whose `forward_unary` echoes `<uuid>|<path>|<body>` — proving the client
+    /// `native_unary` carried the opaque message + the routing/auth metadata end-to-end.
+    struct EchoBackend;
+
+    #[tonic::async_trait]
+    impl DriverBackend for EchoBackend {
+        async fn get_report(&self) -> Result<GetReportResponse, Status> {
+            Err(Status::unimplemented("echo"))
+        }
+        async fn open_router_stream(
+            &self,
+            _request_meta: AsciiMetadataValue,
+            _uplink: FrameUplink,
+        ) -> Result<RouterStreamOpen, Status> {
+            Err(Status::unimplemented("echo"))
+        }
+        async fn log_stream(&self) -> Result<ResponseStream<LogStreamResponse>, Status> {
+            Err(Status::unimplemented("echo"))
+        }
+        async fn forward_unary(
+            &self,
+            path: &str,
+            metadata: MetadataMap,
+            body: bytes::Bytes,
+        ) -> Result<(MetadataMap, bytes::Bytes, MetadataMap), Status> {
+            let uuid = metadata
+                .get("x-jumpstarter-driver-uuid")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string();
+            let mut out = format!("{uuid}|{path}|").into_bytes();
+            out.extend_from_slice(&body);
+            Ok((MetadataMap::new(), bytes::Bytes::from(out), MetadataMap::new()))
+        }
+    }
+
+    /// Full client→server native loop: `ClientSession::native_unary` → demux (header routing) →
+    /// `EchoBackend::forward_unary`, over the in-process transport.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn client_native_unary_round_trips_through_demux() {
+        let transport = InProcessTransport::new();
+        let incoming = transport.incoming();
+        let demux = Demux::new(SingleBackend(Arc::new(EchoBackend)));
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_routes(demux.into_axum_router().into())
+                .serve_with_incoming(incoming)
+                .await
+        });
+
+        let channel = connect_channel(&transport).await.expect("connect");
+        let session = ClientSession {
+            channel,
+            passphrase: None,
+            native: OnceCell::new(),
+        };
+        let path = "/jumpstarter.driver.power.v1.PowerInterface/On";
+        let resp = session
+            .native_unary("power-uuid-1".into(), path.into(), b"hello".to_vec())
+            .await
+            .expect("native_unary");
+        assert_eq!(resp, format!("power-uuid-1|{path}|hello").into_bytes());
+        server.abort();
+    }
+
+    // ---- native dispatch table (the client descriptor cache) -------------------------
+
+    /// Build the exact self-contained `FileDescriptorSet` the Python host ships for
+    /// `PowerInterface` (package `jumpstarter.interfaces.power.v1`): the interface file (importing
+    /// `google/protobuf/empty.proto`) with `On`/`Off`/`SetVoltage`, plus the empty.proto dep,
+    /// deps-first.
+    fn power_descriptor_set_bytes() -> Vec<u8> {
+        use prost_reflect::prost_types::field_descriptor_proto::{Label, Type};
+        use prost_reflect::prost_types::{
+            DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+            MethodDescriptorProto, ServiceDescriptorProto,
+        };
+
+        let empty_file = FileDescriptorProto {
+            name: Some("google/protobuf/empty.proto".into()),
+            package: Some("google.protobuf".into()),
+            message_type: vec![DescriptorProto {
+                name: Some("Empty".into()),
+                ..Default::default()
+            }],
+            syntax: Some("proto3".into()),
+            ..Default::default()
+        };
+        let unary = |name: &str| MethodDescriptorProto {
+            name: Some(name.into()),
+            input_type: Some(".google.protobuf.Empty".into()),
+            output_type: Some(".google.protobuf.Empty".into()),
+            ..Default::default()
+        };
+        let set_voltage_req = DescriptorProto {
+            name: Some("SetVoltageRequest".into()),
+            field: vec![FieldDescriptorProto {
+                name: Some("millivolts".into()),
+                number: Some(1),
+                label: Some(Label::Optional as i32),
+                r#type: Some(Type::Int64 as i32),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let power_file = FileDescriptorProto {
+            name: Some("power.proto".into()),
+            package: Some("jumpstarter.interfaces.power.v1".into()),
+            dependency: vec!["google/protobuf/empty.proto".into()],
+            message_type: vec![set_voltage_req],
+            service: vec![ServiceDescriptorProto {
+                name: Some("PowerInterface".into()),
+                method: vec![
+                    unary("On"),
+                    unary("Off"),
+                    MethodDescriptorProto {
+                        name: Some("SetVoltage".into()),
+                        input_type: Some(
+                            ".jumpstarter.interfaces.power.v1.SetVoltageRequest".into(),
+                        ),
+                        output_type: Some(".google.protobuf.Empty".into()),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            syntax: Some("proto3".into()),
+            ..Default::default()
+        };
+        FileDescriptorSet {
+            file: vec![empty_file, power_file],
+        }
+        .encode_to_vec()
+    }
+
+    /// The client cache indexes each `(uuid, @export-name)` to its native gRPC path + descriptors,
+    /// resolving the import (empty.proto) and the lower_snake `@export` mapping.
+    #[test]
+    fn build_native_table_indexes_export_methods() {
+        use jumpstarter_protocol::v1::DriverInstanceReport;
+
+        let report = DriverInstanceReport {
+            uuid: "power-1".into(),
+            descriptor_set: Some(power_descriptor_set_bytes()),
+            ..Default::default()
+        };
+        let table = build_native_table(&[report]);
+
+        // On/Off/SetVoltage are all indexed under the instance uuid, by lower_snake export name.
+        let on = table
+            .get(&("power-1".to_string(), "on".to_string()))
+            .expect("on route");
+        assert_eq!(on.path, "/jumpstarter.interfaces.power.v1.PowerInterface/On");
+
+        let sv = table
+            .get(&("power-1".to_string(), "set_voltage".to_string()))
+            .expect("set_voltage route");
+        assert_eq!(
+            sv.path,
+            "/jumpstarter.interfaces.power.v1.PowerInterface/SetVoltage"
+        );
+        // Its input message is SetVoltageRequest with the int64 millivolts field.
+        assert!(sv.input.get_field_by_name("millivolts").is_some());
+
+        // A driver with no descriptor set yields no routes (legacy dispatch only).
+        let bare = DriverInstanceReport {
+            uuid: "bare-1".into(),
+            descriptor_set: None,
+            ..Default::default()
+        };
+        assert!(build_native_table(&[bare]).is_empty());
+    }
+
+    /// A full client-side round-trip with NO server: encode `set_voltage(12000)` against the cached
+    /// input descriptor, then decode the (empty) response — proving the cache + encode/decode wiring
+    /// the reimplemented `driver_call` relies on.
+    #[test]
+    fn cached_route_encodes_and_decodes_set_voltage() {
+        use jumpstarter_protocol::v1::DriverInstanceReport;
+
+        let report = DriverInstanceReport {
+            uuid: "power-1".into(),
+            descriptor_set: Some(power_descriptor_set_bytes()),
+            ..Default::default()
+        };
+        let table = build_native_table(&[report]);
+        let route = table
+            .get(&("power-1".to_string(), "set_voltage".to_string()))
+            .unwrap();
+
+        // Client: args JSON -> request bytes (the body native_unary would carry).
+        let body = encode_request(&route.input, "[12000]").unwrap();
+        // Server would decode `body` to `{millivolts: 12000}`; here just assert it re-decodes.
+        let echoed = crate::dynamic::decode_response(&route.input, &body).unwrap();
+        assert_eq!(echoed, "12000"); // single-field unwrap
+
+        // Client: empty (Empty) response -> null result.
+        let result = decode_response(&route.output, &[]).unwrap();
+        assert_eq!(result, "null");
     }
 }

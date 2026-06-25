@@ -1423,17 +1423,23 @@ name = "jumpstarter-core"
 version = "0.0.0"
 dependencies = [
  "async-trait",
+ "axum",
+ "bytes",
+ "http",
  "jumpstarter-client",
  "jumpstarter-compression",
  "jumpstarter-config",
  "jumpstarter-protocol",
  "jumpstarter-transport",
+ "prost",
+ "prost-reflect",
  "prost-types",
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
  "tonic",
+ "tower 0.5.3",
  "tracing",
  "uuid",
 ]
@@ -1487,11 +1493,13 @@ dependencies = [
 name = "jumpstarter-exporter"
 version = "0.0.0"
 dependencies = [
+ "bytes",
  "futures",
  "http",
  "hyper-util",
  "jumpstarter-client",
  "jumpstarter-config",
+ "jumpstarter-core",
  "jumpstarter-fsm",
  "jumpstarter-protocol",
  "jumpstarter-shm",
@@ -1562,15 +1570,24 @@ dependencies = [
  "libc",
  "tempfile",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
 name = "jumpstarter-transport"
 version = "0.0.0"
 dependencies = [
+ "axum",
+ "bytes",
+ "http",
+ "hyper-util",
  "jumpstarter-protocol",
+ "jumpstarter-shm",
+ "tempfile",
+ "tokio",
  "tokio-stream",
  "tonic",
+ "tower 0.5.3",
  "tracing",
 ]
 
@@ -2054,6 +2071,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "prost-reflect"
+version = "0.14.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b5edd582b62f5cde844716e66d92565d7faf7ab1445c8cebce6e00fba83ddb2"
+dependencies = [
+ "once_cell",
+ "prost",
+ "prost-types",
 ]
 
 [[package]]

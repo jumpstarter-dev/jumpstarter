@@ -9,11 +9,23 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use jumpstarter_core::driver::Driver;
+use jumpstarter_core::driver::{empty_interface_descriptor_set, Driver};
 use jumpstarter_core::error::DriverCallError;
 use jumpstarter_core::ClientSession;
 use jumpstarter_driver_macros::DriverClient;
 use serde_json::Value as Json;
+
+/// The native power interface descriptor (`jumpstarter.interfaces.power.v1.PowerInterface` with
+/// `On`/`Off`, both `Empty → Empty`) — the same self-contained `FileDescriptorSet` the Python power
+/// driver introspects, so a native call routes to a Rust driver identically to a Python one. Built
+/// fresh per call (cheap) so the descriptor stays the single source of truth for both drivers.
+fn power_descriptor_set() -> Vec<u8> {
+    empty_interface_descriptor_set(
+        "jumpstarter.interfaces.power.v1",
+        "PowerInterface",
+        &["On", "Off"],
+    )
+}
 
 /// A native power driver advertising the Python `PowerClient`, so `j <name> on|off` works.
 pub struct MockPower;
@@ -29,6 +41,10 @@ impl Driver for MockPower {
             ("on".to_string(), "turn the (mock) power on".to_string()),
             ("off".to_string(), "turn the (mock) power off".to_string()),
         ])
+    }
+
+    fn descriptor_set(&self) -> Option<Vec<u8>> {
+        Some(power_descriptor_set())
     }
 
     async fn call(&self, method: &str, _args: Vec<Json>) -> Result<Json, DriverCallError> {
@@ -58,6 +74,10 @@ impl Driver for MockPowerNativeClient {
             ("on".to_string(), "turn the (mock) power on".to_string()),
             ("off".to_string(), "turn the (mock) power off".to_string()),
         ])
+    }
+
+    fn descriptor_set(&self) -> Option<Vec<u8>> {
+        Some(power_descriptor_set())
     }
 
     async fn call(&self, method: &str, _args: Vec<Json>) -> Result<Json, DriverCallError> {

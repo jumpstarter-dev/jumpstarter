@@ -10,14 +10,15 @@ rust-version.workspace = true
 [features]
 # The async `bridge` (tokio mpsc + a blocking poll thread per ring direction) is opt-in so the
 # core ring stays pure `libc` for reuse from non-tokio / FFI contexts.
-bridge = ["dep:tokio"]
+bridge = ["dep:tokio", "dep:tokio-util"]
 
 [dependencies]
 # Portable POSIX mmap/ftruncate — the ring is std atomics over a shared mapping. No framework
 # dependency (iceoryx2 would be 80 transitive crates for a 1:1 pipe); this is ~one file.
 libc = "0.2"
 tokio = { workspace = true, optional = true }
+tokio-util = { workspace = true, optional = true }
 
 [dev-dependencies]
 tempfile = "3"
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync", "io-util"] }

@@ -14,6 +14,9 @@ jumpstarter-config = { path = "../jumpstarter-config" }
 jumpstarter-fsm = { path = "../jumpstarter-fsm" }
 # The shared driver-call seam (`DriverBackend` + `ChannelBackend`), also consumed by the client.
 jumpstarter-transport = { path = "../jumpstarter-transport" }
+# The native dispatch + the server-side legacy `DriverCall` compatibility shim (`LegacyDispatch`)
+# that translates old clients' calls into the same native forward_unary/forward_stream.
+jumpstarter-core = { path = "../jumpstarter-core" }
 # Reuses the Phase-A channel builder + router byte-bridge.
 jumpstarter-client = { path = "../jumpstarter-client" }
 # Shared-memory byte ring for the local hub<->host bulk byte plane (opt-in via JMP_SHM_TUNNEL).
@@ -35,3 +38,8 @@ tower = { version = "0.5", features = ["util"] }
 http = "1"
 # POSIX `kill(2)` liveness probe for the host-side parent-death watchdog (portable across Linux/macOS/BSD).
 libc = "0.2"
+# Opaque native-call message bytes — `RoutingBackend::forward_unary` (and the demux wiring test) name
+# `bytes::Bytes` in the native forward signature.
+bytes = "1"
+
+[dev-dependencies]
