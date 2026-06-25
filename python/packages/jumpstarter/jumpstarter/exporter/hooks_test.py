@@ -1,5 +1,4 @@
 import os
-import sys
 from contextlib import nullcontext
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -17,16 +16,6 @@ from jumpstarter.exporter.hooks import (
 )
 
 pytestmark = pytest.mark.anyio
-
-# Tests that spawn real subprocesses via PTY and assert on captured logger
-# output are flaky on macOS due to a PTY kernel buffer timing race condition.
-# See https://github.com/jumpstarter-dev/jumpstarter/issues/821
-# Targeted for proper fix in 0.10.0.
-macos_pty_xfail = pytest.mark.xfail(
-    condition=sys.platform == "darwin",
-    reason="PTY output race condition on macOS (#821)",
-    strict=False,
-)
 
 
 class _PtyTracker:
@@ -208,7 +197,7 @@ class TestHookExecutor:
         assert "timed out after 1 seconds" in str(exc_info.value)
         assert exc_info.value.on_failure == "exit"
 
-    @macos_pty_xfail
+
     async def test_hook_environment_variables(self, lease_scope) -> None:
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
@@ -223,7 +212,7 @@ class TestHookExecutor:
             assert any("LEASE_NAME=test-lease-123" in call for call in info_calls)
             assert any("CLIENT_NAME=test-client" in call for call in info_calls)
 
-    @macos_pty_xfail
+
     async def test_real_time_output_logging(self, lease_scope) -> None:
         """Test that hook output is logged in real-time at INFO level."""
         hook_config = HookConfigV1Alpha1(
@@ -241,7 +230,7 @@ class TestHookExecutor:
             assert any("Line 2" in call for call in info_calls)
             assert any("Line 3" in call for call in info_calls)
 
-    @macos_pty_xfail
+
     async def test_post_lease_hook_execution_on_completion(self, lease_scope) -> None:
         """Test that post-lease hook executes when called directly."""
         hook_config = HookConfigV1Alpha1(
@@ -352,7 +341,7 @@ class TestHookExecutor:
         result = await executor.execute_before_lease_hook(lease_scope)
         assert result is None
 
-    @macos_pty_xfail
+
     async def test_exec_bash(self, lease_scope) -> None:
         """Test that exec=/bin/bash allows bash-specific syntax.
 
@@ -374,7 +363,7 @@ class TestHookExecutor:
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("BASH_OK: world" in call for call in info_calls)
 
-    @macos_pty_xfail
+
     async def test_exec_python3(self, lease_scope) -> None:
         """Test that exec=python3 runs inline Python.
 
@@ -397,7 +386,7 @@ class TestHookExecutor:
             # Expected total: 0 + 1 + 4 + 9 == 14
             assert any("PYTHON_OK: 14" in call for call in info_calls)
 
-    @macos_pty_xfail
+
     async def test_script_file_sh(self, lease_scope, tmp_path) -> None:
         """Test that a .sh file auto-detects /bin/sh as interpreter."""
         script_file = tmp_path / "hook_script.sh"
@@ -420,7 +409,7 @@ class TestHookExecutor:
             debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
             assert any("Executing script file" in call for call in debug_calls)
 
-    @macos_pty_xfail
+
     async def test_script_file_py_autodetects_python(self, lease_scope, tmp_path) -> None:
         """Test that a .py file auto-detects the exporter's Python as interpreter."""
         import sys
@@ -447,7 +436,7 @@ class TestHookExecutor:
             # Verify it used the exporter's own Python interpreter
             assert any(sys.executable in call for call in debug_calls)
 
-    @macos_pty_xfail
+
     async def test_script_file_py_exec_override(self, lease_scope, tmp_path) -> None:
         """Test that explicit exec overrides .py auto-detection."""
         script_file = tmp_path / "hook_script.py"
@@ -471,7 +460,7 @@ class TestHookExecutor:
             debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
             assert not any("Auto-detected" in call for call in debug_calls)
 
-    @macos_pty_xfail
+
     async def test_noninteractive_environment(self, lease_scope) -> None:
         """Test that hooks receive noninteractive environment variables.
 
@@ -731,7 +720,7 @@ class TestHookExecutor:
         assert output_lines == []
         assert drained == 0
 
-    @macos_pty_xfail
+
     async def test_drain_captures_output_without_trailing_newline(self, lease_scope) -> None:
         """Verify output without a trailing newline is still captured."""
         hook_config = HookConfigV1Alpha1(
@@ -748,7 +737,7 @@ class TestHookExecutor:
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("NO_NEWLINE_OUTPUT" in call for call in info_calls)
 
-    @macos_pty_xfail
+
     async def test_drain_reads_data_remaining_in_pty_buffer(self, lease_scope) -> None:
         """Verify the drain loop inside read_pty_output reads data left in the
         PTY kernel buffer after the main read loop exits.
@@ -813,7 +802,7 @@ class TestHookExecutor:
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("DRAIN_CAPTURED" in call for call in info_calls)
 
-    @macos_pty_xfail
+
     async def test_drain_select_oserror_exits_gracefully(self, lease_scope) -> None:
         """Verify the drain loop exits gracefully when select.select() raises
         OSError (e.g. fd closed during drain).
@@ -850,7 +839,7 @@ class TestHookExecutor:
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("SELECT_ERROR_TEST" in call for call in info_calls)
 
-    @macos_pty_xfail
+
     async def test_drain_select_valueerror_exits_gracefully(self, lease_scope) -> None:
         """Verify the drain loop exits gracefully when select.select() raises
         ValueError (e.g. negative fd).
@@ -885,7 +874,7 @@ class TestHookExecutor:
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("VALUEERROR_TEST" in call for call in info_calls)
 
-    @macos_pty_xfail
+
     async def test_drain_exits_when_deadline_exceeded_before_select(self, lease_scope) -> None:
         """Verify the drain loop exits when the deadline is exceeded between the
         while condition and the remaining-time check (line: if remaining <= 0).
@@ -920,7 +909,7 @@ class TestHookExecutor:
             # exited early due to remaining <= 0 before select could run
             assert not any("SHOULD_NOT_APPEAR" in call for call in info_calls)
 
-    @macos_pty_xfail
+
     async def test_drain_exception_is_suppressed(self, lease_scope) -> None:
         """Verify that an unexpected exception raised during the drain is caught
         by the except-Exception handler and does not propagate to the caller.
@@ -990,7 +979,7 @@ class TestHookExecutor:
 class TestHookExecutorPRRegressions:
     """Regression tests for issues reported during PR review of hooks feature."""
 
-    @macos_pty_xfail
+
     async def test_infrastructure_messages_at_debug_not_info(self, lease_scope) -> None:
         """Issue A1: Hook infrastructure messages should be at DEBUG, not INFO.
 
