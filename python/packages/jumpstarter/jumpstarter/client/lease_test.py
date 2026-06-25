@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import sys
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -572,61 +573,505 @@ class TestMonitorAsyncError:
         assert remain_arg == timedelta(0)
 
 
-class TestHandleAsyncUnavailableRetry:
-    """Tests for Lease.handle_async UNAVAILABLE retry behavior."""
+def _make_aio_rpc_error(code, details="error"):
+    """Helper to construct an AioRpcError."""
+    return AioRpcError(
+        code=code,
+        initial_metadata=grpc.aio.Metadata(),
+        trailing_metadata=grpc.aio.Metadata(),
+        details=details,
+        debug_error_string=None,
+    )
 
-    def _make_lease_for_handle(self):
-        lease = object.__new__(Lease)
-        lease.name = "test-lease"
-        lease.dial_timeout = 5.0
-        lease.lease_transferred = False
-        lease.tls_config = Mock()
-        lease.grpc_options = {}
-        lease.controller = Mock()
-        return lease
 
-    @pytest.mark.anyio
-    async def test_handle_async_retries_unavailable_then_succeeds(self):
-        """Dial returns UNAVAILABLE once then succeeds on retry."""
-        lease = self._make_lease_for_handle()
-        dial_call_count = 0
+def _make_lease_for_handle():
+    """Create a minimal Lease for testing handle_async."""
+    lease = object.__new__(Lease)
+    lease.name = "test-lease"
+    lease.dial_timeout = 5.0
+    lease.tls_config = Mock()
+    lease.grpc_options = {}
+    lease.controller = Mock()
+    lease.lease_transferred = False
+    return lease
 
-        async def mock_dial(request):
-            nonlocal dial_call_count
-            dial_call_count += 1
-            if dial_call_count == 1:
-                raise MockAioRpcError(grpc.StatusCode.UNAVAILABLE, "temporarily unavailable")
-            return Mock(router_endpoint="endpoint", router_token="token")
 
-        lease.controller.Dial = mock_dial
-
-        with patch("jumpstarter.client.lease.connect_router_stream") as mock_connect:
-            mock_connect.return_value.__aenter__ = AsyncMock()
-            mock_connect.return_value.__aexit__ = AsyncMock(return_value=False)
-            stream = Mock()
-
-            await lease.handle_async(stream)
-
-            assert dial_call_count == 2
-            mock_connect.assert_called_once_with("endpoint", "token", stream, lease.tls_config, lease.grpc_options)
+class TestHandleAsyncTransientRetry:
+    """Tests for transient gRPC error retry in handle_async (unified Dial + router loop)."""
 
     @pytest.mark.anyio
-    async def test_handle_async_unavailable_exceeds_dial_timeout(self):
-        """Dial returns UNAVAILABLE until dial_timeout is exceeded, then raises."""
-        lease = self._make_lease_for_handle()
-        lease.dial_timeout = 0.5
-        dial_call_count = 0
+    async def test_retries_on_dial_unavailable_then_succeeds(self):
+        """Should retry on UNAVAILABLE from Dial and succeed on the next attempt."""
+        lease = _make_lease_for_handle()
 
-        async def mock_dial(request):
-            nonlocal dial_call_count
-            dial_call_count += 1
-            raise MockAioRpcError(grpc.StatusCode.UNAVAILABLE, "permanently unavailable")
+        dial_response = Mock(router_endpoint="ep", router_token="tok")
+        call_count = 0
 
-        lease.controller.Dial = mock_dial
-        stream = Mock()
+        async def dial_side_effect(req):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise _make_aio_rpc_error(grpc.StatusCode.UNAVAILABLE, "tunnel dropped")
+            return dial_response
 
-        with pytest.raises(AioRpcError) as exc_info:
-            await lease.handle_async(stream)
+        lease.controller.Dial = AsyncMock(side_effect=dial_side_effect)
 
-        assert exc_info.value.code() == grpc.StatusCode.UNAVAILABLE
-        assert dial_call_count >= 2
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            with patch("jumpstarter.client.lease.connect_router_stream") as mock_router:
+
+                @asynccontextmanager
+                async def fake_router(*args, **kwargs):
+                    yield
+
+                mock_router.side_effect = fake_router
+                await lease.handle_async(Mock())
+
+        assert call_count == 2
+
+    @pytest.mark.anyio
+    async def test_transient_error_returns_after_timeout(self):
+        """Should give up and return when dial_timeout is exceeded."""
+        lease = _make_lease_for_handle()
+        lease.dial_timeout = 0.0  # already expired
+
+        lease.controller.Dial = AsyncMock(
+            side_effect=_make_aio_rpc_error(grpc.StatusCode.UNAVAILABLE, "tunnel dropped"),
+        )
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            await lease.handle_async(Mock())
+
+        # Should return without raising
+        lease.controller.Dial.assert_called_once()
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize(
+        "status_code",
+        [
+            grpc.StatusCode.RESOURCE_EXHAUSTED,
+            grpc.StatusCode.ABORTED,
+            grpc.StatusCode.INTERNAL,
+        ],
+        ids=["RESOURCE_EXHAUSTED", "ABORTED", "INTERNAL"],
+    )
+    async def test_retries_multiple_transient_codes(self, status_code):
+        """Should retry on RESOURCE_EXHAUSTED, ABORTED, INTERNAL."""
+        lease = _make_lease_for_handle()
+        dial_response = Mock(router_endpoint="ep", router_token="tok")
+        call_count = 0
+
+        async def dial_side_effect(req):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise _make_aio_rpc_error(status_code, "transient")
+            return dial_response
+
+        lease.controller.Dial = AsyncMock(side_effect=dial_side_effect)
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            with patch("jumpstarter.client.lease.connect_router_stream") as mock_router:
+
+                @asynccontextmanager
+                async def fake_router(*args, **kwargs):
+                    yield
+
+                mock_router.side_effect = fake_router
+                await lease.handle_async(Mock())
+
+        assert call_count == 2, f"Expected 2 calls for {status_code}, got {call_count}"
+
+    @pytest.mark.anyio
+    async def test_retries_unknown_with_watch_channel_closed(self):
+        """Should retry UNKNOWN only when details contain 'watch channel closed'."""
+        lease = _make_lease_for_handle()
+        dial_response = Mock(router_endpoint="ep", router_token="tok")
+        call_count = 0
+
+        async def dial_side_effect(req):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise _make_aio_rpc_error(grpc.StatusCode.UNKNOWN, "watch channel closed")
+            return dial_response
+
+        lease.controller.Dial = AsyncMock(side_effect=dial_side_effect)
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            with patch("jumpstarter.client.lease.connect_router_stream") as mock_router:
+
+                @asynccontextmanager
+                async def fake_router(*args, **kwargs):
+                    yield
+
+                mock_router.side_effect = fake_router
+                await lease.handle_async(Mock())
+
+        assert call_count == 2
+
+    @pytest.mark.anyio
+    async def test_unknown_without_known_message_not_retried(self):
+        """UNKNOWN with an unrecognized message should NOT be retried."""
+        lease = _make_lease_for_handle()
+
+        lease.controller.Dial = AsyncMock(
+            side_effect=_make_aio_rpc_error(grpc.StatusCode.UNKNOWN, "some unexpected server bug"),
+        )
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            await lease.handle_async(Mock())
+
+        # Should return after just one attempt (no retry)
+        lease.controller.Dial.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_router_transient_error_retries_full_dial_and_connect(self):
+        """Router transient error should retry the full Dial + connect cycle."""
+        lease = _make_lease_for_handle()
+        dial_response = Mock(router_endpoint="ep", router_token="tok")
+        lease.controller.Dial = AsyncMock(return_value=dial_response)
+
+        connect_count = 0
+
+        @asynccontextmanager
+        async def fake_router(*args, **kwargs):
+            nonlocal connect_count
+            connect_count += 1
+            if connect_count == 1:
+                raise _make_aio_rpc_error(grpc.StatusCode.UNAVAILABLE, "router unreachable")
+            yield
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            with patch("jumpstarter.client.lease.connect_router_stream", side_effect=fake_router):
+                await lease.handle_async(Mock())
+
+        assert connect_count == 2
+        # Dial is called fresh each attempt (unified loop)
+        assert lease.controller.Dial.call_count == 2
+
+    @pytest.mark.anyio
+    async def test_non_transient_error_returns_immediately(self):
+        """Non-transient errors should not be retried."""
+        lease = _make_lease_for_handle()
+        dial_response = Mock(router_endpoint="ep", router_token="tok")
+        lease.controller.Dial = AsyncMock(return_value=dial_response)
+
+        @asynccontextmanager
+        async def fail_router(*args, **kwargs):
+            raise _make_aio_rpc_error(grpc.StatusCode.NOT_FOUND, "not found")
+            yield  # pragma: no cover
+
+        with patch("jumpstarter.client.lease.connect_router_stream", side_effect=fail_router):
+            await lease.handle_async(Mock())
+
+        # Only one Dial attempt, no retry
+        assert lease.controller.Dial.call_count == 1
+
+    @pytest.mark.anyio
+    async def test_transient_router_error_returns_after_timeout(self):
+        """Should give up when dial_timeout is exceeded during router retries."""
+        lease = _make_lease_for_handle()
+        lease.dial_timeout = 0.0  # already expired
+        dial_response = Mock(router_endpoint="ep", router_token="tok")
+        lease.controller.Dial = AsyncMock(return_value=dial_response)
+
+        @asynccontextmanager
+        async def fail_router(*args, **kwargs):
+            raise _make_aio_rpc_error(grpc.StatusCode.UNAVAILABLE, "unreachable")
+            yield  # pragma: no cover
+
+        with patch("jumpstarter.client.lease.connect_router_stream", side_effect=fail_router):
+            await lease.handle_async(Mock())
+
+        # Only one Dial (initial), no retry
+        assert lease.controller.Dial.call_count == 1
+
+    @pytest.mark.anyio
+    async def test_dial_failure_on_retry_is_retried_again(self):
+        """When Dial fails with a transient error during retry, it should keep retrying."""
+        lease = _make_lease_for_handle()
+        dial_response = Mock(router_endpoint="ep", router_token="tok")
+
+        dial_count = 0
+
+        async def dial_side_effect(req):
+            nonlocal dial_count
+            dial_count += 1
+            if dial_count == 1:
+                return dial_response  # first Dial succeeds, router will fail
+            if dial_count == 2:
+                raise _make_aio_rpc_error(grpc.StatusCode.UNAVAILABLE, "re-dial failed")
+            return dial_response  # third Dial succeeds
+
+        lease.controller.Dial = AsyncMock(side_effect=dial_side_effect)
+
+        connect_count = 0
+
+        @asynccontextmanager
+        async def fake_router(*args, **kwargs):
+            nonlocal connect_count
+            connect_count += 1
+            if connect_count == 1:
+                raise _make_aio_rpc_error(grpc.StatusCode.UNAVAILABLE, "router fail")
+            yield
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            with patch("jumpstarter.client.lease.connect_router_stream", side_effect=fake_router):
+                await lease.handle_async(Mock())
+
+        # Attempt 1: Dial OK -> router fails (UNAVAILABLE)
+        # Attempt 2: Dial fails (UNAVAILABLE) -> retried
+        # Attempt 3: Dial OK -> router OK
+        assert dial_count == 3
+        assert connect_count == 2
+
+    @pytest.mark.anyio
+    async def test_oserror_retries_then_succeeds(self):
+        """OSError from router should retry the full Dial + connect cycle."""
+        lease = _make_lease_for_handle()
+        dial_response = Mock(router_endpoint="ep", router_token="tok")
+        lease.controller.Dial = AsyncMock(return_value=dial_response)
+
+        connect_count = 0
+
+        @asynccontextmanager
+        async def fake_router(*args, **kwargs):
+            nonlocal connect_count
+            connect_count += 1
+            if connect_count == 1:
+                raise OSError("Connection refused")
+            yield
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            with patch("jumpstarter.client.lease.connect_router_stream", side_effect=fake_router):
+                await lease.handle_async(Mock())
+
+        assert connect_count == 2
+        # Dial called fresh each attempt
+        assert lease.controller.Dial.call_count == 2
+
+    @pytest.mark.anyio
+    async def test_oserror_returns_after_timeout(self):
+        """Should give up on OSError when dial_timeout is exceeded."""
+        lease = _make_lease_for_handle()
+        lease.dial_timeout = 0.0  # already expired
+        dial_response = Mock(router_endpoint="ep", router_token="tok")
+        lease.controller.Dial = AsyncMock(return_value=dial_response)
+
+        @asynccontextmanager
+        async def fail_router(*args, **kwargs):
+            raise OSError("Connection refused")
+            yield  # pragma: no cover
+
+        with patch("jumpstarter.client.lease.connect_router_stream", side_effect=fail_router):
+            await lease.handle_async(Mock())
+
+        # Only the initial Dial, no retry
+        assert lease.controller.Dial.call_count == 1
+
+    @pytest.mark.anyio
+    async def test_exponential_backoff_delay_values(self):
+        """Verify that sleep delays follow exponential backoff: 0.3, 0.6, 1.2, 2.4, 4.8, capped at 5.0."""
+        lease = _make_lease_for_handle()
+        lease.dial_timeout = 60.0  # large timeout so remaining doesn't cap delays
+
+        # Fail 6 times then succeed on the 7th attempt
+        total_failures = 6
+        call_count = 0
+        dial_response = Mock(router_endpoint="ep", router_token="tok")
+
+        async def dial_side_effect(req):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= total_failures:
+                raise _make_aio_rpc_error(grpc.StatusCode.UNAVAILABLE, "tunnel dropped")
+            return dial_response
+
+        lease.controller.Dial = AsyncMock(side_effect=dial_side_effect)
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock) as mock_sleep:
+            with patch("jumpstarter.client.lease.connect_router_stream") as mock_router:
+
+                @asynccontextmanager
+                async def fake_router(*args, **kwargs):
+                    yield
+
+                mock_router.side_effect = fake_router
+                await lease.handle_async(Mock())
+
+        assert call_count == total_failures + 1
+
+        # Verify exponential backoff: base_delay=0.3, max_delay=5.0
+        # attempt 0: 0.3 * 2^0 = 0.3
+        # attempt 1: 0.3 * 2^1 = 0.6
+        # attempt 2: 0.3 * 2^2 = 1.2
+        # attempt 3: 0.3 * 2^3 = 2.4
+        # attempt 4: 0.3 * 2^4 = 4.8
+        # attempt 5: min(0.3 * 2^5, 5.0) = min(9.6, 5.0) = 5.0
+        expected_delays = [0.3, 0.6, 1.2, 2.4, 4.8, 5.0]
+        actual_delays = [call.args[0] for call in mock_sleep.call_args_list]
+        assert len(actual_delays) == len(expected_delays)
+        for actual, expected in zip(actual_delays, expected_delays, strict=True):
+            assert actual == pytest.approx(expected), f"Expected delay {expected}, got {actual}"
+
+    @pytest.mark.anyio
+    async def test_failed_precondition_not_ready_retries_then_succeeds(self):
+        """FAILED_PRECONDITION 'not ready' should retry and succeed on next attempt."""
+        lease = _make_lease_for_handle()
+        dial_response = Mock(router_endpoint="ep", router_token="tok")
+        call_count = 0
+
+        async def dial_side_effect(req):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise _make_aio_rpc_error(grpc.StatusCode.FAILED_PRECONDITION, "exporter not ready")
+            return dial_response
+
+        lease.controller.Dial = AsyncMock(side_effect=dial_side_effect)
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            with patch("jumpstarter.client.lease.connect_router_stream") as mock_router:
+
+                @asynccontextmanager
+                async def fake_router(*args, **kwargs):
+                    yield
+
+                mock_router.side_effect = fake_router
+                await lease.handle_async(Mock())
+
+        assert call_count == 2
+
+    @pytest.mark.anyio
+    async def test_failed_precondition_returns_after_timeout(self):
+        """FAILED_PRECONDITION should return (not raise) when dial_timeout is exceeded."""
+        lease = _make_lease_for_handle()
+        lease.dial_timeout = 0.0  # already expired
+
+        lease.controller.Dial = AsyncMock(
+            side_effect=_make_aio_rpc_error(grpc.StatusCode.FAILED_PRECONDITION, "exporter not ready"),
+        )
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            # Should return without raising
+            await lease.handle_async(Mock())
+
+        lease.controller.Dial.assert_called_once()
+
+    @pytest.mark.anyio
+    async def test_permission_denied_sets_lease_transferred(self):
+        """PERMISSION_DENIED should set lease_transferred = True."""
+        lease = _make_lease_for_handle()
+        assert lease.lease_transferred is False
+
+        lease.controller.Dial = AsyncMock(
+            side_effect=_make_aio_rpc_error(grpc.StatusCode.PERMISSION_DENIED, "permission denied"),
+        )
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            await lease.handle_async(Mock())
+
+        assert lease.lease_transferred is True
+
+    @pytest.mark.anyio
+    async def test_permission_denied_with_custom_details_still_detected(self):
+        """PERMISSION_DENIED with non-standard detail text should still set lease_transferred."""
+        lease = _make_lease_for_handle()
+        assert lease.lease_transferred is False
+
+        lease.controller.Dial = AsyncMock(
+            side_effect=_make_aio_rpc_error(grpc.StatusCode.PERMISSION_DENIED, "lease reassigned to another client"),
+        )
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            await lease.handle_async(Mock())
+
+        assert lease.lease_transferred is True
+
+    @pytest.mark.anyio
+    async def test_unauthenticated_with_permission_text_does_not_set_transferred(self):
+        """UNAUTHENTICATED with 'permission denied' in details should NOT set lease_transferred."""
+        lease = _make_lease_for_handle()
+        assert lease.lease_transferred is False
+
+        lease.controller.Dial = AsyncMock(
+            side_effect=_make_aio_rpc_error(
+                grpc.StatusCode.UNAUTHENTICATED,
+                "permission denied: token expired",
+            ),
+        )
+
+        with patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock):
+            await lease.handle_async(Mock())
+
+        assert lease.lease_transferred is False
+
+    @pytest.mark.anyio
+    async def test_channel_ready_timeout_bounded_by_remaining(self):
+        """channel_ready_timeout should decrease as the dial deadline approaches."""
+        lease = _make_lease_for_handle()
+        lease.dial_timeout = 3.0
+
+        call_count = 0
+        captured_timeouts = []
+
+        async def tracking_dial_and_connect(self_inner, stream, channel_ready_timeout=10.0):
+            nonlocal call_count
+            call_count += 1
+            captured_timeouts.append(channel_ready_timeout)
+            if call_count <= 3:
+                raise _make_aio_rpc_error(grpc.StatusCode.FAILED_PRECONDITION, "exporter not ready")
+            # Succeed on 4th attempt (won't normally reach here with 3s timeout)
+
+        with (
+            patch.object(type(lease), "_dial_and_connect", tracking_dial_and_connect),
+            patch("jumpstarter.client.lease.sleep", new_callable=AsyncMock),
+        ):
+            await lease.handle_async(Mock())
+
+        # With a 3s dial_timeout, the first call should have channel_ready_timeout <= 3.0
+        # and subsequent calls should have progressively smaller values
+        assert len(captured_timeouts) >= 2
+        assert all(t <= 10.0 for t in captured_timeouts), f"All timeouts should be <= 10.0, got {captured_timeouts}"
+        # The first timeout should be bounded by remaining (~3.0), not the default 10.0
+        assert captured_timeouts[0] <= 3.1, (
+            f"First timeout should be bounded by dial_timeout (~3.0), got {captured_timeouts[0]}"
+        )
+
+
+class TestRetryDelay:
+    """Tests for the _retry_delay static method."""
+
+    def test_basic_exponential(self):
+        assert Lease._retry_delay(0, 60.0) == pytest.approx(0.3)
+        assert Lease._retry_delay(1, 60.0) == pytest.approx(0.6)
+        assert Lease._retry_delay(2, 60.0) == pytest.approx(1.2)
+
+    def test_capped_by_max(self):
+        assert Lease._retry_delay(10, 60.0) == pytest.approx(5.0)
+
+    def test_capped_by_remaining(self):
+        assert Lease._retry_delay(0, 0.1) == pytest.approx(0.1)
+
+
+class TestTransientGrpcCodes:
+    """Tests for the _TRANSIENT_GRPC_CODES class attribute."""
+
+    def test_contains_expected_codes(self):
+        assert grpc.StatusCode.UNAVAILABLE in Lease._TRANSIENT_GRPC_CODES
+        assert grpc.StatusCode.RESOURCE_EXHAUSTED in Lease._TRANSIENT_GRPC_CODES
+        assert grpc.StatusCode.ABORTED in Lease._TRANSIENT_GRPC_CODES
+        assert grpc.StatusCode.INTERNAL in Lease._TRANSIENT_GRPC_CODES
+
+    def test_unknown_not_in_blanket_transient_codes(self):
+        """UNKNOWN is handled separately via _TRANSIENT_UNKNOWN_MESSAGES."""
+        assert grpc.StatusCode.UNKNOWN not in Lease._TRANSIENT_GRPC_CODES
+
+    def test_does_not_contain_non_transient_codes(self):
+        assert grpc.StatusCode.PERMISSION_DENIED not in Lease._TRANSIENT_GRPC_CODES
+        assert grpc.StatusCode.NOT_FOUND not in Lease._TRANSIENT_GRPC_CODES
+        assert grpc.StatusCode.FAILED_PRECONDITION not in Lease._TRANSIENT_GRPC_CODES
+
+    def test_transient_unknown_messages(self):
+        """Should contain the known tunnel teardown messages."""
+        assert "watch channel closed" in Lease._TRANSIENT_UNKNOWN_MESSAGES
