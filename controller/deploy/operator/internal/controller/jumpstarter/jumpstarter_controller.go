@@ -81,7 +81,7 @@ type JumpstarterReconciler struct {
 
 // RBAC resources
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;delete
 
 // Leader election
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
@@ -1053,7 +1053,7 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
 					},
-					ServiceAccountName:        fmt.Sprintf("%s-controller-manager", jumpstarter.Name),
+					ServiceAccountName:        fmt.Sprintf("%s-router-sa", jumpstarter.Name),
 					TopologySpreadConstraints: jumpstarter.Spec.Routers.TopologySpreadConstraints,
 				},
 			},
