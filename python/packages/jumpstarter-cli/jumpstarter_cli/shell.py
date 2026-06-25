@@ -24,7 +24,7 @@ from jumpstarter_cli_common.oidc import (
 )
 from jumpstarter_cli_common.signal import signal_handler
 
-from .common import opt_acquisition_timeout, opt_duration_partial, opt_exporter_name, opt_selector
+from .common import opt_acquisition_timeout, opt_duration_partial, opt_exporter_name, opt_retry_timeout, opt_selector
 from .login import relogin_client
 from jumpstarter.client import DirectLease
 from jumpstarter.client.client import client_from_path
@@ -433,7 +433,8 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
 
 
 async def _shell_with_signal_handling(  # noqa: C901
-    config, selector, exporter_name, lease_name, duration, exporter_logs, command, acquisition_timeout
+    config, selector, exporter_name, lease_name, duration, exporter_logs, command, acquisition_timeout,
+    retry_timeout=None,
 ):
     """Handle lease acquisition and shell execution with signal handling."""
     exit_code = 0
@@ -459,7 +460,8 @@ async def _shell_with_signal_handling(  # noqa: C901
                     connect_deadline = None
                     while True:
                         async with config.lease_async(
-                            selector, exporter_name, lease_name, duration, portal, acquisition_timeout
+                            selector, exporter_name, lease_name, duration, portal, acquisition_timeout,
+                            retry_timeout=retry_timeout,
                         ) as lease:
                             lease_used = lease
 
@@ -479,11 +481,11 @@ async def _shell_with_signal_handling(  # noqa: C901
                                 unreachable = exc
                             if unreachable is not None:
                                 if connect_deadline is None:
-                                    connect_deadline = time.monotonic() + lease.connect_timeout
+                                    connect_deadline = time.monotonic() + lease.retry_timeout
                                 if time.monotonic() >= connect_deadline:
                                     raise ExporterUnreachableError(
                                         f"Exporter {lease.exporter_name} unreachable after "
-                                        f"{lease.connect_timeout:.0f}s of retrying"
+                                        f"{lease.retry_timeout:.0f}s of retrying"
                                     ) from unreachable
                                 logger.warning(
                                     "Exporter %s is unreachable, releasing lease and retrying...",
@@ -642,6 +644,7 @@ async def _shell_direct_async(
 @opt_duration_partial(default=timedelta(minutes=30), show_default="00:30:00")
 @click.option("--exporter-logs", is_flag=True, help="Enable exporter log streaming")
 @opt_acquisition_timeout()
+@opt_retry_timeout()
 # direct connection (no controller)
 @click.option(
     "--tls-grpc",
@@ -672,6 +675,7 @@ def shell(
     duration,
     exporter_logs,
     acquisition_timeout,
+    retry_timeout,
     tls_grpc_address,
     tls_grpc_insecure,
     passphrase,
@@ -720,6 +724,7 @@ def shell(
                 exporter_logs,
                 command,
                 acquisition_timeout,
+                retry_timeout,
             )
             sys.exit(exit_code)
 

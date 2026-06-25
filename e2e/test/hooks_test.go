@@ -205,6 +205,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 			startHooksExporterSingle("exporter-hooks-before-fail-exit.yaml")
 
 			out, err := Jmp("shell", "--client", "test-client-hooks",
+				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
 			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Exporter shutting down|Connection to exporter lost)`))
@@ -239,6 +240,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 
 			// Shell may succeed or fail; the key is the exporter exits
 			_, _ = Jmp("shell", "--client", "test-client-hooks",
+				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 
 			Eventually(func() bool {
@@ -411,6 +413,7 @@ print("PYTHON_HOOK: complete")
 			startHooksExporterSingle("exporter-hooks-before-fail-exit-with-after.yaml")
 
 			out, err := Jmp("shell", "--client", "test-client-hooks",
+				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
 			Expect(out).NotTo(ContainSubstring("AFTER_SHOULD_NOT_RUN"))

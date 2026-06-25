@@ -64,10 +64,13 @@ class _DummyConfig:
         self.token = None
 
     @asynccontextmanager
-    async def lease_async(self, selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+    async def lease_async(
+        self, selector, exporter_name, lease_name, duration, portal,
+        acquisition_timeout, retry_timeout=None,
+    ):
         self.captured = (selector, exporter_name, lease_name, duration, acquisition_timeout)
         m = Mock()
-        m.connect_retry_timeout = 0.0
+        m.retry_timeout = 0.0
         yield m
 
 
@@ -101,12 +104,15 @@ async def test_shell_warns_when_expired_token_prevents_cleanup_on_normal_exit():
     lease.name = "expired-lease"
     lease.lease_ended = False
     lease.lease_transferred = False
-    lease.connect_retry_timeout = 0.0
+    lease.retry_timeout = 0.0
 
     config = _DummyConfig()
 
     @asynccontextmanager
-    async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+    async def lease_async(
+        selector, exporter_name, lease_name, duration, portal,
+        acquisition_timeout, retry_timeout=None,
+    ):
         yield lease
 
     config.lease_async = lease_async
@@ -153,6 +159,7 @@ def test_shell_requires_selector_or_name_when_no_leases():
             duration=timedelta(minutes=1),
             exporter_logs=False,
             acquisition_timeout=None,
+            retry_timeout=None,
             tls_grpc_address=None,
             tls_grpc_insecure=False,
             passphrase=None,
@@ -173,6 +180,7 @@ def test_shell_allows_existing_lease_name_without_selector_or_name():
             duration=timedelta(minutes=1),
             exporter_logs=False,
             acquisition_timeout=None,
+            retry_timeout=None,
             tls_grpc_address=None,
             tls_grpc_insecure=False,
             passphrase=None,
@@ -197,6 +205,7 @@ def test_shell_auto_connects_single_lease():
             duration=timedelta(minutes=1),
             exporter_logs=False,
             acquisition_timeout=None,
+            retry_timeout=None,
             tls_grpc_address=None,
             tls_grpc_insecure=False,
             passphrase=None,
@@ -224,6 +233,7 @@ def test_shell_no_leases_shows_guidance():
             duration=timedelta(minutes=1),
             exporter_logs=False,
             acquisition_timeout=None,
+            retry_timeout=None,
             tls_grpc_address=None,
             tls_grpc_insecure=False,
             passphrase=None,
@@ -264,6 +274,7 @@ def test_shell_multi_lease_no_tty_error():
             duration=timedelta(minutes=1),
             exporter_logs=False,
             acquisition_timeout=None,
+            retry_timeout=None,
             tls_grpc_address=None,
             tls_grpc_insecure=False,
             passphrase=None,
@@ -299,6 +310,7 @@ def test_shell_no_own_leases_among_others():
             duration=timedelta(minutes=1),
             exporter_logs=False,
             acquisition_timeout=None,
+            retry_timeout=None,
             tls_grpc_address=None,
             tls_grpc_insecure=False,
             passphrase=None,
@@ -320,6 +332,7 @@ def test_shell_allows_env_lease_without_selector_or_name():
             duration=timedelta(minutes=1),
             exporter_logs=False,
             acquisition_timeout=None,
+            retry_timeout=None,
             tls_grpc_address=None,
             tls_grpc_insecure=False,
             passphrase=None,
@@ -937,7 +950,10 @@ class TestShellWithSignalHandlingExceptionGroup:
         config = _DummyConfig()
 
         @asynccontextmanager
-        async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+        async def lease_async(
+        selector, exporter_name, lease_name, duration, portal,
+        acquisition_timeout, retry_timeout=None,
+    ):
             yield lease
 
         config.lease_async = lease_async
@@ -1001,15 +1017,15 @@ class TestShellWithSignalHandlingExceptionGroup:
 
 
 class TestRetryLoopTimeout:
-    """Tests for the connect_timeout bounded retry in _shell_with_signal_handling."""
+    """Tests for the retry_timeout bounded retry in _shell_with_signal_handling."""
 
     async def test_retries_then_raises_on_timeout(self):
-        """ExporterUnreachableError retries until connect_timeout expires, then raises."""
+        """ExporterUnreachableError retries until retry_timeout expires, then raises."""
         lease = Mock()
         lease.release = True
         lease.name = "test-lease"
         lease.exporter_name = "test-exporter"
-        lease.connect_timeout = 0.3
+        lease.retry_timeout = 0.3
         lease.lease_ended = False
         lease.lease_transferred = False
 
@@ -1017,7 +1033,10 @@ class TestRetryLoopTimeout:
         state = {"call_count": 0}
 
         @asynccontextmanager
-        async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+        async def lease_async(
+        selector, exporter_name, lease_name, duration, portal,
+        acquisition_timeout, retry_timeout=None,
+    ):
             yield lease
 
         config.lease_async = lease_async
@@ -1050,7 +1069,7 @@ class TestRetryLoopTimeout:
         lease.release = True
         lease.name = "test-lease"
         lease.exporter_name = "test-exporter"
-        lease.connect_timeout = 10.0
+        lease.retry_timeout = 10.0
         lease.lease_ended = False
         lease.lease_transferred = False
 
@@ -1058,7 +1077,10 @@ class TestRetryLoopTimeout:
         state = {"call_count": 0}
 
         @asynccontextmanager
-        async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+        async def lease_async(
+        selector, exporter_name, lease_name, duration, portal,
+        acquisition_timeout, retry_timeout=None,
+    ):
             yield lease
 
         config.lease_async = lease_async
@@ -1090,14 +1112,17 @@ class TestRetryLoopTimeout:
         lease.release = True
         lease.name = "test-lease"
         lease.exporter_name = "test-exporter"
-        lease.connect_timeout = 10.0
+        lease.retry_timeout = 10.0
         lease.lease_ended = False
         lease.lease_transferred = False
 
         config = _DummyConfig()
 
         @asynccontextmanager
-        async def lease_async(selector, exporter_name, lease_name, duration, portal, acquisition_timeout):
+        async def lease_async(
+        selector, exporter_name, lease_name, duration, portal,
+        acquisition_timeout, retry_timeout=None,
+    ):
             yield lease
 
         config.lease_async = lease_async

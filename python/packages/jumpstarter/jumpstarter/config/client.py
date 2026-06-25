@@ -24,7 +24,7 @@ from pydantic import (
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from .common import CONFIG_PATH, ObjectMeta
-from .env import JMP_LEASE
+from .env import JMP_LEASE, JMP_RETRY_TIMEOUT
 from .grpc import call_credentials
 from .shell import ShellConfigV1Alpha1
 from .tls import TLSConfigV1Alpha1
@@ -105,11 +105,10 @@ class ClientConfigV1Alpha1Lease(BaseSettings):
         gt=0,
         exclude=True,  # Internal field, not serialized to config files
     )
-    connect_timeout: float = Field(
+    retry_timeout: float = Field(
         default=300.0,
-        description="Timeout in seconds for retrying initial exporter connection",
-        gt=0,
-        exclude=True,
+        description="Timeout in seconds for retrying when exporter is unreachable (0 to disable)",
+        ge=0,
     )
 
 
@@ -320,6 +319,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         duration: timedelta,
         portal: BlockingPortal,
         acquisition_timeout: timedelta | None = None,
+        retry_timeout: timedelta | None = None,
     ):
         from jumpstarter.client import Lease
 
@@ -333,6 +333,11 @@ class ClientConfigV1Alpha1(BaseSettings):
                 int(acquisition_timeout.total_seconds())
                 if acquisition_timeout is not None
                 else self.leases.acquisition_timeout
+            )
+            retry_timeout_seconds = (
+                retry_timeout.total_seconds()
+                if retry_timeout is not None
+                else float(os.environ.get(JMP_RETRY_TIMEOUT, self.leases.retry_timeout))
             )
             async with Lease(
                 channel=await self.channel(),
@@ -350,7 +355,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 client_name=self.metadata.name,
                 acquisition_timeout=acquisition_timeout_seconds,
                 dial_timeout=self.leases.dial_timeout,
-                connect_timeout=self.leases.connect_timeout,
+                retry_timeout=retry_timeout_seconds,
             ) as lease:
                 yield lease
 

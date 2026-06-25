@@ -145,6 +145,20 @@ opt_acquisition_timeout = partial(
     ),
 )
 
+RETRY_TIMEOUT = DurationParamType(minimum=timedelta(seconds=0))
+
+opt_retry_timeout = partial(
+    click.option,
+    "--retry-timeout",
+    "retry_timeout",
+    type=RETRY_TIMEOUT,
+    default=None,
+    help=(
+        "Override retry timeout for unreachable exporters (e.g., '5m', '30s', "
+        "'0' to disable). Env: JMP_RETRY_TIMEOUT. Default: 5m."
+    ),
+)
+
 opt_begin_time = click.option(
     "--begin-time",
     "begin_time",
