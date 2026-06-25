@@ -82,7 +82,7 @@ async def OpendalAdapter(
     if mode == "rb" and compression is None and original_url is not None:
         yield PresignedRequestResource(
             headers={}, url=original_url, method="GET"
-        ).model_dump(mode="json")
+        ).model_dump_json()
         return
     # if the access mode is binary read, and the storage backend supports presigned read requests
     elif mode == "rb" and operator.capability().presign_read and compression is None:
@@ -90,7 +90,7 @@ async def OpendalAdapter(
         presigned = await operator.to_async_operator().presign_read(path, expire_second=60)
         yield PresignedRequestResource(
             headers=presigned.headers, url=presigned.url, method=presigned.method
-        ).model_dump(mode="json")
+        ).model_dump_json()
     # otherwise stream the file content from the client to the exporter
     else:
         try:

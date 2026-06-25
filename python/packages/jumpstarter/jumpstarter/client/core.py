@@ -182,7 +182,11 @@ class AsyncDriverClient(Metadata):
         rstream = _FFIByteStream(chan)
         metadata = ResourceMetadata(**json.loads(chan.initial_metadata()))
         async with forward_stream(ProgressStream(stream=stream), rstream):
-            yield metadata.resource.model_dump(mode="json")
+            # The handle crosses to the driver as the JSON-string form (not a dict): a driver's
+            # resource param is typed `str` (parse_resource json.loads it), so over the native
+            # per-interface wire it must encode into a proto `string` field. (The old Value codec
+            # tolerated a dict; the typed native encoder does not.)
+            yield metadata.resource.model_dump_json()
 
     @asynccontextmanager
     async def log_stream_async(self, show_all_logs: bool = True):
