@@ -94,6 +94,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     client_name: str | None = None  # Name of the current client, used for ownership validation
     acquisition_timeout: int = field(default=7200)  # Timeout in seconds for lease acquisition, polled in 5s intervals
     dial_timeout: float = field(default=30.0)  # Timeout in seconds for Dial retry loop when exporter not ready
+    connect_timeout: float = field(default=300.0)  # Timeout in seconds for retrying initial exporter connection
     exporter_name: str = field(default="remote", init=False)  # Populated during acquisition
     exporter_labels: dict[str, str] = field(default_factory=dict, init=False)  # Populated during acquisition
     lease_ending_callback: Callable[[Self, timedelta], None] | None = field(
@@ -348,7 +349,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                             attempt + 1,
                         )
                         raise
-                    delay = min(base_delay * (2**attempt), max_delay, remaining)
+                    delay = min(base_delay * (2 ** min(attempt, 10)), max_delay, remaining)
                     logger.debug(
                         "Exporter not ready, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
                         delay,
@@ -367,7 +368,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                             attempt + 1,
                         )
                         raise
-                    delay = min(base_delay * (2**attempt), max_delay, remaining)
+                    delay = min(base_delay * (2 ** min(attempt, 10)), max_delay, remaining)
                     logger.warning(
                         "Exporter unavailable, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
                         delay,

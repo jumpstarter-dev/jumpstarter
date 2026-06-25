@@ -1,6 +1,7 @@
 import logging
 import os
 import sys
+import time
 from contextlib import ExitStack
 from datetime import timedelta
 from types import SimpleNamespace
@@ -28,7 +29,11 @@ from .login import relogin_client
 from jumpstarter.client import DirectLease
 from jumpstarter.client.client import client_from_path
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
-from jumpstarter.common.exceptions import ConnectionError, ExporterOfflineError
+from jumpstarter.common.exceptions import (
+    ConnectionError,
+    ExporterOfflineError,
+    ExporterUnreachableError,
+)
 from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
@@ -39,7 +44,6 @@ logger = logging.getLogger(__name__)
 
 # Refresh token when less than this many seconds remain
 _TOKEN_REFRESH_THRESHOLD_SECONDS = 120
-
 
 
 def _run_shell_only(lease, config, command, path: str) -> int:
@@ -288,9 +292,14 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                     insecure=getattr(lease, "insecure", False),
                     passphrase=getattr(lease, "passphrase", None),
                 ) as client:
-                    # Probe GetStatus before log stream so the server-side error
-                    # from unsupported exporters is not streamed to the terminal.
-                    await client.get_status_async()
+                    try:
+                        await client.get_status_async()
+                    except grpc.aio.AioRpcError as e:
+                        if e.code() in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
+                            raise ExporterUnreachableError(
+                                f"Exporter {lease.exporter_name} did not respond to initial status check"
+                            ) from e
+                        raise
 
                     # Start log streaming and status monitor together
                     # The status monitor polls in the background for reliable status tracking
@@ -447,23 +456,51 @@ async def _shell_with_signal_handling(  # noqa: C901
         try:
             try:
                 async with anyio.from_thread.BlockingPortal() as portal:
-                    async with config.lease_async(
-                        selector, exporter_name, lease_name, duration, portal, acquisition_timeout
-                    ) as lease:
-                        lease_used = lease
+                    connect_deadline = None
+                    while True:
+                        async with config.lease_async(
+                            selector, exporter_name, lease_name, duration, portal, acquisition_timeout
+                        ) as lease:
+                            lease_used = lease
 
-                        # Start token monitoring only once we're in the shell
-                        tg.start_soon(_monitor_token_expiry, config, lease, tg.cancel_scope, token_state)
+                            # Start token monitoring only once we're in the shell
+                            tg.start_soon(_monitor_token_expiry, config, lease, tg.cancel_scope, token_state)
 
-                        exit_code = await _run_shell_with_lease_async(
-                            lease, exporter_logs, config, command, tg.cancel_scope
-                        )
-                        if lease.release and lease.name and token_state["expired_unrecovered"]:
-                            _warn_about_expired_token(lease.name, selector)
+                            unreachable = None
+                            try:
+                                exit_code = await _run_shell_with_lease_async(
+                                    lease, exporter_logs, config, command, tg.cancel_scope
+                                )
+                            except BaseExceptionGroup as eg:
+                                unreachable = find_exception_in_group(eg, ExporterUnreachableError)
+                                if unreachable is None:
+                                    raise
+                            except ExporterUnreachableError as exc:
+                                unreachable = exc
+                            if unreachable is not None:
+                                if connect_deadline is None:
+                                    connect_deadline = time.monotonic() + lease.connect_timeout
+                                if time.monotonic() >= connect_deadline:
+                                    raise ExporterUnreachableError(
+                                        f"Exporter {lease.exporter_name} unreachable after "
+                                        f"{lease.connect_timeout:.0f}s of retrying"
+                                    ) from unreachable
+                                logger.warning(
+                                    "Exporter %s is unreachable, releasing lease and retrying...",
+                                    lease.exporter_name,
+                                )
+                                logger.debug("Unreachable cause: %s", unreachable)
+                                continue  # lease released by __aexit__, loop re-acquires
+                            if lease.release and lease.name and token_state["expired_unrecovered"]:
+                                _warn_about_expired_token(lease.name, selector)
+                            break
             except BaseExceptionGroup as eg:
                 for exc in eg.exceptions:
                     if isinstance(exc, TimeoutError):
                         raise exc from None
+                unreachable_exc = find_exception_in_group(eg, ExporterUnreachableError)
+                if unreachable_exc:
+                    raise unreachable_exc from None
                 offline_exc = find_exception_in_group(eg, ExporterOfflineError)
                 if offline_exc:
                     raise offline_exc from None
@@ -580,9 +617,7 @@ async def _shell_direct_async(
         async with create_task_group() as tg:
             tg.start_soon(signal_handler, tg.cancel_scope)
             try:
-                exit_code = await _run_shell_with_lease_async(
-                    lease, exporter_logs, config, command, tg.cancel_scope
-                )
+                exit_code = await _run_shell_with_lease_async(lease, exporter_logs, config, command, tg.cancel_scope)
             except grpc.aio.AioRpcError as e:
                 if e.code() == grpc.StatusCode.UNAUTHENTICATED:
                     raise click.ClickException("Authentication failed: invalid or missing passphrase") from None

@@ -105,6 +105,12 @@ class ClientConfigV1Alpha1Lease(BaseSettings):
         gt=0,
         exclude=True,  # Internal field, not serialized to config files
     )
+    connect_timeout: float = Field(
+        default=300.0,
+        description="Timeout in seconds for retrying initial exporter connection",
+        gt=0,
+        exclude=True,
+    )
 
 
 class ClientConfigV1Alpha1(BaseSettings):
@@ -344,6 +350,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 client_name=self.metadata.name,
                 acquisition_timeout=acquisition_timeout_seconds,
                 dial_timeout=self.leases.dial_timeout,
+                connect_timeout=self.leases.connect_timeout,
             ) as lease:
                 yield lease
 
