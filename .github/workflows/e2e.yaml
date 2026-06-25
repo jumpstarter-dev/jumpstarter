@@ -57,7 +57,7 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.changes.outputs.e2e-matrix) }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -96,7 +96,7 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.changes.outputs.e2e-matrix) }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
