@@ -14,6 +14,11 @@ dependencies = [
     "jumpstarter-core",
     "anyio>=4.4.0,!=4.6.2",
     "click>=8.1.7.2",
+    # protobuf provides google.protobuf.descriptor_pb2 + the well-known-type modules
+    # (empty_pb2/struct_pb2). The exporter host imports these at runtime to build each driver's
+    # self-contained FileDescriptorSet (driver/descriptor_builder.py) for the Rust core's native
+    # per-driver gRPC dispatch — so it is a real runtime dependency, not dev-only.
+    "protobuf>=4.21.0",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +40,10 @@ dev = [
     # pydantic is no longer a runtime dependency (the value codec + config parsing
     # live in the Rust core); the jsonable parity test still pins its output.
     "pydantic>=2.8.2",
+    # protobuf is now a runtime dependency (see [project].dependencies — the exporter host
+    # builds each driver's FileDescriptorSet at runtime). Kept here too so the descriptor_builder
+    # tests resolve it in dev installs that don't pull the runtime extra.
+    "protobuf>=4.21.0",
     # The presigned extra's deps — the base_test / streams.aiohttp doctest collection import them.
     "aiohttp>=3.9.0",
     "yarl>=1.9.0",
