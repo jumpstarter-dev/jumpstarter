@@ -273,21 +273,30 @@ class HookExecutor:
 
                 output_lines: list[str] = []
 
+                import fcntl
+
+                pipe_fd = process.stdout.fileno()
+                flags = fcntl.fcntl(pipe_fd, fcntl.F_GETFL)
+                fcntl.fcntl(pipe_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
                 async def read_output() -> None:
-                    """Read subprocess output line by line via pipe."""
+                    """Read subprocess output via pipe using async non-blocking I/O."""
                     buffer = b""
                     try:
                         while True:
-                            chunk = await anyio.to_thread.run_sync(
-                                lambda: process.stdout.read(4096),
-                                abandon_on_cancel=True,
-                            )
-                            if not chunk:
+                            try:
+                                with anyio.move_on_after(0.1):
+                                    await anyio.wait_readable(pipe_fd)
+                                chunk = os.read(pipe_fd, 4096)
+                                if not chunk:
+                                    break
+                                buffer += chunk
+                            except BlockingIOError:
+                                continue
+                            except OSError as e:
+                                logger.debug("read_output: OSError: %s", e)
                                 break
-                            buffer += chunk
                             buffer = _flush_lines(buffer, output_lines)
-                    except OSError as e:
-                        logger.debug("read_output: OSError: %s", e)
                     finally:
                         if buffer:
                             line_decoded = buffer.decode(errors="replace").rstrip()
