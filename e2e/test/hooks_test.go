@@ -366,6 +366,7 @@ print("PYTHON_HOOK: complete")
 			startHooksExporter("exporter-hooks-none.yaml")
 
 			out, err := RunCmd("timeout", "60", "jmp", "shell",
+				"--retry-timeout", "75",
 				"--client", "test-client-hooks",
 				"--selector", "example.com/board=hooks",
 				"--duration", "10s", "--", "sleep", "30")
@@ -378,7 +379,7 @@ print("PYTHON_HOOK: complete")
 			startHooksExporter("exporter-hooks-slow-before.yaml")
 
 			out, err := RunCmd("timeout", "60", "jmp", "shell",
-				"--retry-timeout", "0",
+				"--retry-timeout", "75",
 				"--client", "test-client-hooks",
 				"--selector", "example.com/board=hooks",
 				"--duration", "5s", "--", "sleep", "30")
@@ -390,6 +391,7 @@ print("PYTHON_HOOK: complete")
 			startHooksExporter("exporter-hooks-slow-before.yaml")
 
 			out, err := RunCmd("timeout", "60", "jmp", "shell",
+				"--retry-timeout", "75",
 				"--client", "test-client-hooks",
 				"--selector", "example.com/board=hooks",
 				"--duration", "12s", "--", "sleep", "30")
