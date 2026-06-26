@@ -34,9 +34,10 @@ Images must exist before bundle generation. The skill enforces this by splitting
 
 ### 1. Gather context and determine release type
 
-Inspect the current git state:
+Fetch the latest remote state first, then inspect:
 
 ```bash
+git fetch origin --tags
 git branch --show-current
 git branch -r | grep 'origin/release-'
 git tag --sort=-version:refname | head -20
