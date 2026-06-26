@@ -73,14 +73,18 @@ echo "  Replaces       : ${REPLACES:-"(not set)"}"
 echo "  Skip range     : ${SKIP_RANGE:-"(not set)"}"
 echo "============================================"
 echo ""
-read -r -p "Proceed with contribution? [y/N] " confirm
-if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-  echo ""
-  echo "Aborted. To update these values, edit:"
-  echo "  - VERSION / REPLACES in: ${OPERATOR_DIR}/Makefile"
-  echo "  - Or directly: ${RELEASE_CONFIG_PATH}"
-  echo "Then re-run 'make bundle' followed by 'make contribute'."
-  exit 1
+if [ "${AUTO_CONFIRM:-}" = "1" ]; then
+  echo "AUTO_CONFIRM=1 set, skipping confirmation."
+else
+  read -r -p "Proceed with contribution? [y/N] " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    echo ""
+    echo "Aborted. To update these values, edit:"
+    echo "  - VERSION / REPLACES in: ${OPERATOR_DIR}/Makefile"
+    echo "  - Or directly: ${RELEASE_CONFIG_PATH}"
+    echo "Then re-run 'make bundle' followed by 'make contribute'."
+    exit 1
+  fi
 fi
 
 # Clone any missing repos and ensure "user" remote points to the GITHUB_USER fork
