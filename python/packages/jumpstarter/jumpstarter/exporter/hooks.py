@@ -335,6 +335,9 @@ class HookExecutor:
                         tg.start_soon(read_output)
                         returncode = await wait_for_process()
                         logger.debug("Subprocess completed with code: %s", returncode)
+                    # Yield to let the LogStream deliver any pending
+                    # messages before reporting the hook result.
+                    await anyio.sleep(0)
 
                 if cancel_scope.cancelled_caught:
                     timed_out = True
