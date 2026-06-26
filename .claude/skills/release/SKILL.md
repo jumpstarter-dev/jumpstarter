@@ -150,12 +150,20 @@ The tag push triggers:
 The GitHub Release triggers:
 - `release-operator-installer.yaml` — uploads `operator-installer.yaml` to the release
 
-Check CI status:
+Tell the user that CI is now building the container images and you will monitor progress.
+
+Find the CI run triggered by the tag and monitor it:
 ```bash
-gh run list --workflow=build-images.yaml --limit 5
+# Find the run triggered by the tag push
+gh run list --workflow=build-images.yaml --limit 3 --json databaseId,status,conclusion,headBranch,event,createdAt
+
+# Watch the run until it completes (use the databaseId from above)
+gh run watch <RUN_ID>
 ```
 
-Tell the user: **Wait for CI to complete before proceeding to the operator bundle step.** When images are available, continue with step 2C (or run `/release operator-bundle` later).
+Monitor the run periodically using `gh run view <RUN_ID> --json status,conclusion` until it completes. If it fails, show the user the failure details with `gh run view <RUN_ID> --log-failed` and stop.
+
+When the build-images workflow succeeds, inform the user and proceed automatically to step 2C.
 
 ### 2C. Operator bundle contribution
 
