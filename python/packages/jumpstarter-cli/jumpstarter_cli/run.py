@@ -1,5 +1,6 @@
 import logging
 import os
+import secrets
 import signal
 import sys
 import time
@@ -102,14 +103,7 @@ def _handle_child(config, parsed_bind=None, tls_insecure=False, tls_cert=None, t
             if parsed_bind is not None:
                 host, port = parsed_bind
                 tls_credentials = None
-                if tls_insecure:
-                    if passphrase:
-                        click.echo(
-                            "WARNING: --passphrase has no effect without TLS; "
-                            "the passphrase will be transmitted in plaintext",
-                            err=True,
-                        )
-                elif tls_cert and tls_key:
+                if tls_cert and tls_key:
                     tls_credentials = _tls_server_credentials(tls_cert, tls_key)
 
                 interceptors = None
@@ -254,6 +248,44 @@ def _serve_with_exc_handling(
             sys.exit(1) # should never happen
 
 
+def _validate_standalone_auth(
+    passphrase: str | None, unsafe_no_auth: bool, tls_insecure: bool
+) -> str | None:
+    passphrase = passphrase or None
+
+    if passphrase and unsafe_no_auth:
+        raise click.UsageError("--passphrase and --unsafe-no-auth are mutually exclusive")
+
+    if not passphrase and not unsafe_no_auth:
+        passphrase = secrets.token_urlsafe(32)
+        click.echo(
+            f"Generated random passphrase (use --passphrase to set your own): {passphrase}",
+            err=True,
+        )
+
+    if passphrase and tls_insecure:
+        click.echo(
+            "WARNING: passphrase authentication is active but TLS is disabled; "
+            "the passphrase will be transmitted in plaintext",
+            err=True,
+        )
+
+    if unsafe_no_auth and tls_insecure:
+        click.echo(
+            "WARNING: running without authentication AND without TLS. "
+            "The server is completely unprotected.",
+            err=True,
+        )
+    elif unsafe_no_auth:
+        click.echo(
+            "WARNING: running without authentication. "
+            "Any client with network access can control this exporter.",
+            err=True,
+        )
+
+    return passphrase
+
+
 @click.command("run")
 @opt_config(client=False)
 @click.option(
@@ -282,16 +314,25 @@ def _serve_with_exc_handling(
     "--passphrase",
     "passphrase",
     default=None,
-    help="Require this passphrase from clients connecting via --tls-grpc-listener.",
+    envvar="JMP_GRPC_PASSPHRASE",
+    help="Require this passphrase from clients connecting via --tls-grpc-listener. "
+    "If not provided, a random passphrase is generated automatically.",
+)
+@click.option(
+    "--unsafe-no-auth",
+    "unsafe_no_auth",
+    is_flag=True,
+    help="Disable passphrase authentication entirely (dangerous: allows unauthenticated access).",
 )
 @handle_exceptions
-def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase):
+def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase, unsafe_no_auth):
     """Run an exporter locally."""
     if listener_bind is not None and config is None:
         raise click.UsageError("--exporter-config (or --exporter) is required when using --tls-grpc-listener")
-    if listener_bind is None and (tls_insecure or tls_cert or tls_key or passphrase):
+    if listener_bind is None and (tls_insecure or tls_cert or tls_key or passphrase or unsafe_no_auth):
         raise click.UsageError(
-            "--tls-grpc-insecure, --tls-cert, --tls-key, and --passphrase require --tls-grpc-listener"
+            "--tls-grpc-insecure, --tls-cert, --tls-key, --passphrase, and --unsafe-no-auth "
+            "require --tls-grpc-listener"
         )
     if listener_bind is not None:
         if tls_insecure and (tls_cert or tls_key):
@@ -300,5 +341,13 @@ def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase):
             raise click.UsageError(
                 "--tls-grpc-listener requires either --tls-grpc-insecure or --tls-cert and --tls-key"
             )
+        passphrase = _validate_standalone_auth(passphrase, unsafe_no_auth, tls_insecure)
     parsed_bind = _parse_listener_bind(listener_bind) if listener_bind is not None else None
-    return _serve_with_exc_handling(config, parsed_bind, tls_insecure, tls_cert, tls_key, passphrase)
+    return _serve_with_exc_handling(
+        config,
+        parsed_bind=parsed_bind,
+        tls_insecure=tls_insecure,
+        tls_cert=tls_cert,
+        tls_key=tls_key,
+        passphrase=passphrase,
+    )
