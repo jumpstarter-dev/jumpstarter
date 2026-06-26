@@ -172,6 +172,29 @@ impl DriverBackend for RoutingBackend {
         self.route(&uuid)?.forward_stream(path, metadata, body).await
     }
 
+    /// Route an opaque native **client-/bidi-streaming** call to the owning entry by the
+    /// `x-jumpstarter-driver-uuid` header (the fully general analogue of `forward_unary`/
+    /// `forward_stream`), then forward to that entry's backend so the client's request-frame uplink
+    /// reaches a real host without truncation.
+    async fn forward_bidi(
+        &self,
+        path: &str,
+        metadata: MetadataMap,
+        uplink: ResponseStream<bytes::Bytes>,
+    ) -> Result<(MetadataMap, ResponseStream<bytes::Bytes>), Status> {
+        let uuid = metadata
+            .get(jumpstarter_transport::demux::DRIVER_UUID_KEY)
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| {
+                Status::invalid_argument(format!(
+                    "native call missing `{}` metadata",
+                    jumpstarter_transport::demux::DRIVER_UUID_KEY
+                ))
+            })?
+            .to_string();
+        self.route(&uuid)?.forward_bidi(path, metadata, uplink).await
+    }
+
     async fn open_router_stream(
         &self,
         request_meta: AsciiMetadataValue,
@@ -354,6 +377,27 @@ mod tests {
 
         assert_eq!(*power.called.lock().unwrap(), vec!["power-uuid"]);
         // The grandchild routes to the serial entry that owns its subtree.
+        assert_eq!(*serial.called.lock().unwrap(), vec!["gc-uuid"]);
+    }
+
+    #[tokio::test]
+    async fn routes_native_bidi_calls_to_the_owning_entry() {
+        let (backend, power, serial) = routing().await;
+
+        // A single-frame uplink is enough to prove routing: RoutingBackend.forward_bidi routes by
+        // the demux header to the owning entry's backend (whose default forward_bidi records the
+        // uuid via forward_unary).
+        let (md, _body) = native_call("power-uuid");
+        let uplink: ResponseStream<bytes::Bytes> =
+            Box::pin(tokio_stream::once(Ok(bytes::Bytes::new())));
+        let (_md, _stream) = backend.forward_bidi("/p.S/Stream", md, uplink).await.unwrap();
+
+        let (md, _body) = native_call("gc-uuid");
+        let uplink: ResponseStream<bytes::Bytes> =
+            Box::pin(tokio_stream::once(Ok(bytes::Bytes::new())));
+        let (_md, _stream) = backend.forward_bidi("/p.S/Stream", md, uplink).await.unwrap();
+
+        assert_eq!(*power.called.lock().unwrap(), vec!["power-uuid"]);
         assert_eq!(*serial.called.lock().unwrap(), vec!["gc-uuid"]);
     }
 

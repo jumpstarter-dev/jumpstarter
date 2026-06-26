@@ -83,6 +83,18 @@ impl DriverBackend for ShmChannelBackend {
         self.inner.forward_stream(path, metadata, body).await
     }
 
+    /// Native client-/bidi-streaming is a control-plane RPC, not a bulk byte stream, so it rides the
+    /// inner gRPC [`ChannelBackend`] over the host UDS exactly like `forward_stream` — only the
+    /// router byte stream uses the ring.
+    async fn forward_bidi(
+        &self,
+        path: &str,
+        metadata: tonic::metadata::MetadataMap,
+        uplink: ResponseStream<bytes::Bytes>,
+    ) -> Result<(tonic::metadata::MetadataMap, ResponseStream<bytes::Bytes>), Status> {
+        self.inner.forward_bidi(path, metadata, uplink).await
+    }
+
     async fn log_stream(&self) -> Result<ResponseStream<LogStreamResponse>, Status> {
         self.inner.log_stream().await
     }

@@ -4,7 +4,8 @@
 //! `jumpstarter.driver.*.v1.*` — to the host that owns the driver, keyed by the
 //! `x-jumpstarter-driver-uuid` invocation header, **without ever deserializing the per-driver
 //! protobuf**. This generalizes the [`tunnel`](../../jumpstarter_exporter/tunnel) `RouterService`
-//! proxy from the single fixed `Stream` method to arbitrary unary driver methods.
+//! proxy from the single fixed `Stream` method to arbitrary driver methods of **any** gRPC call
+//! shape (unary, server-/client-/bidi-streaming).
 //!
 //! Two pieces live here:
 //!
@@ -13,7 +14,9 @@
 //!   with no per-method Rust types, so the core is a pure byte forwarder.
 //! - [`Demux`] — a catch-all gRPC server (mounted as an `axum::Router` fallback so it accepts ANY
 //!   method path) that reads the driver-uuid header, looks up the backend, and relays the call via
-//!   [`DriverBackend::forward_unary`](crate::DriverBackend::forward_unary).
+//!   [`DriverBackend::forward_bidi`](crate::DriverBackend::forward_bidi). It frames every call as
+//!   bidi-streaming — the most general HTTP/2 shape, which a unary/server-/client-streaming client
+//!   reads identically — so a client uplink is never truncated to its first frame.
 
 use std::convert::Infallible;
 use std::pin::Pin;
@@ -22,7 +25,7 @@ use std::task::{Context, Poll};
 
 use bytes::{Buf, BufMut, Bytes};
 use tonic::codec::{Codec, DecodeBuf, Decoder, EncodeBuf, Encoder};
-use tonic::{Request, Response, Status};
+use tonic::{Request, Response, Status, Streaming};
 
 use crate::{DriverBackend, ResponseStream};
 
@@ -100,9 +103,9 @@ impl Router for SingleBackend {
     }
 }
 
-/// The native demux server: a catch-all gRPC handler that forwards any unary
-/// `jumpstarter.driver.*.v1.*` call to the backend named by the `x-jumpstarter-driver-uuid`
-/// header — opaquely, with zero per-driver proto knowledge.
+/// The native demux server: a catch-all gRPC handler that forwards any `jumpstarter.driver.*.v1.*`
+/// call (of any call shape) to the backend named by the `x-jumpstarter-driver-uuid` header —
+/// opaquely, with zero per-driver proto knowledge.
 pub struct Demux<R: Router> {
     router: Arc<R>,
 }
@@ -131,14 +134,16 @@ impl<R: Router> Demux<R> {
         axum::Router::new().fallback_service(self)
     }
 
-    /// The forwarding body: read the target uuid, look up the backend, relay the call opaquely as
-    /// a **server-streaming** response. Every native call is framed as server-streaming (a unary
-    /// method is a one-message stream — read identically by a unary client), so the opaque demux
-    /// never needs to know whether a method streams.
+    /// The forwarding body: read the target uuid, look up the backend, and relay the call opaquely
+    /// via [`DriverBackend::forward_bidi`] — the fully general primitive. Every native call is framed
+    /// as **bidi-streaming** (the most general HTTP/2 shape); the four gRPC call kinds are then just
+    /// special cases a unary/server-/client-streaming client reads identically, so the opaque demux
+    /// never needs to know a method's call shape and never truncates a client uplink to its first
+    /// frame.
     async fn forward(
         router: Arc<R>,
         path: String,
-        request: Request<Bytes>,
+        request: Request<Streaming<Bytes>>,
     ) -> Result<Response<ResponseStream<Bytes>>, Status> {
         let (metadata, _ext, body) = request.into_parts();
         let uuid = metadata
@@ -149,9 +154,10 @@ impl<R: Router> Demux<R> {
         let backend = router
             .backend(&uuid)
             .ok_or_else(|| Status::not_found(format!("unknown driver uuid: {uuid}")))?;
-        // Forward the opaque body + metadata to the same method path on the backend, relaying its
-        // response message stream verbatim.
-        let (initial, stream) = backend.forward_stream(&path, metadata, body).await?;
+        // Forward the opaque inbound request-frame stream + metadata to the same method path on the
+        // backend, relaying its response-frame stream verbatim.
+        let uplink: ResponseStream<Bytes> = Box::pin(body);
+        let (initial, stream) = backend.forward_bidi(&path, metadata, uplink).await?;
         let mut response = Response::new(stream);
         *response.metadata_mut() = initial;
         Ok(response)
@@ -181,28 +187,29 @@ impl<R: Router> tower::Service<http::Request<axum::body::Body>> for Demux<R> {
                 .max_decoding_message_size(64 * 1024 * 1024)
                 .max_encoding_message_size(64 * 1024 * 1024);
             let svc = ForwardService { router, path };
-            // Server-streaming for every call: a unary method's one-message stream is read
-            // identically by a unary client, and a server-streaming method relays its N messages.
-            Ok(grpc.server_streaming(svc, req).await)
+            // Bidi-streaming for every call: it subsumes all four gRPC call kinds (a unary method's
+            // one-frame request/response is read identically by a unary client), so the opaque demux
+            // never decides a method's call shape and never drops a client uplink's later frames.
+            Ok(grpc.streaming(svc, req).await)
         })
     }
 }
 
-/// One-shot [`tonic::server::ServerStreamingService`] adapter binding a single inbound call to
-/// [`Demux::forward`].
+/// One-shot [`tonic::server::StreamingService`] adapter binding a single inbound (bidi-framed) call
+/// to [`Demux::forward`].
 struct ForwardService<R: Router> {
     router: Arc<R>,
     path: String,
 }
 
-impl<R: Router> tonic::server::ServerStreamingService<Bytes> for ForwardService<R> {
+impl<R: Router> tonic::server::StreamingService<Bytes> for ForwardService<R> {
     type Response = Bytes;
     type ResponseStream = ResponseStream<Bytes>;
     type Future = Pin<
         Box<dyn std::future::Future<Output = Result<Response<Self::ResponseStream>, Status>> + Send>,
     >;
 
-    fn call(&mut self, request: Request<Bytes>) -> Self::Future {
+    fn call(&mut self, request: Request<Streaming<Bytes>>) -> Self::Future {
         let router = self.router.clone();
         let path = self.path.clone();
         Box::pin(Demux::forward(router, path, request))
@@ -251,6 +258,48 @@ mod tests {
         fn call(&mut self, request: Request<Bytes>) -> Self::Future {
             // Echo the opaque body straight back.
             Box::pin(async move { Ok(Response::new(request.into_inner())) })
+        }
+    }
+
+    /// A **bidi-streaming** "driver host" that echoes EACH request frame back as a response frame —
+    /// the client-/bidi-streaming analogue of [`EchoHost`]. It stands in for a native client-/bidi-
+    /// streaming driver, and proves the demux forwards an entire client uplink (every frame, in
+    /// order), not just its first.
+    #[derive(Clone)]
+    struct BidiEchoHost;
+
+    impl tower::Service<http::Request<axum::body::Body>> for BidiEchoHost {
+        type Response = http::Response<tonic::body::BoxBody>;
+        type Error = Infallible;
+        type Future = std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<Self::Response, Infallible>> + Send>,
+        >;
+
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, req: http::Request<axum::body::Body>) -> Self::Future {
+            Box::pin(async move {
+                let mut grpc = tonic::server::Grpc::new(BytesCodec);
+                Ok(grpc.streaming(BidiEchoSvc, req).await)
+            })
+        }
+    }
+
+    struct BidiEchoSvc;
+    impl tonic::server::StreamingService<Bytes> for BidiEchoSvc {
+        type Response = Bytes;
+        type ResponseStream = ResponseStream<Bytes>;
+        type Future = std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<Response<Self::ResponseStream>, Status>> + Send>,
+        >;
+        fn call(&mut self, request: Request<Streaming<Bytes>>) -> Self::Future {
+            // Echo each inbound request frame straight back, in order.
+            Box::pin(async move {
+                let stream: ResponseStream<Bytes> = Box::pin(request.into_inner());
+                Ok(Response::new(stream))
+            })
         }
     }
 
@@ -308,6 +357,72 @@ mod tests {
             .await
             .expect("forwarded echo call");
         assert_eq!(response.into_inner(), payload);
+
+        demux_server.abort();
+        host.abort();
+    }
+
+    /// End-to-end opaque **bidi** forward over `transport`: a client-streaming client sends N request
+    /// frames through the demux to a bidi-echo host and asserts all N come back, in order — proving
+    /// the demux relays an entire client uplink without truncating it to the first frame.
+    async fn bidi_round_trip<Th, Td>(host_transport: Th, demux_transport: Td)
+    where
+        Th: Transport + Clone,
+        Td: Transport + Clone,
+    {
+        use tokio_stream::StreamExt as _;
+
+        // 1. The bidi-echo "driver host", reachable over `host_transport`.
+        let host_incoming = host_transport.incoming();
+        let host = tokio::spawn(async move {
+            let routes = axum::Router::new().fallback_service(BidiEchoHost);
+            Server::builder()
+                .add_routes(routes.into())
+                .serve_with_incoming(host_incoming)
+                .await
+        });
+        let host_channel = connect_channel(&host_transport).await.expect("dial host");
+        let backend: Arc<dyn DriverBackend> = Arc::new(ChannelBackend::new(host_channel));
+
+        // 2. The demux in front, forwarding to `backend` via `forward_bidi`.
+        let demux = Demux::new(SingleBackend(backend));
+        let demux_incoming = demux_transport.incoming();
+        let demux_server = tokio::spawn(async move {
+            Server::builder()
+                .add_routes(demux.into_axum_router().into())
+                .serve_with_incoming(demux_incoming)
+                .await
+        });
+
+        // 3. A raw client-streaming client (BytesCodec) sends 3 frames through the demux.
+        let client_channel = connect_channel(&demux_transport).await.expect("dial demux");
+        let mut client = tonic::client::Grpc::new(client_channel);
+        client.ready().await.expect("client ready");
+
+        let messages = vec![
+            Bytes::from_static(b"frame-one"),
+            Bytes::from_static(b"frame-two"),
+            Bytes::from_static(b"frame-three"),
+        ];
+        let req_stream = tokio_stream::iter(messages.clone());
+        let mut request = Request::new(req_stream);
+        request
+            .metadata_mut()
+            .insert(DRIVER_UUID_KEY, "some-uuid".parse().unwrap());
+        let path = http::uri::PathAndQuery::from_str(ECHO_PATH).unwrap();
+        let response = client
+            .streaming(request, path, BytesCodec)
+            .await
+            .expect("forwarded bidi call");
+        let mut stream = response.into_inner();
+        let mut got = Vec::new();
+        while let Some(item) = stream.next().await {
+            got.push(item.expect("response frame"));
+        }
+        assert_eq!(
+            got, messages,
+            "every client uplink frame must be echoed back through the demux"
+        );
 
         demux_server.abort();
         host.abort();
@@ -377,6 +492,16 @@ mod tests {
             ShmTransport::new().unwrap(),
         )
         .await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn opaque_bidi_forward_over_in_process_transport() {
+        bidi_round_trip(InProcessTransport::new(), InProcessTransport::new()).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn opaque_bidi_forward_over_shm_transport() {
+        bidi_round_trip(ShmTransport::new().unwrap(), ShmTransport::new().unwrap()).await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

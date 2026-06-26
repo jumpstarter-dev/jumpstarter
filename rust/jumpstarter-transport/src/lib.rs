@@ -33,7 +33,7 @@ use jumpstarter_protocol::v1::{
     GetReportResponse, LogStreamResponse, StreamRequest, StreamResponse,
 };
 use tokio_stream::wrappers::ReceiverStream;
-use tokio_stream::Stream;
+use tokio_stream::{Stream, StreamExt as _};
 use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 use tonic::transport::Channel;
 use tonic::{Request, Status};
@@ -118,6 +118,36 @@ pub trait DriverBackend: Send + Sync {
         let (initial, message, _trailers) = self.forward_unary(path, metadata, body).await?;
         let stream: ResponseStream<Bytes> = Box::pin(tokio_stream::once(Ok(message)));
         Ok((initial, stream))
+    }
+
+    /// Forward an **opaque** native per-driver **client-/bidi-streaming** gRPC call — the fully
+    /// general form of the native demux, and the method the demux always invokes.
+    ///
+    /// `uplink` is the inbound request-message stream and the return is the response-message stream.
+    /// Because tonic frames all four gRPC call shapes identically at the HTTP/2 layer, this single
+    /// primitive serves every one: a **unary** client sends one request frame and reads one response;
+    /// **server-streaming** sends one and reads N; **client-streaming** sends N and reads one;
+    /// **bidi** sends N and reads M.
+    ///
+    /// The default collapses to the single-message [`forward_stream`](DriverBackend::forward_stream)
+    /// path — a unary or server-streaming client sends exactly one request frame, so it reads that
+    /// frame and delegates (correct for the dynamic/foreign in-process backends, whose Python
+    /// `@export` seam consumes no client stream). A backend that genuinely relays a client uplink to
+    /// a real host ([`ChannelBackend`]) overrides this to forward **every** frame, so a native
+    /// client-/bidi-streaming driver is proxied without truncation.
+    async fn forward_bidi(
+        &self,
+        path: &str,
+        metadata: MetadataMap,
+        uplink: ResponseStream<Bytes>,
+    ) -> Result<(MetadataMap, ResponseStream<Bytes>), Status> {
+        let mut uplink = uplink;
+        let body = match uplink.next().await {
+            Some(Ok(b)) => b,
+            Some(Err(status)) => return Err(status),
+            None => Bytes::new(),
+        };
+        self.forward_stream(path, metadata, body).await
     }
 }
 
@@ -244,6 +274,37 @@ impl DriverBackend for ChannelBackend {
         let response = grpc
             .server_streaming(request, path, demux::BytesCodec)
             .await?;
+        let initial = response.metadata().clone();
+        let stream: ResponseStream<Bytes> = Box::pin(response.into_inner());
+        Ok((initial, stream))
+    }
+
+    async fn forward_bidi(
+        &self,
+        path: &str,
+        metadata: MetadataMap,
+        uplink: ResponseStream<Bytes>,
+    ) -> Result<(MetadataMap, ResponseStream<Bytes>), Status> {
+        trace!(rpc = "forward_bidi", %path, "channel backend opaque native client/bidi-streaming dispatch");
+        // The fully general analogue of `forward_stream`: a raw bidi `streaming` client over the same
+        // channel + `BytesCodec`, relaying the client's request-frame stream to the host and the
+        // host's response-frame stream back — opaquely. It subsumes the unary/server-streaming cases
+        // (the client simply sends one request frame), so the hub→host hop never needs to know the
+        // method's call shape.
+        let mut grpc = tonic::client::Grpc::new(self.channel.clone())
+            .max_decoding_message_size(64 * 1024 * 1024)
+            .max_encoding_message_size(64 * 1024 * 1024);
+        grpc.ready().await.map_err(|e| {
+            Status::unavailable(format!("native forward: backend not ready: {e}"))
+        })?;
+        let path = http::uri::PathAndQuery::from_str(path)
+            .map_err(|e| Status::internal(format!("native forward: bad method path: {e}")))?;
+        // tonic's streaming client wants a stream of bare encode messages; map the inbound request
+        // stream to `Bytes`, stopping at the first uplink error (a client that aborted its uplink).
+        let body = uplink.take_while(|r| r.is_ok()).filter_map(|r| r.ok());
+        let mut request = Request::new(body);
+        *request.metadata_mut() = metadata;
+        let response = grpc.streaming(request, path, demux::BytesCodec).await?;
         let initial = response.metadata().clone();
         let stream: ResponseStream<Bytes> = Box::pin(response.into_inner());
         Ok((initial, stream))

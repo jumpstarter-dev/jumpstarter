@@ -1,0 +1,8 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: test-exporter-direct-storage
+  namespace: default
+export:
+  storage:
+    type: jumpstarter_driver_opendal.driver.MockStorageMux
