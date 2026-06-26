@@ -686,11 +686,6 @@ class HookExecutor:
                     ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                     f"beforeLease hook failed (on_failure=exit, shutting down): {e}",
                 )
-                await report_status(
-                    ExporterStatus.OFFLINE,
-                    "Exporter shutting down due to beforeLease hook failure",
-                )
-                # Defer shutdown: sets _stop_requested=True, actual stop after lease cleanup
                 shutdown(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
             else:
                 # on_failure='endLease' - report failure, release in finally block

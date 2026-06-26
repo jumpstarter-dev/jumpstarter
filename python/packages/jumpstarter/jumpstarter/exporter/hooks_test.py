@@ -1261,8 +1261,9 @@ class TestHookExecutorPRRegressions:
         """Issue E2: beforeLease fail+exit should report FAILED, not AVAILABLE.
 
         When beforeLease hook fails with on_failure=exit, the last status must be
-        BEFORE_LEASE_HOOK_FAILED. It should NOT report AVAILABLE, which would
-        incorrectly tell the controller the exporter is ready for new leases.
+        BEFORE_LEASE_HOOK_FAILED so the client can detect hook failure reliably.
+        It should NOT report AVAILABLE or OFFLINE, which would clobber the
+        failure status before the client can poll it.
         """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
@@ -1282,16 +1283,9 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        # Last status should be OFFLINE (reported before shutdown to prevent new leases)
         last_status, _ = status_calls[-1]
-        assert last_status == ExporterStatus.OFFLINE, (
-            f"Expected last status to be OFFLINE, got {last_status}"
-        )
-
-        # BEFORE_LEASE_HOOK_FAILED should also be present (reported before OFFLINE)
-        failed_statuses = [s for s, _ in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
-        assert len(failed_statuses) > 0, (
-            f"Expected BEFORE_LEASE_HOOK_FAILED status, got: {status_calls}"
+        assert last_status == ExporterStatus.BEFORE_LEASE_HOOK_FAILED, (
+            f"Expected last status to be BEFORE_LEASE_HOOK_FAILED, got {last_status}"
         )
 
         # AVAILABLE should never have been reported
@@ -1379,11 +1373,12 @@ class TestHookExecutorPRRegressions:
             f"Expected LEASE_READY message to start with '{HOOK_WARNING_PREFIX}', got: '{msg}'"
         )
 
-    async def test_before_hook_exit_reports_offline_before_shutdown(self, lease_scope) -> None:
+    async def test_before_hook_exit_reports_failed_before_shutdown(self, lease_scope) -> None:
         """When beforeLease hook fails with on_failure=exit, the exporter must
-        report OFFLINE status to the controller before initiating shutdown.
-        This prevents the controller from assigning new leases to a dying
-        exporter during the shutdown window.
+        report BEFORE_LEASE_HOOK_FAILED before initiating shutdown. OFFLINE is
+        NOT reported here — the shutdown path handles controller notification
+        during unregistration, avoiding a race where OFFLINE overwrites the
+        failure status before the client can poll it.
         """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
@@ -1406,16 +1401,21 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        offline_indices = [
-            i for i, (s, _) in enumerate(status_calls) if s == ExporterStatus.OFFLINE
+        failed_indices = [
+            i for i, (s, _) in enumerate(status_calls) if s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED
         ]
-        assert len(offline_indices) > 0, (
-            f"Expected OFFLINE status before shutdown, got: {status_calls}"
+        assert len(failed_indices) > 0, (
+            f"Expected BEFORE_LEASE_HOOK_FAILED status before shutdown, got: {status_calls}"
         )
         assert shutdown_called_at_index is not None, "shutdown was never called"
-        assert offline_indices[0] < shutdown_called_at_index, (
-            f"OFFLINE (index {offline_indices[0]}) must be reported before "
+        assert failed_indices[0] < shutdown_called_at_index, (
+            f"BEFORE_LEASE_HOOK_FAILED (index {failed_indices[0]}) must be reported before "
             f"shutdown (index {shutdown_called_at_index}). Statuses: {status_calls}"
+        )
+        offline_statuses = [s for s, _ in status_calls if s == ExporterStatus.OFFLINE]
+        assert len(offline_statuses) == 0, (
+            f"OFFLINE should NOT be reported by hook handler (shutdown path handles it), "
+            f"got: {status_calls}"
         )
 
     async def test_after_hook_exit_reports_offline_before_shutdown(self, lease_scope) -> None:
