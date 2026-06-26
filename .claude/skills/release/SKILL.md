@@ -21,11 +21,12 @@ Release input: $ARGUMENTS
 - Python packages are versioned automatically from git tags via `hatch-vcs` — no manual version files.
 - The `bundle/` directory is NOT committed to the repo.
 - `GITHUB_USER` env var controls the fork for community-operators (defaults to `mangelajo`).
+- Do NOT modify `controller/deploy/operator/api/v1alpha1/jumpstarter_types.go` — the operator resolves `:latest` image defaults to its own version at runtime.
 
 ## Ordering constraint
 
 ```
-types.go + Makefile update → commit → tag push → [CI builds images] → GitHub Release → make bundle → make contribute
+Makefile update → commit → tag push → [CI builds images] → GitHub Release → make bundle → make contribute
 ```
 
 Images must exist before bundle generation. The skill enforces this by splitting the process into phases.
@@ -65,13 +66,20 @@ Using the git state and `$ARGUMENTS` (if provided), ask the user:
 
 Only if the user selected type (A).
 
+**Important:** The `release-*` branch pattern may be protected by repository rulesets. If a direct push is rejected, try creating the branch via the GitHub API:
+
 ```bash
+# Try direct push first
 git fetch origin
-git checkout main
-git pull origin main
-git checkout -b release-X.Y
+git checkout -b release-X.Y origin/main
 git push origin release-X.Y
+
+# If rejected by branch protection, use the API:
+SHA=$(git rev-parse origin/main)
+gh api repos/{owner}/{repo}/git/refs -f ref=refs/heads/release-X.Y -f sha="$SHA"
 ```
+
+If both fail, the user needs to temporarily remove `release-*` from the branch protection ruleset, push the branch, then re-add it.
 
 After pushing, inform the user:
 - The branch push triggers CI to build images tagged with the branch name (e.g., `:release-0.9`)
@@ -94,37 +102,29 @@ git pull origin release-X.Y
 
 **Update version references:**
 
-1. **`controller/deploy/operator/api/v1alpha1/jumpstarter_types.go`** — update both kubebuilder default image tags (there are two: one in `RoutersConfig`, one in `ControllerConfig`):
-   ```go
-   // +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-controller:X.Y.Z"
-   ```
-   For RCs, use the full RC version (e.g., `:0.9.0-rc.1`). Note: no `v` prefix on image tags.
-
-2. **`controller/deploy/operator/Makefile`** — update:
+1. **`controller/deploy/operator/Makefile`** — update:
    - `VERSION ?= X.Y.Z` (or `X.Y.Z-rc.N` for RCs, no `v` prefix)
    - `REPLACES ?= jumpstarter-operator.vPREVIOUS` — must point to the most recently published version in the OLM channel (including RCs). Check existing tags to determine the correct value. For the first release on a new branch, check what the last published version was across all branches.
 
-3. **Regenerate manifests:**
+2. **Regenerate manifests:**
    ```bash
    cd controller/deploy/operator
    make manifests generate
    ```
 
-4. **Commit and push** the changes to the release branch. Files to include:
+3. **Commit and push** the changes to the release branch. Files to include:
    - `controller/deploy/operator/Makefile`
-   - `controller/deploy/operator/api/v1alpha1/jumpstarter_types.go`
-   - `controller/deploy/operator/config/crd/bases/operator.jumpstarter.dev_jumpstarters.yaml`
-   - Any other files changed by `make manifests generate`
+   - Any files changed by `make manifests generate`
 
 #### Phase 2: Tag and GitHub Release
 
-5. **Create and push the git tag:**
+4. **Create and push the git tag:**
    ```bash
    git tag vX.Y.Z       # or vX.Y.Z-rc.N
    git push origin vX.Y.Z
    ```
 
-6. **Create the GitHub Release:**
+5. **Create the GitHub Release:**
    ```bash
    # For a release candidate:
    gh release create vX.Y.Z-rc.N \
@@ -161,7 +161,7 @@ gh run list --workflow=build-images.yaml --limit 3 --json databaseId,status,conc
 gh run watch <RUN_ID>
 ```
 
-Monitor the run periodically using `gh run view <RUN_ID> --json status,conclusion` until it completes. If it fails, show the user the failure details with `gh run view <RUN_ID> --log-failed` and stop.
+Monitor the run periodically using `gh run view <RUN_ID> --json status,conclusion` until it completes. If it fails, offer to re-trigger with `gh run rerun <RUN_ID>`. If it fails again, show the user the failure details with `gh run view <RUN_ID> --log-failed` and stop.
 
 When the build-images workflow succeeds, inform the user and proceed automatically to step 2C.
 
@@ -192,9 +192,6 @@ make bundle
 # Image references should show :X.Y.Z (no :latest, no :vX.Y.Z)
 grep -E "containerImage|image: quay" controller/deploy/operator/bundle/manifests/jumpstarter-operator.clusterserviceversion.yaml
 
-# CRD defaults should match
-grep "default: quay" controller/deploy/operator/bundle/manifests/operator.jumpstarter.dev_jumpstarters.yaml
-
 # Release config
 cat controller/deploy/operator/bundle/release-config.yaml
 ```
@@ -209,33 +206,63 @@ cd controller/deploy/operator
 # Set GITHUB_USER if different from default (mangelajo):
 # export GITHUB_USER=yourusername
 
-make contribute
+# AUTO_CONFIRM=1 skips the interactive y/N prompt
+AUTO_CONFIRM=1 make contribute
 ```
 
-This will show a confirmation prompt. After the script completes, push to the fork and open PRs:
+After the script completes, push to the fork and create PRs using `gh`:
 
 ```bash
+BRANCH="jumpstarter-operator-release-X.Y.Z"
+
 cd controller/deploy/operator/contribute/community-operators
-git push -f user jumpstarter-operator-release-X.Y.Z
+git push -f user "$BRANCH"
 
 cd ../community-operators-prod
-git push -f user jumpstarter-operator-release-X.Y.Z
+git push -f user "$BRANCH"
 ```
 
-Remind the user to open PRs on:
-- `k8s-operatorhub/community-operators`
-- `redhat-openshift-ecosystem/community-operators-prod`
+Then create PRs on both repos:
 
-### 3. Post-release checklist
+```bash
+# PR for community-operators
+cd controller/deploy/operator/contribute/community-operators
+gh pr create --repo k8s-operatorhub/community-operators \
+  --title "operator jumpstarter-operator (X.Y.Z)" \
+  --body "Release X.Y.Z of the jumpstarter-operator for the alpha channel." \
+  --head GITHUB_USER:$BRANCH --base main
+
+# PR for community-operators-prod
+cd ../community-operators-prod
+gh pr create --repo redhat-openshift-ecosystem/community-operators-prod \
+  --title "operator jumpstarter-operator (X.Y.Z)" \
+  --body "Release X.Y.Z of the jumpstarter-operator for the alpha channel." \
+  --head GITHUB_USER:$BRANCH --base main
+```
+
+Replace `GITHUB_USER` with the actual GitHub username (default: `mangelajo`).
+
+### 3. Post-release steps
+
+#### Add new release branch to protection ruleset
+
+If a new `release-X.Y` branch was created, remind the user to add it to the repository's branch protection ruleset so it requires merge queue for future changes. This is done in GitHub Settings → Rules → Rulesets → select the main/release ruleset → add `release-X.Y` to the branch targeting pattern.
+
+#### Cherry-pick infrastructure fixes
+
+If the release included infrastructure-only changes to the contribute script or Makefile (not version-specific), cherry-pick them to `main` in a separate PR.
+
+#### Checklist
 
 Present a checklist of what was done (mark completed items) and what remains:
 
 - [ ] Release branch created (if new `X.Y` cycle)
-- [ ] Version references updated (types.go, Makefile, CRDs)
+- [ ] Release branch added to protection ruleset (if new branch)
+- [ ] Operator Makefile VERSION and REPLACES updated
 - [ ] Git tag created and pushed
 - [ ] GitHub Release created (with `--prerelease` for RCs)
 - [ ] CI image build completed
 - [ ] `operator-installer.yaml` asset uploaded (automated by CI)
 - [ ] OLM bundle generated and verified (`make bundle`)
-- [ ] Community-operators PRs opened (`make contribute`)
-- [ ] Infrastructure-only Makefile fixes cherry-picked to `main` (if applicable)
+- [ ] Community-operators PRs created (`make contribute` + `gh pr create`)
+- [ ] Infrastructure fixes cherry-picked to `main` (if applicable)
