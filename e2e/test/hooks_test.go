@@ -159,6 +159,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 			startHooksExporter("exporter-hooks-before-fail-endLease.yaml")
 
 			out, err := Jmp("shell", "--client", "test-client-hooks",
+				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
 			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Exporter shutting down|Connection to exporter lost)`))
@@ -171,6 +172,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 
 			// First lease: shell should fail because beforeLease hook fails
 			out, err := Jmp("shell", "--client", "test-client-hooks",
+				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
 			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Connection to exporter lost)`))
@@ -181,6 +183,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 			// Second lease: should also fail (hook still configured to fail),
 			// but this proves the exporter accepted a new lease after recovery
 			out2, err2 := Jmp("shell", "--client", "test-client-hooks",
+				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err2).To(HaveOccurred())
 			Expect(out2).To(MatchRegexp(`(beforeLease hook fail|Connection to exporter lost)`))
@@ -193,6 +196,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 			startHooksExporter("exporter-hooks-before-fail-endLease-with-after.yaml")
 
 			out, err := Jmp("shell", "--client", "test-client-hooks",
+				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
 			Expect(out).NotTo(ContainSubstring("AFTER_SHOULD_NOT_RUN"))
@@ -205,6 +209,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 			startHooksExporterSingle("exporter-hooks-before-fail-exit.yaml")
 
 			out, err := Jmp("shell", "--client", "test-client-hooks",
+				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
 			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Exporter shutting down|Connection to exporter lost)`))
@@ -239,6 +244,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 
 			// Shell may succeed or fail; the key is the exporter exits
 			_, _ = Jmp("shell", "--client", "test-client-hooks",
+				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 
 			Eventually(func() bool {
@@ -360,6 +366,7 @@ print("PYTHON_HOOK: complete")
 			startHooksExporter("exporter-hooks-none.yaml")
 
 			out, err := RunCmd("timeout", "60", "jmp", "shell",
+				"--retry-timeout", "75",
 				"--client", "test-client-hooks",
 				"--selector", "example.com/board=hooks",
 				"--duration", "10s", "--", "sleep", "30")
@@ -372,6 +379,7 @@ print("PYTHON_HOOK: complete")
 			startHooksExporter("exporter-hooks-slow-before.yaml")
 
 			out, err := RunCmd("timeout", "60", "jmp", "shell",
+				"--retry-timeout", "75",
 				"--client", "test-client-hooks",
 				"--selector", "example.com/board=hooks",
 				"--duration", "5s", "--", "sleep", "30")
@@ -383,6 +391,7 @@ print("PYTHON_HOOK: complete")
 			startHooksExporter("exporter-hooks-slow-before.yaml")
 
 			out, err := RunCmd("timeout", "60", "jmp", "shell",
+				"--retry-timeout", "75",
 				"--client", "test-client-hooks",
 				"--selector", "example.com/board=hooks",
 				"--duration", "12s", "--", "sleep", "30")
@@ -411,6 +420,7 @@ print("PYTHON_HOOK: complete")
 			startHooksExporterSingle("exporter-hooks-before-fail-exit-with-after.yaml")
 
 			out, err := Jmp("shell", "--client", "test-client-hooks",
+				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
 			Expect(out).NotTo(ContainSubstring("AFTER_SHOULD_NOT_RUN"))

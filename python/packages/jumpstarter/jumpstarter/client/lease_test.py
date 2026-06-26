@@ -19,6 +19,9 @@ class MockAioRpcError(AioRpcError):
     def __init__(self, status_code, message=""):
         self._status_code = status_code
         self._message = message
+        self._code = status_code
+        self._details = message
+        self._debug_error_string = ""
 
     def code(self):
         return self._status_code

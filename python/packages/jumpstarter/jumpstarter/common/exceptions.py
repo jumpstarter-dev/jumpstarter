@@ -51,6 +51,15 @@ class ExporterOfflineError(ConnectionError):
     pass
 
 
+class ExporterUnreachableError(JumpstarterException):
+    """Raised when an exporter does not respond to the initial connection probe.
+
+    Signals that the lease should be released and re-acquired.
+    """
+
+    pass
+
+
 class ConfigurationError(JumpstarterException):
     """Raised when a configuration error exists."""
 

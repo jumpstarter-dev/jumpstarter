@@ -8,11 +8,12 @@ from uuid import UUID
 import grpc
 from anyio.from_thread import BlockingPortal
 from google.protobuf import empty_pb2
+from grpc.aio import AioRpcError
 
 from .grpc import MultipathExporterStub
 from jumpstarter.client import DriverClient
 from jumpstarter.client.base import StubDriverClient
-from jumpstarter.common.exceptions import MissingDriverError
+from jumpstarter.common.exceptions import ExporterUnreachableError, MissingDriverError
 from jumpstarter.common.grpc import _override_default_grpc_options, aio_secure_channel, ssl_channel_credentials
 from jumpstarter.common.importlib import import_class
 from jumpstarter.config.tls import TLSConfigV1Alpha1
@@ -59,6 +60,16 @@ async def client_from_path(
 
         interceptors = passphrase_client_interceptors(passphrase)
 
+    async def _connect(channel):
+        try:
+            return await client_from_channel(channel, portal, stack, allow, unsafe)
+        except AioRpcError as e:
+            if e.code() in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
+                raise ExporterUnreachableError(
+                    "Exporter did not respond to initial connection"
+                ) from e
+            raise
+
     path = str(path)
     if _is_tcp_address(path):
         if insecure:
@@ -67,19 +78,17 @@ async def client_from_path(
                 options=_override_default_grpc_options(grpc_options),
                 interceptors=interceptors,
             ) as channel:
-                yield await client_from_channel(channel, portal, stack, allow, unsafe)
+                yield await _connect(channel)
         else:
             tls = tls_config or TLSConfigV1Alpha1()
             credentials = await ssl_channel_credentials(path, tls)
-            async with aio_secure_channel(
-                path, credentials, grpc_options, interceptors=interceptors
-            ) as channel:
-                yield await client_from_channel(channel, portal, stack, allow, unsafe)
+            async with aio_secure_channel(path, credentials, grpc_options, interceptors=interceptors) as channel:
+                yield await _connect(channel)
     else:
         async with grpc.aio.secure_channel(
             f"unix://{path}", grpc.local_channel_credentials(grpc.LocalConnectionType.UDS)
         ) as channel:
-            yield await client_from_channel(channel, portal, stack, allow, unsafe)
+            yield await _connect(channel)
 
 
 async def client_from_channel(
