@@ -338,6 +338,24 @@ impl ClientSession {
         Ok(resp.into_inner())
     }
 
+    /// Open an opaque **native** server-streaming call and hand back a [`ClientNativeStream`] handle
+    /// the FFI pulls message-at-a-time. This is the server-streaming counterpart of
+    /// [`native_unary`](Self::native_unary): a foreign gRPC stub's custom channel marshals its request
+    /// into `body`, drives this, and decodes each returned message with its own response marshaller —
+    /// the core never sees the per-driver proto. `uuid` rides the `x-jumpstarter-driver-uuid` header so
+    /// the demux routes to the right instance.
+    pub async fn open_native_server_stream(
+        &self,
+        uuid: String,
+        path: String,
+        body: Vec<u8>,
+    ) -> Result<Arc<ClientNativeStream>, DriverCallError> {
+        let inner = self.native_server_stream(uuid, path, body).await?;
+        Ok(Arc::new(ClientNativeStream {
+            inner: Mutex::new(inner),
+        }))
+    }
+
     /// Open a byte stream to a driver `@exportstream`/resource handle. `request_json` is the stream
     /// request (`{uuid, method}` for driver streams or `{uuid, x_jmp_content_encoding}` for
     /// resources). Returns a duplex [`ClientByteStream`] plus the resource initial metadata as JSON.
@@ -568,6 +586,28 @@ impl ClientResultStream {
                 tracing::debug!(stream = %self.label, "streaming_driver_call stream EOF");
                 Ok(None)
             }
+        }
+    }
+}
+
+/// An opaque **native** server-streaming response — the streaming counterpart of
+/// [`ClientSession::native_unary`]'s `Vec<u8>` return. Each [`next`](Self::next) yields one raw
+/// response message (the foreign gRPC stub's own marshaller decodes it); `None` is the clean end of
+/// stream and a non-OK trailer maps to a [`DriverCallError`]. This lets a foreign gRPC stack's custom
+/// channel drive a server-streaming RPC straight through the Rust core without the core ever decoding
+/// the per-driver proto.
+pub struct ClientNativeStream {
+    inner: Mutex<Streaming<bytes::Bytes>>,
+}
+
+impl ClientNativeStream {
+    /// Next raw response message, or `None` at end of stream.
+    pub async fn next(&self) -> Result<Option<Vec<u8>>, DriverCallError> {
+        let mut stream = self.inner.lock().await;
+        match stream.next().await {
+            Some(Ok(bytes)) => Ok(Some(bytes.to_vec())),
+            Some(Err(status)) => Err(err_from_status(status)),
+            None => Ok(None),
         }
     }
 }
@@ -832,6 +872,83 @@ mod native_unary_tests {
         assert_eq!(
             got,
             vec![b"alpha".to_vec(), b"beta".to_vec(), b"gamma".to_vec()]
+        );
+        server.abort();
+    }
+
+    /// A backend whose `forward_bidi` ignores the uplink and emits a fixed N-message downlink —
+    /// proving the client's opaque native **server-streaming** surface drives a real demux call.
+    struct ServerStreamBackend;
+
+    #[tonic::async_trait]
+    impl DriverBackend for ServerStreamBackend {
+        async fn get_report(&self) -> Result<GetReportResponse, Status> {
+            Err(Status::unimplemented("server-stream"))
+        }
+        async fn open_router_stream(
+            &self,
+            _request_meta: AsciiMetadataValue,
+            _uplink: FrameUplink,
+        ) -> Result<RouterStreamOpen, Status> {
+            Err(Status::unimplemented("server-stream"))
+        }
+        async fn log_stream(&self) -> Result<ResponseStream<LogStreamResponse>, Status> {
+            Err(Status::unimplemented("server-stream"))
+        }
+        async fn forward_bidi(
+            &self,
+            _path: &str,
+            _metadata: MetadataMap,
+            _uplink: ResponseStream<bytes::Bytes>,
+        ) -> Result<(MetadataMap, ResponseStream<bytes::Bytes>), Status> {
+            let msgs: Vec<Result<bytes::Bytes, Status>> = vec![
+                Ok(bytes::Bytes::from_static(b"reading-0")),
+                Ok(bytes::Bytes::from_static(b"reading-1")),
+                Ok(bytes::Bytes::from_static(b"reading-2")),
+            ];
+            Ok((MetadataMap::new(), Box::pin(tokio_stream::iter(msgs))))
+        }
+    }
+
+    /// Full client→server native **server-streaming** loop: `ClientSession::open_native_server_stream`
+    /// → demux → `ServerStreamBackend::forward_bidi`, over the in-process transport. The client pulls
+    /// each opaque response message (a foreign stub's own marshaller would decode these), then a clean
+    /// EOF — the streaming counterpart of `client_native_unary_round_trips_through_demux`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn client_native_server_stream_round_trips_through_demux() {
+        let transport = InProcessTransport::new();
+        let incoming = transport.incoming();
+        let demux = Demux::new(SingleBackend(Arc::new(ServerStreamBackend)));
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_routes(demux.into_axum_router().into())
+                .serve_with_incoming(incoming)
+                .await
+        });
+
+        let channel = connect_channel(&transport).await.expect("connect");
+        let session = ClientSession {
+            channel,
+            passphrase: None,
+            native: OnceCell::new(),
+        };
+        let path = "/jumpstarter.interfaces.power.v1.PowerInterface/Read";
+        let stream = session
+            .open_native_server_stream("power-uuid-1".into(), path.into(), Vec::new())
+            .await
+            .expect("open_native_server_stream");
+
+        let mut got = Vec::new();
+        while let Some(msg) = stream.next().await.unwrap() {
+            got.push(msg);
+        }
+        assert_eq!(
+            got,
+            vec![
+                b"reading-0".to_vec(),
+                b"reading-1".to_vec(),
+                b"reading-2".to_vec(),
+            ]
         );
         server.abort();
     }

@@ -75,15 +75,15 @@ class _FFIByteStream(ObjectStream[bytes]):
         # for resource *reads* (host→client): forward_stream's sink→channel copy hits immediate
         # EOF on the empty sink and calls send_eof; a full close here would tear down the
         # receive path the driver is still writing into (BrokenResourceError). The local bridge
-        # exposes close_write; the Rust ClientByteStream currently only has a full close.
+        # exposes close_write; the Rust ClientByteStream currently only has a full shutdown.
         close_write = getattr(self._chan, "close_write", None)
         if close_write is not None:
             await close_write()
         else:
-            await self._chan.close()
+            await self._chan.shutdown()
 
     async def aclose(self) -> None:
-        await self._chan.close()
+        await self._chan.shutdown()
 
 
 @dataclass(kw_only=True)

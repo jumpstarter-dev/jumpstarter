@@ -622,6 +622,25 @@ impl ClientSession {
             .map_err(from_core_err)
     }
 
+    /// Opaque **native** per-driver **server-streaming** gRPC call — the streaming half of the native
+    /// calls surface, the counterpart of [`Self::native_unary`]. Returns a [`ClientNativeStream`] the
+    /// foreign stub's custom channel pulls message-at-a-time, decoding each with its own response
+    /// marshaller; the core never sees the per-driver proto. `uuid` rides the `x-jumpstarter-driver-uuid`
+    /// header so the exporter demux routes to the right instance.
+    pub async fn native_server_stream(
+        &self,
+        uuid: String,
+        path: String,
+        body: Vec<u8>,
+    ) -> Result<Arc<ClientNativeStream>, DriverError> {
+        let inner = self
+            .inner
+            .open_native_server_stream(uuid, path, body)
+            .await
+            .map_err(from_core_err)?;
+        Ok(Arc::new(ClientNativeStream { inner }))
+    }
+
     pub async fn streaming_driver_call(
         &self,
         uuid: String,
@@ -696,7 +715,10 @@ impl ClientByteStream {
         self.inner.write(data.0).await.map_err(from_core_err)
     }
 
-    pub async fn close(&self) -> Result<(), DriverError> {
+    /// Gracefully end the byte stream (half-close the send side / END_STREAM). Named `shutdown`, not
+    /// `close`, because UniFFI's Kotlin backend makes every object `AutoCloseable` with a `close()`
+    /// handle-disposer — an exported async `close()` would be a conflicting overload there.
+    pub async fn shutdown(&self) -> Result<(), DriverError> {
         self.inner.close().await.map_err(from_core_err)
     }
 }
@@ -710,6 +732,21 @@ pub struct ClientResultStream {
 #[uniffi::export(async_runtime = "tokio")]
 impl ClientResultStream {
     pub async fn next(&self) -> Result<Option<String>, DriverError> {
+        self.inner.next().await.map_err(from_core_err)
+    }
+}
+
+/// An opaque **native** server-streaming response, pulled message-at-a-time as raw proto bytes —
+/// the streaming counterpart of [`ClientSession::native_unary`]. The foreign gRPC stub's custom
+/// channel decodes each message with its own response marshaller; `None` is the clean end of stream.
+#[derive(uniffi::Object)]
+pub struct ClientNativeStream {
+    inner: Arc<jumpstarter_core::ClientNativeStream>,
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl ClientNativeStream {
+    pub async fn next(&self) -> Result<Option<Vec<u8>>, DriverError> {
         self.inner.next().await.map_err(from_core_err)
     }
 }
@@ -989,8 +1026,9 @@ impl LeaseTransport {
         self.inner.jumpstarter_host().await.map_err(from_core_controller_err)
     }
 
-    /// Stop the listener + remove the socket (idempotent).
-    pub async fn close(&self) {
+    /// Stop the listener + remove the socket (idempotent). Named `shutdown`, not `close`, to avoid
+    /// colliding with the `AutoCloseable.close()` handle-disposer UniFFI's Kotlin backend generates.
+    pub async fn shutdown(&self) {
         self.inner.close().await;
     }
 }

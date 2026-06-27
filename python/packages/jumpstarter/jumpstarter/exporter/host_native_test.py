@@ -237,7 +237,7 @@ async def test_native_exportstream_echoes_over_bidi():
             await chan.write(b"hello native bidi")
             data = await chan.read()
             assert bytes(data) == b"hello native bidi", "EchoNetwork must echo the written chunk"
-            await chan.close()
+            await chan.shutdown()
 
             await session.end_session()
         finally:

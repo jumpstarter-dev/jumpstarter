@@ -512,7 +512,9 @@ class _LocalByteStream:
                 await self._host.stream_write(self._handle, tail)
         await self._host.stream_close_write(self._handle)
 
-    async def close(self) -> None:
+    async def shutdown(self) -> None:
+        # Mirrors jumpstarter_core.ClientByteStream.shutdown (renamed from close so the FFI binding
+        # doesn't collide with Kotlin's AutoCloseable.close); LocalSession stays a drop-in.
         await self._host.stream_close(self._handle)
 
 

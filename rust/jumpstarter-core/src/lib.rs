@@ -21,7 +21,9 @@ pub mod native_table;
 pub mod report;
 pub(crate) mod stream_pump;
 
-pub use client::{ClientByteStream, ClientLogStream, ClientResultStream, ClientSession};
+pub use client::{
+    ClientByteStream, ClientLogStream, ClientNativeStream, ClientResultStream, ClientSession,
+};
 pub use controller::{ControllerSession, LeaseTransport};
 pub use driver::{Driver, NativeDriverBackend};
 pub use dto::DriverNode;
