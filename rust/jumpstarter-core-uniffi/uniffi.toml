@@ -1,0 +1,7 @@
+# UniFFI binding configuration.
+#
+# The generated Kotlin bindings default to the `uniffi.<crate_name>` package
+# (`uniffi.jumpstarter_core`), which leaks the binding mechanism into consumer imports. Pin them to
+# a real Jumpstarter package so JVM code imports `dev.jumpstarter.core.*` instead.
+[bindings.kotlin]
+package_name = "dev.jumpstarter.core"

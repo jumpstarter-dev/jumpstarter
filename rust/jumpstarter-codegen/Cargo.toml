@@ -1,0 +1,24 @@
+[package]
+name = "jumpstarter-codegen"
+description = "Proto-first cross-language driver codegen: walk a FileDescriptorSet into a language-neutral IR and drive per-language generators"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# The hand-rolled codegen engine over a compiled `FileDescriptorSet`. It owns the
+# descriptor → language-neutral IR walk (`engine.rs`/`ir.rs`) and the
+# `LanguageGenerator` seam (`languages/`); per-language string-building generators
+# (Rust/Java) implement that trait. It depends only on the protobuf descriptor
+# crates already used by `jumpstarter-core` (same versions) plus error helpers — no
+# tonic/uniffi/core deps, so the engine is a thin, fast-compiling library.
+[dependencies]
+# Same prost / prost-types / prost-reflect versions as jumpstarter-core so the
+# `FileDescriptorSet` decode + `DescriptorPool` walk match the in-tree path
+# (driver.rs `build_native_backend`). prost-reflect 0.14 is the prost-0.13 line.
+prost.workspace = true
+prost-types.workspace = true
+prost-reflect = "0.14"
+anyhow = "1"
+thiserror.workspace = true

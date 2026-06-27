@@ -69,12 +69,59 @@ fn parse_codec(request_json: &str) -> Option<Codec> {
 /// result or one stream frame, and the foreign side is GIL-bounded anyway.
 const PUMP_BUFFER: usize = 16;
 
+/// The **opaque server seam** a proto-first foreign host (e.g. a generated Kotlin `PowerBackend`)
+/// provides — the server-side mirror of the client `ClientSession::native_unary`. A host that
+/// implements its interface as a *real gRPC service* (decoding the prost request, calling the
+/// author's typed handler, encoding the response) routes inbound `(path, body)` through this
+/// instead of the JSON `driver_call` codec, so the core never decodes the per-driver proto.
+///
+/// `None`/absent ⇒ [`ForeignDriver`] keeps using its existing descriptor-driven JSON
+/// (`driver_call`) dispatch — the two paths coexist so nothing relying on the legacy codec breaks.
+#[async_trait::async_trait]
+pub trait ForeignNativeUnary: Send + Sync {
+    /// Serve one opaque native unary call: `uuid` is the target driver instance (the demux
+    /// `x-jumpstarter-driver-uuid` header), `path` the full gRPC method path
+    /// (`/jumpstarter.interfaces.power.v1.PowerInterface/On`), `body` the encoded request message;
+    /// returns the encoded response message bytes.
+    async fn forward_unary(
+        &self,
+        uuid: String,
+        path: String,
+        body: Vec<u8>,
+    ) -> Result<Vec<u8>, DriverCallError>;
+
+    /// Serve one opaque native **server-streaming** call — the streaming counterpart of
+    /// [`forward_unary`](Self::forward_unary). The host drives its gRPC service's server-streaming
+    /// method and returns a pull-style stream of encoded response messages (`Read` -> a stream of
+    /// encoded `PowerReading`s). A host with no server-streaming surface for `path` declines with
+    /// [`DriverCallError::Unimplemented`], and the [`ForeignDriver`] falls back to the legacy
+    /// descriptor/JSON streaming dispatch.
+    async fn forward_server_stream(
+        &self,
+        uuid: String,
+        path: String,
+        body: Vec<u8>,
+    ) -> Result<Arc<dyn ForeignNativeByteStream>, DriverCallError>;
+}
+
+/// A pull-style stream of opaque encoded response messages for a native server-streaming call
+/// (the byte-plane counterpart of [`DriverResultStream`]).
+#[async_trait::async_trait]
+pub trait ForeignNativeByteStream: Send + Sync {
+    /// The next encoded response message, or `None` at end of stream.
+    async fn next(&self) -> Result<Option<Vec<u8>>, DriverCallError>;
+}
+
 /// Wraps a [`DriverApi`] as a [`DriverBackend`].
 pub struct ForeignDriver {
     api: Arc<dyn DriverApi>,
     /// The native-gRPC dispatcher, built lazily from the host's per-driver descriptors on the first
     /// native call (the legacy `driver_call` path doesn't need it).
     native: OnceCell<DynamicBackend>,
+    /// Optional proto-first server seam. When present, [`forward_unary`](Self::forward_unary)
+    /// routes the opaque native call straight to the foreign host's own gRPC service instead of
+    /// decoding it to a JSON `driver_call`. Absent ⇒ the legacy descriptor/JSON path is used.
+    native_unary: Option<Arc<dyn ForeignNativeUnary>>,
 }
 
 impl ForeignDriver {
@@ -82,7 +129,100 @@ impl ForeignDriver {
         Self {
             api,
             native: OnceCell::new(),
+            native_unary: None,
         }
+    }
+
+    /// Attach a proto-first [`ForeignNativeUnary`] server seam so native unary calls bypass the
+    /// JSON `driver_call` codec and reach the foreign host's own gRPC service. The legacy
+    /// descriptor/JSON dispatch stays available for everything else (streaming, byte plane, and
+    /// any host that does not implement this seam).
+    pub fn with_native_unary(mut self, native_unary: Arc<dyn ForeignNativeUnary>) -> Self {
+        self.native_unary = Some(native_unary);
+        self
+    }
+
+    /// Try the proto-first [`ForeignNativeUnary`] server seam for one opaque native call. Returns
+    /// `Ok(Some(response_bytes))` when the host served it natively, `Ok(None)` when no seam is
+    /// attached or the host declined (`Unimplemented`) — meaning the caller should fall back to the
+    /// descriptor-driven `driver_call` dispatch — and `Err` for any other host failure.
+    async fn try_native_unary(
+        &self,
+        path: &str,
+        metadata: &MetadataMap,
+        body: &bytes::Bytes,
+    ) -> Result<Option<bytes::Bytes>, Status> {
+        let Some(native_unary) = &self.native_unary else {
+            return Ok(None);
+        };
+        let uuid = metadata
+            .get(jumpstarter_transport::demux::DRIVER_UUID_KEY)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                Status::invalid_argument("native unary call missing x-jumpstarter-driver-uuid header")
+            })?;
+        match native_unary
+            .forward_unary(uuid, path.to_string(), body.to_vec())
+            .await
+        {
+            Ok(resp) => Ok(Some(bytes::Bytes::from(resp))),
+            // Host has no native gRPC surface for this method → fall back to legacy dispatch.
+            Err(DriverCallError::Unimplemented(_)) => Ok(None),
+            Err(e) => Err(status_from(e)),
+        }
+    }
+
+    /// Try the proto-first server-streaming seam for one opaque native call. Returns
+    /// `Ok(Some(stream))` of encoded response messages when the host served it natively,
+    /// `Ok(None)` when no seam is attached or the host declined (`Unimplemented`), and `Err` for
+    /// any other host failure. The host's pull-style [`ForeignNativeByteStream`] is pumped into a
+    /// [`ResponseStream`] (one task draining it) so it slots into the `forward_stream` return.
+    async fn try_native_server_stream(
+        &self,
+        path: &str,
+        metadata: &MetadataMap,
+        body: &bytes::Bytes,
+    ) -> Result<Option<ResponseStream<bytes::Bytes>>, Status> {
+        let Some(native_unary) = &self.native_unary else {
+            return Ok(None);
+        };
+        let uuid = metadata
+            .get(jumpstarter_transport::demux::DRIVER_UUID_KEY)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                Status::invalid_argument("native unary call missing x-jumpstarter-driver-uuid header")
+            })?;
+        let foreign_stream = match native_unary
+            .forward_server_stream(uuid, path.to_string(), body.to_vec())
+            .await
+        {
+            Ok(stream) => stream,
+            // Host has no server-streaming surface for this method → fall back to legacy dispatch.
+            Err(DriverCallError::Unimplemented(_)) => return Ok(None),
+            Err(e) => return Err(status_from(e)),
+        };
+        // Drain the host's pull-style stream into a channel-backed `ResponseStream` (the same
+        // pump shape the byte plane uses). A host error becomes a non-OK item the client observes.
+        let (tx, rx) = mpsc::channel::<Result<bytes::Bytes, Status>>(PUMP_BUFFER);
+        tokio::spawn(async move {
+            loop {
+                match foreign_stream.next().await {
+                    Ok(Some(msg)) => {
+                        if tx.send(Ok(bytes::Bytes::from(msg))).await.is_err() {
+                            break;
+                        }
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        let _ = tx.send(Err(status_from(e))).await;
+                        break;
+                    }
+                }
+            }
+        });
+        Ok(Some(Box::pin(ReceiverStream::new(rx))))
     }
 
     /// Eagerly introspect + build the on-demand native dispatcher **at startup**, so the native
@@ -174,17 +314,44 @@ impl DriverBackend for ForeignDriver {
         metadata: MetadataMap,
         body: bytes::Bytes,
     ) -> Result<(MetadataMap, bytes::Bytes, MetadataMap), Status> {
+        // Proto-first server seam: a host that implements its interface as a real gRPC service
+        // (a generated Kotlin `PowerBackend`) decodes/dispatches/encodes the per-driver proto
+        // itself, so route the opaque call straight to it — the core never touches the codec.
+        // A JSON-only host (today's Python host) declines with `Unimplemented`; that — and only
+        // that — falls through to the descriptor-driven `driver_call` dispatch below, so the
+        // legacy path stays fully intact while proto-first hosts skip it.
+        if let Some(resp) = self.try_native_unary(path, &metadata, &body).await? {
+            return Ok((MetadataMap::new(), resp, MetadataMap::new()));
+        }
+        // Legacy/default: the descriptor-driven JSON `driver_call` dispatch (kept intact so a host
+        // that does not provide the native seam — e.g. today's Python hosts — is unaffected).
         self.native().await?.forward_unary(path, metadata, body).await
     }
 
     /// The server-streaming half: an `@export` async generator served natively, one output message
     /// per yielded result. Routed through the same on-demand [`DynamicBackend`] as the unary path.
+    ///
+    /// A typed **unary** method (`On`/`Off`) is framed as streaming by the demux and arrives here
+    /// too; a proto-first host serves it through its native [`ForeignNativeUnary`] seam, whose
+    /// single response message is presented as a one-item stream (a unary client reads it
+    /// identically). A genuinely server-streaming method (`Read`) — which `forward_unary` cannot
+    /// produce — declines (`Unimplemented`) on that seam and falls through to the descriptor/JSON
+    /// streaming dispatch.
     async fn forward_stream(
         &self,
         path: &str,
         metadata: MetadataMap,
         body: bytes::Bytes,
     ) -> Result<(MetadataMap, ResponseStream<bytes::Bytes>), Status> {
+        // A typed unary method (`On`/`Off`) framed as streaming → one-item stream from the seam.
+        if let Some(resp) = self.try_native_unary(path, &metadata, &body).await? {
+            let stream: ResponseStream<bytes::Bytes> = Box::pin(tokio_stream::once(Ok(resp)));
+            return Ok((MetadataMap::new(), stream));
+        }
+        // A genuinely server-streaming method (`Read`) → N-item stream from the seam.
+        if let Some(stream) = self.try_native_server_stream(path, &metadata, &body).await? {
+            return Ok((MetadataMap::new(), stream));
+        }
         self.native().await?.forward_stream(path, metadata, body).await
     }
 

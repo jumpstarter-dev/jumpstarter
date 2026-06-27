@@ -34,6 +34,7 @@ fn ensure_crypto_provider() {
 }
 
 use async_trait::async_trait;
+use jumpstarter_core::foreign::ForeignNativeUnary;
 use jumpstarter_core::{
     DriverCallError, DriverByteChannel, ForeignDriver, DriverApi, DriverResultStream,
     DriverStreamOpen,
@@ -217,6 +218,44 @@ pub trait DriverHost: Send + Sync {
         method_name: String,
         args_json: String,
     ) -> Result<String, DriverError>;
+
+    /// Opaque **native** per-driver unary call — the server-side mirror of the client
+    /// [`ClientSession::native_unary`]. A proto-first host (a generated Kotlin `PowerBackend`)
+    /// implements its interface as a real gRPC service and decodes/dispatches/encodes the
+    /// per-driver proto itself: `path` is the full method path
+    /// (`/jumpstarter.interfaces.power.v1.PowerInterface/On`), `body` the encoded request message,
+    /// and the return is the encoded response message. `uuid` is the target driver instance.
+    ///
+    /// A JSON-only host (today's Python host) implements this to raise
+    /// [`DriverError::Unimplemented`]; the core then falls back to its descriptor-driven
+    /// `driver_call` dispatch, so the legacy path is unaffected. (UniFFI does not permit a Rust
+    /// default body on an exported foreign-trait method, so every host declares it explicitly.)
+    async fn forward_unary(
+        &self,
+        uuid: String,
+        path: String,
+        body: Bytes,
+    ) -> Result<Bytes, DriverError>;
+
+    /// Opaque **native** per-driver **server-streaming** call — the streaming mirror of
+    /// [`forward_unary`](DriverHost::forward_unary), and the server-side counterpart of the client
+    /// `ClientSession::native_server_stream`. The host drives its gRPC service's server-streaming
+    /// method (`Read`) and returns a handle the core pulls encoded response messages from via
+    /// [`forward_stream_next`](DriverHost::forward_stream_next). A JSON-only host (or one with no
+    /// server-streaming surface for `path`) raises [`DriverError::Unimplemented`]; the core then
+    /// falls back to its descriptor-driven streaming dispatch.
+    async fn forward_server_stream(
+        &self,
+        uuid: String,
+        path: String,
+        body: Bytes,
+    ) -> Result<u64, DriverError>;
+    /// Next encoded response message for a [`forward_server_stream`](DriverHost::forward_server_stream)
+    /// handle, or `None` at end of stream. `Bytes` (not `Vec<u8>`) so the byte plane crosses the FFI
+    /// in bulk (see [`stream_read`](DriverHost::stream_read)).
+    async fn forward_stream_next(&self, handle: u64) -> Result<Option<Bytes>, DriverError>;
+    /// Release a [`forward_server_stream`](DriverHost::forward_server_stream) handle.
+    async fn forward_stream_close(&self, handle: u64) -> Result<(), DriverError>;
 
     /// Start a streaming `@export` call; returns a handle to pull results from.
     async fn streaming_open(
@@ -464,7 +503,14 @@ impl HostFactory for UniffiHostFactory {
         let api: Arc<dyn DriverApi> = Arc::new(UniffiHostApi {
             inner: host.clone(),
         });
-        let foreign = ForeignDriver::new(api);
+        // Attach the proto-first server seam: a host that implements its interface as a real gRPC
+        // service (a generated Kotlin `PowerBackend`) serves native unary calls through
+        // `DriverHost::forward_unary` directly. A JSON-only host raises `Unimplemented` there, so
+        // the core transparently falls back to its descriptor-driven `driver_call` dispatch.
+        let native_unary: Arc<dyn ForeignNativeUnary> = Arc::new(UniffiNativeUnary {
+            inner: host.clone(),
+        });
+        let foreign = ForeignDriver::new(api).with_native_unary(native_unary);
         // Introspect the driver tree NOW (at host startup) so the native gRPC interface is instantly
         // ready to serve — no first-call latency, and any descriptor problems surface here. Failure
         // is non-fatal (the native side is best-effort; legacy dispatch is unaffected).
@@ -481,6 +527,77 @@ impl HostFactory for UniffiHostFactory {
 /// Wraps a foreign `DriverHost` as `jumpstarter_core::DriverApi`.
 struct UniffiHostApi {
     inner: Arc<dyn DriverHost>,
+}
+
+/// Wraps a foreign `DriverHost` as the proto-first [`ForeignNativeUnary`] server seam, bridging the
+/// core's opaque `forward_unary` to the host's own gRPC service (`DriverHost::forward_unary`). A
+/// JSON-only host's `forward_unary` raises `Unimplemented`, which the `ForeignDriver` treats as
+/// "decline" and falls back to the descriptor/JSON dispatch.
+struct UniffiNativeUnary {
+    inner: Arc<dyn DriverHost>,
+}
+
+#[async_trait]
+impl ForeignNativeUnary for UniffiNativeUnary {
+    async fn forward_unary(
+        &self,
+        uuid: String,
+        path: String,
+        body: Vec<u8>,
+    ) -> Result<Vec<u8>, DriverCallError> {
+        self.inner
+            .forward_unary(uuid, path, Bytes(body))
+            .await
+            .map(Vec::from)
+            .map_err(to_core_err)
+    }
+
+    async fn forward_server_stream(
+        &self,
+        uuid: String,
+        path: String,
+        body: Vec<u8>,
+    ) -> Result<Arc<dyn jumpstarter_core::foreign::ForeignNativeByteStream>, DriverCallError> {
+        let handle = self
+            .inner
+            .forward_server_stream(uuid, path, Bytes(body))
+            .await
+            .map_err(to_core_err)?;
+        Ok(Arc::new(HandleNativeByteStream {
+            host: self.inner.clone(),
+            handle,
+        }))
+    }
+}
+
+/// A [`ForeignNativeByteStream`] backed by a `(host, handle)` pair — drives the host's handle-based
+/// `forward_stream_next`/`forward_stream_close`, releasing the handle at end of stream (mirrors
+/// [`HandleResultStream`]).
+struct HandleNativeByteStream {
+    host: Arc<dyn DriverHost>,
+    handle: u64,
+}
+
+#[async_trait]
+impl jumpstarter_core::foreign::ForeignNativeByteStream for HandleNativeByteStream {
+    async fn next(&self) -> Result<Option<Vec<u8>>, DriverCallError> {
+        let item = self
+            .inner_next()
+            .await
+            .map(|opt| opt.map(Vec::from))
+            .map_err(to_core_err)?;
+        if item.is_none() {
+            // End of stream — release the handle (best effort).
+            let _ = self.host.forward_stream_close(self.handle).await;
+        }
+        Ok(item)
+    }
+}
+
+impl HandleNativeByteStream {
+    async fn inner_next(&self) -> Result<Option<Bytes>, DriverError> {
+        self.host.forward_stream_next(self.handle).await
+    }
 }
 
 #[async_trait]

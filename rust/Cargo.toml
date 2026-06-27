@@ -28,6 +28,9 @@ members = [
     "jumpstarter-fsm-macros",
     "jumpstarter-driver-macros",
     "jumpstarter-driver-example",
+    "jumpstarter-codegen",
+    "jumpstarter-driver-runtime",
+    "jumpstarter-driver-power-example",
 ]
 
 [workspace.package]

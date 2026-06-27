@@ -1398,6 +1398,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "jumpstarter-codegen"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "prost",
+ "prost-reflect",
+ "prost-types",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "jumpstarter-compression"
 version = "0.0.0"
 dependencies = [
@@ -1487,6 +1498,43 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "jumpstarter-driver-power-example"
+version = "0.0.0"
+dependencies = [
+ "bytes",
+ "jumpstarter-codegen",
+ "jumpstarter-core",
+ "jumpstarter-driver-runtime",
+ "jumpstarter-protocol",
+ "jumpstarter-transport",
+ "prost",
+ "prost-reflect",
+ "prost-types",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
+name = "jumpstarter-driver-runtime"
+version = "0.0.0"
+dependencies = [
+ "axum",
+ "http",
+ "jumpstarter-protocol",
+ "jumpstarter-transport",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tower 0.5.3",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

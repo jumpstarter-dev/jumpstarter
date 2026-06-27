@@ -1,0 +1,40 @@
+[package]
+name = "jumpstarter-driver-power-example"
+description = "Proto-first example: a native Rust power driver authored as `impl PowerInterface`, served by the generic jumpstarter-driver-runtime over SHM and driven by a build-time-generated PowerClient"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# The ONLY committed code is the author's `impl PowerInterface for MockPower`. build.rs generates
+# everything else into OUT_DIR (not committed): the stock tonic service trait + messages +
+# FILE_DESCRIPTOR_SET (tonic-build), and the typed `PowerClient` (jumpstarter-codegen's
+# RustGenerator over the FileDescriptorSet). The round-trip test serves MockPower via the generic
+# `jumpstarter_driver_runtime::serve_driver` over SHM and drives it through the generated client.
+[lib]
+name = "jumpstarter_driver_power_example"
+path = "src/lib.rs"
+
+[dependencies]
+jumpstarter-core = { path = "../jumpstarter-core" }
+jumpstarter-protocol = { path = "../jumpstarter-protocol" }
+jumpstarter-transport = { path = "../jumpstarter-transport" }
+bytes = "1"
+prost.workspace = true
+prost-types.workspace = true
+tonic.workspace = true
+tokio-stream = "0.1"
+serde_json.workspace = true
+
+[build-dependencies]
+tonic-build.workspace = true
+# build.rs runs the codegen — the client is generated at build time, never committed.
+jumpstarter-codegen = { path = "../jumpstarter-codegen" }
+
+[dev-dependencies]
+jumpstarter-driver-runtime = { path = "../jumpstarter-driver-runtime" }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "sync", "net"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+prost-reflect = "0.14"
+tempfile = "3"

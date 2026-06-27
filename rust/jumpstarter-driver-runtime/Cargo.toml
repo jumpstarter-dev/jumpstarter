@@ -1,0 +1,22 @@
+[package]
+name = "jumpstarter-driver-runtime"
+description = "Generic, codegen-free driver host: serves a stock tonic service over the Jumpstarter SHM transport, exposed to the hub as a ChannelBackend. The author implements only the stock tonic service trait; no per-interface adapter is generated."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+jumpstarter-transport = { path = "../jumpstarter-transport" }
+jumpstarter-protocol = { path = "../jumpstarter-protocol" }
+tonic.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }
+tokio-stream = "0.1"
+# The server stack mirrors the transport demux's own wiring (tonic 0.12 routes over axum 0.7);
+# these are real deps here because this crate IS the server side.
+axum = { version = "0.7", default-features = false }
+http = "1"
+tower = { version = "0.5", features = ["util"] }
+uuid = { version = "1", features = ["v4"] }
+tracing.workspace = true
