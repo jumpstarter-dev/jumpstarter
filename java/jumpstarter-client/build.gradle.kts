@@ -1,20 +1,14 @@
-import org.gradle.internal.os.OperatingSystem
-
 plugins {
     `java-library`
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.protobuf)
+    // Shared cargo cdylib build + JNA test wiring (build-logic).
+    id("dev.jumpstarter.cargo-cdylib")
 }
 
 val repoRoot: File = rootDir.parentFile
-val rustDir = file("$repoRoot/rust")
-val cdylibDir = file("$rustDir/target/debug")
-val libName = when {
-    OperatingSystem.current().isMacOsX -> "libjumpstarter_core.dylib"
-    OperatingSystem.current().isWindows -> "jumpstarter_core.dll"
-    else -> "libjumpstarter_core.so"
-}
-val cdylib = file("$cdylibDir/$libName")
+val rustDir = extra["jumpstarterRustDir"] as File
+val cdylib = extra["jumpstarterCdylib"] as File
 val uniffiOutDir = layout.buildDirectory.dir("generated/uniffi")
 // jumpstarter-codegen: the interface FileDescriptorSet (from the protobuf plugin) and the generated
 // typed clients. Both live under build/ — the typed clients are generated each build, never committed.
@@ -28,13 +22,16 @@ kotlin {
 }
 
 dependencies {
+    // Public API: a driver author implements the stock grpc-java/grpc-kotlin service bases and the
+    // generated clients return protobuf types, so these are exposed transitively to driver modules.
     api(libs.grpc.api)
-    implementation(libs.grpc.protobuf)
-    implementation(libs.grpc.stub)
-    implementation(libs.grpc.kotlin.stub)
-    implementation(libs.protobuf.java)
+    api(libs.grpc.protobuf)
+    api(libs.grpc.stub)
+    api(libs.grpc.kotlin.stub)
+    api(libs.protobuf.java)
+    api(libs.kotlinx.coroutines.core)
+    // Internal: JNA loads the cdylib; gson parses GetReport JSON.
     implementation(libs.jna)
-    implementation(libs.kotlinx.coroutines.core)
     implementation(libs.gson)
 
     // javax.annotation.Generated used by grpc-java codegen output.
@@ -44,17 +41,15 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-// --- Rust core: build the cdylib + generate the UniFFI Kotlin bindings -----------------
-// The JVM client "steals the transport": the generated bindings drive jumpstarter-core over UniFFI
-// (JNA loads libjumpstarter_core), so no JVM-side gRPC socket exists.
-
+// --- UniFFI Kotlin bindings (dev.jumpstarter.core) from the cdylib ----------------------
+// The JVM "steals the transport": the generated bindings drive jumpstarter-core over UniFFI (JNA
+// loads libjumpstarter_core), so there is no JVM-side gRPC socket. This module owns the single
+// cdylib build; the `dev.jumpstarter.cargo-cdylib` convention adds the JNA test wiring (here and in
+// the example/test modules) and depends on this task.
 val cargoBuildCore by tasks.registering(Exec::class) {
     description = "Build the jumpstarter-core UniFFI cdylib"
     workingDir = rustDir
     commandLine("cargo", "build", "-p", "jumpstarter-core-uniffi")
-    // Track the Rust sources so Gradle skips cargo (and the downstream binding regen + Kotlin
-    // recompile) when nothing changed, and rebuilds when a `.rs`/manifest does — without this the
-    // task either re-runs every build or goes stale on a source edit.
     inputs.files(
         fileTree(rustDir) {
             include("**/*.rs", "**/Cargo.toml")
@@ -67,7 +62,7 @@ val cargoBuildCore by tasks.registering(Exec::class) {
 
 val generateUniffiBindings by tasks.registering(Exec::class) {
     description = "Generate the Kotlin UniFFI bindings from the cdylib"
-    dependsOn(cargoBuildCore)
+    dependsOn("cargoBuildCore")
     workingDir = rustDir
     val outDir = uniffiOutDir.get().asFile
     doFirst { outDir.mkdirs() }
@@ -143,16 +138,9 @@ val generateJumpstarterClients by tasks.registering(Exec::class) {
 
 tasks.named("compileKotlin") { dependsOn(generateJumpstarterClients) }
 
-// --- Tests: JNA must find the Rust cdylib ----------------------------------------------
-tasks.withType<Test>().configureEach {
-    dependsOn(cargoBuildCore)
-    systemProperty("jna.library.path", cdylibDir.path)
-    testLogging {
-        events("passed", "skipped", "failed")
-        showStandardStreams = true
-    }
-}
-
+// --- Tests ------------------------------------------------------------------------------
+// JNA's library path + the cargoBuildCore dependency are applied to every Test task by the
+// `dev.jumpstarter.cargo-cdylib` convention.
 tasks.test {
     useJUnitPlatform { excludeTags("integration") }
 }
@@ -162,10 +150,8 @@ tasks.test {
 tasks.register<Test>("integrationTest") {
     description = "Run integration tests inside a jmp shell session"
     group = "verification"
-    dependsOn(cargoBuildCore)
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
-    systemProperty("jna.library.path", cdylibDir.path)
     useJUnitPlatform { includeTags("integration") }
     environment("JUMPSTARTER_HOST", System.getenv("JUMPSTARTER_HOST") ?: "")
 }
