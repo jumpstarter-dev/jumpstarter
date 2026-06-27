@@ -1,0 +1,15 @@
+version: v2
+managed:
+  enabled: true
+plugins: []
+# This file is a seed for future buf-native codegen targets (e.g. Go, TypeScript).
+#
+# Java is intentionally NOT generated here: the JVM build compiles these protos
+# directly via the Gradle com.google.protobuf plugin (pointed at interfaces/proto),
+# producing the bare `jumpstarter.interfaces.*` package. Generating Java via buf
+# (managed mode) would emit a divergent `com.jumpstarter.interfaces.*` copy.
+#
+# To add a target, append a plugin, e.g.:
+#   plugins:
+#     - remote: buf.build/protocolbuffers/go:vX.Y.Z
+#       out: <output-dir>
