@@ -32,6 +32,12 @@ use crate::{DriverBackend, ResponseStream};
 /// The invocation metadata key that selects which driver a native call targets.
 pub const DRIVER_UUID_KEY: &str = "x-jumpstarter-driver-uuid";
 
+/// Marks a native bidi call as a **byte channel** (`@exportstream` / resource `StreamData`) rather
+/// than a typed method. The client sets it on byte-stream opens; the hub's `ShmChannelBackend` keys
+/// on it to SHM-accelerate the bulk byte plane (vs. a typed call, which has no bulk payload). The
+/// demux itself ignores it — it routes every native call opaquely regardless.
+pub const BYTE_STREAM_KEY: &str = "x-jmp-byte-stream";
+
 // --------------------------------------------------------------------------------------------
 // Identity codec
 

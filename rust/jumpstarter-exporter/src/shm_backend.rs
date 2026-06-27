@@ -18,21 +18,29 @@
 //! side auto-activates purely on the presence of the [`SHM_UP_KEY`] metadata (only this backend sets
 //! it), so no separate host flag is needed.
 
+use jumpstarter_core::dynamic_backend::export_name_for;
+use jumpstarter_protocol::router::{classify, data_frame, goaway_frame, FrameAction};
 use jumpstarter_protocol::v1::router_service_client::RouterServiceClient;
 use jumpstarter_protocol::v1::{
     FrameType, GetReportResponse, LogStreamResponse, StreamRequest, StreamResponse,
 };
+use jumpstarter_protocol::{decode_stream_data, encode_stream_data, RESOURCE_OPEN_PATH};
 use jumpstarter_shm::bridge::{RingReader, RingWriter};
 use jumpstarter_shm::wire::{RING_CAP, RING_CHUNK, SHM_DOWN_KEY, SHM_UP_KEY};
 use jumpstarter_shm::Ring;
+use jumpstarter_transport::demux::{BYTE_STREAM_KEY, DRIVER_UUID_KEY};
 use jumpstarter_transport::{
     ChannelBackend, DriverBackend, FrameUplink, ResponseStream, RouterStreamOpen,
 };
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt as _;
-use tonic::metadata::AsciiMetadataValue;
+use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 use tonic::transport::Channel;
-use tonic::{Request, Status};
+use tonic::{Code, Request, Status};
+
+/// The header carrying the requested wire content-encoding on a native resource open (mirrors the
+/// client's `x-jmp-content-encoding`), translated back into the `request` JSON the host expects.
+const CONTENT_ENCODING_KEY: &str = "x-jmp-content-encoding";
 
 /// A [`DriverBackend`] that wraps a host gRPC [`Channel`] and routes a router stream's **uplink**
 /// bytes through a shared-memory ring. Every other method delegates to a plain [`ChannelBackend`].
@@ -83,16 +91,102 @@ impl DriverBackend for ShmChannelBackend {
         self.inner.forward_stream(path, metadata, body).await
     }
 
-    /// Native client-/bidi-streaming is a control-plane RPC, not a bulk byte stream, so it rides the
-    /// inner gRPC [`ChannelBackend`] over the host UDS exactly like `forward_stream` — only the
-    /// router byte stream uses the ring.
+    /// Native bidi dispatch. A **typed** call (no [`BYTE_STREAM_KEY`] marker) is a control-plane RPC
+    /// and rides the inner gRPC [`ChannelBackend`] verbatim. A **byte channel** (`@exportstream` /
+    /// resource, marked by the client) is translated into a `RouterService.Stream` open and routed
+    /// through this backend's SHM-accelerated [`open_router_stream`](Self::open_router_stream) — so
+    /// the bulk byte plane keeps its multi-GiB/s shared-memory hub↔host hop while the client sees only
+    /// native `StreamData` over the demux. (The hub↔host RouterService hop is internal; no client or
+    /// driver author ever sees it.)
     async fn forward_bidi(
         &self,
         path: &str,
-        metadata: tonic::metadata::MetadataMap,
+        metadata: MetadataMap,
         uplink: ResponseStream<bytes::Bytes>,
-    ) -> Result<(tonic::metadata::MetadataMap, ResponseStream<bytes::Bytes>), Status> {
-        self.inner.forward_bidi(path, metadata, uplink).await
+    ) -> Result<(MetadataMap, ResponseStream<bytes::Bytes>), Status> {
+        // Typed call → plain gRPC (no bulk payload to accelerate).
+        if metadata.get(BYTE_STREAM_KEY).is_none() {
+            return self.inner.forward_bidi(path, metadata, uplink).await;
+        }
+
+        // Byte channel → reconstruct the `request` JSON the host's RouterServer expects from the
+        // native path + headers (the host's open_stream/codec machinery is then unchanged).
+        let uuid = metadata
+            .get(DRIVER_UUID_KEY)
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(|| {
+                Status::invalid_argument("native byte stream missing x-jumpstarter-driver-uuid header")
+            })?;
+        let request_json = if path == RESOURCE_OPEN_PATH {
+            let ce = metadata.get(CONTENT_ENCODING_KEY).and_then(|v| v.to_str().ok());
+            serde_json::json!({ "uuid": uuid, "x_jmp_content_encoding": ce }).to_string()
+        } else {
+            // `@exportstream`: the trailing path segment is the proto method → its `@export` name.
+            let method = path.rsplit('/').next().unwrap_or_default();
+            let export = export_name_for(method);
+            serde_json::json!({ "uuid": uuid, "method": export }).to_string()
+        };
+        let request_meta = AsciiMetadataValue::try_from(request_json)
+            .map_err(|e| Status::internal(format!("native byte stream request metadata: {e}")))?;
+
+        // Client native `StreamData` uplink → RouterService DATA frames (+ GOAWAY at END_STREAM).
+        let (tx, rx) = tokio::sync::mpsc::channel::<StreamRequest>(256);
+        let mut uplink = uplink;
+        tokio::spawn(async move {
+            while let Some(item) = uplink.next().await {
+                let frame = match item {
+                    Ok(b) => b,
+                    Err(_) => break,
+                };
+                let payload = match decode_stream_data(&frame) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        tracing::debug!(error = %e, "native byte stream uplink decode failed");
+                        break;
+                    }
+                };
+                if tx.send(data_frame(payload)).await.is_err() {
+                    return;
+                }
+            }
+            let _ = tx.send(goaway_frame()).await; // END_STREAM → GOAWAY (host half-close)
+        });
+
+        // The SHM-accelerated hub↔host hop (this backend's own open_router_stream).
+        let opened = self
+            .open_router_stream(request_meta, ReceiverStream::new(rx))
+            .await?;
+
+        // RouterService `StreamResponse` downlink → native `StreamData`: a DATA frame becomes one
+        // StreamData message; the trailing GOAWAY + `ABORTED "aclose"` is a clean native END_STREAM
+        // (no error item); a real error (e.g. SHM `data_loss` truncation) becomes a non-OK trailer.
+        let (dtx, drx) = tokio::sync::mpsc::channel::<Result<bytes::Bytes, Status>>(16);
+        let mut downlink = opened.downlink;
+        tokio::spawn(async move {
+            while let Some(item) = downlink.next().await {
+                match item {
+                    Ok(frame) => match classify(frame) {
+                        FrameAction::Payload(p) => {
+                            if dtx.send(Ok(encode_stream_data(p))).await.is_err() {
+                                return;
+                            }
+                        }
+                        // GOAWAY: end-of-data; the stream ends after the trailing status below.
+                        FrameAction::Eof | FrameAction::Drop => {}
+                    },
+                    Err(status) => {
+                        // `aclose` is the legacy clean-end sentinel → end cleanly (OK status). Any
+                        // other error (notably shm downlink `data_loss`) is a real truncation trailer.
+                        if status.code() != Code::Aborted {
+                            let _ = dtx.send(Err(status)).await;
+                        }
+                        return;
+                    }
+                }
+            }
+        });
+
+        Ok((opened.initial_metadata, Box::pin(ReceiverStream::new(drx))))
     }
 
     async fn log_stream(&self) -> Result<ResponseStream<LogStreamResponse>, Status> {

@@ -418,6 +418,12 @@ impl ClientSession {
         request
             .metadata_mut()
             .insert("x-jumpstarter-driver-uuid", uuid_val);
+        // Mark this as a byte channel so the hub's ShmChannelBackend SHM-accelerates the bulk plane
+        // (a typed call carries no such header → plain gRPC).
+        request.metadata_mut().insert(
+            jumpstarter_transport::demux::BYTE_STREAM_KEY,
+            AsciiMetadataValue::from_static("1"),
+        );
         if let Some(ce) = &content_encoding {
             if let Ok(v) = AsciiMetadataValue::from_str(ce) {
                 request.metadata_mut().insert(CONTENT_ENCODING_KEY, v);
