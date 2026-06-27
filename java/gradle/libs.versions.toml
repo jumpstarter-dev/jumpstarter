@@ -6,7 +6,9 @@ kotlin = "2.2.0"
 coroutines = "1.10.2"
 jna = "5.17.0"
 gson = "2.14.0"
-junit = "5.13.0"
+junit = "5.13.4"
+# JUnit 4 — the generation used by AOSP / Tradefed; jumpstarter-testing ships a TestRule for it.
+junit4 = "4.13.2"
 
 [libraries]
 grpc-api = { module = "io.grpc:grpc-api", version.ref = "grpc" }
@@ -18,6 +20,10 @@ jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+# Just the Jupiter extension API (for jumpstarter-testing's JUnit 5/6 extension, compileOnly).
+junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
+# JUnit 4 (for jumpstarter-testing's TestRule, compileOnly).
+junit4 = { module = "junit:junit", version.ref = "junit4" }
 
 [plugins]
 protobuf = { id = "com.google.protobuf", version = "0.10.0" }

@@ -28,10 +28,7 @@ import org.junit.jupiter.api.extension.ParameterResolver
  */
 class JumpstarterExtension : BeforeAllCallback, AfterAllCallback, ParameterResolver {
     override fun beforeAll(context: ExtensionContext) {
-        val lease =
-            if (!System.getenv("JUMPSTARTER_HOST").isNullOrEmpty()) JumpstarterLease.fromEnvironment()
-            else JumpstarterLease.acquire()
-        store(context).put(LEASE_KEY, lease)
+        store(context).put(LEASE_KEY, JumpstarterLease.fromEnvironmentOrAcquire())
     }
 
     override fun afterAll(context: ExtensionContext) {

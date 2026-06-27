@@ -66,6 +66,14 @@ class JumpstarterLease private constructor(
             return JumpstarterLease(null, ExporterSession.connect(host))
         }
 
+        /**
+         * The default a test harness uses: connect to the lease an outer `jmp shell` already holds
+         * (`JUMPSTARTER_HOST`), else autonomously [acquire] one. Shared by the JUnit 4/5/6 adapters.
+         */
+        @JvmStatic
+        fun fromEnvironmentOrAcquire(): JumpstarterLease =
+            if (!System.getenv("JUMPSTARTER_HOST").isNullOrEmpty()) fromEnvironment() else acquire()
+
         /** Mirror of Python's client config home: `$JMP_CLIENT_CONFIG_HOME` or `$XDG_CONFIG_HOME/jumpstarter`. */
         private fun clientConfigHome(): Path {
             System.getenv("JMP_CLIENT_CONFIG_HOME")?.takeIf { it.isNotEmpty() }?.let { return Paths.get(it) }
