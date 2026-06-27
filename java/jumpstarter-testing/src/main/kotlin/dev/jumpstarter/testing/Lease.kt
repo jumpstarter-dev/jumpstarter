@@ -28,8 +28,19 @@ class Lease private constructor(
         try {
             session.close()
         } finally {
-            // Only release a lease we acquired; a `fromEnvironment` session is owned by the outer shell.
-            exporter?.let { runBlocking { it.release() } }
+            // Only release a lease we acquired; a `fromEnvironment` session is owned by the outer
+            // shell. Best-effort: the controller may already have released the lease when the session
+            // disconnected, so an "already released" error on teardown is benign and must not fail the
+            // test.
+            exporter?.let { ex ->
+                try {
+                    runBlocking { ex.release() }
+                } catch (e: Exception) {
+                    System.err.println(
+                        "jumpstarter: lease release on teardown was a no-op (already released): ${e.message}",
+                    )
+                }
+            }
         }
     }
 
