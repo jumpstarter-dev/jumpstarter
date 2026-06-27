@@ -16,7 +16,7 @@ data class DriverInstance(
 }
 
 /**
- * The exporter's driver tree, parsed from [uniffi.jumpstarter_core.ClientSession.getReport]'s JSON
+ * The exporter's driver tree, parsed from [dev.jumpstarter.core.ClientSession.getReport]'s JSON
  * (an array of `{uuid, parent_uuid, labels, ...}` nodes the Rust core emits).
  */
 class DriverReport(val instances: List<DriverInstance>) {

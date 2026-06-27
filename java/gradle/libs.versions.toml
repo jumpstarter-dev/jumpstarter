@@ -1,16 +1,18 @@
 [versions]
-grpc = "1.68.1"
-protobuf = "4.28.3"
-kotlin = "2.0.21"
-coroutines = "1.9.0"
-jna = "5.15.0"
-gson = "2.11.0"
-junit = "5.11.3"
+grpc = "1.73.0"
+grpcKotlin = "1.5.0"
+protobuf = "4.34.2"
+kotlin = "2.2.0"
+coroutines = "1.10.2"
+jna = "5.17.0"
+gson = "2.14.0"
+junit = "5.13.0"
 
 [libraries]
 grpc-api = { module = "io.grpc:grpc-api", version.ref = "grpc" }
 grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
 grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
+grpc-kotlin-stub = { module = "io.grpc:grpc-kotlin-stub", version.ref = "grpcKotlin" }
 protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -18,5 +20,5 @@ gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
 
 [plugins]
-protobuf = { id = "com.google.protobuf", version = "0.9.4" }
+protobuf = { id = "com.google.protobuf", version = "0.10.0" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

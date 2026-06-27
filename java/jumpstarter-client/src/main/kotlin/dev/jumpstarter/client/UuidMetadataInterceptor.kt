@@ -10,7 +10,7 @@ import io.grpc.MethodDescriptor
 
 /**
  * Standard gRPC client interceptor that stamps every outgoing call with the
- * `x-jumpstarter-driver-uuid` header so the exporter demux (and [UniffiChannel]) route to the right
+ * `x-jumpstarter-driver-uuid` header so the exporter demux (and [JumpstarterChannel]) route to the right
  * driver instance. A stub bound to one driver wraps itself with one of these.
  */
 class UuidMetadataInterceptor(private val uuid: String) : ClientInterceptor {

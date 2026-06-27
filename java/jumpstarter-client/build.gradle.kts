@@ -16,16 +16,22 @@ val libName = when {
 }
 val cdylib = file("$cdylibDir/$libName")
 val uniffiOutDir = layout.buildDirectory.dir("generated/uniffi")
+// jumpstarter-codegen: the interface FileDescriptorSet (from the protobuf plugin) and the generated
+// typed clients. Both live under build/ — the typed clients are generated each build, never committed.
+val codegenDescriptor = layout.buildDirectory.file("generated/jumpstarter/interfaces.desc")
+val codegenClientsDir = layout.buildDirectory.dir("generated/jumpstarter/clients")
 
 kotlin {
     jvmToolchain(21)
     sourceSets["main"].kotlin.srcDir(uniffiOutDir)
+    sourceSets["main"].kotlin.srcDir(codegenClientsDir)
 }
 
 dependencies {
     api(libs.grpc.api)
     implementation(libs.grpc.protobuf)
     implementation(libs.grpc.stub)
+    implementation(libs.grpc.kotlin.stub)
     implementation(libs.protobuf.java)
     implementation(libs.jna)
     implementation(libs.kotlinx.coroutines.core)
@@ -65,12 +71,15 @@ val generateUniffiBindings by tasks.registering(Exec::class) {
     workingDir = rustDir
     val outDir = uniffiOutDir.get().asFile
     doFirst { outDir.mkdirs() }
+    val uniffiConfig = file("$rustDir/jumpstarter-core-uniffi/uniffi.toml")
     commandLine(
         "cargo", "run", "-p", "jumpstarter-core-uniffi", "--bin", "uniffi-bindgen", "--",
         "generate", "--library", cdylib.path, "--language", "kotlin", "--no-format",
+        "--config", uniffiConfig.path, // pins the package to dev.jumpstarter.core
         "--out-dir", outDir.path,
     )
     inputs.file(cdylib)
+    inputs.file(uniffiConfig)
     outputs.dir(outDir)
 }
 
@@ -93,13 +102,46 @@ protobuf {
         create("grpc") {
             artifact = "io.grpc:protoc-gen-grpc-java:${libs.versions.grpc.get()}"
         }
+        // grpc-kotlin: generates the coroutine service base (`*CoroutineImplBase`, suspend fns +
+        // `Flow`) so a Kotlin driver author writes idiomatic suspend functions.
+        create("grpckt") {
+            artifact = "io.grpc:protoc-gen-grpc-kotlin:${libs.versions.grpcKotlin.get()}:jdk8@jar"
+        }
     }
     generateProtoTasks {
         all().forEach { task ->
-            task.plugins { create("grpc") }
+            task.plugins {
+                create("grpc")
+                create("grpckt")
+            }
+            // Emit a self-contained FileDescriptorSet for jumpstarter-codegen to consume (so the
+            // typed clients are generated at build time, never committed — see below).
+            task.generateDescriptorSet = true
+            task.descriptorSetOptions.includeImports = true
+            task.descriptorSetOptions.path = codegenDescriptor.get().asFile.path
         }
     }
 }
+
+// --- Jumpstarter typed clients: generated each build from the interface descriptor set ----
+// The committed code is the driver *implementations* only; the typed clients (and the gRPC/UniFFI
+// stubs) are fully codegenerated during the build, mirroring the Rust crate's build.rs.
+val generateJumpstarterClients by tasks.registering(Exec::class) {
+    description = "Generate the typed Jumpstarter clients from the interface descriptor set"
+    dependsOn("generateProto")
+    inputs.file(codegenDescriptor)
+    outputs.dir(codegenClientsDir)
+    workingDir = rustDir
+    doFirst { codegenClientsDir.get().asFile.mkdirs() }
+    commandLine(
+        "cargo", "run", "-q", "-p", "jumpstarter-codegen", "--bin", "jumpstarter-codegen", "--",
+        "--descriptor-set", codegenDescriptor.get().asFile.path,
+        "--language", "kotlin", "--kind", "client", "--service", "PowerInterface",
+        "--out", codegenClientsDir.get().asFile.path,
+    )
+}
+
+tasks.named("compileKotlin") { dependsOn(generateJumpstarterClients) }
 
 // --- Tests: JNA must find the Rust cdylib ----------------------------------------------
 tasks.withType<Test>().configureEach {

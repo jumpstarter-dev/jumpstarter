@@ -2,12 +2,12 @@ package dev.jumpstarter.client
 
 import io.grpc.Channel
 import kotlinx.coroutines.runBlocking
-import uniffi.jumpstarter_core.ClientSession
+import dev.jumpstarter.core.ClientSession
 
 /**
  * The thin lease-client wrapper: reads `JUMPSTARTER_HOST` (set by `jmp shell`), connects the Rust
  * [ClientSession] (which owns auth, lease routing, SHM and the byte plane), and exposes a
- * [UniffiChannel] plus name→uuid lookup from `GetReport`. Together with [UniffiChannel] this is the
+ * [JumpstarterChannel] plus name→uuid lookup from `GetReport`. Together with [JumpstarterChannel] this is the
  * entire per-language runtime — everything else (the typed per-interface clients) is generated from
  * the `.proto` files.
  *
@@ -18,7 +18,7 @@ class ExporterSession private constructor(
     val report: DriverReport,
 ) : AutoCloseable {
     /** A gRPC channel that routes stub calls through the Rust core. */
-    val channel: Channel by lazy { UniffiChannel(session) }
+    val channel: Channel by lazy { JumpstarterChannel(session) }
 
     fun requireDriver(name: String): String = report.requireByName(name).uuid
 

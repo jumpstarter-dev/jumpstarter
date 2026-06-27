@@ -14,8 +14,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel as MailboxChannel
 import kotlinx.coroutines.launch
-import uniffi.jumpstarter_core.ClientSession
-import uniffi.jumpstarter_core.DriverException
+import dev.jumpstarter.core.ClientSession
+import dev.jumpstarter.core.DriverException
 import java.io.ByteArrayInputStream
 import java.util.concurrent.Executor
 
@@ -29,7 +29,7 @@ import java.util.concurrent.Executor
  * Everything above this channel is standard gRPC (stubs, [MethodDescriptor] marshallers, the
  * [ClientCall] SPI); the single non-standard hop is the byte transport into Rust.
  */
-class UniffiChannel(private val session: ClientSession) : Channel() {
+class JumpstarterChannel(private val session: ClientSession) : Channel() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun authority(): String = "jumpstarter-uniffi"
@@ -37,7 +37,7 @@ class UniffiChannel(private val session: ClientSession) : Channel() {
     override fun <ReqT, RespT> newCall(
         method: MethodDescriptor<ReqT, RespT>,
         callOptions: CallOptions,
-    ): ClientCall<ReqT, RespT> = UniffiClientCall(session, scope, method, callOptions)
+    ): ClientCall<ReqT, RespT> = JumpstarterClientCall(session, scope, method, callOptions)
 }
 
 /**
@@ -50,7 +50,7 @@ class UniffiChannel(private val session: ClientSession) : Channel() {
  * Flow control is honoured: server-streaming messages are only pulled from the Rust stream as the
  * consumer `request(n)`s them, so blocking stubs never see "too many responses".
  */
-internal class UniffiClientCall<ReqT, RespT>(
+internal class JumpstarterClientCall<ReqT, RespT>(
     private val session: ClientSession,
     private val scope: CoroutineScope,
     private val method: MethodDescriptor<ReqT, RespT>,
@@ -109,7 +109,7 @@ internal class UniffiClientCall<ReqT, RespT>(
                     else -> post {
                         l.onClose(
                             Status.UNIMPLEMENTED.withDescription(
-                                "UniffiChannel does not support ${method.type} calls",
+                                "JumpstarterChannel does not support ${method.type} calls",
                             ),
                             Metadata(),
                         )

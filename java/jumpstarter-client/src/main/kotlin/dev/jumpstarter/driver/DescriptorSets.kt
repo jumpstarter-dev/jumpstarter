@@ -11,6 +11,7 @@ import com.google.protobuf.Descriptors.FileDescriptor
  * exactly the way the Python host's `descriptor_builder` does.
  */
 object DescriptorSets {
+    @JvmStatic
     fun selfContained(root: FileDescriptor): ByteArray {
         val ordered = LinkedHashMap<String, FileDescriptor>()
         fun visit(file: FileDescriptor) {
