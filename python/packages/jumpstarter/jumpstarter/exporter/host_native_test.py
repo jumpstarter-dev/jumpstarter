@@ -38,6 +38,17 @@ export:
     type: jumpstarter_driver_power.driver.MockPower
 """
 
+_ECHO_CONFIG_YAML = """\
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: native-echo-test
+export:
+  echo:
+    type: jumpstarter_driver_network.driver.EchoNetwork
+"""
+
 
 async def _power_uuid() -> str:
     """The MockPower instance uuid (the demux target) via the same describe() the host serves."""
@@ -182,6 +193,51 @@ async def test_streaming_driver_call_read_routes_through_native_path():
                 {"voltage": 0.0, "current": 0.0},
                 {"voltage": 5.0, "current": 2.0},
             ], readings
+
+            await session.end_session()
+        finally:
+            server.cancel()
+            try:
+                await server
+            except (asyncio.CancelledError, Exception):
+                pass
+
+
+@pytest.mark.anyio
+async def test_native_exportstream_echoes_over_bidi():
+    """An ``@exportstream`` byte channel now rides a **native bidi** ``StreamData`` method end to end:
+    ``ClientSession.stream({uuid, method:"connect"})`` resolves the interface's ``Connect`` path from
+    the descriptor, opens the native bidi call through the demux, and the host's ``forward_bidi``
+    bridges it to ``EchoNetwork.connect`` — so a chunk written by the client comes straight back. This
+    replaces the old ``RouterService.Stream`` tunnel for ``@exportstream`` (the Python ``stream()``
+    surface is unchanged; only the Rust transport flipped)."""
+    uniffi_set_event_loop(asyncio.get_running_loop())
+
+    with tempfile.TemporaryDirectory() as tmp:
+        uds = str(Path(tmp) / "host.sock")
+        factory = DriverHostFactory.from_yaml(_ECHO_CONFIG_YAML)
+
+        server = asyncio.create_task(serve_driver_host(uds, factory))
+        try:
+            for _ in range(200):
+                if Path(uds).exists():
+                    break
+                await asyncio.sleep(0.025)
+            assert Path(uds).exists(), "serve_driver_host never bound the socket"
+
+            session = await ClientSession.connect(uds)
+
+            import json
+
+            reports = json.loads(await session.get_report())
+            uuid = reports[0]["uuid"]
+
+            # Open the @exportstream byte channel natively ({uuid, method} → the Connect bidi method).
+            chan = await session.stream(json.dumps({"uuid": uuid, "method": "connect"}))
+            await chan.write(b"hello native bidi")
+            data = await chan.read()
+            assert bytes(data) == b"hello native bidi", "EchoNetwork must echo the written chunk"
+            await chan.close()
 
             await session.end_session()
         finally:

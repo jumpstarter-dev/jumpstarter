@@ -468,6 +468,13 @@ def _introspect_method(name: str, method: Any) -> ExportedMethodInfo | None:
     # Check for @exportstream or @streammethod marker
     if getattr(method, MARKER_STREAMCALL, None) or getattr(method, MARKER_STREAM_METHOD, None):
         call_type = CallType.BIDI_STREAMING
+    # An interface ABC declares its @exportstream method as an abstract @asynccontextmanager (the
+    # concrete driver carries the MARKER_STREAMCALL; the interface does not). Detect that shape — a
+    # contextmanager wrapping an async generator that yields a byte stream — as a bidi byte channel,
+    # so the descriptor models it as a StreamData stream (not a unary Empty→Empty) even when built
+    # from the interface.
+    elif _is_async_context_manager_method(method):
+        call_type = CallType.BIDI_STREAMING
 
     params = [
         (p.name, p.annotation, p.default)
@@ -481,6 +488,26 @@ def _introspect_method(name: str, method: Any) -> ExportedMethodInfo | None:
         params=params,
         return_type=sig.return_annotation,
     )
+
+
+def _is_async_context_manager_method(method: Any) -> bool:
+    """Whether ``method`` is an ``@asynccontextmanager``-wrapped method — the shape of an abstract
+    ``@exportstream`` byte-stream method on an interface ABC.
+
+    ``@asynccontextmanager``'s helper is a plain (sync) function whose ``__wrapped__`` (set via
+    ``functools.wraps``) is the original ``async def`` — a coroutine function when the body is an
+    abstract ``...`` (the interface), or an async generator when the body ``yield``s (the concrete
+    driver). So the tell is: the wrapped target is async while the wrapper method itself is not. This
+    distinguishes a byte stream (``@asynccontextmanager async def connect(self): ...``) from a regular
+    ``@export`` (the method is itself a coroutine / async generator)."""
+    from inspect import isasyncgenfunction, iscoroutinefunction
+
+    wrapped = getattr(method, "__wrapped__", None)
+    if wrapped is None:
+        return False
+    wrapped_is_async = iscoroutinefunction(wrapped) or isasyncgenfunction(wrapped)
+    method_is_async = iscoroutinefunction(method) or isasyncgenfunction(method)
+    return wrapped_is_async and not method_is_async
 
 
 def _infer_call_type_from_sig(method: Any, sig: inspect.Signature) -> CallType:

@@ -64,6 +64,23 @@ assert got == data, "resource round-trip mismatch: %d != %d bytes" % (len(got), 
 print("RESOURCE_ROUNDTRIP_OK")
 `
 
+// exportstreamEchoScript drives an @exportstream byte channel end to end over the native
+// bidi path: client.echo.stream() opens a native StreamData bidi to EchoNetwork's Connect
+// method (a stapled loopback), so a chunk sent comes straight back. This is the typed
+// byte-stream counterpart to the resource transfer above.
+const exportstreamEchoScript = `
+from jumpstarter.common.utils import env
+
+payload = b"NATIVE_EXPORTSTREAM_ECHO_PAYLOAD"
+with env() as client:
+    with client.echo.stream() as conn:
+        conn.send(payload)
+        got = conn.receive()
+
+assert got == payload, "exportstream echo mismatch: %r != %r" % (got, payload)
+print("EXPORTSTREAM_ECHO_OK")
+`
+
 var _ = Describe("Native Resource Transfer E2E Tests", Label("direct-listener"), Ordered, func() {
 	var (
 		tracker      *ProcessTracker
@@ -103,5 +120,16 @@ var _ = Describe("Native Resource Transfer E2E Tests", Label("direct-listener"),
 			"--tls-grpc-insecure", "--", pythonBin(), "-c", resourceRoundTripScript)
 		Expect(err).NotTo(HaveOccurred(), out)
 		Expect(out).To(ContainSubstring("RESOURCE_ROUNDTRIP_OK"))
+	})
+
+	It("echoes an @exportstream byte channel over the native transport", func() {
+		config := filepath.Join(exporterDir, "exporter-direct-echo.yaml")
+		tracker.StartDirectExporter(config, listenerPort, "", false)
+		WaitForDirectExporterReady(listenerPort, "")
+
+		out, err := Jmp("shell", "--tls-grpc", fmt.Sprintf("127.0.0.1:%d", listenerPort),
+			"--tls-grpc-insecure", "--", pythonBin(), "-c", exportstreamEchoScript)
+		Expect(err).NotTo(HaveOccurred(), out)
+		Expect(out).To(ContainSubstring("EXPORTSTREAM_ECHO_OK"))
 	})
 })

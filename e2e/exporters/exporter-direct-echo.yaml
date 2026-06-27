@@ -1,0 +1,8 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  name: test-exporter-direct-echo
+  namespace: default
+export:
+  echo:
+    type: jumpstarter_driver_network.driver.EchoNetwork

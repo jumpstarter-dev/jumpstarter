@@ -16,6 +16,7 @@ use jumpstarter_protocol::v1::router_service_client::RouterServiceClient;
 use jumpstarter_protocol::v1::{
     EndSessionRequest, GetStatusRequest, LogStreamResponse, StreamRequest, StreamResponse,
 };
+use jumpstarter_protocol::{decode_stream_data, encode_stream_data, RESOURCE_OPEN_PATH};
 use tokio::sync::{mpsc, Mutex, OnceCell};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::{Stream, StreamExt as _};
@@ -30,6 +31,30 @@ use crate::error::DriverCallError;
 /// Resource initial-metadata keys the host emits and the client consumes
 /// (`driver/base.py:189-198`); the same allow-list `tunnel.rs` relays.
 const RELAY_KEYS: [&str; 2] = ["resource", "x_jmp_accept_encoding"];
+
+/// The header carrying the requested wire content-encoding on a native resource open (the
+/// `ResourceService.Open` counterpart of the old `request` JSON's `x_jmp_content_encoding`).
+const CONTENT_ENCODING_KEY: &str = "x-jmp-content-encoding";
+
+/// Whether the byte plane (`@exportstream` + resources) rides the **native** per-interface gRPC bidi
+/// path (`StreamData` over the demux) or the legacy `RouterService.Stream` tunnel. Native is the
+/// default; `JMP_NATIVE_STREAMS=0` is the migration escape hatch (retired once `RouterService` is).
+fn native_streams_enabled() -> bool {
+    std::env::var("JMP_NATIVE_STREAMS").as_deref() != Ok("0")
+}
+
+/// Capture the allow-listed resource keys from a stream's response initial metadata into the JSON
+/// object the Python client parses (`{}` for non-resource streams). Shared by the native + legacy
+/// byte-plane openers; both relay the same `resource`/`x_jmp_accept_encoding` keys.
+fn relay_initial_metadata(metadata: &tonic::metadata::MetadataMap) -> String {
+    let mut initial = serde_json::Map::new();
+    for &key in &RELAY_KEYS {
+        if let Some(value) = metadata.get(key).and_then(|v| v.to_str().ok()) {
+            initial.insert(key.to_string(), serde_json::Value::String(value.to_string()));
+        }
+    }
+    serde_json::Value::Object(initial).to_string()
+}
 
 /// Map a wire `tonic::Status` to the driver-call error taxonomy the Python client maps to
 /// its exceptions (`NOT_FOUND`→DriverMethodNotImplemented, `INVALID_ARGUMENT`→
@@ -313,16 +338,111 @@ impl ClientSession {
         Ok(resp.into_inner())
     }
 
-    /// Open a router byte stream to a driver `@exportstream`/resource handle. `request_json`
-    /// is the `request` stream metadata (`{uuid, method}` for driver streams or `{uuid,
-    /// x_jmp_content_encoding}` for resources). Returns a duplex [`ClientByteStream`] plus
-    /// the resource initial metadata as JSON.
+    /// Open a byte stream to a driver `@exportstream`/resource handle. `request_json` is the stream
+    /// request (`{uuid, method}` for driver streams or `{uuid, x_jmp_content_encoding}` for
+    /// resources). Returns a duplex [`ClientByteStream`] plus the resource initial metadata as JSON.
+    ///
+    /// Dispatches to the **native** per-interface gRPC bidi path (`StreamData` over the demux) by
+    /// default, or the legacy `RouterService.Stream` tunnel when [`native_streams_enabled`] is off.
+    /// The `request_json` interface is unchanged, so the Python client + the in-process `LocalSession`
+    /// are untouched by the cutover.
     pub async fn stream(&self, request_json: String) -> Result<Arc<ClientByteStream>, DriverCallError> {
         tracing::debug!(method = "Stream", request = %request_json, "rpc");
+        if native_streams_enabled() {
+            return self.stream_native(&request_json).await;
+        }
+        self.stream_router(request_json).await
+    }
+
+    /// Native byte plane: parse the stream request and open a native bidi `StreamData` call — an
+    /// `@exportstream` method (`{uuid, method}` → the interface's `Connect` path resolved via the
+    /// native descriptor table) or a resource (`{uuid, x_jmp_content_encoding}` →
+    /// [`ResourceService.Open`](jumpstarter_protocol::v1::ResourceService)).
+    async fn stream_native(
+        &self,
+        request_json: &str,
+    ) -> Result<Arc<ClientByteStream>, DriverCallError> {
+        let req: serde_json::Value = serde_json::from_str(request_json)
+            .map_err(|e| DriverCallError::InvalidArgument(format!("bad stream request: {e}")))?;
+        let uuid = req
+            .get("uuid")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| DriverCallError::InvalidArgument("stream request missing uuid".into()))?
+            .to_string();
+
+        if let Some(method) = req.get("method").and_then(|v| v.as_str()) {
+            // `@exportstream`: resolve the bidi `Connect` method path from the descriptor table.
+            let table = self.native_table().await?;
+            let route = table.get(&(uuid.clone(), method.to_string())).ok_or_else(|| {
+                DriverCallError::Unimplemented(format!(
+                    "no native route for {uuid}/{method}: the driver ships no descriptor for this @exportstream"
+                ))
+            })?;
+            let path = route.path.clone();
+            self.open_native_byte_stream(uuid, path, None).await
+        } else {
+            // Resource: the well-known ResourceService.Open path + the content-encoding header.
+            let content_encoding = req
+                .get("x_jmp_content_encoding")
+                .and_then(|v| v.as_str())
+                .map(String::from);
+            self.open_native_byte_stream(uuid, RESOURCE_OPEN_PATH.to_string(), content_encoding)
+                .await
+        }
+    }
+
+    /// Open a native bidi byte channel at `path`, routed to `uuid` via the demux header. The uplink
+    /// carries one `StreamData` message per [`ClientByteStream::write`]; the response stream carries
+    /// the downlink. Resource initial metadata (the handle) comes back on the response headers.
+    async fn open_native_byte_stream(
+        &self,
+        uuid: String,
+        path: String,
+        content_encoding: Option<String>,
+    ) -> Result<Arc<ClientByteStream>, DriverCallError> {
+        use std::str::FromStr;
+        let path_pq = tonic::codegen::http::uri::PathAndQuery::from_str(&path)
+            .map_err(|e| DriverCallError::Unknown(format!("invalid method path {path:?}: {e}")))?;
+        // Deep uplink buffer + large message limits so bulk flash/dump transfers pipeline.
+        let (tx, rx) = mpsc::channel::<bytes::Bytes>(256);
+        let mut grpc =
+            tonic::client::Grpc::new(InterceptedService::new(self.channel.clone(), self.auth()))
+                .max_decoding_message_size(64 * 1024 * 1024)
+                .max_encoding_message_size(64 * 1024 * 1024);
+        grpc.ready()
+            .await
+            .map_err(|e| DriverCallError::Unknown(format!("native channel not ready: {e}")))?;
+        let mut request = Request::new(ReceiverStream::new(rx));
+        let uuid_val = AsciiMetadataValue::from_str(&uuid)
+            .map_err(|e| DriverCallError::Unknown(format!("invalid driver uuid {uuid:?}: {e}")))?;
+        request
+            .metadata_mut()
+            .insert("x-jumpstarter-driver-uuid", uuid_val);
+        if let Some(ce) = &content_encoding {
+            if let Ok(v) = AsciiMetadataValue::from_str(ce) {
+                request.metadata_mut().insert(CONTENT_ENCODING_KEY, v);
+            }
+        }
+        let response = grpc
+            .streaming(request, path_pq, jumpstarter_transport::demux::BytesCodec)
+            .await
+            .map_err(err_from_status)?;
+        let initial_metadata = relay_initial_metadata(response.metadata());
+        Ok(Arc::new(ClientByteStream {
+            uplink: StreamUplink::Native(Mutex::new(Some(tx))),
+            downlink: Mutex::new(StreamDownlink::Native(response.into_inner())),
+            initial_metadata,
+        }))
+    }
+
+    /// Legacy byte plane: open a `RouterService.Stream` tunnel keyed by the `request` metadata. The
+    /// `JMP_NATIVE_STREAMS=0` escape hatch during migration; retired with `RouterService`.
+    async fn stream_router(
+        &self,
+        request_json: String,
+    ) -> Result<Arc<ClientByteStream>, DriverCallError> {
         let meta = AsciiMetadataValue::try_from(request_json)
             .map_err(|e| DriverCallError::InvalidArgument(e.to_string()))?;
-        // Deep uplink buffer + large message limits so bulk resource/flash transfers pipeline
-        // and aren't capped by tonic's 4 MiB default message size (allows multi-MiB chunks).
         let (tx, rx) = mpsc::channel::<StreamRequest>(256);
         let mut request = Request::new(ReceiverStream::new(rx));
         request.metadata_mut().insert("request", meta);
@@ -332,17 +452,10 @@ impl ClientSession {
             .stream(request)
             .await
             .map_err(err_from_status)?;
-        // Capture the allow-listed resource keys before consuming the response.
-        let mut initial = serde_json::Map::new();
-        for &key in &RELAY_KEYS {
-            if let Some(value) = response.metadata().get(key).and_then(|v| v.to_str().ok()) {
-                initial.insert(key.to_string(), serde_json::Value::String(value.to_string()));
-            }
-        }
-        let initial_metadata = serde_json::Value::Object(initial).to_string();
+        let initial_metadata = relay_initial_metadata(response.metadata());
         Ok(Arc::new(ClientByteStream {
-            uplink: tx,
-            downlink: Mutex::new(response.into_inner()),
+            uplink: StreamUplink::Router(tx),
+            downlink: Mutex::new(StreamDownlink::Router(response.into_inner())),
             initial_metadata,
         }))
     }
@@ -453,9 +566,27 @@ impl ClientResultStream {
     }
 }
 
-/// A bidirectional router byte stream (driver `@exportstream` / resource). The Python
-/// client reads/writes raw payloads; Rust owns the DATA/GOAWAY framing. The byte plane is plain
-/// gRPC here — any shared-memory acceleration lives entirely in the hub↔driver-host hop.
+/// The uplink half of a [`ClientByteStream`]: the **native** path sends one encoded `StreamData`
+/// message per write over a bidi request stream (an `Option` sender so `close` ends the request
+/// stream by dropping it = END_STREAM half-close); the legacy **router** path sends DATA/GOAWAY
+/// `StreamRequest` frames over `RouterService.Stream`.
+enum StreamUplink {
+    Native(Mutex<Option<mpsc::Sender<bytes::Bytes>>>),
+    Router(mpsc::Sender<StreamRequest>),
+}
+
+/// The downlink half of a [`ClientByteStream`]: native `StreamData` messages (clean EOF is
+/// END_STREAM with `grpc-status OK`; a non-OK trailer is truncation) or legacy `StreamResponse`
+/// frames (EOF is a GOAWAY frame; the trailing `ABORTED "aclose"` is treated as a clean end).
+enum StreamDownlink {
+    Native(Streaming<bytes::Bytes>),
+    Router(Streaming<StreamResponse>),
+}
+
+/// A bidirectional byte stream (driver `@exportstream` / resource). The Python client reads/writes
+/// raw payloads; Rust owns the framing (native `StreamData` over the demux, or legacy DATA/GOAWAY
+/// over `RouterService.Stream`). Any shared-memory acceleration lives entirely in the hub↔driver-host
+/// hop, invisible here.
 ///
 /// Resource compression (gzip/xz/bz2/zstd) is NOT applied here: the client forwards the
 /// (already-compressed) resource bytes verbatim, and the Rust host (`foreign.rs`) decompresses the
@@ -463,8 +594,8 @@ impl ClientResultStream {
 /// host-only means exactly one transform per byte path — a client-side mirror would double-transform
 /// and deliver still-compressed bytes to the driver.
 pub struct ClientByteStream {
-    uplink: mpsc::Sender<StreamRequest>,
-    downlink: Mutex<Streaming<StreamResponse>>,
+    uplink: StreamUplink,
+    downlink: Mutex<StreamDownlink>,
     initial_metadata: String,
 }
 
@@ -474,39 +605,75 @@ impl ClientByteStream {
         self.initial_metadata.clone()
     }
 
-    /// Next inbound payload, or `None` at EOF. The trailing `ABORTED "RouterStream:
-    /// aclose"` the host emits on teardown is treated as a normal end-of-stream.
+    /// Next inbound payload, or `None` at EOF.
     pub async fn read(&self) -> Result<Option<Vec<u8>>, DriverCallError> {
         let mut downlink = self.downlink.lock().await;
-        loop {
-            match downlink.next().await {
-                Some(Ok(frame)) => match classify(frame) {
-                    FrameAction::Payload(bytes) => return Ok(Some(bytes)),
-                    FrameAction::Eof => return Ok(None),
-                    FrameAction::Drop => continue,
-                },
-                Some(Err(status)) => {
-                    if status.code() == Code::Aborted {
-                        return Ok(None);
+        match &mut *downlink {
+            // Native: each message is one `StreamData`; clean END_STREAM (None) = EOF; a non-OK
+            // trailer is a real error (truncation), NOT a clean end (the `aclose` sentinel is retired).
+            StreamDownlink::Native(stream) => loop {
+                match stream.next().await {
+                    Some(Ok(bytes)) => {
+                        let payload = decode_stream_data(&bytes).map_err(|e| {
+                            DriverCallError::Unknown(format!("StreamData decode: {e}"))
+                        })?;
+                        // The host never emits empty StreamData; skip defensively rather than surface
+                        // a spurious zero-length read.
+                        if payload.is_empty() {
+                            continue;
+                        }
+                        return Ok(Some(payload));
                     }
-                    return Err(err_from_status(status));
+                    Some(Err(status)) => return Err(err_from_status(status)),
+                    None => return Ok(None),
                 }
-                None => return Ok(None),
-            }
+            },
+            // Legacy: classify DATA/GOAWAY/PING; the trailing `ABORTED "aclose"` = a normal end.
+            StreamDownlink::Router(stream) => loop {
+                match stream.next().await {
+                    Some(Ok(frame)) => match classify(frame) {
+                        FrameAction::Payload(bytes) => return Ok(Some(bytes)),
+                        FrameAction::Eof => return Ok(None),
+                        FrameAction::Drop => continue,
+                    },
+                    Some(Err(status)) => {
+                        if status.code() == Code::Aborted {
+                            return Ok(None);
+                        }
+                        return Err(err_from_status(status));
+                    }
+                    None => return Ok(None),
+                }
+            },
         }
     }
 
-    /// Write one payload toward the driver (a DATA frame).
+    /// Write one payload toward the driver (one `StreamData` message / DATA frame).
     pub async fn write(&self, data: Vec<u8>) -> Result<(), DriverCallError> {
-        self.uplink
-            .send(data_frame(data))
-            .await
-            .map_err(|_| DriverCallError::Unknown("router stream closed".to_string()))
+        let closed = || DriverCallError::Unknown("byte stream closed".to_string());
+        match &self.uplink {
+            StreamUplink::Native(tx) => {
+                let guard = tx.lock().await;
+                match guard.as_ref() {
+                    Some(sender) => sender.send(encode_stream_data(data)).await.map_err(|_| closed()),
+                    None => Err(closed()),
+                }
+            }
+            StreamUplink::Router(tx) => tx.send(data_frame(data)).await.map_err(|_| closed()),
+        }
     }
 
-    /// Half-close the uplink (the gRPC GOAWAY); the downlink stays open until the driver ends.
+    /// Half-close the uplink; the downlink stays open until the driver ends. Native ends the bidi
+    /// request stream (END_STREAM) by dropping the sender; legacy sends a GOAWAY frame.
     pub async fn close(&self) -> Result<(), DriverCallError> {
-        let _ = self.uplink.send(goaway_frame()).await;
+        match &self.uplink {
+            StreamUplink::Native(tx) => {
+                *tx.lock().await = None; // drop the sender → request stream END_STREAM
+            }
+            StreamUplink::Router(tx) => {
+                let _ = tx.send(goaway_frame()).await;
+            }
+        }
         Ok(())
     }
 }
@@ -584,6 +751,82 @@ mod native_unary_tests {
             .await
             .expect("native_unary");
         assert_eq!(resp, format!("power-uuid-1|{path}|hello").into_bytes());
+        server.abort();
+    }
+
+    /// A backend whose `forward_bidi` echoes the uplink frames straight to the downlink — proving
+    /// the client's native byte stream (`StreamData` framing, uuid header, clean END_STREAM EOF)
+    /// round-trips through the demux.
+    struct BidiEchoBackend;
+
+    #[tonic::async_trait]
+    impl DriverBackend for BidiEchoBackend {
+        async fn get_report(&self) -> Result<GetReportResponse, Status> {
+            Err(Status::unimplemented("echo"))
+        }
+        async fn open_router_stream(
+            &self,
+            _request_meta: AsciiMetadataValue,
+            _uplink: FrameUplink,
+        ) -> Result<RouterStreamOpen, Status> {
+            Err(Status::unimplemented("echo"))
+        }
+        async fn log_stream(&self) -> Result<ResponseStream<LogStreamResponse>, Status> {
+            Err(Status::unimplemented("echo"))
+        }
+        async fn forward_bidi(
+            &self,
+            _path: &str,
+            _metadata: MetadataMap,
+            uplink: ResponseStream<bytes::Bytes>,
+        ) -> Result<(MetadataMap, ResponseStream<bytes::Bytes>), Status> {
+            // Echo: relay the inbound request-frame stream straight back as the downlink.
+            Ok((MetadataMap::new(), Box::pin(uplink)))
+        }
+    }
+
+    /// Full client→server native **byte stream** loop: `ClientSession::stream` (native path, a
+    /// resource open) → demux → `BidiEchoBackend::forward_bidi`, over the in-process transport. The
+    /// client writes three chunks + half-closes and reads them back as `StreamData`, then a clean EOF.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn client_native_resource_stream_round_trips_through_demux() {
+        let transport = InProcessTransport::new();
+        let incoming = transport.incoming();
+        let demux = Demux::new(SingleBackend(Arc::new(BidiEchoBackend)));
+        let server = tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_routes(demux.into_axum_router().into())
+                .serve_with_incoming(incoming)
+                .await
+        });
+
+        let channel = connect_channel(&transport).await.expect("connect");
+        let session = ClientSession {
+            channel,
+            passphrase: None,
+            native: OnceCell::new(),
+        };
+
+        // A resource open (no `method` → ResourceService.Open) exercises stream_native without
+        // needing a descriptor table.
+        let stream = session
+            .stream_native(r#"{"uuid":"res-1","x_jmp_content_encoding":null}"#)
+            .await
+            .expect("native resource stream");
+
+        stream.write(b"alpha".to_vec()).await.unwrap();
+        stream.write(b"beta".to_vec()).await.unwrap();
+        stream.write(b"gamma".to_vec()).await.unwrap();
+        stream.close().await.unwrap(); // END_STREAM half-close
+
+        let mut got = Vec::new();
+        while let Some(chunk) = stream.read().await.unwrap() {
+            got.push(chunk);
+        }
+        assert_eq!(
+            got,
+            vec![b"alpha".to_vec(), b"beta".to_vec(), b"gamma".to_vec()]
+        );
         server.abort();
     }
 
