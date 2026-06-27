@@ -20,18 +20,32 @@ fn all_services_have_client_and_server_stubs() {
     assert_exists::<v1::exporter_service_client::ExporterServiceClient<tonic::transport::Channel>>(
     );
     assert_exists::<v1::router_service_client::RouterServiceClient<tonic::transport::Channel>>();
+    assert_exists::<v1::resource_service_client::ResourceServiceClient<tonic::transport::Channel>>();
     assert_exists::<client_v1::client_service_client::ClientServiceClient<tonic::transport::Channel>>(
     );
 
     // Server traits exist (referenced as generic bounds; never called).
-    fn _assert_server_traits<C, E, R, Cl>()
+    fn _assert_server_traits<C, E, R, Res, Cl>()
     where
         C: v1::controller_service_server::ControllerService,
         E: v1::exporter_service_server::ExporterService,
         R: v1::router_service_server::RouterService,
+        Res: v1::resource_service_server::ResourceService,
         Cl: client_v1::client_service_server::ClientService,
     {
     }
+}
+
+/// The native byte-stream envelope `StreamData{bytes payload = 1}` round-trips — the framing the
+/// native bidi byte plane (`@exportstream` + `ResourceService.Open`) carries, replacing the
+/// `RouterService` `StreamRequest`/`StreamResponse{payload, frame_type}` frames.
+#[test]
+fn stream_data_roundtrips() {
+    use prost::Message;
+
+    let frame = v1::StreamData { payload: b"chunk".to_vec() };
+    let bytes = frame.encode_to_vec();
+    assert_eq!(v1::StreamData::decode(bytes.as_slice()).unwrap().payload, b"chunk");
 }
 
 /// `ExporterStatus` numeric tags are a hard wire contract

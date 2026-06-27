@@ -17,7 +17,9 @@
 //! `specs/rust-core/02-grpc-protocol.md` and `06-streams-and-router.md`.
 
 pub mod router;
+pub mod stream;
 pub mod value;
+pub use stream::{decode_stream_data, encode_stream_data, RESOURCE_OPEN_PATH};
 pub use value::{decode_args, decode_value, encode_args, encode_value};
 
 pub mod jumpstarter {

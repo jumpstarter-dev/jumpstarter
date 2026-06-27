@@ -100,12 +100,23 @@ impl DynamicBackend {
 
     /// Resolve the target driver uuid for a call: the `x-jumpstarter-driver-uuid` header if
     /// present, else this backend's single known uuid (`None` when neither is available).
-    fn resolve_uuid(&self, metadata: &MetadataMap) -> Option<String> {
+    pub(crate) fn resolve_uuid(&self, metadata: &MetadataMap) -> Option<String> {
         metadata
             .get(DRIVER_UUID_KEY)
             .and_then(|v| v.to_str().ok())
             .map(str::to_owned)
             .or_else(|| self.fallback_uuid.clone())
+    }
+
+    /// If `path` names a native **byte-channel** method (a bidi `StreamData` `@exportstream`),
+    /// return the driver `@export` name it maps to; otherwise `None`. The host serves these through
+    /// the byte-plane pump (`open_stream`), not the typed dispatch — so `forward_bidi` consults this
+    /// to tell a console/serial `Connect` from a typed unary/server-streaming method framed as bidi.
+    pub(crate) fn byte_stream_export(&self, path: &str) -> Option<&str> {
+        self.methods
+            .get(path)
+            .filter(|m| m.is_byte_stream())
+            .map(|m| m.export_name())
     }
 }
 
@@ -445,6 +456,55 @@ mod tests {
         assert_eq!(export_name_for("SetVoltage"), "set_voltage");
         assert_eq!(export_name_for("Read"), "read");
         assert_eq!(export_name_for("GetCPUInfo"), "get_c_p_u_info");
+    }
+
+    /// A pool with a bidi `StreamData` `@exportstream` method (`Connect`) alongside the unary/
+    /// server-streaming methods: `byte_stream_export` must recognise only the bidi one (the byte
+    /// channel), mapping it to its `@export` name, and decline the typed methods.
+    #[test]
+    fn byte_stream_export_recognises_only_bidi_stream_data() {
+        let file = FileDescriptorProto {
+            name: Some("power.proto".to_string()),
+            package: Some(PKG.to_string()),
+            syntax: Some("proto3".to_string()),
+            message_type: vec![
+                message("Empty", vec![]),
+                message("StreamData", vec![field("payload", 1, Type::Bytes)]),
+            ],
+            service: vec![ServiceDescriptorProto {
+                name: Some("PowerInterface".to_string()),
+                method: vec![
+                    method(
+                        "On",
+                        ".jumpstarter.driver.power.v1.Empty",
+                        ".jumpstarter.driver.power.v1.Empty",
+                    ),
+                    MethodDescriptorProto {
+                        name: Some("Connect".to_string()),
+                        input_type: Some(".jumpstarter.driver.power.v1.StreamData".to_string()),
+                        output_type: Some(".jumpstarter.driver.power.v1.StreamData".to_string()),
+                        client_streaming: Some(true),
+                        server_streaming: Some(true),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut pool = DescriptorPool::new();
+        pool.add_file_descriptor_proto(file).unwrap();
+        let backend = DynamicBackend::from_pool(&pool, None, MockDriver::new("null"));
+
+        assert_eq!(
+            backend.byte_stream_export("/jumpstarter.driver.power.v1.PowerInterface/Connect"),
+            Some("connect")
+        );
+        // A unary method is not a byte channel.
+        assert_eq!(
+            backend.byte_stream_export("/jumpstarter.driver.power.v1.PowerInterface/On"),
+            None
+        );
     }
 
     #[test]

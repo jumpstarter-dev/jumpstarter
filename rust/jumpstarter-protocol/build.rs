@@ -30,6 +30,7 @@ fn main() {
         repo_proto.join("jumpstarter/v1/common.proto"),
         repo_proto.join("jumpstarter/v1/kubernetes.proto"),
         repo_proto.join("jumpstarter/v1/router.proto"),
+        repo_proto.join("jumpstarter/v1/resource.proto"),
         repo_proto.join("jumpstarter/v1/jumpstarter.proto"),
         repo_proto.join("jumpstarter/client/v1/client.proto"),
     ];

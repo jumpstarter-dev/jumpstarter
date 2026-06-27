@@ -1,0 +1,30 @@
+// Copyright 2026 The Jumpstarter Authors
+
+syntax = "proto3";
+
+package jumpstarter.v1;
+
+// A single frame of an opaque byte stream carried over a native gRPC bidi method.
+//
+// This is the native replacement for the RouterService StreamRequest/StreamResponse
+// framing: there is no in-band `frame_type` byte. Stream end is signalled by HTTP/2
+// END_STREAM plus the gRPC trailer status — `OK` is a clean EOF, a non-OK status
+// (e.g. `DATA_LOSS`) is a truncation. `@exportstream` interface methods and the
+// ResourceService below both carry this message; it is wire-identical to the per-interface
+// `StreamData` the descriptor builder emits for `@exportstream`.
+message StreamData {
+  // The raw bytes of this stream frame.
+  bytes payload = 1;
+}
+
+// A resource byte channel: the client offers (flash) or receives (dump) a byte stream
+// associated with a driver instance, correlated to a later typed driver call by the
+// resource handle the host returns in the response's initial metadata.
+//
+// Routed to the owning driver by the `x-jumpstarter-driver-uuid` metadata header; the
+// requested wire content-encoding rides in the `x-jmp-content-encoding` header. This is
+// the native replacement for opening a `RouterService.Stream` with a `{uuid}` request.
+service ResourceService {
+  // Open a bidirectional resource byte channel to a driver instance.
+  rpc Open(stream StreamData) returns (stream StreamData);
+}

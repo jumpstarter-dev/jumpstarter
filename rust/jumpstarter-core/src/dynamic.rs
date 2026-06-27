@@ -70,6 +70,11 @@ pub struct DynamicMethod {
     /// server-streaming method dispatches through [`dispatch_streaming`](Self::dispatch_streaming)
     /// (one output message per yielded result); a unary method through [`dispatch`](Self::dispatch).
     server_streaming: bool,
+    /// Whether the proto method is client-streaming. A method that is **both** client- and
+    /// server-streaming is a bidi byte channel (`@exportstream` carries `StreamData` both ways);
+    /// see [`is_byte_stream`](Self::is_byte_stream). Such a method is served by the host's byte-plane
+    /// pump (`forward_bidi`), not the typed dispatch here.
+    client_streaming: bool,
 }
 
 impl DynamicMethod {
@@ -80,6 +85,7 @@ impl DynamicMethod {
             input: method.input(),
             output: method.output(),
             server_streaming: method.is_server_streaming(),
+            client_streaming: method.is_client_streaming(),
         }
     }
 
@@ -96,6 +102,7 @@ impl DynamicMethod {
             input,
             output,
             server_streaming: false,
+            client_streaming: false,
         }
     }
 
@@ -110,6 +117,7 @@ impl DynamicMethod {
             input,
             output,
             server_streaming: true,
+            client_streaming: false,
         }
     }
 
@@ -121,6 +129,13 @@ impl DynamicMethod {
     /// Whether this method is server-streaming (selects [`dispatch_streaming`](Self::dispatch_streaming)).
     pub fn is_server_streaming(&self) -> bool {
         self.server_streaming
+    }
+
+    /// Whether this method is a **bidi byte channel** — both client- and server-streaming, the shape
+    /// the descriptor builder emits for an `@exportstream` (`StreamData` in and out). The host serves
+    /// these through the byte-plane pump (`forward_bidi` → `open_stream`), not the typed dispatch.
+    pub fn is_byte_stream(&self) -> bool {
+        self.client_streaming && self.server_streaming
     }
 
     /// Decode `request_bytes` against the input descriptor, dispatch through the driver

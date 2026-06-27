@@ -22,9 +22,11 @@ use tokio::sync::OnceCell;
 use jumpstarter_transport::{DriverBackend, FrameUplink, ResponseStream, RouterStreamOpen};
 
 use crate::dynamic_backend::DynamicBackend;
+use crate::stream_pump::{downlink_chunk, downlink_finish, uplink_chunk, uplink_finish};
 use jumpstarter_protocol::v1::{
     FrameType, GetReportResponse, LogStreamResponse, StreamResponse,
 };
+use jumpstarter_protocol::{decode_stream_data, encode_stream_data, RESOURCE_OPEN_PATH};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt as _;
@@ -186,6 +188,132 @@ impl DriverBackend for ForeignDriver {
         self.native().await?.forward_stream(path, metadata, body).await
     }
 
+    /// The **native byte plane**: serve a bidi `StreamData` method (`@exportstream` console/serial,
+    /// or [`ResourceService.Open`](jumpstarter_protocol::v1::ResourceService)) by bridging to the
+    /// same in-process `open_stream` machinery the legacy [`open_router_stream`](Self::open_router_stream)
+    /// uses — only the framing differs (`StreamData` messages + END_STREAM instead of
+    /// `StreamRequest/StreamResponse` + GOAWAY). The codec pumps are shared via [`crate::stream_pump`].
+    ///
+    /// The demux frames *every* call as bidi, so a typed unary/server-streaming method also arrives
+    /// here; it is recognised (not a byte channel) and dispatched through the typed
+    /// [`forward_stream`](Self::forward_stream) on its single request frame.
+    async fn forward_bidi(
+        &self,
+        path: &str,
+        metadata: MetadataMap,
+        uplink: ResponseStream<bytes::Bytes>,
+    ) -> Result<(MetadataMap, ResponseStream<bytes::Bytes>), Status> {
+        let native = self.native().await?;
+        // Classify by path: a resource channel, an `@exportstream` channel, or a typed call. Own the
+        // request JSON (`None` = typed) so no descriptor borrow is held across the pumps below.
+        let request_json = if path == RESOURCE_OPEN_PATH {
+            Some(resource_request_json(native, &metadata)?)
+        } else {
+            match native.byte_stream_export(path) {
+                Some(export) => Some(exportstream_request_json(native, &metadata, export)?),
+                None => None,
+            }
+        };
+        let request_json = match request_json {
+            Some(json) => json,
+            None => {
+                // Typed call framed as bidi: read its single request frame, dispatch typed.
+                let mut uplink = uplink;
+                let body = match uplink.next().await {
+                    Some(Ok(b)) => b,
+                    Some(Err(status)) => return Err(status),
+                    None => bytes::Bytes::new(),
+                };
+                return self.forward_stream(path, metadata, body).await;
+            }
+        };
+
+        let codec = parse_codec(&request_json);
+        tracing::trace!(request = %request_json, codec = ?codec, "native byte stream open");
+        let opened = self.api.open_stream(request_json).await.map_err(status_from)?;
+
+        // Uplink pump (client -> driver): decode each StreamData → DECOMPRESS/passthrough → driver.
+        let write_chan = opened.channel.clone();
+        let mut uplink = uplink;
+        let mut dec = codec.map(Decompressor::new);
+        let mut up_fed = false;
+        tokio::spawn(async move {
+            loop {
+                match uplink.next().await {
+                    Some(Ok(frame)) => {
+                        let payload = match decode_stream_data(&frame) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                tracing::debug!(error = %e, "uplink StreamData decode failed");
+                                break;
+                            }
+                        };
+                        if uplink_chunk(&mut dec, &mut up_fed, payload, &write_chan)
+                            .await
+                            .is_err()
+                        {
+                            return; // channel broken — no clean finish
+                        }
+                    }
+                    // Clean END_STREAM: flush the decompressor tail + half-close the write side.
+                    None => {
+                        uplink_finish(dec.take(), up_fed, &write_chan).await;
+                        return;
+                    }
+                    // Client uplink error: abnormal — half-close (driver reads EOF), no tail flush.
+                    Some(Err(_)) => break,
+                }
+            }
+            let _ = write_chan.close_write().await;
+        });
+
+        // Downlink pump (driver -> client): COMPRESS/passthrough → StreamData; clean EOF = END_STREAM.
+        let (tx, rx) = mpsc::channel::<Result<bytes::Bytes, Status>>(PUMP_BUFFER);
+        let read_chan = opened.channel.clone();
+        let mut enc = codec.map(Compressor::new);
+        let mut dn_fed = false;
+        tokio::spawn(async move {
+            loop {
+                match read_chan.read().await {
+                    Ok(Some(payload)) => match downlink_chunk(&mut enc, &mut dn_fed, payload) {
+                        Ok(Some(out)) => {
+                            if tx.send(Ok(encode_stream_data(out))).await.is_err() {
+                                break;
+                            }
+                        }
+                        Ok(None) => continue, // encoder buffered it
+                        Err(msg) => {
+                            let _ = tx.send(Err(Status::internal(msg))).await;
+                            break;
+                        }
+                    },
+                    Ok(None) => {
+                        // Flush the compressor footer (if any), then end the stream cleanly: tonic
+                        // frames END_STREAM + grpc-status OK = a clean EOF (no GOAWAY, no aclose
+                        // sentinel — that legacy framing is retired on the native path).
+                        if let Some(tail) = downlink_finish(enc.take(), dn_fed) {
+                            let _ = tx.send(Ok(encode_stream_data(tail))).await;
+                        }
+                        break;
+                    }
+                    Err(e) => {
+                        // A driver error becomes a non-OK trailer = truncation, distinguishable from
+                        // the clean END_STREAM above.
+                        let _ = tx.send(Err(status_from(e))).await;
+                        break;
+                    }
+                }
+            }
+            let _ = read_chan.close().await;
+        });
+
+        // Accept negotiation: advertise the accepted encoding for a supported codec (Rust owns the wire).
+        let mut meta = opened.initial_metadata;
+        if let Some(c) = &codec {
+            meta.push(("x_jmp_accept_encoding".into(), c.as_wire().into()));
+        }
+        Ok((to_metadata(meta), Box::pin(ReceiverStream::new(rx))))
+    }
 
     async fn open_router_stream(
         &self,
@@ -220,58 +348,18 @@ impl DriverBackend for ForeignDriver {
         tokio::spawn(async move {
             while let Some(frame) = uplink.next().await {
                 match FrameType::try_from(frame.frame_type) {
-                    Ok(FrameType::Data) => match dec.as_mut() {
-                        Some(d) => {
-                            up_fed = true;
-                            match d.decompress(&frame.payload) {
-                                Ok(raw) => {
-                                    tracing::trace!(bytes = raw.len(), "uplink decompressed chunk");
-                                    if !raw.is_empty() {
-                                        if let Err(e) = write_chan.write(raw).await {
-                                            tracing::debug!(error = %e, "uplink write to driver failed");
-                                            break;
-                                        }
-                                    }
-                                }
-                                // A codec error is unrecoverable for this stream — break the pump and
-                                // let the channel close propagate as the normal teardown.
-                                Err(e) => {
-                                    tracing::error!(error = %e, "uplink decompress failed; tearing down stream");
-                                    break;
-                                }
-                            }
+                    Ok(FrameType::Data) => {
+                        // DECOMPRESS (or passthrough) + write to the driver — shared with `forward_bidi`.
+                        if uplink_chunk(&mut dec, &mut up_fed, frame.payload, &write_chan)
+                            .await
+                            .is_err()
+                        {
+                            break;
                         }
-                        None => {
-                            tracing::trace!(bytes = frame.payload.len(), "uplink passthrough chunk");
-                            if let Err(e) = write_chan.write(frame.payload).await {
-                                tracing::debug!(error = %e, "uplink write to driver failed");
-                                break;
-                            }
-                        }
-                    },
+                    }
                     Ok(FrameType::Goaway) => {
-                        tracing::trace!("uplink GOAWAY; half-closing");
-                        // Drain the decompressor tail (gzip residual) BEFORE half-closing, so the
-                        // driver sees the complete raw payload — but only if data actually flowed.
-                        if up_fed {
-                            if let Some(d) = dec.take() {
-                                match d.finish() {
-                                    Ok(tail) => {
-                                        if !tail.is_empty() {
-                                            if let Err(e) = write_chan.write(tail).await {
-                                                tracing::debug!(error = %e, "uplink tail write to driver failed");
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        tracing::debug!(error = %e, "uplink decompressor finish failed");
-                                    }
-                                }
-                            }
-                        }
-                        if let Err(e) = write_chan.close_write().await {
-                            tracing::debug!(error = %e, "uplink close_write failed");
-                        }
+                        // GOAWAY = clean half-close: flush the decompressor tail then close the write side.
+                        uplink_finish(dec.take(), up_fed, &write_chan).await;
                         break;
                     }
                     // PING / unknown are dropped without forwarding (router.rs::classify).
@@ -292,53 +380,31 @@ impl DriverBackend for ForeignDriver {
         // spurious DATA frame the client writes back into the (read-only) source via its
         // bidirectional `forward_stream`. Only a DUMP (driver sends data) gets a footer.
         let mut dn_fed = false;
+        let data_frame = |payload: Vec<u8>| StreamResponse {
+            payload,
+            frame_type: FrameType::Data as i32,
+        };
         tokio::spawn(async move {
             loop {
                 match read_chan.read().await {
-                    Ok(Some(payload)) => {
-                        dn_fed = true;
-                        let out = match enc.as_mut() {
-                            Some(e) => match e.compress(&payload) {
-                                Ok(z) => z,
-                                Err(err) => {
-                                    let _ = tx
-                                        .send(Err(Status::internal(format!(
-                                            "compression error: {err}"
-                                        ))))
-                                        .await;
-                                    break;
-                                }
-                            },
-                            None => payload,
-                        };
-                        // An empty compressed chunk is a no-op (the encoder is still buffering).
-                        if out.is_empty() && enc.is_some() {
-                            continue;
+                    Ok(Some(payload)) => match downlink_chunk(&mut enc, &mut dn_fed, payload) {
+                        // COMPRESS (or passthrough) one chunk — shared with `forward_bidi`.
+                        Ok(Some(out)) => {
+                            if tx.send(Ok(data_frame(out))).await.is_err() {
+                                break;
+                            }
                         }
-                        let frame = StreamResponse {
-                            payload: out,
-                            frame_type: FrameType::Data as i32,
-                        };
-                        if tx.send(Ok(frame)).await.is_err() {
+                        Ok(None) => continue, // encoder buffered it
+                        Err(msg) => {
+                            let _ = tx.send(Err(Status::internal(msg))).await;
                             break;
                         }
-                    }
+                    },
                     Ok(None) => {
-                        // Flush the compressor footer as a FINAL DATA frame before GOAWAY — but only
-                        // if the driver actually produced downlink data (a flash's empty downlink
-                        // emits nothing).
-                        if dn_fed {
-                            if let Some(e) = enc.take() {
-                                if let Ok(tail) = e.finish() {
-                                    if !tail.is_empty() {
-                                        let frame = StreamResponse {
-                                            payload: tail,
-                                            frame_type: FrameType::Data as i32,
-                                        };
-                                        let _ = tx.send(Ok(frame)).await;
-                                    }
-                                }
-                            }
+                        // Flush the compressor footer as a FINAL DATA frame before GOAWAY (only if the
+                        // driver produced data), then the legacy clean-end framing: GOAWAY + aclose.
+                        if let Some(tail) = downlink_finish(enc.take(), dn_fed) {
+                            let _ = tx.send(Ok(data_frame(tail))).await;
                         }
                         let goaway = StreamResponse {
                             payload: Vec::new(),
@@ -377,6 +443,41 @@ impl DriverBackend for ForeignDriver {
         // hook logs itself); an idle stream keeps the client merge well-defined.
         Ok(Box::pin(tokio_stream::empty()))
     }
+}
+
+/// The metadata header carrying the requested wire content-encoding for a native resource open
+/// (the native counterpart of the old `request` JSON's `x_jmp_content_encoding`).
+const CONTENT_ENCODING_KEY: &str = "x-jmp-content-encoding";
+
+/// Reconstruct the host `open_stream` request JSON for a native [`ResourceService.Open`] call: the
+/// driver uuid (from the demux `x-jumpstarter-driver-uuid` header / fallback) plus the requested
+/// wire content-encoding (`x-jmp-content-encoding` header). Wire-identical to the client's old
+/// `{uuid, x_jmp_content_encoding}` resource request, so `host.open_stream` is unchanged.
+#[allow(clippy::result_large_err)]
+fn resource_request_json(native: &DynamicBackend, metadata: &MetadataMap) -> Result<String, Status> {
+    let uuid = native.resolve_uuid(metadata).ok_or_else(|| {
+        Status::invalid_argument("native resource open missing x-jumpstarter-driver-uuid header")
+    })?;
+    let content_encoding = metadata.get(CONTENT_ENCODING_KEY).and_then(|v| v.to_str().ok());
+    Ok(serde_json::json!({
+        "uuid": uuid,
+        "x_jmp_content_encoding": content_encoding,
+    })
+    .to_string())
+}
+
+/// Reconstruct the host `open_stream` request JSON for a native `@exportstream` `Connect` call: the
+/// driver uuid + the `@export` method name. Wire-identical to the client's old `{uuid, method}`.
+#[allow(clippy::result_large_err)]
+fn exportstream_request_json(
+    native: &DynamicBackend,
+    metadata: &MetadataMap,
+    export: &str,
+) -> Result<String, Status> {
+    let uuid = native.resolve_uuid(metadata).ok_or_else(|| {
+        Status::invalid_argument("native @exportstream missing x-jumpstarter-driver-uuid header")
+    })?;
+    Ok(serde_json::json!({ "uuid": uuid, "method": export }).to_string())
 }
 
 /// Convert the foreign host's allow-listed initial metadata into a tonic `MetadataMap`
@@ -827,6 +928,247 @@ mod tests {
         ) -> Result<DriverStreamOpen, DriverCallError> {
             unreachable!()
         }
+    }
+
+    // --- native byte plane (forward_bidi): @exportstream + resource over StreamData ---------
+
+    /// A descriptor set for a console-style interface with a bidi `StreamData` `@exportstream`
+    /// method `Connect` — the shape `byte_stream_export` keys on. Built by hand (no protoc).
+    fn console_descriptor_set_bytes() -> Vec<u8> {
+        use prost_reflect::prost_types::field_descriptor_proto::{Label, Type};
+        use prost_reflect::prost_types::{
+            DescriptorProto, FieldDescriptorProto, MethodDescriptorProto, ServiceDescriptorProto,
+        };
+        let stream_data = DescriptorProto {
+            name: Some("StreamData".into()),
+            field: vec![FieldDescriptorProto {
+                name: Some("payload".into()),
+                number: Some(1),
+                label: Some(Label::Optional as i32),
+                r#type: Some(Type::Bytes as i32),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let console_file = FileDescriptorProto {
+            name: Some("console.proto".into()),
+            package: Some("jumpstarter.interfaces.console.v1".into()),
+            message_type: vec![stream_data],
+            service: vec![ServiceDescriptorProto {
+                name: Some("ConsoleInterface".into()),
+                method: vec![MethodDescriptorProto {
+                    name: Some("Connect".into()),
+                    input_type: Some(".jumpstarter.interfaces.console.v1.StreamData".into()),
+                    output_type: Some(".jumpstarter.interfaces.console.v1.StreamData".into()),
+                    client_streaming: Some(true),
+                    server_streaming: Some(true),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            syntax: Some("proto3".into()),
+            ..Default::default()
+        };
+        FileDescriptorSet {
+            file: vec![console_file],
+        }
+        .encode_to_vec()
+    }
+
+    /// A byte channel that echoes: each `write` (uplink) is queued and returned by a later `read`
+    /// (downlink). `close_write` closes the queue so `read` reaches EOF after draining — modelling a
+    /// console/resource that loops the client's bytes back.
+    struct EchoChannel {
+        tx: Mutex<Option<mpsc::UnboundedSender<Vec<u8>>>>,
+        rx: tokio::sync::Mutex<mpsc::UnboundedReceiver<Vec<u8>>>,
+    }
+    impl EchoChannel {
+        fn new() -> Arc<Self> {
+            let (tx, rx) = mpsc::unbounded_channel();
+            Arc::new(Self {
+                tx: Mutex::new(Some(tx)),
+                rx: tokio::sync::Mutex::new(rx),
+            })
+        }
+    }
+    #[async_trait::async_trait]
+    impl DriverByteChannel for EchoChannel {
+        async fn read(&self) -> Result<Option<Vec<u8>>, DriverCallError> {
+            Ok(self.rx.lock().await.recv().await)
+        }
+        async fn write(&self, data: Vec<u8>) -> Result<(), DriverCallError> {
+            if let Some(tx) = self.tx.lock().unwrap().as_ref() {
+                let _ = tx.send(data);
+            }
+            Ok(())
+        }
+        async fn close_write(&self) -> Result<(), DriverCallError> {
+            *self.tx.lock().unwrap() = None; // close the queue → read reaches EOF after drain
+            Ok(())
+        }
+        async fn close(&self) -> Result<(), DriverCallError> {
+            *self.tx.lock().unwrap() = None;
+            Ok(())
+        }
+    }
+
+    /// A host that records the `open_stream` request JSON and serves an [`EchoChannel`]; advertises
+    /// the console descriptor so the `Connect` method is recognised as a byte channel.
+    struct EchoHost {
+        request: Arc<Mutex<Option<String>>>,
+    }
+    #[async_trait::async_trait]
+    impl DriverApi for EchoHost {
+        async fn describe(&self) -> Result<Vec<DriverNode>, DriverCallError> {
+            Ok(vec![DriverNode {
+                uuid: "echo-1".into(),
+                parent_uuid: None,
+                labels: HashMap::from([(
+                    "jumpstarter.dev/client".to_string(),
+                    "pkg.ConsoleClient".to_string(),
+                )]),
+                description: Some("echo console".into()),
+                methods_description: HashMap::new(),
+                descriptor_set: Some(console_descriptor_set_bytes()),
+            }])
+        }
+        async fn driver_call(
+            &self,
+            _uuid: String,
+            _method_name: String,
+            _args_json: String,
+        ) -> Result<String, DriverCallError> {
+            unreachable!()
+        }
+        async fn streaming_driver_call(
+            &self,
+            _uuid: String,
+            _method_name: String,
+            _args_json: String,
+        ) -> Result<Arc<dyn DriverResultStream>, DriverCallError> {
+            unreachable!()
+        }
+        async fn open_stream(
+            &self,
+            request_json: String,
+        ) -> Result<DriverStreamOpen, DriverCallError> {
+            *self.request.lock().unwrap() = Some(request_json);
+            Ok(DriverStreamOpen {
+                channel: EchoChannel::new(),
+                initial_metadata: vec![("resource".to_string(), "{}".to_string())],
+            })
+        }
+    }
+
+    /// Build a uplink of `StreamData`-encoded chunks followed by a clean END_STREAM (the iterator
+    /// simply ending), as `forward_bidi` consumes it.
+    fn stream_data_uplink(chunks: &[&[u8]]) -> ResponseStream<bytes::Bytes> {
+        let frames: Vec<Result<bytes::Bytes, Status>> = chunks
+            .iter()
+            .map(|c| Ok(encode_stream_data(c.to_vec())))
+            .collect();
+        Box::pin(tokio_stream::iter(frames))
+    }
+
+    fn uuid_md(uuid: &str) -> MetadataMap {
+        let mut md = MetadataMap::new();
+        md.insert(crate::dynamic_backend::DRIVER_UUID_KEY, uuid.parse().unwrap());
+        md
+    }
+
+    #[tokio::test]
+    async fn forward_bidi_exportstream_echoes_stream_data_and_reconstructs_request() {
+        let request = Arc::new(Mutex::new(None));
+        let host = ForeignDriver::new(Arc::new(EchoHost {
+            request: request.clone(),
+        }));
+        host.prepare().await.unwrap();
+
+        let chunks: &[&[u8]] = &[b"one", b"two", b"three"];
+        let (_meta, mut downlink) = host
+            .forward_bidi(
+                "/jumpstarter.interfaces.console.v1.ConsoleInterface/Connect",
+                uuid_md("echo-1"),
+                stream_data_uplink(chunks),
+            )
+            .await
+            .unwrap();
+
+        // The echoed chunks come back as StreamData, in order, then a CLEAN end (no error item).
+        let mut got: Vec<Vec<u8>> = Vec::new();
+        while let Some(item) = downlink.next().await {
+            let frame = item.expect("clean EOF must not surface an error");
+            got.push(decode_stream_data(&frame).unwrap());
+        }
+        assert_eq!(got, vec![b"one".to_vec(), b"two".to_vec(), b"three".to_vec()]);
+
+        // The native path reconstructed the host request JSON: {uuid, method:"connect"} (no codec).
+        let req: serde_json::Value =
+            serde_json::from_str(request.lock().unwrap().as_ref().unwrap()).unwrap();
+        assert_eq!(req["uuid"], "echo-1");
+        assert_eq!(req["method"], "connect");
+    }
+
+    #[tokio::test]
+    async fn forward_bidi_resource_open_reconstructs_resource_request() {
+        let request = Arc::new(Mutex::new(None));
+        let host = ForeignDriver::new(Arc::new(EchoHost {
+            request: request.clone(),
+        }));
+        host.prepare().await.unwrap();
+
+        let chunks: &[&[u8]] = &[b"flash-bytes"];
+        let (meta, mut downlink) = host
+            .forward_bidi(RESOURCE_OPEN_PATH, uuid_md("echo-1"), stream_data_uplink(chunks))
+            .await
+            .unwrap();
+
+        // The resource handle rides the response initial metadata, unchanged from the host.
+        assert!(meta.get("resource").is_some());
+
+        let mut got: Vec<Vec<u8>> = Vec::new();
+        while let Some(item) = downlink.next().await {
+            got.push(decode_stream_data(&item.unwrap()).unwrap());
+        }
+        assert_eq!(got, vec![b"flash-bytes".to_vec()]);
+
+        // Resource request JSON: {uuid, x_jmp_content_encoding:null} — and crucially NO `method`.
+        let req: serde_json::Value =
+            serde_json::from_str(request.lock().unwrap().as_ref().unwrap()).unwrap();
+        assert_eq!(req["uuid"], "echo-1");
+        assert!(req.get("method").is_none(), "a resource open carries no method");
+        assert!(req.get("x_jmp_content_encoding").is_some());
+    }
+
+    #[tokio::test]
+    async fn forward_bidi_typed_call_falls_back_to_typed_dispatch() {
+        // A typed unary method (PowerInterface/On) framed as bidi must NOT be treated as a byte
+        // channel — forward_bidi reads its single request frame and dispatches typed.
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let host = ForeignDriver::new(Arc::new(PowerDescHost {
+            descriptor_set: power_descriptor_set_bytes(),
+            calls: calls.clone(),
+        }));
+        host.prepare().await.unwrap();
+
+        // A typed On request is a single raw (Empty) message, NOT StreamData-wrapped.
+        let uplink: ResponseStream<bytes::Bytes> =
+            Box::pin(tokio_stream::once(Ok(bytes::Bytes::new())));
+        let (_meta, mut downlink) = host
+            .forward_bidi(
+                "/jumpstarter.interfaces.power.v1.PowerInterface/On",
+                uuid_md("power-1"),
+                uplink,
+            )
+            .await
+            .unwrap();
+
+        // The typed dispatch yields one (empty) response message, then clean end.
+        let first = downlink.next().await.unwrap().unwrap();
+        assert!(first.is_empty(), "On() returns Empty → empty response message");
+
+        let (uuid, method, args) = calls.lock().unwrap().last().cloned().unwrap();
+        assert_eq!((uuid.as_str(), method.as_str(), args.as_str()), ("power-1", "on", "[]"));
     }
 
     /// Build the exact self-contained `FileDescriptorSet` the Python host produces for
