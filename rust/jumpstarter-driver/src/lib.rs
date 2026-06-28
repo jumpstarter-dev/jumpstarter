@@ -186,7 +186,7 @@ impl ExporterService for ReportOnlyExporter {
 ///
 /// ```ignore
 /// fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-///     jumpstarter_driver_runtime::run_host(
+///     jumpstarter_driver::run_host(
 ///         POWER_CLIENT_CLASS,
 ///         proto::FILE_DESCRIPTOR_SET,
 ///         proto::power_interface_server::PowerInterfaceServer::new(MockPower::default()),
@@ -302,7 +302,7 @@ struct HostDriver {
 ///
 /// ```ignore
 /// fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-///     jumpstarter_driver_runtime::Host::new()
+///     jumpstarter_driver::Host::new()
 ///         .driver(POWER_CLIENT_CLASS, proto::FILE_DESCRIPTOR_SET,
 ///                 || proto::power_interface_server::PowerInterfaceServer::new(MockPower::default()))
 ///         // .driver(..) for each additional interface this crate implements
@@ -429,7 +429,7 @@ pub struct DriverRegistration {
 inventory::collect!(DriverRegistration);
 
 /// Generate the host binary's whole `fn main` from the crate's `#[driver]` registrations:
-/// `jumpstarter_driver_runtime::host_main!();` is the entire `src/main.rs`. (The crate's lib must be
+/// `jumpstarter_driver::host_main!();` is the entire `src/main.rs`. (The crate's lib must be
 /// linked into the bin — `use <crate> as _;` next to this when the bin references nothing else.)
 #[macro_export]
 macro_rules! host_main {

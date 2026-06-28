@@ -1,6 +1,6 @@
 [package]
 name = "jumpstarter-driver-power-example"
-description = "Proto-first example: a native Rust power driver authored as `impl PowerInterface`, served by the generic jumpstarter-driver-runtime over SHM and driven by a build-time-generated PowerClient"
+description = "Proto-first example: a native Rust power driver authored as `impl PowerInterface`, served by the generic jumpstarter-driver over SHM and driven by a build-time-generated PowerClient"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,13 +11,13 @@ rust-version.workspace = true
 # everything else into OUT_DIR (not committed): the stock tonic service trait + messages +
 # FILE_DESCRIPTOR_SET (tonic-build), and the typed `PowerClient` (jumpstarter-codegen's
 # RustGenerator over the FileDescriptorSet). The round-trip test serves MockPower via the generic
-# `jumpstarter_driver_runtime::serve_driver` over SHM and drives it through the generated client.
+# `jumpstarter_driver::serve_driver` over SHM and drives it through the generated client.
 [lib]
 name = "jumpstarter_driver_power_example"
 path = "src/lib.rs"
 
 # The crate's own binary (the default `src/main.rs`, named after the package) IS the standalone
-# driver host: its `main` is one `jumpstarter_driver_runtime::run_host(..)` call. The polyglot hub
+# driver host: its `main` is one `jumpstarter_driver::run_host(..)` call. The polyglot hub
 # spawns it for `type: rust:jumpstarter-driver-power-example`. It links the host SDK only — never the
 # `jmp` CLI — so a driver crate ships its own host with no per-crate boilerplate.
 
@@ -28,12 +28,12 @@ name = "jumpstarter-driver-power-example-client"
 path = "src/client.rs"
 
 [dependencies]
-# Combined crate (host + client bins): the host side from `jumpstarter-driver-runtime`, the client
+# Combined crate (host + client bins): the host side from `jumpstarter-driver`, the client
 # CLI entrypoint (`client_main!`/`#[client_cli]`) from `jumpstarter-client`, the error taxonomy from
 # `jumpstarter-codec`. Its binaries pull both sides by design (the "single crate if desired" path).
 jumpstarter-client = { path = "../jumpstarter-client" }
 jumpstarter-codec = { path = "../jumpstarter-codec" }
-jumpstarter-driver-runtime = { path = "../jumpstarter-driver-runtime" }
+jumpstarter-driver = { path = "../jumpstarter-driver" }
 jumpstarter-protocol = { path = "../jumpstarter-protocol" }
 jumpstarter-transport = { path = "../jumpstarter-transport" }
 bytes = "1"

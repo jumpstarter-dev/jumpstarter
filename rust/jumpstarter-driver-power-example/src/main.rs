@@ -6,4 +6,4 @@
 
 use jumpstarter_driver_power_example as _;
 
-jumpstarter_driver_runtime::host_main!();
+jumpstarter_driver::host_main!();

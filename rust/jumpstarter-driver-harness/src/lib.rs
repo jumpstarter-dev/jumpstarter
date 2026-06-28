@@ -2,7 +2,7 @@
 //! and a one-call Java `LocalExporter.serve(driver)`.
 //!
 //! [`serve`] stands up a driver impl over the **real** transport — a SHM driver host
-//! ([`jumpstarter_driver_runtime::serve_driver`]) federated through the **production** exporter
+//! ([`jumpstarter_driver::serve_driver`]) federated through the **production** exporter
 //! session ([`jumpstarter_exporter::session::serve_native_host`]) on a private UDS — and connects a
 //! [`ClientSession`]. So a driver author exercises their `impl <Interface>` + the generated client
 //! through the full `client → exporter → SHM → tonic service` loop (no controller, no lease, no
@@ -48,7 +48,7 @@ impl Drop for Harness {
 
 /// Serve a stock `tonic` driver `service` locally and connect a [`ClientSession`]. `name` is the
 /// driver-instance name the client resolves; `client_class` and `descriptor` mirror
-/// [`jumpstarter_driver_runtime::serve_driver`]. Panics on setup failure (it is a test helper).
+/// [`jumpstarter_driver::serve_driver`]. Panics on setup failure (it is a test helper).
 pub async fn serve<S>(name: &str, client_class: &str, descriptor: &[u8], service: S) -> Harness
 where
     S: tower::Service<
@@ -62,7 +62,7 @@ where
         + 'static,
     S::Future: Send + 'static,
 {
-    let backend = jumpstarter_driver_runtime::serve_driver(
+    let backend = jumpstarter_driver::serve_driver(
         name,
         client_class,
         descriptor.to_vec(),

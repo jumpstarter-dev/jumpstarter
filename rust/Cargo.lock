@@ -1485,6 +1485,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "jumpstarter-driver"
+version = "0.0.0"
+dependencies = [
+ "axum",
+ "http",
+ "inventory",
+ "jumpstarter-config",
+ "jumpstarter-driver-macros",
+ "jumpstarter-exporter",
+ "jumpstarter-protocol",
+ "jumpstarter-transport",
+ "prost",
+ "prost-types",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tower 0.5.3",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "jumpstarter-driver-core"
 version = "0.0.0"
 dependencies = [
@@ -1533,7 +1555,7 @@ version = "0.0.0"
 dependencies = [
  "http",
  "jumpstarter-client",
- "jumpstarter-driver-runtime",
+ "jumpstarter-driver",
  "jumpstarter-exporter",
  "jumpstarter-transport",
  "tempfile",
@@ -1560,8 +1582,8 @@ dependencies = [
  "jumpstarter-client",
  "jumpstarter-codec",
  "jumpstarter-codegen",
+ "jumpstarter-driver",
  "jumpstarter-driver-harness",
- "jumpstarter-driver-runtime",
  "jumpstarter-protocol",
  "jumpstarter-transport",
  "prost",
@@ -1571,28 +1593,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
-]
-
-[[package]]
-name = "jumpstarter-driver-runtime"
-version = "0.0.0"
-dependencies = [
- "axum",
- "http",
- "inventory",
- "jumpstarter-config",
- "jumpstarter-driver-macros",
- "jumpstarter-exporter",
- "jumpstarter-protocol",
- "jumpstarter-transport",
- "prost",
- "prost-types",
- "tokio",
- "tokio-stream",
- "tonic",
- "tower 0.5.3",
- "tracing",
- "uuid",
 ]
 
 [[package]]

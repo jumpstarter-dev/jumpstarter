@@ -1,5 +1,5 @@
 [package]
-name = "jumpstarter-driver-runtime"
+name = "jumpstarter-driver"
 description = "Generic, codegen-free driver host: serves a stock tonic service over the Jumpstarter SHM transport, exposed to the hub as a ChannelBackend. The author implements only the stock tonic service trait; no per-interface adapter is generated."
 version.workspace = true
 edition.workspace = true

@@ -303,7 +303,7 @@ fn rust_crate_name(driver_type: Option<&str>) -> Option<&str> {
 }
 
 /// The per-crate native host binary name: the crate's own **default binary** (named after the
-/// package — its `src/main.rs` is the host via `jumpstarter_driver_runtime::driver_host!`). A driver
+/// package — its `src/main.rs` is the host via `jumpstarter_driver::driver_host!`). A driver
 /// crate is named in full (`rust:<crate>`) and ships this binary, so the per-crate path links no
 /// driver code into `jmp` (and matches `cargo install <crate>` → `<crate>` on `PATH`).
 fn rust_host_bin_name(crate_name: &str) -> String {

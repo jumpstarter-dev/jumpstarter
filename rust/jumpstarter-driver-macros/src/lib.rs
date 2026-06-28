@@ -27,10 +27,10 @@ use quote::{format_ident, quote};
 use syn::{parse_macro_input, Data, DeriveInput, Expr, ExprLit, Fields, ItemImpl, Lit, LitStr, MetaNameValue, Type};
 
 /// Pull in everything `build.rs` generated for a proto-first driver crate — the whole `src/lib.rs`
-/// wiring in one line: `jumpstarter_driver_runtime::interface!();`. Expands to the include of the
+/// wiring in one line: `jumpstarter_driver::interface!();`. Expands to the include of the
 /// `jumpstarter_generated.rs` aggregator (the `proto` module + the typed client + the
 /// `<short>_host!`/`<short>_client!` macros) that `jumpstarter_codegen::build::driver_interface`
-/// writes into `OUT_DIR`. Re-exported as `jumpstarter_driver_runtime::interface!`.
+/// writes into `OUT_DIR`. Re-exported as `jumpstarter_driver::interface!`.
 #[proc_macro]
 pub fn interface(_input: TokenStream) -> TokenStream {
     quote! {
@@ -161,13 +161,13 @@ pub fn derive_driver_client(input: TokenStream) -> TokenStream {
 // NOTE: the per-crate host entrypoint is the codegen-generated `<short>_host!` macro_rules (emitted
 // by jumpstarter-codegen's RustGenerator, with the client class / descriptor / server type baked in),
 // so the author's whole `main` is `<crate>::<short>_host!(MyDriver::default())`. No generic host
-// proc-macro is needed here — `jumpstarter_driver_runtime::run_host` is the library primitive it
+// proc-macro is needed here — `jumpstarter_driver::run_host` is the library primitive it
 // expands to.
 
-/// Auto-register a driver impl. Put `#[jumpstarter_driver_runtime::driver(client = "…")]` on an
+/// Auto-register a driver impl. Put `#[jumpstarter_driver::driver(client = "…")]` on an
 /// `impl <Interface> for <Driver>` and the driver is collected into the crate's host registry (the
 /// Rust analog of the JVM `@JumpstarterDriver` annotation), so the host binary's whole `src/main.rs`
-/// is `jumpstarter_driver_runtime::host_main!();`. The server type + descriptor are derived by
+/// is `jumpstarter_driver::host_main!();`. The server type + descriptor are derived by
 /// convention from the interface trait + the crate's `proto` module; `client` is the default client.
 #[proc_macro_attribute]
 pub fn driver(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -224,7 +224,7 @@ pub fn driver(attr: TokenStream, item: TokenStream) -> TokenStream {
                     > + ::std::marker::Send,
             >> {
                 ::std::boxed::Box::pin(async move {
-                    ::jumpstarter_driver_runtime::serve_driver(
+                    ::jumpstarter_driver::serve_driver(
                         &name,
                         #client,
                         crate::proto::FILE_DESCRIPTOR_SET.to_vec(),
@@ -236,8 +236,8 @@ pub fn driver(attr: TokenStream, item: TokenStream) -> TokenStream {
                 })
             }
 
-            ::jumpstarter_driver_runtime::inventory::submit! {
-                ::jumpstarter_driver_runtime::DriverRegistration {
+            ::jumpstarter_driver::inventory::submit! {
+                ::jumpstarter_driver::DriverRegistration {
                     client_class: #client,
                     descriptor: crate::proto::FILE_DESCRIPTOR_SET,
                     serve: #serve_fn,

@@ -7,7 +7,7 @@
 //!   are stock `tonic-build` output ([`proto`], compiled by `build.rs` from the hand-authored
 //!   `interfaces/.../power.proto`);
 //! - the driver **host** is the stock `PowerInterfaceServer` served by the generic
-//!   [`jumpstarter_driver_runtime::serve_driver`] over the **SHM transport** — there is NO
+//!   [`jumpstarter_driver::serve_driver`] over the **SHM transport** — there is NO
 //!   generated, per-interface adapter;
 //! - the typed [`PowerClient`] is generated **at build time** by `build.rs` (`jumpstarter-codegen`'s
 //!   `RustGenerator` over the `FILE_DESCRIPTOR_SET`) into `OUT_DIR` — NOT committed. The only
@@ -23,7 +23,7 @@ pub mod custom_client;
 // stock tonic service trait + prost messages + `FILE_DESCRIPTOR_SET`), the typed [`PowerClient`], and
 // the `power_host!`/`power_client!` entrypoint macros. The only committed code in this crate is the
 // author's [`MockPower`] driver impl below.
-jumpstarter_driver_runtime::interface!();
+jumpstarter_driver::interface!();
 
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -62,7 +62,7 @@ impl MockPower {
 
 // `#[driver]` auto-registers MockPower (and sets its default client), so the host binary's whole
 // `src/main.rs` is `host_main!()` — the Rust analog of the JVM `@JumpstarterDriver` annotation.
-#[jumpstarter_driver_runtime::driver(client = "jumpstarter_driver_power.client.PowerClient")]
+#[jumpstarter_driver::driver(client = "jumpstarter_driver_power.client.PowerClient")]
 #[tonic::async_trait]
 impl PowerInterface for MockPower {
     async fn on(&self, _request: Request<()>) -> Result<Response<()>, Status> {

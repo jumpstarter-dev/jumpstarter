@@ -10,7 +10,7 @@ rust-version.workspace = true
 [dependencies]
 jumpstarter-client = { path = "../jumpstarter-client" }
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
-jumpstarter-driver-runtime = { path = "../jumpstarter-driver-runtime" }
+jumpstarter-driver = { path = "../jumpstarter-driver" }
 jumpstarter-transport = { path = "../jumpstarter-transport" }
 tonic.workspace = true
 tower = { version = "0.5", features = ["util"] }

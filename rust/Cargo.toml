@@ -31,7 +31,7 @@ members = [
     "jumpstarter-driver-macros",
     "jumpstarter-driver-example",
     "jumpstarter-codegen",
-    "jumpstarter-driver-runtime",
+    "jumpstarter-driver",
     "jumpstarter-driver-harness",
     "jumpstarter-driver-power-example",
 ]
