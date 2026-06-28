@@ -14,6 +14,9 @@ jumpstarter-protocol = { path = "../jumpstarter-protocol" }
 # crate's own bin becomes a complete standalone host with one call.
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
 jumpstarter-config = { path = "../jumpstarter-config" }
+# The client-CLI entrypoint (`Client`/`client_main!`) lives here alongside the host entrypoint, over
+# core's client PRIMITIVES (`ClientSession`, `resolve_driver_uuid`).
+jumpstarter-core = { path = "../jumpstarter-core" }
 # Re-exported `interface!` + `#[driver]` macros (the one-line lib.rs include + auto-registration).
 jumpstarter-driver-macros = { path = "../jumpstarter-driver-macros" }
 # `#[driver]` auto-registers each driver impl into a link-time registry the `host_main!` entrypoint

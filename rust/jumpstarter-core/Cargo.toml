@@ -22,10 +22,6 @@ jumpstarter-protocol = { path = "../jumpstarter-protocol" }
 jumpstarter-transport = { path = "../jumpstarter-transport" }
 jumpstarter-client = { path = "../jumpstarter-client" }
 jumpstarter-config = { path = "../jumpstarter-config" }
-# Re-exported `#[client]` attribute (auto-registers a client CLI, mirroring the host `#[driver]`).
-jumpstarter-driver-macros = { path = "../jumpstarter-driver-macros" }
-# `#[client]` registers each CLI into a link-time registry the `client_main!` entrypoint collects.
-inventory = "0.3"
 # Rust is the sole owner of resource-stream (de)compression for the byte plane (gzip/xz/bz2/zstd);
 # the host seam (foreign.rs) and the client seam (client.rs) drive these streaming codecs so Python
 # never touches the wire codec.

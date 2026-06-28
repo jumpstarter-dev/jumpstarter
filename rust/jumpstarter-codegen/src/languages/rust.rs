@@ -631,7 +631,7 @@ fn render_client(iface: &InterfaceRef) -> String {
     );
 
     // The entrypoints are NOT generated as per-interface macros — a driver crate registers its
-    // interface(s) explicitly via the `jumpstarter_driver_runtime::Host` / `jumpstarter_core::Client`
+    // interface(s) explicitly via the `jumpstarter_driver_runtime::Host` / `::Client`
     // builders and selects one at runtime (`--interface`), so one binary serves/drives any of a
     // crate's interfaces. This file provides the typed client + `proto`; the author wires the rest.
     s

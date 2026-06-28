@@ -21,29 +21,10 @@ pub mod native_table;
 pub mod report;
 pub(crate) mod stream_pump;
 
-pub use client::{
-    resolve_driver_uuid, run_client_cli, Client, ClientRegistration, ClientRunFn,
-};
-
-/// `#[client_cli]` — on a typed CLI: auto-registers it (mirroring the host `#[driver]`), so the client
-/// binary's `main` is just [`client_main!`]. The Rust analog of the JVM `@JumpstarterClientCli`.
-pub use jumpstarter_driver_macros::client_cli;
-
-/// Re-exported so the `#[client_cli]`-generated registration can reach `inventory::submit!`.
-#[doc(hidden)]
-pub use inventory;
-
-/// Generate the client binary's whole `fn main` from the crate's `#[client]` registrations:
-/// `jumpstarter_core::client_main!();` is the entire `src/client.rs`. (The crate's lib must be linked
-/// into the bin — `use <crate> as _;` next to this when the bin references nothing else.)
-#[macro_export]
-macro_rules! client_main {
-    () => {
-        fn main() -> ::std::process::ExitCode {
-            $crate::Client::from_inventory().run()
-        }
-    };
-}
+// `resolve_driver_uuid` + `ClientSession` are the client PRIMITIVES core owns; the author-facing
+// client-CLI ENTRYPOINT (`Client`, `#[client_cli]`, `client_main!`) lives alongside the host
+// entrypoint in `jumpstarter-driver-runtime`, so a driver crate imports all its glue from one crate.
+pub use client::resolve_driver_uuid;
 pub use client::{
     ClientByteStream, ClientLogStream, ClientNativeStream, ClientResultStream, ClientSession,
 };
