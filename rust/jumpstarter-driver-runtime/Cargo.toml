@@ -14,7 +14,11 @@ jumpstarter-protocol = { path = "../jumpstarter-protocol" }
 # crate's own bin becomes a complete standalone host with one call.
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
 jumpstarter-config = { path = "../jumpstarter-config" }
+# Re-exported `interface!` macro (the one-line `lib.rs` include of the generated aggregator).
+jumpstarter-driver-macros = { path = "../jumpstarter-driver-macros" }
 tonic.workspace = true
+prost.workspace = true
+prost-types.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "net", "time", "sync", "signal", "io-util"] }
 tokio-stream = "0.1"
 # The server stack mirrors the transport demux's own wiring (tonic 0.12 routes over axum 0.7);

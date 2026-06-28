@@ -21,7 +21,7 @@ pub mod native_table;
 pub mod report;
 pub(crate) mod stream_pump;
 
-pub use client::{run_client_cli, resolve_driver_uuid};
+pub use client::{resolve_driver_uuid, run_client_cli, Client};
 pub use client::{
     ClientByteStream, ClientLogStream, ClientNativeStream, ClientResultStream, ClientSession,
 };

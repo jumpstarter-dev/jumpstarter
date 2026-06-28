@@ -34,6 +34,11 @@ use jumpstarter_transport::{ChannelBackend, DriverBackend};
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
+/// `interface!()` — the one-line `src/lib.rs` of a driver crate: includes the build-time-generated
+/// `proto` module + typed client + entrypoint macros (the aggregator written by
+/// `jumpstarter_codegen::build::driver_interface`).
+pub use jumpstarter_driver_macros::interface;
+
 const CLIENT_LABEL: &str = "jumpstarter.dev/client";
 const NAME_LABEL: &str = "jumpstarter.dev/name";
 
@@ -236,11 +241,153 @@ where
 
 /// Extract the `--serve <uds>` value from this process's argv.
 fn parse_serve_arg() -> Option<String> {
+    parse_value_arg("--serve")
+}
+
+/// The value following `flag` in this process's argv, if present.
+fn parse_value_arg(flag: &str) -> Option<String> {
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
-        if arg == "--serve" {
+        if arg == flag {
             return args.next();
         }
     }
     None
+}
+
+/// The full name (`<package>.<Service>`) of the first service in a serialized `FileDescriptorSet` —
+/// the interface a registered driver implements. Used to select among a crate's drivers at runtime.
+fn descriptor_interface(descriptor: &[u8]) -> Option<String> {
+    use prost::Message as _;
+    let set = prost_types::FileDescriptorSet::decode(descriptor).ok()?;
+    set.file.iter().find_map(|f| {
+        let pkg = f.package();
+        f.service.first().map(|s| {
+            if pkg.is_empty() {
+                s.name().to_string()
+            } else {
+                format!("{pkg}.{}", s.name())
+            }
+        })
+    })
+}
+
+type HostServe = Box<
+    dyn Fn(
+            String,
+        )
+            -> Pin<Box<dyn std::future::Future<Output = std::io::Result<Arc<dyn DriverBackend>>> + Send>>
+        + Send
+        + Sync,
+>;
+
+struct HostDriver {
+    descriptor: &'static [u8],
+    serve: HostServe,
+}
+
+/// A driver-host registry — the entrypoint for a crate that implements one OR MORE interfaces. Each
+/// interface's driver is registered with [`Host::driver`]; [`Host::run`] serves the one the hub
+/// selected (the single registered driver, or the `--interface <fqn>` match when several are
+/// registered — exactly one runs per process). Replaces the per-interface `<short>_host!` macro:
+///
+/// ```ignore
+/// fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+///     jumpstarter_driver_runtime::Host::new()
+///         .driver(POWER_CLIENT_CLASS, proto::FILE_DESCRIPTOR_SET,
+///                 || proto::power_interface_server::PowerInterfaceServer::new(MockPower::default()))
+///         // .driver(..) for each additional interface this crate implements
+///         .run()
+/// }
+/// ```
+#[derive(Default)]
+pub struct Host {
+    drivers: Vec<HostDriver>,
+}
+
+impl Host {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a driver for one interface: its stock `tonic` server (built fresh per lease by
+    /// `make`), the `jumpstarter.dev/client` label, and the interface `FILE_DESCRIPTOR_SET`.
+    pub fn driver<S, F>(
+        mut self,
+        client_class: &'static str,
+        descriptor: &'static [u8],
+        make: F,
+    ) -> Self
+    where
+        S: tower::Service<
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<tonic::body::BoxBody>,
+                Error = Infallible,
+            > + tonic::server::NamedService
+            + Clone
+            + Send
+            + Sync
+            + 'static,
+        S::Future: Send + 'static,
+        F: Fn() -> S + Send + Sync + 'static,
+    {
+        let serve: HostServe = Box::new(move |name| {
+            let service = make();
+            Box::pin(async move {
+                serve_driver(&name, client_class, descriptor.to_vec(), service).await
+            })
+        });
+        self.drivers.push(HostDriver { descriptor, serve });
+        self
+    }
+
+    /// Parse `--serve <uds>` + the optional `--interface <fqn>`, read the hub's single-entry config on
+    /// stdin, select the registered driver, install the parent-death watchdog, and serve the
+    /// driver-host seam until the hub kills the process. Builds its own Tokio runtime (sync `main`).
+    pub fn run(self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        use jumpstarter_config::YamlConfig as _;
+        use std::io::Read as _;
+
+        let uds = parse_serve_arg()
+            .ok_or("usage: <driver-host> --serve <uds> [--interface <fqn>]  (config on stdin)")?;
+        jumpstarter_exporter::exit_when_orphaned();
+
+        let mut config_yaml = String::new();
+        std::io::stdin().read_to_string(&mut config_yaml)?;
+        let config = jumpstarter_config::ExporterConfig::from_yaml(&config_yaml)?;
+        let name = config
+            .export
+            .keys()
+            .next()
+            .ok_or("config has no export entry")?
+            .clone();
+
+        let driver = self.select(parse_value_arg("--interface").as_deref())?;
+
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()?;
+        runtime.block_on(async move {
+            let backend = (driver.serve)(name).await?;
+            jumpstarter_exporter::session::serve_native_host(std::path::Path::new(&uds), backend)
+                .await?;
+            Ok(())
+        })
+    }
+
+    /// Pick the driver to run: the only one registered, else the one whose interface matches
+    /// `--interface`, else an error (ambiguous).
+    fn select(&self, interface: Option<&str>) -> Result<&HostDriver, String> {
+        match (self.drivers.as_slice(), interface) {
+            ([], _) => Err("no drivers registered in this host".into()),
+            ([only], _) => Ok(only),
+            (many, Some(iface)) => many
+                .iter()
+                .find(|d| descriptor_interface(d.descriptor).as_deref() == Some(iface))
+                .ok_or_else(|| format!("no registered driver implements interface `{iface}`")),
+            (_, None) => {
+                Err("this host registers multiple drivers; pass `--interface <fqn>`".into())
+            }
+        }
+    }
 }

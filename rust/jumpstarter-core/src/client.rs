@@ -805,6 +805,145 @@ pub async fn resolve_driver_uuid(
         "driver {driver_name:?} not found in the device tree"
     )))
 }
+
+/// The full name of the first service in a serialized `FileDescriptorSet` (the interface a client
+/// drives) — used to select among a crate's clients at runtime.
+fn descriptor_interface(descriptor: &[u8]) -> Option<String> {
+    let pool = prost_reflect::DescriptorPool::decode(descriptor).ok()?;
+    let service = pool.services().next()?;
+    Some(service.full_name().to_string())
+}
+
+type ClientRun = Box<
+    dyn for<'a> Fn(
+        &'a [String],
+        &'a ClientSession,
+        &'a str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = i32> + 'a>>,
+>;
+
+struct ClientEntry {
+    descriptor: &'static [u8],
+    run: ClientRun,
+}
+
+/// A driver-client registry — the entrypoint for a crate whose clients drive one OR MORE interfaces.
+/// Each interface's CLI is registered with [`Client::cli`]; [`Client::run`] connects, resolves the
+/// driver, and dispatches to the registered CLI (the only one, or the `--interface <fqn>` match — one
+/// client runs per process). Replaces the per-interface `<short>_client!` macro:
+///
+/// ```ignore
+/// fn main() -> std::process::ExitCode {
+///     jumpstarter_core::Client::new()
+///         .cli(proto::FILE_DESCRIPTOR_SET, |a, s, u| Box::pin(PowerCli::run(a, s, u)))
+///         .run()
+/// }
+/// ```
+#[derive(Default)]
+pub struct Client {
+    clis: Vec<ClientEntry>,
+}
+
+impl Client {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register the CLI for one interface: its `FILE_DESCRIPTOR_SET` (used to match the driver's
+    /// interface) and a `run(args, session, uuid)` dispatcher (the typed CLI's, boxed).
+    pub fn cli<F>(mut self, descriptor: &'static [u8], run: F) -> Self
+    where
+        F: for<'a> Fn(
+                &'a [String],
+                &'a ClientSession,
+                &'a str,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = i32> + 'a>>
+            + 'static,
+    {
+        self.clis.push(ClientEntry {
+            descriptor,
+            run: Box::new(run),
+        });
+        self
+    }
+
+    /// Parse `<driver> <subcommand…>` (+ an optional `--interface <fqn>`), connect JUMPSTARTER_HOST,
+    /// resolve the driver uuid, select the registered CLI, and dispatch. Builds its own runtime.
+    pub fn run(self) -> std::process::ExitCode {
+        use std::process::ExitCode;
+        let runtime = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(e) => {
+                eprintln!("jumpstarter: building the client runtime: {e}");
+                return ExitCode::from(1);
+            }
+        };
+        runtime.block_on(async move {
+            // Strip `--interface <fqn>` from argv; the rest is `<driver> <subcommand…>`.
+            let mut interface = None;
+            let mut rest: Vec<String> = Vec::new();
+            let mut argv = std::env::args().skip(1);
+            while let Some(a) = argv.next() {
+                if a == "--interface" {
+                    interface = argv.next();
+                } else {
+                    rest.push(a);
+                }
+            }
+            let Some(driver) = rest.first().cloned() else {
+                eprintln!("usage: <driver> <subcommand> [args]");
+                return ExitCode::from(2);
+            };
+            let host = match std::env::var("JUMPSTARTER_HOST") {
+                Ok(h) => h,
+                Err(_) => {
+                    eprintln!("JUMPSTARTER_HOST is not set (run inside a `jmp shell`)");
+                    return ExitCode::from(1);
+                }
+            };
+            let session = match ClientSession::connect(host).await {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("connecting to the exporter: {e}");
+                    return ExitCode::from(1);
+                }
+            };
+            let entry = match self.select(interface.as_deref()) {
+                Ok(e) => e,
+                Err(e) => {
+                    eprintln!("{e}");
+                    return ExitCode::from(1);
+                }
+            };
+            let uuid = match resolve_driver_uuid(&session, &driver).await {
+                Ok(u) => u,
+                Err(e) => {
+                    eprintln!("resolving driver '{driver}': {e}");
+                    return ExitCode::from(1);
+                }
+            };
+            ExitCode::from((entry.run)(&rest[1..], &session, &uuid).await as u8)
+        })
+    }
+
+    /// Pick the CLI: the only one registered, else the one whose interface matches `--interface`.
+    fn select(&self, interface: Option<&str>) -> Result<&ClientEntry, String> {
+        match (self.clis.as_slice(), interface) {
+            ([], _) => Err("no clients registered in this binary".into()),
+            ([only], _) => Ok(only),
+            (many, Some(iface)) => many
+                .iter()
+                .find(|c| descriptor_interface(c.descriptor).as_deref() == Some(iface))
+                .ok_or_else(|| format!("no registered client drives interface `{iface}`")),
+            (_, None) => {
+                Err("this binary registers multiple clients; pass `--interface <fqn>`".into())
+            }
+        }
+    }
+}
 #[cfg(test)]
 mod native_unary_tests {
     use super::*;

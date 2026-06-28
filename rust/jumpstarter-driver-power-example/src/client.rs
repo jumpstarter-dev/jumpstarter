@@ -1,11 +1,17 @@
-//! `jumpstarter-driver-power-example-client <driver> <subcommand>` — the standalone CLIENT CLI
-//! binary `j` spawns for a driver advertising `rust:jumpstarter-driver-power-example`.
+//! `jumpstarter-driver-power-example-client <driver> <subcommand> [--interface <fqn>]` — this crate's
+//! CLIENT CLI binary (the one `j` spawns).
 //!
-//! The entire `src/client.rs` is one line: the codegen-generated `power_client!` macro expands to a
-//! `fn main` that connects `JUMPSTARTER_HOST`, resolves the driver, and dispatches to [`PowerCli`]'s
-//! subcommands (`on`/`off`/`read`/`cycle`) over native gRPC — the client-side twin of the one-line
-//! `power_host!` host binary. No per-crate client boilerplate; links the client SDK only.
+//! It registers each interface's CLI via the `Client` builder and dispatches to the one matching the
+//! driver (the single registered CLI here, or `--interface <fqn>` when a crate drives several — one
+//! runs per process). No per-interface macro magic; the author registers explicitly.
 
-jumpstarter_driver_power_example::power_client!(
-    jumpstarter_driver_power_example::custom_client::PowerCli
-);
+use jumpstarter_driver_power_example::{custom_client::PowerCli, proto};
+
+fn main() -> std::process::ExitCode {
+    jumpstarter_core::Client::new()
+        .cli(proto::FILE_DESCRIPTOR_SET, |args, session, uuid| {
+            Box::pin(PowerCli::run(args, session, uuid))
+        })
+        // .cli(..) for each additional interface this crate drives
+        .run()
+}

@@ -26,6 +26,19 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, Data, DeriveInput, Fields, LitStr};
 
+/// Pull in everything `build.rs` generated for a proto-first driver crate — the whole `src/lib.rs`
+/// wiring in one line: `jumpstarter_driver_runtime::interface!();`. Expands to the include of the
+/// `jumpstarter_generated.rs` aggregator (the `proto` module + the typed client + the
+/// `<short>_host!`/`<short>_client!` macros) that `jumpstarter_codegen::build::driver_interface`
+/// writes into `OUT_DIR`. Re-exported as `jumpstarter_driver_runtime::interface!`.
+#[proc_macro]
+pub fn interface(_input: TokenStream) -> TokenStream {
+    quote! {
+        include!(concat!(env!("OUT_DIR"), "/jumpstarter_generated.rs"));
+    }
+    .into()
+}
+
 #[proc_macro_derive(DriverClient, attributes(client))]
 pub fn derive_driver_client(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
