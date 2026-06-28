@@ -10,7 +10,7 @@
 //! streams route into the current host, returning `UNKNOWN` when idle.
 
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -181,6 +181,36 @@ fn session_routes(shared: Arc<SharedSession>, route_max_message_size: usize) -> 
         .into_axum_router()
         .fallback_service(Demux::new(SessionRouter(shared)));
     Routes::from(axum_router)
+}
+
+/// Serve a single native driver `backend` on `uds` for the polyglot hub, until the process is
+/// killed. This is the host-SDK entrypoint for a **standalone, pre-compiled native driver host**:
+/// a driver crate builds its own `jumpstarter-driver-<crate>-host` binary that wraps its driver in
+/// a [`DriverBackend`], then calls this — depending only on the host SDK (`jumpstarter-core`,
+/// `-exporter`, `-config`), never the `jmp` CLI. The hub dials `uds` and federates the entry.
+///
+/// Mirrors the foreign-host path (`jumpstarter_core_uniffi::serve_driver_host`): build the routing
+/// table, pin the session watch channels (no lease loop — one fixed tree for the host's lifetime),
+/// and serve the driver-host seam. The caller installs the parent-death watchdog
+/// ([`crate::exit_when_orphaned`]) before awaiting this.
+pub async fn serve_native_host(uds: &Path, backend: Arc<dyn DriverBackend>) -> Result<(), Error> {
+    let routing = RoutingTable::build(backend).await?;
+    // Pin the session watch channels — there is no lease loop here (one fixed driver tree for the
+    // host's lifetime); the senders are held so receivers never observe `Closed`.
+    let (_rtx, routing_rx) = watch::channel(Some(Arc::new(routing)));
+    let (_stx, status_rx) = watch::channel(StatusSnapshot::default());
+    let (_etx, end_rx) = watch::channel(None);
+    let shared = SharedSession::new(routing_rx, status_rx, end_rx, crate::logbuf::HookLog::new());
+
+    // The hook socket is `<uds>.hook` (append, not replace-extension — `uds` ends in `.sock`).
+    let mut hook = uds.as_os_str().to_owned();
+    hook.push(".hook");
+    let hook_path = PathBuf::from(hook);
+
+    let server = serve(shared, uds, &hook_path)?;
+    // Serve until the hub SIGKILLs us at lease end (or a signal terminates the process).
+    let _ = server.await;
+    Ok(())
 }
 
 /// Bind the `ExporterService` + `RouterService` on the main and hook Unix sockets and

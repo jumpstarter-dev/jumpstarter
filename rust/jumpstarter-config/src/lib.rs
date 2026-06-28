@@ -26,7 +26,7 @@ pub use client::{ClientConfig, DriversConfig, LeaseConfig, ShellConfig};
 pub use env::{client_from_env, client_from_env_with};
 pub use exporter::{
     DriverInstance, DriverInstanceBase, DriverInstanceComposite, DriverInstanceProxy,
-    ExporterConfig, FailureDetectionConfig, HookConfig, HookInstanceConfig, OnFailure,
+    ExporterConfig, FailureDetectionConfig, HookConfig, HookInstanceConfig, HostSpec, OnFailure,
 };
 pub use grpc_options::{GrpcOptionValue, GrpcOptions};
 pub use meta::ObjectMeta;

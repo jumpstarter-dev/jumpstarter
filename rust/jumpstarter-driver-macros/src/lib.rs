@@ -145,6 +145,12 @@ pub fn derive_driver_client(input: TokenStream) -> TokenStream {
     .into()
 }
 
+// NOTE: the per-crate host entrypoint is the codegen-generated `<short>_host!` macro_rules (emitted
+// by jumpstarter-codegen's RustGenerator, with the client class / descriptor / server type baked in),
+// so the author's whole `main` is `<crate>::<short>_host!(MyDriver::default())`. No generic host
+// proc-macro is needed here — `jumpstarter_driver_runtime::run_host` is the library primitive it
+// expands to.
+
 /// `OnOff` → `on_off`, `On` → `on`.
 fn to_snake_case(ident: &str) -> String {
     let mut out = String::new();

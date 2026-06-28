@@ -13,10 +13,7 @@ use std::sync::Arc;
 use jumpstarter_config::{DriverInstance, ExporterConfig, YamlConfig};
 use jumpstarter_core::NativeDriverBackend;
 use jumpstarter_exporter::backend::DriverBackend;
-use jumpstarter_exporter::control::StatusSnapshot;
-use jumpstarter_exporter::logbuf::HookLog;
-use jumpstarter_exporter::session::{self, RoutingTable, SharedSession};
-use tokio::sync::watch;
+use jumpstarter_exporter::session;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -48,19 +45,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or_else(|| format!("unknown native driver: rust:{driver_name}"))?;
 
     let backend: Arc<dyn DriverBackend> = Arc::new(NativeDriverBackend::new(name, driver));
-    let routing = RoutingTable::build(backend).await?;
 
-    // Pin the session watch channels — one fixed driver tree for the host's lifetime.
-    let (_rtx, routing_rx) = watch::channel(Some(Arc::new(routing)));
-    let (_stx, status_rx) = watch::channel(StatusSnapshot::default());
-    let (_etx, end_rx) = watch::channel(None);
-    let shared = SharedSession::new(routing_rx, status_rx, end_rx, HookLog::new());
-
-    let hook_uds = format!("{uds}.hook");
-    let server = session::serve(shared, Path::new(&uds), Path::new(&hook_uds))?;
-
-    // Serve until the hub SIGKILLs us at lease end (or a signal terminates the process).
-    let _ = server.await;
+    // The shared host-SDK entrypoint builds the routing table, pins the session, and serves the
+    // driver-host seam on the UDS until the hub kills us. (The same helper underpins the UniFFI
+    // `serve_driver_host` foreign path and any per-crate `jumpstarter-driver-<crate>-host`.)
+    session::serve_native_host(Path::new(&uds), backend).await?;
     Ok(())
 }
 

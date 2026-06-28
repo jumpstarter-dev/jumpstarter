@@ -30,9 +30,14 @@ dependencies {
     api(libs.grpc.kotlin.stub)
     api(libs.protobuf.java)
     api(libs.kotlinx.coroutines.core)
-    // Internal: JNA loads the cdylib; gson parses GetReport JSON.
+    // picocli is exposed so a custom client (subclassing the generated client) can annotate its CLI
+    // subcommands with @Command — the JVM analog of a Python client's click `cli()`.
+    api(libs.picocli)
+    // Internal: JNA loads the cdylib; gson parses GetReport JSON; snakeyaml parses the single-entry
+    // exporter config the hub streams to `jumpstarter-exporter-host` (ConfigDrivenHostFactory).
     implementation(libs.jna)
     implementation(libs.gson)
+    implementation("org.yaml:snakeyaml:2.4")
 
     // javax.annotation.Generated used by grpc-java codegen output.
     compileOnly("org.apache.tomcat:annotations-api:6.0.53")

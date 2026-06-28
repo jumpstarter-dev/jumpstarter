@@ -261,6 +261,7 @@ fn save_config(
             config.drivers = DriversConfig {
                 r#unsafe: unsafe_drivers || allow.iter().any(|d| d == "UNSAFE"),
                 allow,
+                ..Default::default()
             };
             config.tls.ca = ca.to_string();
             config.tls.insecure = insecure_tls;

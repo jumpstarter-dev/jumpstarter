@@ -166,3 +166,81 @@ impl ExporterService for ReportOnlyExporter {
         Err(Status::unimplemented("proto-first host serves native gRPC only"))
     }
 }
+
+/// The complete entrypoint for a STANDALONE native driver host — call this from a driver crate's own
+/// `fn main` and the crate *is* its own host, no per-crate boilerplate:
+///
+/// ```ignore
+/// fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+///     jumpstarter_driver_runtime::run_host(
+///         POWER_CLIENT_CLASS,
+///         proto::FILE_DESCRIPTOR_SET,
+///         proto::power_interface_server::PowerInterfaceServer::new(MockPower::default()),
+///     )
+/// }
+/// ```
+///
+/// It parses `--serve <uds>` from argv, installs the `JMP_HUB_PID` parent-death watchdog, reads the
+/// hub's single-entry config on stdin (serving the driver under that `export:` entry name), serves
+/// `service` via [`serve_driver`], and serves the driver-host seam until the hub kills the process.
+/// Builds its own Tokio runtime, so the crate's `main` stays a plain sync fn. The polyglot hub spawns
+/// the resulting binary for a `type: rust:<crate>` entry (resolved to the crate's own bin).
+pub fn run_host<S>(
+    client_class: &str,
+    descriptor_set: &[u8],
+    service: S,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+where
+    S: tower::Service<
+            http::Request<tonic::body::BoxBody>,
+            Response = http::Response<tonic::body::BoxBody>,
+            Error = Infallible,
+        > + tonic::server::NamedService
+        + Clone
+        + Send
+        + Sync
+        + 'static,
+    S::Future: Send + 'static,
+{
+    use jumpstarter_config::YamlConfig as _;
+    use std::io::Read as _;
+
+    let uds = parse_serve_arg()
+        .ok_or("usage: <driver-host> --serve <uds>  (single-entry config on stdin)")?;
+
+    // Exit if the hub dies before it can SIGKILL us (POSIX parent-death watchdog via JMP_HUB_PID).
+    jumpstarter_exporter::exit_when_orphaned();
+
+    // The hub streams the single-entry config on stdin (EOF-terminated); we advertise the driver
+    // under its `export:` entry name (the accessor the client and the hub's federation route by).
+    let mut config_yaml = String::new();
+    std::io::stdin().read_to_string(&mut config_yaml)?;
+    let config = jumpstarter_config::ExporterConfig::from_yaml(&config_yaml)?;
+    let name = config
+        .export
+        .keys()
+        .next()
+        .ok_or("config has no export entry")?
+        .clone();
+
+    let descriptor_set = descriptor_set.to_vec();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    runtime.block_on(async move {
+        let backend = serve_driver(&name, client_class, descriptor_set, service).await?;
+        jumpstarter_exporter::session::serve_native_host(std::path::Path::new(&uds), backend).await?;
+        Ok(())
+    })
+}
+
+/// Extract the `--serve <uds>` value from this process's argv.
+fn parse_serve_arg() -> Option<String> {
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--serve" {
+            return args.next();
+        }
+    }
+    None
+}

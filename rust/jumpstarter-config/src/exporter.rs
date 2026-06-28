@@ -99,6 +99,40 @@ impl Default for FailureDetectionConfig {
     }
 }
 
+/// An explicit driver-host launcher for an `export:` entry: the binary/script plus any extra args
+/// the hub passes before `--serve <uds>`. Deserializes from either a bare string (`host: my-bin`,
+/// shorthand for `{ bin: my-bin }`) or a mapping (`host: { bin: my-bin, args: [--flag, v] }`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum HostSpec {
+    /// Just the launcher binary/path (no extra args).
+    Bin(String),
+    /// The launcher binary/path plus extra args, prepended before `--serve <uds>`.
+    Detailed {
+        bin: String,
+        #[serde(default)]
+        args: Vec<String>,
+    },
+}
+
+impl HostSpec {
+    /// The launcher binary or script (a path or a `PATH` name).
+    pub fn bin(&self) -> &str {
+        match self {
+            HostSpec::Bin(b) => b,
+            HostSpec::Detailed { bin, .. } => bin,
+        }
+    }
+
+    /// Extra args the hub passes before `--serve <uds>` (empty for the bare-string form).
+    pub fn args(&self) -> &[String] {
+        match self {
+            HostSpec::Bin(_) => &[],
+            HostSpec::Detailed { args, .. } => args,
+        }
+    }
+}
+
 /// A concrete driver instance (`exporter.py:97-103`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DriverInstanceBase {
@@ -108,6 +142,14 @@ pub struct DriverInstanceBase {
     /// inference from `type` (see [`DriverInstanceBase::effective_runtime`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime: Option<String>,
+    /// Explicit driver-host launcher for THIS entry — the binary/script plus extra args the hub
+    /// passes before `--serve <uds>`. Overrides per-crate derivation and the process-wide
+    /// `JMP_<RUNTIME>_DRIVER_HOST` env, so an exporter can federate several *different* hosts of one
+    /// runtime (e.g. two JVM modules' start scripts) or mix runtimes freely. A bare string is
+    /// shorthand for `{ bin: <string> }`. Omitted → the runtime's default resolution (Rust:
+    /// per-crate on PATH / dev build / registry; JVM: `jumpstarter-exporter-host`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<HostSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default)]
@@ -121,15 +163,18 @@ pub struct DriverInstanceBase {
 
 impl DriverInstanceBase {
     /// The effective hosting runtime for this driver: the explicit `runtime:` if set, else
-    /// inferred from `type`. Native drivers are referenced as `rust:<registered-name>`;
-    /// everything else is a Python import path (`pkg.mod.Class`). All current drivers are
-    /// Python, so the inferred default is `python`.
+    /// inferred from `type`. Native drivers are referenced as `rust:<registered-name>` and
+    /// JVM drivers as `jvm:<service-fqn>` (a JVM service FQN is otherwise dotted and so
+    /// indistinguishable from a Python import path); everything else is a Python import path
+    /// (`pkg.mod.Class`). Most current drivers are Python, so the inferred default is `python`.
     pub fn effective_runtime(&self) -> &str {
         if let Some(rt) = self.runtime.as_deref() {
             return rt;
         }
         if self.r#type.starts_with("rust:") {
             "rust"
+        } else if self.r#type.starts_with("jvm:") {
+            "jvm"
         } else {
             "python"
         }
@@ -330,6 +375,8 @@ export:\n\
 \x20   type: jumpstarter_driver_power.driver.MockPower\n\
 \x20 native:\n\
 \x20   type: rust:echo\n\
+\x20 jvm:\n\
+\x20   type: jvm:dev.jumpstarter.examples.power.KotlinPowerDriver\n\
 \x20 forced:\n\
 \x20   type: jumpstarter_driver_power.driver.MockPower\n\
 \x20   runtime: rust\n";
@@ -338,15 +385,47 @@ export:\n\
             DriverInstance::Base(b) => b.effective_runtime(),
             other => panic!("{k} should be Base, got {other:?}"),
         };
-        // A dotted import path infers to python; a `rust:` type infers to rust; an explicit
-        // `runtime:` overrides the inference.
+        // A dotted import path infers to python; a `rust:` type infers to rust; a `jvm:` type
+        // infers to jvm; an explicit `runtime:` overrides the inference.
         assert_eq!(rt("py"), "python");
         assert_eq!(rt("native"), "rust");
+        assert_eq!(rt("jvm"), "jvm");
         assert_eq!(rt("forced"), "rust");
 
         // The optional `runtime:` round-trips and is omitted when absent.
         let out = c.to_yaml().unwrap();
         assert!(out.contains("runtime: rust"), "{out}");
         assert_eq!(ExporterConfig::from_yaml(&out).unwrap(), c);
+    }
+
+    #[test]
+    fn parses_host_spec_string_and_detailed_forms() {
+        let yaml = "apiVersion: jumpstarter.dev/v1alpha1\n\
+kind: ExporterConfig\n\
+metadata:\n  namespace: default\n  name: hosts\n\
+endpoint: e:1\n\
+token: t\n\
+export:\n\
+\x20 shorthand:\n\
+\x20   type: rust:power\n\
+\x20   host: /opt/hosts/power-host\n\
+\x20 detailed:\n\
+\x20   type: jvm:com.example.Net\n\
+\x20   host:\n\
+\x20     bin: /opt/hosts/jumpstarter-exporter-host\n\
+\x20     args: [\"--verbose\", \"--profile=ci\"]\n";
+        let c = ExporterConfig::from_yaml(yaml).unwrap();
+        let host = |k: &str| match &c.export[k] {
+            DriverInstance::Base(b) => b.host.as_ref().expect("host set"),
+            other => panic!("{k} should be Base, got {other:?}"),
+        };
+        // The bare-string form is shorthand for `{ bin, args: [] }`.
+        assert_eq!(host("shorthand").bin(), "/opt/hosts/power-host");
+        assert!(host("shorthand").args().is_empty());
+        // The mapping form carries the bin plus the extra args.
+        assert_eq!(host("detailed").bin(), "/opt/hosts/jumpstarter-exporter-host");
+        assert_eq!(host("detailed").args(), ["--verbose", "--profile=ci"]);
+        // Both forms round-trip.
+        assert_eq!(ExporterConfig::from_yaml(&c.to_yaml().unwrap()).unwrap(), c);
     }
 }

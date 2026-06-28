@@ -17,6 +17,7 @@
 //! the generated [`PowerClient`] through the real `client → exporter/demux → SHM → tonic service`
 //! loop — not a direct method call.
 
+pub mod custom_client;
 pub mod proto;
 
 pub mod generated {
@@ -33,6 +34,8 @@ pub mod generated {
 }
 
 pub use generated::power_client::PowerClient;
+// The codegen also emits a `power_host!` macro (hoisted to the crate root via `#[macro_export]`) —
+// the crate's whole `main` is `jumpstarter_driver_power_example::power_host!(MockPower::default())`.
 
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -99,134 +102,15 @@ impl PowerInterface for MockPower {
 
 #[cfg(test)]
 mod round_trip_tests {
-    //! The W1 exit criterion: `MockPower` (authored as `impl PowerInterface`) is served through the
-    //! **generated** `PowerBackend` over the real demux + `ClientSession` native transport, and
-    //! driven by the **generated** `PowerClient`. `on`/`off` (unary) and `read` (server-streaming)
-    //! reach the driver through `forward_unary`/`forward_stream` — a true round-trip, mirroring
-    //! `jumpstarter-core`'s `client.rs` native demux tests + `driver.rs`'s
-    //! `native_forward_unary_dispatches_to_the_driver`.
+    //! `MockPower` (authored as `impl PowerInterface`) is served and driven by the **generated**
+    //! `PowerClient` through the full `client → exporter → SHM → tonic service` loop — `on`/`off`
+    //! (unary) and `read` (server-streaming) reach the driver over the real transport. The whole
+    //! fixture is now [`jumpstarter_driver_harness::serve`]; the test is just drive + assert.
 
-    use std::sync::Arc;
-
-    use jumpstarter_core::ClientSession;
-    use jumpstarter_protocol::v1::exporter_service_server::{
-        ExporterService, ExporterServiceServer,
-    };
-    use jumpstarter_protocol::v1::{
-        DriverCallRequest, DriverCallResponse, EndSessionRequest, EndSessionResponse,
-        GetReportResponse, GetStatusRequest, GetStatusResponse, LogStreamResponse, ResetRequest,
-        ResetResponse, StreamingDriverCallRequest, StreamingDriverCallResponse,
-    };
-    use jumpstarter_transport::demux::{Demux, SingleBackend};
-    use jumpstarter_transport::DriverBackend;
-    use tokio::net::UnixListener;
-    use tokio_stream::wrappers::UnixListenerStream;
+    use jumpstarter_driver_harness::serve;
     use tokio_stream::StreamExt as _;
-    use tonic::service::Routes;
-    use tonic::{Request, Response, Status};
 
     use super::*;
-
-    /// A minimal `ExporterService` whose `GetReport` proxies the per-driver `backend.get_report()`
-    /// (so the client's `PowerClient::new` name-lookup resolves the driver uuid); every other RPC is
-    /// unimplemented. The native per-driver calls go to the demux fallback, not here.
-    struct ReportExporter {
-        backend: Arc<dyn DriverBackend>,
-    }
-
-    type RespStream<T> =
-        std::pin::Pin<Box<dyn tokio_stream::Stream<Item = Result<T, Status>> + Send>>;
-
-    #[tonic::async_trait]
-    impl ExporterService for ReportExporter {
-        async fn get_report(
-            &self,
-            _req: Request<()>,
-        ) -> Result<Response<GetReportResponse>, Status> {
-            Ok(Response::new(self.backend.get_report().await?))
-        }
-        async fn driver_call(
-            &self,
-            _req: Request<DriverCallRequest>,
-        ) -> Result<Response<DriverCallResponse>, Status> {
-            Err(Status::unimplemented("native-only fixture"))
-        }
-        type StreamingDriverCallStream = RespStream<StreamingDriverCallResponse>;
-        async fn streaming_driver_call(
-            &self,
-            _req: Request<StreamingDriverCallRequest>,
-        ) -> Result<Response<Self::StreamingDriverCallStream>, Status> {
-            Err(Status::unimplemented("native-only fixture"))
-        }
-        type LogStreamStream = RespStream<LogStreamResponse>;
-        async fn log_stream(
-            &self,
-            _req: Request<()>,
-        ) -> Result<Response<Self::LogStreamStream>, Status> {
-            Err(Status::unimplemented("native-only fixture"))
-        }
-        async fn reset(
-            &self,
-            _req: Request<ResetRequest>,
-        ) -> Result<Response<ResetResponse>, Status> {
-            Err(Status::unimplemented("native-only fixture"))
-        }
-        async fn get_status(
-            &self,
-            _req: Request<GetStatusRequest>,
-        ) -> Result<Response<GetStatusResponse>, Status> {
-            Err(Status::unimplemented("native-only fixture"))
-        }
-        async fn end_session(
-            &self,
-            _req: Request<EndSessionRequest>,
-        ) -> Result<Response<EndSessionResponse>, Status> {
-            Err(Status::unimplemented("native-only fixture"))
-        }
-    }
-
-    /// Stand up an exporter serving `backend` over a private UDS socket — the typed
-    /// `ExporterService` (for `GetReport`) plus the native [`Demux`] as the catch-all fallback (for
-    /// the per-driver `On`/`Off`/`Read` calls), exactly as `jumpstarter-exporter`'s `session_routes`
-    /// wires them. Then connect a `ClientSession` to it via the **public** `ClientSession::connect`
-    /// (a UDS path) — the real transport-socket path a leased client uses. Returns the session, the
-    /// spawned server handle, and the tempdir whose lifetime keeps the socket alive.
-    async fn serve(
-        backend: Arc<dyn DriverBackend>,
-    ) -> (
-        ClientSession,
-        tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
-        tempfile::TempDir,
-    ) {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let socket = dir.path().join("exporter.sock");
-        let listener = UnixListener::bind(&socket).expect("bind UDS");
-        let incoming = UnixListenerStream::new(listener);
-
-        // Typed ExporterService (GetReport) + the native per-driver demux as the catch-all fallback,
-        // mirroring `jumpstarter-exporter::session::session_routes`.
-        let exporter = ExporterServiceServer::new(ReportExporter {
-            backend: backend.clone(),
-        });
-        let mut builder = Routes::builder();
-        builder.add_service(exporter);
-        let axum_router = builder
-            .routes()
-            .into_axum_router()
-            .fallback_service(Demux::new(SingleBackend(backend)));
-        let routes = Routes::from(axum_router);
-
-        let server = tokio::spawn(async move {
-            tonic::transport::Server::builder()
-                .add_routes(routes)
-                .serve_with_incoming(incoming)
-                .await
-        });
-        let session = ClientSession::connect(socket.to_string_lossy().into_owned())
-            .await
-            .expect("connect ClientSession over UDS");
-        (session, server, dir)
-    }
 
     /// Stream a `read()` call to completion, collecting the decoded readings.
     async fn collect_readings(
@@ -242,22 +126,17 @@ mod round_trip_tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn on_off_read_round_trip_through_serve_driver_over_shm() {
-        // The ENTIRE driver host: the author's stock `tonic` service, served over the SHM transport
-        // by the generic runtime. No generated adapter — `serve_driver` returns the hub-side
-        // `ChannelBackend` over the SHM hop.
-        let backend = jumpstarter_driver_runtime::serve_driver(
+        // Serve the driver over the real SHM+UDS transport and connect a client — one call.
+        let harness = serve(
             "power",
             POWER_CLIENT_CLASS,
-            proto::FILE_DESCRIPTOR_SET.to_vec(),
+            proto::FILE_DESCRIPTOR_SET,
             proto::power_interface_server::PowerInterfaceServer::new(MockPower::default()),
         )
-        .await
-        .expect("serve power driver over SHM");
-
-        let (session, server, _dir) = serve(backend).await;
+        .await;
 
         // The GENERATED client, resolving the driver uuid from GetReport by the name label.
-        let client = PowerClient::new(&session, "power")
+        let client = PowerClient::new(harness.session(), "power")
             .await
             .expect("resolve power client from report");
 
@@ -286,7 +165,5 @@ mod round_trip_tests {
         for r in &readings {
             assert_eq!(r.voltage, 0.0, "off -> 0 V");
         }
-
-        server.abort();
     }
 }

@@ -1344,7 +1344,6 @@ dependencies = [
  "jumpstarter-cluster",
  "jumpstarter-config",
  "jumpstarter-core",
- "jumpstarter-driver-example",
  "jumpstarter-exporter",
  "jumpstarter-mcp",
  "jumpstarter-protocol",
@@ -1492,6 +1491,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "jumpstarter-driver-harness"
+version = "0.0.0"
+dependencies = [
+ "http",
+ "jumpstarter-core",
+ "jumpstarter-driver-runtime",
+ "jumpstarter-exporter",
+ "jumpstarter-transport",
+ "tempfile",
+ "tokio",
+ "tonic",
+ "tower 0.5.3",
+]
+
+[[package]]
 name = "jumpstarter-driver-macros"
 version = "0.0.0"
 dependencies = [
@@ -1505,8 +1519,10 @@ name = "jumpstarter-driver-power-example"
 version = "0.0.0"
 dependencies = [
  "bytes",
+ "clap",
  "jumpstarter-codegen",
  "jumpstarter-core",
+ "jumpstarter-driver-harness",
  "jumpstarter-driver-runtime",
  "jumpstarter-protocol",
  "jumpstarter-transport",
@@ -1514,7 +1530,6 @@ dependencies = [
  "prost-reflect",
  "prost-types",
  "serde_json",
- "tempfile",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -1527,6 +1542,8 @@ version = "0.0.0"
 dependencies = [
  "axum",
  "http",
+ "jumpstarter-config",
+ "jumpstarter-exporter",
  "jumpstarter-protocol",
  "jumpstarter-transport",
  "tokio",

@@ -251,3 +251,57 @@ async fn native_unary_forwards_through_the_hub_to_a_rust_driver() {
 
     let _ = std::fs::remove_file(&cfg);
 }
+
+/// The per-entry `host:` launcher (`{ bin, args }`) must dispatch through the hub exactly like the
+/// default resolution, letting one exporter pin different/mixed hosts. We pin `rustpower` to the
+/// configured host binary via `host:` (not the process-wide env, which `host:` takes precedence
+/// over). Gated on `JMP_RUST_DRIVER_HOST` only to locate a built host binary.
+#[tokio::test]
+async fn native_unary_forwards_through_the_hub_via_per_entry_host() {
+    let Ok(host_bin) = std::env::var("JMP_RUST_DRIVER_HOST") else {
+        eprintln!("skipping: set JMP_RUST_DRIVER_HOST (a built native host binary) to locate one");
+        return;
+    };
+
+    // A config whose entry pins `host:` to the binary; clear the env so only `host:` can resolve it.
+    let cfg = std::env::temp_dir().join(format!("jmp-hostspec-{}.yaml", std::process::id()));
+    std::fs::write(
+        &cfg,
+        format!(
+            "apiVersion: jumpstarter.dev/v1alpha1\nkind: ExporterConfig\n\
+metadata:\n  namespace: default\n  name: hostspec\n\
+endpoint: grpc.example.com:443\ntoken: dummy\ntls:\n  insecure: true\n\
+export:\n  rustpower:\n    type: rust:jumpstarter-driver-power-example\n    host: {host_bin}\n"
+        ),
+    )
+    .unwrap();
+    std::env::remove_var("JMP_RUST_DRIVER_HOST");
+
+    let (backend, _guard) = PolyglotHostFactory::new(cfg.clone())
+        .provision()
+        .await
+        .expect("provision via per-entry host:");
+
+    let report = backend.get_report().await.expect("get_report");
+    let rustpower = report
+        .reports
+        .iter()
+        .find(|r| r.labels.get("jumpstarter.dev/name").map(String::as_str) == Some("rustpower"))
+        .unwrap_or_else(|| panic!("no `rustpower` leaf in {:#?}", report.reports));
+
+    let mut metadata = MetadataMap::new();
+    metadata.insert(
+        DRIVER_UUID_KEY,
+        AsciiMetadataValue::try_from(rustpower.uuid.as_str()).unwrap(),
+    );
+    let result = backend
+        .forward_unary(
+            "/jumpstarter.interfaces.power.v1.PowerInterface/On",
+            metadata,
+            bytes::Bytes::new(),
+        )
+        .await;
+    assert!(result.is_ok(), "forward_unary(On) via host: failed: {result:?}");
+
+    let _ = std::fs::remove_file(&cfg);
+}

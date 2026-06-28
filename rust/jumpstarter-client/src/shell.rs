@@ -171,7 +171,7 @@ pub async fn run(config: &ClientConfig, opts: ShellOptions) -> Result<i32, Clien
             debug!(lease = %acquired.name, "releasing lease after beforeLease failure");
             eprintln!("Releasing lease {}", acquired.name);
             if let Err(err) = client.delete_lease(&acquired.name).await {
-                warn!(lease = %acquired.name, error = %err, "failed to release lease");
+                log_release_outcome(&acquired.name, &err);
             }
         }
         drop(host);
@@ -209,7 +209,7 @@ pub async fn run(config: &ClientConfig, opts: ShellOptions) -> Result<i32, Clien
         debug!(lease = %acquired.name, "releasing lease");
         eprintln!("Releasing lease {}", acquired.name);
         if let Err(err) = client.delete_lease(&acquired.name).await {
-            warn!(lease = %acquired.name, error = %err, "failed to release lease");
+            log_release_outcome(&acquired.name, &err);
         }
     }
     drop(host);
@@ -528,4 +528,17 @@ fn decorated_shell(context: &str) -> tokio::process::Command {
         ));
     }
     c
+}
+
+/// Log the outcome of a best-effort lease release. The controller auto-releases a lease when its
+/// session ends, so an explicit release after the command often races and returns
+/// `FailedPrecondition: ... already been released` — that is the expected no-op, logged at debug.
+/// Any other failure is a real warning.
+fn log_release_outcome(name: &str, err: &impl std::fmt::Display) {
+    let msg = err.to_string();
+    if msg.contains("already") && msg.contains("released") {
+        debug!(lease = %name, "lease already released by the controller (expected no-op)");
+    } else {
+        warn!(lease = %name, error = %msg, "failed to release lease");
+    }
 }

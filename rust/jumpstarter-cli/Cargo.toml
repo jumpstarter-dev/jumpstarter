@@ -23,9 +23,9 @@ path = "src/bin/j.rs"
 
 [dependencies]
 jumpstarter-core = { path = "../jumpstarter-core" }
-# Built-in native (Rust) clients for native `j` (example/demo registry; a real deployment would
-# register clients via a plugin/inventory mechanism).
-jumpstarter-driver-example = { path = "../jumpstarter-driver-example" }
+# NOTE: `j` links NO driver/client code — it dispatches `j <driver> <cmd>` to a per-crate client CLI
+# binary on PATH (`<crate>-client` / `jumpstarter-jvm-client` / `python -m jumpstarter_cli.j`),
+# mirroring the polyglot hub spawning host binaries.
 jumpstarter-client = { path = "../jumpstarter-client" }
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
 jumpstarter-config = { path = "../jumpstarter-config" }

@@ -297,6 +297,7 @@ async fn login(args: Args) -> Result<(), CmdError> {
                     r#unsafe: unsafe_drivers.unwrap_or(false)
                         || allow_list.iter().any(|d| d == "UNSAFE"),
                     allow: allow_list,
+                    ..Default::default()
                 };
                 client_alias = Some(alias);
                 client_config = Some(c);

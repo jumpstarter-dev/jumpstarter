@@ -1,0 +1,19 @@
+[package]
+name = "jumpstarter-driver-harness"
+description = "Local driver-test harness: serve a driver impl over the real SHM+UDS transport (no controller/lease) and connect a ClientSession, to test a driver + its generated client end to end"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+jumpstarter-core = { path = "../jumpstarter-core" }
+jumpstarter-exporter = { path = "../jumpstarter-exporter" }
+jumpstarter-driver-runtime = { path = "../jumpstarter-driver-runtime" }
+jumpstarter-transport = { path = "../jumpstarter-transport" }
+tonic.workspace = true
+tower = { version = "0.5", features = ["util"] }
+http = "1"
+tokio = { workspace = true, features = ["rt", "macros", "net", "time"] }
+tempfile = "3"

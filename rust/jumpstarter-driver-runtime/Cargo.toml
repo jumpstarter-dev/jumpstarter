@@ -10,8 +10,12 @@ rust-version.workspace = true
 [dependencies]
 jumpstarter-transport = { path = "../jumpstarter-transport" }
 jumpstarter-protocol = { path = "../jumpstarter-protocol" }
+# `run_host` ties the driver into the exporter's host-serving seam + config parsing, so a driver
+# crate's own bin becomes a complete standalone host with one call.
+jumpstarter-exporter = { path = "../jumpstarter-exporter" }
+jumpstarter-config = { path = "../jumpstarter-config" }
 tonic.workspace = true
-tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "net", "time", "sync", "signal", "io-util"] }
 tokio-stream = "0.1"
 # The server stack mirrors the transport demux's own wiring (tonic 0.12 routes over axum 0.7);
 # these are real deps here because this crate IS the server side.

@@ -3,11 +3,17 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     // Tests load the Rust core over UniFFI (JNA), so they need the cdylib on the library path.
     id("dev.jumpstarter.cargo-cdylib")
+    // Ships the `jumpstarter-exporter-host` start script (the JVM driver-host the polyglot hub spawns)
+    // with zero per-module host config: this module's driver classes on the classpath + the reflective
+    // runtime host. The whole "host" is this one plugin line.
+    id("dev.jumpstarter.driver-host")
 }
 
 kotlin {
     jvmToolchain(21)
 }
+
+val jnaPath = (extra["jumpstarterCdylibDir"] as File).path
 
 dependencies {
     // The runtime — brings the generic driver host (GrpcServiceDriverHost/DriverHostServer), the
@@ -33,7 +39,6 @@ tasks.test {
 // Run a controller-mediated exporter whose driver is selected by the config's `type:` (a JVM gRPC
 // service class). Serves until killed:
 //   ./gradlew :jumpstarter-driver-power-example:runPowerExporter -Pconfig=/path/to/exporter.yaml
-val jnaPath = (extra["jumpstarterCdylibDir"] as File).path
 tasks.register<JavaExec>("runPowerExporter") {
     group = "application"
     description = "Run a controller-mediated exporter serving the config-selected JVM driver"

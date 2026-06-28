@@ -124,6 +124,9 @@ pub enum PowerClient {
 
 /// The native-client registry native `j` consults: run the native (Rust) client for `class` if one
 /// is registered here, else `None` (the driver's client is a Python client, handled elsewhere).
+// NOTE: proto-first native clients are no longer dispatched in-process here — `j` spawns the crate's
+// standalone `<crate>-client` binary instead (mirroring the per-crate host), so no client code is
+// linked into `j`. This registry remains only for the LEGACY JSON `driver_call` demo client.
 pub async fn run_client(
     class: &str,
     args: &[String],

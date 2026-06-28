@@ -53,13 +53,20 @@ async fn main() {
     };
 
     match client_for(&report, first) {
-        // A native (Rust) client → drive it in-process via the native client registry, no Python.
-        Some((uuid, label)) if label.starts_with("rust:") => {
-            tracing::debug!(driver = first, %uuid, %label, "routing to native rust client");
-            match jumpstarter_driver_example::run_client(&label, &args[1..], &session, &uuid).await {
-                Some(code) => std::process::exit(code),
-                None => fail(&format!("no native client is registered for `{label}`")),
-            }
+        // A native (Rust) client → spawn the crate's standalone client CLI binary (the client-side
+        // mirror of the per-crate host), exactly as a JVM/Python client delegates to its launcher.
+        // `j` links no client code; it dispatches by the advertised label.
+        Some((_uuid, label)) if label.starts_with("rust:") => {
+            tracing::debug!(driver = first, %label, "routing to rust client cli binary");
+            drop(session);
+            delegate_to_rust_client(&label, &args);
+        }
+        // A JVM (Java/Kotlin) client → the JVM client CLI (picocli, `dev.jumpstarter.cli.JMain`),
+        // exactly as a Python client delegates to the Python CLI. It re-reads JUMPSTARTER_HOST.
+        Some((_uuid, label)) if label.starts_with("jvm:") => {
+            tracing::debug!(driver = first, %label, "routing to jvm client cli");
+            drop(session);
+            delegate_to_jvm(&args);
         }
         // A Python client (or an unknown driver name) → the Python driver-client CLI.
         _ => {
@@ -67,6 +74,33 @@ async fn main() {
             drop(session);
             delegate_to_python(&args);
         }
+    }
+}
+
+/// Delegate to the per-crate Rust client CLI binary for a `rust:<crate>` client label — the
+/// client-side mirror of the hub's per-crate host binary. `JMP_RUST_CLIENT_CLI` overrides the path;
+/// else `<crate>-client` on `PATH`. The driver name + subcommand are forwarded and JUMPSTARTER_HOST
+/// is inherited, so the spawned client connects + drives the typed client over native gRPC.
+fn delegate_to_rust_client(label: &str, args: &[String]) -> ! {
+    let bin = std::env::var("JMP_RUST_CLIENT_CLI").unwrap_or_else(|_| {
+        let crate_name = label.strip_prefix("rust:").unwrap_or(label);
+        format!("{crate_name}-client")
+    });
+    match Command::new(&bin).args(args).status() {
+        Ok(status) => std::process::exit(status.code().unwrap_or(1)),
+        Err(e) => fail(&format!("cannot launch the rust client CLI ({bin}): {e}")),
+    }
+}
+
+/// Delegate to the JVM client CLI — a `jumpstarter-jvm-client` start script running
+/// `dev.jumpstarter.cli.JMain` (resolves the `jvm:<fqn>` client, runs its picocli command over native
+/// gRPC). `JMP_JVM_CLIENT_CLI` overrides the launcher path; JUMPSTARTER_HOST is inherited.
+fn delegate_to_jvm(args: &[String]) -> ! {
+    let launcher = std::env::var("JMP_JVM_CLIENT_CLI")
+        .unwrap_or_else(|_| "jumpstarter-jvm-client".to_string());
+    match Command::new(&launcher).args(args).status() {
+        Ok(status) => std::process::exit(status.code().unwrap_or(1)),
+        Err(e) => fail(&format!("cannot launch the jvm client CLI ({launcher}): {e}")),
     }
 }
 

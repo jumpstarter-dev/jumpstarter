@@ -384,10 +384,6 @@ pub async fn serve_driver_host(
     uds: String,
     factory: Arc<dyn DriverHostFactory>,
 ) -> Result<(), ExporterError> {
-    use jumpstarter_exporter::control::StatusSnapshot;
-    use jumpstarter_exporter::logbuf::HookLog;
-    use jumpstarter_exporter::session::{self, RoutingTable, SharedSession};
-
     init_exporter_tracing();
     // NOTE: the parent-death watchdog for a *Python* host lives in the Python host itself
     // (`jumpstarter.exporter_host`), not here: terminating a Python process from this embedded
@@ -398,27 +394,13 @@ pub async fn serve_driver_host(
         .provision()
         .await
         .map_err(|e| ExporterError::Runtime(e.to_string()))?;
-    let routing = RoutingTable::build(backend)
+
+    // The shared host-SDK entrypoint builds the routing table, pins the session, and serves the
+    // driver-host seam on the UDS until the host process is killed (the same helper the native
+    // `jmp-rust-host` and per-crate native hosts use).
+    jumpstarter_exporter::session::serve_native_host(std::path::Path::new(&uds), backend)
         .await
         .map_err(|e| ExporterError::Runtime(e.to_string()))?;
-
-    // Pin the session watch channels — there is no lease loop here (the host serves one fixed
-    // driver tree for its lifetime); the senders are held so receivers never observe `Closed`.
-    let (_rtx, routing_rx) = tokio::sync::watch::channel(Some(Arc::new(routing)));
-    let (_stx, status_rx) = tokio::sync::watch::channel(StatusSnapshot::default());
-    let (_etx, end_rx) = tokio::sync::watch::channel(None);
-    let shared = SharedSession::new(routing_rx, status_rx, end_rx, HookLog::new());
-
-    let hook_uds = format!("{uds}.hook");
-    let server = session::serve(
-        shared,
-        std::path::Path::new(&uds),
-        std::path::Path::new(&hook_uds),
-    )
-    .map_err(|e| ExporterError::Runtime(e.to_string()))?;
-
-    // Serve until the hub SIGKILLs us at lease end (or a signal terminates the process).
-    let _ = server.await;
     drop(_guard);
     Ok(())
 }

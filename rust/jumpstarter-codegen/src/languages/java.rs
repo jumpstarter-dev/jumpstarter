@@ -493,9 +493,12 @@ fn render_client(iface: &InterfaceRef) -> String {
          * A thin typed client over the stock grpc-java [{grpc}] blocking stub, bound to one driver\n \
          * instance via [UuidMetadataInterceptor] and routed through the [ExporterSession]'s UniFFI\n \
          * channel.\n \
+         *\n \
+         * `open` so a CUSTOM client can subclass it to add wrapper methods or a CLI (the JVM analog\n \
+         * of subclassing Python's `DriverClient`); the `stub` is `protected` for raw calls.\n \
          */\n\
-         class {client}(session: ExporterSession, driverName: String) {{\n    \
-             private val stub: {grpc}.{blocking_stub} =\n        \
+         open class {client}(session: ExporterSession, driverName: String) {{\n    \
+             protected val stub: {grpc}.{blocking_stub} =\n        \
                  {grpc_x}.newBlockingStub(session.channel)\n            \
                      .withInterceptors(UuidMetadataInterceptor(session.requireDriver(driverName)))\n"
     );
@@ -527,7 +530,7 @@ fn render_client(iface: &InterfaceRef) -> String {
             let _ = writeln!(
                 s,
                 "\n    /** `{name}` (server-streaming): returns every response message. */\n    \
-                 fun {camel}({param}): List<{out_ty}> =\n        \
+                 open fun {camel}({param}): List<{out_ty}> =\n        \
                      stub.{camel}({request_expr}).asSequence().toList()",
                 name = m.name,
             );
@@ -535,7 +538,7 @@ fn render_client(iface: &InterfaceRef) -> String {
             let _ = writeln!(
                 s,
                 "\n    /** `{name}` (unary). */\n    \
-                 fun {camel}({param}) {{\n        \
+                 open fun {camel}({param}) {{\n        \
                      stub.{camel}({request_expr})\n    \
                  }}",
                 name = m.name,
@@ -544,7 +547,7 @@ fn render_client(iface: &InterfaceRef) -> String {
             let _ = writeln!(
                 s,
                 "\n    /** `{name}` (unary). */\n    \
-                 fun {camel}({param}): {out_ty} =\n        \
+                 open fun {camel}({param}): {out_ty} =\n        \
                      stub.{camel}({request_expr})",
                 name = m.name,
             );
@@ -625,11 +628,12 @@ mod tests {
         let files = JavaGenerator.generate_client(&iface);
         assert!(files.contains_key("PowerClient.kt"), "keys: {:?}", files.keys());
         let src = &files["PowerClient.kt"];
-        assert!(src.contains("class PowerClient(session: ExporterSession, driverName: String)"));
+        // `open class` + `open fun` so a custom client can subclass and add wrapper methods/CLI.
+        assert!(src.contains("open class PowerClient(session: ExporterSession, driverName: String)"));
         assert!(src.contains("PowerInterfaceGrpc.newBlockingStub(session.channel)"));
         // Unary on()/off(); read() server-streaming returns a list of PowerReading.
-        assert!(src.contains("fun on()"));
-        assert!(src.contains("fun off()"));
+        assert!(src.contains("open fun on()"));
+        assert!(src.contains("open fun off()"));
         assert!(src.contains("fun read(): List<Power.PowerReading>"));
         assert!(src.contains("Empty.getDefaultInstance()"));
     }

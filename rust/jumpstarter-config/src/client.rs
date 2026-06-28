@@ -30,6 +30,26 @@ pub struct DriversConfig {
     /// `allow` (handled when building from the environment).
     #[serde(default, rename = "unsafe")]
     pub r#unsafe: bool,
+    /// Per-interface client SELECTION: a map from a proto interface full name (e.g.
+    /// `jumpstarter.interfaces.power.v1.PowerInterface`) to a client selector — a `rust:<crate>`
+    /// binary, a `jvm:<fqn>`, or a Python client class path — that OVERRIDES the driver's advertised
+    /// `jumpstarter.dev/client` for that interface. Lets a site pin a language-specific client (e.g.
+    /// drive a Rust driver with a JVM client). Empty by default, so the advertised client is used —
+    /// fully backwards compatible (a config without this key, or an interface not listed, is
+    /// unchanged).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub select: std::collections::BTreeMap<String, String>,
+}
+
+impl DriversConfig {
+    /// The client selector to drive `interface` with: the per-interface [`select`](Self::select)
+    /// override if one is configured, else the driver's `advertised` `jumpstarter.dev/client`.
+    pub fn select_client<'a>(&'a self, interface: &str, advertised: &'a str) -> &'a str {
+        self.select
+            .get(interface)
+            .map(String::as_str)
+            .unwrap_or(advertised)
+    }
 }
 
 /// Lease tuning (`client.py:94-107`). `dial_timeout` is an internal field that is
@@ -158,6 +178,38 @@ mod tests {
         let c = ClientConfig::from_yaml(&from_file_yaml()).unwrap();
         let reparsed = ClientConfig::from_yaml(&c.to_yaml().unwrap()).unwrap();
         assert_eq!(c, reparsed);
+    }
+
+    #[test]
+    fn per_interface_client_select_is_backwards_compatible() {
+        // A config WITHOUT `select` parses (empty map) and the advertised client is used — the
+        // existing behaviour is unchanged.
+        let c = ClientConfig::from_yaml(&from_file_yaml()).unwrap();
+        assert!(c.drivers.select.is_empty());
+        assert_eq!(
+            c.drivers.select_client("jumpstarter.interfaces.power.v1.PowerInterface", "rust:foo"),
+            "rust:foo",
+            "absent select -> advertised client"
+        );
+        // `select` is omitted from the saved YAML when empty (no churn for old configs).
+        assert!(!c.to_yaml().unwrap().contains("select:"));
+
+        // A config WITH `select` overrides the advertised client per interface, and round-trips.
+        let yaml = format!(
+            "apiVersion: jumpstarter.dev/v1alpha1\nkind: ClientConfig\n\
+             metadata:\n  namespace: default\n  name: c\n\
+             endpoint: e:1\ntoken: {TOKEN}\n\
+             drivers:\n  select:\n    jumpstarter.interfaces.power.v1.PowerInterface: jvm:com.example.PowerClient\n"
+        );
+        let c = ClientConfig::from_yaml(&yaml).unwrap();
+        assert_eq!(
+            c.drivers.select_client("jumpstarter.interfaces.power.v1.PowerInterface", "rust:foo"),
+            "jvm:com.example.PowerClient",
+            "select override wins over the advertised client"
+        );
+        // An interface NOT in `select` still falls back to the advertised client.
+        assert_eq!(c.drivers.select_client("other.Interface", "rust:foo"), "rust:foo");
+        assert_eq!(ClientConfig::from_yaml(&c.to_yaml().unwrap()).unwrap(), c);
     }
 
     #[test]

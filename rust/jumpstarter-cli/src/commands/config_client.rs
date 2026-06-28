@@ -102,6 +102,7 @@ fn create(a: CreateArgs) -> Result<(), String> {
         // A literal `UNSAFE` entry forces unsafe mode (Python `decode_unsafe`).
         r#unsafe: a.unsafe_drivers || allow_list.iter().any(|d| d == "UNSAFE"),
         allow: allow_list,
+        ..Default::default()
     };
 
     let path = match &a.out {

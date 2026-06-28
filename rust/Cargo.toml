@@ -30,6 +30,7 @@ members = [
     "jumpstarter-driver-example",
     "jumpstarter-codegen",
     "jumpstarter-driver-runtime",
+    "jumpstarter-driver-harness",
     "jumpstarter-driver-power-example",
 ]
 

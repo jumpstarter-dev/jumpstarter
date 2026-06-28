@@ -6,6 +6,7 @@ kotlin = "2.2.0"
 coroutines = "1.10.2"
 jna = "5.17.0"
 gson = "2.14.0"
+picocli = "4.7.6"
 junit = "5.13.4"
 # JUnit 4 — the generation used by AOSP / Tradefed; jumpstarter-testing ships a TestRule for it.
 junit4 = "4.13.2"
@@ -19,6 +20,8 @@ protobuf-java = { module = "com.google.protobuf:protobuf-java", version.ref = "p
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+# picocli — the JVM client-CLI framework (the `j <driver> <subcommand>` surface; analog of Python's click).
+picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
 # Just the Jupiter extension API (for jumpstarter-testing's JUnit 5/6 extension, compileOnly).
 junit-jupiter-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
