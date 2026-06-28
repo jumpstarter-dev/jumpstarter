@@ -194,8 +194,8 @@ $ helm repo add dex https://charts.dexidp.io
 $ helm install --namespace dex --wait -f values.yaml dex dex/dex
 ```
 
-3. Configure Jumpstarter to trust Dex. Use this configuration for
-   `jumpstarter-controller.authenticationConfiguration` during installation:
+3. Configure Jumpstarter to trust Dex. Set `spec.authentication.jwt` on your
+   `Jumpstarter` resource:
 
 ```yaml
 spec:
