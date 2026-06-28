@@ -1368,6 +1368,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "jumpstarter-client"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "axum",
+ "bytes",
+ "http",
+ "inventory",
+ "jumpstarter-codec",
+ "jumpstarter-compression",
+ "jumpstarter-config",
+ "jumpstarter-driver-macros",
+ "jumpstarter-lease",
+ "jumpstarter-protocol",
+ "jumpstarter-transport",
+ "prost",
+ "prost-reflect",
+ "prost-types",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tower 0.5.3",
+ "tracing",
+]
+
+[[package]]
 name = "jumpstarter-cluster"
 version = "0.0.0"
 dependencies = [
@@ -1441,10 +1469,10 @@ dependencies = [
  "axum",
  "bytes",
  "http",
+ "jumpstarter-client",
  "jumpstarter-codec",
  "jumpstarter-compression",
  "jumpstarter-config",
- "jumpstarter-lease",
  "jumpstarter-protocol",
  "jumpstarter-transport",
  "prost",
@@ -1526,6 +1554,8 @@ version = "0.0.0"
 dependencies = [
  "bytes",
  "clap",
+ "jumpstarter-client",
+ "jumpstarter-codec",
  "jumpstarter-codegen",
  "jumpstarter-core",
  "jumpstarter-driver-harness",
@@ -1549,7 +1579,6 @@ dependencies = [
  "http",
  "inventory",
  "jumpstarter-config",
- "jumpstarter-core",
  "jumpstarter-driver-macros",
  "jumpstarter-exporter",
  "jumpstarter-protocol",

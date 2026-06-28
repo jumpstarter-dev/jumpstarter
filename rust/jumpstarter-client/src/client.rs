@@ -4,7 +4,7 @@
 //! Python `AsyncDriverClient`'s gRPC calls so the Python driver clients (and `j`) can
 //! route through the Rust core (FFI) instead of grpcio + generated stubs. Rust owns the
 //! value codec and the wire protocol; args/results cross as plain JSON. This is the
-//! consumer mirror of [`crate::foreign::ForeignDriver`].
+//! consumer mirror of the driver-side `ForeignDriver` (in `jumpstarter-driver-core`).
 
 use std::pin::Pin;
 use std::sync::Arc;
@@ -25,8 +25,8 @@ use tonic::service::interceptor::InterceptedService;
 use tonic::transport::{Channel, Endpoint};
 use tonic::{Code, Request, Status, Streaming};
 
-use crate::dynamic::{decode_response, encode_request};
-use crate::error::DriverCallError;
+use jumpstarter_codec::dynamic::{decode_response, encode_request};
+use jumpstarter_codec::error::DriverCallError;
 
 /// Resource initial-metadata keys the host emits and the client consumes
 /// (`driver/base.py:189-198`); the same allow-list `tunnel.rs` relays.
@@ -88,7 +88,7 @@ impl tonic::service::Interceptor for PassphraseInterceptor {
     }
 }
 
-use crate::native_table::{build_native_table, NativeTable};
+use jumpstarter_codec::native_table::{build_native_table, NativeTable};
 
 /// A connection to an exporter — either via its local `JUMPSTARTER_HOST` transport socket
 /// (lease/local mode), or directly to a standalone exporter's TCP gRPC (`jmp shell --tls-grpc`).
@@ -1107,7 +1107,7 @@ mod native_unary_tests {
         // Client: args JSON -> request bytes (the body native_unary would carry).
         let body = encode_request(&route.input, "[12000]").unwrap();
         // Server would decode `body` to `{millivolts: 12000}`; here just assert it re-decodes.
-        let echoed = crate::dynamic::decode_response(&route.input, &body).unwrap();
+        let echoed = jumpstarter_codec::dynamic::decode_response(&route.input, &body).unwrap();
         assert_eq!(echoed, "12000"); // single-field unwrap
 
         // Client: empty (Empty) response -> null result.

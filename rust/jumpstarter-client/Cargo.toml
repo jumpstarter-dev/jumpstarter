@@ -1,0 +1,54 @@
+[package]
+name = "jumpstarter-client"
+description = "The Jumpstarter driver-CLIENT library + author-facing entrypoint: ClientSession (the consumer driver-call surface), the programmatic ControllerSession lease lifecycle, and the `Client`/#[client_cli]/client_main! client-CLI entrypoint. Pulls NO driver-serving / exporter machinery — a crate that deps only this is a pure client."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# The CLIENT side of the framework: it consumes drivers (over the transport) and drives the
+# controller/lease lifecycle, but never serves a driver. It deliberately deps only the neutral
+# plumbing (`jumpstarter-codec`), the transport seam, compression, config, and the lease primitives
+# — NO `jumpstarter-driver-core` / `jumpstarter-exporter` — so a pure client crate that deps this
+# never compiles the driver-serving runtime.
+[dependencies]
+jumpstarter-protocol = { path = "../jumpstarter-protocol" }
+# Neutral protocol plumbing: the descriptor-driven value/dispatch codec, native dispatch table, and
+# the driver-call / controller error taxonomy the client surface speaks.
+jumpstarter-codec = { path = "../jumpstarter-codec" }
+# The client dials a `JUMPSTARTER_HOST` transport socket and forwards opaque native-gRPC frames.
+jumpstarter-transport = { path = "../jumpstarter-transport" }
+# Channel/lease/shell primitives the programmatic `ControllerSession` wraps (the same the `jmp shell`
+# uses), plus the `uds_channel` the client connects over.
+jumpstarter-lease = { path = "../jumpstarter-lease" }
+jumpstarter-config = { path = "../jumpstarter-config" }
+# Rust owns resource-stream (de)compression for the byte plane (gzip/xz/bz2/zstd); the client seam
+# (client.rs) drives these streaming codecs so the binding never touches the wire codec.
+jumpstarter-compression = { path = "../jumpstarter-compression" }
+# Re-exported `#[client_cli]` macro (the client-side auto-registration) — emits `::jumpstarter_client::`.
+jumpstarter-driver-macros = { path = "../jumpstarter-driver-macros" }
+# `#[client_cli]` auto-registers each CLI into a link-time registry the `client_main!` entrypoint
+# collects (within the crate, so no cross-crate stripping concerns).
+inventory = "0.3"
+prost.workspace = true
+prost-types.workspace = true
+serde_json.workspace = true
+async-trait = "0.1"
+thiserror.workspace = true
+tonic.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "sync", "macros", "net", "time", "io-util"] }
+tokio-stream = "0.1"
+tracing.workspace = true
+# The native demux `forward_unary` seam carries opaque per-driver proto messages as raw bytes;
+# the client names `bytes::Bytes` in that path (already transitive via tonic/transport).
+bytes = "1"
+
+[dev-dependencies]
+# End-to-end native-dispatch test: stand up the transport-crate `Demux` over `InProcessTransport`
+# and drive it with a raw `tonic` client. axum/tower/http mirror the demux's own wiring (tonic
+# re-exports axum 0.7); they are test-only so the client library itself stays free of the server stack.
+axum = { version = "0.7", default-features = false }
+tower = { version = "0.5", features = ["util"] }
+http = "1"
+prost-reflect = "0.14"

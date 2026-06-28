@@ -28,7 +28,15 @@ name = "jumpstarter-driver-power-example-client"
 path = "src/client.rs"
 
 [dependencies]
+# The codegen-generated typed `PowerClient` still names `jumpstarter_core::{ClientSession, error}`
+# (the codegen crate-path switch is a later phase); core re-exports those from `jumpstarter-client` /
+# `jumpstarter-codec` so this combined crate keeps compiling.
 jumpstarter-core = { path = "../jumpstarter-core" }
+# Combined crate (host + client bins): the host side from `jumpstarter-driver-runtime`, the client
+# CLI entrypoint (`client_main!`/`#[client_cli]`) from `jumpstarter-client`, the error taxonomy from
+# `jumpstarter-codec`. Its binaries pull both sides by design (the "single crate if desired" path).
+jumpstarter-client = { path = "../jumpstarter-client" }
+jumpstarter-codec = { path = "../jumpstarter-codec" }
 jumpstarter-driver-runtime = { path = "../jumpstarter-driver-runtime" }
 jumpstarter-protocol = { path = "../jumpstarter-protocol" }
 jumpstarter-transport = { path = "../jumpstarter-transport" }

@@ -7,8 +7,6 @@
 //! FFI dependency (no uniffi/cbindgen/jni) — those live only in the per-binding crates,
 //! which implement [`host::DriverApi`] and convert these DTOs to their native types.
 
-pub mod client;
-pub mod controller;
 pub mod driver;
 pub mod dynamic_backend;
 pub mod foreign;
@@ -24,14 +22,16 @@ pub(crate) mod stream_pump;
 // onto the codec crate directly.
 pub use jumpstarter_codec::{dto, dynamic, error, native_table};
 
-// `resolve_driver_uuid` + `ClientSession` are the client PRIMITIVES core owns; the author-facing
-// client-CLI ENTRYPOINT (`Client`, `#[client_cli]`, `client_main!`) lives alongside the host
-// entrypoint in `jumpstarter-driver-runtime`, so a driver crate imports all its glue from one crate.
-pub use client::resolve_driver_uuid;
-pub use client::{
+// Transitional facade: the CLIENT side (the consumer `ClientSession`, the programmatic
+// `ControllerSession`/`LeaseTransport`, and `resolve_driver_uuid`) now lives in `jumpstarter-client`.
+// Core re-exports it so every existing client consumer (cli, mcp, harness, core-uniffi) keeps
+// compiling against `jumpstarter_core::{ClientSession, ControllerSession, …}` until a later phase
+// migrates each onto the client crate directly.
+pub use jumpstarter_client::resolve_driver_uuid;
+pub use jumpstarter_client::{
     ClientByteStream, ClientLogStream, ClientNativeStream, ClientResultStream, ClientSession,
 };
-pub use controller::{ControllerSession, LeaseTransport};
+pub use jumpstarter_client::{ControllerSession, LeaseTransport};
 pub use driver::{Driver, NativeDriverBackend};
 pub use dynamic_backend::{DynamicBackend, DRIVER_UUID_KEY};
 pub use foreign::ForeignDriver;

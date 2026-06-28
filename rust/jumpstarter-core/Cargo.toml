@@ -17,14 +17,17 @@ jumpstarter-protocol = { path = "../jumpstarter-protocol" }
 # and cross-boundary DTOs. Core re-exports these (transitional facade) until each consumer is
 # migrated onto the codec crate directly in a later phase.
 jumpstarter-codec = { path = "../jumpstarter-codec" }
+# Transitional facade: the CLIENT side (`ClientSession`, `ControllerSession`, `LeaseTransport`,
+# `resolve_driver_uuid`) now lives in `jumpstarter-client`. Core re-exports it so existing client
+# consumers keep compiling against `jumpstarter_core::ClientSession` until a later phase migrates
+# each onto the client crate directly.
+jumpstarter-client = { path = "../jumpstarter-client" }
 # The facade implements the shared `DriverBackend` seam over the binding-agnostic per-driver
-# `Driver` (host side) and exposes a `ClientSession` over the client crate's transport (client
-# side). It depends on `jumpstarter-transport` (the seam), NOT on `jumpstarter-exporter` — so a
-# client consumer never compiles the exporter runtime (subprocess spawn, hooks, session server,
+# `Driver` (host side). It depends on `jumpstarter-transport` (the seam), NOT on `jumpstarter-exporter`
+# — so a client consumer never compiles the exporter runtime (subprocess spawn, hooks, session server,
 # signals). The exporter is pulled only by `jumpstarter-core-uniffi` / the CLI — i.e. things that
 # actually run an exporter (local development).
 jumpstarter-transport = { path = "../jumpstarter-transport" }
-jumpstarter-lease = { path = "../jumpstarter-lease" }
 jumpstarter-config = { path = "../jumpstarter-config" }
 # Rust is the sole owner of resource-stream (de)compression for the byte plane (gzip/xz/bz2/zstd);
 # the host seam (foreign.rs) and the client seam (client.rs) drive these streaming codecs so Python

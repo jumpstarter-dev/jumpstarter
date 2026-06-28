@@ -9,8 +9,8 @@
 use std::time::Duration;
 
 use clap::Parser;
-use jumpstarter_core::error::DriverCallError;
-use jumpstarter_core::ClientSession;
+use jumpstarter_client::ClientSession;
+use jumpstarter_codec::error::DriverCallError;
 
 use crate::PowerClient;
 
@@ -66,7 +66,7 @@ impl<'a> CyclingPowerClient<'a> {
 ///
 /// `#[client_cli]` auto-registers this CLI, so the client binary's whole `src/client.rs` is
 /// `client_main!()` — the mirror of the host `#[driver]` (and the JVM `@JumpstarterClientCli`).
-#[jumpstarter_driver_runtime::client_cli]
+#[jumpstarter_client::client_cli]
 #[derive(Parser)]
 #[command(name = "")]
 pub enum PowerCli {

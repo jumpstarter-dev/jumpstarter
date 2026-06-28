@@ -8,4 +8,4 @@
 
 use jumpstarter_driver_power_example as _;
 
-jumpstarter_driver_runtime::client_main!();
+jumpstarter_client::client_main!();

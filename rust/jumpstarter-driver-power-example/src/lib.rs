@@ -105,7 +105,7 @@ mod round_trip_tests {
 
     /// Stream a `read()` call to completion, collecting the decoded readings.
     async fn collect_readings(
-        stream: impl tokio_stream::Stream<Item = Result<proto::PowerReading, jumpstarter_core::error::DriverCallError>>,
+        stream: impl tokio_stream::Stream<Item = Result<proto::PowerReading, jumpstarter_codec::error::DriverCallError>>,
     ) -> Vec<proto::PowerReading> {
         let mut stream = Box::pin(stream);
         let mut readings = Vec::new();

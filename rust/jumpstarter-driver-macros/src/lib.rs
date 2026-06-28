@@ -248,11 +248,11 @@ pub fn driver(attr: TokenStream, item: TokenStream) -> TokenStream {
     .into()
 }
 
-/// Auto-register a client CLI. Put `#[jumpstarter_driver_runtime::client_cli]` on a typed CLI (a clap
+/// Auto-register a client CLI. Put `#[jumpstarter_client::client_cli]` on a typed CLI (a clap
 /// subcommand type with `async fn run(args, session, uuid) -> i32`) and it's collected into the crate's
 /// client registry (the client-side mirror of the host `#[driver]`, and the Rust analog of the JVM
 /// `@JumpstarterClientCli`), so the client binary's whole `src/client.rs` is
-/// `jumpstarter_driver_runtime::client_main!();`. Only CLI-exposing clients are registered — a plain
+/// `jumpstarter_client::client_main!();`. Only CLI-exposing clients are registered — a plain
 /// client library needs nothing. The descriptor is taken by convention from the crate's `proto` module.
 #[proc_macro_attribute]
 pub fn client_cli(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -268,14 +268,14 @@ pub fn client_cli(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #[allow(non_snake_case)]
             fn #run_fn<'a>(
                 args: &'a [::std::string::String],
-                session: &'a ::jumpstarter_driver_runtime::ClientSession,
+                session: &'a ::jumpstarter_client::ClientSession,
                 uuid: &'a str,
             ) -> ::std::pin::Pin<::std::boxed::Box<dyn ::std::future::Future<Output = i32> + 'a>> {
                 ::std::boxed::Box::pin(#cli::run(args, session, uuid))
             }
 
-            ::jumpstarter_driver_runtime::inventory::submit! {
-                ::jumpstarter_driver_runtime::ClientRegistration {
+            ::jumpstarter_client::inventory::submit! {
+                ::jumpstarter_client::ClientRegistration {
                     descriptor: crate::proto::FILE_DESCRIPTOR_SET,
                     run: #run_fn,
                 }

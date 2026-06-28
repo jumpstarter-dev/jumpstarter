@@ -16,7 +16,7 @@ use jumpstarter_config::{ClientConfig, ObjectMeta, TlsConfig};
 use jumpstarter_protocol::client_v1;
 use tokio::sync::Mutex;
 
-use crate::error::ControllerError;
+use jumpstarter_codec::error::ControllerError;
 
 /// A connected controller session bound to one client identity. Cheap to hold; each lease
 /// op is an independent RPC.
