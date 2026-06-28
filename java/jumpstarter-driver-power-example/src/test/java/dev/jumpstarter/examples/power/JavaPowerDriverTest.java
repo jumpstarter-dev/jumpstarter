@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.jumpstarter.client.ExporterSession;
 import dev.jumpstarter.driver.DriverHostServer;
+import dev.jumpstarter.driver.GrpcServiceDriverHostFactory;
 import dev.jumpstarter.generated.power.PowerClient;
 import jumpstarter.interfaces.power.v1.Power.PowerReading;
 import java.io.File;
@@ -25,7 +26,7 @@ class JavaPowerDriverTest {
     void javaDriverServedAndDriven() throws Exception {
         Path dir = Files.createTempDirectory("jmp-java-power");
         String uds = dir.resolve("host.sock").toString();
-        try (DriverHostServer server = DriverHostServer.serve(uds, new JavaPowerDriver.HostFactory());
+        try (DriverHostServer server = DriverHostServer.serve(uds, GrpcServiceDriverHostFactory.forDriver(JavaPowerDriver.class, "power"));
                 ExporterSession session = ExporterSession.connect(uds)) {
             PowerClient power = new PowerClient(session, "power");
 

@@ -1,23 +1,21 @@
 package dev.jumpstarter.examples.power
 
 import com.google.protobuf.Empty
-import dev.jumpstarter.driver.DescriptorSets
-import dev.jumpstarter.driver.GrpcServiceDriverHostFactory
-import jumpstarter.interfaces.power.v1.Power
+import dev.jumpstarter.driver.JumpstarterDriver
 import jumpstarter.interfaces.power.v1.Power.PowerReading
 import jumpstarter.interfaces.power.v1.PowerInterfaceGrpcKt.PowerInterfaceCoroutineImplBase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
-import dev.jumpstarter.core.DriverHostFactory
 
 /**
  * The **Kotlin** proto-first power driver: a NATIVE coroutine gRPC service — `suspend fun` for the
  * unary methods, `Flow` for the server-streaming one — implementing the stock grpc-kotlin
- * [PowerInterfaceCoroutineImplBase]. No descriptor-building, no adapter: the generic
- * `GrpcServiceDriverHost` serves this stock service to the Rust core (its `dispatch` awaits the
- * coroutine handler's completion). Authoring a Kotlin Jumpstarter driver is idiomatic suspend code.
+ * [PowerInterfaceCoroutineImplBase]. No descriptor-building, no adapter, and (via [JumpstarterDriver])
+ * NO hand-written host factory: the reflective host instantiates this class, derives its descriptor,
+ * and reads the annotation's `client`. Authoring a Kotlin Jumpstarter driver is idiomatic suspend code.
  */
+@JumpstarterDriver(client = "jumpstarter_driver_power.client.PowerClient")
 class KotlinPowerDriver : PowerInterfaceCoroutineImplBase(Dispatchers.Default) {
     @Volatile
     var isOn: Boolean = false
@@ -41,11 +39,3 @@ class KotlinPowerDriver : PowerInterfaceCoroutineImplBase(Dispatchers.Default) {
         }
     }
 }
-
-/** The JVM entrypoint for the Kotlin power driver — mints a fresh host per lease. */
-class KotlinPowerDriverHostFactory : DriverHostFactory by GrpcServiceDriverHostFactory(
-    driverName = "power",
-    descriptorSet = DescriptorSets.selfContained(Power.getDescriptor()),
-    clientClass = "jumpstarter_driver_power.client.PowerClient",
-    service = { KotlinPowerDriver() },
-)

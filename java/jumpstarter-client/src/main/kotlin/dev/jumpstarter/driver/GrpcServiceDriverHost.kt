@@ -176,4 +176,32 @@ class GrpcServiceDriverHostFactory(
 ) : DriverHostFactory {
     override fun newHost(): DriverHost =
         GrpcServiceDriverHost(service(), descriptorSet, driverName, clientClass)
+
+    companion object {
+        /**
+         * Build a host factory from a driver CLASS reflectively — instantiate the stock gRPC service,
+         * derive its descriptor, and read [JumpstarterDriver.client] for the `jumpstarter.dev/client`
+         * label — so an `@JumpstarterDriver`-annotated driver needs NO hand-written factory.
+         */
+        @JvmStatic
+        fun forDriver(
+            driverClass: Class<out io.grpc.BindableService>,
+            driverName: String,
+        ): GrpcServiceDriverHostFactory {
+            val annotation = driverClass.getAnnotation(JumpstarterDriver::class.java)
+                ?: error("${driverClass.name} is not annotated with @JumpstarterDriver")
+            val descriptor = descriptorOf(driverClass.getDeclaredConstructor().newInstance())
+            return GrpcServiceDriverHostFactory(driverName, descriptor, annotation.client) {
+                driverClass.getDeclaredConstructor().newInstance()
+            }
+        }
+
+        /** The interface's self-contained descriptor, taken from the stock service's proto file. */
+        internal fun descriptorOf(service: io.grpc.BindableService): ByteArray {
+            val schema = service.bindService().serviceDescriptor.schemaDescriptor
+            val file = (schema as? io.grpc.protobuf.ProtoFileDescriptorSupplier)?.fileDescriptor
+                ?: error("service ${service::class.java.name} exposes no proto FileDescriptor")
+            return DescriptorSets.selfContained(file)
+        }
+    }
 }

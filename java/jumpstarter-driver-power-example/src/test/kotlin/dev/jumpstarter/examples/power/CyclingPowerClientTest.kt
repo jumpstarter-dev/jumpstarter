@@ -2,6 +2,7 @@ package dev.jumpstarter.examples.power
 
 import dev.jumpstarter.client.ExporterSession
 import dev.jumpstarter.driver.DriverHostServer
+import dev.jumpstarter.driver.GrpcServiceDriverHostFactory
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
@@ -17,7 +18,7 @@ class CyclingPowerClientTest {
     fun customClientCycleLeavesDriverPoweredOn() {
         val dir = Files.createTempDirectory("jmp-cycling-power")
         val uds = dir.resolve("host.sock").toString()
-        DriverHostServer.serve(uds, KotlinPowerDriverHostFactory()).use {
+        DriverHostServer.serve(uds, GrpcServiceDriverHostFactory.forDriver(KotlinPowerDriver::class.java, "power")).use {
             ExporterSession.connect(uds).use { session ->
                 val power = CyclingPowerClient(session, "power")
 
