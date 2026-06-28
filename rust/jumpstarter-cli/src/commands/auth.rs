@@ -3,7 +3,7 @@
 
 use chrono::{TimeZone, Utc};
 use clap::{Args as ClapArgs, Subcommand};
-use jumpstarter_client::ControllerClient;
+use jumpstarter_lease::ControllerClient;
 use jumpstarter_config::YamlConfig;
 use owo_colors::{OwoColorize, Stream::Stdout};
 

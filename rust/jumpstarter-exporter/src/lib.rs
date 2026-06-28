@@ -35,7 +35,7 @@ pub mod tunnel;
 
 /// The exporter reuses the client's error taxonomy (RPC / transport / config) for
 /// the shared controller-channel and router-bridge paths.
-pub type Error = jumpstarter_client::ClientError;
+pub type Error = jumpstarter_lease::ClientError;
 
 /// Tie a (native Rust) driver-host process's lifetime to the polyglot hub that spawned it.
 ///

@@ -12,7 +12,7 @@
 //! - or — later — **in-process** behind an FFI foreign `Driver` (jumpstarter-core's
 //!   `ForeignDriver`, which impls this trait).
 //!
-//! This is the **isometric** seam shared by both `jumpstarter-client` and
+//! This is the **isometric** seam shared by both `jumpstarter-lease` and
 //! `jumpstarter-exporter`: it depends only on the wire protocol + tonic, so a client can
 //! consume `DriverBackend` without pulling in the exporter runtime. The trait is proto-typed
 //! and tonic-facing on purpose — it is the transport/codec boundary; the binding-agnostic

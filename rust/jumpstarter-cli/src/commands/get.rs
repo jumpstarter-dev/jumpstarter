@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use clap::{Args as ClapArgs, Subcommand, ValueEnum};
-use jumpstarter_client::{selector_contains, ControllerClient};
+use jumpstarter_lease::{selector_contains, ControllerClient};
 use jumpstarter_protocol::client_v1;
 
 use crate::clientcfg::ConfigOpts;

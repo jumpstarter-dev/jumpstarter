@@ -9,12 +9,12 @@
 //! JMP_RUST_TEST_CONFIG=~/.config/jumpstarter/clients/test-rust-client.yaml \
 //! JMP_RUST_TEST_SELECTOR='example.com/board=rust' \
 //! JMP_RUST_TEST_JMP=$PWD/python/.venv/bin/j \
-//!   cargo test -p jumpstarter-client --test live_transport -- --nocapture
+//!   cargo test -p jumpstarter-lease --test live_transport -- --nocapture
 //! ```
 
 use std::time::Duration;
 
-use jumpstarter_client::{
+use jumpstarter_lease::{
     acquire, transport, ControllerClient, CreateLeaseParams, LeaseProvider, LeaseTiming,
 };
 use jumpstarter_config::{ClientConfig, YamlConfig};

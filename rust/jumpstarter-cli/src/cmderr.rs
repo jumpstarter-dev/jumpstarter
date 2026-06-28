@@ -40,9 +40,9 @@ pub fn runtime<E: std::fmt::Display>(e: E) -> CmdError {
     CmdError::Runtime(e.to_string())
 }
 
-/// Map a controller [`ClientError`](jumpstarter_client::ClientError) into a
+/// Map a controller [`ClientError`](jumpstarter_lease::ClientError) into a
 /// runtime error using its Python-compatible gRPC message.
-pub fn grpc(e: jumpstarter_client::ClientError) -> CmdError {
+pub fn grpc(e: jumpstarter_lease::ClientError) -> CmdError {
     CmdError::Runtime(e.user_message())
 }
 

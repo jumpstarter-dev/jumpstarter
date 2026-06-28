@@ -26,7 +26,7 @@ jumpstarter-core = { path = "../jumpstarter-core" }
 # NOTE: `j` links NO driver/client code — it dispatches `j <driver> <cmd>` to a per-crate client CLI
 # binary on PATH (`<crate>-client` / `jumpstarter-jvm-client` / `python -m jumpstarter_cli.j`),
 # mirroring the polyglot hub spawning host binaries.
-jumpstarter-client = { path = "../jumpstarter-client" }
+jumpstarter-lease = { path = "../jumpstarter-lease" }
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
 jumpstarter-config = { path = "../jumpstarter-config" }
 jumpstarter-protocol = { path = "../jumpstarter-protocol" }

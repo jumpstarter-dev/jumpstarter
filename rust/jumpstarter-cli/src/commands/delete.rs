@@ -2,8 +2,8 @@
 
 
 use clap::{Args as ClapArgs, Subcommand, ValueEnum};
-use jumpstarter_client::lease::LeaseProvider;
-use jumpstarter_client::{selector_contains, ControllerClient};
+use jumpstarter_lease::lease::LeaseProvider;
+use jumpstarter_lease::{selector_contains, ControllerClient};
 
 use crate::clientcfg::ConfigOpts;
 use crate::cmderr::{grpc, CmdError};

@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use jumpstarter_client::channel;
+use jumpstarter_lease::channel;
 use jumpstarter_config::ExporterConfig;
 use jumpstarter_protocol::v1::controller_service_client::ControllerServiceClient;
 use jumpstarter_protocol::v1::{ExporterStatus, RegisterRequest, StatusRequest, UnregisterRequest};

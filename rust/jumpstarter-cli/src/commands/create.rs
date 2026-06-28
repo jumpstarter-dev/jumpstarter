@@ -3,8 +3,8 @@
 use std::time::Duration;
 
 use clap::{Args as ClapArgs, Subcommand};
-use jumpstarter_client::lease::CreateLeaseParams;
-use jumpstarter_client::ControllerClient;
+use jumpstarter_lease::lease::CreateLeaseParams;
+use jumpstarter_lease::ControllerClient;
 
 use crate::clientcfg::ConfigOpts;
 use crate::cmderr::{grpc, runtime, CmdError};

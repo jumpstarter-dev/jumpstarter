@@ -1,14 +1,14 @@
 //! `jmp shell` — acquire (or reuse) a lease and run a shell/command wired to an
 //! exporter (spec 08 §9.1-9.2; `shell.py`). The client-mode lease flow lives in
-//! `jumpstarter-client`. Local-exporter (`--exporter-config`) and direct
+//! `jumpstarter-lease`. Local-exporter (`--exporter-config`) and direct
 //! (`--tls-grpc`) modes are not yet ported.
 
 use std::io::IsTerminal;
 use std::time::Duration;
 
 use clap::Args as ClapArgs;
-use jumpstarter_client::shell::{self, ShellOptions};
-use jumpstarter_client::ControllerClient;
+use jumpstarter_lease::shell::{self, ShellOptions};
+use jumpstarter_lease::ControllerClient;
 use jumpstarter_config::ClientConfig;
 
 use crate::clientcfg::ConfigOpts;

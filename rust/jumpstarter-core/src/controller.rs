@@ -1,7 +1,7 @@
 //! Programmatic controller/lease facade — the minimal surface the language bindings need to
 //! drive a lease lifecycle without the `jmp` CLI: connect to the controller, acquire/release
 //! a lease, and serve a local transport socket the language's client connects to
-//! (`JUMPSTARTER_HOST`). It wraps the same `jumpstarter-client` primitives the Rust `jmp
+//! (`JUMPSTARTER_HOST`). It wraps the same `jumpstarter-lease` primitives the Rust `jmp
 //! shell` uses — [`ControllerClient`], [`lease::acquire`], [`transport::serve_default`] — so
 //! `jumpstarter-testing` / MCP get identical behavior to the CLI without Python gRPC.
 
@@ -9,9 +9,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use jumpstarter_client::lease::{self, AcquiredLease, CreateLeaseParams, LeaseProvider, LeaseTiming};
-use jumpstarter_client::transport::{self, TransportHost};
-use jumpstarter_client::ControllerClient;
+use jumpstarter_lease::lease::{self, AcquiredLease, CreateLeaseParams, LeaseProvider, LeaseTiming};
+use jumpstarter_lease::transport::{self, TransportHost};
+use jumpstarter_lease::ControllerClient;
 use jumpstarter_config::{ClientConfig, ObjectMeta, TlsConfig};
 use jumpstarter_protocol::client_v1;
 use tokio::sync::Mutex;
@@ -217,7 +217,7 @@ fn lease_to_json(l: &client_v1::Lease) -> serde_json::Value {
     })
 }
 
-/// A live transport listener for one lease. Holds the `jumpstarter-client` `TransportHost`
+/// A live transport listener for one lease. Holds the `jumpstarter-lease` `TransportHost`
 /// (whose `Drop` aborts the listener + removes the socket); [`close`](Self::close) tears it
 /// down deterministically when the language's `serve_unix` context manager exits.
 pub struct LeaseTransport {

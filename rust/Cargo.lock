@@ -1349,11 +1349,11 @@ dependencies = [
  "dialoguer",
  "jumpstarter-admin",
  "jumpstarter-auth",
- "jumpstarter-client",
  "jumpstarter-cluster",
  "jumpstarter-config",
  "jumpstarter-core",
  "jumpstarter-exporter",
+ "jumpstarter-lease",
  "jumpstarter-mcp",
  "jumpstarter-protocol",
  "owo-colors",
@@ -1365,26 +1365,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "jumpstarter-client"
-version = "0.0.0"
-dependencies = [
- "base64",
- "http",
- "hyper-util",
- "jumpstarter-config",
- "jumpstarter-protocol",
- "prost-types",
- "regex",
- "thiserror 2.0.18",
- "tokio",
- "tokio-rustls",
- "tokio-stream",
- "tonic",
- "tower 0.5.3",
- "tracing",
 ]
 
 [[package]]
@@ -1446,9 +1426,9 @@ dependencies = [
  "axum",
  "bytes",
  "http",
- "jumpstarter-client",
  "jumpstarter-compression",
  "jumpstarter-config",
+ "jumpstarter-lease",
  "jumpstarter-protocol",
  "jumpstarter-transport",
  "prost",
@@ -1576,10 +1556,10 @@ dependencies = [
  "futures",
  "http",
  "hyper-util",
- "jumpstarter-client",
  "jumpstarter-config",
  "jumpstarter-core",
  "jumpstarter-fsm",
+ "jumpstarter-lease",
  "jumpstarter-protocol",
  "jumpstarter-shm",
  "jumpstarter-transport",
@@ -1612,6 +1592,26 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "jumpstarter-lease"
+version = "0.0.0"
+dependencies = [
+ "base64",
+ "http",
+ "hyper-util",
+ "jumpstarter-config",
+ "jumpstarter-protocol",
+ "prost-types",
+ "regex",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-rustls",
+ "tokio-stream",
+ "tonic",
+ "tower 0.5.3",
+ "tracing",
 ]
 
 [[package]]

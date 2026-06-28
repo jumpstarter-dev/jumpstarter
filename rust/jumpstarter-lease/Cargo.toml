@@ -1,5 +1,5 @@
 [package]
-name = "jumpstarter-client"
+name = "jumpstarter-lease"
 description = "Jumpstarter client runtime: controller channel, lease lifecycle, and (later) router transport"
 version.workspace = true
 edition.workspace = true

@@ -9,7 +9,7 @@
 use std::pin::Pin;
 use std::sync::Arc;
 
-use jumpstarter_client::exporter_logs::uds_channel;
+use jumpstarter_lease::exporter_logs::uds_channel;
 use jumpstarter_protocol::router::{classify, data_frame, goaway_frame, FrameAction};
 use jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient;
 use jumpstarter_protocol::v1::router_service_client::RouterServiceClient;
@@ -129,8 +129,8 @@ impl ClientSession {
             .initial_stream_window_size(8 * 1024 * 1024)
             .initial_connection_window_size(16 * 1024 * 1024);
         // Connect on the multi-threaded IO runtime so the connection driver doesn't run on
-        // async-compat's single thread (see `jumpstarter_client::io_runtime`).
-        let channel = jumpstarter_client::io_runtime()
+        // async-compat's single thread (see `jumpstarter_lease::io_runtime`).
+        let channel = jumpstarter_lease::io_runtime()
             .spawn(async move { endpoint.connect().await })
             .await
             .map_err(|e| DriverCallError::Unknown(format!("connect task panicked: {e}")))?

@@ -70,7 +70,7 @@ impl From<DriverCallError> for tonic::Status {
 }
 
 /// A controller/lease operation failure (the programmatic lease surface — [`crate::controller`]).
-/// Mirrors the meaningful `jumpstarter_client::ClientError`/`LeaseError` cases the Python
+/// Mirrors the meaningful `jumpstarter_lease::ClientError`/`LeaseError` cases the Python
 /// `Lease` shim and `jumpstarter-testing` need to distinguish.
 #[derive(Debug, thiserror::Error)]
 pub enum ControllerError {
@@ -91,9 +91,9 @@ pub enum ControllerError {
     Other(String),
 }
 
-impl From<jumpstarter_client::ClientError> for ControllerError {
-    fn from(e: jumpstarter_client::ClientError) -> Self {
-        use jumpstarter_client::{ClientError, LeaseError};
+impl From<jumpstarter_lease::ClientError> for ControllerError {
+    fn from(e: jumpstarter_lease::ClientError) -> Self {
+        use jumpstarter_lease::{ClientError, LeaseError};
         match e {
             ClientError::Config(m) => ControllerError::Config(m),
             ClientError::Transport(t) => ControllerError::Connection(t.to_string()),

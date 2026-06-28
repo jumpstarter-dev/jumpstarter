@@ -5,7 +5,7 @@
 //! These own *presentation*: building from the wire protos, the table-column
 //! computations (`EXPIRES AT`/`REMAINING`/`get_status`), and the JSON/YAML shapes
 //! (duration as float seconds, datetimes as ISO strings, conditions rendered like
-//! protobuf `MessageToDict`). The gRPC plumbing lives in `jumpstarter-client`.
+//! protobuf `MessageToDict`). The gRPC plumbing lives in `jumpstarter-lease`.
 
 use std::collections::BTreeMap;
 

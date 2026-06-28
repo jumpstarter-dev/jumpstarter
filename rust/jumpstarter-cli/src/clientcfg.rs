@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use clap::Args as ClapArgs;
-use jumpstarter_client::ControllerClient;
+use jumpstarter_lease::ControllerClient;
 use jumpstarter_config::{client_from_env, paths, ClientConfig, UserConfig, YamlConfig};
 
 use crate::cmderr::CmdError;

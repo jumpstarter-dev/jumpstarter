@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-# This crate is the shared seam below BOTH jumpstarter-client and jumpstarter-exporter:
+# This crate is the shared seam below BOTH jumpstarter-lease and jumpstarter-exporter:
 # it owns `DriverBackend` (where a driver's calls are served — a subprocess over gRPC/UDS,
 # the router, a direct exporter, or — later — an in-process foreign host) plus the
 # channel-backed `ChannelBackend` impl. It depends only on the wire protocol + tonic, so the

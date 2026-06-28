@@ -20,7 +20,7 @@ jumpstarter-protocol = { path = "../jumpstarter-protocol" }
 # signals). The exporter is pulled only by `jumpstarter-core-uniffi` / the CLI — i.e. things that
 # actually run an exporter (local development).
 jumpstarter-transport = { path = "../jumpstarter-transport" }
-jumpstarter-client = { path = "../jumpstarter-client" }
+jumpstarter-lease = { path = "../jumpstarter-lease" }
 jumpstarter-config = { path = "../jumpstarter-config" }
 # Rust is the sole owner of resource-stream (de)compression for the byte plane (gzip/xz/bz2/zstd);
 # the host seam (foreign.rs) and the client seam (client.rs) drive these streaming codecs so Python

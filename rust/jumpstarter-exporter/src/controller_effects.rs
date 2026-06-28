@@ -10,7 +10,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use jumpstarter_client::router;
+use jumpstarter_lease::router;
 use jumpstarter_config::{HookConfig, TlsConfig};
 use jumpstarter_protocol::v1::{ExporterStatus, ListenRequest, LogSource};
 use tokio::net::UnixStream;

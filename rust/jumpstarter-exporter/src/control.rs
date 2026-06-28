@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use hyper_util::rt::TokioIo;
-use jumpstarter_client::AuthInterceptor;
+use jumpstarter_lease::AuthInterceptor;
 use jumpstarter_protocol::v1::controller_service_client::ControllerServiceClient;
 use jumpstarter_protocol::v1::{ExporterStatus, GetStatusResponse, ReportStatusRequest};
 use tokio::net::UnixStream;
