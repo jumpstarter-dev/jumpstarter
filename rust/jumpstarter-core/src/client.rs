@@ -849,6 +849,19 @@ impl Client {
         Self::default()
     }
 
+    /// Build a client from every `#[client]`-annotated CLI in the crate (collected at link time).
+    /// The entrypoint behind [`client_main!`](crate::client_main) — the author never lists CLIs.
+    pub fn from_inventory() -> Self {
+        let mut client = Self::new();
+        for reg in inventory::iter::<ClientRegistration> {
+            client.clis.push(ClientEntry {
+                descriptor: reg.descriptor,
+                run: Box::new(reg.run),
+            });
+        }
+        client
+    }
+
     /// Register the CLI for one interface: its `FILE_DESCRIPTOR_SET` (used to match the driver's
     /// interface) and a `run(args, session, uuid)` dispatcher (the typed CLI's, boxed).
     pub fn cli<F>(mut self, descriptor: &'static [u8], run: F) -> Self
@@ -897,6 +910,14 @@ impl Client {
                 eprintln!("usage: <driver> <subcommand> [args]");
                 return ExitCode::from(2);
             };
+            // Select the registered CLI BEFORE connecting, so an empty/ambiguous registry fails fast.
+            let entry = match self.select(interface.as_deref()) {
+                Ok(e) => e,
+                Err(e) => {
+                    eprintln!("{e}");
+                    return ExitCode::from(1);
+                }
+            };
             let host = match std::env::var("JUMPSTARTER_HOST") {
                 Ok(h) => h,
                 Err(_) => {
@@ -908,13 +929,6 @@ impl Client {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("connecting to the exporter: {e}");
-                    return ExitCode::from(1);
-                }
-            };
-            let entry = match self.select(interface.as_deref()) {
-                Ok(e) => e,
-                Err(e) => {
-                    eprintln!("{e}");
                     return ExitCode::from(1);
                 }
             };
@@ -944,6 +958,21 @@ impl Client {
         }
     }
 }
+
+/// What a `#[client]` registration's `run` dispatches: the typed CLI's `run(args, session, uuid)`.
+pub type ClientRunFn = for<'a> fn(
+    &'a [String],
+    &'a ClientSession,
+    &'a str,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = i32> + 'a>>;
+
+/// One client CLI registered by `#[client]`, collected at link time by [`Client::from_inventory`].
+pub struct ClientRegistration {
+    pub descriptor: &'static [u8],
+    pub run: ClientRunFn,
+}
+
+inventory::collect!(ClientRegistration);
 #[cfg(test)]
 mod native_unary_tests {
     use super::*;

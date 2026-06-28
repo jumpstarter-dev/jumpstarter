@@ -1,17 +1,10 @@
 //! `jumpstarter-driver-power-example-client <driver> <subcommand> [--interface <fqn>]` — this crate's
 //! CLIENT CLI binary (the one `j` spawns).
 //!
-//! It registers each interface's CLI via the `Client` builder and dispatches to the one matching the
-//! driver (the single registered CLI here, or `--interface <fqn>` when a crate drives several — one
-//! runs per process). No per-interface macro magic; the author registers explicitly.
+//! The whole `src/client.rs`: `client_main!()` builds the client from the crate's `#[client]`-registered
+//! CLIs and dispatches to the one matching the driver (the only one here, or `--interface <fqn>` when a
+//! crate drives several). The `use … as _` links the lib so its registrations are collected.
 
-use jumpstarter_driver_power_example::{custom_client::PowerCli, proto};
+use jumpstarter_driver_power_example as _;
 
-fn main() -> std::process::ExitCode {
-    jumpstarter_core::Client::new()
-        .cli(proto::FILE_DESCRIPTOR_SET, |args, session, uuid| {
-            Box::pin(PowerCli::run(args, session, uuid))
-        })
-        // .cli(..) for each additional interface this crate drives
-        .run()
-}
+jumpstarter_core::client_main!();

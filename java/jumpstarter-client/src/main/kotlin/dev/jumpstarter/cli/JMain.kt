@@ -9,8 +9,8 @@ import kotlin.system.exitProcess
  * Rust `j` native path and the Python `j` click dispatch). It connects the leased exporter
  * (`JUMPSTARTER_HOST`), resolves the driver's client class from the report's `jumpstarter.dev/client`
  * label (a `jvm:<fqn>` for a JVM client), instantiates that CUSTOM client (a subclass of the
- * generated client implementing [CliClient]), and runs its picocli command over native gRPC. Native
- * `j` delegates `jvm:`-client drivers here.
+ * generated client annotated [`@JumpstarterClientCli`][JumpstarterClientCli] with a `cliCommand()`),
+ * and runs its picocli command over native gRPC. Native `j` delegates `jvm:`-client drivers here.
  */
 object JMain {
     /** The label carrying a driver instance's client class. */
@@ -51,10 +51,11 @@ object JMain {
             System.err.println("could not load JVM client '$fqn': ${e.message}")
             return 1
         }
-        if (client !is CliClient) {
-            System.err.println("client '$fqn' has no CLI (does not implement CliClient)")
+        if (!client.javaClass.isAnnotationPresent(JumpstarterClientCli::class.java)) {
+            System.err.println("client '$fqn' is not a @JumpstarterClientCli (exposes no `j` CLI)")
             return 1
         }
-        return CommandLine(client.cliCommand()).execute(*args.copyOfRange(1, args.size))
+        val command = client.javaClass.getMethod("cliCommand").invoke(client)
+        return CommandLine(command).execute(*args.copyOfRange(1, args.size))
     }
 }

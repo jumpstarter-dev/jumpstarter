@@ -63,6 +63,10 @@ impl<'a> CyclingPowerClient<'a> {
 }
 
 /// The `j` CLI for the custom power client: `j <driver> {on | off | cycle [--wait N]}`.
+///
+/// `#[client_cli]` auto-registers this CLI, so the client binary's whole `src/client.rs` is
+/// `client_main!()` — the mirror of the host `#[driver]` (and the JVM `@JumpstarterClientCli`).
+#[jumpstarter_core::client_cli]
 #[derive(Parser)]
 #[command(name = "")]
 pub enum PowerCli {
