@@ -211,14 +211,21 @@ pub struct ClientRegistration {
 
 inventory::collect!(ClientRegistration);
 
-/// Generate the client binary's whole `fn main` from the crate's `#[client_cli]` registrations:
-/// `jumpstarter_client::client_main!();` is the entire `src/client.rs`. (The crate's lib must
-/// be linked into the bin — `use <crate> as _;` next to this when the bin references nothing else.)
+/// Generate the client binary's whole `fn main` from the crate's `#[client_cli]` registrations.
+///
+/// - `jumpstarter_client::client_main!();` — when the `#[client_cli]` CLIs are in this same crate.
+/// - `jumpstarter_client::client_main!(my_client_crate);` — when the `#[client_cli]` CLIs are in a
+///   separate LIB the bin must link for its registrations to be collected; this links it for you (no
+///   extra `use my_client_crate as _;` line).
 #[macro_export]
 macro_rules! client_main {
     () => {
         fn main() -> ::std::process::ExitCode {
             $crate::Client::from_inventory().run()
         }
+    };
+    ($krate:path) => {
+        use $krate as _;
+        $crate::client_main!();
     };
 }

@@ -26,15 +26,20 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, Data, DeriveInput, Expr, ExprLit, Fields, ItemImpl, Lit, LitStr, MetaNameValue, Type};
 
-/// Pull in everything `build.rs` generated for a proto-first driver crate — the whole `src/lib.rs`
-/// wiring in one line: `jumpstarter_driver::interface!();`. Expands to the include of the
-/// `jumpstarter_generated.rs` aggregator (the `proto` module + the typed client + the
-/// `<short>_host!`/`<short>_client!` macros) that `jumpstarter_codegen::build::driver_interface`
-/// writes into `OUT_DIR`. Re-exported as `jumpstarter_driver::interface!`.
+/// Pull in the build-time-generated code for an interface — the whole `src/lib.rs` (or bin) wiring in
+/// one line, named by the interface's canonical proto PACKAGE (the same FQN
+/// `tonic::include_proto!` uses, and what `--interface` matches against):
+/// `jumpstarter_driver::interface!("jumpstarter.interfaces.power.v1");` (or
+/// `jumpstarter_client::interface!(…)`). It includes the `<package>_generated.rs` aggregator (the
+/// `proto` module + the typed client for client/combined builds) that
+/// `jumpstarter_codegen::build::{driver,client,}interface` keyed by that package. To consume several
+/// interfaces, call `interface!` once per package.
 #[proc_macro]
-pub fn interface(_input: TokenStream) -> TokenStream {
+pub fn interface(input: TokenStream) -> TokenStream {
+    let package = parse_macro_input!(input as LitStr);
+    let file = format!("{}_generated.rs", package.value());
     quote! {
-        include!(concat!(env!("OUT_DIR"), "/jumpstarter_generated.rs"));
+        include!(concat!(env!("OUT_DIR"), "/", #file));
     }
     .into()
 }

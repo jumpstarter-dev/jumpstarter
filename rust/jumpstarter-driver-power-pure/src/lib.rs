@@ -14,7 +14,7 @@
 // Everything generated at build time (NOT committed), pulled in with one macro: `pub mod proto` (the
 // stock tonic server trait + prost messages + `FILE_DESCRIPTOR_SET`). Driver-only mode emits no typed
 // client. The only committed code in this crate is the author's [`MockPower`] driver impl below.
-jumpstarter_driver::interface!();
+jumpstarter_driver::interface!("jumpstarter.interfaces.power.v1");
 
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};

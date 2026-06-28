@@ -428,9 +428,13 @@ pub struct DriverRegistration {
 
 inventory::collect!(DriverRegistration);
 
-/// Generate the host binary's whole `fn main` from the crate's `#[driver]` registrations:
-/// `jumpstarter_driver::host_main!();` is the entire `src/main.rs`. (The crate's lib must be
-/// linked into the bin — `use <crate> as _;` next to this when the bin references nothing else.)
+/// Generate the host binary's whole `fn main` from the crate's `#[driver]` registrations.
+///
+/// - `jumpstarter_driver::host_main!();` — when the `#[driver]` impls are in this same crate (e.g. a
+///   bin-only crate with everything in `main.rs`).
+/// - `jumpstarter_driver::host_main!(my_driver_crate);` — when the `#[driver]` impls are in a separate
+///   LIB the bin must link for its registrations to be collected; this links it for you (no extra
+///   `use my_driver_crate as _;` line).
 #[macro_export]
 macro_rules! host_main {
     () => {
@@ -440,6 +444,10 @@ macro_rules! host_main {
         > {
             $crate::Host::from_inventory().run()
         }
+    };
+    ($krate:path) => {
+        use $krate as _;
+        $crate::host_main!();
     };
 }
 

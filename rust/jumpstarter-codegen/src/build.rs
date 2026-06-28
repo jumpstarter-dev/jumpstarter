@@ -80,7 +80,15 @@ fn build_interface(proto_rel: &str, mode: Mode) {
         .expect("interfaces/proto tree not found (../../interfaces/proto from the crate)");
     let proto = interfaces_proto.join(proto_rel);
     let out_dir = PathBuf::from(env_var("OUT_DIR"));
-    let fds_path = out_dir.join("interface.fds");
+    // Key the generated artifacts by the proto file stem (e.g. `power.proto` -> `power`), so the
+    // include macro names the interface explicitly — `interface!(power)` includes `power_generated.rs`
+    // — and several interfaces in one crate don't clobber each other's descriptor/aggregator.
+    let stem = PathBuf::from(proto_rel)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .expect("proto path has a file stem")
+        .to_string();
+    let fds_path = out_dir.join(format!("{stem}.fds"));
 
     println!("cargo:rerun-if-changed={}", proto.display());
 
@@ -124,7 +132,7 @@ fn build_interface(proto_rel: &str, mode: Mode) {
             "pub mod proto {{\n    \
                  tonic::include_proto!(\"{pkg}\");\n    \
                  pub const FILE_DESCRIPTOR_SET: &[u8] =\n        \
-                     include_bytes!(concat!(env!(\"OUT_DIR\"), \"/interface.fds\"));\n\
+                     include_bytes!(concat!(env!(\"OUT_DIR\"), \"/{stem}.fds\"));\n\
              }}"
         );
     }
@@ -138,8 +146,13 @@ fn build_interface(proto_rel: &str, mode: Mode) {
         );
     }
 
-    std::fs::write(out_dir.join("jumpstarter_generated.rs"), agg)
-        .expect("write the jumpstarter_generated.rs aggregator");
+    // Key the aggregator by the canonical proto PACKAGE (what `interface!("<package>")` names and
+    // `tonic::include_proto!` uses), falling back to the file stem for a package-less proto. The fds
+    // keeps its stem name (it's written by tonic before the package is known; only this aggregator,
+    // which references it, needs to be addressable by package).
+    let pkg_key = packages.iter().next().cloned().unwrap_or_else(|| stem.clone());
+    std::fs::write(out_dir.join(format!("{pkg_key}_generated.rs")), agg)
+        .unwrap_or_else(|e| panic!("write the {pkg_key}_generated.rs aggregator: {e}"));
 }
 
 fn env_var(key: &str) -> String {

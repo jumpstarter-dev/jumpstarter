@@ -21,7 +21,7 @@ use jumpstarter_codec::error::DriverCallError;
 // Everything generated at build time (NOT committed), pulled in with one macro: `pub mod proto` (the
 // prost messages + `FILE_DESCRIPTOR_SET`) and the typed [`PowerClient`]. Client-only mode emits no
 // server trait. The only committed client code in this crate is [`CyclingPowerClient`]/[`PowerCli`].
-jumpstarter_client::interface!();
+jumpstarter_client::interface!("jumpstarter.interfaces.power.v1");
 
 /// A custom client composing the generated [`PowerClient`] with extra convenience methods. (Rust has
 /// no inheritance, so a custom client *wraps* the generated one and delegates — the idiom matching a

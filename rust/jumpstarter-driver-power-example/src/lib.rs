@@ -23,7 +23,7 @@ pub mod custom_client;
 // stock tonic service trait + prost messages + `FILE_DESCRIPTOR_SET`), the typed [`PowerClient`], and
 // the `power_host!`/`power_client!` entrypoint macros. The only committed code in this crate is the
 // author's [`MockPower`] driver impl below.
-jumpstarter_driver::interface!();
+jumpstarter_driver::interface!("jumpstarter.interfaces.power.v1");
 
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
