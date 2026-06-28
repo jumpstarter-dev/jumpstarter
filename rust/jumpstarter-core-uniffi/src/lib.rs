@@ -1,11 +1,11 @@
 //! UniFFI bindings for the Jumpstarter Rust core — the `jumpstarter_core` Python
 //! extension (and, from the same definition, future Kotlin/Swift).
 //!
-//! Thin per-binding layer over [`jumpstarter_core`]: declares the foreign [`DriverHost`]
+//! Thin per-binding layer over [`jumpstarter_driver_core`]: declares the foreign [`DriverHost`]
 //! trait Python implements and the exported [`run_exporter`] entry Python awaits, then
-//! adapts them to the binding-agnostic `jumpstarter_core::{DriverApi, ...}` and the
+//! adapts them to the binding-agnostic `jumpstarter_driver_core::{DriverApi, ...}` and the
 //! exporter's `HostFactory`. No business logic here — codec/report/framing live in
-//! `jumpstarter-core`.
+//! `jumpstarter-driver-core` / `jumpstarter-codec`.
 //!
 //! ## Design notes (UniFFI constraints, learned from the spike + build)
 //! - Foreign-trait param is `method_name`, never `method` (a UniFFI Python codegen bug
@@ -34,10 +34,10 @@ fn ensure_crypto_provider() {
 }
 
 use async_trait::async_trait;
-use jumpstarter_core::foreign::ForeignNativeUnary;
-use jumpstarter_core::{
-    DriverCallError, DriverByteChannel, ForeignDriver, DriverApi, DriverResultStream,
-    DriverStreamOpen,
+use jumpstarter_codec::error::DriverCallError;
+use jumpstarter_driver_core::foreign::ForeignNativeUnary;
+use jumpstarter_driver_core::{
+    DriverApi, DriverByteChannel, DriverResultStream, DriverStreamOpen, ForeignDriver,
 };
 use jumpstarter_exporter::backend::{DriverBackend, HostFactory, HostGuard};
 
@@ -457,8 +457,8 @@ fn to_core_err(e: DriverError) -> DriverCallError {
     }
 }
 
-fn to_core_node(n: DriverNode) -> jumpstarter_core::DriverNode {
-    jumpstarter_core::DriverNode {
+fn to_core_node(n: DriverNode) -> jumpstarter_codec::dto::DriverNode {
+    jumpstarter_codec::dto::DriverNode {
         uuid: n.uuid,
         parent_uuid: n.parent_uuid,
         labels: n.labels,
@@ -506,7 +506,7 @@ impl HostFactory for UniffiHostFactory {
     }
 }
 
-/// Wraps a foreign `DriverHost` as `jumpstarter_core::DriverApi`.
+/// Wraps a foreign `DriverHost` as `jumpstarter_driver_core::DriverApi`.
 struct UniffiHostApi {
     inner: Arc<dyn DriverHost>,
 }
@@ -539,7 +539,7 @@ impl ForeignNativeUnary for UniffiNativeUnary {
         uuid: String,
         path: String,
         body: Vec<u8>,
-    ) -> Result<Arc<dyn jumpstarter_core::foreign::ForeignNativeByteStream>, DriverCallError> {
+    ) -> Result<Arc<dyn jumpstarter_driver_core::foreign::ForeignNativeByteStream>, DriverCallError> {
         let handle = self
             .inner
             .forward_server_stream(uuid, path, Bytes(body))
@@ -561,7 +561,7 @@ struct HandleNativeByteStream {
 }
 
 #[async_trait]
-impl jumpstarter_core::foreign::ForeignNativeByteStream for HandleNativeByteStream {
+impl jumpstarter_driver_core::foreign::ForeignNativeByteStream for HandleNativeByteStream {
     async fn next(&self) -> Result<Option<Vec<u8>>, DriverCallError> {
         let item = self
             .inner_next()
@@ -584,7 +584,7 @@ impl HandleNativeByteStream {
 
 #[async_trait]
 impl DriverApi for UniffiHostApi {
-    async fn describe(&self) -> Result<Vec<jumpstarter_core::DriverNode>, DriverCallError> {
+    async fn describe(&self) -> Result<Vec<jumpstarter_codec::dto::DriverNode>, DriverCallError> {
         let nodes = self.inner.describe().await.map_err(to_core_err)?;
         Ok(nodes.into_iter().map(to_core_node).collect())
     }
@@ -672,7 +672,7 @@ fn from_core_err(e: DriverCallError) -> DriverError {
 /// driver clients / `j` call these instead of grpcio stubs.
 #[derive(uniffi::Object)]
 pub struct ClientSession {
-    inner: jumpstarter_core::ClientSession,
+    inner: jumpstarter_client::ClientSession,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -681,7 +681,7 @@ impl ClientSession {
     #[uniffi::constructor]
     pub async fn connect(host: String) -> Result<Arc<Self>, DriverError> {
         ensure_crypto_provider();
-        let inner = jumpstarter_core::ClientSession::connect(host)
+        let inner = jumpstarter_client::ClientSession::connect(host)
             .await
             .map_err(from_core_err)?;
         Ok(Arc::new(Self { inner }))
@@ -779,7 +779,7 @@ impl ClientSession {
 /// A LogStream of hook + driver/system log entries, pulled JSON-at-a-time.
 #[derive(uniffi::Object)]
 pub struct ClientLogStream {
-    inner: Arc<jumpstarter_core::ClientLogStream>,
+    inner: Arc<jumpstarter_client::ClientLogStream>,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -792,7 +792,7 @@ impl ClientLogStream {
 /// A bidirectional router byte stream (driver `@exportstream` / resource).
 #[derive(uniffi::Object)]
 pub struct ClientByteStream {
-    inner: Arc<jumpstarter_core::ClientByteStream>,
+    inner: Arc<jumpstarter_client::ClientByteStream>,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -825,7 +825,7 @@ impl ClientByteStream {
 /// A streaming-driver-call result stream, pulled JSON-at-a-time.
 #[derive(uniffi::Object)]
 pub struct ClientResultStream {
-    inner: Arc<jumpstarter_core::ClientResultStream>,
+    inner: Arc<jumpstarter_client::ClientResultStream>,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -840,7 +840,7 @@ impl ClientResultStream {
 /// channel decodes each message with its own response marshaller; `None` is the clean end of stream.
 #[derive(uniffi::Object)]
 pub struct ClientNativeStream {
-    inner: Arc<jumpstarter_core::ClientNativeStream>,
+    inner: Arc<jumpstarter_client::ClientNativeStream>,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -901,8 +901,8 @@ pub enum ControllerError {
     Other(String),
 }
 
-fn from_core_controller_err(e: jumpstarter_core::ControllerError) -> ControllerError {
-    use jumpstarter_core::ControllerError as C;
+fn from_core_controller_err(e: jumpstarter_codec::ControllerError) -> ControllerError {
+    use jumpstarter_codec::ControllerError as C;
     match e {
         C::Config(m) => ControllerError::Config(m),
         C::Connection(m) => ControllerError::Connection(m),
@@ -922,7 +922,7 @@ pub struct AcquiredLease {
 /// A connected controller session (the language's `Lease` shim drives lease ops through this).
 #[derive(uniffi::Object)]
 pub struct ControllerSession {
-    inner: jumpstarter_core::ControllerSession,
+    inner: jumpstarter_client::ControllerSession,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -938,7 +938,7 @@ impl ControllerSession {
         name: String,
     ) -> Result<Arc<Self>, ControllerError> {
         ensure_crypto_provider();
-        let inner = jumpstarter_core::ControllerSession::connect(
+        let inner = jumpstarter_client::ControllerSession::connect(
             endpoint, token, ca, tls_insecure, namespace, name,
         )
         .await
@@ -1027,9 +1027,9 @@ impl ControllerSession {
 /// `release()` tears down the transport and releases the lease.
 #[derive(uniffi::Object)]
 pub struct LeasedExporter {
-    session: jumpstarter_core::ControllerSession,
+    session: jumpstarter_client::ControllerSession,
     // Held so the listener stays up for the lease's lifetime; closed by `release`.
-    _transport: Arc<jumpstarter_core::LeaseTransport>,
+    _transport: Arc<jumpstarter_client::LeaseTransport>,
     name: String,
     host: String,
     exporter: String,
@@ -1052,7 +1052,7 @@ impl LeasedExporter {
         ensure_crypto_provider();
         use jumpstarter_config::{ClientConfig, YamlConfig};
         let cfg = ClientConfig::load(&config_path).map_err(|e| ControllerError::Config(e.to_string()))?;
-        let session = jumpstarter_core::ControllerSession::connect(
+        let session = jumpstarter_client::ControllerSession::connect(
             cfg.endpoint.clone().unwrap_or_default(),
             cfg.token.clone(),
             cfg.tls.ca.clone(),
@@ -1115,7 +1115,7 @@ impl LeasedExporter {
 /// A live transport listener for one lease (drop/close tears it down).
 #[derive(uniffi::Object)]
 pub struct LeaseTransport {
-    inner: Arc<jumpstarter_core::LeaseTransport>,
+    inner: Arc<jumpstarter_client::LeaseTransport>,
 }
 
 #[uniffi::export(async_runtime = "tokio")]

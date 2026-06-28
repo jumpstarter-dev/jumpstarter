@@ -108,9 +108,9 @@ pub fn derive_driver_client(input: TokenStream) -> TokenStream {
             /// Map the parsed command to its driver call and invoke it.
             pub async fn dispatch(
                 self,
-                session: &::jumpstarter_core::ClientSession,
+                session: &::jumpstarter_client::ClientSession,
                 uuid: &str,
-            ) -> ::std::result::Result<::serde_json::Value, ::jumpstarter_core::error::DriverCallError> {
+            ) -> ::std::result::Result<::serde_json::Value, ::jumpstarter_codec::error::DriverCallError> {
                 let (method, args): (&str, ::std::vec::Vec<::serde_json::Value>) = match self { #(#arms)* };
                 let args_json = ::serde_json::to_string(&args).unwrap_or_else(|_| "[]".to_string());
                 let result = session
@@ -125,7 +125,7 @@ pub fn derive_driver_client(input: TokenStream) -> TokenStream {
             /// process exit code. Requires `Self: clap::Parser` (derive `clap::Parser` too).
             pub async fn run(
                 args: &[::std::string::String],
-                session: &::jumpstarter_core::ClientSession,
+                session: &::jumpstarter_client::ClientSession,
                 uuid: &str,
             ) -> i32 {
                 let argv = ::std::iter::once(::std::string::String::from("j"))

@@ -7,10 +7,10 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-# Controller/lease/connection tools run on the Rust core (jumpstarter-core::ControllerSession);
+# Controller/lease/connection tools run on the Rust client (jumpstarter-client::ControllerSession);
 # run/introspection tools shell out to the Python `j` CLI (the driver clients are Python).
 [dependencies]
-jumpstarter-core = { path = "../jumpstarter-core" }
+jumpstarter-client = { path = "../jumpstarter-client" }
 jumpstarter-config = { path = "../jumpstarter-config" }
 jumpstarter-auth = { path = "../jumpstarter-auth" }
 rmcp = { version = "1", features = ["server", "macros", "transport-io"] }

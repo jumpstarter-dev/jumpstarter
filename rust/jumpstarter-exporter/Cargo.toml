@@ -16,7 +16,9 @@ jumpstarter-fsm = { path = "../jumpstarter-fsm" }
 jumpstarter-transport = { path = "../jumpstarter-transport" }
 # The native dispatch + the server-side legacy `DriverCall` compatibility shim (`LegacyDispatch`)
 # that translates old clients' calls into the same native forward_unary/forward_stream.
-jumpstarter-core = { path = "../jumpstarter-core" }
+jumpstarter-driver-core = { path = "../jumpstarter-driver-core" }
+# Neutral protocol plumbing: `export_name_for` (proto method -> `@export` name) for the SHM backend.
+jumpstarter-codec = { path = "../jumpstarter-codec" }
 # Reuses the Phase-A channel builder + router byte-bridge.
 jumpstarter-lease = { path = "../jumpstarter-lease" }
 # Shared-memory byte ring for the local hub<->host bulk byte plane (opt-in via JMP_SHM_TUNNEL).

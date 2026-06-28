@@ -27,8 +27,8 @@ use tokio_stream::StreamExt as _;
 use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 use tonic::Status;
 
-use crate::dynamic::{decode_response, encode_request};
-use crate::native_table::{build_native_table, NativeRoute, NativeTable};
+use jumpstarter_codec::dynamic::{decode_response, encode_request};
+use jumpstarter_codec::native_table::{build_native_table, NativeRoute, NativeTable};
 
 /// Translates legacy `DriverCall`/`StreamingDriverCall` requests into native per-driver gRPC
 /// dispatch. Built once per lease from the driver reports (the `(uuid, method) → route` table),

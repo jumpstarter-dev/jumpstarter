@@ -15,7 +15,7 @@
 //! decline like `NativeDriverBackend`.
 //!
 //! `generate_client` emits a `PowerClient` over
-//! [`ClientSession`](jumpstarter_core::ClientSession) (NOT a tonic stub + interceptor): `new`
+//! [`ClientSession`](jumpstarter_client::ClientSession) (NOT a tonic stub + interceptor): `new`
 //! resolves the driver instance uuid from `session.get_report()` by the `jumpstarter.dev/name`
 //! label, and each typed method encodes the prost request, drives
 //! `ClientSession::native_unary` / `native_server_stream`, and decodes the prost response.
@@ -477,8 +477,8 @@ fn render_client(iface: &InterfaceRef) -> String {
 
     let _ = writeln!(
         s,
-        "use jumpstarter_core::error::DriverCallError;\n\
-         use jumpstarter_core::ClientSession;\n\
+        "use jumpstarter_codec::error::DriverCallError;\n\
+         use jumpstarter_client::ClientSession;\n\
          use tokio_stream::StreamExt as _;\n\n\
          use crate::proto;\n"
     );

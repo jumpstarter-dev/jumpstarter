@@ -1349,9 +1349,9 @@ dependencies = [
  "dialoguer",
  "jumpstarter-admin",
  "jumpstarter-auth",
+ "jumpstarter-client",
  "jumpstarter-cluster",
  "jumpstarter-config",
- "jumpstarter-core",
  "jumpstarter-exporter",
  "jumpstarter-lease",
  "jumpstarter-mcp",
@@ -1462,14 +1462,36 @@ dependencies = [
 ]
 
 [[package]]
-name = "jumpstarter-core"
+name = "jumpstarter-core-uniffi"
+version = "0.0.0"
+dependencies = [
+ "async-trait",
+ "jumpstarter-cli",
+ "jumpstarter-client",
+ "jumpstarter-codec",
+ "jumpstarter-compression",
+ "jumpstarter-config",
+ "jumpstarter-driver-core",
+ "jumpstarter-exporter",
+ "jumpstarter-transport",
+ "rustls",
+ "serde_json",
+ "serde_yaml_ng",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uniffi",
+]
+
+[[package]]
+name = "jumpstarter-driver-core"
 version = "0.0.0"
 dependencies = [
  "async-trait",
  "axum",
  "bytes",
  "http",
- "jumpstarter-client",
  "jumpstarter-codec",
  "jumpstarter-compression",
  "jumpstarter-config",
@@ -1489,34 +1511,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "jumpstarter-core-uniffi"
-version = "0.0.0"
-dependencies = [
- "async-trait",
- "jumpstarter-cli",
- "jumpstarter-compression",
- "jumpstarter-config",
- "jumpstarter-core",
- "jumpstarter-exporter",
- "jumpstarter-transport",
- "rustls",
- "serde_json",
- "serde_yaml_ng",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uniffi",
-]
-
-[[package]]
 name = "jumpstarter-driver-example"
 version = "0.0.0"
 dependencies = [
  "async-trait",
  "clap",
+ "jumpstarter-client",
+ "jumpstarter-codec",
  "jumpstarter-config",
- "jumpstarter-core",
+ "jumpstarter-driver-core",
  "jumpstarter-driver-macros",
  "jumpstarter-exporter",
  "jumpstarter-transport",
@@ -1529,7 +1532,7 @@ name = "jumpstarter-driver-harness"
 version = "0.0.0"
 dependencies = [
  "http",
- "jumpstarter-core",
+ "jumpstarter-client",
  "jumpstarter-driver-runtime",
  "jumpstarter-exporter",
  "jumpstarter-transport",
@@ -1557,7 +1560,6 @@ dependencies = [
  "jumpstarter-client",
  "jumpstarter-codec",
  "jumpstarter-codegen",
- "jumpstarter-core",
  "jumpstarter-driver-harness",
  "jumpstarter-driver-runtime",
  "jumpstarter-protocol",
@@ -1601,8 +1603,9 @@ dependencies = [
  "futures",
  "http",
  "hyper-util",
+ "jumpstarter-codec",
  "jumpstarter-config",
- "jumpstarter-core",
+ "jumpstarter-driver-core",
  "jumpstarter-fsm",
  "jumpstarter-lease",
  "jumpstarter-protocol",
@@ -1664,8 +1667,8 @@ name = "jumpstarter-mcp"
 version = "0.0.0"
 dependencies = [
  "jumpstarter-auth",
+ "jumpstarter-client",
  "jumpstarter-config",
- "jumpstarter-core",
  "rmcp",
  "serde",
  "serde_json",

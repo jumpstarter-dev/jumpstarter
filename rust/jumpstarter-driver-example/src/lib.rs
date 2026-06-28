@@ -9,9 +9,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use jumpstarter_core::driver::{empty_interface_descriptor_set, Driver};
-use jumpstarter_core::error::DriverCallError;
-use jumpstarter_core::ClientSession;
+use jumpstarter_driver_core::driver::{empty_interface_descriptor_set, Driver};
+use jumpstarter_codec::error::DriverCallError;
+use jumpstarter_client::ClientSession;
 use jumpstarter_driver_macros::DriverClient;
 use serde_json::Value as Json;
 

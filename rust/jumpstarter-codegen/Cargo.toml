@@ -11,10 +11,10 @@ rust-version.workspace = true
 # descriptor → language-neutral IR walk (`engine.rs`/`ir.rs`) and the
 # `LanguageGenerator` seam (`languages/`); per-language string-building generators
 # (Rust/Java) implement that trait. It depends only on the protobuf descriptor
-# crates already used by `jumpstarter-core` (same versions) plus error helpers — no
+# crates already used by `jumpstarter-codec` (same versions) plus error helpers — no
 # tonic/uniffi/core deps, so the engine is a thin, fast-compiling library.
 [dependencies]
-# Same prost / prost-types / prost-reflect versions as jumpstarter-core so the
+# Same prost / prost-types / prost-reflect versions as jumpstarter-codec so the
 # `FileDescriptorSet` decode + `DescriptorPool` walk match the in-tree path
 # (driver.rs `build_native_backend`). prost-reflect 0.14 is the prost-0.13 line.
 prost.workspace = true

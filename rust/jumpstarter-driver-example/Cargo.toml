@@ -18,7 +18,9 @@ name = "jmp-rust-host"
 path = "src/main.rs"
 
 [dependencies]
-jumpstarter-core = { path = "../jumpstarter-core" }
+jumpstarter-driver-core = { path = "../jumpstarter-driver-core" }
+jumpstarter-codec = { path = "../jumpstarter-codec" }
+jumpstarter-client = { path = "../jumpstarter-client" }
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
 jumpstarter-config = { path = "../jumpstarter-config" }
 jumpstarter-transport = { path = "../jumpstarter-transport" }

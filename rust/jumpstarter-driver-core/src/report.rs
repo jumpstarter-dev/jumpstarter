@@ -7,7 +7,7 @@
 
 use jumpstarter_protocol::v1::{DriverInstanceReport, GetReportResponse};
 
-use crate::dto::DriverNode;
+use jumpstarter_codec::dto::DriverNode;
 
 /// Build the proto report from the foreign host's flat node list.
 pub fn assemble_report(nodes: &[DriverNode]) -> GetReportResponse {

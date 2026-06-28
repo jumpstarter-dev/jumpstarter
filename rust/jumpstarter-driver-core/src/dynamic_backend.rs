@@ -37,13 +37,10 @@ use tokio::sync::mpsc;
 use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 use tonic::Status;
 
-use crate::dynamic::{encode_result, request_bytes_to_args_json, DynamicMethod};
-use crate::error::DriverCallError;
+use jumpstarter_codec::dynamic::{encode_result, request_bytes_to_args_json, DynamicMethod};
+use jumpstarter_codec::error::DriverCallError;
+use jumpstarter_codec::export_name_for;
 use crate::host::DriverApi;
-
-/// Map a proto method name to the driver `@export` name — re-exported from the codec so callers
-/// keep importing it from `jumpstarter_core::dynamic_backend` (the transitional facade path).
-pub use jumpstarter_codec::export_name_for;
 
 /// The invocation metadata key the native demux uses to select a driver — re-exported from
 /// the transport demux so callers key on one constant.
@@ -297,8 +294,8 @@ impl DriverBackend for DynamicBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dto::DriverNode;
-    use crate::error::DriverCallError;
+    use jumpstarter_codec::dto::DriverNode;
+    use jumpstarter_codec::error::DriverCallError;
     use crate::host::{DriverResultStream, DriverStreamOpen};
     use prost::Message as _;
     use prost_reflect::prost_types::{

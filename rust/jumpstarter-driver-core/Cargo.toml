@@ -1,32 +1,25 @@
 [package]
-name = "jumpstarter-core"
-description = "Binding-agnostic facade for the Jumpstarter Rust core (Python/Kotlin/C bindings wrap this)"
+name = "jumpstarter-driver-core"
+description = "Driver-dispatch core for Jumpstarter: native/foreign driver hosting, dynamic gRPC dispatch, DriverReport assembly"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-# This crate is the stable, FFI-shaped Rust API that every language binding wraps.
-# It owns the value codec application, DriverReport assembly, and the binding-agnostic
-# `ForeignHostApi` seam. It MUST NOT depend on uniffi/cbindgen/jni (enforced by a CI lint):
-# those live only in the per-binding crates (jumpstarter-core-uniffi, jumpstarter-core-capi).
+# This crate holds the driver-dispatch core: native/foreign driver hosting, the binding-agnostic
+# `DriverApi` seam, dynamic gRPC dispatch, and DriverReport assembly. It MUST NOT depend on
+# uniffi/cbindgen/jni (enforced by a CI lint): those live only in the per-binding crates
+# (jumpstarter-core-uniffi, jumpstarter-core-capi). It carries NO client side (no `ClientSession`).
 [dependencies]
 jumpstarter-protocol = { path = "../jumpstarter-protocol" }
 # Neutral protocol plumbing: the value/dispatch codec, native dispatch table, error taxonomy,
-# and cross-boundary DTOs. Core re-exports these (transitional facade) until each consumer is
-# migrated onto the codec crate directly in a later phase.
+# and cross-boundary DTOs that the driver modules build on.
 jumpstarter-codec = { path = "../jumpstarter-codec" }
-# Transitional facade: the CLIENT side (`ClientSession`, `ControllerSession`, `LeaseTransport`,
-# `resolve_driver_uuid`) now lives in `jumpstarter-client`. Core re-exports it so existing client
-# consumers keep compiling against `jumpstarter_core::ClientSession` until a later phase migrates
-# each onto the client crate directly.
-jumpstarter-client = { path = "../jumpstarter-client" }
-# The facade implements the shared `DriverBackend` seam over the binding-agnostic per-driver
+# The driver host implements the shared `DriverBackend` seam over the binding-agnostic per-driver
 # `Driver` (host side). It depends on `jumpstarter-transport` (the seam), NOT on `jumpstarter-exporter`
-# — so a client consumer never compiles the exporter runtime (subprocess spawn, hooks, session server,
-# signals). The exporter is pulled only by `jumpstarter-core-uniffi` / the CLI — i.e. things that
-# actually run an exporter (local development).
+# — so the exporter runtime (subprocess spawn, hooks, session server, signals) is pulled only by the
+# crates that actually run an exporter.
 jumpstarter-transport = { path = "../jumpstarter-transport" }
 jumpstarter-config = { path = "../jumpstarter-config" }
 # Rust is the sole owner of resource-stream (de)compression for the byte plane (gzip/xz/bz2/zstd);

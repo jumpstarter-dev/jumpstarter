@@ -8,7 +8,7 @@
 //! `power/v1/servicer.py`), this module provides the descriptor-driven request/result
 //! encode/decode primitives ([`DynamicMethod`], [`request_bytes_to_args_json`],
 //! [`encode_result`], [`encode_request`], [`decode_response`]). The driver-side
-//! dispatch (`jumpstarter_core::dynamic_backend`) decodes the opaque request bytes
+//! dispatch (`jumpstarter_driver_core::dynamic_backend`) decodes the opaque request bytes
 //! against the method's *input* descriptor, dispatches through the binding-agnostic
 //! `DriverApi` seam (`driver_call(uuid, method, args_json)`), then encodes the JSON
 //! result against the method's *output* descriptor and reserializes to bytes. The
@@ -122,7 +122,7 @@ impl DynamicMethod {
     }
 
     /// Whether this method is server-streaming (the driver side selects its streaming
-    /// dispatch path for these — see `jumpstarter_core::dynamic_backend`).
+    /// dispatch path for these — see `jumpstarter_driver_core::dynamic_backend`).
     pub fn is_server_streaming(&self) -> bool {
         self.server_streaming
     }
@@ -168,7 +168,7 @@ pub fn export_name_for(method_name: &str) -> String {
 
 /// Decode `request_bytes` against `input` and map its fields, in declared order, onto the
 /// positional args JSON array a `driver_call` expects — the request-decode half the
-/// driver-side dispatch (`jumpstarter_core::dynamic_backend`) drives.
+/// driver-side dispatch (`jumpstarter_driver_core::dynamic_backend`) drives.
 pub fn request_bytes_to_args_json(
     input: &MessageDescriptor,
     request_bytes: &[u8],

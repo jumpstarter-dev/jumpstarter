@@ -11,7 +11,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use jumpstarter_config::{DriverInstance, ExporterConfig, YamlConfig};
-use jumpstarter_core::NativeDriverBackend;
+use jumpstarter_driver_core::NativeDriverBackend;
 use jumpstarter_exporter::backend::DriverBackend;
 use jumpstarter_exporter::session;
 

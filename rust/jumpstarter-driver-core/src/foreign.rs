@@ -35,7 +35,7 @@ use tonic::Status;
 
 use jumpstarter_compression::{Codec, Compressor, Decompressor};
 
-use crate::error::DriverCallError;
+use jumpstarter_codec::error::DriverCallError;
 use crate::host::DriverApi;
 use crate::report::assemble_report;
 
@@ -665,7 +665,7 @@ fn to_metadata(entries: Vec<(String, String)>) -> MetadataMap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dto::DriverNode;
+    use jumpstarter_codec::dto::DriverNode;
     use crate::host::{DriverByteChannel, DriverResultStream, DriverStreamOpen};
     use jumpstarter_protocol::v1::StreamRequest;
     use std::collections::HashMap;

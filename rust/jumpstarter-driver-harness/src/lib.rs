@@ -21,7 +21,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;
 
-use jumpstarter_core::ClientSession;
+use jumpstarter_client::ClientSession;
 use jumpstarter_transport::DriverBackend;
 
 /// A running local exporter plus a connected [`ClientSession`]. Drop it to tear down — the server

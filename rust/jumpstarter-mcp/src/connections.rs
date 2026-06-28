@@ -1,7 +1,7 @@
 //! Persistent connection manager for the MCP server (ports the Python `ConnectionManager`).
 //!
 //! A connection holds a leased exporter: an acquired lease + a served `JUMPSTARTER_HOST`
-//! Unix socket, both on the Rust core (`jumpstarter_core::ControllerSession`). The `j`
+//! Unix socket, both on the Rust core (`jumpstarter_client::ControllerSession`). The `j`
 //! subprocess tools (run + introspection) reach the exporter through that socket. The stored
 //! `ControllerSession` and `LeaseTransport` are kept alive for the connection's lifetime so
 //! the socket stays served; dropping the connection tears the listener down.
@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use jumpstarter_core::{ControllerSession, LeaseTransport};
+use jumpstarter_client::{ControllerSession, LeaseTransport};
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 

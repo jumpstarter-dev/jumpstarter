@@ -8,7 +8,7 @@
 
 use std::process::Command;
 
-use jumpstarter_core::ClientSession;
+use jumpstarter_client::ClientSession;
 use serde_json::Value as Json;
 
 #[tokio::main(flavor = "current_thread")]

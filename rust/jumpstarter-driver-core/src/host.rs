@@ -15,11 +15,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::dto::DriverNode;
-use crate::error::DriverCallError;
+use jumpstarter_codec::dto::DriverNode;
+use jumpstarter_codec::error::DriverCallError;
 
 /// The driver-level surface a foreign host exposes. Args/results are plain JSON strings
-/// (Rust applies the proto-`Value` codec — see [`crate::codec`]).
+/// (Rust applies the proto-`Value` codec — see [`jumpstarter_codec::dynamic`]).
 #[async_trait]
 pub trait DriverApi: Send + Sync {
     /// Introspect the whole driver tree as a flat node list (Rust assembles the proto

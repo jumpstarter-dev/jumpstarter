@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use jumpstarter_protocol::v1::exporter_service_server::{ExporterService, ExporterServiceServer};
 use jumpstarter_protocol::v1::router_service_server::RouterServiceServer;
-use jumpstarter_core::legacy::LegacyDispatch;
+use jumpstarter_driver_core::legacy::LegacyDispatch;
 use jumpstarter_protocol::v1::{
     DriverCallRequest, DriverCallResponse, EndSessionRequest, EndSessionResponse,
     GetReportResponse, GetStatusRequest, GetStatusResponse, LogStreamResponse, ResetRequest,

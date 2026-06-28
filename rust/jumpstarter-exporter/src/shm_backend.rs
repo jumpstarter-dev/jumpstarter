@@ -18,7 +18,7 @@
 //! side auto-activates purely on the presence of the [`SHM_UP_KEY`] metadata (only this backend sets
 //! it), so no separate host flag is needed.
 
-use jumpstarter_core::dynamic_backend::export_name_for;
+use jumpstarter_codec::export_name_for;
 use jumpstarter_protocol::router::{classify, data_frame, goaway_frame, FrameAction};
 use jumpstarter_protocol::v1::router_service_client::RouterServiceClient;
 use jumpstarter_protocol::v1::{

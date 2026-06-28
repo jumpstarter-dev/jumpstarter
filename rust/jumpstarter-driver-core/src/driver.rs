@@ -22,7 +22,7 @@ use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 use tonic::Status;
 
 use crate::dynamic_backend::DynamicBackend;
-use crate::error::DriverCallError;
+use jumpstarter_codec::error::DriverCallError;
 use crate::host::{DriverApi, DriverResultStream, DriverStreamOpen};
 
 const CLIENT_LABEL: &str = "jumpstarter.dev/client";
@@ -73,7 +73,7 @@ struct NativeDriverApi {
 
 #[async_trait]
 impl DriverApi for NativeDriverApi {
-    async fn describe(&self) -> Result<Vec<crate::dto::DriverNode>, DriverCallError> {
+    async fn describe(&self) -> Result<Vec<jumpstarter_codec::dto::DriverNode>, DriverCallError> {
         // The report is assembled by `NativeDriverBackend` itself; `DynamicBackend` never calls this.
         Ok(Vec::new())
     }

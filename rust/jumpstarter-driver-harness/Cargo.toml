@@ -8,7 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-jumpstarter-core = { path = "../jumpstarter-core" }
+jumpstarter-client = { path = "../jumpstarter-client" }
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
 jumpstarter-driver-runtime = { path = "../jumpstarter-driver-runtime" }
 jumpstarter-transport = { path = "../jumpstarter-transport" }

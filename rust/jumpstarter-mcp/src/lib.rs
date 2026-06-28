@@ -1,7 +1,7 @@
 //! Rust MCP server exposing Jumpstarter hardware-management tools over stdio.
 //!
 //! Replaces the Python `jumpstarter-mcp` package. The controller/lease tools run on the
-//! Rust core (`jumpstarter_core::ControllerSession`); the connection/run/introspection
+//! Rust core (`jumpstarter_client::ControllerSession`); the connection/run/introspection
 //! tools (added in later phases) manage leases natively and shell out to the Python `j`
 //! CLI for driver-client work (the driver clients are Python).
 

@@ -3,12 +3,12 @@
 //! Mirrors the Python `ClientConnection.resolve()` + `_ensure_fresh_token` the MCP used: the
 //! `JMP_*` environment, else the user config's `current-client`; before each controller
 //! connection the access token is refreshed via OIDC if it is expired or near expiry. The
-//! controller session itself runs on the Rust core (`jumpstarter_core::ControllerSession`).
+//! controller session itself runs on the Rust core (`jumpstarter_client::ControllerSession`).
 
 use std::path::{Path, PathBuf};
 
 use jumpstarter_config::{client_from_env, paths, ClientConfig, UserConfig, YamlConfig};
-use jumpstarter_core::ControllerSession;
+use jumpstarter_client::ControllerSession;
 
 /// Tokens within this many seconds of expiry are refreshed (matches the Python MCP's
 /// `TOKEN_REFRESH_THRESHOLD_SECONDS`).

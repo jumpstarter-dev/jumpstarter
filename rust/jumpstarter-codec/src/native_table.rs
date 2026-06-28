@@ -1,7 +1,7 @@
 //! The native dispatch table: `(uuid, @export-name) → NativeRoute`, built from the descriptors a
-//! `GetReport` ships. Shared by the **client** bridge (`jumpstarter_core::client`, which maps a
+//! `GetReport` ships. Shared by the **client** bridge (`jumpstarter_client::client`, which maps a
 //! dynamic Python `call(...)` onto the native wire) and the **server-side legacy shim**
-//! (`jumpstarter_core::legacy`, which translates an old `DriverCall` into the same native
+//! (`jumpstarter_driver_core::legacy`, which translates an old `DriverCall` into the same native
 //! dispatch). Both resolve `(uuid, method)` to a method path + input/output message descriptors.
 
 use std::collections::HashMap;

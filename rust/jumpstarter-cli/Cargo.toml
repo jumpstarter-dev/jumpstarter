@@ -22,7 +22,7 @@ name = "j"
 path = "src/bin/j.rs"
 
 [dependencies]
-jumpstarter-core = { path = "../jumpstarter-core" }
+jumpstarter-client = { path = "../jumpstarter-client" }
 # NOTE: `j` links NO driver/client code — it dispatches `j <driver> <cmd>` to a per-crate client CLI
 # binary on PATH (`<crate>-client` / `jumpstarter-jvm-client` / `python -m jumpstarter_cli.j`),
 # mirroring the polyglot hub spawning host binaries.

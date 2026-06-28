@@ -22,7 +22,7 @@ members = [
     "jumpstarter-exporter",
     "jumpstarter-admin",
     "jumpstarter-cluster",
-    "jumpstarter-core",
+    "jumpstarter-driver-core",
     "jumpstarter-core-uniffi",
     "jumpstarter-cli",
     "jumpstarter-mcp",
