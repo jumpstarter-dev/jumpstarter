@@ -35,9 +35,17 @@ use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
 /// `interface!()` — the one-line `src/lib.rs` of a driver crate: includes the build-time-generated
-/// `proto` module + typed client + entrypoint macros (the aggregator written by
-/// `jumpstarter_codegen::build::driver_interface`).
+/// `proto` module + typed client (the aggregator written by `jumpstarter_codegen::build`).
 pub use jumpstarter_driver_macros::interface;
+
+/// `#[driver(client = "…")]` — on `impl <Interface> for <Driver>`: auto-registers the driver (sets its
+/// default client), so the host binary's `main` is just [`host_main!`]. The Rust analog of the JVM
+/// `@JumpstarterDriver` annotation.
+pub use jumpstarter_driver_macros::driver;
+
+/// Re-exported so the `#[driver]`-generated registration can reach `inventory::submit!`.
+#[doc(hidden)]
+pub use inventory;
 
 const CLIENT_LABEL: &str = "jumpstarter.dev/client";
 const NAME_LABEL: &str = "jumpstarter.dev/name";
@@ -310,6 +318,19 @@ impl Host {
         Self::default()
     }
 
+    /// Build a host from every `#[driver]`-annotated driver in the crate (collected at link time).
+    /// The entrypoint behind [`host_main!`] — the author never lists drivers explicitly.
+    pub fn from_inventory() -> Self {
+        let mut host = Self::new();
+        for reg in inventory::iter::<DriverRegistration> {
+            host.drivers.push(HostDriver {
+                descriptor: reg.descriptor,
+                serve: Box::new(reg.serve),
+            });
+        }
+        host
+    }
+
     /// Register a driver for one interface: its stock `tonic` server (built fresh per lease by
     /// `make`), the `jumpstarter.dev/client` label, and the interface `FILE_DESCRIPTOR_SET`.
     pub fn driver<S, F>(
@@ -390,4 +411,33 @@ impl Host {
             }
         }
     }
+}
+
+/// What a `#[driver]` registration's `serve` builds: the driver's [`DriverBackend`] for an instance
+/// name (it calls [`serve_driver`] with the baked-in server type + descriptor + client class).
+pub type HostServeFn =
+    fn(String) -> Pin<Box<dyn std::future::Future<Output = std::io::Result<Arc<dyn DriverBackend>>> + Send>>;
+
+/// One driver registered by `#[driver]`, collected at link time by [`Host::from_inventory`].
+pub struct DriverRegistration {
+    pub client_class: &'static str,
+    pub descriptor: &'static [u8],
+    pub serve: HostServeFn,
+}
+
+inventory::collect!(DriverRegistration);
+
+/// Generate the host binary's whole `fn main` from the crate's `#[driver]` registrations:
+/// `jumpstarter_driver_runtime::host_main!();` is the entire `src/main.rs`. (The crate's lib must be
+/// linked into the bin — `use <crate> as _;` next to this when the bin references nothing else.)
+#[macro_export]
+macro_rules! host_main {
+    () => {
+        fn main() -> ::std::result::Result<
+            (),
+            ::std::boxed::Box<dyn ::std::error::Error + ::std::marker::Send + ::std::marker::Sync>,
+        > {
+            $crate::Host::from_inventory().run()
+        }
+    };
 }

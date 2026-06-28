@@ -60,6 +60,9 @@ impl MockPower {
     }
 }
 
+// `#[driver]` auto-registers MockPower (and sets its default client), so the host binary's whole
+// `src/main.rs` is `host_main!()` — the Rust analog of the JVM `@JumpstarterDriver` annotation.
+#[jumpstarter_driver_runtime::driver(client = "jumpstarter_driver_power.client.PowerClient")]
 #[tonic::async_trait]
 impl PowerInterface for MockPower {
     async fn on(&self, _request: Request<()>) -> Result<Response<()>, Status> {

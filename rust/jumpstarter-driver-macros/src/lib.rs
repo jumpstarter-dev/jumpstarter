@@ -23,8 +23,8 @@
 //! ```
 
 use proc_macro::TokenStream;
-use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields, LitStr};
+use quote::{format_ident, quote};
+use syn::{parse_macro_input, Data, DeriveInput, Expr, ExprLit, Fields, ItemImpl, Lit, LitStr, MetaNameValue, Type};
 
 /// Pull in everything `build.rs` generated for a proto-first driver crate — the whole `src/lib.rs`
 /// wiring in one line: `jumpstarter_driver_runtime::interface!();`. Expands to the include of the
@@ -163,6 +163,90 @@ pub fn derive_driver_client(input: TokenStream) -> TokenStream {
 // so the author's whole `main` is `<crate>::<short>_host!(MyDriver::default())`. No generic host
 // proc-macro is needed here — `jumpstarter_driver_runtime::run_host` is the library primitive it
 // expands to.
+
+/// Auto-register a driver impl. Put `#[jumpstarter_driver_runtime::driver(client = "…")]` on an
+/// `impl <Interface> for <Driver>` and the driver is collected into the crate's host registry (the
+/// Rust analog of the JVM `@JumpstarterDriver` annotation), so the host binary's whole `src/main.rs`
+/// is `jumpstarter_driver_runtime::host_main!();`. The server type + descriptor are derived by
+/// convention from the interface trait + the crate's `proto` module; `client` is the default client.
+#[proc_macro_attribute]
+pub fn driver(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let meta = parse_macro_input!(attr as MetaNameValue);
+    let client = match &meta.value {
+        Expr::Lit(ExprLit {
+            lit: Lit::Str(s), ..
+        }) if meta.path.is_ident("client") => s.value(),
+        _ => {
+            return syn::Error::new_spanned(&meta, "expected `#[driver(client = \"…\")]`")
+                .to_compile_error()
+                .into()
+        }
+    };
+
+    let imp = parse_macro_input!(item as ItemImpl);
+    let trait_name = match &imp.trait_ {
+        Some((_, path, _)) => path.segments.last().unwrap().ident.to_string(),
+        None => {
+            return syn::Error::new_spanned(&imp, "`#[driver]` goes on `impl <Interface> for <Driver>`")
+                .to_compile_error()
+                .into()
+        }
+    };
+    let driver_ident = match &*imp.self_ty {
+        Type::Path(tp) => tp.path.segments.last().unwrap().ident.clone(),
+        _ => {
+            return syn::Error::new_spanned(&imp.self_ty, "`#[driver]` needs a named driver type")
+                .to_compile_error()
+                .into()
+        }
+    };
+    let self_ty = &imp.self_ty;
+
+    // Convention from the interface trait name + the crate's generated `proto` module:
+    //   PowerInterface -> proto::power_interface_server::PowerInterfaceServer + proto::FILE_DESCRIPTOR_SET
+    let server_mod = format_ident!("{}_server", to_snake_case(&trait_name));
+    let server_type = format_ident!("{trait_name}Server");
+    let serve_fn = format_ident!("__jmp_driver_serve_{}", driver_ident);
+
+    quote! {
+        #imp
+
+        #[doc(hidden)]
+        const _: () = {
+            #[allow(non_snake_case)]
+            fn #serve_fn(
+                name: ::std::string::String,
+            ) -> ::std::pin::Pin<::std::boxed::Box<
+                dyn ::std::future::Future<
+                        Output = ::std::io::Result<
+                            ::std::sync::Arc<dyn ::jumpstarter_transport::DriverBackend>,
+                        >,
+                    > + ::std::marker::Send,
+            >> {
+                ::std::boxed::Box::pin(async move {
+                    ::jumpstarter_driver_runtime::serve_driver(
+                        &name,
+                        #client,
+                        crate::proto::FILE_DESCRIPTOR_SET.to_vec(),
+                        crate::proto::#server_mod::#server_type::new(
+                            <#self_ty as ::std::default::Default>::default(),
+                        ),
+                    )
+                    .await
+                })
+            }
+
+            ::jumpstarter_driver_runtime::inventory::submit! {
+                ::jumpstarter_driver_runtime::DriverRegistration {
+                    client_class: #client,
+                    descriptor: crate::proto::FILE_DESCRIPTOR_SET,
+                    serve: #serve_fn,
+                }
+            }
+        };
+    }
+    .into()
+}
 
 /// `OnOff` → `on_off`, `On` → `on`.
 fn to_snake_case(ident: &str) -> String {

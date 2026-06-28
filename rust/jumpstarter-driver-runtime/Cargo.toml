@@ -14,8 +14,11 @@ jumpstarter-protocol = { path = "../jumpstarter-protocol" }
 # crate's own bin becomes a complete standalone host with one call.
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
 jumpstarter-config = { path = "../jumpstarter-config" }
-# Re-exported `interface!` macro (the one-line `lib.rs` include of the generated aggregator).
+# Re-exported `interface!` + `#[driver]` macros (the one-line lib.rs include + auto-registration).
 jumpstarter-driver-macros = { path = "../jumpstarter-driver-macros" }
+# `#[driver]` auto-registers each driver impl into a link-time registry the `host_main!` entrypoint
+# collects (within the crate, so no cross-crate stripping concerns).
+inventory = "0.3"
 tonic.workspace = true
 prost.workspace = true
 prost-types.workspace = true
