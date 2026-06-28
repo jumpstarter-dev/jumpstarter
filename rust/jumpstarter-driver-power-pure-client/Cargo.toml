@@ -1,0 +1,46 @@
+[package]
+name = "jumpstarter-driver-power-pure-client"
+description = "Pure CLIENT example: the typed `PowerClient` + `PowerCli` (`#[client_cli]`) for the power interface, linking ONLY the client side. Its build.rs uses `build::client_interface` (typed client + descriptor, NO server trait), and it deps `jumpstarter-client` only — proving a binary-pure client CLI (see `cargo tree -p jumpstarter-driver-power-pure-client -e normal`: no `jumpstarter-driver`/`-exporter`)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "jumpstarter_driver_power_pure_client"
+path = "src/lib.rs"
+
+# The crate's own binary is the standalone CLIENT CLI (the one `j` spawns): its `main` is one
+# `client_main!()` call. It links the client SDK only — never any driver crate — so this crate's
+# client binary is binary-pure.
+[[bin]]
+name = "jumpstarter-driver-power-pure-client"
+path = "src/main.rs"
+
+[dependencies]
+# Pure client: ONLY the client side (`jumpstarter-client` for `interface!`/`#[client_cli]`/
+# `client_main!`) + the neutral error taxonomy (`jumpstarter-codec`, which the generated typed client
+# references). NO `jumpstarter-driver`/`-exporter` — that is the whole point of this example.
+jumpstarter-client = { path = "../jumpstarter-client" }
+jumpstarter-codec = { path = "../jumpstarter-codec" }
+prost.workspace = true
+tonic.workspace = true
+clap = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["rt", "macros", "time"] }
+tokio-stream = "0.1"
+# The generated typed client decodes `GetReport`'s JSON node list to resolve a driver uuid by name.
+serde_json.workspace = true
+
+[build-dependencies]
+# Client-only codegen: `build::client_interface` emits the typed client + descriptor (NO server
+# trait), so nothing here pulls the driver side in.
+jumpstarter-codegen = { path = "../jumpstarter-codegen", features = ["build-helper"] }
+
+[dev-dependencies]
+# The round-trip test serves the PURE DRIVER crate via the harness and drives it with this crate's
+# typed client. These are DEV-dependencies (the driver side + harness), so they never enter the
+# client binary — the test proves end-to-end purity without contaminating the shipped artifact.
+jumpstarter-driver-power-pure = { path = "../jumpstarter-driver-power-pure" }
+jumpstarter-driver-harness = { path = "../jumpstarter-driver-harness" }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "sync", "time"] }

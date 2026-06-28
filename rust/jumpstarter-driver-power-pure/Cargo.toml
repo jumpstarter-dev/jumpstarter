@@ -1,0 +1,31 @@
+[package]
+name = "jumpstarter-driver-power-pure"
+description = "Pure DRIVER example: a native Rust power driver (`impl PowerInterface for MockPower`) that links ONLY the driver side. Its build.rs uses `build::driver_interface` (server trait + descriptor, NO typed client), and it deps `jumpstarter-driver` only — proving a binary-pure driver host (see `cargo tree -p jumpstarter-driver-power-pure -e normal`: no `jumpstarter-client`)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "jumpstarter_driver_power_pure"
+path = "src/lib.rs"
+
+# The crate's own binary is the standalone driver HOST: its `main` is one `host_main!()` call. It
+# links the host SDK only — never any client crate — so this crate's host binary is binary-pure.
+
+[dependencies]
+# Pure driver: ONLY the driver side (`jumpstarter-driver` for `interface!`/`#[driver]`/`host_main!`).
+# NO `jumpstarter-client` — that is the whole point of this example.
+jumpstarter-driver = { path = "../jumpstarter-driver" }
+# The `#[driver]` macro expands to `::jumpstarter_transport::DriverBackend`, so the neutral
+# low-level transport seam is a direct driver-side dep (it never pulls the client in).
+jumpstarter-transport = { path = "../jumpstarter-transport" }
+prost.workspace = true
+tonic.workspace = true
+tokio-stream = "0.1"
+
+[build-dependencies]
+# Driver-only codegen: `build::driver_interface` emits the tonic server trait + descriptor (NO typed
+# client), so nothing here pulls the client side in.
+jumpstarter-codegen = { path = "../jumpstarter-codegen", features = ["build-helper"] }

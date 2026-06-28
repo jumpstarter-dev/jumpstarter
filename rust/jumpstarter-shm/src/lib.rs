@@ -30,7 +30,7 @@ pub mod bridge;
 #[cfg(feature = "bridge")]
 pub mod duplex;
 
-/// Wire contract for the local shared-memory byte plane, shared by the client (`jumpstarter-core`),
+/// Wire contract for the local shared-memory byte plane, shared by the client (`jumpstarter-client`),
 /// the hub, and the host (`jumpstarter-exporter`) so all three agree without a cross-crate dep.
 ///
 /// A producer sets [`SHM_UP_KEY`] in a `RouterService.Stream`'s request metadata to the path of a

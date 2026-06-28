@@ -186,7 +186,7 @@ fn session_routes(shared: Arc<SharedSession>, route_max_message_size: usize) -> 
 /// Serve a single native driver `backend` on `uds` for the polyglot hub, until the process is
 /// killed. This is the host-SDK entrypoint for a **standalone, pre-compiled native driver host**:
 /// a driver crate builds its own `jumpstarter-driver-<crate>-host` binary that wraps its driver in
-/// a [`DriverBackend`], then calls this — depending only on the host SDK (`jumpstarter-core`,
+/// a [`DriverBackend`], then calls this — depending only on the host SDK (`jumpstarter-driver`,
 /// `-exporter`, `-config`), never the `jmp` CLI. The hub dials `uds` and federates the entry.
 ///
 /// Mirrors the foreign-host path (`jumpstarter_core_uniffi::serve_driver_host`): build the routing

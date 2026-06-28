@@ -9,7 +9,7 @@
 //!
 //! - in a **subprocess** reached over gRPC on a private UDS ([`ChannelBackend`]),
 //! - at the **router** or a **direct exporter** over a TCP/UDS channel ([`ChannelBackend`]),
-//! - or — later — **in-process** behind an FFI foreign `Driver` (jumpstarter-core's
+//! - or — later — **in-process** behind an FFI foreign `Driver` (jumpstarter-driver-core's
 //!   `ForeignDriver`, which impls this trait).
 //!
 //! This is the **isometric** seam shared by both `jumpstarter-lease` and

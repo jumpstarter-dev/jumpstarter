@@ -9,7 +9,7 @@ rust-version.workspace = true
 
 # The Rust equivalent of the Python `jumpstarter_cli_common.oidc` shared module: OIDC
 # discovery + grants (refresh/password/token-exchange/authorization-code) and signature-free
-# JWT claim reading. Kept out of jumpstarter-core (the lean binding facade) so both the CLI
+# JWT claim reading. Kept as a standalone crate so both the CLI
 # and the MCP server can share it without a dependency cycle.
 [dependencies]
 jumpstarter-config = { path = "../jumpstarter-config" }

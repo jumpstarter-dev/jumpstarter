@@ -4,7 +4,7 @@
 //! / `_extract_enums`), dropping the CRD / YAML / cluster resolution. Where `engine.py`
 //! walked a single `FileDescriptorProto` with raw path constants, this walks a
 //! [`DescriptorPool`] built from the serialized `FileDescriptorSet` — decoded **exactly**
-//! like `jumpstarter-core`'s `driver.rs::build_native_backend`
+//! like `jumpstarter-driver-core`'s `driver.rs::build_native_backend`
 //! (`FileDescriptorSet::decode` → `DescriptorPool::from_file_descriptor_set`) — and uses
 //! the resolved descriptor API (`ServiceDescriptor` / `MethodDescriptor` /
 //! `MessageDescriptor` / `FieldDescriptor`) so fully-qualified type names are already

@@ -27,6 +27,12 @@ pub use controller::{ControllerSession, LeaseTransport};
 /// [`client_main!`]. The client-side mirror of the host `#[driver]` (and the JVM `@JumpstarterClientCli`).
 pub use jumpstarter_driver_macros::client_cli;
 
+/// `jumpstarter_client::interface!();` — the one-line `lib.rs` include of everything generated into
+/// `OUT_DIR` by `jumpstarter_codegen::build::client_interface` (the `proto` module + the typed
+/// client). The client-side mirror of `jumpstarter_driver::interface!`, so a pure client crate pulls
+/// its include macro from `jumpstarter-client` too.
+pub use jumpstarter_driver_macros::interface;
+
 /// Re-exported so the `#[client_cli]`-generated registrations can reach `inventory::submit!`.
 #[doc(hidden)]
 pub use inventory;

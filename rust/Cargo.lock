@@ -1606,6 +1606,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "jumpstarter-driver-power-pure"
+version = "0.0.0"
+dependencies = [
+ "jumpstarter-codegen",
+ "jumpstarter-driver",
+ "jumpstarter-transport",
+ "prost",
+ "tokio-stream",
+ "tonic",
+]
+
+[[package]]
+name = "jumpstarter-driver-power-pure-client"
+version = "0.0.0"
+dependencies = [
+ "clap",
+ "jumpstarter-client",
+ "jumpstarter-codec",
+ "jumpstarter-codegen",
+ "jumpstarter-driver-harness",
+ "jumpstarter-driver-power-pure",
+ "prost",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+]
+
+[[package]]
 name = "jumpstarter-exporter"
 version = "0.0.0"
 dependencies = [

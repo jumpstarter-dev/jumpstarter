@@ -7,9 +7,9 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-# This crate lives apart from jumpstarter-core deliberately: it pulls heavy native
+# This crate lives apart from the byte-plane consumers deliberately: it pulls heavy native
 # build deps (libbz2 / liblzma source builds) that should not be forced onto every
-# core consumer's compile unless the exporter byte plane is actually built. core
+# consumer's compile unless the exporter byte plane is actually built. The exporter
 # depends on it directly, so the split is organizational and keeps the golden
 # fixtures + wire-compat tests self-contained.
 [dependencies]

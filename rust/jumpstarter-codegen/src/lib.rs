@@ -9,7 +9,7 @@
 //! - [`ir`] — language-neutral intermediate representation (services, methods, messages,
 //!   enums), ported from the jep-14 Python codegen models.
 //! - [`engine`] — the descriptor-walking half: `FileDescriptorSet` → `Vec<InterfaceRef>`,
-//!   decoded exactly like `jumpstarter-core`'s `driver.rs` `build_native_backend`.
+//!   decoded exactly like `jumpstarter-driver-core`'s `driver.rs` `build_native_backend`.
 //! - [`languages`] — the `LanguageGenerator` trait plus per-language generators
 //!   (`rust`, `java`). The trait is the contract per-language generators code against;
 //!   the generators themselves are filled in by the parallel codegen phase.
