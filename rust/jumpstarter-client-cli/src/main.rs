@@ -13,9 +13,9 @@ use serde_json::Value as Json;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-    // Wire tracing/RUST_LOG consistently with the `jmp` binary (`main.rs`); without this the
-    // native `j` entrypoint emitted no logs even with RUST_LOG set.
-    jumpstarter_cli::init_tracing();
+    // Wire tracing/RUST_LOG consistently with the `jmp` binary; without this the native `j`
+    // entrypoint emitted no logs even with RUST_LOG set.
+    init_tracing();
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     // Non-driver invocations (no args, a global flag, the `introspect` MCP side channel) go to the
@@ -138,6 +138,16 @@ fn delegate_to_python(args: &[String]) -> ! {
 fn fail(msg: &str) -> ! {
     eprintln!("Error: {msg}");
     std::process::exit(1);
+}
+
+/// Initialize tracing from `RUST_LOG` (default `info`), writing to stderr — mirrors the `jmp`
+/// binary so the native `j` entrypoint honours the same logging configuration.
+fn init_tracing() {
+    use tracing_subscriber::EnvFilter;
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_writer(std::io::stderr)
+        .try_init();
 }
 
 /// `JMP_DRIVER_HOST_PYTHON` wins, else the venv python sibling of this binary, else `python3`.

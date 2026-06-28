@@ -15,17 +15,9 @@ path = "src/lib.rs"
 name = "jmp"
 path = "src/main.rs"
 
-# The native `j` client entrypoint: connects via ClientSession, reads the report, and routes each
-# driver to its client language (native Rust in-process, Python via the Python driver-client CLI).
-[[bin]]
-name = "j"
-path = "src/bin/j.rs"
-
+# The native `j` client entrypoint now lives in its own client-only crate
+# (`jumpstarter-client-cli`) so it links no driver/exporter code.
 [dependencies]
-jumpstarter-client = { path = "../jumpstarter-client" }
-# NOTE: `j` links NO driver/client code — it dispatches `j <driver> <cmd>` to a per-crate client CLI
-# binary on PATH (`<crate>-client` / `jumpstarter-jvm-client` / `python -m jumpstarter_cli.j`),
-# mirroring the polyglot hub spawning host binaries.
 jumpstarter-lease = { path = "../jumpstarter-lease" }
 jumpstarter-exporter = { path = "../jumpstarter-exporter" }
 jumpstarter-config = { path = "../jumpstarter-config" }

@@ -1,0 +1,22 @@
+[package]
+name = "jumpstarter-client-cli"
+description = "The Jumpstarter native `j` client-side driver CLI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# The native `j` client entrypoint: connects via ClientSession, reads the report, and routes each
+# driver to its client language (native Rust in-process, Python via the Python driver-client CLI).
+# It links ONLY client code — no driver/exporter crates — so a pure-client binary is achievable.
+[[bin]]
+name = "j"
+path = "src/main.rs"
+
+[dependencies]
+jumpstarter-client = { path = "../jumpstarter-client" }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt", "macros"] }
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
