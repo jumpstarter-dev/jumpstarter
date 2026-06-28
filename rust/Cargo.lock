@@ -1386,6 +1386,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "jumpstarter-codec"
+version = "0.0.0"
+dependencies = [
+ "jumpstarter-lease",
+ "jumpstarter-protocol",
+ "prost",
+ "prost-reflect",
+ "prost-types",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tonic",
+ "tracing",
+]
+
+[[package]]
 name = "jumpstarter-codegen"
 version = "0.0.0"
 dependencies = [
@@ -1426,6 +1441,7 @@ dependencies = [
  "axum",
  "bytes",
  "http",
+ "jumpstarter-codec",
  "jumpstarter-compression",
  "jumpstarter-config",
  "jumpstarter-lease",

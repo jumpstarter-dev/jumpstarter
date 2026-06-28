@@ -1,8 +1,8 @@
 //! The native dispatch table: `(uuid, @export-name) → NativeRoute`, built from the descriptors a
-//! `GetReport` ships. Shared by the **client** bridge ([`crate::client`], which maps a dynamic
-//! Python `call(...)` onto the native wire) and the **server-side legacy shim**
-//! ([`crate::legacy`], which translates an old `DriverCall` into the same native dispatch). Both
-//! resolve `(uuid, method)` to a method path + input/output message descriptors.
+//! `GetReport` ships. Shared by the **client** bridge (`jumpstarter_core::client`, which maps a
+//! dynamic Python `call(...)` onto the native wire) and the **server-side legacy shim**
+//! (`jumpstarter_core::legacy`, which translates an old `DriverCall` into the same native
+//! dispatch). Both resolve `(uuid, method)` to a method path + input/output message descriptors.
 
 use std::collections::HashMap;
 
@@ -10,20 +10,20 @@ use prost::Message as _;
 use prost_reflect::prost_types::FileDescriptorSet;
 use prost_reflect::{DescriptorPool, MessageDescriptor};
 
-use crate::dynamic_backend::export_name_for;
+use crate::dynamic::export_name_for;
 
 /// A resolved native route for one `(uuid, @export-method)`: the gRPC method path plus the
 /// input/output message descriptors used to encode the request / decode the response.
 #[derive(Clone)]
-pub(crate) struct NativeRoute {
-    pub(crate) path: String,
-    pub(crate) input: MessageDescriptor,
-    pub(crate) output: MessageDescriptor,
+pub struct NativeRoute {
+    pub path: String,
+    pub input: MessageDescriptor,
+    pub output: MessageDescriptor,
 }
 
 /// The native dispatch table: `(uuid, @export-name) → NativeRoute`, built once from the descriptors
 /// `GetReport` ships. A driver/method missing here has no native surface.
-pub(crate) type NativeTable = HashMap<(String, String), NativeRoute>;
+pub type NativeTable = HashMap<(String, String), NativeRoute>;
 
 /// Build the native dispatch table from a `GetReport`'s driver reports.
 ///
@@ -32,7 +32,7 @@ pub(crate) type NativeTable = HashMap<(String, String), NativeRoute>;
 /// for every instance, the service declared in *its* set is resolved in the pool and each method is
 /// indexed by `(uuid, @export-name) → NativeRoute`. An instance without a descriptor set, or whose
 /// set fails to decode/resolve, simply contributes no native routes.
-pub(crate) fn build_native_table(
+pub fn build_native_table(
     reports: &[jumpstarter_protocol::v1::DriverInstanceReport],
 ) -> NativeTable {
     // Merge every node's set into one pool (dedup by file name, deps-first preserved).

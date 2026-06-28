@@ -1,0 +1,32 @@
+[package]
+name = "jumpstarter-codec"
+description = "Neutral protocol plumbing shared by the Jumpstarter client and driver sides: the protobuf value/dispatch codec, the driver-call error taxonomy, and the cross-boundary DTOs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# This crate is the *neutral* plumbing both the client and the driver sides share — the
+# descriptor-driven request/result codec (`dynamic`), the native dispatch table
+# (`native_table`), the driver-call error taxonomy (`error`), and the binding-agnostic DTOs
+# (`dto`). It deliberately depends only on the protocol stubs + the codec runtimes (prost /
+# prost-reflect / serde_json / tonic): NO transport, NO compression, NO driver-serving or
+# client machinery — so a pure client crate or a pure driver crate can both pull it without
+# dragging in the other side.
+[dependencies]
+jumpstarter-protocol = { path = "../jumpstarter-protocol" }
+# `ControllerError` converts from the lease crate's `ClientError`/`LeaseError` so the
+# programmatic controller surface (in the client side) speaks one error type.
+jumpstarter-lease = { path = "../jumpstarter-lease" }
+prost.workspace = true
+prost-types.workspace = true
+# Dynamic gRPC dispatch: decode/encode opaque per-interface request/response messages straight
+# from their protobuf descriptors (no per-driver generated servicer). 0.14 is the
+# prost-0.13-compatible line (matches `prost`/`prost-types` above).
+prost-reflect = "0.14"
+serde_json.workspace = true
+thiserror.workspace = true
+# `DriverCallError -> tonic::Status` is the single error mapping remote clients observe.
+tonic.workspace = true
+tracing.workspace = true

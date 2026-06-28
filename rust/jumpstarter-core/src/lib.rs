@@ -10,16 +10,19 @@
 pub mod client;
 pub mod controller;
 pub mod driver;
-pub mod dto;
-pub mod dynamic;
 pub mod dynamic_backend;
-pub mod error;
 pub mod foreign;
 pub mod host;
 pub mod legacy;
-pub mod native_table;
 pub mod report;
 pub(crate) mod stream_pump;
+
+// Transitional facade: the neutral protocol plumbing (value/dispatch codec, native dispatch
+// table, error taxonomy, cross-boundary DTOs) now lives in `jumpstarter-codec`. Core re-exports
+// the modules and symbols it previously owned so every existing consumer keeps compiling against
+// `jumpstarter_core::{error, dto, dynamic, native_table, ...}` until a later phase migrates each
+// onto the codec crate directly.
+pub use jumpstarter_codec::{dto, dynamic, error, native_table};
 
 // `resolve_driver_uuid` + `ClientSession` are the client PRIMITIVES core owns; the author-facing
 // client-CLI ENTRYPOINT (`Client`, `#[client_cli]`, `client_main!`) lives alongside the host
@@ -30,12 +33,13 @@ pub use client::{
 };
 pub use controller::{ControllerSession, LeaseTransport};
 pub use driver::{Driver, NativeDriverBackend};
-pub use dto::DriverNode;
-pub use dynamic::{decode_response, encode_request, DynamicMethod};
-pub use dynamic_backend::{export_name_for, DynamicBackend, DRIVER_UUID_KEY};
-pub use error::{ControllerError, DriverCallError};
+pub use dynamic_backend::{DynamicBackend, DRIVER_UUID_KEY};
 pub use foreign::ForeignDriver;
 pub use host::{
     DriverByteChannel, DriverApi, DriverResultStream, DriverStreamOpen,
 };
+pub use jumpstarter_codec::{
+    decode_response, encode_request, export_name_for, DriverNode, DynamicMethod,
+};
+pub use jumpstarter_codec::{ControllerError, DriverCallError};
 pub use report::assemble_report;

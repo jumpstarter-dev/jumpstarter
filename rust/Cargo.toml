@@ -17,6 +17,7 @@ members = [
     "jumpstarter-shm",
     "jumpstarter-compression",
     "jumpstarter-lease",
+    "jumpstarter-codec",
     "jumpstarter-exporter",
     "jumpstarter-admin",
     "jumpstarter-cluster",

@@ -16,7 +16,7 @@
 //! native client ── /pkg.Service/Method + uuid header ──▶ Demux
 //!                                                          │  forward_unary(path, md, body)
 //!                                                          ▼
-//!                                              DynamicBackend  ──▶ DynamicMethod::dispatch
+//!                                              DynamicBackend  ──▶ dispatch (descriptor codec)
 //!                                                                       │
 //!                                                                       ▼  DriverApi::driver_call
 //!                                                                  the driver (mock/real)
@@ -33,11 +33,17 @@ use bytes::Bytes;
 use jumpstarter_protocol::v1::{GetReportResponse, LogStreamResponse};
 use jumpstarter_transport::{DriverBackend, FrameUplink, ResponseStream, RouterStreamOpen};
 use prost_reflect::{DescriptorPool, MethodDescriptor};
+use tokio::sync::mpsc;
 use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 use tonic::Status;
 
-use crate::dynamic::DynamicMethod;
+use crate::dynamic::{encode_result, request_bytes_to_args_json, DynamicMethod};
+use crate::error::DriverCallError;
 use crate::host::DriverApi;
+
+/// Map a proto method name to the driver `@export` name — re-exported from the codec so callers
+/// keep importing it from `jumpstarter_core::dynamic_backend` (the transitional facade path).
+pub use jumpstarter_codec::export_name_for;
 
 /// The invocation metadata key the native demux uses to select a driver — re-exported from
 /// the transport demux so callers key on one constant.
@@ -129,23 +135,80 @@ fn grpc_path(method: &MethodDescriptor) -> String {
     )
 }
 
-/// Map a proto method name (UpperCamelCase, the gRPC convention) to the driver `@export`
-/// name (lower_snake_case), mirroring the prototype servicer (`On`/`Off`/`Read`/`SetVoltage`
-/// → `on`/`off`/`read`/`set_voltage`). A caller with a non-default mapping should build the
-/// backend via [`DynamicBackend::from_methods`] instead.
-pub fn export_name_for(method_name: &str) -> String {
-    let mut out = String::with_capacity(method_name.len() + 4);
-    for (i, ch) in method_name.chars().enumerate() {
-        if ch.is_ascii_uppercase() {
-            if i != 0 {
-                out.push('_');
+/// Decode `request_bytes` against `method`'s input descriptor, dispatch through the driver
+/// seam, and encode the result against the output descriptor — returning the wire bytes of the
+/// native response message. The descriptor-driven encode/decode lives in the codec
+/// ([`jumpstarter_codec::dynamic`]); only the `DriverApi` round-trip is here on the driver side.
+async fn dispatch(
+    method: &DynamicMethod,
+    uuid: &str,
+    request_bytes: &[u8],
+    driver_api: &dyn DriverApi,
+) -> Result<Vec<u8>, DriverCallError> {
+    // 1+2. Decode the opaque request bytes and map its fields onto positional args JSON.
+    let args_json = request_bytes_to_args_json(method.input(), request_bytes)?;
+
+    // 3. Dispatch through the existing dynamic driver seam.
+    let result_json = driver_api
+        .driver_call(uuid.to_string(), method.export_name().to_string(), args_json)
+        .await?;
+
+    // 4. Encode the JSON result into the output message and serialize to bytes.
+    encode_result(&result_json, method.output())
+}
+
+/// The **server-streaming** analogue of [`dispatch`]: decode the request into positional args,
+/// open the driver's result stream via
+/// [`DriverApi::streaming_driver_call`](crate::host::DriverApi::streaming_driver_call), and
+/// return a [`ResponseStream`] that encodes each yielded JSON result into one output message —
+/// the wire shape of a server-streaming gRPC method. A pump task pulls from the driver stream
+/// and pushes encoded message bytes into the returned stream (mirroring `ForeignDriver`'s legacy
+/// streaming pump), so the stream lives independently of this call.
+async fn dispatch_streaming(
+    method: &DynamicMethod,
+    uuid: &str,
+    request_bytes: &[u8],
+    driver_api: Arc<dyn DriverApi>,
+) -> Result<ResponseStream<Bytes>, DriverCallError> {
+    // Decode the request → positional args (synchronously, so a bad request fails the open).
+    let args_json = request_bytes_to_args_json(method.input(), request_bytes)?;
+
+    let export_name = method.export_name().to_string();
+    let output = method.output().clone();
+    let uuid = uuid.to_string();
+    let (tx, rx) = mpsc::channel::<Result<Bytes, Status>>(16);
+    tokio::spawn(async move {
+        let results = match driver_api
+            .streaming_driver_call(uuid, export_name, args_json)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                let _ = tx.send(Err(Status::from(e))).await;
+                return;
             }
-            out.push(ch.to_ascii_lowercase());
-        } else {
-            out.push(ch);
+        };
+        loop {
+            match results.next().await {
+                Ok(Some(result_json)) => {
+                    let item = match encode_result(&result_json, &output) {
+                        Ok(bytes) => Ok(Bytes::from(bytes)),
+                        Err(e) => Err(Status::from(e)),
+                    };
+                    let is_err = item.is_err();
+                    if tx.send(item).await.is_err() || is_err {
+                        break;
+                    }
+                }
+                Ok(None) => break,
+                Err(e) => {
+                    let _ = tx.send(Err(Status::from(e))).await;
+                    break;
+                }
+            }
         }
-    }
-    out
+    });
+    Ok(Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx)))
 }
 
 #[tonic::async_trait]
@@ -165,8 +228,7 @@ impl DriverBackend for DynamicBackend {
         let uuid = self.resolve_uuid(&metadata).ok_or_else(|| {
             Status::invalid_argument("missing x-jumpstarter-driver-uuid header and no fallback uuid")
         })?;
-        let response_bytes = method
-            .dispatch(&uuid, &body, &*self.driver_api)
+        let response_bytes = dispatch(method, &uuid, &body, &*self.driver_api)
             .await
             .map_err(Status::from)?;
         Ok((
@@ -191,16 +253,14 @@ impl DriverBackend for DynamicBackend {
         })?;
         if method.is_server_streaming() {
             // A server-streaming `@export` (async generator): one output message per yielded result.
-            let stream = method
-                .dispatch_streaming(&uuid, &body, self.driver_api.clone())
+            let stream = dispatch_streaming(method, &uuid, &body, self.driver_api.clone())
                 .await
                 .map_err(Status::from)?;
             Ok((MetadataMap::new(), stream))
         } else {
             // A unary method framed as a one-message stream (the demux frames every call as
             // server-streaming; a unary client reads the single message identically).
-            let response_bytes = method
-                .dispatch(&uuid, &body, &*self.driver_api)
+            let response_bytes = dispatch(method, &uuid, &body, &*self.driver_api)
                 .await
                 .map_err(Status::from)?;
             let stream: ResponseStream<Bytes> =

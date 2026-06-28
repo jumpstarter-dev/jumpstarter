@@ -5,9 +5,12 @@
 //! A driver exposes a native gRPC interface (e.g. `PowerInterface`) whose request
 //! and response messages are described only by a [`prost_reflect::MethodDescriptor`].
 //! Rather than generating a typed servicer per interface (the prototype's
-//! `power/v1/servicer.py`), this module decodes the opaque request bytes against the
-//! method's *input* descriptor, dispatches through the existing binding-agnostic
-//! [`DriverApi`] seam (`driver_call(uuid, method, args_json)`), then encodes the JSON
+//! `power/v1/servicer.py`), this module provides the descriptor-driven request/result
+//! encode/decode primitives ([`DynamicMethod`], [`request_bytes_to_args_json`],
+//! [`encode_result`], [`encode_request`], [`decode_response`]). The driver-side
+//! dispatch (`jumpstarter_core::dynamic_backend`) decodes the opaque request bytes
+//! against the method's *input* descriptor, dispatches through the binding-agnostic
+//! `DriverApi` seam (`driver_call(uuid, method, args_json)`), then encodes the JSON
 //! result against the method's *output* descriptor and reserializes to bytes. The
 //! exporter can therefore serve any interface dynamically from the descriptor it
 //! already has, without a generated adapter on either side.
@@ -23,8 +26,8 @@
 //! - `Read(Empty)` → args `[]` → result `{voltage, current}` → `PowerReading` message.
 //!
 //! The request-field → arg and result → response-field conversions go through the
-//! same JSON value model the [`crate::codec`]/[`jumpstarter_protocol::value`] codec
-//! uses for `DriverCall`, so the JSON crossing the [`DriverApi`] seam is byte-for-byte
+//! same JSON value model the [`jumpstarter_protocol::value`] codec
+//! uses for `DriverCall`, so the JSON crossing the `DriverApi` seam is byte-for-byte
 //! the shape a Python driver already produces/consumes (notably: numbers are JSON
 //! numbers; the `int`→`f64` wire quirk only applies to the `google.protobuf.Value`
 //! codec, not here — a proto `int64` field stays an integer in the args JSON).
@@ -37,21 +40,13 @@
 //! into a one-field output message). See the module-end note for the cases that need
 //! care when this is wired to real drivers.
 
-use std::sync::Arc;
-
-use bytes::Bytes;
-use jumpstarter_transport::ResponseStream;
 use prost::Message as _;
 use prost_reflect::{
     DynamicMessage, Kind, MapKey, MessageDescriptor, MethodDescriptor, ReflectMessage as _, Value,
 };
 use serde_json::Value as Json;
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
-use tonic::Status;
 
 use crate::error::DriverCallError;
-use crate::host::DriverApi;
 
 /// A method's dispatch shape: its input/output message descriptors plus the driver
 /// `@export` name the request is dispatched to.
@@ -126,7 +121,8 @@ impl DynamicMethod {
         &self.export_name
     }
 
-    /// Whether this method is server-streaming (selects [`dispatch_streaming`](Self::dispatch_streaming)).
+    /// Whether this method is server-streaming (the driver side selects its streaming
+    /// dispatch path for these — see `jumpstarter_core::dynamic_backend`).
     pub fn is_server_streaming(&self) -> bool {
         self.server_streaming
     }
@@ -138,95 +134,55 @@ impl DynamicMethod {
         self.client_streaming && self.server_streaming
     }
 
-    /// Decode `request_bytes` against the input descriptor, dispatch through the driver
-    /// seam, and encode the result against the output descriptor — returning the wire
-    /// bytes of the native response message.
-    pub async fn dispatch(
-        &self,
-        uuid: &str,
-        request_bytes: &[u8],
-        driver_api: &dyn DriverApi,
-    ) -> Result<Vec<u8>, DriverCallError> {
-        // 1. Decode the opaque request bytes against the method's input descriptor.
-        let request = DynamicMessage::decode(self.input.clone(), request_bytes)
-            .map_err(|e| DriverCallError::InvalidArgument(format!("decode request: {e}")))?;
-
-        // 2. Request fields, in declared order, become the positional args array.
-        let args = request_to_args(&request, &self.input);
-        let args_json = serde_json::to_string(&Json::Array(args))
-            .map_err(|e| DriverCallError::Unknown(format!("encode args: {e}")))?;
-
-        // 3. Dispatch through the existing dynamic driver seam.
-        let result_json = driver_api
-            .driver_call(uuid.to_string(), self.export_name.clone(), args_json)
-            .await?;
-
-        // 4. Encode the JSON result into the output message and serialize to bytes.
-        encode_result(&result_json, &self.output)
+    /// The method's input message descriptor (used by the driver-side dispatch to decode
+    /// request bytes into positional args).
+    pub fn input(&self) -> &MessageDescriptor {
+        &self.input
     }
 
-    /// The **server-streaming** analogue of [`dispatch`](Self::dispatch): decode the request into
-    /// positional args, open the driver's result stream via
-    /// [`DriverApi::streaming_driver_call`](crate::host::DriverApi::streaming_driver_call), and
-    /// return a [`ResponseStream`] that encodes each yielded JSON result into one output message —
-    /// the wire shape of a server-streaming gRPC method. A pump task pulls from the driver stream
-    /// and pushes encoded message bytes into the returned stream (mirroring `ForeignDriver`'s
-    /// legacy streaming pump), so the stream lives independently of this call.
-    pub async fn dispatch_streaming(
-        &self,
-        uuid: &str,
-        request_bytes: &[u8],
-        driver_api: Arc<dyn DriverApi>,
-    ) -> Result<ResponseStream<Bytes>, DriverCallError> {
-        // Decode the request → positional args (synchronously, so a bad request fails the open).
-        let request = DynamicMessage::decode(self.input.clone(), request_bytes)
-            .map_err(|e| DriverCallError::InvalidArgument(format!("decode request: {e}")))?;
-        let args = request_to_args(&request, &self.input);
-        let args_json = serde_json::to_string(&Json::Array(args))
-            .map_err(|e| DriverCallError::Unknown(format!("encode args: {e}")))?;
-
-        let export_name = self.export_name.clone();
-        let output = self.output.clone();
-        let uuid = uuid.to_string();
-        let (tx, rx) = mpsc::channel::<Result<Bytes, Status>>(16);
-        tokio::spawn(async move {
-            let results = match driver_api
-                .streaming_driver_call(uuid, export_name, args_json)
-                .await
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    let _ = tx.send(Err(Status::from(e))).await;
-                    return;
-                }
-            };
-            loop {
-                match results.next().await {
-                    Ok(Some(result_json)) => {
-                        let item = match encode_result(&result_json, &output) {
-                            Ok(bytes) => Ok(Bytes::from(bytes)),
-                            Err(e) => Err(Status::from(e)),
-                        };
-                        let is_err = item.is_err();
-                        if tx.send(item).await.is_err() || is_err {
-                            break;
-                        }
-                    }
-                    Ok(None) => break,
-                    Err(e) => {
-                        let _ = tx.send(Err(Status::from(e))).await;
-                        break;
-                    }
-                }
-            }
-        });
-        Ok(Box::pin(ReceiverStream::new(rx)))
+    /// The method's output message descriptor (used by the driver-side dispatch to encode
+    /// the JSON result into the response message).
+    pub fn output(&self) -> &MessageDescriptor {
+        &self.output
     }
 }
 
+/// Map a proto method name (UpperCamelCase, the gRPC convention) to the driver `@export`
+/// name (lower_snake_case), mirroring the prototype servicer (`On`/`Off`/`Read`/`SetVoltage`
+/// → `on`/`off`/`read`/`set_voltage`). A caller with a non-default mapping should supply the
+/// `@export` name explicitly instead of relying on this default.
+pub fn export_name_for(method_name: &str) -> String {
+    let mut out = String::with_capacity(method_name.len() + 4);
+    for (i, ch) in method_name.chars().enumerate() {
+        if ch.is_ascii_uppercase() {
+            if i != 0 {
+                out.push('_');
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// Decode `request_bytes` against `input` and map its fields, in declared order, onto the
+/// positional args JSON array a `driver_call` expects — the request-decode half the
+/// driver-side dispatch (`jumpstarter_core::dynamic_backend`) drives.
+pub fn request_bytes_to_args_json(
+    input: &MessageDescriptor,
+    request_bytes: &[u8],
+) -> Result<String, DriverCallError> {
+    let request = DynamicMessage::decode(input.clone(), request_bytes)
+        .map_err(|e| DriverCallError::InvalidArgument(format!("decode request: {e}")))?;
+    let args = request_to_args(&request, input);
+    serde_json::to_string(&Json::Array(args))
+        .map_err(|e| DriverCallError::Unknown(format!("encode args: {e}")))
+}
+
 /// Encode a driver-call JSON result string into the wire bytes of `output` — the encode tail
-/// shared by the unary [`dispatch`](DynamicMethod::dispatch) and per-item streaming dispatch.
-fn encode_result(result_json: &str, output: &MessageDescriptor) -> Result<Vec<u8>, DriverCallError> {
+/// the driver-side unary and per-item streaming dispatch share.
+pub fn encode_result(result_json: &str, output: &MessageDescriptor) -> Result<Vec<u8>, DriverCallError> {
     let result: Json = serde_json::from_str(result_json)
         .map_err(|e| DriverCallError::Unknown(format!("decode result json: {e}")))?;
     let response = result_to_message(&result, output)?;
@@ -546,16 +502,12 @@ fn map_key_to_string(key: &MapKey) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dto::DriverNode;
-    use crate::host::{DriverResultStream, DriverStreamOpen};
     use prost_reflect::prost_types::{
         field_descriptor_proto::{Label, Type},
         DescriptorProto, FieldDescriptorProto, FileDescriptorProto, MethodDescriptorProto,
         ServiceDescriptorProto,
     };
     use prost_reflect::DescriptorPool;
-    use std::sync::Arc;
-    use std::sync::Mutex;
 
     // ---- hand-built descriptor pool (no .proto / protoc) ---------------------------
 
@@ -631,164 +583,8 @@ mod tests {
         pool
     }
 
-    fn method_desc(pool: &DescriptorPool, rpc: &str) -> MethodDescriptor {
-        pool.get_service_by_name("power.v1.PowerInterface")
-            .expect("service present")
-            .methods()
-            .find(|m| m.name() == rpc)
-            .expect("method present")
-    }
-
     fn msg(pool: &DescriptorPool, name: &str) -> MessageDescriptor {
         pool.get_message_by_name(name).expect("message present")
-    }
-
-    // ---- a recording mock DriverApi ------------------------------------------------
-
-    struct MockDriver {
-        /// Records every (method, args_json) the dispatcher sent.
-        calls: Mutex<Vec<(String, String)>>,
-        /// Canned JSON result returned from every `driver_call`.
-        result: String,
-    }
-
-    impl MockDriver {
-        fn new(result: &str) -> Self {
-            Self {
-                calls: Mutex::new(Vec::new()),
-                result: result.to_string(),
-            }
-        }
-        fn last_call(&self) -> (String, String) {
-            self.calls.lock().unwrap().last().cloned().unwrap()
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl DriverApi for MockDriver {
-        async fn describe(&self) -> Result<Vec<DriverNode>, DriverCallError> {
-            Ok(vec![])
-        }
-        async fn driver_call(
-            &self,
-            _uuid: String,
-            method_name: String,
-            args_json: String,
-        ) -> Result<String, DriverCallError> {
-            self.calls.lock().unwrap().push((method_name, args_json));
-            Ok(self.result.clone())
-        }
-        async fn streaming_driver_call(
-            &self,
-            _uuid: String,
-            _method_name: String,
-            _args_json: String,
-        ) -> Result<Arc<dyn DriverResultStream>, DriverCallError> {
-            unreachable!()
-        }
-        async fn open_stream(
-            &self,
-            _request_json: String,
-        ) -> Result<DriverStreamOpen, DriverCallError> {
-            unreachable!()
-        }
-    }
-
-    /// Encode a dynamic message of `desc` from a JSON object, for building request bytes.
-    fn encode_request(desc: &MessageDescriptor, json: Json) -> Vec<u8> {
-        let m = result_to_message(&json, desc).expect("build request message");
-        m.encode_to_vec()
-    }
-
-    #[tokio::test]
-    async fn on_empty_request_dispatches_empty_args_and_empty_response() {
-        let pool = power_pool();
-        let m = DynamicMethod::from_descriptor(&method_desc(&pool, "On"), "on");
-        let driver = MockDriver::new("null"); // void return
-
-        // Empty request bytes.
-        let request_bytes = encode_request(&msg(&pool, "power.v1.Empty"), Json::Null);
-        let response = m.dispatch("u1", &request_bytes, &driver).await.unwrap();
-
-        // Args were empty.
-        let (method, args) = driver.last_call();
-        assert_eq!(method, "on");
-        assert_eq!(args, "[]");
-        // Empty response → empty bytes.
-        assert!(response.is_empty(), "Empty response must be empty bytes");
-    }
-
-    #[tokio::test]
-    async fn set_voltage_request_decodes_to_positional_int_arg() {
-        let pool = power_pool();
-        let m = DynamicMethod::from_descriptor(&method_desc(&pool, "SetVoltage"), "set_voltage");
-        let driver = MockDriver::new("null");
-
-        let request_bytes = encode_request(
-            &msg(&pool, "power.v1.SetVoltageRequest"),
-            serde_json::json!({ "millivolts": 12000 }),
-        );
-        let response = m.dispatch("u1", &request_bytes, &driver).await.unwrap();
-
-        let (method, args) = driver.last_call();
-        assert_eq!(method, "set_voltage");
-        // A proto int64 field stays an integer in the args JSON (no int->f64 collapse).
-        assert_eq!(args, "[12000]");
-        assert!(response.is_empty());
-    }
-
-    #[tokio::test]
-    async fn read_encodes_result_object_into_power_reading_message() {
-        let pool = power_pool();
-        let m = DynamicMethod::from_descriptor(&method_desc(&pool, "Read"), "read");
-        let driver = MockDriver::new(r#"{"voltage":5.0,"current":2.0}"#);
-
-        let request_bytes = encode_request(&msg(&pool, "power.v1.Empty"), Json::Null);
-        let response = m.dispatch("u1", &request_bytes, &driver).await.unwrap();
-
-        // Empty args in, object result out.
-        let (method, args) = driver.last_call();
-        assert_eq!(method, "read");
-        assert_eq!(args, "[]");
-
-        // Decode the response bytes back into a PowerReading and check the fields.
-        let decoded = DynamicMessage::decode(msg(&pool, "power.v1.PowerReading"), &response[..])
-            .expect("decode PowerReading");
-        let voltage = decoded
-            .get_field_by_name("voltage")
-            .unwrap()
-            .as_f64()
-            .unwrap();
-        let current = decoded
-            .get_field_by_name("current")
-            .unwrap()
-            .as_f64()
-            .unwrap();
-        assert_eq!(voltage, 5.0);
-        assert_eq!(current, 2.0);
-    }
-
-    #[tokio::test]
-    async fn scalar_result_wraps_into_single_field_message() {
-        // A bare scalar result wraps into a one-field output message (the symmetric
-        // single-return shape). Reuse SetVoltageRequest (one int64 field) as the output.
-        let pool = power_pool();
-        let out = msg(&pool, "power.v1.SetVoltageRequest");
-        let m = DynamicMethod::new(msg(&pool, "power.v1.Empty"), out.clone(), "count");
-        let driver = MockDriver::new("7"); // bare scalar return
-
-        let request_bytes = encode_request(&msg(&pool, "power.v1.Empty"), Json::Null);
-        let response = m.dispatch("u1", &request_bytes, &driver).await.unwrap();
-
-        let decoded = DynamicMessage::decode(out, &response[..]).unwrap();
-        assert_eq!(
-            decoded
-                .get_field_by_name("millivolts")
-                .unwrap()
-                .as_i64()
-                .unwrap(),
-            7
-        );
     }
 
     #[test]
@@ -865,122 +661,5 @@ mod tests {
             serde_json::from_str(&super::decode_response(&reading, &reading_bytes).unwrap())
                 .unwrap();
         assert_eq!(json, serde_json::json!({ "voltage": 5.0, "current": 2.0 }));
-    }
-
-    /// A mock whose `streaming_driver_call` yields a canned list of JSON results, recording the
-    /// `(method, args_json)` it was opened with.
-    struct StreamingMock {
-        opened: Mutex<Option<(String, String)>>,
-        results: Vec<String>,
-    }
-    impl StreamingMock {
-        fn new(results: &[&str]) -> Arc<Self> {
-            Arc::new(Self {
-                opened: Mutex::new(None),
-                results: results.iter().map(|s| s.to_string()).collect(),
-            })
-        }
-    }
-    struct VecResultStream {
-        items: Mutex<std::collections::VecDeque<String>>,
-    }
-    #[async_trait::async_trait]
-    impl DriverResultStream for VecResultStream {
-        async fn next(&self) -> Result<Option<String>, DriverCallError> {
-            Ok(self.items.lock().unwrap().pop_front())
-        }
-    }
-    #[async_trait::async_trait]
-    impl DriverApi for StreamingMock {
-        async fn describe(&self) -> Result<Vec<DriverNode>, DriverCallError> {
-            Ok(vec![])
-        }
-        async fn driver_call(
-            &self,
-            _uuid: String,
-            _method_name: String,
-            _args_json: String,
-        ) -> Result<String, DriverCallError> {
-            unreachable!()
-        }
-        async fn streaming_driver_call(
-            &self,
-            _uuid: String,
-            method_name: String,
-            args_json: String,
-        ) -> Result<Arc<dyn DriverResultStream>, DriverCallError> {
-            *self.opened.lock().unwrap() = Some((method_name, args_json));
-            Ok(Arc::new(VecResultStream {
-                items: Mutex::new(self.results.iter().cloned().collect()),
-            }))
-        }
-        async fn open_stream(
-            &self,
-            _request_json: String,
-        ) -> Result<DriverStreamOpen, DriverCallError> {
-            unreachable!()
-        }
-    }
-
-    #[tokio::test]
-    async fn dispatch_streaming_yields_one_output_message_per_result() {
-        use tokio_stream::StreamExt as _;
-        let pool = power_pool();
-        // Read(Empty) -> PowerReading, served as server-streaming (an async-generator @export).
-        let m = DynamicMethod::new_streaming(
-            msg(&pool, "power.v1.Empty"),
-            msg(&pool, "power.v1.PowerReading"),
-            "read",
-        );
-        let driver = StreamingMock::new(&[
-            r#"{"voltage":1.0,"current":0.1}"#,
-            r#"{"voltage":2.0,"current":0.2}"#,
-            r#"{"voltage":3.0,"current":0.3}"#,
-        ]);
-
-        let request_bytes = encode_request(&msg(&pool, "power.v1.Empty"), Json::Null);
-        let mut stream = m
-            .dispatch_streaming("u1", &request_bytes, driver.clone())
-            .await
-            .unwrap();
-
-        // Each yielded result is encoded into one PowerReading message; decode them back.
-        let mut voltages = Vec::new();
-        while let Some(item) = stream.next().await {
-            let bytes = item.unwrap();
-            let decoded =
-                DynamicMessage::decode(msg(&pool, "power.v1.PowerReading"), &bytes[..]).unwrap();
-            voltages.push(decoded.get_field_by_name("voltage").unwrap().as_f64().unwrap());
-        }
-        assert_eq!(voltages, vec![1.0, 2.0, 3.0]);
-
-        // The driver's streaming seam was opened with the @export name + empty args.
-        assert_eq!(
-            *driver.opened.lock().unwrap(),
-            Some(("read".to_string(), "[]".to_string()))
-        );
-    }
-
-    #[tokio::test]
-    async fn client_server_round_trip_set_voltage() {
-        // Full inverse loop WITHOUT the network: client encode_request → server dispatch →
-        // client decode_response, asserting the driver saw [12000] and the void return decodes
-        // back to null.
-        let pool = power_pool();
-        let method = method_desc(&pool, "SetVoltage");
-        let dynm = DynamicMethod::from_descriptor(&method, "set_voltage");
-        let driver = MockDriver::new("null");
-
-        // Client: args JSON → request bytes.
-        let body = super::encode_request(&method.input(), "[12000]").unwrap();
-        // Server: dispatch → response bytes.
-        let resp = dynm.dispatch("u1", &body, &driver).await.unwrap();
-        // Client: response bytes → result JSON.
-        let result = super::decode_response(&method.output(), &resp).unwrap();
-
-        let (m, args) = driver.last_call();
-        assert_eq!(m, "set_voltage");
-        assert_eq!(args, "[12000]");
-        assert_eq!(result, "null");
     }
 }

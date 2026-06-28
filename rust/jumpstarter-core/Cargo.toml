@@ -13,6 +13,10 @@ rust-version.workspace = true
 # those live only in the per-binding crates (jumpstarter-core-uniffi, jumpstarter-core-capi).
 [dependencies]
 jumpstarter-protocol = { path = "../jumpstarter-protocol" }
+# Neutral protocol plumbing: the value/dispatch codec, native dispatch table, error taxonomy,
+# and cross-boundary DTOs. Core re-exports these (transitional facade) until each consumer is
+# migrated onto the codec crate directly in a later phase.
+jumpstarter-codec = { path = "../jumpstarter-codec" }
 # The facade implements the shared `DriverBackend` seam over the binding-agnostic per-driver
 # `Driver` (host side) and exposes a `ClientSession` over the client crate's transport (client
 # side). It depends on `jumpstarter-transport` (the seam), NOT on `jumpstarter-exporter` — so a
