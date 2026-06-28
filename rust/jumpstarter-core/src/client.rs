@@ -724,6 +724,87 @@ impl ClientByteStream {
     }
 }
 
+
+/// Run a driver-client CLI binary (the kind `j` spawns for a `rust:<crate>` client): parse
+/// `<driver> <subcommand…>` from argv, connect `JUMPSTARTER_HOST`, resolve the driver-instance uuid,
+/// and dispatch to `run(subcommand_args, session, uuid)`. The codegen `<short>_client!` macro
+/// generates a `fn main` that calls this — the client-side analog of the host's `run_host`, so a
+/// driver crate's client binary is one line. `run` is the typed client CLI's dispatcher (e.g.
+/// `PowerCli::run`), wrapped by the macro into a boxed future.
+pub fn run_client_cli<F>(run: F) -> std::process::ExitCode
+where
+    F: for<'a> Fn(
+        &'a [String],
+        &'a ClientSession,
+        &'a str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = i32> + 'a>>,
+{
+    use std::process::ExitCode;
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("jumpstarter: building the client runtime: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    runtime.block_on(async move {
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        let Some(driver) = args.first().cloned() else {
+            eprintln!("usage: <driver> <subcommand> [args]");
+            return ExitCode::from(2);
+        };
+        let host = match std::env::var("JUMPSTARTER_HOST") {
+            Ok(h) => h,
+            Err(_) => {
+                eprintln!("JUMPSTARTER_HOST is not set (run inside a `jmp shell`)");
+                return ExitCode::from(1);
+            }
+        };
+        let session = match ClientSession::connect(host).await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("connecting to the exporter: {e}");
+                return ExitCode::from(1);
+            }
+        };
+        let uuid = match resolve_driver_uuid(&session, &driver).await {
+            Ok(u) => u,
+            Err(e) => {
+                eprintln!("resolving driver '{driver}': {e}");
+                return ExitCode::from(1);
+            }
+        };
+        ExitCode::from(run(&args[1..], &session, &uuid).await as u8)
+    })
+}
+
+/// Resolve a driver-instance uuid from the session's `GetReport` by its `jumpstarter.dev/name`
+/// label (the report is a JSON array of `{uuid, labels, …}` nodes).
+pub async fn resolve_driver_uuid(
+    session: &ClientSession,
+    driver_name: &str,
+) -> Result<String, DriverCallError> {
+    let report = session.get_report().await?;
+    let nodes: Vec<serde_json::Value> = serde_json::from_str(&report)
+        .map_err(|e| DriverCallError::Unknown(format!("parse report: {e}")))?;
+    for node in nodes {
+        let name = node
+            .get("labels")
+            .and_then(|l| l.get("jumpstarter.dev/name"))
+            .and_then(|n| n.as_str());
+        if name == Some(driver_name) {
+            if let Some(uuid) = node.get("uuid").and_then(|u| u.as_str()) {
+                return Ok(uuid.to_string());
+            }
+        }
+    }
+    Err(DriverCallError::NotFound(format!(
+        "driver {driver_name:?} not found in the device tree"
+    )))
+}
 #[cfg(test)]
 mod native_unary_tests {
     use super::*;

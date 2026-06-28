@@ -1405,6 +1405,7 @@ dependencies = [
  "prost-reflect",
  "prost-types",
  "thiserror 2.0.18",
+ "tonic-build",
 ]
 
 [[package]]
@@ -1533,7 +1534,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tonic",
- "tonic-build",
 ]
 
 [[package]]

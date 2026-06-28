@@ -22,3 +22,10 @@ prost-types.workspace = true
 prost-reflect = "0.14"
 anyhow = "1"
 thiserror.workspace = true
+# The `build-helper` feature: a driver crate's build.rs calls `jumpstarter_codegen::build::driver_interface`
+# (tonic compile + client gen + an aggregator), so it depends on tonic-build only behind that feature
+# (the CLI, which links jumpstarter-codegen as a normal lib, does not pull tonic-build).
+tonic-build = { workspace = true, optional = true }
+
+[features]
+build-helper = ["dep:tonic-build"]

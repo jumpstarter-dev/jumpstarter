@@ -18,24 +18,12 @@
 //! loop — not a direct method call.
 
 pub mod custom_client;
-pub mod proto;
 
-pub mod generated {
-    //! Codegen output produced at **build time** by `build.rs` (NOT committed): the typed client.
-    //!
-    //! The interface stubs (the `tonic` service trait + prost messages + `FILE_DESCRIPTOR_SET`) are
-    //! `tonic-build` output, also in `OUT_DIR`. The driver host is the stock `tonic` service served
-    //! by the generic [`jumpstarter_driver_runtime::serve_driver`] — no per-interface adapter is
-    //! generated. The only committed code in this crate is the author's driver impl ([`MockPower`]).
-
-    pub mod power_client {
-        include!(concat!(env!("OUT_DIR"), "/power_client.rs"));
-    }
-}
-
-pub use generated::power_client::PowerClient;
-// The codegen also emits a `power_host!` macro (hoisted to the crate root via `#[macro_export]`) —
-// the crate's whole `main` is `jumpstarter_driver_power_example::power_host!(MockPower::default())`.
+// Everything generated at build time (NOT committed), pulled in with one line: `pub mod proto` (the
+// stock tonic service trait + prost messages + `FILE_DESCRIPTOR_SET`), the typed [`PowerClient`], and
+// the `power_host!`/`power_client!` entrypoint macros. The only committed code in this crate is the
+// author's [`MockPower`] driver impl below.
+include!(concat!(env!("OUT_DIR"), "/jumpstarter_generated.rs"));
 
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};

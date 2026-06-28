@@ -44,9 +44,9 @@ tokio-stream = "0.1"
 serde_json.workspace = true
 
 [build-dependencies]
-tonic-build.workspace = true
-# build.rs runs the codegen — the client is generated at build time, never committed.
-jumpstarter-codegen = { path = "../jumpstarter-codegen" }
+# One call in build.rs (`jumpstarter_codegen::build::driver_interface`) compiles the proto + generates
+# the client/macros/aggregator; the `build-helper` feature pulls in tonic-build.
+jumpstarter-codegen = { path = "../jumpstarter-codegen", features = ["build-helper"] }
 
 [dev-dependencies]
 jumpstarter-driver-harness = { path = "../jumpstarter-driver-harness" }

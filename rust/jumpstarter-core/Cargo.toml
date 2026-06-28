@@ -38,7 +38,7 @@ thiserror.workspace = true
 tonic.workspace = true
 # Mint uuids for native Rust drivers served via NativeDriverBackend.
 uuid = { version = "1", features = ["v4"] }
-tokio = { workspace = true, features = ["rt", "sync", "macros"] }
+tokio = { workspace = true, features = ["rt", "sync", "macros", "net", "time", "io-util"] }
 tokio-stream = "0.1"
 tracing.workspace = true
 # The native demux `forward_unary` seam carries opaque per-driver proto messages as raw bytes;
