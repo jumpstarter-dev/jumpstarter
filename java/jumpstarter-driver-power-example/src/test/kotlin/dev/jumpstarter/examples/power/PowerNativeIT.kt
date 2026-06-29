@@ -1,5 +1,6 @@
-package dev.jumpstarter.client
+package dev.jumpstarter.examples.power
 
+import dev.jumpstarter.client.ExporterSession
 import dev.jumpstarter.generated.power.PowerClient
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Tag

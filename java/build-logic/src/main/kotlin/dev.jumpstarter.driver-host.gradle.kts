@@ -37,4 +37,4 @@ distributions.named("main") {
 }
 
 // The start scripts embed the Rust core cdylib path, so building the dist needs the cdylib built.
-tasks.named("installDist") { dependsOn(":jumpstarter-client:cargoBuildCore") }
+tasks.named("installDist") { dependsOn(":jumpstarter-core:cargoBuildCore") }
