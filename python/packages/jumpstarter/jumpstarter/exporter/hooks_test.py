@@ -1045,3 +1045,145 @@ class TestBeforeLeaseHookLeaseEndedGuard:
         assert len(hook_started_calls) == 1, (
             f"BEFORE_LEASE_HOOK must be reported (hook must run) even when lease has ended, got: {status_calls}"
         )
+
+
+class TestPipeOutputEdgeCases:
+    """Edge cases for pipe-based output capture (PR #837)."""
+
+    async def test_stderr_captured_via_pipe_merge(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo STDOUT_LINE; echo STDERR_LINE >&2",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("STDOUT_LINE" in call for call in info_calls)
+        assert any("STDERR_LINE" in call for call in info_calls)
+
+    async def test_large_output_spanning_multiple_reads(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script=(
+                    "seq 1 200 | while read n; do "
+                    "echo \"LINE_${n}_PADDING_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\"; "
+                    "done"
+                ),
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("LINE_1_" in call for call in info_calls)
+        assert any("LINE_100_" in call for call in info_calls)
+        assert any("LINE_200_" in call for call in info_calls)
+
+    async def test_non_utf8_output_decoded_with_replacement(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                exec_="python3",
+                script=(
+                    "import sys; "
+                    "sys.stdout.buffer.write(b'VALID_PREFIX\\x80VALID_SUFFIX\\n')"
+                ),
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        matching = [
+            call for call in info_calls
+            if "VALID_PREFIX" in call and "VALID_SUFFIX" in call
+        ]
+        assert len(matching) > 0
+
+    async def test_rapid_exit_with_buffered_output(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo FAST_1; echo FAST_2; echo FAST_3; echo FAST_4; echo FAST_5",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        for i in range(1, 6):
+            assert any(f"FAST_{i}" in call for call in info_calls), (
+                f"FAST_{i} was not captured"
+            )
+
+    async def test_spawn_failure_cleans_up_without_crash(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                exec_="/nonexistent/interpreter",
+                script="echo should not run",
+                timeout=10,
+                on_failure="warn",
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        result = await executor.execute_before_lease_hook(lease_scope)
+        assert result is not None
+        assert "error" in result.lower()
+
+    async def test_interleaved_stdout_and_stderr_captured(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script=(
+                    "echo OUT_1; echo ERR_1 >&2; "
+                    "echo OUT_2; echo ERR_2 >&2; "
+                    "echo OUT_3"
+                ),
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        for label in ("OUT_1", "OUT_2", "OUT_3", "ERR_1", "ERR_2"):
+            assert any(label in call for call in info_calls), (
+                f"{label} was not captured"
+            )
+
+    async def test_timeout_with_grandchild_holding_pipe(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo GRANDCHILD_TEST; sleep 10 &",
+                timeout=2,
+                on_failure="warn",
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is not None
+        assert "timed out" in result.lower()
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("GRANDCHILD_TEST" in call for call in info_calls)
