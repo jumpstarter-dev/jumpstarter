@@ -58,7 +58,9 @@ install_dependencies() {
 
 # Step 2: Install e2e tools (cfssl, cfssljson, yq) as prebuilt binaries
 E2E_TOOLS_BIN="$REPO_ROOT/.e2e/bin"
+# renovate: datasource=github-releases depName=cloudflare/cfssl extractVersion=^v(?<version>.+)$
 CFSSL_VERSION="1.6.5"
+# renovate: datasource=github-releases depName=mikefarah/yq
 YQ_VERSION="v4.52.5"
 
 # SHA256 checksums for prebuilt binaries (from upstream release assets)
