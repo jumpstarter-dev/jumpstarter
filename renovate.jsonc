@@ -293,6 +293,20 @@
         "cloudflare/cfssl",
         "mikefarah/yq"
       ]
+    },
+    {
+      "description": "Group Go build tools across both controller Makefiles",
+      "groupName": "go-build-tools",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "kubernetes-sigs/kustomize",
+        "kubernetes-sigs/controller-tools",
+        "golangci/golangci-lint",
+        "kubernetes-sigs/kind",
+        "fullstorydev/grpcurl"
+      ]
     }
   ]
 }
