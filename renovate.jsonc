@@ -76,7 +76,18 @@
         "/(^|/)Makefile$/"
       ],
       "matchStrings": [
-        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n[A-Z_]+\\s*\\??=\\s*(?<currentValue>[^\\s]+)"
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n[A-Z0-9_]+\\s*\\??=\\s*(?<currentValue>[^\\s]+)"
+      ]
+    },
+    {
+      "description": "Track versioned ARG dependencies in Containerfiles/Dockerfiles via inline annotations",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)[Cc]ontainerfile[^/]*$/",
+        "/(^|/)[Dd]ockerfile[^/]*$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\nARG\\s+[A-Z0-9_]+=(?<currentValue>[^\\s]+)"
       ]
     },
     {
@@ -86,7 +97,7 @@
         "/(^|/)[^/]+\\.sh$/"
       ],
       "matchStrings": [
-        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n[A-Z_]+=(?:\"|')(?<currentValue>[^\"']+)(?:\"|')"
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n[A-Z0-9_]+=(?:\"|')(?<currentValue>[^\"']+)(?:\"|')"
       ]
     },
     {
@@ -96,7 +107,7 @@
         "/(^|/)\\.github/workflows/[^/]+\\.ya?ml$/"
       ],
       "matchStrings": [
-        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\n\\s+[A-Z_]+:\\s*(?<currentValue>[^\\s]+)"
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n\\s+[A-Z0-9_]+:\\s*(?<currentValue>[^\\s]+)"
       ]
     },
     {
@@ -116,7 +127,7 @@
         "/(^|/)[^/]+\\.py$/"
       ],
       "matchStrings": [
-        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\n[A-Z_]+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\n[A-Z0-9_]+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
       ]
     },
     {

@@ -16,7 +16,6 @@ spec:
       restartPolicy: Always
       containers:
       - name: jumpstarter-exporter
-        # renovate: image
         image: quay.io/jumpstarter-dev/jumpstarter:latest
         imagePullPolicy: IfNotPresent
         env:
