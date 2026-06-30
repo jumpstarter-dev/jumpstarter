@@ -129,6 +129,30 @@
         "#\\s*renovate:\\s*image\\n\\s+image:\\s*(?<depName>[^:\\s]+):(?<currentValue>[^\\s]+)"
       ],
       "datasourceTemplate": "docker"
+    },
+    {
+      "description": "Track buf protobuf plugin versions (protocolbuffers/python -> protobuf releases)",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)buf\\.gen\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "remote:\\s*buf\\.build/protocolbuffers/(?<depName>python):(?<currentValue>v[^\\s]+)"
+      ],
+      "depNameTemplate": "protocolbuffers/protobuf",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "description": "Track buf community plugin versions (nipunn1313-mypy, nipunn1313-mypy-grpc); uses pypi datasource for mypy-protobuf",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)buf\\.gen\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "remote:\\s*buf\\.build/community/nipunn1313-mypy(?:-grpc)?:v(?<currentValue>[^\\s]+)"
+      ],
+      "depNameTemplate": "mypy-protobuf",
+      "datasourceTemplate": "pypi"
     }
   ],
   "packageRules": [
@@ -352,6 +376,14 @@
       "groupName": "buf-tooling",
       "matchDepNames": [
         "docker.io/bufbuild/buf"
+      ]
+    },
+    {
+      "description": "Group buf protobuf plugins",
+      "groupName": "buf-protobuf-plugins",
+      "matchDepNames": [
+        "protocolbuffers/protobuf",
+        "mypy-protobuf"
       ]
     }
   ]
