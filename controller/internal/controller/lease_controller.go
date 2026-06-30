@@ -32,9 +32,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 // LeaseReconciler reconciles a Lease object
@@ -585,9 +588,37 @@ func filterOutOfflineExporters(approvedExporters []ApprovedExporter) []ApprovedE
 	return onlineExporters
 }
 
+// isLeaseEnded checks whether a lease object carries the ended label.
+func isLeaseEnded(obj client.Object) bool {
+	if v, ok := obj.GetLabels()[string(jumpstarterdevv1alpha1.LeaseLabelEnded)]; ok {
+		return v == jumpstarterdevv1alpha1.LeaseLabelEndedValue
+	}
+	return false
+}
+
+// skipEndedPredicate returns a predicate that filters out leases carrying the
+// ended label. Leases without the label are admitted so the reconciler can
+// backfill it when Status.Ended is true but the label write was lost.
+func skipEndedPredicate() predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return !isLeaseEnded(e.Object)
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return !isLeaseEnded(e.ObjectNew)
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return true
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return !isLeaseEnded(e.Object)
+		},
+	}
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *LeaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&jumpstarterdevv1alpha1.Lease{}).
+		For(&jumpstarterdevv1alpha1.Lease{}, builder.WithPredicates(skipEndedPredicate())).
 		Complete(r)
 }
