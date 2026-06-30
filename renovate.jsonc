@@ -98,6 +98,26 @@
       "matchStrings": [
         "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\n\\s+[A-Z_]+:\\s*(?<currentValue>[^\\s]+)"
       ]
+    },
+    {
+      "description": "Track versioned dependencies in Go source files via inline annotations",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)[^/]+\\.go$/"
+      ],
+      "matchStrings": [
+        "//\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\n\\s+\\w+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+      ]
+    },
+    {
+      "description": "Track versioned dependencies in Python source files via inline annotations",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)[^/]+\\.py$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\n[A-Z_]+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+      ]
     }
   ],
   "packageRules": [
@@ -292,6 +312,14 @@
       "matchDepNames": [
         "cloudflare/cfssl",
         "mikefarah/yq"
+      ]
+    },
+    {
+      "description": "Group infrastructure manifests (cert-manager, prometheus-operator)",
+      "groupName": "infrastructure-manifests",
+      "matchDepNames": [
+        "cert-manager/cert-manager",
+        "prometheus-operator/prometheus-operator"
       ]
     },
     {
