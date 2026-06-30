@@ -68,6 +68,36 @@
       "depNameTemplate": "astral-sh/uv",
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "semver"
+    },
+    {
+      "description": "Track GitHub release binaries in Makefiles via inline annotations",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)Makefile$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n[A-Z_]+\\s*\\??=\\s*(?<currentValue>[^\\s]+)"
+      ]
+    },
+    {
+      "description": "Track GitHub release binaries in shell scripts via inline annotations",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)[^/]+\\.sh$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n[A-Z_]+=(?:\"|')(?<currentValue>[^\"']+)(?:\"|')"
+      ]
+    },
+    {
+      "description": "Track GitHub release binaries in GitHub Actions YAML env blocks",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\n\\s+[A-Z_]+:\\s*(?<currentValue>[^\\s]+)"
+      ]
     }
   ],
   "packageRules": [
@@ -246,6 +276,23 @@
       ],
       "allowedVersions": "/^\\d+\\.\\d+\\.\\d+$/",
       "automerge": false
+    },
+    {
+      "description": "Group operator tooling (operator-sdk, OPM, scorecard-test)",
+      "groupName": "operator-tooling",
+      "matchDepNames": [
+        "operator-framework/operator-sdk",
+        "operator-framework/operator-registry",
+        "quay.io/operator-framework/scorecard-test"
+      ]
+    },
+    {
+      "description": "Group e2e test tools (cfssl, yq)",
+      "groupName": "e2e-test-tools",
+      "matchDepNames": [
+        "cloudflare/cfssl",
+        "mikefarah/yq"
+      ]
     }
   ]
 }
