@@ -148,14 +148,19 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: python/packages/jumpstarter-driver-qemu/images
-          key: fedora-cloud-43-1.6
+          key: fedora-cloud-${{ env.FEDORA_CLOUD_VERSION }}
+        env:
+          FEDORA_CLOUD_VERSION: "43-1.6"
 
       - name: Download Fedora Cloud images
         if: steps.cache-fedora-cloud-images.outputs.cache-hit != 'true'
+        env:
+          FEDORA_CLOUD_VERSION: "43-1.6"
         run: |
+          FEDORA_RELEASE="${FEDORA_CLOUD_VERSION%%-*}"
           for arch in aarch64 x86_64; do
-            curl -L --fail --output "python/packages/jumpstarter-driver-qemu/images/Fedora-Cloud-Base-Generic-43-1.6.${arch}.qcow2" \
-              "https://iad.mirror.rackspace.com/fedora/releases/43/Cloud/${arch}/images/Fedora-Cloud-Base-Generic-43-1.6.${arch}.qcow2"
+            curl -L --fail --output "python/packages/jumpstarter-driver-qemu/images/Fedora-Cloud-Base-Generic-${FEDORA_CLOUD_VERSION}.${arch}.qcow2" \
+              "https://iad.mirror.rackspace.com/fedora/releases/${FEDORA_RELEASE}/Cloud/${arch}/images/Fedora-Cloud-Base-Generic-${FEDORA_CLOUD_VERSION}.${arch}.qcow2"
           done
 
       - name: Run pytest

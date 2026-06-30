@@ -16,7 +16,8 @@ spec:
       restartPolicy: Always
       containers:
       - name: jumpstarter-exporter
-        image: quay.io/jumpstarter-dev/jumpstarter:0.5.0
+        # renovate: image
+        image: quay.io/jumpstarter-dev/jumpstarter:latest
         imagePullPolicy: IfNotPresent
         env:
         - name: JUMPSTARTER_GRPC_INSECURE
