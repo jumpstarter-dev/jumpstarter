@@ -118,6 +118,17 @@
       "matchStrings": [
         "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\n[A-Z_]+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
       ]
+    },
+    {
+      "description": "Track container image references in YAML via '# renovate: image' annotations",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*image\\n\\s+image:\\s*(?<depName>[^:\\s]+):(?<currentValue>[^\\s]+)"
+      ],
+      "datasourceTemplate": "docker"
     }
   ],
   "packageRules": [
@@ -334,6 +345,13 @@
         "golangci/golangci-lint",
         "kubernetes-sigs/kind",
         "fullstorydev/grpcurl"
+      ]
+    },
+    {
+      "description": "Group bufbuild/buf container image across Makefiles",
+      "groupName": "buf-tooling",
+      "matchDepNames": [
+        "docker.io/bufbuild/buf"
       ]
     }
   ]

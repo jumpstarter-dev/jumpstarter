@@ -283,9 +283,12 @@ controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessar
 $(CONTROLLER_GEN): $(LOCALBIN)
 	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
 
+# renovate: datasource=docker depName=docker.io/bufbuild/buf
+BUF_VERSION ?= v1.71.0
+
 .PHONY: protobuf-gen
 protobuf-gen:
-	podman run --volume "$(shell cd .. && pwd):/workspace" --workdir /workspace/controller docker.io/bufbuild/buf:latest generate
+	podman run --volume "$(shell cd .. && pwd):/workspace" --workdir /workspace/controller docker.io/bufbuild/buf:$(BUF_VERSION) generate
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
