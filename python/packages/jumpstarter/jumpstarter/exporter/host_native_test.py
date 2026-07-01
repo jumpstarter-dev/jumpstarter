@@ -26,6 +26,7 @@ from jumpstarter_core.jumpstarter_core import uniffi_set_event_loop
 from jumpstarter.exporter.host import DriverHost, DriverHostFactory
 
 _POWER_ON_PATH = "/jumpstarter.interfaces.power.v1.PowerInterface/On"
+_POWER_READ_PATH = "/jumpstarter.interfaces.power.v1.PowerInterface/Read"
 
 _CONFIG_YAML = """\
 apiVersion: jumpstarter.dev/v1alpha1
@@ -201,6 +202,92 @@ async def test_streaming_driver_call_read_routes_through_native_path():
                 await server
             except (asyncio.CancelledError, Exception):
                 pass
+
+
+class _SpyFactory(DriverHostFactory):
+    """A factory whose host records which dispatch seam each call lands on — so a test can assert
+    the proto-bytes ``forward_*`` path is taken, not the legacy JSON ``driver_call``/``streaming_open``
+    fallback."""
+
+    def new_host(self) -> DriverHost:
+        host = super().new_host()
+        self.calls = dict.fromkeys(
+            ("forward_unary", "forward_server_stream", "driver_call", "streaming_open"), 0
+        )
+
+        def wrap(name):
+            orig = getattr(host, name)
+
+            async def spy(*args, **kwargs):
+                self.calls[name] += 1
+                return await orig(*args, **kwargs)
+
+            return spy
+
+        for name in list(self.calls):
+            setattr(host, name, wrap(name))
+        return host
+
+
+@pytest.mark.anyio
+async def test_native_client_calls_take_forward_path_not_json():
+    """The decisive proof this change works: a native (proto-bytes) client — ``native_unary`` for
+    ``On`` and ``native_server_stream`` for ``Read`` (the seam the generated proto clients use) — now
+    reaches ``MockPower`` through the host's ``forward_unary``/``forward_server_stream`` methods,
+    decoding/encoding real proto messages. Before this change the Python host raised ``Unimplemented``
+    there and the Rust core fell back to converting proto→JSON→``driver_call``; the spy asserts that
+    fallback is no longer used."""
+    uniffi_set_event_loop(asyncio.get_running_loop())
+
+    with tempfile.TemporaryDirectory() as tmp:
+        uds = str(Path(tmp) / "host.sock")
+        factory = _SpyFactory.from_yaml(_CONFIG_YAML)
+
+        server = asyncio.create_task(serve_driver_host(uds, factory))
+        try:
+            for _ in range(200):
+                if Path(uds).exists():
+                    break
+                await asyncio.sleep(0.025)
+            assert Path(uds).exists(), "serve_driver_host never bound the socket"
+
+            session = await ClientSession.connect(uds)
+
+            import json
+
+            reports = json.loads(await session.get_report())
+            uuid = reports[0]["uuid"]
+
+            # Native unary On: Empty request → Empty response, served by host.forward_unary.
+            assert bytes(await session.native_unary(uuid, _POWER_ON_PATH, b"")) == b""
+
+            # Native server-streaming Read: two PowerReading messages, served by
+            # host.forward_server_stream + forward_stream_next. Decode each with the interface's own
+            # PowerReading message class (built from the same descriptor the host advertises).
+            from jumpstarter_driver_power.driver import MockPower
+
+            from jumpstarter.driver.proto_marshal import build_marshaller
+
+            reading_cls = build_marshaller(MockPower()).methods[_POWER_READ_PATH].output_cls
+            stream = await session.native_server_stream(uuid, _POWER_READ_PATH, b"")
+            readings = []
+            while (item := await stream.next()) is not None:
+                msg = reading_cls.FromString(bytes(item))
+                readings.append((msg.voltage, msg.current))
+            assert readings == [(0.0, 0.0), (5.0, 2.0)], readings
+
+            await session.end_session()
+        finally:
+            server.cancel()
+            try:
+                await server
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    assert factory.calls["forward_unary"] >= 1, factory.calls
+    assert factory.calls["forward_server_stream"] >= 1, factory.calls
+    assert factory.calls["driver_call"] == 0, "native unary must not fall back to JSON driver_call"
+    assert factory.calls["streaming_open"] == 0, "native stream must not fall back to JSON streaming_open"
 
 
 @pytest.mark.anyio

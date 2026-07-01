@@ -49,6 +49,7 @@ from jumpstarter.driver.decorators import (
     MARKER_STREAMCALL,
     MARKER_STREAMING_DRIVERCALL,
 )
+from jumpstarter.driver.proto_marshal import DriverMarshaller, build_marshaller, decode_request, encode_response
 from jumpstarter.streams.common import create_memory_stream
 
 _log = logging.getLogger("jumpstarter.exporter.host")
@@ -106,6 +107,16 @@ def _lookup(driver, name: str, marker: str):
     return method
 
 
+def _native_method(driver, name: str, marker: str):
+    """Like ``_lookup`` but raises ``Unimplemented`` (not ``NotFound``) on a miss, so a method the
+    native proto seam can't serve DEFERS to the legacy JSON ``driver_call`` path in the Rust core
+    rather than surfacing as a hard error."""
+    method = getattr(driver, name, None)
+    if method is None or getattr(method, marker, None) != MARKER_MAGIC:
+        raise DriverError.Unimplemented(f"method {name} not served by the native path")
+    return method
+
+
 def _raise_mapped(exc: BaseException) -> None:
     """Map a driver exception to the typed ``DriverError`` (UniFFI panics on any undeclared
     exception, so this catch must be total)."""
@@ -133,12 +144,43 @@ class DriverHost(_CoreDriverHost):
         self._handles = count(1)
         self._result_streams: dict[int, tuple[str, Any]] = {}
         self._channels: dict[int, dict] = {}
+        # Native (proto-bytes) dispatch: a per-driver marshaller (None = no native surface → the
+        # forward_* seam raises Unimplemented and the Rust core falls back to JSON driver_call), and
+        # the server-stream registry (the proto-encoding analog of _result_streams, carrying the spec
+        # so each yielded item is encoded against the right response message).
+        self._marshallers: dict[str, DriverMarshaller | None] = {}
+        self._native_streams: dict[int, tuple[str, Any, Any]] = {}
 
     def _driver(self, uuid: str):
         driver = self._by_uuid.get(uuid)
         if driver is None:
             raise DriverError.NotFound(f"unknown driver uuid: {uuid}")
         return driver
+
+    def _marshaller(self, uuid: str) -> DriverMarshaller | None:
+        """The driver's native dispatch table, built lazily and memoized (``None`` included). Built
+        synchronously on the event-loop thread — never inside ``to_thread`` — so there is no
+        cross-thread ``DescriptorPool`` race; the driver tree is fixed per lease so uuid keying is
+        stable."""
+        if uuid not in self._marshallers:
+            self._marshallers[uuid] = build_marshaller(self._driver(uuid))
+        return self._marshallers[uuid]
+
+    def _native_spec(self, uuid: str, path: str, *, server_streaming: bool):
+        """Resolve the ``MethodSpec`` for ``path``, or raise ``Unimplemented`` (→ Rust JSON fallback)
+        when the driver has no native surface, the path is unknown, or the path's streaming shape
+        doesn't match the seam it arrived on."""
+        marshaller = self._marshaller(uuid)
+        if marshaller is None:
+            raise DriverError.Unimplemented(f"driver {uuid} has no native surface")
+        spec = marshaller.methods.get(path)
+        if spec is None:
+            raise DriverError.Unimplemented(f"no native method for {path}")
+        if spec.server_streaming != server_streaming:
+            # A unary call must not arrive on the server-stream seam or vice-versa (the Rust core
+            # frames unary-as-one-item-stream itself and never routes it here).
+            raise DriverError.Unimplemented(f"{path} streaming shape mismatch")
+        return spec
 
     async def describe(self) -> list[DriverNode]:
         _log.debug("describe: introspecting driver tree")
@@ -165,6 +207,78 @@ class DriverHost(_CoreDriverHost):
                 )
             )
         return nodes
+
+    # --- native (proto-bytes) dispatch -------------------------------------------------------
+    # forward_unary / forward_server_stream carry REAL proto messages (decoded/encoded by
+    # proto_marshal against the driver's own descriptor), so the Rust core forwards opaque bytes
+    # instead of the JSON driver_call codec — parity with the JVM GrpcServiceDriverHost. Anything
+    # the native path can't serve raises Unimplemented, and the core falls back to driver_call
+    # below, keeping every existing @export driver working unchanged.
+
+    async def forward_unary(self, uuid: str, path: str, body: bytes) -> bytes:
+        _log.debug("forward_unary uuid=%s path=%s", uuid, path)
+        spec = self._native_spec(uuid, path, server_streaming=False)
+        method = _native_method(self._driver(uuid), spec.export_name, MARKER_DRIVERCALL)
+        try:
+            args = decode_request(spec, bytes(body))
+            if iscoroutinefunction(method):
+                result = await method(*args)
+            else:
+                result = await to_thread.run_sync(method, *args)
+            return encode_response(spec, result)
+        except BaseException as exc:  # noqa: BLE001 — must be total (see _raise_mapped)
+            _raise_mapped(exc)
+
+    async def forward_server_stream(self, uuid: str, path: str, body: bytes) -> int:
+        _log.debug("forward_server_stream uuid=%s path=%s", uuid, path)
+        spec = self._native_spec(uuid, path, server_streaming=True)
+        method = _native_method(self._driver(uuid), spec.export_name, MARKER_STREAMING_DRIVERCALL)
+        try:
+            # Decode BEFORE opening so a bad request fails at open (mirrors the Rust core).
+            args = decode_request(spec, bytes(body))
+            if isasyncgenfunction(method):
+                state = ("async", method(*args), spec)
+            else:
+                state = ("sync", iter(method(*args)), spec)
+        except BaseException as exc:  # noqa: BLE001
+            _raise_mapped(exc)
+        handle = next(self._handles)
+        self._native_streams[handle] = state
+        return handle
+
+    async def forward_stream_next(self, handle: int) -> bytes | None:
+        entry = self._native_streams.get(handle)
+        if entry is None:
+            return None
+        kind, it, spec = entry
+        try:
+            if kind == "async":
+                try:
+                    item = await it.__anext__()
+                except StopAsyncIteration:
+                    return None
+            else:
+                sentinel = object()
+
+                def _next():
+                    return next(it, sentinel)
+
+                item = await to_thread.run_sync(_next)
+                if item is sentinel:
+                    return None
+        except BaseException as exc:  # noqa: BLE001
+            _raise_mapped(exc)
+        return encode_response(spec, item)
+
+    async def forward_stream_close(self, handle: int) -> None:
+        entry = self._native_streams.pop(handle, None)
+        if entry and entry[0] == "async":
+            aclose = getattr(entry[1], "aclose", None)
+            if aclose:
+                try:
+                    await aclose()
+                except BaseException:  # noqa: BLE001
+                    pass
 
     async def driver_call(self, uuid: str, method_name: str, args_json: str) -> str:
         _log.debug("driver_call uuid=%s method=%s", uuid, method_name)
