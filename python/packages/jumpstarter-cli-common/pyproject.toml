@@ -10,7 +10,7 @@ dependencies = [
   "jumpstarter",
   "pydantic>=2.8.2",
   "click>=8.1.7.2",
-  "authlib>=1.4.1",
+  "requests>=2.32.0",
   "truststore>=0.10.1",
   "joserfc>=1.0.3",
   "yarl>=1.18.3",
