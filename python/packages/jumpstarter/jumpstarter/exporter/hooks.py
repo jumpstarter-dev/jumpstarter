@@ -252,18 +252,10 @@ class HookExecutor:
                                 logger.info("%s", line_decoded)
 
                 async def wait_for_process() -> int:
-                    """Wait for the subprocess to complete.
-
-                    After the child exits, closes pipe_fd so that read_output
-                    sees EOF even if a grandchild still holds the write end.
-                    """
+                    """Wait for the subprocess to complete."""
                     logger.debug("wait_for_process: waiting for PID %d", process.pid)
                     result = await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
                     logger.debug("wait_for_process: PID %d exited with code %d", process.pid, result)
-                    try:
-                        os.close(pipe_fd)
-                    except OSError:
-                        pass
                     return result
 
                 returncode: int | None = None

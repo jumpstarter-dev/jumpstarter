@@ -1095,10 +1095,7 @@ class TestPipeOutputEdgeCases:
                 f"{label} was not captured"
             )
 
-    async def test_grandchild_holding_pipe_does_not_block(self, lease_scope) -> None:
-        """After child exits, pipe_fd is closed so a grandchild holding
-        the write end does not block the reader until the full timeout.
-        """
+    async def test_timeout_with_grandchild_holding_pipe(self, lease_scope) -> None:
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
                 script="echo GRANDCHILD_TEST; sleep 10 &",
@@ -1111,7 +1108,8 @@ class TestPipeOutputEdgeCases:
         with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
             result = await executor.execute_before_lease_hook(lease_scope)
 
-        assert result is None
+        assert result is not None
+        assert "timed out" in result.lower()
         info_calls = [str(call) for call in mock_logger.info.call_args_list]
         assert any("GRANDCHILD_TEST" in call for call in info_calls)
 
@@ -1144,11 +1142,8 @@ class TestReadOutputErrorPaths:
         info_calls = [str(call) for call in mock_logger.info.call_args_list]
         assert any("DELAYED_OUTPUT" in call for call in info_calls)
 
-    async def test_os_error_on_closed_pipe_breaks_reader(self, lease_scope) -> None:
-        """When the pipe fd is closed (by wait_for_process after child exit),
-        os.read raises OSError (Bad file descriptor) and read_output breaks
-        out of the loop.
-        """
+    async def test_reader_exits_on_eof(self, lease_scope) -> None:
+        """read_output exits cleanly when os.read returns empty bytes (EOF)."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
                 script="echo BEFORE_CLOSE",
