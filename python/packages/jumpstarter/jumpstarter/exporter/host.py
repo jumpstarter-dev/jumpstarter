@@ -71,63 +71,24 @@ def _interface_class(driver) -> type | None:
     return None
 
 
-def _dependency_fdps(fdp, _seen: set[str]) -> list:
-    """Collect the transitive well-known-type dependency ``FileDescriptorProto``s referenced by
-    ``fdp.dependency`` (e.g. ``google/protobuf/empty.proto`` → its compiled descriptor, and recurse
-    into ITS deps), ordered deps-first and deduped. Each dependency's FDP comes from the compiled
-    protobuf module's ``DESCRIPTOR`` (``CopyToProto``). Unknown/unresolvable dependency names are
-    skipped (logged) — only the well-known types the builder emits are mapped here."""
-    from google.protobuf import descriptor_pb2
-
-    # Map the dependency proto-file name → the compiled module whose DESCRIPTOR carries it. The
-    # descriptor_builder only ever emits empty.proto / struct.proto (Value lives in struct.proto).
-    out = []
-    for dep_name in fdp.dependency:
-        if dep_name in _seen:
-            continue
-        _seen.add(dep_name)
-        try:
-            if dep_name == "google/protobuf/empty.proto":
-                from google.protobuf import empty_pb2 as _mod
-            elif dep_name in ("google/protobuf/struct.proto", "google/protobuf/value.proto"):
-                from google.protobuf import struct_pb2 as _mod
-            else:
-                _log.warning("native descriptor: unknown well-known dependency %s; skipping", dep_name)
-                continue
-        except ImportError as exc:  # pragma: no cover — protobuf wkt always ships these
-            _log.warning("native descriptor: cannot import dependency %s: %s", dep_name, exc)
-            continue
-        dep_fdp = descriptor_pb2.FileDescriptorProto()
-        _mod.DESCRIPTOR.CopyToProto(dep_fdp)
-        # Recurse first so this dep's own dependencies precede it (deps-first ordering).
-        out.extend(_dependency_fdps(dep_fdp, _seen))
-        out.append(dep_fdp)
-    return out
-
-
 def _descriptor_set_bytes(driver) -> bytes | None:
-    """Build a self-contained, serialized ``FileDescriptorSet`` for a driver's native interface: the
-    interface's own ``FileDescriptorProto`` plus its transitive well-known-type dependency files
-    (``google/protobuf/empty.proto`` etc.), ordered deps-first, so the Rust core can build a
-    descriptor pool with no external imports to resolve.
+    """Serialize the self-contained ``FileDescriptorSet`` for a driver's native interface (the
+    interface's own ``FileDescriptorProto`` plus its transitive well-known-type dependency files,
+    deps-first), so the Rust core can build a descriptor pool with no external imports to resolve.
 
     The descriptor is built from the driver's **interface ABC** when it has one (the stable contract
     name, e.g. ``PowerInterface``), else from the **concrete driver class** itself — introspecting
     its full ``@export`` surface across the MRO. So EVERY driver gets a native descriptor, native is
     the only call path, and there is no legacy fallback. Returns ``None`` (logged, never raises) only
-    if the build genuinely fails — describe() must not crash on one bad driver."""
+    if the build genuinely fails — describe() must not crash on one bad driver.
+
+    Delegates to ``descriptor_builder.build_file_descriptor_set`` so the marshaller (proto_marshal)
+    decodes/encodes against the exact same set this host advertises."""
     iface = _interface_class(driver) or type(driver)
     try:
-        from google.protobuf import descriptor_pb2
+        from jumpstarter.driver.descriptor_builder import build_file_descriptor_set
 
-        from jumpstarter.driver.descriptor_builder import build_file_descriptor
-
-        fdp = build_file_descriptor(iface)
-        file_set = descriptor_pb2.FileDescriptorSet()
-        # Dependencies first (deps-first ordering the pool requires), then the interface file.
-        file_set.file.extend(_dependency_fdps(fdp, set()))
-        file_set.file.append(fdp)
-        return file_set.SerializeToString()
+        return build_file_descriptor_set(iface).SerializeToString()
     except Exception as exc:  # noqa: BLE001 — describe() must survive a bad/uninspectable interface
         _log.warning(
             "native descriptor build failed for %s (%s); driver has no native surface",

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import dataclasses
 import inspect
+import logging
 from collections.abc import AsyncGenerator, Generator
 from typing import Any, get_args, get_origin
 
@@ -25,6 +26,7 @@ from google.protobuf.descriptor_pb2 import (
     DescriptorProto,
     FieldDescriptorProto,
     FileDescriptorProto,
+    FileDescriptorSet,
     MethodDescriptorProto,
     ServiceDescriptorProto,
     SourceCodeInfo,
@@ -39,6 +41,8 @@ from .decorators import (
     ExportedMethodInfo,
 )
 from .type_mapping import EMPTY_TYPE, VALUE_TYPE, TypeMappingResult, map_python_type
+
+_log = logging.getLogger(__name__)
 
 # FileDescriptorProto field numbers for source_code_info paths
 _FDP_MESSAGE_TYPE = 4  # FileDescriptorProto.message_type
@@ -244,6 +248,59 @@ def build_file_descriptor(  # noqa: C901 — linear assembly of one FileDescript
         fd.source_code_info.CopyFrom(sci)
 
     return fd
+
+
+def build_file_descriptor_set(
+    interface_class: type, version: str | None = None
+) -> FileDescriptorSet:
+    """Build a self-contained ``FileDescriptorSet`` for an interface: its own
+    ``FileDescriptorProto`` plus its transitive well-known-type dependency files
+    (``google/protobuf/empty.proto`` etc.), ordered **deps-first**, so a descriptor pool
+    can be built with no external imports to resolve.
+
+    This is the single source of the interface's native wire contract — both the exporter
+    host (which serializes it into each ``DriverNode.descriptor_set``) and the proto
+    marshaller (which decodes/encodes the per-driver proto against it) consume the SAME set,
+    so the advertised wire and the decoded wire can never diverge.
+    """
+    fdp = build_file_descriptor(interface_class, version)
+    file_set = FileDescriptorSet()
+    # Dependencies first (the deps-first ordering a descriptor pool requires), then the
+    # interface file itself last.
+    file_set.file.extend(_dependency_fdps(fdp, set()))
+    file_set.file.append(fdp)
+    return file_set
+
+
+def _dependency_fdps(fdp: FileDescriptorProto, _seen: set[str]) -> list[FileDescriptorProto]:
+    """Collect the transitive well-known-type dependency ``FileDescriptorProto``s referenced by
+    ``fdp.dependency`` (e.g. ``google/protobuf/empty.proto`` → its compiled descriptor, and recurse
+    into ITS deps), ordered deps-first and deduped. Each dependency's FDP comes from the compiled
+    protobuf module's ``DESCRIPTOR`` (``CopyToProto``). Unknown/unresolvable dependency names are
+    skipped (logged) — only the well-known types the builder emits are mapped here."""
+    # The builder only ever emits empty.proto / struct.proto (Value lives in struct.proto).
+    out: list[FileDescriptorProto] = []
+    for dep_name in fdp.dependency:
+        if dep_name in _seen:
+            continue
+        _seen.add(dep_name)
+        try:
+            if dep_name == "google/protobuf/empty.proto":
+                from google.protobuf import empty_pb2 as _mod
+            elif dep_name in ("google/protobuf/struct.proto", "google/protobuf/value.proto"):
+                from google.protobuf import struct_pb2 as _mod
+            else:
+                _log.warning("native descriptor: unknown well-known dependency %s; skipping", dep_name)
+                continue
+        except ImportError as exc:  # pragma: no cover — protobuf wkt always ships these
+            _log.warning("native descriptor: cannot import dependency %s: %s", dep_name, exc)
+            continue
+        dep_fdp = FileDescriptorProto()
+        _mod.DESCRIPTOR.CopyToProto(dep_fdp)
+        # Recurse first so this dep's own dependencies precede it (deps-first ordering).
+        out.extend(_dependency_fdps(dep_fdp, _seen))
+        out.append(dep_fdp)
+    return out
 
 
 def _add_comment(
