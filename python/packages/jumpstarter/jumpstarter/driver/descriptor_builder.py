@@ -40,7 +40,13 @@ from .decorators import (
     CallType,
     ExportedMethodInfo,
 )
-from .type_mapping import EMPTY_TYPE, VALUE_TYPE, TypeMappingResult, map_python_type
+from .type_mapping import (
+    EMPTY_TYPE,
+    VALUE_TYPE,
+    TypeMappingResult,
+    add_synthetic_oneof,
+    map_python_type,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -49,6 +55,27 @@ _FDP_MESSAGE_TYPE = 4  # FileDescriptorProto.message_type
 _FDP_SERVICE = 6  # FileDescriptorProto.service
 _SDP_METHOD = 2  # ServiceDescriptorProto.method
 _DP_FIELD = 2  # DescriptorProto.field
+
+
+def resolve_interface_class(driver) -> type | None:
+    """Find the driver's INTERFACE class — the base that declares the per-interface contract (the
+    abstract ``@export`` methods + the ``client()`` classmethod). A driver subclasses its interface
+    alongside ``Driver`` (e.g. ``MockPower(PowerInterface, Driver)``), so the interface is the MRO
+    entry that defines ``client`` in its own namespace and is NOT itself a ``Driver`` subclass (which
+    excludes ``Driver`` and the concrete driver). Returns ``None`` if no such base exists (the driver
+    then has no native surface).
+
+    Callers typically do ``resolve_interface_class(driver) or type(driver)`` — the concrete class is
+    the fallback so a driver without a separate interface ABC still exposes its ``@export`` surface.
+    """
+    from .base import Driver
+
+    for cls in type(driver).__mro__:
+        if cls is Driver or cls is object:
+            continue
+        if "client" in cls.__dict__ and not issubclass(cls, Driver):
+            return cls
+    return None
 
 
 def build_file_descriptor(  # noqa: C901 — linear assembly of one FileDescriptorProto
@@ -642,6 +669,7 @@ def _build_request_message(
         if result.is_optional:
             field.proto3_optional = True
 
+        add_synthetic_oneof(msg, field)
         msg.field.append(field)
 
         # Add any nested messages/enums

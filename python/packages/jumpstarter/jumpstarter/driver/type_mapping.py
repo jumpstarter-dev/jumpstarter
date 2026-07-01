@@ -197,6 +197,22 @@ def _to_pascal_case(name: str) -> str:
     return "".join(word.capitalize() for word in name.split("_"))
 
 
+def add_synthetic_oneof(msg: DescriptorProto, field: FieldDescriptorProto) -> None:
+    """Give a ``proto3_optional`` field its required synthetic oneof.
+
+    In proto3, every ``optional`` field must sit in its own synthetic oneof named ``_<field>``
+    (protoc emits these automatically). A hand-built ``DescriptorProto`` that sets
+    ``proto3_optional`` without the oneof is rejected by ``DescriptorPool`` with "proto3_optional
+    was not in a oneof". Synthetic oneofs must follow any real oneofs — the builders here emit no
+    real oneofs, so appending in field order keeps the indices correct. No-op for non-optional
+    fields. (``proto_render`` keys off ``proto3_optional``, not ``oneof_decl``, so this does not
+    change the rendered ``.proto`` text.)"""
+    if not field.proto3_optional:
+        return
+    field.oneof_index = len(msg.oneof_decl)
+    msg.oneof_decl.add(name=f"_{field.name}")
+
+
 def _build_literal_enum(
     enum_name: str, values: tuple[Any, ...]
 ) -> EnumDescriptorProto:
@@ -258,6 +274,7 @@ def _build_basemodel_message(
         if result.is_optional:
             field.proto3_optional = True
 
+        add_synthetic_oneof(msg, field)
         msg.field.append(field)
         nested_messages.extend(result.messages)
         nested_enums.extend(result.enums)
@@ -292,6 +309,7 @@ def _build_dataclass_message(
         if result.is_optional:
             proto_field.proto3_optional = True
 
+        add_synthetic_oneof(msg, proto_field)
         msg.field.append(proto_field)
         nested_messages.extend(result.messages)
         nested_enums.extend(result.enums)
