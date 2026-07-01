@@ -2,6 +2,7 @@
 
 import logging
 import os
+import signal
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Literal
@@ -22,13 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def _flush_lines(buffer: bytes, output_lines: list[str]) -> bytes:
-    """Extract and log complete lines from a byte buffer.
-
-    Splits the buffer on newline boundaries, decodes each complete line,
-    and appends non-empty lines to output_lines while logging them.
-
-    Returns the remaining bytes after the last newline (incomplete line).
-    """
+    """Extract complete lines from buffer, log them, return the remainder."""
     while b"\n" in buffer:
         line, buffer = buffer.split(b"\n", 1)
         line_decoded = line.decode(errors="replace").rstrip()
@@ -40,13 +35,7 @@ def _flush_lines(buffer: bytes, output_lines: list[str]) -> bytes:
 
 @dataclass
 class HookExecutionError(Exception):
-    """Raised when a hook fails and on_failure is set to 'endLease' or 'exit'.
-
-    Attributes:
-        message: Error message describing the failure
-        on_failure: The on_failure mode that triggered this error ('endLease' or 'exit')
-        hook_type: The type of hook that failed ('before_lease' or 'after_lease')
-    """
+    """Raised when a hook fails and on_failure is set to 'endLease' or 'exit'."""
 
     message: str
     on_failure: Literal["endLease", "exit"]
@@ -71,22 +60,13 @@ class HookExecutor:
     config: HookConfigV1Alpha1
 
     def _create_hook_env(self, lease_scope: "LeaseContext") -> dict[str, str]:
-        """Create standardized hook environment variables.
+        """Create environment variables for hook execution.
 
-        Args:
-            lease_scope: LeaseScope containing lease metadata and socket paths
-
-        Returns:
-            Dictionary of environment variables for hook execution
-
-        Note:
-            Uses the hook_socket_path (if available) instead of the main socket_path
-            to prevent SSL frame corruption when hook j commands access the session
-            concurrently with client LogStream connections.
+        Uses hook_socket_path (if available) instead of the main socket_path
+        to prevent SSL frame corruption when hook j commands access the session
+        concurrently with client LogStream connections.
         """
         hook_env = os.environ.copy()
-        # Use dedicated hook socket to prevent SSL corruption
-        # Falls back to main socket if hook socket not available (backward compatibility)
         socket_path = lease_scope.hook_socket_path or lease_scope.socket_path
         if lease_scope.hook_socket_path:
             logger.info(
@@ -107,9 +87,8 @@ class HookExecutor:
                 "LEASE_NAME": lease_scope.lease_name,
                 "CLIENT_NAME": lease_scope.client_name,
                 # Signal noninteractive mode to the child process.
-                # Even though hooks run in a PTY (for line-buffered output), they
-                # are not interactive sessions. These variables prevent programs
-                # from displaying prompts or interactive UI.
+                # Hooks are not interactive sessions. These variables prevent
+                # programs from displaying prompts or interactive UI.
                 "TERM": "dumb",
                 "DEBIAN_FRONTEND": "noninteractive",
                 "GIT_TERMINAL_PROMPT": "0",
@@ -125,16 +104,7 @@ class HookExecutor:
         lease_scope: "LeaseContext",
         log_source: LogSource,
     ) -> str | None:
-        """Execute a single hook command.
-
-        Args:
-            hook_config: Hook configuration including script, timeout, and on_failure
-            lease_scope: LeaseScope containing lease metadata and session
-            log_source: Log source for hook output
-
-        Returns:
-            Warning message string if hook failed with on_failure='warn', None otherwise
-        """
+        """Execute a single hook command."""
         command = hook_config.script
         if not command or not command.strip():
             logger.debug("Hook command is empty, skipping")
@@ -142,14 +112,11 @@ class HookExecutor:
 
         logger.debug("Executing hook: %s", command.strip().split("\n")[0][:100])
 
-        # Determine hook type from log source
         hook_type = "before_lease" if log_source == LogSource.BEFORE_LEASE_HOOK else "after_lease"
 
-        # Validate session is available for logging
         if lease_scope.session is None:
             raise RuntimeError("Cannot execute hook: lease_scope.session is None")
 
-        # Use existing session from lease_scope
         hook_env = self._create_hook_env(lease_scope)
         logger.debug(
             "Hook environment: JUMPSTARTER_HOST=%s, LEASE_NAME=%s, CLIENT_NAME=%s",
@@ -169,20 +136,7 @@ class HookExecutor:
         hook_type: Literal["before_lease", "after_lease"],
         cause: Exception | None = None,
     ) -> str | None:
-        """Handle hook failure according to on_failure setting.
-
-        Args:
-            error_msg: Error message describing the failure
-            on_failure: The on_failure mode ('warn', 'endLease', or 'exit')
-            hook_type: The type of hook that failed
-            cause: Optional exception that caused the failure
-
-        Returns:
-            Warning message string if on_failure is 'warn', None otherwise
-
-        Raises:
-            HookExecutionError: If on_failure is 'endLease' or 'exit'
-        """
+        """Handle hook failure according to on_failure setting."""
         if on_failure == "warn":
             logger.warning("%s (on_failure=warn, continuing)", error_msg)
             return error_msg
@@ -195,7 +149,6 @@ class HookExecutor:
             hook_type=hook_type,
         )
 
-        # Properly handle exception chaining
         if cause is not None:
             raise error from cause
         else:
@@ -210,11 +163,7 @@ class HookExecutor:
         logging_session: Session,
         hook_type: Literal["before_lease", "after_lease"],
     ) -> str | None:
-        """Execute the hook process and capture its output via pipes.
-
-        Returns:
-            Warning message string if hook failed with on_failure='warn', None otherwise
-        """
+        """Execute the hook process and capture its output via pipes."""
         import subprocess
 
         command = hook_config.script
@@ -273,11 +222,9 @@ class HookExecutor:
 
                 output_lines: list[str] = []
 
-                import fcntl
-
+                assert process.stdout is not None
                 pipe_fd = process.stdout.fileno()
-                flags = fcntl.fcntl(pipe_fd, fcntl.F_GETFL)
-                fcntl.fcntl(pipe_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+                os.set_blocking(pipe_fd, False)
 
                 async def read_output() -> None:
                     """Read subprocess output via pipe using async non-blocking I/O."""
@@ -305,27 +252,19 @@ class HookExecutor:
                                 logger.info("%s", line_decoded)
 
                 async def wait_for_process() -> int:
-                    """Wait for the subprocess to complete."""
+                    """Wait for the subprocess to complete.
+
+                    After the child exits, closes pipe_fd so that read_output
+                    sees EOF even if a grandchild still holds the write end.
+                    """
                     logger.debug("wait_for_process: waiting for PID %d", process.pid)
+                    result = await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
+                    logger.debug("wait_for_process: PID %d exited with code %d", process.pid, result)
                     try:
-                        result = await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
-                        logger.debug("wait_for_process: PID %d exited with code %d", process.pid, result)
-                        return result
-                    finally:
-                        if process.poll() is None:
-                            logger.debug("wait_for_process: cleaning up still-running PID %d", process.pid)
-                            try:
-                                process.terminate()
-                                for _ in range(10):
-                                    if process.poll() is not None:
-                                        break
-                                    await anyio.sleep(0.1)
-                                if process.poll() is None:
-                                    logger.debug("wait_for_process: force killing PID %d", process.pid)
-                                    process.kill()
-                                await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=False)
-                            except Exception as e:
-                                logger.debug("wait_for_process: error during cleanup: %s", e)
+                        os.close(pipe_fd)
+                    except OSError:
+                        pass
+                    return result
 
                 returncode: int | None = None
                 logger.debug("Starting output reader and process waiter (timeout=%d)", timeout)
@@ -344,14 +283,20 @@ class HookExecutor:
                     error_msg = f"Hook timed out after {timeout} seconds"
                     logger.error(error_msg)
                     if process and process.poll() is None:
-                        process.terminate()
+                        try:
+                            os.killpg(process.pid, signal.SIGTERM)
+                        except ProcessLookupError:
+                            pass
                         try:
                             with anyio.move_on_after(5):
                                 await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
                         except Exception:
                             pass
                         if process.poll() is None:
-                            process.kill()
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
                             try:
                                 await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
                             except Exception:
@@ -368,11 +313,28 @@ class HookExecutor:
                 cause = e
                 logger.error(error_msg, exc_info=True)
             finally:
-                if process and process.stdout:
-                    try:
-                        process.stdout.close()
-                    except OSError:
-                        pass
+                if process:
+                    if process.poll() is None:
+                        try:
+                            os.killpg(process.pid, signal.SIGTERM)
+                        except ProcessLookupError:
+                            pass
+                        try:
+                            process.wait(timeout=5)
+                        except Exception:
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                            try:
+                                process.wait(timeout=5)
+                            except Exception:
+                                pass
+                    if process.stdout:
+                        try:
+                            process.stdout.close()
+                        except OSError:
+                            pass
 
             if error_msg is not None:
                 if timed_out and cause is None:
@@ -381,17 +343,7 @@ class HookExecutor:
         return None
 
     async def execute_before_lease_hook(self, lease_scope: "LeaseContext") -> str | None:
-        """Execute the before-lease hook.
-
-        Args:
-            lease_scope: LeaseScope with lease metadata and session
-
-        Returns:
-            Warning message string if hook failed with on_failure='warn', None otherwise
-
-        Raises:
-            HookExecutionError: If hook fails and on_failure is set to 'endLease' or 'exit'
-        """
+        """Execute the before-lease hook."""
         if not self.config.before_lease:
             logger.debug("No before-lease hook configured")
             return None
@@ -404,17 +356,7 @@ class HookExecutor:
         )
 
     async def execute_after_lease_hook(self, lease_scope: "LeaseContext") -> str | None:
-        """Execute the after-lease hook.
-
-        Args:
-            lease_scope: LeaseScope with lease metadata and session
-
-        Returns:
-            Warning message string if hook failed with on_failure='warn', None otherwise
-
-        Raises:
-            HookExecutionError: If hook fails and on_failure is set to 'endLease' or 'exit'
-        """
+        """Execute the after-lease hook."""
         if not self.config.after_lease:
             logger.debug("No after-lease hook configured")
             return None
@@ -446,25 +388,13 @@ class HookExecutor:
     ) -> None:
         """Execute before-lease hook with full orchestration.
 
-        This method handles the complete lifecycle of running a before-lease hook:
-        - Waits for the lease scope to be ready (session/socket populated)
-        - Reports status changes via the provided callback
-        - Sets up the hook executor with the session for logging
-        - Executes the hook and handles errors
-        - Always signals the before_lease_hook event to unblock connections
-
-        Args:
-            lease_scope: LeaseScope containing session, socket_path, and sync event
-            report_status: Async callback to report status changes to controller
-            shutdown: Callback to trigger exporter shutdown (accepts optional exit_code kwarg)
-            request_lease_release: Async callback to request lease release from controller
+        Always signals the before_lease_hook event to unblock connections,
+        even on failure.
         """
         should_release = False
         try:
-            # Wait for lease scope to be fully populated by handle_lease
-            # This is necessary because handle_lease and run_before_lease_hook run concurrently
-            timeout = 30  # seconds
-            interval = 0.1  # seconds
+            timeout = 30
+            interval = 0.1
             elapsed = 0.0
             while not lease_scope.is_ready():
                 if elapsed >= timeout:
@@ -476,7 +406,6 @@ class HookExecutor:
                 await anyio.sleep(interval)
                 elapsed += interval
 
-            # Check if hook is configured
             if not self.config.before_lease:
                 logger.debug("No before-lease hook configured")
                 await report_status(ExporterStatus.LEASE_READY, "Ready for commands")
@@ -484,7 +413,6 @@ class HookExecutor:
 
             await report_status(ExporterStatus.BEFORE_LEASE_HOOK, "Running beforeLease hook")
 
-            # Execute hook with lease scope
             logger.info("Executing before-lease hook for lease %s", lease_scope.lease_name)
             warning = await self._execute_hook(
                 self.config.before_lease,
@@ -508,7 +436,6 @@ class HookExecutor:
 
         except HookExecutionError as e:
             if e.should_shutdown_exporter():
-                # on_failure='exit' - defer shutdown until client handles the failure
                 logger.error("beforeLease hook failed with on_failure='exit': %s", e)
                 lease_scope.skip_after_lease_hook = True
                 await report_status(
@@ -519,10 +446,8 @@ class HookExecutor:
                     ExporterStatus.OFFLINE,
                     "Exporter shutting down due to beforeLease hook failure",
                 )
-                # Defer shutdown: sets _stop_requested=True, actual stop after lease cleanup
                 shutdown(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
             else:
-                # on_failure='endLease' - report failure, release in finally block
                 logger.error("beforeLease hook failed with on_failure='endLease': %s", e)
                 lease_scope.skip_after_lease_hook = True
                 should_release = True
@@ -537,13 +462,9 @@ class HookExecutor:
                 ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                 f"beforeLease hook failed: {e}",
             )
-            # Unexpected errors don't trigger shutdown - just block the lease
-
         finally:
-            # Always set the event to unblock connections
             lease_scope.before_lease_hook.set()
 
-            # Release lease for endLease failure mode.
             # Shielded from cancellation to ensure the release completes
             # even if the task group is being torn down.
             if should_release:
@@ -558,32 +479,14 @@ class HookExecutor:
         shutdown: Callable[..., None],
         request_lease_release: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
-        """Execute after-lease hook with full orchestration.
-
-        This method handles the complete lifecycle of running an after-lease hook:
-        - Validates that the lease scope is ready
-        - Reports status changes via the provided callback
-        - Sets up the hook executor with the session for logging
-        - Executes the hook and handles errors
-        - Triggers shutdown on critical failures (HookExecutionError)
-        - Requests lease release from controller after hook completes
-
-        Args:
-            lease_scope: LeaseScope containing session, socket_path, and client info
-            report_status: Async callback to report status changes to controller
-            shutdown: Callback to trigger exporter shutdown (accepts optional exit_code kwarg)
-            request_lease_release: Async callback to request lease release from controller
-        """
+        """Execute after-lease hook with full orchestration."""
         shutdown_called = False
         try:
-            # Verify lease scope is ready - for after-lease this should always be true
-            # since we've already processed the lease, but check defensively
             if not lease_scope.is_ready():
-                logger.warning("LeaseScope not ready for after-lease hook, skipping")
+                logger.warning("LeaseContext not ready for after-lease hook, skipping")
                 await report_status(ExporterStatus.AVAILABLE, "Available for new lease")
                 return
 
-            # Check if hook is configured
             if not self.config.after_lease:
                 logger.debug("No after-lease hook configured")
                 await report_status(ExporterStatus.AVAILABLE, "Available for new lease")
@@ -591,7 +494,6 @@ class HookExecutor:
 
             await report_status(ExporterStatus.AFTER_LEASE_HOOK, "Running afterLease hooks")
 
-            # Execute hook with lease scope
             logger.info("Executing after-lease hook for lease %s", lease_scope.lease_name)
             warning = await self._execute_hook(
                 self.config.after_lease,
@@ -608,7 +510,6 @@ class HookExecutor:
 
         except HookExecutionError as e:
             if e.should_shutdown_exporter():
-                # on_failure='exit' - shut down the entire exporter
                 logger.error("afterLease hook failed with on_failure='exit': %s", e)
                 await report_status(
                     ExporterStatus.AFTER_LEASE_HOOK_FAILED,
@@ -618,16 +519,10 @@ class HookExecutor:
                     ExporterStatus.OFFLINE,
                     "Exporter shutting down due to afterLease hook failure",
                 )
-                # No delay needed - client is already polling and will see the failure
                 logger.error("Shutting down exporter due to afterLease hook failure with on_failure='exit'")
-                # Exit code 1 tells the CLI not to restart the exporter
                 shutdown(exit_code=1, should_unregister=True, wait_for_lease_exit=True)
                 shutdown_called = True
             else:
-                # on_failure='endLease' - report failure to the client, then release the lease.
-                # AFTER_LEASE_HOOK_FAILED is a transient status: the client sees the failure,
-                # the lease is released in the finally block, and the exporter's main loop
-                # clears the lease context and accepts new leases.
                 logger.error("afterLease hook failed with on_failure='endLease': %s", e)
                 await report_status(
                     ExporterStatus.AFTER_LEASE_HOOK_FAILED,
@@ -635,9 +530,6 @@ class HookExecutor:
                 )
 
         except Exception as e:
-            # Unexpected errors: report failure but do not shut down.
-            # Same transient status - the lease is released and the exporter
-            # accepts new leases after the finally block completes.
             logger.error("afterLease hook failed with unexpected error: %s", e, exc_info=True)
             await report_status(
                 ExporterStatus.AFTER_LEASE_HOOK_FAILED,
@@ -645,11 +537,10 @@ class HookExecutor:
             )
 
         finally:
-            # Always delay to give client time to poll the final status
             await anyio.sleep(1.0)
 
-            # Don't release lease when exporter is shutting down - unregistration handles cleanup.
-            # Releasing here would report AVAILABLE to the controller right before shutdown.
+            # Don't release lease when exporter is shutting down --
+            # releasing here would report AVAILABLE right before shutdown.
             if request_lease_release and not shutdown_called:
                 try:
                     await request_lease_release()

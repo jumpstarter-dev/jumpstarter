@@ -65,9 +65,7 @@ def lease_scope():
         before_lease_hook=Event(),
         client_name="test-client",
     )
-    # Add mock session to lease_scope
     mock_session = MagicMock()
-    # Return a no-op context manager for context_log_source
     mock_session.context_log_source.return_value = nullcontext()
     lease_scope.session = mock_session
     lease_scope.socket_path = "/tmp/test_socket"
@@ -84,7 +82,6 @@ class TestHookExecutor:
         empty_config = HookConfigV1Alpha1()
         executor = HookExecutor(config=empty_config)
 
-        # Both hooks should return None for empty/None commands
         assert await executor.execute_before_lease_hook(lease_scope) is None
         assert await executor.execute_after_lease_hook(lease_scope) is None
 
@@ -181,7 +178,6 @@ class TestHookExecutor:
             result = await executor.execute_before_lease_hook(lease_scope)
             assert result is not None
             assert "timed out" in result.lower()
-            # Verify WARNING log was created
             warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
             assert any("on_failure=warn, continuing" in call for call in warning_calls)
 
@@ -197,12 +193,8 @@ class TestHookExecutor:
         assert "exit code 1" in result.lower()
 
     async def test_failed_hook_with_warn_logs_warning_inside_log_source_context(self) -> None:
-        """Test that the WARNING log for on_failure='warn' is emitted inside context_log_source.
-
-        Issue #246: The WARNING log from _handle_hook_failure must be emitted while
-        the context_log_source context manager is active. This ensures the warning
-        is tagged with the hook source (BEFORE_LEASE_HOOK / AFTER_LEASE_HOOK) and
-        is visible to the client even without --exporter-logs.
+        """The WARNING log for on_failure='warn' must be emitted inside context_log_source
+        so the warning is tagged with the hook source and visible to the client.
         """
         from contextlib import contextmanager
 
@@ -215,7 +207,6 @@ class TestHookExecutor:
         )
         executor = HookExecutor(config=hook_config)
 
-        # Track whether context_log_source is active when warning is logged
         context_active = False
         warning_logged_in_context = False
 
@@ -354,10 +345,8 @@ class TestHookExecutor:
             assert result is None
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("PYFILE_OK" in call for call in info_calls)
-            # Verify it auto-detected Python (now logged at DEBUG level)
             debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
             assert any("Auto-detected Python script" in call for call in debug_calls)
-            # Verify it used the exporter's own Python interpreter
             assert any(sys.executable in call for call in debug_calls)
 
 
@@ -380,7 +369,6 @@ class TestHookExecutor:
             assert result is None
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("OVERRIDE_OK" in call for call in info_calls)
-            # Should NOT say "Auto-detected" since exec was explicitly set
             debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
             assert not any("Auto-detected" in call for call in debug_calls)
 
@@ -392,8 +380,8 @@ class TestHookExecutor:
         and that PS1 is not set in the env dict passed to the subprocess.
 
         Note: PS1 is verified via _create_hook_env directly because shells
-        started in a PTY may re-set PS1 from init files despite it being
-        removed from the environment.
+        may re-set PS1 from init files despite it being removed from the
+        environment.
         """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
@@ -408,7 +396,7 @@ class TestHookExecutor:
         executor = HookExecutor(config=hook_config)
 
         # Verify PS1 is removed from the env dict (not via subprocess, since
-        # shells in a PTY may re-set PS1 from profile/init files)
+        # shells may re-set PS1 from profile/init files)
         hook_env = executor._create_hook_env(lease_scope)
         assert "PS1" not in hook_env
 
@@ -512,13 +500,8 @@ class TestHookExecutorPRRegressions:
 
 
     async def test_infrastructure_messages_at_debug_not_info(self, lease_scope) -> None:
-        """Issue A1: Hook infrastructure messages should be at DEBUG, not INFO.
-
-        Infrastructure messages like 'Starting hook subprocess', 'Creating PTY',
-        'Spawning subprocess', 'Subprocess spawned', 'Subprocess completed', and
-        'Hook executed successfully' must be logged at DEBUG level so they don't
-        appear in the client LogStream at the default INFO level. Only user output
-        from the hook script should be at INFO.
+        """Infrastructure messages must be at DEBUG, not INFO, so they
+        don't appear in the client LogStream.
         """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="echo 'user output'", timeout=10),
@@ -531,7 +514,6 @@ class TestHookExecutorPRRegressions:
             debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
 
-            # Infrastructure messages should be at DEBUG level
             infra_messages = [
                 "Starting hook subprocess",
                 "Spawning subprocess",
@@ -546,15 +528,11 @@ class TestHookExecutorPRRegressions:
                     f"Infrastructure message '{msg}' should NOT be at INFO level"
                 )
 
-            # User output should be at INFO level
             assert any("user output" in call for call in info_calls)
 
     async def test_before_lease_hook_always_sets_event_on_failure(self, lease_scope) -> None:
-        """Issue C3: before_lease_hook event must be set even when hook fails.
-
-        When the beforeLease hook fails with on_failure=endLease, the event must
-        still be set to unblock process_connections in handle_lease. Otherwise
-        the lease hangs indefinitely.
+        """before_lease_hook event must be set even when hook fails, to
+        unblock process_connections in handle_lease.
         """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="endLease"),
@@ -572,15 +550,10 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        # Event must always be set to unblock connections
         assert lease_scope.before_lease_hook.is_set()
 
     async def test_before_lease_hook_always_sets_event_on_exit(self, lease_scope) -> None:
-        """Issue C3b: before_lease_hook event must be set when hook fails with exit.
-
-        Same as C3 but for on_failure=exit. The event must be set, shutdown called,
-        and skip_after_lease_hook set to True.
-        """
+        """before_lease_hook event must be set when hook fails with on_failure=exit."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
         )
@@ -600,12 +573,7 @@ class TestHookExecutorPRRegressions:
         mock_shutdown.assert_called_once()
 
     async def test_no_hooks_transitions_to_lease_ready(self, lease_scope) -> None:
-        """Issue D1: No hooks configured should transition directly to LEASE_READY.
-
-        When no hooks are configured, run_before_lease_hook should report
-        LEASE_READY immediately, preventing the 'create lease, never use → stuck'
-        scenario.
-        """
+        """No hooks configured should transition directly to LEASE_READY."""
         empty_config = HookConfigV1Alpha1()
         executor = HookExecutor(config=empty_config)
 
@@ -622,19 +590,13 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        # Should have reported LEASE_READY
         assert any(
             status == ExporterStatus.LEASE_READY and msg == "Ready for commands"
             for status, msg in status_calls
         ), f"Expected LEASE_READY status, got: {status_calls}"
 
     async def test_skip_after_lease_prevents_after_hook_execution(self, lease_scope) -> None:
-        """Issue E1: beforeLease fail+exit should prevent afterLease hook execution.
-
-        When beforeLease fails with on_failure=exit, skip_after_lease_hook is set
-        to True. The handle_lease finally block checks this flag and skips the
-        afterLease hook. This test verifies the orchestration sequence.
-        """
+        """beforeLease fail+exit should prevent afterLease hook execution."""
         # Config with both hooks
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
@@ -649,7 +611,6 @@ class TestHookExecutorPRRegressions:
 
         mock_shutdown = MagicMock()
 
-        # Run before hook (which fails and sets skip flag)
         await executor.run_before_lease_hook(
             lease_scope,
             mock_report_status,
@@ -658,8 +619,6 @@ class TestHookExecutorPRRegressions:
 
         assert lease_scope.skip_after_lease_hook is True
 
-        # Now simulate what handle_lease does: check the flag before running after hook
-        # This mirrors the actual code: `if not lease_scope.skip_after_lease_hook:`
         if not lease_scope.skip_after_lease_hook:
             await executor.run_after_lease_hook(
                 lease_scope,
@@ -667,19 +626,13 @@ class TestHookExecutorPRRegressions:
                 mock_shutdown,
             )
 
-        # AFTER_LEASE_HOOK status should never have been reported
         after_hook_statuses = [s for s, _ in status_calls if s == ExporterStatus.AFTER_LEASE_HOOK]
         assert len(after_hook_statuses) == 0, (
             f"afterLease hook should have been skipped, but AFTER_LEASE_HOOK was reported: {status_calls}"
         )
 
     async def test_before_hook_exit_reports_failed_not_available(self, lease_scope) -> None:
-        """Issue E2: beforeLease fail+exit should report FAILED, not AVAILABLE.
-
-        When beforeLease hook fails with on_failure=exit, the last status must be
-        BEFORE_LEASE_HOOK_FAILED. It should NOT report AVAILABLE, which would
-        incorrectly tell the controller the exporter is ready for new leases.
-        """
+        """beforeLease fail+exit should report FAILED, not AVAILABLE."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
         )
@@ -698,35 +651,25 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        # Last status should be OFFLINE (reported before shutdown to prevent new leases)
         last_status, _ = status_calls[-1]
         assert last_status == ExporterStatus.OFFLINE, (
             f"Expected last status to be OFFLINE, got {last_status}"
         )
 
-        # BEFORE_LEASE_HOOK_FAILED should also be present (reported before OFFLINE)
         failed_statuses = [s for s, _ in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
         assert len(failed_statuses) > 0, (
             f"Expected BEFORE_LEASE_HOOK_FAILED status, got: {status_calls}"
         )
 
-        # AVAILABLE should never have been reported
         available_statuses = [s for s, _ in status_calls if s == ExporterStatus.AVAILABLE]
         assert len(available_statuses) == 0, (
             f"AVAILABLE should NOT be reported when beforeLease exits, got: {status_calls}"
         )
 
-        # Shutdown should have been called with correct args
         mock_shutdown.assert_called_once_with(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
 
     async def test_after_hook_exit_reports_failed_calls_shutdown(self, lease_scope) -> None:
-        """Issue E3: afterLease fail+exit should report FAILED and call shutdown.
-
-        When afterLease hook fails with on_failure=exit:
-        - AFTER_LEASE_HOOK_FAILED status must be reported
-        - AVAILABLE must NOT be reported
-        - shutdown must be called (not request_lease_release)
-        """
+        """afterLease fail+exit should report FAILED and call shutdown."""
         hook_config = HookConfigV1Alpha1(
             after_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
         )
@@ -747,27 +690,22 @@ class TestHookExecutorPRRegressions:
             mock_request_release,
         )
 
-        # AFTER_LEASE_HOOK_FAILED should be in statuses
         failed_statuses = [s for s, _ in status_calls if s == ExporterStatus.AFTER_LEASE_HOOK_FAILED]
         assert len(failed_statuses) > 0, (
             f"Expected AFTER_LEASE_HOOK_FAILED status, got: {status_calls}"
         )
 
-        # AVAILABLE should NOT be in statuses
         available_statuses = [s for s, _ in status_calls if s == ExporterStatus.AVAILABLE]
         assert len(available_statuses) == 0, (
             f"AVAILABLE should NOT be reported when afterLease exits, got: {status_calls}"
         )
 
-        # Shutdown called (not request_lease_release)
         mock_shutdown.assert_called_once_with(exit_code=1, should_unregister=True, wait_for_lease_exit=True)
         mock_request_release.assert_not_called()
 
     async def test_before_hook_warn_includes_warning_prefix(self, lease_scope) -> None:
-        """Issue E5: beforeLease hook fail with warn should include HOOK_WARNING_PREFIX.
-
-        The status message for LEASE_READY must start with '[HOOK_WARNING] ' so that
-        shell.py can detect it and display a user-visible warning.
+        """beforeLease hook fail with warn should include HOOK_WARNING_PREFIX
+        so shell.py can detect and display a user-visible warning.
         """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="warn"),
@@ -787,7 +725,6 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        # Find the LEASE_READY status call
         ready_calls = [(s, m) for s, m in status_calls if s == ExporterStatus.LEASE_READY]
         assert len(ready_calls) == 1, f"Expected exactly one LEASE_READY, got: {status_calls}"
         _, msg = ready_calls[0]
@@ -796,11 +733,7 @@ class TestHookExecutorPRRegressions:
         )
 
     async def test_before_hook_exit_reports_offline_before_shutdown(self, lease_scope) -> None:
-        """When beforeLease hook fails with on_failure=exit, the exporter must
-        report OFFLINE status to the controller before initiating shutdown.
-        This prevents the controller from assigning new leases to a dying
-        exporter during the shutdown window.
-        """
+        """OFFLINE must be reported before shutdown to prevent new lease assignment."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
         )
@@ -900,11 +833,9 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        # beforeLease with warn should still transition to LEASE_READY
         ready_calls = [s for s, _ in status_calls if s == ExporterStatus.LEASE_READY]
         assert len(ready_calls) == 1
 
-        # Now run afterLease (simulating premature lease-end cleanup)
         await executor.run_after_lease_hook(
             lease_scope,
             mock_report_status,
@@ -912,18 +843,13 @@ class TestHookExecutorPRRegressions:
             mock_request_release,
         )
 
-        # afterLease hook should run and transition to AVAILABLE
         available_calls = [s for s, _ in status_calls if s == ExporterStatus.AVAILABLE]
         assert len(available_calls) > 0, (
             f"Expected AVAILABLE status after warn+afterLease, got: {status_calls}"
         )
 
     async def test_after_hook_warn_includes_warning_prefix(self, lease_scope) -> None:
-        """Issue E5b: afterLease hook fail with warn should include HOOK_WARNING_PREFIX.
-
-        The status message for AVAILABLE must start with '[HOOK_WARNING] ' so that
-        shell.py can detect it and display a user-visible warning after session ends.
-        """
+        """afterLease hook fail with warn should include HOOK_WARNING_PREFIX."""
         hook_config = HookConfigV1Alpha1(
             after_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="warn"),
         )
@@ -942,7 +868,6 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        # Find the AVAILABLE status call
         available_calls = [(s, m) for s, m in status_calls if s == ExporterStatus.AVAILABLE]
         assert len(available_calls) == 1, f"Expected exactly one AVAILABLE, got: {status_calls}"
         _, msg = available_calls[0]
@@ -1170,7 +1095,10 @@ class TestPipeOutputEdgeCases:
                 f"{label} was not captured"
             )
 
-    async def test_timeout_with_grandchild_holding_pipe(self, lease_scope) -> None:
+    async def test_grandchild_holding_pipe_does_not_block(self, lease_scope) -> None:
+        """After child exits, pipe_fd is closed so a grandchild holding
+        the write end does not block the reader until the full timeout.
+        """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
                 script="echo GRANDCHILD_TEST; sleep 10 &",
@@ -1183,7 +1111,102 @@ class TestPipeOutputEdgeCases:
         with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
             result = await executor.execute_before_lease_hook(lease_scope)
 
-        assert result is not None
-        assert "timed out" in result.lower()
+        assert result is None
         info_calls = [str(call) for call in mock_logger.info.call_args_list]
         assert any("GRANDCHILD_TEST" in call for call in info_calls)
+
+
+class TestReadOutputErrorPaths:
+    """Tests for BlockingIOError and OSError handling in read_output.
+
+    These exercise the read_output error paths via real subprocesses
+    that produce controlled output patterns, and via _flush_lines
+    for the partial buffer flush path.
+    """
+
+    async def test_blocking_io_error_path_via_nonblocking_pipe(self, lease_scope) -> None:
+        """On a non-blocking pipe, reading before data arrives raises
+        BlockingIOError. read_output handles this by continuing the loop.
+        Verified via a script that delays output.
+        """
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="sleep 0.1; echo DELAYED_OUTPUT",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("DELAYED_OUTPUT" in call for call in info_calls)
+
+    async def test_os_error_on_closed_pipe_breaks_reader(self, lease_scope) -> None:
+        """When the pipe fd is closed (by wait_for_process after child exit),
+        os.read raises OSError (Bad file descriptor) and read_output breaks
+        out of the loop.
+        """
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo BEFORE_CLOSE",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("BEFORE_CLOSE" in call for call in info_calls)
+
+    def test_flush_lines_partial_buffer_preserved(self) -> None:
+        """Partial buffer (no trailing newline) is returned for later flush."""
+        output: list[str] = []
+        remainder = _flush_lines(b"complete\npartial_data", output)
+        assert output == ["complete"]
+        assert remainder == b"partial_data"
+
+    async def test_partial_buffer_flushed_on_exit(self, lease_scope) -> None:
+        """When the subprocess exits with output lacking a trailing newline,
+        the finally block in read_output flushes the partial buffer.
+        """
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="printf 'NO_TRAILING_NEWLINE'",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("NO_TRAILING_NEWLINE" in call for call in info_calls)
+
+    async def test_mixed_complete_and_partial_lines(self, lease_scope) -> None:
+        """Complete lines are flushed immediately; the trailing partial
+        is flushed when the subprocess exits.
+        """
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="printf 'LINE_A\\nLINE_B\\nPARTIAL_C'",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("LINE_A" in call for call in info_calls)
+        assert any("LINE_B" in call for call in info_calls)
+        assert any("PARTIAL_C" in call for call in info_calls)
