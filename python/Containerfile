@@ -12,6 +12,7 @@ RUN dnf install -y python3 ustreamer libusb1 android-tools python3-libgpiod curl
     dnf clean all && \
     rm -rf /var/cache/dnf
 
+# renovate: datasource=github-releases depName=jumpstarter-dev/fls
 ARG FLS_VERSION=0.3.0
 RUN ARCH=$(uname -m) && \
     SUFFIX="linux" && \

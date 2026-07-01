@@ -68,6 +68,102 @@
       "depNameTemplate": "astral-sh/uv",
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "semver"
+    },
+    {
+      "description": "Track GitHub release binaries in Makefiles via inline annotations",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)Makefile$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n[A-Z0-9_]+\\s*\\??=\\s*(?<currentValue>[^\\s]+)"
+      ]
+    },
+    {
+      "description": "Track versioned ARG dependencies in Containerfiles/Dockerfiles via inline annotations",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)[Cc]ontainerfile[^/]*$/",
+        "/(^|/)[Dd]ockerfile[^/]*$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\nARG\\s+[A-Z0-9_]+=(?<currentValue>[^\\s]+)"
+      ]
+    },
+    {
+      "description": "Track GitHub release binaries in shell scripts via inline annotations",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)[^/]+\\.sh$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n[A-Z0-9_]+=(?:\"|')(?<currentValue>[^\"']+)(?:\"|')"
+      ]
+    },
+    {
+      "description": "Track GitHub release binaries in GitHub Actions YAML env blocks",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n\\s+[A-Z0-9_]+:\\s*(?<currentValue>[^\\s]+)"
+      ]
+    },
+    {
+      "description": "Track versioned dependencies in Go source files via inline annotations",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)[^/]+\\.go$/"
+      ],
+      "matchStrings": [
+        "//\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\n\\s+\\w+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+      ]
+    },
+    {
+      "description": "Track versioned dependencies in Python source files via inline annotations",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)[^/]+\\.py$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\n[A-Z0-9_]+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+      ]
+    },
+    {
+      "description": "Track container image references in YAML via '# renovate: image' annotations",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*image\\n\\s+image:\\s*(?<depName>[^:\\s]+):(?<currentValue>[^\\s]+)"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "description": "Track buf protobuf plugin versions (protocolbuffers/python -> protobuf releases)",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)buf\\.gen\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "remote:\\s*buf\\.build/protocolbuffers/(?<depName>python):(?<currentValue>v[^\\s]+)"
+      ],
+      "depNameTemplate": "protocolbuffers/protobuf",
+      "datasourceTemplate": "github-releases"
+    },
+    {
+      "description": "Track buf community plugin versions (nipunn1313-mypy, nipunn1313-mypy-grpc); uses pypi datasource for mypy-protobuf",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)buf\\.gen\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "remote:\\s*buf\\.build/community/nipunn1313-mypy(?:-grpc)?:v(?<currentValue>[^\\s]+)"
+      ],
+      "depNameTemplate": "mypy-protobuf",
+      "datasourceTemplate": "pypi"
     }
   ],
   "packageRules": [
@@ -246,6 +342,60 @@
       ],
       "allowedVersions": "/^\\d+\\.\\d+\\.\\d+$/",
       "automerge": false
+    },
+    {
+      "description": "Group operator tooling (operator-sdk, OPM, scorecard-test)",
+      "groupName": "operator-tooling",
+      "matchDepNames": [
+        "operator-framework/operator-sdk",
+        "operator-framework/operator-registry",
+        "quay.io/operator-framework/scorecard-test"
+      ]
+    },
+    {
+      "description": "Group e2e test tools (cfssl, yq)",
+      "groupName": "e2e-test-tools",
+      "matchDepNames": [
+        "cloudflare/cfssl",
+        "mikefarah/yq"
+      ]
+    },
+    {
+      "description": "Group infrastructure manifests (cert-manager, prometheus-operator)",
+      "groupName": "infrastructure-manifests",
+      "matchDepNames": [
+        "cert-manager/cert-manager",
+        "prometheus-operator/prometheus-operator"
+      ]
+    },
+    {
+      "description": "Group Go build tools across both controller Makefiles",
+      "groupName": "go-build-tools",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "kubernetes-sigs/kustomize",
+        "kubernetes-sigs/controller-tools",
+        "golangci/golangci-lint",
+        "kubernetes-sigs/kind",
+        "fullstorydev/grpcurl"
+      ]
+    },
+    {
+      "description": "Group bufbuild/buf container image across Makefiles",
+      "groupName": "buf-tooling",
+      "matchDepNames": [
+        "docker.io/bufbuild/buf"
+      ]
+    },
+    {
+      "description": "Group buf protobuf plugins",
+      "groupName": "buf-protobuf-plugins",
+      "matchDepNames": [
+        "protocolbuffers/protobuf",
+        "mypy-protobuf"
+      ]
     }
   ]
 }
