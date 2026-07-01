@@ -1,0 +1,33 @@
+name: Stress Test Hooks
+
+on:
+  push:
+    branches:
+      - fix/pty-read-before-stop
+
+permissions:
+  contents: read
+
+jobs:
+  stress-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-13, macos-14, macos-15]
+        run: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - id: uv
+        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: ${{ steps.uv.outputs.version }}
+          python-version: "3.12"
+
+      - name: Run hooks tests (iteration ${{ matrix.run }} on ${{ matrix.os }})
+        working-directory: python
+        run: |
+          uv run --package jumpstarter pytest packages/jumpstarter/jumpstarter/exporter/hooks_test.py -v 2>&1 | tail -60
