@@ -6,14 +6,15 @@
 //!     [--service PowerInterface]   # restrict to one service (default: all in the set)
 //! ```
 //!
-//! `--language`: `rust` | `java` | `kotlin` (java and kotlin share the JVM generator).
-//! `--kind`: `client` (typed client) | `stub` (driver impl skeleton).
+//! `--language`: `rust` | `java` | `kotlin` (java and kotlin share the JVM generator) | `python`.
+//! `--kind`: `client` (typed client) | `stub` (driver impl skeleton / interface base).
 
 use std::path::PathBuf;
 use std::process::exit;
 
 use jumpstarter_codegen::engine::interfaces_from_descriptor_set;
 use jumpstarter_codegen::languages::java::JavaGenerator;
+use jumpstarter_codegen::languages::python::PythonGenerator;
 use jumpstarter_codegen::languages::rust::RustGenerator;
 use jumpstarter_codegen::languages::LanguageGenerator;
 
@@ -34,7 +35,7 @@ fn main() {
             "--out" => out_dir = Some(PathBuf::from(next())),
             "--service" => service = Some(next()),
             "-h" | "--help" => {
-                eprintln!("usage: jumpstarter-codegen --descriptor-set <f> --language <rust|java|kotlin> --kind <client|stub> --out <dir> [--service <Name>]");
+                eprintln!("usage: jumpstarter-codegen --descriptor-set <f> --language <rust|java|kotlin|python> --kind <client|stub> --out <dir> [--service <Name>]");
                 return;
             }
             other => fail(&format!("unknown argument {other}")),
@@ -48,7 +49,8 @@ fn main() {
         "rust" => Box::new(RustGenerator),
         // java and kotlin both target the JVM generator (grpc-java stubs + a Kotlin client).
         "java" | "kotlin" => Box::new(JavaGenerator),
-        other => fail(&format!("unknown --language {other:?} (rust|java|kotlin)")),
+        "python" => Box::new(PythonGenerator),
+        other => fail(&format!("unknown --language {other:?} (rust|java|kotlin|python)")),
     };
 
     let bytes = std::fs::read(&descriptor_set)

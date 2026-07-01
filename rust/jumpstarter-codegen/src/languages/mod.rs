@@ -15,6 +15,7 @@ use crate::ir::InterfaceRef;
 
 pub mod rust;
 pub mod java;
+pub mod python;
 
 /// A per-language code generator.
 ///
