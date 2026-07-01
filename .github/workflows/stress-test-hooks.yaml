@@ -1,7 +1,9 @@
 name: Stress Test Hooks
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - fix/pty-read-before-stop
 
 permissions:
   contents: read
