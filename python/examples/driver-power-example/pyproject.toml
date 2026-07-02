@@ -1,0 +1,26 @@
+[project]
+name = "jumpstarter-driver-power-example"
+version = "0.1.0"
+description = "Example proto-first Python power driver — generated driver base + typed client from the committed power.proto"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = ["jumpstarter", "click>=8.1.7"]
+
+[project.entry-points."jumpstarter.drivers"]
+ExamplePower = "jumpstarter_driver_power_example.driver:ExamplePower"
+
+[dependency-groups]
+dev = ["pytest>=8.3.2", "pytest-cov>=5.0.0"]
+
+[build-system]
+requires = ["hatchling", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+# Proto-first codegen: everything under jumpstarter_driver_power_example/_generated (message
+# dataclasses, driver interface base, typed client, embedded descriptor) is regenerated from the
+# committed interfaces/proto power.proto on every build — the .proto is the source of truth.
+# Edit-loop regen: `make codegen` (python/) or `uv run python -m hatch_pin_jumpstarter.codegen .`
+[tool.hatch.build.hooks.jumpstarter_codegen]
+proto = "jumpstarter/interfaces/power/v1/power.proto"
+package = "jumpstarter_driver_power_example._generated"

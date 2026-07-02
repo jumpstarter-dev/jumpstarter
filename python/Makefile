@@ -1,5 +1,9 @@
 PKG_TARGETS = $(subst packages/,,$(wildcard packages/*))
 
+# Example packages under examples/ whose tests run as part of `make test` (opt-in, so
+# hardware-flavored examples aren't swept into CI implicitly).
+EXAMPLE_TEST_TARGETS = driver-power-example
+
 # Maturin-backed packages built from the Rust workspace: the FFI extension
 # (jumpstarter-core -> the `jumpstarter_core` module) and the native jmp/j
 # binaries (jumpstarter-cli-bin). uv caches their built wheels, so a change to
@@ -33,6 +37,8 @@ help:
 	@echo "  test               - Run all package tests and documentation tests"
 	@echo "  pkg-test-all       - Run tests for all packages"
 	@echo "  pkg-test-<pkg>     - Run tests for a specific package"
+	@echo "  example-test-all   - Run tests for the CI-covered example packages"
+	@echo "  example-test-<pkg> - Run tests for a specific example package"
 	@echo "  docs-test          - Run documentation tests"
 	@echo ""
 	@echo "Linting and type checking:"
@@ -101,15 +107,31 @@ pkg-test-%: packages/%
 		touch $(LOGS_DIR)/$*.failed; \
 	fi; \
 	true'
+
+example-test-%: examples/%
+	@mkdir -p $(LOGS_DIR)
+	@rm -f $(LOGS_DIR)/example-$*.failed
+	@bash -c 'set -o pipefail; \
+	UV_CACHE_DIR="$(CURDIR)/.uv-cache/example-$*" PYTHONUNBUFFERED=1 uv run --isolated --directory $< pytest 2>&1 | tee $(LOGS_DIR)/example-$*.log; \
+	rc=$$?; \
+	if [ $$rc -ne 0 ] && [ $$rc -ne 5 ]; then \
+		touch $(LOGS_DIR)/example-$*.failed; \
+	fi; \
+	true'
 else
 pkg-test-%: packages/%
 	UV_CACHE_DIR="$(CURDIR)/.uv-cache/$*" uv run --isolated --directory $< pytest || [ $$? -eq 5 ]
+
+example-test-%: examples/%
+	UV_CACHE_DIR="$(CURDIR)/.uv-cache/example-$*" uv run --isolated --directory $< pytest || [ $$? -eq 5 ]
 endif
 
 pkg-ty-%: packages/%
 	uv run --isolated --directory $< ty check .
 
 pkg-test-all: $(addprefix pkg-test-,$(PKG_TARGETS))
+
+example-test-all: $(addprefix example-test-,$(EXAMPLE_TEST_TARGETS))
 
 ifdef LOGS_DIR
 test-report:
@@ -157,7 +179,7 @@ sync-native:
 
 # Proto-first packages whose _generated modules are derived from an interfaces/proto .proto
 # by the shared jumpstarter_codegen build hook (see hatch-pin-jumpstarter).
-CODEGEN_PKGS = packages/jumpstarter-driver-power
+CODEGEN_PKGS = packages/jumpstarter-driver-power examples/driver-power-example
 
 # Regenerate the proto-first packages' _generated modules from their committed .proto
 # (build hooks run at install time, not per source edit — use this for the edit loop
@@ -184,9 +206,9 @@ clean-docs:
 clean: clean-docs clean-venv clean-build clean-test
 
 ifdef LOGS_DIR
-test: pkg-test-all docs-test docs-test-grpc test-report
+test: pkg-test-all example-test-all docs-test docs-test-grpc test-report
 else
-test: pkg-test-all docs-test docs-test-grpc
+test: pkg-test-all example-test-all docs-test docs-test-grpc
 endif
 
 ty: pkg-ty-all
@@ -198,7 +220,7 @@ lint-fix:
 	uv run ruff check --fix
 
 .PHONY: default help docs docs-all docs-serve docs-serve-all docs-clean docs-test \
-	docs-check-grpc docs-test-grpc docs-linkcheck docs-generate-grpc pkg-test-all pkg-ty-all build generate sync sync-native \
+	docs-check-grpc docs-test-grpc docs-linkcheck docs-generate-grpc pkg-test-all example-test-all pkg-ty-all build generate sync sync-native \
 	clean clean-venv clean-build clean-test clean-all test test-report test-all ty-all docs \
 	lint lint-fix \
 	pkg-ty-jumpstarter \

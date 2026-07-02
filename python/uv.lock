@@ -38,6 +38,7 @@ members = [
     "jumpstarter-driver-opendal",
     "jumpstarter-driver-pi-pico",
     "jumpstarter-driver-power",
+    "jumpstarter-driver-power-example",
     "jumpstarter-driver-probe-rs",
     "jumpstarter-driver-pyserial",
     "jumpstarter-driver-qemu",
@@ -2721,6 +2722,33 @@ dev = [
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "trio", specifier = ">=0.28.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-power-example"
+version = "0.1.0"
+source = { editable = "examples/driver-power-example" }
+dependencies = [
+    { name = "click" },
+    { name = "jumpstarter" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.1.7" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
 [[package]]
