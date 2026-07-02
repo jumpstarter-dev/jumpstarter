@@ -19,6 +19,7 @@ help:
 	@echo "  protobuf-gen       - Generate code from protobuf definitions"
 	@echo "  sync               - Sync all packages and extras"
 	@echo "  sync-native        - Rebuild Rust/maturin packages (FFI + native jmp/j) and sync"
+	@echo "  codegen            - Regenerate proto-first packages' _generated modules from .proto"
 	@echo ""
 	@echo "Documentation targets:"
 	@echo "  docs               - Build HTML documentation with warnings as errors"
@@ -153,6 +154,12 @@ sync:
 # under rust/ — a plain `make sync` reuses uv's cached wheels and won't recompile.
 sync-native:
 	uv sync --all-packages --all-extras --group dev $(REINSTALL_NATIVE)
+
+# Regenerate the proto-first packages' _generated modules from their committed .proto
+# (build hooks run at install time, not per source edit — use this for the edit loop
+# after changing an interface proto).
+codegen:
+	cd packages/jumpstarter-driver-power && uv run python hatch_build.py
 
 clean-venv:
 	-rm -rf ./.venv

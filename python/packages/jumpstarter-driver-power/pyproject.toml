@@ -31,3 +31,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"
+
+# Proto-first codegen: regenerate jumpstarter_driver_power/_generated (message dataclasses, driver
+# interface base, typed client, embedded descriptor) from the committed interfaces/proto
+# power.proto on every build. The generated modules are gitignored build artifacts — the .proto is
+# the source of truth. Edit-loop regen: `uv run python hatch_build.py` in this directory.
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
