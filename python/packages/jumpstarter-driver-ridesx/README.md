@@ -61,6 +61,7 @@ Example configuration for the RideSX driver:
 $ jmp shell -l board=qc-ridesx4
 # Flash the device using the artifacts from automotive-image-builder, this uses 3 partition file systems
 $$ j storage flash --target system_a:rootfs.simg --target system_b:qm_var.simg --target boot_a:aboot.img
+$$ j storage erase recoveryinfo
 $$ j power on
 $$ j serial start-console
 ```
@@ -118,6 +119,13 @@ The driver automatically handles compressed images (`.gz`, `.gzip`, `.xz`):
 ridesx_client.flash("/path/to/boot.img.gz", target="boot")
 ```
 
+### Erase Partition
+
+```{code-block} python
+# Erase a partition (boots to fastboot, erases, leaves device in fastboot)
+ridesx_client.erase_partition("recoveryinfo")
+```
+
 ### Power Control
 
 ```{code-block} python
@@ -137,7 +145,7 @@ power_client.cycle(wait=5)  # Wait 5 seconds between off/on
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_ridesx.client.RideSXClient()
-    :members: flash, flash_images, boot_to_fastboot, cli
+    :members: flash, flash_images, erase_partition, boot_to_fastboot, cli
 ```
 
 ### RideSXPowerClient

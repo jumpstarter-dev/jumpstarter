@@ -20,6 +20,7 @@ class RideSXDriver(Driver):
     decompression_timeout: int = field(default=15 * 60)  # 15 minutes
     flash_timeout: int = field(default=30 * 60)  # 30 minutes
     continue_timeout: int = field(default=20 * 60)  # 20 minutes
+    erase_timeout: int = field(default=120)  # 2 minutes
     storage_dir: str = field(default="/var/lib/jumpstarter/ridesx")
 
     # FLS configuration
@@ -325,6 +326,40 @@ class RideSXDriver(Driver):
         except FileNotFoundError:
             self.logger.error("FLS command not found - ensure FLS is installed and in PATH")
             raise RuntimeError("FLS command not found") from None
+
+    @export
+    def erase_partition(self, device_id: str, partition: str) -> dict[str, str]:
+        """Erase a partition using fastboot
+
+        Args:
+            device_id: The fastboot device ID
+            partition: The partition name to erase (e.g., 'recoveryinfo')
+        """
+        if not partition or not partition.strip():
+            raise ValueError("Partition name cannot be empty")
+
+        self.logger.info(f"Erasing partition '{partition}' on device {device_id}")
+
+        cmd = ["fastboot", "-s", device_id, "erase", "--", partition]
+        self.logger.debug(f"Running command: {' '.join(cmd)}")
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=self.erase_timeout)
+            self.logger.info(f"Successfully erased partition '{partition}'")
+            self.logger.debug(f"Erase stdout: {result.stdout}")
+            if result.stderr:
+                self.logger.debug(f"Erase stderr: {result.stderr}")
+            return {"status": "success", "partition": partition, "output": result.stdout}
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Failed to erase partition '{partition}' - return code: {e.returncode}")
+            self.logger.error(f"stdout: {e.stdout}")
+            self.logger.error(f"stderr: {e.stderr}")
+            raise RuntimeError(f"Failed to erase partition '{partition}': {e.stderr or e.stdout}") from e
+        except subprocess.TimeoutExpired:
+            self.logger.error(f"Timeout while erasing partition '{partition}'")
+            raise RuntimeError(f"Timeout while erasing partition '{partition}'") from None
+        except FileNotFoundError:
+            raise RuntimeError("fastboot command not found") from None
 
     @export
     async def boot_to_fastboot(self):

@@ -33,6 +33,23 @@ class RideSXClient(FlasherClient, CompositeClient):
     def boot_to_fastboot(self):
         return self.call("boot_to_fastboot")
 
+    def erase_partition(self, partition: str) -> dict[str, str]:
+        """Erase a partition on the device via fastboot.
+
+        Args:
+            partition: The partition name to erase (e.g., 'recoveryinfo')
+        """
+        self.logger.info(f"Starting erase operation for partition '{partition}'")
+        self.boot_to_fastboot()
+
+        detection_result = self.call("detect_fastboot_device", 5, 2.0)
+        if detection_result["status"] != "device_found":
+            raise click.ClickException("No fastboot devices found. Make sure device is in fastboot mode.")
+
+        device_id = detection_result["device_id"]
+        self.logger.info(f"Found fastboot device: {device_id}")
+        return self.call("erase_partition", device_id, partition)
+
     def _upload_file_if_needed(self, file_path: str, operator: Operator | None = None) -> str:
         if not file_path or not file_path.strip():
             raise ValueError("File path cannot be empty. Please provide a valid file path.")
@@ -476,6 +493,19 @@ class RideSXClient(FlasherClient, CompositeClient):
         def boot_to_fastboot():
             """Boot to fastboot"""
             self.boot_to_fastboot()
+
+        @base.command()
+        @click.argument("partition")
+        def erase(partition):
+            """Erase a partition using fastboot.
+
+            \b
+            Examples:
+              j storage erase recoveryinfo
+              j storage erase userdata
+            """
+            result = self.erase_partition(partition)
+            click.echo(f"Erased partition '{partition}': {result.get('status')}")
 
         return base
 
