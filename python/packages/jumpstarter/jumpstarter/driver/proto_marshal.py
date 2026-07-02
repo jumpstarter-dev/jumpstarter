@@ -370,10 +370,100 @@ def _py_to_pb_value(v: Any, out: Message) -> None:
         out.string_value = str(v)
 
 
+# --- client side (the generated typed clients) -------------------------------------------
+# The mirror of the host seam above: a generated client (jumpstarter.client.native) encodes its
+# native args into request bytes and decodes response bytes back into native values, against the
+# FileDescriptorSet embedded in its generated <stem>_descriptor.py module. No driver introspection —
+# the descriptor is the whole contract; the generated method passes its native return model.
+
+
+@dataclasses.dataclass
+class ClientMethodSpec:
+    """One RPC as the client sees it: the message classes + streaming shape for a grpc path."""
+
+    grpc_path: str
+    input_desc: Descriptor
+    output_desc: Descriptor
+    input_cls: type[Message]
+    output_cls: type[Message]
+    server_streaming: bool
+
+
+@dataclasses.dataclass
+class ServiceMarshaller:
+    """A service's client-side codec table, built once per generated client class."""
+
+    pool: DescriptorPool
+    service_full_name: str
+    methods: dict[str, ClientMethodSpec]  # keyed by grpc_path
+
+
+def build_service_marshaller(descriptor_set: bytes, service_full_name: str) -> ServiceMarshaller:
+    """Build the client-side codec table from a serialized, self-contained (deps-first)
+    ``FileDescriptorSet`` and the service's full name. Raises on an unresolvable set — a generated
+    client with a broken embedded descriptor is a build defect, not a runtime condition."""
+    from google.protobuf.descriptor_pb2 import FileDescriptorSet
+
+    file_set = FileDescriptorSet.FromString(descriptor_set)
+    pool = DescriptorPool()
+    for fdp in file_set.file:
+        pool.Add(fdp)
+    svc = pool.FindServiceByName(service_full_name)
+    methods: dict[str, ClientMethodSpec] = {}
+    for m in svc.methods:
+        path = f"/{service_full_name}/{m.name}"
+        methods[path] = ClientMethodSpec(
+            grpc_path=path,
+            input_desc=m.input_type,
+            output_desc=m.output_type,
+            input_cls=message_factory.GetMessageClass(m.input_type),
+            output_cls=message_factory.GetMessageClass(m.output_type),
+            server_streaming=m.server_streaming,
+        )
+    return ServiceMarshaller(pool=pool, service_full_name=service_full_name, methods=methods)
+
+
+def encode_args(spec: ClientMethodSpec, args: list[Any]) -> bytes:
+    """Encode positional native args into the request message's bytes (arg order = field order,
+    the same convention the host decodes by). An Empty request takes ``args == []``."""
+    fields = spec.input_desc.fields
+    if len(args) != len(fields):
+        raise ValueError(
+            f"{spec.grpc_path} takes {len(fields)} argument(s), got {len(args)}"
+        )
+    msg = spec.input_cls()
+    for fdesc, arg in zip(fields, args, strict=True):
+        _encode_field(msg, fdesc, Any, arg)
+    return msg.SerializeToString()
+
+
+def decode_result(spec: ClientMethodSpec, data: bytes, model: type | None) -> Any:
+    """Decode a response message's bytes into the native return value. ``model`` is the generated
+    method's native message type (dataclass) for a bare-message response, or ``None`` — then an
+    Empty response decodes to ``None`` and a synthetic ``<Method>Response{value}`` wrapper to its
+    unwrapped ``value``."""
+    msg = spec.output_cls()
+    msg.ParseFromString(data)
+    if model is not None:
+        return _decode_message(msg, spec.output_desc, model)
+    fields = spec.output_desc.fields
+    if not fields:
+        return None
+    if len(fields) == 1 and fields[0].name == "value":
+        return _decode_field(msg, fields[0], Any)
+    # A bare message with no model hint decodes to a plain field dict.
+    return _decode_message(msg, spec.output_desc, Any)
+
+
 __all__ = [
+    "ClientMethodSpec",
     "DriverMarshaller",
     "MethodSpec",
+    "ServiceMarshaller",
     "build_marshaller",
+    "build_service_marshaller",
     "decode_request",
+    "decode_result",
+    "encode_args",
     "encode_response",
 ]

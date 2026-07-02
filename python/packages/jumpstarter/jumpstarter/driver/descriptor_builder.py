@@ -19,7 +19,7 @@ from __future__ import annotations
 import dataclasses
 import inspect
 import logging
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, AsyncIterator, Generator, Iterator
 from typing import Any, get_args, get_origin
 
 from google.protobuf.descriptor_pb2 import (
@@ -427,13 +427,15 @@ def _to_snake_case(name: str) -> str:
 
 
 def _is_generator_type(annotation: Any) -> bool:
-    """Check if an annotation is AsyncGenerator or Generator."""
+    """Check if an annotation is a streaming-yield type: AsyncGenerator/Generator, or their
+    idiomatic hint forms AsyncIterator/Iterator (what generated proto-first interfaces use)."""
     origin = get_origin(annotation)
-    return origin is AsyncGenerator or origin is Generator
+    return origin in (AsyncGenerator, Generator, AsyncIterator, Iterator)
 
 
 def _unwrap_generator_type(annotation: Any) -> Any:
-    """Extract the yield type from AsyncGenerator[T, ...] or Generator[T, ...]."""
+    """Extract the yield type from AsyncGenerator[T, ...] / Generator[T, ...] /
+    AsyncIterator[T] / Iterator[T] (the yield type is the first arg in all four)."""
     args = get_args(annotation)
     if args:
         return args[0]

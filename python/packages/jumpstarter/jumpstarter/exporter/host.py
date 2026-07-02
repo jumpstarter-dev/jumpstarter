@@ -512,6 +512,21 @@ class _LocalResultStream:
         return item
 
 
+class _LocalNativeStream:
+    """The native (proto-bytes) analog of ``_LocalResultStream``: pulls encoded response messages
+    from the host's ``forward_stream_next``, releasing the handle at end of stream."""
+
+    def __init__(self, host: DriverHost, handle: int):
+        self._host = host
+        self._handle = handle
+
+    async def next(self):
+        item = await self._host.forward_stream_next(self._handle)
+        if item is None:
+            await self._host.forward_stream_close(self._handle)
+        return item
+
+
 _KNOWN_CODECS = frozenset({"gzip", "xz", "bz2", "zstd"})
 
 
@@ -621,6 +636,16 @@ class LocalSession:
     async def streaming_driver_call(self, uuid: str, method_name: str, args_json: str):
         handle = await self._host.streaming_open(uuid, method_name, args_json)
         return _LocalResultStream(self._host, handle)
+
+    # Native (proto-bytes) seam — what a generated NativeDriverClient drives. Bridged straight to
+    # the host's forward_* methods (locally there is no Rust core in between, hence no JSON
+    # fallback: a driver without a native surface raises Unimplemented here).
+    async def native_unary(self, uuid: str, path: str, body: bytes) -> bytes:
+        return await self._host.forward_unary(uuid, path, body)
+
+    async def native_server_stream(self, uuid: str, path: str, body: bytes):
+        handle = await self._host.forward_server_stream(uuid, path, body)
+        return _LocalNativeStream(self._host, handle)
 
     async def stream(self, request_json: str):
         opened = await self._host.open_stream(request_json)
