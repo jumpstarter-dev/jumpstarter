@@ -1,5 +1,7 @@
 """Tests for session GetReport with descriptions and methods_description"""
 
+import logging
+
 import grpc
 import pytest
 from google.protobuf import empty_pb2
@@ -415,3 +417,86 @@ async def test_serve_tcp_passphrase_missing():
                 with pytest.raises(grpc.aio.AioRpcError) as exc_info:
                     await stub.GetReport(empty_pb2.Empty())
                 assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
+
+
+# ============================================================================
+# Passphrase authentication logging
+# ============================================================================
+
+
+@pytest.mark.anyio
+async def test_serve_tcp_passphrase_rejected_logs_warning(caplog):
+    """Auth failure with wrong passphrase logs a warning with the RPC method name."""
+    from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+    passphrase = "test-secret-123"
+    driver = SimpleDriver(description="auth log test")
+    session = Session(uuid=driver.uuid, labels=driver.labels, root_device=driver)
+    with session:
+        async with session.serve_tcp_async(
+            "127.0.0.1", 0, interceptors=[PassphraseInterceptor(passphrase)]
+        ) as bound_port:
+            metadata = ((PASSPHRASE_METADATA_KEY, "wrong-passphrase"),)
+            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
+                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+                with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.auth"):
+                    with pytest.raises(grpc.aio.AioRpcError):
+                        await stub.GetReport(empty_pb2.Empty(), metadata=metadata)
+
+    # The interceptor should have emitted a WARNING log with the method name.
+    auth_warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "authentication failed" in r.message]
+    assert len(auth_warnings) >= 1, f"expected auth failure warning log, got: {[r.message for r in caplog.records]}"
+    # The log should include the RPC method name.
+    assert "GetReport" in auth_warnings[0].message, (
+        f"expected RPC method name 'GetReport' in warning, got: {auth_warnings[0].message}"
+    )
+
+
+@pytest.mark.anyio
+async def test_serve_tcp_passphrase_missing_logs_warning(caplog):
+    """Auth failure with no passphrase logs a warning with the RPC method name."""
+    from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+    passphrase = "test-secret-123"
+    driver = SimpleDriver(description="auth log test")
+    session = Session(uuid=driver.uuid, labels=driver.labels, root_device=driver)
+    with session:
+        async with session.serve_tcp_async(
+            "127.0.0.1", 0, interceptors=[PassphraseInterceptor(passphrase)]
+        ) as bound_port:
+            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
+                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+                with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.auth"):
+                    with pytest.raises(grpc.aio.AioRpcError):
+                        await stub.GetReport(empty_pb2.Empty())
+
+    auth_warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "authentication failed" in r.message]
+    assert len(auth_warnings) >= 1, f"expected auth failure warning log, got: {[r.message for r in caplog.records]}"
+    assert "GetReport" in auth_warnings[0].message
+
+
+@pytest.mark.anyio
+async def test_serve_tcp_passphrase_correct_no_warning_log(caplog):
+    """Successful auth should not emit any auth failure warning."""
+    from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+    passphrase = "test-secret-123"
+    driver = SimpleDriver(description="auth log test")
+    session = Session(uuid=driver.uuid, labels=driver.labels, root_device=driver)
+    with session:
+        async with session.serve_tcp_async(
+            "127.0.0.1", 0, interceptors=[PassphraseInterceptor(passphrase)]
+        ) as bound_port:
+            metadata = ((PASSPHRASE_METADATA_KEY, passphrase),)
+            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
+                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+                with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.auth"):
+                    response = await stub.GetReport(empty_pb2.Empty(), metadata=metadata)
+            assert response.uuid == str(driver.uuid)
+
+    auth_warnings = [
+        r for r in caplog.records if r.levelno == logging.WARNING and "authentication failed" in r.message
+    ]
+    assert len(auth_warnings) == 0, (
+        f"successful auth should not log warnings, got: {[r.message for r in auth_warnings]}"
+    )

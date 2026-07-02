@@ -208,9 +208,8 @@ type wrappedStream struct {
 }
 
 func logContext(ctx context.Context) context.Context {
-	p, ok := peer.FromContext(ctx)
-	if ok {
-		return log.IntoContext(ctx, log.FromContext(ctx, "peer", p.Addr))
+	if p, ok := peer.FromContext(ctx); ok && p.Addr != nil {
+		return log.IntoContext(ctx, log.FromContext(ctx, "peer", auth.PeerAddr(ctx)))
 	}
 	return ctx
 }
@@ -244,7 +243,6 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
-		logger.Info("unable to authenticate exporter", "error", err.Error())
 		return nil, err
 	}
 
@@ -311,7 +309,6 @@ func (s *ControllerService) Unregister(
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
-		logger.Error(err, "unable to authenticate exporter")
 		return nil, err
 	}
 
@@ -341,7 +338,6 @@ func (s *ControllerService) ReportStatus(
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
-		logger.Info("unable to authenticate exporter", "error", err.Error())
 		return nil, err
 	}
 
@@ -613,7 +609,6 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
-		logger.Error(err, "unable to authenticate exporter")
 		return err
 	}
 
@@ -747,7 +742,6 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 
 	client, err := s.authenticateClient(ctx)
 	if err != nil {
-		logger.Error(err, "unable to authenticate client")
 		return nil, err
 	}
 

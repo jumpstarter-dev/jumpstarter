@@ -17,7 +17,12 @@ limitations under the License.
 package service
 
 import (
+	"bytes"
 	"context"
+	"net"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -26,9 +31,13 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	grpcpeer "google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 const testRouterToken = "tok"
@@ -1776,5 +1785,244 @@ func TestListenQueueListenLoopDrainsOnSupersession(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("expected 2 drained tokens from listen loop, got %d", count)
+	}
+}
+
+// withCapturedLog creates a buffer-backed logr.Logger for use in tests and
+// returns the buffer plus a context enriched with that logger. It does NOT
+// mutate the global logf.Log, so tests are isolated from each other.
+func withCapturedLog(t *testing.T) (*bytes.Buffer, context.Context) {
+	t.Helper()
+	var buf bytes.Buffer
+	logger := ctrlzap.New(ctrlzap.UseDevMode(true), ctrlzap.WriteTo(&buf))
+	ctx := logf.IntoContext(context.Background(), logger)
+	return &buf, ctx
+}
+
+// TestRouterAuthenticateNoTokenLeak verifies that when the router's Stream
+// method logs an authentication failure, the raw JWT token value never appears
+// in the log output. This exercises the same code path as the real Stream
+// method: authenticate -> fail -> logger.Info("router authentication failed").
+func TestRouterAuthenticateNoTokenLeak(t *testing.T) {
+	const sensitiveToken = "header.payload.signature-secret-value"
+
+	buf, baseCtx := withCapturedLog(t)
+
+	// Build a context with gRPC metadata carrying the bogus bearer token
+	// and a peer address (like a real gRPC connection).
+	md := metadata.Pairs("authorization", "Bearer "+sensitiveToken)
+	ctx := metadata.NewIncomingContext(baseCtx, md)
+	ctx = grpcpeer.NewContext(ctx, &grpcpeer.Peer{
+		Addr: fakeAddr{network: "tcp", addr: "10.0.0.1:5555"},
+	})
+
+	// Reproduce the exact logging path from RouterService.Stream:
+	//   ctx = logContext(stream.Context())
+	//   logger := log.FromContext(ctx)
+	//   _, err := s.authenticate(ctx)
+	//   logger.Info("router authentication failed", "error", err.Error())
+	ctx = logContext(ctx)
+	logger := logf.FromContext(ctx)
+
+	svc := &RouterService{}
+	_, err := svc.authenticate(ctx)
+	if err == nil {
+		t.Fatal("expected authenticate to fail with an invalid token, but it succeeded")
+	}
+
+	// This is the exact log call from RouterService.Stream:
+	logger.Info("router authentication failed", "error", err.Error())
+
+	logged := buf.String()
+
+	// The log MUST contain the auth failure message.
+	if !strings.Contains(logged, "router authentication failed") {
+		t.Errorf("expected 'router authentication failed' in log, got:\n%s", logged)
+	}
+	// The log MUST contain the peer IP.
+	if !strings.Contains(logged, "10.0.0.1") {
+		t.Errorf("expected peer IP in log, got:\n%s", logged)
+	}
+	// The log MUST NOT contain the raw JWT token value.
+	if strings.Contains(logged, sensitiveToken) {
+		t.Errorf("JWT token value was leaked in log output:\n%s", logged)
+	}
+}
+
+// TestRouterAuthenticateReturnsUnauthenticated verifies the error code
+// returned for an invalid JWT is codes.Unauthenticated (not InvalidArgument).
+func TestRouterAuthenticateReturnsUnauthenticated(t *testing.T) {
+	md := metadata.Pairs("authorization", "Bearer invalid.jwt.token")
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	svc := &RouterService{}
+	_, err := svc.authenticate(ctx)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %T: %v", err, err)
+	}
+	if st.Code() != codes.Unauthenticated {
+		t.Errorf("expected codes.Unauthenticated, got %v", st.Code())
+	}
+}
+
+// TestRouterAuthenticateMissingMetadata verifies that when no authorization
+// metadata is present, authenticate() returns codes.Unauthenticated.
+func TestRouterAuthenticateMissingMetadata(t *testing.T) {
+	svc := &RouterService{}
+	_, err := svc.authenticate(context.Background())
+	if err == nil {
+		t.Fatal("expected error for missing metadata, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got %T: %v", err, err)
+	}
+	if st.Code() != codes.Unauthenticated {
+		t.Errorf("expected codes.Unauthenticated, got %v", st.Code())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// fakeAddr implements net.Addr for test peer injection.
+// ---------------------------------------------------------------------------
+
+type fakeAddr struct {
+	network string
+	addr    string
+}
+
+func (a fakeAddr) Network() string { return a.network }
+func (a fakeAddr) String() string  { return a.addr }
+
+// ---------------------------------------------------------------------------
+// logContext tests
+// ---------------------------------------------------------------------------
+
+func TestLogContext_WithPeer_EnrichesContextWithPeerIP(t *testing.T) {
+	buf, ctx := withCapturedLog(t)
+
+	ctx = grpcpeer.NewContext(ctx, &grpcpeer.Peer{
+		Addr: fakeAddr{network: "tcp", addr: "10.20.30.40:9090"},
+	})
+
+	enriched := logContext(ctx)
+
+	// Use the enriched context's logger and emit a message.
+	logf.FromContext(enriched).Info("test message")
+
+	logged := buf.String()
+	if !strings.Contains(logged, "10.20.30.40") {
+		t.Errorf("expected peer IP '10.20.30.40' in log output, got:\n%s", logged)
+	}
+	// Port should be stripped.
+	if strings.Contains(logged, "9090") {
+		t.Errorf("expected port to be stripped from peer address, got:\n%s", logged)
+	}
+}
+
+func TestLogContext_WithoutPeer_ReturnsUnchangedContext(t *testing.T) {
+	buf, ctx := withCapturedLog(t)
+
+	enriched := logContext(ctx)
+
+	logf.FromContext(enriched).Info("test message")
+
+	logged := buf.String()
+	// No peer info should be added.
+	if strings.Contains(logged, "peer") {
+		t.Errorf("expected no 'peer' key in log output without peer, got:\n%s", logged)
+	}
+}
+
+func TestLogContext_IPv6Peer_StripsPort(t *testing.T) {
+	buf, ctx := withCapturedLog(t)
+
+	ctx = grpcpeer.NewContext(ctx, &grpcpeer.Peer{
+		Addr: fakeAddr{network: "tcp", addr: "[::1]:8082"},
+	})
+
+	enriched := logContext(ctx)
+	logf.FromContext(enriched).Info("ipv6 test")
+
+	logged := buf.String()
+	if !strings.Contains(logged, "::1") {
+		t.Errorf("expected IPv6 address '::1' in log, got:\n%s", logged)
+	}
+}
+
+func TestLogContext_NilAddr_ReturnsUnchangedContext(t *testing.T) {
+	buf, ctx := withCapturedLog(t)
+
+	ctx = grpcpeer.NewContext(ctx, &grpcpeer.Peer{Addr: nil})
+
+	// Should not panic and should return context without peer enrichment.
+	enriched := logContext(ctx)
+	logf.FromContext(enriched).Info("nil addr test")
+
+	logged := buf.String()
+	if strings.Contains(logged, "peer") {
+		t.Errorf("expected no 'peer' key with nil Addr, got:\n%s", logged)
+	}
+}
+
+func TestLogContext_UnixSocket_ReturnsUnknownPeer(t *testing.T) {
+	buf, ctx := withCapturedLog(t)
+
+	ctx = grpcpeer.NewContext(ctx, &grpcpeer.Peer{
+		Addr: &net.UnixAddr{Name: "/var/run/test.sock", Net: "unix"},
+	})
+
+	enriched := logContext(ctx)
+	logf.FromContext(enriched).Info("unix socket test")
+
+	logged := buf.String()
+	// The peer key should be present but with value "unknown" because
+	// SplitHostPort fails on unix paths.
+	if !strings.Contains(logged, "unknown") {
+		t.Errorf("expected 'unknown' peer for unix socket, got:\n%s", logged)
+	}
+	// The socket path itself should NOT appear.
+	if strings.Contains(logged, "/var/run/test.sock") {
+		t.Errorf("unix socket path should not leak into log, got:\n%s", logged)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Verify that controller-service methods do NOT double-log auth failures.
+// The auth helpers in auth/auth.go own the auth-failure logging; the
+// controller_service RPC methods should NOT add their own log lines.
+// We verify this by grep-ing the source file rather than using runtime tests
+// (the auth layer needs mocks that require envtest).
+// ---------------------------------------------------------------------------
+
+func TestControllerServiceAuthMethodsDoNotLogAuthFailures(t *testing.T) {
+	// Auth-failure logging lives exclusively in auth/auth.go.
+	// The RPC methods in controller_service.go must NOT duplicate those
+	// log lines. We enforce this by scanning the source for forbidden
+	// auth-failure log strings.
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("failed to resolve test file path")
+	}
+	svcPath := filepath.Join(filepath.Dir(thisFile), "controller_service.go")
+	b, err := os.ReadFile(svcPath)
+	if err != nil {
+		t.Fatalf("failed to read controller_service.go: %v", err)
+	}
+	src := string(b)
+	for _, forbidden := range []string{
+		"client authentication failed",
+		"exporter authentication failed",
+		"unable to authenticate",
+	} {
+		if strings.Contains(src, forbidden) {
+			t.Errorf("found duplicate auth-failure logging in controller_service.go: %q", forbidden)
+		}
 	}
 }

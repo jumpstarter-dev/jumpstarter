@@ -52,7 +52,11 @@ type streamContext struct {
 func (s *RouterService) authenticate(ctx context.Context) (string, error) {
 	token, err := authentication.BearerTokenFromContext(ctx)
 	if err != nil {
-		return "", err
+		// Wrap any BearerTokenFromContext error as Unauthenticated.
+		// The underlying function may return InvalidArgument for missing
+		// metadata or malformed headers, but from the router's perspective
+		// any failure to extract a bearer token is an authentication failure.
+		return "", status.Errorf(codes.Unauthenticated, "missing or invalid authorization: %v", err)
 	}
 
 	parsed, err := jwt.ParseWithClaims(
@@ -71,19 +75,19 @@ func (s *RouterService) authenticate(ctx context.Context) (string, error) {
 	)
 
 	if err != nil || !parsed.Valid {
-		return "", status.Errorf(codes.InvalidArgument, "invalid jwt token")
+		return "", status.Errorf(codes.Unauthenticated, "invalid jwt token")
 	}
 
 	return parsed.Claims.GetSubject()
 }
 
 func (s *RouterService) Stream(stream pb.RouterService_StreamServer) error {
-	ctx := stream.Context()
+	ctx := logContext(stream.Context())
 	logger := log.FromContext(ctx)
 
 	streamName, err := s.authenticate(ctx)
 	if err != nil {
-		logger.Error(err, "failed to authenticate")
+		logger.Info("router authentication failed", "error", err.Error())
 		return err
 	}
 
