@@ -31,8 +31,8 @@ from google.protobuf.descriptor_pb2 import (
     ServiceDescriptorProto,
     SourceCodeInfo,
 )
-from pydantic import BaseModel
 
+from pydantic import BaseModel
 from .decorators import (
     MARKER_STREAM_METHOD,
     MARKER_STREAMCALL,
@@ -58,18 +58,25 @@ _DP_FIELD = 2  # DescriptorProto.field
 
 
 def resolve_interface_class(driver) -> type | None:
-    """Find the driver's INTERFACE class — the base that declares the per-interface contract (the
-    abstract ``@export`` methods + the ``client()`` classmethod). A driver subclasses its interface
-    alongside ``Driver`` (e.g. ``MockPower(PowerInterface, Driver)``), so the interface is the MRO
-    entry that defines ``client`` in its own namespace and is NOT itself a ``Driver`` subclass (which
-    excludes ``Driver`` and the concrete driver). Returns ``None`` if no such base exists (the driver
+    """Find the driver's INTERFACE class — the base that declares the per-interface contract.
+
+    Proto-first drivers subclass a codegen-generated base that itself directly subclasses
+    ``ProtoInterface`` (e.g. ``NativeMockPower(PowerInterface)``) — the interface is that
+    generated base. Legacy drivers subclass a hand-written interface ABC alongside ``Driver``
+    (e.g. ``MockPower(PowerInterface, Driver)``) — the interface is the MRO entry that defines
+    ``client`` in its own namespace and is NOT itself a ``Driver`` subclass (which excludes
+    ``Driver`` and the concrete driver). Returns ``None`` if no such base exists (the driver
     then has no native surface).
 
     Callers typically do ``resolve_interface_class(driver) or type(driver)`` — the concrete class is
     the fallback so a driver without a separate interface ABC still exposes its ``@export`` surface.
     """
     from .base import Driver
+    from .proto_interface import ProtoInterface
 
+    for cls in type(driver).__mro__:
+        if cls is not ProtoInterface and ProtoInterface in cls.__bases__:
+            return cls
     for cls in type(driver).__mro__:
         if cls is Driver or cls is object:
             continue
@@ -455,12 +462,16 @@ def _get_interface_methods(
     INHERITED ones from parent driver classes — so such a driver still exposes
     its complete native surface (not only methods defined in its own namespace).
     Methods resolve to their most-derived definition (a subclass override wins).
+
+    A codegen-generated proto-first base (a direct ProtoInterface subclass) is a Driver
+    subclass too, but its contract is its ABSTRACT methods — it takes the abstract branch.
     """
     from .base import Driver
+    from .proto_interface import ProtoInterface
 
     methods: dict[str, ExportedMethodInfo] = {}
 
-    is_concrete_driver = issubclass(interface_class, Driver)
+    is_concrete_driver = issubclass(interface_class, Driver) and ProtoInterface not in interface_class.__bases__
 
     if is_concrete_driver:
         # Walk the MRO base→derived so a derived override wins, collecting @export methods at each

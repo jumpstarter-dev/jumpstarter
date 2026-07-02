@@ -93,3 +93,27 @@ def exportstream(func):
     """
     setattr(func, MARKER_STREAMCALL, MARKER_MAGIC)
     return func
+
+
+def driver(*, client: str | None = None):
+    """Class decorator for proto-first driver classes — the Python analog of Rust's
+    ``#[driver(client = "...")]`` and the JVM's ``@JumpstarterDriver(client = ...)``.
+
+    A generated interface base already advertises its generated typed client, so the decorator is
+    only needed to point a driver at a custom one::
+
+        @driver(client="example.client.CyclingPowerClient")
+        class ExamplePower(PowerInterface): ...
+    """
+
+    def wrap(cls):
+        if client is not None:
+            label = client
+
+            def _client(cls) -> str:
+                return label
+
+            cls.client = classmethod(_client)
+        return cls
+
+    return wrap
