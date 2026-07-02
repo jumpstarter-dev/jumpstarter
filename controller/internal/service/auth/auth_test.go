@@ -74,14 +74,16 @@ func ctxWithPeer(addr string) context.Context {
 }
 
 // captureLog sets up a buffer-backed logger and returns the buffer and a
-// context enriched with that logger. The caller can inspect buf.String()
-// after the code under test runs. It does NOT mutate the global logf.Log,
-// so tests are isolated from each other and safe for t.Parallel().
+// context enriched with that logger, with LogContext applied on top exactly
+// like the gRPC interceptors do in production (that is what adds the "peer"
+// key to the auth-failure logs). The caller can inspect buf.String() after
+// the code under test runs. It does NOT mutate the global logf.Log, so tests
+// are isolated from each other and safe for t.Parallel().
 func captureLog(t *testing.T, ctx context.Context) (context.Context, *bytes.Buffer) {
 	t.Helper()
 	var buf bytes.Buffer
 	logger := ctrlzap.New(ctrlzap.UseDevMode(true), ctrlzap.WriteTo(&buf))
-	return logf.IntoContext(ctx, logger), &buf
+	return LogContext(logf.IntoContext(ctx, logger)), &buf
 }
 
 // peerAddrUnknown is the expected return value when PeerAddr cannot determine
@@ -384,6 +386,71 @@ func TestAuthExporter_Success_NoAuthFailureLog(t *testing.T) {
 	logged := buf.String()
 	if strings.Contains(logged, "authentication failed") {
 		t.Errorf("successful auth should produce no failure log, got:\n%s", logged)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// VerifyClient / VerifyExporter logging tests — the namespace-free variants
+// used by ControllerService's authenticate helpers.
+// ---------------------------------------------------------------------------
+
+func TestVerifyClient_TokenVerificationFailure_LogsPeerAndError(t *testing.T) {
+	authn := &stubAuthenticator{err: fmt.Errorf("bad token")}
+	attr := &stubAttributesGetter{}
+	authz := &stubAuthorizer{}
+
+	ctx := ctxWithPeer("192.168.1.11:5001")
+	ctx, buf := captureLog(t, ctx)
+
+	a := newAuth(authn, authz, attr)
+	_, err := a.VerifyClient(ctx)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, "client authentication failed") {
+		t.Errorf("expected 'client authentication failed', got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "192.168.1.11") {
+		t.Errorf("expected peer IP in log, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "bad token") {
+		t.Errorf("expected error text in log, got:\n%s", logged)
+	}
+	// The interceptor-applied LogContext owns the "peer" key; the auth layer
+	// must not add it a second time.
+	if n := strings.Count(logged, `"peer"`); n != 1 {
+		t.Errorf(`expected exactly one "peer" key in log output, found %d:\n%s`, n, logged)
+	}
+}
+
+func TestVerifyExporter_TokenVerificationFailure_LogsPeerAndError(t *testing.T) {
+	authn := &stubAuthenticator{err: fmt.Errorf("expired token")}
+	attr := &stubAttributesGetter{}
+	authz := &stubAuthorizer{}
+
+	ctx := ctxWithPeer("172.16.0.101:6001")
+	ctx, buf := captureLog(t, ctx)
+
+	a := newAuth(authn, authz, attr)
+	_, err := a.VerifyExporter(ctx)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, "exporter authentication failed") {
+		t.Errorf("expected 'exporter authentication failed', got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "172.16.0.101") {
+		t.Errorf("expected peer IP in log, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "expired token") {
+		t.Errorf("expected error text in log, got:\n%s", logged)
+	}
+	if n := strings.Count(logged, `"peer"`); n != 1 {
+		t.Errorf(`expected exactly one "peer" key in log output, found %d:\n%s`, n, logged)
 	}
 }
 

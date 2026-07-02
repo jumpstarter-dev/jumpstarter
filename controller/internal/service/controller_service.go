@@ -49,7 +49,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -207,35 +206,26 @@ type wrappedStream struct {
 	grpc.ServerStream
 }
 
+// logContext enriches the context logger with the peer address so every log
+// line (including auth failures logged by the auth package) carries a "peer"
+// key. See auth.LogContext for the enrichment semantics.
 func logContext(ctx context.Context) context.Context {
-	if p, ok := peer.FromContext(ctx); ok && p.Addr != nil {
-		return log.IntoContext(ctx, log.FromContext(ctx, "peer", auth.PeerAddr(ctx)))
-	}
-	return ctx
+	return auth.LogContext(ctx)
 }
 
 func (w *wrappedStream) Context() context.Context {
 	return logContext(w.ServerStream.Context())
 }
 
+// authenticateClient and authenticateExporter delegate to the auth package,
+// which owns auth-failure logging (with peer address) for all services.
+
 func (s *ControllerService) authenticateClient(ctx context.Context) (*jumpstarterdevv1alpha1.Client, error) {
-	return oidc.VerifyClientObjectToken(
-		ctx,
-		s.Authn,
-		s.Authz,
-		s.Attr,
-		s.Client,
-	)
+	return auth.NewAuth(s.Client, s.Authn, s.Authz, s.Attr).VerifyClient(ctx)
 }
 
 func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstarterdevv1alpha1.Exporter, error) {
-	return oidc.VerifyExporterObjectToken(
-		ctx,
-		s.Authn,
-		s.Authz,
-		s.Attr,
-		s.Client,
-	)
+	return auth.NewAuth(s.Client, s.Authn, s.Authz, s.Attr).VerifyExporter(ctx)
 }
 
 func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {

@@ -19,6 +19,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -28,14 +29,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	grpcpeer "google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apiserver/pkg/authentication/authenticator"
+	"k8s.io/apiserver/pkg/authentication/user"
+	"k8s.io/apiserver/pkg/authorization/authorizer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -1926,7 +1932,7 @@ func TestLogContext_WithPeer_EnrichesContextWithPeerIP(t *testing.T) {
 	}
 }
 
-func TestLogContext_WithoutPeer_ReturnsUnchangedContext(t *testing.T) {
+func TestLogContext_WithoutPeer_LogsUnknownPeer(t *testing.T) {
 	buf, ctx := withCapturedLog(t)
 
 	enriched := logContext(ctx)
@@ -1934,9 +1940,10 @@ func TestLogContext_WithoutPeer_ReturnsUnchangedContext(t *testing.T) {
 	logf.FromContext(enriched).Info("test message")
 
 	logged := buf.String()
-	// No peer info should be added.
-	if strings.Contains(logged, "peer") {
-		t.Errorf("expected no 'peer' key in log output without peer, got:\n%s", logged)
+	// The peer key is always present; without peer info it falls back to
+	// "unknown" so all log lines share a uniform shape.
+	if !strings.Contains(logged, "peer") || !strings.Contains(logged, "unknown") {
+		t.Errorf("expected 'peer' key with value 'unknown' without peer info, got:\n%s", logged)
 	}
 }
 
@@ -1956,18 +1963,18 @@ func TestLogContext_IPv6Peer_StripsPort(t *testing.T) {
 	}
 }
 
-func TestLogContext_NilAddr_ReturnsUnchangedContext(t *testing.T) {
+func TestLogContext_NilAddr_LogsUnknownPeer(t *testing.T) {
 	buf, ctx := withCapturedLog(t)
 
 	ctx = grpcpeer.NewContext(ctx, &grpcpeer.Peer{Addr: nil})
 
-	// Should not panic and should return context without peer enrichment.
+	// Should not panic and should fall back to peer="unknown".
 	enriched := logContext(ctx)
 	logf.FromContext(enriched).Info("nil addr test")
 
 	logged := buf.String()
-	if strings.Contains(logged, "peer") {
-		t.Errorf("expected no 'peer' key with nil Addr, got:\n%s", logged)
+	if !strings.Contains(logged, "peer") || !strings.Contains(logged, "unknown") {
+		t.Errorf("expected 'peer' key with value 'unknown' for nil Addr, got:\n%s", logged)
 	}
 }
 
@@ -2024,5 +2031,233 @@ func TestControllerServiceAuthMethodsDoNotLogAuthFailures(t *testing.T) {
 		if strings.Contains(src, forbidden) {
 			t.Errorf("found duplicate auth-failure logging in controller_service.go: %q", forbidden)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// End-to-end auth-failure logging through ControllerService RPCs.
+//
+// These tests drive real RPC methods with a failing authenticator and verify
+// that the auth failure is logged (by the auth package) with the peer address.
+// They guard against regressions where ControllerService bypasses the auth
+// package and auth failures produce no log output at all.
+// ---------------------------------------------------------------------------
+
+type failingAuthenticator struct{ err error }
+
+func (f *failingAuthenticator) AuthenticateContext(_ context.Context) (*authenticator.Response, bool, error) {
+	return nil, false, f.err
+}
+
+type noopAttributesGetter struct{}
+
+func (noopAttributesGetter) ContextAttributes(_ context.Context, _ user.Info) (authorizer.Attributes, error) {
+	return nil, nil
+}
+
+type noopAuthorizer struct{}
+
+func (noopAuthorizer) Authorize(_ context.Context, _ authorizer.Attributes) (authorizer.Decision, string, error) {
+	return authorizer.DecisionNoOpinion, "", nil
+}
+
+// authFailureServiceCtx builds a ControllerService whose authentication always
+// fails, plus a context carrying a peer address, a captured logger, and the
+// logContext enrichment applied by the gRPC interceptors in production.
+func authFailureServiceCtx(t *testing.T, peerAddr string) (*ControllerService, context.Context, *bytes.Buffer) {
+	t.Helper()
+	buf, ctx := withCapturedLog(t)
+	ctx = grpcpeer.NewContext(ctx, &grpcpeer.Peer{
+		Addr: fakeAddr{network: "tcp", addr: peerAddr},
+	})
+	ctx = logContext(ctx)
+
+	svc := &ControllerService{
+		Authn: &failingAuthenticator{err: fmt.Errorf("token verification failed")},
+		Authz: noopAuthorizer{},
+		Attr:  noopAttributesGetter{},
+	}
+	return svc, ctx, buf
+}
+
+func TestControllerServiceRegister_AuthFailure_LogsWithPeer(t *testing.T) {
+	svc, ctx, buf := authFailureServiceCtx(t, "203.0.113.7:33445")
+
+	_, err := svc.Register(ctx, &pb.RegisterRequest{})
+	if err == nil {
+		t.Fatal("expected Register to fail authentication, but it succeeded")
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, "exporter authentication failed") {
+		t.Errorf("expected 'exporter authentication failed' in log, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "203.0.113.7") {
+		t.Errorf("expected peer IP in log, got:\n%s", logged)
+	}
+	if strings.Contains(logged, "33445") {
+		t.Errorf("expected peer port to be stripped, got:\n%s", logged)
+	}
+	if n := strings.Count(logged, `"peer"`); n != 1 {
+		t.Errorf(`expected exactly one "peer" key in log output, found %d:\n%s`, n, logged)
+	}
+}
+
+func TestControllerServiceDial_AuthFailure_LogsWithPeer(t *testing.T) {
+	svc, ctx, buf := authFailureServiceCtx(t, "198.51.100.23:44556")
+
+	_, err := svc.Dial(ctx, &pb.DialRequest{})
+	if err == nil {
+		t.Fatal("expected Dial to fail authentication, but it succeeded")
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, "client authentication failed") {
+		t.Errorf("expected 'client authentication failed' in log, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "198.51.100.23") {
+		t.Errorf("expected peer IP in log, got:\n%s", logged)
+	}
+	if n := strings.Count(logged, `"peer"`); n != 1 {
+		t.Errorf(`expected exactly one "peer" key in log output, found %d:\n%s`, n, logged)
+	}
+}
+
+// fakeStatusStream implements pb.ControllerService_StatusServer for driving
+// the streaming Status RPC directly. Only Context() is exercised before the
+// auth failure aborts the handler.
+type fakeStatusStream struct {
+	pb.ControllerService_StatusServer
+	ctx context.Context
+}
+
+func (f *fakeStatusStream) Context() context.Context { return f.ctx }
+
+func TestControllerServiceStatus_AuthFailure_LogsWithPeer(t *testing.T) {
+	svc, ctx, buf := authFailureServiceCtx(t, "192.0.2.99:55667")
+
+	err := svc.Status(&pb.StatusRequest{}, &fakeStatusStream{ctx: ctx})
+	if err == nil {
+		t.Fatal("expected Status to fail authentication, but it succeeded")
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, "exporter authentication failed") {
+		t.Errorf("expected 'exporter authentication failed' in log, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "192.0.2.99") {
+		t.Errorf("expected peer IP in log, got:\n%s", logged)
+	}
+	if n := strings.Count(logged, `"peer"`); n != 1 {
+		t.Errorf(`expected exactly one "peer" key in log output, found %d:\n%s`, n, logged)
+	}
+}
+
+// fakeServerStream implements grpc.ServerStream for testing wrappedStream.
+type fakeServerStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (f *fakeServerStream) Context() context.Context { return f.ctx }
+
+// TestWrappedStreamContext_EnrichesPeer verifies the stream-interceptor
+// wrapper enriches the stream context logger with the peer address, exactly
+// like the unary interceptor does via logContext.
+func TestWrappedStreamContext_EnrichesPeer(t *testing.T) {
+	buf, ctx := withCapturedLog(t)
+	ctx = grpcpeer.NewContext(ctx, &grpcpeer.Peer{
+		Addr: fakeAddr{network: "tcp", addr: "203.0.113.42:7777"},
+	})
+
+	ws := &wrappedStream{ServerStream: &fakeServerStream{ctx: ctx}}
+	logf.FromContext(ws.Context()).Info("stream context test")
+
+	logged := buf.String()
+	if !strings.Contains(logged, "203.0.113.42") {
+		t.Errorf("expected peer IP in log from wrapped stream context, got:\n%s", logged)
+	}
+	if strings.Contains(logged, "7777") {
+		t.Errorf("expected peer port to be stripped, got:\n%s", logged)
+	}
+}
+
+// fakeRouterStream implements pb.RouterService_StreamServer for driving the
+// real RouterService.Stream method. Only Context() is exercised before the
+// auth failure aborts the handler.
+type fakeRouterStream struct {
+	pb.RouterService_StreamServer
+	ctx context.Context
+}
+
+func (f *fakeRouterStream) Context() context.Context { return f.ctx }
+
+// TestRouterStream_AuthFailure_LogsWithPeer drives the real Stream method
+// (not a replica of its logging sequence) with an invalid token and verifies
+// the auth failure is logged with the peer address and without the token.
+func TestRouterStream_AuthFailure_LogsWithPeer(t *testing.T) {
+	const sensitiveToken = "header.payload.signature-secret-value"
+
+	buf, baseCtx := withCapturedLog(t)
+	md := metadata.Pairs("authorization", "Bearer "+sensitiveToken)
+	ctx := metadata.NewIncomingContext(baseCtx, md)
+	ctx = grpcpeer.NewContext(ctx, &grpcpeer.Peer{
+		Addr: fakeAddr{network: "tcp", addr: "198.51.100.77:8888"},
+	})
+
+	svc := &RouterService{}
+	err := svc.Stream(&fakeRouterStream{ctx: ctx})
+	if err == nil {
+		t.Fatal("expected Stream to fail authentication, but it succeeded")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok || st.Code() != codes.Unauthenticated {
+		t.Errorf("expected codes.Unauthenticated, got %v", err)
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, "router authentication failed") {
+		t.Errorf("expected 'router authentication failed' in log, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "198.51.100.77") {
+		t.Errorf("expected peer IP in log, got:\n%s", logged)
+	}
+	if strings.Contains(logged, sensitiveToken) {
+		t.Errorf("JWT token value was leaked in log output:\n%s", logged)
+	}
+	if n := strings.Count(logged, `"peer"`); n != 1 {
+		t.Errorf(`expected exactly one "peer" key in log output, found %d:\n%s`, n, logged)
+	}
+}
+
+// TestRouterAuthenticateValidToken covers the success path: a JWT signed with
+// ROUTER_KEY and carrying the expected issuer/audience yields the subject.
+func TestRouterAuthenticateValidToken(t *testing.T) {
+	const routerKey = "test-router-key"
+	t.Setenv("ROUTER_KEY", routerKey)
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		Issuer:    "https://jumpstarter.dev/stream",
+		Audience:  jwt.ClaimStrings{"https://jumpstarter.dev/router"},
+		Subject:   "stream-e2e-unit",
+		IssuedAt:  jwt.NewNumericDate(time.Now()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+	})
+	signed, err := token.SignedString([]byte(routerKey))
+	if err != nil {
+		t.Fatalf("failed to sign test token: %v", err)
+	}
+
+	md := metadata.Pairs("authorization", "Bearer "+signed)
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	svc := &RouterService{}
+	subject, err := svc.authenticate(ctx)
+	if err != nil {
+		t.Fatalf("expected valid token to authenticate, got error: %v", err)
+	}
+	if subject != "stream-e2e-unit" {
+		t.Errorf("expected subject 'stream-e2e-unit', got %q", subject)
 	}
 }
