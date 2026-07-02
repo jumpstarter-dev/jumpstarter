@@ -1,5 +1,3 @@
-import os
-import sys
 from contextlib import nullcontext
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -8,96 +6,12 @@ import pytest
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
 from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
 from jumpstarter.exporter.hooks import (
-    DRAIN_MAX_EMPTY_POLLS,
-    DRAIN_TIMEOUT_SECONDS,
-    MAX_DRAIN_BYTES,
     HookExecutionError,
     HookExecutor,
     _flush_lines,
-    _monotonic,
 )
 
 pytestmark = pytest.mark.anyio
-
-# Tests that spawn real subprocesses via PTY and assert on captured logger
-# output are flaky on macOS due to a PTY kernel buffer timing race condition.
-# See https://github.com/jumpstarter-dev/jumpstarter/issues/821
-# Targeted for proper fix in 0.10.0.
-macos_pty_xfail = pytest.mark.xfail(
-    condition=sys.platform == "darwin",
-    reason="PTY output race condition on macOS (#821)",
-    strict=False,
-)
-
-
-class _PtyTracker:
-    """Tracks PTY fd and EOF state for drain tests that need to intercept
-    os.read and pty.openpty calls.
-
-    When ``return_drain_data`` is True (default), the first os.read after EOF
-    returns ``b"SHOULD_NOT_APPEAR\\n"``; otherwise it returns ``b""``.
-    """
-
-    def __init__(self, *, return_drain_data: bool = True) -> None:
-        import pty
-
-        self.parent_fd: int | None = None
-        self.eof_seen: bool = False
-        self._drain_data_returned: bool = False
-        self._return_drain_data = return_drain_data
-        self._original_openpty = pty.openpty
-        self._original_os_read = os.read
-
-    def tracking_openpty(self):
-        parent, child = self._original_openpty()
-        self.parent_fd = parent
-        return parent, child
-
-    def os_read_with_drain_data(self, fd, size):
-        if fd != self.parent_fd:
-            return self._original_os_read(fd, size)
-        if not self.eof_seen:
-            try:
-                data = self._original_os_read(fd, size)
-            except (BlockingIOError, OSError):
-                self.eof_seen = True
-                raise
-            if not data:
-                self.eof_seen = True
-                return b""
-            return data
-        if self._return_drain_data and not self._drain_data_returned:
-            self._drain_data_returned = True
-            return b"SHOULD_NOT_APPEAR\n"
-        return b""
-
-
-class _DrainDeadlineClock:
-    """A callable that replaces ``_monotonic`` to simulate the drain
-    deadline being exceeded between the ``while`` condition check and the
-    ``remaining`` calculation.
-
-    Only patches the hooks module's ``_monotonic`` reference, leaving
-    ``time.monotonic`` (used by the asyncio event loop) unaffected.
-    """
-
-    def __init__(self, real_monotonic, state: _PtyTracker) -> None:
-        self._real = real_monotonic
-        self._state = state
-        self._call_count = 0
-        self._deadline: float | None = None
-
-    def __call__(self) -> float:
-        real_time = self._real()
-        if not self._state.eof_seen:
-            return real_time
-        self._call_count += 1
-        if self._call_count == 1:
-            self._deadline = real_time + DRAIN_TIMEOUT_SECONDS
-            return real_time
-        if self._call_count == 2:
-            return self._deadline - 0.001  # type: ignore[operator]
-        return self._deadline + 1.0  # type: ignore[operator]
 
 
 class TestFlushLines:
@@ -151,9 +65,7 @@ def lease_scope():
         before_lease_hook=Event(),
         client_name="test-client",
     )
-    # Add mock session to lease_scope
     mock_session = MagicMock()
-    # Return a no-op context manager for context_log_source
     mock_session.context_log_source.return_value = nullcontext()
     lease_scope.session = mock_session
     lease_scope.socket_path = "/tmp/test_socket"
@@ -170,7 +82,6 @@ class TestHookExecutor:
         empty_config = HookConfigV1Alpha1()
         executor = HookExecutor(config=empty_config)
 
-        # Both hooks should return None for empty/None commands
         assert await executor.execute_before_lease_hook(lease_scope) is None
         assert await executor.execute_after_lease_hook(lease_scope) is None
 
@@ -207,7 +118,7 @@ class TestHookExecutor:
         assert "timed out after 1 seconds" in str(exc_info.value)
         assert exc_info.value.on_failure == "exit"
 
-    @macos_pty_xfail
+
     async def test_hook_environment_variables(self, lease_scope) -> None:
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
@@ -222,7 +133,7 @@ class TestHookExecutor:
             assert any("LEASE_NAME=test-lease-123" in call for call in info_calls)
             assert any("CLIENT_NAME=test-client" in call for call in info_calls)
 
-    @macos_pty_xfail
+
     async def test_real_time_output_logging(self, lease_scope) -> None:
         """Test that hook output is logged in real-time at INFO level."""
         hook_config = HookConfigV1Alpha1(
@@ -240,7 +151,7 @@ class TestHookExecutor:
             assert any("Line 2" in call for call in info_calls)
             assert any("Line 3" in call for call in info_calls)
 
-    @macos_pty_xfail
+
     async def test_post_lease_hook_execution_on_completion(self, lease_scope) -> None:
         """Test that post-lease hook executes when called directly."""
         hook_config = HookConfigV1Alpha1(
@@ -267,7 +178,6 @@ class TestHookExecutor:
             result = await executor.execute_before_lease_hook(lease_scope)
             assert result is not None
             assert "timed out" in result.lower()
-            # Verify WARNING log was created
             warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
             assert any("on_failure=warn, continuing" in call for call in warning_calls)
 
@@ -283,12 +193,8 @@ class TestHookExecutor:
         assert "exit code 1" in result.lower()
 
     async def test_failed_hook_with_warn_logs_warning_inside_log_source_context(self) -> None:
-        """Test that the WARNING log for on_failure='warn' is emitted inside context_log_source.
-
-        Issue #246: The WARNING log from _handle_hook_failure must be emitted while
-        the context_log_source context manager is active. This ensures the warning
-        is tagged with the hook source (BEFORE_LEASE_HOOK / AFTER_LEASE_HOOK) and
-        is visible to the client even without --exporter-logs.
+        """The WARNING log for on_failure='warn' must be emitted inside context_log_source
+        so the warning is tagged with the hook source and visible to the client.
         """
         from contextlib import contextmanager
 
@@ -301,7 +207,6 @@ class TestHookExecutor:
         )
         executor = HookExecutor(config=hook_config)
 
-        # Track whether context_log_source is active when warning is logged
         context_active = False
         warning_logged_in_context = False
 
@@ -351,7 +256,7 @@ class TestHookExecutor:
         result = await executor.execute_before_lease_hook(lease_scope)
         assert result is None
 
-    @macos_pty_xfail
+
     async def test_exec_bash(self, lease_scope) -> None:
         """Test that exec=/bin/bash allows bash-specific syntax.
 
@@ -373,7 +278,7 @@ class TestHookExecutor:
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("BASH_OK: world" in call for call in info_calls)
 
-    @macos_pty_xfail
+
     async def test_exec_python3(self, lease_scope) -> None:
         """Test that exec=python3 runs inline Python.
 
@@ -396,7 +301,7 @@ class TestHookExecutor:
             # Expected total: 0 + 1 + 4 + 9 == 14
             assert any("PYTHON_OK: 14" in call for call in info_calls)
 
-    @macos_pty_xfail
+
     async def test_script_file_sh(self, lease_scope, tmp_path) -> None:
         """Test that a .sh file auto-detects /bin/sh as interpreter."""
         script_file = tmp_path / "hook_script.sh"
@@ -419,7 +324,7 @@ class TestHookExecutor:
             debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
             assert any("Executing script file" in call for call in debug_calls)
 
-    @macos_pty_xfail
+
     async def test_script_file_py_autodetects_python(self, lease_scope, tmp_path) -> None:
         """Test that a .py file auto-detects the exporter's Python as interpreter."""
         import sys
@@ -440,13 +345,11 @@ class TestHookExecutor:
             assert result is None
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("PYFILE_OK" in call for call in info_calls)
-            # Verify it auto-detected Python (now logged at DEBUG level)
             debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
             assert any("Auto-detected Python script" in call for call in debug_calls)
-            # Verify it used the exporter's own Python interpreter
             assert any(sys.executable in call for call in debug_calls)
 
-    @macos_pty_xfail
+
     async def test_script_file_py_exec_override(self, lease_scope, tmp_path) -> None:
         """Test that explicit exec overrides .py auto-detection."""
         script_file = tmp_path / "hook_script.py"
@@ -466,11 +369,10 @@ class TestHookExecutor:
             assert result is None
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("OVERRIDE_OK" in call for call in info_calls)
-            # Should NOT say "Auto-detected" since exec was explicitly set
             debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
             assert not any("Auto-detected" in call for call in debug_calls)
 
-    @macos_pty_xfail
+
     async def test_noninteractive_environment(self, lease_scope) -> None:
         """Test that hooks receive noninteractive environment variables.
 
@@ -478,8 +380,8 @@ class TestHookExecutor:
         and that PS1 is not set in the env dict passed to the subprocess.
 
         Note: PS1 is verified via _create_hook_env directly because shells
-        started in a PTY may re-set PS1 from init files despite it being
-        removed from the environment.
+        may re-set PS1 from init files despite it being removed from the
+        environment.
         """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
@@ -494,7 +396,7 @@ class TestHookExecutor:
         executor = HookExecutor(config=hook_config)
 
         # Verify PS1 is removed from the env dict (not via subprocess, since
-        # shells in a PTY may re-set PS1 from profile/init files)
+        # shells may re-set PS1 from profile/init files)
         hook_env = executor._create_hook_env(lease_scope)
         assert "PS1" not in hook_env
 
@@ -570,168 +472,8 @@ class TestHookExecutor:
         assert lease_scope.skip_after_lease_hook is True
         mock_request_lease_release.assert_called_once()
 
-    async def test_pty_output_drained_after_stop_flag_set(self) -> None:
-        """Test that PTY drain captures data remaining after the stop flag is set.
 
-        Simulates the macOS scenario where PTY output is still in the kernel
-        buffer after the subprocess exits and reader_stop is set. Uses a pipe
-        to inject data, sets reader_stop=True to skip the main loop, and
-        verifies the finally-block drain captures all lines.
-        """
-        import fcntl
-        import time
-
-        read_fd, write_fd = os.pipe()
-        try:
-            flags = fcntl.fcntl(read_fd, fcntl.F_GETFL)
-            fcntl.fcntl(read_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-
-            os.write(write_fd, b"DRAIN_LINE_1\nDRAIN_LINE_2\nDRAIN_LINE_3\n")
-            os.close(write_fd)
-            write_fd = -1
-
-            output_lines: list[str] = []
-            buffer = b""
-
-            drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
-            drained = 0
-            while drained < MAX_DRAIN_BYTES and time.monotonic() < drain_deadline:
-                try:
-                    chunk = os.read(read_fd, 4096)
-                    if not chunk:
-                        break
-                    buffer += chunk
-                    drained += len(chunk)
-                except (BlockingIOError, OSError):
-                    break
-
-            buffer = _flush_lines(buffer, output_lines)
-
-            assert "DRAIN_LINE_1" in output_lines
-            assert "DRAIN_LINE_2" in output_lines
-            assert "DRAIN_LINE_3" in output_lines
-        finally:
-            os.close(read_fd)
-            if write_fd != -1:
-                os.close(write_fd)
-
-    async def test_drain_respects_byte_limit(self) -> None:
-        """Verify the drain loop stops after MAX_DRAIN_BYTES to prevent
-        indefinite blocking when a grandchild process holds the PTY open.
-
-        Directly tests the drain logic using a pipe with data exceeding the
-        byte limit. Uses non-blocking writes to fill the pipe without blocking.
-        """
-        import fcntl
-        import time
-
-        read_fd, write_fd = os.pipe()
-        try:
-            flags = fcntl.fcntl(read_fd, fcntl.F_GETFL)
-            fcntl.fcntl(read_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-            wflags = fcntl.fcntl(write_fd, fcntl.F_GETFL)
-            fcntl.fcntl(write_fd, fcntl.F_SETFL, wflags | os.O_NONBLOCK)
-
-            total_written = 0
-            chunk = b"X" * 4000 + b"\n"
-            try:
-                while True:
-                    os.write(write_fd, chunk)
-                    total_written += len(chunk)
-            except BlockingIOError:
-                pass
-
-            assert total_written > 0
-
-            output_lines: list[str] = []
-            buffer = b""
-            drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
-            drained = 0
-            while drained < MAX_DRAIN_BYTES and time.monotonic() < drain_deadline:
-                try:
-                    data = os.read(read_fd, 4096)
-                    if not data:
-                        break
-                    buffer += data
-                    drained += len(data)
-                except (BlockingIOError, OSError):
-                    break
-
-            buffer = _flush_lines(buffer, output_lines)
-
-            assert drained <= MAX_DRAIN_BYTES
-            assert len(output_lines) > 0
-        finally:
-            os.close(read_fd)
-            os.close(write_fd)
-
-    async def test_drain_completes_immediately_on_empty_buffer(self) -> None:
-        """Verify drain exits quickly when the PTY buffer is empty (EOF)."""
-        import time
-
-        read_fd, write_fd = os.pipe()
-        os.close(write_fd)
-        try:
-            import fcntl
-
-            flags = fcntl.fcntl(read_fd, fcntl.F_GETFL)
-            fcntl.fcntl(read_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-
-            output_lines: list[str] = []
-            buffer = b""
-            start = time.monotonic()
-
-            drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
-            drained = 0
-            while drained < MAX_DRAIN_BYTES and time.monotonic() < drain_deadline:
-                try:
-                    chunk = os.read(read_fd, 4096)
-                    if not chunk:
-                        break
-                    buffer += chunk
-                    drained += len(chunk)
-                except (BlockingIOError, OSError):
-                    break
-
-            buffer = _flush_lines(buffer, output_lines)
-            elapsed = time.monotonic() - start
-
-            assert output_lines == []
-            assert drained == 0
-            assert elapsed < 0.5
-        finally:
-            os.close(read_fd)
-
-    async def test_drain_handles_oserror_gracefully(self) -> None:
-        """Verify drain exits gracefully when os.read raises OSError (e.g. EIO)."""
-        import time
-
-        read_fd, write_fd = os.pipe()
-        os.close(write_fd)
-        os.close(read_fd)
-
-        output_lines: list[str] = []
-        buffer = b""
-
-        drain_deadline = time.monotonic() + DRAIN_TIMEOUT_SECONDS
-        drained = 0
-        while drained < MAX_DRAIN_BYTES and time.monotonic() < drain_deadline:
-            try:
-                chunk = os.read(read_fd, 4096)
-                if not chunk:
-                    break
-                buffer += chunk
-                drained += len(chunk)
-            except (BlockingIOError, OSError):
-                break
-
-        buffer = _flush_lines(buffer, output_lines)
-
-        assert output_lines == []
-        assert drained == 0
-
-    @macos_pty_xfail
-    async def test_drain_captures_output_without_trailing_newline(self, lease_scope) -> None:
+    async def test_output_captured_without_trailing_newline(self, lease_scope) -> None:
         """Verify output without a trailing newline is still captured."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
@@ -747,343 +489,6 @@ class TestHookExecutor:
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("NO_NEWLINE_OUTPUT" in call for call in info_calls)
 
-    @macos_pty_xfail
-    async def test_drain_reads_data_remaining_in_pty_buffer(self, lease_scope) -> None:
-        """Verify the drain loop inside read_pty_output reads data left in the
-        PTY kernel buffer after the main read loop exits.
-
-        Patches os.read so that, once the main loop has consumed the initial
-        subprocess output via EOF from the specific PTY fd, a subsequent read
-        returns additional data - simulating the macOS scenario where the
-        kernel buffers output that arrives after the reader stop flag is set.
-        """
-        import pty
-
-        hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
-                script="echo MAIN_OUTPUT",
-                timeout=10,
-            ),
-        )
-        executor = HookExecutor(config=hook_config)
-
-        original_os_read = os.read
-        original_openpty = pty.openpty
-        pty_parent_fd = None
-        eof_seen_on_pty = False
-
-        def tracking_openpty():
-            nonlocal pty_parent_fd
-            parent, child = original_openpty()
-            pty_parent_fd = parent
-            return parent, child
-
-        drain_data_returned = False
-
-        def os_read_with_drain_data(fd, size):
-            nonlocal eof_seen_on_pty, drain_data_returned
-            if fd != pty_parent_fd:
-                return original_os_read(fd, size)
-            if not eof_seen_on_pty:
-                try:
-                    data = original_os_read(fd, size)
-                except (BlockingIOError, OSError):
-                    if not eof_seen_on_pty:
-                        eof_seen_on_pty = True
-                    raise
-                if not data:
-                    eof_seen_on_pty = True
-                    return b""
-                return data
-            if not drain_data_returned:
-                drain_data_returned = True
-                return b"DRAIN_CAPTURED\n"
-            return b""
-
-        with (
-            patch("pty.openpty", side_effect=tracking_openpty),
-            patch("os.read", side_effect=os_read_with_drain_data),
-            patch("jumpstarter.exporter.hooks.logger") as mock_logger,
-        ):
-            result = await executor.execute_before_lease_hook(lease_scope)
-            assert result is None
-            assert pty_parent_fd is not None
-            assert eof_seen_on_pty
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("DRAIN_CAPTURED" in call for call in info_calls)
-
-    @macos_pty_xfail
-    async def test_drain_select_oserror_exits_gracefully(self, lease_scope) -> None:
-        """Verify the drain loop exits gracefully when select.select() raises
-        OSError (e.g. fd closed during drain).
-
-        Patches select.select inside the drain to raise OSError, simulating a
-        closed or invalid fd. The hook should still complete successfully.
-        """
-        import select as select_mod
-
-        original_select = select_mod.select
-        state = _PtyTracker()
-
-        def select_with_oserror(rlist, wlist, xlist, timeout=None):
-            if state.eof_seen and rlist and rlist[0] == state.parent_fd:
-                raise OSError("simulated fd closed during drain")
-            return original_select(rlist, wlist, xlist, timeout)
-
-        hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
-                script="echo SELECT_ERROR_TEST", timeout=10,
-            ),
-        )
-        executor = HookExecutor(config=hook_config)
-
-        with (
-            patch("pty.openpty", side_effect=state.tracking_openpty),
-            patch("os.read", side_effect=state.os_read_with_drain_data),
-            patch("jumpstarter.exporter.hooks.select.select", side_effect=select_with_oserror),
-            patch("jumpstarter.exporter.hooks.logger") as mock_logger,
-        ):
-            result = await executor.execute_before_lease_hook(lease_scope)
-            assert result is None
-            assert state.eof_seen
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("SELECT_ERROR_TEST" in call for call in info_calls)
-
-    @macos_pty_xfail
-    async def test_drain_select_valueerror_exits_gracefully(self, lease_scope) -> None:
-        """Verify the drain loop exits gracefully when select.select() raises
-        ValueError (e.g. negative fd).
-
-        This covers the except (ValueError, OSError) handler in the drain loop.
-        """
-        import select as select_mod
-
-        original_select = select_mod.select
-        state = _PtyTracker(return_drain_data=False)
-
-        def select_with_valueerror(rlist, wlist, xlist, timeout=None):
-            if state.eof_seen and rlist and rlist[0] == state.parent_fd:
-                raise ValueError("file descriptor cannot be a negative integer (-1)")
-            return original_select(rlist, wlist, xlist, timeout)
-
-        hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
-                script="echo VALUEERROR_TEST", timeout=10,
-            ),
-        )
-        executor = HookExecutor(config=hook_config)
-
-        with (
-            patch("pty.openpty", side_effect=state.tracking_openpty),
-            patch("os.read", side_effect=state.os_read_with_drain_data),
-            patch("jumpstarter.exporter.hooks.select.select", side_effect=select_with_valueerror),
-            patch("jumpstarter.exporter.hooks.logger") as mock_logger,
-        ):
-            result = await executor.execute_before_lease_hook(lease_scope)
-            assert result is None
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("VALUEERROR_TEST" in call for call in info_calls)
-
-    @macos_pty_xfail
-    async def test_drain_exits_when_deadline_exceeded_before_select(self, lease_scope) -> None:
-        """Verify the drain loop exits when the deadline is exceeded between the
-        while condition and the remaining-time check (line: if remaining <= 0).
-
-        Patches ``jumpstarter.exporter.hooks._monotonic`` (not ``time.monotonic``
-        globally) to simulate a jump past the deadline after the while condition
-        passes but before the remaining check.  Using the module-level
-        ``_monotonic`` reference avoids breaking the asyncio event loop, which
-        also relies on ``time.monotonic``.
-        """
-        state = _PtyTracker()
-        clock = _DrainDeadlineClock(_monotonic, state)
-
-        hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
-                script="echo DEADLINE_TEST", timeout=10,
-            ),
-        )
-        executor = HookExecutor(config=hook_config)
-
-        with (
-            patch("pty.openpty", side_effect=state.tracking_openpty),
-            patch("os.read", side_effect=state.os_read_with_drain_data),
-            patch("jumpstarter.exporter.hooks._monotonic", side_effect=clock),
-            patch("jumpstarter.exporter.hooks.logger") as mock_logger,
-        ):
-            result = await executor.execute_before_lease_hook(lease_scope)
-            assert result is None
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("DEADLINE_TEST" in call for call in info_calls)
-            # SHOULD_NOT_APPEAR should not be in output because the drain
-            # exited early due to remaining <= 0 before select could run
-            assert not any("SHOULD_NOT_APPEAR" in call for call in info_calls)
-
-    @macos_pty_xfail
-    async def test_drain_exception_is_suppressed(self, lease_scope) -> None:
-        """Verify that an unexpected exception raised during the drain is caught
-        by the except-Exception handler and does not propagate to the caller.
-
-        Patches _flush_lines so that the second call (inside the drain) raises
-        a RuntimeError. The hook should still complete successfully because the
-        drain's except-Exception block suppresses it.
-        """
-        hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
-                script="echo BEFORE_DRAIN_ERROR",
-                timeout=10,
-            ),
-        )
-        executor = HookExecutor(config=hook_config)
-
-        original_flush = _flush_lines
-        call_count = 0
-
-        def flush_lines_with_drain_error(buffer, output_lines):
-            nonlocal call_count
-            call_count += 1
-            result = original_flush(buffer, output_lines)
-            if call_count > 1:
-                raise RuntimeError("simulated drain error")
-            return result
-
-        with (
-            patch("jumpstarter.exporter.hooks._flush_lines", side_effect=flush_lines_with_drain_error),
-            patch("jumpstarter.exporter.hooks.logger"),
-        ):
-            result = await executor.execute_before_lease_hook(lease_scope)
-            assert result is None
-
-    @macos_pty_xfail
-    async def test_drain_retries_empty_select_then_captures_data(self, lease_scope) -> None:
-        """Verify that the drain retries after empty select() calls and still
-        captures data that arrives later.
-
-        Patches select.select to return empty for the first N calls (where
-        N < DRAIN_MAX_EMPTY_POLLS), then reports the fd as readable.  The
-        hook output should still be captured despite the initial empty polls.
-        """
-        import select as select_mod
-
-        original_select = select_mod.select
-        state = _PtyTracker()
-        empty_count = 0
-        empties_before_data = DRAIN_MAX_EMPTY_POLLS - 2  # e.g. 8 empties then data
-
-        def select_with_delayed_ready(rlist, wlist, xlist, timeout=None):
-            nonlocal empty_count
-            if state.eof_seen and rlist and rlist[0] == state.parent_fd:
-                empty_count += 1
-                if empty_count <= empties_before_data:
-                    return ([], [], [])  # simulate delayed data
-            return original_select(rlist, wlist, xlist, timeout)
-
-        hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
-                script="echo DELAYED_DRAIN_OK", timeout=10,
-            ),
-        )
-        executor = HookExecutor(config=hook_config)
-
-        with (
-            patch("pty.openpty", side_effect=state.tracking_openpty),
-            patch("os.read", side_effect=state.os_read_with_drain_data),
-            patch("jumpstarter.exporter.hooks.select.select", side_effect=select_with_delayed_ready),
-            patch("jumpstarter.exporter.hooks.logger") as mock_logger,
-        ):
-            result = await executor.execute_before_lease_hook(lease_scope)
-            assert result is None
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("DELAYED_DRAIN_OK" in call for call in info_calls)
-
-    @macos_pty_xfail
-    async def test_drain_terminates_after_max_empty_polls(self, lease_scope) -> None:
-        """Verify the drain loop terminates after DRAIN_MAX_EMPTY_POLLS
-        consecutive empty select() results.
-
-        Patches select.select to always return empty during the drain phase.
-        The hook should still complete (no hang) and the drain data should
-        not appear since it's never read.
-        """
-        import select as select_mod
-
-        original_select = select_mod.select
-        state = _PtyTracker(return_drain_data=False)
-
-        def select_always_empty(rlist, wlist, xlist, timeout=None):
-            if state.eof_seen and rlist and rlist[0] == state.parent_fd:
-                return ([], [], [])  # always empty
-            return original_select(rlist, wlist, xlist, timeout)
-
-        hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
-                script="echo MAX_EMPTY_TEST", timeout=10,
-            ),
-        )
-        executor = HookExecutor(config=hook_config)
-
-        with (
-            patch("pty.openpty", side_effect=state.tracking_openpty),
-            patch("os.read", side_effect=state.os_read_with_drain_data),
-            patch("jumpstarter.exporter.hooks.select.select", side_effect=select_always_empty),
-            patch("jumpstarter.exporter.hooks.logger") as mock_logger,
-        ):
-            result = await executor.execute_before_lease_hook(lease_scope)
-            assert result is None
-            # Main loop should have captured the output before drain
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("MAX_EMPTY_TEST" in call for call in info_calls)
-
-    @macos_pty_xfail
-    async def test_drain_empty_counter_resets_on_data(self, lease_scope) -> None:
-        """Verify the consecutive empty poll counter resets when data arrives.
-
-        Simulates an empty-data-empty pattern during drain: a few empty polls,
-        then data becomes readable, then more empty polls.  The counter should
-        reset after data is read, so the drain should tolerate more than
-        DRAIN_MAX_EMPTY_POLLS total empties as long as they are not consecutive.
-        """
-        import select as select_mod
-
-        original_select = select_mod.select
-        state = _PtyTracker()
-        drain_select_call = 0
-        # Pattern: 5 empties, then ready, then 5 more empties, then ready
-        # Total empties (10) >= DRAIN_MAX_EMPTY_POLLS but never consecutive
-        pattern = [False] * 5 + [True] + [False] * 5 + [True]
-
-        def select_with_interleaved_empties(rlist, wlist, xlist, timeout=None):
-            nonlocal drain_select_call
-            if state.eof_seen and rlist and rlist[0] == state.parent_fd:
-                idx = drain_select_call
-                drain_select_call += 1
-                if idx < len(pattern) and not pattern[idx]:
-                    return ([], [], [])
-            return original_select(rlist, wlist, xlist, timeout)
-
-        hook_config = HookConfigV1Alpha1(
-            before_lease=HookInstanceConfigV1Alpha1(
-                script="echo INTERLEAVE_TEST", timeout=10,
-            ),
-        )
-        executor = HookExecutor(config=hook_config)
-
-        with (
-            patch("pty.openpty", side_effect=state.tracking_openpty),
-            patch("os.read", side_effect=state.os_read_with_drain_data),
-            patch("jumpstarter.exporter.hooks.select.select", side_effect=select_with_interleaved_empties),
-            patch("jumpstarter.exporter.hooks.logger") as mock_logger,
-        ):
-            result = await executor.execute_before_lease_hook(lease_scope)
-            assert result is None
-            info_calls = [str(call) for call in mock_logger.info.call_args_list]
-            assert any("INTERLEAVE_TEST" in call for call in info_calls)
-
-    async def test_drain_constants_are_reasonable(self) -> None:
-        assert MAX_DRAIN_BYTES == 256 * 1024
-        assert DRAIN_TIMEOUT_SECONDS == 2.0
-        assert DRAIN_MAX_EMPTY_POLLS == 10
-
     async def test_exec_default_is_none(self) -> None:
         """Test that the default exec is None (auto-detect)."""
         hook = HookInstanceConfigV1Alpha1(script="echo hello")
@@ -1093,15 +498,10 @@ class TestHookExecutor:
 class TestHookExecutorPRRegressions:
     """Regression tests for issues reported during PR review of hooks feature."""
 
-    @macos_pty_xfail
-    async def test_infrastructure_messages_at_debug_not_info(self, lease_scope) -> None:
-        """Issue A1: Hook infrastructure messages should be at DEBUG, not INFO.
 
-        Infrastructure messages like 'Starting hook subprocess', 'Creating PTY',
-        'Spawning subprocess', 'Subprocess spawned', 'Subprocess completed', and
-        'Hook executed successfully' must be logged at DEBUG level so they don't
-        appear in the client LogStream at the default INFO level. Only user output
-        from the hook script should be at INFO.
+    async def test_infrastructure_messages_at_debug_not_info(self, lease_scope) -> None:
+        """Infrastructure messages must be at DEBUG, not INFO, so they
+        don't appear in the client LogStream.
         """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="echo 'user output'", timeout=10),
@@ -1114,10 +514,8 @@ class TestHookExecutorPRRegressions:
             debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
 
-            # Infrastructure messages should be at DEBUG level
             infra_messages = [
                 "Starting hook subprocess",
-                "Creating PTY",
                 "Spawning subprocess",
                 "Subprocess spawned",
                 "Hook executed successfully",
@@ -1130,15 +528,11 @@ class TestHookExecutorPRRegressions:
                     f"Infrastructure message '{msg}' should NOT be at INFO level"
                 )
 
-            # User output should be at INFO level
             assert any("user output" in call for call in info_calls)
 
     async def test_before_lease_hook_always_sets_event_on_failure(self, lease_scope) -> None:
-        """Issue C3: before_lease_hook event must be set even when hook fails.
-
-        When the beforeLease hook fails with on_failure=endLease, the event must
-        still be set to unblock process_connections in handle_lease. Otherwise
-        the lease hangs indefinitely.
+        """before_lease_hook event must be set even when hook fails, to
+        unblock process_connections in handle_lease.
         """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="endLease"),
@@ -1156,15 +550,10 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        # Event must always be set to unblock connections
         assert lease_scope.before_lease_hook.is_set()
 
     async def test_before_lease_hook_always_sets_event_on_exit(self, lease_scope) -> None:
-        """Issue C3b: before_lease_hook event must be set when hook fails with exit.
-
-        Same as C3 but for on_failure=exit. The event must be set, shutdown called,
-        and skip_after_lease_hook set to True.
-        """
+        """before_lease_hook event must be set when hook fails with on_failure=exit."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
         )
@@ -1184,12 +573,7 @@ class TestHookExecutorPRRegressions:
         mock_shutdown.assert_called_once()
 
     async def test_no_hooks_transitions_to_lease_ready(self, lease_scope) -> None:
-        """Issue D1: No hooks configured should transition directly to LEASE_READY.
-
-        When no hooks are configured, run_before_lease_hook should report
-        LEASE_READY immediately, preventing the 'create lease, never use → stuck'
-        scenario.
-        """
+        """No hooks configured should transition directly to LEASE_READY."""
         empty_config = HookConfigV1Alpha1()
         executor = HookExecutor(config=empty_config)
 
@@ -1206,19 +590,13 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        # Should have reported LEASE_READY
         assert any(
             status == ExporterStatus.LEASE_READY and msg == "Ready for commands"
             for status, msg in status_calls
         ), f"Expected LEASE_READY status, got: {status_calls}"
 
     async def test_skip_after_lease_prevents_after_hook_execution(self, lease_scope) -> None:
-        """Issue E1: beforeLease fail+exit should prevent afterLease hook execution.
-
-        When beforeLease fails with on_failure=exit, skip_after_lease_hook is set
-        to True. The handle_lease finally block checks this flag and skips the
-        afterLease hook. This test verifies the orchestration sequence.
-        """
+        """beforeLease fail+exit should prevent afterLease hook execution."""
         # Config with both hooks
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
@@ -1233,7 +611,6 @@ class TestHookExecutorPRRegressions:
 
         mock_shutdown = MagicMock()
 
-        # Run before hook (which fails and sets skip flag)
         await executor.run_before_lease_hook(
             lease_scope,
             mock_report_status,
@@ -1242,8 +619,6 @@ class TestHookExecutorPRRegressions:
 
         assert lease_scope.skip_after_lease_hook is True
 
-        # Now simulate what handle_lease does: check the flag before running after hook
-        # This mirrors the actual code: `if not lease_scope.skip_after_lease_hook:`
         if not lease_scope.skip_after_lease_hook:
             await executor.run_after_lease_hook(
                 lease_scope,
@@ -1251,19 +626,13 @@ class TestHookExecutorPRRegressions:
                 mock_shutdown,
             )
 
-        # AFTER_LEASE_HOOK status should never have been reported
         after_hook_statuses = [s for s, _ in status_calls if s == ExporterStatus.AFTER_LEASE_HOOK]
         assert len(after_hook_statuses) == 0, (
             f"afterLease hook should have been skipped, but AFTER_LEASE_HOOK was reported: {status_calls}"
         )
 
     async def test_before_hook_exit_reports_failed_not_available(self, lease_scope) -> None:
-        """Issue E2: beforeLease fail+exit should report FAILED, not AVAILABLE.
-
-        When beforeLease hook fails with on_failure=exit, the last status must be
-        BEFORE_LEASE_HOOK_FAILED. It should NOT report AVAILABLE, which would
-        incorrectly tell the controller the exporter is ready for new leases.
-        """
+        """beforeLease fail+exit should report FAILED, not AVAILABLE."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
         )
@@ -1282,35 +651,25 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        # Last status should be OFFLINE (reported before shutdown to prevent new leases)
         last_status, _ = status_calls[-1]
         assert last_status == ExporterStatus.OFFLINE, (
             f"Expected last status to be OFFLINE, got {last_status}"
         )
 
-        # BEFORE_LEASE_HOOK_FAILED should also be present (reported before OFFLINE)
         failed_statuses = [s for s, _ in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
         assert len(failed_statuses) > 0, (
             f"Expected BEFORE_LEASE_HOOK_FAILED status, got: {status_calls}"
         )
 
-        # AVAILABLE should never have been reported
         available_statuses = [s for s, _ in status_calls if s == ExporterStatus.AVAILABLE]
         assert len(available_statuses) == 0, (
             f"AVAILABLE should NOT be reported when beforeLease exits, got: {status_calls}"
         )
 
-        # Shutdown should have been called with correct args
         mock_shutdown.assert_called_once_with(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
 
     async def test_after_hook_exit_reports_failed_calls_shutdown(self, lease_scope) -> None:
-        """Issue E3: afterLease fail+exit should report FAILED and call shutdown.
-
-        When afterLease hook fails with on_failure=exit:
-        - AFTER_LEASE_HOOK_FAILED status must be reported
-        - AVAILABLE must NOT be reported
-        - shutdown must be called (not request_lease_release)
-        """
+        """afterLease fail+exit should report FAILED and call shutdown."""
         hook_config = HookConfigV1Alpha1(
             after_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
         )
@@ -1331,27 +690,22 @@ class TestHookExecutorPRRegressions:
             mock_request_release,
         )
 
-        # AFTER_LEASE_HOOK_FAILED should be in statuses
         failed_statuses = [s for s, _ in status_calls if s == ExporterStatus.AFTER_LEASE_HOOK_FAILED]
         assert len(failed_statuses) > 0, (
             f"Expected AFTER_LEASE_HOOK_FAILED status, got: {status_calls}"
         )
 
-        # AVAILABLE should NOT be in statuses
         available_statuses = [s for s, _ in status_calls if s == ExporterStatus.AVAILABLE]
         assert len(available_statuses) == 0, (
             f"AVAILABLE should NOT be reported when afterLease exits, got: {status_calls}"
         )
 
-        # Shutdown called (not request_lease_release)
         mock_shutdown.assert_called_once_with(exit_code=1, should_unregister=True, wait_for_lease_exit=True)
         mock_request_release.assert_not_called()
 
     async def test_before_hook_warn_includes_warning_prefix(self, lease_scope) -> None:
-        """Issue E5: beforeLease hook fail with warn should include HOOK_WARNING_PREFIX.
-
-        The status message for LEASE_READY must start with '[HOOK_WARNING] ' so that
-        shell.py can detect it and display a user-visible warning.
+        """beforeLease hook fail with warn should include HOOK_WARNING_PREFIX
+        so shell.py can detect and display a user-visible warning.
         """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="warn"),
@@ -1371,7 +725,6 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        # Find the LEASE_READY status call
         ready_calls = [(s, m) for s, m in status_calls if s == ExporterStatus.LEASE_READY]
         assert len(ready_calls) == 1, f"Expected exactly one LEASE_READY, got: {status_calls}"
         _, msg = ready_calls[0]
@@ -1380,11 +733,7 @@ class TestHookExecutorPRRegressions:
         )
 
     async def test_before_hook_exit_reports_offline_before_shutdown(self, lease_scope) -> None:
-        """When beforeLease hook fails with on_failure=exit, the exporter must
-        report OFFLINE status to the controller before initiating shutdown.
-        This prevents the controller from assigning new leases to a dying
-        exporter during the shutdown window.
-        """
+        """OFFLINE must be reported before shutdown to prevent new lease assignment."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="exit"),
         )
@@ -1484,11 +833,9 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        # beforeLease with warn should still transition to LEASE_READY
         ready_calls = [s for s, _ in status_calls if s == ExporterStatus.LEASE_READY]
         assert len(ready_calls) == 1
 
-        # Now run afterLease (simulating premature lease-end cleanup)
         await executor.run_after_lease_hook(
             lease_scope,
             mock_report_status,
@@ -1496,18 +843,13 @@ class TestHookExecutorPRRegressions:
             mock_request_release,
         )
 
-        # afterLease hook should run and transition to AVAILABLE
         available_calls = [s for s, _ in status_calls if s == ExporterStatus.AVAILABLE]
         assert len(available_calls) > 0, (
             f"Expected AVAILABLE status after warn+afterLease, got: {status_calls}"
         )
 
     async def test_after_hook_warn_includes_warning_prefix(self, lease_scope) -> None:
-        """Issue E5b: afterLease hook fail with warn should include HOOK_WARNING_PREFIX.
-
-        The status message for AVAILABLE must start with '[HOOK_WARNING] ' so that
-        shell.py can detect it and display a user-visible warning after session ends.
-        """
+        """afterLease hook fail with warn should include HOOK_WARNING_PREFIX."""
         hook_config = HookConfigV1Alpha1(
             after_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="warn"),
         )
@@ -1526,7 +868,6 @@ class TestHookExecutorPRRegressions:
             mock_shutdown,
         )
 
-        # Find the AVAILABLE status call
         available_calls = [(s, m) for s, m in status_calls if s == ExporterStatus.AVAILABLE]
         assert len(available_calls) == 1, f"Expected exactly one AVAILABLE, got: {status_calls}"
         _, msg = available_calls[0]
@@ -1629,3 +970,238 @@ class TestBeforeLeaseHookLeaseEndedGuard:
         assert len(hook_started_calls) == 1, (
             f"BEFORE_LEASE_HOOK must be reported (hook must run) even when lease has ended, got: {status_calls}"
         )
+
+
+class TestPipeOutputEdgeCases:
+    """Edge cases for pipe-based output capture (PR #837)."""
+
+    async def test_stderr_captured_via_pipe_merge(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo STDOUT_LINE; echo STDERR_LINE >&2",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("STDOUT_LINE" in call for call in info_calls)
+        assert any("STDERR_LINE" in call for call in info_calls)
+
+    async def test_large_output_spanning_multiple_reads(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script=(
+                    "seq 1 200 | while read n; do "
+                    "echo \"LINE_${n}_PADDING_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\"; "
+                    "done"
+                ),
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("LINE_1_" in call for call in info_calls)
+        assert any("LINE_100_" in call for call in info_calls)
+        assert any("LINE_200_" in call for call in info_calls)
+
+    async def test_non_utf8_output_decoded_with_replacement(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                exec_="python3",
+                script=(
+                    "import sys; "
+                    "sys.stdout.buffer.write(b'VALID_PREFIX\\x80VALID_SUFFIX\\n')"
+                ),
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        matching = [
+            call for call in info_calls
+            if "VALID_PREFIX" in call and "VALID_SUFFIX" in call
+        ]
+        assert len(matching) > 0
+
+    async def test_rapid_exit_with_buffered_output(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo FAST_1; echo FAST_2; echo FAST_3; echo FAST_4; echo FAST_5",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        for i in range(1, 6):
+            assert any(f"FAST_{i}" in call for call in info_calls), (
+                f"FAST_{i} was not captured"
+            )
+
+    async def test_spawn_failure_cleans_up_without_crash(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                exec_="/nonexistent/interpreter",
+                script="echo should not run",
+                timeout=10,
+                on_failure="warn",
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        result = await executor.execute_before_lease_hook(lease_scope)
+        assert result is not None
+        assert "error" in result.lower()
+
+    async def test_interleaved_stdout_and_stderr_captured(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script=(
+                    "echo OUT_1; echo ERR_1 >&2; "
+                    "echo OUT_2; echo ERR_2 >&2; "
+                    "echo OUT_3"
+                ),
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        for label in ("OUT_1", "OUT_2", "OUT_3", "ERR_1", "ERR_2"):
+            assert any(label in call for call in info_calls), (
+                f"{label} was not captured"
+            )
+
+    async def test_timeout_with_grandchild_holding_pipe(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo GRANDCHILD_TEST; sleep 10 &",
+                timeout=2,
+                on_failure="warn",
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is not None
+        assert "timed out" in result.lower()
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("GRANDCHILD_TEST" in call for call in info_calls)
+
+
+class TestReadOutputErrorPaths:
+    """Tests for BlockingIOError and OSError handling in read_output.
+
+    These exercise the read_output error paths via real subprocesses
+    that produce controlled output patterns, and via _flush_lines
+    for the partial buffer flush path.
+    """
+
+    async def test_blocking_io_error_path_via_nonblocking_pipe(self, lease_scope) -> None:
+        """On a non-blocking pipe, reading before data arrives raises
+        BlockingIOError. read_output handles this by continuing the loop.
+        Verified via a script that delays output.
+        """
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="sleep 0.1; echo DELAYED_OUTPUT",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("DELAYED_OUTPUT" in call for call in info_calls)
+
+    async def test_reader_exits_on_eof(self, lease_scope) -> None:
+        """read_output exits cleanly when os.read returns empty bytes (EOF)."""
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo BEFORE_CLOSE",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("BEFORE_CLOSE" in call for call in info_calls)
+
+    def test_flush_lines_partial_buffer_preserved(self) -> None:
+        """Partial buffer (no trailing newline) is returned for later flush."""
+        output: list[str] = []
+        remainder = _flush_lines(b"complete\npartial_data", output)
+        assert output == ["complete"]
+        assert remainder == b"partial_data"
+
+    async def test_partial_buffer_flushed_on_exit(self, lease_scope) -> None:
+        """When the subprocess exits with output lacking a trailing newline,
+        the finally block in read_output flushes the partial buffer.
+        """
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="printf 'NO_TRAILING_NEWLINE'",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("NO_TRAILING_NEWLINE" in call for call in info_calls)
+
+    async def test_mixed_complete_and_partial_lines(self, lease_scope) -> None:
+        """Complete lines are flushed immediately; the trailing partial
+        is flushed when the subprocess exits.
+        """
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="printf 'LINE_A\\nLINE_B\\nPARTIAL_C'",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("LINE_A" in call for call in info_calls)
+        assert any("LINE_B" in call for call in info_calls)
+        assert any("PARTIAL_C" in call for call in info_calls)

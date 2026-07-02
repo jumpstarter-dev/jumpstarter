@@ -2,8 +2,7 @@
 
 import logging
 import os
-import select
-import time
+import signal
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Literal
@@ -21,23 +20,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-MAX_DRAIN_BYTES = 256 * 1024
-DRAIN_TIMEOUT_SECONDS = 2.0
-DRAIN_MAX_EMPTY_POLLS = 10
-
-# Module-level reference to time.monotonic so tests can patch it without
-# affecting the asyncio event loop (which also uses time.monotonic).
-_monotonic = time.monotonic
 
 
 def _flush_lines(buffer: bytes, output_lines: list[str]) -> bytes:
-    """Extract and log complete lines from a byte buffer.
-
-    Splits the buffer on newline boundaries, decodes each complete line,
-    and appends non-empty lines to output_lines while logging them.
-
-    Returns the remaining bytes after the last newline (incomplete line).
-    """
+    """Extract complete lines from buffer, log them, return the remainder."""
     while b"\n" in buffer:
         line, buffer = buffer.split(b"\n", 1)
         line_decoded = line.decode(errors="replace").rstrip()
@@ -49,13 +35,7 @@ def _flush_lines(buffer: bytes, output_lines: list[str]) -> bytes:
 
 @dataclass
 class HookExecutionError(Exception):
-    """Raised when a hook fails and on_failure is set to 'endLease' or 'exit'.
-
-    Attributes:
-        message: Error message describing the failure
-        on_failure: The on_failure mode that triggered this error ('endLease' or 'exit')
-        hook_type: The type of hook that failed ('before_lease' or 'after_lease')
-    """
+    """Raised when a hook fails and on_failure is set to 'endLease' or 'exit'."""
 
     message: str
     on_failure: Literal["endLease", "exit"]
@@ -73,19 +53,6 @@ class HookExecutionError(Exception):
         return self.on_failure in ("endLease", "exit")
 
 
-@dataclass
-class PtyState:
-    """Mutable state for PTY file descriptors and reader coordination.
-
-    Tracks which fds are still open (for cleanup) and provides a separate
-    stop flag to signal the reader task without affecting fd lifecycle.
-    """
-
-    parent_fd_open: bool = True
-    child_fd_open: bool = True
-    reader_stop: bool = False
-
-
 @dataclass(kw_only=True)
 class HookExecutor:
     """Executes lifecycle hooks with access to the j CLI."""
@@ -93,22 +60,13 @@ class HookExecutor:
     config: HookConfigV1Alpha1
 
     def _create_hook_env(self, lease_scope: "LeaseContext") -> dict[str, str]:
-        """Create standardized hook environment variables.
+        """Create environment variables for hook execution.
 
-        Args:
-            lease_scope: LeaseScope containing lease metadata and socket paths
-
-        Returns:
-            Dictionary of environment variables for hook execution
-
-        Note:
-            Uses the hook_socket_path (if available) instead of the main socket_path
-            to prevent SSL frame corruption when hook j commands access the session
-            concurrently with client LogStream connections.
+        Uses hook_socket_path (if available) instead of the main socket_path
+        to prevent SSL frame corruption when hook j commands access the session
+        concurrently with client LogStream connections.
         """
         hook_env = os.environ.copy()
-        # Use dedicated hook socket to prevent SSL corruption
-        # Falls back to main socket if hook socket not available (backward compatibility)
         socket_path = lease_scope.hook_socket_path or lease_scope.socket_path
         if lease_scope.hook_socket_path:
             logger.info(
@@ -129,9 +87,8 @@ class HookExecutor:
                 "LEASE_NAME": lease_scope.lease_name,
                 "CLIENT_NAME": lease_scope.client_name,
                 # Signal noninteractive mode to the child process.
-                # Even though hooks run in a PTY (for line-buffered output), they
-                # are not interactive sessions. These variables prevent programs
-                # from displaying prompts or interactive UI.
+                # Hooks are not interactive sessions. These variables prevent
+                # programs from displaying prompts or interactive UI.
                 "TERM": "dumb",
                 "DEBIAN_FRONTEND": "noninteractive",
                 "GIT_TERMINAL_PROMPT": "0",
@@ -147,16 +104,7 @@ class HookExecutor:
         lease_scope: "LeaseContext",
         log_source: LogSource,
     ) -> str | None:
-        """Execute a single hook command.
-
-        Args:
-            hook_config: Hook configuration including script, timeout, and on_failure
-            lease_scope: LeaseScope containing lease metadata and session
-            log_source: Log source for hook output
-
-        Returns:
-            Warning message string if hook failed with on_failure='warn', None otherwise
-        """
+        """Execute a single hook command."""
         command = hook_config.script
         if not command or not command.strip():
             logger.debug("Hook command is empty, skipping")
@@ -164,14 +112,11 @@ class HookExecutor:
 
         logger.debug("Executing hook: %s", command.strip().split("\n")[0][:100])
 
-        # Determine hook type from log source
         hook_type = "before_lease" if log_source == LogSource.BEFORE_LEASE_HOOK else "after_lease"
 
-        # Validate session is available for logging
         if lease_scope.session is None:
             raise RuntimeError("Cannot execute hook: lease_scope.session is None")
 
-        # Use existing session from lease_scope
         hook_env = self._create_hook_env(lease_scope)
         logger.debug(
             "Hook environment: JUMPSTARTER_HOST=%s, LEASE_NAME=%s, CLIENT_NAME=%s",
@@ -191,20 +136,7 @@ class HookExecutor:
         hook_type: Literal["before_lease", "after_lease"],
         cause: Exception | None = None,
     ) -> str | None:
-        """Handle hook failure according to on_failure setting.
-
-        Args:
-            error_msg: Error message describing the failure
-            on_failure: The on_failure mode ('warn', 'endLease', or 'exit')
-            hook_type: The type of hook that failed
-            cause: Optional exception that caused the failure
-
-        Returns:
-            Warning message string if on_failure is 'warn', None otherwise
-
-        Raises:
-            HookExecutionError: If on_failure is 'endLease' or 'exit'
-        """
+        """Handle hook failure according to on_failure setting."""
         if on_failure == "warn":
             logger.warning("%s (on_failure=warn, continuing)", error_msg)
             return error_msg
@@ -217,7 +149,6 @@ class HookExecutor:
             hook_type=hook_type,
         )
 
-        # Properly handle exception chaining
         if cause is not None:
             raise error from cause
         else:
@@ -232,52 +163,28 @@ class HookExecutor:
         logging_session: Session,
         hook_type: Literal["before_lease", "after_lease"],
     ) -> str | None:
-        """Execute the hook process with the given environment and logging session.
-
-        Uses subprocess with a PTY to force line buffering in the subprocess,
-        ensuring logs stream in real-time rather than being block-buffered.
-
-        Returns:
-            Warning message string if hook failed with on_failure='warn', None otherwise
-        """
-        import pty
+        """Execute the hook process and capture its output via pipes."""
         import subprocess
 
         command = hook_config.script
         timeout = hook_config.timeout
         on_failure = hook_config.on_failure
 
-        # Exception handling
         error_msg: str | None = None
         cause: Exception | None = None
         timed_out = False
 
-        # Route hook output logs to the client via the session's log stream
         logger.debug("Entering log source context for %s", log_source)
         with logging_session.context_log_source(__name__, log_source):
-            # Create a PTY pair - this forces line buffering in the subprocess
             logger.debug("Starting hook subprocess...")
-            logger.debug("Creating PTY pair...")
-            try:
-                parent_fd, child_fd = pty.openpty()
-            except Exception as e:
-                logger.error("Failed to create PTY: %s", e, exc_info=True)
-                raise
-            logger.debug("PTY created: parent_fd=%d, child_fd=%d", parent_fd, child_fd)
-
-            pty_state = PtyState()
 
             process: subprocess.Popen | None = None
             try:
-                # Use subprocess.Popen with the PTY child as stdin/stdout/stderr
-                # This avoids the issues with os.fork() in async contexts
-                # Determine interpreter and invocation mode
                 script_stripped = command.strip()
                 is_file = "\n" not in script_stripped and os.path.isfile(script_stripped)
 
                 interpreter = hook_config.exec_
                 if is_file and interpreter is None:
-                    # Auto-detect interpreter from file extension
                     import sys
 
                     ext = os.path.splitext(script_stripped)[1].lower()
@@ -301,137 +208,43 @@ class HookExecutor:
                 try:
                     process = subprocess.Popen(
                         cmd,
-                        stdin=child_fd,
-                        stdout=child_fd,
-                        stderr=child_fd,
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
                         env=hook_env,
-                        start_new_session=True,  # Equivalent to os.setsid()
-                        close_fds=True,  # Close inherited fds to prevent interference with gRPC connections
+                        process_group=0,
+                        close_fds=True,
                     )
                 except Exception as e:
                     logger.error("Failed to spawn subprocess: %s", e, exc_info=True)
                     raise
                 logger.debug("Subprocess spawned with PID %d", process.pid)
-                # Close child fd in parent process - subprocess has it now
-                os.close(child_fd)
-                pty_state.child_fd_open = False
-                logger.debug("Closed child_fd in parent process")
 
                 output_lines: list[str] = []
 
-                # Set parent fd to non-blocking mode
-                import fcntl
+                assert process.stdout is not None
+                pipe_fd = process.stdout.fileno()
+                os.set_blocking(pipe_fd, False)
 
-                flags = fcntl.fcntl(parent_fd, fcntl.F_GETFL)
-                fcntl.fcntl(parent_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
-                logger.debug("Parent fd set to non-blocking")
-
-                async def read_pty_output() -> None:  # noqa: C901
-                    """Read from PTY parent fd line by line using non-blocking I/O."""
-                    logger.debug("read_pty_output task started")
+                async def read_output() -> None:
+                    """Read subprocess output via pipe using async non-blocking I/O."""
                     buffer = b""
-                    read_count = 0
-                    last_heartbeat = 0
-
-                    start_time = _monotonic()
                     try:
-                        while not pty_state.reader_stop:
+                        while True:
                             try:
-                                # Wait for fd to be readable with timeout
                                 with anyio.move_on_after(0.1):
-                                    await anyio.wait_readable(parent_fd)
-
-                                # Check stop flag immediately after timeout
-                                # (main task may have signaled us to stop)
-                                if pty_state.reader_stop:
-                                    logger.debug("read_pty_output: stop flag set, exiting")
+                                    await anyio.wait_readable(pipe_fd)
+                                chunk = os.read(pipe_fd, 4096)
+                                if not chunk:
                                     break
-
-                                read_count += 1
-                                # Log heartbeat every 2 seconds
-                                elapsed = _monotonic() - start_time
-                                if elapsed - last_heartbeat >= 2.0:
-                                    logger.debug(
-                                        "read_pty_output: heartbeat at %.1fs, iterations=%d", elapsed, read_count
-                                    )
-                                    last_heartbeat = elapsed
-
-                                # Read available data (non-blocking)
-                                try:
-                                    chunk = os.read(parent_fd, 4096)
-                                    if not chunk:
-                                        # EOF
-                                        logger.debug("read_pty_output: EOF received")
-                                        break
-                                    buffer += chunk
-                                except BlockingIOError:
-                                    # No data available right now, continue loop
-                                    continue
-                                except OSError as e:
-                                    # PTY closed or error
-                                    logger.debug("read_pty_output: OSError on read: %s", e)
-                                    break
-
-                                # Process complete lines
-                                buffer = _flush_lines(buffer, output_lines)
-
+                                buffer += chunk
+                            except BlockingIOError:
+                                continue
                             except OSError as e:
-                                # PTY closed or read error
-                                logger.debug("read_pty_output: OSError in loop: %s", e)
+                                logger.debug("read_output: OSError: %s", e)
                                 break
-                    finally:
-                        # Drain any remaining data from the PTY buffer.
-                        # On macOS, PTY output may still be in the kernel buffer
-                        # after the subprocess exits and the stop flag is set.
-                        # Use select() with a timeout to poll for readability
-                        # instead of immediately breaking on BlockingIOError,
-                        # giving the macOS PTY kernel buffer time to deliver
-                        # remaining data.
-                        # Bound the drain to prevent spinning indefinitely if a
-                        # grandchild process holds the PTY slave fd open.
-                        try:
-                            drain_deadline = _monotonic() + DRAIN_TIMEOUT_SECONDS
-                            drained = 0
-                            consecutive_empty = 0
-                            while drained < MAX_DRAIN_BYTES and _monotonic() < drain_deadline:
-                                # Poll for readability with a short timeout.
-                                # This avoids the race where a non-blocking read
-                                # raises BlockingIOError because the macOS PTY
-                                # kernel buffer hasn't delivered the data yet.
-                                remaining = drain_deadline - _monotonic()
-                                if remaining <= 0:
-                                    break
-                                timeout_s = min(remaining, 0.1)
-                                try:
-                                    readable, _, _ = select.select([parent_fd], [], [], timeout_s)
-                                except (ValueError, OSError):
-                                    # fd closed or invalid
-                                    break
-                                if not readable:
-                                    # On macOS, data may not be available on the
-                                    # first select() call even though the subprocess
-                                    # has already written and exited.  Keep retrying
-                                    # until we see several consecutive empty polls,
-                                    # which indicates the buffer is truly drained.
-                                    consecutive_empty += 1
-                                    if consecutive_empty >= DRAIN_MAX_EMPTY_POLLS:
-                                        break
-                                    continue
-                                consecutive_empty = 0
-                                try:
-                                    chunk = os.read(parent_fd, 4096)
-                                    if not chunk:
-                                        break
-                                    buffer += chunk
-                                    drained += len(chunk)
-                                except (BlockingIOError, OSError):
-                                    break
-
                             buffer = _flush_lines(buffer, output_lines)
-                        except Exception:
-                            logger.debug("read_pty_output: error during drain", exc_info=True)
-
-                        logger.debug("read_pty_output: exiting, processed %d iterations", read_count)
+                    finally:
                         if buffer:
                             line_decoded = buffer.decode(errors="replace").rstrip()
                             if line_decoded:
@@ -439,80 +252,43 @@ class HookExecutor:
                                 logger.info("%s", line_decoded)
 
                 async def wait_for_process() -> int:
-                    """Wait for the subprocess to complete.
-
-                    Ensures the subprocess is properly reaped even if cancelled,
-                    preventing zombie processes.
-                    """
+                    """Wait for the subprocess to complete."""
                     logger.debug("wait_for_process: waiting for PID %d", process.pid)
-                    try:
-                        result = await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
-                        logger.debug("wait_for_process: PID %d exited with code %d", process.pid, result)
-                        return result
-                    finally:
-                        # Ensure subprocess is reaped on cancellation to prevent zombies
-                        if process.poll() is None:
-                            logger.debug("wait_for_process: cleaning up still-running PID %d", process.pid)
-                            try:
-                                process.terminate()
-                                # Give it a moment to terminate gracefully
-                                for _ in range(10):
-                                    if process.poll() is not None:
-                                        break
-                                    await anyio.sleep(0.1)
-                                # Force kill if still running
-                                if process.poll() is None:
-                                    logger.debug("wait_for_process: force killing PID %d", process.pid)
-                                    process.kill()
-                                # Final reap with non-abandoning wait
-                                await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=False)
-                            except Exception as e:
-                                logger.debug("wait_for_process: error during cleanup: %s", e)
+                    result = await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
+                    logger.debug("wait_for_process: PID %d exited with code %d", process.pid, result)
+                    return result
 
-                # Use move_on_after for timeout
                 returncode: int | None = None
-                logger.debug("Starting PTY output reader and process waiter (timeout=%d)", timeout)
-
-                # Yield to event loop to ensure other tasks can progress
-                # This helps prevent race conditions in task scheduling
-                await anyio.sleep(0)
+                logger.debug("Starting output reader and process waiter (timeout=%d)", timeout)
 
                 with anyio.move_on_after(timeout) as cancel_scope:
-                    # Run output reading and process waiting concurrently
                     async with anyio.create_task_group() as tg:
-                        logger.debug("Task group created, starting tasks...")
-                        tg.start_soon(read_pty_output)
-                        logger.debug("Waiting for subprocess to complete...")
+                        tg.start_soon(read_output)
                         returncode = await wait_for_process()
                         logger.debug("Subprocess completed with code: %s", returncode)
-                        # Give a brief moment for any final output to be read
-                        await anyio.sleep(0.2)
-                        # Signal the read task to stop via the dedicated stop flag.
-                        # The read task checks this flag after each 0.1s timeout
-                        # and also receives EOF when the subprocess exits.
-                        # Note: pty_state.parent_fd_open stays True so the finally block
-                        # properly closes parent_fd.
-                        pty_state.reader_stop = True
-                        logger.debug("Stop flag set, waiting for read task to exit")
-                        # Don't cancel - let the task exit naturally via EOF or flag check
-                        # Cancellation can cause unexpected side effects on gRPC connections
+                    # Yield to let the LogStream deliver any pending
+                    # messages before reporting the hook result.
+                    await anyio.sleep(0)
 
                 if cancel_scope.cancelled_caught:
                     timed_out = True
                     error_msg = f"Hook timed out after {timeout} seconds"
                     logger.error(error_msg)
-                    # Terminate the process
                     if process and process.poll() is None:
-                        process.terminate()
-                        # Give it a moment to terminate gracefully
+                        try:
+                            os.killpg(process.pid, signal.SIGTERM)
+                        except ProcessLookupError:
+                            pass
                         try:
                             with anyio.move_on_after(5):
                                 await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
                         except Exception:
                             pass
-                        # Force kill if still running
                         if process.poll() is None:
-                            process.kill()
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
                             try:
                                 await anyio.to_thread.run_sync(process.wait, abandon_on_cancel=True)
                             except Exception:
@@ -529,40 +305,37 @@ class HookExecutor:
                 cause = e
                 logger.error(error_msg, exc_info=True)
             finally:
-                # Clean up file descriptors - only close those still open to avoid
-                # closing an unrelated fd that reused the same number.
-                if pty_state.parent_fd_open:
-                    try:
-                        os.close(parent_fd)
-                    except OSError:
-                        pass
-                if pty_state.child_fd_open:
-                    try:
-                        os.close(child_fd)
-                    except OSError:
-                        pass
+                if process:
+                    if process.poll() is None:
+                        try:
+                            os.killpg(process.pid, signal.SIGTERM)
+                        except ProcessLookupError:
+                            pass
+                        try:
+                            process.wait(timeout=5)
+                        except Exception:
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                            try:
+                                process.wait(timeout=5)
+                            except Exception:
+                                pass
+                    if process.stdout:
+                        try:
+                            process.stdout.close()
+                        except OSError:
+                            pass
 
-            # Handle failure inside context_log_source so the WARNING log is
-            # routed to the client as a hook log (visible without --exporter-logs).
             if error_msg is not None:
-                # For timeout, create a TimeoutError as the cause
                 if timed_out and cause is None:
                     cause = TimeoutError(error_msg)
                 return self._handle_hook_failure(error_msg, on_failure, hook_type, cause)
         return None
 
     async def execute_before_lease_hook(self, lease_scope: "LeaseContext") -> str | None:
-        """Execute the before-lease hook.
-
-        Args:
-            lease_scope: LeaseScope with lease metadata and session
-
-        Returns:
-            Warning message string if hook failed with on_failure='warn', None otherwise
-
-        Raises:
-            HookExecutionError: If hook fails and on_failure is set to 'endLease' or 'exit'
-        """
+        """Execute the before-lease hook."""
         if not self.config.before_lease:
             logger.debug("No before-lease hook configured")
             return None
@@ -575,17 +348,7 @@ class HookExecutor:
         )
 
     async def execute_after_lease_hook(self, lease_scope: "LeaseContext") -> str | None:
-        """Execute the after-lease hook.
-
-        Args:
-            lease_scope: LeaseScope with lease metadata and session
-
-        Returns:
-            Warning message string if hook failed with on_failure='warn', None otherwise
-
-        Raises:
-            HookExecutionError: If hook fails and on_failure is set to 'endLease' or 'exit'
-        """
+        """Execute the after-lease hook."""
         if not self.config.after_lease:
             logger.debug("No after-lease hook configured")
             return None
@@ -617,25 +380,13 @@ class HookExecutor:
     ) -> None:
         """Execute before-lease hook with full orchestration.
 
-        This method handles the complete lifecycle of running a before-lease hook:
-        - Waits for the lease scope to be ready (session/socket populated)
-        - Reports status changes via the provided callback
-        - Sets up the hook executor with the session for logging
-        - Executes the hook and handles errors
-        - Always signals the before_lease_hook event to unblock connections
-
-        Args:
-            lease_scope: LeaseScope containing session, socket_path, and sync event
-            report_status: Async callback to report status changes to controller
-            shutdown: Callback to trigger exporter shutdown (accepts optional exit_code kwarg)
-            request_lease_release: Async callback to request lease release from controller
+        Always signals the before_lease_hook event to unblock connections,
+        even on failure.
         """
         should_release = False
         try:
-            # Wait for lease scope to be fully populated by handle_lease
-            # This is necessary because handle_lease and run_before_lease_hook run concurrently
-            timeout = 30  # seconds
-            interval = 0.1  # seconds
+            timeout = 30
+            interval = 0.1
             elapsed = 0.0
             while not lease_scope.is_ready():
                 if elapsed >= timeout:
@@ -647,7 +398,6 @@ class HookExecutor:
                 await anyio.sleep(interval)
                 elapsed += interval
 
-            # Check if hook is configured
             if not self.config.before_lease:
                 logger.debug("No before-lease hook configured")
                 await report_status(ExporterStatus.LEASE_READY, "Ready for commands")
@@ -655,7 +405,6 @@ class HookExecutor:
 
             await report_status(ExporterStatus.BEFORE_LEASE_HOOK, "Running beforeLease hook")
 
-            # Execute hook with lease scope
             logger.info("Executing before-lease hook for lease %s", lease_scope.lease_name)
             warning = await self._execute_hook(
                 self.config.before_lease,
@@ -679,7 +428,6 @@ class HookExecutor:
 
         except HookExecutionError as e:
             if e.should_shutdown_exporter():
-                # on_failure='exit' - defer shutdown until client handles the failure
                 logger.error("beforeLease hook failed with on_failure='exit': %s", e)
                 lease_scope.skip_after_lease_hook = True
                 await report_status(
@@ -690,10 +438,8 @@ class HookExecutor:
                     ExporterStatus.OFFLINE,
                     "Exporter shutting down due to beforeLease hook failure",
                 )
-                # Defer shutdown: sets _stop_requested=True, actual stop after lease cleanup
                 shutdown(exit_code=1, wait_for_lease_exit=True, should_unregister=True)
             else:
-                # on_failure='endLease' - report failure, release in finally block
                 logger.error("beforeLease hook failed with on_failure='endLease': %s", e)
                 lease_scope.skip_after_lease_hook = True
                 should_release = True
@@ -708,13 +454,9 @@ class HookExecutor:
                 ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
                 f"beforeLease hook failed: {e}",
             )
-            # Unexpected errors don't trigger shutdown - just block the lease
-
         finally:
-            # Always set the event to unblock connections
             lease_scope.before_lease_hook.set()
 
-            # Release lease for endLease failure mode.
             # Shielded from cancellation to ensure the release completes
             # even if the task group is being torn down.
             if should_release:
@@ -729,32 +471,14 @@ class HookExecutor:
         shutdown: Callable[..., None],
         request_lease_release: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
-        """Execute after-lease hook with full orchestration.
-
-        This method handles the complete lifecycle of running an after-lease hook:
-        - Validates that the lease scope is ready
-        - Reports status changes via the provided callback
-        - Sets up the hook executor with the session for logging
-        - Executes the hook and handles errors
-        - Triggers shutdown on critical failures (HookExecutionError)
-        - Requests lease release from controller after hook completes
-
-        Args:
-            lease_scope: LeaseScope containing session, socket_path, and client info
-            report_status: Async callback to report status changes to controller
-            shutdown: Callback to trigger exporter shutdown (accepts optional exit_code kwarg)
-            request_lease_release: Async callback to request lease release from controller
-        """
+        """Execute after-lease hook with full orchestration."""
         shutdown_called = False
         try:
-            # Verify lease scope is ready - for after-lease this should always be true
-            # since we've already processed the lease, but check defensively
             if not lease_scope.is_ready():
-                logger.warning("LeaseScope not ready for after-lease hook, skipping")
+                logger.warning("LeaseContext not ready for after-lease hook, skipping")
                 await report_status(ExporterStatus.AVAILABLE, "Available for new lease")
                 return
 
-            # Check if hook is configured
             if not self.config.after_lease:
                 logger.debug("No after-lease hook configured")
                 await report_status(ExporterStatus.AVAILABLE, "Available for new lease")
@@ -762,7 +486,6 @@ class HookExecutor:
 
             await report_status(ExporterStatus.AFTER_LEASE_HOOK, "Running afterLease hooks")
 
-            # Execute hook with lease scope
             logger.info("Executing after-lease hook for lease %s", lease_scope.lease_name)
             warning = await self._execute_hook(
                 self.config.after_lease,
@@ -779,7 +502,6 @@ class HookExecutor:
 
         except HookExecutionError as e:
             if e.should_shutdown_exporter():
-                # on_failure='exit' - shut down the entire exporter
                 logger.error("afterLease hook failed with on_failure='exit': %s", e)
                 await report_status(
                     ExporterStatus.AFTER_LEASE_HOOK_FAILED,
@@ -789,16 +511,10 @@ class HookExecutor:
                     ExporterStatus.OFFLINE,
                     "Exporter shutting down due to afterLease hook failure",
                 )
-                # No delay needed - client is already polling and will see the failure
                 logger.error("Shutting down exporter due to afterLease hook failure with on_failure='exit'")
-                # Exit code 1 tells the CLI not to restart the exporter
                 shutdown(exit_code=1, should_unregister=True, wait_for_lease_exit=True)
                 shutdown_called = True
             else:
-                # on_failure='endLease' - report failure to the client, then release the lease.
-                # AFTER_LEASE_HOOK_FAILED is a transient status: the client sees the failure,
-                # the lease is released in the finally block, and the exporter's main loop
-                # clears the lease context and accepts new leases.
                 logger.error("afterLease hook failed with on_failure='endLease': %s", e)
                 await report_status(
                     ExporterStatus.AFTER_LEASE_HOOK_FAILED,
@@ -806,9 +522,6 @@ class HookExecutor:
                 )
 
         except Exception as e:
-            # Unexpected errors: report failure but do not shut down.
-            # Same transient status - the lease is released and the exporter
-            # accepts new leases after the finally block completes.
             logger.error("afterLease hook failed with unexpected error: %s", e, exc_info=True)
             await report_status(
                 ExporterStatus.AFTER_LEASE_HOOK_FAILED,
@@ -816,11 +529,10 @@ class HookExecutor:
             )
 
         finally:
-            # Always delay to give client time to poll the final status
             await anyio.sleep(1.0)
 
-            # Don't release lease when exporter is shutting down - unregistration handles cleanup.
-            # Releasing here would report AVAILABLE to the controller right before shutdown.
+            # Don't release lease when exporter is shutting down --
+            # releasing here would report AVAILABLE right before shutdown.
             if request_lease_release and not shutdown_called:
                 try:
                     await request_lease_release()
