@@ -19,7 +19,8 @@ from google.protobuf.descriptor_pb2 import (
     EnumValueDescriptorProto,
     FieldDescriptorProto,
 )
-from pydantic import BaseModel, TypeAdapter
+
+from ._pydantic import BaseModel, TypeAdapter
 
 # Well-known type names (fully qualified)
 EMPTY_TYPE = ".google.protobuf.Empty"

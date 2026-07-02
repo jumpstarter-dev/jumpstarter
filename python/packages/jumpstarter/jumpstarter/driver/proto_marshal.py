@@ -30,8 +30,8 @@ from google.protobuf import message_factory
 from google.protobuf.descriptor import Descriptor, FieldDescriptor
 from google.protobuf.descriptor_pool import DescriptorPool
 from google.protobuf.message import Message
-from pydantic import BaseModel
 
+from ._pydantic import BaseModel
 from .decorators import ExportedMethodInfo
 from .descriptor_builder import (
     _get_interface_methods,

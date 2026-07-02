@@ -32,7 +32,7 @@ from google.protobuf.descriptor_pb2 import (
     SourceCodeInfo,
 )
 
-from pydantic import BaseModel
+from ._pydantic import BaseModel
 from .decorators import (
     MARKER_STREAM_METHOD,
     MARKER_STREAMCALL,
