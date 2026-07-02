@@ -20,6 +20,9 @@ rust-version.workspace = true
 prost.workspace = true
 prost-types.workspace = true
 prost-reflect = "0.14"
+# Pure-Rust .proto compiler (same prost 0.13 line) so the CLI can take `--proto` directly —
+# build hooks (e.g. the Python packages' hatch codegen hook) need no system protoc.
+protox = "0.7"
 anyhow = "1"
 thiserror.workspace = true
 # The `build-helper` feature: a driver crate's build.rs calls `jumpstarter_codegen::build::driver_interface`
