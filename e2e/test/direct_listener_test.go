@@ -147,21 +147,31 @@ var _ = Describe("Direct Listener E2E Tests", Label("direct-listener"), Ordered,
 
 	It("wrong passphrase is rejected", func() {
 		config := configPath("exporter-direct-listener.yaml")
-		tracker.StartDirectExporter(config, listenerPort, "my-secret", false)
+		_, stderrBuf := tracker.StartDirectExporter(config, listenerPort, "my-secret", true)
 		WaitForDirectExporterReady(listenerPort, "my-secret")
 
 		_, err := Jmp("shell", "--tls-grpc", fmt.Sprintf("127.0.0.1:%d", listenerPort),
-			"--tls-grpc-insecure", "--passphrase", "wrong", "--", "j", "power", "on")
+			"--tls-grpc-insecure", "--passphrase", "e2e-wrong-passphrase-value", "--", "j", "power", "on")
 		Expect(err).To(HaveOccurred())
+
+		// The exporter must log the auth failure (issue #811) — and must not
+		// log the presented passphrase value.
+		Eventually(stderrBuf.String, 10*time.Second, 500*time.Millisecond).
+			Should(ContainSubstring("authentication failed: invalid or missing passphrase"))
+		Expect(stderrBuf.String()).NotTo(ContainSubstring("e2e-wrong-passphrase-value"),
+			"the presented passphrase value must never be logged")
 	})
 
 	It("missing passphrase is rejected", func() {
 		config := configPath("exporter-direct-listener.yaml")
-		tracker.StartDirectExporter(config, listenerPort, "my-secret", false)
+		_, stderrBuf := tracker.StartDirectExporter(config, listenerPort, "my-secret", true)
 		WaitForDirectExporterReady(listenerPort, "my-secret")
 
 		_, err := Jmp("shell", "--tls-grpc", fmt.Sprintf("127.0.0.1:%d", listenerPort),
 			"--tls-grpc-insecure", "--", "j", "power", "on")
 		Expect(err).To(HaveOccurred())
+
+		Eventually(stderrBuf.String, 10*time.Second, 500*time.Millisecond).
+			Should(ContainSubstring("authentication failed: invalid or missing passphrase"))
 	})
 })
