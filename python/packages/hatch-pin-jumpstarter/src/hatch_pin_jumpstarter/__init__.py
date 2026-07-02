@@ -9,6 +9,8 @@ from hatchling.plugin import hookimpl
 from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
 
+from .codegen import JumpstarterCodegen
+
 
 class PinJumpstarter(BuildHookInterface):
     PLUGIN_NAME = "pin_jumpstarter"
@@ -46,4 +48,4 @@ class PinJumpstarter(BuildHookInterface):
 
 @hookimpl
 def hatch_register_build_hook():
-    return PinJumpstarter
+    return [PinJumpstarter, JumpstarterCodegen]

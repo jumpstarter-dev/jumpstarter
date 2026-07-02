@@ -8,8 +8,8 @@ forward_server_stream → decode — returning native dataclasses. No JSON, no h
 
 import pytest
 
-# The generated package is a build artifact (hatch_build.py); regenerate with
-# `uv run python hatch_build.py` in the package dir if this skips.
+# The generated package is a build artifact (the jumpstarter_codegen build hook); regenerate
+# with `make codegen` (python/) or `uv run python -m hatch_pin_jumpstarter.codegen .` here.
 pytest.importorskip(
     "jumpstarter_driver_power._generated.power_client",
     reason="generated modules missing — run the codegen build hook",

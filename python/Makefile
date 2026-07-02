@@ -155,11 +155,15 @@ sync:
 sync-native:
 	uv sync --all-packages --all-extras --group dev $(REINSTALL_NATIVE)
 
+# Proto-first packages whose _generated modules are derived from an interfaces/proto .proto
+# by the shared jumpstarter_codegen build hook (see hatch-pin-jumpstarter).
+CODEGEN_PKGS = packages/jumpstarter-driver-power
+
 # Regenerate the proto-first packages' _generated modules from their committed .proto
 # (build hooks run at install time, not per source edit — use this for the edit loop
 # after changing an interface proto).
 codegen:
-	cd packages/jumpstarter-driver-power && uv run python hatch_build.py
+	uv run python -m hatch_pin_jumpstarter.codegen $(CODEGEN_PKGS)
 
 clean-venv:
 	-rm -rf ./.venv
