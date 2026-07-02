@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal, Mapping
@@ -6,8 +7,6 @@ from anyio import BrokenResourceError, EndOfStream
 from anyio.abc import ObjectStream
 from opendal import AsyncFile, Metadata, Operator
 from opendal.exceptions import Error
-
-import os
 
 from jumpstarter.client import DriverClient
 from jumpstarter.client.adapters import blocking
