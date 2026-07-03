@@ -2,7 +2,7 @@ PKG_TARGETS = $(subst packages/,,$(wildcard packages/*))
 
 # Example packages under examples/ whose tests run as part of `make test` (opt-in, so
 # hardware-flavored examples aren't swept into CI implicitly).
-EXAMPLE_TEST_TARGETS = driver-power-example
+EXAMPLE_TEST_TARGETS = driver-power-example exporter-device-example
 
 # Maturin-backed packages built from the Rust workspace: the FFI extension
 # (jumpstarter-core -> the `jumpstarter_core` module) and the native jmp/j
@@ -179,7 +179,7 @@ sync-native:
 
 # Proto-first packages whose _generated modules are derived from an interfaces/proto .proto
 # by the shared jumpstarter_codegen build hook (see hatch-pin-jumpstarter).
-CODEGEN_PKGS = packages/jumpstarter-driver-power examples/driver-power-example
+CODEGEN_PKGS = packages/jumpstarter-driver-power examples/driver-power-example examples/exporter-device-example
 
 # Regenerate the proto-first packages' _generated modules from their committed .proto
 # (build hooks run at install time, not per source edit — use this for the edit loop

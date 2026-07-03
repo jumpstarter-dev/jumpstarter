@@ -1,0 +1,21 @@
+# The example rig this package's typed device wrapper is generated FROM (the source of truth):
+# a `dut` composite holding a proto-first power driver with a custom client (`power`, typed via
+# its explicit `interface:` key + this package's registry.yaml) and a generated-base mock
+# (`backup_power`, typed via the committed interfaces/registry — bound to the GENERATED client
+# since it advertises no custom one).
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: example-rig
+export:
+  dut:
+    children:
+      power:
+        type: jumpstarter_driver_power_example.driver.ExamplePower
+        # Codegen-only: names this node's proto service so the generator never imports the
+        # driver (the registry entry in registry.yaml would also cover it — this exercises
+        # the explicit-key path).
+        interface: jumpstarter.interfaces.power.v1.PowerInterface
+      backup_power:
+        type: jumpstarter_driver_power.driver_native.NativeMockPower

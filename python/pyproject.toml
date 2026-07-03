@@ -26,6 +26,7 @@ jumpstarter-driver-network = { workspace = true }
 jumpstarter-driver-obd = { workspace = true }
 jumpstarter-driver-opendal = { workspace = true }
 jumpstarter-driver-power = { workspace = true }
+jumpstarter-driver-power-example = { workspace = true }
 jumpstarter-driver-pi-pico = { workspace = true }
 jumpstarter-driver-probe-rs = { workspace = true }
 jumpstarter-driver-pyserial = { workspace = true }

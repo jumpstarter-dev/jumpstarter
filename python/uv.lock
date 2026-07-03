@@ -67,6 +67,7 @@ members = [
     "jumpstarter-example-automotive",
     "jumpstarter-example-soc-pytest",
     "jumpstarter-example-xcp-ecu",
+    "jumpstarter-exporter-device-example",
     "jumpstarter-fls",
     "jumpstarter-imagehash",
     "jumpstarter-ipaddr",
@@ -3614,6 +3615,37 @@ requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-xcp", editable = "packages/jumpstarter-driver-xcp" },
     { name = "pytest", specifier = ">=8.3.2" },
+]
+
+[[package]]
+name = "jumpstarter-exporter-device-example"
+version = "0.1.0"
+source = { editable = "examples/exporter-device-example" }
+dependencies = [
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-power" },
+    { name = "jumpstarter-driver-power-example" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
+    { name = "jumpstarter-driver-power-example", editable = "examples/driver-power-example" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
 [[package]]

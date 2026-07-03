@@ -1,0 +1,32 @@
+[project]
+name = "jumpstarter-exporter-device-example"
+version = "0.1.0"
+description = "Example typed device wrapper generated from an exporter config (proto-only resolution)"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = [
+  "jumpstarter",
+  # Serving-side deps for the self-contained e2e test (the test serves the same exporter.yaml
+  # it generates from; a pure client consumer needs only `jumpstarter`).
+  "jumpstarter-driver-composite",
+  "jumpstarter-driver-power",
+  "jumpstarter-driver-power-example",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3.2", "pytest-cov>=5.0.0"]
+
+[build-system]
+requires = ["hatchling", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+# Device-mode codegen: regenerate the typed device wrapper (per-node typed clients + the tree
+# class) from the committed exporter.yaml on every build. Resolution is proto-only — the
+# committed interfaces/registry plus this package's registry.yaml (the out-of-tree-driver
+# pattern) map each node's `type:` to its interface; no driver code is loaded at build time.
+# Edit-loop regen: `make codegen` (python/) or `uv run python -m hatch_pin_jumpstarter.codegen .`
+[tool.hatch.build.hooks.jumpstarter_codegen]
+exporter_config = "exporter.yaml"
+registry = "registry.yaml"
+package = "jumpstarter_exporter_device_example._generated"

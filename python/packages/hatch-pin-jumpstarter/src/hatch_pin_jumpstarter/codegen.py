@@ -1,21 +1,30 @@
-"""Shared build hook: generate a package's proto-first Python modules from its committed proto.
+"""Shared build hook: generate a package's proto-first Python modules from committed sources.
 
-The interface ``.proto`` under the monorepo's ``interfaces/proto/`` is the source of truth; the
-typed modules derived from it — the message dataclasses, the driver interface base, the typed
-client, and the embedded descriptor — are BUILD ARTIFACTS, regenerated into a gitignored
-``_generated/`` package on every wheel/editable build (the Python analog of the Rust crates'
-build.rs → OUT_DIR and the JVM's generateProto → build/generated). A proto change regenerates
-them, and an impl that no longer satisfies the new signatures breaks the build — intentionally.
+Two modes, selected by the pyproject config keys (both need ``hatch-pin-jumpstarter`` in the
+package's build requirements). Everything generated is a BUILD ARTIFACT, regenerated into a
+gitignored ``_generated/`` package on every wheel/editable build (the Python analog of the Rust
+crates' build.rs → OUT_DIR and the JVM's generateProto → build/generated); a source change
+regenerates it, and an impl that no longer satisfies the new contract breaks the build —
+intentionally.
 
-A proto-first package opts in with two pyproject keys (plus ``hatch-pin-jumpstarter`` in its
-build requirements)::
+**Interface mode** — a driver package's typed modules from its committed interface proto::
 
     [tool.hatch.build.hooks.jumpstarter_codegen]
     proto = "jumpstarter/interfaces/power/v1/power.proto"   # relative to interfaces/proto/
     package = "jumpstarter_driver_power._generated"          # import path of the generated pkg
 
-Editable installs don't re-run build hooks per source edit, so the edit loop after a proto
-change is the standalone runner (or ``make codegen`` in python/)::
+**Device mode** — a consumer package's typed device wrapper from its exporter config (per-node
+typed clients + the tree class; proto-only resolution via the committed interfaces/registry —
+no driver code is loaded)::
+
+    [tool.hatch.build.hooks.jumpstarter_codegen]
+    exporter_config = "exporter.yaml"                        # relative to the package root
+    package = "my_tests._generated"
+    # registry = "registry.yaml"                             # optional package-local registry
+    #                                                        # merged over interfaces/registry/
+
+Editable installs don't re-run build hooks per source edit, so the edit loop after a proto or
+config change is the standalone runner (or ``make codegen`` in python/)::
 
     uv run python -m hatch_pin_jumpstarter.codegen <package-dir>...
 """
@@ -67,34 +76,78 @@ def generate(package_root: Path, proto: str, package: str) -> None:
     (out / "__init__.py").write_text(GENERATED_INIT)
 
 
+def generate_device(
+    package_root: Path, exporter_config: str, package: str, registry: str | None = None
+) -> None:
+    """Run jumpstarter-codegen device mode into ``package_root/<package path>``.
+
+    Proto-only resolution: the exporter config's nodes are typed from the committed
+    ``interfaces/registry/`` + ``interfaces/proto/`` (plus an optional package-local registry
+    file layered on top) — no driver code is imported.
+    """
+    repo_root = find_repo_root(package_root)
+    if repo_root is None:
+        raise RuntimeError(f"no monorepo root (interfaces/proto + rust/) above {package_root}")
+    config_path = package_root / exporter_config
+    if not config_path.is_file():
+        raise RuntimeError(f"exporter config not found: {config_path}")
+    out = package_root.joinpath(*package.split("."))
+    out.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "cargo", "run", "-q", "-p", "jumpstarter-codegen", "--bin", "jumpstarter-codegen",
+        "--",
+        "--exporter-config", str(config_path),
+        "--language", "python",
+        "--kind", "device",
+        "--registry", str(repo_root / "interfaces" / "registry"),
+        "--proto-root", str(repo_root / "interfaces" / "proto"),
+        "--python-package", package,
+        "--out", str(out),
+    ]
+    if registry:
+        cmd += ["--registry", str(package_root / registry)]
+    subprocess.run(cmd, cwd=repo_root / "rust", check=True)
+    (out / "__init__.py").write_text(GENERATED_INIT)
+
+
 class JumpstarterCodegen(BuildHookInterface):
     """Regenerate the configured ``_generated/`` package from the committed proto at build time."""
 
     PLUGIN_NAME = "jumpstarter_codegen"
 
     def initialize(self, version, build_data):
-        proto: str = self.config["proto"]
         package: str = self.config["package"]
+        proto: str | None = self.config.get("proto")
+        exporter_config: str | None = self.config.get("exporter_config")
+        if bool(proto) == bool(exporter_config):
+            raise RuntimeError(
+                "jumpstarter_codegen needs exactly one of `proto` (interface mode) or "
+                "`exporter_config` (device mode)"
+            )
         root = Path(self.root)
         out = root.joinpath(*package.split("."))
 
         repo_root = find_repo_root(root)
-        can_generate = (
-            repo_root is not None
-            and (repo_root / "interfaces" / "proto" / proto).is_file()
-            and shutil.which("cargo") is not None
+        source_present = (
+            (repo_root / "interfaces" / "proto" / proto).is_file()
+            if proto and repo_root is not None
+            else (root / exporter_config).is_file() if exporter_config else False
         )
+        can_generate = repo_root is not None and source_present and shutil.which("cargo") is not None
         if can_generate:
-            generate(root, proto, package)
+            if proto:
+                generate(root, proto, package)
+            else:
+                generate_device(root, exporter_config, package, self.config.get("registry"))
         elif (out / "__init__.py").exists():
             # Building outside the monorepo (e.g. from an sdist): the generated modules must
-            # already be present — regeneration needs the repo's proto + the Rust codegen.
+            # already be present — regeneration needs the repo sources + the Rust codegen.
             self.app.display_warning(
-                f"jumpstarter codegen skipped (no repo proto/cargo); keeping existing {package}"
+                f"jumpstarter codegen skipped (no repo sources/cargo); keeping existing {package}"
             )
         else:
             raise RuntimeError(
-                f"cannot generate {package}: needs the monorepo's interfaces/proto/{proto} "
+                f"cannot generate {package}: needs the monorepo's committed sources "
                 "and cargo on PATH (or pre-generated modules)"
             )
         # The generated dir is gitignored; hatchling excludes gitignored files unless declared artifacts.
@@ -111,6 +164,11 @@ def regenerate_from_pyproject(package_dir: Path) -> str:
         hook = config["tool"]["hatch"]["build"]["hooks"]["jumpstarter_codegen"]
     except KeyError:
         raise RuntimeError(f"{package_dir} has no jumpstarter_codegen build hook configured") from None
+    if "exporter_config" in hook:
+        generate_device(
+            package_dir, hook["exporter_config"], hook["package"], hook.get("registry")
+        )
+        return f"generated {hook['package']} from {hook['exporter_config']}"
     generate(package_dir, hook["proto"], hook["package"])
     return f"generated {hook['package']} from interfaces/proto/{hook['proto']}"
 

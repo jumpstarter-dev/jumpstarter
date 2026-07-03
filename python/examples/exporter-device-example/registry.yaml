@@ -1,0 +1,9 @@
+# Package-local driver registry — the pattern for OUT-OF-TREE driver packages: ship a registry
+# snippet mapping your driver types to their interfaces (and custom clients), layered over the
+# monorepo's committed interfaces/registry/ by the build hook's `registry =` key.
+version: 1
+drivers:
+  "jumpstarter_driver_power_example.driver.ExamplePower":
+    interface: "jumpstarter.interfaces.power.v1.PowerInterface"
+    clients:
+      python: "jumpstarter_driver_power_example.client.CyclingPowerClient"
