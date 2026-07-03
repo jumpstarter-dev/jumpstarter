@@ -26,6 +26,11 @@ class ExporterSession private constructor(
 
     fun hasDriver(name: String): Boolean = report.findByName(name) != null
 
+    /** Tree-aware name-path lookup (see [DriverReport.findByPath]) for generated device wrappers. */
+    fun requireDriverPath(vararg names: String): DriverInstance = report.requireByPath(*names)
+
+    fun findDriverPath(vararg names: String): DriverInstance? = report.findByPath(*names)
+
     override fun close() {
         // The Rust core / `jmp shell` owns the session lifecycle; nothing JVM-owned to release yet.
     }

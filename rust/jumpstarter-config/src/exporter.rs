@@ -150,6 +150,14 @@ pub struct DriverInstanceBase {
     /// per-crate on PATH / dev build / registry; JVM: `jumpstarter-exporter-host`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host: Option<HostSpec>,
+    /// The driver's gRPC interface as a proto service full name
+    /// (e.g. `jumpstarter.interfaces.power.v1.PowerInterface`). CODEGEN-ONLY: consumed by
+    /// `jumpstarter-codegen --kind device` to resolve this node against the committed
+    /// `interfaces/proto` tree without loading any driver code; it overrides the driver
+    /// registry and is required for `type:`s the registry doesn't know. The exporter
+    /// runtime ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interface: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default)]
@@ -395,6 +403,38 @@ export:\n\
         // The optional `runtime:` round-trips and is omitted when absent.
         let out = c.to_yaml().unwrap();
         assert!(out.contains("runtime: rust"), "{out}");
+        assert_eq!(ExporterConfig::from_yaml(&out).unwrap(), c);
+    }
+
+    #[test]
+    fn parses_optional_interface_key() {
+        // `interface:` names the node's proto service (codegen-only; the runtime ignores it).
+        // It round-trips, and is omitted from serialized output when absent.
+        let yaml = "apiVersion: jumpstarter.dev/v1alpha1\n\
+kind: ExporterConfig\n\
+metadata:\n  namespace: default\n  name: iface\n\
+endpoint: e:1\n\
+token: t\n\
+export:\n\
+\x20 native:\n\
+\x20   type: rust:power\n\
+\x20   interface: jumpstarter.interfaces.power.v1.PowerInterface\n\
+\x20 plain:\n\
+\x20   type: jumpstarter_driver_power.driver.MockPower\n";
+        let c = ExporterConfig::from_yaml(yaml).unwrap();
+        let iface = |k: &str| match &c.export[k] {
+            DriverInstance::Base(b) => b.interface.clone(),
+            other => panic!("{k} should be Base, got {other:?}"),
+        };
+        assert_eq!(
+            iface("native").as_deref(),
+            Some("jumpstarter.interfaces.power.v1.PowerInterface")
+        );
+        assert_eq!(iface("plain"), None);
+
+        let out = c.to_yaml().unwrap();
+        assert!(out.contains("interface: jumpstarter.interfaces.power.v1.PowerInterface"), "{out}");
+        assert_eq!(out.matches("interface:").count(), 1, "{out}");
         assert_eq!(ExporterConfig::from_yaml(&out).unwrap(), c);
     }
 

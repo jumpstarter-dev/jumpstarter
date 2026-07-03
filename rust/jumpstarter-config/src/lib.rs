@@ -19,6 +19,7 @@ mod exporter;
 mod grpc_options;
 mod meta;
 pub mod paths;
+mod registry;
 mod tls;
 mod user;
 
@@ -30,6 +31,7 @@ pub use exporter::{
 };
 pub use grpc_options::{GrpcOptionValue, GrpcOptions};
 pub use meta::ObjectMeta;
+pub use registry::{DriverRegistry, DriverRegistryEntry, InterfaceRegistryEntry};
 pub use tls::TlsConfig;
 pub use user::{UserConfig, UserConfigInner};
 

@@ -750,6 +750,180 @@ pub async fn resolve_driver_uuid(
     )))
 }
 
+/// A parsed, tree-aware index over one `GetReport` — resolves driver uuids by NAME PATH
+/// (`["dut", "power"]`), disambiguating same-named nodes under different parents (which the flat
+/// [`resolve_driver_uuid`] scan cannot). Generated device wrappers do one `get_report`, build
+/// this index, and resolve every configured node from it.
+pub struct DriverReportIndex {
+    /// (parent uuid or None for roots, `jumpstarter.dev/name` label) → uuid.
+    by_parent_and_name: std::collections::HashMap<(Option<String>, String), String>,
+    /// Uuids of parentless nodes (the roots — e.g. the hub's synthetic composite).
+    roots: std::collections::HashSet<String>,
+}
+
+impl DriverReportIndex {
+    /// Parse a report (the JSON array of `{uuid, parent_uuid, labels, …}` nodes).
+    pub fn parse(report_json: &str) -> Result<Self, DriverCallError> {
+        let nodes: Vec<serde_json::Value> = serde_json::from_str(report_json)
+            .map_err(|e| DriverCallError::Unknown(format!("parse report: {e}")))?;
+        let mut by_parent_and_name = std::collections::HashMap::new();
+        let mut roots = std::collections::HashSet::new();
+        for node in &nodes {
+            let Some(uuid) = node.get("uuid").and_then(|u| u.as_str()) else {
+                continue;
+            };
+            let parent = node
+                .get("parent_uuid")
+                .and_then(|p| p.as_str())
+                .map(str::to_string);
+            if parent.is_none() {
+                roots.insert(uuid.to_string());
+            }
+            let Some(name) = node
+                .get("labels")
+                .and_then(|l| l.get("jumpstarter.dev/name"))
+                .and_then(|n| n.as_str())
+            else {
+                continue;
+            };
+            by_parent_and_name.insert((parent, name.to_string()), uuid.to_string());
+        }
+        Ok(Self { by_parent_and_name, roots })
+    }
+
+    /// Build the index from a live session's `GetReport`.
+    pub async fn from_session(session: &ClientSession) -> Result<Self, DriverCallError> {
+        Self::parse(&session.get_report().await?)
+    }
+
+    /// The uuid of `name` directly under `parent` (`None` = a root node).
+    pub fn child_uuid(&self, parent: Option<&str>, name: &str) -> Option<&str> {
+        self.by_parent_and_name
+            .get(&(parent.map(str::to_string), name.to_string()))
+            .map(String::as_str)
+    }
+
+    /// Resolve a name path from the roots (e.g. `["dut", "power"]`). The first segment may also
+    /// match a child of a synthetic/unnamed root (the exporter hub re-parents per-entry hosts
+    /// under a root composite whose children carry the `export:` keys).
+    pub fn resolve_path(&self, path: &[&str]) -> Result<String, DriverCallError> {
+        let not_found = || {
+            DriverCallError::NotFound(format!(
+                "driver path {:?} not found in the device tree",
+                path.join("/")
+            ))
+        };
+        let (first, rest) = path.split_first().ok_or_else(not_found)?;
+        // The named entry is either a root itself (single-host serve) or a direct child of a
+        // root composite (hub tree) — try root first, then children of roots only.
+        let mut uuid: String = match self.child_uuid(None, first) {
+            Some(uuid) => uuid.to_string(),
+            None => {
+                let mut candidates = self
+                    .by_parent_and_name
+                    .iter()
+                    .filter(|((parent, name), _)| {
+                        name == first
+                            && parent.as_ref().is_some_and(|p| self.roots.contains(p))
+                    })
+                    .map(|(_, uuid)| uuid.clone());
+                let found = candidates.next().ok_or_else(not_found)?;
+                if candidates.next().is_some() {
+                    return Err(DriverCallError::Unknown(format!(
+                        "driver name {first:?} is ambiguous at the tree root; \
+                         qualify the path from the export entry"
+                    )));
+                }
+                found
+            }
+        };
+        for segment in rest {
+            uuid = self
+                .child_uuid(Some(&uuid), segment)
+                .ok_or_else(not_found)?
+                .to_string();
+        }
+        Ok(uuid)
+    }
+}
+
+/// Resolve a driver-instance uuid by NAME PATH from the session's `GetReport` — the tree-aware
+/// sibling of [`resolve_driver_uuid`].
+pub async fn resolve_driver_uuid_path(
+    session: &ClientSession,
+    path: &[&str],
+) -> Result<String, DriverCallError> {
+    DriverReportIndex::from_session(session).await?.resolve_path(path)
+}
+
+#[cfg(test)]
+mod report_index_tests {
+    use super::*;
+
+    /// Two same-named `power` nodes under different composites, plus a root named entry.
+    fn report() -> String {
+        serde_json::json!([
+            {"uuid": "root", "parent_uuid": null, "labels": {}},
+            {"uuid": "dut-a", "parent_uuid": "root", "labels": {"jumpstarter.dev/name": "dut_a"}},
+            {"uuid": "dut-b", "parent_uuid": "root", "labels": {"jumpstarter.dev/name": "dut_b"}},
+            {"uuid": "pow-a", "parent_uuid": "dut-a", "labels": {"jumpstarter.dev/name": "power"}},
+            {"uuid": "pow-b", "parent_uuid": "dut-b", "labels": {"jumpstarter.dev/name": "power"}},
+            {"uuid": "solo", "parent_uuid": null, "labels": {"jumpstarter.dev/name": "solo_power"}},
+        ])
+        .to_string()
+    }
+
+    #[test]
+    fn resolves_nested_paths_and_disambiguates_duplicates() {
+        let index = DriverReportIndex::parse(&report()).unwrap();
+        assert_eq!(index.resolve_path(&["dut_a", "power"]).unwrap(), "pow-a");
+        assert_eq!(index.resolve_path(&["dut_b", "power"]).unwrap(), "pow-b");
+        assert_eq!(index.resolve_path(&["solo_power"]).unwrap(), "solo");
+    }
+
+    #[test]
+    fn first_segment_falls_back_to_children_of_an_unnamed_root() {
+        // The hub's synthetic root has no name label; export entries hang beneath it.
+        let index = DriverReportIndex::parse(&report()).unwrap();
+        assert_eq!(index.resolve_path(&["dut_a"]).unwrap(), "dut-a");
+    }
+
+    #[test]
+    fn ambiguous_first_segment_errors_instead_of_guessing() {
+        // Two roots (e.g. two federated hosts), each exporting a `power` entry.
+        let report = serde_json::json!([
+            {"uuid": "r1", "parent_uuid": null, "labels": {}},
+            {"uuid": "r2", "parent_uuid": null, "labels": {}},
+            {"uuid": "p1", "parent_uuid": "r1", "labels": {"jumpstarter.dev/name": "power"}},
+            {"uuid": "p2", "parent_uuid": "r2", "labels": {"jumpstarter.dev/name": "power"}},
+        ])
+        .to_string();
+        let index = DriverReportIndex::parse(&report).unwrap();
+        let err = index.resolve_path(&["power"]).unwrap_err();
+        assert!(err.to_string().contains("ambiguous"), "{err}");
+    }
+
+    #[test]
+    fn deeply_nested_names_do_not_leak_to_the_root_fallback() {
+        // `power` exists only two levels down — a root-level lookup must NOT find it.
+        let index = DriverReportIndex::parse(&report()).unwrap();
+        assert!(matches!(
+            index.resolve_path(&["power"]),
+            Err(DriverCallError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn missing_paths_are_not_found() {
+        let index = DriverReportIndex::parse(&report()).unwrap();
+        assert!(matches!(
+            index.resolve_path(&["dut_a", "nope"]),
+            Err(DriverCallError::NotFound(_))
+        ));
+        assert!(matches!(index.resolve_path(&[]), Err(DriverCallError::NotFound(_))));
+    }
+}
+
 #[cfg(test)]
 mod native_unary_tests {
     use super::*;
