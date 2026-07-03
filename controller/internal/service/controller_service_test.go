@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -31,6 +30,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	jlog "github.com/jumpstarter-dev/jumpstarter-controller/internal/log"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -1823,11 +1823,11 @@ func TestRouterAuthenticateNoTokenLeak(t *testing.T) {
 	})
 
 	// Reproduce the exact logging path from RouterService.Stream:
-	//   ctx = logContext(stream.Context())
+	//   ctx = jlog.LogContext(stream.Context())
 	//   logger := log.FromContext(ctx)
 	//   _, err := s.authenticate(ctx)
 	//   logger.Info("router authentication failed", "error", err.Error())
-	ctx = logContext(ctx)
+	ctx = jlog.LogContext(ctx)
 	logger := logf.FromContext(ctx)
 
 	svc := &RouterService{}
@@ -1907,100 +1907,6 @@ func (a fakeAddr) Network() string { return a.network }
 func (a fakeAddr) String() string  { return a.addr }
 
 // ---------------------------------------------------------------------------
-// logContext tests
-// ---------------------------------------------------------------------------
-
-func TestLogContext_WithPeer_EnrichesContextWithPeerIP(t *testing.T) {
-	buf, ctx := withCapturedLog(t)
-
-	ctx = grpcpeer.NewContext(ctx, &grpcpeer.Peer{
-		Addr: fakeAddr{network: "tcp", addr: "10.20.30.40:9090"},
-	})
-
-	enriched := logContext(ctx)
-
-	// Use the enriched context's logger and emit a message.
-	logf.FromContext(enriched).Info("test message")
-
-	logged := buf.String()
-	if !strings.Contains(logged, "10.20.30.40") {
-		t.Errorf("expected peer IP '10.20.30.40' in log output, got:\n%s", logged)
-	}
-	// Port should be stripped.
-	if strings.Contains(logged, "9090") {
-		t.Errorf("expected port to be stripped from peer address, got:\n%s", logged)
-	}
-}
-
-func TestLogContext_WithoutPeer_LogsUnknownPeer(t *testing.T) {
-	buf, ctx := withCapturedLog(t)
-
-	enriched := logContext(ctx)
-
-	logf.FromContext(enriched).Info("test message")
-
-	logged := buf.String()
-	// The peer key is always present; without peer info it falls back to
-	// "unknown" so all log lines share a uniform shape.
-	if !strings.Contains(logged, "peer") || !strings.Contains(logged, "unknown") {
-		t.Errorf("expected 'peer' key with value 'unknown' without peer info, got:\n%s", logged)
-	}
-}
-
-func TestLogContext_IPv6Peer_StripsPort(t *testing.T) {
-	buf, ctx := withCapturedLog(t)
-
-	ctx = grpcpeer.NewContext(ctx, &grpcpeer.Peer{
-		Addr: fakeAddr{network: "tcp", addr: "[::1]:8082"},
-	})
-
-	enriched := logContext(ctx)
-	logf.FromContext(enriched).Info("ipv6 test")
-
-	logged := buf.String()
-	if !strings.Contains(logged, "::1") {
-		t.Errorf("expected IPv6 address '::1' in log, got:\n%s", logged)
-	}
-}
-
-func TestLogContext_NilAddr_LogsUnknownPeer(t *testing.T) {
-	buf, ctx := withCapturedLog(t)
-
-	ctx = grpcpeer.NewContext(ctx, &grpcpeer.Peer{Addr: nil})
-
-	// Should not panic and should fall back to peer="unknown".
-	enriched := logContext(ctx)
-	logf.FromContext(enriched).Info("nil addr test")
-
-	logged := buf.String()
-	if !strings.Contains(logged, "peer") || !strings.Contains(logged, "unknown") {
-		t.Errorf("expected 'peer' key with value 'unknown' for nil Addr, got:\n%s", logged)
-	}
-}
-
-func TestLogContext_UnixSocket_ReturnsUnknownPeer(t *testing.T) {
-	buf, ctx := withCapturedLog(t)
-
-	ctx = grpcpeer.NewContext(ctx, &grpcpeer.Peer{
-		Addr: &net.UnixAddr{Name: "/var/run/test.sock", Net: "unix"},
-	})
-
-	enriched := logContext(ctx)
-	logf.FromContext(enriched).Info("unix socket test")
-
-	logged := buf.String()
-	// The peer key should be present but with value "unknown" because
-	// SplitHostPort fails on unix paths.
-	if !strings.Contains(logged, "unknown") {
-		t.Errorf("expected 'unknown' peer for unix socket, got:\n%s", logged)
-	}
-	// The socket path itself should NOT appear.
-	if strings.Contains(logged, "/var/run/test.sock") {
-		t.Errorf("unix socket path should not leak into log, got:\n%s", logged)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // Verify that controller-service methods do NOT double-log auth failures.
 // The auth helpers in auth/auth.go own the auth-failure logging; the
 // controller_service RPC methods should NOT add their own log lines.
@@ -2063,14 +1969,14 @@ func (noopAuthorizer) Authorize(_ context.Context, _ authorizer.Attributes) (aut
 
 // authFailureServiceCtx builds a ControllerService whose authentication always
 // fails, plus a context carrying a peer address, a captured logger, and the
-// logContext enrichment applied by the gRPC interceptors in production.
+// jlog.LogContext enrichment applied by the gRPC interceptors in production.
 func authFailureServiceCtx(t *testing.T, peerAddr string) (*ControllerService, context.Context, *bytes.Buffer) {
 	t.Helper()
 	buf, ctx := withCapturedLog(t)
 	ctx = grpcpeer.NewContext(ctx, &grpcpeer.Peer{
 		Addr: fakeAddr{network: "tcp", addr: peerAddr},
 	})
-	ctx = logContext(ctx)
+	ctx = jlog.LogContext(ctx)
 
 	svc := &ControllerService{
 		Authn: &failingAuthenticator{err: fmt.Errorf("token verification failed")},
@@ -2163,7 +2069,7 @@ func (f *fakeServerStream) Context() context.Context { return f.ctx }
 
 // TestWrappedStreamContext_EnrichesPeer verifies the stream-interceptor
 // wrapper enriches the stream context logger with the peer address, exactly
-// like the unary interceptor does via logContext.
+// like the unary interceptor does via jlog.LogContext.
 func TestWrappedStreamContext_EnrichesPeer(t *testing.T) {
 	buf, ctx := withCapturedLog(t)
 	ctx = grpcpeer.NewContext(ctx, &grpcpeer.Peer{
