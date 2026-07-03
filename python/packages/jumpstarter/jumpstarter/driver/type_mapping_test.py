@@ -198,7 +198,8 @@ class TestEnumTypes:
         assert len(result.enums) == 1
 
         enum_desc = result.enums[0]
-        assert enum_desc.value[0].name == "POWERSTATEENUM_UNSPECIFIED"
+        # Value names use the UPPER_SNAKE prefix of the enum name (buf's ENUM_VALUE_PREFIX rule).
+        assert enum_desc.value[0].name == "POWER_STATE_ENUM_UNSPECIFIED"
         assert enum_desc.value[0].number == 0
         assert len(enum_desc.value) == 4  # UNSPECIFIED + 3 values
 

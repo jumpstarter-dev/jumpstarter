@@ -234,5 +234,10 @@ def render_proto_source(fd: FileDescriptorProto) -> str:
         msg_path = [_FDP_MESSAGE_TYPE, msg_idx]
         lines.append(_render_message(msg, fd.package, "", fd, msg_path))
 
+    # File-level enums (hoisted model/Literal enums referenced as `.{package}.{Name}`)
+    for enum_desc in fd.enum_type:
+        lines.append("")
+        lines.append(_render_enum(enum_desc, ""))
+
     lines.append("")
     return "\n".join(lines)

@@ -24,6 +24,7 @@ from typing import Any, get_args, get_origin
 
 from google.protobuf.descriptor_pb2 import (
     DescriptorProto,
+    EnumDescriptorProto,
     FieldDescriptorProto,
     FileDescriptorProto,
     FileDescriptorSet,
@@ -57,8 +58,8 @@ _SDP_METHOD = 2  # ServiceDescriptorProto.method
 _DP_FIELD = 2  # DescriptorProto.field
 
 
-def resolve_interface_class(driver) -> type | None:
-    """Find the driver's INTERFACE class — the base that declares the per-interface contract.
+def resolve_interface_class_of(driver_class: type) -> type | None:
+    """Find a driver CLASS's INTERFACE class — the base that declares the per-interface contract.
 
     Proto-first drivers subclass a codegen-generated base that itself directly subclasses
     ``ProtoInterface`` (e.g. ``NativeMockPower(PowerInterface)``) — the interface is that
@@ -68,21 +69,26 @@ def resolve_interface_class(driver) -> type | None:
     ``Driver`` and the concrete driver). Returns ``None`` if no such base exists (the driver
     then has no native surface).
 
-    Callers typically do ``resolve_interface_class(driver) or type(driver)`` — the concrete class is
-    the fallback so a driver without a separate interface ABC still exposes its ``@export`` surface.
+    Callers typically fall back to the driver class itself (``... or driver_class``) so a driver
+    without a separate interface ABC still exposes its ``@export`` surface.
     """
     from .base import Driver
     from .proto_interface import ProtoInterface
 
-    for cls in type(driver).__mro__:
+    for cls in driver_class.__mro__:
         if cls is not ProtoInterface and ProtoInterface in cls.__bases__:
             return cls
-    for cls in type(driver).__mro__:
+    for cls in driver_class.__mro__:
         if cls is Driver or cls is object:
             continue
         if "client" in cls.__dict__ and not issubclass(cls, Driver):
             return cls
     return None
+
+
+def resolve_interface_class(driver) -> type | None:
+    """Instance convenience for :func:`resolve_interface_class_of` (see there)."""
+    return resolve_interface_class_of(type(driver))
 
 
 def build_file_descriptor(  # noqa: C901 — linear assembly of one FileDescriptorProto
@@ -131,6 +137,11 @@ def build_file_descriptor(  # noqa: C901 — linear assembly of one FileDescript
     needs_empty = False
     needs_value = False
 
+    # Model/enum types referenced by request/response fields, declared once at the file level
+    # (appended after the method loop; deduped by name).
+    shared_messages: dict[str, DescriptorProto] = {}
+    shared_enums: dict[str, EnumDescriptorProto] = {}
+
     # Track source_code_info locations for doc comments
     locations: list[SourceCodeInfo.Location] = []
 
@@ -168,13 +179,21 @@ def build_file_descriptor(  # noqa: C901 — linear assembly of one FileDescript
             output_type = f".{package}.StreamData"
         else:
             # Build request message
-            request_msg, req_deps = _build_request_message(
+            request_msg, req_deps, req_extra_msgs, req_extra_enums = _build_request_message(
                 method_name, method_info.params, package
             )
             # Build response message
-            response_msg, resp_deps = _build_response_message(
+            response_msg, resp_deps, resp_extra_msgs, resp_extra_enums = _build_response_message(
                 method_name, method_info.return_type, method_info.call_type, package
             )
+
+            # Referenced model/enum types are declared at the FILE level (their references are
+            # `.{package}.{Name}`); collect them deduped and append after the method loop so
+            # the request/response docstring indices above stay stable.
+            for extra in (*req_extra_msgs, *resp_extra_msgs):
+                shared_messages.setdefault(extra.name, extra)
+            for extra in (*req_extra_enums, *resp_extra_enums):
+                shared_enums.setdefault(extra.name, extra)
 
             # Track dependencies
             if req_deps.get("empty") or resp_deps.get("empty"):
@@ -265,6 +284,20 @@ def build_file_descriptor(  # noqa: C901 — linear assembly of one FileDescript
                 and loc != locations[-1]  # Don't shift the one we just added
             ):
                 loc.path[1] += 1
+
+    # Declare the referenced model/enum types at the file level (deduped, after the per-method
+    # request/response messages so their docstring indices are unaffected). A bare-message
+    # response was already appended in the loop — skip anything present by name.
+    declared = {m.name for m in fd.message_type}
+    for name, extra in shared_messages.items():
+        if name not in declared:
+            fd.message_type.append(extra)
+            declared.add(name)
+    declared_enums = {e.name for e in fd.enum_type}
+    for name, extra_enum in shared_enums.items():
+        if name not in declared_enums:
+            fd.enum_type.append(extra_enum)
+            declared_enums.add(name)
 
     fd.service.append(service)
 
@@ -641,17 +674,20 @@ def _build_request_message(
     method_name: str,
     params: list[tuple[str, Any, Any]],
     package: str,
-) -> tuple[DescriptorProto | None, dict[str, bool]]:
+) -> tuple[DescriptorProto | None, dict[str, bool], list[DescriptorProto], list[EnumDescriptorProto]]:
     """Build a request message descriptor from method parameters.
 
-    Returns (message, dependencies) where dependencies tracks which
-    well-known types are needed.
+    Returns (message, dependencies, referenced messages, referenced enums): `dependencies`
+    tracks which well-known types are needed; the referenced model/enum descriptors must be
+    declared at the FILE level by the caller.
     """
     deps: dict[str, bool] = {}
+    extra_messages: list[DescriptorProto] = []
+    extra_enums: list[EnumDescriptorProto] = []
 
     if not params:
         deps["empty"] = True
-        return None, deps
+        return None, deps, extra_messages, extra_enums
 
     msg_name = f"{_to_pascal_case(method_name)}Request"
     msg = DescriptorProto(name=msg_name)
@@ -685,13 +721,12 @@ def _build_request_message(
         add_synthetic_oneof(msg, field)
         msg.field.append(field)
 
-        # Add any nested messages/enums
-        for nested in result.messages:
-            msg.nested_type.append(nested)
-        for nested_enum in result.enums:
-            msg.enum_type.append(nested_enum)
+        # Referenced model/enum types are declared at the FILE level by the caller (the field
+        # references are `.{package}.{Name}`, never nested).
+        extra_messages.extend(result.messages)
+        extra_enums.extend(result.enums)
 
-    return msg, deps
+    return msg, deps, extra_messages, extra_enums
 
 
 def _build_response_message(
@@ -699,10 +734,11 @@ def _build_response_message(
     return_type: Any,
     call_type: CallType,
     package: str,
-) -> tuple[DescriptorProto | None, dict[str, bool]]:
+) -> tuple[DescriptorProto | None, dict[str, bool], list[DescriptorProto], list[EnumDescriptorProto]]:
     """Build a response message descriptor from the return type.
 
-    Returns (message, dependencies).
+    Returns (message, dependencies, referenced messages, referenced enums) — the referenced
+    model/enum descriptors must be declared at the FILE level by the caller.
     """
     deps: dict[str, bool] = {}
 
@@ -720,14 +756,14 @@ def _build_response_message(
         or actual_type == "None"
     ):
         deps["empty"] = True
-        return None, deps
+        return None, deps, [], []
 
     result = map_python_type(actual_type, package, f"{method_name}_response")
 
     # If it maps to Empty, no message needed
     if result.type_name == EMPTY_TYPE:
         deps["empty"] = True
-        return None, deps
+        return None, deps, [], []
 
     # For simple types, wrap in a response message
     msg_name = f"{_to_pascal_case(method_name)}Response"
@@ -736,8 +772,9 @@ def _build_response_message(
     # If the result is already a message type with its own descriptor,
     # we can use it directly or wrap it
     if result.field_type == FieldDescriptorProto.TYPE_MESSAGE and result.messages:
-        # The type already has its own message — return it directly
-        return result.messages[0], deps
+        # The type already has its own message — return it directly (BARE); its transitive
+        # deps go to the file level.
+        return result.messages[0], deps, list(result.messages[1:]), list(result.enums)
 
     # Wrap primitive/simple types in a response message with a 'value' field
     field = FieldDescriptorProto(
@@ -753,10 +790,4 @@ def _build_response_message(
 
     msg.field.append(field)
 
-    # Add nested types
-    for nested in result.messages:
-        msg.nested_type.append(nested)
-    for nested_enum in result.enums:
-        msg.enum_type.append(nested_enum)
-
-    return msg, deps
+    return msg, deps, list(result.messages), list(result.enums)

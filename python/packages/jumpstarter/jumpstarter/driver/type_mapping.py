@@ -158,20 +158,24 @@ def map_python_type(  # noqa: C901 — flat type-dispatch; each branch handles o
 
     # Handle Pydantic BaseModel -> generated DescriptorProto
     if isinstance(python_type, type) and issubclass(python_type, BaseModel):
-        msg = _build_basemodel_message(python_type, parent_package)
+        msg, dep_msgs, dep_enums = _build_basemodel_message(python_type, parent_package)
         return TypeMappingResult(
             field_type=FieldDescriptorProto.TYPE_MESSAGE,
             type_name=f".{parent_package}.{msg.name}",
-            messages=[msg],
+            # The referenced message FIRST, then its transitive deps — all declared at the
+            # file level by the caller (references are `.{package}.{Name}`, never nested).
+            messages=[msg, *dep_msgs],
+            enums=dep_enums,
         )
 
     # Handle dataclass -> generated DescriptorProto
     if dataclasses.is_dataclass(python_type) and isinstance(python_type, type):
-        msg = _build_dataclass_message(python_type, parent_package)
+        msg, dep_msgs, dep_enums = _build_dataclass_message(python_type, parent_package)
         return TypeMappingResult(
             field_type=FieldDescriptorProto.TYPE_MESSAGE,
             type_name=f".{parent_package}.{msg.name}",
-            messages=[msg],
+            messages=[msg, *dep_msgs],
+            enums=dep_enums,
         )
 
     # Handle dict with type params (dict[str, X]) -> Value fallback
@@ -214,21 +218,30 @@ def add_synthetic_oneof(msg: DescriptorProto, field: FieldDescriptorProto) -> No
     msg.oneof_decl.add(name=f"_{field.name}")
 
 
+def _enum_value_prefix(enum_name: str) -> str:
+    """Proto enum value prefix: PascalCase name → UPPER_SNAKE (buf's ENUM_VALUE_PREFIX rule).
+
+    ``OBDConnectionStatus`` → ``OBD_CONNECTION_STATUS``.
+    """
+    import re
+
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", "_", enum_name).upper()
+
+
 def _build_literal_enum(
     enum_name: str, values: tuple[Any, ...]
 ) -> EnumDescriptorProto:
     """Build a proto enum from Literal string values."""
+    prefix = _enum_value_prefix(enum_name)
     enum_desc = EnumDescriptorProto(name=enum_name)
     # Proto3 requires first value to be 0
     enum_desc.value.append(
-        EnumValueDescriptorProto(
-            name=f"{enum_name.upper()}_UNSPECIFIED", number=0
-        )
+        EnumValueDescriptorProto(name=f"{prefix}_UNSPECIFIED", number=0)
     )
     for i, val in enumerate(values, start=1):
         safe_name = str(val).upper().replace("-", "_").replace(" ", "_")
         enum_desc.value.append(
-            EnumValueDescriptorProto(name=f"{enum_name.upper()}_{safe_name}", number=i)
+            EnumValueDescriptorProto(name=f"{prefix}_{safe_name}", number=i)
         )
     return enum_desc
 
@@ -237,29 +250,31 @@ def _build_python_enum(
     enum_name: str, enum_type: type[enum.Enum]
 ) -> EnumDescriptorProto:
     """Build a proto enum from a Python Enum class."""
+    prefix = _enum_value_prefix(enum_name)
     enum_desc = EnumDescriptorProto(name=enum_name)
     # Proto3 requires first value to be 0
     enum_desc.value.append(
-        EnumValueDescriptorProto(
-            name=f"{enum_name.upper()}_UNSPECIFIED", number=0
-        )
+        EnumValueDescriptorProto(name=f"{prefix}_UNSPECIFIED", number=0)
     )
     for i, member in enumerate(enum_type, start=1):
         enum_desc.value.append(
-            EnumValueDescriptorProto(
-                name=f"{enum_name.upper()}_{member.name.upper()}", number=i
-            )
+            EnumValueDescriptorProto(name=f"{prefix}_{member.name.upper()}", number=i)
         )
     return enum_desc
 
 
 def _build_basemodel_message(
     model: type[BaseModel], parent_package: str
-) -> DescriptorProto:
-    """Build a DescriptorProto from a Pydantic BaseModel."""
+) -> tuple[DescriptorProto, list[DescriptorProto], list[EnumDescriptorProto]]:
+    """Build a DescriptorProto from a Pydantic BaseModel.
+
+    Returns ``(message, dependency messages, dependency enums)``. Field types reference their
+    message/enum at the TOP level (``.{package}.{Name}``), so the dependencies must be declared
+    at the file level by the caller — NOT nested inside this message.
+    """
     msg = DescriptorProto(name=model.__name__)
-    nested_messages = []
-    nested_enums = []
+    dep_messages: list[DescriptorProto] = []
+    dep_enums: list[EnumDescriptorProto] = []
 
     for i, (field_name, field_info) in enumerate(model.model_fields.items(), start=1):
         result = map_python_type(field_info.annotation, parent_package, field_name)
@@ -277,24 +292,19 @@ def _build_basemodel_message(
 
         add_synthetic_oneof(msg, field)
         msg.field.append(field)
-        nested_messages.extend(result.messages)
-        nested_enums.extend(result.enums)
+        dep_messages.extend(result.messages)
+        dep_enums.extend(result.enums)
 
-    for nested in nested_messages:
-        msg.nested_type.append(nested)
-    for nested_enum in nested_enums:
-        msg.enum_type.append(nested_enum)
-
-    return msg
+    return msg, dep_messages, dep_enums
 
 
 def _build_dataclass_message(
     dc: type, parent_package: str
-) -> DescriptorProto:
-    """Build a DescriptorProto from a dataclass."""
+) -> tuple[DescriptorProto, list[DescriptorProto], list[EnumDescriptorProto]]:
+    """Build a DescriptorProto from a dataclass (same contract as `_build_basemodel_message`)."""
     msg = DescriptorProto(name=dc.__name__)
-    nested_messages = []
-    nested_enums = []
+    dep_messages: list[DescriptorProto] = []
+    dep_enums: list[EnumDescriptorProto] = []
 
     for i, field in enumerate(dataclasses.fields(dc), start=1):
         result = map_python_type(field.type, parent_package, field.name)
@@ -312,15 +322,10 @@ def _build_dataclass_message(
 
         add_synthetic_oneof(msg, proto_field)
         msg.field.append(proto_field)
-        nested_messages.extend(result.messages)
-        nested_enums.extend(result.enums)
+        dep_messages.extend(result.messages)
+        dep_enums.extend(result.enums)
 
-    for nested in nested_messages:
-        msg.nested_type.append(nested)
-    for nested_enum in nested_enums:
-        msg.enum_type.append(nested_enum)
-
-    return msg
+    return msg, dep_messages, dep_enums
 
 
 # JSON Schema type -> protobuf type
@@ -351,6 +356,8 @@ def _map_json_schema(
         # Generate a message
         msg_name = _to_pascal_case(field_name) if field_name else "Object"
         msg = DescriptorProto(name=msg_name)
+        dep_messages: list[DescriptorProto] = []
+        dep_enums: list[EnumDescriptorProto] = []
         properties = schema.get("properties", {})
         for i, (prop_name, prop_schema) in enumerate(properties.items(), start=1):
             inner = _map_json_schema(prop_schema, parent_package, prop_name)
@@ -363,10 +370,15 @@ def _map_json_schema(
             if inner.type_name:
                 field.type_name = inner.type_name
             msg.field.append(field)
+            # Property-referenced messages/enums are declared at the file level (references
+            # are `.{package}.{Name}`) — bubble them up with this message.
+            dep_messages.extend(inner.messages)
+            dep_enums.extend(inner.enums)
         return TypeMappingResult(
             field_type=FieldDescriptorProto.TYPE_MESSAGE,
             type_name=f".{parent_package}.{msg_name}",
-            messages=[msg],
+            messages=[msg, *dep_messages],
+            enums=dep_enums,
         )
 
     # anyOf with null -> optional

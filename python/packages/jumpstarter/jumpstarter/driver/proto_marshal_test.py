@@ -270,11 +270,16 @@ def test_uninspectable_driver_returns_none(monkeypatch):
     assert build_marshaller(NoneDriver()) is None  # → host raises Unimplemented → Rust JSON fallback
 
 
-def test_enum_param_not_yet_native_falls_back():
-    # Generated enums are declared nested but referenced top-level (a descriptor_builder limitation),
-    # so an enum-param interface is not poolable and gracefully degrades to the JSON path. Documents
-    # the current boundary of native coverage (tracked as a descriptor_builder follow-up).
-    assert build_marshaller(EnumDriver()) is None
+def test_enum_param_is_native_and_round_trips():
+    # Enum descriptors are hoisted to the file level (they used to be declared nested but
+    # referenced top-level, making the pool reject the file → JSON fallback), so an enum-param
+    # interface is fully native: the wire value is the 1-based declared position.
+    marshaller = build_marshaller(EnumDriver())
+    assert marshaller is not None, "enum params must be natively poolable"
+    spec = _spec(EnumDriver(), "pick")
+    req = spec.input_cls()
+    req.c = 2  # 1-based declared order: RED=1, GREEN=2
+    assert decode_request(spec, req.SerializeToString()) == [Color.GREEN]
 
 
 def test_malformed_request_bytes_raise():
