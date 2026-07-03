@@ -93,31 +93,37 @@ class TestRegistryEmission:
         assert rc == 0
         return registry_file.read_text()
 
-    def test_registry_maps_legacy_driver_to_interface_and_client(self, tmp_path):
+    def test_registry_is_interface_keyed_with_driver_entries(self, tmp_path):
         content = self._registry(tmp_path, ["jumpstarter_driver_power.driver"])
-        assert '"jumpstarter_driver_power.driver.MockPower":' in content
-        assert 'interface: "jumpstarter.interfaces.power.v1.PowerInterface"' in content
-        assert 'python: "jumpstarter_driver_power.client.PowerClient"' in content
-        assert '"jumpstarter.interfaces.power.v1.PowerInterface":' in content
-        assert 'proto: "jumpstarter/interfaces/power/v1/power.proto"' in content
+        # The interface is the entry (source of truth), drivers listed under it.
+        assert "  - name: jumpstarter.interfaces.power.v1.PowerInterface" in content
+        assert "    proto: jumpstarter/interfaces/power/v1/power.proto" in content
+        assert "      - name: jumpstarter_driver_power.driver.MockPower" in content
+        assert "          python: jumpstarter_driver_power.client.PowerClient" in content
+        # No quoted map keys anywhere — plain scalars only.
+        assert '"' not in content
 
-    def test_proto_first_driver_gets_entry_but_no_generated_default_client(self, tmp_path):
-        """NativeMockPower's advertised client is its _generated default — a registry entry
-        records the interface but NOT that label (device codegen emits its own typed client)."""
+    def test_proto_first_driver_is_a_bare_entry_without_generated_default_client(self, tmp_path):
+        """NativeMockPower's advertised client is its _generated default — it lists as a
+        bare-string driver entry (device codegen emits its own typed client)."""
         content = self._registry(
             tmp_path,
             ["jumpstarter_driver_power.driver", "jumpstarter_driver_power.driver_native"],
         )
-        assert '"jumpstarter_driver_power.driver_native.NativeMockPower":' in content
+        assert "      - jumpstarter_driver_power.driver_native.NativeMockPower" in content
         assert "_generated" not in content
 
     def test_registry_parses_as_yaml_with_expected_shape(self, tmp_path):
         yaml = pytest.importorskip("yaml")
         data = yaml.safe_load(self._registry(tmp_path, ["jumpstarter_driver_power.driver"]))
         assert data["version"] == 1
-        entry = data["drivers"]["jumpstarter_driver_power.driver.MockPower"]
-        assert entry["interface"] == "jumpstarter.interfaces.power.v1.PowerInterface"
-        assert (
-            data["interfaces"][entry["interface"]]["proto"]
-            == "jumpstarter/interfaces/power/v1/power.proto"
+        power = next(
+            e for e in data["interfaces"]
+            if e["name"] == "jumpstarter.interfaces.power.v1.PowerInterface"
         )
+        assert power["proto"] == "jumpstarter/interfaces/power/v1/power.proto"
+        mock = next(
+            d for d in power["drivers"]
+            if isinstance(d, dict) and d["name"] == "jumpstarter_driver_power.driver.MockPower"
+        )
+        assert mock["clients"]["python"] == "jumpstarter_driver_power.client.PowerClient"

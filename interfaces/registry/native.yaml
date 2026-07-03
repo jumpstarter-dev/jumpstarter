@@ -1,18 +1,16 @@
 # Hand-maintained registry entries for NON-Python driver types (`rust:<crate>` / `jvm:<fqn>`),
-# merged with the generated python.yaml by `jumpstarter-codegen --kind device`. Proto-first
-# Rust/JVM drivers' interfaces are the committed protos by construction — add each driver's
-# `type:` string (as written in exporter configs) with its proto service FQN, and optionally
-# per-language custom clients ("clients: {rust: <type path>, jvm: <fqn>, python: <class path>}").
+# merged with the generated python.yaml by `jumpstarter-codegen --kind device` (same interface
+# entries union their driver lists). Proto-first Rust/JVM drivers' interfaces are the committed
+# protos by construction — list each driver's `type:` string (as written in exporter configs)
+# under its interface, optionally with per-language custom clients
+# (`clients: {rust: <type path>, jvm: <fqn>, python: <class path>}`).
 version: 1
-drivers:
-  "rust:jumpstarter-driver-power-pure":
-    interface: "jumpstarter.interfaces.power.v1.PowerInterface"
-  "jvm:dev.jumpstarter.examples.power.KotlinPowerDriver":
-    interface: "jumpstarter.interfaces.power.v1.PowerInterface"
-    clients:
-      jvm: "dev.jumpstarter.examples.power.CyclingPowerClient"
-  "jvm:dev.jumpstarter.examples.power.JavaPowerDriver":
-    interface: "jumpstarter.interfaces.power.v1.PowerInterface"
 interfaces:
-  "jumpstarter.interfaces.power.v1.PowerInterface":
-    proto: "jumpstarter/interfaces/power/v1/power.proto"
+  - name: jumpstarter.interfaces.power.v1.PowerInterface
+    proto: jumpstarter/interfaces/power/v1/power.proto
+    drivers:
+      - rust:jumpstarter-driver-power-pure
+      - name: jvm:dev.jumpstarter.examples.power.KotlinPowerDriver
+        clients:
+          jvm: dev.jumpstarter.examples.power.CyclingPowerClient
+      - jvm:dev.jumpstarter.examples.power.JavaPowerDriver

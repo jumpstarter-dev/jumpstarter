@@ -231,7 +231,7 @@ fn resolve_driver_kind(
     device: &mut ResolvedDevice,
 ) -> anyhow::Result<NodeKind> {
     let registry_entry = registry.driver(driver_type);
-    let fqn = match explicit_interface.or(registry_entry.map(|e| e.interface.as_str())) {
+    let fqn = match explicit_interface.or(registry_entry.as_ref().map(|(i, _)| i.name.as_str())) {
         Some(fqn) => fqn.to_string(),
         None => {
             return Ok(opaque_kind(
@@ -292,7 +292,7 @@ fn resolve_driver_kind(
     Ok(NodeKind::Driver {
         interface: fqn,
         driver_type: driver_type.to_string(),
-        clients: registry_entry.map(|e| e.clients.clone()).unwrap_or_default(),
+        clients: registry_entry.map(|(_, clients)| clients).unwrap_or_default(),
     })
 }
 
@@ -309,14 +309,13 @@ mod tests {
         DriverRegistry::from_yaml(
             r#"
 version: 1
-drivers:
-  "jumpstarter_driver_power.driver.MockPower":
-    interface: "jumpstarter.interfaces.power.v1.PowerInterface"
-    clients:
-      python: "jumpstarter_driver_power.client.PowerClient"
 interfaces:
-  "jumpstarter.interfaces.power.v1.PowerInterface":
-    proto: "jumpstarter/interfaces/power/v1/power.proto"
+  - name: jumpstarter.interfaces.power.v1.PowerInterface
+    proto: jumpstarter/interfaces/power/v1/power.proto
+    drivers:
+      - name: jumpstarter_driver_power.driver.MockPower
+        clients:
+          python: jumpstarter_driver_power.client.PowerClient
 "#,
         )
         .unwrap()

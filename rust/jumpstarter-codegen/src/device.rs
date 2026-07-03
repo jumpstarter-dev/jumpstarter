@@ -600,18 +600,16 @@ mod tests {
         let registry = DriverRegistry::from_yaml(
             r#"
 version: 1
-drivers:
-  "jumpstarter_driver_power.driver.MockPower":
-    interface: "jumpstarter.interfaces.power.v1.PowerInterface"
-    clients:
-      python: "jumpstarter_driver_power.client.PowerClient"
-  "jvm:dev.jumpstarter.examples.power.KotlinPowerDriver":
-    interface: "jumpstarter.interfaces.power.v1.PowerInterface"
-    clients:
-      jvm: "dev.jumpstarter.examples.power.CyclingPowerClient"
 interfaces:
-  "jumpstarter.interfaces.power.v1.PowerInterface":
-    proto: "jumpstarter/interfaces/power/v1/power.proto"
+  - name: jumpstarter.interfaces.power.v1.PowerInterface
+    proto: jumpstarter/interfaces/power/v1/power.proto
+    drivers:
+      - name: jumpstarter_driver_power.driver.MockPower
+        clients:
+          python: jumpstarter_driver_power.client.PowerClient
+      - name: jvm:dev.jumpstarter.examples.power.KotlinPowerDriver
+        clients:
+          jvm: dev.jumpstarter.examples.power.CyclingPowerClient
 "#,
         )
         .unwrap();

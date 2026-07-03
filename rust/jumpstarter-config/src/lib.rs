@@ -31,7 +31,7 @@ pub use exporter::{
 };
 pub use grpc_options::{GrpcOptionValue, GrpcOptions};
 pub use meta::ObjectMeta;
-pub use registry::{DriverRegistry, DriverRegistryEntry, InterfaceRegistryEntry};
+pub use registry::{DriverRegistry, RegistryDriver, RegistryInterface};
 pub use tls::TlsConfig;
 pub use user::{UserConfig, UserConfigInner};
 
