@@ -3,24 +3,25 @@ package dev.jumpstarter.examples.power
 import dev.jumpstarter.client.ExporterSession
 import dev.jumpstarter.driver.DriverHostServer
 import dev.jumpstarter.driver.GrpcServiceDriverHostFactory
-import dev.jumpstarter.generated.device.ExampleRigDevice
+import dev.jumpstarter.generated.device.ExampleRig
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
 
 /**
- * End-to-end test for the GENERATED typed device wrapper — the JVM sibling of
+ * End-to-end test for the GENERATED typed root client — the JVM sibling of
  * `python/examples/exporter-device-example` and `rust/jumpstarter-device-example`.
  *
- * The served tree matches this module's committed `exporter.yaml` (the wrapper's source of
- * truth): one `power` node hosting [KotlinPowerDriver]. `ExampleRigDevice(session)` resolves the
- * node by NAME PATH from the report, and — because `interfaces/registry/native.yaml` advertises
- * the custom jvm client for this driver type — `device.power` is statically a
- * [CyclingPowerClient], custom extension methods included.
+ * The served tree matches this module's committed `exporter.yaml` (the source of truth): one
+ * `power` driver entry hosting [KotlinPowerDriver] — so the root IS the driver, and the
+ * generated `ExampleRig(session)` factory resolves it by NAME PATH from the report and returns
+ * its typed client directly. Because `interfaces/registry/native.yaml` advertises the custom
+ * jvm client for this driver type, that client is statically a [CyclingPowerClient], custom
+ * extension methods included.
  */
-class ExampleRigDeviceTest {
+class ExampleRigTest {
     @Test
-    fun deviceWrapperBindsTheCustomClientAndRoundTrips() {
+    fun generatedRootBindsTheCustomClientAndRoundTrips() {
         val dir = Files.createTempDirectory("jmp-device-example")
         val uds = dir.resolve("host.sock").toString()
         DriverHostServer.serve(
@@ -28,11 +29,9 @@ class ExampleRigDeviceTest {
             GrpcServiceDriverHostFactory.forDriver(KotlinPowerDriver::class.java, "power"),
         ).use {
             ExporterSession.connect(uds).use { session ->
-                val device = ExampleRigDevice(session)
-
-                // Statically typed as the CUSTOM client (registry-advertised) — the extension
-                // methods are available without casts.
-                val power: CyclingPowerClient = device.power
+                // The root IS the power driver: statically the CUSTOM client (registry-advertised),
+                // extension methods available without casts.
+                val power: CyclingPowerClient = ExampleRig(session)
 
                 power.on()
                 assertTrue(power.readVoltages().all { it > 0.0 }, "powered-on readings")

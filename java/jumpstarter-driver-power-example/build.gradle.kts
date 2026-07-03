@@ -99,7 +99,11 @@ val generateJumpstarterDevice by tasks.registering(Exec::class) {
     inputs.dir("$repoRoot/interfaces/proto")
     outputs.dir(codegenDeviceDir)
     workingDir = rustDir
-    doFirst { codegenDeviceDir.get().asFile.mkdirs() }
+    doFirst {
+        // Clean first: the output set (file names) follows the config, so stale files linger.
+        codegenDeviceDir.get().asFile.deleteRecursively()
+        codegenDeviceDir.get().asFile.mkdirs()
+    }
     commandLine(
         "cargo", "run", "-q", "-p", "jumpstarter-codegen", "--bin", "jumpstarter-codegen", "--",
         "--exporter-config", file("exporter.yaml").path,
