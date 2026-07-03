@@ -450,6 +450,12 @@ async def test_serve_tcp_passphrase_rejected_logs_warning(caplog):
     assert "GetReport" in auth_warnings[0].message, (
         f"expected RPC method name 'GetReport' in warning, got: {auth_warnings[0].message}"
     )
+    # Neither the server secret nor the client-supplied passphrase may appear
+    # in any log record.
+    for record in caplog.records:
+        message = record.getMessage()
+        assert passphrase not in message, f"server passphrase leaked in log: {message}"
+        assert "wrong-passphrase" not in message, f"client passphrase leaked in log: {message}"
 
 
 @pytest.mark.anyio
@@ -473,6 +479,10 @@ async def test_serve_tcp_passphrase_missing_logs_warning(caplog):
     auth_warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "authentication failed" in r.message]
     assert len(auth_warnings) >= 1, f"expected auth failure warning log, got: {[r.message for r in caplog.records]}"
     assert "GetReport" in auth_warnings[0].message
+    # The server secret may not appear in any log record.
+    for record in caplog.records:
+        message = record.getMessage()
+        assert passphrase not in message, f"server passphrase leaked in log: {message}"
 
 
 @pytest.mark.anyio
