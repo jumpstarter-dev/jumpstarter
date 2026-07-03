@@ -62,7 +62,7 @@ impl LanguageGenerator for RustGenerator {
 
 /// `PascalCase`/`camelCase` -> `snake_case` (`On` -> `on`, `SetVoltage` -> `set_voltage`,
 /// `PowerInterface` -> `power_interface`).
-fn pascal_to_snake(name: &str) -> String {
+pub(crate) fn pascal_to_snake(name: &str) -> String {
     let mut out = String::with_capacity(name.len() + 4);
     let chars: Vec<char> = name.chars().collect();
     for (i, &c) in chars.iter().enumerate() {
@@ -96,7 +96,7 @@ fn client_struct_name(iface: &InterfaceRef) -> String {
 
 /// Strip a trailing `Interface` from a service name (`PowerInterface` -> `Power`); leave names
 /// without that suffix unchanged.
-fn strip_interface_suffix(service: &str) -> String {
+pub(crate) fn strip_interface_suffix(service: &str) -> String {
     service
         .strip_suffix("Interface")
         .unwrap_or(service)

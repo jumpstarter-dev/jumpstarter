@@ -102,7 +102,7 @@ fn backend_class_name(iface: &InterfaceRef) -> String {
 }
 
 /// The Kotlin class name for a service's typed client: `PowerInterface` -> `PowerClient`.
-fn client_class_name(iface: &InterfaceRef) -> String {
+pub(crate) fn client_class_name(iface: &InterfaceRef) -> String {
     format!("{}Client", strip_interface_suffix(&iface.service_name))
 }
 
@@ -450,7 +450,7 @@ fn render_driver(iface: &InterfaceRef) -> String {
 
 /// The lowercase generated subpackage for the interface (`power`), used in the Kotlin `package`
 /// declaration so each interface's generated glue is namespaced.
-fn generated_subpackage(iface: &InterfaceRef) -> String {
+pub(crate) fn generated_subpackage(iface: &InterfaceRef) -> String {
     outer_class_name(iface).to_ascii_lowercase()
 }
 
@@ -481,6 +481,7 @@ fn render_client(iface: &InterfaceRef) -> String {
     let _ = writeln!(
         s,
         "import com.google.protobuf.Empty\n\
+         import dev.jumpstarter.client.DriverInstance\n\
          import dev.jumpstarter.client.ExporterSession\n\
          import dev.jumpstarter.client.UuidMetadataInterceptor\n\
          import {pkg}.{outer}\n\
@@ -495,12 +496,16 @@ fn render_client(iface: &InterfaceRef) -> String {
          * channel.\n \
          *\n \
          * `open` so a CUSTOM client can subclass it to add wrapper methods or a CLI (the JVM analog\n \
-         * of subclassing Python's `DriverClient`); the `stub` is `protected` for raw calls.\n \
+         * of subclassing Python's `DriverClient`); the `stub` is `protected` for raw calls. The\n \
+         * primary constructor is uuid-precise (a [DriverInstance] from the report — device wrappers\n \
+         * resolve nested nodes by NAME PATH); the secondary keeps the flat by-name convenience.\n \
          */\n\
-         open class {client}(session: ExporterSession, driverName: String) {{\n    \
+         open class {client}(session: ExporterSession, instance: DriverInstance) {{\n    \
+             constructor(session: ExporterSession, driverName: String) :\n        \
+                 this(session, session.report.requireByName(driverName))\n\n    \
              protected val stub: {grpc}.{blocking_stub} =\n        \
                  {grpc_x}.newBlockingStub(session.channel)\n            \
-                     .withInterceptors(UuidMetadataInterceptor(session.requireDriver(driverName)))\n"
+                     .withInterceptors(UuidMetadataInterceptor(instance.uuid))\n"
     );
 
     for m in &iface.methods {
@@ -629,7 +634,9 @@ mod tests {
         assert!(files.contains_key("PowerClient.kt"), "keys: {:?}", files.keys());
         let src = &files["PowerClient.kt"];
         // `open class` + `open fun` so a custom client can subclass and add wrapper methods/CLI.
-        assert!(src.contains("open class PowerClient(session: ExporterSession, driverName: String)"));
+        // Primary ctor is uuid-precise (DriverInstance); the by-name secondary is kept.
+        assert!(src.contains("open class PowerClient(session: ExporterSession, instance: DriverInstance)"));
+        assert!(src.contains("constructor(session: ExporterSession, driverName: String)"));
         assert!(src.contains("PowerInterfaceGrpc.newBlockingStub(session.channel)"));
         // Unary on()/off(); read() server-streaming returns a list of PowerReading.
         assert!(src.contains("open fun on()"));

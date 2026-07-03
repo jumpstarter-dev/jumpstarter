@@ -117,7 +117,7 @@ fn strip_interface_suffix(service: &str) -> String {
 
 /// The snake_case module stem for the interface's generated files — the package segment just before
 /// the trailing `vN` (`jumpstarter.interfaces.power.v1` -> `power`, `…storage_mux.v1` -> `storage_mux`).
-fn module_stem(iface: &InterfaceRef) -> String {
+pub(crate) fn module_stem(iface: &InterfaceRef) -> String {
     let segments: Vec<&str> = iface.proto_package.split('.').collect();
     segments
         .iter()
@@ -129,7 +129,7 @@ fn module_stem(iface: &InterfaceRef) -> String {
 }
 
 /// The typed client class name: `PowerInterface` -> `PowerClient`.
-fn client_class_name(iface: &InterfaceRef) -> String {
+pub(crate) fn client_class_name(iface: &InterfaceRef) -> String {
     format!("{}Client", strip_interface_suffix(&iface.service_name))
 }
 

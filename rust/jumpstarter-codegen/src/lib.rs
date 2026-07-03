@@ -17,6 +17,8 @@
 pub mod ir;
 pub mod engine;
 pub mod languages;
+pub mod resolver;
+pub mod device;
 
 /// Build-script helper for a driver crate (feature `build-helper`): one call compiles the interface
 /// proto + generates the client + macros + the `jumpstarter_generated.rs` aggregator.

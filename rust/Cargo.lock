@@ -1449,6 +1449,7 @@ name = "jumpstarter-codegen"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "jumpstarter-config",
  "prost",
  "prost-reflect",
  "prost-types",

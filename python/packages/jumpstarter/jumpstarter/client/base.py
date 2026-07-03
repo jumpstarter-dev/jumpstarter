@@ -153,3 +153,45 @@ class StubDriverClient(DriverClient):
         raise a helpful ImportError instead of AttributeError.
         """
         self._raise_missing_error()
+
+
+def rebind_client(client: DriverClient, cls: type[DriverClient]) -> DriverClient:
+    """Reconstruct ``client`` as an instance of ``cls`` (same uuid/session/children/…).
+
+    Generated device wrappers use this to bind each tree node to the codegen-chosen client
+    class — a custom client where one is defined, else the generated typed client — regardless
+    of what the runtime resolved from the node's ``jumpstarter.dev/client`` label. Notably this
+    upgrades a :class:`StubDriverClient` (driver package not installed client-side) into a fully
+    working typed client. A client that already satisfies ``cls`` is returned as-is, so a richer
+    runtime-resolved subclass is preserved.
+    """
+    if isinstance(client, cls):
+        return client
+    return cls(
+        uuid=client.uuid,
+        labels=client.labels,
+        session=client.session,
+        portal=client.portal,
+        stack=client.stack,
+        children=client.children,
+        description=client.description,
+        methods_description=client.methods_description,
+    )
+
+
+def resolve_root_child(root: DriverClient, name: str) -> DriverClient:
+    """Resolve a device tree's first path segment against the client tree root.
+
+    The named export entry is either a child of the root composite (the exporter hub's
+    synthesized tree), the root client itself (a config-served single entry), or — for a bare
+    single-driver harness ``serve()`` whose root carries no name label and no children — the
+    root unambiguously.
+    """
+    if name in root.children:
+        return root.children[name]
+    root_name = root.labels.get("jumpstarter.dev/name")
+    if root_name == name:
+        return root
+    if root_name is None and not root.children:
+        return root
+    raise KeyError(f"driver {name!r} not found under the exporter root")
