@@ -17,11 +17,11 @@ val jnaPath = (extra["jumpstarterCdylibDir"] as File).path
 // jumpstarter-codegen: the interface FileDescriptorSet (from the protobuf plugin) and the generated
 // typed clients. Both live under build/ — the typed clients are generated each build, never committed.
 val codegenDescriptor = layout.buildDirectory.file("generated/jumpstarter/interfaces.desc")
-val codegenClientsDir = layout.buildDirectory.dir("generated/jumpstarter/clients")
+val codegenDeviceDir = layout.buildDirectory.dir("generated/jumpstarter/device")
 
 kotlin {
     jvmToolchain(21)
-    sourceSets["main"].kotlin.srcDir(codegenClientsDir)
+    sourceSets["main"].kotlin.srcDir(codegenDeviceDir)
 }
 
 dependencies {
@@ -87,25 +87,30 @@ protobuf {
     }
 }
 
-// --- Jumpstarter typed clients: generated each build from the interface descriptor set ----
-// The committed code is the driver *implementations* + custom client only; the typed clients (and the
-// gRPC stubs above) are fully codegenerated during the build, mirroring the Rust crate's build.rs.
-val generateJumpstarterClients by tasks.registering(Exec::class) {
-    description = "Generate the typed Jumpstarter clients from the interface descriptor set"
-    dependsOn("generateProto")
-    inputs.file(codegenDescriptor)
-    outputs.dir(codegenClientsDir)
+// --- Jumpstarter typed device: generated each build from the committed exporter.yaml ------
+// The committed code is the driver *implementations* + custom client + exporter.yaml only; the
+// typed per-interface clients AND the device tree wrapper are codegenerated during the build
+// (device mode resolves each node proto-only via interfaces/registry — no driver code loaded),
+// mirroring the Rust crate's build.rs `exporter_device` and the Python packages' hatch hook.
+val generateJumpstarterDevice by tasks.registering(Exec::class) {
+    description = "Generate the typed device wrapper (+ typed clients) from exporter.yaml"
+    inputs.file("exporter.yaml")
+    inputs.dir("$repoRoot/interfaces/registry")
+    inputs.dir("$repoRoot/interfaces/proto")
+    outputs.dir(codegenDeviceDir)
     workingDir = rustDir
-    doFirst { codegenClientsDir.get().asFile.mkdirs() }
+    doFirst { codegenDeviceDir.get().asFile.mkdirs() }
     commandLine(
         "cargo", "run", "-q", "-p", "jumpstarter-codegen", "--bin", "jumpstarter-codegen", "--",
-        "--descriptor-set", codegenDescriptor.get().asFile.path,
-        "--language", "kotlin", "--kind", "client", "--service", "PowerInterface",
-        "--out", codegenClientsDir.get().asFile.path,
+        "--exporter-config", file("exporter.yaml").path,
+        "--language", "kotlin", "--kind", "device", "--strict",
+        "--registry", "$repoRoot/interfaces/registry",
+        "--proto-root", "$repoRoot/interfaces/proto",
+        "--out", codegenDeviceDir.get().asFile.path,
     )
 }
 
-tasks.named("compileKotlin") { dependsOn(generateJumpstarterClients) }
+tasks.named("compileKotlin") { dependsOn(generateJumpstarterDevice) }
 
 tasks.test {
     // The self-contained driver tests run here. The lease-based examples need a real leased exporter:

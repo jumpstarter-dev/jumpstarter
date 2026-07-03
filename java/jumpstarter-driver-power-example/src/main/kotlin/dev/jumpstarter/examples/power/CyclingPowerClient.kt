@@ -1,6 +1,7 @@
 package dev.jumpstarter.examples.power
 
 import dev.jumpstarter.cli.JumpstarterClientCli
+import dev.jumpstarter.client.DriverInstance
 import dev.jumpstarter.client.ExporterSession
 import dev.jumpstarter.generated.power.PowerClient
 import jumpstarter.interfaces.power.v1.Power.PowerReading
@@ -17,8 +18,12 @@ import picocli.CommandLine.Option
  * A driver advertises this client with the label `jvm:dev.jumpstarter.examples.power.CyclingPowerClient`.
  */
 @JumpstarterClientCli
-class CyclingPowerClient(session: ExporterSession, driverName: String) :
-    PowerClient(session, driverName) {
+class CyclingPowerClient(session: ExporterSession, instance: DriverInstance) :
+    PowerClient(session, instance) {
+
+    /** Flat by-name convenience, mirroring the generated client's secondary constructor. */
+    constructor(session: ExporterSession, driverName: String) :
+        this(session, session.report.requireByName(driverName))
 
     /** Custom client-side method (NOT an interface RPC): power-cycle — off, wait, on. */
     fun cycle(waitMillis: Long = 2_000) {
