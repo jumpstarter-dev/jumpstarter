@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"net"
 	"strings"
 	"testing"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
+	jlog "github.com/jumpstarter-dev/jumpstarter-controller/internal/log"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	grpcpeer "google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -36,6 +38,19 @@ type stubAuthenticator struct {
 
 func (s *stubAuthenticator) AuthenticateContext(_ context.Context) (*authenticator.Response, bool, error) {
 	return s.resp, s.ok, s.err
+}
+
+// recordingTokenAuthenticator implements authenticator.Token. It records the
+// bearer token it is handed so tests can prove the token actually traversed
+// the production extraction path (metadata -> BearerTokenFromContext ->
+// AuthenticateToken), and fails with a generic error like the real verifier.
+type recordingTokenAuthenticator struct {
+	received string
+}
+
+func (r *recordingTokenAuthenticator) AuthenticateToken(_ context.Context, token string) (*authenticator.Response, bool, error) {
+	r.received = token
+	return nil, false, fmt.Errorf("token verification failed")
 }
 
 type stubAttributesGetter struct {
@@ -74,67 +89,16 @@ func ctxWithPeer(addr string) context.Context {
 }
 
 // captureLog sets up a buffer-backed logger and returns the buffer and a
-// context enriched with that logger, with LogContext applied on top exactly
-// like the gRPC interceptors do in production (that is what adds the "peer"
-// key to the auth-failure logs). The caller can inspect buf.String() after
-// the code under test runs. It does NOT mutate the global logf.Log, so tests
-// are isolated from each other and safe for t.Parallel().
+// context enriched with that logger, with jlog.LogContext applied on top
+// exactly like the gRPC interceptors do in production (that is what adds the
+// "peer" key to the auth-failure logs). The caller can inspect buf.String()
+// after the code under test runs. It does NOT mutate the global logf.Log, so
+// tests are isolated from each other and safe for t.Parallel().
 func captureLog(t *testing.T, ctx context.Context) (context.Context, *bytes.Buffer) {
 	t.Helper()
 	var buf bytes.Buffer
 	logger := ctrlzap.New(ctrlzap.UseDevMode(true), ctrlzap.WriteTo(&buf))
-	return LogContext(logf.IntoContext(ctx, logger)), &buf
-}
-
-// peerAddrUnknown is the expected return value when PeerAddr cannot determine
-// the remote IP (no peer, nil Addr, unparsable address, etc.).
-const peerAddrUnknown = "unknown"
-
-// ---------------------------------------------------------------------------
-// PeerAddr tests
-// ---------------------------------------------------------------------------
-
-func TestPeerAddr(t *testing.T) {
-	tests := []struct {
-		name     string
-		ctx      context.Context
-		expected string
-	}{
-		{
-			name:     "no peer in context returns unknown",
-			ctx:      context.Background(),
-			expected: peerAddrUnknown,
-		},
-		{
-			name:     "peer with host:port returns host only",
-			ctx:      ctxWithPeer("10.0.0.5:43210"),
-			expected: "10.0.0.5",
-		},
-		{
-			name:     "peer with IPv6 [host]:port returns host only",
-			ctx:      ctxWithPeer("[::1]:8080"),
-			expected: "::1",
-		},
-		{
-			name:     "peer with bare address (no port) returns unknown",
-			ctx:      ctxWithPeer("no-port-here"),
-			expected: peerAddrUnknown,
-		},
-		{
-			name:     "peer with empty address returns unknown",
-			ctx:      ctxWithPeer(""),
-			expected: peerAddrUnknown,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := PeerAddr(tc.ctx)
-			if got != tc.expected {
-				t.Errorf("PeerAddr() = %q, want %q", got, tc.expected)
-			}
-		})
-	}
+	return jlog.LogContext(logf.IntoContext(ctx, logger)), &buf
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +118,7 @@ func newFakeClient(objs ...kclient.Object) kclient.Client {
 		Build()
 }
 
-func newAuth(authn *stubAuthenticator, authz *stubAuthorizer, attr *stubAttributesGetter, objs ...kclient.Object) *Auth {
+func newAuth(authn authentication.ContextAuthenticator, authz *stubAuthorizer, attr *stubAttributesGetter, objs ...kclient.Object) *Auth {
 	return NewAuth(newFakeClient(objs...), authn, authz, attr)
 }
 
@@ -455,104 +419,84 @@ func TestVerifyExporter_TokenVerificationFailure_LogsPeerAndError(t *testing.T) 
 }
 
 // ---------------------------------------------------------------------------
-// Auth logging: no duplicate log on error (controller-service level should not
-// re-log what auth already logs)
+// Token leak tests — verify that sensitive token values never appear in logs.
+//
+// The sensitive token is injected as real incoming gRPC metadata and the Auth
+// is built with the production BearerTokenAuthenticator, so the token travels
+// the same extraction path as production traffic (metadata ->
+// BearerTokenFromContext -> AuthenticateToken). The tests then prove the
+// token was actually seen by the verifier before asserting it is absent from
+// the log output — a regression that logs the authorization header or request
+// metadata would make them fail.
 // ---------------------------------------------------------------------------
 
-func TestAuthClient_ErrorLogIncludesNoDuplicateTokenInMessage(t *testing.T) {
-	// Ensure the error message itself doesn't echo back the token.
-	// The auth layer only logs "client authentication failed" + the error
-	// string from the verification layer.
-	authn := &stubAuthenticator{err: fmt.Errorf("token verification failed")}
-	attr := &stubAttributesGetter{}
-	authz := &stubAuthorizer{}
+// sensitiveToken is the bearer token value that must never appear in logs.
+const sensitiveToken = "header.payload.signature-secret-value"
 
-	ctx := ctxWithPeer("10.0.0.1:1234")
-	ctx, buf := captureLog(t, ctx)
-
-	a := newAuth(authn, authz, attr)
-	_, _ = a.AuthClient(ctx, "default")
-
-	logged := buf.String()
-	// The log should never contain the word "Bearer" or raw token material.
-	if strings.Contains(logged, "Bearer") {
-		t.Errorf("log should not contain raw bearer prefix:\n%s", logged)
-	}
+// ctxWithBearerToken returns ctx with incoming gRPC metadata carrying
+// "authorization: Bearer <token>", like a real authenticated request.
+func ctxWithBearerToken(ctx context.Context, token string) context.Context {
+	return metadata.NewIncomingContext(ctx, metadata.Pairs("authorization", "Bearer "+token))
 }
 
-// ---------------------------------------------------------------------------
-// Token leak tests — verify that sensitive token values never appear in logs.
-// Replicates the TestRouterAuthenticateNoTokenLeak pattern from
-// controller_service_test.go for the auth package.
-// ---------------------------------------------------------------------------
-
 func TestAuthClient_NoTokenLeak(t *testing.T) {
-	const sensitiveToken = "header.payload.signature-secret-value"
-
-	// The stub error does NOT include the token — this mirrors the real
-	// oidc.VerifyClientObjectToken which returns generic error messages.
-	authn := &stubAuthenticator{err: fmt.Errorf("token verification failed")}
+	rec := &recordingTokenAuthenticator{}
+	authn := authentication.NewBearerTokenAuthenticator(rec)
 	attr := &stubAttributesGetter{}
 	authz := &stubAuthorizer{}
 
-	ctx := ctxWithPeer("10.0.0.1:1234")
+	ctx := ctxWithBearerToken(ctxWithPeer("10.0.0.1:1234"), sensitiveToken)
 	ctx, buf := captureLog(t, ctx)
 
 	a := newAuth(authn, authz, attr)
-	_, _ = a.AuthClient(ctx, "default")
+	if _, err := a.AuthClient(ctx, "default"); err == nil {
+		t.Fatal("expected authentication to fail, got nil error")
+	}
+
+	// The token must have traversed the production extraction path — this is
+	// what makes the absence assertions below meaningful.
+	if rec.received != sensitiveToken {
+		t.Fatalf("token authenticator received %q, want %q", rec.received, sensitiveToken)
+	}
 
 	logged := buf.String()
+	if !strings.Contains(logged, "client authentication failed") {
+		t.Fatalf("expected 'client authentication failed' in log, got:\n%s", logged)
+	}
 	if strings.Contains(logged, sensitiveToken) {
 		t.Errorf("JWT token value leaked in auth log output:\n%s", logged)
+	}
+	if strings.Contains(logged, "Bearer") {
+		t.Errorf("raw bearer header leaked in auth log output:\n%s", logged)
 	}
 }
 
 func TestAuthExporter_NoTokenLeak(t *testing.T) {
-	const sensitiveToken = "header.payload.signature-secret-value"
-
-	authn := &stubAuthenticator{err: fmt.Errorf("token verification failed")}
+	rec := &recordingTokenAuthenticator{}
+	authn := authentication.NewBearerTokenAuthenticator(rec)
 	attr := &stubAttributesGetter{}
 	authz := &stubAuthorizer{}
 
-	ctx := ctxWithPeer("10.0.0.1:1234")
+	ctx := ctxWithBearerToken(ctxWithPeer("10.0.0.1:1234"), sensitiveToken)
 	ctx, buf := captureLog(t, ctx)
 
 	a := newAuth(authn, authz, attr)
-	_, _ = a.AuthExporter(ctx, "default")
+	if _, err := a.AuthExporter(ctx, "default"); err == nil {
+		t.Fatal("expected authentication to fail, got nil error")
+	}
+
+	if rec.received != sensitiveToken {
+		t.Fatalf("token authenticator received %q, want %q", rec.received, sensitiveToken)
+	}
 
 	logged := buf.String()
+	if !strings.Contains(logged, "exporter authentication failed") {
+		t.Fatalf("expected 'exporter authentication failed' in log, got:\n%s", logged)
+	}
 	if strings.Contains(logged, sensitiveToken) {
 		t.Errorf("JWT token value leaked in auth log output:\n%s", logged)
 	}
-}
-
-// ---------------------------------------------------------------------------
-// PeerAddr with nil Addr in peer (edge case)
-// ---------------------------------------------------------------------------
-
-func TestPeerAddr_NilAddr(t *testing.T) {
-	ctx := grpcpeer.NewContext(context.Background(), &grpcpeer.Peer{
-		Addr: nil,
-	})
-	// PeerAddr must not panic when p.Addr is nil and should return "unknown".
-	got := PeerAddr(ctx)
-	if got != peerAddrUnknown {
-		t.Errorf("PeerAddr with nil Addr = %q, want %q", got, peerAddrUnknown)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// PeerAddr with a unix socket address
-// ---------------------------------------------------------------------------
-
-func TestPeerAddr_UnixSocket(t *testing.T) {
-	ctx := grpcpeer.NewContext(context.Background(), &grpcpeer.Peer{
-		Addr: &net.UnixAddr{Name: "/var/run/jumpstarter.sock", Net: "unix"},
-	})
-	got := PeerAddr(ctx)
-	// A Unix socket path should not be returned; it should return "unknown"
-	// because SplitHostPort will fail on "/var/run/jumpstarter.sock".
-	if got != peerAddrUnknown {
-		t.Errorf("PeerAddr for unix socket = %q, want %q", got, peerAddrUnknown)
+	if strings.Contains(logged, "Bearer") {
+		t.Errorf("raw bearer header leaked in auth log output:\n%s", logged)
 	}
 }
