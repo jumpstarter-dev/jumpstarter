@@ -1,0 +1,29 @@
+[package]
+name = "jumpstarter-device-example"
+description = "Example typed DEVICE wrapper generated from an exporter config: build.rs is one `build::exporter_device(\"exporter.yaml\")` call, lib.rs is one `jumpstarter_client::device!()` — the committed exporter.yaml is the source of truth, resolved proto-only via interfaces/registry (no driver code loaded at build time)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Pure consumer: the client SDK (session + report index the generated device binds through) +
+# the neutral error taxonomy + prost/tonic for the generated message types. No driver crates.
+jumpstarter-client = { path = "../jumpstarter-client" }
+jumpstarter-codec = { path = "../jumpstarter-codec" }
+prost.workspace = true
+tonic.workspace = true
+tokio-stream = "0.1"
+# The generated typed client decodes `GetReport`'s JSON node list when resolving by name.
+serde_json.workspace = true
+
+[build-dependencies]
+jumpstarter-codegen = { path = "../jumpstarter-codegen", features = ["build-helper"] }
+
+[dev-dependencies]
+# The round-trip test serves the PURE DRIVER crate via the harness and drives it with the
+# generated device wrapper — dev-only, so the driver side never enters the consumer artifact.
+jumpstarter-driver-power-pure = { path = "../jumpstarter-driver-power-pure" }
+jumpstarter-driver-harness = { path = "../jumpstarter-driver-harness" }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "sync", "time"] }

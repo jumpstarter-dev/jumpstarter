@@ -17,7 +17,7 @@ use std::pin::Pin;
 pub mod client;
 pub mod controller;
 
-pub use client::resolve_driver_uuid;
+pub use client::{resolve_driver_uuid, resolve_driver_uuid_path, DriverReportIndex};
 pub use client::{
     ClientByteStream, ClientLogStream, ClientNativeStream, ClientResultStream, ClientSession,
 };
@@ -32,6 +32,20 @@ pub use jumpstarter_driver_macros::client_cli;
 /// client). The client-side mirror of `jumpstarter_driver::interface!`, so a pure client crate pulls
 /// its include macro from `jumpstarter-client` too.
 pub use jumpstarter_driver_macros::interface;
+
+/// Pull in the typed device wrapper generated into `OUT_DIR` by
+/// `jumpstarter_codegen::build::exporter_device` (the `proto` module + the per-interface typed
+/// clients + the `<Name>Device` tree). The device-mode sibling of [`interface!`]:
+///
+/// ```ignore
+/// jumpstarter_client::device!();   // -> pub mod proto { … } + PowerClient + ExampleRigDevice
+/// ```
+#[macro_export]
+macro_rules! device {
+    () => {
+        include!(concat!(env!("OUT_DIR"), "/jumpstarter_device_generated.rs"));
+    };
+}
 
 /// Re-exported so the `#[client_cli]`-generated registrations can reach `inventory::submit!`.
 #[doc(hidden)]

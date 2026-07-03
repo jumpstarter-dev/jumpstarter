@@ -1,0 +1,10 @@
+# The example rig this crate's typed device wrapper is generated FROM (the source of truth):
+# one proto-first Rust power driver, typed via interfaces/registry/native.yaml.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: example-rig
+export:
+  power:
+    type: rust:jumpstarter-driver-power-pure

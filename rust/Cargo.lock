@@ -1504,6 +1504,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "jumpstarter-device-example"
+version = "0.0.0"
+dependencies = [
+ "jumpstarter-client",
+ "jumpstarter-codec",
+ "jumpstarter-codegen",
+ "jumpstarter-driver-harness",
+ "jumpstarter-driver-power-pure",
+ "prost",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+]
+
+[[package]]
 name = "jumpstarter-driver"
 version = "0.0.0"
 dependencies = [

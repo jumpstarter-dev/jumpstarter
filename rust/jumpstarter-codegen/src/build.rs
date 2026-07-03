@@ -155,6 +155,104 @@ fn build_interface(proto_rel: &str, mode: Mode) {
         .unwrap_or_else(|e| panic!("write the {pkg_key}_generated.rs aggregator: {e}"));
 }
 
+/// **Device**: from a crate-local exporter config, generate the typed device wrapper + its
+/// per-interface typed clients into `OUT_DIR` (aggregator `jumpstarter_device_generated.rs`,
+/// pulled in by `jumpstarter_client::device!()`). Resolution is proto-only via the monorepo's
+/// committed `interfaces/registry` + `interfaces/proto` (strict: an unresolvable node fails the
+/// build — the config is the contract). A consumer crate's `build.rs` is just:
+/// ```ignore
+/// fn main() {
+///     jumpstarter_codegen::build::exporter_device("exporter.yaml");
+/// }
+/// ```
+pub fn exporter_device(config_rel: &str) {
+    use jumpstarter_config::{DriverRegistry, ExporterConfig, YamlConfig};
+
+    let manifest = PathBuf::from(env_var("CARGO_MANIFEST_DIR"));
+    let repo_root = manifest
+        .join("../..")
+        .canonicalize()
+        .expect("monorepo root not found (../.. from the crate)");
+    let proto_root = repo_root.join("interfaces/proto");
+    let registry_dir = repo_root.join("interfaces/registry");
+    let config_path = manifest.join(config_rel);
+    let out_dir = PathBuf::from(env_var("OUT_DIR"));
+
+    println!("cargo:rerun-if-changed={}", config_path.display());
+    println!("cargo:rerun-if-changed={}", registry_dir.display());
+
+    let config = ExporterConfig::load(&config_path)
+        .unwrap_or_else(|e| panic!("load {}: {e}", config_path.display()));
+    let registry = DriverRegistry::load_path(&registry_dir)
+        .unwrap_or_else(|e| panic!("load registry {}: {e}", registry_dir.display()));
+    let device = crate::resolver::resolve_device(&config, &registry, &proto_root, true)
+        .unwrap_or_else(|e| panic!("resolve {}: {e}", config_path.display()));
+
+    // The generated Rust clients reference `crate::proto` — one proto package per crate for now
+    // (matching `interface!`); a multi-package device needs per-package module wiring.
+    let packages: std::collections::BTreeSet<String> = device
+        .interfaces
+        .values()
+        .map(|i| i.fqn.rsplit_once('.').expect("service FQN").0.to_string())
+        .collect();
+    assert!(
+        packages.len() <= 1,
+        "exporter_device: all interfaces must share one proto package for now, got {packages:?}"
+    );
+
+    // Stock prost messages (no server, no grpc client) for every referenced proto.
+    let protos: Vec<PathBuf> = device
+        .interfaces
+        .values()
+        .map(|i| {
+            let p = proto_root.join(&i.proto_path);
+            println!("cargo:rerun-if-changed={}", p.display());
+            p
+        })
+        .collect();
+    let fds_path = out_dir.join("device.fds");
+    tonic_build::configure()
+        .build_server(false)
+        .build_client(false)
+        .file_descriptor_set_path(&fds_path)
+        .compile_protos(&protos, &[&proto_root])
+        .expect("failed to compile the device's interface protos");
+
+    let (files, warnings) = crate::device::generate_device(
+        &device,
+        "rust",
+        &crate::device::DeviceOptions::default(),
+    )
+    .expect("generate device wrapper");
+    for warning in &warnings {
+        println!("cargo:warning=jumpstarter device: {warning}");
+    }
+
+    let mut agg = String::new();
+    if let Some(pkg) = packages.iter().next() {
+        let _ = writeln!(
+            agg,
+            "pub mod proto {{\n    \
+                 tonic::include_proto!(\"{pkg}\");\n    \
+                 pub const FILE_DESCRIPTOR_SET: &[u8] =\n        \
+                     include_bytes!(concat!(env!(\"OUT_DIR\"), \"/device.fds\"));\n\
+             }}"
+        );
+    }
+    for (i, (name, source)) in files.iter().enumerate() {
+        std::fs::write(out_dir.join(name), source)
+            .unwrap_or_else(|e| panic!("write generated {name}: {e}"));
+        let _ = writeln!(
+            agg,
+            "#[doc(hidden)]\nmod __jmp_device_{i} {{\n    \
+                 include!(concat!(env!(\"OUT_DIR\"), \"/{name}\"));\n\
+             }}\npub use __jmp_device_{i}::*;"
+        );
+    }
+    std::fs::write(out_dir.join("jumpstarter_device_generated.rs"), agg)
+        .expect("write the jumpstarter_device_generated.rs aggregator");
+}
+
 fn env_var(key: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| panic!("{key} not set (run from a cargo build script)"))
 }

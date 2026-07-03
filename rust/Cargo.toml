@@ -37,6 +37,7 @@ members = [
     "jumpstarter-driver-power-example",
     "jumpstarter-driver-power-pure",
     "jumpstarter-driver-power-pure-client",
+    "jumpstarter-device-example",
 ]
 
 [workspace.package]
