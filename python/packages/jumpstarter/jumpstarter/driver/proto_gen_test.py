@@ -1,5 +1,7 @@
 """Tests for the proto_gen generator entrypoint."""
 
+import pytest
+
 from .proto_gen import _discover_interfaces, _is_interface_class, _proto_path_for, main
 
 
@@ -71,3 +73,51 @@ class TestGenerateCli:
         power = tmp_path / "jumpstarter" / "interfaces" / "power" / "v1" / "power.proto"
         assert power.exists()
         assert "service PowerInterface {" in power.read_text()
+
+
+class TestRegistryEmission:
+    """--registry-out: the static driver-type → interface map for proto-only device codegen."""
+
+    def _registry(self, tmp_path, packages):
+        registry_file = tmp_path / "registry" / "python.yaml"
+        rc = main(
+            [
+                "generate-all",
+                "--output-dir",
+                str(tmp_path / "proto"),
+                *[arg for pkg in packages for arg in ("--import-package", pkg)],
+                "--registry-out",
+                str(registry_file),
+            ]
+        )
+        assert rc == 0
+        return registry_file.read_text()
+
+    def test_registry_maps_legacy_driver_to_interface_and_client(self, tmp_path):
+        content = self._registry(tmp_path, ["jumpstarter_driver_power.driver"])
+        assert '"jumpstarter_driver_power.driver.MockPower":' in content
+        assert 'interface: "jumpstarter.interfaces.power.v1.PowerInterface"' in content
+        assert 'python: "jumpstarter_driver_power.client.PowerClient"' in content
+        assert '"jumpstarter.interfaces.power.v1.PowerInterface":' in content
+        assert 'proto: "jumpstarter/interfaces/power/v1/power.proto"' in content
+
+    def test_proto_first_driver_gets_entry_but_no_generated_default_client(self, tmp_path):
+        """NativeMockPower's advertised client is its _generated default — a registry entry
+        records the interface but NOT that label (device codegen emits its own typed client)."""
+        content = self._registry(
+            tmp_path,
+            ["jumpstarter_driver_power.driver", "jumpstarter_driver_power.driver_native"],
+        )
+        assert '"jumpstarter_driver_power.driver_native.NativeMockPower":' in content
+        assert "_generated" not in content
+
+    def test_registry_parses_as_yaml_with_expected_shape(self, tmp_path):
+        yaml = pytest.importorskip("yaml")
+        data = yaml.safe_load(self._registry(tmp_path, ["jumpstarter_driver_power.driver"]))
+        assert data["version"] == 1
+        entry = data["drivers"]["jumpstarter_driver_power.driver.MockPower"]
+        assert entry["interface"] == "jumpstarter.interfaces.power.v1.PowerInterface"
+        assert (
+            data["interfaces"][entry["interface"]]["proto"]
+            == "jumpstarter/interfaces/power/v1/power.proto"
+        )
