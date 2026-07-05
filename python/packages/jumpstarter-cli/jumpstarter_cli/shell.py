@@ -352,14 +352,29 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                 # (5s interval in LEASE_READY) may not have detected yet.
                                 if not monitor.connection_lost:
                                     try:
-                                        probe_status = await client.get_status_async()
-                                        if lease.lease_ended:
+                                        probe_status = None
+                                        async with anyio.create_task_group() as probe_tg:
+
+                                            async def cancel_when_connection_lost():
+                                                while not monitor.connection_lost:
+                                                    await anyio.sleep(1)
+                                                probe_tg.cancel_scope.cancel()
+
+                                            probe_tg.start_soon(cancel_when_connection_lost)
+                                            probe_status = await client.get_status_async()
+                                            probe_tg.cancel_scope.cancel()
+                                        if probe_status is None:
+                                            logger.debug(
+                                                "Connection probe timed out, marking connection as lost"
+                                            )
+                                            monitor._connection_lost = True
+                                        elif lease.lease_ended:
                                             logger.debug(
                                                 "Lease ended during probe (status=%s), skipping afterLease hook",
                                                 probe_status,
                                             )
                                             return exit_code
-                                        if probe_status is not None and probe_status not in (
+                                        elif probe_status not in (
                                             ExporterStatus.LEASE_READY,
                                             ExporterStatus.AFTER_LEASE_HOOK,
                                         ):
