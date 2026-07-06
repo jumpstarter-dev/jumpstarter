@@ -1,6 +1,9 @@
+import os
+import subprocess
 from contextlib import nullcontext
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
 import pytest
 
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
@@ -848,6 +851,38 @@ class TestHookExecutorPRRegressions:
             f"Expected AVAILABLE status after warn+afterLease, got: {status_calls}"
         )
 
+    async def test_after_lease_hook_skips_when_lease_context_not_ready(self) -> None:
+        from anyio import Event
+
+        from jumpstarter.exporter.lease_context import LeaseContext
+
+        hook_config = HookConfigV1Alpha1(
+            after_lease=HookInstanceConfigV1Alpha1(script="echo should-not-run", timeout=10),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        lease_scope = LeaseContext(
+            lease_name="test-lease",
+            before_lease_hook=Event(),
+            client_name="test-client",
+        )
+
+        status_calls: list[tuple] = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        await executor.run_after_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        assert any(s == ExporterStatus.AVAILABLE for s, _ in status_calls)
+        assert not any(s == ExporterStatus.AFTER_LEASE_HOOK for s, _ in status_calls)
+
     async def test_after_hook_warn_includes_warning_prefix(self, lease_scope) -> None:
         """afterLease hook fail with warn should include HOOK_WARNING_PREFIX."""
         hook_config = HookConfigV1Alpha1(
@@ -1114,6 +1149,81 @@ class TestPipeOutputEdgeCases:
         assert any("GRANDCHILD_TEST" in call for call in info_calls)
 
 
+    async def test_timeout_cleanup_handles_process_lookup_errors(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                exec_="python3",
+                script=(
+                    "import signal, time\n"
+                    "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+                    "time.sleep(300)\n"
+                ),
+                timeout=1,
+                on_failure="warn",
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        original_killpg = os.killpg
+
+        def killpg_raises_after_real_signal(pgid, sig):
+            try:
+                original_killpg(pgid, sig)
+            except ProcessLookupError:
+                pass
+            raise ProcessLookupError
+
+        with patch("os.killpg", side_effect=killpg_raises_after_real_signal):
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is not None
+        assert "timed out" in result.lower()
+
+    async def test_exception_during_hook_triggers_finally_cleanup(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                exec_="python3",
+                script=(
+                    "import signal, time\n"
+                    "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+                    "time.sleep(300)\n"
+                ),
+                timeout=30,
+                on_failure="warn",
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        original_wait = subprocess.Popen.wait
+        original_killpg = os.killpg
+        wait_calls = [0]
+
+        def failing_then_real_wait(self_popen, timeout=None):
+            wait_calls[0] += 1
+            if wait_calls[0] == 1:
+                import time as _time
+
+                _time.sleep(0.3)
+                raise RuntimeError("simulated wait failure")
+            return original_wait(self_popen, timeout=timeout)
+
+        def killpg_raises_after_real_signal(pgid, sig):
+            try:
+                original_killpg(pgid, sig)
+            except ProcessLookupError:
+                pass
+            raise ProcessLookupError
+
+        with (
+            patch.object(subprocess.Popen, "wait", failing_then_real_wait),
+            patch("os.killpg", side_effect=killpg_raises_after_real_signal),
+        ):
+            result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is not None
+        assert "error" in result.lower()
+
+
 class TestReadOutputErrorPaths:
     """Tests for BlockingIOError and OSError handling in read_output.
 
@@ -1184,6 +1294,38 @@ class TestReadOutputErrorPaths:
         assert result is None
         info_calls = [str(call) for call in mock_logger.info.call_args_list]
         assert any("NO_TRAILING_NEWLINE" in call for call in info_calls)
+
+    async def test_oserror_during_pipe_read_exits_gracefully(self, lease_scope) -> None:
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                exec_="python3",
+                script=(
+                    "import sys, time\n"
+                    "sys.stdout.write('VISIBLE\\n')\n"
+                    "sys.stdout.flush()\n"
+                    "time.sleep(0.5)\n"
+                ),
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        original_wait_readable = anyio.wait_readable
+        call_count = [0]
+
+        async def wait_readable_then_oserror(fd):
+            call_count[0] += 1
+            if call_count[0] >= 3:
+                raise OSError("simulated fd error")
+            return await original_wait_readable(fd)
+
+        with patch("anyio.wait_readable", side_effect=wait_readable_then_oserror):
+            with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
+                result = await executor.execute_before_lease_hook(lease_scope)
+
+        assert result is None
+        info_calls = [str(call) for call in mock_logger.info.call_args_list]
+        assert any("VISIBLE" in call for call in info_calls)
 
     async def test_mixed_complete_and_partial_lines(self, lease_scope) -> None:
         """Complete lines are flushed immediately; the trailing partial
