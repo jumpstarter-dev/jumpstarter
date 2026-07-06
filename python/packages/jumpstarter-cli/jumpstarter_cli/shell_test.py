@@ -2,6 +2,7 @@ import base64
 import inspect
 import json
 import logging
+import math
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
@@ -936,6 +937,54 @@ class TestRunShellWithLeaseAsync:
 
         assert exit_code == 0
         assert not monitor._connection_lost
+
+    async def test_probe_cancelled_when_connection_lost(self):
+        """Probe blocks while connection_lost is False, then unblocks
+        once the monitor marks connection as lost."""
+        monitor = _FakeStatusMonitor()
+        lease = _make_shell_lease(release=True, lease_ended=False)
+        cancel_scope = Mock(cancel_called=False)
+
+        initial_done = anyio.Event()
+
+        async def get_status_blocks_on_probe():
+            if not initial_done.is_set():
+                initial_done.set()
+                return ExporterStatus.LEASE_READY
+            await anyio.sleep(math.inf)
+
+        client = _build_fake_client(monitor, get_status_return=ExporterStatus.LEASE_READY)
+        client.get_status_async = get_status_blocks_on_probe
+
+        @asynccontextmanager
+        async def fake_client_from_path(*_a, **_kw):
+            yield client
+
+        function_returned = anyio.Event()
+
+        async def run_shell():
+            nonlocal exit_code
+            with (
+                patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
+                patch("jumpstarter_cli.shell._run_shell_only", return_value=0),
+            ):
+                exit_code = await _run_shell_with_lease_async(lease, False, None, (), cancel_scope)
+            function_returned.set()
+
+        async def flip_connection_lost():
+            await anyio.sleep(5)
+            assert not function_returned.is_set(), "probe returned while connection_lost was False"
+            monitor._connection_lost = True
+
+        exit_code = -1
+        with anyio.fail_after(10):
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(run_shell)
+                tg.start_soon(flip_connection_lost)
+
+        assert exit_code == 0
+        assert monitor._connection_lost
+        client.end_session_async.assert_not_called()
 
 
 class TestShellWithSignalHandlingExceptionGroup:
