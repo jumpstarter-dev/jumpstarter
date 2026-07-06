@@ -25,6 +25,10 @@ class PassphraseInterceptor(grpc.aio.ServerInterceptor):
         provided = metadata.get(PASSPHRASE_METADATA_KEY)
 
         if provided is None or not hmac.compare_digest(provided, self._passphrase):
+            logger.warning(
+                "authentication failed: invalid or missing passphrase for method %s",
+                handler_call_details.method,
+            )
             # Resolve the real handler to preserve the RPC type, then reject
             handler = await continuation(handler_call_details)
             if handler is None:
