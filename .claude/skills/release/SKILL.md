@@ -76,7 +76,8 @@ git push origin release-X.Y
 
 # If rejected by branch protection, use the API:
 SHA=$(git rev-parse origin/main)
-gh api repos/{owner}/{repo}/git/refs -f ref=refs/heads/release-X.Y -f sha="$SHA"
+REPO=$(gh repo view --json owner,name -q '.owner.login + "/" + .name')
+gh api "repos/${REPO}/git/refs" -f ref=refs/heads/release-X.Y -f sha="$SHA"
 ```
 
 If both fail, the user needs to temporarily remove `release-*` from the branch protection ruleset, push the branch, then re-add it.
@@ -230,14 +231,14 @@ cd controller/deploy/operator/contribute/community-operators
 gh pr create --repo k8s-operatorhub/community-operators \
   --title "operator jumpstarter-operator (X.Y.Z)" \
   --body "Release X.Y.Z of the jumpstarter-operator for the alpha channel." \
-  --head GITHUB_USER:$BRANCH --base main
+  --head ${GITHUB_USER:-mangelajo}:$BRANCH --base main
 
 # PR for community-operators-prod
 cd ../community-operators-prod
 gh pr create --repo redhat-openshift-ecosystem/community-operators-prod \
   --title "operator jumpstarter-operator (X.Y.Z)" \
   --body "Release X.Y.Z of the jumpstarter-operator for the alpha channel." \
-  --head GITHUB_USER:$BRANCH --base main
+  --head ${GITHUB_USER:-mangelajo}:$BRANCH --base main
 ```
 
 Replace `GITHUB_USER` with the actual GitHub username (default: `mangelajo`).
