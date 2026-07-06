@@ -49,7 +49,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -89,6 +88,8 @@ type ControllerService struct {
 	Signer           *oidc.Signer
 	listenQueues     sync.Map
 	leaseLocks       sync.Map
+	authOnce         sync.Once
+	auth             *auth.Auth
 }
 
 type listenQueue struct {
@@ -224,36 +225,30 @@ type wrappedStream struct {
 	grpc.ServerStream
 }
 
-func logContext(ctx context.Context) context.Context {
-	p, ok := peer.FromContext(ctx)
-	if ok {
-		return log.IntoContext(ctx, log.FromContext(ctx, "peer", p.Addr))
-	}
-	return ctx
+func (w *wrappedStream) Context() context.Context {
+	return jlog.LogContext(w.ServerStream.Context())
 }
 
-func (w *wrappedStream) Context() context.Context {
-	return logContext(w.ServerStream.Context())
+// getAuth lazily builds the shared *auth.Auth from the service's immutable
+// dependencies on first use. Lazy init (rather than init in Start) keeps bare
+// &ControllerService{...} construction working, which tests rely on to call
+// RPC methods without Start; sync.Once makes the first concurrent RPCs safe.
+func (s *ControllerService) getAuth() *auth.Auth {
+	s.authOnce.Do(func() {
+		s.auth = auth.NewAuth(s.Client, s.Authn, s.Authz, s.Attr)
+	})
+	return s.auth
 }
+
+// authenticateClient and authenticateExporter delegate to the auth package,
+// which owns auth-failure logging (with peer address) for all services.
 
 func (s *ControllerService) authenticateClient(ctx context.Context) (*jumpstarterdevv1alpha1.Client, error) {
-	return oidc.VerifyClientObjectToken(
-		ctx,
-		s.Authn,
-		s.Authz,
-		s.Attr,
-		s.Client,
-	)
+	return s.getAuth().VerifyClient(ctx)
 }
 
 func (s *ControllerService) authenticateExporter(ctx context.Context) (*jumpstarterdevv1alpha1.Exporter, error) {
-	return oidc.VerifyExporterObjectToken(
-		ctx,
-		s.Authn,
-		s.Authz,
-		s.Attr,
-		s.Client,
-	)
+	return s.getAuth().VerifyExporter(ctx)
 }
 
 func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
@@ -261,7 +256,6 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
-		logger.Info("unable to authenticate exporter", "error", err.Error())
 		return nil, err
 	}
 
@@ -328,7 +322,6 @@ func (s *ControllerService) Unregister(
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
-		logger.Error(err, "unable to authenticate exporter")
 		return nil, err
 	}
 
@@ -358,7 +351,6 @@ func (s *ControllerService) ReportStatus(
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
-		logger.Info("unable to authenticate exporter", "error", err.Error())
 		return nil, err
 	}
 
@@ -630,7 +622,6 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 
 	exporter, err := s.authenticateExporter(ctx)
 	if err != nil {
-		logger.Error(err, "unable to authenticate exporter")
 		return err
 	}
 
@@ -764,7 +755,6 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 
 	client, err := s.authenticateClient(ctx)
 	if err != nil {
-		logger.Error(err, "unable to authenticate client")
 		return nil, err
 	}
 
@@ -1085,7 +1075,7 @@ func (s *ControllerService) ReleaseLease(
 	req *pb.ReleaseLeaseRequest,
 ) (*pb.ReleaseLeaseResponse, error) {
 	// Route based on jumpstarter-kind metadata to avoid spurious auth failures
-	if auth.NewAuth(s.Client, s.Authn, s.Authz, s.Attr).IsExporter(ctx) {
+	if s.getAuth().IsExporter(ctx) {
 		exporter, err := s.authenticateExporter(ctx)
 		if err != nil {
 			return nil, err
@@ -1199,7 +1189,7 @@ func (s *ControllerService) Start(ctx context.Context) error {
 			_ *grpc.UnaryServerInfo,
 			handler grpc.UnaryHandler,
 		) (resp any, err error) {
-			return handler(logContext(gctx), req)
+			return handler(jlog.LogContext(gctx), req)
 		}, recovery.UnaryServerInterceptor()),
 		grpc.ChainStreamInterceptor(func(
 			srv any,
@@ -1215,7 +1205,7 @@ func (s *ControllerService) Start(ctx context.Context) error {
 	pb.RegisterControllerServiceServer(server, s)
 	cpb.RegisterClientServiceServer(
 		server,
-		clientsvcv1.NewClientService(s.Client, *auth.NewAuth(s.Client, s.Authn, s.Authz, s.Attr), s.effectiveMaxTags(), s.Signer, s.effectiveHiddenLabelKeys(), s.effectiveDeprecatedLabelKeys()),
+		clientsvcv1.NewClientService(s.Client, *s.getAuth(), s.effectiveMaxTags(), s.Signer, s.effectiveHiddenLabelKeys(), s.effectiveDeprecatedLabelKeys()),
 	)
 
 	// Register the standard gRPC health checking service (grpc.health.v1.Health).
