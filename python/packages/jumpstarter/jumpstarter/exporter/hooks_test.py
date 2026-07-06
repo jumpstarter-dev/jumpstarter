@@ -3,7 +3,6 @@ import subprocess
 from contextlib import nullcontext
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import anyio
 import pytest
 
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
@@ -1298,34 +1297,22 @@ class TestReadOutputErrorPaths:
     async def test_oserror_during_pipe_read_exits_gracefully(self, lease_scope) -> None:
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
-                exec_="python3",
-                script=(
-                    "import sys, time\n"
-                    "sys.stdout.write('VISIBLE\\n')\n"
-                    "sys.stdout.flush()\n"
-                    "time.sleep(0.5)\n"
-                ),
+                script="echo done",
                 timeout=10,
             ),
         )
         executor = HookExecutor(config=hook_config)
 
-        original_wait_readable = anyio.wait_readable
-        call_count = [0]
+        async def wait_readable_oserror(fd):
+            raise OSError("simulated fd error")
 
-        async def wait_readable_then_oserror(fd):
-            call_count[0] += 1
-            if call_count[0] >= 3:
-                raise OSError("simulated fd error")
-            return await original_wait_readable(fd)
-
-        with patch("anyio.wait_readable", side_effect=wait_readable_then_oserror):
+        with patch("anyio.wait_readable", side_effect=wait_readable_oserror):
             with patch("jumpstarter.exporter.hooks.logger") as mock_logger:
                 result = await executor.execute_before_lease_hook(lease_scope)
 
         assert result is None
-        info_calls = [str(call) for call in mock_logger.info.call_args_list]
-        assert any("VISIBLE" in call for call in info_calls)
+        debug_calls = [str(call) for call in mock_logger.debug.call_args_list]
+        assert any("OSError" in call for call in debug_calls)
 
     async def test_mixed_complete_and_partial_lines(self, lease_scope) -> None:
         """Complete lines are flushed immediately; the trailing partial
