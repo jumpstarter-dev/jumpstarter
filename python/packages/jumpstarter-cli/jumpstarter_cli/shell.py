@@ -263,6 +263,24 @@ async def _monitor_token_expiry(config, lease, cancel_scope, token_state=None) -
             return
 
 
+async def _cancel_if_connection_lost(monitor, coro):
+    """Run *coro* but cancel it as soon as monitor.connection_lost becomes True.
+
+    Returns the coroutine's result, or None if cancelled due to connection loss.
+    """
+    result = None
+    async with anyio.create_task_group() as tg:
+        async def _watcher():
+            while not monitor.connection_lost:
+                await anyio.sleep(1)
+            tg.cancel_scope.cancel()
+
+        tg.start_soon(_watcher)
+        result = await coro
+        tg.cancel_scope.cancel()
+    return result
+
+
 async def _run_shell_with_lease_async(lease, exporter_logs, config, command, cancel_scope):  # noqa: C901
     """Run shell with lease context managers and wait for afterLease hook if logs enabled.
 
@@ -352,17 +370,9 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                 # (5s interval in LEASE_READY) may not have detected yet.
                                 if not monitor.connection_lost:
                                     try:
-                                        probe_status = None
-                                        async with anyio.create_task_group() as probe_tg:
-
-                                            async def cancel_when_connection_lost():
-                                                while not monitor.connection_lost:
-                                                    await anyio.sleep(1)
-                                                probe_tg.cancel_scope.cancel()
-
-                                            probe_tg.start_soon(cancel_when_connection_lost)
-                                            probe_status = await client.get_status_async()
-                                            probe_tg.cancel_scope.cancel()
+                                        probe_status = await _cancel_if_connection_lost(
+                                            monitor, client.get_status_async()
+                                        )
                                         if probe_status is None:
                                             logger.debug(
                                                 "Connection probe timed out, marking connection as lost"

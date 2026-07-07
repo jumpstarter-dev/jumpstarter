@@ -15,6 +15,7 @@ from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentic
 
 from jumpstarter_cli.shell import (
     _attempt_token_recovery,
+    _cancel_if_connection_lost,
     _monitor_token_expiry,
     _resolve_lease_from_active_async,
     _run_shell_with_lease_async,
@@ -985,6 +986,39 @@ class TestRunShellWithLeaseAsync:
         assert exit_code == 0
         assert monitor._connection_lost
         client.end_session_async.assert_not_called()
+
+
+class TestCancelIfConnectionLost:
+    """Unit tests for _cancel_if_connection_lost helper."""
+
+    async def test_returns_result_when_coro_completes(self):
+        """When the coroutine completes normally, its result is returned."""
+        monitor = _FakeStatusMonitor()
+
+        async def quick_coro():
+            return "ok"
+
+        result = await _cancel_if_connection_lost(monitor, quick_coro())
+        assert result == "ok"
+        assert not monitor.connection_lost
+
+    async def test_returns_none_when_connection_lost(self):
+        """When connection_lost flips while the coroutine is blocked, returns None."""
+        monitor = _FakeStatusMonitor()
+
+        async def blocking_coro():
+            await anyio.sleep(math.inf)
+
+        async def flip_after_delay():
+            await anyio.sleep(2)
+            monitor._connection_lost = True
+
+        with anyio.fail_after(10):
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(flip_after_delay)
+                result = await _cancel_if_connection_lost(monitor, blocking_coro())
+
+        assert result is None
 
 
 class TestShellWithSignalHandlingExceptionGroup:
