@@ -407,6 +407,67 @@ def test_flash_with_fastboot_continue_failure(temp_storage_dir, ridesx_driver):
             assert mock_subprocess.call_count == 2
 
 
+# Erase Partition Tests
+
+
+def test_erase_partition_success(ridesx_driver):
+    with serve(ridesx_driver) as client:
+        with patch("subprocess.run") as mock_subprocess:
+            mock_result = MagicMock()
+            mock_result.stdout = "Finished. Total time: 0.042s"
+            mock_result.stderr = ""
+            mock_result.returncode = 0
+            mock_subprocess.return_value = mock_result
+
+            result = client.call("erase_partition", "ABC123", "recoveryinfo")
+
+            assert result["status"] == "success"
+            assert result["partition"] == "recoveryinfo"
+            mock_subprocess.assert_called_once()
+            call_args = mock_subprocess.call_args[0][0]
+            assert call_args == ["fastboot", "-s", "ABC123", "erase", "recoveryinfo"]
+
+
+def test_erase_partition_failure(ridesx_driver):
+    with serve(ridesx_driver) as client:
+        from jumpstarter.client.core import DriverError
+
+        with patch("subprocess.run") as mock_subprocess:
+            error = subprocess.CalledProcessError(1, "fastboot")
+            error.stdout = ""
+            error.stderr = "FAILED (remote: Partition not found)"
+            mock_subprocess.side_effect = error
+
+            with pytest.raises(DriverError, match="Failed to erase partition"):
+                client.call("erase_partition", "ABC123", "recoveryinfo")
+
+
+def test_erase_partition_timeout(ridesx_driver):
+    with serve(ridesx_driver) as client:
+        from jumpstarter.client.core import DriverError
+
+        with patch("subprocess.run") as mock_subprocess:
+            mock_subprocess.side_effect = subprocess.TimeoutExpired("fastboot", 120)
+
+            with pytest.raises(DriverError, match="Timeout while erasing"):
+                client.call("erase_partition", "ABC123", "recoveryinfo")
+
+
+def test_erase_partition_fastboot_not_found(ridesx_driver):
+    with serve(ridesx_driver) as client:
+        from jumpstarter.client.core import DriverError
+
+        with patch("subprocess.run", side_effect=FileNotFoundError("fastboot not found")):
+            with pytest.raises(DriverError, match="fastboot command not found"):
+                client.call("erase_partition", "ABC123", "recoveryinfo")
+
+
+def test_erase_partition_empty_name(ridesx_driver):
+    with serve(ridesx_driver) as client:
+        with pytest.raises(ValueError, match="Partition name cannot be empty"):
+            client.call("erase_partition", "ABC123", "")
+
+
 def test_power_missing_serial():
     with pytest.raises(ConfigurationError):
         RideSXPowerDriver(children={})
@@ -542,9 +603,7 @@ def test_flash_oci_image_with_credentials(temp_storage_dir, ridesx_driver):
                 mock_result.returncode = 0
                 mock_subprocess.return_value = mock_result
 
-                result = client.call(
-                    "flash_oci_image", "oci://quay.io/private/image:tag", None, "myuser", "mypass"
-                )
+                result = client.call("flash_oci_image", "oci://quay.io/private/image:tag", None, "myuser", "mypass")
 
                 assert result["status"] == "success"
                 # Credentials should NOT appear in the command args
