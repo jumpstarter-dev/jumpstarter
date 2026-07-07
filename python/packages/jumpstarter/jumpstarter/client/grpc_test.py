@@ -34,7 +34,7 @@ class TestAddDisplayColumns:
         add_display_columns(table)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "ENABLED", "LABELS"]
+        assert columns == ["NAME", "LABELS"]
 
     def test_with_online_column(self):
         table = Table()
@@ -42,7 +42,7 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "ENABLED", "ONLINE", "LABELS"]
+        assert columns == ["NAME", "ONLINE", "LABELS"]
 
     def test_with_leases_columns(self):
         table = Table()
@@ -50,7 +50,7 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "ENABLED", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
+        assert columns == ["NAME", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
 
     def test_with_all_columns(self):
         table = Table()
@@ -58,7 +58,7 @@ class TestAddDisplayColumns:
         add_display_columns(table, options)
 
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "ENABLED", "ONLINE", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
+        assert columns == ["NAME", "ONLINE", "LABELS", "LEASED BY", "LEASE STATUS", "RELEASE TIME"]
 
 
 class TestAddExporterRow:
@@ -76,7 +76,7 @@ class TestAddExporterRow:
 
         # Just verify a row was added and correct number of columns
         assert len(table.rows) == 1
-        assert len(table.columns) == 3  # NAME, ENABLED, LABELS
+        assert len(table.columns) == 2  # NAME, LABELS
 
     def test_row_with_lease_info(self):
         table = Table()
@@ -88,7 +88,7 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 6  # NAME, ENABLED, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
     def test_row_with_lease_info_available(self):
         table = Table()
@@ -100,7 +100,7 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 6
+        assert len(table.columns) == 5
 
     def test_row_with_all_options(self):
         table = Table()
@@ -112,7 +112,25 @@ class TestAddExporterRow:
         add_exporter_row(table, exporter, options, lease_info)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 7  # NAME, ENABLED, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 6  # NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+
+
+class TestWithDisabledOption:
+    def test_show_disabled_adds_enabled_column(self):
+        table = Table()
+        options = WithOptions(show_disabled=True)
+        add_display_columns(table, options)
+        columns = [col.header for col in table.columns]
+        assert columns == ["NAME", "ENABLED", "LABELS"]
+
+    def test_show_disabled_adds_enabled_value_to_row(self):
+        table = Table()
+        options = WithOptions(show_disabled=True)
+        add_display_columns(table, options)
+        exporter = Exporter(namespace="default", name="test", labels={}, enabled=False)
+        add_exporter_row(table, exporter, options)
+        assert len(table.rows) == 1
+        assert len(table.columns) == 3  # NAME, ENABLED, LABELS
 
 
 class TestExporterList:
@@ -144,7 +162,7 @@ class TestExporterList:
         exporter.rich_add_rows(table)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 3  # NAME, ENABLED, LABELS
+        assert len(table.columns) == 2  # NAME, LABELS
 
     def test_exporter_with_lease_no_display(self):
         lease = self.create_test_lease()
@@ -158,7 +176,7 @@ class TestExporterList:
 
         # Should not show lease info when show_leases=False
         assert len(table.rows) == 1
-        assert len(table.columns) == 3  # NAME, ENABLED, LABELS
+        assert len(table.columns) == 2  # NAME, LABELS
 
     def test_exporter_with_lease_display(self):
         lease = self.create_test_lease()
@@ -172,7 +190,7 @@ class TestExporterList:
         exporter.rich_add_rows(table, options)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 6  # NAME, ENABLED, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=120)
@@ -195,7 +213,7 @@ class TestExporterList:
         exporter.rich_add_rows(table, options)
 
         assert len(table.rows) == 1
-        assert len(table.columns) == 6  # NAME, ENABLED, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 5  # NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=120)
@@ -227,7 +245,7 @@ class TestExporterList:
         exporter_offline.rich_add_rows(table, options)
 
         assert len(table.rows) == 2
-        assert len(table.columns) == 4  # NAME, ENABLED, ONLINE, LABELS
+        assert len(table.columns) == 3  # NAME, ONLINE, LABELS
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=120)
@@ -265,7 +283,7 @@ class TestExporterList:
         exporter_offline_no_lease.rich_add_rows(table, options)
 
         assert len(table.rows) == 2
-        assert len(table.columns) == 7  # NAME, ENABLED, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 6  # NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
 
         # Test actual table content by rendering it
         console = Console(file=StringIO(), width=150)
@@ -362,8 +380,8 @@ class TestExporterList:
         Exporter.rich_add_columns(table, options)
         exporter.rich_add_rows(table, options)
 
-        # Should have 6 columns: NAME, ENABLED, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
-        assert len(table.columns) == 6
+        # Should have 5 columns: NAME, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+        assert len(table.columns) == 5
         assert len(table.rows) == 1
 
         # Test actual table content by rendering it
