@@ -94,6 +94,9 @@ message Exporter {
   jumpstarter.v1.ExporterStatus status = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
   // A human-readable message providing details about the exporter status.
   string status_message = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Whether the exporter is enabled for lease assignment.
+  // When false, the controller will not assign new leases to this exporter.
+  bool enabled = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A lease resource representing a reservation of an exporter.
@@ -141,6 +144,9 @@ message Lease {
   optional string exporter_name = 12 [(google.api.field_behavior) = IMMUTABLE];
   // The set of tags associated with the lease.
   map<string, string> tags = 13 [(google.api.field_behavior) = IMMUTABLE];
+  // Allow leasing a disabled exporter. Only effective when exporter_name is set.
+  // Useful for investigating broken exporters that have been administratively disabled.
+  bool allow_disabled = 14 [(google.api.field_behavior) = IMMUTABLE];
 }
 
 // Request to retrieve an exporter.

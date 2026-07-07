@@ -17,8 +17,10 @@ spec:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ExporterAccessPolicy is the Schema for the exporteraccesspolicies
-          API.
+        description: |-
+          ExporterAccessPolicy is the Schema for the exporteraccesspolicies API.
+          ExporterAccessPolicies are used to define the access policies for the exporters.
+          They help organize, prioritize and restrict access to the exporters by clients.
         properties:
           apiVersion:
             description: |-

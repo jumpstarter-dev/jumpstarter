@@ -28,6 +28,7 @@ def add_display_columns(table, options: WithOptions = None):
     if options is None:
         options = WithOptions()
     table.add_column("NAME")
+    table.add_column("ENABLED")
     if options.show_online:
         table.add_column("ONLINE")
     if options.show_status:
@@ -44,6 +45,7 @@ def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: t
         options = WithOptions()
     row_data = []
     row_data.append(exporter.name)
+    row_data.append("yes" if exporter.enabled else "no")
     if options.show_online:
         row_data.append("yes" if exporter.online else "no")
     if options.show_status:
@@ -89,6 +91,7 @@ class Exporter(BaseModel):
     labels: dict[str, str]
     online: bool = False
     status: ExporterStatus | None = None
+    enabled: bool = True
     lease: Lease | None = None
 
     @classmethod
@@ -97,7 +100,14 @@ class Exporter(BaseModel):
         status = None
         if hasattr(data, "status") and data.status:
             status = ExporterStatus.from_proto(data.status)
-        return cls(namespace=namespace, name=name, labels=data.labels, online=data.online, status=status)
+        return cls(
+            namespace=namespace,
+            name=name,
+            labels=data.labels,
+            online=data.online,
+            status=status,
+            enabled=data.enabled,
+        )
 
     @classmethod
     def rich_add_columns(cls, table, options: WithOptions = None):
@@ -454,6 +464,7 @@ class ClientService:
         begin_time: datetime | None = None,
         lease_id: str | None = None,
         tags: dict[str, str] | None = None,
+        allow_disabled: bool = False,
     ):
         duration_pb = duration_pb2.Duration()
         duration_pb.FromTimedelta(duration)
@@ -462,6 +473,7 @@ class ClientService:
             duration=duration_pb,
             selector=selector or "",
             exporter_name=exporter_name or "",
+            allow_disabled=allow_disabled,
         )
 
         if tags:

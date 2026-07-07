@@ -40,6 +40,12 @@ type LeaseSpec struct {
 	// Maximum 10 entries. Keys must be simple names (no slashes) conforming to Kubernetes label rules.
 	// +kubebuilder:validation:MaxProperties=10
 	Tags map[string]string `json:"tags,omitempty"`
+	// AllowDisabled permits leasing a disabled exporter when used with ExporterRef.
+	// When true and ExporterRef is set, the controller will allow leasing an exporter
+	// even if its spec.enabled field is false. This is useful for investigating
+	// broken exporters that have been administratively disabled.
+	// Ignored for selector-based leases (disabled exporters are always filtered out).
+	AllowDisabled bool `json:"allowDisabled,omitempty"`
 	// The release flag requests the controller to end the lease now
 	Release bool `json:"release,omitempty"`
 	// Requested start time. If omitted, lease starts when exporter is acquired.

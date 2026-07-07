@@ -10,6 +10,12 @@ import (
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// IsEnabled returns whether this exporter is enabled for lease assignment.
+// Returns true if Enabled is nil (backward compatibility) or explicitly set to true.
+func (e *Exporter) IsEnabled() bool {
+	return e.Spec.Enabled == nil || *e.Spec.Enabled
+}
+
 func (e *Exporter) InternalSubject() string {
 	namespace, uid := getNamespaceAndUID(e.Namespace, e.UID, e.Annotations)
 	return strings.Join([]string{"exporter", namespace, e.Name, uid}, ":")
@@ -35,6 +41,7 @@ func (e *Exporter) ToProtobuf() *cpb.Exporter {
 		Online:        isOnline,
 		Status:        stringToProtoStatus(e.Status.ExporterStatusValue),
 		StatusMessage: e.Status.StatusMessage,
+		Enabled:       e.IsEnabled(),
 	}
 }
 

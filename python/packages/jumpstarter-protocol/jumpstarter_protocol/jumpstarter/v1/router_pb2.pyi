@@ -24,26 +24,39 @@ class _FrameType:
 class _FrameTypeEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_FrameType.ValueType], builtins.type):
     DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
     FRAME_TYPE_DATA: _FrameType.ValueType  # 0
+    """Data frame carrying payload bytes."""
     FRAME_TYPE_RST_STREAM: _FrameType.ValueType  # 3
+    """Reset stream signal."""
     FRAME_TYPE_PING: _FrameType.ValueType  # 6
+    """Keepalive ping frame."""
     FRAME_TYPE_GOAWAY: _FrameType.ValueType  # 7
+    """Graceful shutdown signal."""
 
-class FrameType(_FrameType, metaclass=_FrameTypeEnumTypeWrapper): ...
+class FrameType(_FrameType, metaclass=_FrameTypeEnumTypeWrapper):
+    """Frame types for the stream protocol."""
 
 FRAME_TYPE_DATA: FrameType.ValueType  # 0
+"""Data frame carrying payload bytes."""
 FRAME_TYPE_RST_STREAM: FrameType.ValueType  # 3
+"""Reset stream signal."""
 FRAME_TYPE_PING: FrameType.ValueType  # 6
+"""Keepalive ping frame."""
 FRAME_TYPE_GOAWAY: FrameType.ValueType  # 7
+"""Graceful shutdown signal."""
 Global___FrameType: typing_extensions.TypeAlias = FrameType
 
 @typing.final
 class StreamRequest(google.protobuf.message.Message):
+    """Request message for bidirectional stream communication."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     PAYLOAD_FIELD_NUMBER: builtins.int
     FRAME_TYPE_FIELD_NUMBER: builtins.int
     payload: builtins.bytes
+    """The raw bytes of the stream frame."""
     frame_type: Global___FrameType.ValueType
+    """The type of frame being sent."""
     def __init__(
         self,
         *,
@@ -56,12 +69,16 @@ Global___StreamRequest: typing_extensions.TypeAlias = StreamRequest
 
 @typing.final
 class StreamResponse(google.protobuf.message.Message):
+    """Response message for bidirectional stream communication."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     PAYLOAD_FIELD_NUMBER: builtins.int
     FRAME_TYPE_FIELD_NUMBER: builtins.int
     payload: builtins.bytes
+    """The raw bytes of the stream frame."""
     frame_type: Global___FrameType.ValueType
+    """The type of frame being received."""
     def __init__(
         self,
         *,

@@ -256,6 +256,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         begin_time: datetime | None = None,
         lease_id: str | None = None,
         tags: dict[str, str] | None = None,
+        allow_disabled: bool = False,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.CreateLease(
@@ -265,6 +266,7 @@ class ClientConfigV1Alpha1(BaseSettings):
             begin_time=begin_time,
             lease_id=lease_id,
             tags=tags,
+            allow_disabled=allow_disabled,
         )
 
     @_blocking_compat

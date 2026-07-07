@@ -28,14 +28,14 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// StreamService
+// Router service for multiplexing bidirectional streams between clients and exporters.
 // Claims:
 // iss: jumpstarter controller
 // aud: jumpstarter router
 // sub: jumpstarter client/exporter
-// stream: stream id
+// stream: stream id.
 type RouterServiceClient interface {
-	// Stream connects caller to another caller of the same stream
+	// Stream connects caller to another caller of the same stream.
 	Stream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[StreamRequest, StreamResponse], error)
 }
 
@@ -64,14 +64,14 @@ type RouterService_StreamClient = grpc.BidiStreamingClient[StreamRequest, Stream
 // All implementations must embed UnimplementedRouterServiceServer
 // for forward compatibility.
 //
-// StreamService
+// Router service for multiplexing bidirectional streams between clients and exporters.
 // Claims:
 // iss: jumpstarter controller
 // aud: jumpstarter router
 // sub: jumpstarter client/exporter
-// stream: stream id
+// stream: stream id.
 type RouterServiceServer interface {
-	// Stream connects caller to another caller of the same stream
+	// Stream connects caller to another caller of the same stream.
 	Stream(grpc.BidiStreamingServer[StreamRequest, StreamResponse]) error
 	mustEmbedUnimplementedRouterServiceServer()
 }
