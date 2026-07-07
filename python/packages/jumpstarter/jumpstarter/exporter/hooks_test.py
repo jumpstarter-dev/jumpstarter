@@ -1541,9 +1541,9 @@ class TestBeforeLeaseHookLeaseEndedGuard:
     NOT set status to LEASE_READY, preventing the exporter from being
     stuck in LEASE_READY permanently."""
 
-    async def test_run_before_lease_hook_skips_lease_ready_when_lease_ended(self, lease_scope) -> None:
-        """When the lease has already ended by the time the beforeLease hook
-        completes, status must NOT be set to LEASE_READY."""
+    async def test_run_before_lease_hook_skips_entirely_when_lease_ended(self, lease_scope) -> None:
+        """When the lease has already ended before the hook runs, the hook
+        subprocess must NOT be executed and skip_after_lease_hook must be set."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
         )
@@ -1564,14 +1564,11 @@ class TestBeforeLeaseHookLeaseEndedGuard:
             mock_shutdown,
         )
 
-        lease_ready_calls = [s for s, _ in status_calls if s == ExporterStatus.LEASE_READY]
-        assert len(lease_ready_calls) == 0, (
-            f"LEASE_READY must NOT be set when lease has already ended, got: {status_calls}"
+        assert len(status_calls) == 0, (
+            f"No status should be reported when hook is skipped due to lease ended, got: {status_calls}"
         )
-
-        hook_started_calls = [s for s, _ in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK]
-        assert len(hook_started_calls) == 1, (
-            f"BEFORE_LEASE_HOOK must be reported (hook must run) even when lease has ended, got: {status_calls}"
+        assert lease_scope.skip_after_lease_hook is True, (
+            "skip_after_lease_hook must be set when beforeLease hook is skipped"
         )
 
     async def test_run_before_lease_hook_sets_event_even_when_lease_ended(self, lease_scope) -> None:
@@ -1597,9 +1594,9 @@ class TestBeforeLeaseHookLeaseEndedGuard:
             "before_lease_hook event must be set even when lease has ended"
         )
 
-    async def test_run_before_lease_hook_warn_skips_lease_ready_when_lease_ended(self, lease_scope) -> None:
-        """When hook fails with on_failure=warn and the lease has already ended,
-        LEASE_READY must still be skipped."""
+    async def test_run_before_lease_hook_warn_skips_entirely_when_lease_ended(self, lease_scope) -> None:
+        """When lease has already ended, hook is skipped entirely regardless
+        of on_failure setting — the hook subprocess never runs."""
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="warn"),
         )
@@ -1620,12 +1617,93 @@ class TestBeforeLeaseHookLeaseEndedGuard:
             mock_shutdown,
         )
 
-        lease_ready_calls = [s for s, _ in status_calls if s == ExporterStatus.LEASE_READY]
-        assert len(lease_ready_calls) == 0, (
-            f"LEASE_READY must NOT be set when lease has ended (even with warn), got: {status_calls}"
+        assert len(status_calls) == 0, (
+            f"No status should be reported when hook is skipped due to lease ended, got: {status_calls}"
+        )
+        assert lease_scope.skip_after_lease_hook is True, (
+            "skip_after_lease_hook must be set when beforeLease hook is skipped (warn)"
         )
 
-        hook_started_calls = [s for s, _ in status_calls if s == ExporterStatus.BEFORE_LEASE_HOOK]
-        assert len(hook_started_calls) == 1, (
-            f"BEFORE_LEASE_HOOK must be reported (hook must run) even when lease has ended, got: {status_calls}"
+    async def test_wait_for_lease_ready_times_out_when_session_never_populated(self) -> None:
+        """When is_ready() never becomes True and lease_ended is never set,
+        _wait_for_lease_ready must time out, report BEFORE_LEASE_HOOK_FAILED,
+        and set before_lease_hook to unblock downstream."""
+        import anyio
+
+        from jumpstarter.exporter.lease_context import LeaseContext
+
+        lease_scope = LeaseContext(
+            lease_name="test-lease-timeout",
+            before_lease_hook=anyio.Event(),
+            client_name="test-client",
+        )
+
+        executor = HookExecutor(
+            config=HookConfigV1Alpha1(
+                before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
+            )
+        )
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        # Make sleep instant so the 30s timeout fires immediately
+        # without blocking the test for 30 real seconds.
+        async def instant_sleep(_delay):
+            pass
+
+        with patch("jumpstarter.exporter.hooks.anyio.sleep", side_effect=instant_sleep):
+            result = await executor._wait_for_lease_ready(lease_scope, mock_report_status)
+
+        assert result is False
+        assert any(
+            s == ExporterStatus.BEFORE_LEASE_HOOK_FAILED
+            for s, _ in status_calls
+        ), f"Expected BEFORE_LEASE_HOOK_FAILED, got: {status_calls}"
+        assert lease_scope.before_lease_hook.is_set()
+
+    async def test_run_before_lease_hook_skips_when_lease_ended_during_is_ready_wait(self) -> None:
+        """When lease_ended is set before the session is created (is_ready()
+        returns False), the hook must bail out immediately without waiting
+        for the full is_ready timeout."""
+        from anyio import Event
+
+        from jumpstarter.exporter.lease_context import LeaseContext
+
+        lease_scope = LeaseContext(
+            lease_name="test-lease-stale",
+            before_lease_hook=Event(),
+            client_name="test-client",
+        )
+        # Leave session=None and socket_path="" so is_ready() returns False
+        lease_scope.lease_ended.set()
+
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="echo setup", timeout=10),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+
+        await executor.run_before_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+        )
+
+        assert len(status_calls) == 0, (
+            f"No status should be reported when bailing out during is_ready wait, got: {status_calls}"
+        )
+        assert lease_scope.skip_after_lease_hook is True, (
+            "skip_after_lease_hook must be set when skipping during is_ready wait"
+        )
+        assert lease_scope.before_lease_hook.is_set(), (
+            "before_lease_hook event must be set to unblock downstream waiters"
         )
