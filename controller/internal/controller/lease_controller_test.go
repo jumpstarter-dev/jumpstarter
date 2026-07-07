@@ -31,6 +31,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -1027,6 +1029,98 @@ var _ = Describe("orderApprovedExporters", func() {
 	})
 })
 
+var _ = Describe("isLeaseEnded", func() {
+	It("should return true when the ended label is present", func() {
+		lease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{
+					string(jumpstarterdevv1alpha1.LeaseLabelEnded): jumpstarterdevv1alpha1.LeaseLabelEndedValue,
+				},
+			},
+		}
+		Expect(isLeaseEnded(lease)).To(BeTrue())
+	})
+
+	It("should return false when the ended label is missing", func() {
+		lease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{},
+			},
+		}
+		Expect(isLeaseEnded(lease)).To(BeFalse())
+	})
+
+	It("should return false when labels are nil", func() {
+		lease := &jumpstarterdevv1alpha1.Lease{}
+		Expect(isLeaseEnded(lease)).To(BeFalse())
+	})
+})
+
+var _ = Describe("skipEndedPredicate", func() {
+	var skipEnded predicate.Funcs
+
+	BeforeEach(func() {
+		skipEnded = skipEndedPredicate()
+	})
+
+	It("should admit creates for non-ended leases", func() {
+		lease := &jumpstarterdevv1alpha1.Lease{}
+		Expect(skipEnded.Create(event.CreateEvent{Object: lease})).To(BeTrue())
+	})
+
+	It("should reject creates for ended leases", func() {
+		lease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{
+					string(jumpstarterdevv1alpha1.LeaseLabelEnded): jumpstarterdevv1alpha1.LeaseLabelEndedValue,
+				},
+			},
+		}
+		Expect(skipEnded.Create(event.CreateEvent{Object: lease})).To(BeFalse())
+	})
+
+	It("should reject updates where new object has ended label", func() {
+		oldLease := &jumpstarterdevv1alpha1.Lease{}
+		newLease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{
+					string(jumpstarterdevv1alpha1.LeaseLabelEnded): jumpstarterdevv1alpha1.LeaseLabelEndedValue,
+				},
+			},
+		}
+		Expect(skipEnded.Update(event.UpdateEvent{ObjectOld: oldLease, ObjectNew: newLease})).To(BeFalse())
+	})
+
+	It("should admit updates for non-ended leases", func() {
+		oldLease := &jumpstarterdevv1alpha1.Lease{}
+		newLease := &jumpstarterdevv1alpha1.Lease{}
+		Expect(skipEnded.Update(event.UpdateEvent{ObjectOld: oldLease, ObjectNew: newLease})).To(BeTrue())
+	})
+
+	It("should admit updates for ended-in-status but unlabeled leases so label can be backfilled", func() {
+		oldLease := &jumpstarterdevv1alpha1.Lease{}
+		newLease := &jumpstarterdevv1alpha1.Lease{
+			Status: jumpstarterdevv1alpha1.LeaseStatus{
+				Ended: true,
+			},
+		}
+		// No ended label → predicate admits → reconciler runs → backfills label
+		Expect(skipEnded.Update(event.UpdateEvent{ObjectOld: oldLease, ObjectNew: newLease})).To(BeTrue())
+	})
+
+	It("should always admit deletes", func() {
+		lease := &jumpstarterdevv1alpha1.Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{
+					string(jumpstarterdevv1alpha1.LeaseLabelEnded): jumpstarterdevv1alpha1.LeaseLabelEndedValue,
+				},
+			},
+		}
+		Expect(skipEnded.Delete(event.DeleteEvent{Object: lease})).To(BeTrue())
+	})
+
+})
+
 var _ = Describe("Scheduled Leases", func() {
 	BeforeEach(func() {
 		createExporters(context.Background(), testExporter1DutA, testExporter2DutA, testExporter3DutB)
@@ -1706,6 +1800,65 @@ var _ = Describe("Scheduled Leases", func() {
 				updatedLease = getLease(ctx, lease.Name)
 				return updatedLease.Status.Ended
 			}).WithTimeout(500*time.Millisecond).WithPolling(50*time.Millisecond).Should(BeTrue(), "Should be marked as ended")
+		})
+	})
+
+	When("an ended lease has the ended label", func() {
+		It("should be a no-op on subsequent reconciles", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+			lease.Spec.Duration = &metav1.Duration{Duration: 100 * time.Millisecond}
+
+			ctx := context.Background()
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			Eventually(func() bool {
+				_ = reconcileLease(ctx, lease)
+				return getLease(ctx, lease.Name).Status.Ended
+			}).WithTimeout(500 * time.Millisecond).WithPolling(50 * time.Millisecond).Should(BeTrue())
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Labels).To(HaveKeyWithValue(
+				string(jumpstarterdevv1alpha1.LeaseLabelEnded),
+				jumpstarterdevv1alpha1.LeaseLabelEndedValue,
+			))
+
+			// Reconciling again should be a no-op
+			result := reconcileLease(ctx, lease)
+			Expect(result.RequeueAfter).To(BeZero())
+		})
+	})
+
+	When("an ended lease is missing the ended label", func() {
+		It("should backfill the label on the next reconcile", func() {
+			lease := leaseDutA2Sec.DeepCopy()
+			lease.Spec.Duration = &metav1.Duration{Duration: 100 * time.Millisecond}
+
+			ctx := context.Background()
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			Eventually(func() bool {
+				_ = reconcileLease(ctx, lease)
+				return getLease(ctx, lease.Name).Status.Ended
+			}).WithTimeout(500 * time.Millisecond).WithPolling(50 * time.Millisecond).Should(BeTrue())
+
+			// Simulate split-brain: remove the ended label as if metadata update failed
+			updatedLease := getLease(ctx, lease.Name)
+			delete(updatedLease.Labels, string(jumpstarterdevv1alpha1.LeaseLabelEnded))
+			Expect(k8sClient.Update(ctx, updatedLease)).To(Succeed())
+
+			// Verify label is gone
+			updatedLease = getLease(ctx, lease.Name)
+			Expect(updatedLease.Labels).NotTo(HaveKey(string(jumpstarterdevv1alpha1.LeaseLabelEnded)))
+
+			// Reconcile should backfill the label
+			_ = reconcileLease(ctx, lease)
+			updatedLease = getLease(ctx, lease.Name)
+			Expect(updatedLease.Labels).To(HaveKeyWithValue(
+				string(jumpstarterdevv1alpha1.LeaseLabelEnded),
+				jumpstarterdevv1alpha1.LeaseLabelEndedValue,
+			))
 		})
 	})
 
