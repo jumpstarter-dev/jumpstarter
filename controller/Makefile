@@ -5,6 +5,7 @@ IMG ?= quay.io/jumpstarter-dev/jumpstarter-controller:latest
 DOCKER_REPO = $(shell echo $(IMG) | cut -d: -f1)
 DOCKER_TAG  = $(shell echo $(IMG) | cut -d: -f2)
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
+# renovate: datasource=github-releases depName=kubernetes/kubernetes extractVersion=^v(?<version>.+)$
 ENVTEST_K8S_VERSION = 1.30.0
 
 # Version information
@@ -224,11 +225,16 @@ KIND = $(LOCALBIN)/kind
 GRPCURL = $(LOCALBIN)/grpcurl
 
 ## Tool Versions
-KUSTOMIZE_VERSION ?= v5.4.1
-CONTROLLER_TOOLS_VERSION ?= v0.16.3
+# renovate: datasource=github-releases depName=kubernetes-sigs/kustomize extractVersion=^kustomize/(?<version>v\d+\.\d+\.\d+)$
+KUSTOMIZE_VERSION ?= v5.6.0
+# renovate: datasource=github-releases depName=kubernetes-sigs/controller-tools
+CONTROLLER_TOOLS_VERSION ?= v0.18.0
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
+# renovate: datasource=github-releases depName=golangci/golangci-lint
 GOLANGCI_LINT_VERSION ?= v2.5.0
+# renovate: datasource=github-releases depName=kubernetes-sigs/kind
 KIND_VERSION ?= v0.27.0
+# renovate: datasource=github-releases depName=fullstorydev/grpcurl
 GRPCURL_VERSION ?= v1.9.2
 
 .PHONY: kustomize
@@ -241,9 +247,12 @@ controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessar
 $(CONTROLLER_GEN): $(LOCALBIN)
 	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
 
+# renovate: datasource=docker depName=docker.io/bufbuild/buf
+BUF_VERSION ?= 1.71.0
+
 .PHONY: protobuf-gen
 protobuf-gen:
-	podman run --volume "$(shell pwd):/workspace" --workdir /workspace docker.io/bufbuild/buf:latest generate
+	podman run --volume "$(shell pwd):/workspace" --workdir /workspace docker.io/bufbuild/buf:$(BUF_VERSION) generate
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
