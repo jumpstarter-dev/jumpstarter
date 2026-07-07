@@ -4,19 +4,19 @@ The community provides an experimental standalone/lightweight bootable container
 image including MicroShift, the Jumpstarter {term}`operator`, and a small web UI.
 
 This is ideal for small development environments, and small labs.
-For production deployments where High Availability is desired
+For production deployments where high availability is desired
 see [Production](production.md).
 
 ## Prerequisites
 
-- An Intel device, capable of running Centos 10
+- An Intel device, capable of running CentOS 10
 - At least 4GB RAM and 40GB disk space recommended
 
 ## Install
 
-### Method 1: create a centos install iso with a kickstart.ks config attached
+### Method 1: Create a CentOS install ISO with a kickstart.ks configuration attached
 
-From a linux system, for example fedora:
+From a Linux system, for example Fedora:
 
 ```console
 export CENTOS_ISO=CentOS-Stream-10-latest-x86_64-boot.iso
@@ -27,9 +27,9 @@ mkksiso kickstart.ks ${CENTOS_ISO} cs10-js-install.iso
 
 Flash the .iso to a pendrive, and boot/install your system, watch out and remove the pendrive once install has finished.
 
-### Method 2: using system-reinstall-bootc
+### Method 2: Using system-reinstall-bootc
 
-From a bootc capable system (Fedora or Centos 10), run the following command,
+From a bootc capable system (Fedora or CentOS 10), run the following command,
 please note that this action is **destructive** and will re-install your system.
 
 ```console
@@ -54,7 +54,7 @@ have control over your DNS.
 | Port | Service | Description |
 |------|---------|-------------|
 | 80 | HTTP | MicroShift ingress |
-| 443 | HTTPS | MicroShift API and ingress |
+| 443 | HTTPS | MicroShift ingress |
 | 8880 | Config UI | Web configuration interface |
 | 6443 | API Server | Kubernetes API (internal) |
 
