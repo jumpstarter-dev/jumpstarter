@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euox pipefail
 
-declare -a BRANCHES=("main" "release-0.6" "release-0.7" "release-0.8")
+declare -a BRANCHES=("main" "release-0.6" "release-0.7" "release-0.8" "release-0.9")
 
 # https://stackoverflow.com/a/246128
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
