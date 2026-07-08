@@ -47,7 +47,7 @@ func main() {
 
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)).WithValues("component", "router"))
 	logger := ctrl.Log.WithName("router")
 	ctx := logr.NewContext(context.Background(), logger)
 

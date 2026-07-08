@@ -539,10 +539,7 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return err
 	}
 
-	logger.WithValues("lease", types.NamespacedName{
-		Namespace: exporter.Namespace,
-		Name:      leaseName,
-	})
+	logger = logger.WithValues("lease_id", leaseName)
 
 	var lease jumpstarterdevv1alpha1.Lease
 	if err := s.Client.Get(
@@ -703,6 +700,7 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 				leased := exporter.Status.LeaseRef != nil
 				leaseName := (*string)(nil)
 				clientName := (*string)(nil)
+				var leaseContext map[string]string
 
 				if leased {
 					leaseName = &exporter.Status.LeaseRef.Name
@@ -716,12 +714,14 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 						return err
 					}
 					clientName = &lease.Spec.ClientRef.Name
+					leaseContext = lease.Spec.Context
 				}
 
 				status := pb.StatusResponse{
 					Leased:     leased,
 					LeaseName:  leaseName,
 					ClientName: clientName,
+					Context:    leaseContext,
 				}
 				if proto.Equal(lastPbStatusResponse, &status) {
 					jlog.Verbose(logger, "Not sending status update to exporter, it is the same as the last one")
@@ -761,10 +761,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		return nil, err
 	}
 
-	logger = logger.WithValues("lease", types.NamespacedName{
-		Namespace: client.Namespace,
-		Name:      leaseName,
-	})
+	logger = logger.WithValues("lease_id", leaseName)
 
 	var lease jumpstarterdevv1alpha1.Lease
 	if err := s.Client.Get(
