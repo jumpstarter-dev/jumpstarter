@@ -1,12 +1,16 @@
 import logging
 from collections import deque
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from threading import RLock
 
+from google.protobuf.timestamp_pb2 import Timestamp
 from jumpstarter_protocol import jumpstarter_pb2
 
 from .logging_protocol import LoggerRegistration
 from jumpstarter.common import LogSource
+
+_STRUCTURED_FIELD_KEYS = ("result", "error_type", "lease_id", "client", "exporter", "namespace")
 
 
 class LogHandler(logging.Handler):
@@ -43,12 +47,27 @@ class LogHandler(logging.Handler):
 
     def prepare(self, record):
         source = self.get_source_for_record(record)
-        return jumpstarter_pb2.LogStreamResponse(
-            uuid="",
-            severity=record.levelname,
-            message=record.getMessage(),  # Use getMessage() directly to avoid formatter
-            source=source.value,  # Convert to proto value
-        )
+        kwargs = {
+            "uuid": "",
+            "severity": record.levelname,
+            "message": record.getMessage(),
+            "source": source.value,
+        }
+        if hasattr(record, "driver_type"):
+            kwargs["driver_type"] = record.driver_type
+        if hasattr(record, "operation"):
+            kwargs["operation"] = record.operation
+        ts = Timestamp()
+        ts.FromDatetime(datetime.fromtimestamp(record.created, tz=timezone.utc))
+        kwargs["timestamp"] = ts
+        structured = {}
+        for key in _STRUCTURED_FIELD_KEYS:
+            val = getattr(record, key, None)
+            if val is not None:
+                structured[key] = str(val)
+        if structured:
+            kwargs["structured_fields"] = structured
+        return jumpstarter_pb2.LogStreamResponse(**kwargs)
 
     def emit(self, record):
         try:

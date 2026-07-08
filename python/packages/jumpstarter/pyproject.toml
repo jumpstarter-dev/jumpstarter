@@ -23,6 +23,7 @@ dependencies = [
     "tenacity>=8.2.0",
     "backports-zstd>=1.1.0 ; python_full_version < '3.14'",
     "click>=8.1.7.2",
+    "structlog>=24.1.0",
 ]
 
 [dependency-groups]
