@@ -34,6 +34,10 @@ jobs:
             label: jumpstarter-controller
             dockerfile: controller/Containerfile
             context: controller
+          - image_name: jumpstarter-dev/exporter-set-controller
+            label: exporter-set-controller
+            dockerfile: controller/Containerfile.exporter-set-controller
+            context: controller
           - image_name: jumpstarter-dev/jumpstarter-operator
             label: jumpstarter-operator
             dockerfile: controller/Containerfile.operator
@@ -221,6 +225,7 @@ jobs:
             const buildAll = labels.includes('build-pr-images');
             const allImages = [
               'jumpstarter-dev/jumpstarter-controller',
+              'jumpstarter-dev/exporter-set-controller',
               'jumpstarter-dev/jumpstarter-operator',
               'jumpstarter-dev/jumpstarter-operator-bundle',
               'jumpstarter-dev/jumpstarter',

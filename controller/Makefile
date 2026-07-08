@@ -4,6 +4,7 @@ GO_FILES := $(shell find ./ -name ".go" -not -path "./bin" -not -path "./packagi
 IMG ?= quay.io/jumpstarter-dev/jumpstarter-controller:latest
 DOCKER_REPO = $(shell echo $(IMG) | cut -d: -f1)
 DOCKER_TAG  = $(shell echo $(IMG) | cut -d: -f2)
+EXPORTER_SET_CONTROLLER_IMG ?= quay.io/jumpstarter-dev/exporter-set-controller:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.30.0
 
@@ -108,6 +109,7 @@ build-operator:
 build: manifests generate fmt vet ## Build manager binary.
 	go build -ldflags "$(LDFLAGS)" -o bin/manager cmd/main.go
 	go build -ldflags "$(LDFLAGS)" -o bin/router cmd/router/main.go
+	go build -ldflags "$(LDFLAGS)" -o bin/exporter-set-controller cmd/exporter-set-controller/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -127,6 +129,14 @@ docker-build: ## Build docker image with the manager.
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		-t ${IMG} -f Containerfile .
+
+.PHONY: docker-build-exporter-set-controller
+docker-build-exporter-set-controller: ## Build docker image for the exporter-set-controller.
+	$(CONTAINER_TOOL) build \
+		--build-arg GIT_VERSION=$(GIT_VERSION) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t ${EXPORTER_SET_CONTROLLER_IMG} -f Containerfile.exporter-set-controller .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
