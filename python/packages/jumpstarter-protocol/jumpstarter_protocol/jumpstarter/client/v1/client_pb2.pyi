@@ -56,6 +56,7 @@ class Exporter(google.protobuf.message.Message):
     ONLINE_FIELD_NUMBER: builtins.int
     STATUS_FIELD_NUMBER: builtins.int
     STATUS_MESSAGE_FIELD_NUMBER: builtins.int
+    ENABLED_FIELD_NUMBER: builtins.int
     name: builtins.str
     """The resource name of the exporter."""
     online: builtins.bool
@@ -64,6 +65,10 @@ class Exporter(google.protobuf.message.Message):
     """The current status of the exporter."""
     status_message: builtins.str
     """A human-readable message providing details about the exporter status."""
+    enabled: builtins.bool
+    """Whether the exporter is enabled for lease assignment.
+    When false, the controller will not assign new leases to this exporter.
+    """
     @property
     def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
         """The set of labels associated with the exporter."""
@@ -76,8 +81,11 @@ class Exporter(google.protobuf.message.Message):
         online: builtins.bool = ...,
         status: jumpstarter.v1.common_pb2.ExporterStatus.ValueType = ...,
         status_message: builtins.str = ...,
+        enabled: builtins.bool | None = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["labels", b"labels", "name", b"name", "online", b"online", "status", b"status", "status_message", b"status_message"]) -> None: ...
+    def HasField(self, field_name: typing.Literal["_enabled", b"_enabled", "enabled", b"enabled"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["_enabled", b"_enabled", "enabled", b"enabled", "labels", b"labels", "name", b"name", "online", b"online", "status", b"status", "status_message", b"status_message"]) -> None: ...
+    def WhichOneof(self, oneof_group: typing.Literal["_enabled", b"_enabled"]) -> typing.Literal["enabled"] | None: ...
 
 Global___Exporter: typing_extensions.TypeAlias = Exporter
 
@@ -116,6 +124,7 @@ class Lease(google.protobuf.message.Message):
     CONDITIONS_FIELD_NUMBER: builtins.int
     EXPORTER_NAME_FIELD_NUMBER: builtins.int
     TAGS_FIELD_NUMBER: builtins.int
+    ALLOW_DISABLED_FIELD_NUMBER: builtins.int
     name: builtins.str
     """The resource name of the lease."""
     selector: builtins.str
@@ -126,6 +135,10 @@ class Lease(google.protobuf.message.Message):
     """The resource name of the exporter assigned to this lease."""
     exporter_name: builtins.str
     """The name of a specific exporter to target for the lease."""
+    allow_disabled: builtins.bool
+    """Allow leasing a disabled exporter. Only effective when exporter_name is set.
+    Useful for investigating broken exporters that have been administratively disabled.
+    """
     @property
     def duration(self) -> google.protobuf.duration_pb2.Duration:
         """The requested duration of the lease."""
@@ -174,9 +187,10 @@ class Lease(google.protobuf.message.Message):
         conditions: collections.abc.Iterable[jumpstarter.v1.kubernetes_pb2.Condition] | None = ...,
         exporter_name: builtins.str | None = ...,
         tags: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
+        allow_disabled: builtins.bool = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "begin_time", b"begin_time", "client", b"client", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "name", b"name", "selector", b"selector", "tags", b"tags"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "allow_disabled", b"allow_disabled", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "name", b"name", "selector", b"selector", "tags", b"tags"]) -> None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_begin_time", b"_begin_time"]) -> typing.Literal["begin_time"] | None: ...
     @typing.overload

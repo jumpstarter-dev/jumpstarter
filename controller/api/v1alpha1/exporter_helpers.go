@@ -6,9 +6,16 @@ import (
 	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
 	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/utils"
+	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/api/meta"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// IsEnabled returns whether this exporter is enabled for lease assignment.
+// Returns true if Enabled is nil (backward compatibility) or explicitly set to true.
+func (e *Exporter) IsEnabled() bool {
+	return e.Spec.Enabled == nil || *e.Spec.Enabled
+}
 
 func (e *Exporter) InternalSubject() string {
 	namespace, uid := getNamespaceAndUID(e.Namespace, e.UID, e.Annotations)
@@ -35,6 +42,7 @@ func (e *Exporter) ToProtobuf() *cpb.Exporter {
 		Online:        isOnline,
 		Status:        stringToProtoStatus(e.Status.ExporterStatusValue),
 		StatusMessage: e.Status.StatusMessage,
+		Enabled:       proto.Bool(e.IsEnabled()),
 	}
 }
 

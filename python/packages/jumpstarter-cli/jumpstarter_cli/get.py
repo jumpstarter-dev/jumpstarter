@@ -31,6 +31,12 @@ def get():
     default=False,
     help="Show labels hidden by controller config",
 )
+@click.option(
+    "--allow-disabled",
+    is_flag=True,
+    default=False,
+    help="Include disabled exporters in the listing",
+)
 @handle_exceptions_with_reauthentication(relogin_client)
 def get_exporters(
     config,
@@ -38,6 +44,7 @@ def get_exporters(
     output: OutputType,
     with_options: list[str],
     show_hidden_labels: bool,
+    allow_disabled: bool,
 ):
     """
     Display one or many exporters
@@ -52,6 +59,7 @@ def get_exporters(
         include_online=include_online,
         include_status=include_status,
         show_hidden_labels=show_hidden_labels,
+        include_disabled=allow_disabled,
     )
 
     model_print(exporters, output)

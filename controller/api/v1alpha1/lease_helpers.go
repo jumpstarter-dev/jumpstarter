@@ -261,8 +261,9 @@ func LeaseFromProtobuf(
 				}
 				return &corev1.LocalObjectReference{Name: *req.ExporterName}
 			}(),
-			BeginTime: beginTime,
-			EndTime:   endTime,
+			AllowDisabled: req.AllowDisabled,
+			BeginTime:     beginTime,
+			EndTime:       endTime,
 		},
 	}, nil
 }
@@ -284,11 +285,12 @@ func (l *Lease) ToProtobuf() *cpb.Lease {
 	}
 
 	lease := cpb.Lease{
-		Name:       fmt.Sprintf("namespaces/%s/leases/%s", l.Namespace, l.Name),
-		Selector:   metav1.FormatLabelSelector(&l.Spec.Selector),
-		Client:     ptr.To(fmt.Sprintf("namespaces/%s/clients/%s", l.Namespace, l.Spec.ClientRef.Name)),
-		Conditions: conditions,
-		Tags:       l.Spec.Tags,
+		Name:          fmt.Sprintf("namespaces/%s/leases/%s", l.Namespace, l.Name),
+		Selector:      metav1.FormatLabelSelector(&l.Spec.Selector),
+		Client:        ptr.To(fmt.Sprintf("namespaces/%s/clients/%s", l.Namespace, l.Spec.ClientRef.Name)),
+		Conditions:    conditions,
+		Tags:          l.Spec.Tags,
+		AllowDisabled: l.Spec.AllowDisabled,
 	}
 	if l.Spec.ExporterRef != nil {
 		lease.ExporterName = ptr.To(l.Spec.ExporterRef.Name)
