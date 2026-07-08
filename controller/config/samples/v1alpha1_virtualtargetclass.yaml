@@ -1,0 +1,27 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: VirtualTargetClass
+metadata:
+  name: qemu-rpi4
+  namespace: jumpstarter
+spec:
+  provisioner: qemu.jumpstarter.dev
+  bindingMode: Immediate
+  reclaimPolicy: Delete
+  scheduling:
+    nodeSelector:
+      kubernetes.io/arch: arm64
+    tolerations:
+      - key: jumpstarter.dev/kvm
+        operator: Exists
+        effect: NoSchedule
+    resources:
+      limits:
+        devices.kubevirt.io/kvm: "1"
+  parameters:
+    machineType: virt
+    firmware:
+      url: registry.example.com/firmware/rpi4:latest
+    resources:
+      cpu: 4
+      memory: 4Gi
+      storage: 16Gi

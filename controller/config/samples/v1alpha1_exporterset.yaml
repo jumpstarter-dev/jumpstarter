@@ -1,0 +1,31 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterSet
+metadata:
+  name: rpi4-virtual
+  namespace: jumpstarter
+spec:
+  minReplicas: 0
+  maxReplicas: 20
+  minAvailableReplicas: 2
+  scaleDownCooldown: 5m
+  recycleStrategy: ExitAndReplace
+  virtualTargetClassName: qemu-rpi4
+  parameters:
+    resources:
+      memory: 8Gi
+  selector:
+    matchLabels:
+      board: rpi4
+  template:
+    metadata:
+      labels:
+        board: rpi4
+        arch: aarch64
+        virtual: "true"
+    spec:
+      drivers:
+        - type: jumpstarter_driver_power.driver.QemuPower
+        - type: jumpstarter_driver_network.driver.TcpNetwork
+          config:
+            port: 22
+        - type: jumpstarter_driver_serial.driver.QemuSerial

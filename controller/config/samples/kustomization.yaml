@@ -4,4 +4,6 @@ resources:
 - v1alpha1_client.yaml
 - v1alpha1_lease.yaml
 - v1alpha1_exporteraccesspolicy.yaml
+- v1alpha1_virtualtargetclass.yaml
+- v1alpha1_exporterset.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples
