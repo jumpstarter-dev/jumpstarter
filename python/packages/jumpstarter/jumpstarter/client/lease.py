@@ -426,10 +426,9 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     raise ConnectionError("Socket not ready at %s" % path) from e
 
     def _notify_lease_ending(self, remaining: timedelta) -> None:
-        """Log lease status and invoke the ending callback if set."""
+        """Set lease_ended flag and invoke the ending callback if set."""
         if remaining <= timedelta(0):
             self.lease_ended = True
-            logger.info("Lease {} ended at {}".format(self.name, datetime.now().astimezone()))
         if self.lease_ending_callback is not None:
             self.lease_ending_callback(self, remaining)
 
