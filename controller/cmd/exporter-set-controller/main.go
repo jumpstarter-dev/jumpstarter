@@ -58,9 +58,14 @@ func main() {
 		enableLeaderElection bool
 	)
 
-	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. Use :8443 for HTTPS or :8080 for HTTP, or 0 to disable.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.StringVar(&provisioner, "provisioner", "", "The provisioner this controller handles (e.g. qemu.jumpstarter.dev). Required.")
+	flag.StringVar(&metricsAddr, "metrics-bind-address", "0",
+		"The address the metrics endpoint binds to. "+
+			"Use :8443 for HTTPS or :8080 for HTTP, or 0 to disable.")
+	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081",
+		"The address the probe endpoint binds to.")
+	flag.StringVar(&provisioner, "provisioner", "",
+		"The provisioner this controller handles "+
+			"(e.g. qemu.jumpstarter.dev). Required.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager.")
 
 	opts := zap.Options{}
