@@ -28,6 +28,7 @@ from .common import opt_acquisition_timeout, opt_duration_partial, opt_exporter_
 from .login import relogin_client
 from jumpstarter.client import DirectLease
 from jumpstarter.client.client import client_from_path
+from jumpstarter.client.exceptions import LeaseError
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
 from jumpstarter.common.exceptions import (
     ConnectionError,
@@ -505,6 +506,8 @@ async def _shell_with_signal_handling(  # noqa: C901
                             except ExporterUnreachableError as exc:
                                 unreachable = exc
                             if unreachable is not None:
+                                if lease.lease_ended:
+                                    break  # lease expired naturally — exit cleanly
                                 if connect_deadline is None:
                                     connect_deadline = time.monotonic() + lease.retry_timeout
                                 if time.monotonic() >= connect_deadline:
@@ -531,6 +534,9 @@ async def _shell_with_signal_handling(  # noqa: C901
                 offline_exc = find_exception_in_group(eg, ExporterOfflineError)
                 if offline_exc:
                     raise offline_exc from None
+                lease_exc = find_exception_in_group(eg, LeaseError)
+                if lease_exc:
+                    raise lease_exc from None
                 if lease_used is not None:
                     if lease_used.lease_ended:
                         # Lease expired naturally (e.g. during beforeLease hook)
