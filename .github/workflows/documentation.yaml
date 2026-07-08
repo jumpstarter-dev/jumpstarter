@@ -54,6 +54,16 @@ jobs:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
 
+      - name: Install Python package build dependencies (Python 3.14)
+        run: |
+          sudo apt-get update
+          # Pillow dependencies
+          sudo apt-get install -y libjpeg-dev zlib1g-dev libtiff-dev libfreetype6-dev liblcms2-dev libwebp-dev libopenjp2-7-dev
+          # scipy dependencies
+          sudo apt-get install -y g++ gfortran libopenblas-dev liblapack-dev pkg-config
+          # cffi dependencies
+          sudo apt-get install -y libffi-dev
+
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
@@ -92,6 +102,16 @@ jobs:
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
+
+      - name: Install Python package build dependencies (Python 3.14)
+        run: |
+          sudo apt-get update
+          # Pillow dependencies
+          sudo apt-get install -y libjpeg-dev zlib1g-dev libtiff-dev libfreetype6-dev liblcms2-dev libwebp-dev libopenjp2-7-dev
+          # scipy dependencies
+          sudo apt-get install -y g++ gfortran libopenblas-dev liblapack-dev pkg-config
+          # cffi dependencies
+          sudo apt-get install -y libffi-dev
 
       - name: Verify generated gRPC docs are up to date
         run: make docs-check-grpc
