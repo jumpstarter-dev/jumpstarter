@@ -551,3 +551,82 @@ class TestReportStatusGrpcErrorHandling:
         assert not any("ReportStatus not supported" in r.message for r in warning_msgs), (
             "UNAVAILABLE error should not produce 'not supported' warning"
         )
+
+
+class TestHandleLeaseStaleSkip:
+    async def test_handle_lease_skips_session_for_stale_lease(self):
+        """When lease_ended is already set, handle_lease skips session
+        creation entirely and just sets the events needed by serve()."""
+        lease_ctx = LeaseContext(
+            lease_name="stale-lease",
+            before_lease_hook=Event(),
+            client_name="test-client",
+        )
+        lease_ctx.lease_ended.set()
+
+        exporter = make_exporter(lease_ctx)
+        session_for_lease_mock = AsyncMock()
+        exporter.session_for_lease = session_for_lease_mock
+
+        async with create_task_group() as tg:
+            await exporter.handle_lease("stale-lease", tg, lease_ctx)
+
+        session_for_lease_mock.assert_not_called()
+        assert lease_ctx.skip_after_lease_hook is True
+        assert lease_ctx.before_lease_hook.is_set()
+        assert lease_ctx.after_lease_hook_done.is_set()
+        assert lease_ctx.session is None
+        exporter._report_status.assert_awaited_once_with(
+            ExporterStatus.AVAILABLE, "Available for new lease",
+        )
+
+    async def test_handle_lease_stale_skip_suppresses_available_on_shutdown(self):
+        """When stop_requested is True, the stale lease fast path should
+        not report AVAILABLE status."""
+        lease_ctx = LeaseContext(
+            lease_name="stale-lease",
+            before_lease_hook=Event(),
+        )
+        lease_ctx.lease_ended.set()
+
+        exporter = make_exporter(lease_ctx)
+        exporter._stop_requested = True
+
+        async with create_task_group() as tg:
+            await exporter.handle_lease("stale-lease", tg, lease_ctx)
+
+        assert lease_ctx.after_lease_hook_done.is_set()
+        exporter._report_status.assert_not_awaited()
+
+    async def test_handle_lease_skips_conn_handling_when_lease_ends_during_session(self):
+        """When lease_ended is set during session creation (serve() processes
+        the buffered leased=False while session_for_lease sets up sockets),
+        handle_lease bails after session setup, skipping Listen/conn_tg."""
+        from contextlib import asynccontextmanager
+
+        lease_ctx = LeaseContext(
+            lease_name="stale-during-setup",
+            before_lease_hook=Event(),
+            client_name="test-client",
+        )
+
+        mock_session = MagicMock()
+        mock_session.context_log_source.return_value = nullcontext()
+
+        @asynccontextmanager
+        async def fake_session_for_lease():
+            lease_ctx.lease_ended.set()
+            yield (mock_session, "/tmp/main.sock", "/tmp/hook.sock")
+
+        exporter = make_exporter(lease_ctx)
+        exporter.session_for_lease = fake_session_for_lease
+
+        async with create_task_group() as tg:
+            await exporter.handle_lease("stale-during-setup", tg, lease_ctx)
+
+        assert lease_ctx.skip_after_lease_hook is True
+        assert lease_ctx.before_lease_hook.is_set()
+        assert lease_ctx.after_lease_hook_done.is_set()
+        exporter._report_status.assert_awaited_once_with(
+            ExporterStatus.AVAILABLE, "Available for new lease",
+        )

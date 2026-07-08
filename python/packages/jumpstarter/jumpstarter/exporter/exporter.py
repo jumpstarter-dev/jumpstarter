@@ -634,7 +634,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     )
                 else:
                     if lease_scope.skip_after_lease_hook:
-                        logger.info("Skipping afterLease hook: beforeLease hook failed")
+                        if lease_scope.lease_ended.is_set():
+                            logger.info("Skipping afterLease hook: lease ended before beforeLease hook ran")
+                        else:
+                            logger.info("Skipping afterLease hook: beforeLease hook failed")
                     if not self._stop_requested:
                         logger.debug(
                             "No afterLease hook or no client on session close,"
@@ -649,6 +652,22 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 logger.debug("Waiting for afterLease hook to complete before closing session")
                 await lease_scope.after_lease_hook_done.wait()
                 logger.debug("afterLease hook completed, closing session")
+
+    async def _skip_stale_lease(self, lease_name: str, lease_scope: LeaseContext, context: str) -> bool:
+        """Handle early bail for a stale lease whose lease_ended is already set.
+
+        Sets the events that serve() is waiting on and reports AVAILABLE.
+        Returns True if the lease was stale and the caller should return.
+        """
+        if not lease_scope.lease_ended.is_set():
+            return False
+        logger.info("Lease %s already ended (%s), skipping", lease_name, context)
+        lease_scope.skip_after_lease_hook = True
+        lease_scope.before_lease_hook.set()
+        if not self._stop_requested:
+            await self._report_status(ExporterStatus.AVAILABLE, "Available for new lease")
+        lease_scope.after_lease_hook_done.set()
+        return True
 
     async def handle_lease(self, lease_name: str, tg: TaskGroup, lease_scope: LeaseContext) -> None:
         """Handle all incoming client connections for a lease.
@@ -674,6 +693,18 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             the serve() method when a lease is assigned. It terminates when the lease
             ends or the exporter stops.
         """
+        # Yield to let serve() process any immediately-following leased=False
+        # status that's already in the buffer. Without this, handle_lease runs
+        # before serve() gets a chance to set lease_ended (anyio's receive()
+        # always checkpoints, even when data is buffered).
+        await anyio.sleep(0)
+
+        # Fast path: if the lease is already ended (stale lease from backlog
+        # when the exporter couldn't keep up with lease churn), skip session
+        # creation and all connection handling entirely.
+        if await self._skip_stale_lease(lease_name, lease_scope, "before session creation"):
+            return
+
         logger.info("Listening for incoming connection requests on lease %s", lease_name)
 
         # Buffer Listen responses to avoid blocking when responses arrive before
@@ -694,6 +725,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             # before session was created, e.g., BEFORE_LEASE_HOOK when hooks are configured)
             session.update_status(lease_scope.current_status, lease_scope.status_message)
             logger.debug("Session sockets: main=%s, hook=%s", main_path, hook_path)
+
+            # Check if lease ended during session creation — serve() often
+            # processes the buffered leased=False while session_for_lease is
+            # setting up sockets and gRPC servers.  Bailing here avoids the
+            # Listen stream, conn_tg, and _cleanup_after_lease overhead.
+            # The session context manager handles teardown on return.
+            if await self._skip_stale_lease(lease_name, lease_scope, "during session setup"):
+                return
 
             # Accept connections immediately - driver calls will be gated internally
             # until the beforeLease hook completes. This allows LogStream to work
@@ -764,7 +803,11 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 # blocks forever.  When conn_tg is cancelled before the no-hook
                 # path reaches lease_scope.before_lease_hook.set(), this flag
                 # remains unset and _cleanup_after_lease (shielded) deadlocks.
-                if not lease_scope.before_lease_hook.is_set():
+                # Only apply this fallback when NO hooks are configured — when
+                # hooks ARE configured, run_before_lease_hook's finally block
+                # sets the event after updating skip_after_lease_hook. Setting
+                # it here prematurely would race with that flag update.
+                if not self.hook_executor and not lease_scope.before_lease_hook.is_set():
                     lease_scope.before_lease_hook.set()
                 # Close the listen stream to signal termination to listen_rx
                 await listen_tx.aclose()
@@ -849,10 +892,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         logger.info("afterLease hook completed")
 
                     # Clear lease scope for next lease
+                    session_was_created = (
+                        self._lease_context is not None and self._lease_context.session is not None
+                    )
                     self._lease_context = None
-                    # Brief delay to ensure session is fully closed before next lease
-                    # This prevents SSL corruption from overlapping connections
-                    await sleep(0.2)
+                    if session_was_created:
+                        # Brief delay to ensure session is fully closed before next lease
+                        # This prevents SSL corruption from overlapping connections
+                        await sleep(0.2)
                     logger.debug("Ready for next lease")
 
                     if self._stop_requested:

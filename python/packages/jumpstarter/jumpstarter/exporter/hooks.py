@@ -608,6 +608,37 @@ class HookExecutor:
             except Exception as e:
                 logger.error("Failed to request lease release: %s", e, exc_info=True)
 
+    async def _wait_for_lease_ready(
+        self,
+        lease_scope: "LeaseContext",
+        report_status: Callable[["ExporterStatus", str], Awaitable[None]],
+    ) -> bool:
+        """Wait for lease scope to be fully populated by handle_lease.
+
+        Returns True if ready, False if the caller should bail out
+        (lease already ended or timeout waiting for session).
+        """
+        timeout = 30  # seconds
+        interval = 0.1  # seconds
+        elapsed = 0.0
+        while not lease_scope.is_ready():
+            if lease_scope.lease_ended.is_set():
+                logger.info(
+                    "Lease %s ended while waiting for session, skipping beforeLease hook",
+                    lease_scope.lease_name,
+                )
+                lease_scope.skip_after_lease_hook = True
+                return False
+            if elapsed >= timeout:
+                error_msg = "Timeout waiting for lease scope to be ready"
+                logger.error(error_msg)
+                await report_status(ExporterStatus.BEFORE_LEASE_HOOK_FAILED, error_msg)
+                lease_scope.before_lease_hook.set()
+                return False
+            await anyio.sleep(interval)
+            elapsed += interval
+        return True
+
     async def run_before_lease_hook(
         self,
         lease_scope: "LeaseContext",
@@ -632,25 +663,23 @@ class HookExecutor:
         """
         should_release = False
         try:
-            # Wait for lease scope to be fully populated by handle_lease
-            # This is necessary because handle_lease and run_before_lease_hook run concurrently
-            timeout = 30  # seconds
-            interval = 0.1  # seconds
-            elapsed = 0.0
-            while not lease_scope.is_ready():
-                if elapsed >= timeout:
-                    error_msg = "Timeout waiting for lease scope to be ready"
-                    logger.error(error_msg)
-                    await report_status(ExporterStatus.BEFORE_LEASE_HOOK_FAILED, error_msg)
-                    lease_scope.before_lease_hook.set()
-                    return
-                await anyio.sleep(interval)
-                elapsed += interval
+            if not await self._wait_for_lease_ready(lease_scope, report_status):
+                return
 
             # Check if hook is configured
             if not self.config.before_lease:
                 logger.debug("No before-lease hook configured")
                 await report_status(ExporterStatus.LEASE_READY, "Ready for commands")
+                return
+
+            # Skip hook if lease already ended (e.g. stale lease from backlog
+            # when the exporter couldn't keep up with lease churn)
+            if lease_scope.lease_ended.is_set():
+                logger.info(
+                    "Lease %s already ended, skipping beforeLease hook",
+                    lease_scope.lease_name,
+                )
+                lease_scope.skip_after_lease_hook = True
                 return
 
             await report_status(ExporterStatus.BEFORE_LEASE_HOOK, "Running beforeLease hook")
