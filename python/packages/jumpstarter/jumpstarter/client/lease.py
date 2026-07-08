@@ -180,7 +180,8 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         if self.name:
             logger.debug("using existing lease via env or flag %s", self.name)
             existing_lease = await self.get()
-            # Verify the lease belongs to the current client
+            if existing_lease.effective_end_time:
+                raise LeaseError(f"lease {self.name} has already ended")
             if self.client_name and existing_lease.client != self.client_name:
                 raise LeaseError(
                     f"lease {self.name} belongs to client '{existing_lease.client}', "
@@ -278,9 +279,9 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                                 f"Unsatisfiable state either"
                             )
 
-                        # lease released
-                        if condition_present_and_equal(result.conditions, "Ready", "False", "Released"):
-                            raise LeaseError(f"lease {self.name} released")
+                        if condition_false(result.conditions, "Ready"):
+                            message = condition_message(result.conditions, "Ready") or "lease is no longer active"
+                            raise LeaseError(f"lease {self.name}: {message}")
 
                         # Update spinner with appropriate status message
                         self._update_spinner_status(spinner, result)
