@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package exporterset
 
 import (
 	"context"
@@ -32,11 +32,13 @@ import (
 // ExporterSetReconciler reconciles an ExporterSet object.
 // It watches ExporterSets, Exporters, and Leases to maintain a warm pool
 // of virtual exporter instances with configurable autoscaling.
+// Provisioner-specific logic (Pod rendering, cleanup) is delegated to the
+// Provisioner interface implementation.
 type ExporterSetReconciler struct {
 	client.Client
 	Scheme      *runtime.Scheme
 	Recorder    record.EventRecorder
-	Provisioner string // The provisioner this controller handles (e.g. "qemu.jumpstarter.dev")
+	Provisioner Provisioner
 }
 
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exportersets,verbs=get;list;watch;create;update;patch;delete
@@ -76,7 +78,7 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// Only reconcile ExporterSets whose class matches our provisioner
-	if vtc.Spec.Provisioner != r.Provisioner {
+	if vtc.Spec.Provisioner != r.Provisioner.Name() {
 		return ctrl.Result{}, nil
 	}
 
@@ -92,8 +94,10 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// 1. Count owned Exporter CRs: replicas, readyReplicas, leasedReplicas, availableReplicas
 	// 2. Deep-merge parameters from VirtualTargetClass + ExporterSet overrides
 	// 3. Scale up if availableReplicas < minAvailableReplicas and replicas < maxReplicas
+	//    - Use r.Provisioner.RenderPod() to create Pods
 	// 4. Scale up on demand if pending leases match selector
 	// 5. Scale down if availableReplicas > minAvailableReplicas after cooldown
+	//    - Use r.Provisioner.Cleanup() before deleting
 	// 6. Update ExporterSet.status
 
 	return ctrl.Result{}, nil

@@ -4,7 +4,7 @@ GO_FILES := $(shell find ./ -name ".go" -not -path "./bin" -not -path "./packagi
 IMG ?= quay.io/jumpstarter-dev/jumpstarter-controller:latest
 DOCKER_REPO = $(shell echo $(IMG) | cut -d: -f1)
 DOCKER_TAG  = $(shell echo $(IMG) | cut -d: -f2)
-EXPORTER_SET_CONTROLLER_IMG ?= quay.io/jumpstarter-dev/exporter-set-controller:latest
+EXPORTER_SET_CONTROLLER_IMG ?= quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.30.0
 

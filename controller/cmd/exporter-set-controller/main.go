@@ -18,6 +18,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,7 +31,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/controller"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/exporterset"
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/exporterset/provisioners/qemu"
 )
 
 var (
@@ -78,6 +80,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Select the provisioner implementation based on the flag
+	prov, err := selectProvisioner(provisioner)
+	if err != nil {
+		setupLog.Error(err, "unsupported provisioner", "provisioner", provisioner)
+		os.Exit(1)
+	}
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
@@ -92,11 +101,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.ExporterSetReconciler{
+	if err = (&exporterset.ExporterSetReconciler{
 		Client:      mgr.GetClient(),
 		Scheme:      mgr.GetScheme(),
 		Recorder:    mgr.GetEventRecorderFor("exporter-set-controller"),
-		Provisioner: provisioner,
+		Provisioner: prov,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ExporterSet")
 		os.Exit(1)
@@ -115,5 +124,16 @@ func main() {
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
+	}
+}
+
+// selectProvisioner returns the Provisioner implementation for the given name.
+// Add new provisioners here as they are implemented.
+func selectProvisioner(name string) (exporterset.Provisioner, error) {
+	switch name {
+	case qemu.ProvisionerName:
+		return qemu.New(), nil
+	default:
+		return nil, fmt.Errorf("unknown provisioner %q; supported: %s", name, qemu.ProvisionerName)
 	}
 }
