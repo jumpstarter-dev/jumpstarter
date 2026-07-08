@@ -9,6 +9,14 @@ from __future__ import annotations
 
 import structlog
 
+_persistent_fields: dict[str, str] = {}
+
+
+def set_persistent_log_context(**fields: str) -> None:
+    """Set fields that survive clear_log_context() (e.g. namespace, component)."""
+    _persistent_fields.update(fields)
+    structlog.contextvars.bind_contextvars(**fields)
+
 
 def set_log_context(**fields: str) -> None:
     """Set correlation fields for the current async context.
@@ -23,8 +31,10 @@ def set_log_context(**fields: str) -> None:
 
 
 def clear_log_context() -> None:
-    """Clear all correlation fields from the current async context."""
+    """Clear lease-scoped correlation fields, preserving persistent fields (namespace, component)."""
     structlog.contextvars.clear_contextvars()
+    if _persistent_fields:
+        structlog.contextvars.bind_contextvars(**_persistent_fields)
 
 
 def unbind_log_context(*keys: str) -> None:

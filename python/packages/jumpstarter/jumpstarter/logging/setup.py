@@ -112,7 +112,8 @@ def setup_logging(
 
     ns = _detect_namespace()
     if ns:
-        structlog.contextvars.bind_contextvars(namespace=ns)
+        from jumpstarter.logging.context import set_persistent_log_context
+        set_persistent_log_context(namespace=ns)
 
 
 def _detect_namespace() -> str | None:

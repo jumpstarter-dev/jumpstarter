@@ -652,6 +652,7 @@ def _make_serve_exporter(exit_on_lease_end=False):
     exporter._exit_code = None
     exporter.hook_executor = None
     exporter.exit_on_lease_end = exit_on_lease_end
+    exporter.labels = {"jumpstarter.dev/name": "test-exporter"}
     exporter._report_status = AsyncMock()
     exporter._request_lease_release = AsyncMock()
 

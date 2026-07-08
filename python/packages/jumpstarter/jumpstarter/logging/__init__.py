@@ -8,12 +8,18 @@ logger.info() calls are automatically rendered as structured JSON without any
 call-site changes.
 """
 
-from jumpstarter.logging.context import clear_log_context, set_log_context, unbind_log_context
+from jumpstarter.logging.context import (
+    clear_log_context,
+    set_log_context,
+    set_persistent_log_context,
+    unbind_log_context,
+)
 from jumpstarter.logging.setup import setup_logging
 
 __all__ = [
     "clear_log_context",
     "set_log_context",
+    "set_persistent_log_context",
     "setup_logging",
     "unbind_log_context",
 ]

@@ -10,7 +10,8 @@ from jumpstarter_protocol import jumpstarter_pb2
 from .logging_protocol import LoggerRegistration
 from jumpstarter.common import LogSource
 
-_STRUCTURED_FIELD_KEYS = ("result", "error_type", "lease_id", "client", "exporter", "namespace")
+_FIRST_CLASS_KEYS = frozenset(("driver_type", "operation"))
+_STDLIB_RECORD_ATTRS = frozenset(vars(logging.LogRecord("", 0, "", 0, "", (), None)).keys())
 
 
 class LogHandler(logging.Handler):
@@ -61,8 +62,9 @@ class LogHandler(logging.Handler):
         ts.FromDatetime(datetime.fromtimestamp(record.created, tz=timezone.utc))
         kwargs["timestamp"] = ts
         structured = {}
-        for key in _STRUCTURED_FIELD_KEYS:
-            val = getattr(record, key, None)
+        for key, val in record.__dict__.items():
+            if key in _STDLIB_RECORD_ATTRS or key in _FIRST_CLASS_KEYS:
+                continue
             if val is not None:
                 structured[key] = str(val)
         if structured:

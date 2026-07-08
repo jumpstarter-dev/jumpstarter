@@ -7,6 +7,7 @@ from collections import deque
 from unittest.mock import patch
 
 import pytest
+import structlog
 
 from jumpstarter.common import LogSource
 from jumpstarter.exporter.logging import LogHandler
@@ -254,6 +255,11 @@ class TestNamespaceDetection:
 
     def test_setup_logging_no_namespace_when_not_in_k8s(self):
         """Namespace should be absent from logs when not detectable."""
+        from jumpstarter.logging import context as log_ctx_mod
+
+        log_ctx_mod._persistent_fields.clear()
+        structlog.contextvars.clear_contextvars()
+
         stream = io.StringIO()
         with patch.dict("os.environ", {}, clear=True):
             with patch("jumpstarter.logging.setup.Path") as mock_path:
