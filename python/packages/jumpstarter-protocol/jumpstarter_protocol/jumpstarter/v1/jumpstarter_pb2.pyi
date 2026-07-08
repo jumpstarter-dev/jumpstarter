@@ -246,24 +246,46 @@ class StatusResponse(google.protobuf.message.Message):
 
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
+    @typing.final
+    class ContextEntry(google.protobuf.message.Message):
+        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+        KEY_FIELD_NUMBER: builtins.int
+        VALUE_FIELD_NUMBER: builtins.int
+        key: builtins.str
+        value: builtins.str
+        def __init__(
+            self,
+            *,
+            key: builtins.str = ...,
+            value: builtins.str = ...,
+        ) -> None: ...
+        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+
     LEASED_FIELD_NUMBER: builtins.int
     LEASE_NAME_FIELD_NUMBER: builtins.int
     CLIENT_NAME_FIELD_NUMBER: builtins.int
+    CONTEXT_FIELD_NUMBER: builtins.int
     leased: builtins.bool
     """Whether the exporter is currently leased."""
     lease_name: builtins.str
     """Name of the active lease, if any."""
     client_name: builtins.str
     """Name of the connected client, if any."""
+    @property
+    def context(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+        """User-defined lease context metadata."""
+
     def __init__(
         self,
         *,
         leased: builtins.bool = ...,
         lease_name: builtins.str | None = ...,
         client_name: builtins.str | None = ...,
+        context: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_client_name", b"_client_name", "_lease_name", b"_lease_name", "client_name", b"client_name", "lease_name", b"lease_name"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_client_name", b"_client_name", "_lease_name", b"_lease_name", "client_name", b"client_name", "lease_name", b"lease_name", "leased", b"leased"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_client_name", b"_client_name", "_lease_name", b"_lease_name", "client_name", b"client_name", "context", b"context", "lease_name", b"lease_name", "leased", b"leased"]) -> None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_client_name", b"_client_name"]) -> typing.Literal["client_name"] | None: ...
     @typing.overload
@@ -310,36 +332,6 @@ class DialResponse(google.protobuf.message.Message):
     def ClearField(self, field_name: typing.Literal["router_endpoint", b"router_endpoint", "router_token", b"router_token"]) -> None: ...
 
 Global___DialResponse: typing_extensions.TypeAlias = DialResponse
-
-@typing.final
-class AuditStreamRequest(google.protobuf.message.Message):
-    """An audit event sent from an exporter to the controller."""
-
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
-
-    EXPORTER_UUID_FIELD_NUMBER: builtins.int
-    DRIVER_INSTANCE_UUID_FIELD_NUMBER: builtins.int
-    SEVERITY_FIELD_NUMBER: builtins.int
-    MESSAGE_FIELD_NUMBER: builtins.int
-    exporter_uuid: builtins.str
-    """UUID of the exporter."""
-    driver_instance_uuid: builtins.str
-    """UUID of the driver instance."""
-    severity: builtins.str
-    """Severity level of the event."""
-    message: builtins.str
-    """Human-readable event message."""
-    def __init__(
-        self,
-        *,
-        exporter_uuid: builtins.str = ...,
-        driver_instance_uuid: builtins.str = ...,
-        severity: builtins.str = ...,
-        message: builtins.str = ...,
-    ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["driver_instance_uuid", b"driver_instance_uuid", "exporter_uuid", b"exporter_uuid", "message", b"message", "severity", b"severity"]) -> None: ...
-
-Global___AuditStreamRequest: typing_extensions.TypeAlias = AuditStreamRequest
 
 @typing.final
 class ReportStatusRequest(google.protobuf.message.Message):
@@ -582,10 +574,30 @@ class LogStreamResponse(google.protobuf.message.Message):
 
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
+    @typing.final
+    class StructuredFieldsEntry(google.protobuf.message.Message):
+        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+        KEY_FIELD_NUMBER: builtins.int
+        VALUE_FIELD_NUMBER: builtins.int
+        key: builtins.str
+        value: builtins.str
+        def __init__(
+            self,
+            *,
+            key: builtins.str = ...,
+            value: builtins.str = ...,
+        ) -> None: ...
+        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+
     UUID_FIELD_NUMBER: builtins.int
     SEVERITY_FIELD_NUMBER: builtins.int
     MESSAGE_FIELD_NUMBER: builtins.int
     SOURCE_FIELD_NUMBER: builtins.int
+    DRIVER_TYPE_FIELD_NUMBER: builtins.int
+    OPERATION_FIELD_NUMBER: builtins.int
+    TIMESTAMP_FIELD_NUMBER: builtins.int
+    STRUCTURED_FIELDS_FIELD_NUMBER: builtins.int
     uuid: builtins.str
     """UUID of the driver instance."""
     severity: builtins.str
@@ -594,6 +606,18 @@ class LogStreamResponse(google.protobuf.message.Message):
     """Log message content."""
     source: jumpstarter.v1.common_pb2.LogSource.ValueType
     """Source of the log message."""
+    driver_type: builtins.str
+    """Driver category when source=DRIVER (e.g. "power", "storage")."""
+    operation: builtins.str
+    """Operation name when the log is part of a known operation."""
+    @property
+    def timestamp(self) -> google.protobuf.timestamp_pb2.Timestamp:
+        """Explicit timestamp of the log entry."""
+
+    @property
+    def structured_fields(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+        """Additional structured key-value fields."""
+
     def __init__(
         self,
         *,
@@ -601,10 +625,21 @@ class LogStreamResponse(google.protobuf.message.Message):
         severity: builtins.str = ...,
         message: builtins.str = ...,
         source: jumpstarter.v1.common_pb2.LogSource.ValueType | None = ...,
+        driver_type: builtins.str | None = ...,
+        operation: builtins.str | None = ...,
+        timestamp: google.protobuf.timestamp_pb2.Timestamp | None = ...,
+        structured_fields: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["_source", b"_source", "source", b"source"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_source", b"_source", "message", b"message", "severity", b"severity", "source", b"source", "uuid", b"uuid"]) -> None: ...
+    def HasField(self, field_name: typing.Literal["_driver_type", b"_driver_type", "_operation", b"_operation", "_source", b"_source", "_timestamp", b"_timestamp", "driver_type", b"driver_type", "operation", b"operation", "source", b"source", "timestamp", b"timestamp"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["_driver_type", b"_driver_type", "_operation", b"_operation", "_source", b"_source", "_timestamp", b"_timestamp", "driver_type", b"driver_type", "message", b"message", "operation", b"operation", "severity", b"severity", "source", b"source", "structured_fields", b"structured_fields", "timestamp", b"timestamp", "uuid", b"uuid"]) -> None: ...
+    @typing.overload
+    def WhichOneof(self, oneof_group: typing.Literal["_driver_type", b"_driver_type"]) -> typing.Literal["driver_type"] | None: ...
+    @typing.overload
+    def WhichOneof(self, oneof_group: typing.Literal["_operation", b"_operation"]) -> typing.Literal["operation"] | None: ...
+    @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_source", b"_source"]) -> typing.Literal["source"] | None: ...
+    @typing.overload
+    def WhichOneof(self, oneof_group: typing.Literal["_timestamp", b"_timestamp"]) -> typing.Literal["timestamp"] | None: ...
 
 Global___LogStreamResponse: typing_extensions.TypeAlias = LogStreamResponse
 

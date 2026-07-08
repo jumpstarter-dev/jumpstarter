@@ -147,6 +147,8 @@ message Lease {
   // Allow leasing a disabled exporter. Only effective when exporter_name is set.
   // Useful for investigating broken exporters that have been administratively disabled.
   bool allow_disabled = 14 [(google.api.field_behavior) = IMMUTABLE];
+  // User-defined context metadata for the lease (e.g. build_id, image_digest, VCS ref).
+  map<string, string> context = 15 [(google.api.field_behavior) = IMMUTABLE];
 }
 
 // Request to retrieve an exporter.

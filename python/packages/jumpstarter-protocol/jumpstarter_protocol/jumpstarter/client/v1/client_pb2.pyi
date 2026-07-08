@@ -111,6 +111,22 @@ class Lease(google.protobuf.message.Message):
         ) -> None: ...
         def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
 
+    @typing.final
+    class ContextEntry(google.protobuf.message.Message):
+        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+        KEY_FIELD_NUMBER: builtins.int
+        VALUE_FIELD_NUMBER: builtins.int
+        key: builtins.str
+        value: builtins.str
+        def __init__(
+            self,
+            *,
+            key: builtins.str = ...,
+            value: builtins.str = ...,
+        ) -> None: ...
+        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+
     NAME_FIELD_NUMBER: builtins.int
     SELECTOR_FIELD_NUMBER: builtins.int
     DURATION_FIELD_NUMBER: builtins.int
@@ -125,6 +141,7 @@ class Lease(google.protobuf.message.Message):
     EXPORTER_NAME_FIELD_NUMBER: builtins.int
     TAGS_FIELD_NUMBER: builtins.int
     ALLOW_DISABLED_FIELD_NUMBER: builtins.int
+    CONTEXT_FIELD_NUMBER: builtins.int
     name: builtins.str
     """The resource name of the lease."""
     selector: builtins.str
@@ -171,6 +188,10 @@ class Lease(google.protobuf.message.Message):
     def tags(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
         """The set of tags associated with the lease."""
 
+    @property
+    def context(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+        """User-defined context metadata for the lease (e.g. build_id, image_digest, VCS ref)."""
+
     def __init__(
         self,
         *,
@@ -188,9 +209,10 @@ class Lease(google.protobuf.message.Message):
         exporter_name: builtins.str | None = ...,
         tags: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
         allow_disabled: builtins.bool = ...,
+        context: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "begin_time", b"begin_time", "client", b"client", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "allow_disabled", b"allow_disabled", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "name", b"name", "selector", b"selector", "tags", b"tags"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "allow_disabled", b"allow_disabled", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "context", b"context", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "name", b"name", "selector", b"selector", "tags", b"tags"]) -> None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_begin_time", b"_begin_time"]) -> typing.Literal["begin_time"] | None: ...
     @typing.overload
