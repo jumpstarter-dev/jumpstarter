@@ -264,3 +264,140 @@ class TestGetLogger:
 
         assert isinstance(logger, logging.Logger)
         # Should not raise any error
+
+
+class TestLogHandlerNewFields:
+    """Tests for LogStreamResponse enrichment fields (Phase 2)."""
+
+    def test_prepare_populates_driver_type(self) -> None:
+        """Test that driver_type extra is mapped to the proto field."""
+        queue = deque()
+        handler = LogHandler(queue, source=LogSource.DRIVER)
+
+        record = logging.LogRecord(
+            name="driver.power", level=logging.INFO,
+            pathname="driver.py", lineno=1, msg="Op started", args=(), exc_info=None,
+        )
+        record.driver_type = "power"
+
+        response = handler.prepare(record)
+
+        assert response.driver_type == "power"
+
+    def test_prepare_populates_operation(self) -> None:
+        """Test that operation extra is mapped to the proto field."""
+        queue = deque()
+        handler = LogHandler(queue, source=LogSource.DRIVER)
+
+        record = logging.LogRecord(
+            name="driver.power", level=logging.INFO,
+            pathname="driver.py", lineno=1, msg="Op started", args=(), exc_info=None,
+        )
+        record.operation = "power_on"
+
+        response = handler.prepare(record)
+
+        assert response.operation == "power_on"
+
+    def test_prepare_sets_timestamp(self) -> None:
+        """Test that timestamp is always set from record.created."""
+        queue = deque()
+        handler = LogHandler(queue, source=LogSource.SYSTEM)
+
+        record = logging.LogRecord(
+            name="test", level=logging.INFO,
+            pathname="test.py", lineno=1, msg="Test", args=(), exc_info=None,
+        )
+
+        response = handler.prepare(record)
+
+        assert response.HasField("timestamp")
+        assert response.timestamp.seconds > 0
+
+    def test_prepare_populates_structured_fields(self) -> None:
+        """Test that result, error_type, and correlation fields go into structured_fields."""
+        queue = deque()
+        handler = LogHandler(queue, source=LogSource.DRIVER)
+
+        record = logging.LogRecord(
+            name="driver.storage", level=logging.WARNING,
+            pathname="driver.py", lineno=1, msg="Op failed", args=(), exc_info=None,
+        )
+        record.result = "failure"
+        record.error_type = "timeout"
+        record.lease_id = "lease-abc"
+
+        response = handler.prepare(record)
+
+        assert response.structured_fields["result"] == "failure"
+        assert response.structured_fields["error_type"] == "timeout"
+        assert response.structured_fields["lease_id"] == "lease-abc"
+
+    def test_prepare_omits_empty_structured_fields(self) -> None:
+        """Test that structured_fields is empty when no relevant extras are set."""
+        queue = deque()
+        handler = LogHandler(queue, source=LogSource.SYSTEM)
+
+        record = logging.LogRecord(
+            name="test", level=logging.INFO,
+            pathname="test.py", lineno=1, msg="Plain msg", args=(), exc_info=None,
+        )
+
+        response = handler.prepare(record)
+
+        assert len(response.structured_fields) == 0
+
+    def test_prepare_without_driver_type_leaves_field_unset(self) -> None:
+        """Test that driver_type is not set when extra is absent."""
+        queue = deque()
+        handler = LogHandler(queue, source=LogSource.SYSTEM)
+
+        record = logging.LogRecord(
+            name="test", level=logging.INFO,
+            pathname="test.py", lineno=1, msg="Test", args=(), exc_info=None,
+        )
+
+        response = handler.prepare(record)
+
+        assert not response.HasField("driver_type")
+
+    def test_prepare_all_error_type_categories(self) -> None:
+        """Test that all defined error_type categories are captured correctly."""
+        queue = deque()
+        handler = LogHandler(queue, source=LogSource.DRIVER)
+
+        error_types = [
+            "not_implemented", "validation_error", "timeout",
+            "connection_error", "device_error", "internal_error",
+        ]
+        for error_type in error_types:
+            record = logging.LogRecord(
+                name="driver.test", level=logging.WARNING,
+                pathname="driver.py", lineno=1, msg="Op failed", args=(), exc_info=None,
+            )
+            record.error_type = error_type
+            record.result = "failure"
+            record.operation = "test_op"
+            record.driver_type = "power"
+
+            response = handler.prepare(record)
+
+            assert response.structured_fields["error_type"] == error_type
+            assert response.structured_fields["result"] == "failure"
+            assert response.driver_type == "power"
+            assert response.operation == "test_op"
+
+    def test_prepare_namespace_in_structured_fields(self) -> None:
+        """Test that namespace extra is included in structured_fields."""
+        queue = deque()
+        handler = LogHandler(queue, source=LogSource.SYSTEM)
+
+        record = logging.LogRecord(
+            name="test", level=logging.INFO,
+            pathname="test.py", lineno=1, msg="Test", args=(), exc_info=None,
+        )
+        record.namespace = "production"
+
+        response = handler.prepare(record)
+
+        assert response.structured_fields["namespace"] == "production"

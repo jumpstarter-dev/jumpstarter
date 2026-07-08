@@ -561,3 +561,101 @@ async def test_serve_tcp_passphrase_correct_no_warning_log(caplog):
     assert len(auth_warnings) == 0, (
         f"successful auth should not log warnings, got: {[r.message for r in auth_warnings]}"
     )
+
+
+# ============================================================================
+# LogStream integration tests (enriched fields)
+# ============================================================================
+
+
+@pytest.mark.anyio
+async def test_log_stream_returns_enriched_fields():
+    """LogStream returns messages with driver_type, operation, timestamp, and structured_fields."""
+    import logging
+
+    from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+    from jumpstarter.common import ExporterStatus
+
+    driver = SimpleDriver(description="log stream test")
+    session = Session(uuid=driver.uuid, labels=driver.labels, root_device=driver)
+
+    with session:
+        session.update_status(ExporterStatus.LEASE_READY)
+
+        # Inject a log message with enriched fields directly into the queue
+        test_logger = logging.getLogger("driver.test_stream")
+        test_logger.addHandler(session._logging_handler)
+        test_logger.setLevel(logging.INFO)
+
+        record = logging.LogRecord(
+            name="driver.power",
+            level=logging.INFO,
+            pathname="driver.py",
+            lineno=1,
+            msg="Power on completed",
+            args=(),
+            exc_info=None,
+        )
+        record.driver_type = "power"
+        record.operation = "power_on"
+        record.result = "success"
+        record.lease_id = "lease-123"
+
+        session._logging_handler.emit(record)
+
+        async with session.serve_tcp_async("127.0.0.1", 0) as bound_port:
+            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
+                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+
+                log_stream = stub.LogStream(empty_pb2.Empty())
+
+                msg = await log_stream.read()
+
+                assert msg.message == "Power on completed"
+                assert msg.severity == "INFO"
+                assert msg.driver_type == "power"
+                assert msg.operation == "power_on"
+                assert msg.HasField("timestamp")
+                assert msg.timestamp.seconds > 0
+                assert msg.structured_fields["result"] == "success"
+                assert msg.structured_fields["lease_id"] == "lease-123"
+
+                log_stream.cancel()
+
+
+@pytest.mark.anyio
+async def test_log_stream_without_enriched_fields():
+    """LogStream gracefully handles messages without enriched fields (backward compat)."""
+    import logging
+
+    from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+    from jumpstarter.common import ExporterStatus
+
+    driver = SimpleDriver(description="plain log test")
+    session = Session(uuid=driver.uuid, labels=driver.labels, root_device=driver)
+
+    with session:
+        session.update_status(ExporterStatus.LEASE_READY)
+
+        test_logger = logging.getLogger("system.plain")
+        test_logger.addHandler(session._logging_handler)
+        test_logger.setLevel(logging.INFO)
+        test_logger.info("Simple message")
+
+        async with session.serve_tcp_async("127.0.0.1", 0) as bound_port:
+            async with grpc.aio.insecure_channel(f"127.0.0.1:{bound_port}") as channel:
+                stub = jumpstarter_pb2_grpc.ExporterServiceStub(channel)
+
+                log_stream = stub.LogStream(empty_pb2.Empty())
+                msg = await log_stream.read()
+
+                assert msg.message == "Simple message"
+                assert msg.severity == "INFO"
+                assert not msg.HasField("driver_type")
+                assert not msg.HasField("operation")
+                assert msg.HasField("timestamp")
+                assert len(msg.structured_fields) == 0
+
+                log_stream.cancel()

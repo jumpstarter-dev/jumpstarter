@@ -724,3 +724,63 @@ async def test_list_exporters_show_hidden_labels_defaults_false():
 
     call_args = mock_stub.ListExporters.call_args[0][0]
     assert call_args.show_hidden_labels is False
+
+
+@pytest.mark.anyio
+async def test_create_lease_sets_context_on_protobuf():
+    from jumpstarter_protocol import client_pb2
+
+    mock_channel = Mock()
+
+    response_lease = client_pb2.Lease(
+        selector="board=rpi4",
+        client="namespaces/default/clients/test-client",
+    )
+    response_lease.name = "namespaces/default/leases/test-lease"
+    response_lease.context["build_id"] = "abc123"
+    response_lease.context["image_digest"] = "sha256:deadbeef"
+    response_lease.duration.FromTimedelta(timedelta(hours=1))
+
+    mock_stub = Mock()
+    mock_stub.CreateLease = AsyncMock(return_value=response_lease)
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+    svc.stub = mock_stub
+
+    result = await svc.CreateLease(
+        selector="board=rpi4",
+        duration=timedelta(hours=1),
+        context={"build_id": "abc123", "image_digest": "sha256:deadbeef"},
+    )
+
+    call_args = mock_stub.CreateLease.call_args[0][0]
+    assert dict(call_args.lease.context) == {"build_id": "abc123", "image_digest": "sha256:deadbeef"}
+    assert result.context == {"build_id": "abc123", "image_digest": "sha256:deadbeef"}
+
+
+@pytest.mark.anyio
+async def test_create_lease_no_context_leaves_field_empty():
+    from jumpstarter_protocol import client_pb2
+
+    mock_channel = Mock()
+
+    response_lease = client_pb2.Lease(
+        selector="board=rpi4",
+        client="namespaces/default/clients/test-client",
+    )
+    response_lease.name = "namespaces/default/leases/test-lease"
+    response_lease.duration.FromTimedelta(timedelta(hours=1))
+
+    mock_stub = Mock()
+    mock_stub.CreateLease = AsyncMock(return_value=response_lease)
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+    svc.stub = mock_stub
+
+    await svc.CreateLease(
+        selector="board=rpi4",
+        duration=timedelta(hours=1),
+    )
+
+    call_args = mock_stub.CreateLease.call_args[0][0]
+    assert len(call_args.lease.context) == 0

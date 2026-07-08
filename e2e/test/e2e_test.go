@@ -398,6 +398,45 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 			MustJmp("delete", "leases", "--all")
 		})
 
+		It("can create a lease with context metadata", func() {
+			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
+			MustJmp("config", "client", "use", "test-client-oidc")
+
+			out := MustJmp("create", "lease",
+				"--selector", "example.com/board=oidc",
+				"--duration", "1d",
+				"--context", "build_id=nightly-42",
+				"--context", "image_digest=sha256:abc",
+				"-o", "yaml")
+
+			// Verify context appears in the lease YAML output
+			Expect(out).To(ContainSubstring("build_id"))
+			Expect(out).To(ContainSubstring("nightly-42"))
+			Expect(out).To(ContainSubstring("image_digest"))
+			Expect(out).To(ContainSubstring("sha256:abc"))
+
+			// Verify via kubectl that the CRD has context in spec
+			tmpFile, tmpErr := os.CreateTemp("", "lease-ctx-*.yaml")
+			Expect(tmpErr).NotTo(HaveOccurred())
+			defer os.Remove(tmpFile.Name())
+			_, tmpErr = tmpFile.WriteString(out)
+			Expect(tmpErr).NotTo(HaveOccurred())
+			tmpFile.Close()
+
+			leaseName := MustReadYAMLField(tmpFile.Name(), "name")
+			ns := os.Getenv("JMP_NAMESPACE")
+			if ns == "" {
+				ns = "default"
+			}
+
+			kubectlOut := MustKubectl("get", "lease.jumpstarter.dev", leaseName,
+				"-n", ns, "-o", "jsonpath={.spec.context}")
+			Expect(kubectlOut).To(ContainSubstring("build_id"))
+			Expect(kubectlOut).To(ContainSubstring("nightly-42"))
+
+			MustJmp("delete", "leases", "--all")
+		})
+
 		It("paginated lease listing returns all leases", func() {
 			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
 			MustJmp("config", "client", "use", "test-client-oidc")
