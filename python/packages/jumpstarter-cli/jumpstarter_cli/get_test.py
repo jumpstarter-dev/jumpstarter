@@ -222,11 +222,11 @@ class TestGetExportersCallsPaginatedMethod:
 
         with patch("jumpstarter_cli.get.model_print"):
             get_exporters.callback.__wrapped__.__wrapped__(
-                config=config, selector=None, output="text", with_options=[]
+                config=config, selector=None, output="text", with_options=[], allow_disabled=False
             )
 
         config.list_exporters.assert_called_once_with(
-            filter=None, include_leases=False, include_online=False, include_status=False
+            filter=None, include_leases=False, include_online=False, include_status=False, include_disabled=False
         )
 
     def test_get_leases_calls_list_leases(self):
