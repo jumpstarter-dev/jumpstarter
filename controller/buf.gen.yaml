@@ -18,6 +18,4 @@ plugins:
     out: internal/protocol
     opt: paths=source_relative
 inputs:
-  - git_repo: https://github.com/jumpstarter-dev/jumpstarter-protocol.git
-    branch: main
-    subdir: proto
+  - directory: ../protocol/proto

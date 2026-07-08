@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta
 from io import StringIO
 from unittest.mock import AsyncMock, Mock, patch
@@ -9,6 +10,7 @@ from rich.table import Table
 from jumpstarter.client.grpc import (
     ClientService,
     Exporter,
+    ExporterList,
     Lease,
     WithOptions,
     add_display_columns,
@@ -113,6 +115,24 @@ class TestAddExporterRow:
 
         assert len(table.rows) == 1
         assert len(table.columns) == 6  # NAME, ONLINE, LABELS, LEASED BY, LEASE STATUS, RELEASE TIME
+
+
+class TestWithDisabledOption:
+    def test_show_disabled_adds_enabled_column(self):
+        table = Table()
+        options = WithOptions(show_disabled=True)
+        add_display_columns(table, options)
+        columns = [col.header for col in table.columns]
+        assert columns == ["NAME", "ENABLED", "LABELS"]
+
+    def test_show_disabled_adds_enabled_value_to_row(self):
+        table = Table()
+        options = WithOptions(show_disabled=True)
+        add_display_columns(table, options)
+        exporter = Exporter(namespace="default", name="test", labels={}, enabled=False)
+        add_exporter_row(table, exporter, options)
+        assert len(table.rows) == 1
+        assert len(table.columns) == 3  # NAME, ENABLED, LABELS
 
 
 class TestExporterList:
@@ -376,6 +396,108 @@ class TestExporterList:
         assert "my-client" in output
         assert "Scheduled" in output
         assert "2023-01-01 11:00:00" in output  # begin_time (10:00) + duration (1h)
+
+
+class TestExporterListDisabledFiltering:
+    """Tests for ExporterList filtering of disabled exporters."""
+
+    def test_visible_exporters_hides_disabled_by_default(self):
+        exporters = [
+            Exporter(namespace="default", name="enabled-1", labels={}, enabled=True),
+            Exporter(namespace="default", name="disabled-1", labels={}, enabled=False),
+            Exporter(namespace="default", name="enabled-2", labels={}, enabled=True),
+        ]
+        el = ExporterList(exporters=exporters, next_page_token=None)
+        visible = el._visible_exporters()
+        assert len(visible) == 2
+        assert [e.name for e in visible] == ["enabled-1", "enabled-2"]
+
+    def test_visible_exporters_shows_all_when_include_disabled(self):
+        exporters = [
+            Exporter(namespace="default", name="enabled-1", labels={}, enabled=True),
+            Exporter(namespace="default", name="disabled-1", labels={}, enabled=False),
+        ]
+        el = ExporterList(exporters=exporters, next_page_token=None, include_disabled=True)
+        visible = el._visible_exporters()
+        assert len(visible) == 2
+
+    def test_rich_add_rows_skips_disabled(self):
+        exporters = [
+            Exporter(namespace="default", name="enabled", labels={}, enabled=True),
+            Exporter(namespace="default", name="disabled", labels={}, enabled=False),
+        ]
+        el = ExporterList(exporters=exporters, next_page_token=None)
+        table = Table()
+        el.rich_add_columns(table)
+        el.rich_add_rows(table)
+        assert len(table.rows) == 1
+
+    def test_rich_add_rows_includes_disabled_when_requested(self):
+        exporters = [
+            Exporter(namespace="default", name="enabled", labels={}, enabled=True),
+            Exporter(namespace="default", name="disabled", labels={}, enabled=False),
+        ]
+        el = ExporterList(exporters=exporters, next_page_token=None, include_disabled=True)
+        table = Table()
+        el.rich_add_columns(table)
+        el.rich_add_rows(table)
+        assert len(table.rows) == 2
+        # Should have ENABLED column when include_disabled is set
+        columns = [col.header for col in table.columns]
+        assert "ENABLED" in columns
+
+    def test_rich_add_names_skips_disabled(self):
+        exporters = [
+            Exporter(namespace="default", name="enabled", labels={}, enabled=True),
+            Exporter(namespace="default", name="disabled", labels={}, enabled=False),
+        ]
+        el = ExporterList(exporters=exporters, next_page_token=None)
+        names = []
+        el.rich_add_names(names)
+        assert names == ["enabled"]
+
+    def test_model_dump_json_filters_disabled(self):
+        exporters = [
+            Exporter(namespace="default", name="enabled", labels={}, enabled=True),
+            Exporter(namespace="default", name="disabled", labels={}, enabled=False),
+        ]
+        el = ExporterList(exporters=exporters, next_page_token=None)
+        result = json.loads(el.model_dump_json())
+        assert len(result["exporters"]) == 1
+        assert result["exporters"][0]["name"] == "enabled"
+        # enabled field should be excluded from output when include_disabled is False
+        assert "enabled" not in result["exporters"][0]
+
+    def test_model_dump_json_includes_disabled_when_requested(self):
+        exporters = [
+            Exporter(namespace="default", name="enabled", labels={}, enabled=True),
+            Exporter(namespace="default", name="disabled", labels={}, enabled=False),
+        ]
+        el = ExporterList(exporters=exporters, next_page_token=None, include_disabled=True)
+        result = json.loads(el.model_dump_json())
+        assert len(result["exporters"]) == 2
+        # enabled field should be included in output
+        assert result["exporters"][0]["enabled"] is True
+        assert result["exporters"][1]["enabled"] is False
+
+    def test_model_dump_filters_disabled(self):
+        exporters = [
+            Exporter(namespace="default", name="enabled", labels={}, enabled=True),
+            Exporter(namespace="default", name="disabled", labels={}, enabled=False),
+        ]
+        el = ExporterList(exporters=exporters, next_page_token=None)
+        result = el.model_dump()
+        assert len(result["exporters"]) == 1
+        assert result["exporters"][0]["name"] == "enabled"
+
+    def test_model_dump_includes_disabled_when_requested(self):
+        exporters = [
+            Exporter(namespace="default", name="enabled", labels={}, enabled=True),
+            Exporter(namespace="default", name="disabled", labels={}, enabled=False),
+        ]
+        el = ExporterList(exporters=exporters, next_page_token=None, include_disabled=True)
+        result = el.model_dump()
+        assert len(result["exporters"]) == 2
 
 
 class TestLeaseRichDisplay:

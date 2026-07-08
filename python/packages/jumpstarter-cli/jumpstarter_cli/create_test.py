@@ -23,6 +23,7 @@ def test_create_lease_passes_exporter_name_to_config():
             begin_time=None,
             lease_id=None,
             tags=(),
+            allow_disabled=False,
             output="yaml",
         )
 
@@ -33,6 +34,7 @@ def test_create_lease_passes_exporter_name_to_config():
         begin_time=None,
         lease_id=None,
         tags=None,
+        allow_disabled=False,
     )
     model_print.assert_called_once_with(lease, "yaml")
 
@@ -47,6 +49,7 @@ def test_create_lease_requires_selector_or_name():
             begin_time=None,
             lease_id=None,
             tags=(),
+            allow_disabled=False,
             output="yaml",
         )
 
@@ -65,6 +68,7 @@ def test_create_lease_passes_tags_to_config():
             begin_time=None,
             lease_id=None,
             tags=("team=devops", "ci-job=12345"),
+            allow_disabled=False,
             output="yaml",
         )
 
@@ -75,6 +79,7 @@ def test_create_lease_passes_tags_to_config():
         begin_time=None,
         lease_id=None,
         tags={"team": "devops", "ci-job": "12345"},
+        allow_disabled=False,
     )
 
 
@@ -92,6 +97,7 @@ def test_create_lease_empty_tags_passes_none():
             begin_time=None,
             lease_id=None,
             tags=(),
+            allow_disabled=False,
             output="yaml",
         )
 
@@ -102,6 +108,7 @@ def test_create_lease_empty_tags_passes_none():
         begin_time=None,
         lease_id=None,
         tags=None,
+        allow_disabled=False,
     )
 
 
@@ -115,5 +122,6 @@ def test_create_lease_invalid_tag_format():
             begin_time=None,
             lease_id=None,
             tags=("invalid-no-equals",),
+            allow_disabled=False,
             output="yaml",
         )

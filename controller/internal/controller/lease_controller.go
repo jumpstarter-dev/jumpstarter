@@ -248,6 +248,17 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 				)
 				return nil
 			}
+			// Check if the explicitly requested exporter is disabled
+			if !exporter.IsEnabled() && !lease.Spec.AllowDisabled {
+				lease.SetStatusUnsatisfiable(
+					"ExporterDisabled",
+					"Requested exporter %s is disabled. "+
+						"To lease a disabled exporter, set spec.allowDisabled: true on the Lease, "+
+						"or use --allow-disabled with jmp create lease",
+					exporter.Name,
+				)
+				return nil
+			}
 			matchingExporters = []jumpstarterdevv1alpha1.Exporter{exporter}
 		} else {
 			// List all exporters matching selector
@@ -255,7 +266,16 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			if err != nil {
 				return fmt.Errorf("reconcileStatusExporterRef: failed to list matching exporters: %w", err)
 			}
-			matchingExporters = listed.Items
+			// Filter out disabled exporters from selector-based listing
+			matchingExporters = filterOutDisabledExporters(listed.Items)
+			if len(matchingExporters) == 0 && len(listed.Items) > 0 {
+				lease.SetStatusUnsatisfiable(
+					"AllDisabled",
+					"All %d exporters matching the selector are disabled",
+					len(listed.Items),
+				)
+				return nil
+			}
 		}
 
 		approvedExporters, unmatchedDescriptions, err := r.attachMatchingPolicies(ctx, lease, matchingExporters)
@@ -567,6 +587,17 @@ func filterOutNotReadyExporters(approvedExporters []ApprovedExporter) []Approved
 			return status != jumpstarterdevv1alpha1.ExporterStatusAvailable &&
 				status != jumpstarterdevv1alpha1.ExporterStatusUnspecified &&
 				status != ""
+		},
+	)
+}
+
+// filterOutDisabledExporters removes exporters that have spec.enabled set to false.
+// Exporters with nil Enabled (backward compatibility) or Enabled=true are kept.
+func filterOutDisabledExporters(exporters []jumpstarterdevv1alpha1.Exporter) []jumpstarterdevv1alpha1.Exporter {
+	return slices.DeleteFunc(
+		slices.Clone(exporters),
+		func(exporter jumpstarterdevv1alpha1.Exporter) bool {
+			return !exporter.IsEnabled()
 		},
 	)
 }

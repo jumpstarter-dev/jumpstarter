@@ -31,6 +31,8 @@ DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
 
 @typing.final
 class Exporter(google.protobuf.message.Message):
+    """An exporter resource representing a registered device provider."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     @typing.final
@@ -54,12 +56,23 @@ class Exporter(google.protobuf.message.Message):
     ONLINE_FIELD_NUMBER: builtins.int
     STATUS_FIELD_NUMBER: builtins.int
     STATUS_MESSAGE_FIELD_NUMBER: builtins.int
+    ENABLED_FIELD_NUMBER: builtins.int
     name: builtins.str
+    """The resource name of the exporter."""
     online: builtins.bool
+    """Whether the exporter is currently online. Deprecated in favor of the status field."""
     status: jumpstarter.v1.common_pb2.ExporterStatus.ValueType
+    """The current status of the exporter."""
     status_message: builtins.str
+    """A human-readable message providing details about the exporter status."""
+    enabled: builtins.bool
+    """Whether the exporter is enabled for lease assignment.
+    When false, the controller will not assign new leases to this exporter.
+    """
     @property
-    def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]: ...
+    def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+        """The set of labels associated with the exporter."""
+
     def __init__(
         self,
         *,
@@ -68,13 +81,18 @@ class Exporter(google.protobuf.message.Message):
         online: builtins.bool = ...,
         status: jumpstarter.v1.common_pb2.ExporterStatus.ValueType = ...,
         status_message: builtins.str = ...,
+        enabled: builtins.bool | None = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["labels", b"labels", "name", b"name", "online", b"online", "status", b"status", "status_message", b"status_message"]) -> None: ...
+    def HasField(self, field_name: typing.Literal["_enabled", b"_enabled", "enabled", b"enabled"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["_enabled", b"_enabled", "enabled", b"enabled", "labels", b"labels", "name", b"name", "online", b"online", "status", b"status", "status_message", b"status_message"]) -> None: ...
+    def WhichOneof(self, oneof_group: typing.Literal["_enabled", b"_enabled"]) -> typing.Literal["enabled"] | None: ...
 
 Global___Exporter: typing_extensions.TypeAlias = Exporter
 
 @typing.final
 class Lease(google.protobuf.message.Message):
+    """A lease resource representing a reservation of an exporter."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     @typing.final
@@ -106,27 +124,53 @@ class Lease(google.protobuf.message.Message):
     CONDITIONS_FIELD_NUMBER: builtins.int
     EXPORTER_NAME_FIELD_NUMBER: builtins.int
     TAGS_FIELD_NUMBER: builtins.int
+    ALLOW_DISABLED_FIELD_NUMBER: builtins.int
     name: builtins.str
+    """The resource name of the lease."""
     selector: builtins.str
+    """The label selector expression used to match an exporter."""
     client: builtins.str
+    """The resource name of the client that owns this lease."""
     exporter: builtins.str
+    """The resource name of the exporter assigned to this lease."""
     exporter_name: builtins.str
+    """The name of a specific exporter to target for the lease."""
+    allow_disabled: builtins.bool
+    """Allow leasing a disabled exporter. Only effective when exporter_name is set.
+    Useful for investigating broken exporters that have been administratively disabled.
+    """
     @property
-    def duration(self) -> google.protobuf.duration_pb2.Duration: ...
+    def duration(self) -> google.protobuf.duration_pb2.Duration:
+        """The requested duration of the lease."""
+
     @property
-    def effective_duration(self) -> google.protobuf.duration_pb2.Duration: ...
+    def effective_duration(self) -> google.protobuf.duration_pb2.Duration:
+        """The server-computed effective duration of the lease."""
+
     @property
-    def begin_time(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
+    def begin_time(self) -> google.protobuf.timestamp_pb2.Timestamp:
+        """The requested begin time of the lease."""
+
     @property
-    def effective_begin_time(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
+    def effective_begin_time(self) -> google.protobuf.timestamp_pb2.Timestamp:
+        """The server-computed effective begin time of the lease."""
+
     @property
-    def end_time(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
+    def end_time(self) -> google.protobuf.timestamp_pb2.Timestamp:
+        """The requested end time of the lease."""
+
     @property
-    def effective_end_time(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
+    def effective_end_time(self) -> google.protobuf.timestamp_pb2.Timestamp:
+        """The server-computed effective end time of the lease."""
+
     @property
-    def conditions(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[jumpstarter.v1.kubernetes_pb2.Condition]: ...
+    def conditions(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[jumpstarter.v1.kubernetes_pb2.Condition]:
+        """The list of conditions reflecting the current state of the lease."""
+
     @property
-    def tags(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]: ...
+    def tags(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+        """The set of tags associated with the lease."""
+
     def __init__(
         self,
         *,
@@ -143,9 +187,10 @@ class Lease(google.protobuf.message.Message):
         conditions: collections.abc.Iterable[jumpstarter.v1.kubernetes_pb2.Condition] | None = ...,
         exporter_name: builtins.str | None = ...,
         tags: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
+        allow_disabled: builtins.bool = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "begin_time", b"begin_time", "client", b"client", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "name", b"name", "selector", b"selector", "tags", b"tags"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "allow_disabled", b"allow_disabled", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "name", b"name", "selector", b"selector", "tags", b"tags"]) -> None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_begin_time", b"_begin_time"]) -> typing.Literal["begin_time"] | None: ...
     @typing.overload
@@ -167,10 +212,13 @@ Global___Lease: typing_extensions.TypeAlias = Lease
 
 @typing.final
 class GetExporterRequest(google.protobuf.message.Message):
+    """Request to retrieve an exporter."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     NAME_FIELD_NUMBER: builtins.int
     name: builtins.str
+    """The resource name of the exporter."""
     def __init__(
         self,
         *,
@@ -182,6 +230,8 @@ Global___GetExporterRequest: typing_extensions.TypeAlias = GetExporterRequest
 
 @typing.final
 class ListExportersRequest(google.protobuf.message.Message):
+    """Request to list exporters."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     PARENT_FIELD_NUMBER: builtins.int
@@ -189,9 +239,13 @@ class ListExportersRequest(google.protobuf.message.Message):
     PAGE_TOKEN_FIELD_NUMBER: builtins.int
     FILTER_FIELD_NUMBER: builtins.int
     parent: builtins.str
+    """The parent resource name (namespace)."""
     page_size: builtins.int
+    """Maximum number of results to return."""
     page_token: builtins.str
+    """Token for retrieving the next page of results."""
     filter: builtins.str
+    """Filter expression for the results."""
     def __init__(
         self,
         *,
@@ -206,13 +260,18 @@ Global___ListExportersRequest: typing_extensions.TypeAlias = ListExportersReques
 
 @typing.final
 class ListExportersResponse(google.protobuf.message.Message):
+    """Response containing a list of exporters."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     EXPORTERS_FIELD_NUMBER: builtins.int
     NEXT_PAGE_TOKEN_FIELD_NUMBER: builtins.int
     next_page_token: builtins.str
+    """Token for the next page of results."""
     @property
-    def exporters(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___Exporter]: ...
+    def exporters(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___Exporter]:
+        """The list of exporters."""
+
     def __init__(
         self,
         *,
@@ -225,10 +284,13 @@ Global___ListExportersResponse: typing_extensions.TypeAlias = ListExportersRespo
 
 @typing.final
 class GetLeaseRequest(google.protobuf.message.Message):
+    """Request to retrieve a lease."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     NAME_FIELD_NUMBER: builtins.int
     name: builtins.str
+    """The resource name of the lease."""
     def __init__(
         self,
         *,
@@ -240,6 +302,8 @@ Global___GetLeaseRequest: typing_extensions.TypeAlias = GetLeaseRequest
 
 @typing.final
 class ListLeasesRequest(google.protobuf.message.Message):
+    """Request to list leases."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     PARENT_FIELD_NUMBER: builtins.int
@@ -249,11 +313,17 @@ class ListLeasesRequest(google.protobuf.message.Message):
     ONLY_ACTIVE_FIELD_NUMBER: builtins.int
     TAG_FILTER_FIELD_NUMBER: builtins.int
     parent: builtins.str
+    """The parent resource name (namespace)."""
     page_size: builtins.int
+    """Maximum number of results to return."""
     page_token: builtins.str
+    """Token for retrieving the next page of results."""
     filter: builtins.str
+    """Filter expression for the results."""
     only_active: builtins.bool
+    """If true, return only active leases."""
     tag_filter: builtins.str
+    """Filter expression for lease tags."""
     def __init__(
         self,
         *,
@@ -272,13 +342,18 @@ Global___ListLeasesRequest: typing_extensions.TypeAlias = ListLeasesRequest
 
 @typing.final
 class ListLeasesResponse(google.protobuf.message.Message):
+    """Response containing a list of leases."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     LEASES_FIELD_NUMBER: builtins.int
     NEXT_PAGE_TOKEN_FIELD_NUMBER: builtins.int
     next_page_token: builtins.str
+    """Token for the next page of results."""
     @property
-    def leases(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___Lease]: ...
+    def leases(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___Lease]:
+        """The list of leases."""
+
     def __init__(
         self,
         *,
@@ -291,15 +366,21 @@ Global___ListLeasesResponse: typing_extensions.TypeAlias = ListLeasesResponse
 
 @typing.final
 class CreateLeaseRequest(google.protobuf.message.Message):
+    """Request to create a lease."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     PARENT_FIELD_NUMBER: builtins.int
     LEASE_ID_FIELD_NUMBER: builtins.int
     LEASE_FIELD_NUMBER: builtins.int
     parent: builtins.str
+    """The parent resource name (namespace)."""
     lease_id: builtins.str
+    """The client-assigned identifier for the lease."""
     @property
-    def lease(self) -> Global___Lease: ...
+    def lease(self) -> Global___Lease:
+        """The lease resource to create."""
+
     def __init__(
         self,
         *,
@@ -314,14 +395,20 @@ Global___CreateLeaseRequest: typing_extensions.TypeAlias = CreateLeaseRequest
 
 @typing.final
 class UpdateLeaseRequest(google.protobuf.message.Message):
+    """Request to update a lease."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     LEASE_FIELD_NUMBER: builtins.int
     UPDATE_MASK_FIELD_NUMBER: builtins.int
     @property
-    def lease(self) -> Global___Lease: ...
+    def lease(self) -> Global___Lease:
+        """The lease resource with updated fields."""
+
     @property
-    def update_mask(self) -> google.protobuf.field_mask_pb2.FieldMask: ...
+    def update_mask(self) -> google.protobuf.field_mask_pb2.FieldMask:
+        """The set of fields to update."""
+
     def __init__(
         self,
         *,
@@ -335,10 +422,13 @@ Global___UpdateLeaseRequest: typing_extensions.TypeAlias = UpdateLeaseRequest
 
 @typing.final
 class DeleteLeaseRequest(google.protobuf.message.Message):
+    """Request to delete a lease."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     NAME_FIELD_NUMBER: builtins.int
     name: builtins.str
+    """The resource name of the lease."""
     def __init__(
         self,
         *,
@@ -350,10 +440,13 @@ Global___DeleteLeaseRequest: typing_extensions.TypeAlias = DeleteLeaseRequest
 
 @typing.final
 class RotateTokenRequest(google.protobuf.message.Message):
+    """Request to rotate the authentication token for a client."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     PARENT_FIELD_NUMBER: builtins.int
     parent: builtins.str
+    """The parent resource name (namespace)."""
     def __init__(
         self,
         *,
@@ -365,13 +458,18 @@ Global___RotateTokenRequest: typing_extensions.TypeAlias = RotateTokenRequest
 
 @typing.final
 class RotateTokenResponse(google.protobuf.message.Message):
+    """Response containing the newly rotated token."""
+
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     TOKEN_FIELD_NUMBER: builtins.int
     EXPIRY_FIELD_NUMBER: builtins.int
     token: builtins.str
+    """The new authentication token."""
     @property
-    def expiry(self) -> google.protobuf.timestamp_pb2.Timestamp: ...
+    def expiry(self) -> google.protobuf.timestamp_pb2.Timestamp:
+        """The expiration time of the new token."""
+
     def __init__(
         self,
         *,

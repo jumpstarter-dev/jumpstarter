@@ -40,14 +40,24 @@ const (
 // ClientServiceClient is the client API for ClientService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// Client-facing API service for managing exporters and leases.
 type ClientServiceClient interface {
+	// Retrieve a single exporter by resource name.
 	GetExporter(ctx context.Context, in *GetExporterRequest, opts ...grpc.CallOption) (*Exporter, error)
+	// List exporters in a namespace with optional filtering.
 	ListExporters(ctx context.Context, in *ListExportersRequest, opts ...grpc.CallOption) (*ListExportersResponse, error)
+	// Retrieve a single lease by resource name.
 	GetLease(ctx context.Context, in *GetLeaseRequest, opts ...grpc.CallOption) (*Lease, error)
+	// List leases in a namespace with optional filtering.
 	ListLeases(ctx context.Context, in *ListLeasesRequest, opts ...grpc.CallOption) (*ListLeasesResponse, error)
+	// Create a new lease for an exporter.
 	CreateLease(ctx context.Context, in *CreateLeaseRequest, opts ...grpc.CallOption) (*Lease, error)
+	// Update an existing lease.
 	UpdateLease(ctx context.Context, in *UpdateLeaseRequest, opts ...grpc.CallOption) (*Lease, error)
+	// Delete a lease by resource name.
 	DeleteLease(ctx context.Context, in *DeleteLeaseRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Rotate the authentication token for the client.
 	RotateToken(ctx context.Context, in *RotateTokenRequest, opts ...grpc.CallOption) (*RotateTokenResponse, error)
 }
 
@@ -142,14 +152,24 @@ func (c *clientServiceClient) RotateToken(ctx context.Context, in *RotateTokenRe
 // ClientServiceServer is the server API for ClientService service.
 // All implementations must embed UnimplementedClientServiceServer
 // for forward compatibility.
+//
+// Client-facing API service for managing exporters and leases.
 type ClientServiceServer interface {
+	// Retrieve a single exporter by resource name.
 	GetExporter(context.Context, *GetExporterRequest) (*Exporter, error)
+	// List exporters in a namespace with optional filtering.
 	ListExporters(context.Context, *ListExportersRequest) (*ListExportersResponse, error)
+	// Retrieve a single lease by resource name.
 	GetLease(context.Context, *GetLeaseRequest) (*Lease, error)
+	// List leases in a namespace with optional filtering.
 	ListLeases(context.Context, *ListLeasesRequest) (*ListLeasesResponse, error)
+	// Create a new lease for an exporter.
 	CreateLease(context.Context, *CreateLeaseRequest) (*Lease, error)
+	// Update an existing lease.
 	UpdateLease(context.Context, *UpdateLeaseRequest) (*Lease, error)
+	// Delete a lease by resource name.
 	DeleteLease(context.Context, *DeleteLeaseRequest) (*emptypb.Empty, error)
+	// Rotate the authentication token for the client.
 	RotateToken(context.Context, *RotateTokenRequest) (*RotateTokenResponse, error)
 	mustEmbedUnimplementedClientServiceServer()
 }

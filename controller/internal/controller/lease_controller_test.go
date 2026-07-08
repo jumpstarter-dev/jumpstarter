@@ -743,6 +743,100 @@ var _ = Describe("Lease Controller", func() {
 			Expect(updatedExporter.Status.LeaseRef).To(BeNil())
 		})
 	})
+
+	When("trying to lease a disabled exporter by ExporterRef", func() {
+		It("should fail with ExporterDisabled reason and helpful message", func() {
+			ctx := context.Background()
+			setExporterEnabled(ctx, testExporter1DutA.Name, false)
+
+			lease := leaseDutA2Sec.DeepCopy()
+			lease.Spec.Selector.MatchLabels = nil
+			lease.Spec.ExporterRef = &corev1.LocalObjectReference{Name: testExporter1DutA.Name}
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).To(BeNil())
+			condition := meta.FindStatusCondition(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+			)
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Reason).To(Equal("ExporterDisabled"))
+			Expect(condition.Message).To(ContainSubstring("is disabled"))
+			Expect(condition.Message).To(ContainSubstring("allowDisabled"))
+			Expect(condition.Message).To(ContainSubstring("--allow-disabled"))
+
+			// Restore for subsequent tests
+			setExporterEnabled(ctx, testExporter1DutA.Name, true)
+		})
+	})
+
+	When("trying to lease a disabled exporter with allowDisabled", func() {
+		It("should succeed when ExporterRef and AllowDisabled are set", func() {
+			ctx := context.Background()
+			setExporterEnabled(ctx, testExporter1DutA.Name, false)
+
+			lease := leaseDutA2Sec.DeepCopy()
+			lease.Spec.Selector.MatchLabels = nil
+			lease.Spec.ExporterRef = &corev1.LocalObjectReference{Name: testExporter1DutA.Name}
+			lease.Spec.AllowDisabled = true
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			Expect(updatedLease.Status.ExporterRef.Name).To(Equal(testExporter1DutA.Name))
+
+			// Restore for subsequent tests
+			setExporterEnabled(ctx, testExporter1DutA.Name, true)
+		})
+	})
+
+	When("trying to lease with selector and some exporters disabled", func() {
+		It("should skip disabled exporters and lease an enabled one", func() {
+			ctx := context.Background()
+			// Disable one of the two dut=a exporters
+			setExporterEnabled(ctx, testExporter1DutA.Name, false)
+
+			lease := leaseDutA2Sec.DeepCopy()
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil())
+			// Should only get the enabled exporter
+			Expect(updatedLease.Status.ExporterRef.Name).To(Equal(testExporter2DutA.Name))
+
+			// Restore for subsequent tests
+			setExporterEnabled(ctx, testExporter1DutA.Name, true)
+		})
+
+		It("should be unsatisfiable when all matching exporters are disabled", func() {
+			ctx := context.Background()
+			setExporterEnabled(ctx, testExporter1DutA.Name, false)
+			setExporterEnabled(ctx, testExporter2DutA.Name, false)
+
+			lease := leaseDutA2Sec.DeepCopy()
+
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			_ = reconcileLease(ctx, lease)
+
+			updatedLease := getLease(ctx, lease.Name)
+			Expect(updatedLease.Status.ExporterRef).To(BeNil())
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+			)).To(BeTrue())
+
+			// Restore for subsequent tests
+			setExporterEnabled(ctx, testExporter1DutA.Name, true)
+			setExporterEnabled(ctx, testExporter2DutA.Name, true)
+		})
+	})
 })
 
 var testExporter1DutA = &jumpstarterdevv1alpha1.Exporter{
@@ -799,6 +893,13 @@ func setExporterOnlineConditions(ctx context.Context, name string, status metav1
 		exporter.Status.StatusMessage = "Offline"
 	}
 	Expect(k8sClient.Status().Update(ctx, exporter)).To(Succeed())
+}
+
+// setExporterEnabled updates an exporter's spec.enabled field.
+func setExporterEnabled(ctx context.Context, name string, enabled bool) {
+	exporter := getExporter(ctx, name)
+	exporter.Spec.Enabled = &enabled
+	Expect(k8sClient.Update(ctx, exporter)).To(Succeed())
 }
 
 // setExporterNotReady sets an exporter as online and registered but NOT ready
@@ -1026,6 +1127,78 @@ var _ = Describe("orderApprovedExporters", func() {
 			Expect(ordered[4].Exporter.Name).To(Equal(testExporter2DutA.Name))
 
 		})
+	})
+})
+
+var _ = Describe("filterOutDisabledExporters", func() {
+	boolTrue := true
+	boolFalse := false
+
+	It("should keep exporters with nil Enabled (backward compat)", func() {
+		exporters := []jumpstarterdevv1alpha1.Exporter{
+			{ObjectMeta: metav1.ObjectMeta{Name: "nil-enabled"}},
+		}
+		result := filterOutDisabledExporters(exporters)
+		Expect(result).To(HaveLen(1))
+		Expect(result[0].Name).To(Equal("nil-enabled"))
+	})
+
+	It("should keep exporters with Enabled=true", func() {
+		exporters := []jumpstarterdevv1alpha1.Exporter{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "enabled"},
+				Spec:       jumpstarterdevv1alpha1.ExporterSpec{Enabled: &boolTrue},
+			},
+		}
+		result := filterOutDisabledExporters(exporters)
+		Expect(result).To(HaveLen(1))
+		Expect(result[0].Name).To(Equal("enabled"))
+	})
+
+	It("should remove exporters with Enabled=false", func() {
+		exporters := []jumpstarterdevv1alpha1.Exporter{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "disabled"},
+				Spec:       jumpstarterdevv1alpha1.ExporterSpec{Enabled: &boolFalse},
+			},
+		}
+		result := filterOutDisabledExporters(exporters)
+		Expect(result).To(BeEmpty())
+	})
+
+	It("should filter correctly with a mix of nil, true, and false", func() {
+		exporters := []jumpstarterdevv1alpha1.Exporter{
+			{ObjectMeta: metav1.ObjectMeta{Name: "nil-enabled"}},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "enabled"},
+				Spec:       jumpstarterdevv1alpha1.ExporterSpec{Enabled: &boolTrue},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "disabled"},
+				Spec:       jumpstarterdevv1alpha1.ExporterSpec{Enabled: &boolFalse},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "also-disabled"},
+				Spec:       jumpstarterdevv1alpha1.ExporterSpec{Enabled: &boolFalse},
+			},
+		}
+		result := filterOutDisabledExporters(exporters)
+		Expect(result).To(HaveLen(2))
+		Expect(result[0].Name).To(Equal("nil-enabled"))
+		Expect(result[1].Name).To(Equal("enabled"))
+	})
+
+	It("should not modify the original slice", func() {
+		exporters := []jumpstarterdevv1alpha1.Exporter{
+			{ObjectMeta: metav1.ObjectMeta{Name: "enabled"}},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "disabled"},
+				Spec:       jumpstarterdevv1alpha1.ExporterSpec{Enabled: &boolFalse},
+			},
+		}
+		result := filterOutDisabledExporters(exporters)
+		Expect(result).To(HaveLen(1))
+		Expect(exporters).To(HaveLen(2)) // original unchanged
 	})
 })
 

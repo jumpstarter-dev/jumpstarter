@@ -6,8 +6,8 @@ from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 from . import jumpstarter_pb2 as jumpstarter_dot_v1_dot_jumpstarter__pb2
 
 
-class ControllerServiceStub(object):
-    """A service where a exporter can connect to make itself available
+class ControllerServiceStub:
+    """A service where an exporter can connect to make itself available.
     """
 
     def __init__(self, channel):
@@ -73,91 +73,87 @@ class ControllerServiceStub(object):
                 _registered_method=True)
 
 
-class ControllerServiceServicer(object):
-    """A service where a exporter can connect to make itself available
+class ControllerServiceServicer:
+    """A service where an exporter can connect to make itself available.
     """
 
     def Register(self, request, context):
-        """Exporter registration
+        """Register an exporter with the controller.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def Unregister(self, request, context):
-        """Exporter disconnection
-        Disconnecting with bye will invalidate any existing router tokens
-        we will eventually have a mechanism to tell the router this token
-        has been invalidated
+        """Unregister an exporter from the controller.
+        Disconnecting will invalidate any existing router tokens.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def ReportStatus(self, request, context):
-        """Exporter status report
-        Allows exporters to report their own status to the controller
+        """Report exporter status to the controller.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def Listen(self, request, context):
-        """Exporter listening
-        Returns stream tokens for accepting incoming client connections
+        """Listen for incoming client connections on a lease.
+        Returns stream tokens for accepting incoming client connections.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def Status(self, request, context):
-        """Exporter status
-        Returns lease status for the exporter
+        """Stream lease status updates for the exporter.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def Dial(self, request, context):
-        """Client connecting
-        Returns stream token for connecting to the desired exporter
-        Leases are checked before token issuance
+        """Dial an exporter through the router.
+        Returns a stream token for connecting to the desired exporter.
+        Leases are checked before token issuance.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def AuditStream(self, request_iterator, context):
-        """Audit events from the exporters
-        audit events are used to track the exporter's activity
+        """Stream audit events from the exporters.
+        Audit events are used to track the exporter activity.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def GetLease(self, request, context):
-        """Get Lease
+        """Retrieve a lease by name.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def RequestLease(self, request, context):
-        """Request Lease
+        """Request a new lease for an exporter.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def ReleaseLease(self, request, context):
-        """Release Lease
+        """Release an active lease.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def ListLeases(self, request, context):
-        """List Leases
+        """List all leases.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -229,8 +225,8 @@ def add_ControllerServiceServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class ControllerService(object):
-    """A service where a exporter can connect to make itself available
+class ControllerService:
+    """A service where an exporter can connect to make itself available.
     """
 
     @staticmethod
@@ -531,9 +527,9 @@ class ControllerService(object):
             _registered_method=True)
 
 
-class ExporterServiceStub(object):
-    """A service a exporter can share locally to be used without a server
-    Channel/Call credentials are used to authenticate the client, and routing to the right exporter
+class ExporterServiceStub:
+    """A service an exporter can share locally to be used without a server.
+    Channel and call credentials are used to authenticate the client and route to the right exporter.
     """
 
     def __init__(self, channel):
@@ -579,52 +575,57 @@ class ExporterServiceStub(object):
                 _registered_method=True)
 
 
-class ExporterServiceServicer(object):
-    """A service a exporter can share locally to be used without a server
-    Channel/Call credentials are used to authenticate the client, and routing to the right exporter
+class ExporterServiceServicer:
+    """A service an exporter can share locally to be used without a server.
+    Channel and call credentials are used to authenticate the client and route to the right exporter.
     """
 
     def GetReport(self, request, context):
-        """Exporter registration
+        """Retrieve the exporter driver report.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def DriverCall(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Invoke a method on a driver instance.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def StreamingDriverCall(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Invoke a streaming method on a driver instance.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def LogStream(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Stream log messages from the exporter.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def Reset(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Reset the exporter connection.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def GetStatus(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+        """Retrieve the current exporter status.
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
     def EndSession(self, request, context):
-        """End the current session, triggering the afterLease hook
-        The client should keep the connection open to receive hook logs via LogStream
-        Returns after the afterLease hook completes
+        """End the current session, triggering the afterLease hook.
+        The client should keep the connection open to receive hook logs via LogStream.
+        Returns after the afterLease hook completes.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -676,9 +677,9 @@ def add_ExporterServiceServicer_to_server(servicer, server):
 
 
  # This class is part of an EXPERIMENTAL API.
-class ExporterService(object):
-    """A service a exporter can share locally to be used without a server
-    Channel/Call credentials are used to authenticate the client, and routing to the right exporter
+class ExporterService:
+    """A service an exporter can share locally to be used without a server.
+    Channel and call credentials are used to authenticate the client and route to the right exporter.
     """
 
     @staticmethod

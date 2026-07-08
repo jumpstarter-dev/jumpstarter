@@ -161,6 +161,8 @@ _ClientServiceRotateTokenType = typing_extensions.TypeVar(
 )
 
 class ClientServiceStub(typing.Generic[_ClientServiceGetExporterType, _ClientServiceListExportersType, _ClientServiceGetLeaseType, _ClientServiceListLeasesType, _ClientServiceCreateLeaseType, _ClientServiceUpdateLeaseType, _ClientServiceDeleteLeaseType, _ClientServiceRotateTokenType]):
+    """Client-facing API service for managing exporters and leases."""
+
     @typing.overload
     def __init__(self: ClientServiceStub[
         grpc.UnaryUnaryMultiCallable[
@@ -234,20 +236,28 @@ class ClientServiceStub(typing.Generic[_ClientServiceGetExporterType, _ClientSer
     ], channel: grpc.aio.Channel) -> None: ...
 
     GetExporter: _ClientServiceGetExporterType
+    """Retrieve a single exporter by resource name."""
 
     ListExporters: _ClientServiceListExportersType
+    """List exporters in a namespace with optional filtering."""
 
     GetLease: _ClientServiceGetLeaseType
+    """Retrieve a single lease by resource name."""
 
     ListLeases: _ClientServiceListLeasesType
+    """List leases in a namespace with optional filtering."""
 
     CreateLease: _ClientServiceCreateLeaseType
+    """Create a new lease for an exporter."""
 
     UpdateLease: _ClientServiceUpdateLeaseType
+    """Update an existing lease."""
 
     DeleteLease: _ClientServiceDeleteLeaseType
+    """Delete a lease by resource name."""
 
     RotateToken: _ClientServiceRotateTokenType
+    """Rotate the authentication token for the client."""
 
 ClientServiceAsyncStub: typing_extensions.TypeAlias = ClientServiceStub[
     grpc.aio.UnaryUnaryMultiCallable[
@@ -285,60 +295,70 @@ ClientServiceAsyncStub: typing_extensions.TypeAlias = ClientServiceStub[
 ]
 
 class ClientServiceServicer(metaclass=abc.ABCMeta):
+    """Client-facing API service for managing exporters and leases."""
+
     @abc.abstractmethod
     def GetExporter(
         self,
         request: jumpstarter.client.v1.client_pb2.GetExporterRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.client.v1.client_pb2.Exporter, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.Exporter]]: ...
+    ) -> typing.Union[jumpstarter.client.v1.client_pb2.Exporter, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.Exporter]]:
+        """Retrieve a single exporter by resource name."""
 
     @abc.abstractmethod
     def ListExporters(
         self,
         request: jumpstarter.client.v1.client_pb2.ListExportersRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.client.v1.client_pb2.ListExportersResponse, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.ListExportersResponse]]: ...
+    ) -> typing.Union[jumpstarter.client.v1.client_pb2.ListExportersResponse, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.ListExportersResponse]]:
+        """List exporters in a namespace with optional filtering."""
 
     @abc.abstractmethod
     def GetLease(
         self,
         request: jumpstarter.client.v1.client_pb2.GetLeaseRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.client.v1.client_pb2.Lease, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.Lease]]: ...
+    ) -> typing.Union[jumpstarter.client.v1.client_pb2.Lease, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.Lease]]:
+        """Retrieve a single lease by resource name."""
 
     @abc.abstractmethod
     def ListLeases(
         self,
         request: jumpstarter.client.v1.client_pb2.ListLeasesRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.client.v1.client_pb2.ListLeasesResponse, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.ListLeasesResponse]]: ...
+    ) -> typing.Union[jumpstarter.client.v1.client_pb2.ListLeasesResponse, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.ListLeasesResponse]]:
+        """List leases in a namespace with optional filtering."""
 
     @abc.abstractmethod
     def CreateLease(
         self,
         request: jumpstarter.client.v1.client_pb2.CreateLeaseRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.client.v1.client_pb2.Lease, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.Lease]]: ...
+    ) -> typing.Union[jumpstarter.client.v1.client_pb2.Lease, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.Lease]]:
+        """Create a new lease for an exporter."""
 
     @abc.abstractmethod
     def UpdateLease(
         self,
         request: jumpstarter.client.v1.client_pb2.UpdateLeaseRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.client.v1.client_pb2.Lease, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.Lease]]: ...
+    ) -> typing.Union[jumpstarter.client.v1.client_pb2.Lease, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.Lease]]:
+        """Update an existing lease."""
 
     @abc.abstractmethod
     def DeleteLease(
         self,
         request: jumpstarter.client.v1.client_pb2.DeleteLeaseRequest,
         context: _ServicerContext,
-    ) -> typing.Union[google.protobuf.empty_pb2.Empty, collections.abc.Awaitable[google.protobuf.empty_pb2.Empty]]: ...
+    ) -> typing.Union[google.protobuf.empty_pb2.Empty, collections.abc.Awaitable[google.protobuf.empty_pb2.Empty]]:
+        """Delete a lease by resource name."""
 
     @abc.abstractmethod
     def RotateToken(
         self,
         request: jumpstarter.client.v1.client_pb2.RotateTokenRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.client.v1.client_pb2.RotateTokenResponse, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.RotateTokenResponse]]: ...
+    ) -> typing.Union[jumpstarter.client.v1.client_pb2.RotateTokenResponse, collections.abc.Awaitable[jumpstarter.client.v1.client_pb2.RotateTokenResponse]]:
+        """Rotate the authentication token for the client."""
 
 def add_ClientServiceServicer_to_server(servicer: ClientServiceServicer, server: typing.Union[grpc.Server, grpc.aio.Server]) -> None: ...

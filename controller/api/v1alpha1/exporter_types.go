@@ -25,6 +25,12 @@ import (
 type ExporterSpec struct {
 	// Username is the identity of the exporter, used for authentication and authorization.
 	Username *string `json:"username,omitempty"`
+	// Enabled controls whether this exporter is eligible for lease assignment.
+	// When set to false, the controller will not assign new leases to this exporter.
+	// Useful for temporarily taking an exporter offline for maintenance without deleting it,
+	// or for graceful scale-down of virtual exporter pools.
+	// +kubebuilder:default=true
+	Enabled *bool `json:"enabled,omitempty"`
 }
 
 // ExporterStatus defines the observed state of Exporter.
@@ -69,6 +75,7 @@ const (
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Enabled",type="boolean",JSONPath=".spec.enabled"
 // +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.exporterStatus"
 // +kubebuilder:printcolumn:name="Message",type="string",JSONPath=".status.statusMessage",priority=1
 

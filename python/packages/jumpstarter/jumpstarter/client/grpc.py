@@ -22,12 +22,15 @@ class WithOptions:
     show_online: bool = False
     show_leases: bool = False
     show_status: bool = False
+    show_disabled: bool = False
 
 
 def add_display_columns(table, options: WithOptions = None):
     if options is None:
         options = WithOptions()
     table.add_column("NAME")
+    if options.show_disabled:
+        table.add_column("ENABLED")
     if options.show_online:
         table.add_column("ONLINE")
     if options.show_status:
@@ -44,6 +47,8 @@ def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: t
         options = WithOptions()
     row_data = []
     row_data.append(exporter.name)
+    if options.show_disabled:
+        row_data.append("yes" if exporter.enabled else "no")
     if options.show_online:
         row_data.append("yes" if exporter.online else "no")
     if options.show_status:
@@ -89,6 +94,7 @@ class Exporter(BaseModel):
     labels: dict[str, str]
     online: bool = False
     status: ExporterStatus | None = None
+    enabled: bool = True
     lease: Lease | None = None
 
     @classmethod
@@ -97,7 +103,14 @@ class Exporter(BaseModel):
         status = None
         if hasattr(data, "status") and data.status:
             status = ExporterStatus.from_proto(data.status)
-        return cls(namespace=namespace, name=name, labels=data.labels, online=data.online, status=status)
+        return cls(
+            namespace=namespace,
+            name=name,
+            labels=data.labels,
+            online=data.online,
+            status=status,
+            enabled=data.enabled if data.HasField("enabled") else True,
+        )
 
     @classmethod
     def rich_add_columns(cls, table, options: WithOptions = None):
@@ -287,6 +300,7 @@ class ExporterList(BaseModel):
     include_online: bool = Field(default=False, exclude=True)
     include_leases: bool = Field(default=False, exclude=True)
     include_status: bool = Field(default=False, exclude=True)
+    include_disabled: bool = Field(default=False, exclude=True)
 
     @classmethod
     def from_protobuf(cls, data: client_pb2.ListExportersResponse) -> ExporterList:
@@ -295,21 +309,33 @@ class ExporterList(BaseModel):
             next_page_token=data.next_page_token,
         )
 
+    def _visible_exporters(self) -> list[Exporter]:
+        """Return exporters filtered by enabled status unless include_disabled is set."""
+        if self.include_disabled:
+            return self.exporters
+        return [e for e in self.exporters if e.enabled]
+
     def rich_add_columns(self, table):
         options = WithOptions(
-            show_online=self.include_online, show_leases=self.include_leases, show_status=self.include_status
+            show_online=self.include_online,
+            show_leases=self.include_leases,
+            show_status=self.include_status,
+            show_disabled=self.include_disabled,
         )
         Exporter.rich_add_columns(table, options)
 
     def rich_add_rows(self, table):
         options = WithOptions(
-            show_online=self.include_online, show_leases=self.include_leases, show_status=self.include_status
+            show_online=self.include_online,
+            show_leases=self.include_leases,
+            show_status=self.include_status,
+            show_disabled=self.include_disabled,
         )
-        for exporter in self.exporters:
+        for exporter in self._visible_exporters():
             exporter.rich_add_rows(table, options)
 
     def rich_add_names(self, names):
-        for exporter in self.exporters:
+        for exporter in self._visible_exporters():
             exporter.rich_add_names(names)
 
     def model_dump_json(self, **kwargs):
@@ -323,8 +349,15 @@ class ExporterList(BaseModel):
             exclude_fields.add("online")
         if not self.include_status:
             exclude_fields.add("status")
+        if not self.include_disabled:
+            exclude_fields.add("enabled")
 
-        data = {"exporters": [exporter.model_dump(mode="json", exclude=exclude_fields) for exporter in self.exporters]}
+        data = {
+            "exporters": [
+                exporter.model_dump(mode="json", exclude=exclude_fields)
+                for exporter in self._visible_exporters()
+            ]
+        }
         return json.dumps(data, **json_kwargs)
 
     def model_dump(self, **kwargs):
@@ -335,8 +368,15 @@ class ExporterList(BaseModel):
             exclude_fields.add("online")
         if not self.include_status:
             exclude_fields.add("status")
+        if not self.include_disabled:
+            exclude_fields.add("enabled")
 
-        return {"exporters": [exporter.model_dump(mode="json", exclude=exclude_fields) for exporter in self.exporters]}
+        return {
+            "exporters": [
+                exporter.model_dump(mode="json", exclude=exclude_fields)
+                for exporter in self._visible_exporters()
+            ]
+        }
 
 
 class LeaseList(BaseModel):
@@ -454,6 +494,7 @@ class ClientService:
         begin_time: datetime | None = None,
         lease_id: str | None = None,
         tags: dict[str, str] | None = None,
+        allow_disabled: bool = False,
     ):
         duration_pb = duration_pb2.Duration()
         duration_pb.FromTimedelta(duration)
@@ -462,6 +503,7 @@ class ClientService:
             duration=duration_pb,
             selector=selector or "",
             exporter_name=exporter_name or "",
+            allow_disabled=allow_disabled,
         )
 
         if tags:
