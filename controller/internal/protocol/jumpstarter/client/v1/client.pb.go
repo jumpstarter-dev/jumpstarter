@@ -51,7 +51,7 @@ type Exporter struct {
 	StatusMessage string `protobuf:"bytes,5,opt,name=status_message,json=statusMessage,proto3" json:"status_message,omitempty"`
 	// Whether the exporter is enabled for lease assignment.
 	// When false, the controller will not assign new leases to this exporter.
-	Enabled       bool `protobuf:"varint,6,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Enabled       *bool `protobuf:"varint,6,opt,name=enabled,proto3,oneof" json:"enabled,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -123,8 +123,8 @@ func (x *Exporter) GetStatusMessage() string {
 }
 
 func (x *Exporter) GetEnabled() bool {
-	if x != nil {
-		return x.Enabled
+	if x != nil && x.Enabled != nil {
+		return *x.Enabled
 	}
 	return false
 }
@@ -929,18 +929,20 @@ var File_jumpstarter_client_v1_client_proto protoreflect.FileDescriptor
 
 const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\n" +
-	"\"jumpstarter/client/v1/client.proto\x12\x15jumpstarter.client.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x17google/api/client.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x19google/api/resource.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1fjumpstarter/v1/kubernetes.proto\x1a\x1bjumpstarter/v1/common.proto\"\xab\x03\n" +
+	"\"jumpstarter/client/v1/client.proto\x12\x15jumpstarter.client.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x17google/api/client.proto\x1a\x1fgoogle/api/field_behavior.proto\x1a\x19google/api/resource.proto\x1a\x1egoogle/protobuf/duration.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a google/protobuf/field_mask.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1fjumpstarter/v1/kubernetes.proto\x1a\x1bjumpstarter/v1/common.proto\"\xbc\x03\n" +
 	"\bExporter\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tB\x03\xe0A\bR\x04name\x12C\n" +
 	"\x06labels\x18\x02 \x03(\v2+.jumpstarter.client.v1.Exporter.LabelsEntryR\x06labels\x12\x1d\n" +
 	"\x06online\x18\x03 \x01(\bB\x05\xe0A\x03\x18\x01R\x06online\x12;\n" +
 	"\x06status\x18\x04 \x01(\x0e2\x1e.jumpstarter.v1.ExporterStatusB\x03\xe0A\x03R\x06status\x12*\n" +
-	"\x0estatus_message\x18\x05 \x01(\tB\x03\xe0A\x03R\rstatusMessage\x12\x1d\n" +
-	"\aenabled\x18\x06 \x01(\bB\x03\xe0A\x03R\aenabled\x1a9\n" +
+	"\x0estatus_message\x18\x05 \x01(\tB\x03\xe0A\x03R\rstatusMessage\x12\"\n" +
+	"\aenabled\x18\x06 \x01(\bB\x03\xe0A\x03H\x00R\aenabled\x88\x01\x01\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:_\xeaA\\\n" +
-	"\x18jumpstarter.dev/Exporter\x12+namespaces/{namespace}/exporters/{exporter}*\texporters2\bexporter\"\xe1\b\n" +
+	"\x18jumpstarter.dev/Exporter\x12+namespaces/{namespace}/exporters/{exporter}*\texporters2\bexporterB\n" +
+	"\n" +
+	"\b_enabled\"\xe1\b\n" +
 	"\x05Lease\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tB\x03\xe0A\bR\x04name\x12\"\n" +
 	"\bselector\x18\x02 \x01(\tB\x06\xe0A\x02\xe0A\x05R\bselector\x12:\n" +
@@ -1112,6 +1114,7 @@ func file_jumpstarter_client_v1_client_proto_init() {
 	if File_jumpstarter_client_v1_client_proto != nil {
 		return
 	}
+	file_jumpstarter_client_v1_client_proto_msgTypes[0].OneofWrappers = []any{}
 	file_jumpstarter_client_v1_client_proto_msgTypes[1].OneofWrappers = []any{}
 	file_jumpstarter_client_v1_client_proto_msgTypes[6].OneofWrappers = []any{}
 	type x struct{}

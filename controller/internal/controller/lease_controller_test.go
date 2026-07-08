@@ -827,6 +827,10 @@ var _ = Describe("Lease Controller", func() {
 
 			updatedLease := getLease(ctx, lease.Name)
 			Expect(updatedLease.Status.ExporterRef).To(BeNil())
+			Expect(meta.IsStatusConditionTrue(
+				updatedLease.Status.Conditions,
+				string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+			)).To(BeTrue())
 
 			// Restore for subsequent tests
 			setExporterEnabled(ctx, testExporter1DutA.Name, true)

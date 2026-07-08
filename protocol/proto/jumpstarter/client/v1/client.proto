@@ -96,7 +96,7 @@ message Exporter {
   string status_message = 5 [(google.api.field_behavior) = OUTPUT_ONLY];
   // Whether the exporter is enabled for lease assignment.
   // When false, the controller will not assign new leases to this exporter.
-  bool enabled = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  optional bool enabled = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A lease resource representing a reservation of an exporter.

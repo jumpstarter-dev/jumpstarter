@@ -109,7 +109,7 @@ class Exporter(BaseModel):
             labels=data.labels,
             online=data.online,
             status=status,
-            enabled=data.enabled,
+            enabled=data.enabled if data.HasField("enabled") else True,
         )
 
     @classmethod

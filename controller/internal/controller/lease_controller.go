@@ -268,6 +268,14 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			}
 			// Filter out disabled exporters from selector-based listing
 			matchingExporters = filterOutDisabledExporters(listed.Items)
+			if len(matchingExporters) == 0 && len(listed.Items) > 0 {
+				lease.SetStatusUnsatisfiable(
+					"AllDisabled",
+					"All %d exporters matching the selector are disabled",
+					len(listed.Items),
+				)
+				return nil
+			}
 		}
 
 		approvedExporters, unmatchedDescriptions, err := r.attachMatchingPolicies(ctx, lease, matchingExporters)
