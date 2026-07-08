@@ -37,26 +37,7 @@ When preparing a new release version X.Y.Z, update these files together:
 - `REPLACES ?= jumpstarter-operator.vPREVIOUS` (the most recent version published to the OLM channel - including RCs. E.g. if `v0.8.1-rc.1` was published, REPLACES must be `jumpstarter-operator.v0.8.1-rc.1`, not `v0.8.0`)
 - Optionally update `OPENSHIFT_VERSIONS` if the supported range changes
 
-### 2. `controller/deploy/operator/api/v1alpha1/jumpstarter_types.go`
-Update the kubebuilder default image tags for both controller and router:
-```go
-// In RoutersConfig:
-// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-controller:X.Y.Z"
-Image string `json:"image,omitempty"`
-
-// In ControllerConfig:
-// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-controller:X.Y.Z"
-Image string `json:"image,omitempty"`
-```
-These defaults flow into the CRD YAML via `make manifests` and into the OLM bundle via `make bundle`.
-
-### 3. `controller/deploy/operator/test/e2e/e2e_test.go`
-Update the default controller image constant:
-```go
-const defaultControllerImage = "quay.io/jumpstarter-dev/jumpstarter-controller:X.Y.Z"
-```
-
-### 4. `controller/deploy/operator/config/manager/kustomization.yaml`
+### 2. `controller/deploy/operator/config/manager/kustomization.yaml`
 The `newTag` field is updated automatically by `make bundle` (via `kustomize edit set image`), but verify it reflects the correct tag after running the bundle target.
 
 ## Release Steps
@@ -91,7 +72,7 @@ cat bundle/release-config.yaml
 ```
 
 ### Step 4: Commit
-Create a commit with the Makefile, types, CRD, kustomization, and e2e changes. The `bundle/` directory is NOT committed to the repo (it was removed in commit `12b680e3`).
+Create a commit with the Makefile, CRD, and kustomization changes. The `bundle/` directory is NOT committed to the repo (it was removed in commit `12b680e3`).
 
 ### Step 5: Contribute to community-operators (when ready)
 ```bash
