@@ -71,6 +71,8 @@ class SomeIp(Driver):
     per the SOME/IP specification.
     """
 
+    driver_type = "automotive"
+
     host: str
     port: int = 30490
     transport_mode: str = "UDP"

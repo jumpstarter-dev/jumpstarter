@@ -36,6 +36,8 @@ class Tftp(Driver):
         port (int): Port number to listen on. Defaults to 69 (standard TFTP port)
     """
 
+    driver_type = "storage"
+
     root_dir: str = "/var/lib/tftpboot"
     host: str = field(default="")
     port: int = 69

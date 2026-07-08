@@ -39,6 +39,8 @@ class SNMPError(Exception):
 class SNMPServer(Driver):
     """SNMP Power Control Driver"""
 
+    driver_type = "power"
+
     host: str = field()
     user: str = field()
     port: int = field(default=161)

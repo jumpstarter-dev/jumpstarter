@@ -20,6 +20,8 @@ class Can(Driver):
     interfaces through the `python-can` library.
     """
 
+    driver_type = "automotive"
+
     """
     The CAN channel to connect to.
     """
@@ -152,6 +154,8 @@ class IsoTpPython(Driver):
     Available on any platform, moderate performance and reliability,
     wide support for non-standard hardware interfaces
     """
+
+    driver_type = "automotive"
 
     """
     The CAN channel to connect to.
@@ -295,6 +299,8 @@ class IsoTpSocket(Driver):
     Available since kernel 5.10, good performance and reliability,
     only supports standard hardware interfaces
     """
+
+    driver_type = "automotive"
 
     """
     The CAN channel to connect to.

@@ -6,6 +6,8 @@ from jumpstarter.driver import Driver, export
 
 
 class PowerInterface(metaclass=ABCMeta):
+    driver_type = "power"
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_power.client.PowerClient"
@@ -21,6 +23,8 @@ class PowerInterface(metaclass=ABCMeta):
 
 
 class VirtualPowerInterface(metaclass=ABCMeta):
+    driver_type = "power"
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_power.client.VirtualPowerClient"

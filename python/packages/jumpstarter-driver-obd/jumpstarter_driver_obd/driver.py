@@ -27,6 +27,8 @@ class OBD(Driver):
     serial path, e.g. ``/dev/ttyUSB0``.
     """
 
+    driver_type = "automotive"
+
     port: Optional[str] = field(default=None)
     baudrate: int = field(default=38400)
     # fast mode is quicker but flaky on cheap clone adapters, so it defaults off

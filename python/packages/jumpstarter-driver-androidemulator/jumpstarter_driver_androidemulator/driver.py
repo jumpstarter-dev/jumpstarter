@@ -26,6 +26,8 @@ class AndroidEmulator(Driver):
     - ``power``: Emulator lifecycle (on/off)
     """
 
+    driver_type = "composite"
+
     avd_name: str
     emulator_path: str = "emulator"
     headless: bool = True

@@ -30,6 +30,8 @@ class DoIP(Driver):
     exchange per ISO-13400.
     """
 
+    driver_type = "automotive"
+
     ecu_ip: str
     ecu_logical_address: int
     tcp_port: int = 13400

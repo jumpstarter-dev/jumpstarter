@@ -64,6 +64,8 @@ class BleWriteNotifyStream(Driver):
     for data transfer.
     """
 
+    driver_type = "bluetooth"
+
     address: str
     service_uuid: str
     write_char_uuid: str

@@ -120,6 +120,8 @@ class Xcp(Driver):
     devices (ECUs) for measurement, calibration, DAQ, and programming.
     """
 
+    driver_type = "automotive"
+
     transport: XcpTransport = XcpTransport.ETH
     host: str | None = "localhost"
     port: int = 5555

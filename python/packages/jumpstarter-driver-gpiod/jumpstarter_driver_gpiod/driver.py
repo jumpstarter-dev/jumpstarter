@@ -21,6 +21,8 @@ from jumpstarter.driver import Driver, export
 class _GPIOBase(Driver):
     """Base GPIO"""
 
+    driver_type = "gpio"
+
     line: int
     device: str
     _chip: gpiod.Chip = field(init=False, repr=False)
