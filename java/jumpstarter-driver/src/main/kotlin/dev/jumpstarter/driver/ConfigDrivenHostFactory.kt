@@ -30,9 +30,15 @@ class ConfigDrivenHostFactory private constructor(
         // Strip the `jvm:` runtime prefix (present when the hub selected this runtime by type) to
         // recover the bare service FQN for reflection.
         val type = (entry["type"] as? String)?.removePrefix("jvm:") ?: error("export.$name has no type:")
-        val clientClass = entry["client"] as? String ?: defaultClientClass(name)
+        val driverClass = Class.forName(type)
+        // The `jumpstarter.dev/client` label: an explicit `client:` in the config entry wins, else
+        // the driver's own @JumpstarterDriver(client = …) declaration (the same source
+        // [GrpcServiceDriverHostFactory.forDriver] reads), else the naming convention.
+        val clientClass = entry["client"] as? String
+            ?: driverClass.getAnnotation(JumpstarterDriver::class.java)?.client
+            ?: defaultClientClass(name)
 
-        val service = Class.forName(type).getDeclaredConstructor().newInstance() as BindableService
+        val service = driverClass.getDeclaredConstructor().newInstance() as BindableService
         return GrpcServiceDriverHost(service, descriptorOf(service), name, clientClass)
     }
 
