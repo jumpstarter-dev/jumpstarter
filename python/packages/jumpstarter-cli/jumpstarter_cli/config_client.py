@@ -7,6 +7,9 @@ from jumpstarter_cli_common.opt import (
     OutputMode,
     OutputType,
     PathOutputType,
+    confirm_insecure_tls,
+    opt_insecure_tls,
+    opt_nointeractive,
     opt_output_all,
     opt_output_path_only,
 )
@@ -14,6 +17,7 @@ from jumpstarter_cli_common.print import model_print
 
 from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 from jumpstarter.config.common import ObjectMeta
+from jumpstarter.config.tls import TLSConfigV1Alpha1
 from jumpstarter.config.user import UserConfigV1Alpha1
 
 
@@ -67,6 +71,8 @@ def config_client():
     default="",
 )
 @click.option("--unsafe", is_flag=True, help="Should all driver client packages be allowed to load (UNSAFE!).")
+@opt_insecure_tls
+@opt_nointeractive
 @opt_output_path_only
 @handle_exceptions
 def create_client_config(
@@ -77,6 +83,8 @@ def create_client_config(
     token: str,
     allow: str,
     unsafe: bool,
+    insecure_tls: bool,
+    nointeractive: bool,
     out: Optional[PathLike],
     output: PathOutputType,
 ):
@@ -84,12 +92,15 @@ def create_client_config(
     if out is None and ClientConfigV1Alpha1.exists(alias):
         raise click.ClickException(f"A client with the name '{alias}' already exists.")
 
+    confirm_insecure_tls(insecure_tls, nointeractive)
+
     config = ClientConfigV1Alpha1(
         alias=alias,
         metadata=ObjectMeta(namespace=namespace, name=name),
         endpoint=endpoint,
         token=token,
         drivers=ClientConfigV1Alpha1Drivers(allow=allow.split(","), unsafe=unsafe),
+        tls=TLSConfigV1Alpha1(insecure=insecure_tls),
     )
     path = ClientConfigV1Alpha1.save(config, out)
 
