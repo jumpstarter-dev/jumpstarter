@@ -1,0 +1,13 @@
+# Act 2 — a single Python power driver, driven from a JUnit/Kotlin test via a GENERATED Kotlin
+# client. The driver name `power` is what the generated PowerClient looks up
+# (`PowerClient(session, "power")` in PowerNativeIT).
+#
+# Credentials (endpoint/token/tls) are spliced in at bring-up -> /etc/jumpstarter/exporters/demo-mock.yaml
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: jumpstarter-lab
+  name: demo-mock
+export:
+  power:
+    type: jumpstarter_driver_power.driver.MockPower

@@ -1,0 +1,38 @@
+# Act 1 — a QEMU virtual DUT, all Python drivers.
+#
+# This is the driver tree only; the bring-up (cluster/up.sh -> write_exporter) splices in the
+# endpoint / token / tls credentials from `jmp admin create exporter` and writes the runnable
+# copy to /etc/jumpstarter/exporters/demo-qemu.yaml.
+#
+# The `dut` node is the composite QEMU driver. Its children (created by the driver): power
+# (QemuPower on/off), console (a PySerial over the guest's serial PTY), flasher, vnc, and one
+# TcpNetwork per hostfwd entry (here: ssh -> guest :22).
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: jumpstarter-lab
+  name: demo-qemu
+export:
+  dut:
+    type: jumpstarter_driver_qemu.driver.Qemu
+    config:
+      # REQUIRED on Apple Silicon: platform.machine() reports "arm64", but the driver builds
+      # `qemu-system-<arch>` and only special-cases aarch64/x86_64 machine types. Setting
+      # aarch64 selects `qemu-system-aarch64 -machine virt`.
+      arch: aarch64
+      smp: 2
+      mem: 1G
+      hostname: demo
+      # cloud-init (from the driver's generated CIDATA drive) creates this login on first boot.
+      username: jumpstarter
+      password: password
+      default_partitions:
+        # A local cloud qcow2 supplied directly (no fls/flash step). fetch-image.sh downloads it
+        # plus the UEFI firmware into ./assets. Paths are relative to where you run `jmp run`.
+        root: ./examples/rust-core-demo/act1-python-qemu/assets/disk.qcow2
+        OVMF_CODE.fd: ./examples/rust-core-demo/act1-python-qemu/assets/edk2-aarch64-code.fd
+        OVMF_VARS.fd: ./examples/rust-core-demo/act1-python-qemu/assets/edk2-aarch64-vars.fd
+      hostfwd:
+        ssh:
+          hostport: 2222
+          guestport: 22

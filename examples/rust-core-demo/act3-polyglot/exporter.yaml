@@ -1,0 +1,18 @@
+# Act 3 — one exporter, three languages. The polyglot hub spawns one driver-host subprocess per
+# entry and federates them by UUID: a Python host for pypower, the native jmp-rust-host for
+# rustpower, and the JVM jumpstarter-exporter-host for jvmpower. All three serve the SAME
+# PowerInterface natively (from their advertised descriptor), with zero generated servicer.
+#
+# Credentials are spliced in at bring-up -> /etc/jumpstarter/exporters/demo-polyglot.yaml
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: jumpstarter-lab
+  name: demo-polyglot
+export:
+  pypower:
+    type: jumpstarter_driver_power.driver.MockPower
+  rustpower:
+    type: rust:power
+  jvmpower:
+    type: jvm:dev.jumpstarter.examples.power.KotlinPowerDriver

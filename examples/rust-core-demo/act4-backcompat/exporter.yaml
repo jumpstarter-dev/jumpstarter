@@ -1,0 +1,14 @@
+# Act 4 — a new Rust-core exporter hosting a plain Python MockPower driver named `power`.
+# An UNMODIFIED old (0.7.4) client drives it. The old client speaks the legacy
+# DriverCall(uuid, method, args) protocol; the Rust exporter's session translates it into native
+# per-interface dispatch via the legacy shim (rust/jumpstarter-driver-core/src/legacy.rs).
+#
+# Credentials are spliced in at bring-up -> /etc/jumpstarter/exporters/demo-compat.yaml
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: jumpstarter-lab
+  name: demo-compat
+export:
+  power:
+    type: jumpstarter_driver_power.driver.MockPower

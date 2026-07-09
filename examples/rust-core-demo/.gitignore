@@ -1,0 +1,6 @@
+# Downloaded QEMU boot assets (large; never commit)
+act1-python-qemu/assets/
+
+# Python bytecode
+__pycache__/
+*.pyc
