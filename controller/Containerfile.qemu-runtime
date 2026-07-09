@@ -1,15 +1,18 @@
 # QEMU runtime container for ExporterSet virtual targets.
 # Provides QEMU tools for running virtual machines as part of
 # the sidecar pattern (paired with the jumpstarter exporter).
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8
+#
+# Uses Fedora as the base image because QEMU packages are not
+# available in UBI-minimal repositories.
+FROM registry.fedoraproject.org/fedora:44
 
-RUN microdnf install --setopt=install_weak_deps=0 -y \
+RUN dnf install --setopt=install_weak_deps=False -y \
         qemu-img \
         qemu-kvm \
         procps-ng \
         virtiofsd && \
-    microdnf clean all
+    dnf clean all
 
 USER 65532:65532
 
-ENTRYPOINT ["/usr/libexec/qemu-kvm"]
+ENTRYPOINT ["/usr/bin/qemu-kvm"]
