@@ -24,7 +24,14 @@ from jumpstarter_cli_common.oidc import (
 )
 from jumpstarter_cli_common.signal import signal_handler
 
-from .common import opt_acquisition_timeout, opt_duration_partial, opt_exporter_name, opt_retry_timeout, opt_selector
+from .common import (
+    opt_acquisition_timeout,
+    opt_dial_timeout,
+    opt_duration_partial,
+    opt_exporter_name,
+    opt_retry_timeout,
+    opt_selector,
+)
 from .login import relogin_client
 from jumpstarter.client import DirectLease
 from jumpstarter.client.client import client_from_path, fetch_motd
@@ -473,7 +480,7 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
 
 async def _shell_with_signal_handling(  # noqa: C901
     config, selector, exporter_name, lease_name, duration, exporter_logs, command, acquisition_timeout,
-    retry_timeout=None,
+    retry_timeout=None, dial_timeout=None,
 ):
     """Handle lease acquisition and shell execution with signal handling."""
     exit_code = 0
@@ -500,7 +507,7 @@ async def _shell_with_signal_handling(  # noqa: C901
                     while True:
                         async with config.lease_async(
                             selector, exporter_name, lease_name, duration, portal, acquisition_timeout,
-                            retry_timeout=retry_timeout,
+                            retry_timeout=retry_timeout, dial_timeout=dial_timeout,
                         ) as lease:
                             lease_used = lease
 
@@ -689,6 +696,7 @@ async def _shell_direct_async(
 @click.option("--exporter-logs", is_flag=True, help="Enable exporter log streaming")
 @opt_acquisition_timeout()
 @opt_retry_timeout()
+@opt_dial_timeout()
 # direct connection (no controller)
 @click.option(
     "--tls-grpc",
@@ -720,6 +728,7 @@ def shell(
     exporter_logs,
     acquisition_timeout,
     retry_timeout,
+    dial_timeout,
     tls_grpc_address,
     tls_grpc_insecure,
     passphrase,
@@ -769,6 +778,7 @@ def shell(
                 command,
                 acquisition_timeout,
                 retry_timeout,
+                dial_timeout,
             )
             sys.exit(exit_code)
 

@@ -332,6 +332,7 @@ shell:
   use_profiles: false
 leases:
   acquisition_timeout: 3600
+  dial_timeout: 60.0
   retry_timeout: 300.0
 """
     config = ClientConfigV1Alpha1(
