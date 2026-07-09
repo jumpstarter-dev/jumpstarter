@@ -11,10 +11,10 @@
 
 use std::time::Duration;
 
+use jumpstarter_config::{ClientConfig, YamlConfig};
 use jumpstarter_lease::{
     acquire, ClientError, ControllerClient, CreateLeaseParams, LeaseProvider, LeaseTiming,
 };
-use jumpstarter_config::{ClientConfig, YamlConfig};
 
 fn load_config() -> Option<ClientConfig> {
     let path = std::env::var("JMP_RUST_TEST_CONFIG").ok()?;

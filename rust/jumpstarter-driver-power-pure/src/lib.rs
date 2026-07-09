@@ -66,7 +66,8 @@ impl PowerInterface for MockPower {
         Ok(Response::new(()))
     }
 
-    type ReadStream = Pin<Box<dyn tokio_stream::Stream<Item = Result<PowerReading, Status>> + Send>>;
+    type ReadStream =
+        Pin<Box<dyn tokio_stream::Stream<Item = Result<PowerReading, Status>> + Send>>;
 
     async fn read(&self, _request: Request<()>) -> Result<Response<Self::ReadStream>, Status> {
         let (voltage, current) = if self.is_on() {

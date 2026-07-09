@@ -22,21 +22,46 @@ pub struct KubectlContext {
 pub async fn get_kubectl_contexts(kubectl: &str) -> Result<Vec<KubectlContext>> {
     let out = run_command(&[kubectl, "config", "view", "-o", "json"]).await?;
     if !out.ok() {
-        return Err(ClusterError::Kubeconfig(format!("Failed to get kubectl config: {}", out.stderr)));
+        return Err(ClusterError::Kubeconfig(format!(
+            "Failed to get kubectl config: {}",
+            out.stderr
+        )));
     }
     let config: serde_json::Value = serde_json::from_str(&out.stdout)
         .map_err(|e| ClusterError::Kubeconfig(format!("Failed to parse kubectl config: {e}")))?;
 
-    let current = config.get("current-context").and_then(|v| v.as_str()).unwrap_or("");
+    let current = config
+        .get("current-context")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let empty = vec![];
-    let clusters = config.get("clusters").and_then(|v| v.as_array()).unwrap_or(&empty);
+    let clusters = config
+        .get("clusters")
+        .and_then(|v| v.as_array())
+        .unwrap_or(&empty);
 
     let mut contexts = Vec::new();
-    for ctx in config.get("contexts").and_then(|v| v.as_array()).unwrap_or(&empty) {
-        let name = ctx.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    for ctx in config
+        .get("contexts")
+        .and_then(|v| v.as_array())
+        .unwrap_or(&empty)
+    {
+        let name = ctx
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let inner = ctx.get("context");
-        let cluster = inner.and_then(|c| c.get("cluster")).and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let user = inner.and_then(|c| c.get("user")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let cluster = inner
+            .and_then(|c| c.get("cluster"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let user = inner
+            .and_then(|c| c.get("user"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let namespace = inner
             .and_then(|c| c.get("namespace"))
             .and_then(|v| v.as_str())
@@ -52,7 +77,14 @@ pub async fn get_kubectl_contexts(kubectl: &str) -> Result<Vec<KubectlContext>> 
             .unwrap_or("")
             .to_string();
         let current = name == current;
-        contexts.push(KubectlContext { name, cluster, server, user, namespace, current });
+        contexts.push(KubectlContext {
+            name,
+            cluster,
+            server,
+            user,
+            namespace,
+            current,
+        });
     }
     Ok(contexts)
 }
@@ -68,7 +100,12 @@ fn parse_json_with_prefix(stdout: &str) -> serde_json::Result<serde_json::Value>
 /// Query Jumpstarter CR instances to confirm a full install
 /// (`_check_cr_instances` + `_apply_cr_result`); fills `installed`/`namespace`/
 /// `status` or `error` on `inst`.
-async fn apply_cr_instances(inst: &mut JumpstarterInstance, kubectl: &str, context: &str, namespace: Option<&str>) {
+async fn apply_cr_instances(
+    inst: &mut JumpstarterInstance,
+    kubectl: &str,
+    context: &str,
+    namespace: Option<&str>,
+) {
     let cr = "jumpstarters.operator.jumpstarter.dev";
     match run_command(&[kubectl, "--context", context, "get", cr, "-A", "-o", "json"]).await {
         Ok(out) if out.ok() => match serde_json::from_str::<serde_json::Value>(&out.stdout) {
@@ -89,8 +126,15 @@ async fn apply_cr_instances(inst: &mut JumpstarterInstance, kubectl: &str, conte
             Err(e) => inst.error = Some(format!("CR instance check failed: {e}")),
         },
         Ok(out) => {
-            let detail = if out.stderr.is_empty() { &out.stdout } else { &out.stderr };
-            inst.error = Some(format!("CR instance check failed (exit {}): {}", out.code, detail));
+            let detail = if out.stderr.is_empty() {
+                &out.stdout
+            } else {
+                &out.stderr
+            };
+            inst.error = Some(format!(
+                "CR instance check failed (exit {}): {}",
+                out.code, detail
+            ));
         }
         Err(e) => inst.error = Some(format!("CR instance check failed: {e}")),
     }
@@ -104,7 +148,8 @@ pub async fn check_jumpstarter_installation(
     kubectl: &str,
 ) -> JumpstarterInstance {
     let mut inst = JumpstarterInstance::not_installed();
-    let out = match run_command(&[kubectl, "--context", context, "get", "crd", "-o", "json"]).await {
+    let out = match run_command(&[kubectl, "--context", context, "get", "crd", "-o", "json"]).await
+    {
         Ok(o) => o,
         Err(e) => {
             inst.error = Some(format!("Command failed: {e}"));
@@ -112,7 +157,11 @@ pub async fn check_jumpstarter_installation(
         }
     };
     if !out.ok() {
-        let detail = if out.stderr.is_empty() { &out.stdout } else { &out.stderr };
+        let detail = if out.stderr.is_empty() {
+            &out.stdout
+        } else {
+            &out.stderr
+        };
         inst.error = Some(format!("Command failed: {detail}"));
         return inst;
     }
@@ -129,13 +178,20 @@ pub async fn check_jumpstarter_installation(
         .and_then(|v| v.as_array())
         .unwrap_or(&empty)
         .iter()
-        .filter_map(|item| item.get("metadata").and_then(|m| m.get("name")).and_then(|v| v.as_str()))
+        .filter_map(|item| {
+            item.get("metadata")
+                .and_then(|m| m.get("name"))
+                .and_then(|v| v.as_str())
+        })
         .filter(|n| n.contains("jumpstarter.dev"))
         .map(String::from)
         .collect();
     if !names.is_empty() {
         inst.has_crds = true;
-        if names.iter().any(|n| n == "jumpstarters.operator.jumpstarter.dev") {
+        if names
+            .iter()
+            .any(|n| n == "jumpstarters.operator.jumpstarter.dev")
+        {
             apply_cr_instances(&mut inst, kubectl, context, namespace).await;
         }
     }
@@ -177,7 +233,12 @@ pub async fn get_cluster_info(context: &str, kubectl: &str, minikube: &str) -> C
             Ok(out) if out.ok() => {
                 let v = serde_json::from_str::<serde_json::Value>(&out.stdout)
                     .ok()
-                    .and_then(|j| j.get("serverVersion").and_then(|s| s.get("gitVersion")).and_then(|g| g.as_str()).map(String::from))
+                    .and_then(|j| {
+                        j.get("serverVersion")
+                            .and_then(|s| s.get("gitVersion"))
+                            .and_then(|g| g.as_str())
+                            .map(String::from)
+                    })
                     .unwrap_or_else(|| "unknown".to_string());
                 (true, Some(v))
             }
@@ -214,7 +275,12 @@ pub async fn get_cluster_info(context: &str, kubectl: &str, minikube: &str) -> C
 pub async fn list_clusters(type_filter: &str, kubectl: &str, minikube: &str) -> ClusterList {
     let contexts = match get_kubectl_contexts(kubectl).await {
         Ok(c) => c,
-        Err(e) => return ClusterList::new(vec![unreachable_cluster("error", format!("Failed to list clusters: {e}"))]),
+        Err(e) => {
+            return ClusterList::new(vec![unreachable_cluster(
+                "error",
+                format!("Failed to list clusters: {e}"),
+            )])
+        }
     };
     let mut items = Vec::new();
     for ctx in contexts {

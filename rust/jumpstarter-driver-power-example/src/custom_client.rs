@@ -167,7 +167,12 @@ mod tests {
         // The CLI dispatch path: `j <driver> cycle --wait 0` reaches the same typed client.
         custom.off().await.unwrap();
         assert_eq!(
-            PowerCli::run(&["cycle".into(), "--wait".into(), "0".into()], harness.session(), &uuid).await,
+            PowerCli::run(
+                &["cycle".into(), "--wait".into(), "0".into()],
+                harness.session(),
+                &uuid
+            )
+            .await,
             0,
         );
         assert!(powered_on(&typed).await, "CLI cycle ends powered on");

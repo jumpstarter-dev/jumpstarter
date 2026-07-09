@@ -536,7 +536,8 @@ impl Get {
             GetKind::Cluster(a) => return get_cluster(a).await,
             GetKind::Clusters(a) => {
                 let list = jumpstarter_cluster::list_clusters(&a.ty, &a.kubectl, &a.minikube).await;
-                return output::print(&ClusterTable::Many(list), ListFormat::resolve(a.output)).map_err(runtime);
+                return output::print(&ClusterTable::Many(list), ListFormat::resolve(a.output))
+                    .map_err(runtime);
             }
         };
         let admin = a.cluster.connect().await?;
@@ -544,7 +545,11 @@ impl Get {
             Some(name) => vec![admin.get(kind, name).await.map_err(runtime)?],
             None => admin.list(kind).await.map_err(runtime)?,
         };
-        let list = ResourceList { kind, items, devices: a.devices };
+        let list = ResourceList {
+            kind,
+            items,
+            devices: a.devices,
+        };
         output::print(&list, ListFormat::resolve(a.output)).map_err(runtime)
     }
 }
@@ -554,8 +559,15 @@ async fn get_cluster(a: GetClusterArgs) -> Result<(), CmdError> {
         Some(name) => {
             let info = jumpstarter_cluster::get_cluster_info(name, &a.kubectl, &a.minikube).await;
             // A "not found" context is an error (`get.py:47-48`).
-            if info.error.as_deref().map(|e| e.contains("not found")).unwrap_or(false) {
-                return Err(CmdError::Runtime(format!("Kubernetes context \"{name}\" not found")));
+            if info
+                .error
+                .as_deref()
+                .map(|e| e.contains("not found"))
+                .unwrap_or(false)
+            {
+                return Err(CmdError::Runtime(format!(
+                    "Kubernetes context \"{name}\" not found"
+                )));
             }
             output::print(&ClusterTable::One(info), ListFormat::resolve(a.output)).map_err(runtime)
         }
@@ -598,7 +610,10 @@ impl Printable for ClusterTable {
             ClusterTable::One(c) => vec![c],
             ClusterTable::Many(l) => l.items.iter().collect(),
         };
-        items.iter().map(|c| format!("cluster/{}", c.name)).collect()
+        items
+            .iter()
+            .map(|c| format!("cluster/{}", c.name))
+            .collect()
     }
 }
 
@@ -642,11 +657,17 @@ impl jumpstarter_cluster::Progress for CliProgress {
 }
 
 async fn create_cluster(a: CreateClusterArgs) -> Result<(), CmdError> {
-    let cluster_type =
-        jumpstarter_cluster::validate_cluster_type_selection(a.kind.as_deref(), a.minikube.as_deref(), a.k3s.as_deref())
-            .map_err(runtime)?;
+    let cluster_type = jumpstarter_cluster::validate_cluster_type_selection(
+        a.kind.as_deref(),
+        a.minikube.as_deref(),
+        a.k3s.as_deref(),
+    )
+    .map_err(runtime)?;
     let quiet = a.output.is_some();
-    let progress = CliProgress { quiet, force: a.nointeractive };
+    let progress = CliProgress {
+        quiet,
+        force: a.nointeractive,
+    };
     if !quiet {
         if a.kind.is_none() && a.minikube.is_none() && a.k3s.is_none() {
             println!("Auto-detected {cluster_type} as the cluster type");
@@ -654,16 +675,21 @@ async fn create_cluster(a: CreateClusterArgs) -> Result<(), CmdError> {
         if a.skip_install {
             println!("Creating {cluster_type} cluster \"{}\"...", a.name);
         } else {
-            println!("Creating {cluster_type} cluster \"{}\" and installing Jumpstarter...", a.name);
+            println!(
+                "Creating {cluster_type} cluster \"{}\" and installing Jumpstarter...",
+                a.name
+            );
         }
     }
 
     // Auto-detect a compatible operator version when installing (`create.py:120-124`).
     let version: Option<String> = if !a.skip_install && a.version.is_none() {
         Some(
-            jumpstarter_cluster::get_latest_compatible_controller_version(Some(env!("CARGO_PKG_VERSION")))
-                .await
-                .map_err(runtime)?,
+            jumpstarter_cluster::get_latest_compatible_controller_version(Some(env!(
+                "CARGO_PKG_VERSION"
+            )))
+            .await
+            .map_err(runtime)?,
         )
     } else {
         a.version.clone()
@@ -671,8 +697,14 @@ async fn create_cluster(a: CreateClusterArgs) -> Result<(), CmdError> {
 
     let kind = a.kind.clone().unwrap_or_else(|| "kind".to_string());
     let minikube = a.minikube.clone().unwrap_or_else(|| "minikube".to_string());
-    let extra_certs = a.extra_certs.as_ref().map(|p| p.to_string_lossy().into_owned());
-    let kubeconfig = a.kubeconfig.as_ref().map(|p| p.to_string_lossy().into_owned());
+    let extra_certs = a
+        .extra_certs
+        .as_ref()
+        .map(|p| p.to_string_lossy().into_owned());
+    let kubeconfig = a
+        .kubeconfig
+        .as_ref()
+        .map(|p| p.to_string_lossy().into_owned());
 
     let opts = jumpstarter_cluster::CreateOptions {
         cluster_type: &cluster_type,
@@ -695,13 +727,21 @@ async fn create_cluster(a: CreateClusterArgs) -> Result<(), CmdError> {
         operator_installer: a.operator_installer.as_deref(),
         k3s_ssh_host: a.k3s.as_deref(),
     };
-    jumpstarter_cluster::create_cluster_and_install(opts, &progress).await.map_err(runtime)?;
+    jumpstarter_cluster::create_cluster_and_install(opts, &progress)
+        .await
+        .map_err(runtime)?;
 
     if !quiet {
         if a.skip_install {
-            println!("Cluster \"{}\" is ready for Jumpstarter installation.", a.name);
+            println!(
+                "Cluster \"{}\" is ready for Jumpstarter installation.",
+                a.name
+            );
         } else {
-            println!("Cluster \"{}\" created and Jumpstarter installed successfully!", a.name);
+            println!(
+                "Cluster \"{}\" created and Jumpstarter installed successfully!",
+                a.name
+            );
         }
     }
     Ok(())
@@ -716,10 +756,18 @@ async fn delete_cluster(a: DeleteClusterArgs) -> Result<(), CmdError> {
         None
     };
     let quiet = a.output.is_some();
-    let progress = CliProgress { quiet, force: a.force };
-    jumpstarter_cluster::delete_cluster_by_name(&a.name, cluster_type.as_deref(), a.force, &progress)
-        .await
-        .map_err(runtime)?;
+    let progress = CliProgress {
+        quiet,
+        force: a.force,
+    };
+    jumpstarter_cluster::delete_cluster_by_name(
+        &a.name,
+        cluster_type.as_deref(),
+        a.force,
+        &progress,
+    )
+    .await
+    .map_err(runtime)?;
     if let Some(NameOutput::Name) = a.output {
         println!("{}", a.name);
     }
@@ -800,15 +848,20 @@ impl serde::Serialize for ResourceList {
 
 /// A JSON string field at `ptr` in `data`, or `""`.
 fn jstr(data: &serde_json::Value, ptr: &str) -> String {
-    data.pointer(ptr).and_then(|v| v.as_str()).unwrap_or("").to_string()
+    data.pointer(ptr)
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 /// `k:v,k:v` rendering of a JSON-object label map, keys sorted.
 fn join_labels(map: Option<&serde_json::Value>) -> String {
     map.and_then(|v| v.as_object())
         .map(|m| {
-            let mut kv: Vec<String> =
-                m.iter().map(|(k, v)| format!("{k}:{}", v.as_str().unwrap_or_default())).collect();
+            let mut kv: Vec<String> = m
+                .iter()
+                .map(|(k, v)| format!("{k}:{}", v.as_str().unwrap_or_default()))
+                .collect();
             kv.sort();
             kv.join(",")
         })
@@ -822,42 +875,74 @@ fn age_from_secs(secs: i64) -> String {
         format!("{secs}s")
     } else if secs < 3600 {
         let (m, s) = (secs / 60, secs % 60);
-        if s > 0 { format!("{m}m{s}s") } else { format!("{m}m") }
+        if s > 0 {
+            format!("{m}m{s}s")
+        } else {
+            format!("{m}m")
+        }
     } else if secs < 86400 {
         let (h, m) = (secs / 3600, (secs % 3600) / 60);
-        if m > 0 && h < 2 { format!("{h}h{m}m") } else { format!("{h}h") }
+        if m > 0 && h < 2 {
+            format!("{h}h{m}m")
+        } else {
+            format!("{h}h")
+        }
     } else if secs < 2_592_000 {
         let (d, h) = (secs / 86400, (secs % 86400) / 3600);
-        if h > 0 { format!("{d}d{h}h") } else { format!("{d}d") }
+        if h > 0 {
+            format!("{d}d{h}h")
+        } else {
+            format!("{d}d")
+        }
     } else if secs < 31_536_000 {
         let days = secs / 86400;
         let (mo, d) = (days / 30, days % 30);
-        if d > 0 { format!("{mo}mo{d}d") } else { format!("{mo}mo") }
+        if d > 0 {
+            format!("{mo}mo{d}d")
+        } else {
+            format!("{mo}mo")
+        }
     } else {
         let days = secs / 86400;
         let (y, mo) = (days / 365, (days % 365) / 30);
-        if mo > 0 { format!("{y}y{mo}mo") } else { format!("{y}y") }
+        if mo > 0 {
+            format!("{y}y{mo}mo")
+        } else {
+            format!("{y}y")
+        }
     }
 }
 
 /// Humanize the age since a Kubernetes `creationTimestamp`.
 fn humanize_age(o: &DynamicObject) -> String {
     match o.metadata.creation_timestamp.as_ref().map(|t| t.0) {
-        Some(created) => age_from_secs(chrono::Utc::now().signed_duration_since(created).num_seconds()),
+        // k8s-openapi 0.28 `Time` wraps `jiff::Timestamp`; compare epoch seconds
+        // against chrono's now (identical semantics to the previous
+        // `signed_duration_since(..).num_seconds()` on whole seconds).
+        Some(created) => age_from_secs(chrono::Utc::now().timestamp() - created.as_second()),
         None => String::new(),
     }
 }
 
 fn exporter_status(data: &serde_json::Value) -> String {
     let s = jstr(data, "/status/exporterStatus");
-    if s.is_empty() { "Unknown".to_string() } else { s }
+    if s.is_empty() {
+        "Unknown".to_string()
+    } else {
+        s
+    }
 }
 
 fn client_row(name: &str, data: &serde_json::Value) -> Vec<String> {
     vec![name.to_string(), jstr(data, "/status/endpoint")]
 }
 
-fn exporter_rows(name: &str, data: &serde_json::Value, age: &str, devices: bool) -> Vec<Vec<String>> {
+fn exporter_rows(
+    name: &str,
+    data: &serde_json::Value,
+    age: &str,
+    devices: bool,
+) -> Vec<Vec<String>> {
     let status = exporter_status(data);
     let endpoint = jstr(data, "/status/endpoint");
     let device_list = data.pointer("/status/devices").and_then(|v| v.as_array());
@@ -867,29 +952,58 @@ fn exporter_rows(name: &str, data: &serde_json::Value, age: &str, devices: bool)
                 ds.iter()
                     .map(|d| {
                         let labels = join_labels(d.pointer("/labels"));
-                        let uuid = d.pointer("/uuid").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        vec![name.to_string(), status.clone(), endpoint.clone(), age.to_string(), labels, uuid]
+                        let uuid = d
+                            .pointer("/uuid")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        vec![
+                            name.to_string(),
+                            status.clone(),
+                            endpoint.clone(),
+                            age.to_string(),
+                            labels,
+                            uuid,
+                        ]
                     })
                     .collect()
             })
             .unwrap_or_default()
     } else {
         let count = device_list.map(|a| a.len()).unwrap_or(0);
-        vec![vec![name.to_string(), status, endpoint, count.to_string(), age.to_string()]]
+        vec![vec![
+            name.to_string(),
+            status,
+            endpoint,
+            count.to_string(),
+            age.to_string(),
+        ]]
     }
 }
 
 fn lease_row(name: &str, data: &serde_json::Value, age: &str) -> Vec<String> {
     let selectors = {
         let s = join_labels(data.pointer("/spec/selector/matchLabels"));
-        if s.is_empty() { "*".to_string() } else { s }
+        if s.is_empty() {
+            "*".to_string()
+        } else {
+            s
+        }
     };
-    let ended = data.pointer("/status/ended").and_then(|v| v.as_bool()).unwrap_or(false);
+    let ended = data
+        .pointer("/status/ended")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let reason = data
         .pointer("/status/conditions")
         .and_then(|v| v.as_array())
         .and_then(|a| a.last())
-        .map(|c| c.pointer("/reason").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string())
+        .map(|c| {
+            c.pointer("/reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string()
+        })
         .unwrap_or_else(|| "Unknown".to_string());
     vec![
         name.to_string(),
@@ -897,7 +1011,11 @@ fn lease_row(name: &str, data: &serde_json::Value, age: &str) -> Vec<String> {
         selectors,
         jstr(data, "/status/exporter/name"),
         jstr(data, "/spec/duration"),
-        if ended { "Ended".to_string() } else { "InProgress".to_string() },
+        if ended {
+            "Ended".to_string()
+        } else {
+            "InProgress".to_string()
+        },
         reason,
         jstr(data, "/status/beginTime"),
         jstr(data, "/status/endTime"),
@@ -922,10 +1040,13 @@ impl Printable for ResourceList {
     fn headers(&self) -> Vec<String> {
         let h: &[&str] = match self.kind {
             Kind::Client => &["NAME", "ENDPOINT"],
-            Kind::Exporter if self.devices => &["NAME", "STATUS", "ENDPOINT", "AGE", "LABELS", "UUID"],
+            Kind::Exporter if self.devices => {
+                &["NAME", "STATUS", "ENDPOINT", "AGE", "LABELS", "UUID"]
+            }
             Kind::Exporter => &["NAME", "STATUS", "ENDPOINT", "DEVICES", "AGE"],
             Kind::Lease => &[
-                "NAME", "CLIENT", "SELECTOR", "EXPORTER", "DURATION", "STATUS", "REASON", "BEGIN", "END", "AGE",
+                "NAME", "CLIENT", "SELECTOR", "EXPORTER", "DURATION", "STATUS", "REASON", "BEGIN",
+                "END", "AGE",
             ],
         };
         h.iter().map(|s| s.to_string()).collect()
@@ -984,7 +1105,8 @@ mod tests {
 
     #[test]
     fn save_config_writes_client_with_ca_and_drivers() {
-        let dir = std::env::temp_dir().join(format!("jmp-admin-test-client-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("jmp-admin-test-client-{}", std::process::id()));
         let path = dir.join("c1.yaml");
         let _ = std::fs::remove_file(&path);
         save_config(
@@ -1015,7 +1137,8 @@ mod tests {
 
     #[test]
     fn save_config_unsafe_via_allow_sentinel() {
-        let dir = std::env::temp_dir().join(format!("jmp-admin-test-unsafe-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("jmp-admin-test-unsafe-{}", std::process::id()));
         let path = dir.join("c2.yaml");
         let _ = std::fs::remove_file(&path);
         save_config(
@@ -1032,13 +1155,17 @@ mod tests {
         )
         .unwrap();
         let cfg = ClientConfig::load(&path).unwrap();
-        assert!(cfg.drivers.r#unsafe, "UNSAFE in the allow-list implies unsafe");
+        assert!(
+            cfg.drivers.r#unsafe,
+            "UNSAFE in the allow-list implies unsafe"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn save_config_writes_exporter_with_ca() {
-        let dir = std::env::temp_dir().join(format!("jmp-admin-test-exporter-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("jmp-admin-test-exporter-{}", std::process::id()));
         let path = dir.join("e1.yaml");
         let _ = std::fs::remove_file(&path);
         save_config(
@@ -1102,14 +1229,33 @@ mod tests {
         // --devices: one row per device with LABELS + UUID.
         let rows = exporter_rows("e1", &data, "5m", true);
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0], vec!["e1", "Online", "grpc.example.com:1443", "5m", "jumpstarter.dev/name:power", "u1"]);
-        assert_eq!(rows[1], vec!["e1", "Online", "grpc.example.com:1443", "5m", "", "u2"]);
+        assert_eq!(
+            rows[0],
+            vec![
+                "e1",
+                "Online",
+                "grpc.example.com:1443",
+                "5m",
+                "jumpstarter.dev/name:power",
+                "u1"
+            ]
+        );
+        assert_eq!(
+            rows[1],
+            vec!["e1", "Online", "grpc.example.com:1443", "5m", "", "u2"]
+        );
     }
 
     #[test]
     fn exporter_status_defaults_to_unknown() {
-        assert_eq!(exporter_status(&serde_json::json!({"status": {}})), "Unknown");
-        assert_eq!(exporter_rows("e", &serde_json::json!({}), "1s", false)[0][1], "Unknown");
+        assert_eq!(
+            exporter_status(&serde_json::json!({"status": {}})),
+            "Unknown"
+        );
+        assert_eq!(
+            exporter_rows("e", &serde_json::json!({}), "1s", false)[0][1],
+            "Unknown"
+        );
     }
 
     #[test]
@@ -1131,8 +1277,16 @@ mod tests {
         assert_eq!(
             lease_row("l1", &data, "2d"),
             vec![
-                "l1", "client-a", "board:rpi", "exp-1", "30m0s", "Ended", "Released",
-                "2026-01-01T00:00:00Z", "2026-01-01T00:30:00Z", "2d",
+                "l1",
+                "client-a",
+                "board:rpi",
+                "exp-1",
+                "30m0s",
+                "Ended",
+                "Released",
+                "2026-01-01T00:00:00Z",
+                "2026-01-01T00:30:00Z",
+                "2d",
             ]
         );
     }

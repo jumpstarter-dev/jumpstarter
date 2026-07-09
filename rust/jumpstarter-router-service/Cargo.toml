@@ -1,0 +1,54 @@
+[package]
+name = "jumpstarter-router-service"
+description = "Jumpstarter router service: RouterService.Stream token rendezvous and verbatim frame forwarding (port of controller/internal/service/router_service.go + router_support.go)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+jumpstarter-controller-config = { path = "../jumpstarter-controller-config" }
+jumpstarter-protocol = { path = "../jumpstarter-protocol" }
+dashmap.workspace = true
+# The compression mirror layer inspects/edits gRPC request headers
+# (compression.rs); http 1 + tower-{layer,service} 0.3 are exactly tonic
+# 0.12's own versions of these traits/types.
+http = "1"
+jsonwebtoken.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "macros"] }
+# ReceiverStream adapts the per-peer response channel into the tonic response
+# stream type.
+tokio-stream = "0.1"
+# CancellationToken stops a parked first peer's disconnect guard once a
+# pairing peer claims the entry (service.rs). It plays no role in forwarding:
+# like Go's pipe (router_support.go:12-29), a pipe error never cancels the
+# opposite direction.
+tokio-util.workspace = true
+# `gzip` is the Go router's blank-import gzip codec registration
+# (cmd/router/main.go:34): it unlocks accept_compressed/send_compressed on
+# the generated service (compression.rs).
+tonic = { workspace = true, features = ["gzip"] }
+tower-layer = "0.3"
+tower-service = "0.3"
+tracing.workspace = true
+
+[dev-dependencies]
+# Hand-rolling an alg=none token in the auth tests.
+base64 = "0.22"
+# The TLS end-to-end test generates its own localhost CA/leaf pair.
+rcgen.workspace = true
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "io-util"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+# `gzip` also equips the test *clients* to send/accept compressed messages
+# for the round-trip tests.
+tonic = { workspace = true, features = ["tls", "gzip"] }
+# The TLS tests install the ring provider explicitly (as the controller binaries do):
+# rustls panics at first TLS use when feature unification leaves zero-or-two default
+# crypto backends, and which backends are enabled varies with the `cargo test -p …`
+# invocation shape.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+uuid = { version = "1", features = ["v4"] }

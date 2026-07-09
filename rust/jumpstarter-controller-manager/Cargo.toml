@@ -1,0 +1,46 @@
+[package]
+name = "jumpstarter-controller-manager"
+description = "Jumpstarter controller manager binary: composes the runtime scaffolding, reconcilers, and gRPC services; installed at /manager in the controller image"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+jumpstarter-controller-api = { path = "../jumpstarter-controller-api" }
+jumpstarter-controller-auth = { path = "../jumpstarter-controller-auth" }
+jumpstarter-controller-config = { path = "../jumpstarter-controller-config" }
+jumpstarter-controller-core = { path = "../jumpstarter-controller-core" }
+jumpstarter-controller-runtime = { path = "../jumpstarter-controller-runtime" }
+jumpstarter-controller-service = { path = "../jumpstarter-controller-service" }
+jumpstarter-protocol = { path = "../jumpstarter-protocol" }
+# Legacy ConfigMap `authentication` key is a raw YAML string that must be
+# parsed into config::types::Authentication for the token validator.
+serde_yaml_ng.workspace = true
+kube = { workspace = true, features = ["client", "config", "rustls-tls", "ring"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "net"] }
+# TcpListenerStream adapts the TLS-terminated listener into the connection
+# stream tonic's serve_with_incoming consumes.
+tokio-stream = { version = "0.1", features = ["net"] }
+# `tls` enables tonic's `Connected` impl for tokio-rustls server streams so
+# the hand-rolled TLS acceptor (runtime tls.rs material, Go-parity ALPN) can
+# feed serve_with_incoming.
+tonic = { workspace = true, features = ["tls"] }
+tonic-health.workspace = true
+tonic-reflection.workspace = true
+tracing.workspace = true
+# Same default-features=false + ring pattern as jumpstarter-controller-runtime:
+# the workspace standardizes on the ring provider, installed at startup.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+# Leader-election identity is "<hostname>_<uuid>" (controller-runtime
+# pkg/leaderelection/leader_election.go:88-94); Go mints a v1 UUID, we use v4
+# — the identity is opaque, only uniqueness matters.
+uuid = { version = "1", features = ["v4"] }
+hostname = "0.4"
+
+[dev-dependencies]
+# The inline gRPC wire test generates its own localhost CA/server cert so a
+# real tonic TLS client can verify the served stack (health/reflection/stubs).
+rcgen.workspace = true

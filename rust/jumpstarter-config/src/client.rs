@@ -149,7 +149,8 @@ mod tests {
     use super::*;
     use crate::YamlConfig;
 
-    const TOKEN: &str = "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz";
+    const TOKEN: &str =
+        "dGhpc2lzYXRva2VuLTEyMzQxMjM0MTIzNEyMzQtc2Rxd3Jxd2VycXdlcnF3ZXJxd2VyLTEyMzQxMjM0MTIz";
 
     fn from_file_yaml() -> String {
         format!(
@@ -169,7 +170,10 @@ mod tests {
         assert_eq!(c.metadata.name, "testclient");
         assert_eq!(c.endpoint.as_deref(), Some("jumpstarter.my-lab.com:1443"));
         assert_eq!(c.token.as_deref(), Some(TOKEN));
-        assert_eq!(c.drivers.allow, vec!["jumpstarter.drivers.*", "vendorpackage.*"]);
+        assert_eq!(
+            c.drivers.allow,
+            vec!["jumpstarter.drivers.*", "vendorpackage.*"]
+        );
         assert!(!c.drivers.r#unsafe);
     }
 
@@ -187,7 +191,8 @@ mod tests {
         let c = ClientConfig::from_yaml(&from_file_yaml()).unwrap();
         assert!(c.drivers.select.is_empty());
         assert_eq!(
-            c.drivers.select_client("jumpstarter.interfaces.power.v1.PowerInterface", "rust:foo"),
+            c.drivers
+                .select_client("jumpstarter.interfaces.power.v1.PowerInterface", "rust:foo"),
             "rust:foo",
             "absent select -> advertised client"
         );
@@ -203,12 +208,16 @@ mod tests {
         );
         let c = ClientConfig::from_yaml(&yaml).unwrap();
         assert_eq!(
-            c.drivers.select_client("jumpstarter.interfaces.power.v1.PowerInterface", "rust:foo"),
+            c.drivers
+                .select_client("jumpstarter.interfaces.power.v1.PowerInterface", "rust:foo"),
             "jvm:com.example.PowerClient",
             "select override wins over the advertised client"
         );
         // An interface NOT in `select` still falls back to the advertised client.
-        assert_eq!(c.drivers.select_client("other.Interface", "rust:foo"), "rust:foo");
+        assert_eq!(
+            c.drivers.select_client("other.Interface", "rust:foo"),
+            "rust:foo"
+        );
         assert_eq!(ClientConfig::from_yaml(&c.to_yaml().unwrap()).unwrap(), c);
     }
 
@@ -218,11 +227,20 @@ mod tests {
         let c = ClientConfig::new(ObjectMeta::new("c1").with_namespace("default"));
         let yaml = c.to_yaml().unwrap();
         // exclude_none: absent optionals are not serialized.
-        assert!(!yaml.contains("token:"), "token should be omitted when None:\n{yaml}");
-        assert!(!yaml.contains("endpoint:"), "endpoint should be omitted when None:\n{yaml}");
+        assert!(
+            !yaml.contains("token:"),
+            "token should be omitted when None:\n{yaml}"
+        );
+        assert!(
+            !yaml.contains("endpoint:"),
+            "endpoint should be omitted when None:\n{yaml}"
+        );
         assert!(!yaml.contains("refresh_token:"));
         // leases is dropped entirely when it holds only defaults (v0.7.x compat).
-        assert!(!yaml.contains("leases:"), "default leases block should be dropped:\n{yaml}");
+        assert!(
+            !yaml.contains("leases:"),
+            "default leases block should be dropped:\n{yaml}"
+        );
         // camelCase keys are preserved.
         assert!(yaml.contains("apiVersion:"));
         assert!(yaml.contains("grpcOptions:"));
@@ -233,7 +251,10 @@ mod tests {
         let mut c = ClientConfig::new(ObjectMeta::new("c1"));
         c.leases.acquisition_timeout = 99;
         let yaml = c.to_yaml().unwrap();
-        assert!(yaml.contains("leases:"), "non-default leases must be kept:\n{yaml}");
+        assert!(
+            yaml.contains("leases:"),
+            "non-default leases must be kept:\n{yaml}"
+        );
         assert!(yaml.contains("acquisition_timeout: 99"));
     }
 

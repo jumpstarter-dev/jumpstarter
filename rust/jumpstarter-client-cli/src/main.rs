@@ -23,7 +23,10 @@ async fn main() {
     let first = args.first().map(String::as_str).unwrap_or("");
     tracing::debug!(driver = first, args = ?args, "j dispatch entry");
     if first.is_empty() || first.starts_with('-') || first == "introspect" {
-        tracing::debug!(driver = first, "delegating non-driver invocation to python driver-client CLI");
+        tracing::debug!(
+            driver = first,
+            "delegating non-driver invocation to python driver-client CLI"
+        );
         delegate_to_python(&args);
     }
 
@@ -70,7 +73,10 @@ async fn main() {
         }
         // A Python client (or an unknown driver name) → the Python driver-client CLI.
         _ => {
-            tracing::debug!(driver = first, "no native client; delegating to python driver-client CLI");
+            tracing::debug!(
+                driver = first,
+                "no native client; delegating to python driver-client CLI"
+            );
             drop(session);
             delegate_to_python(&args);
         }
@@ -100,7 +106,9 @@ fn delegate_to_jvm(args: &[String]) -> ! {
         .unwrap_or_else(|_| "jumpstarter-jvm-client".to_string());
     match Command::new(&launcher).args(args).status() {
         Ok(status) => std::process::exit(status.code().unwrap_or(1)),
-        Err(e) => fail(&format!("cannot launch the jvm client CLI ({launcher}): {e}")),
+        Err(e) => fail(&format!(
+            "cannot launch the jvm client CLI ({launcher}): {e}"
+        )),
     }
 }
 
@@ -145,7 +153,9 @@ fn fail(msg: &str) -> ! {
 fn init_tracing() {
     use tracing_subscriber::EnvFilter;
     let _ = tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .with_writer(std::io::stderr)
         .try_init();
 }

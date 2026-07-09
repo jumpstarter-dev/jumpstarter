@@ -1,0 +1,106 @@
+{
+  "_comment": "Recorded by jumpstarter-conformance tests/differential.rs against the real Go controller (controller/hack/conformance) on the shared envtest apiserver. (code, message) per spec-02 §12 case. Regenerate: JMP_CONFORMANCE_RECORD=1.",
+  "source": "go",
+  "cases": [
+    {
+      "name": "empty_lease_name",
+      "code": "Unknown",
+      "message": "empty lease name"
+    },
+    {
+      "name": "permission_denied",
+      "code": "Unknown",
+      "message": "permission denied"
+    },
+    {
+      "name": "lease_not_active",
+      "code": "Unknown",
+      "message": "lease not active"
+    },
+    {
+      "name": "exporter_not_listening",
+      "code": "Unavailable",
+      "message": "exporter is not listening on lease lease"
+    },
+    {
+      "name": "apiserver_notfound_verbatim",
+      "code": "Unknown",
+      "message": "leases.jumpstarter.dev \"ghost\" not found"
+    },
+    {
+      "name": "missing_authorization_header",
+      "code": "Unauthenticated",
+      "message": "missing authorization header"
+    },
+    {
+      "name": "malformed_header",
+      "code": "InvalidArgument",
+      "message": "malformed authorization header"
+    },
+    {
+      "name": "multiple_headers",
+      "code": "InvalidArgument",
+      "message": "multiple authorization headers"
+    },
+    {
+      "name": "object_kind_mismatch",
+      "code": "InvalidArgument",
+      "message": "object kind mismatch"
+    },
+    {
+      "name": "missing_namespace_metadata",
+      "code": "InvalidArgument",
+      "message": "missing metadata: jumpstarter-namespace"
+    },
+    {
+      "name": "resource_name_required",
+      "code": "InvalidArgument",
+      "message": "resource name required for pre-existing authentication"
+    },
+    {
+      "name": "token_expired",
+      "code": "Unknown",
+      "message": "oidc: verify token: oidc: token is expired (Token Expiry: 2025-07-05 22:03:40 -0400 EDT)"
+    },
+    {
+      "name": "invalid_argument_create_lease",
+      "code": "InvalidArgument",
+      "message": "one of selector or exporter_name is required"
+    },
+    {
+      "name": "namespace_mismatch",
+      "code": "PermissionDenied",
+      "message": "namespace mismatch"
+    },
+    {
+      "name": "aip_bad_segments",
+      "code": "InvalidArgument",
+      "message": "invalid number of segments in identifier \"namespaces/ns/leases\", expecting 4, got 3"
+    },
+    {
+      "name": "aip_bad_first",
+      "code": "InvalidArgument",
+      "message": "invalid first segment in identifier \"nope/ns/leases/l\", expecting \"namespaces\", got \"nope\""
+    },
+    {
+      "name": "aip_bad_third",
+      "code": "InvalidArgument",
+      "message": "invalid third segment in identifier \"namespaces/ns/pods/l\", expecting \"leases\", got \"pods\""
+    },
+    {
+      "name": "soft_delete_idempotent",
+      "code": "FailedPrecondition",
+      "message": "lease \"namespaces/go17/leases/019f352a-be76-7d36-ae72-fb93692bcc35\" has already been released"
+    },
+    {
+      "name": "register_ok",
+      "code": "Ok",
+      "message": ""
+    },
+    {
+      "name": "create_lease_ok",
+      "code": "Ok",
+      "message": ""
+    }
+  ]
+}

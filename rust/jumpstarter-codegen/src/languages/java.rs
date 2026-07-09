@@ -139,7 +139,9 @@ fn outer_class_name(iface: &InterfaceRef) -> String {
     let stem = segments
         .iter()
         .rev()
-        .find(|s| !(s.starts_with('v') && s[1..].chars().all(|c| c.is_ascii_digit()) && s.len() > 1))
+        .find(|s| {
+            !(s.starts_with('v') && s[1..].chars().all(|c| c.is_ascii_digit()) && s.len() > 1)
+        })
         .copied()
         .unwrap_or("");
     snake_to_pascal(stem)
@@ -406,9 +408,7 @@ fn render_driver(iface: &InterfaceRef) -> String {
     );
 
     // companion: a stable per-instance uuid, plus the StreamObserver helpers.
-    s.push_str(
-        "\n    private val driverUuid: String = java.util.UUID.randomUUID().toString()\n",
-    );
+    s.push_str("\n    private val driverUuid: String = java.util.UUID.randomUUID().toString()\n");
 
     s.push_str(
         "\n    /**\n     \
@@ -594,7 +594,10 @@ mod tests {
         let iface = power_iface();
         assert_eq!(outer_class_name(&iface), "Power");
         assert_eq!(java_package(&iface), "jumpstarter.interfaces.power.v1");
-        assert_eq!(grpc_class(&iface), "jumpstarter.interfaces.power.v1.PowerInterfaceGrpc");
+        assert_eq!(
+            grpc_class(&iface),
+            "jumpstarter.interfaces.power.v1.PowerInterfaceGrpc"
+        );
     }
 
     #[test]
@@ -603,10 +606,16 @@ mod tests {
         // not a runtime adapter — the generic GrpcServiceDriverHost serves it once filled in.
         let iface = power_iface();
         let files = JavaGenerator.generate_driver(&iface);
-        assert!(files.contains_key("PowerDriver.kt"), "keys: {:?}", files.keys());
+        assert!(
+            files.contains_key("PowerDriver.kt"),
+            "keys: {:?}",
+            files.keys()
+        );
         let src = &files["PowerDriver.kt"];
         assert!(src.contains("class PowerDriver : PowerInterfaceImplBase()"));
-        assert!(src.contains("import jumpstarter.interfaces.power.v1.PowerInterfaceGrpc.PowerInterfaceImplBase"));
+        assert!(src.contains(
+            "import jumpstarter.interfaces.power.v1.PowerInterfaceGrpc.PowerInterfaceImplBase"
+        ));
         assert!(src.contains("override fun on(request: com.google.protobuf.Empty, responseObserver: StreamObserver<com.google.protobuf.Empty>)"));
         assert!(src.contains("override fun read(request: com.google.protobuf.Empty, responseObserver: StreamObserver<Power.PowerReading>)"));
         assert!(src.contains("TODO(\"implement PowerInterface.on\")"));
@@ -631,11 +640,17 @@ mod tests {
     fn client_output_keyed_by_client_file() {
         let iface = power_iface();
         let files = JavaGenerator.generate_client(&iface);
-        assert!(files.contains_key("PowerClient.kt"), "keys: {:?}", files.keys());
+        assert!(
+            files.contains_key("PowerClient.kt"),
+            "keys: {:?}",
+            files.keys()
+        );
         let src = &files["PowerClient.kt"];
         // `open class` + `open fun` so a custom client can subclass and add wrapper methods/CLI.
         // Primary ctor is uuid-precise (DriverInstance); the by-name secondary is kept.
-        assert!(src.contains("open class PowerClient(session: ExporterSession, instance: DriverInstance)"));
+        assert!(src.contains(
+            "open class PowerClient(session: ExporterSession, instance: DriverInstance)"
+        ));
         assert!(src.contains("constructor(session: ExporterSession, driverName: String)"));
         assert!(src.contains("PowerInterfaceGrpc.newBlockingStub(session.channel)"));
         // Unary on()/off(); read() server-streaming returns a list of PowerReading.

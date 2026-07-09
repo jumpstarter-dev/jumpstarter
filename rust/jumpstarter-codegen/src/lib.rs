@@ -14,11 +14,11 @@
 //!   (`rust`, `java`). The trait is the contract per-language generators code against;
 //!   the generators themselves are filled in by the parallel codegen phase.
 
-pub mod ir;
+pub mod device;
 pub mod engine;
+pub mod ir;
 pub mod languages;
 pub mod resolver;
-pub mod device;
 
 /// Build-script helper for a driver crate (feature `build-helper`): one call compiles the interface
 /// proto + generates the client + macros + the `jumpstarter_generated.rs` aggregator.

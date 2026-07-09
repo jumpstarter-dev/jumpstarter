@@ -16,7 +16,11 @@ fn compress(codec: Codec, input: &[u8]) -> Vec<u8> {
 }
 
 fn main() {
-    let out_dir = PathBuf::from(std::env::args().nth(1).expect("usage: dump_blobs <out_dir>"));
+    let out_dir = PathBuf::from(
+        std::env::args()
+            .nth(1)
+            .expect("usage: dump_blobs <out_dir>"),
+    );
     std::fs::create_dir_all(&out_dir).unwrap();
     let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
     for (stem, file) in [("random", "input_random.bin"), ("zeros", "input_zeros.bin")] {

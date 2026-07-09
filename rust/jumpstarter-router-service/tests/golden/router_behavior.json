@@ -1,0 +1,397 @@
+{
+  "description": "Observed behavior of the Go router (controller/cmd/router) recorded by rust/jumpstarter-router-service/tests/differential.rs; regenerate by running that test with JMP_GO_ROUTER_BIN and JMP_RUST_ROUTER_BIN set. Binary: /private/tmp/claude-501/-Users-kirk-repos-jumpstarter-dev-jumpstarter/0147e9ef-4c30-46fc-bf80-fe3d03a2d597/scratchpad/jmp-go-router",
+  "scenarios": [
+    {
+      "scenario": "a_echo_clean_close",
+      "peers": {
+        "pairer": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "aGVsbG8tZnJvbS13YWl0ZXI="
+            }
+          ],
+          "end": {
+            "kind": "ok"
+          }
+        },
+        "waiter": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "aGVsbG8tZnJvbS1wYWlyZXI="
+            }
+          ],
+          "end": {
+            "kind": "ok"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "b1_waiter_rst_cancel",
+      "peers": {
+        "survivor": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "cHJvYmUtYmFjaw=="
+            }
+          ],
+          "end": {
+            "kind": "still_open"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "b2_pairer_rst_cancel",
+      "peers": {
+        "survivor": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "cHJvYmU="
+            }
+          ],
+          "end": {
+            "kind": "still_open"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "b3_waiter_conn_sever",
+      "peers": {
+        "survivor": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "cHJvYmUtYmFjaw=="
+            }
+          ],
+          "end": {
+            "kind": "still_open"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "b4_pairer_conn_sever",
+      "peers": {
+        "survivor": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "cHJvYmU="
+            }
+          ],
+          "end": {
+            "kind": "still_open"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "b1n_waiter_rst_cancel_survivor_nudge",
+      "peers": {
+        "survivor": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "cHJvYmUtYmFjaw=="
+            }
+          ],
+          "end": {
+            "kind": "status",
+            "code": "Unavailable",
+            "message": "transport is closing"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "b2n_pairer_rst_cancel_survivor_nudge",
+      "peers": {
+        "survivor": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "cHJvYmU="
+            }
+          ],
+          "end": {
+            "kind": "ok"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "b3n_waiter_conn_sever_survivor_nudge",
+      "peers": {
+        "survivor": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "cHJvYmUtYmFjaw=="
+            }
+          ],
+          "end": {
+            "kind": "status",
+            "code": "Cancelled",
+            "message": "context canceled"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "b4n_pairer_conn_sever_survivor_nudge",
+      "peers": {
+        "survivor": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "cHJvYmU="
+            }
+          ],
+          "end": {
+            "kind": "ok"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "c_pre_pairing_cancel_reconnect",
+      "peers": {
+        "pairer": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "cG9zdC1yZWNvbm5lY3QtYmFjaw=="
+            }
+          ],
+          "end": {
+            "kind": "ok"
+          }
+        },
+        "waiter": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "cG9zdC1yZWNvbm5lY3Q="
+            }
+          ],
+          "end": {
+            "kind": "ok"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "d_goaway_half_close",
+      "peers": {
+        "pairer": {
+          "frames": [
+            {
+              "frame_type": 7,
+              "payload_b64": ""
+            }
+          ],
+          "end": {
+            "kind": "ok"
+          }
+        },
+        "waiter": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "cHJlLWdvYXdheQ=="
+            },
+            {
+              "frame_type": 0,
+              "payload_b64": "cmV2LTA="
+            },
+            {
+              "frame_type": 0,
+              "payload_b64": "cmV2LTE="
+            },
+            {
+              "frame_type": 0,
+              "payload_b64": "cmV2LTI="
+            }
+          ],
+          "end": {
+            "kind": "ok"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "e1_garbage_token",
+      "peers": {
+        "caller": {
+          "frames": [],
+          "end": {
+            "kind": "status",
+            "code": "InvalidArgument",
+            "message": "invalid jwt token"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "e2_expired_token",
+      "peers": {
+        "caller": {
+          "frames": [],
+          "end": {
+            "kind": "status",
+            "code": "InvalidArgument",
+            "message": "invalid jwt token"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "e3_wrong_audience",
+      "peers": {
+        "caller": {
+          "frames": [],
+          "end": {
+            "kind": "status",
+            "code": "InvalidArgument",
+            "message": "invalid jwt token"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "e4_wrong_key",
+      "peers": {
+        "caller": {
+          "frames": [],
+          "end": {
+            "kind": "status",
+            "code": "InvalidArgument",
+            "message": "invalid jwt token"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "e5_missing_authorization",
+      "peers": {
+        "caller": {
+          "frames": [],
+          "end": {
+            "kind": "status",
+            "code": "Unauthenticated",
+            "message": "missing authorization header"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "f_second_pairing_same_sub",
+      "peers": {
+        "first_pairer": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "aGVsbG8tZnJvbS13YWl0ZXI="
+            }
+          ],
+          "end": {
+            "kind": "ok"
+          }
+        },
+        "first_waiter": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "aGVsbG8tZnJvbS1wYWlyZXI="
+            }
+          ],
+          "end": {
+            "kind": "ok"
+          }
+        },
+        "second_pairer": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "aGVsbG8tZnJvbS13YWl0ZXI="
+            }
+          ],
+          "end": {
+            "kind": "ok"
+          }
+        },
+        "second_waiter": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": "aGVsbG8tZnJvbS1wYWlyZXI="
+            }
+          ],
+          "end": {
+            "kind": "ok"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "h_frames_verbatim",
+      "peers": {
+        "pairer": {
+          "frames": [],
+          "end": {
+            "kind": "ok"
+          }
+        },
+        "waiter": {
+          "frames": [
+            {
+              "frame_type": 0,
+              "payload_b64": ""
+            },
+            {
+              "frame_type": 3,
+              "payload_b64": "cnN0"
+            },
+            {
+              "frame_type": 6,
+              "payload_b64": ""
+            },
+            {
+              "frame_type": 42,
+              "payload_b64": "bXlzdGVyeQ=="
+            },
+            {
+              "frame_type": 7,
+              "payload_b64": "dGFpbA=="
+            },
+            {
+              "frame_type": 0,
+              "payload_b64": "YWZ0ZXItZ29hd2F5"
+            }
+          ],
+          "end": {
+            "kind": "ok"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "g_lone_waiter_no_timeout",
+      "peers": {
+        "waiter": {
+          "frames": [],
+          "end": {
+            "kind": "still_open"
+          }
+        }
+      }
+    }
+  ]
+}

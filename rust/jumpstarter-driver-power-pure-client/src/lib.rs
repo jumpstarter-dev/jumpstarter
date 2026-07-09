@@ -191,12 +191,20 @@ mod round_trip_tests {
         let custom = CyclingPowerClient::with_uuid(harness.session(), uuid.clone());
         custom.off().await.expect("off()");
         assert!(!powered_on(&client).await, "off before cycle");
-        custom.cycle(Duration::from_millis(10)).await.expect("cycle");
+        custom
+            .cycle(Duration::from_millis(10))
+            .await
+            .expect("cycle");
         assert!(powered_on(&client).await, "cycle ends powered on");
 
         custom.off().await.expect("off()");
         assert_eq!(
-            PowerCli::run(&["cycle".into(), "--wait".into(), "0".into()], harness.session(), &uuid).await,
+            PowerCli::run(
+                &["cycle".into(), "--wait".into(), "0".into()],
+                harness.session(),
+                &uuid
+            )
+            .await,
             0,
         );
         assert!(powered_on(&client).await, "CLI cycle ends powered on");

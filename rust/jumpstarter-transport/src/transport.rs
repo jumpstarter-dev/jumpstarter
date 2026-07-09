@@ -322,7 +322,11 @@ mod tests {
         let channel = connect_channel(&transport).await.expect("connect");
         let mut client =
             jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient::new(channel);
-        let report = client.get_report(()).await.expect("get_report").into_inner();
+        let report = client
+            .get_report(())
+            .await
+            .expect("get_report")
+            .into_inner();
         assert_eq!(report.reports.len(), 1);
         assert_eq!(report.reports[0].uuid, "stub-uuid");
 

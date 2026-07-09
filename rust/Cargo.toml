@@ -38,6 +38,16 @@ members = [
     "jumpstarter-driver-power-pure",
     "jumpstarter-driver-power-pure-client",
     "jumpstarter-device-example",
+    "jumpstarter-controller-api",
+    "jumpstarter-controller-auth",
+    "jumpstarter-controller-config",
+    "jumpstarter-controller-core",
+    "jumpstarter-controller-runtime",
+    "jumpstarter-controller-manager",
+    "jumpstarter-router",
+    "jumpstarter-router-service",
+    "jumpstarter-controller-service",
+    "jumpstarter-conformance",
 ]
 
 [workspace.package]
@@ -45,7 +55,9 @@ version = "0.0.0"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/jumpstarter-dev/jumpstarter"
-rust-version = "1.85"
+# 1.88 is kube 4.0's MSRV (the controller crates need kube-derive's CEL
+# validation support, which requires the modern kube line).
+rust-version = "1.88"
 
 # Pinned to the mature 0.12 tonic line. prost 0.13 is the matching codegen
 # runtime. Generated code is quarantined in jumpstarter-protocol so a version
@@ -53,6 +65,10 @@ rust-version = "1.85"
 [workspace.dependencies]
 tonic = "0.12"
 tonic-build = "0.12"
+# Standard gRPC health (grpc.health.v1) and server-reflection services for the
+# controller/router binaries, pinned to the tonic 0.12 line.
+tonic-health = "0.12"
+tonic-reflection = "0.12"
 prost = "0.13"
 prost-types = "0.13"
 serde = { version = "1", features = ["derive"] }
@@ -60,6 +76,11 @@ serde_json = "1"
 # serde_yaml is archived upstream (spec open question 18c); serde_yaml_ng is the
 # maintained drop-in fork we pin for config parse/serialize.
 serde_yaml_ng = "0.10"
+# Detects unknown keys when parsing the ConfigMap `config` document, mirroring
+# Go's yaml.UnmarshalStrict. The models stay lenient — the workspace forbids
+# deny_unknown_fields (K8s pruning semantics) — so Go's per-call-site
+# strictness is reproduced at the reader instead.
+serde_ignored = "0.1"
 thiserror = "2"
 tokio = "1"
 # tokio-util `PollSender` adapts a bounded mpsc Sender to a poll-based API, used to back the
@@ -69,3 +90,42 @@ tracing = "0.1"
 clap = { version = "4", features = ["derive"] }
 # Async stream adapter used by the typestate FSM core (jumpstarter-fsm::Fsm::drive).
 async-stream = "0.3"
+# Kubernetes stack for the controller/router/operator rewrite (and jumpstarter-admin).
+# kube 4 is the floor for kube-derive CEL validation (x-kubernetes-validations on the
+# Lease CRD). Feature selection is per-crate; the k8s-openapi version feature must be
+# agreed workspace-wide (exactly-one rule), so it is pinned here: v1_32 is the oldest
+# version 0.28 supports (the types the controller uses are stable since well before
+# the 1.30 envtest apiserver the Go suites pin).
+kube = { version = "4", default-features = false }
+k8s-openapi = { version = "0.28", features = ["v1_32"] }
+schemars = "1"
+# Health/login/OIDC HTTP surfaces; 0.7 matches tonic 0.12's transitive axum tree.
+axum = "0.7"
+# Self-signed cert generation (controller TLS fallback, internal OIDC localhost cert).
+rcgen = "0.13"
+# Sharded concurrent map backing the router's stream rendezvous (the Go
+# router's `pending sync.Map`, controller/internal/service/router_service.go:44).
+dashmap = "6"
+# HS256/384/512 router stream tokens (golang-jwt v5 counterpart for the
+# `ROUTER_KEY` tokens minted by ControllerService.Dial). The 10.x line needs
+# exactly one crypto backend selected; `rust_crypto` avoids any dependence on
+# a process-level provider install.
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+# Deterministic ES256 key derivation (bit-exact port of the Go controller's
+# CONTROLLER_KEY seed derivation: sha256 -> Go math/rand -> keygen.ECDSALegacy).
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+sha2 = "0.10"
+num-bigint = "0.4"
+# Time arithmetic for the lease scheduler (begin/end/duration reconcile,
+# expiry). Matches k8s-openapi's chrono (its metav1::Time wraps
+# chrono::DateTime<Utc>), so the scheduler and CRD types share one clock type.
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+
+# Vendored h2 with ONE patch: the server tolerates an unparseable `:authority`
+# (treated as absent) instead of RST_STREAM(PROTOCOL_ERROR). Legacy gRPC C-core
+# clients (old Python jumpstarter over `unix://`) send a percent-encoded socket
+# path as the authority, which `http::uri::Authority` rejects — without this,
+# every RPC from a pre-rewrite client to the Rust exporter dies at the h2 layer.
+# See rust/vendor/h2/README-JUMPSTARTER.md.
+[patch.crates-io]
+h2 = { path = "vendor/h2" }

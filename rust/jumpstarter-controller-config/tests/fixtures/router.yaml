@@ -1,0 +1,10 @@
+default:
+  endpoint: router-0.jumpstarter.127.0.0.1.nip.io:443
+router-1:
+  endpoint: router-1.jumpstarter.127.0.0.1.nip.io:443
+  labels:
+    router-index: "1"
+router-2:
+  endpoint: router-2.jumpstarter.127.0.0.1.nip.io:443
+  labels:
+    router-index: "2"

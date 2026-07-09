@@ -92,12 +92,12 @@ impl LegacyDispatch {
         tokio::spawn(async move {
             while let Some(item) = stream.next().await {
                 let mapped = match item {
-                    Ok(bytes) => decode_result(&route, &bytes).map(|result| {
-                        StreamingDriverCallResponse {
+                    Ok(bytes) => {
+                        decode_result(&route, &bytes).map(|result| StreamingDriverCallResponse {
                             uuid: uuid.clone(),
                             result: Some(result),
-                        }
-                    }),
+                        })
+                    }
                     Err(status) => Err(status),
                 };
                 let is_err = mapped.is_err();

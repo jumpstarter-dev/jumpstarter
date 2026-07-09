@@ -1,0 +1,29 @@
+[package]
+name = "jumpstarter-controller-core"
+description = "Jumpstarter controller reconcilers: Exporter/Client/Lease controllers on kube::runtime, with a pure (cluster-free) lease scheduler decision core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+jumpstarter-controller-api = { path = "../jumpstarter-controller-api" }
+jumpstarter-controller-auth = { path = "../jumpstarter-controller-auth" }
+jumpstarter-controller-config = { path = "../jumpstarter-controller-config" }
+kube = { workspace = true, features = ["client", "config", "runtime", "rustls-tls", "ring"] }
+k8s-openapi.workspace = true
+chrono.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync"] }
+tracing.workspace = true
+futures = "0.3"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "process"] }
+base64 = "0.22"
+rcgen = { workspace = true }
+serde_yaml_ng = { workspace = true }
+http = "1"

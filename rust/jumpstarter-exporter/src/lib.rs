@@ -52,7 +52,10 @@ pub type Error = jumpstarter_lease::ClientError;
 /// NOTE: only for *native* hosts. A Python host must do this in Python (`jumpstarter.exporter_host`)
 /// — terminating a Python process from this embedded core deadlocks on interpreter finalization.
 pub fn exit_when_orphaned() {
-    let Some(hub_pid) = std::env::var("JMP_HUB_PID").ok().and_then(|s| s.parse::<i32>().ok()) else {
+    let Some(hub_pid) = std::env::var("JMP_HUB_PID")
+        .ok()
+        .and_then(|s| s.parse::<i32>().ok())
+    else {
         return; // not spawned by the hub (e.g. a direct invocation) — nothing to watch.
     };
     std::thread::Builder::new()

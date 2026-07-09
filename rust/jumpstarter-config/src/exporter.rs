@@ -313,7 +313,10 @@ export:\n\
         assert_eq!(power.r#type, "jumpstarter_driver_power.driver.PduPower");
         assert_eq!(power.config["host"], serde_json::json!("192.168.1.111"));
         assert_eq!(power.config["port"], serde_json::json!(1234));
-        assert_eq!(power.config["auth"], serde_json::json!({"username": "admin", "password": "secret"}));
+        assert_eq!(
+            power.config["auth"],
+            serde_json::json!({"username": "admin", "password": "secret"})
+        );
 
         // nested: a Base node carrying a `custom` child (Python treats a node with
         // children-and-no-type structurally; here it has children only).
@@ -433,7 +436,10 @@ export:\n\
         assert_eq!(iface("plain"), None);
 
         let out = c.to_yaml().unwrap();
-        assert!(out.contains("interface: jumpstarter.interfaces.power.v1.PowerInterface"), "{out}");
+        assert!(
+            out.contains("interface: jumpstarter.interfaces.power.v1.PowerInterface"),
+            "{out}"
+        );
         assert_eq!(out.matches("interface:").count(), 1, "{out}");
         assert_eq!(ExporterConfig::from_yaml(&out).unwrap(), c);
     }
@@ -463,7 +469,10 @@ export:\n\
         assert_eq!(host("shorthand").bin(), "/opt/hosts/power-host");
         assert!(host("shorthand").args().is_empty());
         // The mapping form carries the bin plus the extra args.
-        assert_eq!(host("detailed").bin(), "/opt/hosts/jumpstarter-exporter-host");
+        assert_eq!(
+            host("detailed").bin(),
+            "/opt/hosts/jumpstarter-exporter-host"
+        );
         assert_eq!(host("detailed").args(), ["--verbose", "--profile=ci"]);
         // Both forms round-trip.
         assert_eq!(ExporterConfig::from_yaml(&c.to_yaml().unwrap()).unwrap(), c);

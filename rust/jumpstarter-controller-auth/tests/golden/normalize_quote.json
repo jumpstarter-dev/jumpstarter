@@ -1,0 +1,375 @@
+{
+  "normalize": [
+    {
+      "input": "dex:test-user",
+      "strip": "test-user",
+      "username": "test-user",
+      "name": "oidc-dex-test-user-e17b3e"
+    },
+    {
+      "input": "internal:admin",
+      "strip": "admin",
+      "username": "admin",
+      "name": "oidc-internal-admin-95ad2c"
+    },
+    {
+      "input": "test-user",
+      "strip": "test-user",
+      "username": "test-user",
+      "name": "oidc-test-user-f85ac8"
+    },
+    {
+      "input": "prefix:with:multiple:colons",
+      "strip": "with:multiple:colons",
+      "username": "with-multiple-colons",
+      "name": "oidc-prefix-with-multiple-colons-68748f"
+    },
+    {
+      "input": "",
+      "strip": "",
+      "username": "",
+      "name": "oidc--e3b0c4"
+    },
+    {
+      "input": "dex:system:serviceaccount:jumpstarter-lab:test-exporter-sa",
+      "strip": "jumpstarter-lab:test-exporter-sa",
+      "username": "jumpstarter-lab-test-exporter-sa",
+      "name": "oidc-dex-system-serviceaccount-jumpstarter-78e753"
+    },
+    {
+      "input": "dex:system:serviceaccount:default:my-sa",
+      "strip": "default:my-sa",
+      "username": "default-my-sa",
+      "name": "oidc-dex-system-serviceaccount-default-my--fd4e7e"
+    },
+    {
+      "input": "foo",
+      "strip": "foo",
+      "username": "foo",
+      "name": "oidc-foo-2c26b4"
+    },
+    {
+      "input": "foo@example.com",
+      "strip": "foo@example.com",
+      "username": "foo-example-com",
+      "name": "oidc-foo-example-com-321ba1"
+    },
+    {
+      "input": "foo@@@@@example.com",
+      "strip": "foo@@@@@example.com",
+      "username": "foo-example-com",
+      "name": "oidc-foo-example-com-5ac340"
+    },
+    {
+      "input": "@foo@example.com@",
+      "strip": "@foo@example.com@",
+      "username": "foo-example-com",
+      "name": "oidc-foo-example-com-5be6ea"
+    },
+    {
+      "input": "foofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoo",
+      "strip": "foofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoo",
+      "username": "foofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoo",
+      "name": "oidc-foofoofoofoofoofoofoofoofoofoofoofoof-4ac4a7"
+    },
+    {
+      "input": "dex:test-exporter-hooks",
+      "strip": "test-exporter-hooks",
+      "username": "test-exporter-hooks",
+      "name": "oidc-dex-test-exporter-hooks-b2304f"
+    },
+    {
+      "input": "dex:foo@example.com",
+      "strip": "foo@example.com",
+      "username": "foo-example-com",
+      "name": "oidc-dex-foo-example-com-8da166"
+    },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "strip": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "username": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "name": "oidc-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-6bd5e5"
+    },
+    {
+      "input": "dex:system:serviceaccount:ns:name:extra",
+      "strip": "ns:name",
+      "username": "ns-name",
+      "name": "oidc-dex-system-serviceaccount-ns-name-ext-614612"
+    },
+    {
+      "input": "system:serviceaccount:ns:name",
+      "strip": "serviceaccount:ns:name",
+      "username": "serviceaccount-ns-name",
+      "name": "oidc-system-serviceaccount-ns-name-3759cd"
+    },
+    {
+      "input": "x:system:serviceaccount:ns",
+      "strip": "system:serviceaccount:ns",
+      "username": "system-serviceaccount-ns",
+      "name": "oidc-x-system-serviceaccount-ns-c14470"
+    },
+    {
+      "input": ":",
+      "strip": "",
+      "username": "",
+      "name": "oidc--e7ac07"
+    },
+    {
+      "input": "dex:",
+      "strip": "",
+      "username": "",
+      "name": "oidc-dex-2cb1eb"
+    },
+    {
+      "input": "-leading-and-trailing-",
+      "strip": "-leading-and-trailing-",
+      "username": "leading-and-trailing",
+      "name": "oidc-leading-and-trailing-5f50c0"
+    },
+    {
+      "input": "--multiple---hyphens--",
+      "strip": "--multiple---hyphens--",
+      "username": "multiple-hyphens",
+      "name": "oidc-multiple-hyphens-85acc1"
+    },
+    {
+      "input": "UPPER_case.user",
+      "strip": "UPPER_case.user",
+      "username": "upper-case-user",
+      "name": "oidc-upper-case-user-27dd41"
+    },
+    {
+      "input": "-",
+      "strip": "-",
+      "username": "",
+      "name": "oidc--3973e0"
+    },
+    {
+      "input": "dex:Ünïcödé@Example.COM",
+      "strip": "Ünïcödé@Example.COM",
+      "username": "n-c-d-example-com",
+      "name": "oidc-dex-n-c-d-example-com-3872ee"
+    },
+    {
+      "input": "dex:İstanbul-User",
+      "strip": "İstanbul-User",
+      "username": "istanbul-user",
+      "name": "oidc-dex-istanbul-user-9201b0"
+    },
+    {
+      "input": "dex:KelvinK2",
+      "strip": "KelvinK2",
+      "username": "kelvink2",
+      "name": "oidc-dex-kelvink2-f02300"
+    },
+    {
+      "input": "İ",
+      "strip": "İ",
+      "username": "i",
+      "name": "oidc-i-a65018"
+    },
+    {
+      "input": "K",
+      "strip": "K",
+      "username": "k",
+      "name": "oidc-k-2bc4fb"
+    },
+    {
+      "input": "dex:ΑΣ",
+      "strip": "ΑΣ",
+      "username": "",
+      "name": "oidc-dex-c7fb5a"
+    },
+    {
+      "input": "ΑΣΤΕΡΙ",
+      "strip": "ΑΣΤΕΡΙ",
+      "username": "",
+      "name": "oidc--7abbdb"
+    },
+    {
+      "input": "日本語ユーザー",
+      "strip": "日本語ユーザー",
+      "username": "",
+      "name": "oidc--44b7be"
+    },
+    {
+      "input": "dex:пользователь@example.com",
+      "strip": "пользователь@example.com",
+      "username": "example-com",
+      "name": "oidc-dex-example-com-d07432"
+    },
+    {
+      "input": "😀smile😀",
+      "strip": "😀smile😀",
+      "username": "smile",
+      "name": "oidc-smile-fde957"
+    },
+    {
+      "input": "a b",
+      "strip": "a b",
+      "username": "a-b",
+      "name": "oidc-a-b-950701"
+    },
+    {
+      "input": "éclair",
+      "strip": "éclair",
+      "username": "e-clair",
+      "name": "oidc-e-clair-a942c8"
+    },
+    {
+      "input": "ẞharp",
+      "strip": "ẞharp",
+      "username": "harp",
+      "name": "oidc-harp-9ac1a1"
+    },
+    {
+      "input": "ﬁle-ﬀancy",
+      "strip": "ﬁle-ﬀancy",
+      "username": "le-ancy",
+      "name": "oidc-le-ancy-f105c3"
+    },
+    {
+      "input": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+      "strip": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+      "username": "",
+      "name": "oidc--f42ec4"
+    },
+    {
+      "input": "aéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaé",
+      "strip": "aéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaéaé",
+      "username": "a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a",
+      "name": "oidc-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-a-e8c18d"
+    },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@bcd",
+      "strip": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@bcd",
+      "username": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "name": "oidc-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-0719d3"
+    },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@bcd",
+      "strip": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@bcd",
+      "username": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bcd",
+      "name": "oidc-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa--b4c80a"
+    },
+    {
+      "input": "ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-",
+      "strip": "ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-",
+      "username": "ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab",
+      "name": "oidc-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-ab-a-ddd859"
+    }
+  ],
+  "quote": [
+    {
+      "input": "hello",
+      "quoted": "\"hello\""
+    },
+    {
+      "input": "sla\\sh\"quote",
+      "quoted": "\"sla\\\\sh\\\"quote\""
+    },
+    {
+      "input": "tab\tbell\u0007",
+      "quoted": "\"tab\\tbell\\a\""
+    },
+    {
+      "input": "new\nline\r\u000b\f\b",
+      "quoted": "\"new\\nline\\r\\v\\f\\b\""
+    },
+    {
+      "input": "del",
+      "quoted": "\"del\\x7f\""
+    },
+    {
+      "input": "esc\u001b",
+      "quoted": "\"esc\\x1b\""
+    },
+    {
+      "input": "nul\u0000",
+      "quoted": "\"nul\\x00\""
+    },
+    {
+      "input": "nbsp end",
+      "quoted": "\"nbsp\\u00a0end\""
+    },
+    {
+      "input": "zwsp​end",
+      "quoted": "\"zwsp\\u200bend\""
+    },
+    {
+      "input": "é",
+      "quoted": "\"é\""
+    },
+    {
+      "input": "́",
+      "quoted": "\"́\""
+    },
+    {
+      "input": "日本語",
+      "quoted": "\"日本語\""
+    },
+    {
+      "input": "😀",
+      "quoted": "\"😀\""
+    },
+    {
+      "input": "",
+      "quoted": "\"\\ue000\""
+    },
+    {
+      "input": "󠁧",
+      "quoted": "\"\\U000e0067\""
+    },
+    {
+      "input": "�",
+      "quoted": "\"�\""
+    },
+    {
+      "input": "İ",
+      "quoted": "\"İ\""
+    },
+    {
+      "input": "space char",
+      "quoted": "\"space char\""
+    },
+    {
+      "input": "~tilde",
+      "quoted": "\"~tilde\""
+    },
+    {
+      "input": "\u0001\u001f",
+      "quoted": "\"\\x01\\x1f\""
+    },
+    {
+      "input": "\u2028\u2029",
+      "quoted": "\"\\u2028\\u2029\""
+    }
+  ],
+  "mismatch": [
+    {
+      "provided": "arbitrary-name",
+      "username": "dex:test-user@example.com",
+      "message": "resource name mismatch: provided \"arbitrary-name\" but expected \"test-user-example-com\" (derived from OIDC username \"dex:test-user@example.com\")"
+    },
+    {
+      "provided": "oidc-test-user",
+      "username": "dex:test-user@example.com",
+      "message": "resource name mismatch: provided \"oidc-test-user\" but expected \"test-user-example-com\" (derived from OIDC username \"dex:test-user@example.com\")"
+    },
+    {
+      "provided": "provided-ünïcödé",
+      "username": "dex:Ünïcödé@Example.COM",
+      "message": "resource name mismatch: provided \"provided-ünïcödé\" but expected \"n-c-d-example-com\" (derived from OIDC username \"dex:Ünïcödé@Example.COM\")"
+    },
+    {
+      "provided": "bell\u0007name",
+      "username": "dex:us er",
+      "message": "resource name mismatch: provided \"bell\\aname\" but expected \"us-er\" (derived from OIDC username \"dex:us\\u00a0er\")"
+    },
+    {
+      "provided": "tab\tname",
+      "username": "dex:😀smile",
+      "message": "resource name mismatch: provided \"tab\\tname\" but expected \"smile\" (derived from OIDC username \"dex:😀smile\")"
+    }
+  ]
+}

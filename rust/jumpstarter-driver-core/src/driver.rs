@@ -22,8 +22,8 @@ use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 use tonic::Status;
 
 use crate::dynamic_backend::DynamicBackend;
-use jumpstarter_codec::error::DriverCallError;
 use crate::host::{DriverApi, DriverResultStream, DriverStreamOpen};
+use jumpstarter_codec::error::DriverCallError;
 
 const CLIENT_LABEL: &str = "jumpstarter.dev/client";
 const NAME_LABEL: &str = "jumpstarter.dev/name";
@@ -340,7 +340,11 @@ mod tests {
         let report = backend().get_report().await.unwrap();
         // The driver is the host root (no parent), carrying its name + client labels — no wrapper.
         assert_eq!(report.reports.len(), 1);
-        let root = report.reports.iter().find(|r| r.parent_uuid.is_none()).unwrap();
+        let root = report
+            .reports
+            .iter()
+            .find(|r| r.parent_uuid.is_none())
+            .unwrap();
         assert_eq!(root.labels[NAME_LABEL], "thing");
         assert_eq!(root.labels[CLIENT_LABEL], "pkg.client.EchoClient");
         assert_eq!(root.methods_description["echo"], "echo the first argument");

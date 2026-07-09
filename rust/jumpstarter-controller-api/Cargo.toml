@@ -1,0 +1,21 @@
+[package]
+name = "jumpstarter-controller-api"
+description = "Jumpstarter controller API: the jumpstarter.dev/v1alpha1 CRD types (Exporter, Client, Lease, ExporterAccessPolicy) as kube-derive CustomResources, plus helper ports of controller/api/v1alpha1"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# Pure-data crate: CRD types + helpers only. No tonic, no kube runtime/client —
+# the same rule the workspace applies to jumpstarter-config (spec §3.5).
+[dependencies]
+kube = { workspace = true, features = ["derive", "cel"] }
+k8s-openapi = { workspace = true, features = ["schemars"] }
+schemars.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_yaml_ng.workspace = true

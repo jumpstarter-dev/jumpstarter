@@ -33,7 +33,8 @@ fn f64_field(v: &Value, k: &str) -> Option<f64> {
 fn iso(epoch: Option<f64>) -> Option<String> {
     let e = epoch?;
     let dt = time::OffsetDateTime::from_unix_timestamp(e as i64).ok()?;
-    dt.format(&time::format_description::well_known::Rfc3339).ok()
+    dt.format(&time::format_description::well_known::Rfc3339)
+        .ok()
 }
 
 /// Format a duration in seconds as `H:MM:SS` (matching Python `str(timedelta)`).
@@ -80,9 +81,15 @@ pub fn shape_exporters(
             let name = e.get("name").and_then(Value::as_str).unwrap_or("");
             let mut entry = Map::new();
             entry.insert("name".into(), json!(name));
-            entry.insert("labels".into(), e.get("labels").cloned().unwrap_or_else(|| json!({})));
+            entry.insert(
+                "labels".into(),
+                e.get("labels").cloned().unwrap_or_else(|| json!({})),
+            );
             if include_online {
-                entry.insert("online".into(), e.get("online").cloned().unwrap_or(json!(false)));
+                entry.insert(
+                    "online".into(),
+                    e.get("online").cloned().unwrap_or(json!(false)),
+                );
             }
             if let Some(status) = e.get("status") {
                 if !status.is_null() {

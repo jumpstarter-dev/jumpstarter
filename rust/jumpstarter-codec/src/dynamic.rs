@@ -182,7 +182,10 @@ pub fn request_bytes_to_args_json(
 
 /// Encode a driver-call JSON result string into the wire bytes of `output` — the encode tail
 /// the driver-side unary and per-item streaming dispatch share.
-pub fn encode_result(result_json: &str, output: &MessageDescriptor) -> Result<Vec<u8>, DriverCallError> {
+pub fn encode_result(
+    result_json: &str,
+    output: &MessageDescriptor,
+) -> Result<Vec<u8>, DriverCallError> {
     let result: Json = serde_json::from_str(result_json)
         .map_err(|e| DriverCallError::Unknown(format!("decode result json: {e}")))?;
     let response = result_to_message(&result, output)?;
@@ -302,7 +305,10 @@ pub fn encode_request(
 /// and a multi-field message decodes to a JSON object keyed by field name (a
 /// `PowerReading`-style struct return). This is what `call_async` then `json.loads`es and
 /// hands back to the driver client.
-pub fn decode_response(output: &MessageDescriptor, bytes: &[u8]) -> Result<String, DriverCallError> {
+pub fn decode_response(
+    output: &MessageDescriptor,
+    bytes: &[u8],
+) -> Result<String, DriverCallError> {
     let message = DynamicMessage::decode(output.clone(), bytes)
         .map_err(|e| DriverCallError::Unknown(format!("decode response: {e}")))?;
 
@@ -315,7 +321,8 @@ pub fn decode_response(output: &MessageDescriptor, bytes: &[u8]) -> Result<Strin
         // Multiple fields → an object keyed by field name (a struct/BaseModel return).
         (Some(_), Some(_)) => message_to_json(&message),
     };
-    serde_json::to_string(&json).map_err(|e| DriverCallError::Unknown(format!("encode result json: {e}")))
+    serde_json::to_string(&json)
+        .map_err(|e| DriverCallError::Unknown(format!("encode result json: {e}")))
 }
 
 // ---- dynamic Value <-> JSON ------------------------------------------------------
@@ -392,7 +399,10 @@ fn json_to_value(
             // Map keys are always strings in JSON; proto map keys are scalar — we only
             // support string keys here (the common case for driver maps). Other key
             // types would need the map-entry key kind; deferred.
-            map.insert(MapKey::String(k.clone()), json_to_value(v, kind, false, false)?);
+            map.insert(
+                MapKey::String(k.clone()),
+                json_to_value(v, kind, false, false)?,
+            );
         }
         return Ok(Value::Map(map));
     }
@@ -417,7 +427,9 @@ fn json_to_value(
 /// typed dynamic value of `kind`.
 fn json_scalar_to_value(json: &Json, kind: &Kind) -> Result<Value, DriverCallError> {
     let type_err = |want: &str| {
-        DriverCallError::Unknown(format!("result JSON {json} not convertible to proto {want}"))
+        DriverCallError::Unknown(format!(
+            "result JSON {json} not convertible to proto {want}"
+        ))
     };
 
     Ok(match kind {
@@ -445,7 +457,9 @@ fn json_scalar_to_value(json: &Json, kind: &Kind) -> Result<Value, DriverCallErr
                 .to_vec()
                 .into(),
         ),
-        Kind::Enum(_) => Value::EnumNumber(json_as_i64(json).ok_or_else(|| type_err("enum"))? as i32),
+        Kind::Enum(_) => {
+            Value::EnumNumber(json_as_i64(json).ok_or_else(|| type_err("enum"))? as i32)
+        }
         Kind::Message(desc) => Value::Message(result_to_message(json, desc)?),
     })
 }
@@ -570,7 +584,11 @@ mod tests {
                 name: Some("PowerInterface".to_string()),
                 method: vec![
                     method("On", ".power.v1.Empty", ".power.v1.Empty"),
-                    method("SetVoltage", ".power.v1.SetVoltageRequest", ".power.v1.Empty"),
+                    method(
+                        "SetVoltage",
+                        ".power.v1.SetVoltageRequest",
+                        ".power.v1.Empty",
+                    ),
                     method("Read", ".power.v1.Empty", ".power.v1.PowerReading"),
                 ],
                 ..Default::default()
@@ -636,7 +654,9 @@ mod tests {
         let pool = power_pool();
         let empty = msg(&pool, "power.v1.Empty");
         assert!(super::encode_request(&empty, "[]").unwrap().is_empty());
-        assert!(super::encode_request(&empty, "[1, 2, 3]").unwrap().is_empty());
+        assert!(super::encode_request(&empty, "[1, 2, 3]")
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -653,9 +673,11 @@ mod tests {
 
         // Multi-field message → object keyed by field name.
         let reading = msg(&pool, "power.v1.PowerReading");
-        let reading_msg =
-            result_to_message(&serde_json::json!({ "voltage": 5.0, "current": 2.0 }), &reading)
-                .unwrap();
+        let reading_msg = result_to_message(
+            &serde_json::json!({ "voltage": 5.0, "current": 2.0 }),
+            &reading,
+        )
+        .unwrap();
         let reading_bytes = reading_msg.encode_to_vec();
         let json: Json =
             serde_json::from_str(&super::decode_response(&reading, &reading_bytes).unwrap())

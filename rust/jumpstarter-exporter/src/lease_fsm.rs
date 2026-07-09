@@ -897,7 +897,11 @@ mod table_tests {
 
         // Internal (typed) progressions decided by the runner.
         add(&mut edges, "Created", &created().begin_setup().into());
-        add(&mut edges, "Starting", &starting().enter_before_lease().into());
+        add(
+            &mut edges,
+            "Starting",
+            &starting().enter_before_lease().into(),
+        );
         add(&mut edges, "Starting", &starting().mark_ready().into());
         add(&mut edges, "Ending", &ending().enter_after_lease().into());
         add(&mut edges, "Ending", &ending().begin_release().into());
@@ -905,18 +909,58 @@ mod table_tests {
         add(&mut edges, "Releasing", &releasing().mark_done().into());
 
         // `fail` from each live state.
-        add(&mut edges, "Created", &created().fail(LeaseFailureReason::Internal).into());
-        add(&mut edges, "Starting", &starting().fail(LeaseFailureReason::Internal).into());
-        add(&mut edges, "BeforeLease", &before().fail(LeaseFailureReason::Internal).into());
-        add(&mut edges, "Ready", &ready().fail(LeaseFailureReason::Internal).into());
-        add(&mut edges, "Ending", &ending().fail(LeaseFailureReason::Internal).into());
-        add(&mut edges, "AfterLease", &after().fail(LeaseFailureReason::Internal).into());
-        add(&mut edges, "Releasing", &releasing().fail(LeaseFailureReason::Internal).into());
+        add(
+            &mut edges,
+            "Created",
+            &created().fail(LeaseFailureReason::Internal).into(),
+        );
+        add(
+            &mut edges,
+            "Starting",
+            &starting().fail(LeaseFailureReason::Internal).into(),
+        );
+        add(
+            &mut edges,
+            "BeforeLease",
+            &before().fail(LeaseFailureReason::Internal).into(),
+        );
+        add(
+            &mut edges,
+            "Ready",
+            &ready().fail(LeaseFailureReason::Internal).into(),
+        );
+        add(
+            &mut edges,
+            "Ending",
+            &ending().fail(LeaseFailureReason::Internal).into(),
+        );
+        add(
+            &mut edges,
+            "AfterLease",
+            &after().fail(LeaseFailureReason::Internal).into(),
+        );
+        add(
+            &mut edges,
+            "Releasing",
+            &releasing().fail(LeaseFailureReason::Internal).into(),
+        );
 
         // Signal-driven cross-variant edges.
-        add(&mut edges, "Created", &LeaseState::Created(created()).apply(ctrl_ended()));
-        add(&mut edges, "Starting", &LeaseState::Starting(starting()).apply(ctrl_ended()));
-        add(&mut edges, "Ready", &LeaseState::Ready(ready()).apply(ctrl_ended()));
+        add(
+            &mut edges,
+            "Created",
+            &LeaseState::Created(created()).apply(ctrl_ended()),
+        );
+        add(
+            &mut edges,
+            "Starting",
+            &LeaseState::Starting(starting()).apply(ctrl_ended()),
+        );
+        add(
+            &mut edges,
+            "Ready",
+            &LeaseState::Ready(ready()).apply(ctrl_ended()),
+        );
         add(
             &mut edges,
             "BeforeLease",
@@ -968,7 +1012,10 @@ mod table_tests {
         .into_iter()
         .collect();
 
-        assert_eq!(edges, expected, "reachable edge set diverged from the agreed table");
+        assert_eq!(
+            edges, expected,
+            "reachable edge set diverged from the agreed table"
+        );
     }
 
     #[test]
@@ -997,7 +1044,10 @@ mod table_tests {
     fn projection_matches_every_state() {
         use ExporterStatus as S;
         assert_eq!(project(&LeaseState::Created(created())), Some(S::Available));
-        assert_eq!(project(&LeaseState::Starting(starting())), Some(S::Available));
+        assert_eq!(
+            project(&LeaseState::Starting(starting())),
+            Some(S::Available)
+        );
         assert_eq!(
             project(&LeaseState::BeforeLease(before())),
             Some(S::BeforeLeaseHook)
@@ -1008,7 +1058,10 @@ mod table_tests {
             project(&LeaseState::AfterLease(after())),
             Some(S::AfterLeaseHook)
         );
-        assert_eq!(project(&LeaseState::Releasing(releasing())), Some(S::Available));
+        assert_eq!(
+            project(&LeaseState::Releasing(releasing())),
+            Some(S::Available)
+        );
         assert_eq!(project(&done_state()), None);
         let fail_before: LeaseState = before().fail(LeaseFailureReason::BeforeHook).into();
         assert_eq!(project(&fail_before), Some(S::BeforeLeaseHookFailed));

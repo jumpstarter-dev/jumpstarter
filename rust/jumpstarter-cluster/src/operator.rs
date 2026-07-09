@@ -37,9 +37,19 @@ fn with(base: &[String], extra: &[&str]) -> Vec<String> {
     cmd
 }
 
-async fn install_cert_manager(kubeconfig: Option<&str>, context: Option<&str>, progress: &dyn Progress) -> Result<()> {
+async fn install_cert_manager(
+    kubeconfig: Option<&str>,
+    context: Option<&str>,
+    progress: &dyn Progress,
+) -> Result<()> {
     let base = kubectl_base(kubeconfig, context);
-    if run_command(&with(&base, &["get", "crd", "certificates.cert-manager.io"])).await?.ok() {
+    if run_command(&with(
+        &base,
+        &["get", "crd", "certificates.cert-manager.io"],
+    ))
+    .await?
+    .ok()
+    {
         progress.progress("cert-manager already installed, skipping");
         return Ok(());
     }
@@ -48,10 +58,16 @@ async fn install_cert_manager(kubeconfig: Option<&str>, context: Option<&str>, p
         "https://github.com/cert-manager/cert-manager/releases/download/{CERTMANAGER_VERSION}/cert-manager.yaml"
     );
     if run_command_streamed(&with(&base, &["apply", "-f", &url])).await? != 0 {
-        return Err(ClusterError::Operation("Failed to install cert-manager".to_string()));
+        return Err(ClusterError::Operation(
+            "Failed to install cert-manager".to_string(),
+        ));
     }
     progress.progress("Waiting for cert-manager to be ready...");
-    tracing::debug!(deployment = "cert-manager-webhook", namespace = "cert-manager", "waiting for cert-manager webhook to become available");
+    tracing::debug!(
+        deployment = "cert-manager-webhook",
+        namespace = "cert-manager",
+        "waiting for cert-manager webhook to become available"
+    );
     let code = run_command_streamed(&with(
         &base,
         &[
@@ -65,8 +81,14 @@ async fn install_cert_manager(kubeconfig: Option<&str>, context: Option<&str>, p
     ))
     .await?;
     if code != 0 {
-        tracing::warn!(deployment = "cert-manager-webhook", code, "cert-manager did not become ready");
-        return Err(ClusterError::Operation("cert-manager did not become ready".to_string()));
+        tracing::warn!(
+            deployment = "cert-manager-webhook",
+            code,
+            "cert-manager did not become ready"
+        );
+        return Err(ClusterError::Operation(
+            "cert-manager did not become ready".to_string(),
+        ));
     }
     tracing::info!("cert-manager installed");
     progress.success("cert-manager installed");
@@ -81,23 +103,49 @@ async fn install_operator(
     progress: &dyn Progress,
 ) -> Result<()> {
     let base = kubectl_base(kubeconfig, context);
-    let installer = operator_installer.map(String::from).unwrap_or_else(|| operator_installer_url(version));
+    let installer = operator_installer
+        .map(String::from)
+        .unwrap_or_else(|| operator_installer_url(version));
     progress.progress(&format!("Installing Jumpstarter operator {version}..."));
     progress.progress(&format!("Installer: {installer}"));
     if run_command_streamed(&with(&base, &["apply", "-f", &installer])).await? != 0 {
-        return Err(ClusterError::Operation(format!("Failed to apply operator installer from {installer}")));
+        return Err(ClusterError::Operation(format!(
+            "Failed to apply operator installer from {installer}"
+        )));
     }
     // Restart the operator if it already existed, so it picks up the new image.
-    if run_command(&with(&base, &["get", "deployment", OPERATOR_DEPLOYMENT, "-n", OPERATOR_NAMESPACE])).await?.ok() {
+    if run_command(&with(
+        &base,
+        &[
+            "get",
+            "deployment",
+            OPERATOR_DEPLOYMENT,
+            "-n",
+            OPERATOR_NAMESPACE,
+        ],
+    ))
+    .await?
+    .ok()
+    {
         progress.progress("Restarting operator to pick up new image...");
         let _ = run_command_streamed(&with(
             &base,
-            &["rollout", "restart", &format!("deployment/{OPERATOR_DEPLOYMENT}"), "-n", OPERATOR_NAMESPACE],
+            &[
+                "rollout",
+                "restart",
+                &format!("deployment/{OPERATOR_DEPLOYMENT}"),
+                "-n",
+                OPERATOR_NAMESPACE,
+            ],
         ))
         .await?;
     }
     progress.progress("Waiting for operator to be ready...");
-    tracing::debug!(deployment = OPERATOR_DEPLOYMENT, namespace = OPERATOR_NAMESPACE, "waiting for operator deployment to become available");
+    tracing::debug!(
+        deployment = OPERATOR_DEPLOYMENT,
+        namespace = OPERATOR_NAMESPACE,
+        "waiting for operator deployment to become available"
+    );
     let code = run_command_streamed(&with(
         &base,
         &[
@@ -111,8 +159,14 @@ async fn install_operator(
     ))
     .await?;
     if code != 0 {
-        tracing::warn!(deployment = OPERATOR_DEPLOYMENT, code, "operator did not become ready");
-        return Err(ClusterError::Operation("Operator did not become ready".to_string()));
+        tracing::warn!(
+            deployment = OPERATOR_DEPLOYMENT,
+            code,
+            "operator did not become ready"
+        );
+        return Err(ClusterError::Operation(
+            "Operator did not become ready".to_string(),
+        ));
     }
     tracing::info!(deployment = OPERATOR_DEPLOYMENT, "operator is ready");
     progress.success("Operator is ready");
@@ -120,7 +174,12 @@ async fn install_operator(
 }
 
 /// Build the Jumpstarter CR YAML (`_build_jumpstarter_cr`, nodeport mode).
-pub fn build_jumpstarter_cr(namespace: &str, basedomain: &str, grpc_endpoint: &str, router_endpoint: &str) -> String {
+pub fn build_jumpstarter_cr(
+    namespace: &str,
+    basedomain: &str,
+    grpc_endpoint: &str,
+    router_endpoint: &str,
+) -> String {
     let controller_endpoint = format!(
         "        - address: \"{grpc_endpoint}\"\n          nodeport:\n            enabled: true\n            port: {GRPC_NODEPORT}"
     );
@@ -153,18 +212,36 @@ async fn apply_jumpstarter_cr(
 ) -> Result<()> {
     let base = kubectl_base(kubeconfig, context);
     // Create the namespace (idempotent, via apply of the dry-run manifest).
-    let ns = run_command(&with(&base, &["create", "namespace", namespace, "--dry-run=client", "-o", "yaml"])).await?;
+    let ns = run_command(&with(
+        &base,
+        &[
+            "create",
+            "namespace",
+            namespace,
+            "--dry-run=client",
+            "-o",
+            "yaml",
+        ],
+    ))
+    .await?;
     if ns.ok() {
-        let out = run_command_stdin(&with(&base, &["apply", "-f", "-"]), ns.stdout.as_bytes()).await?;
+        let out =
+            run_command_stdin(&with(&base, &["apply", "-f", "-"]), ns.stdout.as_bytes()).await?;
         if !out.ok() {
-            return Err(ClusterError::Operation(format!("Failed to create namespace {namespace}: {}", out.stderr)));
+            return Err(ClusterError::Operation(format!(
+                "Failed to create namespace {namespace}: {}",
+                out.stderr
+            )));
         }
     }
     let cr = build_jumpstarter_cr(namespace, basedomain, grpc_endpoint, router_endpoint);
     progress.progress("Applying Jumpstarter CR...");
     let out = run_command_stdin(&with(&base, &["apply", "-f", "-"]), cr.as_bytes()).await?;
     if !out.ok() {
-        return Err(ClusterError::Operation(format!("Failed to apply Jumpstarter CR: {}", out.stderr)));
+        return Err(ClusterError::Operation(format!(
+            "Failed to apply Jumpstarter CR: {}",
+            out.stderr
+        )));
     }
     progress.success("Jumpstarter CR applied");
     Ok(())
@@ -186,7 +263,13 @@ async fn wait_for_jumpstarter_ready(
         let mut created = false;
         for attempt in 1..=max_polls {
             tracing::debug!(deployment, %namespace, attempt, of = max_polls, "polling for deployment to be created");
-            if run_command(&with(&base, &["get", "deployment", deployment, "-n", namespace])).await?.ok() {
+            if run_command(&with(
+                &base,
+                &["get", "deployment", deployment, "-n", namespace],
+            ))
+            .await?
+            .ok()
+            {
                 tracing::info!(deployment, attempt, "deployment created by operator");
                 created = true;
                 break;
@@ -195,9 +278,15 @@ async fn wait_for_jumpstarter_ready(
         }
         if !created {
             tracing::warn!(deployment, %namespace, polls = max_polls, "timed out waiting for deployment to be created");
-            return Err(ClusterError::Operation(format!("Timeout waiting for deployment/{deployment} to be created")));
+            return Err(ClusterError::Operation(format!(
+                "Timeout waiting for deployment/{deployment} to be created"
+            )));
         }
-        tracing::debug!(deployment, timeout, "waiting for deployment to become available");
+        tracing::debug!(
+            deployment,
+            timeout,
+            "waiting for deployment to become available"
+        );
         let code = run_command_streamed(&with(
             &base,
             &[
@@ -212,7 +301,9 @@ async fn wait_for_jumpstarter_ready(
         .await?;
         if code != 0 {
             tracing::warn!(deployment, code, "deployment did not become ready");
-            return Err(ClusterError::Operation(format!("deployment/{deployment} did not become ready")));
+            return Err(ClusterError::Operation(format!(
+                "deployment/{deployment} did not become ready"
+            )));
         }
         tracing::info!(deployment, "deployment is available");
     }
@@ -236,7 +327,16 @@ pub async fn install_jumpstarter_operator(
 ) -> Result<()> {
     install_cert_manager(kubeconfig, context, progress).await?;
     install_operator(version, kubeconfig, context, operator_installer, progress).await?;
-    apply_jumpstarter_cr(namespace, basedomain, grpc_endpoint, router_endpoint, kubeconfig, context, progress).await?;
+    apply_jumpstarter_cr(
+        namespace,
+        basedomain,
+        grpc_endpoint,
+        router_endpoint,
+        kubeconfig,
+        context,
+        progress,
+    )
+    .await?;
     wait_for_jumpstarter_ready(namespace, kubeconfig, context, progress, 300).await?;
     Ok(())
 }

@@ -107,4 +107,3 @@ impl From<jumpstarter_lease::ClientError> for ControllerError {
         }
     }
 }
-

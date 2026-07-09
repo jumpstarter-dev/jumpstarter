@@ -346,7 +346,9 @@ pub async fn run_exporter(
 fn init_exporter_tracing() {
     use tracing_subscriber::EnvFilter;
     let _ = tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
         .with_writer(std::io::stderr)
         .try_init();
 }
@@ -418,11 +420,10 @@ pub async fn run_exporter_polyglot(config_path: String) -> Result<ExporterExit, 
     init_exporter_tracing();
     let config = ExporterConfig::load(&config_path)
         .map_err(|e| ExporterError::Config(format!("loading exporter config: {e}")))?;
-    let factory: Arc<dyn HostFactory> = Arc::new(
-        jumpstarter_exporter::polyglot::PolyglotHostFactory::new(std::path::PathBuf::from(
-            config_path,
-        )),
-    );
+    let factory: Arc<dyn HostFactory> =
+        Arc::new(jumpstarter_exporter::polyglot::PolyglotHostFactory::new(
+            std::path::PathBuf::from(config_path),
+        ));
     let exit = jumpstarter_exporter::run_with_factory(config, factory)
         .await
         .map_err(|e| ExporterError::Runtime(e.to_string()))?;
@@ -539,7 +540,8 @@ impl ForeignNativeUnary for UniffiNativeUnary {
         uuid: String,
         path: String,
         body: Vec<u8>,
-    ) -> Result<Arc<dyn jumpstarter_driver_core::foreign::ForeignNativeByteStream>, DriverCallError> {
+    ) -> Result<Arc<dyn jumpstarter_driver_core::foreign::ForeignNativeByteStream>, DriverCallError>
+    {
         let handle = self
             .inner
             .forward_server_stream(uuid, path, Bytes(body))
@@ -619,7 +621,11 @@ impl DriverApi for UniffiHostApi {
     }
 
     async fn open_stream(&self, request_json: String) -> Result<DriverStreamOpen, DriverCallError> {
-        let opened = self.inner.open_stream(request_json).await.map_err(to_core_err)?;
+        let opened = self
+            .inner
+            .open_stream(request_json)
+            .await
+            .map_err(to_core_err)?;
         let channel: Arc<dyn DriverByteChannel> = Arc::new(HandleByteChannel {
             host: self.inner.clone(),
             handle: opened.handle,
@@ -645,7 +651,11 @@ struct HandleResultStream {
 #[async_trait]
 impl DriverResultStream for HandleResultStream {
     async fn next(&self) -> Result<Option<String>, DriverCallError> {
-        let item = self.host.streaming_next(self.handle).await.map_err(to_core_err)?;
+        let item = self
+            .host
+            .streaming_next(self.handle)
+            .await
+            .map_err(to_core_err)?;
         if item.is_none() {
             // End of stream — release the handle (best effort).
             let _ = self.host.streaming_close(self.handle).await;
@@ -756,7 +766,11 @@ impl ClientSession {
 
     /// Open a router byte stream (driver `@exportstream` / resource handle).
     pub async fn stream(&self, request_json: String) -> Result<Arc<ClientByteStream>, DriverError> {
-        let inner = self.inner.stream(request_json).await.map_err(from_core_err)?;
+        let inner = self
+            .inner
+            .stream(request_json)
+            .await
+            .map_err(from_core_err)?;
         Ok(Arc::new(ClientByteStream { inner }))
     }
 
@@ -878,7 +892,10 @@ impl DriverByteChannel for HandleByteChannel {
             .map_err(to_core_err)
     }
     async fn close(&self) -> Result<(), DriverCallError> {
-        self.host.stream_close(self.handle).await.map_err(to_core_err)
+        self.host
+            .stream_close(self.handle)
+            .await
+            .map_err(to_core_err)
     }
 }
 
@@ -939,7 +956,12 @@ impl ControllerSession {
     ) -> Result<Arc<Self>, ControllerError> {
         ensure_crypto_provider();
         let inner = jumpstarter_client::ControllerSession::connect(
-            endpoint, token, ca, tls_insecure, namespace, name,
+            endpoint,
+            token,
+            ca,
+            tls_insecure,
+            namespace,
+            name,
         )
         .await
         .map_err(from_core_controller_err)?;
@@ -974,20 +996,30 @@ impl ControllerSession {
 
     /// Release (delete) a lease by name.
     pub async fn release_lease(&self, name: String) -> Result<(), ControllerError> {
-        self.inner.release_lease(name).await.map_err(from_core_controller_err)
+        self.inner
+            .release_lease(name)
+            .await
+            .map_err(from_core_controller_err)
     }
 
     /// Start a transport listener for the lease; the returned handle exposes the
     /// `JUMPSTARTER_HOST` socket path the language client connects to.
     pub async fn serve_lease(&self, name: String) -> Result<Arc<LeaseTransport>, ControllerError> {
-        let inner = self.inner.serve_lease(name).await.map_err(from_core_controller_err)?;
+        let inner = self
+            .inner
+            .serve_lease(name)
+            .await
+            .map_err(from_core_controller_err)?;
         Ok(Arc::new(LeaseTransport { inner }))
     }
 
     /// List exporters as a JSON array string (`filter` = label selector). Each entry:
     /// `{name, labels, online, status}`.
     pub async fn list_exporters(&self, filter: Option<String>) -> Result<String, ControllerError> {
-        self.inner.list_exporters_json(filter).await.map_err(from_core_controller_err)
+        self.inner
+            .list_exporters_json(filter)
+            .await
+            .map_err(from_core_controller_err)
     }
 
     /// List leases as a JSON array string. Each entry: `{name, client, exporter, selector,
@@ -1013,7 +1045,12 @@ impl ControllerSession {
         tags: HashMap<String, String>,
     ) -> Result<String, ControllerError> {
         self.inner
-            .create_lease(duration_secs, selector, exporter_name, tags.into_iter().collect())
+            .create_lease(
+                duration_secs,
+                selector,
+                exporter_name,
+                tags.into_iter().collect(),
+            )
             .await
             .map_err(from_core_controller_err)
     }
@@ -1051,13 +1088,17 @@ impl LeasedExporter {
     ) -> Result<Arc<Self>, ControllerError> {
         ensure_crypto_provider();
         use jumpstarter_config::{ClientConfig, YamlConfig};
-        let cfg = ClientConfig::load(&config_path).map_err(|e| ControllerError::Config(e.to_string()))?;
+        let cfg =
+            ClientConfig::load(&config_path).map_err(|e| ControllerError::Config(e.to_string()))?;
         let session = jumpstarter_client::ControllerSession::connect(
             cfg.endpoint.clone().unwrap_or_default(),
             cfg.token.clone(),
             cfg.tls.ca.clone(),
             cfg.tls.insecure,
-            cfg.metadata.namespace.clone().unwrap_or_else(|| "default".to_string()),
+            cfg.metadata
+                .namespace
+                .clone()
+                .unwrap_or_else(|| "default".to_string()),
             cfg.metadata.name.clone(),
         )
         .await
@@ -1072,10 +1113,17 @@ impl LeasedExporter {
             )
             .await
             .map_err(from_core_controller_err)?;
-        let transport = session.serve_lease(acquired.name.clone()).await.map_err(from_core_controller_err)?;
-        let host = transport.jumpstarter_host().await.map_err(from_core_controller_err)?;
+        let transport = session
+            .serve_lease(acquired.name.clone())
+            .await
+            .map_err(from_core_controller_err)?;
+        let host = transport
+            .jumpstarter_host()
+            .await
+            .map_err(from_core_controller_err)?;
         // Preserve the `"UNSAFE" in allow` sentinel so the client tree's driver-allow policy matches.
-        let unsafe_drivers = cfg.drivers.r#unsafe || cfg.drivers.allow.iter().any(|d| d == "UNSAFE");
+        let unsafe_drivers =
+            cfg.drivers.r#unsafe || cfg.drivers.allow.iter().any(|d| d == "UNSAFE");
         Ok(Arc::new(Self {
             session,
             _transport: transport,
@@ -1108,7 +1156,10 @@ impl LeasedExporter {
     /// Tear down the transport and release the lease. Call once on test teardown.
     pub async fn release(&self) -> Result<(), ControllerError> {
         self._transport.close().await;
-        self.session.release_lease(self.name.clone()).await.map_err(from_core_controller_err)
+        self.session
+            .release_lease(self.name.clone())
+            .await
+            .map_err(from_core_controller_err)
     }
 }
 
@@ -1122,7 +1173,10 @@ pub struct LeaseTransport {
 impl LeaseTransport {
     /// The Unix socket path to export as `JUMPSTARTER_HOST`.
     pub async fn jumpstarter_host(&self) -> Result<String, ControllerError> {
-        self.inner.jumpstarter_host().await.map_err(from_core_controller_err)
+        self.inner
+            .jumpstarter_host()
+            .await
+            .map_err(from_core_controller_err)
     }
 
     /// Stop the listener + remove the socket (idempotent). Named `shutdown`, not `close`, to avoid

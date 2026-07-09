@@ -181,7 +181,10 @@ impl ChannelBackend {
         let mut client = RouterServiceClient::new(self.channel.clone())
             .max_decoding_message_size(64 * 1024 * 1024)
             .max_encoding_message_size(64 * 1024 * 1024);
-        debug!(max_message_bytes = 64 * 1024 * 1024, "opening router stream");
+        debug!(
+            max_message_bytes = 64 * 1024 * 1024,
+            "opening router stream"
+        );
         let host_resp = client.stream(host_req).await?;
         let initial_metadata = host_resp.metadata().clone();
         debug!(
@@ -208,7 +211,10 @@ impl DriverBackend for ChannelBackend {
         request_meta: AsciiMetadataValue,
         uplink: FrameUplink,
     ) -> Result<RouterStreamOpen, Status> {
-        trace!(rpc = "Stream", "channel backend RPC dispatch (router stream open)");
+        trace!(
+            rpc = "Stream",
+            "channel backend RPC dispatch (router stream open)"
+        );
         // Forward uplink frames + the `request` metadata to the driver eagerly; it sends
         // its initial metadata before reading any frame, so this returns promptly.
         self.open_router_stream_impl(request_meta, uplink).await
@@ -232,9 +238,9 @@ impl DriverBackend for ChannelBackend {
         let mut grpc = tonic::client::Grpc::new(self.channel.clone())
             .max_decoding_message_size(64 * 1024 * 1024)
             .max_encoding_message_size(64 * 1024 * 1024);
-        grpc.ready().await.map_err(|e| {
-            Status::unavailable(format!("native forward: backend not ready: {e}"))
-        })?;
+        grpc.ready()
+            .await
+            .map_err(|e| Status::unavailable(format!("native forward: backend not ready: {e}")))?;
         let path = http::uri::PathAndQuery::from_str(path)
             .map_err(|e| Status::internal(format!("native forward: bad method path: {e}")))?;
         // Carry the inbound metadata (driver uuid header included) verbatim to the backend method.
@@ -264,9 +270,9 @@ impl DriverBackend for ChannelBackend {
         let mut grpc = tonic::client::Grpc::new(self.channel.clone())
             .max_decoding_message_size(64 * 1024 * 1024)
             .max_encoding_message_size(64 * 1024 * 1024);
-        grpc.ready().await.map_err(|e| {
-            Status::unavailable(format!("native forward: backend not ready: {e}"))
-        })?;
+        grpc.ready()
+            .await
+            .map_err(|e| Status::unavailable(format!("native forward: backend not ready: {e}")))?;
         let path = http::uri::PathAndQuery::from_str(path)
             .map_err(|e| Status::internal(format!("native forward: bad method path: {e}")))?;
         let mut request = Request::new(body);
@@ -294,9 +300,9 @@ impl DriverBackend for ChannelBackend {
         let mut grpc = tonic::client::Grpc::new(self.channel.clone())
             .max_decoding_message_size(64 * 1024 * 1024)
             .max_encoding_message_size(64 * 1024 * 1024);
-        grpc.ready().await.map_err(|e| {
-            Status::unavailable(format!("native forward: backend not ready: {e}"))
-        })?;
+        grpc.ready()
+            .await
+            .map_err(|e| Status::unavailable(format!("native forward: backend not ready: {e}")))?;
         let path = http::uri::PathAndQuery::from_str(path)
             .map_err(|e| Status::internal(format!("native forward: bad method path: {e}")))?;
         // tonic's streaming client wants a stream of bare encode messages; map the inbound request

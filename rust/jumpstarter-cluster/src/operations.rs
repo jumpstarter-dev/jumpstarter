@@ -5,7 +5,9 @@ use crate::common::validate_cluster_name;
 use crate::detection::{auto_detect_cluster_type, detect_existing_cluster_type};
 use crate::error::{ClusterError, Result};
 use crate::kind::{delete_kind_cluster_with_feedback, kind_cluster_exists, kind_installed};
-use crate::minikube::{delete_minikube_cluster_with_feedback, minikube_cluster_exists, minikube_installed};
+use crate::minikube::{
+    delete_minikube_cluster_with_feedback, minikube_cluster_exists, minikube_installed,
+};
 use crate::progress::Progress;
 
 /// Pick the cluster type from the `--kind`/`--minikube`/`--k3s` flags, or
@@ -48,7 +50,9 @@ pub async fn delete_cluster_by_name(
                 return Err(ClusterError::tool_not_installed("kind"));
             }
             if !kind_cluster_exists("kind", &cluster_name).await {
-                return Err(ClusterError::NotFound(format!("kind cluster \"{cluster_name}\" does not exist")));
+                return Err(ClusterError::NotFound(format!(
+                    "kind cluster \"{cluster_name}\" does not exist"
+                )));
             }
             "kind".to_string()
         }
@@ -57,7 +61,9 @@ pub async fn delete_cluster_by_name(
                 return Err(ClusterError::tool_not_installed("minikube"));
             }
             if !minikube_cluster_exists("minikube", &cluster_name).await {
-                return Err(ClusterError::NotFound(format!("minikube cluster \"{cluster_name}\" does not exist")));
+                return Err(ClusterError::NotFound(format!(
+                    "minikube cluster \"{cluster_name}\" does not exist"
+                )));
             }
             "minikube".to_string()
         }
@@ -71,7 +77,11 @@ pub async fn delete_cluster_by_name(
                 progress.progress(&format!("Auto-detected {t} cluster \"{cluster_name}\""));
                 t
             }
-            None => return Err(ClusterError::NotFound(format!("No cluster named \"{cluster_name}\" found"))),
+            None => {
+                return Err(ClusterError::NotFound(format!(
+                    "No cluster named \"{cluster_name}\" found"
+                )))
+            }
         },
     };
 
@@ -86,10 +96,14 @@ pub async fn delete_cluster_by_name(
 
     match cluster_type.as_str() {
         "kind" => delete_kind_cluster_with_feedback("kind", &cluster_name, progress).await?,
-        "minikube" => delete_minikube_cluster_with_feedback("minikube", &cluster_name, progress).await?,
+        "minikube" => {
+            delete_minikube_cluster_with_feedback("minikube", &cluster_name, progress).await?
+        }
         _ => unreachable!(),
     }
-    progress.success(&format!("Successfully deleted {cluster_type} cluster \"{cluster_name}\""));
+    progress.success(&format!(
+        "Successfully deleted {cluster_type} cluster \"{cluster_name}\""
+    ));
     Ok(())
 }
 
@@ -99,9 +113,18 @@ mod tests {
 
     #[test]
     fn type_selection_rejects_multiple_and_picks_one() {
-        assert_eq!(validate_cluster_type_selection(Some("kind"), None, None).unwrap(), "kind");
-        assert_eq!(validate_cluster_type_selection(None, Some("minikube"), None).unwrap(), "minikube");
-        assert_eq!(validate_cluster_type_selection(None, None, Some("user@h")).unwrap(), "k3s");
+        assert_eq!(
+            validate_cluster_type_selection(Some("kind"), None, None).unwrap(),
+            "kind"
+        );
+        assert_eq!(
+            validate_cluster_type_selection(None, Some("minikube"), None).unwrap(),
+            "minikube"
+        );
+        assert_eq!(
+            validate_cluster_type_selection(None, None, Some("user@h")).unwrap(),
+            "k3s"
+        );
         assert!(validate_cluster_type_selection(Some("kind"), Some("minikube"), None).is_err());
     }
 }

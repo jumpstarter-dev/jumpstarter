@@ -58,7 +58,10 @@ fn main() {
 
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
-        let mut next = || args.next().unwrap_or_else(|| fail(&format!("{arg} needs a value")));
+        let mut next = || {
+            args.next()
+                .unwrap_or_else(|| fail(&format!("{arg} needs a value")))
+        };
         match arg.as_str() {
             "--descriptor-set" => descriptor_set = Some(PathBuf::from(next())),
             "--proto" => proto = Some(PathBuf::from(next())),
@@ -104,7 +107,8 @@ fn main() {
                 .unwrap_or_else(|e| fail(&format!("load registry {}: {e}", path.display())));
             registry.merge(loaded);
         }
-        let proto_root = proto_root.unwrap_or_else(|| fail("--kind device requires --proto-root <dir>"));
+        let proto_root =
+            proto_root.unwrap_or_else(|| fail("--kind device requires --proto-root <dir>"));
 
         // Client overrides: `drivers.select` from --client-config, then --select flags on top.
         let mut select = std::collections::BTreeMap::new();
@@ -117,7 +121,11 @@ fn main() {
 
         let device = resolve_device(&config, &registry, &proto_root, strict)
             .unwrap_or_else(|e| fail(&format!("resolve exporter config: {e}")));
-        let opts = DeviceOptions { device_name, select, python_package };
+        let opts = DeviceOptions {
+            device_name,
+            select,
+            python_package,
+        };
         let (files, warnings) = generate_device(&device, &language, &opts)
             .unwrap_or_else(|e| fail(&format!("generate device: {e}")));
         for warning in &warnings {
@@ -136,8 +144,9 @@ fn main() {
 
     // The serialized FileDescriptorSet: read pre-compiled, or compile the .proto in-process.
     let bytes: Vec<u8> = match (&descriptor_set, &proto) {
-        (Some(path), None) => std::fs::read(path)
-            .unwrap_or_else(|e| fail(&format!("read {}: {e}", path.display()))),
+        (Some(path), None) => {
+            std::fs::read(path).unwrap_or_else(|e| fail(&format!("read {}: {e}", path.display())))
+        }
         (None, Some(proto)) => {
             if includes.is_empty() {
                 // Default include path: the proto's own directory.
@@ -158,7 +167,9 @@ fn main() {
         // java and kotlin both target the JVM generator (grpc-java stubs + a Kotlin client).
         "java" | "kotlin" => Box::new(JavaGenerator),
         "python" => Box::new(PythonGenerator::new(python_package, bytes.clone())),
-        other => fail(&format!("unknown --language {other:?} (rust|java|kotlin|python)")),
+        other => fail(&format!(
+            "unknown --language {other:?} (rust|java|kotlin|python)"
+        )),
     };
 
     let interfaces = interfaces_from_descriptor_set(&bytes)

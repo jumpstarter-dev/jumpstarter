@@ -1,0 +1,15 @@
+# Context ignore for repo-root-context image builds (rust/Containerfile.controller).
+# The Go controller/operator images use controller/ as their context and are
+# unaffected. Whitelist style: the Rust image needs only protocol/ and rust/
+# (rust/jumpstarter-protocol/build.rs compiles ../../protocol/proto), so
+# everything else — notably .git, python/.venv, .e2e — stays out of the
+# context tarball. Cargo build-artifact dirs (target, target-codegen, and any
+# other target* the FFI/codegen builds create) are large and rebuilt inside the
+# image, so they must be excluded or they fill the build VM's disk.
+*
+!protocol
+!rust
+rust/target
+rust/target-codegen
+rust/target-*
+**/target/

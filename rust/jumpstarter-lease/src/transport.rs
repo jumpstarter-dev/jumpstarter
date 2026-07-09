@@ -138,7 +138,8 @@ impl Bridge {
             endpoint = %dial.router_endpoint,
             "dial succeeded; opening router bridge"
         );
-        let result = router::bridge(stream, &dial.router_endpoint, &dial.router_token, &self.tls).await;
+        let result =
+            router::bridge(stream, &dial.router_endpoint, &dial.router_token, &self.tls).await;
         debug!(lease_name = %self.lease_name, conn, ok = result.is_ok(), "router bridge closed");
         result
     }

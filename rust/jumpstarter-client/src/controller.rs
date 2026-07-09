@@ -9,10 +9,12 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use jumpstarter_lease::lease::{self, AcquiredLease, CreateLeaseParams, LeaseProvider, LeaseTiming};
+use jumpstarter_config::{ClientConfig, ObjectMeta, TlsConfig};
+use jumpstarter_lease::lease::{
+    self, AcquiredLease, CreateLeaseParams, LeaseProvider, LeaseTiming,
+};
 use jumpstarter_lease::transport::{self, TransportHost};
 use jumpstarter_lease::ControllerClient;
-use jumpstarter_config::{ClientConfig, ObjectMeta, TlsConfig};
 use jumpstarter_protocol::client_v1;
 use tokio::sync::Mutex;
 
@@ -42,9 +44,16 @@ impl ControllerSession {
         let mut config = ClientConfig::new(metadata);
         config.endpoint = Some(endpoint);
         config.token = token.filter(|t| !t.is_empty());
-        config.tls = TlsConfig { ca, insecure: tls_insecure };
+        config.tls = TlsConfig {
+            ca,
+            insecure: tls_insecure,
+        };
         let inner = ControllerClient::connect(&config).await?;
-        Ok(Self { inner, tls: config.tls, client_name: name })
+        Ok(Self {
+            inner,
+            tls: config.tls,
+            client_name: name,
+        })
     }
 
     /// Acquire a lease (the full FSM: create-or-reuse, poll until Ready). Returns the lease
@@ -99,13 +108,18 @@ impl ControllerSession {
     /// or closing it tears the listener down and removes the socket.
     pub async fn serve_lease(&self, name: String) -> Result<Arc<LeaseTransport>, ControllerError> {
         let host = transport::serve_default(self.inner.clone(), name, self.tls.clone()).await?;
-        Ok(Arc::new(LeaseTransport { inner: Mutex::new(Some(host)) }))
+        Ok(Arc::new(LeaseTransport {
+            inner: Mutex::new(Some(host)),
+        }))
     }
 
     /// List exporters (all pages) as a JSON array — the language binding `json.loads` it.
     /// `filter` is the full label-selector string. Each entry: `{name, labels, online,
     /// status}` (status = the enum name, or `null` when unspecified).
-    pub async fn list_exporters_json(&self, filter: Option<String>) -> Result<String, ControllerError> {
+    pub async fn list_exporters_json(
+        &self,
+        filter: Option<String>,
+    ) -> Result<String, ControllerError> {
         let exporters = self.inner.list_exporters(filter.as_deref()).await?;
         let arr: Vec<serde_json::Value> = exporters.iter().map(exporter_to_json).collect();
         Ok(serde_json::Value::Array(arr).to_string())

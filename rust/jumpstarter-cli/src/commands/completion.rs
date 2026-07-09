@@ -3,7 +3,6 @@
 //! invocation and the accepted shells are preserved; other shells are a usage error
 //! (exit 2) via the value enum.
 
-
 use clap::{Args as ClapArgs, CommandFactory};
 use clap_complete::{generate, Shell};
 

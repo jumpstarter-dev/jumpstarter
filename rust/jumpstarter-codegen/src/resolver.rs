@@ -109,7 +109,15 @@ pub fn resolve_device(
 
     let export = &config.export;
     for (name, instance) in export {
-        let node = resolve_node(name, instance, &[], export, registry, proto_root, &mut device)?;
+        let node = resolve_node(
+            name,
+            instance,
+            &[],
+            export,
+            registry,
+            proto_root,
+            &mut device,
+        )?;
         device.roots.push(node);
     }
 
@@ -145,47 +153,47 @@ fn resolve_node(
     let mut path = parent_path.to_vec();
     path.push(name.to_string());
 
-    let (kind, children_map): (NodeKind, Option<&BTreeMap<String, DriverInstance>>) =
-        match instance {
-            DriverInstance::Base(base) => {
-                let kind = resolve_driver_kind(
+    let (kind, children_map): (NodeKind, Option<&BTreeMap<String, DriverInstance>>) = match instance
+    {
+        DriverInstance::Base(base) => {
+            let kind = resolve_driver_kind(
+                &path,
+                &base.r#type,
+                base.interface.as_deref(),
+                registry,
+                proto_root,
+                device,
+            )?;
+            (kind, Some(&base.children))
+        }
+        DriverInstance::Composite(composite) => (NodeKind::Composite, Some(&composite.children)),
+        DriverInstance::Proxy(proxy) => {
+            // Top-level `ref:` target reuse: resolve the dotted ref through the export tree
+            // and adopt the target driver's typing under the proxy's name (the runtime
+            // proxy delegates to the target). Deeper proxy semantics are deferred.
+            let kind = match lookup_ref(export, &proxy.reference) {
+                Some(DriverInstance::Base(target)) => resolve_driver_kind(
                     &path,
-                    &base.r#type,
-                    base.interface.as_deref(),
+                    &target.r#type,
+                    target.interface.as_deref(),
                     registry,
                     proto_root,
                     device,
-                )?;
-                (kind, Some(&base.children))
-            }
-            DriverInstance::Composite(composite) => (NodeKind::Composite, Some(&composite.children)),
-            DriverInstance::Proxy(proxy) => {
-                // Top-level `ref:` target reuse: resolve the dotted ref through the export tree
-                // and adopt the target driver's typing under the proxy's name (the runtime
-                // proxy delegates to the target). Deeper proxy semantics are deferred.
-                let kind = match lookup_ref(export, &proxy.reference) {
-                    Some(DriverInstance::Base(target)) => resolve_driver_kind(
-                        &path,
-                        &target.r#type,
-                        target.interface.as_deref(),
-                        registry,
-                        proto_root,
-                        device,
-                    )?,
-                    Some(_) => opaque_kind(
-                        device,
-                        &path,
-                        format!("proxy ref {:?} targets a non-driver node", proxy.reference),
-                    ),
-                    None => opaque_kind(
-                        device,
-                        &path,
-                        format!("proxy ref {:?} not found in export tree", proxy.reference),
-                    ),
-                };
-                (kind, None)
-            }
-        };
+                )?,
+                Some(_) => opaque_kind(
+                    device,
+                    &path,
+                    format!("proxy ref {:?} targets a non-driver node", proxy.reference),
+                ),
+                None => opaque_kind(
+                    device,
+                    &path,
+                    format!("proxy ref {:?} not found in export tree", proxy.reference),
+                ),
+            };
+            (kind, None)
+        }
+    };
 
     let mut children = Vec::new();
     if let Some(map) = children_map {
@@ -196,7 +204,12 @@ fn resolve_node(
         }
     }
 
-    Ok(ResolvedNode { name: name.to_string(), path, kind, children })
+    Ok(ResolvedNode {
+        name: name.to_string(),
+        path,
+        kind,
+        children,
+    })
 }
 
 /// Follow a dotted `ref:` path (`"dut.power"`) from the export root through `children:` maps.
@@ -218,7 +231,9 @@ fn lookup_ref<'a>(
 }
 
 fn opaque_kind(device: &mut ResolvedDevice, path: &[String], reason: String) -> NodeKind {
-    device.warnings.push(format!("{}: {}", path.join("/"), reason));
+    device
+        .warnings
+        .push(format!("{}: {}", path.join("/"), reason));
     NodeKind::Opaque { reason }
 }
 
@@ -246,9 +261,11 @@ fn resolve_driver_kind(
     };
 
     if !device.interfaces.contains_key(&fqn) {
-        let proto_path = match registry.proto_for(&fqn).map(str::to_string).or_else(|| {
-            proto_path_for_fqn(&fqn)
-        }) {
+        let proto_path = match registry
+            .proto_for(&fqn)
+            .map(str::to_string)
+            .or_else(|| proto_path_for_fqn(&fqn))
+        {
             Some(p) => p,
             None => {
                 return Ok(opaque_kind(
@@ -263,7 +280,10 @@ fn resolve_driver_kind(
             return Ok(opaque_kind(
                 device,
                 path,
-                format!("interface {fqn:?}: proto not found at {}", proto_file.display()),
+                format!(
+                    "interface {fqn:?}: proto not found at {}",
+                    proto_file.display()
+                ),
             ));
         }
         let fds = protox::compile([proto_file.as_path()], [proto_root])
@@ -272,8 +292,11 @@ fn resolve_driver_kind(
         // The FQN must actually exist in the compiled contract (catches registry typos).
         let has_service = fds.file.iter().any(|f| {
             f.service.iter().any(|s| {
-                format!("{}.{}", f.package.as_deref().unwrap_or(""), s.name.as_deref().unwrap_or(""))
-                    == fqn
+                format!(
+                    "{}.{}",
+                    f.package.as_deref().unwrap_or(""),
+                    s.name.as_deref().unwrap_or("")
+                ) == fqn
             })
         });
         if !has_service {
@@ -285,14 +308,20 @@ fn resolve_driver_kind(
         }
         device.interfaces.insert(
             fqn.clone(),
-            ResolvedInterface { fqn: fqn.clone(), proto_path, descriptor_set: bytes },
+            ResolvedInterface {
+                fqn: fqn.clone(),
+                proto_path,
+                descriptor_set: bytes,
+            },
         );
     }
 
     Ok(NodeKind::Driver {
         interface: fqn,
         driver_type: driver_type.to_string(),
-        clients: registry_entry.map(|(_, clients)| clients).unwrap_or_default(),
+        clients: registry_entry
+            .map(|(_, clients)| clients)
+            .unwrap_or_default(),
     })
 }
 
@@ -389,7 +418,8 @@ interfaces:
             Some("jumpstarter/interfaces/power/v1/power.proto")
         );
         assert_eq!(
-            proto_path_for_fqn("jumpstarter.interfaces.storage_mux.v1.StorageMuxInterface").as_deref(),
+            proto_path_for_fqn("jumpstarter.interfaces.storage_mux.v1.StorageMuxInterface")
+                .as_deref(),
             Some("jumpstarter/interfaces/storage_mux/v1/storage_mux.proto")
         );
     }

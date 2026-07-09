@@ -56,7 +56,10 @@ impl Output {
 }
 
 fn spawn_err(prog: &OsStr, e: std::io::Error) -> ClusterError {
-    ClusterError::Spawn { program: prog.to_string_lossy().into_owned(), source: e }
+    ClusterError::Spawn {
+        program: prog.to_string_lossy().into_owned(),
+        source: e,
+    }
 }
 
 /// Run a command and capture exit code + stdout + stderr, decoding lossily and
@@ -154,7 +157,10 @@ pub async fn run_command_stdin<S: AsRef<OsStr>>(cmd: &[S], input: &[u8]) -> Resu
             spawn_err(prog.as_ref(), e)
         })?;
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(input).await.map_err(|e| spawn_err(prog.as_ref(), e))?;
+        stdin
+            .write_all(input)
+            .await
+            .map_err(|e| spawn_err(prog.as_ref(), e))?;
         // Drop stdin to signal EOF.
         drop(stdin);
     }
@@ -199,14 +205,19 @@ mod tests {
 
     #[tokio::test]
     async fn missing_binary_is_a_spawn_error() {
-        let err = run_command(&["definitely-not-a-real-binary-xyz"]).await.unwrap_err();
+        let err = run_command(&["definitely-not-a-real-binary-xyz"])
+            .await
+            .unwrap_err();
         assert!(matches!(err, ClusterError::Spawn { .. }));
     }
 
     #[tokio::test]
     async fn empty_command_errors() {
         let empty: [&str; 0] = [];
-        assert!(matches!(run_command(&empty).await.unwrap_err(), ClusterError::EmptyCommand));
+        assert!(matches!(
+            run_command(&empty).await.unwrap_err(),
+            ClusterError::EmptyCommand
+        ));
     }
 
     #[tokio::test]

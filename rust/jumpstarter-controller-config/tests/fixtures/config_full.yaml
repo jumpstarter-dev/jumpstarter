@@ -1,0 +1,47 @@
+authentication:
+  internal:
+    prefix: 'internal:'
+    tokenLifetime: 720h
+  jwt:
+  - claimMappings:
+      extra:
+      - key: example.com/tenant
+        valueExpression: claims.tenant
+      groups:
+        claim: groups
+        prefix: ""
+      uid:
+        claim: uid
+      username:
+        claim: sub
+        prefix: 'oidc:'
+    claimValidationRules:
+    - claim: hd
+      requiredValue: example.com
+    - expression: claims.exp - claims.nbf <= 86400
+      message: total token lifetime must not exceed 24 hours
+    issuer:
+      audienceMatchPolicy: MatchAny
+      audiences:
+      - foo
+      - bar
+      discoveryURL: https://oidc.oidc-namespace/.well-known/openid-configuration
+      url: https://oidc.example.com
+    userValidationRules:
+    - expression: '!user.username.startsWith(''system:'')'
+      message: 'username cannot use reserved system: prefix'
+  k8s:
+    enabled: true
+grpc:
+  keepalive:
+    intervalTime: 10s
+    maxConnectionAge: 30m
+    maxConnectionAgeGrace: 10s
+    maxConnectionIdle: 5m
+    minTime: 1s
+    permitWithoutStream: true
+    timeout: 180s
+leasePolicy:
+  maxTags: 10
+provisioning:
+  enabled: false

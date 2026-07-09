@@ -35,13 +35,19 @@ pub struct CreateOptions<'a> {
     pub k3s_ssh_host: Option<&'a str>,
 }
 
-pub async fn create_cluster_and_install(opts: CreateOptions<'_>, progress: &dyn Progress) -> Result<()> {
+pub async fn create_cluster_and_install(
+    opts: CreateOptions<'_>,
+    progress: &dyn Progress,
+) -> Result<()> {
     let cluster_name = validate_cluster_name(opts.cluster_name)?;
 
     if opts.force_recreate {
-        progress
-            .warning(&format!("WARNING: Force recreating cluster \"{cluster_name}\" will destroy ALL data in it!"));
-        if !progress.confirm(&format!("Are you sure you want to recreate cluster \"{cluster_name}\"?")) {
+        progress.warning(&format!(
+            "WARNING: Force recreating cluster \"{cluster_name}\" will destroy ALL data in it!"
+        ));
+        if !progress.confirm(&format!(
+            "Are you sure you want to recreate cluster \"{cluster_name}\"?"
+        )) {
             progress.progress("Cluster recreation cancelled.");
             return Err(ClusterError::Cancelled);
         }
@@ -76,7 +82,9 @@ pub async fn create_cluster_and_install(opts: CreateOptions<'_>, progress: &dyn 
             ));
         }
         other => {
-            return Err(ClusterError::Validation(format!("Unsupported cluster type: {other}")));
+            return Err(ClusterError::Validation(format!(
+                "Unsupported cluster type: {other}"
+            )));
         }
     }
 
@@ -92,9 +100,11 @@ pub async fn create_cluster_and_install(opts: CreateOptions<'_>, progress: &dyn 
         )
         .await?;
 
-        let version = opts
-            .version
-            .ok_or_else(|| ClusterError::Operation("Version must be specified when installing Jumpstarter".to_string()))?;
+        let version = opts.version.ok_or_else(|| {
+            ClusterError::Operation(
+                "Version must be specified when installing Jumpstarter".to_string(),
+            )
+        })?;
 
         install_jumpstarter_operator(
             version,

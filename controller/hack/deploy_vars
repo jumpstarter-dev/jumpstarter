@@ -33,6 +33,14 @@ else # no tag specified
     IMAGE_TAG="latest"
     IMAGE_REPO="${IMG}"
 fi
+
+# Rust controller rewrite seam: allow deploying alternate controller/router
+# images (e.g. the image built from rust/Containerfile.controller) without
+# changing the default Go image path. When unset these default to the
+# IMG-derived repository, reproducing the historical Jumpstarter CR
+# (spec.controller.image / spec.routers.image = IMAGE_REPO) byte-for-byte.
+CONTROLLER_IMG=${CONTROLLER_IMG:-${IMAGE_REPO}}
+ROUTER_IMG=${ROUTER_IMG:-${IMAGE_REPO}}
 # Export all variables for use in scripts
 export IP
 export BASEDOMAIN
@@ -44,4 +52,6 @@ export IMAGE_REPO
 export IMAGE_TAG
 export IMG
 export OPERATOR_IMG
+export CONTROLLER_IMG
+export ROUTER_IMG
 

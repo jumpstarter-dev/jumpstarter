@@ -68,7 +68,9 @@ pub async fn serve_standalone_tcp(
     if hooks::run_before_lease(&mut reporter, config.hooks.before_lease.as_ref(), &ctx).await
         == BeforeOutcome::Exit
     {
-        tracing::warn!("beforeLease hook failed (on_failure=exit); shutting down standalone exporter");
+        tracing::warn!(
+            "beforeLease hook failed (on_failure=exit); shutting down standalone exporter"
+        );
         cleanup(tcp_task, hook_task, guard, &hook_dir);
         return Err(Error::Config(
             "beforeLease hook failed (on_failure=exit)".to_string(),

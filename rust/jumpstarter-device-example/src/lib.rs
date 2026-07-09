@@ -49,7 +49,11 @@ mod round_trip_tests {
         power.on().await.expect("on");
         let mut stream = Box::pin(power.read().await.expect("read stream"));
         let first = stream.next().await.expect("a reading").expect("decoded");
-        assert!(first.voltage > 0.0, "powered-on voltage, got {}", first.voltage);
+        assert!(
+            first.voltage > 0.0,
+            "powered-on voltage, got {}",
+            first.voltage
+        );
 
         power.off().await.expect("off");
     }

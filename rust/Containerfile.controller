@@ -1,0 +1,66 @@
+# Build the Rust manager and router binaries (Rust rewrite of controller/Containerfile).
+#
+# IMPORTANT: the build context is the REPOSITORY ROOT, not rust/ —
+# rust/jumpstarter-protocol/build.rs compiles ../../protocol/proto relative to
+# the crate, so protocol/ and rust/ must be laid out in the build stage with
+# the same relative structure as the repo:
+#
+#   podman build -t <img> -f rust/Containerfile.controller .
+#
+# Builder base: no rust-toolset image exists on the unauthenticated UBI
+# registry (registry.access.redhat.com — only go-toolset is published there;
+# rust-toolset requires registry.redhat.io auth), so we use the official Docker
+# library image instead. The Debian release is pinned to bookworm (glibc 2.36)
+# rather than the floating rust:*-slim default (trixie, glibc 2.41) so the
+# produced binaries do not reference symbol versions newer than the ubi9-micro
+# runtime base (glibc 2.34) provides.
+FROM docker.io/library/rust:1.91-slim-bookworm AS builder
+# Reserved for parity with controller/Containerfile; not yet embedded in the
+# Rust binaries (version stamping is a follow-up).
+ARG GIT_VERSION=unknown
+ARG GIT_COMMIT=unknown
+ARG BUILD_DATE=unknown
+
+# gcc: required by the `cc` crate for ring's C/asm sources.
+# protobuf-compiler: `protoc` for tonic-build (jumpstarter-protocol/build.rs).
+# libprotobuf-dev: the google/protobuf/*.proto well-known types at
+#   /usr/include/google/protobuf, which protoc resolves relative to its own
+#   install prefix (<bin>/../include).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        protobuf-compiler \
+        libprotobuf-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy the proto source of truth and the Rust workspace, preserving the
+# repo-relative layout expected by rust/jumpstarter-protocol/build.rs.
+# NOTE: rust/target is not needed; build from a clean checkout (CI) or use a
+# context ignore file for rust/target to keep local builds fast.
+COPY protocol/proto protocol/proto
+COPY rust/ rust/
+
+# Build only the two controller binaries.
+# Cache module downloads and build artifacts across builds (mirrors the go
+# mod/build cache mounts in controller/Containerfile); the binaries are copied
+# out of the cached target dir in the same RUN because cache mounts are not
+# part of the resulting image layer.
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/build/rust/target,sharing=locked \
+    cargo build --locked --release \
+        --manifest-path rust/Cargo.toml \
+        -p jumpstarter-controller-manager \
+        -p jumpstarter-router \
+    && install -m 0755 rust/target/release/jumpstarter-controller-manager /build/manager \
+    && install -m 0755 rust/target/release/jumpstarter-router /build/router
+
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.8-1779858820@sha256:b498b3ea26111ab4b81d65139f2ebd2ef9a2abb7a4588b7fdcc54889f95e9caa
+WORKDIR /
+COPY --from=builder /build/manager .
+COPY --from=builder /build/router  .
+USER 65532:65532
+
+ENTRYPOINT ["/manager"]

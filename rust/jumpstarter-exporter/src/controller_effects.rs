@@ -10,8 +10,8 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use jumpstarter_lease::router;
 use jumpstarter_config::{HookConfig, TlsConfig};
+use jumpstarter_lease::router;
 use jumpstarter_protocol::v1::{ExporterStatus, ListenRequest, LogSource};
 use tokio::net::UnixStream;
 use tokio::sync::Notify;
@@ -198,7 +198,9 @@ impl LeaseEffects for ControllerEffects {
                                                     tracing::debug!(lease = %bridge_lease, "router bridge completed");
                                                 }
                                             }
-                                            Err(e) => tracing::warn!(lease = %bridge_lease, error = %e, "connecting to session socket failed"),
+                                            Err(e) => {
+                                                tracing::warn!(lease = %bridge_lease, error = %e, "connecting to session socket failed")
+                                            }
                                         }
                                     });
                                 }
@@ -288,7 +290,9 @@ impl LeaseEffects for ControllerEffects {
                     reporter
                         .report(
                             ExporterStatus::BeforeLeaseHookFailed,
-                            &format!("beforeLease hook failed (on_failure=exit, shutting down): {e}"),
+                            &format!(
+                                "beforeLease hook failed (on_failure=exit, shutting down): {e}"
+                            ),
                         )
                         .await;
                     HookResult::Failed
@@ -341,7 +345,9 @@ impl LeaseEffects for ControllerEffects {
                     reporter
                         .report(
                             ExporterStatus::AfterLeaseHookFailed,
-                            &format!("afterLease hook failed (on_failure=exit, shutting down): {e}"),
+                            &format!(
+                                "afterLease hook failed (on_failure=exit, shutting down): {e}"
+                            ),
                         )
                         .await;
                     HookResult::Failed

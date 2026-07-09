@@ -162,7 +162,11 @@ fn assert_magic(codec: Codec, blob: &[u8]) {
         Codec::Bz2 => blob.starts_with(&[0x42, 0x5a, 0x68]), // "BZh"
         Codec::Zstd => blob.starts_with(&[0x28, 0xb5, 0x2f, 0xfd]),
     };
-    assert!(ok, "Rust {codec:?} output had wrong magic bytes: {:02x?}", &blob[..blob.len().min(8)]);
+    assert!(
+        ok,
+        "Rust {codec:?} output had wrong magic bytes: {:02x?}",
+        &blob[..blob.len().min(8)]
+    );
 }
 
 /// bz2 level-9 header parity: Python `BZ2Compressor()` emits "BZh9".
@@ -170,5 +174,9 @@ fn assert_magic(codec: Codec, blob: &[u8]) {
 fn rust_bz2_uses_level_9_header() {
     let original = read_fixture("input_zeros.bin");
     let blob = rust_compress(Codec::Bz2, &original);
-    assert_eq!(&blob[..4], b"BZh9", "bz2 must use level 9 ('BZh9') to match Python");
+    assert_eq!(
+        &blob[..4],
+        b"BZh9",
+        "bz2 must use level 9 ('BZh9') to match Python"
+    );
 }

@@ -33,6 +33,16 @@ fi
 load_image "${IMG}"
 load_image "${OPERATOR_IMG}"
 
+# Load any override controller/router images (Rust controller rewrite seam,
+# see deploy_vars). Skipped when they resolve to the default IMG-derived
+# repository, preserving today's behavior when the overrides are unset.
+if [ "${CONTROLLER_IMG}" != "${IMAGE_REPO}" ]; then
+  load_image "${CONTROLLER_IMG}"
+fi
+if [ "${ROUTER_IMG}" != "${IMAGE_REPO}" ] && [ "${ROUTER_IMG}" != "${CONTROLLER_IMG}" ]; then
+  load_image "${ROUTER_IMG}"
+fi
+
 # Deploy the operator
 echo -e "${GREEN}Deploying Jumpstarter operator ...${NC}"
 kubectl apply -f deploy/operator/dist/install.yaml
@@ -181,7 +191,7 @@ spec:
 ${CERTMANAGER_CONFIG}
 ${AUTH_CONFIG}
   controller:
-    image: ${IMAGE_REPO}
+    image: ${CONTROLLER_IMG}
     imagePullPolicy: IfNotPresent
     replicas: 1
     resources:
@@ -193,7 +203,7 @@ ${AUTH_CONFIG}
 ${CONTROLLER_ENDPOINT_CONFIG}
 ${LOGIN_ENDPOINT_CONFIG}
   routers:
-    image: ${IMAGE_REPO}
+    image: ${ROUTER_IMG}
     imagePullPolicy: IfNotPresent
     replicas: 1
     resources:

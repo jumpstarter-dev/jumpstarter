@@ -1,6 +1,5 @@
 //! `jmp delete leases` (spec 08 §7.4; `delete.py`).
 
-
 use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 use jumpstarter_lease::lease::LeaseProvider;
 use jumpstarter_lease::{selector_contains, ControllerClient};

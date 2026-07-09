@@ -174,7 +174,10 @@ async fn advance<E: LeaseEffects>(
 /// Block on the mailbox, applying each fact, until the wrapper variant changes (a real
 /// transition). Self-loops (same variant, e.g. data-only updates) are acked `Ignored` and keep
 /// waiting. If all senders drop while waiting, fail cleanly rather than hang.
-async fn wait_until_change(mailbox: &mut Mailbox<LeaseSignal>, mut state: LeaseState) -> LeaseState {
+async fn wait_until_change(
+    mailbox: &mut Mailbox<LeaseSignal>,
+    mut state: LeaseState,
+) -> LeaseState {
     let start = std::mem::discriminant(&state);
     loop {
         match mailbox.recv().await {
@@ -303,7 +306,8 @@ mod tests {
             }
             self.reported.lock().unwrap().push(status);
             // Simulate the lease ending right after it becomes ready.
-            if status == ExporterStatus::LeaseReady && !self.end_posted.swap(true, Ordering::SeqCst) {
+            if status == ExporterStatus::LeaseReady && !self.end_posted.swap(true, Ordering::SeqCst)
+            {
                 let sig = match self.cfg.end {
                     EndKind::Controller => LeaseSignal::Controller(ControllerSignal::Ended),
                     EndKind::EndSession => LeaseSignal::Client(ClientSignal::EndSession),
@@ -313,7 +317,11 @@ mod tests {
             ReportOutcome::Accepted
         }
 
-        fn spawn_listen(&mut self, _ctx: &LeaseContext, sink: SignalSink<ClientSignal, LeaseSignal>) {
+        fn spawn_listen(
+            &mut self,
+            _ctx: &LeaseContext,
+            sink: SignalSink<ClientSignal, LeaseSignal>,
+        ) {
             if self.cfg.connect_client {
                 sink.send(ClientSignal::Connected);
             }
@@ -327,9 +335,9 @@ mod tests {
             if self.cfg.end_during_before {
                 // The lease ends while the (slow) hook runs: deferred end recorded in BeforeLease.
                 self.end_posted.store(true, Ordering::SeqCst);
-                let _ = self
-                    .tx
-                    .send(Envelope::new(LeaseSignal::Controller(ControllerSignal::Ended)));
+                let _ = self.tx.send(Envelope::new(LeaseSignal::Controller(
+                    ControllerSignal::Ended,
+                )));
             }
             sink.send(HookSignal::BeforeDone(self.cfg.before));
         }
@@ -384,7 +392,10 @@ mod tests {
                 ExporterStatus::Available,
             ]
         );
-        assert!(!h.released.load(Ordering::SeqCst), "controller-ended: no request_release");
+        assert!(
+            !h.released.load(Ordering::SeqCst),
+            "controller-ended: no request_release"
+        );
         assert!(!h.shutdown.load(Ordering::SeqCst));
     }
 
@@ -431,9 +442,16 @@ mod tests {
             ..Cfg::default()
         };
         let (state, h) = run(cfg).await;
-        assert!(matches!(state, LeaseState::Done(_)), "endLease ends cleanly, no shutdown");
+        assert!(
+            matches!(state, LeaseState::Done(_)),
+            "endLease ends cleanly, no shutdown"
+        );
         // Never served: LeaseReady was never reported.
-        assert!(!h.reported.lock().unwrap().contains(&ExporterStatus::LeaseReady));
+        assert!(!h
+            .reported
+            .lock()
+            .unwrap()
+            .contains(&ExporterStatus::LeaseReady));
         assert!(h.released.load(Ordering::SeqCst));
         assert!(!h.shutdown.load(Ordering::SeqCst));
     }
@@ -447,7 +465,11 @@ mod tests {
         };
         let (state, h) = run(cfg).await;
         assert!(matches!(state, LeaseState::Failed(_)));
-        assert!(!h.reported.lock().unwrap().contains(&ExporterStatus::LeaseReady));
+        assert!(!h
+            .reported
+            .lock()
+            .unwrap()
+            .contains(&ExporterStatus::LeaseReady));
         assert!(h.shutdown.load(Ordering::SeqCst));
     }
 
@@ -479,7 +501,10 @@ mod tests {
         // It still flashed LEASE_READY before ending (the #569 grace), even though the lease was
         // already gone when the hook finished.
         assert!(reported.contains(&ExporterStatus::LeaseReady));
-        assert!(!h.released.load(Ordering::SeqCst), "controller-ended: no request_release");
+        assert!(
+            !h.released.load(Ordering::SeqCst),
+            "controller-ended: no request_release"
+        );
     }
 
     #[tokio::test]
@@ -492,7 +517,11 @@ mod tests {
         let (state, h) = run(cfg).await;
         // A rejected LEASE_READY must not serve: the lease fails instead.
         assert!(matches!(state, LeaseState::Failed(_)));
-        assert!(!h.reported.lock().unwrap().contains(&ExporterStatus::LeaseReady));
+        assert!(!h
+            .reported
+            .lock()
+            .unwrap()
+            .contains(&ExporterStatus::LeaseReady));
         assert!(h.shutdown.load(Ordering::SeqCst));
     }
 

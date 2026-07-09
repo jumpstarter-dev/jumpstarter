@@ -7,8 +7,8 @@
 
 use std::path::{Path, PathBuf};
 
-use jumpstarter_config::{client_from_env, paths, ClientConfig, UserConfig, YamlConfig};
 use jumpstarter_client::ControllerSession;
+use jumpstarter_config::{client_from_env, paths, ClientConfig, UserConfig, YamlConfig};
 
 /// Tokens within this many seconds of expiry are refreshed (matches the Python MCP's
 /// `TOKEN_REFRESH_THRESHOLD_SECONDS`).
@@ -23,20 +23,26 @@ pub fn resolve_with_path() -> Result<(ClientConfig, Option<PathBuf>), String> {
     }
     let user_path = paths::user_config_path();
     if !user_path.exists() {
-        return Err("No jumpstarter client config found. Run 'jmp config client use <name>' or set \
+        return Err(
+            "No jumpstarter client config found. Run 'jmp config client use <name>' or set \
                     JMP_* environment variables."
-            .to_string());
+                .to_string(),
+        );
     }
-    let user = UserConfig::load(&user_path).map_err(|e| format!("Failed to load user config: {e}"))?;
+    let user =
+        UserConfig::load(&user_path).map_err(|e| format!("Failed to load user config: {e}"))?;
     match user.current_client() {
         Some(alias) => {
             let path = paths::client_config_path(alias);
-            let cfg = ClientConfig::load(&path).map_err(|e| format!("Failed to load client config: {e}"))?;
+            let cfg = ClientConfig::load(&path)
+                .map_err(|e| format!("Failed to load client config: {e}"))?;
             Ok((cfg, Some(path)))
         }
-        None => Err("No current client configured. Run 'jmp config client use <name>' or set JMP_* \
+        None => Err(
+            "No current client configured. Run 'jmp config client use <name>' or set JMP_* \
                      environment variables."
-            .to_string()),
+                .to_string(),
+        ),
     }
 }
 
@@ -56,7 +62,9 @@ async fn ensure_fresh_token(config: &mut ClientConfig, path: Option<&Path>) {
     let refresh_token = match config.refresh_token.as_deref() {
         Some(rt) if !rt.is_empty() => rt.to_string(),
         _ => {
-            tracing::warn!("Token is expired but no refresh_token stored - run 'jmp login --offline-access'");
+            tracing::warn!(
+                "Token is expired but no refresh_token stored - run 'jmp login --offline-access'"
+            );
             return;
         }
     };
@@ -100,7 +108,10 @@ fn save_token(path: &Path, access_token: &str, refresh_token: Option<&str>) {
                 cfg.refresh_token = Some(rt.to_string());
             }
             if let Err(e) = cfg.save(path) {
-                tracing::warn!("Failed to persist refreshed token to {}: {e}", path.display());
+                tracing::warn!(
+                    "Failed to persist refreshed token to {}: {e}",
+                    path.display()
+                );
             }
         }
         Err(e) => tracing::warn!("Failed to reload config to save refreshed token: {e}"),

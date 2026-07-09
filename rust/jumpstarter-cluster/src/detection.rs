@@ -48,7 +48,8 @@ pub async fn detect_kind_provider(cluster_name: &str) -> Result<(String, String)
 /// (`detect_existing_cluster_type`); errors if both exist.
 pub async fn detect_existing_cluster_type(cluster_name: &str) -> Result<Option<String>> {
     let kind_exists = kind_installed("kind") && kind_cluster_exists("kind", cluster_name).await;
-    let minikube_exists = minikube_installed("minikube") && minikube_cluster_exists("minikube", cluster_name).await;
+    let minikube_exists =
+        minikube_installed("minikube") && minikube_cluster_exists("minikube", cluster_name).await;
     match (kind_exists, minikube_exists) {
         (true, true) => Err(ClusterError::Operation(format!(
             "Both Kind and Minikube clusters named \"{cluster_name}\" exist. \
@@ -94,7 +95,10 @@ pub async fn detect_cluster_type(context_name: &str, server_url: &str, minikube:
         return "minikube".to_string();
     }
     let lower = server_url.to_lowercase();
-    if ["localhost", "127.0.0.1", "0.0.0.0"].iter().any(|h| lower.contains(h)) {
+    if ["localhost", "127.0.0.1", "0.0.0.0"]
+        .iter()
+        .any(|h| lower.contains(h))
+    {
         return "kind".to_string();
     }
     if looks_like_minikube_ip(server_url) {
@@ -102,8 +106,11 @@ pub async fn detect_cluster_type(context_name: &str, server_url: &str, minikube:
         if let Ok(out) = run_command(&[minikube, "profile", "list", "-o", "json"]).await {
             if out.ok() {
                 if let Ok(v) = serde_json::from_str::<serde_json::Value>(&out.stdout) {
-                    let has_valid =
-                        v.get("valid").and_then(|x| x.as_array()).map(|a| !a.is_empty()).unwrap_or(false);
+                    let has_valid = v
+                        .get("valid")
+                        .and_then(|x| x.as_array())
+                        .map(|a| !a.is_empty())
+                        .unwrap_or(false);
                     if has_valid {
                         return "minikube".to_string();
                     }
@@ -120,11 +127,26 @@ mod tests {
 
     #[tokio::test]
     async fn detects_kind_and_minikube_and_remote_by_name_and_url() {
-        assert_eq!(detect_cluster_type("kind-dev", "https://x", "minikube").await, "kind");
-        assert_eq!(detect_cluster_type("kindcluster", "https://x", "minikube").await, "kind");
-        assert_eq!(detect_cluster_type("my-minikube", "https://x", "minikube").await, "minikube");
-        assert_eq!(detect_cluster_type("ctx", "https://127.0.0.1:6443", "minikube").await, "kind");
-        assert_eq!(detect_cluster_type("ctx", "https://example.com:6443", "minikube").await, "remote");
+        assert_eq!(
+            detect_cluster_type("kind-dev", "https://x", "minikube").await,
+            "kind"
+        );
+        assert_eq!(
+            detect_cluster_type("kindcluster", "https://x", "minikube").await,
+            "kind"
+        );
+        assert_eq!(
+            detect_cluster_type("my-minikube", "https://x", "minikube").await,
+            "minikube"
+        );
+        assert_eq!(
+            detect_cluster_type("ctx", "https://127.0.0.1:6443", "minikube").await,
+            "kind"
+        );
+        assert_eq!(
+            detect_cluster_type("ctx", "https://example.com:6443", "minikube").await,
+            "remote"
+        );
     }
 
     #[test]

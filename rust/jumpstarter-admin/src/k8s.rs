@@ -151,7 +151,10 @@ impl JumpstarterAdmin {
             );
             Ok(String::new())
         } else {
-            tracing::debug!(len = ca_crt.len(), "retrieved CA certificate from ConfigMap");
+            tracing::debug!(
+                len = ca_crt.len(),
+                "retrieved CA certificate from ConfigMap"
+            );
             Ok(base64::engine::general_purpose::STANDARD.encode(ca_crt.as_bytes()))
         }
     }

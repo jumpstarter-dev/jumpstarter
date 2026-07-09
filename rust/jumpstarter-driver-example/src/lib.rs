@@ -9,9 +9,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use jumpstarter_driver_core::driver::{empty_interface_descriptor_set, Driver};
-use jumpstarter_codec::error::DriverCallError;
 use jumpstarter_client::ClientSession;
+use jumpstarter_codec::error::DriverCallError;
+use jumpstarter_driver_core::driver::{empty_interface_descriptor_set, Driver};
 use jumpstarter_driver_macros::DriverClient;
 use serde_json::Value as Json;
 
@@ -93,10 +93,7 @@ impl Driver for MockPowerNativeClient {
 /// Look up a native driver by the name after the `rust:` prefix in its `type:`. A real driver
 /// crate would register here (or via `inventory`); the example keeps a small match. `power`
 /// advertises the Python `PowerClient`; `powerrs` advertises the native `rust:powerclient`.
-pub fn make_driver(
-    name: &str,
-    _config: &serde_json::Map<String, Json>,
-) -> Option<Arc<dyn Driver>> {
+pub fn make_driver(name: &str, _config: &serde_json::Map<String, Json>) -> Option<Arc<dyn Driver>> {
     match name {
         "power" => Some(Arc::new(MockPower)),
         "powerrs" => Some(Arc::new(MockPowerNativeClient)),

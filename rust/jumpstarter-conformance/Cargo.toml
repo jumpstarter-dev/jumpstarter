@@ -1,0 +1,34 @@
+[package]
+name = "jumpstarter-conformance"
+description = "Black-box gRPC conformance harness: runs identical (code, details) + CR-state assertions against BOTH the Go and Rust controllers to machine-check wire equivalence"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+jumpstarter-protocol = { path = "../jumpstarter-protocol" }
+jumpstarter-controller-api = { path = "../jumpstarter-controller-api" }
+jumpstarter-controller-auth = { path = "../jumpstarter-controller-auth" }
+jumpstarter-controller-config = { path = "../jumpstarter-controller-config" }
+jumpstarter-controller-service = { path = "../jumpstarter-controller-service" }
+kube = { workspace = true, features = ["client", "config", "runtime", "rustls-tls", "ring"] }
+k8s-openapi.workspace = true
+tonic = { workspace = true, features = ["tls"] }
+prost-types.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "sync", "process"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tokio-util = { workspace = true }
+futures = "0.3"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+serde_yaml_ng = { workspace = true }
+thiserror.workspace = true
+tracing.workspace = true
+uuid = { version = "1", features = ["v4", "v7"] }
+chrono = { workspace = true }
+base64 = "0.22"
+rcgen = { workspace = true }
+http = "1"

@@ -1,0 +1,16 @@
+[package]
+name = "jumpstarter-controller-config"
+description = "Jumpstarter controller config: pure-data serde models of the jumpstarter-controller ConfigMap (config + router keys), mirroring controller/internal/config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# Pure-data crate: no I/O, no kube, no tonic. Shared by the controller, the
+# router, and (later) the operator that writes the ConfigMap — a single source
+# of truth for the config wire shape.
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_yaml_ng.workspace = true
+thiserror.workspace = true

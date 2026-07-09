@@ -50,7 +50,10 @@ fn relay_initial_metadata(metadata: &tonic::metadata::MetadataMap) -> String {
     let mut initial = serde_json::Map::new();
     for &key in &RELAY_KEYS {
         if let Some(value) = metadata.get(key).and_then(|v| v.to_str().ok()) {
-            initial.insert(key.to_string(), serde_json::Value::String(value.to_string()));
+            initial.insert(
+                key.to_string(),
+                serde_json::Value::String(value.to_string()),
+            );
         }
     }
     serde_json::Value::Object(initial).to_string()
@@ -134,7 +137,9 @@ impl ClientSession {
             .spawn(async move { endpoint.connect().await })
             .await
             .map_err(|e| DriverCallError::Unknown(format!("connect task panicked: {e}")))?
-            .map_err(|e| DriverCallError::Unknown(format!("connecting to direct exporter {host}: {e}")))?;
+            .map_err(|e| {
+                DriverCallError::Unknown(format!("connecting to direct exporter {host}: {e}"))
+            })?;
         let passphrase = std::env::var(jumpstarter_config::env::JMP_GRPC_PASSPHRASE)
             .ok()
             .filter(|p| !p.is_empty())
@@ -154,7 +159,9 @@ impl ClientSession {
         }
     }
 
-    fn exporter(&self) -> ExporterServiceClient<InterceptedService<Channel, PassphraseInterceptor>> {
+    fn exporter(
+        &self,
+    ) -> ExporterServiceClient<InterceptedService<Channel, PassphraseInterceptor>> {
         ExporterServiceClient::with_interceptor(self.channel.clone(), self.auth())
     }
 
@@ -364,7 +371,10 @@ impl ClientSession {
     /// default, or the legacy `RouterService.Stream` tunnel when [`native_streams_enabled`] is off.
     /// The `request_json` interface is unchanged, so the Python client + the in-process `LocalSession`
     /// are untouched by the cutover.
-    pub async fn stream(&self, request_json: String) -> Result<Arc<ClientByteStream>, DriverCallError> {
+    pub async fn stream(
+        &self,
+        request_json: String,
+    ) -> Result<Arc<ClientByteStream>, DriverCallError> {
         tracing::debug!(method = "Stream", request = %request_json, "rpc");
         if native_streams_enabled() {
             return self.stream_native(&request_json).await;
@@ -701,7 +711,10 @@ impl ClientByteStream {
             StreamUplink::Native(tx) => {
                 let guard = tx.lock().await;
                 match guard.as_ref() {
-                    Some(sender) => sender.send(encode_stream_data(data)).await.map_err(|_| closed()),
+                    Some(sender) => sender
+                        .send(encode_stream_data(data))
+                        .await
+                        .map_err(|_| closed()),
                     None => Err(closed()),
                 }
             }
@@ -723,7 +736,6 @@ impl ClientByteStream {
         Ok(())
     }
 }
-
 
 /// Resolve a driver-instance uuid from the session's `GetReport` by its `jumpstarter.dev/name`
 /// label (the report is a JSON array of `{uuid, labels, …}` nodes).
@@ -788,7 +800,10 @@ impl DriverReportIndex {
             };
             by_parent_and_name.insert((parent, name.to_string()), uuid.to_string());
         }
-        Ok(Self { by_parent_and_name, roots })
+        Ok(Self {
+            by_parent_and_name,
+            roots,
+        })
     }
 
     /// Build the index from a live session's `GetReport`.
@@ -823,8 +838,7 @@ impl DriverReportIndex {
                     .by_parent_and_name
                     .iter()
                     .filter(|((parent, name), _)| {
-                        name == first
-                            && parent.as_ref().is_some_and(|p| self.roots.contains(p))
+                        name == first && parent.as_ref().is_some_and(|p| self.roots.contains(p))
                     })
                     .map(|(_, uuid)| uuid.clone());
                 let found = candidates.next().ok_or_else(not_found)?;
@@ -853,7 +867,9 @@ pub async fn resolve_driver_uuid_path(
     session: &ClientSession,
     path: &[&str],
 ) -> Result<String, DriverCallError> {
-    DriverReportIndex::from_session(session).await?.resolve_path(path)
+    DriverReportIndex::from_session(session)
+        .await?
+        .resolve_path(path)
 }
 
 #[cfg(test)]
@@ -920,7 +936,10 @@ mod report_index_tests {
             index.resolve_path(&["dut_a", "nope"]),
             Err(DriverCallError::NotFound(_))
         ));
-        assert!(matches!(index.resolve_path(&[]), Err(DriverCallError::NotFound(_))));
+        assert!(matches!(
+            index.resolve_path(&[]),
+            Err(DriverCallError::NotFound(_))
+        ));
     }
 }
 
@@ -928,10 +947,10 @@ mod report_index_tests {
 mod native_unary_tests {
     use super::*;
     use jumpstarter_protocol::v1::{GetReportResponse, LogStreamResponse};
-    use prost::Message as _;
     use jumpstarter_transport::demux::{Demux, SingleBackend};
     use jumpstarter_transport::transport::{connect_channel, InProcessTransport, Transport};
     use jumpstarter_transport::{DriverBackend, FrameUplink, ResponseStream, RouterStreamOpen};
+    use prost::Message as _;
     use std::sync::Arc;
     use tonic::metadata::MetadataMap;
 
@@ -967,7 +986,11 @@ mod native_unary_tests {
                 .to_string();
             let mut out = format!("{uuid}|{path}|").into_bytes();
             out.extend_from_slice(&body);
-            Ok((MetadataMap::new(), bytes::Bytes::from(out), MetadataMap::new()))
+            Ok((
+                MetadataMap::new(),
+                bytes::Bytes::from(out),
+                MetadataMap::new(),
+            ))
         }
     }
 
@@ -1240,7 +1263,10 @@ mod native_unary_tests {
         let on = table
             .get(&("power-1".to_string(), "on".to_string()))
             .expect("on route");
-        assert_eq!(on.path, "/jumpstarter.interfaces.power.v1.PowerInterface/On");
+        assert_eq!(
+            on.path,
+            "/jumpstarter.interfaces.power.v1.PowerInterface/On"
+        );
 
         let sv = table
             .get(&("power-1".to_string(), "set_voltage".to_string()))

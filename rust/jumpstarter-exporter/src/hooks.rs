@@ -210,7 +210,10 @@ fn build_command(hook: &HookInstanceConfig) -> (String, Vec<String>) {
             tracing::debug!(interpreter = %py, "auto-detected python interpreter for hook script");
             py
         } else {
-            tracing::debug!(interpreter = "/bin/sh", "auto-detected sh interpreter for hook");
+            tracing::debug!(
+                interpreter = "/bin/sh",
+                "auto-detected sh interpreter for hook"
+            );
             "/bin/sh".to_string()
         }
     });
@@ -285,7 +288,12 @@ async fn execute(
             Ok(())
         }
         Ok(Ok(status)) => {
-            tracing::debug!(?source, pid, code = status.code(), "hook subprocess exited non-zero");
+            tracing::debug!(
+                ?source,
+                pid,
+                code = status.code(),
+                "hook subprocess exited non-zero"
+            );
             Err(format!(
                 "Hook failed with exit code {}",
                 status
@@ -296,7 +304,12 @@ async fn execute(
         }
         Ok(Err(e)) => Err(format!("Error executing hook: {e}")),
         Err(_) => {
-            tracing::debug!(?source, pid, timeout = hook.timeout, "hook subprocess timed out; killing");
+            tracing::debug!(
+                ?source,
+                pid,
+                timeout = hook.timeout,
+                "hook subprocess timed out; killing"
+            );
             let _ = child.start_kill();
             Err(format!("Hook timed out after {} seconds", hook.timeout))
         }

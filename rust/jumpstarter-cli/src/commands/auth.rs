@@ -1,10 +1,9 @@
 //! `jmp auth {status,refresh,rotate}` (spec 08 §8.1-8.3; `auth.py`).
 
-
 use chrono::{TimeZone, Utc};
 use clap::{Args as ClapArgs, Subcommand};
-use jumpstarter_lease::ControllerClient;
 use jumpstarter_config::YamlConfig;
+use jumpstarter_lease::ControllerClient;
 use owo_colors::{OwoColorize, Stream::Stdout};
 
 use jumpstarter_auth::jwt;

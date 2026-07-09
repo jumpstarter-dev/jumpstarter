@@ -14,9 +14,9 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 
+use jumpstarter_driver_core::legacy::LegacyDispatch;
 use jumpstarter_protocol::v1::exporter_service_server::{ExporterService, ExporterServiceServer};
 use jumpstarter_protocol::v1::router_service_server::RouterServiceServer;
-use jumpstarter_driver_core::legacy::LegacyDispatch;
 use jumpstarter_protocol::v1::{
     DriverCallRequest, DriverCallResponse, EndSessionRequest, EndSessionResponse,
     GetReportResponse, GetStatusRequest, GetStatusResponse, LogStreamResponse, ResetRequest,
@@ -296,9 +296,8 @@ pub fn serve_standalone(
     // whole `Routes` — typed routes *and* the native demux fallback — so native per-driver calls
     // are passphrase-gated identically; the large message limits are set on the typed
     // `RouterService` inside `session_routes` (before the layer), matching the prior behavior.
-    let interceptor = tonic::service::interceptor::interceptor(
-        crate::auth::passphrase_interceptor(passphrase),
-    );
+    let interceptor =
+        tonic::service::interceptor::interceptor(crate::auth::passphrase_interceptor(passphrase));
     let routes = session_routes(shared, 64 * 1024 * 1024);
     let tcp_task = tokio::spawn(async move {
         if let Err(e) = Server::builder()
@@ -354,7 +353,10 @@ impl ExporterService for ExporterServer {
             .shared
             .routing()
             .ok_or_else(|| Status::unknown("no active lease"))?;
-        let resp = routing.legacy().driver_call(&*routing.backend(), req).await?;
+        let resp = routing
+            .legacy()
+            .driver_call(&*routing.backend(), req)
+            .await?;
         Ok(Response::new(resp))
     }
 

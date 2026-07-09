@@ -86,7 +86,13 @@ impl ConnectionManager {
         );
         let acquire_started = Instant::now();
         let acquired = session
-            .acquire_lease(selector.clone(), exporter_name.clone(), lease_id, duration_secs, ACQUISITION_TIMEOUT_SECS)
+            .acquire_lease(
+                selector.clone(),
+                exporter_name.clone(),
+                lease_id,
+                duration_secs,
+                ACQUISITION_TIMEOUT_SECS,
+            )
             .await
             .map_err(|e| e.to_string())?;
         tracing::debug!(
@@ -95,8 +101,14 @@ impl ConnectionManager {
             elapsed = ?acquire_started.elapsed(),
             "lease acquired; serving transport"
         );
-        let transport = session.serve_lease(acquired.name.clone()).await.map_err(|e| e.to_string())?;
-        let socket_path = transport.jumpstarter_host().await.map_err(|e| e.to_string())?;
+        let transport = session
+            .serve_lease(acquired.name.clone())
+            .await
+            .map_err(|e| e.to_string())?;
+        let socket_path = transport
+            .jumpstarter_host()
+            .await
+            .map_err(|e| e.to_string())?;
         tracing::debug!(lease = %acquired.name, socket = %socket_path, "transport served");
 
         let id = format!("{:08x}", self.counter.fetch_add(1, Ordering::Relaxed) + 1);
@@ -167,7 +179,9 @@ impl ConnectionManager {
     /// The subprocess environment for a connection (errors if the id is unknown).
     pub async fn env(&self, id: &str) -> Result<ConnEnv, String> {
         let conns = self.conns.lock().await;
-        let c = conns.get(id).ok_or_else(|| format!("No connection with id {id}"))?;
+        let c = conns
+            .get(id)
+            .ok_or_else(|| format!("No connection with id {id}"))?;
         Ok(ConnEnv {
             lease_name: c.lease_name.clone(),
             exporter_name: c.exporter_name.clone(),

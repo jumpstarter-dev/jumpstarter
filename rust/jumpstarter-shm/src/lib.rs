@@ -80,7 +80,12 @@ impl Ring {
     /// Producer side: create/truncate `path` to hold a ring of `cap` data bytes and zero the
     /// header. The consumer opens the same path with the same `cap`.
     pub fn create(path: &Path, cap: usize) -> io::Result<Self> {
-        let file = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(path)?;
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)?;
         let mapsz = HDR + cap;
         file.set_len(mapsz as u64)?;
         let ring = unsafe { Self::map(file, cap, mapsz)? };
@@ -110,7 +115,12 @@ impl Ring {
         if base == libc::MAP_FAILED {
             return Err(io::Error::last_os_error());
         }
-        Ok(Self { base: base as *mut u8, cap, mapsz, _file: file })
+        Ok(Self {
+            base: base as *mut u8,
+            cap,
+            mapsz,
+            _file: file,
+        })
     }
 
     #[inline]

@@ -1,7 +1,6 @@
 //! `jmp config` — local configuration commands (spec 08 §11). Groups the
 //! `client` and `exporter` subgroups.
 
-
 use clap::{Args as ClapArgs, Subcommand};
 
 use crate::commands::{config_client, config_exporter};

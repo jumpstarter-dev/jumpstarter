@@ -13,9 +13,9 @@ use std::collections::BTreeMap;
 
 use crate::ir::InterfaceRef;
 
-pub mod rust;
 pub mod java;
 pub mod python;
+pub mod rust;
 
 /// A per-language code generator.
 ///

@@ -150,7 +150,11 @@ fn build_interface(proto_rel: &str, mode: Mode) {
     // `tonic::include_proto!` uses), falling back to the file stem for a package-less proto. The fds
     // keeps its stem name (it's written by tonic before the package is known; only this aggregator,
     // which references it, needs to be addressable by package).
-    let pkg_key = packages.iter().next().cloned().unwrap_or_else(|| stem.clone());
+    let pkg_key = packages
+        .iter()
+        .next()
+        .cloned()
+        .unwrap_or_else(|| stem.clone());
     std::fs::write(out_dir.join(format!("{pkg_key}_generated.rs")), agg)
         .unwrap_or_else(|e| panic!("write the {pkg_key}_generated.rs aggregator: {e}"));
 }
@@ -218,12 +222,9 @@ pub fn exporter_device(config_rel: &str) {
         .compile_protos(&protos, &[&proto_root])
         .expect("failed to compile the device's interface protos");
 
-    let (files, warnings) = crate::device::generate_device(
-        &device,
-        "rust",
-        &crate::device::DeviceOptions::default(),
-    )
-    .expect("generate device wrapper");
+    let (files, warnings) =
+        crate::device::generate_device(&device, "rust", &crate::device::DeviceOptions::default())
+            .expect("generate device wrapper");
     for warning in &warnings {
         println!("cargo:warning=jumpstarter device: {warning}");
     }

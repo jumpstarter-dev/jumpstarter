@@ -176,8 +176,9 @@ impl<R: Router> Demux<R> {
 impl<R: Router> tower::Service<http::Request<axum::body::Body>> for Demux<R> {
     type Response = http::Response<tonic::body::BoxBody>;
     type Error = Infallible;
-    type Future =
-        std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Infallible>> + Send>>;
+    type Future = std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Self::Response, Infallible>> + Send>,
+    >;
 
     fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
@@ -212,7 +213,9 @@ impl<R: Router> tonic::server::StreamingService<Bytes> for ForwardService<R> {
     type Response = Bytes;
     type ResponseStream = ResponseStream<Bytes>;
     type Future = Pin<
-        Box<dyn std::future::Future<Output = Result<Response<Self::ResponseStream>, Status>> + Send>,
+        Box<
+            dyn std::future::Future<Output = Result<Response<Self::ResponseStream>, Status>> + Send,
+        >,
     >;
 
     fn call(&mut self, request: Request<Streaming<Bytes>>) -> Self::Future {
@@ -298,7 +301,10 @@ mod tests {
         type Response = Bytes;
         type ResponseStream = ResponseStream<Bytes>;
         type Future = std::pin::Pin<
-            Box<dyn std::future::Future<Output = Result<Response<Self::ResponseStream>, Status>> + Send>,
+            Box<
+                dyn std::future::Future<Output = Result<Response<Self::ResponseStream>, Status>>
+                    + Send,
+            >,
         >;
         fn call(&mut self, request: Request<Streaming<Bytes>>) -> Self::Future {
             // Echo each inbound request frame straight back, in order.
@@ -493,11 +499,7 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn opaque_forward_over_shm_transport() {
-        round_trip(
-            ShmTransport::new().unwrap(),
-            ShmTransport::new().unwrap(),
-        )
-        .await;
+        round_trip(ShmTransport::new().unwrap(), ShmTransport::new().unwrap()).await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

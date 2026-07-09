@@ -35,6 +35,9 @@ help:
 	@echo "  make test-<project>   - Test specific project"
 	@echo "  make clean-<project>  - Clean specific project"
 	@echo ""
+	@echo "Container images:"
+	@echo "  make rust-controller-image - Build the Rust controller/router image (rust/Containerfile.controller)"
+	@echo ""
 	@echo "Projects: $(SUBDIRS)"
 
 # Build all projects
@@ -179,6 +182,18 @@ e2e-compat-setup:
 e2e-compat-run:
 	@echo "Running compat e2e (test: $(COMPAT_TEST))..."
 	@COMPAT_TEST=$(COMPAT_TEST) bash e2e/compat/run.sh
+
+# Rust controller/router image (Rust controller rewrite).
+# Built from the REPO ROOT so the build stage sees both rust/ and
+# protocol/proto (rust/jumpstarter-protocol/build.rs compiles
+# ../../protocol/proto). Deploy it via the CONTROLLER_IMG/ROUTER_IMG
+# overrides in controller/hack/deploy_vars.
+CONTAINER_TOOL ?= podman
+RUST_CONTROLLER_IMG ?= quay.io/jumpstarter-dev/jumpstarter-controller-rust:latest
+
+.PHONY: rust-controller-image
+rust-controller-image:
+	$(CONTAINER_TOOL) build -t $(RUST_CONTROLLER_IMG) -f rust/Containerfile.controller .
 
 # Per-project clean targets
 .PHONY: clean-python clean-protocol clean-controller clean-e2e

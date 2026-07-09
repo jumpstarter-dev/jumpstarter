@@ -7,7 +7,9 @@
 
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{CallToolResult, Content, Implementation, ProtocolVersion, ServerCapabilities, ServerInfo},
+    model::{
+        CallToolResult, Content, Implementation, ProtocolVersion, ServerCapabilities, ServerInfo,
+    },
     schemars, tool, tool_handler, tool_router,
     transport::stdio,
     ErrorData as McpError, ServerHandler, ServiceExt,
@@ -192,7 +194,9 @@ async fn run_j(
         let drain = async {
             let _ = tokio::join!(stdout.read_to_end(&mut out), stderr.read_to_end(&mut err));
         };
-        tokio::time::timeout(Duration::from_secs(timeout_seconds), drain).await.is_err()
+        tokio::time::timeout(Duration::from_secs(timeout_seconds), drain)
+            .await
+            .is_err()
     };
     if timed_out {
         tracing::warn!(command = ?command, timeout_seconds, "run_j timed out; killing child");
@@ -247,16 +251,22 @@ async fn j_introspect(
         .kill_on_drop(true);
     let output = match tokio::time::timeout(Duration::from_secs(60), cmd.output()).await {
         Ok(Ok(o)) => o,
-        Ok(Err(e)) => return json_result(json!({"error": format!("failed to run j introspect: {e}")})),
+        Ok(Err(e)) => {
+            return json_result(json!({"error": format!("failed to run j introspect: {e}")}))
+        }
         Err(_) => return json_result(json!({"error": "j introspect timed out"})),
     };
     let stdout = String::from_utf8_lossy(&output.stdout);
     if stdout.trim().is_empty() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return json_result(json!({"error": format!("j introspect produced no output: {}", stderr.trim())}));
+        return json_result(
+            json!({"error": format!("j introspect produced no output: {}", stderr.trim())}),
+        );
     }
     // stdout is already JSON from `j introspect`.
-    Ok(CallToolResult::success(vec![Content::text(stdout.into_owned())]))
+    Ok(CallToolResult::success(vec![Content::text(
+        stdout.into_owned(),
+    )]))
 }
 
 /// The Jumpstarter MCP server. Holds the rmcp tool router; each tool resolves the client
@@ -289,14 +299,29 @@ impl Jumpstarter {
         Parameters(args): Parameters<ListExportersArgs>,
     ) -> Result<CallToolResult, McpError> {
         let session = config::connect().await.map_err(internal)?;
-        let exporters = parse_array(&session.list_exporters_json(args.selector).await.map_err(internal)?)?;
+        let exporters = parse_array(
+            &session
+                .list_exporters_json(args.selector)
+                .await
+                .map_err(internal)?,
+        )?;
         let active = if args.include_leases {
-            let leases = parse_array(&session.list_leases_json(None, true, None).await.map_err(internal)?)?;
+            let leases = parse_array(
+                &session
+                    .list_leases_json(None, true, None)
+                    .await
+                    .map_err(internal)?,
+            )?;
             shape::active_leases_by_exporter(&leases)
         } else {
             Default::default()
         };
-        let out = shape::shape_exporters(&exporters, &active, args.include_leases, args.include_online);
+        let out = shape::shape_exporters(
+            &exporters,
+            &active,
+            args.include_leases,
+            args.include_online,
+        );
         json_result(Value::Array(out))
     }
 
@@ -306,7 +331,12 @@ impl Jumpstarter {
         Parameters(args): Parameters<ListLeasesArgs>,
     ) -> Result<CallToolResult, McpError> {
         let session = config::connect().await.map_err(internal)?;
-        let leases = parse_array(&session.list_leases_json(args.selector, true, None).await.map_err(internal)?)?;
+        let leases = parse_array(
+            &session
+                .list_leases_json(args.selector, true, None)
+                .await
+                .map_err(internal)?,
+        )?;
         json_result(Value::Array(shape::shape_leases(&leases)))
     }
 
@@ -346,7 +376,10 @@ impl Jumpstarter {
         Parameters(args): Parameters<DeleteLeaseArgs>,
     ) -> Result<CallToolResult, McpError> {
         let session = config::connect().await.map_err(internal)?;
-        session.release_lease(args.lease_id.clone()).await.map_err(internal)?;
+        session
+            .release_lease(args.lease_id.clone())
+            .await
+            .map_err(internal)?;
         json_result(json!({"name": args.lease_id, "status": "deleted"}))
     }
 
@@ -360,7 +393,9 @@ impl Jumpstarter {
         Parameters(args): Parameters<ConnectArgs>,
     ) -> Result<CallToolResult, McpError> {
         if args.lease_id.is_none() && args.selector.is_none() && args.exporter_name.is_none() {
-            return json_result(json!({"error": "One of lease_id, selector, or exporter_name is required"}));
+            return json_result(
+                json!({"error": "One of lease_id, selector, or exporter_name is required"}),
+            );
         }
         let (session, cfg) = config::connect_with_config().await.map_err(internal)?;
         match self
@@ -402,7 +437,10 @@ impl Jumpstarter {
                        against the connection, capturing stdout, stderr, and exit code. For \
                        streaming commands like \"serial pipe\", use a short timeout_seconds."
     )]
-    async fn jmp_run(&self, Parameters(args): Parameters<RunArgs>) -> Result<CallToolResult, McpError> {
+    async fn jmp_run(
+        &self,
+        Parameters(args): Parameters<RunArgs>,
+    ) -> Result<CallToolResult, McpError> {
         let env = match self.manager.env(&args.connection_id).await {
             Ok(e) => e,
             Err(e) => return json_result(json!({"error": e})),
@@ -444,7 +482,10 @@ impl Jumpstarter {
                        command tree (names, help, params, nested subcommands). Pass command_path \
                        to drill into a subtree (e.g. [\"storage\"])."
     )]
-    async fn jmp_explore(&self, Parameters(args): Parameters<ExploreArgs>) -> Result<CallToolResult, McpError> {
+    async fn jmp_explore(
+        &self,
+        Parameters(args): Parameters<ExploreArgs>,
+    ) -> Result<CallToolResult, McpError> {
         let env = match self.manager.env(&args.connection_id).await {
             Ok(e) => e,
             Err(e) => return json_result(json!({"error": e})),

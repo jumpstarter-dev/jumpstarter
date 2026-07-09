@@ -70,7 +70,11 @@ mod tests {
         ];
 
         let report = assemble_report(&nodes);
-        let by_uuid: HashMap<_, _> = report.reports.iter().map(|r| (r.uuid.as_str(), r)).collect();
+        let by_uuid: HashMap<_, _> = report
+            .reports
+            .iter()
+            .map(|r| (r.uuid.as_str(), r))
+            .collect();
 
         assert_eq!(report.reports.len(), 3);
         assert_eq!(by_uuid["root"].parent_uuid, None);

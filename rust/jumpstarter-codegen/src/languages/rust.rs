@@ -67,7 +67,8 @@ pub(crate) fn pascal_to_snake(name: &str) -> String {
     let chars: Vec<char> = name.chars().collect();
     for (i, &c) in chars.iter().enumerate() {
         if c.is_ascii_uppercase() {
-            let prev_lower_or_digit = i > 0 && (chars[i - 1].is_ascii_lowercase() || chars[i - 1].is_ascii_digit());
+            let prev_lower_or_digit =
+                i > 0 && (chars[i - 1].is_ascii_lowercase() || chars[i - 1].is_ascii_digit());
             let next_lower = i + 1 < chars.len() && chars[i + 1].is_ascii_lowercase();
             let prev_upper = i > 0 && chars[i - 1].is_ascii_uppercase();
             if i > 0 && (prev_lower_or_digit || (prev_upper && next_lower)) {
@@ -668,11 +669,16 @@ mod tests {
         // not a runtime adapter — the generic runtime serves it once the author fills it in.
         let iface = power_iface();
         let files = RustGenerator.generate_driver(&iface);
-        assert!(files.contains_key("power_driver_stub.rs"), "keys: {:?}", files.keys());
+        assert!(
+            files.contains_key("power_driver_stub.rs"),
+            "keys: {:?}",
+            files.keys()
+        );
         let src = &files["power_driver_stub.rs"];
         assert!(src.contains("pub struct PowerDriver;"));
         assert!(src.contains("impl PowerInterface for PowerDriver"));
-        assert!(src.contains("async fn on(&self, _request: Request<()>) -> Result<Response<()>, Status>"));
+        assert!(src
+            .contains("async fn on(&self, _request: Request<()>) -> Result<Response<()>, Status>"));
         // Server-streaming Read carries an associated stream type.
         assert!(src.contains("type ReadStream"));
         assert!(src.contains("async fn read(&self, _request: Request<()>) -> Result<Response<Self::ReadStream>, Status>"));
@@ -683,7 +689,11 @@ mod tests {
     fn client_output_keyed_by_client_file() {
         let iface = power_iface();
         let files = RustGenerator.generate_client(&iface);
-        assert!(files.contains_key("power_client.rs"), "keys: {:?}", files.keys());
+        assert!(
+            files.contains_key("power_client.rs"),
+            "keys: {:?}",
+            files.keys()
+        );
         let src = &files["power_client.rs"];
         assert!(src.contains("pub struct PowerClient<'a>"));
         // Unary on()/off() over native_unary; read() over native_server_stream.

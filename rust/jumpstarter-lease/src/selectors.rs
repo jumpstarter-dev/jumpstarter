@@ -235,7 +235,10 @@ mod tests {
     // requirement and whitespace tolerance around `=`.
     #[test]
     fn contains_not_exists_requirement() {
-        assert!(selector_contains("board=rpi,!experimental", "!experimental"));
+        assert!(selector_contains(
+            "board=rpi,!experimental",
+            "!experimental"
+        ));
         assert!(!selector_contains("board=rpi", "!experimental"));
     }
 

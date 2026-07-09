@@ -67,7 +67,10 @@ impl LanguageGenerator for PythonGenerator {
     fn generate_driver(&self, iface: &InterfaceRef) -> BTreeMap<String, String> {
         let mut out = BTreeMap::new();
         out.insert(models_file_name(iface), render_models(iface));
-        out.insert(driver_file_name(iface), render_driver(iface, &self.package_prefix()));
+        out.insert(
+            driver_file_name(iface),
+            render_driver(iface, &self.package_prefix()),
+        );
         out.insert(
             descriptor_file_name(iface),
             render_descriptor(iface, &self.descriptor_set),
@@ -122,7 +125,9 @@ pub(crate) fn module_stem(iface: &InterfaceRef) -> String {
     segments
         .iter()
         .rev()
-        .find(|s| !(s.starts_with('v') && s[1..].chars().all(|c| c.is_ascii_digit()) && s.len() > 1))
+        .find(|s| {
+            !(s.starts_with('v') && s[1..].chars().all(|c| c.is_ascii_digit()) && s.len() > 1)
+        })
         .copied()
         .unwrap_or("interface")
         .to_string()
@@ -148,7 +153,10 @@ fn descriptor_file_name(iface: &InterfaceRef) -> String {
 
 /// The full gRPC method path: `/<proto_package>.<Service>/<Method>`.
 fn method_path(iface: &InterfaceRef, method: &Method) -> String {
-    format!("/{}.{}/{}", iface.proto_package, iface.service_name, method.name)
+    format!(
+        "/{}.{}/{}",
+        iface.proto_package, iface.service_name, method.name
+    )
 }
 
 /// `true` for the well-known `google.protobuf.Empty`.
@@ -255,7 +263,11 @@ fn py_params(iface: &InterfaceRef, method: &Method) -> Vec<(String, String)> {
     if is_empty(&method.input_type) {
         return Vec::new();
     }
-    let Some(msg) = iface.messages.iter().find(|m| m.full_name == method.input_type) else {
+    let Some(msg) = iface
+        .messages
+        .iter()
+        .find(|m| m.full_name == method.input_type)
+    else {
         return Vec::new();
     };
     msg.fields
@@ -279,7 +291,11 @@ fn referenced_models(iface: &InterfaceRef) -> Vec<String> {
             push(short_name(&m.output_type).to_string());
         }
         // Message-typed params.
-        for msg in iface.messages.iter().filter(|msg| msg.full_name == m.input_type) {
+        for msg in iface
+            .messages
+            .iter()
+            .filter(|msg| msg.full_name == m.input_type)
+        {
             for f in &msg.fields {
                 if f.is_message
                     && f.type_name != "google.protobuf.Value"
@@ -353,10 +369,7 @@ fn render_descriptor(iface: &InterfaceRef, descriptor_set: &[u8]) -> String {
     let full = format!("{}.{}", iface.proto_package, service);
     // Hex (not base64) so decoding is a stdlib one-liner with no import. Wrapped as adjacent
     // string literals for a readable file.
-    let hex: String = descriptor_set
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
+    let hex: String = descriptor_set.iter().map(|b| format!("{b:02x}")).collect();
     let mut s = String::new();
     let _ = write!(
         s,
@@ -369,7 +382,11 @@ fn render_descriptor(iface: &InterfaceRef, descriptor_set: &[u8]) -> String {
          FILE_DESCRIPTOR_SET: bytes = bytes.fromhex(\n"
     );
     for chunk in hex.as_bytes().chunks(96) {
-        let _ = writeln!(s, "    \"{}\"", std::str::from_utf8(chunk).unwrap_or_default());
+        let _ = writeln!(
+            s,
+            "    \"{}\"",
+            std::str::from_utf8(chunk).unwrap_or_default()
+        );
     }
     s.push_str(")\n");
     s
@@ -577,27 +594,66 @@ mod tests {
     #[test]
     fn driver_base_is_proto_first_abc() {
         let files = generator().generate_driver(&power_iface());
-        assert!(files.contains_key("power_models.py"), "keys: {:?}", files.keys());
-        assert!(files.contains_key("power_driver.py"), "keys: {:?}", files.keys());
+        assert!(
+            files.contains_key("power_models.py"),
+            "keys: {:?}",
+            files.keys()
+        );
+        assert!(
+            files.contains_key("power_driver.py"),
+            "keys: {:?}",
+            files.keys()
+        );
         let src = &files["power_driver.py"];
-        assert!(src.contains("class PowerInterface(ProtoInterface):"), "{src}");
-        assert!(src.contains("from jumpstarter.driver import ProtoInterface"), "{src}");
+        assert!(
+            src.contains("class PowerInterface(ProtoInterface):"),
+            "{src}"
+        );
+        assert!(
+            src.contains("from jumpstarter.driver import ProtoInterface"),
+            "{src}"
+        );
         assert!(src.contains("def client(cls) -> str:"), "{src}");
         assert!(src.contains("return \"power_client.PowerClient\""), "{src}");
-        assert!(src.contains("    @abstractmethod\n    async def on(self) -> None: ..."), "{src}");
-        assert!(src.contains("async def read(self) -> AsyncIterator[PowerReading]: ..."), "{src}");
-        assert!(src.contains("from .power_models import PowerReading"), "{src}");
+        assert!(
+            src.contains("    @abstractmethod\n    async def on(self) -> None: ..."),
+            "{src}"
+        );
+        assert!(
+            src.contains("async def read(self) -> AsyncIterator[PowerReading]: ..."),
+            "{src}"
+        );
+        assert!(
+            src.contains("from .power_models import PowerReading"),
+            "{src}"
+        );
     }
 
     #[test]
     fn client_uses_native_seam_and_native_types() {
         let files = generator().generate_client(&power_iface());
-        assert!(files.contains_key("power_client.py"), "keys: {:?}", files.keys());
+        assert!(
+            files.contains_key("power_client.py"),
+            "keys: {:?}",
+            files.keys()
+        );
         let src = &files["power_client.py"];
-        assert!(src.contains("class PowerClient(NativeDriverClient):"), "{src}");
-        assert!(src.contains("_DESCRIPTOR_SET = FILE_DESCRIPTOR_SET"), "{src}");
-        assert!(src.contains("_SERVICE_FULL_NAME = SERVICE_FULL_NAME"), "{src}");
-        assert!(src.contains("from .power_descriptor import FILE_DESCRIPTOR_SET, SERVICE_FULL_NAME"), "{src}");
+        assert!(
+            src.contains("class PowerClient(NativeDriverClient):"),
+            "{src}"
+        );
+        assert!(
+            src.contains("_DESCRIPTOR_SET = FILE_DESCRIPTOR_SET"),
+            "{src}"
+        );
+        assert!(
+            src.contains("_SERVICE_FULL_NAME = SERVICE_FULL_NAME"),
+            "{src}"
+        );
+        assert!(
+            src.contains("from .power_descriptor import FILE_DESCRIPTOR_SET, SERVICE_FULL_NAME"),
+            "{src}"
+        );
         assert!(src.contains("def on(self) -> None:"), "{src}");
         assert!(
             src.contains(
@@ -605,7 +661,10 @@ mod tests {
             ),
             "{src}"
         );
-        assert!(src.contains("def read(self) -> Iterator[PowerReading]:"), "{src}");
+        assert!(
+            src.contains("def read(self) -> Iterator[PowerReading]:"),
+            "{src}"
+        );
         assert!(
             src.contains(
                 "self._native_server_stream(\"/jumpstarter.interfaces.power.v1.PowerInterface/Read\", PowerReading, [])"
@@ -617,12 +676,17 @@ mod tests {
     #[test]
     fn descriptor_module_embeds_the_set_and_service() {
         let files = generator().generate_client(&power_iface());
-        let src = files.get("power_descriptor.py").expect("descriptor module emitted");
+        let src = files
+            .get("power_descriptor.py")
+            .expect("descriptor module emitted");
         assert!(
             src.contains("SERVICE_FULL_NAME = \"jumpstarter.interfaces.power.v1.PowerInterface\""),
             "{src}"
         );
-        assert!(src.contains("FILE_DESCRIPTOR_SET: bytes = bytes.fromhex("), "{src}");
+        assert!(
+            src.contains("FILE_DESCRIPTOR_SET: bytes = bytes.fromhex("),
+            "{src}"
+        );
         // Round-trip: the embedded hex is exactly the input descriptor set.
         let hex: String = src
             .lines()
@@ -632,9 +696,14 @@ mod tests {
             .step_by(2)
             .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
             .collect();
-        assert_eq!(decoded, POWER_FDS, "embedded set must round-trip byte-identical");
+        assert_eq!(
+            decoded, POWER_FDS,
+            "embedded set must round-trip byte-identical"
+        );
         // The driver kind ships it too (same file, either kind is standalone).
-        assert!(generator().generate_driver(&power_iface()).contains_key("power_descriptor.py"));
+        assert!(generator()
+            .generate_driver(&power_iface())
+            .contains_key("power_descriptor.py"));
     }
 
     #[test]
@@ -645,8 +714,9 @@ mod tests {
         );
         let files = gen.generate_driver(&power_iface());
         assert!(
-            files["power_driver.py"]
-                .contains("return \"jumpstarter_driver_power._generated.power_client.PowerClient\""),
+            files["power_driver.py"].contains(
+                "return \"jumpstarter_driver_power._generated.power_client.PowerClient\""
+            ),
             "{}",
             files["power_driver.py"]
         );

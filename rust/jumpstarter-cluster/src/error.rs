@@ -55,7 +55,10 @@ pub enum ClusterError {
 
 impl ClusterError {
     pub fn tool_not_installed(tool: impl Into<String>) -> Self {
-        Self::ToolNotInstalled { tool: tool.into(), info: String::new() }
+        Self::ToolNotInstalled {
+            tool: tool.into(),
+            info: String::new(),
+        }
     }
 }
 

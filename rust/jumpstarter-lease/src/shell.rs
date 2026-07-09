@@ -13,7 +13,7 @@ use jumpstarter_protocol::v1::exporter_service_client::ExporterServiceClient;
 use jumpstarter_protocol::v1::{EndSessionRequest, ExporterStatus, GetStatusRequest};
 use tracing::{debug, info, trace, warn};
 
-use crate::error::ClientError;
+use crate::error::{ClientError, LeaseError};
 use crate::lease::{acquire, CreateLeaseParams, LeaseProvider, LeaseTiming};
 use crate::service::ControllerClient;
 use crate::transport;
@@ -87,7 +87,7 @@ pub async fn run(config: &ClientConfig, opts: ShellOptions) -> Result<i32, Clien
         ..LeaseTiming::default()
     };
 
-    let acquired = acquire(
+    let acquired = match acquire(
         &client,
         CreateLeaseParams {
             selector: opts.selector.clone(),
@@ -99,7 +99,28 @@ pub async fn run(config: &ClientConfig, opts: ShellOptions) -> Result<i32, Clien
         Some(&config.metadata.name),
         timing,
     )
-    .await?;
+    .await
+    {
+        Ok(acquired) => acquired,
+        // A lease that is `Released` before it is ever observed `Ready` means the
+        // exporter took the lease and gave it back during setup — most commonly a
+        // `beforeLease` hook failing with `onFailure: endLease`, which ends the
+        // lease faster than the acquisition poll catches the brief `Ready=True`
+        // window (a fast controller widens this race; the exporter/lease genuinely
+        // went away). Surface it like the beforeLease-wait's own connection-loss
+        // path (see `wait_for_lease_ready`) rather than the raw "lease released",
+        // so the user sees why the shell could not start.
+        Err(ClientError::Lease(LeaseError::Released(name))) => {
+            warn!(
+                lease = %name,
+                "lease released before it became ready; treating as connection loss"
+            );
+            return Err(ClientError::Exporter(
+                "Connection to exporter lost".to_string(),
+            ));
+        }
+        Err(e) => return Err(e),
+    };
 
     // The exporter name labels the shell prompt + the lifecycle messages (`shell.py`
     // passes `lease.exporter_name` to `launch_shell`); fall back to the lease name.
@@ -416,7 +437,10 @@ pub async fn run_direct(
         None
     };
 
-    let result = spawn_child(command, address, address, "UNSAFE", insecure, passphrase, None).await;
+    let result = spawn_child(
+        command, address, address, "UNSAFE", insecure, passphrase, None,
+    )
+    .await;
 
     if let Some(task) = log_task {
         // Brief flush window for any trailing (afterLease) lines before aborting.

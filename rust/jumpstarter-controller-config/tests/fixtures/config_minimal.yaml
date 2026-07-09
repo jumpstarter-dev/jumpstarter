@@ -1,0 +1,12 @@
+authentication:
+  internal:
+    prefix: ""
+  jwt: []
+  k8s: {}
+grpc:
+  keepalive:
+    minTime: 1s
+    permitWithoutStream: true
+leasePolicy: {}
+provisioning:
+  enabled: false

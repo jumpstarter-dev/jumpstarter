@@ -1,0 +1,65 @@
+[package]
+name = "jumpstarter-controller-auth"
+description = "Jumpstarter controller auth: internal ES256 signer (bit-exact Go key derivation), token validation (internal + external OIDC JWKS), authorization, and the internal OIDC discovery server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+jumpstarter-controller-api = { path = "../jumpstarter-controller-api" }
+jumpstarter-controller-config = { path = "../jumpstarter-controller-config" }
+kube = { workspace = true, features = ["client", "config", "rustls-tls", "ring"] }
+k8s-openapi.workspace = true
+# Bearer/metadata extraction and the authorizer speak the gRPC surface
+# (`tonic::Status`/`Code`, `metadata::MetadataMap`), matching the sibling port
+# in jumpstarter-router-service/src/auth.rs so error codes/messages stay
+# byte-identical. Only the always-available `Status`/`Code`/`metadata` core is
+# used (no transport feature).
+tonic = { workspace = true }
+jsonwebtoken.workspace = true
+p256.workspace = true
+# Randomized ECDSA nonce for internal-token signing. Go's crypto/ecdsa (via
+# go-jose) signs with a fresh random nonce, so two tokens with identical claims
+# still differ; jsonwebtoken's ES256 is deterministic (RFC 6979), which makes
+# same-second token rotations byte-identical. We re-sign with OsRng to match
+# Go's non-deterministic signatures (and its exact token structure — no `jti`).
+rand_core = { version = "0.6", features = ["getrandom"] }
+sha2.workspace = true
+num-bigint.workspace = true
+axum.workspace = true
+rcgen.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "sync"] }
+tracing.workspace = true
+# JWK x/y coordinates are base64url-no-pad (go-jose base64.RawURLEncoding).
+base64 = "0.22"
+# Fresh stream/jti UUIDs for router-token minting (Go: k8s.io/apimachinery
+# util/uuid.NewUUID -> google/uuid V4).
+uuid = { version = "1", features = ["v4"] }
+# rcgen expresses certificate validity as `time::OffsetDateTime` (discovery
+# server self-signed cert: now..now+365d, mirroring selfsigned.go). Same
+# pattern as jumpstarter-controller-runtime.
+time = "0.3"
+# TLS accept loop of the :8085 discovery server (axum 0.7 has no built-in
+# TLS): tokio-rustls acceptor + the same hyper-util connection bridge
+# axum::serve uses internally. ring provider, consistent with the workspace.
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+hyper = "1"
+hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service"] }
+tower = { version = "0.5", features = ["util"] }
+# JWKS/discovery fetch for external OIDC issuers. Same default-features=false +
+# rustls pattern as the rest of the workspace (ring provider installed by the
+# binaries at startup).
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-manual-roots", "json"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+# Cross-validation: controller-minted router stream tokens must pass the
+# router's validator — the two crates implement the two ends of one contract
+# (mint: controller_service.go:864-879; validate: router_service.go:52-78).
+jumpstarter-router-service = { path = "../jumpstarter-router-service" }

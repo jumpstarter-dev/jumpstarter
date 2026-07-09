@@ -127,7 +127,9 @@ pub fn generate_device(
     let device_source = match language {
         "python" => render_device_python(device, &device_name, &ifaces, opts, &mut warnings),
         "rust" => render_device_rust(device, &device_name, &ifaces, opts, &mut warnings),
-        "java" | "kotlin" => render_device_kotlin(device, &device_name, &ifaces, opts, &mut warnings),
+        "java" | "kotlin" => {
+            render_device_kotlin(device, &device_name, &ifaces, opts, &mut warnings)
+        }
         other => anyhow::bail!("unsupported device language {other:?}"),
     };
     let device_file = match language {
@@ -149,7 +151,10 @@ fn walk<'a>(
     out: &mut Vec<(&'a ResolvedNode, String, Binding)>,
 ) {
     for node in nodes {
-        if let NodeKind::Driver { interface, clients, .. } = &node.kind {
+        if let NodeKind::Driver {
+            interface, clients, ..
+        } = &node.kind
+        {
             let binding = binding_for(language, interface, clients, opts, warnings);
             out.push((node, interface.clone(), binding));
         }
@@ -247,7 +252,10 @@ fn render_device_python(
     fn composite_class_name(path: &[String]) -> String {
         format!(
             "_{}",
-            path.iter().map(|p| pascal_case(p)).collect::<Vec<_>>().join("")
+            path.iter()
+                .map(|p| pascal_case(p))
+                .collect::<Vec<_>>()
+                .join("")
         )
     }
 
@@ -374,7 +382,8 @@ fn render_device_python(
                         );
                     }
                     NodeKind::Opaque { reason } => {
-                        let _ = writeln!(s, "        # {name}: skipped ({reason})", name = root.name);
+                        let _ =
+                            writeln!(s, "        # {name}: skipped ({reason})", name = root.name);
                     }
                 }
             }
@@ -413,7 +422,10 @@ fn render_device_rust(
     fn composite_struct_name(device_name: &str, path: &[String]) -> String {
         format!(
             "{device_name}{}",
-            path.iter().map(|p| pascal_case(p)).collect::<Vec<_>>().join("")
+            path.iter()
+                .map(|p| pascal_case(p))
+                .collect::<Vec<_>>()
+                .join("")
         )
     }
 
@@ -503,7 +515,11 @@ fn render_device_rust(
 
     for composite in &composites {
         let name = composite_struct_name(device_name, &composite.path);
-        let _ = writeln!(s, "/// `{}` composite group (generated).", composite.path.join("/"));
+        let _ = writeln!(
+            s,
+            "/// `{}` composite group (generated).",
+            composite.path.join("/")
+        );
         let _ = writeln!(s, "pub struct {name}<'a> {{");
         struct_fields(&mut s, device_name, &composite.children, &node_type);
         let _ = writeln!(s, "}}\n");
@@ -513,7 +529,10 @@ fn render_device_rust(
         RootShape::SingleComposite(root) => &root.children,
         _ => &device.roots,
     };
-    let _ = writeln!(s, "/// The typed root client for this exporter config (generated).");
+    let _ = writeln!(
+        s,
+        "/// The typed root client for this exporter config (generated)."
+    );
     let _ = writeln!(s, "pub struct {device_name}<'a> {{");
     struct_fields(&mut s, device_name, root_children, &node_type);
     let _ = writeln!(s, "}}\n");
@@ -761,17 +780,34 @@ interfaces:
 
     #[test]
     fn python_single_composite_root_is_the_entry_itself() {
-        let (files, _) =
-            generate_device(&fixture_single_composite(), "python", &DeviceOptions::default())
-                .unwrap();
+        let (files, _) = generate_device(
+            &fixture_single_composite(),
+            "python",
+            &DeviceOptions::default(),
+        )
+        .unwrap();
         let src = &files["device.py"];
         // The class IS the dut node's client — children are DIRECT attributes (no .dut. hop).
         assert!(src.contains("class Example(DriverClient):"), "{src}");
-        assert!(src.contains("node = resolve_root_child(root, \"dut\")"), "{src}");
-        assert!(src.contains("self.power: PowerClient = rebind_client(node.children[\"power\"], PowerClient)"), "{src}");
+        assert!(
+            src.contains("node = resolve_root_child(root, \"dut\")"),
+            "{src}"
+        );
+        assert!(
+            src.contains(
+                "self.power: PowerClient = rebind_client(node.children[\"power\"], PowerClient)"
+            ),
+            "{src}"
+        );
         // The advertised python custom client wins; jvm-only labels don't leak into python.
-        assert!(src.contains("from jumpstarter_driver_power.client import PowerClient"), "{src}");
-        assert!(src.contains("from .power_client import PowerClient"), "{src}");
+        assert!(
+            src.contains("from jumpstarter_driver_power.client import PowerClient"),
+            "{src}"
+        );
+        assert!(
+            src.contains("from .power_client import PowerClient"),
+            "{src}"
+        );
         // The single composite entry gets NO extra wrapper class.
         assert!(!src.contains("class _Dut"), "{src}");
         assert!(files.contains_key("power_client.py"), "{:?}", files.keys());
@@ -779,12 +815,19 @@ interfaces:
 
     #[test]
     fn python_single_driver_root_subclasses_the_client() {
-        let (files, _) =
-            generate_device(&fixture_single_driver(), "python", &DeviceOptions::default()).unwrap();
+        let (files, _) = generate_device(
+            &fixture_single_driver(),
+            "python",
+            &DeviceOptions::default(),
+        )
+        .unwrap();
         let src = &files["device.py"];
         // The device class IS the driver's typed client (generated one — jvm label ≠ python).
         assert!(src.contains("class Example(PowerClient):"), "{src}");
-        assert!(src.contains("node = resolve_root_child(root, \"power\")"), "{src}");
+        assert!(
+            src.contains("node = resolve_root_child(root, \"power\")"),
+            "{src}"
+        );
     }
 
     #[test]
@@ -793,11 +836,17 @@ interfaces:
             generate_device(&fixture_forest(), "python", &DeviceOptions::default()).unwrap();
         let src = &files["device.py"];
         assert!(src.contains("class Example(DriverClient):"), "{src}");
-        assert!(src.contains("self.dut = _Dut(resolve_root_child(node, \"dut\"))"), "{src}");
+        assert!(
+            src.contains("self.dut = _Dut(resolve_root_child(node, \"dut\"))"),
+            "{src}"
+        );
         // Composite groups are typed DriverClient subclasses over their node.
         assert!(src.contains("class _Dut(DriverClient):"), "{src}");
         assert!(src.contains("# mystery: skipped"), "{src}");
-        assert!(warnings.iter().any(|w| w.contains("mystery")), "{warnings:?}");
+        assert!(
+            warnings.iter().any(|w| w.contains("mystery")),
+            "{warnings:?}"
+        );
     }
 
     #[test]
@@ -811,19 +860,34 @@ interfaces:
         };
         let (files, _) = generate_device(&fixture_single_composite(), "python", &opts).unwrap();
         let src = &files["device.py"];
-        assert!(src.contains("from my_pkg.clients import SuperPowerClient"), "{src}");
-        assert!(!src.contains("from jumpstarter_driver_power.client import"), "{src}");
+        assert!(
+            src.contains("from my_pkg.clients import SuperPowerClient"),
+            "{src}"
+        );
+        assert!(
+            !src.contains("from jumpstarter_driver_power.client import"),
+            "{src}"
+        );
     }
 
     #[test]
     fn rust_single_composite_flattens_and_resolves_full_paths() {
-        let (files, _) =
-            generate_device(&fixture_single_composite(), "rust", &DeviceOptions::default()).unwrap();
+        let (files, _) = generate_device(
+            &fixture_single_composite(),
+            "rust",
+            &DeviceOptions::default(),
+        )
+        .unwrap();
         let src = &files["device.rs"];
         assert!(src.contains("pub struct Example<'a> {"), "{src}");
         // Children are direct fields; report paths stay FULL ("dut"/"power").
         assert!(src.contains("pub power: PowerClient<'a>,"), "{src}");
-        assert!(src.contains("PowerClient::with_uuid(session, index.resolve_path(&[\"dut\", \"power\"])?)"), "{src}");
+        assert!(
+            src.contains(
+                "PowerClient::with_uuid(session, index.resolve_path(&[\"dut\", \"power\"])?)"
+            ),
+            "{src}"
+        );
         assert!(!src.contains("pub dut:"), "{src}");
         assert!(files.contains_key("power_client.rs"), "{:?}", files.keys());
     }
@@ -835,17 +899,29 @@ interfaces:
         let src = &files["device.rs"];
         assert!(src.contains("pub struct Example;"), "{src}");
         assert!(src.contains("pub async fn connect<'a>"), "{src}");
-        assert!(src.contains("Ok(PowerClient::with_uuid(session, index.resolve_path(&[\"power\"])?))"), "{src}");
+        assert!(
+            src.contains("Ok(PowerClient::with_uuid(session, index.resolve_path(&[\"power\"])?))"),
+            "{src}"
+        );
     }
 
     #[test]
     fn kotlin_single_composite_uses_advertised_jvm_client_and_name_paths() {
-        let (files, _) =
-            generate_device(&fixture_single_composite(), "kotlin", &DeviceOptions::default())
-                .unwrap();
+        let (files, _) = generate_device(
+            &fixture_single_composite(),
+            "kotlin",
+            &DeviceOptions::default(),
+        )
+        .unwrap();
         let src = &files["Example.kt"];
-        assert!(src.contains("package dev.jumpstarter.generated.device"), "{src}");
-        assert!(src.contains("open class Example(session: ExporterSession)"), "{src}");
+        assert!(
+            src.contains("package dev.jumpstarter.generated.device"),
+            "{src}"
+        );
+        assert!(
+            src.contains("open class Example(session: ExporterSession)"),
+            "{src}"
+        );
         // Children are direct vals; the jvm advertised custom client binds backup_power.
         assert!(
             src.contains("dev.jumpstarter.examples.power.CyclingPowerClient(session, session.requireDriverPath(\"dut\", \"backup_power\"))"),
@@ -862,8 +938,12 @@ interfaces:
 
     #[test]
     fn kotlin_single_driver_is_a_factory_function() {
-        let (files, _) =
-            generate_device(&fixture_single_driver(), "kotlin", &DeviceOptions::default()).unwrap();
+        let (files, _) = generate_device(
+            &fixture_single_driver(),
+            "kotlin",
+            &DeviceOptions::default(),
+        )
+        .unwrap();
         let src = &files["Example.kt"];
         assert!(src.contains("fun Example(session: ExporterSession): dev.jumpstarter.examples.power.CyclingPowerClient"), "{src}");
         assert!(src.contains("requireDriverPath(\"power\")"), "{src}");
@@ -878,8 +958,15 @@ interfaces:
             )]),
             ..Default::default()
         };
-        let (files, warnings) = generate_device(&fixture_single_composite(), "rust", &opts).unwrap();
-        assert!(files["device.rs"].contains("PowerClient::with_uuid"), "generated fallback");
-        assert!(warnings.iter().any(|w| w.contains("type path")), "{warnings:?}");
+        let (files, warnings) =
+            generate_device(&fixture_single_composite(), "rust", &opts).unwrap();
+        assert!(
+            files["device.rs"].contains("PowerClient::with_uuid"),
+            "generated fallback"
+        );
+        assert!(
+            warnings.iter().any(|w| w.contains("type path")),
+            "{warnings:?}"
+        );
     }
 }

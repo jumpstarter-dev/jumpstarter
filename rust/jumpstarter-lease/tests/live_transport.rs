@@ -14,10 +14,10 @@
 
 use std::time::Duration;
 
+use jumpstarter_config::{ClientConfig, YamlConfig};
 use jumpstarter_lease::{
     acquire, transport, ControllerClient, CreateLeaseParams, LeaseProvider, LeaseTiming,
 };
-use jumpstarter_config::{ClientConfig, YamlConfig};
 
 /// Acquire a lease, serve the transport socket, run `j power on` through it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

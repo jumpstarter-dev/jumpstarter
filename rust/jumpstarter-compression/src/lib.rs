@@ -116,8 +116,8 @@ impl Compressor {
             Codec::Bz2 => Enc::Bz2(BzEncoder::new(Vec::new(), BzCompression::best())),
             Codec::Zstd => {
                 // `new` only fails on an invalid level; ZSTD_LEVEL is a constant.
-                let enc = ZstdEncoder::new(Vec::new(), ZSTD_LEVEL)
-                    .expect("zstd level 3 is always valid");
+                let enc =
+                    ZstdEncoder::new(Vec::new(), ZSTD_LEVEL).expect("zstd level 3 is always valid");
                 Enc::Zstd(enc)
             }
         };
@@ -327,7 +327,10 @@ mod tests {
                 out.extend(c.finish().unwrap());
                 out
             };
-            assert!(!blob.is_empty(), "{codec:?} empty frame should have header/footer");
+            assert!(
+                !blob.is_empty(),
+                "{codec:?} empty frame should have header/footer"
+            );
             let back = {
                 let mut d = Decompressor::new(codec);
                 let mut out = d.decompress(&blob).unwrap();

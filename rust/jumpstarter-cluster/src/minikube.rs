@@ -23,7 +23,8 @@ pub async fn minikube_cluster_exists(minikube: &str, cluster_name: &str) -> bool
                     .get("valid")
                     .and_then(|x| x.as_array())
                     .map(|a| {
-                        a.iter().any(|p| p.get("Name").and_then(|n| n.as_str()) == Some(cluster_name))
+                        a.iter()
+                            .any(|p| p.get("Name").and_then(|n| n.as_str()) == Some(cluster_name))
                     })
                     .unwrap_or(false);
                 if found {
@@ -43,7 +44,11 @@ pub async fn minikube_cluster_exists(minikube: &str, cluster_name: &str) -> bool
     }
 }
 
-pub async fn delete_minikube_cluster(minikube: &str, cluster_name: &str, progress: &dyn Progress) -> Result<()> {
+pub async fn delete_minikube_cluster(
+    minikube: &str,
+    cluster_name: &str,
+    progress: &dyn Progress,
+) -> Result<()> {
     if !minikube_installed(minikube) {
         return Err(ClusterError::tool_not_installed("minikube"));
     }
@@ -52,10 +57,14 @@ pub async fn delete_minikube_cluster(minikube: &str, cluster_name: &str, progres
     }
     progress.progress(&format!("Deleting Minikube cluster \"{cluster_name}\"..."));
     if run_command_streamed(&[minikube, "delete", "-p", cluster_name]).await? == 0 {
-        progress.success(&format!("Successfully deleted Minikube cluster \"{cluster_name}\""));
+        progress.success(&format!(
+            "Successfully deleted Minikube cluster \"{cluster_name}\""
+        ));
         Ok(())
     } else {
-        Err(ClusterError::Operation(format!("Failed to delete Minikube cluster '{cluster_name}'")))
+        Err(ClusterError::Operation(format!(
+            "Failed to delete Minikube cluster '{cluster_name}'"
+        )))
     }
 }
 
@@ -71,7 +80,9 @@ pub async fn create_minikube_cluster(
     }
     if minikube_cluster_exists(minikube, cluster_name).await {
         if !force_recreate {
-            progress.progress(&format!("Minikube cluster \"{cluster_name}\" already exists, continuing..."));
+            progress.progress(&format!(
+                "Minikube cluster \"{cluster_name}\" already exists, continuing..."
+            ));
             return Ok(());
         }
         delete_minikube_cluster(minikube, cluster_name, progress).await?;
@@ -79,7 +90,9 @@ pub async fn create_minikube_cluster(
 
     // Default to --cpus=4 unless the caller set it or `minikube config get cpus`
     // is a positive int (`minikube.py:127-136`).
-    let has_cpus = extra_args.iter().any(|a| a == "--cpus" || a.starts_with("--cpus="));
+    let has_cpus = extra_args
+        .iter()
+        .any(|a| a == "--cpus" || a.starts_with("--cpus="));
     if !has_cpus {
         let config_cpus = run_command(&[minikube, "config", "get", "cpus"])
             .await
@@ -102,12 +115,20 @@ pub async fn create_minikube_cluster(
     ];
     cmd.extend(extra_args.iter().cloned());
     if run_command_streamed(&cmd).await? == 0 {
-        let past = if force_recreate { "recreated" } else { "created" };
-        progress.success(&format!("Successfully {past} Minikube cluster \"{cluster_name}\""));
+        let past = if force_recreate {
+            "recreated"
+        } else {
+            "created"
+        };
+        progress.success(&format!(
+            "Successfully {past} Minikube cluster \"{cluster_name}\""
+        ));
         Ok(())
     } else {
         let action = if force_recreate { "recreate" } else { "create" };
-        Err(ClusterError::Operation(format!("Failed to {action} Minikube cluster '{cluster_name}'")))
+        Err(ClusterError::Operation(format!(
+            "Failed to {action} Minikube cluster '{cluster_name}'"
+        )))
     }
 }
 
@@ -120,7 +141,9 @@ pub async fn list_minikube_clusters(minikube: &str) -> Vec<String> {
             .ok()
             .and_then(|v| v.get("valid").and_then(|x| x.as_array()).cloned())
             .map(|a| {
-                a.iter().filter_map(|p| p.get("Name").and_then(|n| n.as_str()).map(String::from)).collect()
+                a.iter()
+                    .filter_map(|p| p.get("Name").and_then(|n| n.as_str()).map(String::from))
+                    .collect()
             })
             .unwrap_or_default(),
         _ => Vec::new(),
@@ -132,7 +155,9 @@ pub async fn prepare_certificates(extra_certs: &str, progress: &dyn Progress) ->
     let path = get_extra_certs_path(extra_certs)
         .ok_or_else(|| ClusterError::Certificate("Extra certificates path is empty".to_string()))?;
     if !std::path::Path::new(&path).exists() {
-        return Err(ClusterError::Certificate(format!("Extra certificates file not found: {path}")));
+        return Err(ClusterError::Certificate(format!(
+            "Extra certificates file not found: {path}"
+        )));
     }
     let certs_dir = home::home_dir()
         .ok_or_else(|| ClusterError::Certificate("Cannot resolve home dir".to_string()))?
@@ -140,7 +165,8 @@ pub async fn prepare_certificates(extra_certs: &str, progress: &dyn Progress) ->
         .join("certs");
     std::fs::create_dir_all(&certs_dir).map_err(|e| ClusterError::Certificate(e.to_string()))?;
     let dest = certs_dir.join("ca.crt");
-    let src = std::fs::read_to_string(&path).map_err(|e| ClusterError::Certificate(e.to_string()))?;
+    let src =
+        std::fs::read_to_string(&path).map_err(|e| ClusterError::Certificate(e.to_string()))?;
     if dest.exists() {
         use std::io::Write;
         let mut f = std::fs::OpenOptions::new()
@@ -151,7 +177,10 @@ pub async fn prepare_certificates(extra_certs: &str, progress: &dyn Progress) ->
     } else {
         std::fs::write(&dest, src).map_err(|e| ClusterError::Certificate(e.to_string()))?;
     }
-    progress.success(&format!("Prepared custom certificates for Minikube: {}", dest.display()));
+    progress.success(&format!(
+        "Prepared custom certificates for Minikube: {}",
+        dest.display()
+    ));
     Ok(())
 }
 
@@ -166,7 +195,11 @@ pub async fn create_minikube_cluster_with_options(
     if !minikube_installed(minikube) {
         return Err(ClusterError::tool_not_installed("minikube"));
     }
-    let action = if force_recreate { "Recreating" } else { "Creating" };
+    let action = if force_recreate {
+        "Recreating"
+    } else {
+        "Creating"
+    };
     progress.progress(&format!("{action} Minikube cluster \"{cluster_name}\"..."));
     let mut extra: Vec<String> = if minikube_extra_args.trim().is_empty() {
         Vec::new()
@@ -183,7 +216,9 @@ pub async fn create_minikube_cluster_with_options(
         .await
         .map_err(|e| {
             let action = if force_recreate { "recreate" } else { "create" };
-            ClusterError::Operation(format!("Failed to {action} minikube cluster \"{cluster_name}\": {e}"))
+            ClusterError::Operation(format!(
+                "Failed to {action} minikube cluster \"{cluster_name}\": {e}"
+            ))
         })
 }
 
@@ -197,5 +232,9 @@ pub async fn delete_minikube_cluster_with_feedback(
     }
     delete_minikube_cluster(minikube, cluster_name, progress)
         .await
-        .map_err(|e| ClusterError::Operation(format!("Failed to delete minikube cluster \"{cluster_name}\": {e}")))
+        .map_err(|e| {
+            ClusterError::Operation(format!(
+                "Failed to delete minikube cluster \"{cluster_name}\": {e}"
+            ))
+        })
 }

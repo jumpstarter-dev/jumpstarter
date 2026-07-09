@@ -24,7 +24,10 @@
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, Data, DeriveInput, Expr, ExprLit, Fields, ItemImpl, Lit, LitStr, MetaNameValue, Type};
+use syn::{
+    parse_macro_input, Data, DeriveInput, Expr, ExprLit, Fields, ItemImpl, Lit, LitStr,
+    MetaNameValue, Type,
+};
 
 /// Pull in the build-time-generated code for an interface — the whole `src/lib.rs` (or bin) wiring in
 /// one line, named by the interface's canonical proto PACKAGE (the same FQN
@@ -192,9 +195,12 @@ pub fn driver(attr: TokenStream, item: TokenStream) -> TokenStream {
     let trait_name = match &imp.trait_ {
         Some((_, path, _)) => path.segments.last().unwrap().ident.to_string(),
         None => {
-            return syn::Error::new_spanned(&imp, "`#[driver]` goes on `impl <Interface> for <Driver>`")
-                .to_compile_error()
-                .into()
+            return syn::Error::new_spanned(
+                &imp,
+                "`#[driver]` goes on `impl <Interface> for <Driver>`",
+            )
+            .to_compile_error()
+            .into()
         }
     };
     let driver_ident = match &*imp.self_ty {

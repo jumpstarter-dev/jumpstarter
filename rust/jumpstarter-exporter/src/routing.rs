@@ -169,7 +169,9 @@ impl DriverBackend for RoutingBackend {
                 ))
             })?
             .to_string();
-        self.route(&uuid)?.forward_stream(path, metadata, body).await
+        self.route(&uuid)?
+            .forward_stream(path, metadata, body)
+            .await
     }
 
     /// Route an opaque native **client-/bidi-streaming** call to the owning entry by the
@@ -192,7 +194,9 @@ impl DriverBackend for RoutingBackend {
                 ))
             })?
             .to_string();
-        self.route(&uuid)?.forward_bidi(path, metadata, uplink).await
+        self.route(&uuid)?
+            .forward_bidi(path, metadata, uplink)
+            .await
     }
 
     async fn open_router_stream(
@@ -263,7 +267,12 @@ mod tests {
         fn new(entry_uuid: &str, name: &str, grandchild: Option<&str>) -> Self {
             let mut reports = vec![node(entry_uuid, None, Some(name), "pkg.client.Thing")];
             if let Some(gc) = grandchild {
-                reports.push(node(gc, Some(entry_uuid), Some("inner"), "pkg.client.Inner"));
+                reports.push(node(
+                    gc,
+                    Some(entry_uuid),
+                    Some("inner"),
+                    "pkg.client.Inner",
+                ));
             }
             Self {
                 report: GetReportResponse {
@@ -333,8 +342,11 @@ mod tests {
     async fn stitches_entries_under_one_synthetic_root() {
         let (backend, _p, _s) = routing().await;
         let report = backend.get_report().await.unwrap();
-        let by_uuid: HashMap<_, _> =
-            report.reports.iter().map(|r| (r.uuid.as_str(), r)).collect();
+        let by_uuid: HashMap<_, _> = report
+            .reports
+            .iter()
+            .map(|r| (r.uuid.as_str(), r))
+            .collect();
 
         // Exactly one root: the synthetic Composite (each host serves its entry directly, so
         // there are no per-host wrapper roots to drop).
@@ -349,11 +361,23 @@ mod tests {
         assert_eq!(roots[0].description.as_deref(), Some("the lab"));
 
         // Each entry is re-parented under the hub root, keeping its name label.
-        assert_eq!(by_uuid["power-uuid"].parent_uuid.as_deref(), Some("root-uuid"));
-        assert_eq!(by_uuid["serial-uuid"].parent_uuid.as_deref(), Some("root-uuid"));
-        assert_eq!(by_uuid["power-uuid"].labels["jumpstarter.dev/name"], "power");
+        assert_eq!(
+            by_uuid["power-uuid"].parent_uuid.as_deref(),
+            Some("root-uuid")
+        );
+        assert_eq!(
+            by_uuid["serial-uuid"].parent_uuid.as_deref(),
+            Some("root-uuid")
+        );
+        assert_eq!(
+            by_uuid["power-uuid"].labels["jumpstarter.dev/name"],
+            "power"
+        );
         // Deeper descendants keep their original parent.
-        assert_eq!(by_uuid["gc-uuid"].parent_uuid.as_deref(), Some("serial-uuid"));
+        assert_eq!(
+            by_uuid["gc-uuid"].parent_uuid.as_deref(),
+            Some("serial-uuid")
+        );
     }
 
     /// A native unary call carrying the driver uuid in the demux header.
@@ -390,12 +414,18 @@ mod tests {
         let (md, _body) = native_call("power-uuid");
         let uplink: ResponseStream<bytes::Bytes> =
             Box::pin(tokio_stream::once(Ok(bytes::Bytes::new())));
-        let (_md, _stream) = backend.forward_bidi("/p.S/Stream", md, uplink).await.unwrap();
+        let (_md, _stream) = backend
+            .forward_bidi("/p.S/Stream", md, uplink)
+            .await
+            .unwrap();
 
         let (md, _body) = native_call("gc-uuid");
         let uplink: ResponseStream<bytes::Bytes> =
             Box::pin(tokio_stream::once(Ok(bytes::Bytes::new())));
-        let (_md, _stream) = backend.forward_bidi("/p.S/Stream", md, uplink).await.unwrap();
+        let (_md, _stream) = backend
+            .forward_bidi("/p.S/Stream", md, uplink)
+            .await
+            .unwrap();
 
         assert_eq!(*power.called.lock().unwrap(), vec!["power-uuid"]);
         assert_eq!(*serial.called.lock().unwrap(), vec!["gc-uuid"]);
@@ -413,10 +443,7 @@ mod tests {
         assert_eq!(err.code(), tonic::Code::Unknown);
         // The synthetic root is not a real driver (not in the routes) → also UNKNOWN.
         let (md, body) = native_call("root-uuid");
-        let err = backend
-            .forward_unary("/p.S/X", md, body)
-            .await
-            .unwrap_err();
+        let err = backend.forward_unary("/p.S/X", md, body).await.unwrap_err();
         assert_eq!(err.code(), tonic::Code::Unknown);
     }
 }

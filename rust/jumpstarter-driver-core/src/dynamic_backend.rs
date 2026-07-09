@@ -37,10 +37,10 @@ use tokio::sync::mpsc;
 use tonic::metadata::{AsciiMetadataValue, MetadataMap};
 use tonic::Status;
 
+use crate::host::DriverApi;
 use jumpstarter_codec::dynamic::{encode_result, request_bytes_to_args_json, DynamicMethod};
 use jumpstarter_codec::error::DriverCallError;
 use jumpstarter_codec::export_name_for;
-use crate::host::DriverApi;
 
 /// The invocation metadata key the native demux uses to select a driver — re-exported from
 /// the transport demux so callers key on one constant.
@@ -125,11 +125,7 @@ impl DynamicBackend {
 
 /// The gRPC method path for a descriptor: `/<service-full-name>/<MethodName>`.
 fn grpc_path(method: &MethodDescriptor) -> String {
-    format!(
-        "/{}/{}",
-        method.parent_service().full_name(),
-        method.name()
-    )
+    format!("/{}/{}", method.parent_service().full_name(), method.name())
 }
 
 /// Decode `request_bytes` against `method`'s input descriptor, dispatch through the driver
@@ -147,7 +143,11 @@ async fn dispatch(
 
     // 3. Dispatch through the existing dynamic driver seam.
     let result_json = driver_api
-        .driver_call(uuid.to_string(), method.export_name().to_string(), args_json)
+        .driver_call(
+            uuid.to_string(),
+            method.export_name().to_string(),
+            args_json,
+        )
         .await?;
 
     // 4. Encode the JSON result into the output message and serialize to bytes.
@@ -223,7 +223,9 @@ impl DriverBackend for DynamicBackend {
             Status::unimplemented(format!("no dynamic method for native path {path}"))
         })?;
         let uuid = self.resolve_uuid(&metadata).ok_or_else(|| {
-            Status::invalid_argument("missing x-jumpstarter-driver-uuid header and no fallback uuid")
+            Status::invalid_argument(
+                "missing x-jumpstarter-driver-uuid header and no fallback uuid",
+            )
         })?;
         let response_bytes = dispatch(method, &uuid, &body, &*self.driver_api)
             .await
@@ -246,7 +248,9 @@ impl DriverBackend for DynamicBackend {
             Status::unimplemented(format!("no dynamic method for native path {path}"))
         })?;
         let uuid = self.resolve_uuid(&metadata).ok_or_else(|| {
-            Status::invalid_argument("missing x-jumpstarter-driver-uuid header and no fallback uuid")
+            Status::invalid_argument(
+                "missing x-jumpstarter-driver-uuid header and no fallback uuid",
+            )
         })?;
         if method.is_server_streaming() {
             // A server-streaming `@export` (async generator): one output message per yielded result.
@@ -294,9 +298,9 @@ impl DriverBackend for DynamicBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::{DriverResultStream, DriverStreamOpen};
     use jumpstarter_codec::dto::DriverNode;
     use jumpstarter_codec::error::DriverCallError;
-    use crate::host::{DriverResultStream, DriverStreamOpen};
     use prost::Message as _;
     use prost_reflect::prost_types::{
         field_descriptor_proto::{Label, Type},
@@ -362,7 +366,11 @@ mod tests {
             service: vec![ServiceDescriptorProto {
                 name: Some("PowerInterface".to_string()),
                 method: vec![
-                    method("On", ".jumpstarter.driver.power.v1.Empty", ".jumpstarter.driver.power.v1.Empty"),
+                    method(
+                        "On",
+                        ".jumpstarter.driver.power.v1.Empty",
+                        ".jumpstarter.driver.power.v1.Empty",
+                    ),
                     method(
                         "SetVoltage",
                         ".jumpstarter.driver.power.v1.SetVoltageRequest",
@@ -443,7 +451,10 @@ mod tests {
             method_name: String,
             args_json: String,
         ) -> Result<String, DriverCallError> {
-            self.calls.lock().unwrap().push((uuid, method_name, args_json));
+            self.calls
+                .lock()
+                .unwrap()
+                .push((uuid, method_name, args_json));
             Ok(self.result.clone())
         }
         async fn streaming_driver_call(
@@ -708,7 +719,13 @@ mod tests {
                 &item[..],
             )
             .expect("decode PowerReading");
-            voltages.push(decoded.get_field_by_name("voltage").unwrap().as_f64().unwrap());
+            voltages.push(
+                decoded
+                    .get_field_by_name("voltage")
+                    .unwrap()
+                    .as_f64()
+                    .unwrap(),
+            );
         }
         assert_eq!(voltages, vec![1.0, 2.0]);
 
@@ -755,7 +772,8 @@ mod tests {
     async fn fallback_uuid_used_when_header_absent() {
         let pool = power_pool();
         let driver = MockDriver::new("null");
-        let backend = DynamicBackend::from_pool(&pool, Some("fallback-uuid".to_string()), driver.clone());
+        let backend =
+            DynamicBackend::from_pool(&pool, Some("fallback-uuid".to_string()), driver.clone());
         backend
             .forward_unary(
                 "/jumpstarter.driver.power.v1.PowerInterface/On",

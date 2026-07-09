@@ -2,7 +2,6 @@
 //! contract field `gitVersion`. Python embeds the interpreter version; a Rust binary
 //! reports its own build instead.
 
-
 use clap::Args as ClapArgs;
 use serde::Serialize;
 

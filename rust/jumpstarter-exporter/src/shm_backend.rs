@@ -74,8 +74,14 @@ impl DriverBackend for ShmChannelBackend {
         path: &str,
         metadata: tonic::metadata::MetadataMap,
         body: bytes::Bytes,
-    ) -> Result<(tonic::metadata::MetadataMap, bytes::Bytes, tonic::metadata::MetadataMap), Status>
-    {
+    ) -> Result<
+        (
+            tonic::metadata::MetadataMap,
+            bytes::Bytes,
+            tonic::metadata::MetadataMap,
+        ),
+        Status,
+    > {
         self.inner.forward_unary(path, metadata, body).await
     }
 
@@ -115,10 +121,14 @@ impl DriverBackend for ShmChannelBackend {
             .get(DRIVER_UUID_KEY)
             .and_then(|v| v.to_str().ok())
             .ok_or_else(|| {
-                Status::invalid_argument("native byte stream missing x-jumpstarter-driver-uuid header")
+                Status::invalid_argument(
+                    "native byte stream missing x-jumpstarter-driver-uuid header",
+                )
             })?;
         let request_json = if path == RESOURCE_OPEN_PATH {
-            let ce = metadata.get(CONTENT_ENCODING_KEY).and_then(|v| v.to_str().ok());
+            let ce = metadata
+                .get(CONTENT_ENCODING_KEY)
+                .and_then(|v| v.to_str().ok());
             serde_json::json!({ "uuid": uuid, "x_jmp_content_encoding": ce }).to_string()
         } else {
             // `@exportstream`: the trailing path segment is the proto method → its `@export` name.
@@ -220,8 +230,8 @@ impl DriverBackend for ShmChannelBackend {
                 }
             }
             writer.close(); // EOF to the host consumer
-            // Best-effort: the host unlinks right after open (mmap survives unlink); this covers
-            // the case where the host never opened the ring (open error before unlink).
+                            // Best-effort: the host unlinks right after open (mmap survives unlink); this covers
+                            // the case where the host never opened the ring (open error before unlink).
             let _ = std::fs::remove_file(&cleanup_path);
         });
 

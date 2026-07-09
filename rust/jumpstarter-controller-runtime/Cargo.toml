@@ -1,0 +1,42 @@
+[package]
+name = "jumpstarter-controller-runtime"
+description = "Jumpstarter controller runtime scaffolding: Go-flag argv shim, namespace resolution, leader election, health/metrics servers, ConfigMap loading, TLS material"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+jumpstarter-controller-config = { path = "../jumpstarter-controller-config" }
+kube = { workspace = true, features = ["client", "config", "rustls-tls", "ring"] }
+k8s-openapi.workspace = true
+axum.workspace = true
+rcgen.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml_ng.workspace = true
+# Detects unknown keys when parsing the ConfigMap `config` document, mirroring
+# Go's yaml.UnmarshalStrict without deny_unknown_fields on the models.
+serde_ignored.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "signal", "fs", "time"] }
+tracing.workspace = true
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Server TLS termination material for the gRPC/HTTP listeners. Same
+# default-features=false + ring pattern as jumpstarter-cli: several transitive
+# deps pull rustls with the aws-lc-rs provider; the workspace standardizes on
+# ring, and the process-default provider is installed by the binaries at startup.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+# PEM decoding of the operator-mounted tls.crt/tls.key (Go: tls.X509KeyPair).
+rustls-pemfile = "2"
+# rcgen expresses certificate validity as `time::OffsetDateTime`.
+time = "0.3"
+
+[dev-dependencies]
+# io-util backs the raw-TCP HTTP client used by the health/metrics smoke tests.
+tokio = { workspace = true, features = ["test-util", "io-util"] }
+# SAN/CN/serial assertions parse the generated self-signed cert back through
+# rcgen's own x509-parser-backed `CertificateParams::from_ca_cert_der`
+# (feature is additive and only affects this crate's builds).
+rcgen = { workspace = true, features = ["x509-parser"] }

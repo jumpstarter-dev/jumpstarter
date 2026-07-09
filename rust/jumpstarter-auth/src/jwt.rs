@@ -66,14 +66,18 @@ mod tests {
     use chrono::Utc;
 
     fn token_with_exp(exp: i64) -> String {
-        let payload = serde_json::json!({ "exp": exp, "iss": "https://issuer.example" }).to_string();
+        let payload =
+            serde_json::json!({ "exp": exp, "iss": "https://issuer.example" }).to_string();
         let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload);
         format!("aGVhZGVy.{b64}.c2ln")
     }
 
     #[test]
     fn fresh_token_is_not_stale() {
-        assert!(!is_stale(&token_with_exp(Utc::now().timestamp() + 3600), 30));
+        assert!(!is_stale(
+            &token_with_exp(Utc::now().timestamp() + 3600),
+            30
+        ));
     }
 
     #[test]

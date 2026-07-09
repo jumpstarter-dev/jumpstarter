@@ -23,7 +23,9 @@ pub fn format_cluster_name(name: &str) -> String {
 pub fn validate_cluster_name(name: &str) -> Result<String> {
     let formatted = format_cluster_name(name);
     if formatted.is_empty() {
-        return Err(ClusterError::Validation("Cluster name cannot be empty".to_string()));
+        return Err(ClusterError::Validation(
+            "Cluster name cannot be empty".to_string(),
+        ));
     }
     Ok(formatted)
 }
@@ -50,7 +52,9 @@ pub fn get_extra_certs_path(extra_certs: &str) -> Option<String> {
     let abs = if expanded.is_absolute() {
         expanded
     } else {
-        std::env::current_dir().map(|c| c.join(&expanded)).unwrap_or(expanded)
+        std::env::current_dir()
+            .map(|c| c.join(&expanded))
+            .unwrap_or(expanded)
     };
     Some(abs.to_string_lossy().into_owned())
 }
@@ -80,14 +84,30 @@ mod tests {
 
     #[test]
     fn extracts_ssh_host() {
-        assert_eq!(extract_host_from_ssh("user@host.example.com"), "host.example.com");
-        assert_eq!(extract_host_from_ssh("host.example.com"), "host.example.com");
+        assert_eq!(
+            extract_host_from_ssh("user@host.example.com"),
+            "host.example.com"
+        );
+        assert_eq!(
+            extract_host_from_ssh("host.example.com"),
+            "host.example.com"
+        );
     }
 
     #[test]
     fn validates_single_cluster_type() {
-        assert_eq!(validate_cluster_type(Some("kind"), None).unwrap().as_deref(), Some("kind"));
-        assert_eq!(validate_cluster_type(None, Some("minikube")).unwrap().as_deref(), Some("minikube"));
+        assert_eq!(
+            validate_cluster_type(Some("kind"), None)
+                .unwrap()
+                .as_deref(),
+            Some("kind")
+        );
+        assert_eq!(
+            validate_cluster_type(None, Some("minikube"))
+                .unwrap()
+                .as_deref(),
+            Some("minikube")
+        );
         assert_eq!(validate_cluster_type(None, None).unwrap(), None);
         assert!(validate_cluster_type(Some("kind"), Some("minikube")).is_err());
     }

@@ -16,7 +16,9 @@ fn parse_lenient(v: &str) -> Option<Version> {
     Version::parse(s).ok()
 }
 
-pub async fn get_latest_compatible_controller_version(client_version: Option<&str>) -> Result<String> {
+pub async fn get_latest_compatible_controller_version(
+    client_version: Option<&str>,
+) -> Result<String> {
     let client_parsed = match client_version {
         None => None,
         Some(v) => Some(
@@ -39,18 +41,14 @@ pub async fn get_latest_compatible_controller_version(client_version: Option<&st
             tracing::warn!(error = %e, "failed to fetch controller versions");
             ClusterError::Version(format!("Failed to fetch controller versions: {e}"))
         })?;
-    let data: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| {
-            tracing::warn!(error = %e, "failed to parse controller versions response");
-            ClusterError::Version(format!("Failed to fetch controller versions: {e}"))
-        })?;
+    let data: serde_json::Value = resp.json().await.map_err(|e| {
+        tracing::warn!(error = %e, "failed to parse controller versions response");
+        ClusterError::Version(format!("Failed to fetch controller versions: {e}"))
+    })?;
 
-    let tags = data
-        .get("tags")
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| ClusterError::Version("Unexpected response fetching controller version".to_string()))?;
+    let tags = data.get("tags").and_then(|v| v.as_array()).ok_or_else(|| {
+        ClusterError::Version("Unexpected response fetching controller version".to_string())
+    })?;
 
     let mut compatible: Vec<(Version, String)> = Vec::new();
     let mut fallback: Vec<(Version, String)> = Vec::new();

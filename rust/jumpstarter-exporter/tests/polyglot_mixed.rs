@@ -34,7 +34,8 @@ export:
 
 #[tokio::test]
 async fn federates_python_and_rust_drivers_in_one_exporter() {
-    if std::env::var("JMP_DRIVER_HOST_PYTHON").is_err() || std::env::var("JMP_RUST_DRIVER_HOST").is_err()
+    if std::env::var("JMP_DRIVER_HOST_PYTHON").is_err()
+        || std::env::var("JMP_RUST_DRIVER_HOST").is_err()
     {
         eprintln!(
             "skipping: set JMP_DRIVER_HOST_PYTHON (a venv python) + JMP_RUST_DRIVER_HOST (jmp-rust-host)"
@@ -103,8 +104,14 @@ async fn federates_python_and_rust_drivers_in_one_exporter() {
         }
     };
     let (py_resp, rs_resp) = tokio::join!(call(py.uuid.clone()), call(rs.uuid.clone()));
-    assert!(py_resp.is_ok(), "concurrent native On on pypower failed: {py_resp:?}");
-    assert!(rs_resp.is_ok(), "concurrent native On on rustpower failed: {rs_resp:?}");
+    assert!(
+        py_resp.is_ok(),
+        "concurrent native On on pypower failed: {py_resp:?}"
+    );
+    assert!(
+        rs_resp.is_ok(),
+        "concurrent native On on rustpower failed: {rs_resp:?}"
+    );
 
     let _ = std::fs::remove_file(&cfg);
 }
@@ -176,7 +183,11 @@ async fn native_unary_forwards_through_the_hub_to_a_python_driver() {
     );
     let (_init, body, _trailers) = result.unwrap();
     // `On` returns `Empty`, so the response message is zero bytes.
-    assert!(body.is_empty(), "expected empty On() response, got {} bytes", body.len());
+    assert!(
+        body.is_empty(),
+        "expected empty On() response, got {} bytes",
+        body.len()
+    );
 
     let _ = std::fs::remove_file(&cfg);
 }
@@ -247,7 +258,11 @@ async fn native_unary_forwards_through_the_hub_to_a_rust_driver() {
         "native forward_unary(On) to the rust driver through the hub failed: {result:?}"
     );
     let (_init, body, _trailers) = result.unwrap();
-    assert!(body.is_empty(), "expected empty On() response, got {} bytes", body.len());
+    assert!(
+        body.is_empty(),
+        "expected empty On() response, got {} bytes",
+        body.len()
+    );
 
     let _ = std::fs::remove_file(&cfg);
 }
@@ -301,7 +316,10 @@ export:\n  rustpower:\n    type: rust:jumpstarter-driver-power-example\n    host
             bytes::Bytes::new(),
         )
         .await;
-    assert!(result.is_ok(), "forward_unary(On) via host: failed: {result:?}");
+    assert!(
+        result.is_ok(),
+        "forward_unary(On) via host: failed: {result:?}"
+    );
 
     let _ = std::fs::remove_file(&cfg);
 }

@@ -83,7 +83,11 @@ impl ClusterInfo {
     /// (`clusters.py:rich_add_rows`).
     pub fn row_cells(&self) -> Vec<String> {
         let current = if self.is_current { "*" } else { "" };
-        let status = if self.accessible { "Running" } else { "Stopped" };
+        let status = if self.accessible {
+            "Running"
+        } else {
+            "Stopped"
+        };
         let jumpstarter = if self.jumpstarter.error.is_some() {
             "Error"
         } else if self.jumpstarter.installed {
@@ -91,8 +95,16 @@ impl ClusterInfo {
         } else {
             "No"
         };
-        let version = self.jumpstarter.version.clone().unwrap_or_else(|| "-".to_string());
-        let namespace = self.jumpstarter.namespace.clone().unwrap_or_else(|| "-".to_string());
+        let version = self
+            .jumpstarter
+            .version
+            .clone()
+            .unwrap_or_else(|| "-".to_string());
+        let namespace = self
+            .jumpstarter
+            .namespace
+            .clone()
+            .unwrap_or_else(|| "-".to_string());
         vec![
             current.to_string(),
             self.name.clone(),
@@ -105,10 +117,18 @@ impl ClusterInfo {
     }
 
     pub fn columns() -> Vec<String> {
-        ["CURRENT", "NAME", "TYPE", "STATUS", "JUMPSTARTER", "VERSION", "NAMESPACE"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect()
+        [
+            "CURRENT",
+            "NAME",
+            "TYPE",
+            "STATUS",
+            "JUMPSTARTER",
+            "VERSION",
+            "NAMESPACE",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
     }
 }
 
@@ -127,7 +147,11 @@ impl ClusterList {
     }
 
     pub fn new(items: Vec<ClusterInfo>) -> Self {
-        Self { api_version: api_version(), items, kind: Self::kind_default() }
+        Self {
+            api_version: api_version(),
+            items,
+            kind: Self::kind_default(),
+        }
     }
 }
 
@@ -162,7 +186,15 @@ mod tests {
     fn row_cells_match_python() {
         assert_eq!(
             sample().row_cells(),
-            vec!["*", "kind-test", "kind", "Running", "Yes", "0.1.0", "jumpstarter"]
+            vec![
+                "*",
+                "kind-test",
+                "kind",
+                "Running",
+                "Yes",
+                "0.1.0",
+                "jumpstarter"
+            ]
         );
     }
 
@@ -172,7 +204,10 @@ mod tests {
         c.is_current = false;
         c.accessible = false;
         c.jumpstarter = JumpstarterInstance::not_installed();
-        assert_eq!(c.row_cells(), vec!["", "kind-test", "kind", "Stopped", "No", "-", "-"]);
+        assert_eq!(
+            c.row_cells(),
+            vec!["", "kind-test", "kind", "Stopped", "No", "-", "-"]
+        );
     }
 
     #[test]

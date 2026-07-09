@@ -1,0 +1,29 @@
+authentication:
+  internal:
+    prefix: 'internal:'
+    tokenLifetime: 43800h0m0s
+  jwt:
+  - claimMappings:
+      groups: {}
+      uid: {}
+      username:
+        claim: name
+        prefix: 'dex:'
+    issuer:
+      audienceMatchPolicy: MatchAny
+      audiences:
+      - jumpstarter-cli
+      certificateAuthority: |
+        -----BEGIN CERTIFICATE-----
+        MIIBhTCCASugAwIBAgIQIRi6zePL6mKjOipn+dNuaTAKBggqhkjOPQQDAjASMRAw
+        -----END CERTIFICATE-----
+      url: https://dex.dex.svc.cluster.local:5556
+  k8s: {}
+grpc:
+  keepalive:
+    minTime: 1s
+    permitWithoutStream: true
+leasePolicy:
+  maxTags: 10
+provisioning:
+  enabled: true

@@ -62,14 +62,10 @@ where
         + 'static,
     S::Future: Send + 'static,
 {
-    let backend = jumpstarter_driver::serve_driver(
-        name,
-        client_class,
-        descriptor.to_vec(),
-        service,
-    )
-    .await
-    .expect("serve_driver over SHM");
+    let backend =
+        jumpstarter_driver::serve_driver(name, client_class, descriptor.to_vec(), service)
+            .await
+            .expect("serve_driver over SHM");
     serve_backend(backend).await
 }
 

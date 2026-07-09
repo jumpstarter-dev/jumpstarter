@@ -676,7 +676,8 @@ mod tests {
 
     #[test]
     fn parse_trims_client_and_endpoint() {
-        let (client, endpoint) = parse_login_argument("  my-client  @  login.example.com  ").unwrap();
+        let (client, endpoint) =
+            parse_login_argument("  my-client  @  login.example.com  ").unwrap();
         assert_eq!(client.as_deref(), Some("my-client"));
         assert_eq!(endpoint, "login.example.com");
     }
@@ -699,7 +700,9 @@ mod tests {
     #[tokio::test]
     async fn fetch_auth_config_rejects_http_without_opt_in() {
         // The scheme check returns before any network access.
-        let err = fetch_auth_config("http://login.example.com", false).await.unwrap_err();
+        let err = fetch_auth_config("http://login.example.com", false)
+            .await
+            .unwrap_err();
         assert!(format!("{err:?}").contains("HTTP"), "{err:?}");
     }
 }

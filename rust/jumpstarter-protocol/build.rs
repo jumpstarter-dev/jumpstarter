@@ -39,9 +39,15 @@ fn main() {
     println!("cargo:rerun-if-changed={}", repo_proto.display());
     println!("cargo:rerun-if-changed={}", vendor_proto.display());
 
+    // Emit the serialized FileDescriptorSet (imports included) alongside the
+    // generated modules; it backs the gRPC server-reflection service in the
+    // controller-manager/router binaries (`FILE_DESCRIPTOR_SET` in lib.rs).
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR set by cargo"));
+
     tonic_build::configure()
         .build_server(true)
         .build_client(true)
+        .file_descriptor_set_path(out_dir.join("jumpstarter_descriptor.bin"))
         .compile_protos(&protos, &[repo_proto, vendor_proto])
         .expect("failed to compile Jumpstarter protocol definitions");
 }

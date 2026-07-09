@@ -23,9 +23,7 @@ use jumpstarter_transport::{DriverBackend, FrameUplink, ResponseStream, RouterSt
 
 use crate::dynamic_backend::DynamicBackend;
 use crate::stream_pump::{downlink_chunk, downlink_finish, uplink_chunk, uplink_finish};
-use jumpstarter_protocol::v1::{
-    FrameType, GetReportResponse, LogStreamResponse, StreamResponse,
-};
+use jumpstarter_protocol::v1::{FrameType, GetReportResponse, LogStreamResponse, StreamResponse};
 use jumpstarter_protocol::{decode_stream_data, encode_stream_data, RESOURCE_OPEN_PATH};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -35,9 +33,9 @@ use tonic::Status;
 
 use jumpstarter_compression::{Codec, Compressor, Decompressor};
 
-use jumpstarter_codec::error::DriverCallError;
 use crate::host::DriverApi;
 use crate::report::assemble_report;
+use jumpstarter_codec::error::DriverCallError;
 
 /// Mirrors `driver/base.py:27-36`: `JMP_DISABLE_COMPRESSION=1` turns the wire codec off
 /// entirely (the host then advertises no accept and runs pure passthrough).
@@ -160,7 +158,9 @@ impl ForeignDriver {
             .and_then(|v| v.to_str().ok())
             .map(str::to_owned)
             .ok_or_else(|| {
-                Status::invalid_argument("native unary call missing x-jumpstarter-driver-uuid header")
+                Status::invalid_argument(
+                    "native unary call missing x-jumpstarter-driver-uuid header",
+                )
             })?;
         match native_unary
             .forward_unary(uuid, path.to_string(), body.to_vec())
@@ -192,7 +192,9 @@ impl ForeignDriver {
             .and_then(|v| v.to_str().ok())
             .map(str::to_owned)
             .ok_or_else(|| {
-                Status::invalid_argument("native unary call missing x-jumpstarter-driver-uuid header")
+                Status::invalid_argument(
+                    "native unary call missing x-jumpstarter-driver-uuid header",
+                )
             })?;
         let foreign_stream = match native_unary
             .forward_server_stream(uuid, path.to_string(), body.to_vec())
@@ -325,7 +327,10 @@ impl DriverBackend for ForeignDriver {
         }
         // Legacy/default: the descriptor-driven JSON `driver_call` dispatch (kept intact so a host
         // that does not provide the native seam — e.g. today's Python hosts — is unaffected).
-        self.native().await?.forward_unary(path, metadata, body).await
+        self.native()
+            .await?
+            .forward_unary(path, metadata, body)
+            .await
     }
 
     /// The server-streaming half: an `@export` async generator served natively, one output message
@@ -349,10 +354,16 @@ impl DriverBackend for ForeignDriver {
             return Ok((MetadataMap::new(), stream));
         }
         // A genuinely server-streaming method (`Read`) → N-item stream from the seam.
-        if let Some(stream) = self.try_native_server_stream(path, &metadata, &body).await? {
+        if let Some(stream) = self
+            .try_native_server_stream(path, &metadata, &body)
+            .await?
+        {
             return Ok((MetadataMap::new(), stream));
         }
-        self.native().await?.forward_stream(path, metadata, body).await
+        self.native()
+            .await?
+            .forward_stream(path, metadata, body)
+            .await
     }
 
     /// The **native byte plane**: serve a bidi `StreamData` method (`@exportstream` console/serial,
@@ -397,7 +408,11 @@ impl DriverBackend for ForeignDriver {
 
         let codec = parse_codec(&request_json);
         tracing::trace!(request = %request_json, codec = ?codec, "native byte stream open");
-        let opened = self.api.open_stream(request_json).await.map_err(status_from)?;
+        let opened = self
+            .api
+            .open_stream(request_json)
+            .await
+            .map_err(status_from)?;
 
         // Uplink pump (client -> driver): decode each StreamData → DECOMPRESS/passthrough → driver.
         let write_chan = opened.channel.clone();
@@ -621,11 +636,16 @@ const CONTENT_ENCODING_KEY: &str = "x-jmp-content-encoding";
 /// wire content-encoding (`x-jmp-content-encoding` header). Wire-identical to the client's old
 /// `{uuid, x_jmp_content_encoding}` resource request, so `host.open_stream` is unchanged.
 #[allow(clippy::result_large_err)]
-fn resource_request_json(native: &DynamicBackend, metadata: &MetadataMap) -> Result<String, Status> {
+fn resource_request_json(
+    native: &DynamicBackend,
+    metadata: &MetadataMap,
+) -> Result<String, Status> {
     let uuid = native.resolve_uuid(metadata).ok_or_else(|| {
         Status::invalid_argument("native resource open missing x-jumpstarter-driver-uuid header")
     })?;
-    let content_encoding = metadata.get(CONTENT_ENCODING_KEY).and_then(|v| v.to_str().ok());
+    let content_encoding = metadata
+        .get(CONTENT_ENCODING_KEY)
+        .and_then(|v| v.to_str().ok());
     Ok(serde_json::json!({
         "uuid": uuid,
         "x_jmp_content_encoding": content_encoding,
@@ -665,8 +685,8 @@ fn to_metadata(entries: Vec<(String, String)>) -> MetadataMap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jumpstarter_codec::dto::DriverNode;
     use crate::host::{DriverByteChannel, DriverResultStream, DriverStreamOpen};
+    use jumpstarter_codec::dto::DriverNode;
     use jumpstarter_protocol::v1::StreamRequest;
     use std::collections::HashMap;
     use std::sync::Mutex;
@@ -945,7 +965,7 @@ mod tests {
                 Some(Ok(frame)) if frame.frame_type == FrameType::Data as i32 => {
                     compressed_down.extend(frame.payload)
                 }
-                Some(Ok(_)) => break, // GOAWAY
+                Some(Ok(_)) => break,  // GOAWAY
                 Some(Err(_)) => break, // trailing aborted
                 None => break,
             }
@@ -963,7 +983,8 @@ mod tests {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../jumpstarter-compression/tests/fixtures")
             .join(name);
-        std::fs::read(&path).unwrap_or_else(|e| panic!("read golden fixture {}: {e}", path.display()))
+        std::fs::read(&path)
+            .unwrap_or_else(|e| panic!("read golden fixture {}: {e}", path.display()))
     }
 
     /// END-TO-END host decompression guard (silent-corruption): feed a *Python-zstd*
@@ -982,7 +1003,10 @@ mod tests {
         let python_zstd = python_golden_fixture("random.zstd");
         // Guard the fixtures themselves so a bad checkout can't make this pass vacuously.
         assert_eq!(original.len(), 262144, "golden original len drifted");
-        assert_ne!(python_zstd, original, "compressed fixture must differ from raw");
+        assert_ne!(
+            python_zstd, original,
+            "compressed fixture must differ from raw"
+        );
 
         let recorded = Arc::new(Mutex::new(Vec::new()));
         let host = ForeignDriver::new(Arc::new(CodecHost {
@@ -1078,7 +1102,10 @@ mod tests {
             method_name: String,
             args_json: String,
         ) -> Result<String, DriverCallError> {
-            self.calls.lock().unwrap().push((uuid, method_name, args_json));
+            self.calls
+                .lock()
+                .unwrap()
+                .push((uuid, method_name, args_json));
             Ok("null".into()) // On() returns Empty
         }
         async fn streaming_driver_call(
@@ -1239,7 +1266,10 @@ mod tests {
 
     fn uuid_md(uuid: &str) -> MetadataMap {
         let mut md = MetadataMap::new();
-        md.insert(crate::dynamic_backend::DRIVER_UUID_KEY, uuid.parse().unwrap());
+        md.insert(
+            crate::dynamic_backend::DRIVER_UUID_KEY,
+            uuid.parse().unwrap(),
+        );
         md
     }
 
@@ -1267,7 +1297,10 @@ mod tests {
             let frame = item.expect("clean EOF must not surface an error");
             got.push(decode_stream_data(&frame).unwrap());
         }
-        assert_eq!(got, vec![b"one".to_vec(), b"two".to_vec(), b"three".to_vec()]);
+        assert_eq!(
+            got,
+            vec![b"one".to_vec(), b"two".to_vec(), b"three".to_vec()]
+        );
 
         // The native path reconstructed the host request JSON: {uuid, method:"connect"} (no codec).
         let req: serde_json::Value =
@@ -1286,7 +1319,11 @@ mod tests {
 
         let chunks: &[&[u8]] = &[b"flash-bytes"];
         let (meta, mut downlink) = host
-            .forward_bidi(RESOURCE_OPEN_PATH, uuid_md("echo-1"), stream_data_uplink(chunks))
+            .forward_bidi(
+                RESOURCE_OPEN_PATH,
+                uuid_md("echo-1"),
+                stream_data_uplink(chunks),
+            )
             .await
             .unwrap();
 
@@ -1303,7 +1340,10 @@ mod tests {
         let req: serde_json::Value =
             serde_json::from_str(request.lock().unwrap().as_ref().unwrap()).unwrap();
         assert_eq!(req["uuid"], "echo-1");
-        assert!(req.get("method").is_none(), "a resource open carries no method");
+        assert!(
+            req.get("method").is_none(),
+            "a resource open carries no method"
+        );
         assert!(req.get("x_jmp_content_encoding").is_some());
     }
 
@@ -1332,10 +1372,16 @@ mod tests {
 
         // The typed dispatch yields one (empty) response message, then clean end.
         let first = downlink.next().await.unwrap().unwrap();
-        assert!(first.is_empty(), "On() returns Empty → empty response message");
+        assert!(
+            first.is_empty(),
+            "On() returns Empty → empty response message"
+        );
 
         let (uuid, method, args) = calls.lock().unwrap().last().cloned().unwrap();
-        assert_eq!((uuid.as_str(), method.as_str(), args.as_str()), ("power-1", "on", "[]"));
+        assert_eq!(
+            (uuid.as_str(), method.as_str(), args.as_str()),
+            ("power-1", "on", "[]")
+        );
     }
 
     /// Build the exact self-contained `FileDescriptorSet` the Python host produces for
@@ -1424,7 +1470,9 @@ mod tests {
         }));
 
         // Eager prepare must succeed (the import resolves now) and leave the native surface ready.
-        host.prepare().await.expect("native interface built from descriptor set");
+        host.prepare()
+            .await
+            .expect("native interface built from descriptor set");
 
         // A native unary On call (Empty request → empty body) routed via the uuid header.
         let mut md = MetadataMap::new();

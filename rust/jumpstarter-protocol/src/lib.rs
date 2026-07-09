@@ -42,6 +42,13 @@ pub mod jumpstarter {
     }
 }
 
+/// Serialized `google.protobuf.FileDescriptorSet` of every compiled proto
+/// (transitive imports included), backing the gRPC server-reflection service
+/// (`reflection.Register(server)` in the Go controller/router; tonic-reflection
+/// in the Rust binaries).
+pub const FILE_DESCRIPTOR_SET: &[u8] =
+    tonic::include_file_descriptor_set!("jumpstarter_descriptor");
+
 // Convenience re-exports at the crate root.
 pub use jumpstarter::client::v1 as client_v1;
 pub use jumpstarter::v1;

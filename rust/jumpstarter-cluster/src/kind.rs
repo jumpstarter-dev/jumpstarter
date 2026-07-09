@@ -66,7 +66,9 @@ pub async fn delete_kind_cluster(kind: &str, cluster_name: &str) -> Result<()> {
     if code == 0 {
         Ok(())
     } else {
-        Err(ClusterError::Operation(format!("Failed to delete Kind cluster '{cluster_name}'")))
+        Err(ClusterError::Operation(format!(
+            "Failed to delete Kind cluster '{cluster_name}'"
+        )))
     }
 }
 
@@ -81,7 +83,9 @@ pub async fn create_kind_cluster(
     }
     if kind_cluster_exists(kind, cluster_name).await {
         if !force_recreate {
-            return Err(ClusterError::AlreadyExists(format!("kind cluster \"{cluster_name}\" already exists")));
+            return Err(ClusterError::AlreadyExists(format!(
+                "kind cluster \"{cluster_name}\" already exists"
+            )));
         }
         delete_kind_cluster(kind, cluster_name).await?;
     }
@@ -111,7 +115,9 @@ pub async fn create_kind_cluster(
     if code == 0 {
         Ok(())
     } else {
-        Err(ClusterError::Operation(format!("Failed to create Kind cluster '{cluster_name}'")))
+        Err(ClusterError::Operation(format!(
+            "Failed to create Kind cluster '{cluster_name}'"
+        )))
     }
 }
 
@@ -120,26 +126,51 @@ pub async fn list_kind_clusters(kind: &str) -> Vec<String> {
         return Vec::new();
     }
     match run_command(&[kind, "get", "clusters"]).await {
-        Ok(out) if out.ok() => out.stdout.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect(),
+        Ok(out) if out.ok() => out
+            .stdout
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect(),
         _ => Vec::new(),
     }
 }
 
 /// Copy + trust custom CA certs in the kind node (`inject_certificates`).
-pub async fn inject_certificates(extra_certs: &str, cluster_name: &str, progress: &dyn Progress) -> Result<()> {
+pub async fn inject_certificates(
+    extra_certs: &str,
+    cluster_name: &str,
+    progress: &dyn Progress,
+) -> Result<()> {
     let path = get_extra_certs_path(extra_certs)
         .ok_or_else(|| ClusterError::Certificate("Extra certificates path is empty".to_string()))?;
     if !std::path::Path::new(&path).exists() {
-        return Err(ClusterError::Certificate(format!("Extra certificates file not found: {path}")));
+        return Err(ClusterError::Certificate(format!(
+            "Extra certificates file not found: {path}"
+        )));
     }
     let (runtime, node) = detect_kind_provider(cluster_name).await?;
-    progress.progress(&format!("Injecting certificates from {path} into Kind cluster..."));
+    progress.progress(&format!(
+        "Injecting certificates from {path} into Kind cluster..."
+    ));
     let dest = format!("{node}:/usr/local/share/ca-certificates/extra-certs.crt");
     if run_command_streamed(&[runtime.as_str(), "cp", path.as_str(), dest.as_str()]).await? != 0 {
-        return Err(ClusterError::Certificate(format!("Failed to copy certificates to Kind node: {node}")));
+        return Err(ClusterError::Certificate(format!(
+            "Failed to copy certificates to Kind node: {node}"
+        )));
     }
-    if run_command_streamed(&[runtime.as_str(), "exec", node.as_str(), "update-ca-certificates"]).await? != 0 {
-        return Err(ClusterError::Certificate("Failed to update certificates in Kind node".to_string()));
+    if run_command_streamed(&[
+        runtime.as_str(),
+        "exec",
+        node.as_str(),
+        "update-ca-certificates",
+    ])
+    .await?
+        != 0
+    {
+        return Err(ClusterError::Certificate(
+            "Failed to update certificates in Kind node".to_string(),
+        ));
     }
     progress.success("Successfully injected custom certificates into Kind cluster");
     Ok(())
@@ -158,7 +189,11 @@ pub async fn create_kind_cluster_with_options(
     if !kind_installed(kind) {
         return Err(ClusterError::tool_not_installed("kind"));
     }
-    let action = if force_recreate { "Recreating" } else { "Creating" };
+    let action = if force_recreate {
+        "Recreating"
+    } else {
+        "Creating"
+    };
     progress.progress(&format!("{action} Kind cluster \"{cluster_name}\"..."));
     let extra: Vec<String> = if kind_extra_args.trim().is_empty() {
         Vec::new()
@@ -173,7 +208,9 @@ pub async fn create_kind_cluster_with_options(
             Ok(())
         }
         Err(ClusterError::AlreadyExists(_)) if !force_recreate => {
-            progress.progress(&format!("Kind cluster \"{cluster_name}\" already exists, continuing..."));
+            progress.progress(&format!(
+                "Kind cluster \"{cluster_name}\" already exists, continuing..."
+            ));
             if let Some(certs) = extra_certs {
                 inject_certificates(certs, cluster_name, progress).await?;
             }
@@ -181,16 +218,24 @@ pub async fn create_kind_cluster_with_options(
         }
         Err(e) => {
             let action = if force_recreate { "recreate" } else { "create" };
-            Err(ClusterError::Operation(format!("Failed to {action} kind cluster \"{cluster_name}\": {e}")))
+            Err(ClusterError::Operation(format!(
+                "Failed to {action} kind cluster \"{cluster_name}\": {e}"
+            )))
         }
     }
 }
 
-pub async fn delete_kind_cluster_with_feedback(kind: &str, cluster_name: &str, _progress: &dyn Progress) -> Result<()> {
+pub async fn delete_kind_cluster_with_feedback(
+    kind: &str,
+    cluster_name: &str,
+    _progress: &dyn Progress,
+) -> Result<()> {
     if !kind_installed(kind) {
         return Err(ClusterError::tool_not_installed("kind"));
     }
-    delete_kind_cluster(kind, cluster_name)
-        .await
-        .map_err(|e| ClusterError::Operation(format!("Failed to delete kind cluster \"{cluster_name}\": {e}")))
+    delete_kind_cluster(kind, cluster_name).await.map_err(|e| {
+        ClusterError::Operation(format!(
+            "Failed to delete kind cluster \"{cluster_name}\": {e}"
+        ))
+    })
 }

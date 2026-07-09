@@ -7,9 +7,9 @@ use std::io::IsTerminal;
 use std::time::Duration;
 
 use clap::Args as ClapArgs;
+use jumpstarter_config::ClientConfig;
 use jumpstarter_lease::shell::{self, ShellOptions};
 use jumpstarter_lease::ControllerClient;
-use jumpstarter_config::ClientConfig;
 
 use crate::clientcfg::ConfigOpts;
 use crate::cmderr::{self, CmdError};

@@ -20,7 +20,8 @@ fn all_services_have_client_and_server_stubs() {
     assert_exists::<v1::exporter_service_client::ExporterServiceClient<tonic::transport::Channel>>(
     );
     assert_exists::<v1::router_service_client::RouterServiceClient<tonic::transport::Channel>>();
-    assert_exists::<v1::resource_service_client::ResourceServiceClient<tonic::transport::Channel>>();
+    assert_exists::<v1::resource_service_client::ResourceServiceClient<tonic::transport::Channel>>(
+    );
     assert_exists::<client_v1::client_service_client::ClientServiceClient<tonic::transport::Channel>>(
     );
 
@@ -43,9 +44,14 @@ fn all_services_have_client_and_server_stubs() {
 fn stream_data_roundtrips() {
     use prost::Message;
 
-    let frame = v1::StreamData { payload: b"chunk".to_vec() };
+    let frame = v1::StreamData {
+        payload: b"chunk".to_vec(),
+    };
     let bytes = frame.encode_to_vec();
-    assert_eq!(v1::StreamData::decode(bytes.as_slice()).unwrap().payload, b"chunk");
+    assert_eq!(
+        v1::StreamData::decode(bytes.as_slice()).unwrap().payload,
+        b"chunk"
+    );
 }
 
 /// `ExporterStatus` numeric tags are a hard wire contract
@@ -93,5 +99,8 @@ fn driver_instance_report_with_descriptor_set_roundtrips() {
 
     assert_eq!(decoded.uuid, "abc-123");
     assert_eq!(decoded.parent_uuid.as_deref(), Some("root"));
-    assert_eq!(decoded.descriptor_set.as_deref(), Some(&[0x0a, 0x05, b'h', b'e', b'l', b'l', b'o'][..]));
+    assert_eq!(
+        decoded.descriptor_set.as_deref(),
+        Some(&[0x0a, 0x05, b'h', b'e', b'l', b'l', b'o'][..])
+    );
 }

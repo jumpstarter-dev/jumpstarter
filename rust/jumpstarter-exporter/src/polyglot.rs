@@ -82,7 +82,9 @@ fn base_type(instance: &jumpstarter_config::DriverInstance) -> Option<&str> {
 /// A `Base` entry's explicit `host:` launcher (bin + extra args), if any — lets one exporter run
 /// several *different* hosts of a runtime (e.g. two JVM modules' start scripts) or mix runtimes.
 /// `None` for composites/proxies.
-fn base_host(instance: &jumpstarter_config::DriverInstance) -> Option<&jumpstarter_config::HostSpec> {
+fn base_host(
+    instance: &jumpstarter_config::DriverInstance,
+) -> Option<&jumpstarter_config::HostSpec> {
     match instance {
         jumpstarter_config::DriverInstance::Base(b) => b.host.as_ref(),
         _ => None,
@@ -104,9 +106,7 @@ fn host_dir() -> Result<PathBuf, Error> {
 
 #[tonic::async_trait]
 impl HostFactory for PolyglotHostFactory {
-    async fn provision(
-        &self,
-    ) -> Result<(Arc<dyn DriverBackend>, Box<dyn HostGuard>), Error> {
+    async fn provision(&self) -> Result<(Arc<dyn DriverBackend>, Box<dyn HostGuard>), Error> {
         let config = ExporterConfig::load(&self.config_path)
             .map_err(|e| Error::Config(format!("loading exporter config: {e}")))?;
         let dir = host_dir()?;
@@ -115,33 +115,37 @@ impl HostFactory for PolyglotHostFactory {
         // (spawn Python host + dial its UDS until it serves) is independent and I/O-bound, so the
         // wall-clock collapses from the sum of all hosts to the slowest single host — the dominant
         // cost of exporter startup (registration spawns the whole tree to assemble `GetReport`).
-        let provisions = config.export.iter().enumerate().map(|(index, (name, instance))| {
-            let runtime = entry_runtime(instance);
-            let driver_type = base_type(instance).map(str::to_string);
-            let host_spec = base_host(instance).cloned();
-            let uds = dir.join(format!("{index}.sock"));
-            // A single-entry config (drop hooks — the hub runs lease hooks, not the host),
-            // streamed to the host on stdin (no temp file on disk).
-            let mut entry_config = config.clone();
-            entry_config.export = BTreeMap::from([(name.clone(), instance.clone())]);
-            entry_config.hooks = HookConfig::default();
-            let name = name.clone();
-            async move {
-                let yaml = entry_config
-                    .to_yaml()
-                    .map_err(|e| Error::Config(format!("serializing entry config: {e}")))?;
-                let host = spawn_entry_host(
-                    &runtime,
-                    driver_type.as_deref(),
-                    host_spec.as_ref(),
-                    &yaml,
-                    &uds,
-                )
-                .await?;
-                let backend = dial_with_retry(&uds, HOST_READY_TIMEOUT).await?;
-                Ok::<(EntryHost, HostedEntry), Error>((host, HostedEntry { name, backend }))
-            }
-        });
+        let provisions = config
+            .export
+            .iter()
+            .enumerate()
+            .map(|(index, (name, instance))| {
+                let runtime = entry_runtime(instance);
+                let driver_type = base_type(instance).map(str::to_string);
+                let host_spec = base_host(instance).cloned();
+                let uds = dir.join(format!("{index}.sock"));
+                // A single-entry config (drop hooks — the hub runs lease hooks, not the host),
+                // streamed to the host on stdin (no temp file on disk).
+                let mut entry_config = config.clone();
+                entry_config.export = BTreeMap::from([(name.clone(), instance.clone())]);
+                entry_config.hooks = HookConfig::default();
+                let name = name.clone();
+                async move {
+                    let yaml = entry_config
+                        .to_yaml()
+                        .map_err(|e| Error::Config(format!("serializing entry config: {e}")))?;
+                    let host = spawn_entry_host(
+                        &runtime,
+                        driver_type.as_deref(),
+                        host_spec.as_ref(),
+                        &yaml,
+                        &uds,
+                    )
+                    .await?;
+                    let backend = dial_with_retry(&uds, HOST_READY_TIMEOUT).await?;
+                    Ok::<(EntryHost, HostedEntry), Error>((host, HostedEntry { name, backend }))
+                }
+            });
         // try_join_all preserves input order and short-circuits on the first error.
         let provisioned = futures::future::try_join_all(provisions).await?;
         let mut hosts: Vec<EntryHost> = Vec::with_capacity(provisioned.len());
@@ -156,10 +160,7 @@ impl HostFactory for PolyglotHostFactory {
             .await
             .map_err(|s| Error::Config(format!("federating driver hosts: {s}")))?;
 
-        let guard = PolyglotGuard {
-            _hosts: hosts,
-            dir,
-        };
+        let guard = PolyglotGuard { _hosts: hosts, dir };
         Ok((Arc::new(backend), Box::new(guard)))
     }
 }
@@ -224,11 +225,9 @@ async fn spawn_entry_host(
                 c.arg("--serve").arg(uds);
                 c
             }
-            other => {
-                return Err(Error::Config(format!(
-                    "driver runtime `{other}` is not supported (expected `python`, `rust`, or `jvm`)"
-                )))
-            }
+            other => return Err(Error::Config(format!(
+                "driver runtime `{other}` is not supported (expected `python`, `rust`, or `jvm`)"
+            ))),
         }
     };
     command

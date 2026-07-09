@@ -18,8 +18,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use jumpstarter_lease::channel;
 use jumpstarter_config::ExporterConfig;
+use jumpstarter_lease::channel;
 use jumpstarter_protocol::v1::controller_service_client::ControllerServiceClient;
 use jumpstarter_protocol::v1::{ExporterStatus, RegisterRequest, StatusRequest, UnregisterRequest};
 use tokio::sync::{watch, Notify};
@@ -360,10 +360,10 @@ async fn status_loop(
                     tracing::info!("lease ended");
                     let lease = active.take().unwrap();
                     lease.end.notify_one(); // -> pump -> Controller(Ended) fact -> runner
-                    // Bound the wait for the runner to finish its teardown (afterLease etc.): a
-                    // hung runner must not wedge the Status loop — and hence the whole exporter —
-                    // forever. The runner should finish within the afterLease hook budget; abort
-                    // and proceed with host teardown if it overruns.
+                                            // Bound the wait for the runner to finish its teardown (afterLease etc.): a
+                                            // hung runner must not wedge the Status loop — and hence the whole exporter —
+                                            // forever. The runner should finish within the afterLease hook budget; abort
+                                            // and proceed with host teardown if it overruns.
                     let lease_grace = Duration::from_secs(
                         config
                             .hooks
@@ -374,7 +374,10 @@ async fn status_loop(
                             + 60,
                     );
                     let mut handle = lease.handle;
-                    if tokio::time::timeout(lease_grace, &mut handle).await.is_err() {
+                    if tokio::time::timeout(lease_grace, &mut handle)
+                        .await
+                        .is_err()
+                    {
                         tracing::error!(grace = ?lease_grace, "lease runner did not finish in time; aborting it");
                         handle.abort();
                     }

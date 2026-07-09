@@ -21,7 +21,7 @@ use prost_reflect::{
     ServiceDescriptor,
 };
 
-use crate::ir::{EnumType, Field, InterfaceRef, Method, MessageType};
+use crate::ir::{EnumType, Field, InterfaceRef, MessageType, Method};
 
 /// Decode a serialized [`FileDescriptorSet`] and walk every gRPC service into a
 /// language-neutral [`InterfaceRef`].
@@ -222,7 +222,10 @@ mod tests {
             .expect("Read method");
         assert!(read.server_streaming, "Read must be server-streaming");
         assert!(!read.client_streaming, "Read is not client-streaming");
-        assert_eq!(read.output_type, "jumpstarter.interfaces.power.v1.PowerReading");
+        assert_eq!(
+            read.output_type,
+            "jumpstarter.interfaces.power.v1.PowerReading"
+        );
 
         // On/Off are unary Empty -> Empty.
         let on = power.methods.iter().find(|m| m.name == "On").unwrap();

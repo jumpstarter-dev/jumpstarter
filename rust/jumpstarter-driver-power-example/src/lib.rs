@@ -75,7 +75,8 @@ impl PowerInterface for MockPower {
         Ok(Response::new(()))
     }
 
-    type ReadStream = Pin<Box<dyn tokio_stream::Stream<Item = Result<PowerReading, Status>> + Send>>;
+    type ReadStream =
+        Pin<Box<dyn tokio_stream::Stream<Item = Result<PowerReading, Status>> + Send>>;
 
     async fn read(&self, _request: Request<()>) -> Result<Response<Self::ReadStream>, Status> {
         let (voltage, current) = if self.is_on() {
@@ -105,7 +106,9 @@ mod round_trip_tests {
 
     /// Stream a `read()` call to completion, collecting the decoded readings.
     async fn collect_readings(
-        stream: impl tokio_stream::Stream<Item = Result<proto::PowerReading, jumpstarter_codec::error::DriverCallError>>,
+        stream: impl tokio_stream::Stream<
+            Item = Result<proto::PowerReading, jumpstarter_codec::error::DriverCallError>,
+        >,
     ) -> Vec<proto::PowerReading> {
         let mut stream = Box::pin(stream);
         let mut readings = Vec::new();
@@ -134,7 +137,11 @@ mod round_trip_tests {
         // Initially off: a Read streams zero-voltage readings (proving the call reached the driver
         // through client → exporter/demux → SHM → tonic service, all the way back).
         let readings = collect_readings(client.read().await.expect("read stream (off)")).await;
-        assert_eq!(readings.len(), MockPower::READINGS, "Read yields N readings");
+        assert_eq!(
+            readings.len(),
+            MockPower::READINGS,
+            "Read yields N readings"
+        );
         for r in &readings {
             assert_eq!(r.voltage, 0.0, "off -> 0 V");
             assert_eq!(r.current, 0.0, "off -> 0 A");
@@ -145,7 +152,11 @@ mod round_trip_tests {
         let readings = collect_readings(client.read().await.expect("read stream (on)")).await;
         assert_eq!(readings.len(), MockPower::READINGS);
         for r in &readings {
-            assert!(r.voltage > 0.0, "powered-on voltage must be > 0, got {}", r.voltage);
+            assert!(
+                r.voltage > 0.0,
+                "powered-on voltage must be > 0, got {}",
+                r.voltage
+            );
             assert_eq!(r.voltage, MockPower::ON_VOLTAGE);
             assert_eq!(r.current, MockPower::ON_CURRENT);
         }

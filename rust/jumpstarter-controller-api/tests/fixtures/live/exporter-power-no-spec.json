@@ -1,0 +1,51 @@
+{
+  "apiVersion": "jumpstarter.dev/v1alpha1",
+  "kind": "Exporter",
+  "metadata": {
+    "creationTimestamp": "2026-06-27T23:09:36Z",
+    "generation": 1,
+    "labels": {
+      "example.com/board": "power"
+    },
+    "name": "power-exporter",
+    "namespace": "jumpstarter-lab",
+    "resourceVersion": "5321081",
+    "uid": "8754778d-13ab-4772-9d90-4749c4127a4f"
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-06-28T03:34:21Z",
+        "message": "Last seen more than 1 minute ago",
+        "observedGeneration": 1,
+        "reason": "Seen",
+        "status": "False",
+        "type": "Online"
+      },
+      {
+        "lastTransitionTime": "2026-06-27T23:20:01Z",
+        "message": "",
+        "observedGeneration": 1,
+        "reason": "Register",
+        "status": "True",
+        "type": "Registered"
+      }
+    ],
+    "credential": {
+      "name": "power-exporter-exporter"
+    },
+    "devices": [
+      {
+        "labels": {
+          "jumpstarter.dev/client": "rust:jumpstarter-driver-power-example",
+          "jumpstarter.dev/name": "power"
+        },
+        "uuid": "e8324b9e-9897-422c-9ffe-3f05973c4d67"
+      }
+    ],
+    "endpoint": "127.0.0.1:8082",
+    "exporterStatus": "Offline",
+    "lastSeen": "2026-06-28T03:34:21Z",
+    "statusMessage": "Exporter shutting down"
+  }
+}

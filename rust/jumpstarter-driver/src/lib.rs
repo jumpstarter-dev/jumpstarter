@@ -140,7 +140,9 @@ impl ExporterService for ReportOnlyExporter {
         &self,
         _req: Request<DriverCallRequest>,
     ) -> Result<Response<DriverCallResponse>, Status> {
-        Err(Status::unimplemented("proto-first host serves native gRPC only"))
+        Err(Status::unimplemented(
+            "proto-first host serves native gRPC only",
+        ))
     }
 
     type StreamingDriverCallStream = RespStream<StreamingDriverCallResponse>;
@@ -148,7 +150,9 @@ impl ExporterService for ReportOnlyExporter {
         &self,
         _req: Request<StreamingDriverCallRequest>,
     ) -> Result<Response<Self::StreamingDriverCallStream>, Status> {
-        Err(Status::unimplemented("proto-first host serves native gRPC only"))
+        Err(Status::unimplemented(
+            "proto-first host serves native gRPC only",
+        ))
     }
 
     type LogStreamStream = RespStream<LogStreamResponse>;
@@ -156,28 +160,33 @@ impl ExporterService for ReportOnlyExporter {
         &self,
         _req: Request<()>,
     ) -> Result<Response<Self::LogStreamStream>, Status> {
-        Err(Status::unimplemented("proto-first host serves native gRPC only"))
+        Err(Status::unimplemented(
+            "proto-first host serves native gRPC only",
+        ))
     }
 
-    async fn reset(
-        &self,
-        _req: Request<ResetRequest>,
-    ) -> Result<Response<ResetResponse>, Status> {
-        Err(Status::unimplemented("proto-first host serves native gRPC only"))
+    async fn reset(&self, _req: Request<ResetRequest>) -> Result<Response<ResetResponse>, Status> {
+        Err(Status::unimplemented(
+            "proto-first host serves native gRPC only",
+        ))
     }
 
     async fn get_status(
         &self,
         _req: Request<GetStatusRequest>,
     ) -> Result<Response<GetStatusResponse>, Status> {
-        Err(Status::unimplemented("proto-first host serves native gRPC only"))
+        Err(Status::unimplemented(
+            "proto-first host serves native gRPC only",
+        ))
     }
 
     async fn end_session(
         &self,
         _req: Request<EndSessionRequest>,
     ) -> Result<Response<EndSessionResponse>, Status> {
-        Err(Status::unimplemented("proto-first host serves native gRPC only"))
+        Err(Status::unimplemented(
+            "proto-first host serves native gRPC only",
+        ))
     }
 }
 
@@ -243,7 +252,8 @@ where
         .build()?;
     runtime.block_on(async move {
         let backend = serve_driver(&name, client_class, descriptor_set, service).await?;
-        jumpstarter_exporter::session::serve_native_host(std::path::Path::new(&uds), backend).await?;
+        jumpstarter_exporter::session::serve_native_host(std::path::Path::new(&uds), backend)
+            .await?;
         Ok(())
     })
 }
@@ -284,9 +294,9 @@ fn descriptor_interface(descriptor: &[u8]) -> Option<String> {
 type HostServe = Box<
     dyn Fn(
             String,
-        )
-            -> Pin<Box<dyn std::future::Future<Output = std::io::Result<Arc<dyn DriverBackend>>> + Send>>
-        + Send
+        ) -> Pin<
+            Box<dyn std::future::Future<Output = std::io::Result<Arc<dyn DriverBackend>>> + Send>,
+        > + Send
         + Sync,
 >;
 
@@ -416,8 +426,11 @@ impl Host {
 
 /// What a `#[driver]` registration's `serve` builds: the driver's [`DriverBackend`] for an instance
 /// name (it calls [`serve_driver`] with the baked-in server type + descriptor + client class).
-pub type HostServeFn =
-    fn(String) -> Pin<Box<dyn std::future::Future<Output = std::io::Result<Arc<dyn DriverBackend>>> + Send>>;
+pub type HostServeFn = fn(
+    String,
+) -> Pin<
+    Box<dyn std::future::Future<Output = std::io::Result<Arc<dyn DriverBackend>>> + Send>,
+>;
 
 /// One driver registered by `#[driver]`, collected at link time by [`Host::from_inventory`].
 pub struct DriverRegistration {

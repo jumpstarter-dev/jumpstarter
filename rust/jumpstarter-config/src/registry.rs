@@ -136,7 +136,10 @@ impl DriverRegistry {
 
     /// The interface entry an exporter-config `type:` string implements (plus that driver's
     /// advertised clients).
-    pub fn driver(&self, driver_type: &str) -> Option<(&RegistryInterface, BTreeMap<String, String>)> {
+    pub fn driver(
+        &self,
+        driver_type: &str,
+    ) -> Option<(&RegistryInterface, BTreeMap<String, String>)> {
         for interface in &self.interfaces {
             if let Some(driver) = interface.drivers.iter().find(|d| d.name() == driver_type) {
                 return Some((interface, driver.clients()));
@@ -188,7 +191,9 @@ interfaces:
     #[test]
     fn parses_and_answers_lookups() {
         let r = DriverRegistry::from_yaml(PYTHON_YAML).unwrap();
-        let (iface, clients) = r.driver("jumpstarter_driver_power.driver.MockPower").unwrap();
+        let (iface, clients) = r
+            .driver("jumpstarter_driver_power.driver.MockPower")
+            .unwrap();
         assert_eq!(iface.name, "jumpstarter.interfaces.power.v1.PowerInterface");
         assert_eq!(
             clients.get("python").map(String::as_str),
@@ -215,7 +220,9 @@ interfaces:
         // Same interface entry now carries drivers from BOTH files.
         assert_eq!(r.interfaces.len(), 1);
         assert!(r.driver("rust:jumpstarter-driver-power-pure").is_some());
-        assert!(r.driver("jumpstarter_driver_power.driver.MockPower").is_some());
+        assert!(r
+            .driver("jumpstarter_driver_power.driver.MockPower")
+            .is_some());
         let (_, clients) = r
             .driver("jvm:dev.jumpstarter.examples.power.KotlinPowerDriver")
             .unwrap();
@@ -236,7 +243,10 @@ interfaces:
 ";
         r.merge(DriverRegistry::from_yaml(override_yaml).unwrap());
         let (_, clients) = r.driver("rust:jumpstarter-driver-power-pure").unwrap();
-        assert_eq!(clients.get("rust").map(String::as_str), Some("my_crate::CustomPowerClient"));
+        assert_eq!(
+            clients.get("rust").map(String::as_str),
+            Some("my_crate::CustomPowerClient")
+        );
     }
 
     #[test]
@@ -247,12 +257,16 @@ interfaces:
         std::fs::write(dir.path().join("ignored.txt"), "not yaml").unwrap();
 
         let r = DriverRegistry::load_path(dir.path()).unwrap();
-        assert!(r.driver("jumpstarter_driver_power.driver.MockPower").is_some());
+        assert!(r
+            .driver("jumpstarter_driver_power.driver.MockPower")
+            .is_some());
         assert!(r.driver("rust:jumpstarter-driver-power-pure").is_some());
 
         // A single file loads directly too.
         let single = DriverRegistry::load_path(&dir.path().join("a-python.yaml")).unwrap();
-        assert!(single.driver("rust:jumpstarter-driver-power-pure").is_none());
+        assert!(single
+            .driver("rust:jumpstarter-driver-power-pure")
+            .is_none());
     }
 
     #[test]
