@@ -2,7 +2,7 @@ import asyncio
 import socket
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 from pysnmp.carrier.asyncio.dgram import udp
 from pysnmp.entity import config, engine
@@ -165,9 +165,6 @@ class SNMPServer(Driver):
 
         try:
             self.logger.info(f"Sending power {state.name} command to {self.host}")
-
-            # Get the running event loop (Python 3.14+ requires this)
-            loop = asyncio.get_running_loop()
 
             # Create event in async context (required for Python 3.14+)
             response_received = asyncio.Event()
