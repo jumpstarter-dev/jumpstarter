@@ -159,6 +159,20 @@ opt_retry_timeout = partial(
     ),
 )
 
+DIAL_TIMEOUT = DurationParamType(minimum=timedelta(seconds=5))
+
+opt_dial_timeout = partial(
+    click.option,
+    "--dial-timeout",
+    "dial_timeout",
+    type=DIAL_TIMEOUT,
+    default=None,
+    help=(
+        "Override dial timeout for slow exporters (e.g., '60s', '2m', "
+        "'90s'). Env: JMP_DIAL_TIMEOUT. Default: 60s."
+    ),
+)
+
 opt_begin_time = click.option(
     "--begin-time",
     "begin_time",

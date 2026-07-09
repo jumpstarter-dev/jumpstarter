@@ -68,7 +68,7 @@ class _DummyConfig:
     @asynccontextmanager
     async def lease_async(
         self, selector, exporter_name, lease_name, duration, portal,
-        acquisition_timeout, retry_timeout=None,
+        acquisition_timeout, retry_timeout=None, dial_timeout=None,
     ):
         self.captured = (selector, exporter_name, lease_name, duration, acquisition_timeout)
         m = Mock()
@@ -113,7 +113,7 @@ async def test_shell_warns_when_expired_token_prevents_cleanup_on_normal_exit():
     @asynccontextmanager
     async def lease_async(
         selector, exporter_name, lease_name, duration, portal,
-        acquisition_timeout, retry_timeout=None,
+        acquisition_timeout, retry_timeout=None, dial_timeout=None,
     ):
         yield lease
 
@@ -162,6 +162,7 @@ def test_shell_requires_selector_or_name_when_no_leases():
             exporter_logs=False,
             acquisition_timeout=None,
             retry_timeout=None,
+            dial_timeout=None,
             tls_grpc_address=None,
             tls_grpc_insecure=False,
             passphrase=None,
@@ -183,6 +184,7 @@ def test_shell_allows_existing_lease_name_without_selector_or_name():
             exporter_logs=False,
             acquisition_timeout=None,
             retry_timeout=None,
+            dial_timeout=None,
             tls_grpc_address=None,
             tls_grpc_insecure=False,
             passphrase=None,
@@ -208,6 +210,7 @@ def test_shell_auto_connects_single_lease():
             exporter_logs=False,
             acquisition_timeout=None,
             retry_timeout=None,
+            dial_timeout=None,
             tls_grpc_address=None,
             tls_grpc_insecure=False,
             passphrase=None,
@@ -236,6 +239,7 @@ def test_shell_no_leases_shows_guidance():
             exporter_logs=False,
             acquisition_timeout=None,
             retry_timeout=None,
+            dial_timeout=None,
             tls_grpc_address=None,
             tls_grpc_insecure=False,
             passphrase=None,
@@ -277,6 +281,7 @@ def test_shell_multi_lease_no_tty_error():
             exporter_logs=False,
             acquisition_timeout=None,
             retry_timeout=None,
+            dial_timeout=None,
             tls_grpc_address=None,
             tls_grpc_insecure=False,
             passphrase=None,
@@ -313,6 +318,7 @@ def test_shell_no_own_leases_among_others():
             exporter_logs=False,
             acquisition_timeout=None,
             retry_timeout=None,
+            dial_timeout=None,
             tls_grpc_address=None,
             tls_grpc_insecure=False,
             passphrase=None,
@@ -335,6 +341,7 @@ def test_shell_allows_env_lease_without_selector_or_name():
             exporter_logs=False,
             acquisition_timeout=None,
             retry_timeout=None,
+            dial_timeout=None,
             tls_grpc_address=None,
             tls_grpc_insecure=False,
             passphrase=None,
@@ -1035,7 +1042,7 @@ class TestShellWithSignalHandlingExceptionGroup:
         @asynccontextmanager
         async def lease_async(
         selector, exporter_name, lease_name, duration, portal,
-        acquisition_timeout, retry_timeout=None,
+        acquisition_timeout, retry_timeout=None, dial_timeout=None,
     ):
             yield lease
 
@@ -1118,7 +1125,7 @@ class TestRetryLoopTimeout:
         @asynccontextmanager
         async def lease_async(
         selector, exporter_name, lease_name, duration, portal,
-        acquisition_timeout, retry_timeout=None,
+        acquisition_timeout, retry_timeout=None, dial_timeout=None,
     ):
             yield lease
 
@@ -1162,7 +1169,7 @@ class TestRetryLoopTimeout:
         @asynccontextmanager
         async def lease_async(
         selector, exporter_name, lease_name, duration, portal,
-        acquisition_timeout, retry_timeout=None,
+        acquisition_timeout, retry_timeout=None, dial_timeout=None,
     ):
             yield lease
 
@@ -1204,7 +1211,7 @@ class TestRetryLoopTimeout:
         @asynccontextmanager
         async def lease_async(
         selector, exporter_name, lease_name, duration, portal,
-        acquisition_timeout, retry_timeout=None,
+        acquisition_timeout, retry_timeout=None, dial_timeout=None,
     ):
             yield lease
 
