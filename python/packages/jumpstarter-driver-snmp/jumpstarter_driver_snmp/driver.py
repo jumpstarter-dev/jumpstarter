@@ -63,6 +63,12 @@ class SNMPServer(Driver):
         self.full_oid = tuple(int(x) for x in self.oid.split(".")) + (self.plug,)
 
     def _setup_snmp(self):
+        """
+        Set up SNMP engine with v3 authentication.
+
+        Note: This method should be called from an async context in Python 3.14+
+        to ensure an event loop is available for UdpAsyncioTransport.
+        """
         snmp_engine = engine.SnmpEngine()
 
         AUTH_PROTOCOLS = {
@@ -109,6 +115,8 @@ class SNMPServer(Driver):
             timeout=int(self.timeout * 100),
         )
 
+        # Python 3.14+: UdpAsyncioTransport will use the running event loop
+        # This must be called from an async context
         config.add_transport(snmp_engine, udp.DOMAIN_NAME, udp.UdpAsyncioTransport().open_client_mode())
 
         return snmp_engine
@@ -138,31 +146,37 @@ class SNMPServer(Driver):
 
         return callback
 
-    def _setup_event_loop(self) -> Tuple[asyncio.AbstractEventLoop, bool]:
-        try:
-            loop = asyncio.get_running_loop()
-            return loop, False
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            return loop, True
-
     async def _run_snmp_dispatcher(self, snmp_engine: engine.SnmpEngine, response_received: asyncio.Event):
+        """Run the SNMP dispatcher until response is received"""
         snmp_engine.open_dispatcher()
-        await response_received.wait()
-        snmp_engine.close_dispatcher()
+        try:
+            await response_received.wait()
+        finally:
+            snmp_engine.close_dispatcher()
 
-    def _snmp_set(self, state: PowerState):
+    async def _snmp_set(self, state: PowerState):
+        """
+        Send an SNMP SET command to change power state.
+
+        This method is now async to properly work with Python 3.14+
+        which requires explicit event loop management.
+        """
         result = {"success": False, "error": None}
-        response_received = asyncio.Event()
-        loop = None
-        created_loop = False
 
         try:
             self.logger.info(f"Sending power {state.name} command to {self.host}")
-            loop, created_loop = self._setup_event_loop()
+
+            # Get the running event loop (Python 3.14+ requires this)
+            loop = asyncio.get_running_loop()
+
+            # Create event in async context (required for Python 3.14+)
+            response_received = asyncio.Event()
+
+            # Set up SNMP engine
             snmp_engine = self._setup_snmp()
             callback = self._create_snmp_callback(result, response_received)
+
+            # Send the SNMP command
             cmdgen.SetCommandGenerator().send_varbinds(
                 snmp_engine,
                 "my-target",
@@ -172,9 +186,12 @@ class SNMPServer(Driver):
                 callback,
             )
 
-            dispatcher_task = loop.create_task(self._run_snmp_dispatcher(snmp_engine, response_received))
+            # Run dispatcher with timeout
             try:
-                loop.run_until_complete(asyncio.wait_for(dispatcher_task, self.timeout))
+                await asyncio.wait_for(
+                    self._run_snmp_dispatcher(snmp_engine, response_received),
+                    self.timeout
+                )
             except asyncio.TimeoutError:
                 self.logger.warning(f"SNMP operation timed out after {self.timeout} seconds")
                 result["error"] = "SNMP operation timed out"
@@ -188,19 +205,16 @@ class SNMPServer(Driver):
             error_msg = f"SNMP set failed: {str(e)}"
             self.logger.error(error_msg)
             raise SNMPError(error_msg) from e
-        finally:
-            if created_loop and loop:
-                loop.close()
 
     @export
-    def on(self):
-        """Turn power on"""
-        return self._snmp_set(PowerState.ON)
+    async def on(self):
+        """Turn power on (async method for Python 3.14+ compatibility)"""
+        return await self._snmp_set(PowerState.ON)
 
     @export
-    def off(self):
-        """Turn power off"""
-        return self._snmp_set(PowerState.OFF)
+    async def off(self):
+        """Turn power off (async method for Python 3.14+ compatibility)"""
+        return await self._snmp_set(PowerState.OFF)
 
     def close(self):
         """No cleanup needed since engines are created per operation"""
