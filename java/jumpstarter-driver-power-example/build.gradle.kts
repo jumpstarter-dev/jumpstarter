@@ -22,6 +22,10 @@ val codegenDeviceDir = layout.buildDirectory.dir("generated/jumpstarter/device")
 kotlin {
     jvmToolchain(21)
     sourceSets["main"].kotlin.srcDir(codegenDeviceDir)
+    // The rust-core-demo's JUnit test (PowerNativeIT) lives in the examples tree so demo readers
+    // see exactly what runs, and compiles as part of THIS module's test source set — one source of
+    // truth, no copy to drift (same external-srcDir pattern as interfaces/proto above).
+    sourceSets["test"].kotlin.srcDir("$repoRoot/examples/rust-core-demo/act2-kotlin-python/src")
 }
 
 dependencies {
