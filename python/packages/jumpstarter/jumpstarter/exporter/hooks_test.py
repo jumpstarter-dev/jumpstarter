@@ -1534,6 +1534,104 @@ class TestHookExecutorPRRegressions:
             f"Expected AVAILABLE message to start with '{HOOK_WARNING_PREFIX}', got: '{msg}'"
         )
 
+    async def test_after_hook_endlease_reports_failed_then_available(self, lease_scope) -> None:
+        """afterLease hook failure with on_failure=endLease must transition to AVAILABLE.
+
+        When afterLease hook fails with on_failure=endLease:
+        - AFTER_LEASE_HOOK_FAILED status must be reported
+        - AVAILABLE status must be reported in the finally block
+        - request_lease_release must be called (not shutdown)
+
+        This ensures the exporter can accept new leases after the failure.
+        """
+        hook_config = HookConfigV1Alpha1(
+            after_lease=HookInstanceConfigV1Alpha1(script="exit 1", timeout=10, on_failure="endLease"),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+        mock_request_release = AsyncMock()
+
+        await executor.run_after_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+            mock_request_release,
+        )
+
+        # AFTER_LEASE_HOOK_FAILED should be reported
+        failed_statuses = [s for s, _ in status_calls if s == ExporterStatus.AFTER_LEASE_HOOK_FAILED]
+        assert len(failed_statuses) > 0, (
+            f"Expected AFTER_LEASE_HOOK_FAILED status, got: {status_calls}"
+        )
+
+        # AVAILABLE should be reported to allow new leases
+        available_statuses = [s for s, _ in status_calls if s == ExporterStatus.AVAILABLE]
+        assert len(available_statuses) > 0, (
+            f"Expected AVAILABLE status after endLease failure, got: {status_calls}"
+        )
+
+        # request_lease_release called (not shutdown)
+        mock_request_release.assert_called_once()
+        mock_shutdown.assert_not_called()
+
+    async def test_after_hook_unexpected_error_reports_failed_then_available(self, lease_scope) -> None:
+        """Unexpected exception during afterLease must transition to AVAILABLE.
+
+        When afterLease hook encounters an unexpected error (not HookExecutionError):
+        - AFTER_LEASE_HOOK_FAILED status must be reported
+        - AVAILABLE status must be reported in the finally block
+        - request_lease_release must be called
+
+        This ensures the exporter can recover from unexpected errors.
+        """
+        hook_config = HookConfigV1Alpha1(
+            after_lease=HookInstanceConfigV1Alpha1(script="echo test", timeout=10),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        status_calls = []
+
+        async def mock_report_status(status, msg):
+            status_calls.append((status, msg))
+
+        mock_shutdown = MagicMock()
+        mock_request_release = AsyncMock()
+
+        # Inject an unexpected error by replacing the execute method
+        async def failing_execute(*args, **kwargs):
+            raise ValueError("Simulated unexpected error")
+
+        executor._execute_hook = failing_execute
+
+        await executor.run_after_lease_hook(
+            lease_scope,
+            mock_report_status,
+            mock_shutdown,
+            mock_request_release,
+        )
+
+        # AFTER_LEASE_HOOK_FAILED should be reported
+        failed_statuses = [s for s, _ in status_calls if s == ExporterStatus.AFTER_LEASE_HOOK_FAILED]
+        assert len(failed_statuses) > 0, (
+            f"Expected AFTER_LEASE_HOOK_FAILED status, got: {status_calls}"
+        )
+
+        # AVAILABLE should be reported to allow new leases
+        available_statuses = [s for s, _ in status_calls if s == ExporterStatus.AVAILABLE]
+        assert len(available_statuses) > 0, (
+            f"Expected AVAILABLE status after unexpected error, got: {status_calls}"
+        )
+
+        # request_lease_release called
+        mock_request_release.assert_called_once()
+        mock_shutdown.assert_not_called()
+
 
 class TestBeforeLeaseHookLeaseEndedGuard:
     """Tests for the race condition where beforeLease hook completes after

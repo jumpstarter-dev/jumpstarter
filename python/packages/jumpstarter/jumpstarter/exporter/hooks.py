@@ -825,9 +825,8 @@ class HookExecutor:
                 shutdown_called = True
             else:
                 # on_failure='endLease' - report failure to the client, then release the lease.
-                # AFTER_LEASE_HOOK_FAILED is a transient status: the client sees the failure,
-                # the lease is released in the finally block, and the exporter's main loop
-                # clears the lease context and accepts new leases.
+                # AFTER_LEASE_HOOK_FAILED is transient: the finally block transitions to AVAILABLE
+                # and releases the lease, allowing the exporter to accept new leases.
                 logger.error("afterLease hook failed with on_failure='endLease': %s", e)
                 await report_status(
                     ExporterStatus.AFTER_LEASE_HOOK_FAILED,
@@ -836,8 +835,8 @@ class HookExecutor:
 
         except Exception as e:
             # Unexpected errors: report failure but do not shut down.
-            # Same transient status - the lease is released and the exporter
-            # accepts new leases after the finally block completes.
+            # AFTER_LEASE_HOOK_FAILED is transient: the finally block transitions to AVAILABLE
+            # and releases the lease, allowing the exporter to accept new leases.
             logger.error("afterLease hook failed with unexpected error: %s", e, exc_info=True)
             await report_status(
                 ExporterStatus.AFTER_LEASE_HOOK_FAILED,
@@ -851,6 +850,9 @@ class HookExecutor:
             # Don't release lease when exporter is shutting down - unregistration handles cleanup.
             # Releasing here would report AVAILABLE to the controller right before shutdown.
             if request_lease_release and not shutdown_called:
+                # Transition to AVAILABLE to clear AFTER_LEASE_HOOK_FAILED.
+                # Idempotent if already AVAILABLE from the happy/warn paths.
+                await report_status(ExporterStatus.AVAILABLE, "Available for new lease")
                 try:
                     await request_lease_release()
                 except Exception as e:
