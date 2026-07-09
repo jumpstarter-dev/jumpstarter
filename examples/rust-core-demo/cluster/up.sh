@@ -77,6 +77,10 @@ if [ ! -d "$EXPORTER_DIR" ] || [ ! -w "$EXPORTER_DIR" ]; then
 fi
 
 log "creating the demo client identity '$DEMO_CLIENT' (unsafe drivers allowed, insecure TLS)"
+# Idempotent: delete any prior demo client (CR + local config) so a re-run always yields fresh,
+# working credentials.
+jmp admin delete client "$DEMO_CLIENT" -n "$NS" --context "$KCTX" --delete >/dev/null 2>&1 \
+  && warn "client '$DEMO_CLIENT' existed — recreated with fresh credentials" || true
 jmp admin create client "$DEMO_CLIENT" -n "$NS" --context "$KCTX" --unsafe -k --save >/dev/null
 jmp config client use "$DEMO_CLIENT" >/dev/null 2>&1 || true
 

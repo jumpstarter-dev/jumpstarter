@@ -149,4 +149,7 @@ tasks.register<Test>("integrationTest") {
     classpath = sourceSets.test.get().runtimeClasspath
     useJUnitPlatform { includeTags("integration") }
     environment("JUMPSTARTER_HOST", System.getenv("JUMPSTARTER_HOST") ?: "")
+    // These tests exercise a LIVE leased exporter — external state gradle can't fingerprint —
+    // so never let the task go UP-TO-DATE: every invocation must actually run against the lease.
+    outputs.upToDateWhen { false }
 }

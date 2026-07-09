@@ -50,14 +50,17 @@ require() {
   command -v "$1" >/dev/null 2>&1 || { err "required tool '$1' not found on PATH"; return 1; }
 }
 
-# write_exporter <name> <label> <act_config_yaml> — create an Exporter CR + credentials in
+# write_exporter <name> <label> <act_config_yaml> — (re)create an Exporter CR + credentials in
 # the cluster, then splice this act's driver tree (its `export:` block) onto the credentialed
 # config and drop the result in $EXPORTER_DIR/<name>.yaml. `-k` bakes tls.insecure=true so the
-# self-signed controller TLS is accepted without a CA install.
+# self-signed controller TLS is accepted without a CA install. Idempotent: an existing CR is
+# deleted first so a re-run of up.sh always yields fresh, working credentials.
 write_exporter() {
   local name="$1" label="$2" act_cfg="$3"
   local dest="$EXPORTER_DIR/$name.yaml"
   local tmp; tmp="$(mktemp -t "jmp-demo-$name.XXXXXX")"
+  jmp admin delete exporter "$name" -n "$NS" --context "$KCTX" >/dev/null 2>&1 \
+    && warn "exporter '$name' existed — recreated with fresh credentials" || true
   log "creating exporter identity '$name' (label: $label)"
   jmp admin create exporter "$name" -n "$NS" --context "$KCTX" -k --label "$label" --out "$tmp" >/dev/null
   "$(venv_python)" - "$tmp" "$act_cfg" "$dest" "$name" <<'PY'
