@@ -68,10 +68,9 @@ type ExporterSetSpec struct {
 	MinReplicas int32 `json:"minReplicas,omitempty"`
 
 	// MaxReplicas is the maximum number of instances (ceiling).
-	// 0 means no upper bound.
-	// +kubebuilder:default=0
-	// +kubebuilder:validation:Minimum=0
-	MaxReplicas int32 `json:"maxReplicas,omitempty"`
+	// +kubebuilder:default=10
+	// +kubebuilder:validation:Minimum=1
+	MaxReplicas int32 `json:"maxReplicas"`
 
 	// MinAvailableReplicas is the warm buffer: ready and unleased instances.
 	// +kubebuilder:default=0

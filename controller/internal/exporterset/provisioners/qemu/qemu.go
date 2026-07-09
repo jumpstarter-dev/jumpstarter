@@ -14,9 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package qemu implements the qemu.jumpstarter.dev provisioner for ExporterSets.
-// It renders Pods using the sidecar pattern: a native sidecar init container running
-// the Jumpstarter exporter alongside a main container running the QEMU runtime.
+// Package qemu implements the qemu.jumpstarter.dev provisioner
+// for ExporterSets. It renders Pods using the sidecar pattern:
+// a native sidecar init container running the Jumpstarter exporter
+// alongside a main container running the QEMU runtime.
 package qemu
 
 import (
@@ -26,16 +27,31 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 const (
-	// ProvisionerName is the provisioner identifier for QEMU-based virtual targets.
+	// ProvisionerName is the provisioner identifier for
+	// QEMU-based virtual targets.
 	ProvisionerName = "qemu.jumpstarter.dev"
+
+	// DefaultExporterImage is the exporter sidecar image.
+	DefaultExporterImage = "quay.io/jumpstarter-dev/jumpstarter:latest"
+
+	// DefaultQEMURuntimeImage is the QEMU runtime container image.
+	DefaultQEMURuntimeImage = "quay.io/jumpstarter-dev/qemu-runtime:latest"
+
+	// sharedVolumeName is the name of the shared emptyDir volume
+	// used for Unix socket communication between the exporter
+	// sidecar and the QEMU runtime (QMP, serial, launcher).
+	sharedVolumeName = "shared"
+	sharedMountPath  = "/shared"
 )
 
 // Provisioner implements the qemu.jumpstarter.dev provisioner.
-// It renders Pods with a QEMU runtime container and an exporter sidecar,
-// communicating via Unix sockets on a shared emptyDir volume.
+// It renders Pods with a QEMU runtime container and an exporter
+// sidecar, communicating via Unix sockets on a shared emptyDir
+// volume.
 type Provisioner struct{}
 
 // New creates a new QEMU provisioner.
@@ -48,16 +64,24 @@ func (p *Provisioner) Name() string {
 	return ProvisionerName
 }
 
-// RenderPod creates a Pod spec for a new QEMU-based exporter instance.
-// The Pod uses the sidecar pattern:
-//   - Exporter sidecar (native sidecar init container, restartPolicy: Always)
-//   - QEMU runtime container (main container)
-//   - Shared emptyDir volume for Unix socket communication (QMP, serial, launcher)
+// RenderPod creates a Pod for a new QEMU-based exporter instance
+// using the native sidecar pattern (KEP-753):
 //
-// TODO: This is a stub. Full implementation will:
-//   - Apply scheduling constraints from VirtualTargetClass
-//   - Configure QEMU runtime from merged parameters (CPU, memory, firmware, etc.)
-//   - Set up exporter sidecar with driver configuration from ExporterSet template
+//   - Exporter sidecar (init container with restartPolicy: Always)
+//     starts first and drains last; registers with the controller.
+//   - QEMU runtime (main container) runs the virtual machine.
+//   - Shared emptyDir volume for Unix socket communication
+//     (QMP, serial console, launcher socket).
+//
+// The caller (reconciler) is responsible for setting
+// OwnerReferences on the Pod to ensure garbage collection when
+// the ExporterSet is deleted.
+//
+// TODO: Full implementation will:
+//   - Configure QEMU runtime from merged parameters
+//     (CPU, memory, firmware, machine type, etc.)
+//   - Set up exporter with driver config from ExporterSet
+//     template
 //   - Mount firmware/OS images as OCI volume sources
 func (p *Provisioner) RenderPod(
 	ctx context.Context,
@@ -65,20 +89,66 @@ func (p *Provisioner) RenderPod(
 	vtc *jumpstarterdevv1alpha1.VirtualTargetClass,
 	mergedParameters map[string]interface{},
 ) (*corev1.Pod, error) {
+	restartAlways := corev1.ContainerRestartPolicyAlways
+
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: fmt.Sprintf("%s-", exporterSet.Name),
 			Namespace:    exporterSet.Namespace,
 			Labels:       exporterSet.Spec.Template.Labels,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(
+					exporterSet,
+					schema.GroupVersionKind{
+						Group:   "jumpstarter.dev",
+						Version: "v1alpha1",
+						Kind:    "ExporterSet",
+					},
+				),
+			},
 		},
 		Spec: corev1.PodSpec{
-			// TODO: populate from VirtualTargetClass.scheduling
-			// TODO: render exporter sidecar + QEMU runtime containers
-			// TODO: add shared emptyDir volume
+			// Exporter runs as a native sidecar init container
+			// (KEP-753): starts before main containers and
+			// drains after them.
+			InitContainers: []corev1.Container{
+				{
+					Name:          "exporter",
+					Image:         DefaultExporterImage,
+					RestartPolicy: &restartAlways,
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      sharedVolumeName,
+							MountPath: sharedMountPath,
+						},
+					},
+					// TODO: configure exporter with driver
+					// config from ExporterSet template, inject
+					// controller endpoint, credentials, etc.
+				},
+			},
+			// QEMU runtime is the main container — independent
+			// image that can be versioned separately.
 			Containers: []corev1.Container{
 				{
 					Name:  "target-runtime",
-					Image: "quay.io/jumpstarter-dev/qemu-runtime:latest", // placeholder
+					Image: DefaultQEMURuntimeImage,
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      sharedVolumeName,
+							MountPath: sharedMountPath,
+						},
+					},
+					// TODO: configure QEMU from merged
+					// parameters (CPU, memory, firmware, etc.)
+				},
+			},
+			Volumes: []corev1.Volume{
+				{
+					Name: sharedVolumeName,
+					VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{},
+					},
 				},
 			},
 		},
@@ -92,14 +162,18 @@ func (p *Provisioner) RenderPod(
 		if vtc.Spec.Scheduling.Tolerations != nil {
 			pod.Spec.Tolerations = vtc.Spec.Scheduling.Tolerations
 		}
+		if vtc.Spec.Scheduling.Resources != nil {
+			// Apply resource requirements to target-runtime
+			pod.Spec.Containers[0].Resources = *vtc.Spec.Scheduling.Resources
+		}
 	}
 
 	return pod, nil
 }
 
 // Cleanup handles teardown of QEMU-based exporter instances.
-// For in-cluster QEMU, this is a no-op since deleting the Pod handles cleanup.
-// Future: clean up any external state if needed.
+// For in-cluster QEMU, this is a no-op since deleting the Pod
+// (via OwnerReference cascade) handles cleanup.
 func (p *Provisioner) Cleanup(
 	ctx context.Context,
 	exporterSet *jumpstarterdevv1alpha1.ExporterSet,

@@ -5,7 +5,7 @@
 | **JEP**           | 0014                                                           |
 | **Title**         | Virtual Scalable Exporters                                     |
 | **Author(s)**     | @mangelajo (Miguel Angel Ajo Pelayo)                           |
-| **Status**        | Draft                                                          |
+| **Status**        | Approved                                                       |
 | **Type**          | Standards Track                                                |
 | **Created**       | 2026-06-03                                                     |
 | **Updated**       | 2026-06-18                                                     |
@@ -285,7 +285,7 @@ spec:
   initContainers:
     - name: exporter                 # native sidecar (starts first, drains last)
       restartPolicy: Always
-      image: quay.io/jumpstarter-dev/exporter:latest
+      image: quay.io/jumpstarter-dev/jumpstarter:latest
   containers:
     - name: target-runtime           # QEMU/Cuttlefish — independent image
       image: quay.io/jumpstarter-dev/qemu-runtime:latest
