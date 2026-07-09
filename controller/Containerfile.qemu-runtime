@@ -15,4 +15,5 @@ RUN dnf install --setopt=install_weak_deps=False -y \
 
 USER 65532:65532
 
-ENTRYPOINT ["/usr/bin/qemu-kvm"]
+# No ENTRYPOINT — the exporter sidecar will manage QEMU
+# lifecycle via a launcher/wrapper on the shared volume.
