@@ -30,18 +30,21 @@
 
 ## Run
 
-**Terminal A — host the new Rust-core exporter** (HEAD `jmp run`, Python MockPower driver):
+Two terminals:
 
 ```bash
-JMP_DRIVERS_ALLOW=UNSAFE jmp run --exporter demo-compat
+./serve.sh   # terminal A: the NEW Rust-core exporter (Python MockPower driver)
+./run.sh     # terminal B: the OLD 0.7.4 client leases + runs `j power on`; prints the verdict
 ```
 
-**Terminal B — drive it with the OLD client.** Put the old venv's `bin` first on PATH (so the
-old `jmp` finds ITS OWN `j` and driver-client packages, exactly like a real pre-rewrite user with
-their venv activated), and note the old `jmp` takes the command with no `--`:
+Equivalent by hand — put the old venv's `bin` first on PATH (so the old `jmp` finds ITS OWN `j`
+and driver-client packages, exactly like a real pre-rewrite user with their venv activated), and
+note the old `jmp` takes the command with no `--`:
 
 ```bash
-export PATH="/tmp/jmp-old/.venv/bin:$PATH"
+JMP_DRIVERS_ALLOW=UNSAFE jmp run --exporter demo-compat        # terminal A (new venv)
+
+export PATH="/tmp/jmp-old/.venv/bin:$PATH"                     # terminal B
 JUMPSTARTER_GRPC_INSECURE=1 JMP_DRIVERS_ALLOW=UNSAFE \
     jmp shell --client demo-client --selector example.com/dut=compat j power on
 echo "exit=$?"   # 0 = the legacy DriverCall round-tripped through the Rust stack

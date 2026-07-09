@@ -24,24 +24,24 @@ Everything is Python here: the QEMU driver, its `power`/`console` children, and 
 
 ## Run
 
-Two terminals, both with the venv active. Run from the repo root (the exporter config's asset
-paths are repo-root-relative).
-
-**Terminal A — host the QEMU exporter** (spawns `qemu-system-aarch64` on this Mac):
+Two terminals. The test itself is right here — `test_qemu_boot.py` — and the scripts show
+exactly what runs:
 
 ```bash
-JMP_DRIVERS_ALLOW=UNSAFE jmp run --exporter demo-qemu
+./serve.sh                 # terminal A: host the QEMU exporter (spawns qemu-system-aarch64)
+DEBUG_CONSOLE=1 ./run.sh   # terminal B: lease the DUT + run test_qemu_boot.py
 ```
 
-**Terminal B — lease it through the controller and run the test:**
+`DEBUG_CONSOLE=1` mirrors the guest's serial output live — great for the audience to watch the
+kernel boot and the login happen. Extra `run.sh` args go to pytest.
+
+Equivalent by hand (venv active, from the repo root):
 
 ```bash
+JMP_DRIVERS_ALLOW=UNSAFE jmp run --exporter demo-qemu                     # terminal A
 jmp shell --client demo-client --selector example.com/dut=qemu -- \
-    pytest -s examples/rust-core-demo/act1-python-qemu/test_qemu_boot.py
+    pytest -s examples/rust-core-demo/act1-python-qemu/test_qemu_boot.py  # terminal B
 ```
-
-Add `DEBUG_CONSOLE=1` before `pytest` to mirror the guest's serial output live — great for the
-audience to watch the kernel boot and the login happen.
 
 ## What to say
 

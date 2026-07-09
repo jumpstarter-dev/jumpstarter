@@ -5,12 +5,15 @@ your users rely on changed, and it unlocks true multi-language.** Everything run
 laptop: a local kind cluster (podman/docker) with the **Rust controller + router**, exporters as
 local `jmp run` processes, and a real (small) QEMU VM as the DUT.
 
-| Act | Shows | Client | Driver(s) | DUT |
-|-----|-------|--------|-----------|-----|
+| Act | Shows | Client / test | Driver(s) | DUT |
+|-----|-------|---------------|-----------|-----|
 | 1 | "Nothing changed" | Python `pytest` | Python (QEMU) | real QEMU VM |
 | 2 | Multi-language clients | Kotlin / JUnit + **generated** client | Python `MockPower` | mock |
-| 3 | Polyglot exporter | native (Rust) `jmp`/`j` | **Python + Rust + Java** at once | mock |
+| 3 | Polyglot exporter | native `j` CLI + a **Rust `cargo test`** | **Python + Rust + Java** at once | mock |
 | 4 | Reveal + backwards-compat | **old 0.7.4** PyPI client | Python on a **Rust-core** exporter | mock |
+
+Tests exist in all three languages, each visible in its act's directory: `test_qemu_boot.py`
+(Act 1), `src/PowerNativeIT.kt` (Act 2), `power_test.rs` (Act 3).
 
 The controller/router are Rust from Act 1 — **don't reveal that until Act 4.**
 
@@ -65,17 +68,20 @@ redeploys the controller as Rust. To start clean: `bash cluster/down.sh --cluste
 
 ## Run order (the show)
 
-Each act = two terminals (venv active in both). Full steps in each act's README.
+Every act is two terminals and two scripts — `serve.sh` (host the exporter) ‖ `run.sh` (lease it
+and run the test). The scripts and the test sources live **in each act's directory**, so the
+audience can read exactly what's being run. One-time preps are noted; details in each act README.
 
-- **Act 1** — `act1-python-qemu/README.md`
-  `bash act1-python-qemu/fetch-image.sh` once, then
-  `jmp run --exporter demo-qemu` ‖ `jmp shell --client demo-client --selector example.com/dut=qemu -- pytest -s examples/rust-core-demo/act1-python-qemu/test_qemu_boot.py`
-- **Act 2** — `act2-kotlin-python/README.md`
-  `jmp run --exporter demo-mock` ‖ `(cd java && jmp shell --client demo-client --selector example.com/dut=mock -- ./gradlew :jumpstarter-driver-power-example:integrationTest)`
-- **Act 3** — `act3-polyglot/README.md`
-  `bash act3-polyglot/build-hosts.sh` once, then `jmp run --exporter demo-polyglot` (with the printed host env) ‖ `jmp shell --client demo-client --selector example.com/dut=polyglot -- sh -c 'j pypower on && j rustpower on && j jvmpower on'`
-- **Act 4** — `act4-backcompat/README.md`
-  reveal the Rust image, then `bash act4-backcompat/install-old-client.sh`, `jmp run --exporter demo-compat` ‖ `/tmp/jmp-old/.venv/bin/jmp shell --client demo-client --selector example.com/dut=compat j power on`
+- **Act 1** — `act1-python-qemu/`: the test is `test_qemu_boot.py`.
+  Prep once: `bash act1-python-qemu/fetch-image.sh`. Then `./serve.sh` ‖ `DEBUG_CONSOLE=1 ./run.sh`
+- **Act 2** — `act2-kotlin-python/`: the test is `src/PowerNativeIT.kt` (compiled by the gradle
+  module via an external srcDir — this file IS what runs). `./serve.sh` ‖ `./run.sh`
+- **Act 3** — `act3-polyglot/`: the drivers are declared in `exporter.yaml`; `run.sh` first tours
+  them with `j`, then runs the native Rust test `power_test.rs` (compiled by
+  `jumpstarter-driver-power-pure-client` via a `#[path]` shim — this file IS what runs).
+  Prep once: `bash act3-polyglot/build-hosts.sh`. Then `./serve.sh` ‖ `./run.sh`
+- **Act 4** — `act4-backcompat/`: reveal the Rust image (see README), then
+  prep once: `bash act4-backcompat/install-old-client.sh`. Then `./serve.sh` ‖ `./run.sh`
 
 ---
 

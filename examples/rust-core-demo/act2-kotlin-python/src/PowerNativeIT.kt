@@ -7,14 +7,18 @@ import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 
 /**
- * End-to-end proof that a JVM caller drives a real Python driver through stock gRPC stubs whose
- * channel rides the Rust UniFFI transport — no JVM-side socket. Runs under `jmp shell` against a
- * direct `MockPower` exporter (JUMPSTARTER_HOST set):
+ * Act 2 of the rust-core demo: a JUnit/Kotlin test drives a real **Python** power driver through
+ * the **generated** Kotlin [PowerClient] — stock grpc-java stubs whose channel rides the Rust
+ * UniFFI transport. There is no JVM-side gRPC socket; the Rust core owns all I/O.
  *
- *   jmp run --exporter-config e2e/exporters/exporter-direct-power.yaml \
- *           --tls-grpc-listener 19093 --tls-grpc-insecure
- *   jmp shell --tls-grpc 127.0.0.1:19093 --tls-grpc-insecure -- \
- *           ./gradlew :jumpstarter-client:integrationTest
+ * This file lives in `examples/rust-core-demo/act2-kotlin-python/` so demo readers see exactly
+ * what runs; the gradle module `:jumpstarter-driver-power-example` compiles it via an external
+ * test srcDir. Run it under a controller lease — `serve.sh` + `run.sh` next to this file, or:
+ *
+ *   jmp run --exporter demo-mock                                     # terminal A
+ *   cd java && jmp shell --client demo-client --selector example.com/dut=mock -- \
+ *       ./gradlew :jumpstarter-driver-power-example:integrationTest \
+ *       --tests "*PowerNativeIT"                                     # terminal B
  */
 @Tag("integration")
 class PowerNativeIT {

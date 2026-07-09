@@ -4,10 +4,11 @@
 **generated Kotlin client** — against the *same* kind of Python driver. Multi-language, from one
 set of Protobuf interfaces, over the same Rust transport.
 
-The test is already in the tree: `PowerNativeIT` drives the Python `MockPower` through the
-generated `PowerClient`:
+**The test is right here: [`src/PowerNativeIT.kt`](src/PowerNativeIT.kt)** — it drives the
+Python `MockPower` through the generated `PowerClient`. The gradle module
+`:jumpstarter-driver-power-example` compiles this directory as an external test srcDir, so the
+file you're reading in the demo folder is the exact code that runs (no copy to drift).
 
-- Test: `java/jumpstarter-driver-power-example/src/test/kotlin/dev/jumpstarter/examples/power/PowerNativeIT.kt`
 - Generated client (regenerated each build, never committed):
   `java/jumpstarter-driver-power-example/build/generated/jumpstarter/clients/PowerClient.kt`
 
@@ -24,18 +25,20 @@ Unix-domain-socket pain simply doesn't exist here. The socket is Rust's.
 
 ## Run
 
-**Terminal A — host the Python power driver:**
+Two terminals:
 
 ```bash
-JMP_DRIVERS_ALLOW=UNSAFE jmp run --exporter demo-mock
+./serve.sh   # terminal A: host the Python power driver
+./run.sh     # terminal B: lease it + run src/PowerNativeIT.kt via gradle
 ```
 
-**Terminal B — lease it through the controller and run the JUnit/Kotlin test:**
+Equivalent by hand (venv active):
 
 ```bash
-cd java
-jmp shell --client demo-client --selector example.com/dut=mock -- \
-    ./gradlew :jumpstarter-driver-power-example:integrationTest --tests "*PowerNativeIT"
+JMP_DRIVERS_ALLOW=UNSAFE jmp run --exporter demo-mock                       # terminal A
+cd java && jmp shell --client demo-client --selector example.com/dut=mock -- \
+    ./gradlew :jumpstarter-driver-power-example:integrationTest \
+    --tests "*PowerNativeIT"                                                # terminal B
 ```
 
 > Scope to `*PowerNativeIT` — the module also carries `PowerLeaseExtensionTest`, whose assertions

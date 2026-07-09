@@ -14,6 +14,9 @@ log "building the native Rust driver host (jmp-rust-host) — serves rust:power"
 RUST_HOST="$REPO_ROOT/rust/target/debug/jmp-rust-host"
 [ -x "$RUST_HOST" ] || { err "jmp-rust-host not found at $RUST_HOST"; exit 1; }
 
+log "pre-building the Act-3 Rust test (power_test.rs) so run.sh doesn't compile inside the lease"
+( cd "$REPO_ROOT/rust" && cargo test -p jumpstarter-driver-power-pure-client --test rust_core_demo --no-run )
+
 log "building the JVM driver host (installDist) — serves jvm:KotlinPowerDriver"
 ( cd "$REPO_ROOT/java" && ./gradlew --console=plain :jumpstarter-driver-power-example:installDist )
 JVM_HOST="$(ls "$REPO_ROOT"/java/jumpstarter-driver-power-example/build/install/*/bin/jumpstarter-exporter-host 2>/dev/null | head -1 || true)"

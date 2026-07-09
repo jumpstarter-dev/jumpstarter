@@ -6,6 +6,13 @@
 (its own runtime/GIL), federated by UUID through the Rust hub, every call a native per-interface
 gRPC over the unified Rust transport.
 
+Then the same three drivers are driven **from a native Rust test** —
+[`power_test.rs`](power_test.rs), right here in this directory — using the build-time-generated
+typed `PowerClient`. With Act 1 (pytest) and Act 2 (JUnit/Kotlin) that completes the trilogy:
+the same interface, the same transport, a native test in every language. (The crate
+`jumpstarter-driver-power-pure-client` compiles this file via a `#[path]` shim, so the file you
+read here is the exact code that runs.)
+
 This is the payoff of the interface-first, transport-in-Rust design: the language a driver is
 written in is just a hosting detail.
 
@@ -22,24 +29,11 @@ written in is just a hosting detail.
 
 ## Run
 
-**Terminal A — host the polyglot exporter** (paste the exports printed by `build-hosts.sh`):
+Two terminals — the scripts carry the full host wiring and the exact `j` commands:
 
 ```bash
-export JMP_DRIVER_HOST_PYTHON="$PWD/python/.venv/bin/python"
-export JMP_RUST_DRIVER_HOST="$PWD/rust/target/debug/jmp-rust-host"
-export JMP_JVM_DRIVER_HOST="$(ls "$PWD"/java/jumpstarter-driver-power-example/build/install/*/bin/jumpstarter-exporter-host | head -1)"
-export JMP_DRIVERS_ALLOW=UNSAFE
-jmp run --exporter demo-polyglot
-```
-
-**Terminal B — lease it and drive all three from the Rust client:**
-
-```bash
-jmp shell --client demo-client --selector example.com/dut=polyglot -- sh -c '
-  echo "== report ==" && j &&
-  echo "== python driver ==" && j pypower on &&
-  echo "== rust driver =="   && j rustpower on &&
-  echo "== java driver =="   && j jvmpower on'
+./serve.sh   # terminal A: spawn the 3 per-language driver hosts + register the exporter
+./run.sh     # terminal B: one lease; j pypower/rustpower/jvmpower, then the Rust test power_test.rs
 ```
 
 Or interactively:
@@ -74,7 +68,7 @@ The **JVM** entry is coded but not covered by that mixed test — it's the riski
 - `rust:power` is served by `jmp-rust-host` (from `jumpstarter-driver-example`). All three drivers
   advertise the Python `PowerClient` as their client, so `j <name> on` renders the typed client via
   Python while the **driver** runs in its native language — the point being the polyglot *drivers*
-  + Rust hub/transport. (Swap `rustpower` to `type: rust:jumpstarter-driver-power-pure` for a
+  and the Rust hub/transport. (Swap `rustpower` to `type: rust:jumpstarter-driver-power-pure` for a
   genuinely native Rust typed client, if you want that flourish and have built its client binary.)
 - Per-entry `host:` in the exporter config can pin any entry to a specific host binary if the
   env-based resolution above isn't convenient.
