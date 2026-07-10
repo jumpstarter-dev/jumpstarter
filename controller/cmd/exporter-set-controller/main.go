@@ -30,9 +30,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/exporterset"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/exporterset/provisioners/qemu"
+	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/qemu"
 )
 
 var (
