@@ -3,9 +3,9 @@ package v1alpha1
 import (
 	"strings"
 
-	cpb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1"
-	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/utils"
+	cpb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/client/v1"
+	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/service/utils"
 	"google.golang.org/protobuf/proto"
 	"k8s.io/apimachinery/pkg/api/meta"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"

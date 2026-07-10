@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/api/v1alpha1"
+	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 )

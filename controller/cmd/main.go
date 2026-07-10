@@ -43,14 +43,14 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authorization"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/config"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/controller"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service/login"
+	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authorization"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/config"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/controller"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/service"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/service/login"
 
 	// +kubebuilder:scaffold:imports
 

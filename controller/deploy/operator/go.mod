@@ -1,4 +1,4 @@
-module github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator
+module github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator
 
 go 1.24.0
 
@@ -6,7 +6,7 @@ require (
 	github.com/cert-manager/cert-manager v1.18.6
 	github.com/go-logr/logr v1.4.3
 	github.com/google/uuid v1.6.0
-	github.com/jumpstarter-dev/jumpstarter-controller v0.7.1
+	github.com/jumpstarter-dev/jumpstarter/controller v0.7.1
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
 	github.com/openshift/api v0.0.0-20251023135607-98e18dae8c7a
@@ -20,7 +20,7 @@ require (
 	sigs.k8s.io/yaml v1.6.0
 )
 
-replace github.com/jumpstarter-dev/jumpstarter-controller => ../../
+replace github.com/jumpstarter-dev/jumpstarter/controller => ../../
 
 require (
 	cel.dev/expr v0.25.1 // indirect

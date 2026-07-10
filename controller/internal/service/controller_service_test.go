@@ -29,9 +29,9 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
-	jlog "github.com/jumpstarter-dev/jumpstarter-controller/internal/log"
-	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
+	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	jlog "github.com/jumpstarter-dev/jumpstarter/controller/internal/log"
+	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"

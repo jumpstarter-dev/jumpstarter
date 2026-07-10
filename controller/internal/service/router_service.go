@@ -26,9 +26,9 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
-	jlog "github.com/jumpstarter-dev/jumpstarter-controller/internal/log"
-	pb "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
+	jlog "github.com/jumpstarter-dev/jumpstarter/controller/internal/log"
+	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"

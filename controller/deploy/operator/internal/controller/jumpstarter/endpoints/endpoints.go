@@ -28,8 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/api/v1alpha1"
-	"github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/internal/utils"
+	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/internal/utils"
 )
 
 // Reconciler provides endpoint reconciliation functionality

@@ -46,10 +46,10 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
 
-	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/api/v1alpha1"
-	"github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/internal/controller/jumpstarter/endpoints"
-	loglevels "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/internal/log"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/config"
+	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/internal/controller/jumpstarter/endpoints"
+	loglevels "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/internal/log"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/config"
 )
 
 const (
