@@ -58,10 +58,12 @@ spec:
             description: ExporterSetSpec defines the desired state of ExporterSet.
             properties:
               maxReplicas:
-                default: 10
-                description: MaxReplicas is the maximum number of instances (ceiling).
+                default: 4
+                description: |-
+                  MaxReplicas is the maximum number of instances (ceiling).
+                  0 means no upper bound.
                 format: int32
-                minimum: 1
+                minimum: 0
                 type: integer
               minAvailableReplicas:
                 default: 0
@@ -176,7 +178,6 @@ spec:
                 minLength: 1
                 type: string
             required:
-            - maxReplicas
             - selector
             - template
             - virtualTargetClassName

@@ -1,5 +1,5 @@
 /*
-Copyright 2024.
+Copyright 2026 The Jumpstarter Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -68,9 +68,10 @@ type ExporterSetSpec struct {
 	MinReplicas int32 `json:"minReplicas,omitempty"`
 
 	// MaxReplicas is the maximum number of instances (ceiling).
-	// +kubebuilder:default=10
-	// +kubebuilder:validation:Minimum=1
-	MaxReplicas int32 `json:"maxReplicas"`
+	// 0 means no upper bound.
+	// +kubebuilder:default=4
+	// +kubebuilder:validation:Minimum=0
+	MaxReplicas int32 `json:"maxReplicas,omitempty"`
 
 	// MinAvailableReplicas is the warm buffer: ready and unleased instances.
 	// +kubebuilder:default=0
