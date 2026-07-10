@@ -190,17 +190,14 @@ docker-push: ## Push docker image with the manager.
 PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
-	# copy existing Containerfile and insert --platform=${BUILDPLATFORM} into Containerfile.cross, and preserve the original Containerfile
-	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' ../../Containerfile.operator > ../../Containerfile.operator.cross
 	- $(CONTAINER_TOOL) buildx create --name jumpstarter-operator-builder
 	$(CONTAINER_TOOL) buildx use jumpstarter-operator-builder
 	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) \
 		--build-arg GIT_VERSION=$(GIT_VERSION) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
-		--tag ${IMG} -f ../../Containerfile.operator.cross ../../
+		--tag ${IMG} -f ../../Containerfile.operator ../../
 	- $(CONTAINER_TOOL) buildx rm jumpstarter-operator-builder
-	rm ../../Containerfile.operator.cross
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
