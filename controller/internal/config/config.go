@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
 	corev1 "k8s.io/api/core/v1"

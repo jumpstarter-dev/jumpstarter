@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
-	jlog "github.com/jumpstarter-dev/jumpstarter-controller/internal/log"
+	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
+	jlog "github.com/jumpstarter-dev/jumpstarter/controller/internal/log"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	grpcpeer "google.golang.org/grpc/peer"

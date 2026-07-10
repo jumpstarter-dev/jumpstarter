@@ -6,7 +6,7 @@ import (
 	"net"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 

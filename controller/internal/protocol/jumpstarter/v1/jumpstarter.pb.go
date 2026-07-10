@@ -2007,7 +2007,7 @@ const file_jumpstarter_v1_jumpstarter_proto_rawDesc = "" +
 	"\tGetStatus\x12 .jumpstarter.v1.GetStatusRequest\x1a!.jumpstarter.v1.GetStatusResponse\x12S\n" +
 	"\n" +
 	"EndSession\x12!.jumpstarter.v1.EndSessionRequest\x1a\".jumpstarter.v1.EndSessionResponseB\xe1\x01\n" +
-	"\x12com.jumpstarter.v1B\x10JumpstarterProtoP\x01Z`github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3"
+	"\x12com.jumpstarter.v1B\x10JumpstarterProtoP\x01Z`github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3"
 
 var (
 	file_jumpstarter_v1_jumpstarter_proto_rawDescOnce sync.Once

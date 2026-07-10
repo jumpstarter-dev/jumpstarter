@@ -324,7 +324,7 @@ const file_jumpstarter_v1_kubernetes_proto_rawDesc = "" +
 	"\a_reasonB\n" +
 	"\n" +
 	"\b_messageB\xe0\x01\n" +
-	"\x12com.jumpstarter.v1B\x0fKubernetesProtoP\x01Z`github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3"
+	"\x12com.jumpstarter.v1B\x0fKubernetesProtoP\x01Z`github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3"
 
 var (
 	file_jumpstarter_v1_kubernetes_proto_rawDescOnce sync.Once

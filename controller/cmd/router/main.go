@@ -28,8 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/go-logr/logr"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/config"
-	"github.com/jumpstarter-dev/jumpstarter-controller/internal/service"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/config"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/service"
 
 	_ "google.golang.org/grpc/encoding/gzip"
 )

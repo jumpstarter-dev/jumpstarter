@@ -14,7 +14,7 @@
 package clientv1
 
 import (
-	v1 "github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/v1"
+	v1 "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -1031,7 +1031,7 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\vUpdateLease\x12).jumpstarter.client.v1.UpdateLeaseRequest\x1a\x1c.jumpstarter.client.v1.Lease\"I\xdaA\x11lease,update_mask\x82\xd3\xe4\x93\x02/:\x05lease2&/v1/{lease.name=namespaces/*/leases/*}\x12\x81\x01\n" +
 	"\vDeleteLease\x12).jumpstarter.client.v1.DeleteLeaseRequest\x1a\x16.google.protobuf.Empty\"/\xdaA\x04name\x82\xd3\xe4\x93\x02\"* /v1/{name=namespaces/*/leases/*}\x12\xa0\x01\n" +
 	"\vRotateToken\x12).jumpstarter.client.v1.RotateTokenRequest\x1a*.jumpstarter.client.v1.RotateTokenResponse\":\xdaA\x06parent\x82\xd3\xe4\x93\x02+:\x01*\"&/v1/{parent=namespaces/*}/rotate-tokenB\x82\x02\n" +
-	"\x19com.jumpstarter.client.v1B\vClientProtoP\x01Zbgithub.com/jumpstarter-dev/jumpstarter-controller/internal/protocol/jumpstarter/client/v1;clientv1\xa2\x02\x03JCX\xaa\x02\x15Jumpstarter.Client.V1\xca\x02\x15Jumpstarter\\Client\\V1\xe2\x02!Jumpstarter\\Client\\V1\\GPBMetadata\xea\x02\x17Jumpstarter::Client::V1b\x06proto3"
+	"\x19com.jumpstarter.client.v1B\vClientProtoP\x01Zbgithub.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/client/v1;clientv1\xa2\x02\x03JCX\xaa\x02\x15Jumpstarter.Client.V1\xca\x02\x15Jumpstarter\\Client\\V1\xe2\x02!Jumpstarter\\Client\\V1\\GPBMetadata\xea\x02\x17Jumpstarter::Client::V1b\x06proto3"
 
 var (
 	file_jumpstarter_client_v1_client_proto_rawDescOnce sync.Once

@@ -19,7 +19,7 @@ package endpoints
 import (
 	"fmt"
 
-	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/deploy/operator/api/v1alpha1"
+	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 )
 
 // ensureEndpointServiceType ensures an endpoint has a service type enabled.

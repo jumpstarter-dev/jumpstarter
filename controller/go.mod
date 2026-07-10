@@ -1,4 +1,4 @@
-module github.com/jumpstarter-dev/jumpstarter-controller
+module github.com/jumpstarter-dev/jumpstarter/controller
 
 go 1.24.0
 
