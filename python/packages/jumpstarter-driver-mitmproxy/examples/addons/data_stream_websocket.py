@@ -131,7 +131,7 @@ class Handler:
                     "normal", DEFAULT_SCENARIOS["normal"],
                 ))
 
-                task = asyncio.ensure_future(
+                task = asyncio.create_task(
                     self._push_telemetry(
                         flow, scenario, interval_ms / 1000.0,
                     )
@@ -169,7 +169,7 @@ class Handler:
                 new_scenario, DEFAULT_SCENARIOS["normal"],
             ))
             interval_ms = config.get("push_interval_ms", 100)
-            task = asyncio.ensure_future(
+            task = asyncio.create_task(
                 self._push_telemetry(
                     flow, scenario, interval_ms / 1000.0,
                 )

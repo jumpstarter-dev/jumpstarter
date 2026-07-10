@@ -67,27 +67,31 @@ class Tftp(Driver):
         return "jumpstarter_driver_tftp.client.TftpServerClient"
 
     def _start_server(self):
-        self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
+        try:
+            asyncio.run(self._run_server_lifecycle())
+        except Exception as e:
+            self.logger.error(f"Error running TFTP server: {e}")
+        finally:
+            self.logger.info("TFTP server thread completed")
+
+    async def _run_server_lifecycle(self):
+        """Set up and run the TFTP server within a proper async context.
+
+        This ensures asyncio.Event() objects inside TftpServer are created
+        with a running event loop, as required by Python 3.14+.
+        """
+        self._loop = asyncio.get_running_loop()
         self.server = TftpServer(
             host=self.host,
             port=self.port,
             operator=self.children["storage"]._operator,
             logger=self.logger,
         )
+        self._loop_ready.set()
         try:
-            self._loop_ready.set()
-            self._loop.run_until_complete(self._run_server())
-        except Exception as e:
-            self.logger.error(f"Error running TFTP server: {e}")
+            await self._run_server()
         finally:
-            try:
-                self._loop.run_until_complete(self._loop.shutdown_asyncgens())
-                self._loop.close()
-            except Exception as e:
-                self.logger.error(f"Error during event loop cleanup: {e}")
             self._loop = None
-            self.logger.info("TFTP server thread completed")
 
     async def _run_server(self):
         try:
