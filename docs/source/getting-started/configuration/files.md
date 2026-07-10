@@ -46,6 +46,10 @@ token: "******************" # An authentication token
 drivers:
   allow: ["jumpstarter_drivers_*", "vendorpackage.*"] # Driver packages the client can dynamically load
   unsafe: false # Allow any driver package to load dynamically
+leases:
+  acquisition_timeout: 7200 # Timeout in seconds for lease acquisition (default: 7200)
+  dial_timeout: 60 # Time limit for the exporter to become ready after lease is acquired (default: 60)
+  retry_timeout: 300 # Time limit for re-attempting a lease when the exporter becomes unreachable (default: 300, 0 to disable)
 ```
 
 **Environment Variables**:
@@ -59,6 +63,16 @@ drivers:
 - `JMP_TOKEN` - Auth token (overrides config file)
 - `JMP_DRIVERS_ALLOW` - Comma-separated list of allowed driver namespaces
 - `JUMPSTARTER_FORCE_SYSTEM_CERTS` - Set to `1` to force system CA certificates
+- `JMP_RETRY_TIMEOUT` - Retry timeout in seconds for unreachable exporters (overrides config, default: 300)
+- `JMP_DIAL_TIMEOUT` - Dial timeout in seconds for slow exporters (overrides config, default: 60)
+- `JMP_OIDC_CALLBACK_PORT` - Local port for the OIDC callback during `jmp login` (useful for SSH tunneling; default: OS-assigned)
+- `JMP_GRPC_PASSPHRASE` - Shared passphrase for authenticating against passphrase-protected exporters
+
+**Shell Session Variables** (automatically set by `jmp shell`):
+
+- `JMP_LEASE` - Active lease name (enables reconnection via `JMP_LEASE=<name> jmp shell`)
+- `JMP_EXPORTER` - Name of the connected exporter
+- `JMP_EXPORTER_LABELS` - Connected exporter's labels as comma-separated `key=value` pairs
 
 **CLI Commands**:
 ```{code-block}  console
@@ -130,6 +144,7 @@ boundaries. See [{term}`Hook`s](../../introduction/hooks.md) for full details on
 - `JMP_TOKEN` - Auth token (overrides config file)
 - `JMP_NAMESPACE` - Namespace in the {term}`controller`
 - `JMP_NAME` - {term}`Exporter` name
+- `JMP_DISABLE_COMPRESSION` - Set to `1` to disable stream compression (gzip, xz, bz2, zstd) for driver data transfers
 
 **CLI Commands**:
 ```{code-block}  console
