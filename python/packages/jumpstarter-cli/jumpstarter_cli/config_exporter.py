@@ -3,6 +3,9 @@ from jumpstarter_cli_common.opt import (
     OutputMode,
     OutputType,
     PathOutputType,
+    confirm_insecure_tls,
+    opt_insecure_tls,
+    opt_nointeractive,
     opt_output_all,
     opt_output_path_only,
 )
@@ -10,6 +13,7 @@ from jumpstarter_cli_common.print import model_print
 
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1, ObjectMeta
+from jumpstarter.config.tls import TLSConfigV1Alpha1
 
 
 def _validate_alias_param(ctx, param, value):
@@ -35,20 +39,27 @@ def config_exporter():
 @click.option("--name", prompt=True)
 @click.option("--endpoint", prompt=True)
 @click.option("--token", prompt=True)
+@opt_insecure_tls
+@opt_nointeractive
 @opt_output_path_only
 @arg_alias
-def create_exporter_config(alias, namespace, name, endpoint, token, output: PathOutputType):
+def create_exporter_config(
+    alias, namespace, name, endpoint, token, insecure_tls, nointeractive, output: PathOutputType
+):
     """Create an exporter config."""
     # Guard against overwriting an existing user-level config (the write target).
     # A same-named config in the system location (/etc) is allowed to be shadowed.
     if ExporterConfigV1Alpha1.user_config_exists(alias):
         raise click.ClickException(f'exporter "{alias}" exists')
 
+    confirm_insecure_tls(insecure_tls, nointeractive)
+
     config = ExporterConfigV1Alpha1(
         alias=alias,
         metadata=ObjectMeta(namespace=namespace, name=name),
         endpoint=endpoint,
         token=token,
+        tls=TLSConfigV1Alpha1(insecure=insecure_tls),
     )
     path = ExporterConfigV1Alpha1.save(config)
 

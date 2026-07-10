@@ -84,11 +84,10 @@ def test_edit_passes_string_filename_to_click_edit():
     mock_config = MagicMock()
     mock_config.path = Path("/etc/jumpstarter/exporters/default.yaml")
 
-    with patch(
-        "jumpstarter_cli.config_exporter.ExporterConfigV1Alpha1"
-    ) as mock_exporter_cls, patch(
-        "jumpstarter_cli.config_exporter.click.edit"
-    ) as mock_edit:
+    with (
+        patch("jumpstarter_cli.config_exporter.ExporterConfigV1Alpha1") as mock_exporter_cls,
+        patch("jumpstarter_cli.config_exporter.click.edit") as mock_edit,
+    ):
         mock_exporter_cls.load.return_value = mock_config
 
         runner = CliRunner()
@@ -97,15 +96,11 @@ def test_edit_passes_string_filename_to_click_edit():
         assert result.exit_code == 0
         mock_edit.assert_called_once()
         filename_arg = mock_edit.call_args[1]["filename"]
-        assert isinstance(filename_arg, str), (
-            f"Expected str but got {type(filename_arg).__name__}"
-        )
+        assert isinstance(filename_arg, str), f"Expected str but got {type(filename_arg).__name__}"
 
 
 def test_edit_nonexistent_exporter_shows_error():
-    with patch(
-        "jumpstarter_cli.config_exporter.ExporterConfigV1Alpha1"
-    ) as mock_exporter_cls:
+    with patch("jumpstarter_cli.config_exporter.ExporterConfigV1Alpha1") as mock_exporter_cls:
         mock_exporter_cls.load.side_effect = FileNotFoundError
 
         runner = CliRunner()
@@ -113,3 +108,51 @@ def test_edit_nonexistent_exporter_shows_error():
 
         assert result.exit_code != 0
         assert "does not exist" in result.output
+
+
+def test_create_exporter_default_tls(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setattr(ExporterConfigV1Alpha1, "BASE_PATH", tmp_path / "user")
+    monkeypatch.setattr(ExporterConfigV1Alpha1, "SYSTEM_CONFIG_PATH", tmp_path / "system")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        config_exporter,
+        ["create", "myexporter"],
+        input="default\nmyexporter\njumpstarter.my-lab.com:1443\ntest-token\n",
+    )
+    assert result.exit_code == 0, result.output
+
+    config = ExporterConfigV1Alpha1.load("myexporter")
+    assert config.tls.insecure is False
+
+
+def test_create_exporter_insecure_tls(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setattr(ExporterConfigV1Alpha1, "BASE_PATH", tmp_path / "user")
+    monkeypatch.setattr(ExporterConfigV1Alpha1, "SYSTEM_CONFIG_PATH", tmp_path / "system")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        config_exporter,
+        ["create", "--insecure-tls", "--nointeractive", "myexporter"],
+        input="default\nmyexporter\njumpstarter.my-lab.com:1443\ntest-token\n",
+    )
+    assert result.exit_code == 0, result.output
+
+    config = ExporterConfigV1Alpha1.load("myexporter")
+    assert config.tls.insecure is True
+
+
+def test_create_exporter_insecure_tls_short_flag(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setattr(ExporterConfigV1Alpha1, "BASE_PATH", tmp_path / "user")
+    monkeypatch.setattr(ExporterConfigV1Alpha1, "SYSTEM_CONFIG_PATH", tmp_path / "system")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        config_exporter,
+        ["create", "-k", "--nointeractive", "myexporter"],
+        input="default\nmyexporter\njumpstarter.my-lab.com:1443\ntest-token\n",
+    )
+    assert result.exit_code == 0, result.output
+
+    config = ExporterConfigV1Alpha1.load("myexporter")
+    assert config.tls.insecure is True
