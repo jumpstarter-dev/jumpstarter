@@ -117,12 +117,6 @@ class DutlinkPower(DutlinkConfig, PowerInterface, Driver):
         self.last_action = action
         return result
 
-    def reset(self):
-        self.off()
-
-    def close(self):
-        self.off()
-
     @export
     def on(self) -> None:
         self.control("on")
@@ -188,12 +182,6 @@ class DutlinkStorageMux(DutlinkConfig, StorageMuxFlasherInterface, Driver):
             action,
             None,
         )
-
-    def reset(self):
-        self.off()
-
-    def close(self):
-        self.off()
 
     @export
     def host(self):
