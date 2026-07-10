@@ -1060,9 +1060,9 @@ class TestShellWithSignalHandlingExceptionGroup:
 
         @asynccontextmanager
         async def lease_async(
-        selector, exporter_name, lease_name, duration, portal,
-        acquisition_timeout, retry_timeout=None, dial_timeout=None,
-    ):
+            selector, exporter_name, lease_name, duration, portal,
+            acquisition_timeout, retry_timeout=None, dial_timeout=None,
+        ):
             yield lease
 
         config.lease_async = lease_async
@@ -1143,9 +1143,9 @@ class TestRetryLoopTimeout:
 
         @asynccontextmanager
         async def lease_async(
-        selector, exporter_name, lease_name, duration, portal,
-        acquisition_timeout, retry_timeout=None, dial_timeout=None,
-    ):
+            selector, exporter_name, lease_name, duration, portal,
+            acquisition_timeout, retry_timeout=None, dial_timeout=None,
+        ):
             yield lease
 
         config.lease_async = lease_async
@@ -1187,9 +1187,9 @@ class TestRetryLoopTimeout:
 
         @asynccontextmanager
         async def lease_async(
-        selector, exporter_name, lease_name, duration, portal,
-        acquisition_timeout, retry_timeout=None, dial_timeout=None,
-    ):
+            selector, exporter_name, lease_name, duration, portal,
+            acquisition_timeout, retry_timeout=None, dial_timeout=None,
+        ):
             yield lease
 
         config.lease_async = lease_async
@@ -1229,9 +1229,9 @@ class TestRetryLoopTimeout:
 
         @asynccontextmanager
         async def lease_async(
-        selector, exporter_name, lease_name, duration, portal,
-        acquisition_timeout, retry_timeout=None, dial_timeout=None,
-    ):
+            selector, exporter_name, lease_name, duration, portal,
+            acquisition_timeout, retry_timeout=None, dial_timeout=None,
+        ):
             yield lease
 
         config.lease_async = lease_async
