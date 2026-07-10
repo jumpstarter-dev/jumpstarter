@@ -3,6 +3,8 @@
 import logging
 import os
 import select
+import stat
+import tempfile
 import time
 from collections.abc import Awaitable
 from dataclasses import dataclass
@@ -12,7 +14,7 @@ import anyio
 from anyio import CancelScope
 
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus, LogSource
-from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JUMPSTARTER_HOST
+from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_MOTD_FILE, JUMPSTARTER_HOST
 from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
 from jumpstarter.exporter.session import Session
 
@@ -24,6 +26,9 @@ logger = logging.getLogger(__name__)
 MAX_DRAIN_BYTES = 256 * 1024
 DRAIN_TIMEOUT_SECONDS = 2.0
 DRAIN_MAX_EMPTY_POLLS = 10
+
+# Upper bound on hook-contributed motd content read from $JMP_MOTD_FILE.
+MAX_MOTD_BYTES = 64 * 1024
 
 # Module-level reference to time.monotonic so tests can patch it without
 # affecting the asyncio event loop (which also uses time.monotonic).
@@ -180,9 +185,52 @@ class HookExecutor:
             hook_env.get("CLIENT_NAME", "NOT_SET"),
         )
 
-        return await self._execute_hook_process(
-            hook_config, lease_scope, log_source, hook_env, lease_scope.session, hook_type
-        )
+        # $JMP_MOTD_FILE is beforeLease-only; clear any inherited value first
+        hook_env.pop(JMP_MOTD_FILE, None)
+        motd_file = None
+        if hook_type == "before_lease":
+            fd, motd_file = tempfile.mkstemp(prefix="jmp-motd-")
+            os.close(fd)
+            hook_env[JMP_MOTD_FILE] = motd_file
+
+        try:
+            result = await self._execute_hook_process(
+                hook_config, lease_scope, log_source, hook_env, lease_scope.session, hook_type
+            )
+            if motd_file:
+                self._append_hook_motd(lease_scope.session, motd_file)
+            return result
+        finally:
+            if motd_file:
+                try:
+                    os.unlink(motd_file)
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _append_hook_motd(session: Session, motd_file: str) -> None:
+        """Append hook-written motd content to the session motd.
+
+        The hook controls this path: O_NONBLOCK avoids hanging on a FIFO,
+        non-regular files are skipped, and the read is capped.
+        """
+        try:
+            fd = os.open(motd_file, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError as e:
+            logger.warning("Failed to open hook motd file %s: %s", motd_file, e)
+            return
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                logger.warning("Hook motd file %s is not a regular file, ignoring", motd_file)
+                return
+            content = os.read(fd, MAX_MOTD_BYTES).decode(errors="replace").strip()
+        except OSError as e:
+            logger.warning("Failed to read hook motd file %s: %s", motd_file, e)
+            return
+        finally:
+            os.close(fd)
+        if content:
+            session.motd = "\n".join(filter(None, [session.motd, content]))
 
     def _handle_hook_failure(
         self,

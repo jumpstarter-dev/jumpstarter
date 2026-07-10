@@ -104,6 +104,34 @@ export:
     assert config == ExporterConfigV1Alpha1.load("test")
 
 
+def test_exporter_config_with_motd(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setattr(ExporterConfigV1Alpha1, "BASE_PATH", tmp_path)
+
+    path = tmp_path / "test-motd.yaml"
+
+    text = """apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: test-motd
+motd: |
+  You have been assigned to exporter test-motd.
+  Flash the device with: j storage flash
+export: {}
+"""
+    path.write_text(text, encoding="utf-8")
+
+    config = ExporterConfigV1Alpha1.load("test-motd")
+
+    assert config.motd == ("You have been assigned to exporter test-motd.\nFlash the device with: j storage flash\n")
+
+    path.unlink()
+
+    ExporterConfigV1Alpha1.save(config)
+
+    assert ExporterConfigV1Alpha1.load("test-motd").motd == config.motd
+
+
 def test_exporter_config_with_hooks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr(ExporterConfigV1Alpha1, "BASE_PATH", tmp_path)
 

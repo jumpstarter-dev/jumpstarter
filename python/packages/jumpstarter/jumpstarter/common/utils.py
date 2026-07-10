@@ -150,6 +150,7 @@ def launch_shell(
     lease=None,
     insecure: bool = False,
     passphrase: str | None = None,
+    motd: str | None = None,
 ) -> int:
     """Launch a shell with a custom prompt indicating the exporter type.
 
@@ -161,6 +162,7 @@ def launch_shell(
         use_profiles: Whether to load shell profile files
         command: Optional command to run instead of launching an interactive shell
         lease: Optional Lease object to set up lease ending callback
+        motd: Optional message of the day printed before interactive shells
 
     Returns:
         The exit code of the shell or command process
@@ -175,6 +177,9 @@ def launch_shell(
 
     if command:
         return _run_process(list(command), common_env, lease)
+
+    if motd:
+        print(motd, flush=True)
 
     if shell_name.endswith("bash"):
         env = common_env | {

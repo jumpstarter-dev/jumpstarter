@@ -91,6 +91,12 @@ async def client_from_path(
             yield await _connect(channel)
 
 
+async def fetch_motd(client: DriverClient) -> str | None:
+    """Fetch the exporter motd over a connected client's channel."""
+    response = await client.stub.GetReport(empty_pb2.Empty())
+    return response.motd or None
+
+
 async def client_from_channel(
     channel: grpc.aio.Channel,
     portal: BlockingPortal,

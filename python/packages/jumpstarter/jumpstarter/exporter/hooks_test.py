@@ -11,6 +11,7 @@ from jumpstarter.exporter.hooks import (
     DRAIN_MAX_EMPTY_POLLS,
     DRAIN_TIMEOUT_SECONDS,
     MAX_DRAIN_BYTES,
+    MAX_MOTD_BYTES,
     HookExecutionError,
     HookExecutor,
     _flush_lines,
@@ -155,6 +156,8 @@ def lease_scope():
     mock_session = MagicMock()
     # Return a no-op context manager for context_log_source
     mock_session.context_log_source.return_value = nullcontext()
+    # Session.motd is str | None; model it so the beforeLease motd append works
+    mock_session.motd = None
     lease_scope.session = mock_session
     lease_scope.socket_path = "/tmp/test_socket"
     return lease_scope
@@ -221,6 +224,91 @@ class TestHookExecutor:
             info_calls = [str(call) for call in mock_logger.info.call_args_list]
             assert any("LEASE_NAME=test-lease-123" in call for call in info_calls)
             assert any("CLIENT_NAME=test-client" in call for call in info_calls)
+
+    async def test_before_lease_hook_appends_motd(self, lease_scope) -> None:
+        lease_scope.session.motd = None
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script='echo "flashed image: test-v1" > "$JMP_MOTD_FILE"', timeout=10
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+        await executor.execute_before_lease_hook(lease_scope)
+        assert lease_scope.session.motd == "flashed image: test-v1"
+
+    async def test_before_lease_hook_appends_motd_to_existing(self, lease_scope) -> None:
+        lease_scope.session.motd = "Welcome to test-exporter!"
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script='echo "flashed image: test-v1" > "$JMP_MOTD_FILE"', timeout=10
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+        await executor.execute_before_lease_hook(lease_scope)
+        assert lease_scope.session.motd == "Welcome to test-exporter!\nflashed image: test-v1"
+
+    async def test_before_lease_hook_motd_unchanged_when_not_written(self, lease_scope) -> None:
+        lease_scope.session.motd = "Welcome to test-exporter!"
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(script="true", timeout=10),
+        )
+        executor = HookExecutor(config=hook_config)
+        await executor.execute_before_lease_hook(lease_scope)
+        assert lease_scope.session.motd == "Welcome to test-exporter!"
+
+    async def test_before_lease_hook_motd_kept_on_warn_failure(self, lease_scope) -> None:
+        lease_scope.session.motd = None
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script='echo "partial setup done" > "$JMP_MOTD_FILE"; exit 1', timeout=10, on_failure="warn"
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+        result = await executor.execute_before_lease_hook(lease_scope)
+        assert result is not None  # warning returned, lease proceeds
+        assert lease_scope.session.motd == "partial setup done"
+
+    async def test_after_lease_hook_has_no_motd_file(self, lease_scope) -> None:
+        lease_scope.session.motd = "Welcome to test-exporter!"
+        hook_config = HookConfigV1Alpha1(
+            after_lease=HookInstanceConfigV1Alpha1(
+                script='test -z "$JMP_MOTD_FILE"', timeout=10, on_failure="endLease"
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+        # Hook succeeds only if JMP_MOTD_FILE is not set for afterLease hooks
+        await executor.execute_after_lease_hook(lease_scope)
+        assert lease_scope.session.motd == "Welcome to test-exporter!"
+
+    async def test_after_lease_hook_clears_inherited_motd_file(self, lease_scope, monkeypatch) -> None:
+        # Even if the exporter process inherited JMP_MOTD_FILE, afterLease must not see it.
+        monkeypatch.setenv("JMP_MOTD_FILE", "/tmp/should-not-be-visible")
+        lease_scope.session.motd = "Welcome to test-exporter!"
+        hook_config = HookConfigV1Alpha1(
+            after_lease=HookInstanceConfigV1Alpha1(
+                script='test -z "$JMP_MOTD_FILE"', timeout=10, on_failure="endLease"
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+        await executor.execute_after_lease_hook(lease_scope)  # raises if var is visible
+        assert lease_scope.session.motd == "Welcome to test-exporter!"
+
+    def test_append_hook_motd_skips_fifo(self, tmp_path) -> None:
+        # A FIFO substituted by a hook must not hang or be read.
+        fifo = tmp_path / "motd.fifo"
+        os.mkfifo(fifo)
+        session = MagicMock()
+        session.motd = "static"
+        HookExecutor._append_hook_motd(session, str(fifo))  # must return promptly
+        assert session.motd == "static"
+
+    def test_append_hook_motd_caps_size(self, tmp_path) -> None:
+        big = tmp_path / "motd.txt"
+        big.write_text("x" * (MAX_MOTD_BYTES * 2))
+        session = MagicMock()
+        session.motd = None
+        HookExecutor._append_hook_motd(session, str(big))
+        assert len(session.motd) <= MAX_MOTD_BYTES
 
     @macos_pty_xfail
     async def test_real_time_output_logging(self, lease_scope) -> None:

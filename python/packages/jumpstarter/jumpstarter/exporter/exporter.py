@@ -84,6 +84,12 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     Passed to connect_router_stream() for client connections.
     """
 
+    motd: str | None = field(default=None)
+    """Message of the day shown to clients when they enter a shell on this exporter.
+
+    Configured via YAML as motd in exporter config and returned to clients in GetReport.
+    """
+
     hook_executor: HookExecutor | None = field(default=None)
     """Optional executor for lifecycle hooks (before-lease and after-lease).
 
@@ -550,6 +556,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             uuid=self.uuid,
             labels=self.labels,
             root_device=self.device_factory(),
+            motd=self.motd,
         ) as session:
             # Create a Unix socket
             async with session.serve_unix_async() as path:
@@ -585,6 +592,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             uuid=self.uuid,
             labels=self.labels,
             root_device=self.device_factory(),
+            motd=self.motd,
         ) as session:
             # Create dual Unix sockets - one for clients, one for hooks
             async with session.serve_unix_with_hook_socket_async() as (main_path, hook_path):
@@ -933,6 +941,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 uuid=self.uuid,
                 labels=self.labels,
                 root_device=self.device_factory(),
+                motd=self.motd,
             ) as session:
                 session.lease_context = lease_scope
                 lease_scope.session = session

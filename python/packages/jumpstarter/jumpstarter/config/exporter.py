@@ -178,6 +178,7 @@ class ExporterConfigV1Alpha1(BaseModel):
     grpcOptions: dict[str, str | int] | None = Field(default_factory=dict)
 
     description: str | None = None
+    motd: str | None = None
     export: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
     hooks: HookConfigV1Alpha1 = Field(default_factory=HookConfigV1Alpha1)
     failure_detection: FailureDetectionConfigV1Alpha1 = Field(
@@ -318,6 +319,7 @@ class ExporterConfigV1Alpha1(BaseModel):
                 description=self.description,
                 children=self.export,
             ).instantiate(),
+            motd=self.motd,
         ) as session:
             async with session.serve_unix_async() as path:
                 # For local usage, set status to LEASE_READY since there's no lease/hook flow
@@ -376,6 +378,7 @@ class ExporterConfigV1Alpha1(BaseModel):
                 tls=self.tls,
                 grpc_options=self.grpcOptions,
                 hook_executor=hook_executor,
+                motd=self.motd,
             )
             # Initialize the exporter (registration, etc.)
             await exporter.__aenter__()
