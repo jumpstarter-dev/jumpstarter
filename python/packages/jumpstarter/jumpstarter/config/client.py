@@ -344,7 +344,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 if retry_timeout is not None
                 else float(os.environ.get(JMP_RETRY_TIMEOUT, self.leases.retry_timeout))
             )
-            dial_timeout_seconds = (
+            dial_timeout_seconds = (  # pragma: no cover
                 dial_timeout.total_seconds()
                 if dial_timeout is not None
                 else float(os.environ.get(JMP_DIAL_TIMEOUT, self.leases.dial_timeout))

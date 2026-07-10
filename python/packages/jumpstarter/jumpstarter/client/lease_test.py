@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import sys
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock, patch
 
+import anyio
 import grpc
 import pytest
 from grpc.aio import AioRpcError
@@ -11,6 +13,7 @@ from rich.console import Console
 
 from jumpstarter.client.exceptions import LeaseError
 from jumpstarter.client.lease import Lease, LeaseAcquisitionSpinner
+from jumpstarter.common.exceptions import ExporterUnreachableError
 
 
 class MockAioRpcError(AioRpcError):
@@ -611,7 +614,6 @@ class TestDialWithRetry:
     @pytest.mark.anyio
     async def test_dial_unavailable_exceeds_timeout_raises_exporter_unreachable(self):
         """Dial returns UNAVAILABLE until dial_timeout is exceeded, raises ExporterUnreachableError."""
-        from jumpstarter.common.exceptions import ExporterUnreachableError
 
         lease = self._make_lease_for_dial()
         lease.dial_timeout = 0.5
@@ -628,3 +630,119 @@ class TestDialWithRetry:
             await lease._dial_with_retry()
 
         assert dial_call_count >= 2
+
+    @pytest.mark.anyio
+    async def test_dial_failed_precondition_exceeds_timeout_raises_exporter_unreachable(self):
+        """Dial returns FAILED_PRECONDITION until dial_timeout is exceeded, raises ExporterUnreachableError."""
+
+        lease = self._make_lease_for_dial()
+        lease.dial_timeout = 0.5
+        dial_call_count = 0
+
+        async def mock_dial(request):
+            nonlocal dial_call_count
+            dial_call_count += 1
+            raise MockAioRpcError(grpc.StatusCode.FAILED_PRECONDITION, "not ready")
+
+        lease.controller.Dial = mock_dial
+
+        with pytest.raises(ExporterUnreachableError):
+            await lease._dial_with_retry()
+
+        assert dial_call_count >= 2
+
+    @pytest.mark.anyio
+    async def test_dial_permission_denied_raises_exporter_unreachable_and_sets_transferred(self):
+        """Dial returns permission denied error, raises ExporterUnreachableError and sets lease_transferred flag."""
+
+        lease = self._make_lease_for_dial()
+
+        async def mock_dial(request):
+            raise MockAioRpcError(grpc.StatusCode.PERMISSION_DENIED, "permission denied")
+
+        lease.controller.Dial = mock_dial
+
+        with pytest.raises(ExporterUnreachableError) as exc_info:
+            await lease._dial_with_retry()
+
+        assert lease.lease_transferred is True
+        assert "transferred to another client" in str(exc_info.value)
+
+    @pytest.mark.anyio
+    async def test_dial_unknown_error_raises_exporter_unreachable(self):
+        """Dial returns unknown error, raises ExporterUnreachableError without retry."""
+
+        lease = self._make_lease_for_dial()
+
+        async def mock_dial(request):
+            raise MockAioRpcError(grpc.StatusCode.INTERNAL, "something broke")
+
+        lease.controller.Dial = mock_dial
+
+        with pytest.raises(ExporterUnreachableError) as exc_info:
+            await lease._dial_with_retry()
+
+        assert lease.lease_transferred is False
+        assert "lost" in str(exc_info.value).lower()
+
+
+class TestServeUnixAsync:
+    """Unit tests for Lease.serve_unix_async."""
+
+    @pytest.mark.anyio
+    async def test_serve_unix_async_readiness_check_and_per_connection_dial(self):
+        """serve_unix_async calls readiness check once, then per-connection Dial for each socket connection."""
+
+        lease = object.__new__(Lease)
+        lease.name = "test-lease"
+        lease.exporter_name = "test-exporter"
+        lease.tls_config = Mock()
+        lease.grpc_options = {}
+        lease.controller = Mock()
+
+        # Mock the readiness check
+        readiness_check_called = False
+
+        async def mock_dial_with_retry():
+            nonlocal readiness_check_called
+            readiness_check_called = True
+
+        # Mock per-connection Dial
+        dial_call_count = 0
+
+        async def mock_dial(request):
+            nonlocal dial_call_count
+            dial_call_count += 1
+            return Mock(router_endpoint="test-endpoint", router_token="test-token")
+
+        lease.controller.Dial = mock_dial
+
+        # Mock connect_router_stream
+        router_stream_calls = []
+
+        @asynccontextmanager
+        async def mock_connect_router_stream(endpoint, token, stream, tls_config, grpc_options):
+            router_stream_calls.append((endpoint, token, tls_config, grpc_options))
+            yield
+
+        with patch.object(lease, "_dial_with_retry", side_effect=mock_dial_with_retry):
+            with patch("jumpstarter.client.lease.connect_router_stream", side_effect=mock_connect_router_stream):
+                async with lease.serve_unix_async() as socket_path:
+                    # Readiness check should have been called
+                    assert readiness_check_called
+
+                    # Connect to the Unix socket
+                    async with await anyio.connect_unix(socket_path):
+                        # Give the handler time to process
+                        await anyio.sleep(0.1)
+
+        # Verify per-connection Dial was called
+        assert dial_call_count == 1
+
+        # Verify connect_router_stream was called with correct args
+        assert len(router_stream_calls) == 1
+        endpoint, token, tls_config, grpc_options = router_stream_calls[0]
+        assert endpoint == "test-endpoint"
+        assert token == "test-token"
+        assert tls_config is lease.tls_config
+        assert grpc_options is lease.grpc_options
