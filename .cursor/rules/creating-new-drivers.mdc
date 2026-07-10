@@ -85,9 +85,9 @@ python/packages/jumpstarter-driver-<driver_package>/
 ## 8. Documentation
 The script automatically creates:
 - A README.md with basic documentation
-- A symlink in `python/docs/source/reference/package-apis/drivers/` pointing to the README
+- A symlink in `docs/source/reference/package-apis/drivers/` pointing to the README
 - Template files for all necessary components
-- A good example of documentation is in `python/docs/source/reference/package-apis/drivers/gpiod.md` and also `python/docs/source/reference/package-apis/drivers/pyserial.md`
+- A good example of documentation is in `docs/source/reference/package-apis/drivers/gpiod.md` and also `docs/source/reference/package-apis/drivers/pyserial.md`
 
 ## Code Style and Testing
 

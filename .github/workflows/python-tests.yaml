@@ -29,7 +29,7 @@ jobs:
           filters: |
             python:
               - 'python/**'
-              - '!python/docs/**'
+              - '!docs/**'
               - '!python/**/*.md'
               - '.github/workflows/python-tests.yaml'
             renode_driver:
@@ -179,7 +179,7 @@ jobs:
         if: github.event_name == 'pull_request' && runner.os == 'Linux'
         working-directory: python
         run: |
-          coverage_files=$(find packages docs/source/reference -name coverage.xml 2>/dev/null | sort)
+          coverage_files=$(find packages ../docs/source/reference -name coverage.xml 2>/dev/null | sort)
           if [ -z "$coverage_files" ]; then
             echo "::error::No coverage.xml files found"
             exit 1

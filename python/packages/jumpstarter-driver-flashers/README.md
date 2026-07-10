@@ -87,7 +87,7 @@ artifacts and metadata. It is a container that contains the following:
 
 ### The format of the manifest is as follows:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-flashers/oci_bundles/test/manifest.yaml
+```{literalinclude} ../../../../../python/packages/jumpstarter-driver-flashers/oci_bundles/test/manifest.yaml
 :language: yaml
 ```
 
@@ -118,7 +118,7 @@ artifacts and metadata. It is a container that contains the following:
 
 An example bundle for the TI J784S4XEVM looks like this:
 
-```{literalinclude} ../../../../../packages/jumpstarter-driver-flashers/oci_bundles/ti_j784s4xevm/manifest.yaml
+```{literalinclude} ../../../../../python/packages/jumpstarter-driver-flashers/oci_bundles/ti_j784s4xevm/manifest.yaml
 :language: yaml
 ```
 

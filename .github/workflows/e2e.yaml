@@ -31,7 +31,7 @@ jobs:
               - 'controller/**'
               - 'e2e/**'
               - 'python/**'
-              - '!python/docs/**'
+              - '!docs/**'
               - '!python/**/*.md'
               - '.github/workflows/e2e.yaml'
               - 'Makefile'

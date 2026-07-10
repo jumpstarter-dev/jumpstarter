@@ -1,1 +1,0 @@
-../../../../../packages/jumpstarter-driver-ssh-mount/README.md

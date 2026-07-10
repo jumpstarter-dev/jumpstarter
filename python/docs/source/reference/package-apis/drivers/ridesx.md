@@ -1,1 +1,0 @@
-../../../../../packages/jumpstarter-driver-ridesx/README.md

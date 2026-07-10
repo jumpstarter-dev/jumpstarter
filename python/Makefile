@@ -3,27 +3,18 @@ PKG_TARGETS = $(subst packages/,,$(wildcard packages/*))
 # Help target
 .PHONY: help
 help:
-	@echo "Jumpstarter Makefile Help"
-	@echo "=========================="
+	@echo "Jumpstarter Python Makefile Help"
+	@echo "================================="
 	@echo ""
 	@echo "Build targets:"
 	@echo "  build              - Build all packages"
 	@echo "  protobuf-gen       - Generate code from protobuf definitions"
 	@echo "  sync               - Sync all packages and extras"
 	@echo ""
-	@echo "Documentation targets:"
-	@echo "  docs               - Build HTML documentation with warnings as errors"
-	@echo "  docs-singlehtml    - Build single HTML page documentation"
-	@echo "  docs-all           - Build multiversion documentation"
-	@echo "  docs-serve         - Build and serve documentation locally"
-	@echo "  docs-serve-all     - Build and serve multiversion documentation locally"
-	@echo "  docs-linkcheck     - Check documentation links"
-	@echo ""
 	@echo "Testing targets:"
-	@echo "  test               - Run all package tests and documentation tests"
+	@echo "  test               - Run all package tests"
 	@echo "  pkg-test-all       - Run tests for all packages"
 	@echo "  pkg-test-<pkg>     - Run tests for a specific package"
-	@echo "  docs-test          - Run documentation tests"
 	@echo ""
 	@echo "Linting and type checking:"
 	@echo "  ty                 - Run ty type checking on all packages"
@@ -37,48 +28,11 @@ help:
 	@echo "  clean-venv         - Clean virtual environment"
 	@echo "  clean-build        - Clean build artifacts"
 	@echo "  clean-test         - Clean test artifacts"
-	@echo "  clean-docs         - Clean documentation build"
+	@echo ""
+	@echo "Note: Documentation targets are in the root Makefile."
 
 default: help
 
-docs-singlehtml: docs-generate-crds docs-generate-grpc
-	uv run --isolated --all-packages --group docs $(MAKE) -C docs singlehtml
-
-docs-generate-crds:
-	uv run --isolated --all-packages --group docs python3 docs/source/reference/generate-crd-docs.py
-
-docs-generate-grpc:
-	uv run --isolated --all-packages --group docs python3 docs/source/reference/generate_grpc_docs.py
-
-docs: docs-generate-crds docs-generate-grpc
-	uv run --isolated --all-packages --group docs $(MAKE) -C docs html SPHINXOPTS="-W --keep-going -n"
-
-docs-all: docs-generate-crds docs-generate-grpc
-	uv run --isolated --all-packages --group docs $(MAKE) -C docs multiversion
-
-docs-serve: clean-docs docs-generate-crds docs-generate-grpc
-	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve
-
-docs-serve-all: clean-docs docs-all
-	uv run --isolated --all-packages --group docs $(MAKE) -C docs serve-multiversion
-
-docs-check-grpc:
-	@TMPDIR1=$$(mktemp -d) && TMPDIR2=$$(mktemp -d) && \
-	trap 'rm -rf "$$TMPDIR1" "$$TMPDIR2"' EXIT && \
-	uv run --isolated --all-packages --group docs python3 -c \
-		"import sys; sys.path.insert(0, 'docs/source/reference'); from generate_grpc_docs import main; main(output_dir='$$TMPDIR1')" && \
-	uv run --isolated --all-packages --group docs python3 -c \
-		"import sys; sys.path.insert(0, 'docs/source/reference'); from generate_grpc_docs import main; main(output_dir='$$TMPDIR2')" && \
-	diff -r "$$TMPDIR1/" "$$TMPDIR2/"
-
-docs-test-grpc:
-	uv run --isolated --all-packages --group docs pytest --cov=docs/source/reference --cov-report=xml:docs/source/reference/coverage.xml docs/source/reference/generate_grpc_docs_test.py
-
-docs-test: docs-generate-crds docs-generate-grpc
-	uv run --isolated --all-packages --group docs $(MAKE) -C docs doctest
-
-docs-linkcheck: docs-generate-crds docs-generate-grpc
-	uv run --isolated --all-packages --group docs $(MAKE) -C docs linkcheck
 
 ifdef LOGS_DIR
 pkg-test-%: packages/%
@@ -149,15 +103,12 @@ clean-test:
 	-rm -rf htmlcov
 	-rm -rf .uv-cache
 
-clean-docs:
-	uv run --isolated --all-packages --group docs $(MAKE) -C docs clean
-
-clean: clean-docs clean-venv clean-build clean-test
+clean: clean-venv clean-build clean-test
 
 ifdef LOGS_DIR
-test: pkg-test-all docs-test docs-test-grpc test-report
+test: pkg-test-all test-report
 else
-test: pkg-test-all docs-test docs-test-grpc
+test: pkg-test-all
 endif
 
 ty: pkg-ty-all
@@ -168,9 +119,8 @@ lint:
 lint-fix:
 	uv run ruff check --fix
 
-.PHONY: default help docs docs-all docs-serve docs-serve-all docs-clean docs-test \
-	docs-check-grpc docs-test-grpc docs-linkcheck docs-generate-grpc pkg-test-all pkg-ty-all build generate sync \
-	clean clean-venv clean-build clean-test clean-all test test-report test-all ty-all docs \
+.PHONY: default help pkg-test-all pkg-ty-all build generate sync \
+	clean clean-venv clean-build clean-test test test-report ty \
 	lint lint-fix \
 	pkg-ty-jumpstarter \
 	pkg-ty-jumpstarter-cli-admin \

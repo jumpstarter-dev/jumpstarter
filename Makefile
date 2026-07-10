@@ -6,6 +6,9 @@
 # Subdirectories containing projects
 SUBDIRS := python protocol controller e2e
 
+# UV invocation for docs (must run from python/ where pyproject.toml lives)
+UV_DOCS = cd python && uv run --isolated --all-packages --group docs
+
 # Default target
 .PHONY: all
 all: build
@@ -23,6 +26,15 @@ help:
 	@echo "  make lint       - Run linters in all projects"
 	@echo "  make fmt        - Format code in all projects"
 	@echo ""
+	@echo "Documentation targets:"
+	@echo "  make docs            - Build HTML documentation with warnings as errors"
+	@echo "  make docs-singlehtml - Build single HTML page documentation"
+	@echo "  make docs-all        - Build multiversion documentation"
+	@echo "  make docs-serve      - Build and serve documentation locally"
+	@echo "  make docs-serve-all  - Build and serve multiversion documentation locally"
+	@echo "  make docs-linkcheck  - Check documentation links"
+	@echo "  make docs-test       - Run documentation tests"
+	@echo ""
 	@echo "End-to-end testing:"
 	@echo "  make e2e-setup  - Setup e2e test environment (one-time)"
 	@echo "  make e2e-run    - Run e2e tests (requires e2e-setup first)"
@@ -36,6 +48,56 @@ help:
 	@echo "  make clean-<project>  - Clean specific project"
 	@echo ""
 	@echo "Projects: $(SUBDIRS)"
+
+# ---- Documentation targets ----
+
+.PHONY: docs docs-singlehtml docs-all docs-serve docs-serve-all docs-linkcheck \
+	docs-test docs-test-grpc docs-check-grpc docs-generate-crds docs-generate-grpc clean-docs
+
+docs-generate-crds:
+	$(UV_DOCS) python3 ../docs/source/reference/generate-crd-docs.py
+
+docs-generate-grpc:
+	$(UV_DOCS) python3 ../docs/source/reference/generate_grpc_docs.py
+
+docs: docs-generate-crds docs-generate-grpc
+	$(UV_DOCS) $(MAKE) -C ../docs html SPHINXOPTS="-W --keep-going -n"
+
+docs-singlehtml: docs-generate-crds docs-generate-grpc
+	$(UV_DOCS) $(MAKE) -C ../docs singlehtml
+
+docs-all: docs-generate-crds docs-generate-grpc
+	$(UV_DOCS) $(MAKE) -C ../docs multiversion
+
+docs-serve: clean-docs docs-generate-crds docs-generate-grpc
+	$(UV_DOCS) $(MAKE) -C ../docs serve
+
+docs-serve-all: clean-docs docs-all
+	$(UV_DOCS) $(MAKE) -C ../docs serve-multiversion
+
+docs-check-grpc:
+	@TMPDIR1=$$(mktemp -d) && TMPDIR2=$$(mktemp -d) && \
+	trap 'rm -rf "$$TMPDIR1" "$$TMPDIR2"' EXIT && \
+	cd python && \
+	uv run --isolated --all-packages --group docs python3 -c \
+		"import sys; sys.path.insert(0, '../docs/source/reference'); from generate_grpc_docs import main; main(output_dir='$$TMPDIR1')" && \
+	uv run --isolated --all-packages --group docs python3 -c \
+		"import sys; sys.path.insert(0, '../docs/source/reference'); from generate_grpc_docs import main; main(output_dir='$$TMPDIR2')" && \
+	diff -r "$$TMPDIR1/" "$$TMPDIR2/"
+
+docs-test-grpc:
+	$(UV_DOCS) pytest --cov=../docs/source/reference --cov-report=xml:../docs/source/reference/coverage.xml ../docs/source/reference/generate_grpc_docs_test.py
+
+docs-test: docs-generate-crds docs-generate-grpc
+	$(UV_DOCS) $(MAKE) -C ../docs doctest
+
+docs-linkcheck: docs-generate-crds docs-generate-grpc
+	$(UV_DOCS) $(MAKE) -C ../docs linkcheck
+
+clean-docs:
+	rm -rf docs/build
+
+# ---- Build targets ----
 
 # Build all projects
 .PHONY: build

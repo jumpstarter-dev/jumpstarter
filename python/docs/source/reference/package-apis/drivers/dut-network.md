@@ -1,1 +1,0 @@
-../../../../../packages/jumpstarter-driver-dut-network/README.md

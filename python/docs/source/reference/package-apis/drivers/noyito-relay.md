@@ -1,1 +1,0 @@
-../../../../../packages/jumpstarter-driver-noyito-relay/README.md

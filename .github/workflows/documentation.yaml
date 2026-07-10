@@ -5,12 +5,12 @@ on:
   push:
     branches: ["main"]
     paths:
-      - 'python/docs/**'
+      - 'docs/**'
       - 'python/packages/**'
       - 'protocol/proto/**'
   pull_request:
     paths:
-      - 'python/docs/**'
+      - 'docs/**'
       - 'python/packages/**'
       - 'protocol/proto/**'
   merge_group:
@@ -33,7 +33,6 @@ concurrency:
 defaults:
   run:
     shell: bash
-    working-directory: python
 
 jobs:
   # Build job
@@ -47,7 +46,6 @@ jobs:
 
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
-        working-directory: .
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
@@ -74,7 +72,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
-          path: ./python/docs/build
+          path: ./docs/build
 
   check-warnings:
     runs-on: ubuntu-latest
@@ -86,7 +84,6 @@ jobs:
 
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
-        working-directory: .
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
@@ -97,7 +94,7 @@ jobs:
         run: make docs-check-grpc
 
       - name: Build the documentation for the current version (no warnings allowed)
-        run: make sync && make docs
+        run: cd python && make sync && cd .. && make docs
 
   # Deployment job
   deploy:
