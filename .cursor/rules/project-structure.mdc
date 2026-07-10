@@ -14,10 +14,10 @@ jumpstarter/
 │   ├── pyproject.toml      # Main workspace configuration
 │   ├── packages/           # All Python packages
 │   ├── examples/           # Example applications
-│   ├── docs/               # Documentation (Sphinx)
-│   │   └── source/
-│   │       └── internal/   # JEPs (rendered as part of docs)
-│   │           └── jeps/   # Jumpstarter Enhancement Proposals
+├── docs/                   # Documentation (Sphinx)
+│   └── source/
+│       └── contributing/   # JEPs (rendered as part of docs)
+│           └── jeps/       # Jumpstarter Enhancement Proposals
 │   └── __templates__/      # Templates for creating new drivers
 ├── controller/             # Controller components
 ├── protocol/               # Protocol definitions
@@ -136,7 +136,7 @@ python/examples/
 1. **Naming**: Package names use hyphens, module names use underscores
 2. **Entry points**: Drivers register via `jumpstarter.drivers` entry point
 3. **Versioning**: All packages share the same version from VCS
-4. **Documentation**: Each package has its own README.md, and when it's a driver we make a symlink in `python/docs/source/reference/package-apis/drivers/` pointing to the README.md for the driver.
+4. **Documentation**: Each package has its own README.md, and when it's a driver we make a symlink in `docs/source/reference/package-apis/drivers/` pointing to the README.md for the driver.
 5. **Testing**: Comprehensive test coverage required, but always try to focus on starting a server and client to test it e2e. Mock sometimes when there is too much dependency on system tools/services/compatibility issues between MacOs/Linux.
 6. **Dependencies**: Minimal, focused dependencies per package
 

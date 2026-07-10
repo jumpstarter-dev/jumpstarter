@@ -29,9 +29,17 @@ build/
 .DS_Store
 
 # Generated documentation
-python/docs/source/reference/grpc/*.md
+docs/source/reference/grpc/*.md
+docs/build/
+docs/build_all/
+docs/source/reference/crds/client.md
+docs/source/reference/crds/exporter.md
+docs/source/reference/crds/exporteraccesspolicy.md
+docs/source/reference/crds/jumpstarter.md
+docs/source/reference/crds/lease.md
 
 # Local tooling
 .specify/
 .envrc
 specs/
+docs/source/reference/coverage.xml
