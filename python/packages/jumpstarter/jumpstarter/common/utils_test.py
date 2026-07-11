@@ -29,6 +29,50 @@ def test_launch_shell(tmp_path, monkeypatch):
     assert exit_code == 1
 
 
+def test_launch_shell_command_not_found(tmp_path, capfd):
+    exit_code = launch_shell(
+        host=str(tmp_path / "test.sock"),
+        context="remote",
+        allow=["*"],
+        unsafe=False,
+        use_profiles=False,
+        command=("nonexistent_binary_xyz",),
+    )
+    assert exit_code == 127
+    assert "command not found: nonexistent_binary_xyz" in capfd.readouterr().err
+
+
+def test_launch_shell_permission_denied(tmp_path, capfd):
+    script = tmp_path / "not_executable.sh"
+    script.write_text("#!/bin/sh\necho hi\n")
+    script.chmod(0o644)
+    exit_code = launch_shell(
+        host=str(tmp_path / "test.sock"),
+        context="remote",
+        allow=["*"],
+        unsafe=False,
+        use_profiles=False,
+        command=(str(script),),
+    )
+    assert exit_code == 126
+    assert "permission denied" in capfd.readouterr().err
+
+
+def test_launch_shell_oserror(tmp_path, capfd):
+    from unittest.mock import patch
+    with patch("jumpstarter.common.utils.Popen", side_effect=OSError(22, "Invalid argument")):
+        exit_code = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+            command=("some_cmd",),
+        )
+    assert exit_code == 126
+    assert "cannot execute" in capfd.readouterr().err
+
+
 def test_launch_shell_sets_lease_env(tmp_path, monkeypatch):
     env_output = tmp_path / "env_output.txt"
     script = tmp_path / "capture_env.sh"
