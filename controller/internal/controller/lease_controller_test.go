@@ -992,6 +992,165 @@ func deleteLeases(ctx context.Context, leases ...string) {
 	}
 }
 
+// Pending leases with offline exporters requeue every 1 second with no backoff.
+// With MaxConcurrentReconciles=1 (default), N stuck leases generate N reconcile
+// cycles per second, starving new lease requests from being processed promptly.
+var _ = Describe("Pending lease queue starvation", func() {
+	const (
+		starveLease1 = "starve-pending-1"
+		starveLease2 = "starve-pending-2"
+		starveLease3 = "starve-pending-3"
+		starveLease4 = "starve-pending-4"
+		starveLease5 = "starve-pending-5"
+		starveValid  = "starve-valid"
+	)
+
+	BeforeEach(func() {
+		createExporters(context.Background(), testExporter1DutA, testExporter2DutA, testExporter3DutB)
+	})
+	AfterEach(func() {
+		ctx := context.Background()
+		deleteExporters(ctx, testExporter1DutA, testExporter2DutA, testExporter3DutB)
+		deleteLeases(ctx,
+			starveLease1, starveLease2, starveLease3, starveLease4, starveLease5,
+			starveValid,
+		)
+	})
+
+	When("multiple leases are pending because all exporters are offline", func() {
+		It("should use exponential backoff instead of fixed 1-second requeue", func() {
+			ctx := context.Background()
+
+			// All exporters offline
+			setExporterOnlineConditions(ctx, testExporter1DutA.Name, metav1.ConditionFalse)
+			setExporterOnlineConditions(ctx, testExporter2DutA.Name, metav1.ConditionFalse)
+			setExporterOnlineConditions(ctx, testExporter3DutB.Name, metav1.ConditionFalse)
+
+			pendingNames := []string{starveLease1, starveLease2, starveLease3, starveLease4, starveLease5}
+			for _, name := range pendingNames {
+				lease := leaseDutA2Sec.DeepCopy()
+				lease.Name = name
+				Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			}
+
+			leaseReconciler := &LeaseReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			// First reconcile sets the Pending condition with LastTransitionTime=now
+			for _, name := range pendingNames {
+				_, err := leaseReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: name, Namespace: "default"},
+				})
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			// Simulate time passing: patch LastTransitionTime on the Pending
+			// condition to 60 seconds ago. In production this happens naturally
+			// as the lease sits pending; in tests we fast-forward the clock.
+			pastTime := metav1.NewTime(time.Now().Add(-60 * time.Second))
+			for _, name := range pendingNames {
+				lease := getLease(ctx, name)
+				for i := range lease.Status.Conditions {
+					if lease.Status.Conditions[i].Type == string(jumpstarterdevv1alpha1.LeaseConditionTypePending) {
+						lease.Status.Conditions[i].LastTransitionTime = pastTime
+					}
+				}
+				Expect(k8sClient.Status().Update(ctx, lease)).To(Succeed())
+			}
+
+			// Now reconcile again — backoff should be well above 1 second
+			for _, name := range pendingNames {
+				result, err := leaseReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: name, Namespace: "default"},
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeNumerically(">", time.Second),
+					"lease %s should back off beyond 1s after being pending for 60s", name)
+				Expect(result.RequeueAfter).To(BeNumerically("<=", maxPendingRequeue),
+					"lease %s backoff should not exceed the cap", name)
+			}
+		})
+	})
+
+	When("pending leases are consuming the reconciler while a valid lease arrives", func() {
+		It("should back off so new valid leases are not starved", func() {
+			ctx := context.Background()
+
+			// All exporters offline initially
+			setExporterOnlineConditions(ctx, testExporter1DutA.Name, metav1.ConditionFalse)
+			setExporterOnlineConditions(ctx, testExporter2DutA.Name, metav1.ConditionFalse)
+			setExporterOnlineConditions(ctx, testExporter3DutB.Name, metav1.ConditionFalse)
+
+			pendingNames := []string{starveLease1, starveLease2, starveLease3, starveLease4, starveLease5}
+			for _, name := range pendingNames {
+				lease := leaseDutA2Sec.DeepCopy()
+				lease.Name = name
+				Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			}
+
+			leaseReconciler := &LeaseReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			// First reconcile sets Pending condition
+			for _, name := range pendingNames {
+				_, err := leaseReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: name, Namespace: "default"},
+				})
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			// Fast-forward: make pending leases look like they've been pending 60s
+			pastTime := metav1.NewTime(time.Now().Add(-60 * time.Second))
+			for _, name := range pendingNames {
+				lease := getLease(ctx, name)
+				for i := range lease.Status.Conditions {
+					if lease.Status.Conditions[i].Type == string(jumpstarterdevv1alpha1.LeaseConditionTypePending) {
+						lease.Status.Conditions[i].LastTransitionTime = pastTime
+					}
+				}
+				Expect(k8sClient.Status().Update(ctx, lease)).To(Succeed())
+			}
+
+			// Verify pending leases have backed off
+			var totalRequeueTime time.Duration
+			for _, name := range pendingNames {
+				result, err := leaseReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: types.NamespacedName{Name: name, Namespace: "default"},
+				})
+				Expect(err).NotTo(HaveOccurred())
+				totalRequeueTime += result.RequeueAfter
+			}
+			Expect(totalRequeueTime).To(BeNumerically(">", 5*time.Second),
+				"pending leases should have backed off beyond 1s each")
+
+			// Now bring exporter3 (dut:b) online and create a valid lease
+			setExporterOnlineConditions(ctx, testExporter3DutB.Name, metav1.ConditionTrue)
+
+			validLease := leaseDutA2Sec.DeepCopy()
+			validLease.Name = starveValid
+			validLease.Spec.Selector.MatchLabels["dut"] = "b"
+			Expect(k8sClient.Create(ctx, validLease)).To(Succeed())
+
+			// The valid lease gets its turn and succeeds immediately
+			result, err := leaseReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: starveValid, Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			updatedLease := getLease(ctx, starveValid)
+			Expect(updatedLease.Status.ExporterRef).NotTo(BeNil(),
+				"valid lease should acquire exporter3-dut-b")
+			Expect(updatedLease.Status.ExporterRef.Name).To(Equal(testExporter3DutB.Name))
+			Expect(result.RequeueAfter).To(BeNumerically("<=", 2*time.Second),
+				"valid lease should requeue for expiration, not stuck pending")
+		})
+	})
+})
+
 var _ = Describe("orderApprovedExporters", func() {
 	When("approved exporters are under a lease", func() {
 		It("should put them last", func() {
@@ -2467,4 +2626,31 @@ var _ = Describe("Scheduled Leases", func() {
 			Expect(lease).To(BeNil())
 		})
 	})
+})
+
+var _ = Describe("pendingRequeueAfter", func() {
+	It("should return 1s when no Pending condition exists", func() {
+		lease := &jumpstarterdevv1alpha1.Lease{}
+		Expect(pendingRequeueAfter(lease)).To(Equal(time.Second))
+	})
+
+	DescribeTable("should back off exponentially based on pending duration",
+		func(elapsed, expected time.Duration) {
+			lease := &jumpstarterdevv1alpha1.Lease{}
+			meta.SetStatusCondition(&lease.Status.Conditions, metav1.Condition{
+				Type:               string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
+				Status:             metav1.ConditionTrue,
+				Reason:             "Offline",
+				LastTransitionTime: metav1.NewTime(time.Now().Add(-elapsed)),
+			})
+			Expect(pendingRequeueAfter(lease)).To(Equal(expected))
+		},
+		Entry("just pending", 500*time.Millisecond, time.Second),
+		Entry("1.5s", 1500*time.Millisecond, 2*time.Second),
+		Entry("3s", 3*time.Second, 4*time.Second),
+		Entry("6s", 6*time.Second, 8*time.Second),
+		Entry("12s", 12*time.Second, 16*time.Second),
+		Entry("25s (hits cap)", 25*time.Second, 30*time.Second),
+		Entry("5m (capped)", 5*time.Minute, 30*time.Second),
+	)
 })
