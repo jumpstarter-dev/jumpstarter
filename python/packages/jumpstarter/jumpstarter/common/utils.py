@@ -86,7 +86,17 @@ def _run_process(
     lease=None,
 ) -> int:
     """Helper to run a process with an option to set a lease ending callback."""
-    process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
+    try:
+        process = Popen(cmd, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, env=env)
+    except FileNotFoundError:
+        print(f"Error: command not found: {cmd[0]}", file=sys.stderr)
+        return 127
+    except PermissionError:
+        print(f"Error: permission denied: {cmd[0]}", file=sys.stderr)
+        return 126
+    except OSError as exc:
+        print(f"Error: cannot execute {cmd[0]}: {exc}", file=sys.stderr)
+        return 126
     if lease is not None:
         lease.lease_ending_callback = partial(lease_ending_handler, process)
     return process.wait()
