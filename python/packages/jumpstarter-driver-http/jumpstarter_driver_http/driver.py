@@ -137,12 +137,29 @@ class HttpServer(Driver):
         if self.runner:
             try:
                 anyio.from_thread.run(self._async_cleanup)
-            except Exception as e:
-                self.logger.warning(f"HTTP server cleanup failed: {e}")
+            except Exception:
+                self._force_close_sockets()
             finally:
                 self.runner = None
                 self._bound_port = 0
         super().close()
+
+    def _force_close_sockets(self):
+        """Force-close server sockets when async cleanup is unavailable.
+
+        When close() is called from the event loop thread (e.g. during
+        Session teardown), anyio.from_thread.run() cannot dispatch the
+        async cleanup. Closing the underlying transport sockets directly
+        ensures the port is released.
+        """
+        try:
+            if self.runner:
+                for site in self.runner.sites:
+                    if hasattr(site, "_server") and site._server:
+                        site._server.close()
+            self.logger.info("HTTP server sockets force-closed.")
+        except Exception as e:
+            self.logger.warning(f"HTTP server force-close failed: {e}")
 
     async def _async_cleanup(self):
         try:
