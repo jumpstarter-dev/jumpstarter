@@ -1,5 +1,8 @@
+import ctypes
+import signal
 import sys
 from base64 import b64encode
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,6 +16,8 @@ from anyio import connect_unix
 from .common import UStreamerState
 from jumpstarter.driver import Driver, export, exportstream
 
+_IS_LINUX = sys.platform.startswith("linux")
+
 
 def find_ustreamer():
     executable = which("ustreamer")
@@ -21,6 +26,30 @@ def find_ustreamer():
         raise FileNotFoundError("ustreamer executable not found")
 
     return executable
+
+
+def _get_preexec_fn() -> Callable[[], None] | None:
+    """Get platform-specific preexec_fn for the ustreamer subprocess.
+
+    On Linux, returns a function that sets PR_SET_PDEATHSIG to SIGTERM,
+    ensuring ustreamer receives SIGTERM when the parent process dies.
+    This works even if the parent is killed with SIGKILL.
+
+    On other platforms, returns None.
+    """
+    if not _IS_LINUX:
+        return None
+
+    libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    PR_SET_PDEATHSIG = 1
+
+    def set_pdeathsig():
+        """Set parent death signal to SIGTERM via prctl."""
+        if libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM, 0, 0, 0) != 0:
+            errno = ctypes.get_errno()
+            raise OSError(errno, "prctl(PR_SET_PDEATHSIG) failed")
+
+    return set_pdeathsig
 
 
 @dataclass(kw_only=True)
@@ -46,7 +75,12 @@ class UStreamer(Driver):
 
         cmdline += ["--unix", self.socketp]
 
-        self.process = Popen(cmdline, stdout=sys.stdout, stderr=sys.stderr)
+        self.process = Popen(
+            cmdline,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            preexec_fn=_get_preexec_fn(),
+        )
 
     def close(self):
         self.process.terminate()
