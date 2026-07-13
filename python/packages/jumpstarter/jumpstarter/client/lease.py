@@ -17,7 +17,6 @@ from anyio import (
     AsyncContextManagerMixin,
     CancelScope,
     ContextManagerMixin,
-    connect_unix,
     create_task_group,
     fail_after,
     sleep,
@@ -33,7 +32,7 @@ from jumpstarter.client import client_from_path
 from jumpstarter.client.grpc import ClientService
 from jumpstarter.common import TemporaryUnixListener
 from jumpstarter.common.condition import condition_false, condition_message, condition_present_and_equal, condition_true
-from jumpstarter.common.exceptions import ConnectionError
+from jumpstarter.common.exceptions import ConnectionError, ExporterUnreachableError
 from jumpstarter.common.grpc import translate_grpc_exceptions
 from jumpstarter.common.streams import connect_router_stream
 from jumpstarter.config.tls import TLSConfigV1Alpha1
@@ -325,20 +324,20 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         with self.portal.wrap_async_context_manager(self) as value:
             yield value
 
-    async def handle_async(self, stream):
-        logger.debug("Connecting to Lease with name %s", self.name)
-        # Retry Dial with exponential backoff for transient "exporter not ready" errors.
-        # This handles the race condition where the client acquires a lease before
-        # the exporter has transitioned to LEASE_READY status.
-        # Uses time-based retry bounded by dial_timeout instead of fixed retry count.
+    async def _dial_with_retry(self):
+        """Dial the controller with exponential backoff, waiting for the exporter to be ready.
+
+        Returns DialResponse on success.
+        Raises ExporterUnreachableError on timeout or unrecoverable error.
+        """
+        logger.debug("Dialing controller for lease %s", self.name)
         base_delay = 0.3
         max_delay = 2.0
         deadline = time.monotonic() + self.dial_timeout
         attempt = 0
         while True:
             try:
-                response = await self.controller.Dial(jumpstarter_pb2.DialRequest(lease_name=self.name))
-                break
+                return await self.controller.Dial(jumpstarter_pb2.DialRequest(lease_name=self.name))
             except AioRpcError as e:
                 if e.code() == grpc.StatusCode.FAILED_PRECONDITION and "not ready" in str(e.details()):
                     remaining = deadline - time.monotonic()
@@ -348,7 +347,9 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                             self.dial_timeout,
                             attempt + 1,
                         )
-                        raise
+                        raise ExporterUnreachableError(
+                            f"Exporter {self.exporter_name} not ready after {self.dial_timeout:.0f}s"
+                        ) from e
                     delay = min(base_delay * (2 ** min(attempt, 10)), max_delay, remaining)
                     logger.debug(
                         "Exporter not ready, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
@@ -367,7 +368,9 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                             self.dial_timeout,
                             attempt + 1,
                         )
-                        raise
+                        raise ExporterUnreachableError(
+                            f"Exporter {self.exporter_name} unavailable after {self.dial_timeout:.0f}s"
+                        ) from e
                     delay = min(base_delay * (2 ** min(attempt, 10)), max_delay, remaining)
                     logger.warning(
                         "Exporter unavailable, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
@@ -378,51 +381,44 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     await sleep(delay)
                     attempt += 1
                     continue
-                # Exporter went offline or lease ended - log and exit gracefully
+                # Exporter went offline or lease ended - raise immediately
                 if "permission denied" in str(e.details()).lower():
                     self.lease_transferred = True
                     logger.warning(
                         "Lease %s has been transferred to another client. Your session is no longer valid.",
                         self.name,
                     )
-                else:
-                    logger.warning("Connection to exporter lost: %s", e.details())
-                return
-        async with connect_router_stream(
-            response.router_endpoint, response.router_token, stream, self.tls_config, self.grpc_options
-        ):
-            pass
+                    raise ExporterUnreachableError(
+                        f"Lease {self.name} transferred to another client"
+                    ) from e
+                logger.warning("Connection to exporter lost: %s", e.details())
+                raise ExporterUnreachableError(
+                    f"Connection to exporter {self.exporter_name} lost: {e.details()}"
+                ) from e
 
     @asynccontextmanager
     async def serve_unix_async(self):
-        async with TemporaryUnixListener(self.handle_async) as path:
+        # Wait for exporter readiness before accepting connections.
+        # The response is intentionally discarded — each connection needs
+        # its own Dial to get a unique router tunnel.
+        await self._dial_with_retry()
+
+        async def _tunnel_handler(stream):
+            response = await self.controller.Dial(
+                jumpstarter_pb2.DialRequest(lease_name=self.name)
+            )
+            async with connect_router_stream(
+                response.router_endpoint,
+                response.router_token,
+                stream,
+                self.tls_config,
+                self.grpc_options,
+            ):
+                pass
+
+        async with TemporaryUnixListener(_tunnel_handler) as path:
             logger.debug("Serving Unix socket at %s", path)
-            await self._wait_for_ready_connection(path)
             yield path
-
-    async def _wait_for_ready_connection(self, path: str):
-        """Wait for the Unix socket listener to be ready.
-
-        This only verifies that the Unix socket is accepting connections.
-        It does NOT create a gRPC channel or call Dial, which would create
-        a spurious router connection that can interfere with the real
-        connection established later by client_from_path.
-        """
-        retries_left = 5
-        logger.info("Waiting for ready connection at %s", path)
-        while True:
-            try:
-                stream = await connect_unix(path)
-                await stream.aclose()
-                logger.debug("Socket is ready at %s", path)
-                break
-            except (OSError, ConnectionRefusedError) as e:
-                if retries_left > 1:
-                    retries_left -= 1
-                    logger.debug("Socket not ready at %s, retrying (%d left)", path, retries_left)
-                    await sleep(1)
-                else:
-                    raise ConnectionError("Socket not ready at %s" % path) from e
 
     def _notify_lease_ending(self, remaining: timedelta) -> None:
         """Log lease status and invoke the ending callback if set."""

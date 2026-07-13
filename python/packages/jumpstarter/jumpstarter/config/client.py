@@ -24,7 +24,7 @@ from pydantic import (
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from .common import CONFIG_PATH, ObjectMeta
-from .env import JMP_LEASE, JMP_RETRY_TIMEOUT
+from .env import JMP_DIAL_TIMEOUT, JMP_LEASE, JMP_RETRY_TIMEOUT
 from .grpc import call_credentials
 from .shell import ShellConfigV1Alpha1
 from .tls import TLSConfigV1Alpha1
@@ -100,10 +100,9 @@ class ClientConfigV1Alpha1Lease(BaseSettings):
         ge=5,  # Must be at least 5 seconds (polling interval)
     )
     dial_timeout: float = Field(
-        default=30.0,
+        default=60.0,
         description="Timeout in seconds for Dial retry loop when exporter not ready",
-        gt=0,
-        exclude=True,  # Internal field, not serialized to config files
+        ge=5,
     )
     retry_timeout: float = Field(
         default=300.0,
@@ -325,6 +324,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         portal: BlockingPortal,
         acquisition_timeout: timedelta | None = None,
         retry_timeout: timedelta | None = None,
+        dial_timeout: timedelta | None = None,
     ):
         from jumpstarter.client import Lease
 
@@ -344,6 +344,11 @@ class ClientConfigV1Alpha1(BaseSettings):
                 if retry_timeout is not None
                 else float(os.environ.get(JMP_RETRY_TIMEOUT, self.leases.retry_timeout))
             )
+            dial_timeout_seconds = (  # pragma: no cover
+                dial_timeout.total_seconds()
+                if dial_timeout is not None
+                else float(os.environ.get(JMP_DIAL_TIMEOUT, self.leases.dial_timeout))
+            )
             async with Lease(
                 channel=await self.channel(),
                 namespace=self.metadata.namespace,
@@ -359,7 +364,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 grpc_options=self.grpcOptions,
                 client_name=self.metadata.name,
                 acquisition_timeout=acquisition_timeout_seconds,
-                dial_timeout=self.leases.dial_timeout,
+                dial_timeout=dial_timeout_seconds,
                 retry_timeout=retry_timeout_seconds,
             ) as lease:
                 yield lease
