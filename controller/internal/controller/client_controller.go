@@ -19,8 +19,10 @@ package controller
 import (
 	"context"
 	"fmt"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -58,14 +60,24 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	original := kclient.MergeFrom(client.DeepCopy())
 	prevCredential := client.Status.Credential
+	prevTokenExpiring := meta.IsStatusConditionTrue(client.Status.Conditions, string(jumpstarterdevv1alpha1.ClientConditionTypeTokenExpiring))
 
-	if err := r.reconcileStatusCredential(ctx, &client); err != nil {
+	tokenExpiry, err := r.reconcileStatusCredential(ctx, &client)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 
 	if err := r.reconcileStatusEndpoint(ctx, &client); err != nil {
 		return ctrl.Result{}, err
 	}
+
+	reconcileTokenExpiry(
+		&client.Status.Conditions,
+		&client.Status.TokenExpiresAt,
+		tokenExpiry,
+		client.Generation,
+		string(jumpstarterdevv1alpha1.ClientConditionTypeTokenExpiring),
+	)
 
 	if err := r.Status().Patch(ctx, &client, original); err != nil {
 		return RequeueConflict(logger, ctrl.Result{}, err)
@@ -77,24 +89,30 @@ func (r *ClientReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			"Credential secret created for client: secret=%s", client.Status.Credential.Name)
 	}
 
-	return ctrl.Result{}, nil
+	newTokenExpiring := meta.IsStatusConditionTrue(client.Status.Conditions, string(jumpstarterdevv1alpha1.ClientConditionTypeTokenExpiring))
+	if !prevTokenExpiring && newTokenExpiring {
+		r.emitEventf(&client, corev1.EventTypeWarning, "TokenExpiringSoon",
+			"Token for client %s is expiring soon: expires=%s", client.Name, tokenExpiry.UTC().Format(time.RFC3339))
+	}
+
+	return ctrl.Result{RequeueAfter: tokenExpiryRequeueInterval}, nil
 }
 
 func (r *ClientReconciler) reconcileStatusCredential(
 	ctx context.Context,
 	client *jumpstarterdevv1alpha1.Client,
-) error {
-	secret, err := ensureSecret(ctx, kclient.ObjectKey{
+) (time.Time, error) {
+	secret, expiry, err := ensureSecret(ctx, kclient.ObjectKey{
 		Name:      client.Name + "-client",
 		Namespace: client.Namespace,
 	}, r.Client, r.Scheme, r.Signer, client.InternalSubject(), client)
 	if err != nil {
-		return fmt.Errorf("reconcileStatusCredential: failed to prepare credential for client: %w", err)
+		return time.Time{}, fmt.Errorf("reconcileStatusCredential: failed to prepare credential for client: %w", err)
 	}
 	client.Status.Credential = &corev1.LocalObjectReference{
 		Name: secret.Name,
 	}
-	return nil
+	return expiry, nil
 }
 
 // nolint:unparam

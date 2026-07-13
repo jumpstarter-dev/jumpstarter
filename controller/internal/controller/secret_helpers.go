@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	corev1 "k8s.io/api/core/v1"
@@ -23,20 +24,20 @@ func ensureSecret(
 	signer *oidc.Signer,
 	subject string,
 	owner metav1.Object,
-) (*corev1.Secret, error) {
+) (*corev1.Secret, time.Time, error) {
 	logger := log.FromContext(ctx).WithName("ensureSecret")
 	var secret corev1.Secret
 	if err := kclient.Get(ctx, key, &secret); err != nil {
 		if !errors.IsNotFound(err) {
 			logger.Error(err, "failed to get secret")
-			return nil, err
+			return nil, time.Time{}, err
 		}
 		// Secret not present
 		logger.Info("secret not present, creating")
 		token, err := signer.Token(subject)
 		if err != nil {
 			logger.Error(err, "failed to sign token")
-			return nil, err
+			return nil, time.Time{}, err
 		}
 		secret = corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
@@ -50,36 +51,39 @@ func ensureSecret(
 		}
 		if err := controllerutil.SetControllerReference(owner, &secret, scheme); err != nil {
 			logger.Error(err, "failed to set controller reference")
-			return nil, err
+			return nil, time.Time{}, err
 		}
 		if err = kclient.Create(ctx, &secret); err != nil {
 			logger.Error(err, "failed to create secret")
-			return nil, err
+			return nil, time.Time{}, err
 		}
-		return &secret, nil
+		expiry, _ := signer.TokenExpiry(token)
+		return &secret, expiry, nil
 	} else {
 		original := client.MergeFrom(secret.DeepCopy())
 		if err := controllerutil.SetControllerReference(owner, &secret, scheme); err != nil {
 			logger.Error(err, "failed to set controller reference")
-			return nil, err
+			return nil, time.Time{}, err
 		}
 		token, ok := secret.Data[TokenKey]
 		if !ok || signer.Validate(string(token)) != nil {
 			// Secret present but invalid
 			logger.Info("secret present but invalid, updating")
-			token, err := signer.Token(subject)
+			newToken, err := signer.Token(subject)
 			if err != nil {
 				logger.Error(err, "failed to sign token")
-				return nil, err
+				return nil, time.Time{}, err
 			}
 			secret.Data = map[string][]byte{
-				TokenKey: []byte(token),
+				TokenKey: []byte(newToken),
 			}
+			token = []byte(newToken)
 		}
 		if err = kclient.Patch(ctx, &secret, original); err != nil {
 			logger.Error(err, "failed to update secret")
-			return nil, err
+			return nil, time.Time{}, err
 		}
-		return &secret, nil
+		expiry, _ := signer.TokenExpiry(string(token))
+		return &secret, expiry, nil
 	}
 }

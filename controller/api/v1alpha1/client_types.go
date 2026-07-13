@@ -27,16 +27,28 @@ type ClientSpec struct {
 	Username *string `json:"username,omitempty"`
 }
 
+// ClientConditionType defines the condition types for Client resources.
+type ClientConditionType string
+
+const (
+	ClientConditionTypeTokenExpiring ClientConditionType = "TokenExpiring"
+)
+
 // ClientStatus defines the observed state of Client.
 type ClientStatus struct {
+	// Conditions represent the latest available observations of the client state.
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 	// Credential is a reference to the secret containing the client credentials.
 	Credential *corev1.LocalObjectReference `json:"credential,omitempty"`
 	// Endpoint is the controller gRPC endpoint URL assigned to this client.
 	Endpoint string `json:"endpoint,omitempty"`
+	// TokenExpiresAt is the expiry time of the internal credential token.
+	TokenExpiresAt *metav1.Time `json:"tokenExpiresAt,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Token Expires",type="string",JSONPath=".status.tokenExpiresAt"
 
 // Client is the Schema for the clients API
 type Client struct {

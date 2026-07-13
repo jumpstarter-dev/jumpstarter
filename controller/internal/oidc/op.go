@@ -103,6 +103,18 @@ func (k *Signer) Validate(token string) error {
 	return err
 }
 
+func (k *Signer) TokenExpiry(tokenString string) (time.Time, error) {
+	parser := jwt.NewParser(jwt.WithoutClaimsValidation())
+	claims := &jwt.RegisteredClaims{}
+	if _, _, err := parser.ParseUnverified(tokenString, claims); err != nil {
+		return time.Time{}, err
+	}
+	if claims.ExpiresAt == nil {
+		return time.Time{}, nil
+	}
+	return claims.ExpiresAt.Time, nil
+}
+
 func (k *Signer) Token(
 	subject string,
 ) (string, error) {

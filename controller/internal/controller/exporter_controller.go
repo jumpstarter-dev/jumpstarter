@@ -130,7 +130,7 @@ func (r *ExporterReconciler) reconcileStatusCredential(
 	ctx context.Context,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) error {
-	secret, err := ensureSecret(ctx, client.ObjectKey{
+	secret, _, err := ensureSecret(ctx, client.ObjectKey{
 		Name:      exporter.Name + "-exporter",
 		Namespace: exporter.Namespace,
 	}, r.Client, r.Scheme, r.Signer, exporter.InternalSubject(), exporter)
