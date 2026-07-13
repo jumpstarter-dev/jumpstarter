@@ -95,6 +95,8 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// 2. Deep-merge parameters from VirtualTargetClass + ExporterSet overrides
 	// 3. Scale up if availableReplicas < minAvailableReplicas and replicas < maxReplicas
 	//    - Use r.Provisioner.RenderPod() to create Pods
+	//    - Set OwnerReferences on the Pod via ctrl.SetControllerReference
+	//      before creation so that ExporterSet deletion cascades to Pods
 	// 4. Scale up on demand if pending leases match selector
 	// 5. Scale down if availableReplicas > minAvailableReplicas after cooldown
 	//    - Use r.Provisioner.Cleanup() before deleting
