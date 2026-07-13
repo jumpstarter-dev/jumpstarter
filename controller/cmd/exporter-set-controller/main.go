@@ -81,7 +81,7 @@ func main() {
 	)
 
 	if provisioner == "" {
-		setupLog.Error(nil, "--provisioner flag is required")
+		setupLog.Error(fmt.Errorf("missing required flag"), "--provisioner flag is required")
 		os.Exit(1)
 	}
 

@@ -23,11 +23,11 @@ package qemu
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 const (
@@ -95,17 +95,7 @@ func (p *Provisioner) RenderPod(
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: fmt.Sprintf("%s-", exporterSet.Name),
 			Namespace:    exporterSet.Namespace,
-			Labels:       exporterSet.Spec.Template.Labels,
-			OwnerReferences: []metav1.OwnerReference{
-				*metav1.NewControllerRef(
-					exporterSet,
-					schema.GroupVersionKind{
-						Group:   "jumpstarter.dev",
-						Version: "v1alpha1",
-						Kind:    "ExporterSet",
-					},
-				),
-			},
+			Labels:       maps.Clone(exporterSet.Spec.Template.Labels),
 		},
 		Spec: corev1.PodSpec{
 			// Exporter runs as a native sidecar init container
@@ -154,13 +144,14 @@ func (p *Provisioner) RenderPod(
 		},
 	}
 
-	// Apply scheduling from VirtualTargetClass
+	// Apply scheduling from VirtualTargetClass.
+	// Clone maps and slices to avoid mutating the VTC's fields.
 	if vtc.Spec.Scheduling != nil {
 		if vtc.Spec.Scheduling.NodeSelector != nil {
-			pod.Spec.NodeSelector = vtc.Spec.Scheduling.NodeSelector
+			pod.Spec.NodeSelector = maps.Clone(vtc.Spec.Scheduling.NodeSelector)
 		}
 		if vtc.Spec.Scheduling.Tolerations != nil {
-			pod.Spec.Tolerations = vtc.Spec.Scheduling.Tolerations
+			pod.Spec.Tolerations = append([]corev1.Toleration(nil), vtc.Spec.Scheduling.Tolerations...)
 		}
 		if vtc.Spec.Scheduling.Resources != nil {
 			// Apply resource requirements to target-runtime
