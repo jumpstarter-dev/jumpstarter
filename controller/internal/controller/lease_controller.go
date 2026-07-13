@@ -36,8 +36,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // LeaseReconciler reconciles a Lease object
@@ -310,7 +312,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 				len(approvedExporters),
 				approvedExporters[0].Exporter.Name,
 			)
-			result.RequeueAfter = time.Second
+			result.RequeueAfter = pendingRequeueAfter(lease)
 			return nil
 		}
 
@@ -337,7 +339,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 				len(onlineApprovedExporters),
 				onlineApprovedExporters[0].Exporter.Name,
 			)
-			result.RequeueAfter = time.Second
+			result.RequeueAfter = pendingRequeueAfter(lease)
 			return nil
 		}
 
@@ -348,7 +350,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 				"There are %d online exporters, but none are ready (still cleaning up previous lease)",
 				len(availableExporters),
 			)
-			result.RequeueAfter = time.Second
+			result.RequeueAfter = pendingRequeueAfter(lease)
 			return nil
 		}
 
@@ -368,7 +370,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			lease.SetStatusPending("NotAvailable",
 				"Exporter %s is already leased by another client under spot access, but spot access eviction still not implemented",
 				selected.Exporter.Name)
-			result.RequeueAfter = time.Second
+			result.RequeueAfter = pendingRequeueAfter(lease)
 			return nil
 		}
 
@@ -647,9 +649,109 @@ func skipEndedPredicate() predicate.Funcs {
 	}
 }
 
+const maxPendingRequeue = 30 * time.Second
+
+func pendingRequeueAfter(lease *jumpstarterdevv1alpha1.Lease) time.Duration {
+	cond := meta.FindStatusCondition(
+		lease.Status.Conditions,
+		string(jumpstarterdevv1alpha1.LeaseConditionTypePending),
+	)
+	if cond == nil {
+		return time.Second
+	}
+	elapsed := time.Since(cond.LastTransitionTime.Time)
+	backoff := time.Second
+	for backoff < maxPendingRequeue && backoff < elapsed {
+		backoff *= 2
+	}
+	if backoff > maxPendingRequeue {
+		backoff = maxPendingRequeue
+	}
+	return backoff
+}
+
+func exporterChangedForPendingLeases() predicate.Funcs {
+	meaningful := func(oldExp, newExp *jumpstarterdevv1alpha1.Exporter) bool {
+		if oldExp.Status.ExporterStatusValue != newExp.Status.ExporterStatusValue {
+			return true
+		}
+		oldOnline := meta.IsStatusConditionTrue(oldExp.Status.Conditions,
+			string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline))
+		newOnline := meta.IsStatusConditionTrue(newExp.Status.Conditions,
+			string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline))
+		if oldOnline != newOnline {
+			return true
+		}
+		oldLeased := oldExp.Status.LeaseRef != nil
+		newLeased := newExp.Status.LeaseRef != nil
+		if oldLeased != newLeased {
+			return true
+		}
+		if !labels.Equals(labels.Set(oldExp.Labels), labels.Set(newExp.Labels)) {
+			return true
+		}
+		return false
+	}
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return true
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldExp := e.ObjectOld.(*jumpstarterdevv1alpha1.Exporter)
+			newExp := e.ObjectNew.(*jumpstarterdevv1alpha1.Exporter)
+			return meaningful(oldExp, newExp)
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return false
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return true
+		},
+	}
+}
+
+func (r *LeaseReconciler) mapExporterToLeases(ctx context.Context, obj client.Object) []reconcile.Request {
+	exporter := obj.(*jumpstarterdevv1alpha1.Exporter)
+
+	var leaseList jumpstarterdevv1alpha1.LeaseList
+	if err := r.List(ctx, &leaseList, client.InNamespace(exporter.Namespace), MatchingActiveLeases()); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for i := range leaseList.Items {
+		lease := &leaseList.Items[i]
+		if !meta.IsStatusConditionTrue(lease.Status.Conditions,
+			string(jumpstarterdevv1alpha1.LeaseConditionTypePending)) {
+			continue
+		}
+
+		if lease.Spec.ExporterRef != nil && lease.Spec.ExporterRef.Name == exporter.Name {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: lease.Name, Namespace: lease.Namespace},
+			})
+			continue
+		}
+
+		selector, err := metav1.LabelSelectorAsSelector(&lease.Spec.Selector)
+		if err != nil {
+			continue
+		}
+		if selector.Matches(labels.Set(exporter.Labels)) {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: lease.Name, Namespace: lease.Namespace},
+			})
+		}
+	}
+	return requests
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *LeaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&jumpstarterdevv1alpha1.Lease{}, builder.WithPredicates(skipEndedPredicate())).
+		Watches(&jumpstarterdevv1alpha1.Exporter{},
+			handler.EnqueueRequestsFromMapFunc(r.mapExporterToLeases),
+			builder.WithPredicates(exporterChangedForPendingLeases())).
 		Complete(r)
 }
