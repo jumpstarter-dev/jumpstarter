@@ -371,7 +371,7 @@ class TestRequestAsyncOwnership:
     async def test_raises_when_lease_belongs_to_different_client(self):
         """request_async should raise LeaseError when the lease belongs to another client."""
         lease = self._make_lease(client_name="my-client")
-        lease.get.return_value = Mock(client="other-client", selector=None)
+        lease.get.return_value = Mock(client="other-client", selector=None, effective_end_time=None)
 
         with pytest.raises(LeaseError, match="belongs to client 'other-client'"):
             await lease.request_async()
@@ -380,7 +380,7 @@ class TestRequestAsyncOwnership:
     async def test_skips_check_when_client_name_is_none(self):
         """request_async should skip ownership check when client_name is not set."""
         lease = self._make_lease(client_name=None)
-        lease.get.return_value = Mock(client="other-client", selector=None)
+        lease.get.return_value = Mock(client="other-client", selector=None, effective_end_time=None)
         lease._acquire = AsyncMock(return_value=lease)
 
         result = await lease.request_async()
@@ -633,3 +633,93 @@ class TestHandleAsyncUnavailableRetry:
 
         assert exc_info.value.code() == grpc.StatusCode.UNAVAILABLE
         assert dial_call_count >= 2
+
+
+class TestRequestAsyncExpiredLease:
+    """Tests for early detection of already-ended leases in request_async."""
+
+    def _make_lease(self, *, name="test-lease", client_name="my-client"):
+        lease = object.__new__(Lease)
+        lease.name = name
+        lease.client_name = client_name
+        lease.selector = None
+        lease.get = AsyncMock()
+        return lease
+
+    @pytest.mark.anyio
+    async def test_raises_when_lease_has_effective_end_time(self):
+        """request_async should raise LeaseError when the lease has already ended."""
+        lease = self._make_lease()
+        lease.get.return_value = Mock(
+            effective_end_time=datetime.now(timezone.utc),
+            client="my-client",
+            selector=None,
+        )
+
+        with pytest.raises(LeaseError, match="has already ended"):
+            await lease.request_async()
+
+    @pytest.mark.anyio
+    async def test_passes_when_lease_has_no_effective_end_time(self):
+        """request_async should proceed to _acquire when lease is still active."""
+        lease = self._make_lease()
+        lease.get.return_value = Mock(
+            effective_end_time=None,
+            client="my-client",
+            selector=None,
+        )
+        lease._acquire = AsyncMock(return_value=lease)
+
+        result = await lease.request_async()
+        assert result is lease
+        lease._acquire.assert_called_once()
+
+
+class TestAcquireExpiredLease:
+    """Tests for Ready=False detection in _acquire polling loop."""
+
+    def _make_lease(self, *, name="test-lease"):
+
+        lease = object.__new__(Lease)
+        lease.name = name
+        lease.acquisition_timeout = 5
+        lease._get_with_retry = AsyncMock()
+        return lease
+
+    @pytest.mark.anyio
+    async def test_raises_on_ready_false_expired(self):
+        """_acquire should raise LeaseError when Ready=False with reason Expired."""
+        from jumpstarter_protocol import kubernetes_pb2
+
+        lease = self._make_lease()
+        lease._get_with_retry.return_value = Mock(
+            conditions=[
+                kubernetes_pb2.Condition(
+                    type="Ready", status="False", reason="Expired",
+                    message="The lease has expired",
+                ),
+            ],
+            exporter="test-exporter",
+        )
+
+        with pytest.raises(LeaseError, match="The lease has expired"):
+            await lease._acquire()
+
+    @pytest.mark.anyio
+    async def test_raises_on_ready_false_released(self):
+        """_acquire should raise LeaseError when Ready=False with reason Released."""
+        from jumpstarter_protocol import kubernetes_pb2
+
+        lease = self._make_lease()
+        lease._get_with_retry.return_value = Mock(
+            conditions=[
+                kubernetes_pb2.Condition(
+                    type="Ready", status="False", reason="Released",
+                    message="The lease was marked for release",
+                ),
+            ],
+            exporter="test-exporter",
+        )
+
+        with pytest.raises(LeaseError, match="The lease was marked for release"):
+            await lease._acquire()

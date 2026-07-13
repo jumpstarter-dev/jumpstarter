@@ -180,7 +180,8 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         if self.name:
             logger.debug("using existing lease via env or flag %s", self.name)
             existing_lease = await self.get()
-            # Verify the lease belongs to the current client
+            if existing_lease.effective_end_time:
+                raise LeaseError(f"lease {self.name} has already ended")
             if self.client_name and existing_lease.client != self.client_name:
                 raise LeaseError(
                     f"lease {self.name} belongs to client '{existing_lease.client}', "
@@ -278,9 +279,9 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                                 f"Unsatisfiable state either"
                             )
 
-                        # lease released
-                        if condition_present_and_equal(result.conditions, "Ready", "False", "Released"):
-                            raise LeaseError(f"lease {self.name} released")
+                        if condition_false(result.conditions, "Ready"):
+                            message = condition_message(result.conditions, "Ready") or "lease is no longer active"
+                            raise LeaseError(f"lease {self.name}: {message}")
 
                         # Update spinner with appropriate status message
                         self._update_spinner_status(spinner, result)
@@ -425,10 +426,9 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     raise ConnectionError("Socket not ready at %s" % path) from e
 
     def _notify_lease_ending(self, remaining: timedelta) -> None:
-        """Log lease status and invoke the ending callback if set."""
+        """Set lease_ended flag and invoke the ending callback if set."""
         if remaining <= timedelta(0):
             self.lease_ended = True
-            logger.info("Lease {} ended at {}".format(self.name, datetime.now().astimezone()))
         if self.lease_ending_callback is not None:
             self.lease_ending_callback(self, remaining)
 

@@ -1226,3 +1226,83 @@ class TestRetryLoopTimeout:
 
         assert exit_code == 0
         assert state["call_count"] == 3
+
+
+class TestRetryLoopLeaseExpired:
+    """Tests for lease expiry detection in the retry loop."""
+
+    async def test_exits_cleanly_when_lease_ended_during_connection(self):
+        """Retry loop should exit cleanly instead of retrying when lease has ended."""
+        lease = Mock()
+        lease.release = True
+        lease.name = "test-lease"
+        lease.exporter_name = "test-exporter"
+        lease.retry_timeout = 10.0
+        lease.lease_ended = True
+        lease.lease_transferred = False
+
+        config = _DummyConfig()
+        state = {"call_count": 0}
+
+        @asynccontextmanager
+        async def lease_async(
+            selector, exporter_name, lease_name, duration, portal,
+            acquisition_timeout, retry_timeout=None,
+        ):
+            yield lease
+
+        config.lease_async = lease_async
+
+        async def fake_run(*_):
+            state["call_count"] += 1
+            raise ExporterUnreachableError("exporter dead")
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run),
+        ):
+            exit_code = await _shell_with_signal_handling(
+                config, None, None, None, timedelta(minutes=1), False, (), None
+            )
+
+        assert exit_code == 0
+        assert state["call_count"] == 1  # did not retry
+
+    async def test_retries_normally_when_lease_not_ended(self):
+        """Retry loop should continue retrying when lease has not ended."""
+        lease = Mock()
+        lease.release = True
+        lease.name = "test-lease"
+        lease.exporter_name = "test-exporter"
+        lease.retry_timeout = 10.0
+        lease.lease_ended = False
+        lease.lease_transferred = False
+
+        config = _DummyConfig()
+        state = {"call_count": 0}
+
+        @asynccontextmanager
+        async def lease_async(
+            selector, exporter_name, lease_name, duration, portal,
+            acquisition_timeout, retry_timeout=None,
+        ):
+            yield lease
+
+        config.lease_async = lease_async
+
+        async def fake_run(*_):
+            state["call_count"] += 1
+            if state["call_count"] < 3:
+                raise ExporterUnreachableError("exporter dead")
+            return 0
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run),
+        ):
+            exit_code = await _shell_with_signal_handling(
+                config, None, None, None, timedelta(minutes=1), False, (), None
+            )
+
+        assert exit_code == 0
+        assert state["call_count"] == 3
