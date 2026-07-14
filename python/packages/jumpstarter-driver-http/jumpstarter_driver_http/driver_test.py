@@ -222,18 +222,22 @@ async def test_driver_port_zero_assigns_real_port(tmp_path):
 
 @pytest.mark.anyio
 async def test_driver_close_with_running_loop(tmp_path, unused_tcp_port):
-    """close() while an event loop is running should clean up via anyio."""
-    server = HttpServer(root_dir=str(tmp_path), port=unused_tcp_port)
+    """close() from the event loop thread must release the port."""
+    server = HttpServer(root_dir=str(tmp_path), host="127.0.0.1", port=unused_tcp_port)
     await server.start()
     assert server.runner is not None
 
-    # close() is synchronous; when called from an async context,
-    # anyio.from_thread.run() may not work (we're on the event loop thread),
-    # but the finally block still sets runner=None and _bound_port=0.
     server.close()
 
     assert server.runner is None
     assert server._bound_port == 0
+
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind((server.host, unused_tcp_port))
+    finally:
+        s.close()
 
 
 @pytest.mark.anyio
