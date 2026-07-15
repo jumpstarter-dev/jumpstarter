@@ -131,7 +131,7 @@ itself.
 **Example: VirtualTargetClass (namespaced backend profile)**
 
 ```yaml
-apiVersion: jumpstarter.dev/v1alpha1
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
 kind: VirtualTargetClass
 metadata:
   name: qemu-rpi4
@@ -164,7 +164,7 @@ spec:
 **Example: ExporterSet (generic scaling resource)**
 
 ```yaml
-apiVersion: jumpstarter.dev/v1alpha1
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
 kind: ExporterSet
 metadata:
   name: rpi4-virtual
@@ -206,7 +206,7 @@ status:
 **Example: Corellium VirtualTargetClass**
 
 ```yaml
-apiVersion: jumpstarter.dev/v1alpha1
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
 kind: VirtualTargetClass
 metadata:
   name: corellium-kronos
@@ -238,7 +238,7 @@ Pod; `ExporterSet` authors never see credentials.
 **Example: Android ExporterSet**
 
 ```yaml
-apiVersion: jumpstarter.dev/v1alpha1
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
 kind: ExporterSet
 metadata:
   name: pixel7-emulator
@@ -404,7 +404,7 @@ and boot what they need after leasing (see Phase 4 and DD-7).
    the `ExporterSet` that will reference it):
 
 ```yaml
-apiVersion: jumpstarter.dev/v1alpha1
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
 kind: VirtualTargetClass
 metadata:
   name: qemu-rpi4
@@ -438,7 +438,7 @@ spec:
    by name and declares scaling + lease-matching labels:
 
 ```yaml
-apiVersion: jumpstarter.dev/v1alpha1
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
 kind: ExporterSet
 metadata:
   name: rpi4-virtual
@@ -1003,7 +1003,7 @@ higher-fidelity behavior than in-cluster QEMU. The cluster hosts
 orchestration only; emulators run on the bench network.
 
 ```yaml
-apiVersion: jumpstarter.dev/v1alpha1
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
 kind: VirtualTargetClass
 metadata:
   name: qcom-sa8295-baremetal
@@ -1027,7 +1027,7 @@ spec:
     board:
       soc: sa8295
 ---
-apiVersion: jumpstarter.dev/v1alpha1
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
 kind: ExporterSet
 metadata:
   name: qcom-sa8295-hifi

@@ -38,7 +38,7 @@ jobs:
             label: jumpstarter-exporterset-controller
             dockerfile: controller/Containerfile.exporter-set-controller
             context: controller
-          - image_name: jumpstarter-dev/qemu-runtime
+          - image_name: jumpstarter-dev/exporterset/qemu-runtime
             label: qemu-runtime
             dockerfile: controller/Containerfile.qemu-runtime
             context: controller

@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: virtualtargetclasses.jumpstarter.dev
+  name: virtualtargetclasses.virtualtarget.jumpstarter.dev
 spec:
-  group: jumpstarter.dev
+  group: virtualtarget.jumpstarter.dev
   names:
     kind: VirtualTargetClass
     listKind: VirtualTargetClassList
@@ -58,6 +58,22 @@ spec:
                 - Immediate
                 - WaitForFirstConsumer
                 type: string
+              caBundleConfigMapRef:
+                description: |-
+                  CABundleConfigMapRef references a ConfigMap containing CA certificates
+                  to inject into rendered Pods for corporate/private TLS verification.
+                properties:
+                  key:
+                    default: ca-bundle.crt
+                    description: Key within the ConfigMap. Defaults to "ca-bundle.crt".
+                    type: string
+                  name:
+                    description: Name of the ConfigMap.
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
               credentialsSecretRef:
                 description: |-
                   CredentialsSecretRef is a reference to a Secret in the same namespace

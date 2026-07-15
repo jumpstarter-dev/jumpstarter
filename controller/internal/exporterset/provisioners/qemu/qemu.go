@@ -26,6 +26,7 @@ import (
 	"maps"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -39,7 +40,7 @@ const (
 	DefaultExporterImage = "quay.io/jumpstarter-dev/jumpstarter:latest"
 
 	// DefaultQEMURuntimeImage is the QEMU runtime container image.
-	DefaultQEMURuntimeImage = "quay.io/jumpstarter-dev/qemu-runtime:latest"
+	DefaultQEMURuntimeImage = "quay.io/jumpstarter-dev/exporterset/qemu-runtime:latest"
 
 	// sharedVolumeName is the name of the shared emptyDir volume
 	// used for Unix socket communication between the exporter
@@ -85,8 +86,8 @@ func (p *Provisioner) Name() string {
 //   - Mount firmware/OS images as OCI volume sources
 func (p *Provisioner) RenderPod(
 	ctx context.Context,
-	exporterSet *jumpstarterdevv1alpha1.ExporterSet,
-	vtc *jumpstarterdevv1alpha1.VirtualTargetClass,
+	exporterSet *virtualtargetv1alpha1.ExporterSet,
+	vtc *virtualtargetv1alpha1.VirtualTargetClass,
 	mergedParameters map[string]interface{},
 ) (*corev1.Pod, error) {
 	restartAlways := corev1.ContainerRestartPolicyAlways
@@ -95,7 +96,7 @@ func (p *Provisioner) RenderPod(
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: fmt.Sprintf("%s-", exporterSet.Name),
 			Namespace:    exporterSet.Namespace,
-			Labels:       maps.Clone(exporterSet.Spec.Template.Labels),
+			Labels:       maps.Clone(exporterSet.Spec.Template.Metadata.Labels),
 		},
 		Spec: corev1.PodSpec{
 			// Exporter runs as a native sidecar init container
@@ -155,7 +156,7 @@ func (p *Provisioner) RenderPod(
 		}
 		if vtc.Spec.Scheduling.Resources != nil {
 			// Apply resource requirements to target-runtime
-			pod.Spec.Containers[0].Resources = *vtc.Spec.Scheduling.Resources
+			pod.Spec.Containers[0].Resources = *vtc.Spec.Scheduling.Resources.DeepCopy()
 		}
 	}
 
@@ -167,7 +168,7 @@ func (p *Provisioner) RenderPod(
 // (via OwnerReference cascade) handles cleanup.
 func (p *Provisioner) Cleanup(
 	ctx context.Context,
-	exporterSet *jumpstarterdevv1alpha1.ExporterSet,
+	exporterSet *virtualtargetv1alpha1.ExporterSet,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) error {
 	return nil

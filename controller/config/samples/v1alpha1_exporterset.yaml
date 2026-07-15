@@ -1,4 +1,4 @@
-apiVersion: jumpstarter.dev/v1alpha1
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
 kind: ExporterSet
 metadata:
   name: rpi4-virtual

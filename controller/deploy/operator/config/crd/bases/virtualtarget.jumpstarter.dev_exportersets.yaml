@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: exportersets.jumpstarter.dev
+  name: exportersets.virtualtarget.jumpstarter.dev
 spec:
-  group: jumpstarter.dev
+  group: virtualtarget.jumpstarter.dev
   names:
     kind: ExporterSet
     listKind: ExporterSetList
@@ -148,6 +148,17 @@ spec:
                 properties:
                   metadata:
                     description: Metadata for created Exporter resources.
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: Annotations to apply to created Exporter resources.
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: Labels to apply to created Exporter resources.
+                        type: object
                     type: object
                   spec:
                     description: Spec defines the exporter configuration.
@@ -182,6 +193,10 @@ spec:
             - template
             - virtualTargetClassName
             type: object
+            x-kubernetes-validations:
+            - message: minReplicas must be less than or equal to maxReplicas (when
+                maxReplicas is not 0)
+              rule: self.maxReplicas == 0 || self.minReplicas <= self.maxReplicas
           status:
             description: ExporterSetStatus defines the observed state of ExporterSet.
             properties:

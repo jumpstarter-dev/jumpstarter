@@ -20,6 +20,7 @@ import (
 	"context"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -52,8 +53,8 @@ type Provisioner interface {
 	// sets OwnerReferences on the Pod before creation.
 	RenderPod(
 		ctx context.Context,
-		exporterSet *jumpstarterdevv1alpha1.ExporterSet,
-		vtc *jumpstarterdevv1alpha1.VirtualTargetClass,
+		exporterSet *virtualtargetv1alpha1.ExporterSet,
+		vtc *virtualtargetv1alpha1.VirtualTargetClass,
 		mergedParameters map[string]interface{},
 	) (*corev1.Pod, error)
 
@@ -64,7 +65,7 @@ type Provisioner interface {
 	// deletion automatically.
 	Cleanup(
 		ctx context.Context,
-		exporterSet *jumpstarterdevv1alpha1.ExporterSet,
+		exporterSet *virtualtargetv1alpha1.ExporterSet,
 		exporter *jumpstarterdevv1alpha1.Exporter,
 	) error
 }
