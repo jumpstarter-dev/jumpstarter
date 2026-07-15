@@ -27,7 +27,7 @@ from jumpstarter_cli_common.signal import signal_handler
 from .common import opt_acquisition_timeout, opt_duration_partial, opt_exporter_name, opt_retry_timeout, opt_selector
 from .login import relogin_client
 from jumpstarter.client import DirectLease
-from jumpstarter.client.client import client_from_path
+from jumpstarter.client.client import client_from_path, fetch_motd
 from jumpstarter.client.exceptions import LeaseError
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
 from jumpstarter.common.exceptions import (
@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 _TOKEN_REFRESH_THRESHOLD_SECONDS = 120
 
 
-def _run_shell_only(lease, config, command, path: str) -> int:
+def _run_shell_only(lease, config, command, path: str, motd: str | None = None) -> int:
     """Run just the shell command without log streaming."""
     allow = config.drivers.allow if config is not None else getattr(lease, "allow", [])
     unsafe = config.drivers.unsafe if config is not None else getattr(lease, "unsafe", False)
@@ -64,6 +64,7 @@ def _run_shell_only(lease, config, command, path: str) -> int:
         lease=lease,
         insecure=insecure,
         passphrase=passphrase,
+        motd=motd,
     )
 
 
@@ -352,8 +353,20 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                 warning_text = monitor.status_message[len(HOOK_WARNING_PREFIX) :]
                                 click.echo(click.style(f"Warning: {warning_text}", fg="yellow", bold=True))
 
+                            # Fetch motd now (after the beforeLease hook has run);
+                            # skipped in command mode where it is never shown
+                            motd = None
+                            if not command:
+                                try:
+                                    with anyio.fail_after(5):
+                                        motd = await fetch_motd(client)
+                                except Exception:
+                                    logger.debug("Failed to fetch motd, continuing without it")
+
                             # Run the shell command
-                            exit_code = await anyio.to_thread.run_sync(_run_shell_only, lease, config, command, path)
+                            exit_code = await anyio.to_thread.run_sync(
+                                _run_shell_only, lease, config, command, path, motd
+                            )
 
                             # Shell has exited. For auto-created leases (release=True), call
                             # EndSession to trigger afterLease hook while keeping log stream
@@ -769,4 +782,5 @@ def shell(
                     unsafe=True,
                     use_profiles=False,
                     command=command,
+                    motd=config.motd,
                 )

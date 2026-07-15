@@ -752,6 +752,7 @@ type GetReportResponse struct {
 	Labels               map[string]string       `protobuf:"bytes,2,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Key-value metadata labels.
 	Reports              []*DriverInstanceReport `protobuf:"bytes,3,rep,name=reports,proto3" json:"reports,omitempty"`                                                                         // Driver instance reports.
 	AlternativeEndpoints []*Endpoint             `protobuf:"bytes,4,rep,name=alternative_endpoints,json=alternativeEndpoints,proto3" json:"alternative_endpoints,omitempty"`                   // Alternative connection endpoints.
+	Motd                 string                  `protobuf:"bytes,5,opt,name=motd,proto3" json:"motd,omitempty"`                                                                               // Message of the day shown to clients when entering a shell.
 	unknownFields        protoimpl.UnknownFields
 	sizeCache            protoimpl.SizeCache
 }
@@ -812,6 +813,13 @@ func (x *GetReportResponse) GetAlternativeEndpoints() []*Endpoint {
 		return x.AlternativeEndpoints
 	}
 	return nil
+}
+
+func (x *GetReportResponse) GetMotd() string {
+	if x != nil {
+		return x.Motd
+	}
+	return ""
 }
 
 // Connection endpoint with TLS credentials.
@@ -1906,12 +1914,13 @@ const file_jumpstarter_v1_jumpstarter_proto_rawDesc = "" +
 	"\n" +
 	"\b_messageB\x10\n" +
 	"\x0e_release_lease\"\x16\n" +
-	"\x14ReportStatusResponse\"\xb8\x02\n" +
+	"\x14ReportStatusResponse\"\xcc\x02\n" +
 	"\x11GetReportResponse\x12\x12\n" +
 	"\x04uuid\x18\x01 \x01(\tR\x04uuid\x12E\n" +
 	"\x06labels\x18\x02 \x03(\v2-.jumpstarter.v1.GetReportResponse.LabelsEntryR\x06labels\x12>\n" +
 	"\areports\x18\x03 \x03(\v2$.jumpstarter.v1.DriverInstanceReportR\areports\x12M\n" +
-	"\x15alternative_endpoints\x18\x04 \x03(\v2\x18.jumpstarter.v1.EndpointR\x14alternativeEndpoints\x1a9\n" +
+	"\x15alternative_endpoints\x18\x04 \x03(\v2\x18.jumpstarter.v1.EndpointR\x14alternativeEndpoints\x12\x12\n" +
+	"\x04motd\x18\x05 \x01(\tR\x04motd\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa5\x01\n" +

@@ -154,6 +154,7 @@ message GetReportResponse {
   map<string, string> labels = 2; // Key-value metadata labels.
   repeated DriverInstanceReport reports = 3; // Driver instance reports.
   repeated Endpoint alternative_endpoints = 4; // Alternative connection endpoints.
+  string motd = 5; // Message of the day shown to clients when entering a shell.
 }
 
 // Connection endpoint with TLS credentials.

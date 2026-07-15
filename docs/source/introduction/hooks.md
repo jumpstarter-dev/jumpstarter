@@ -140,6 +140,7 @@ communicate with the {term}`exporter` {term}`session`:
 | `LEASE_NAME`        | Name of the current {term}`lease` assigned by the {term}`controller`                                |
 | `CLIENT_NAME`       | Name of the client holding the {term}`lease`                                                |
 | `JMP_DRIVERS_ALLOW` | Set to `UNSAFE` to enable access to all drivers ({term}`hook`s run locally on the {term}`exporter`) |
+| `JMP_MOTD_FILE`     | `beforeLease` only: path to a file; content written here is appended to the motd shown to the client |
 
 These variables are set automatically. The {term}`hook` uses a dedicated Unix socket
 separate from the client connection to avoid protocol interference.

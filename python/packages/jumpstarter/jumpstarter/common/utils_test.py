@@ -29,6 +29,35 @@ def test_launch_shell(tmp_path, monkeypatch):
     assert exit_code == 1
 
 
+def test_launch_shell_prints_motd(tmp_path, monkeypatch, capfd):
+    monkeypatch.setenv("SHELL", shutil.which("true"))
+    exit_code = launch_shell(
+        host=str(tmp_path / "test.sock"),
+        context="remote",
+        allow=["*"],
+        unsafe=False,
+        use_profiles=False,
+        motd="Welcome to my-exporter!",
+    )
+    assert exit_code == 0
+    assert "Welcome to my-exporter!" in capfd.readouterr().out
+
+
+def test_launch_shell_no_motd_for_command(tmp_path, monkeypatch, capfd):
+    monkeypatch.setenv("SHELL", shutil.which("true"))
+    exit_code = launch_shell(
+        host=str(tmp_path / "test.sock"),
+        context="remote",
+        allow=["*"],
+        unsafe=False,
+        use_profiles=False,
+        command=(shutil.which("true"),),
+        motd="Welcome to my-exporter!",
+    )
+    assert exit_code == 0
+    assert "Welcome to my-exporter!" not in capfd.readouterr().out
+
+
 def test_launch_shell_command_not_found(tmp_path, capfd):
     exit_code = launch_shell(
         host=str(tmp_path / "test.sock"),

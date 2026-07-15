@@ -410,8 +410,11 @@ class GetReportResponse(google.protobuf.message.Message):
     LABELS_FIELD_NUMBER: builtins.int
     REPORTS_FIELD_NUMBER: builtins.int
     ALTERNATIVE_ENDPOINTS_FIELD_NUMBER: builtins.int
+    MOTD_FIELD_NUMBER: builtins.int
     uuid: builtins.str
     """Exporter UUID."""
+    motd: builtins.str
+    """Message of the day shown to clients when entering a shell."""
     @property
     def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
         """Key-value metadata labels."""
@@ -431,8 +434,9 @@ class GetReportResponse(google.protobuf.message.Message):
         labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
         reports: collections.abc.Iterable[Global___DriverInstanceReport] | None = ...,
         alternative_endpoints: collections.abc.Iterable[Global___Endpoint] | None = ...,
+        motd: builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["alternative_endpoints", b"alternative_endpoints", "labels", b"labels", "reports", b"reports", "uuid", b"uuid"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["alternative_endpoints", b"alternative_endpoints", "labels", b"labels", "motd", b"motd", "reports", b"reports", "uuid", b"uuid"]) -> None: ...
 
 Global___GetReportResponse: typing_extensions.TypeAlias = GetReportResponse
 

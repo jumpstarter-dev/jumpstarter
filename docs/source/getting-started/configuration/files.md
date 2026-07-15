@@ -94,6 +94,9 @@ tls:
   ca: "" # A CA certificate to use
 endpoint: "jumpstarter.my-lab.com:1443" # The Jumpstarter service endpoint
 token: "******************" # An authentication token
+motd: | # Optional message of the day shown to clients when they enter a shell
+  Welcome to myexporter!
+  Flash the device with: j storage flash
 export: # Configure drivers to expose to the clients
   power:
     type: "jumpstarter_driver_power.driver.PduPower" # The driver Python class path and type

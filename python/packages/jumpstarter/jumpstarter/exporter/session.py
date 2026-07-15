@@ -44,6 +44,7 @@ class Session(
 ):
     root_device: "Driver"
     mapping: dict[UUID, "Driver"]
+    motd: str | None = None
     lease_context: "LeaseContext | None" = field(init=False, default=None)
 
     _logging_queue: deque = field(init=False)
@@ -74,10 +75,11 @@ class Session(
             finally:
                 logging.getLogger().removeHandler(self._logging_handler)
 
-    def __init__(self, *args, root_device, **kwargs):
+    def __init__(self, *args, root_device, motd=None, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.root_device = root_device
+        self.motd = motd
         self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
 
         self._logging_queue = deque(maxlen=256)
@@ -296,6 +298,7 @@ class Session(
         return jumpstarter_pb2.GetReportResponse(
             uuid=str(self.uuid),
             labels=self.labels,
+            motd=self.motd or "",
             reports=[
                 instance.report(parent=parent, name=name)
                 for (_, parent, name, instance) in self.root_device.enumerate()

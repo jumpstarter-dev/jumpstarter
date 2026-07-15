@@ -146,6 +146,57 @@ def test_empty_description_not_included():
         assert not getattr(report, 'description', None)
 
 
+def test_get_report_includes_motd():
+    """Test that GetReport includes the motd when set on the session"""
+    import asyncio
+
+    driver = SimpleDriver()
+
+    session = Session(
+        uuid=driver.uuid,
+        labels=driver.labels,
+        root_device=driver,
+        motd="Welcome to my-exporter!",
+    )
+    response = asyncio.run(session.GetReport(empty_pb2.Empty(), None))
+    assert response.motd == "Welcome to my-exporter!"
+
+    session_without_motd = Session(
+        uuid=driver.uuid,
+        labels=driver.labels,
+        root_device=driver,
+    )
+    response = asyncio.run(session_without_motd.GetReport(empty_pb2.Empty(), None))
+    assert response.motd == ""
+
+
+def test_client_fetches_motd_via_getreport():
+    """Test that a connected client can read the motd from GetReport (as the shell does)"""
+    from contextlib import ExitStack
+
+    from anyio.from_thread import start_blocking_portal
+    from google.protobuf import empty_pb2
+
+    from jumpstarter.client.client import client_from_path
+
+    driver = SimpleDriver()
+
+    with start_blocking_portal() as portal:
+        with ExitStack() as stack:
+            with Session(
+                uuid=driver.uuid,
+                labels=driver.labels,
+                root_device=driver,
+                motd="Welcome to my-exporter!",
+            ) as session:
+                with portal.wrap_async_context_manager(session.serve_unix_async()) as path:
+                    with portal.wrap_async_context_manager(
+                        client_from_path(path, portal, stack, allow=[], unsafe=True)
+                    ) as client:
+                        report = portal.call(lambda: client.stub.GetReport(empty_pb2.Empty()))
+                        assert report.motd == "Welcome to my-exporter!"
+
+
 def test_description_override_in_exporter_config():
     """Test that description in exporter config overrides default"""
     # Create a driver with a custom description
