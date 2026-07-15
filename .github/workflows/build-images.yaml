@@ -38,7 +38,7 @@ jobs:
             label: jumpstarter-exporterset-controller
             dockerfile: controller/Containerfile.exporter-set-controller
             context: controller
-          - image_name: jumpstarter-dev/exporterset/qemu-runtime
+          - image_name: jumpstarter-dev/virtual/qemu-runtime
             label: qemu-runtime
             dockerfile: controller/Containerfile.qemu-runtime
             context: controller
@@ -230,7 +230,7 @@ jobs:
             const allImages = [
               'jumpstarter-dev/jumpstarter-controller',
               'jumpstarter-dev/jumpstarter-exporterset-controller',
-              'jumpstarter-dev/qemu-runtime',
+              'jumpstarter-dev/virtual/qemu-runtime',
               'jumpstarter-dev/jumpstarter-operator',
               'jumpstarter-dev/jumpstarter-operator-bundle',
               'jumpstarter-dev/jumpstarter',
