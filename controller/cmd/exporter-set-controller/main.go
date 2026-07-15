@@ -31,6 +31,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/qemu"
 )
@@ -48,6 +49,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(jumpstarterdevv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(virtualtargetv1alpha1.AddToScheme(scheme))
 }
 
 func main() {

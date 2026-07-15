@@ -57,6 +57,19 @@ type SchedulingSpec struct {
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
+// CABundleRef references a ConfigMap key containing PEM-encoded CA certificates.
+// These are injected into rendered Pods for TLS verification.
+type CABundleRef struct {
+	// Name of the ConfigMap.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// Key within the ConfigMap. Defaults to "ca-bundle.crt".
+	// +kubebuilder:default="ca-bundle.crt"
+	// +optional
+	Key string `json:"key,omitempty"`
+}
+
 // VirtualTargetClassSpec defines the desired state of VirtualTargetClass.
 type VirtualTargetClassSpec struct {
 	// Provisioner identifies which exporter-set controller handles this class.
@@ -93,6 +106,11 @@ type VirtualTargetClassSpec struct {
 	// Scheduling defines node placement constraints inherited by rendered Pods.
 	// +optional
 	Scheduling *SchedulingSpec `json:"scheduling,omitempty"`
+
+	// CABundleConfigMapRef references a ConfigMap containing CA certificates
+	// to inject into rendered Pods for corporate/private TLS verification.
+	// +optional
+	CABundleConfigMapRef *CABundleRef `json:"caBundleConfigMapRef,omitempty"`
 }
 
 // +kubebuilder:object:root=true

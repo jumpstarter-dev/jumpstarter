@@ -50,17 +50,29 @@ type ExporterTemplateSpec struct {
 	Drivers []DriverConfig `json:"drivers,omitempty"`
 }
 
+// EmbeddedObjectMeta defines metadata fields allowed on ExporterSet templates.
+type EmbeddedObjectMeta struct {
+	// Labels to apply to created Exporter resources.
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// Annotations to apply to created Exporter resources.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
 // ExporterSetTemplate defines the template for exporter instances created by this set.
 type ExporterSetTemplate struct {
 	// Metadata for created Exporter resources.
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Metadata EmbeddedObjectMeta `json:"metadata,omitempty"`
 
 	// Spec defines the exporter configuration.
 	Spec ExporterTemplateSpec `json:"spec,omitempty"`
 }
 
 // ExporterSetSpec defines the desired state of ExporterSet.
+// +kubebuilder:validation:XValidation:rule="self.maxReplicas == 0 || self.minReplicas <= self.maxReplicas",message="minReplicas must be less than or equal to maxReplicas (when maxReplicas is not 0)"
 type ExporterSetSpec struct {
 	// MinReplicas is the minimum number of instances (floor).
 	// +kubebuilder:default=0

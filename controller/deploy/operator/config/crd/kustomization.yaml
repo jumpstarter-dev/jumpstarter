@@ -7,6 +7,8 @@ resources:
 - bases/jumpstarter.dev_exporters.yaml
 - bases/jumpstarter.dev_leases.yaml
 - bases/jumpstarter.dev_exporteraccesspolicies.yaml
+- bases/virtualtarget.jumpstarter.dev_exportersets.yaml
+- bases/virtualtarget.jumpstarter.dev_virtualtargetclasses.yaml
 
 # +kubebuilder:scaffold:crdkustomizeresource
 

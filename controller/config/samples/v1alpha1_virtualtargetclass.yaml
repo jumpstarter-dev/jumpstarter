@@ -1,4 +1,4 @@
-apiVersion: jumpstarter.dev/v1alpha1
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
 kind: VirtualTargetClass
 metadata:
   name: qemu-rpi4
