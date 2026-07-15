@@ -40,7 +40,7 @@ const (
 	DefaultExporterImage = "quay.io/jumpstarter-dev/jumpstarter:latest"
 
 	// DefaultQEMURuntimeImage is the QEMU runtime container image.
-	DefaultQEMURuntimeImage = "quay.io/jumpstarter-dev/exporterset/qemu-runtime:latest"
+	DefaultQEMURuntimeImage = "quay.io/jumpstarter-dev/virtual/qemu-runtime:latest"
 
 	// sharedVolumeName is the name of the shared emptyDir volume
 	// used for Unix socket communication between the exporter

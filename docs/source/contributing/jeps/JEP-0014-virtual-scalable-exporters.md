@@ -288,7 +288,7 @@ spec:
       image: quay.io/jumpstarter-dev/jumpstarter:latest
   containers:
     - name: target-runtime           # QEMU/Cuttlefish — independent image
-      image: quay.io/jumpstarter-dev/qemu-runtime:latest
+      image: quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
       volumeMounts:
         - name: os
           mountPath: /os
