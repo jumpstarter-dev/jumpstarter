@@ -217,14 +217,18 @@ class GetExporterRequest(google.protobuf.message.Message):
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     NAME_FIELD_NUMBER: builtins.int
+    SHOW_HIDDEN_LABELS_FIELD_NUMBER: builtins.int
     name: builtins.str
     """The resource name of the exporter."""
+    show_hidden_labels: builtins.bool
+    """When true, include labels hidden by controller configuration."""
     def __init__(
         self,
         *,
         name: builtins.str = ...,
+        show_hidden_labels: builtins.bool = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["name", b"name"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["name", b"name", "show_hidden_labels", b"show_hidden_labels"]) -> None: ...
 
 Global___GetExporterRequest: typing_extensions.TypeAlias = GetExporterRequest
 
@@ -238,6 +242,7 @@ class ListExportersRequest(google.protobuf.message.Message):
     PAGE_SIZE_FIELD_NUMBER: builtins.int
     PAGE_TOKEN_FIELD_NUMBER: builtins.int
     FILTER_FIELD_NUMBER: builtins.int
+    SHOW_HIDDEN_LABELS_FIELD_NUMBER: builtins.int
     parent: builtins.str
     """The parent resource name (namespace)."""
     page_size: builtins.int
@@ -246,6 +251,8 @@ class ListExportersRequest(google.protobuf.message.Message):
     """Token for retrieving the next page of results."""
     filter: builtins.str
     """Filter expression for the results."""
+    show_hidden_labels: builtins.bool
+    """When true, include labels hidden by controller configuration."""
     def __init__(
         self,
         *,
@@ -253,8 +260,9 @@ class ListExportersRequest(google.protobuf.message.Message):
         page_size: builtins.int = ...,
         page_token: builtins.str = ...,
         filter: builtins.str = ...,
+        show_hidden_labels: builtins.bool = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["filter", b"filter", "page_size", b"page_size", "page_token", b"page_token", "parent", b"parent"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["filter", b"filter", "page_size", b"page_size", "page_token", b"page_token", "parent", b"parent", "show_hidden_labels", b"show_hidden_labels"]) -> None: ...
 
 Global___ListExportersRequest: typing_extensions.TypeAlias = ListExportersRequest
 

@@ -684,3 +684,43 @@ async def test_create_lease_sets_tags_on_protobuf():
     call_args = mock_stub.CreateLease.call_args[0][0]
     assert dict(call_args.lease.tags) == {"team": "devops", "ci-job": "999"}
     assert result.tags == {"team": "devops", "ci-job": "999"}
+
+
+@pytest.mark.asyncio
+async def test_list_exporters_passes_show_hidden_labels_to_proto():
+    from jumpstarter_protocol import client_pb2
+
+    mock_channel = Mock()
+
+    response = client_pb2.ListExportersResponse()
+
+    mock_stub = Mock()
+    mock_stub.ListExporters = AsyncMock(return_value=response)
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+    svc.stub = mock_stub
+
+    await svc.ListExporters(show_hidden_labels=True)
+
+    call_args = mock_stub.ListExporters.call_args[0][0]
+    assert call_args.show_hidden_labels is True
+
+
+@pytest.mark.asyncio
+async def test_list_exporters_show_hidden_labels_defaults_false():
+    from jumpstarter_protocol import client_pb2
+
+    mock_channel = Mock()
+
+    response = client_pb2.ListExportersResponse()
+
+    mock_stub = Mock()
+    mock_stub.ListExporters = AsyncMock(return_value=response)
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+    svc.stub = mock_stub
+
+    await svc.ListExporters()
+
+    call_args = mock_stub.ListExporters.call_args[0][0]
+    assert call_args.show_hidden_labels is False

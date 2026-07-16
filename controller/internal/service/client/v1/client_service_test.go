@@ -86,6 +86,67 @@ func TestDeleteLeaseRejectsAlreadyReleasedLease(t *testing.T) {
 	})
 }
 
+func toHiddenSet(keys ...string) map[string]struct{} {
+	s := make(map[string]struct{}, len(keys))
+	for _, k := range keys {
+		s[k] = struct{}{}
+	}
+	return s
+}
+
+func TestFilterHiddenLabels(t *testing.T) {
+	t.Run("no hidden keys configured is a no-op", func(t *testing.T) {
+		exp := &cpb.Exporter{Labels: map[string]string{"board": "rpi4", "pool": "staging"}}
+		filterHiddenLabels(exp, nil, false)
+		if len(exp.Labels) != 2 {
+			t.Fatalf("expected 2 labels, got %d", len(exp.Labels))
+		}
+	})
+
+	t.Run("strips configured hidden keys", func(t *testing.T) {
+		exp := &cpb.Exporter{Labels: map[string]string{"board": "rpi4", "pool": "staging", "internal-id": "abc"}}
+		filterHiddenLabels(exp, toHiddenSet("pool", "internal-id"), false)
+		if len(exp.Labels) != 1 {
+			t.Fatalf("expected 1 label, got %d", len(exp.Labels))
+		}
+		if exp.Labels["board"] != "rpi4" {
+			t.Fatalf("expected board=rpi4, got %v", exp.Labels)
+		}
+	})
+
+	t.Run("show_hidden_labels bypasses filtering", func(t *testing.T) {
+		exp := &cpb.Exporter{Labels: map[string]string{"board": "rpi4", "pool": "staging"}}
+		filterHiddenLabels(exp, toHiddenSet("pool"), true)
+		if len(exp.Labels) != 2 {
+			t.Fatalf("expected 2 labels (show_hidden_labels=true), got %d", len(exp.Labels))
+		}
+	})
+
+	t.Run("hidden key not present in labels is harmless", func(t *testing.T) {
+		exp := &cpb.Exporter{Labels: map[string]string{"board": "rpi4"}}
+		filterHiddenLabels(exp, toHiddenSet("nonexistent"), false)
+		if len(exp.Labels) != 1 {
+			t.Fatalf("expected 1 label, got %d", len(exp.Labels))
+		}
+	})
+
+	t.Run("empty labels map is a no-op", func(t *testing.T) {
+		exp := &cpb.Exporter{Labels: map[string]string{}}
+		filterHiddenLabels(exp, toHiddenSet("pool"), false)
+		if len(exp.Labels) != 0 {
+			t.Fatalf("expected 0 labels, got %d", len(exp.Labels))
+		}
+	})
+
+	t.Run("nil labels map is a no-op", func(t *testing.T) {
+		exp := &cpb.Exporter{}
+		filterHiddenLabels(exp, toHiddenSet("pool"), false)
+		if exp.Labels != nil {
+			t.Fatalf("expected nil labels, got %v", exp.Labels)
+		}
+	})
+}
+
 func TestCreateLeaseRejectsNilRequest(t *testing.T) {
 	svc := &ClientService{}
 
