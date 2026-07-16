@@ -218,6 +218,9 @@ def _serve_with_exc_handling(
             if (exit_code := _handle_parent(pid)) is not None:
                 return exit_code
 
+            if config.exit_on_lease_end:
+                return 0
+
             # Child exited with code 0 (restart requested).
             # Check if it failed too quickly, indicating a persistent error
             # (e.g., DNS resolution failure) that won't resolve by restarting.
@@ -284,8 +287,15 @@ def _serve_with_exc_handling(
     default=None,
     help="Require this passphrase from clients connecting via --tls-grpc-listener.",
 )
+@click.option(
+    "--exit-on-lease-end",
+    "exit_on_lease_end",
+    is_flag=True,
+    default=False,
+    help="Exit after the current lease ends instead of waiting for a new one.",
+)
 @handle_exceptions
-def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase):
+def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase, exit_on_lease_end):
     """Run an exporter locally."""
     if listener_bind is not None and config is None:
         raise click.UsageError("--exporter-config (or --exporter) is required when using --tls-grpc-listener")
@@ -300,5 +310,7 @@ def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase):
             raise click.UsageError(
                 "--tls-grpc-listener requires either --tls-grpc-insecure or --tls-cert and --tls-key"
             )
+    if exit_on_lease_end:
+        config.exit_on_lease_end = True
     parsed_bind = _parse_listener_bind(listener_bind) if listener_bind is not None else None
     return _serve_with_exc_handling(config, parsed_bind, tls_insecure, tls_cert, tls_key, passphrase)

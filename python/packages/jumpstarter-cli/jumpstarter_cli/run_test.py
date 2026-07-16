@@ -5,11 +5,12 @@ from unittest.mock import MagicMock, patch
 import jumpstarter_cli.run as run_mod
 
 
-def _make_config(max_rapid_failures=5, rapid_failure_window=60):
+def _make_config(max_rapid_failures=5, rapid_failure_window=60, exit_on_lease_end=False):
     """Create a mock config with failure_detection settings."""
     config = MagicMock()
     config.failure_detection.max_rapid_failures = max_rapid_failures
     config.failure_detection.rapid_failure_window = rapid_failure_window
+    config.exit_on_lease_end = exit_on_lease_end
     return config
 
 
@@ -177,3 +178,45 @@ class TestServeWithExcHandlingRapidFailures:
 
         assert exit_code == 1
         assert counter[0] == 3
+
+
+class TestExitOnLeaseEnd:
+    """Test exit_on_lease_end prevents parent from restarting child."""
+
+    def test_no_restart_when_exit_on_lease_end(self):
+        """Parent returns 0 immediately when child exits 0 with exit_on_lease_end."""
+        config = _make_config(exit_on_lease_end=True)
+
+        def mock_fork():
+            return 1
+
+        def mock_handle_parent(pid):
+            return None  # Child exited 0
+
+        with (
+            patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
+            patch("os.fork", side_effect=mock_fork),
+            patch("time.monotonic", return_value=0.0),
+        ):
+            exit_code = run_mod._serve_with_exc_handling(config)
+
+        assert exit_code == 0
+
+    def test_nonzero_exit_still_passes_through(self):
+        """Non-zero child exit code passes through even with exit_on_lease_end."""
+        config = _make_config(exit_on_lease_end=True)
+
+        def mock_fork():
+            return 1
+
+        def mock_handle_parent(pid):
+            return 137  # Killed by signal
+
+        with (
+            patch.object(run_mod, "_handle_parent", side_effect=mock_handle_parent),
+            patch("os.fork", side_effect=mock_fork),
+            patch("time.monotonic", return_value=0.0),
+        ):
+            exit_code = run_mod._serve_with_exc_handling(config)
+
+        assert exit_code == 137

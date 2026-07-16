@@ -185,6 +185,42 @@ export:
     assert "after_lease:" not in yaml_output
 
 
+def test_exporter_config_exit_on_lease_end(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    monkeypatch.setattr(ExporterConfigV1Alpha1, "BASE_PATH", tmp_path)
+
+    path = tmp_path / "test-exit.yaml"
+    path.write_text(
+        """apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: test-exit
+endpoint: "jumpstarter.my-lab.com:1443"
+token: "test-token"
+exitOnLeaseEnd: true
+""",
+        encoding="utf-8",
+    )
+
+    config = ExporterConfigV1Alpha1.load("test-exit")
+    assert config.exit_on_lease_end is True
+
+    # Verify default is False
+    config_default = ExporterConfigV1Alpha1(
+        metadata=ObjectMeta(namespace="default", name="default-test"),
+    )
+    assert config_default.exit_on_lease_end is False
+
+    # Verify round-trips through YAML serialization
+    yaml_output = ExporterConfigV1Alpha1.dump_yaml(config)
+    assert "exitOnLeaseEnd: true" in yaml_output
+    assert "exit_on_lease_end" not in yaml_output
+
+    # Verify default (False) is also serialized
+    yaml_default = ExporterConfigV1Alpha1.dump_yaml(config_default)
+    assert "exitOnLeaseEnd: false" in yaml_default
+
+
 def _write_minimal_config(path: Path, name: str):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(

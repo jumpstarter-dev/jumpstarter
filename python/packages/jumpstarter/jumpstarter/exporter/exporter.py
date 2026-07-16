@@ -99,6 +99,12 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     Created when hooks.before_lease or hooks.after_lease are defined in config.
     """
 
+    exit_on_lease_end: bool = field(default=False)
+    """When True, the exporter exits after serving one lease.
+
+    Triggers the existing _stop_requested mechanism after lease cleanup.
+    """
+
     # Internal State Fields
 
     _registered: bool = field(init=False, default=False)
@@ -909,6 +915,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         # This prevents SSL corruption from overlapping connections
                         await sleep(0.2)
                     logger.debug("Ready for next lease")
+
+                    if self.exit_on_lease_end and previous_leased:
+                        logger.info("Exporter configured to exit after lease, shutting down")
+                        self._stop_requested = True
 
                     if self._stop_requested:
                         self.stop(should_unregister=self._deferred_unregister)
