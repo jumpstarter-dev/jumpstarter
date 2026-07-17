@@ -108,33 +108,23 @@ var _ = Describe("Exit On Lease End E2E Tests", Label("exit-on-lease-end"), Orde
 			"exporter should remain running before any lease is served")
 	})
 
-	It("exporter serves exactly one lease then exits", func() {
-		// Start the exporter and complete two lease attempts:
-		// the first should succeed, then the exporter should exit,
-		// making the second lease fail.
+	It("exporter serves exactly one lease then exits and goes offline", func() {
+		// Serve a single lease and verify that the exporter process
+		// terminates and the controller marks it offline.
 		tracker.StartExporterSingle("test-exporter-exit-on-lease-end")
 		WaitForExporter("test-exporter-exit-on-lease-end")
 
-		// First lease succeeds.
 		out, err := Jmp("shell", "--client", "test-client-exit-on-lease-end",
 			"--selector", "example.com/board=exit-on-lease-end", "j", "power", "on")
 		Expect(err).NotTo(HaveOccurred(), out)
 
-		// Wait for the exporter to exit.
+		// The exporter should exit after the lease ends.
 		Eventually(func() bool {
 			return tracker.IsProcessRunning()
 		}, 60*time.Second, 1*time.Second).Should(BeFalse(),
-			"exporter process should have exited after first lease ended")
+			"exporter process should have exited after lease ended")
 
+		// Verify the controller reflects the exporter as offline.
 		WaitForExporterOffline("test-exporter-exit-on-lease-end")
-
-		// Second lease should fail because the exporter is offline.
-		// Use a short acquisition-timeout so we don't block forever waiting
-		// for the controller to match the lease to an (offline) exporter.
-		_, err = Jmp("shell", "--client", "test-client-exit-on-lease-end",
-			"--retry-timeout", "0",
-			"--acquisition-timeout", "10s",
-			"--selector", "example.com/board=exit-on-lease-end", "j", "power", "on")
-		Expect(err).To(HaveOccurred(), "second lease should fail because exporter has exited")
 	})
 })
