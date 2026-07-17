@@ -18,8 +18,66 @@ env:
   QUAY_ORG: quay.io/jumpstarter-dev
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      controller: ${{ steps.filter.outputs.controller }}
+      operator: ${{ steps.filter.outputs.operator }}
+      operator-bundle: ${{ steps.filter.outputs.operator-bundle }}
+      microshift: ${{ steps.filter.outputs.microshift }}
+      python: ${{ steps.filter.outputs.python }}
+      python-utils: ${{ steps.filter.outputs.python-utils }}
+      python-dev: ${{ steps.filter.outputs.python-dev }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4
+        id: filter
+        with:
+          base: ${{ github.base_ref || github.event.merge_group.base_ref || 'main' }}
+          filters: |
+            controller:
+              - 'controller/Containerfile'
+              - 'controller/go.mod'
+              - 'controller/go.sum'
+              - 'controller/cmd/**'
+              - 'controller/api/**'
+              - 'controller/internal/**'
+            operator:
+              - 'controller/Containerfile.operator'
+              - 'controller/go.mod'
+              - 'controller/go.sum'
+              - 'controller/api/**'
+              - 'controller/internal/**'
+              - 'controller/deploy/operator/go.mod'
+              - 'controller/deploy/operator/go.sum'
+              - 'controller/deploy/operator/cmd/**'
+              - 'controller/deploy/operator/api/**'
+              - 'controller/deploy/operator/internal/**'
+            operator-bundle:
+              - 'controller/deploy/operator/Containerfile.bundle'
+              - 'controller/deploy/operator/bundle/**'
+            microshift:
+              - 'controller/deploy/microshift-bootc/**'
+              - 'controller/deploy/operator/dist/**'
+            python:
+              - 'python/Containerfile'
+              - 'python/.devfile/Containerfile.client'
+              - 'python/**'
+            python-utils:
+              - 'python/Containerfile.utils'
+            python-dev:
+              - 'python/.devfile/Containerfile'
+              - '.py-version'
+
   build-and-push-image:
-    if: github.event_name != 'pull_request' || contains(toJSON(github.event.pull_request.labels.*.name), 'build-pr-images')
+    needs: changes
+    # Run on: push/tags (always), workflow_dispatch (always), merge_group (changed images only),
+    # pull_request (only when labeled, per-image label filtering handled in steps below).
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(toJSON(github.event.pull_request.labels.*.name), 'build-pr-images')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -34,36 +92,44 @@ jobs:
             label: jumpstarter-controller
             dockerfile: controller/Containerfile
             context: controller
+            filter: controller
           - image_name: jumpstarter-dev/jumpstarter-operator
             label: jumpstarter-operator
             dockerfile: controller/Containerfile.operator
             context: controller
+            filter: operator
           - image_name: jumpstarter-dev/jumpstarter-operator-bundle
             label: jumpstarter-operator-bundle
             dockerfile: controller/deploy/operator/Containerfile.bundle
             context: controller/deploy/operator
             generate_bundle: true
+            filter: operator-bundle
           - image_name: jumpstarter-dev/microshift/bootc
             dockerfile: controller/deploy/microshift-bootc/Containerfile
             context: controller
             generate_installer: true
+            filter: microshift
           # Python images (use repo root context for .git access needed by hatch-vcs)
           - image_name: jumpstarter-dev/jumpstarter
             label: jumpstarter
             dockerfile: python/Containerfile
             context: .
+            filter: python
           - image_name: jumpstarter-dev/jumpstarter-utils
             label: jumpstarter-utils
             dockerfile: python/Containerfile.utils
             context: python
+            filter: python-utils
           - image_name: jumpstarter-dev/jumpstarter-dev
             label: jumpstarter-dev
             dockerfile: python/.devfile/Containerfile
             context: .
+            filter: python-dev
           - image_name: jumpstarter-dev/jumpstarter-devspace
             label: jumpstarter-devspace
             dockerfile: python/.devfile/Containerfile.client
             context: .
+            filter: python
     steps:
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -72,18 +138,34 @@ jobs:
 
       - name: Check if this image should be built
         id: check
-        if: github.event_name == 'pull_request'
         env:
+          EVENT_NAME: ${{ github.event_name }}
           LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
           IMAGE_LABEL: ${{ matrix.label }}
+          FILES_CHANGED: ${{ needs.changes.outputs[matrix.filter] }}
         run: |
-          # build-pr-images builds all images, build-pr-images/<label> builds a specific one
-          if echo "$LABELS" | jq -e 'index("build-pr-images")' > /dev/null 2>&1; then
+          # On PRs: build only labeled images (existing behavior).
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            if echo "$LABELS" | jq -e 'index("build-pr-images")' > /dev/null 2>&1; then
+              echo "skip=false" >> $GITHUB_OUTPUT
+            elif echo "$LABELS" | jq -e --arg label "build-pr-images/$IMAGE_LABEL" 'index($label)' > /dev/null 2>&1; then
+              echo "skip=false" >> $GITHUB_OUTPUT
+            else
+              echo "skip=true" >> $GITHUB_OUTPUT
+            fi
+          # On push to tags/main/release (always build all images).
+          elif [[ "$EVENT_NAME" == "push" || "$EVENT_NAME" == "workflow_dispatch" ]]; then
             echo "skip=false" >> $GITHUB_OUTPUT
-          elif echo "$LABELS" | jq -e --arg label "build-pr-images/$IMAGE_LABEL" 'index($label)' > /dev/null 2>&1; then
-            echo "skip=false" >> $GITHUB_OUTPUT
+          # On merge_group: only build images whose dependencies changed.
+          elif [[ "$EVENT_NAME" == "merge_group" ]]; then
+            if [[ "$FILES_CHANGED" == "true" ]]; then
+              echo "skip=false" >> $GITHUB_OUTPUT
+            else
+              echo "skip=true" >> $GITHUB_OUTPUT
+              echo "Skipping $IMAGE_LABEL — no relevant file changes detected"
+            fi
           else
-            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "skip=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Get version
@@ -273,3 +355,18 @@ jobs:
               });
             }
 
+  # https://github.com/orgs/community/discussions/26822
+  image-builds:
+    runs-on: ubuntu-latest
+    needs: [changes, build-and-push-image]
+    if: ${{ always() }}
+    steps:
+      - run: exit 1
+        # Fail on actual failures or cancellations. Skips are OK — images are
+        # skipped on PRs without labels and in merge queue when no relevant
+        # files changed.
+        if: >-
+          ${{
+               contains(needs.*.result, 'failure')
+            || contains(needs.*.result, 'cancelled')
+          }}
