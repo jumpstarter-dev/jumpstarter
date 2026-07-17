@@ -36,23 +36,13 @@ var _ = Describe("Exit On Lease End E2E Tests", Label("exit-on-lease-end"), Orde
 		ns = Namespace()
 		exporterConfigPath = SystemExporterConfigPath("test-exporter-exit-on-lease-end")
 
-		// Create client and exporter for exit-on-lease-end tests
+		// Create client and exporter using legacy (token) auth — no OIDC/dex dependency.
 		MustJmp("admin", "create", "client", "-n", ns, "test-client-exit-on-lease-end",
-			"--unsafe", "--nointeractive", "--oidc-username", "dex:test-client-exit-on-lease-end")
+			"--unsafe", "--save")
 
 		MustJmp("admin", "create", "exporter", "-n", ns, "test-exporter-exit-on-lease-end",
-			"--nointeractive", "--oidc-username", "dex:test-exporter-exit-on-lease-end",
+			"--out", exporterConfigPath,
 			"--label", "example.com/board=exit-on-lease-end")
-
-		MustJmp("login", "--client", "test-client-exit-on-lease-end",
-			"--endpoint", Endpoint(), "--namespace", ns, "--name", "test-client-exit-on-lease-end",
-			"--issuer", "https://dex.dex.svc.cluster.local:5556",
-			"--username", "test-client-exit-on-lease-end@example.com", "--password", "password", "--unsafe")
-
-		MustJmp("login", "--exporter-config", exporterConfigPath,
-			"--endpoint", Endpoint(), "--namespace", ns, "--name", "test-exporter-exit-on-lease-end",
-			"--issuer", "https://dex.dex.svc.cluster.local:5556",
-			"--username", "test-exporter-exit-on-lease-end@example.com", "--password", "password")
 
 		// Merge the base exporter drivers + exitOnLeaseEnd overlay
 		overlayPath := filepath.Join(RepoRoot(), "e2e", "exporters", "exporter-exit-on-lease-end.yaml")
