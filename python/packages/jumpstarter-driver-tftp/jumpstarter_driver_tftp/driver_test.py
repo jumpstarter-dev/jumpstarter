@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from jumpstarter_driver_tftp.driver import Tftp
+from jumpstarter_driver_tftp.driver import Tftp, TftpError
 
 from jumpstarter.common.utils import serve
 
@@ -85,10 +85,10 @@ def test_tftp_start_server_logs_error_on_failure(tmp_path):
 
 @pytest.mark.anyio
 async def test_tftp_run_server_lifecycle_creates_server_in_async_context(tmp_path):
-    """Test that _run_server_lifecycle creates TftpServer with a running event loop.
+    """Test that _run_server_lifecycle creates TftpServer within asyncio.run().
 
-    This is the key fix: asyncio.Event() objects inside TftpServer are now
-    created with a running loop, which is required by Python 3.14+.
+    This validates the replacement of the deprecated new_event_loop() +
+    set_event_loop() + run_until_complete() pattern with asyncio.run().
     """
     server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=0)
 
@@ -96,10 +96,29 @@ async def test_tftp_run_server_lifecycle_creates_server_in_async_context(tmp_pat
     with patch.object(server, "_run_server", new_callable=AsyncMock):
         await server._run_server_lifecycle()
 
-    # Server was created in async context, Event() objects are bound to a loop
+    # Server was created in async context
     assert server.server is not None
     assert server.server.shutdown_event is not None
     assert server.server.ready_event is not None
     # Loop ref is cleaned up in the finally block
     assert server._loop is None
+    server.close()
+
+
+def test_tftp_start_surfaces_startup_error(tmp_path):
+    """Test that start() surfaces the real error instead of a generic timeout.
+
+    If TftpServer construction fails inside _run_server_lifecycle, the
+    _startup_error field is set and _loop_ready is signalled via finally,
+    so start() returns promptly and raises the actual cause.
+    """
+    server = Tftp(root_dir=str(tmp_path), host="127.0.0.1", port=0)
+
+    with patch(
+        "jumpstarter_driver_tftp.driver.TftpServer",
+        side_effect=RuntimeError("port already in use"),
+    ):
+        with pytest.raises(TftpError, match="port already in use"):
+            server.start()
+
     server.close()

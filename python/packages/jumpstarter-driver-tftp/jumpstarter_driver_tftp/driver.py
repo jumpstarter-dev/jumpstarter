@@ -45,6 +45,7 @@ class Tftp(Driver):
     _shutdown_event: threading.Event = field(init=False, default_factory=threading.Event)
     _loop_ready: threading.Event = field(init=False, default_factory=threading.Event)
     _loop: Optional[asyncio.AbstractEventLoop] = field(init=False, default=None)
+    _startup_error: Optional[BaseException] = field(init=False, default=None)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -77,17 +78,26 @@ class Tftp(Driver):
     async def _run_server_lifecycle(self):
         """Set up and run the TFTP server within a proper async context.
 
-        This ensures asyncio.Event() objects inside TftpServer are created
-        with a running event loop, as required by Python 3.14+.
+        Uses asyncio.run() instead of the deprecated new_event_loop() +
+        set_event_loop() + run_until_complete() pattern, which emits
+        DeprecationWarning on Python 3.12/3.13 and breaks on 3.14
+        (get_event_loop() raises RuntimeError when no loop is running).
         """
-        self._loop = asyncio.get_running_loop()
-        self.server = TftpServer(
-            host=self.host,
-            port=self.port,
-            operator=self.children["storage"]._operator,
-            logger=self.logger,
-        )
-        self._loop_ready.set()
+        try:
+            self._loop = asyncio.get_running_loop()
+            self.server = TftpServer(
+                host=self.host,
+                port=self.port,
+                operator=self.children["storage"]._operator,
+                logger=self.logger,
+            )
+        except Exception as e:
+            self._startup_error = e
+            raise
+        finally:
+            # Always unblock start() so it can check _startup_error
+            # instead of waiting for the full timeout.
+            self._loop_ready.set()
         try:
             await self._run_server()
         finally:
@@ -124,6 +134,7 @@ class Tftp(Driver):
 
         self._shutdown_event.clear()
         self._loop_ready.clear()
+        self._startup_error = None
 
         self.server_thread = threading.Thread(target=self._start_server, daemon=True)
         self.server_thread.start()
@@ -132,6 +143,10 @@ class Tftp(Driver):
             self.logger.error("Timeout waiting for event loop to be ready")
             self.server_thread = None
             raise TftpError("Failed to start TFTP server - event loop initialization timeout")
+
+        if self._startup_error is not None:
+            self.server_thread = None
+            raise TftpError(f"Failed to start TFTP server: {self._startup_error}") from self._startup_error
 
         self.logger.info(f"TFTP server started on {self.host}:{self.port}")
 
