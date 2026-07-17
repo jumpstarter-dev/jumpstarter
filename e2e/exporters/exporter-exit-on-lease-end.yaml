@@ -1,0 +1,7 @@
+export:
+  power:
+    type: jumpstarter_driver_power.driver.MockPower
+  storage:
+    type: jumpstarter_driver_opendal.driver.MockStorageMux
+
+exitOnLeaseEnd: true
