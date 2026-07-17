@@ -185,6 +185,10 @@ class ExporterConfigV1Alpha1(BaseModel):
         default_factory=FailureDetectionConfigV1Alpha1,
         alias="failureDetection",
     )
+    exit_on_lease_end: bool = Field(
+        default=False,
+        alias="exitOnLeaseEnd",
+    )
 
     path: Path | None = Field(default=None)
 
@@ -259,10 +263,15 @@ class ExporterConfigV1Alpha1(BaseModel):
                 exporters.append(cls.load(alias))
         return ExporterConfigListV1Alpha1(items=exporters)
 
+    _EXCLUDE_FROM_YAML: ClassVar[set[str]] = {"alias", "path"}
+
     @classmethod
     def dump_yaml(self, config: Self) -> str:
         """Serialize a config to a YAML string, omitting internal fields (alias, path)."""
-        return yaml.safe_dump(config.model_dump(mode="json", by_alias=True, exclude={"alias", "path"}), sort_keys=False)
+        return yaml.safe_dump(
+            config.model_dump(mode="json", by_alias=True, exclude=self._EXCLUDE_FROM_YAML),
+            sort_keys=False,
+        )
 
     @classmethod
     def save(cls, config: Self, path: Optional[str] = None) -> Path:
@@ -278,7 +287,11 @@ class ExporterConfigV1Alpha1(BaseModel):
             os.fchmod(temp_fd, 0o600)
             with os.fdopen(temp_fd, "w") as f:
                 yaml.safe_dump(
-                    config.model_dump(mode="json", by_alias=True, exclude={"alias", "path"}), f, sort_keys=False
+                    config.model_dump(
+                        mode="json", by_alias=True, exclude=cls._EXCLUDE_FROM_YAML,
+                    ),
+                    f,
+                    sort_keys=False,
                 )
                 f.flush()
                 os.fsync(f.fileno())
@@ -379,6 +392,7 @@ class ExporterConfigV1Alpha1(BaseModel):
                 grpc_options=self.grpcOptions,
                 hook_executor=hook_executor,
                 motd=self.motd,
+                exit_on_lease_end=self.exit_on_lease_end,
             )
             # Initialize the exporter (registration, etc.)
             await exporter.__aenter__()

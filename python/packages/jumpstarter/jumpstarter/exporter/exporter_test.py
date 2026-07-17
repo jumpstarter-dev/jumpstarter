@@ -630,3 +630,95 @@ class TestHandleLeaseStaleSkip:
         exporter._report_status.assert_awaited_once_with(
             ExporterStatus.AVAILABLE, "Available for new lease",
         )
+
+
+def _make_serve_exporter(exit_on_lease_end=False):
+    """Build an Exporter suitable for serve() tests with mocked I/O."""
+    from contextlib import asynccontextmanager
+
+    from jumpstarter.exporter.exporter import Exporter
+
+    exporter = Exporter.__new__(Exporter)
+    exporter._exporter_status = ExporterStatus.AVAILABLE
+    exporter._lease_context = None
+    exporter._stop_requested = False
+    exporter._standalone = False
+    exporter._previous_leased = False
+    exporter._tg = None
+    exporter._started = False
+    exporter._registered = True
+    exporter._unregister = False
+    exporter._deferred_unregister = True
+    exporter._exit_code = None
+    exporter.hook_executor = None
+    exporter.exit_on_lease_end = exit_on_lease_end
+    exporter._report_status = AsyncMock()
+    exporter._request_lease_release = AsyncMock()
+
+    @asynccontextmanager
+    async def fake_session():
+        yield
+
+    exporter.session = fake_session
+    return exporter
+
+
+def _wire_status_stream(exporter, statuses):
+    """Replace _retry_stream with a function that feeds statuses into tx."""
+    async def fake_retry_stream(name, factory, tx, **kwargs):
+        for s in statuses:
+            await tx.send(s)
+        await tx.aclose()
+
+    exporter._retry_stream = fake_retry_stream
+
+
+def _wire_handle_lease(exporter):
+    """Replace handle_lease with a minimal mock that satisfies lifecycle events."""
+    async def fake_handle_lease(lease_name, tg, lease_ctx):
+        await lease_ctx.lease_ended.wait()
+        lease_ctx.after_lease_hook_done.set()
+
+    exporter.handle_lease = fake_handle_lease
+
+
+class TestExitOnLeaseEnd:
+    async def test_serve_stops_after_lease_ends(self):
+        """serve() sets _stop_requested after a lease→unleased transition
+        when exit_on_lease_end is True."""
+        exporter = _make_serve_exporter(exit_on_lease_end=True)
+        _wire_status_stream(exporter, [
+            MagicMock(leased=True, lease_name="test-lease", client_name="test"),
+            MagicMock(leased=False, lease_name="", client_name=""),
+        ])
+        _wire_handle_lease(exporter)
+
+        await exporter.serve()
+
+        assert exporter._stop_requested is True
+
+    async def test_serve_not_triggered_on_startup(self):
+        """serve() does NOT set _stop_requested on startup when no lease
+        has been served yet (previous_leased is False)."""
+        exporter = _make_serve_exporter(exit_on_lease_end=True)
+        _wire_status_stream(exporter, [
+            MagicMock(leased=False, lease_name="", client_name=""),
+        ])
+
+        await exporter.serve()
+
+        assert exporter._stop_requested is False
+
+    async def test_serve_continues_when_disabled(self):
+        """serve() does NOT set _stop_requested after lease ends when
+        exit_on_lease_end is False — the exporter loops for next lease."""
+        exporter = _make_serve_exporter(exit_on_lease_end=False)
+        _wire_status_stream(exporter, [
+            MagicMock(leased=True, lease_name="test-lease", client_name="test"),
+            MagicMock(leased=False, lease_name="", client_name=""),
+        ])
+        _wire_handle_lease(exporter)
+
+        await exporter.serve()
+
+        assert exporter._stop_requested is False
