@@ -402,15 +402,15 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
 			MustJmp("config", "client", "use", "test-client-oidc")
 
-			for i := 1; i <= 101; i++ {
+			for i := 1; i <= 10; i++ {
 				out, err := Jmp("create", "lease", "--selector", "example.com/board=oidc", "--duration", "1d")
 				Expect(err).NotTo(HaveOccurred(), out)
 			}
 
-			out, err := Jmp("get", "leases", "-o", "name")
+			out, err := Jmp("get", "leases", "--page-size", "5", "-o", "name")
 			Expect(err).NotTo(HaveOccurred(), out)
 			lines := strings.Split(strings.TrimSpace(out), "\n")
-			Expect(lines).To(HaveLen(101))
+			Expect(lines).To(HaveLen(10))
 
 			MustJmp("delete", "leases", "--all")
 		})
@@ -420,7 +420,7 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 			MustJmp("config", "client", "use", "test-client-oidc")
 
 			ns := Namespace()
-			for i := 1; i <= 101; i++ {
+			for i := 1; i <= 10; i++ {
 				name := fmt.Sprintf("pagination-exp-%d", i)
 				out, err := Jmp("admin", "create", "exporter", "-n", ns, name,
 					"--nointeractive", "-l", "pagination=true",
@@ -428,12 +428,12 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 				Expect(err).NotTo(HaveOccurred(), out)
 			}
 
-			out, err := Jmp("get", "exporters", "--selector", "pagination=true", "-o", "name")
+			out, err := Jmp("get", "exporters", "--selector", "pagination=true", "--page-size", "5", "-o", "name")
 			Expect(err).NotTo(HaveOccurred(), out)
 			lines := strings.Split(strings.TrimSpace(out), "\n")
-			Expect(lines).To(HaveLen(101))
+			Expect(lines).To(HaveLen(10))
 
-			for i := 1; i <= 101; i++ {
+			for i := 1; i <= 10; i++ {
 				MustJmp("admin", "delete", "exporter", "--namespace", ns, fmt.Sprintf("pagination-exp-%d", i), "--delete")
 			}
 		})
