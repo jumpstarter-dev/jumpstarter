@@ -129,8 +129,11 @@ var _ = Describe("Exit On Lease End E2E Tests", Label("exit-on-lease-end"), Orde
 		WaitForExporterOffline("test-exporter-exit-on-lease-end")
 
 		// Second lease should fail because the exporter is offline.
+		// Use a short acquisition-timeout so we don't block forever waiting
+		// for the controller to match the lease to an (offline) exporter.
 		_, err = Jmp("shell", "--client", "test-client-exit-on-lease-end",
 			"--retry-timeout", "0",
+			"--acquisition-timeout", "10s",
 			"--selector", "example.com/board=exit-on-lease-end", "j", "power", "on")
 		Expect(err).To(HaveOccurred(), "second lease should fail because exporter has exited")
 	})
