@@ -38,6 +38,10 @@ log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_tftp"]
 asyncio_mode = "auto"
+addopts = "--cov --cov-report=html --cov-report=xml"
+
+[tool.coverage.run]
+source = ["."]
 
 [build-system]
 requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
