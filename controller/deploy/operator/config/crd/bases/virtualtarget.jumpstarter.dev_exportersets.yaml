@@ -197,6 +197,9 @@ spec:
             - message: minReplicas must be less than or equal to maxReplicas (when
                 maxReplicas is not 0)
               rule: self.maxReplicas == 0 || self.minReplicas <= self.maxReplicas
+            - message: minAvailableReplicas must be less than or equal to maxReplicas
+                (when maxReplicas is not 0)
+              rule: self.maxReplicas == 0 || self.minAvailableReplicas <= self.maxReplicas
           status:
             description: ExporterSetStatus defines the observed state of ExporterSet.
             properties:

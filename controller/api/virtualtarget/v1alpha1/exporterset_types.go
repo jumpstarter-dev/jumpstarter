@@ -73,6 +73,7 @@ type ExporterSetTemplate struct {
 
 // ExporterSetSpec defines the desired state of ExporterSet.
 // +kubebuilder:validation:XValidation:rule="self.maxReplicas == 0 || self.minReplicas <= self.maxReplicas",message="minReplicas must be less than or equal to maxReplicas (when maxReplicas is not 0)"
+// +kubebuilder:validation:XValidation:rule="self.maxReplicas == 0 || self.minAvailableReplicas <= self.maxReplicas",message="minAvailableReplicas must be less than or equal to maxReplicas (when maxReplicas is not 0)"
 type ExporterSetSpec struct {
 	// MinReplicas is the minimum number of instances (floor).
 	// +kubebuilder:default=0

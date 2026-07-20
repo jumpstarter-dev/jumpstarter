@@ -142,6 +142,8 @@ func (r *ExporterSetReconciler) findExporterSetsForVTC(
 
 	var exporterSetList virtualtargetv1alpha1.ExporterSetList
 	if err := r.List(ctx, &exporterSetList, client.InNamespace(vtc.Namespace)); err != nil {
+		log.FromContext(ctx).Error(err, "unable to list ExporterSets for VirtualTargetClass",
+			"namespace", vtc.Namespace, "name", vtc.Name)
 		return nil
 	}
 

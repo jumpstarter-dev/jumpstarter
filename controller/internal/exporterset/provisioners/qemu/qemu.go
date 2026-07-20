@@ -28,6 +28,7 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -47,6 +48,10 @@ const (
 	// sidecar and the QEMU runtime (QMP, serial, launcher).
 	sharedVolumeName = "shared"
 	sharedMountPath  = "/shared"
+
+	// sharedVolumeSizeLimit caps emptyDir usage so a misbehaving
+	// container cannot exhaust node ephemeral storage.
+	sharedVolumeSizeLimit = "100Mi"
 )
 
 // Provisioner implements the qemu.jumpstarter.dev provisioner.
@@ -91,12 +96,14 @@ func (p *Provisioner) RenderPod(
 	mergedParameters map[string]interface{},
 ) (*corev1.Pod, error) {
 	restartAlways := corev1.ContainerRestartPolicyAlways
+	sizeLimit := resource.MustParse(sharedVolumeSizeLimit)
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: fmt.Sprintf("%s-", exporterSet.Name),
 			Namespace:    exporterSet.Namespace,
 			Labels:       maps.Clone(exporterSet.Spec.Template.Metadata.Labels),
+			Annotations:  maps.Clone(exporterSet.Spec.Template.Metadata.Annotations),
 		},
 		Spec: corev1.PodSpec{
 			// Exporter runs as a native sidecar init container
@@ -138,7 +145,9 @@ func (p *Provisioner) RenderPod(
 				{
 					Name: sharedVolumeName,
 					VolumeSource: corev1.VolumeSource{
-						EmptyDir: &corev1.EmptyDirVolumeSource{},
+						EmptyDir: &corev1.EmptyDirVolumeSource{
+							SizeLimit: &sizeLimit,
+						},
 					},
 				},
 			},
