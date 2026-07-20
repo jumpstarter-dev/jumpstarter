@@ -5,7 +5,7 @@ description = "Jumpstarter driver for controlling Tasmota-compatible devices via
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "Nick Cao", email = "nickcao@nichi.co" }]
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 dependencies = [
     "anyio>=4.10.0",
     "jumpstarter_driver_power",

@@ -198,14 +198,14 @@ class Shell(Driver):
         )
 
         # Create a task to monitor the process timeout
-        start_time = asyncio.get_event_loop().time()
+        start_time = asyncio.get_running_loop().time()
 
         if timeout is None:
             timeout = self.timeout
 
         # Read output in real-time
         while process.returncode is None:
-            if asyncio.get_event_loop().time() - start_time > timeout:
+            if asyncio.get_running_loop().time() - start_time > timeout:
                 # Send SIGTERM to entire process group for graceful termination
                 try:
                     os.killpg(process.pid, signal.SIGTERM)

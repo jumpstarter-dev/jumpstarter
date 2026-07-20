@@ -37,14 +37,14 @@ jobs:
       - name: Compute test matrix
         id: matrix
         run: |
-          # PRs: test only Python 3.12 on Linux to save CI time.
+          # PRs: test only Python 3.14 on Linux to save CI time.
           # Merge queue and workflow_dispatch run the full matrix
           # (all Python versions on both Linux and macOS).
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo 'python-versions=["3.12"]' >> "$GITHUB_OUTPUT"
+            echo 'python-versions=["3.14"]' >> "$GITHUB_OUTPUT"
             echo 'runners=["ubuntu-24.04"]' >> "$GITHUB_OUTPUT"
           else
-            echo 'python-versions=["3.11", "3.12", "3.13"]' >> "$GITHUB_OUTPUT"
+            echo 'python-versions=["3.14"]' >> "$GITHUB_OUTPUT"
             echo 'runners=["ubuntu-24.04", "macos-15"]' >> "$GITHUB_OUTPUT"
           fi
 
@@ -52,13 +52,18 @@ jobs:
     needs: changes
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.runs-on }}
+    env:
+      # Building packages like grpcio and scipy from source (required for
+      # Python 3.14 until upstream ships wheels) can exceed the default 300s
+      # uv lock timeout. 30 minutes gives enough headroom.
+      UV_LOCK_TIMEOUT: 1800
     strategy:
       matrix:
         runs-on: ${{ fromJson(needs.changes.outputs.runners) }}
         # Floor: oldest Python in supported platforms (RHEL 9 appstream)
         # Ceiling: newest Python in latest Fedora
         # Review on each RHEL/Fedora release
-        # PRs run only 3.12 on Linux; merge queue runs all versions
+        # PRs run only 3.14 on Linux; merge queue runs all versions
         # on both Linux and macOS.
         python-version: ${{ fromJson(needs.changes.outputs.python-versions) }}
     steps:
@@ -104,6 +109,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgpiod-dev liblgpio-dev
 
+      - name: Install Python package build dependencies (Linux, Python 3.14)
+        if: runner.os == 'Linux' && matrix.python-version == '3.14'
+        run: |
+          sudo apt-get update
+          # Pillow dependencies
+          sudo apt-get install -y libjpeg-dev zlib1g-dev libtiff-dev libfreetype6-dev liblcms2-dev libwebp-dev libopenjp2-7-dev
+          # scipy dependencies
+          sudo apt-get install -y g++ gfortran libopenblas-dev liblapack-dev pkg-config
+          # cffi dependencies
+          sudo apt-get install -y libffi-dev
+
       - name: Install nftables and dnsmasq (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -127,6 +143,17 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install qemu
+
+      - name: Install Python package build dependencies (macOS, Python 3.14)
+        if: runner.os == 'macOS' && matrix.python-version == '3.14'
+        run: |
+          # Pillow dependencies
+          brew install libjpeg libtiff little-cms2 webp
+          # scipy dependencies
+          brew install gcc openblas
+          # Link gfortran so scipy's meson build can find it
+          # Homebrew's gcc provides gfortran-14, create a gfortran symlink
+          ln -sf "$(brew --prefix gcc)/bin/gfortran-$(brew list --versions gcc | sed 's/gcc //' | cut -d. -f1)" /usr/local/bin/gfortran
 
       # Homebrew Renode is slow (~5+ minutes per job). Install on macOS only when this run
       # touches the Renode driver, or on workflow_dispatch (full manual run). Linux still
