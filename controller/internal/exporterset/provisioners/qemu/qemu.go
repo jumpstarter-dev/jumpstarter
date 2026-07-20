@@ -89,6 +89,9 @@ func (p *Provisioner) Name() string {
 //   - Set up exporter with driver config from ExporterSet
 //     template
 //   - Mount firmware/OS images as OCI volume sources
+//   - Inventory shared interfaces (serial, USB, CAN,
+//     network) and map them to QEMU device models plus
+//     any required container capabilities/privileges
 func (p *Provisioner) RenderPod(
 	ctx context.Context,
 	exporterSet *virtualtargetv1alpha1.ExporterSet,
