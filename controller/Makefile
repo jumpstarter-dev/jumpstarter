@@ -63,10 +63,13 @@ help: ## Display this help.
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) 	rbac:roleName=jumpstarter-manager-role crd webhook paths="./api/..." paths="./internal/..." \
-						output:crd:artifacts:config=deploy/operator/config/crd/bases/ \
-						output:rbac:artifacts:config=deploy/operator/config/rbac/
+manifests: controller-gen ## Generate WebhookConfiguration and CustomResourceDefinition objects.
+	# CRDs only — do not emit RBAC into deploy/operator/config/rbac/.
+	# The operator ClusterRole (manager-role) is owned by deploy/operator/Makefile.
+	# Writing jumpstarter-manager-role there overwrites the operator role and
+	# breaks role_binding.yaml (which references manager-role).
+	$(CONTROLLER_GEN) 	crd webhook paths="./api/..." paths="./internal/..." \
+						output:crd:artifacts:config=deploy/operator/config/crd/bases/
 
 	# Regenerate operator install.yaml to include updated CRDs
 	$(MAKE) -C deploy/operator build-installer
