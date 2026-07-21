@@ -387,11 +387,12 @@ class ClientService:
     def __post_init__(self):
         self.stub = client_pb2_grpc.ClientServiceStub(channel=self.channel)
 
-    async def GetExporter(self, *, name: str):
+    async def GetExporter(self, *, name: str, show_hidden_labels: bool = False):
         with translate_grpc_exceptions():
             exporter = await self.stub.GetExporter(
                 client_pb2.GetExporterRequest(
                     name="namespaces/{}/exporters/{}".format(self.namespace, name),
+                    show_hidden_labels=show_hidden_labels,
                 )
             )
         return Exporter.from_protobuf(exporter)
@@ -402,6 +403,7 @@ class ClientService:
         page_size: int | None = None,
         page_token: str | None = None,
         filter: str | None = None,
+        show_hidden_labels: bool = False,
     ):
         with translate_grpc_exceptions():
             exporters = await self.stub.ListExporters(
@@ -410,6 +412,7 @@ class ClientService:
                     page_size=page_size,
                     page_token=page_token,
                     filter=filter,
+                    show_hidden_labels=show_hidden_labels,
                 )
             )
         return ExporterList.from_protobuf(exporters)

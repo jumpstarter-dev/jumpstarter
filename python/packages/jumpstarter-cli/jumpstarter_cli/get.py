@@ -25,8 +25,20 @@ def get():
     {"leases", "online", "status"},
     help_text="Include fields: leases, online, status (comma-separated or repeated)",
 )
+@click.option(
+    "--show-hidden-labels",
+    is_flag=True,
+    default=False,
+    help="Show labels hidden by controller config",
+)
 @handle_exceptions_with_reauthentication(relogin_client)
-def get_exporters(config, selector: str | None, output: OutputType, with_options: list[str]):
+def get_exporters(
+    config,
+    selector: str | None,
+    output: OutputType,
+    with_options: list[str],
+    show_hidden_labels: bool,
+):
     """
     Display one or many exporters
     """
@@ -35,7 +47,11 @@ def get_exporters(config, selector: str | None, output: OutputType, with_options
     include_online = "online" in with_options
     include_status = "status" in with_options
     exporters = config.list_exporters(
-        filter=selector, include_leases=include_leases, include_online=include_online, include_status=include_status
+        filter=selector,
+        include_leases=include_leases,
+        include_online=include_online,
+        include_status=include_status,
+        show_hidden_labels=show_hidden_labels,
     )
 
     model_print(exporters, output)
