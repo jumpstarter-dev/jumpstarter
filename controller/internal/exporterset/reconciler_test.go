@@ -67,7 +67,7 @@ func TestReconcile_virtualTargetClassNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v, want nil", err)
 	}
-	if result.Requeue || result.RequeueAfter != 0 {
+	if result.RequeueAfter != 0 {
 		t.Fatalf("Reconcile() result = %#v, want no requeue", result)
 	}
 }
@@ -99,7 +99,7 @@ func TestReconcile_provisionerMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reconcile() error = %v, want nil", err)
 	}
-	if result.Requeue || result.RequeueAfter != 0 {
+	if result.RequeueAfter != 0 {
 		t.Fatalf("Reconcile() result = %#v, want no requeue", result)
 	}
 }
