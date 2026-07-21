@@ -22,6 +22,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -82,7 +84,17 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if apierrors.IsNotFound(err) {
 			logger.Info("VirtualTargetClass not found",
 				"virtualTargetClassName", exporterSet.Spec.VirtualTargetClassName)
-			// TODO: set a condition on the ExporterSet indicating the class is missing
+			meta.SetStatusCondition(&exporterSet.Status.Conditions, metav1.Condition{
+				Type:               string(virtualtargetv1alpha1.ExporterSetConditionAvailable),
+				Status:             metav1.ConditionFalse,
+				ObservedGeneration: exporterSet.Generation,
+				Reason:             "VirtualTargetClassNotFound",
+				Message: fmt.Sprintf("VirtualTargetClass %q not found",
+					exporterSet.Spec.VirtualTargetClassName),
+			})
+			if updateErr := r.Status().Update(ctx, &exporterSet); updateErr != nil {
+				return requeueConflict(logger, updateErr)
+			}
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("unable to get VirtualTargetClass %q: %w",
@@ -102,19 +114,370 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		"minAvailableReplicas", exporterSet.Spec.MinAvailableReplicas,
 	)
 
-	// TODO: Phase 2 implementation
-	// 1. Count owned Exporter CRs: replicas, readyReplicas, leasedReplicas, availableReplicas
-	// 2. Deep-merge parameters from VirtualTargetClass + ExporterSet overrides
-	// 3. Scale up if availableReplicas < minAvailableReplicas and replicas < maxReplicas
-	//    - Use r.Provisioner.RenderPod() to create Pods
-	//    - Set OwnerReferences on the Pod via ctrl.SetControllerReference
-	//      before creation so that ExporterSet deletion cascades to Pods
-	// 4. Scale up on demand if pending leases match selector
-	// 5. Scale down if availableReplicas > minAvailableReplicas after cooldown
-	//    - Use r.Provisioner.Cleanup() before deleting
-	// 6. Update ExporterSet.status
+	prevAvailable := meta.IsStatusConditionTrue(
+		exporterSet.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionAvailable),
+	)
+	prevDegraded := meta.IsStatusConditionTrue(
+		exporterSet.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionDegraded),
+	)
+	prevProgressing := meta.IsStatusConditionTrue(
+		exporterSet.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionProgressing),
+	)
+	prevScalingLimited := meta.IsStatusConditionTrue(
+		exporterSet.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited),
+	)
+
+	if err := r.reconcileStatusCounts(ctx, &exporterSet); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	r.reconcileConditions(&exporterSet)
+
+	if err := r.Status().Update(ctx, &exporterSet); err != nil {
+		return requeueConflict(logger, err)
+	}
+
+	r.emitConditionEvents(&exporterSet, prevAvailable, prevProgressing, prevDegraded, prevScalingLimited)
 
 	return ctrl.Result{}, nil
+}
+
+func (r *ExporterSetReconciler) reconcileStatusCounts(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+) error {
+	selector, err := metav1.LabelSelectorAsSelector(&es.Spec.Selector)
+	if err != nil {
+		return fmt.Errorf("invalid label selector: %w", err)
+	}
+
+	es.Status.Selector = metav1.FormatLabelSelector(&es.Spec.Selector)
+
+	var exporterList jumpstarterdevv1alpha1.ExporterList
+	if err := r.List(ctx, &exporterList,
+		client.InNamespace(es.Namespace),
+		client.MatchingLabelsSelector{Selector: selector},
+	); err != nil {
+		return fmt.Errorf("unable to list Exporters: %w", err)
+	}
+
+	ownedExporters := filterOwnedExporters(exporterList.Items, es.UID)
+
+	var replicas, ready, available, leased int32
+	var active, idle, disabled, offline int32
+
+	for i := range ownedExporters {
+		exp := &ownedExporters[i]
+		replicas++
+
+		isOnline := meta.IsStatusConditionTrue(
+			exp.Status.Conditions,
+			string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+		)
+		isEnabled := exp.IsEnabled()
+		isLeased := exp.Status.LeaseRef != nil
+
+		if isOnline {
+			ready++
+		}
+		if isLeased {
+			leased++
+		}
+		if isOnline && isEnabled && !isLeased {
+			available++
+		}
+
+		if !isEnabled {
+			disabled++
+		} else if isLeased {
+			active++
+		} else if isOnline {
+			idle++
+		} else {
+			offline++
+		}
+	}
+
+	es.Status.Replicas = replicas
+	es.Status.ReadyReplicas = ready
+	es.Status.AvailableReplicas = available
+	es.Status.UnavailableReplicas = replicas - ready
+	es.Status.LeasedReplicas = leased
+	es.Status.ExportersActive = active
+	es.Status.ExportersIdle = idle
+	es.Status.ExportersDisabled = disabled
+	es.Status.ExportersOffline = offline
+
+	var podList corev1.PodList
+	if err := r.List(ctx, &podList,
+		client.InNamespace(es.Namespace),
+		client.MatchingLabelsSelector{Selector: selector},
+	); err != nil {
+		return fmt.Errorf("unable to list Pods: %w", err)
+	}
+
+	var pending, running, failed, unknown int32
+
+	for i := range podList.Items {
+		if !isOwnedBy(&podList.Items[i], es.UID) {
+			continue
+		}
+		switch podList.Items[i].Status.Phase {
+		case corev1.PodPending:
+			pending++
+		case corev1.PodRunning:
+			running++
+		case corev1.PodFailed:
+			failed++
+		default:
+			unknown++
+		}
+	}
+
+	es.Status.PodsPending = pending
+	es.Status.PodsRunning = running
+	es.Status.PodsFailed = failed
+	es.Status.PodsUnknown = unknown
+
+	return nil
+}
+
+func (r *ExporterSetReconciler) reconcileConditions(es *virtualtargetv1alpha1.ExporterSet) {
+	r.reconcileConditionAvailable(es)
+	r.reconcileConditionProgressing(es)
+	r.reconcileConditionDegraded(es)
+	r.reconcileConditionScalingLimited(es)
+}
+
+func (r *ExporterSetReconciler) reconcileConditionAvailable(es *virtualtargetv1alpha1.ExporterSet) {
+	condType := string(virtualtargetv1alpha1.ExporterSetConditionAvailable)
+
+	if es.Spec.MinReplicas == 0 && es.Status.Replicas == 0 {
+		meta.SetStatusCondition(&es.Status.Conditions, metav1.Condition{
+			Type:               condType,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: es.Generation,
+			Reason:             "NoReplicasRequired",
+			Message:            "No minimum replicas configured",
+		})
+		return
+	}
+
+	if es.Status.ReadyReplicas >= es.Spec.MinReplicas {
+		meta.SetStatusCondition(&es.Status.Conditions, metav1.Condition{
+			Type:               condType,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: es.Generation,
+			Reason:             "MinimumReplicasAvailable",
+			Message: fmt.Sprintf("%d/%d replicas ready",
+				es.Status.ReadyReplicas, es.Spec.MinReplicas),
+		})
+		return
+	}
+
+	meta.SetStatusCondition(&es.Status.Conditions, metav1.Condition{
+		Type:               condType,
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: es.Generation,
+		Reason:             "MinimumReplicasUnavailable",
+		Message: fmt.Sprintf("%d/%d replicas ready, need %d",
+			es.Status.ReadyReplicas, es.Status.Replicas, es.Spec.MinReplicas),
+	})
+}
+
+func (r *ExporterSetReconciler) reconcileConditionProgressing(es *virtualtargetv1alpha1.ExporterSet) {
+	condType := string(virtualtargetv1alpha1.ExporterSetConditionProgressing)
+
+	if es.Status.PodsPending > 0 {
+		meta.SetStatusCondition(&es.Status.Conditions, metav1.Condition{
+			Type:               condType,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: es.Generation,
+			Reason:             "PodsStarting",
+			Message:            fmt.Sprintf("%d pod(s) pending", es.Status.PodsPending),
+		})
+		return
+	}
+
+	if es.Status.UnavailableReplicas > 0 {
+		meta.SetStatusCondition(&es.Status.Conditions, metav1.Condition{
+			Type:               condType,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: es.Generation,
+			Reason:             "ReplicasNotReady",
+			Message: fmt.Sprintf("%d replica(s) not yet ready",
+				es.Status.UnavailableReplicas),
+		})
+		return
+	}
+
+	meta.SetStatusCondition(&es.Status.Conditions, metav1.Condition{
+		Type:               condType,
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: es.Generation,
+		Reason:             "AllReplicasReady",
+		Message:            "All replicas are ready",
+	})
+}
+
+func (r *ExporterSetReconciler) reconcileConditionDegraded(es *virtualtargetv1alpha1.ExporterSet) {
+	condType := string(virtualtargetv1alpha1.ExporterSetConditionDegraded)
+
+	if es.Status.PodsFailed > 0 {
+		meta.SetStatusCondition(&es.Status.Conditions, metav1.Condition{
+			Type:               condType,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: es.Generation,
+			Reason:             "PodsFailing",
+			Message:            fmt.Sprintf("%d pod(s) in Failed state", es.Status.PodsFailed),
+		})
+		return
+	}
+
+	if es.Status.UnavailableReplicas > 0 && es.Status.PodsPending == 0 {
+		meta.SetStatusCondition(&es.Status.Conditions, metav1.Condition{
+			Type:               condType,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: es.Generation,
+			Reason:             "ExportersOffline",
+			Message: fmt.Sprintf("%d exporter(s) not ready with no pending pods",
+				es.Status.UnavailableReplicas),
+		})
+		return
+	}
+
+	meta.SetStatusCondition(&es.Status.Conditions, metav1.Condition{
+		Type:               condType,
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: es.Generation,
+		Reason:             "AllReplicasHealthy",
+		Message:            "No degraded replicas",
+	})
+}
+
+func (r *ExporterSetReconciler) reconcileConditionScalingLimited(es *virtualtargetv1alpha1.ExporterSet) {
+	condType := string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited)
+
+	atMax := es.Spec.MaxReplicas > 0 && es.Status.Replicas >= es.Spec.MaxReplicas
+	needMore := es.Status.AvailableReplicas < es.Spec.MinAvailableReplicas
+
+	if atMax && needMore {
+		meta.SetStatusCondition(&es.Status.Conditions, metav1.Condition{
+			Type:               condType,
+			Status:             metav1.ConditionTrue,
+			ObservedGeneration: es.Generation,
+			Reason:             "AtMaxReplicas",
+			Message: fmt.Sprintf("Cannot scale beyond %d replicas; %d available, need %d",
+				es.Spec.MaxReplicas, es.Status.AvailableReplicas,
+				es.Spec.MinAvailableReplicas),
+		})
+		return
+	}
+
+	meta.SetStatusCondition(&es.Status.Conditions, metav1.Condition{
+		Type:               condType,
+		Status:             metav1.ConditionFalse,
+		ObservedGeneration: es.Generation,
+		Reason:             "WithinLimits",
+		Message:            "Scaling is not constrained",
+	})
+}
+
+func (r *ExporterSetReconciler) emitConditionEvents(
+	es *virtualtargetv1alpha1.ExporterSet,
+	prevAvailable, prevProgressing, prevDegraded, prevScalingLimited bool,
+) {
+	if r.Recorder == nil {
+		return
+	}
+
+	nowAvailable := meta.IsStatusConditionTrue(
+		es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionAvailable),
+	)
+	nowProgressing := meta.IsStatusConditionTrue(
+		es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionProgressing),
+	)
+	nowDegraded := meta.IsStatusConditionTrue(
+		es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionDegraded),
+	)
+	nowScalingLimited := meta.IsStatusConditionTrue(
+		es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited),
+	)
+
+	if !prevAvailable && nowAvailable {
+		r.Recorder.Eventf(es, corev1.EventTypeNormal, "ExporterSetAvailable",
+			"ExporterSet %s is available: %d ready replicas",
+			es.Name, es.Status.ReadyReplicas)
+	} else if prevAvailable && !nowAvailable {
+		r.Recorder.Eventf(es, corev1.EventTypeWarning, "ExporterSetUnavailable",
+			"ExporterSet %s is unavailable: %d/%d replicas ready",
+			es.Name, es.Status.ReadyReplicas, es.Spec.MinReplicas)
+	}
+
+	if !prevProgressing && nowProgressing {
+		r.Recorder.Eventf(es, corev1.EventTypeNormal, "ExporterSetProgressing",
+			"ExporterSet %s is progressing: %d pending pods, %d unavailable replicas",
+			es.Name, es.Status.PodsPending, es.Status.UnavailableReplicas)
+	} else if prevProgressing && !nowProgressing {
+		r.Recorder.Eventf(es, corev1.EventTypeNormal, "ExporterSetSettled",
+			"ExporterSet %s finished progressing: all replicas ready", es.Name)
+	}
+
+	if !prevDegraded && nowDegraded {
+		r.Recorder.Eventf(es, corev1.EventTypeWarning, "ExporterSetDegraded",
+			"ExporterSet %s is degraded: %d failed pods, %d unavailable replicas",
+			es.Name, es.Status.PodsFailed, es.Status.UnavailableReplicas)
+	} else if prevDegraded && !nowDegraded {
+		r.Recorder.Eventf(es, corev1.EventTypeNormal, "ExporterSetRecovered",
+			"ExporterSet %s recovered: all replicas healthy", es.Name)
+	}
+
+	if !prevScalingLimited && nowScalingLimited {
+		r.Recorder.Eventf(es, corev1.EventTypeWarning, "ScalingLimited",
+			"ExporterSet %s scaling limited at %d replicas",
+			es.Name, es.Spec.MaxReplicas)
+	} else if prevScalingLimited && !nowScalingLimited {
+		r.Recorder.Eventf(es, corev1.EventTypeNormal, "ScalingUnlimited",
+			"ExporterSet %s scaling no longer limited", es.Name)
+	}
+}
+
+func filterOwnedExporters(
+	exporters []jumpstarterdevv1alpha1.Exporter,
+	ownerUID types.UID,
+) []jumpstarterdevv1alpha1.Exporter {
+	owned := make([]jumpstarterdevv1alpha1.Exporter, 0, len(exporters))
+	for i := range exporters {
+		if isOwnedBy(&exporters[i], ownerUID) {
+			owned = append(owned, exporters[i])
+		}
+	}
+	return owned
+}
+
+func isOwnedBy(obj client.Object, ownerUID types.UID) bool {
+	for _, ref := range obj.GetOwnerReferences() {
+		if ref.UID == ownerUID && ref.Controller != nil && *ref.Controller {
+			return true
+		}
+	}
+	return false
+}
+
+func requeueConflict(logger interface{ Info(string, ...interface{}) }, err error) (ctrl.Result, error) {
+	if apierrors.IsConflict(err) {
+		logger.Info("conflict on status patch, requeuing")
+		return ctrl.Result{Requeue: true}, nil
+	}
+	return ctrl.Result{}, err
 }
 
 // SetupWithManager sets up the controller with the Manager.

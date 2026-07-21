@@ -24,6 +24,9 @@ spec:
     - jsonPath: .status.availableReplicas
       name: Available
       type: integer
+    - jsonPath: .status.unavailableReplicas
+      name: Unavailable
+      type: integer
     - jsonPath: .status.leasedReplicas
       name: Leased
       type: integer
@@ -204,8 +207,8 @@ spec:
             description: ExporterSetStatus defines the observed state of ExporterSet.
             properties:
               availableReplicas:
-                description: AvailableReplicas is the number of ready and unleased
-                  instances (warm pool).
+                description: AvailableReplicas is the number of ready, unleased, and
+                  enabled instances (warm pool).
                 format: int32
                 type: integer
               conditions:
@@ -266,30 +269,85 @@ spec:
                   - type
                   type: object
                 type: array
+              exportersActive:
+                description: ExportersActive is the number of exporters currently
+                  serving a lease.
+                format: int32
+                type: integer
+              exportersDisabled:
+                description: ExportersDisabled is the number of exporters with spec.enabled=false.
+                format: int32
+                type: integer
+              exportersIdle:
+                description: ExportersIdle is the number of exporters that are online,
+                  enabled, and not leased.
+                format: int32
+                type: integer
+              exportersOffline:
+                description: ExportersOffline is the number of enabled exporters that
+                  are not online and not leased.
+                format: int32
+                type: integer
               leasedReplicas:
                 description: LeasedReplicas is the number of instances currently leased.
                 format: int32
                 type: integer
+              podsFailed:
+                description: PodsFailed is the number of owned pods in Failed phase.
+                format: int32
+                type: integer
+              podsPending:
+                description: PodsPending is the number of owned pods in Pending phase.
+                format: int32
+                type: integer
+              podsRunning:
+                description: PodsRunning is the number of owned pods in Running phase.
+                format: int32
+                type: integer
+              podsUnknown:
+                description: PodsUnknown is the number of owned pods in Unknown or
+                  Succeeded phase.
+                format: int32
+                type: integer
               readyReplicas:
-                description: ReadyReplicas is the number of instances that are registered
-                  and ready.
+                description: ReadyReplicas is the number of instances that are online
+                  and registered.
                 format: int32
                 type: integer
               replicas:
-                description: Replicas is the total number of exporter instances.
+                description: Replicas is the total number of exporter instances owned
+                  by this set.
+                format: int32
+                type: integer
+              selector:
+                description: Selector is the serialized label selector for HPA compatibility.
+                type: string
+              unavailableReplicas:
+                description: UnavailableReplicas is the number of instances that are
+                  not yet ready.
                 format: int32
                 type: integer
             required:
             - availableReplicas
+            - exportersActive
+            - exportersDisabled
+            - exportersIdle
+            - exportersOffline
             - leasedReplicas
+            - podsFailed
+            - podsPending
+            - podsRunning
+            - podsUnknown
             - readyReplicas
             - replicas
+            - unavailableReplicas
             type: object
         type: object
     served: true
     storage: true
     subresources:
       scale:
+        labelSelectorPath: .status.selector
         specReplicasPath: .spec.maxReplicas
         statusReplicasPath: .status.replicas
       status: {}
