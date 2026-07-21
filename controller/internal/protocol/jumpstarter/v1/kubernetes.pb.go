@@ -23,11 +23,15 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// A label selector requirement with key, operator, and values.
 type LabelSelectorRequirement struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	Operator      string                 `protobuf:"bytes,2,opt,name=operator,proto3" json:"operator,omitempty"`
-	Values        []string               `protobuf:"bytes,3,rep,name=values,proto3" json:"values,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The label key that the selector applies to.
+	Key string `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	// The operator (In, NotIn, Exists, DoesNotExist) relating the key to values.
+	Operator string `protobuf:"bytes,2,opt,name=operator,proto3" json:"operator,omitempty"`
+	// The set of values for the operator to match against.
+	Values        []string `protobuf:"bytes,3,rep,name=values,proto3" json:"values,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -85,11 +89,13 @@ func (x *LabelSelectorRequirement) GetValues() []string {
 
 // Reference: https://kubernetes.io/docs/reference/kubernetes-api/common-definitions/label-selector/
 type LabelSelector struct {
-	state            protoimpl.MessageState      `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A list of label selector requirements combined by AND.
 	MatchExpressions []*LabelSelectorRequirement `protobuf:"bytes,1,rep,name=match_expressions,json=matchExpressions,proto3" json:"match_expressions,omitempty"`
-	MatchLabels      map[string]string           `protobuf:"bytes,2,rep,name=match_labels,json=matchLabels,proto3" json:"match_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// A map of key-value pairs that must match exactly.
+	MatchLabels   map[string]string `protobuf:"bytes,2,rep,name=match_labels,json=matchLabels,proto3" json:"match_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *LabelSelector) Reset() {
@@ -136,11 +142,14 @@ func (x *LabelSelector) GetMatchLabels() map[string]string {
 	return nil
 }
 
+// Timestamp in seconds and nanoseconds since the Unix epoch.
 // Reference: https://github.com/kubernetes/kubernetes/blob/v1.31.1/staging/src/k8s.io/apimachinery/pkg/apis/meta/v1/generated.proto
 type Time struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Seconds       *int64                 `protobuf:"varint,1,opt,name=seconds,proto3,oneof" json:"seconds,omitempty"`
-	Nanos         *int32                 `protobuf:"varint,2,opt,name=nanos,proto3,oneof" json:"nanos,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Seconds since the Unix epoch.
+	Seconds *int64 `protobuf:"varint,1,opt,name=seconds,proto3,oneof" json:"seconds,omitempty"`
+	// Non-negative fractions of a second at nanosecond resolution.
+	Nanos         *int32 `protobuf:"varint,2,opt,name=nanos,proto3,oneof" json:"nanos,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -189,16 +198,23 @@ func (x *Time) GetNanos() int32 {
 	return 0
 }
 
+// A Kubernetes-style status condition.
 type Condition struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	Type               *string                `protobuf:"bytes,1,opt,name=type,proto3,oneof" json:"type,omitempty"`
-	Status             *string                `protobuf:"bytes,2,opt,name=status,proto3,oneof" json:"status,omitempty"`
-	ObservedGeneration *int64                 `protobuf:"varint,3,opt,name=observedGeneration,proto3,oneof" json:"observedGeneration,omitempty"`
-	LastTransitionTime *Time                  `protobuf:"bytes,4,opt,name=lastTransitionTime,proto3,oneof" json:"lastTransitionTime,omitempty"`
-	Reason             *string                `protobuf:"bytes,5,opt,name=reason,proto3,oneof" json:"reason,omitempty"`
-	Message            *string                `protobuf:"bytes,6,opt,name=message,proto3,oneof" json:"message,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The type of condition.
+	Type *string `protobuf:"bytes,1,opt,name=type,proto3,oneof" json:"type,omitempty"`
+	// The status of the condition (True, False, Unknown).
+	Status *string `protobuf:"bytes,2,opt,name=status,proto3,oneof" json:"status,omitempty"`
+	// The generation observed by the controller.
+	ObservedGeneration *int64 `protobuf:"varint,3,opt,name=observedGeneration,proto3,oneof" json:"observedGeneration,omitempty"`
+	// The last time the condition transitioned.
+	LastTransitionTime *Time `protobuf:"bytes,4,opt,name=lastTransitionTime,proto3,oneof" json:"lastTransitionTime,omitempty"`
+	// A machine-readable reason for the condition.
+	Reason *string `protobuf:"bytes,5,opt,name=reason,proto3,oneof" json:"reason,omitempty"`
+	// A human-readable description of the condition.
+	Message       *string `protobuf:"bytes,6,opt,name=message,proto3,oneof" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Condition) Reset() {

@@ -23,44 +23,44 @@ class _ExporterStatus:
 class _ExporterStatusEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_ExporterStatus.ValueType], builtins.type):
     DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
     EXPORTER_STATUS_UNSPECIFIED: _ExporterStatus.ValueType  # 0
-    """Unspecified exporter status"""
+    """Unspecified exporter status."""
     EXPORTER_STATUS_OFFLINE: _ExporterStatus.ValueType  # 1
-    """Exporter is offline"""
+    """Exporter is offline."""
     EXPORTER_STATUS_AVAILABLE: _ExporterStatus.ValueType  # 2
-    """Exporter is available to be leased"""
+    """Exporter is available to be leased."""
     EXPORTER_STATUS_BEFORE_LEASE_HOOK: _ExporterStatus.ValueType  # 3
-    """Exporter is executing before lease hook(s)"""
+    """Exporter is executing before lease hook(s)."""
     EXPORTER_STATUS_LEASE_READY: _ExporterStatus.ValueType  # 4
-    """Exporter is leased and ready to accept commands"""
+    """Exporter is leased and ready to accept commands."""
     EXPORTER_STATUS_AFTER_LEASE_HOOK: _ExporterStatus.ValueType  # 5
-    """Exporter is executing after lease hook(s)"""
+    """Exporter is executing after lease hook(s)."""
     EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED: _ExporterStatus.ValueType  # 6
-    """Exporter before lease hook failed"""
+    """Exporter before lease hook failed."""
     EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED: _ExporterStatus.ValueType  # 7
-    """Exporter after lease hook failed"""
+    """Exporter after lease hook failed."""
 
 class ExporterStatus(_ExporterStatus, metaclass=_ExporterStatusEnumTypeWrapper):
-    """Shared types used across multiple Jumpstarter services
+    """Shared types used across multiple Jumpstarter services.
 
-    Exporter status information
+    Exporter status information.
     """
 
 EXPORTER_STATUS_UNSPECIFIED: ExporterStatus.ValueType  # 0
-"""Unspecified exporter status"""
+"""Unspecified exporter status."""
 EXPORTER_STATUS_OFFLINE: ExporterStatus.ValueType  # 1
-"""Exporter is offline"""
+"""Exporter is offline."""
 EXPORTER_STATUS_AVAILABLE: ExporterStatus.ValueType  # 2
-"""Exporter is available to be leased"""
+"""Exporter is available to be leased."""
 EXPORTER_STATUS_BEFORE_LEASE_HOOK: ExporterStatus.ValueType  # 3
-"""Exporter is executing before lease hook(s)"""
+"""Exporter is executing before lease hook(s)."""
 EXPORTER_STATUS_LEASE_READY: ExporterStatus.ValueType  # 4
-"""Exporter is leased and ready to accept commands"""
+"""Exporter is leased and ready to accept commands."""
 EXPORTER_STATUS_AFTER_LEASE_HOOK: ExporterStatus.ValueType  # 5
-"""Exporter is executing after lease hook(s)"""
+"""Exporter is executing after lease hook(s)."""
 EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED: ExporterStatus.ValueType  # 6
-"""Exporter before lease hook failed"""
+"""Exporter before lease hook failed."""
 EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED: ExporterStatus.ValueType  # 7
-"""Exporter after lease hook failed"""
+"""Exporter after lease hook failed."""
 Global___ExporterStatus: typing_extensions.TypeAlias = ExporterStatus
 
 class _LogSource:
@@ -70,27 +70,27 @@ class _LogSource:
 class _LogSourceEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_LogSource.ValueType], builtins.type):
     DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
     LOG_SOURCE_UNSPECIFIED: _LogSource.ValueType  # 0
-    """Unspecified log source"""
+    """Unspecified log source."""
     LOG_SOURCE_DRIVER: _LogSource.ValueType  # 1
-    """Driver/device logs"""
+    """Driver/device logs."""
     LOG_SOURCE_BEFORE_LEASE_HOOK: _LogSource.ValueType  # 2
-    """beforeLease hook execution logs"""
+    """beforeLease hook execution logs."""
     LOG_SOURCE_AFTER_LEASE_HOOK: _LogSource.ValueType  # 3
-    """afterLease hook execution logs"""
+    """afterLease hook execution logs."""
     LOG_SOURCE_SYSTEM: _LogSource.ValueType  # 4
-    """System/exporter logs"""
+    """System/exporter logs."""
 
 class LogSource(_LogSource, metaclass=_LogSourceEnumTypeWrapper):
-    """Source of log stream messages"""
+    """Source of log stream messages."""
 
 LOG_SOURCE_UNSPECIFIED: LogSource.ValueType  # 0
-"""Unspecified log source"""
+"""Unspecified log source."""
 LOG_SOURCE_DRIVER: LogSource.ValueType  # 1
-"""Driver/device logs"""
+"""Driver/device logs."""
 LOG_SOURCE_BEFORE_LEASE_HOOK: LogSource.ValueType  # 2
-"""beforeLease hook execution logs"""
+"""beforeLease hook execution logs."""
 LOG_SOURCE_AFTER_LEASE_HOOK: LogSource.ValueType  # 3
-"""afterLease hook execution logs"""
+"""afterLease hook execution logs."""
 LOG_SOURCE_SYSTEM: LogSource.ValueType  # 4
-"""System/exporter logs"""
+"""System/exporter logs."""
 Global___LogSource: typing_extensions.TypeAlias = LogSource

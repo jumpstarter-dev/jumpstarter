@@ -203,7 +203,7 @@ _ControllerServiceListLeasesType = typing_extensions.TypeVar(
 )
 
 class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _ControllerServiceUnregisterType, _ControllerServiceReportStatusType, _ControllerServiceListenType, _ControllerServiceStatusType, _ControllerServiceDialType, _ControllerServiceAuditStreamType, _ControllerServiceGetLeaseType, _ControllerServiceRequestLeaseType, _ControllerServiceReleaseLeaseType, _ControllerServiceListLeasesType]):
-    """A service where a exporter can connect to make itself available"""
+    """A service where an exporter can connect to make itself available."""
 
     @typing.overload
     def __init__(self: ControllerServiceStub[
@@ -302,52 +302,46 @@ class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _Cont
     ], channel: grpc.aio.Channel) -> None: ...
 
     Register: _ControllerServiceRegisterType
-    """Exporter registration"""
+    """Register an exporter with the controller."""
 
     Unregister: _ControllerServiceUnregisterType
-    """Exporter disconnection
-    Disconnecting with bye will invalidate any existing router tokens
-    we will eventually have a mechanism to tell the router this token
-    has been invalidated
+    """Unregister an exporter from the controller.
+    Disconnecting will invalidate any existing router tokens.
     """
 
     ReportStatus: _ControllerServiceReportStatusType
-    """Exporter status report
-    Allows exporters to report their own status to the controller
-    """
+    """Report exporter status to the controller."""
 
     Listen: _ControllerServiceListenType
-    """Exporter listening
-    Returns stream tokens for accepting incoming client connections
+    """Listen for incoming client connections on a lease.
+    Returns stream tokens for accepting incoming client connections.
     """
 
     Status: _ControllerServiceStatusType
-    """Exporter status
-    Returns lease status for the exporter
-    """
+    """Stream lease status updates for the exporter."""
 
     Dial: _ControllerServiceDialType
-    """Client connecting
-    Returns stream token for connecting to the desired exporter
-    Leases are checked before token issuance
+    """Dial an exporter through the router.
+    Returns a stream token for connecting to the desired exporter.
+    Leases are checked before token issuance.
     """
 
     AuditStream: _ControllerServiceAuditStreamType
-    """Audit events from the exporters
-    audit events are used to track the exporter's activity
+    """Stream audit events from the exporters.
+    Audit events are used to track the exporter activity.
     """
 
     GetLease: _ControllerServiceGetLeaseType
-    """Get Lease"""
+    """Retrieve a lease by name."""
 
     RequestLease: _ControllerServiceRequestLeaseType
-    """Request Lease"""
+    """Request a new lease for an exporter."""
 
     ReleaseLease: _ControllerServiceReleaseLeaseType
-    """Release Lease"""
+    """Release an active lease."""
 
     ListLeases: _ControllerServiceListLeasesType
-    """List Leases"""
+    """List all leases."""
 
 ControllerServiceAsyncStub: typing_extensions.TypeAlias = ControllerServiceStub[
     grpc.aio.UnaryUnaryMultiCallable[
@@ -397,7 +391,7 @@ ControllerServiceAsyncStub: typing_extensions.TypeAlias = ControllerServiceStub[
 ]
 
 class ControllerServiceServicer(metaclass=abc.ABCMeta):
-    """A service where a exporter can connect to make itself available"""
+    """A service where an exporter can connect to make itself available."""
 
     @abc.abstractmethod
     def Register(
@@ -405,7 +399,7 @@ class ControllerServiceServicer(metaclass=abc.ABCMeta):
         request: jumpstarter.v1.jumpstarter_pb2.RegisterRequest,
         context: _ServicerContext,
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.RegisterResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.RegisterResponse]]:
-        """Exporter registration"""
+        """Register an exporter with the controller."""
 
     @abc.abstractmethod
     def Unregister(
@@ -413,10 +407,8 @@ class ControllerServiceServicer(metaclass=abc.ABCMeta):
         request: jumpstarter.v1.jumpstarter_pb2.UnregisterRequest,
         context: _ServicerContext,
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.UnregisterResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.UnregisterResponse]]:
-        """Exporter disconnection
-        Disconnecting with bye will invalidate any existing router tokens
-        we will eventually have a mechanism to tell the router this token
-        has been invalidated
+        """Unregister an exporter from the controller.
+        Disconnecting will invalidate any existing router tokens.
         """
 
     @abc.abstractmethod
@@ -425,9 +417,7 @@ class ControllerServiceServicer(metaclass=abc.ABCMeta):
         request: jumpstarter.v1.jumpstarter_pb2.ReportStatusRequest,
         context: _ServicerContext,
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.ReportStatusResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.ReportStatusResponse]]:
-        """Exporter status report
-        Allows exporters to report their own status to the controller
-        """
+        """Report exporter status to the controller."""
 
     @abc.abstractmethod
     def Listen(
@@ -435,8 +425,8 @@ class ControllerServiceServicer(metaclass=abc.ABCMeta):
         request: jumpstarter.v1.jumpstarter_pb2.ListenRequest,
         context: _ServicerContext,
     ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.jumpstarter_pb2.ListenResponse], collections.abc.AsyncIterator[jumpstarter.v1.jumpstarter_pb2.ListenResponse]]:
-        """Exporter listening
-        Returns stream tokens for accepting incoming client connections
+        """Listen for incoming client connections on a lease.
+        Returns stream tokens for accepting incoming client connections.
         """
 
     @abc.abstractmethod
@@ -445,9 +435,7 @@ class ControllerServiceServicer(metaclass=abc.ABCMeta):
         request: jumpstarter.v1.jumpstarter_pb2.StatusRequest,
         context: _ServicerContext,
     ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.jumpstarter_pb2.StatusResponse], collections.abc.AsyncIterator[jumpstarter.v1.jumpstarter_pb2.StatusResponse]]:
-        """Exporter status
-        Returns lease status for the exporter
-        """
+        """Stream lease status updates for the exporter."""
 
     @abc.abstractmethod
     def Dial(
@@ -455,9 +443,9 @@ class ControllerServiceServicer(metaclass=abc.ABCMeta):
         request: jumpstarter.v1.jumpstarter_pb2.DialRequest,
         context: _ServicerContext,
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.DialResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.DialResponse]]:
-        """Client connecting
-        Returns stream token for connecting to the desired exporter
-        Leases are checked before token issuance
+        """Dial an exporter through the router.
+        Returns a stream token for connecting to the desired exporter.
+        Leases are checked before token issuance.
         """
 
     @abc.abstractmethod
@@ -466,8 +454,8 @@ class ControllerServiceServicer(metaclass=abc.ABCMeta):
         request_iterator: _MaybeAsyncIterator[jumpstarter.v1.jumpstarter_pb2.AuditStreamRequest],
         context: _ServicerContext,
     ) -> typing.Union[google.protobuf.empty_pb2.Empty, collections.abc.Awaitable[google.protobuf.empty_pb2.Empty]]:
-        """Audit events from the exporters
-        audit events are used to track the exporter's activity
+        """Stream audit events from the exporters.
+        Audit events are used to track the exporter activity.
         """
 
     @abc.abstractmethod
@@ -476,7 +464,7 @@ class ControllerServiceServicer(metaclass=abc.ABCMeta):
         request: jumpstarter.v1.jumpstarter_pb2.GetLeaseRequest,
         context: _ServicerContext,
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.GetLeaseResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.GetLeaseResponse]]:
-        """Get Lease"""
+        """Retrieve a lease by name."""
 
     @abc.abstractmethod
     def RequestLease(
@@ -484,7 +472,7 @@ class ControllerServiceServicer(metaclass=abc.ABCMeta):
         request: jumpstarter.v1.jumpstarter_pb2.RequestLeaseRequest,
         context: _ServicerContext,
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.RequestLeaseResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.RequestLeaseResponse]]:
-        """Request Lease"""
+        """Request a new lease for an exporter."""
 
     @abc.abstractmethod
     def ReleaseLease(
@@ -492,7 +480,7 @@ class ControllerServiceServicer(metaclass=abc.ABCMeta):
         request: jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseRequest,
         context: _ServicerContext,
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.ReleaseLeaseResponse]]:
-        """Release Lease"""
+        """Release an active lease."""
 
     @abc.abstractmethod
     def ListLeases(
@@ -500,7 +488,7 @@ class ControllerServiceServicer(metaclass=abc.ABCMeta):
         request: jumpstarter.v1.jumpstarter_pb2.ListLeasesRequest,
         context: _ServicerContext,
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.ListLeasesResponse]]:
-        """List Leases"""
+        """List all leases."""
 
 def add_ControllerServiceServicer_to_server(servicer: ControllerServiceServicer, server: typing.Union[grpc.Server, grpc.aio.Server]) -> None: ...
 
@@ -617,8 +605,8 @@ _ExporterServiceEndSessionType = typing_extensions.TypeVar(
 )
 
 class ExporterServiceStub(typing.Generic[_ExporterServiceGetReportType, _ExporterServiceDriverCallType, _ExporterServiceStreamingDriverCallType, _ExporterServiceLogStreamType, _ExporterServiceResetType, _ExporterServiceGetStatusType, _ExporterServiceEndSessionType]):
-    """A service a exporter can share locally to be used without a server
-    Channel/Call credentials are used to authenticate the client, and routing to the right exporter
+    """A service an exporter can share locally to be used without a server.
+    Channel and call credentials are used to authenticate the client and route to the right exporter.
     """
 
     @typing.overload
@@ -686,22 +674,27 @@ class ExporterServiceStub(typing.Generic[_ExporterServiceGetReportType, _Exporte
     ], channel: grpc.aio.Channel) -> None: ...
 
     GetReport: _ExporterServiceGetReportType
-    """Exporter registration"""
+    """Retrieve the exporter driver report."""
 
     DriverCall: _ExporterServiceDriverCallType
+    """Invoke a method on a driver instance."""
 
     StreamingDriverCall: _ExporterServiceStreamingDriverCallType
+    """Invoke a streaming method on a driver instance."""
 
     LogStream: _ExporterServiceLogStreamType
+    """Stream log messages from the exporter."""
 
     Reset: _ExporterServiceResetType
+    """Reset the exporter connection."""
 
     GetStatus: _ExporterServiceGetStatusType
+    """Retrieve the current exporter status."""
 
     EndSession: _ExporterServiceEndSessionType
-    """End the current session, triggering the afterLease hook
-    The client should keep the connection open to receive hook logs via LogStream
-    Returns after the afterLease hook completes
+    """End the current session, triggering the afterLease hook.
+    The client should keep the connection open to receive hook logs via LogStream.
+    Returns after the afterLease hook completes.
     """
 
 ExporterServiceAsyncStub: typing_extensions.TypeAlias = ExporterServiceStub[
@@ -736,8 +729,8 @@ ExporterServiceAsyncStub: typing_extensions.TypeAlias = ExporterServiceStub[
 ]
 
 class ExporterServiceServicer(metaclass=abc.ABCMeta):
-    """A service a exporter can share locally to be used without a server
-    Channel/Call credentials are used to authenticate the client, and routing to the right exporter
+    """A service an exporter can share locally to be used without a server.
+    Channel and call credentials are used to authenticate the client and route to the right exporter.
     """
 
     @abc.abstractmethod
@@ -746,42 +739,47 @@ class ExporterServiceServicer(metaclass=abc.ABCMeta):
         request: google.protobuf.empty_pb2.Empty,
         context: _ServicerContext,
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.GetReportResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.GetReportResponse]]:
-        """Exporter registration"""
+        """Retrieve the exporter driver report."""
 
     @abc.abstractmethod
     def DriverCall(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.DriverCallRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.DriverCallResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.DriverCallResponse]]: ...
+    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.DriverCallResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.DriverCallResponse]]:
+        """Invoke a method on a driver instance."""
 
     @abc.abstractmethod
     def StreamingDriverCall(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallRequest,
         context: _ServicerContext,
-    ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallResponse], collections.abc.AsyncIterator[jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallResponse]]: ...
+    ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallResponse], collections.abc.AsyncIterator[jumpstarter.v1.jumpstarter_pb2.StreamingDriverCallResponse]]:
+        """Invoke a streaming method on a driver instance."""
 
     @abc.abstractmethod
     def LogStream(
         self,
         request: google.protobuf.empty_pb2.Empty,
         context: _ServicerContext,
-    ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.jumpstarter_pb2.LogStreamResponse], collections.abc.AsyncIterator[jumpstarter.v1.jumpstarter_pb2.LogStreamResponse]]: ...
+    ) -> typing.Union[collections.abc.Iterator[jumpstarter.v1.jumpstarter_pb2.LogStreamResponse], collections.abc.AsyncIterator[jumpstarter.v1.jumpstarter_pb2.LogStreamResponse]]:
+        """Stream log messages from the exporter."""
 
     @abc.abstractmethod
     def Reset(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.ResetRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.ResetResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.ResetResponse]]: ...
+    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.ResetResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.ResetResponse]]:
+        """Reset the exporter connection."""
 
     @abc.abstractmethod
     def GetStatus(
         self,
         request: jumpstarter.v1.jumpstarter_pb2.GetStatusRequest,
         context: _ServicerContext,
-    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.GetStatusResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.GetStatusResponse]]: ...
+    ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.GetStatusResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.GetStatusResponse]]:
+        """Retrieve the current exporter status."""
 
     @abc.abstractmethod
     def EndSession(
@@ -789,9 +787,9 @@ class ExporterServiceServicer(metaclass=abc.ABCMeta):
         request: jumpstarter.v1.jumpstarter_pb2.EndSessionRequest,
         context: _ServicerContext,
     ) -> typing.Union[jumpstarter.v1.jumpstarter_pb2.EndSessionResponse, collections.abc.Awaitable[jumpstarter.v1.jumpstarter_pb2.EndSessionResponse]]:
-        """End the current session, triggering the afterLease hook
-        The client should keep the connection open to receive hook logs via LogStream
-        Returns after the afterLease hook completes
+        """End the current session, triggering the afterLease hook.
+        The client should keep the connection open to receive hook logs via LogStream.
+        Returns after the afterLease hook completes.
         """
 
 def add_ExporterServiceServicer_to_server(servicer: ExporterServiceServicer, server: typing.Union[grpc.Server, grpc.aio.Server]) -> None: ...
