@@ -34,14 +34,21 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// An exporter resource representing a registered device provider.
 type Exporter struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	Name   string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Labels map[string]string      `protobuf:"bytes,2,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The resource name of the exporter.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The set of labels associated with the exporter.
+	Labels map[string]string `protobuf:"bytes,2,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Whether the exporter is currently online. Deprecated in favor of the status field.
+	//
 	// Deprecated: Marked as deprecated in jumpstarter/client/v1/client.proto.
-	Online        bool              `protobuf:"varint,3,opt,name=online,proto3" json:"online,omitempty"`
-	Status        v1.ExporterStatus `protobuf:"varint,4,opt,name=status,proto3,enum=jumpstarter.v1.ExporterStatus" json:"status,omitempty"`
-	StatusMessage string            `protobuf:"bytes,5,opt,name=status_message,json=statusMessage,proto3" json:"status_message,omitempty"`
+	Online bool `protobuf:"varint,3,opt,name=online,proto3" json:"online,omitempty"`
+	// The current status of the exporter.
+	Status v1.ExporterStatus `protobuf:"varint,4,opt,name=status,proto3,enum=jumpstarter.v1.ExporterStatus" json:"status,omitempty"`
+	// A human-readable message providing details about the exporter status.
+	StatusMessage string `protobuf:"bytes,5,opt,name=status_message,json=statusMessage,proto3" json:"status_message,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -112,23 +119,37 @@ func (x *Exporter) GetStatusMessage() string {
 	return ""
 }
 
+// A lease resource representing a reservation of an exporter.
 type Lease struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	Name               string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Selector           string                 `protobuf:"bytes,2,opt,name=selector,proto3" json:"selector,omitempty"`
-	Duration           *durationpb.Duration   `protobuf:"bytes,3,opt,name=duration,proto3,oneof" json:"duration,omitempty"`
-	EffectiveDuration  *durationpb.Duration   `protobuf:"bytes,4,opt,name=effective_duration,json=effectiveDuration,proto3" json:"effective_duration,omitempty"`
-	BeginTime          *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=begin_time,json=beginTime,proto3,oneof" json:"begin_time,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The resource name of the lease.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The label selector expression used to match an exporter.
+	Selector string `protobuf:"bytes,2,opt,name=selector,proto3" json:"selector,omitempty"`
+	// The requested duration of the lease.
+	Duration *durationpb.Duration `protobuf:"bytes,3,opt,name=duration,proto3,oneof" json:"duration,omitempty"`
+	// The server-computed effective duration of the lease.
+	EffectiveDuration *durationpb.Duration `protobuf:"bytes,4,opt,name=effective_duration,json=effectiveDuration,proto3" json:"effective_duration,omitempty"`
+	// The requested begin time of the lease.
+	BeginTime *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=begin_time,json=beginTime,proto3,oneof" json:"begin_time,omitempty"`
+	// The server-computed effective begin time of the lease.
 	EffectiveBeginTime *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=effective_begin_time,json=effectiveBeginTime,proto3,oneof" json:"effective_begin_time,omitempty"`
-	EndTime            *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=end_time,json=endTime,proto3,oneof" json:"end_time,omitempty"`
-	EffectiveEndTime   *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=effective_end_time,json=effectiveEndTime,proto3,oneof" json:"effective_end_time,omitempty"`
-	Client             *string                `protobuf:"bytes,9,opt,name=client,proto3,oneof" json:"client,omitempty"`
-	Exporter           *string                `protobuf:"bytes,10,opt,name=exporter,proto3,oneof" json:"exporter,omitempty"`
-	Conditions         []*v1.Condition        `protobuf:"bytes,11,rep,name=conditions,proto3" json:"conditions,omitempty"`
-	ExporterName       *string                `protobuf:"bytes,12,opt,name=exporter_name,json=exporterName,proto3,oneof" json:"exporter_name,omitempty"`
-	Tags               map[string]string      `protobuf:"bytes,13,rep,name=tags,proto3" json:"tags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// The requested end time of the lease.
+	EndTime *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=end_time,json=endTime,proto3,oneof" json:"end_time,omitempty"`
+	// The server-computed effective end time of the lease.
+	EffectiveEndTime *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=effective_end_time,json=effectiveEndTime,proto3,oneof" json:"effective_end_time,omitempty"`
+	// The resource name of the client that owns this lease.
+	Client *string `protobuf:"bytes,9,opt,name=client,proto3,oneof" json:"client,omitempty"`
+	// The resource name of the exporter assigned to this lease.
+	Exporter *string `protobuf:"bytes,10,opt,name=exporter,proto3,oneof" json:"exporter,omitempty"`
+	// The list of conditions reflecting the current state of the lease.
+	Conditions []*v1.Condition `protobuf:"bytes,11,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	// The name of a specific exporter to target for the lease.
+	ExporterName *string `protobuf:"bytes,12,opt,name=exporter_name,json=exporterName,proto3,oneof" json:"exporter_name,omitempty"`
+	// The set of tags associated with the lease.
+	Tags          map[string]string `protobuf:"bytes,13,rep,name=tags,proto3" json:"tags,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Lease) Reset() {
@@ -252,11 +273,15 @@ func (x *Lease) GetTags() map[string]string {
 	return nil
 }
 
+// Request to retrieve an exporter.
 type GetExporterRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The resource name of the exporter.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// When true, include labels hidden by controller configuration.
+	ShowHiddenLabels bool `protobuf:"varint,2,opt,name=show_hidden_labels,json=showHiddenLabels,proto3" json:"show_hidden_labels,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *GetExporterRequest) Reset() {
@@ -296,14 +321,28 @@ func (x *GetExporterRequest) GetName() string {
 	return ""
 }
 
+func (x *GetExporterRequest) GetShowHiddenLabels() bool {
+	if x != nil {
+		return x.ShowHiddenLabels
+	}
+	return false
+}
+
+// Request to list exporters.
 type ListExportersRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Parent        string                 `protobuf:"bytes,1,opt,name=parent,proto3" json:"parent,omitempty"`
-	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	PageToken     string                 `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
-	Filter        string                 `protobuf:"bytes,4,opt,name=filter,proto3" json:"filter,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The parent resource name (namespace).
+	Parent string `protobuf:"bytes,1,opt,name=parent,proto3" json:"parent,omitempty"`
+	// Maximum number of results to return.
+	PageSize int32 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// Token for retrieving the next page of results.
+	PageToken string `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	// Filter expression for the results.
+	Filter string `protobuf:"bytes,4,opt,name=filter,proto3" json:"filter,omitempty"`
+	// When true, include labels hidden by controller configuration.
+	ShowHiddenLabels bool `protobuf:"varint,5,opt,name=show_hidden_labels,json=showHiddenLabels,proto3" json:"show_hidden_labels,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ListExportersRequest) Reset() {
@@ -364,10 +403,20 @@ func (x *ListExportersRequest) GetFilter() string {
 	return ""
 }
 
+func (x *ListExportersRequest) GetShowHiddenLabels() bool {
+	if x != nil {
+		return x.ShowHiddenLabels
+	}
+	return false
+}
+
+// Response containing a list of exporters.
 type ListExportersResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Exporters     []*Exporter            `protobuf:"bytes,1,rep,name=exporters,proto3" json:"exporters,omitempty"`
-	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The list of exporters.
+	Exporters []*Exporter `protobuf:"bytes,1,rep,name=exporters,proto3" json:"exporters,omitempty"`
+	// Token for the next page of results.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -416,9 +465,11 @@ func (x *ListExportersResponse) GetNextPageToken() string {
 	return ""
 }
 
+// Request to retrieve a lease.
 type GetLeaseRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The resource name of the lease.
+	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -460,14 +511,21 @@ func (x *GetLeaseRequest) GetName() string {
 	return ""
 }
 
+// Request to list leases.
 type ListLeasesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Parent        string                 `protobuf:"bytes,1,opt,name=parent,proto3" json:"parent,omitempty"`
-	PageSize      int32                  `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	PageToken     string                 `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
-	Filter        string                 `protobuf:"bytes,4,opt,name=filter,proto3" json:"filter,omitempty"`
-	OnlyActive    *bool                  `protobuf:"varint,5,opt,name=only_active,json=onlyActive,proto3,oneof" json:"only_active,omitempty"`
-	TagFilter     string                 `protobuf:"bytes,6,opt,name=tag_filter,json=tagFilter,proto3" json:"tag_filter,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The parent resource name (namespace).
+	Parent string `protobuf:"bytes,1,opt,name=parent,proto3" json:"parent,omitempty"`
+	// Maximum number of results to return.
+	PageSize int32 `protobuf:"varint,2,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// Token for retrieving the next page of results.
+	PageToken string `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	// Filter expression for the results.
+	Filter string `protobuf:"bytes,4,opt,name=filter,proto3" json:"filter,omitempty"`
+	// If true, return only active leases.
+	OnlyActive *bool `protobuf:"varint,5,opt,name=only_active,json=onlyActive,proto3,oneof" json:"only_active,omitempty"`
+	// Filter expression for lease tags.
+	TagFilter     string `protobuf:"bytes,6,opt,name=tag_filter,json=tagFilter,proto3" json:"tag_filter,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -544,10 +602,13 @@ func (x *ListLeasesRequest) GetTagFilter() string {
 	return ""
 }
 
+// Response containing a list of leases.
 type ListLeasesResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Leases        []*Lease               `protobuf:"bytes,1,rep,name=leases,proto3" json:"leases,omitempty"`
-	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The list of leases.
+	Leases []*Lease `protobuf:"bytes,1,rep,name=leases,proto3" json:"leases,omitempty"`
+	// Token for the next page of results.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -596,11 +657,15 @@ func (x *ListLeasesResponse) GetNextPageToken() string {
 	return ""
 }
 
+// Request to create a lease.
 type CreateLeaseRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Parent        string                 `protobuf:"bytes,1,opt,name=parent,proto3" json:"parent,omitempty"`
-	LeaseId       string                 `protobuf:"bytes,2,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
-	Lease         *Lease                 `protobuf:"bytes,3,opt,name=lease,proto3" json:"lease,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The parent resource name (namespace).
+	Parent string `protobuf:"bytes,1,opt,name=parent,proto3" json:"parent,omitempty"`
+	// The client-assigned identifier for the lease.
+	LeaseId string `protobuf:"bytes,2,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
+	// The lease resource to create.
+	Lease         *Lease `protobuf:"bytes,3,opt,name=lease,proto3" json:"lease,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -656,9 +721,12 @@ func (x *CreateLeaseRequest) GetLease() *Lease {
 	return nil
 }
 
+// Request to update a lease.
 type UpdateLeaseRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Lease         *Lease                 `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The lease resource with updated fields.
+	Lease *Lease `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
+	// The set of fields to update.
 	UpdateMask    *fieldmaskpb.FieldMask `protobuf:"bytes,2,opt,name=update_mask,json=updateMask,proto3" json:"update_mask,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -708,9 +776,11 @@ func (x *UpdateLeaseRequest) GetUpdateMask() *fieldmaskpb.FieldMask {
 	return nil
 }
 
+// Request to delete a lease.
 type DeleteLeaseRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The resource name of the lease.
+	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -752,9 +822,11 @@ func (x *DeleteLeaseRequest) GetName() string {
 	return ""
 }
 
+// Request to rotate the authentication token for a client.
 type RotateTokenRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Parent        string                 `protobuf:"bytes,1,opt,name=parent,proto3" json:"parent,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The parent resource name (namespace).
+	Parent        string `protobuf:"bytes,1,opt,name=parent,proto3" json:"parent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -796,9 +868,12 @@ func (x *RotateTokenRequest) GetParent() string {
 	return ""
 }
 
+// Response containing the newly rotated token.
 type RotateTokenResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The new authentication token.
+	Token string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	// The expiration time of the new token.
 	Expiry        *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=expiry,proto3" json:"expiry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -894,16 +969,18 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\x13_effective_end_timeB\t\n" +
 	"\a_clientB\v\n" +
 	"\t_exporterB\x10\n" +
-	"\x0e_exporter_name\"J\n" +
+	"\x0e_exporter_name\"}\n" +
 	"\x12GetExporterRequest\x124\n" +
 	"\x04name\x18\x01 \x01(\tB \xe0A\x02\xfaA\x1a\n" +
-	"\x18jumpstarter.dev/ExporterR\x04name\"\xb3\x01\n" +
+	"\x18jumpstarter.dev/ExporterR\x04name\x121\n" +
+	"\x12show_hidden_labels\x18\x02 \x01(\bB\x03\xe0A\x01R\x10showHiddenLabels\"\xe6\x01\n" +
 	"\x14ListExportersRequest\x128\n" +
 	"\x06parent\x18\x01 \x01(\tB \xe0A\x02\xfaA\x1a\x12\x18jumpstarter.dev/ExporterR\x06parent\x12 \n" +
 	"\tpage_size\x18\x02 \x01(\x05B\x03\xe0A\x01R\bpageSize\x12\"\n" +
 	"\n" +
 	"page_token\x18\x03 \x01(\tB\x03\xe0A\x01R\tpageToken\x12\x1b\n" +
-	"\x06filter\x18\x04 \x01(\tB\x03\xe0A\x01R\x06filter\"~\n" +
+	"\x06filter\x18\x04 \x01(\tB\x03\xe0A\x01R\x06filter\x121\n" +
+	"\x12show_hidden_labels\x18\x05 \x01(\bB\x03\xe0A\x01R\x10showHiddenLabels\"~\n" +
 	"\x15ListExportersResponse\x12=\n" +
 	"\texporters\x18\x01 \x03(\v2\x1f.jumpstarter.client.v1.ExporterR\texporters\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"D\n" +

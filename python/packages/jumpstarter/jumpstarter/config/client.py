@@ -167,9 +167,10 @@ class ClientConfigV1Alpha1(BaseSettings):
     async def get_exporter(
         self,
         name: str,
+        show_hidden_labels: bool = False,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await svc.GetExporter(name=name)
+        return await svc.GetExporter(name=name, show_hidden_labels=show_hidden_labels)
 
     async def _collect_all_leases(self, svc, page_size=100, only_active=True, filter=None, tag_filter=None):
         from jumpstarter.client.grpc import LeaseList
@@ -199,6 +200,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         include_online: bool = False,
         include_status: bool = False,
         page_size: int = 100,
+        show_hidden_labels: bool = False,
     ):
         from jumpstarter.client.grpc import ExporterList
 
@@ -210,11 +212,13 @@ class ClientConfigV1Alpha1(BaseSettings):
                 page_size=page_size,
                 page_token=page_token,
                 filter=filter,
+                show_hidden_labels=show_hidden_labels,
             )
             all_exporters.extend(page.exporters)
             if not page.next_page_token:
                 break
             page_token = page.next_page_token
+
         result = ExporterList(exporters=all_exporters, next_page_token=None)
         result.include_online = include_online
         result.include_status = include_status

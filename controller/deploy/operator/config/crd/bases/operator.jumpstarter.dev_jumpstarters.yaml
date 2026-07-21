@@ -1347,6 +1347,18 @@ spec:
                         type: object
                     type: object
                 type: object
+              hiddenLabels:
+                description: Hidden labels configuration for hiding specific label
+                  keys from exporter listings.
+                properties:
+                  keys:
+                    description: |-
+                      List of exact label keys to hide from ListExporters/GetExporter responses.
+                      Clients can pass show_hidden_labels=true to see all labels.
+                    items:
+                      type: string
+                    type: array
+                type: object
               leasePolicy:
                 default: {}
                 description: Lease policy configuration for controlling lease behavior.

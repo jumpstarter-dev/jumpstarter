@@ -43,17 +43,36 @@ type ClientService struct {
 	cpb.UnimplementedClientServiceServer
 	kclient.Client
 	auth.Auth
-	MaxTags int32
-	Signer  *oidc.Signer
+	MaxTags        int32
+	Signer         *oidc.Signer
+	hiddenLabelSet map[string]struct{}
 }
 
-func NewClientService(client kclient.Client, auth auth.Auth, maxTags int32, signer *oidc.Signer) *ClientService {
-	return &ClientService{
-		Client:  client,
-		Auth:    auth,
-		MaxTags: maxTags,
-		Signer:  signer,
+func NewClientService(client kclient.Client, auth auth.Auth, maxTags int32, signer *oidc.Signer, hiddenLabelKeys []string) *ClientService {
+	hiddenSet := make(map[string]struct{}, len(hiddenLabelKeys))
+	for _, k := range hiddenLabelKeys {
+		hiddenSet[k] = struct{}{}
 	}
+	return &ClientService{
+		Client:         client,
+		Auth:           auth,
+		MaxTags:        maxTags,
+		Signer:         signer,
+		hiddenLabelSet: hiddenSet,
+	}
+}
+
+func filterHiddenLabels(exporter *cpb.Exporter, hiddenSet map[string]struct{}, showHidden bool) {
+	if showHidden || len(hiddenSet) == 0 || len(exporter.Labels) == 0 {
+		return
+	}
+	filtered := make(map[string]string, len(exporter.Labels))
+	for k, v := range exporter.Labels {
+		if _, hidden := hiddenSet[k]; !hidden {
+			filtered[k] = v
+		}
+	}
+	exporter.Labels = filtered
 }
 
 func (s *ClientService) GetExporter(
@@ -75,7 +94,9 @@ func (s *ClientService) GetExporter(
 		return nil, err
 	}
 
-	return jexporter.ToProtobuf(), nil
+	result := jexporter.ToProtobuf()
+	filterHiddenLabels(result, s.hiddenLabelSet, req.ShowHiddenLabels)
+	return result, nil
 }
 
 func (s *ClientService) ListExporters(
@@ -107,7 +128,11 @@ func (s *ClientService) ListExporters(
 		return nil, err
 	}
 
-	return jexporters.ToProtobuf(), nil
+	response := jexporters.ToProtobuf()
+	for _, exp := range response.Exporters {
+		filterHiddenLabels(exp, s.hiddenLabelSet, req.ShowHiddenLabels)
+	}
+	return response, nil
 }
 
 func (s *ClientService) GetLease(ctx context.Context, req *cpb.GetLeaseRequest) (*cpb.Lease, error) {

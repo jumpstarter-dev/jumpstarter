@@ -183,6 +183,18 @@ type JumpstarterSpec struct {
 	// Lease policy configuration for controlling lease behavior.
 	// +kubebuilder:default={}
 	LeasePolicy LeasePolicyConfig `json:"leasePolicy,omitempty"`
+
+	// Hidden labels configuration for hiding specific label keys from exporter listings.
+	// +optional
+	HiddenLabels HiddenLabelsConfig `json:"hiddenLabels,omitempty"`
+}
+
+// HiddenLabelsConfig defines label keys to hide from exporter listings by default.
+type HiddenLabelsConfig struct {
+	// List of exact label keys to hide from ListExporters/GetExporter responses.
+	// Clients can pass show_hidden_labels=true to see all labels.
+	// +optional
+	Keys []string `json:"keys,omitempty"`
 }
 
 // LeasePolicyConfig defines policy constraints for leases.

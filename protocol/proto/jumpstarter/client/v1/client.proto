@@ -150,6 +150,8 @@ message GetExporterRequest {
     (google.api.field_behavior) = REQUIRED,
     (google.api.resource_reference) = {type: "jumpstarter.dev/Exporter"}
   ];
+  // When true, include labels hidden by controller configuration.
+  bool show_hidden_labels = 2 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Request to list exporters.
@@ -165,6 +167,8 @@ message ListExportersRequest {
   string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
   // Filter expression for the results.
   string filter = 4 [(google.api.field_behavior) = OPTIONAL];
+  // When true, include labels hidden by controller configuration.
+  bool show_hidden_labels = 5 [(google.api.field_behavior) = OPTIONAL];
 }
 
 // Response containing a list of exporters.

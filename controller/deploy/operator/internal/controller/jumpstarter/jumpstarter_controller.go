@@ -1156,6 +1156,10 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 		MaxTags: jumpstarter.Spec.LeasePolicy.MaxTags,
 	}
 
+	cfg.HiddenLabels = config.HiddenLabels{
+		Keys: jumpstarter.Spec.HiddenLabels.Keys,
+	}
+
 	// gRPC keepalive configuration
 	if jumpstarter.Spec.Controller.GRPC.Keepalive != nil {
 		ka := &cfg.Grpc.Keepalive

@@ -13,11 +13,17 @@ type Config struct {
 	Provisioning   Provisioning   `json:"provisioning" yaml:"provisioning"`
 	Grpc           Grpc           `json:"grpc" yaml:"grpc"`
 	LeasePolicy    LeasePolicy    `json:"leasePolicy,omitempty" yaml:"leasePolicy,omitempty"`
+	HiddenLabels   HiddenLabels   `json:"hiddenLabels,omitempty" yaml:"hiddenLabels,omitempty"`
 }
 
 // LeasePolicy defines policy constraints for leases.
 type LeasePolicy struct {
 	MaxTags int32 `json:"maxTags,omitempty" yaml:"maxTags,omitempty"`
+}
+
+// HiddenLabels defines label keys to hide from exporter listings by default.
+type HiddenLabels struct {
+	Keys []string `json:"keys,omitempty" yaml:"keys,omitempty"`
 }
 
 // Authentication defines the authentication configuration for the controller.

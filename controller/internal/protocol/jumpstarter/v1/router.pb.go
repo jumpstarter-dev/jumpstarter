@@ -23,13 +23,18 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Frame types for the stream protocol.
 type FrameType int32
 
 const (
-	FrameType_FRAME_TYPE_DATA       FrameType = 0
+	// Data frame carrying payload bytes.
+	FrameType_FRAME_TYPE_DATA FrameType = 0
+	// Reset stream signal.
 	FrameType_FRAME_TYPE_RST_STREAM FrameType = 3
-	FrameType_FRAME_TYPE_PING       FrameType = 6
-	FrameType_FRAME_TYPE_GOAWAY     FrameType = 7
+	// Keepalive ping frame.
+	FrameType_FRAME_TYPE_PING FrameType = 6
+	// Graceful shutdown signal.
+	FrameType_FRAME_TYPE_GOAWAY FrameType = 7
 )
 
 // Enum value maps for FrameType.
@@ -75,10 +80,13 @@ func (FrameType) EnumDescriptor() ([]byte, []int) {
 	return file_jumpstarter_v1_router_proto_rawDescGZIP(), []int{0}
 }
 
+// Request message for bidirectional stream communication.
 type StreamRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Payload       []byte                 `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
-	FrameType     FrameType              `protobuf:"varint,2,opt,name=frame_type,json=frameType,proto3,enum=jumpstarter.v1.FrameType" json:"frame_type,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The raw bytes of the stream frame.
+	Payload []byte `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
+	// The type of frame being sent.
+	FrameType     FrameType `protobuf:"varint,2,opt,name=frame_type,json=frameType,proto3,enum=jumpstarter.v1.FrameType" json:"frame_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -127,10 +135,13 @@ func (x *StreamRequest) GetFrameType() FrameType {
 	return FrameType_FRAME_TYPE_DATA
 }
 
+// Response message for bidirectional stream communication.
 type StreamResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Payload       []byte                 `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
-	FrameType     FrameType              `protobuf:"varint,2,opt,name=frame_type,json=frameType,proto3,enum=jumpstarter.v1.FrameType" json:"frame_type,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The raw bytes of the stream frame.
+	Payload []byte `protobuf:"bytes,1,opt,name=payload,proto3" json:"payload,omitempty"`
+	// The type of frame being received.
+	FrameType     FrameType `protobuf:"varint,2,opt,name=frame_type,json=frameType,proto3,enum=jumpstarter.v1.FrameType" json:"frame_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

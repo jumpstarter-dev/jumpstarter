@@ -177,6 +177,52 @@ router-2:
 	}
 }
 
+func TestHiddenLabelsRoundTrip(t *testing.T) {
+	original := Config{
+		HiddenLabels: HiddenLabels{
+			Keys: []string{"pool", "internal-id", "routing-key"},
+		},
+	}
+
+	yamlData, err := yaml.Marshal(original)
+	if err != nil {
+		t.Fatalf("Failed to marshal config: %v", err)
+	}
+
+	var parsed Config
+	if err := yaml.Unmarshal(yamlData, &parsed); err != nil {
+		t.Fatalf("Failed to unmarshal config: %v", err)
+	}
+
+	if len(parsed.HiddenLabels.Keys) != 3 {
+		t.Fatalf("expected 3 hidden label keys, got %d", len(parsed.HiddenLabels.Keys))
+	}
+
+	for i, key := range []string{"pool", "internal-id", "routing-key"} {
+		if parsed.HiddenLabels.Keys[i] != key {
+			t.Errorf("hidden label key[%d]: got %q, want %q", i, parsed.HiddenLabels.Keys[i], key)
+		}
+	}
+}
+
+func TestHiddenLabelsOmitEmpty(t *testing.T) {
+	original := Config{}
+
+	yamlData, err := yaml.Marshal(original)
+	if err != nil {
+		t.Fatalf("Failed to marshal config: %v", err)
+	}
+
+	var parsed Config
+	if err := yaml.Unmarshal(yamlData, &parsed); err != nil {
+		t.Fatalf("Failed to unmarshal config: %v", err)
+	}
+
+	if len(parsed.HiddenLabels.Keys) != 0 {
+		t.Fatalf("expected 0 hidden label keys when omitted, got %d", len(parsed.HiddenLabels.Keys))
+	}
+}
+
 func TestParseDuration(t *testing.T) {
 	tests := []struct {
 		input    string

@@ -609,3 +609,33 @@ async def test_list_exporters_with_leases_propagates_page_size():
 
     lease_calls = mock_service.ListLeases.call_args_list
     assert lease_calls[0].kwargs["page_size"] == 50
+
+
+@pytest.mark.asyncio
+async def test_get_exporter_passes_show_hidden_labels():
+    from jumpstarter.client.grpc import Exporter
+
+    exp = Exporter(
+        namespace="default", name="exporter-a", labels={"env": "test"},
+        online=True, lease=None,
+    )
+
+    config = ClientConfigV1Alpha1(
+        alias="testclient",
+        metadata=ObjectMeta(namespace="default", name="testclient"),
+        endpoint="jumpstarter.my-lab.com:1443",
+        token="token",
+        drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*"], unsafe=False),
+    )
+
+    mock_service = Mock()
+    mock_service.GetExporter = AsyncMock(return_value=exp)
+
+    with (
+        patch("jumpstarter.config.client.ClientConfigV1Alpha1.channel", AsyncMock(return_value=Mock())),
+        patch("jumpstarter.config.client.ClientService", return_value=mock_service),
+    ):
+        result = await config.get_exporter(name="exporter-a", show_hidden_labels=True)
+
+    assert result.name == "exporter-a"
+    mock_service.GetExporter.assert_called_once_with(name="exporter-a", show_hidden_labels=True)
