@@ -197,6 +197,10 @@ type JumpstarterSpec struct {
 	// provisioner using the same exporter-set-controller image with a --provisioner flag.
 	// +optional
 	ExporterSets *ExporterSetsConfig `json:"exporterSets,omitempty"`
+
+	// Deprecated labels configuration for warning users about label keys that should no longer be used.
+	// +optional
+	DeprecatedLabels DeprecatedLabelsConfig `json:"deprecatedLabels,omitempty"`
 }
 
 // HiddenLabelsConfig defines label keys to hide from exporter listings by default.
@@ -251,6 +255,15 @@ type ProvisionerConfig struct {
 	// Resources overrides the global exporterSets.resources for this provisioner.
 	// +optional
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+}
+
+// DeprecatedLabelsConfig defines label keys that are deprecated and should trigger warnings.
+type DeprecatedLabelsConfig struct {
+	// Map of deprecated label keys to human-readable deprecation messages.
+	// When an exporter has any of these labels, clients will receive a deprecation warning
+	// with the corresponding message.
+	// +optional
+	Keys map[string]string `json:"keys,omitempty"`
 }
 
 // LeasePolicyConfig defines policy constraints for leases.

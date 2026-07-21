@@ -217,7 +217,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	authenticator, prefix, router, option, provisioning, leasePolicy, hiddenLabels, err := config.LoadConfiguration(
+	authenticator, prefix, router, option, provisioning, leasePolicy,
+		hiddenLabels, deprecatedLabels, err := config.LoadConfiguration(
 		context.Background(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
@@ -279,11 +280,12 @@ func main() {
 			ResourceKey:  "jumpstarter-kind",
 			NameKey:      "jumpstarter-name",
 		}),
-		Router:        router,
-		ServerOptions: option,
-		LeasePolicy:   leasePolicy,
-		HiddenLabels:  hiddenLabels,
-		Signer:        oidcSigner,
+		Router:           router,
+		ServerOptions:    option,
+		LeasePolicy:      leasePolicy,
+		HiddenLabels:     hiddenLabels,
+		DeprecatedLabels: deprecatedLabels,
+		Signer:           oidcSigner,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create service", "service", "Controller")
 		os.Exit(1)

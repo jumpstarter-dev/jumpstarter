@@ -11,6 +11,7 @@ from jumpstarter_cli.create import create_lease
 def test_create_lease_passes_exporter_name_to_config():
     config = Mock()
     lease = Mock()
+    lease.deprecated_labels = {}
     config.create_lease.return_value = lease
 
     with patch("jumpstarter_cli.create.model_print") as model_print:
@@ -60,6 +61,7 @@ def test_create_lease_requires_selector_or_name():
 def test_create_lease_passes_tags_to_config():
     config = Mock()
     lease = Mock()
+    lease.deprecated_labels = {}
     config.create_lease.return_value = lease
 
     with patch("jumpstarter_cli.create.model_print"):
@@ -91,6 +93,7 @@ def test_create_lease_passes_tags_to_config():
 def test_create_lease_empty_tags_passes_none():
     config = Mock()
     lease = Mock()
+    lease.deprecated_labels = {}
     config.create_lease.return_value = lease
 
     with patch("jumpstarter_cli.create.model_print"):
@@ -138,6 +141,7 @@ def test_create_lease_invalid_tag_format():
 def test_create_lease_passes_context_to_config():
     config = Mock()
     lease = Mock()
+    lease.deprecated_labels = {}
     config.create_lease.return_value = lease
 
     with patch("jumpstarter_cli.create.model_print"):
@@ -169,6 +173,7 @@ def test_create_lease_passes_context_to_config():
 def test_create_lease_empty_context_passes_none():
     config = Mock()
     lease = Mock()
+    lease.deprecated_labels = {}
     config.create_lease.return_value = lease
 
     with patch("jumpstarter_cli.create.model_print"):
@@ -262,3 +267,87 @@ def test_create_lease_too_many_context_entries():
             context_entries=entries,
             output="yaml",
         )
+
+
+def test_create_lease_emits_deprecated_label_warnings():
+    config = Mock()
+    lease = Mock()
+    lease.deprecated_labels = {"legacy-board": "Use board instead"}
+    config.create_lease.return_value = lease
+
+    with patch("jumpstarter_cli.create.model_print"), patch("jumpstarter_cli.create.click") as mock_click:
+        mock_click.style.side_effect = lambda text, **kwargs: text
+        mock_click.UsageError = click.UsageError
+        inspect.unwrap(create_lease.callback)(
+            config=config,
+            selector="legacy-board=rpi4",
+            exporter_name=None,
+            duration=timedelta(minutes=5),
+            begin_time=None,
+            lease_id=None,
+            tags=(),
+            allow_disabled=False,
+            context_entries=(),
+            output="yaml",
+        )
+
+    mock_click.style.assert_called_once_with("Warning: ", fg="yellow")
+    mock_click.echo.assert_called_once()
+    assert mock_click.echo.call_args[1]["err"] is True
+    warning_msg = mock_click.echo.call_args[0][0]
+    assert "legacy-board" in warning_msg
+    assert "deprecated" in warning_msg
+    assert "Use board instead" in warning_msg
+
+
+def test_create_lease_emits_deprecated_label_warning_without_message():
+    config = Mock()
+    lease = Mock()
+    lease.deprecated_labels = {"old-key": ""}
+    config.create_lease.return_value = lease
+
+    with patch("jumpstarter_cli.create.model_print"), patch("jumpstarter_cli.create.click") as mock_click:
+        mock_click.style.side_effect = lambda text, **kwargs: text
+        mock_click.UsageError = click.UsageError
+        inspect.unwrap(create_lease.callback)(
+            config=config,
+            selector="old-key=val",
+            exporter_name=None,
+            duration=timedelta(minutes=5),
+            begin_time=None,
+            lease_id=None,
+            tags=(),
+            allow_disabled=False,
+            context_entries=(),
+            output="yaml",
+        )
+
+    mock_click.echo.assert_called_once()
+    warning_msg = mock_click.echo.call_args[0][0]
+    assert "old-key" in warning_msg
+    assert "deprecated" in warning_msg
+    assert ":" not in warning_msg.split("deprecated")[1]
+
+
+def test_create_lease_no_warnings_when_no_deprecated_labels():
+    config = Mock()
+    lease = Mock()
+    lease.deprecated_labels = {}
+    config.create_lease.return_value = lease
+
+    with patch("jumpstarter_cli.create.model_print"), patch("jumpstarter_cli.create.click") as mock_click:
+        mock_click.UsageError = click.UsageError
+        inspect.unwrap(create_lease.callback)(
+            config=config,
+            selector="board=rpi4",
+            exporter_name=None,
+            duration=timedelta(minutes=5),
+            begin_time=None,
+            lease_id=None,
+            tags=(),
+            allow_disabled=False,
+            context_entries=(),
+            output="yaml",
+        )
+
+    mock_click.echo.assert_not_called()

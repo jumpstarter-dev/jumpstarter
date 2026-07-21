@@ -29,6 +29,8 @@ async def list_exporters(
             "name": exporter.name,
             "labels": labels,
         }
+        if exporter.deprecated_labels:
+            entry["deprecated_labels"] = exporter.deprecated_labels
         if include_online:
             entry["online"] = exporter.online
         if exporter.status is not None:
@@ -58,7 +60,7 @@ async def list_leases(
     result = await config.list_leases(filter=selector, only_active=not show_all)
     leases = []
     for lease in result.leases:
-        leases.append({
+        entry: dict = {
             "name": lease.name,
             "client": lease.client,
             "exporter": lease.exporter,
@@ -67,7 +69,10 @@ async def list_leases(
             "begin_time": lease.effective_begin_time.isoformat() if lease.effective_begin_time else None,
             "end_time": lease.effective_end_time.isoformat() if lease.effective_end_time else None,
             "duration": str(lease.duration) if lease.duration else None,
-        })
+        }
+        if lease.deprecated_labels:
+            entry["deprecated_labels"] = lease.deprecated_labels
+        leases.append(entry)
     return leases
 
 
@@ -86,7 +91,7 @@ async def create_lease(
         exporter_name=exporter_name,
         tags=tags,
     )
-    return {
+    entry: dict = {
         "name": result.name,
         "status": "created",
         "duration_seconds": duration_seconds,
@@ -94,6 +99,9 @@ async def create_lease(
         "exporter_name": exporter_name,
         "tags": tags,
     }
+    if result.deprecated_labels:
+        entry["deprecated_labels"] = result.deprecated_labels
+    return entry
 
 
 async def delete_lease(

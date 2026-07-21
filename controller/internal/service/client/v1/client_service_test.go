@@ -147,6 +147,169 @@ func TestFilterHiddenLabels(t *testing.T) {
 	})
 }
 
+func toDeprecatedMessages(keysAndMessages ...string) map[string]string {
+	m := make(map[string]string, len(keysAndMessages)/2)
+	for i := 0; i < len(keysAndMessages)-1; i += 2 {
+		m[keysAndMessages[i]] = keysAndMessages[i+1]
+	}
+	return m
+}
+
+func toDeprecatedSet(keys ...string) map[string]struct{} {
+	s := make(map[string]struct{}, len(keys))
+	for _, k := range keys {
+		s[k] = struct{}{}
+	}
+	return s
+}
+
+func TestAnnotateDeprecatedLabels(t *testing.T) {
+	t.Run("no deprecated keys configured is a no-op", func(t *testing.T) {
+		exp := &cpb.Exporter{Labels: map[string]string{"board": "rpi4"}}
+		annotateDeprecatedLabels(exp, nil)
+		if len(exp.DeprecatedLabels) != 0 {
+			t.Fatalf("expected 0 deprecated labels, got %d", len(exp.DeprecatedLabels))
+		}
+	})
+
+	t.Run("annotates matching deprecated keys with messages", func(t *testing.T) {
+		exp := &cpb.Exporter{Labels: map[string]string{"board": "rpi4", "pool": "staging", "old-key": "val"}}
+		annotateDeprecatedLabels(exp, toDeprecatedMessages("pool", "Use 'env' instead", "old-key", "Removed in v2.0"))
+		if len(exp.DeprecatedLabels) != 2 {
+			t.Fatalf("expected 2 deprecated labels, got %d", len(exp.DeprecatedLabels))
+		}
+		if exp.DeprecatedLabels["pool"] != "Use 'env' instead" {
+			t.Fatalf("expected pool message, got %q", exp.DeprecatedLabels["pool"])
+		}
+		if exp.DeprecatedLabels["old-key"] != "Removed in v2.0" {
+			t.Fatalf("expected old-key message, got %q", exp.DeprecatedLabels["old-key"])
+		}
+	})
+
+	t.Run("empty message is valid", func(t *testing.T) {
+		exp := &cpb.Exporter{Labels: map[string]string{"board": "rpi4", "pool": "staging"}}
+		annotateDeprecatedLabels(exp, toDeprecatedMessages("pool", ""))
+		if len(exp.DeprecatedLabels) != 1 {
+			t.Fatalf("expected 1 deprecated label, got %d", len(exp.DeprecatedLabels))
+		}
+		if _, ok := exp.DeprecatedLabels["pool"]; !ok {
+			t.Fatalf("expected pool in deprecated labels, got %v", exp.DeprecatedLabels)
+		}
+	})
+
+	t.Run("deprecated key not present in labels is harmless", func(t *testing.T) {
+		exp := &cpb.Exporter{Labels: map[string]string{"board": "rpi4"}}
+		annotateDeprecatedLabels(exp, toDeprecatedMessages("nonexistent", "gone"))
+		if len(exp.DeprecatedLabels) != 0 {
+			t.Fatalf("expected 0 deprecated labels, got %d", len(exp.DeprecatedLabels))
+		}
+	})
+
+	t.Run("empty labels map is a no-op", func(t *testing.T) {
+		exp := &cpb.Exporter{Labels: map[string]string{}}
+		annotateDeprecatedLabels(exp, toDeprecatedMessages("pool", "gone"))
+		if len(exp.DeprecatedLabels) != 0 {
+			t.Fatalf("expected 0 deprecated labels, got %d", len(exp.DeprecatedLabels))
+		}
+	})
+
+	t.Run("nil labels map is a no-op", func(t *testing.T) {
+		exp := &cpb.Exporter{}
+		annotateDeprecatedLabels(exp, toDeprecatedMessages("pool", "gone"))
+		if len(exp.DeprecatedLabels) != 0 {
+			t.Fatalf("expected 0 deprecated labels, got %d", len(exp.DeprecatedLabels))
+		}
+	})
+}
+
+func TestDeprecatedLabelsAnnotatedThenHidden(t *testing.T) {
+	t.Run("deprecated labels are annotated and then filtered from labels map", func(t *testing.T) {
+		exp := &cpb.Exporter{Labels: map[string]string{"board": "rpi4", "old-key": "val", "legacy": "x"}}
+		messages := toDeprecatedMessages("old-key", "Use new-key", "legacy", "Removed")
+		deprecatedSet := toDeprecatedSet("old-key", "legacy")
+
+		annotateDeprecatedLabels(exp, messages)
+		filterHiddenLabels(exp, deprecatedSet, false)
+
+		if len(exp.Labels) != 1 {
+			t.Fatalf("expected 1 visible label, got %d: %v", len(exp.Labels), exp.Labels)
+		}
+		if exp.Labels["board"] != "rpi4" {
+			t.Fatalf("expected board=rpi4, got %v", exp.Labels)
+		}
+		if len(exp.DeprecatedLabels) != 2 {
+			t.Fatalf("expected 2 deprecated annotations, got %d", len(exp.DeprecatedLabels))
+		}
+	})
+
+	t.Run("show_hidden_labels bypasses deprecated filtering", func(t *testing.T) {
+		exp := &cpb.Exporter{Labels: map[string]string{"board": "rpi4", "old-key": "val"}}
+		messages := toDeprecatedMessages("old-key", "Use new-key")
+		deprecatedSet := toDeprecatedSet("old-key")
+
+		annotateDeprecatedLabels(exp, messages)
+		filterHiddenLabels(exp, deprecatedSet, true)
+
+		if len(exp.Labels) != 2 {
+			t.Fatalf("expected 2 labels with show_hidden=true, got %d", len(exp.Labels))
+		}
+		if len(exp.DeprecatedLabels) != 1 {
+			t.Fatalf("expected 1 deprecated annotation, got %d", len(exp.DeprecatedLabels))
+		}
+	})
+}
+
+func TestAnnotateLeaseDeprecatedLabels(t *testing.T) {
+	t.Run("no deprecated keys configured is a no-op", func(t *testing.T) {
+		lease := &cpb.Lease{Selector: "board=rpi4"}
+		annotateLeaseDeprecatedLabels(lease, nil)
+		if len(lease.DeprecatedLabels) != 0 {
+			t.Fatalf("expected 0, got %d", len(lease.DeprecatedLabels))
+		}
+	})
+
+	t.Run("annotates matching selector keys with messages", func(t *testing.T) {
+		lease := &cpb.Lease{Selector: "legacy-board=rpi4,old-pool=staging"}
+		annotateLeaseDeprecatedLabels(lease, toDeprecatedMessages(
+			"legacy-board", "Use board instead",
+			"old-pool", "Removed in v2.0",
+		))
+		if len(lease.DeprecatedLabels) != 2 {
+			t.Fatalf("expected 2, got %d", len(lease.DeprecatedLabels))
+		}
+		if lease.DeprecatedLabels["legacy-board"] != "Use board instead" {
+			t.Fatalf("wrong message for legacy-board: %q", lease.DeprecatedLabels["legacy-board"])
+		}
+		if lease.DeprecatedLabels["old-pool"] != "Removed in v2.0" {
+			t.Fatalf("wrong message for old-pool: %q", lease.DeprecatedLabels["old-pool"])
+		}
+	})
+
+	t.Run("non-deprecated selector keys are not annotated", func(t *testing.T) {
+		lease := &cpb.Lease{Selector: "board=rpi4"}
+		annotateLeaseDeprecatedLabels(lease, toDeprecatedMessages("old-pool", "gone"))
+		if len(lease.DeprecatedLabels) != 0 {
+			t.Fatalf("expected 0, got %d", len(lease.DeprecatedLabels))
+		}
+	})
+
+	t.Run("empty selector is a no-op", func(t *testing.T) {
+		lease := &cpb.Lease{Selector: ""}
+		annotateLeaseDeprecatedLabels(lease, toDeprecatedMessages("old-pool", "gone"))
+		if len(lease.DeprecatedLabels) != 0 {
+			t.Fatalf("expected 0, got %d", len(lease.DeprecatedLabels))
+		}
+	})
+
+	t.Run("set-based selector keys are annotated", func(t *testing.T) {
+		lease := &cpb.Lease{Selector: "legacy-board in (rpi3,rpi4)"}
+		annotateLeaseDeprecatedLabels(lease, toDeprecatedMessages("legacy-board", "Use board instead"))
+		if len(lease.DeprecatedLabels) != 1 {
+			t.Fatalf("expected 1, got %d", len(lease.DeprecatedLabels))
+		}
+	})
+}
+
 func TestCreateLeaseRejectsNilRequest(t *testing.T) {
 	svc := &ClientService{}
 

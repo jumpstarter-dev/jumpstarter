@@ -784,3 +784,61 @@ async def test_create_lease_no_context_leaves_field_empty():
 
     call_args = mock_stub.CreateLease.call_args[0][0]
     assert len(call_args.lease.context) == 0
+
+
+@pytest.mark.anyio
+async def test_exporter_from_protobuf_parses_deprecated_labels():
+    from jumpstarter_protocol import client_pb2
+
+    proto_exporter = client_pb2.Exporter(
+        name="namespaces/default/exporters/test-exp",
+        labels={"board": "rpi4", "old-key": "val"},
+        deprecated_labels={"old-key": "Use new-key instead"},
+    )
+
+    exporter = Exporter.from_protobuf(proto_exporter)
+    assert exporter.deprecated_labels == {"old-key": "Use new-key instead"}
+
+
+@pytest.mark.anyio
+async def test_exporter_from_protobuf_empty_deprecated_labels():
+    from jumpstarter_protocol import client_pb2
+
+    proto_exporter = client_pb2.Exporter(
+        name="namespaces/default/exporters/test-exp",
+        labels={"board": "rpi4"},
+    )
+
+    exporter = Exporter.from_protobuf(proto_exporter)
+    assert exporter.deprecated_labels == {}
+
+
+@pytest.mark.anyio
+async def test_lease_from_protobuf_parses_deprecated_labels():
+    from jumpstarter_protocol import client_pb2
+
+    proto_lease = client_pb2.Lease(
+        selector="legacy-board=rpi4",
+        client="namespaces/default/clients/test-client",
+        deprecated_labels={"legacy-board": "Use board instead"},
+    )
+    proto_lease.name = "namespaces/default/leases/test-lease"
+    proto_lease.duration.FromTimedelta(timedelta(hours=1))
+
+    lease = Lease.from_protobuf(proto_lease)
+    assert lease.deprecated_labels == {"legacy-board": "Use board instead"}
+
+
+@pytest.mark.anyio
+async def test_lease_from_protobuf_empty_deprecated_labels():
+    from jumpstarter_protocol import client_pb2
+
+    proto_lease = client_pb2.Lease(
+        selector="board=rpi4",
+        client="namespaces/default/clients/test-client",
+    )
+    proto_lease.name = "namespaces/default/leases/test-lease"
+    proto_lease.duration.FromTimedelta(timedelta(hours=1))
+
+    lease = Lease.from_protobuf(proto_lease)
+    assert lease.deprecated_labels == {}
