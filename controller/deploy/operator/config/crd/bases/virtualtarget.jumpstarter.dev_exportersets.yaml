@@ -1,0 +1,295 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: exportersets.virtualtarget.jumpstarter.dev
+spec:
+  group: virtualtarget.jumpstarter.dev
+  names:
+    kind: ExporterSet
+    listKind: ExporterSetList
+    plural: exportersets
+    singular: exporterset
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.replicas
+      name: Replicas
+      type: integer
+    - jsonPath: .status.readyReplicas
+      name: Ready
+      type: integer
+    - jsonPath: .status.availableReplicas
+      name: Available
+      type: integer
+    - jsonPath: .status.leasedReplicas
+      name: Leased
+      type: integer
+    - jsonPath: .spec.virtualTargetClassName
+      name: Class
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ExporterSet is the Schema for the exportersets API.
+          It manages a scalable set of virtual exporter instances backed by a VirtualTargetClass.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ExporterSetSpec defines the desired state of ExporterSet.
+            properties:
+              maxReplicas:
+                default: 4
+                description: |-
+                  MaxReplicas is the maximum number of instances (ceiling).
+                  0 means no upper bound.
+                format: int32
+                minimum: 0
+                type: integer
+              minAvailableReplicas:
+                default: 0
+                description: 'MinAvailableReplicas is the warm buffer: ready and unleased
+                  instances.'
+                format: int32
+                minimum: 0
+                type: integer
+              minReplicas:
+                default: 0
+                description: MinReplicas is the minimum number of instances (floor).
+                format: int32
+                minimum: 0
+                type: integer
+              parameters:
+                description: Parameters are optional overrides deep-merged over the
+                  class parameters.
+                x-kubernetes-preserve-unknown-fields: true
+              recycleStrategy:
+                default: ExitAndReplace
+                description: RecycleStrategy defines what happens when a lease is
+                  released.
+                enum:
+                - ExitAndReplace
+                - InPlaceReuse
+                type: string
+              scaleDownCooldown:
+                default: 5m
+                description: ScaleDownCooldown is how long to wait before scaling
+                  down excess replicas.
+                type: string
+              selector:
+                description: Selector defines the label selector for matching exporters
+                  owned by this set.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
+                          type: string
+                        values:
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
+                    type: object
+                type: object
+                x-kubernetes-map-type: atomic
+              template:
+                description: Template defines the exporter template for instances
+                  created by this set.
+                properties:
+                  metadata:
+                    description: Metadata for created Exporter resources.
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: Annotations to apply to created Exporter resources.
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: Labels to apply to created Exporter resources.
+                        type: object
+                    type: object
+                  spec:
+                    description: Spec defines the exporter configuration.
+                    properties:
+                      drivers:
+                        description: Drivers is the list of drivers to configure on
+                          each exporter instance.
+                        items:
+                          description: DriverConfig defines a single driver entry
+                            in an exporter template.
+                          properties:
+                            config:
+                              description: Config holds driver-specific configuration.
+                              x-kubernetes-preserve-unknown-fields: true
+                            type:
+                              description: Type is the fully qualified Python driver
+                                class name.
+                              type: string
+                          required:
+                          - type
+                          type: object
+                        type: array
+                    type: object
+                type: object
+              virtualTargetClassName:
+                description: VirtualTargetClassName references a VirtualTargetClass
+                  in the same namespace.
+                minLength: 1
+                type: string
+            required:
+            - selector
+            - template
+            - virtualTargetClassName
+            type: object
+            x-kubernetes-validations:
+            - message: minReplicas must be less than or equal to maxReplicas (when
+                maxReplicas is not 0)
+              rule: self.maxReplicas == 0 || self.minReplicas <= self.maxReplicas
+            - message: minAvailableReplicas must be less than or equal to maxReplicas
+                (when maxReplicas is not 0)
+              rule: self.maxReplicas == 0 || self.minAvailableReplicas <= self.maxReplicas
+          status:
+            description: ExporterSetStatus defines the observed state of ExporterSet.
+            properties:
+              availableReplicas:
+                description: AvailableReplicas is the number of ready and unleased
+                  instances (warm pool).
+                format: int32
+                type: integer
+              conditions:
+                description: Conditions represent the latest available observations
+                  of the ExporterSet state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              leasedReplicas:
+                description: LeasedReplicas is the number of instances currently leased.
+                format: int32
+                type: integer
+              readyReplicas:
+                description: ReadyReplicas is the number of instances that are registered
+                  and ready.
+                format: int32
+                type: integer
+              replicas:
+                description: Replicas is the total number of exporter instances.
+                format: int32
+                type: integer
+            required:
+            - availableReplicas
+            - leasedReplicas
+            - readyReplicas
+            - replicas
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      scale:
+        specReplicasPath: .spec.maxReplicas
+        statusReplicasPath: .status.replicas
+      status: {}

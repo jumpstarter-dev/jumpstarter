@@ -4,6 +4,7 @@ GO_FILES := $(shell find ./ -name ".go" -not -path "./bin" -not -path "./packagi
 IMG ?= quay.io/jumpstarter-dev/jumpstarter-controller:latest
 DOCKER_REPO = $(shell echo $(IMG) | cut -d: -f1)
 DOCKER_TAG  = $(shell echo $(IMG) | cut -d: -f2)
+EXPORTER_SET_CONTROLLER_IMG ?= quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.30.0
 
@@ -62,10 +63,13 @@ help: ## Display this help.
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	$(CONTROLLER_GEN) 	rbac:roleName=jumpstarter-manager-role crd webhook paths="./api/..." paths="./internal/..." \
-						output:crd:artifacts:config=deploy/operator/config/crd/bases/ \
-						output:rbac:artifacts:config=deploy/operator/config/rbac/
+manifests: controller-gen ## Generate WebhookConfiguration and CustomResourceDefinition objects.
+	# CRDs only — do not emit RBAC into deploy/operator/config/rbac/.
+	# The operator ClusterRole (manager-role) is owned by deploy/operator/Makefile.
+	# Writing jumpstarter-manager-role there overwrites the operator role and
+	# breaks role_binding.yaml (which references manager-role).
+	$(CONTROLLER_GEN) 	crd webhook paths="./api/..." paths="./internal/..." \
+						output:crd:artifacts:config=deploy/operator/config/crd/bases/
 
 	# Regenerate operator install.yaml to include updated CRDs
 	$(MAKE) -C deploy/operator build-installer
@@ -108,6 +112,7 @@ build-operator:
 build: manifests generate fmt vet ## Build manager binary.
 	go build -ldflags "$(LDFLAGS)" -o bin/manager cmd/main.go
 	go build -ldflags "$(LDFLAGS)" -o bin/router cmd/router/main.go
+	go build -ldflags "$(LDFLAGS)" -o bin/exporter-set-controller cmd/exporter-set-controller/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -127,6 +132,14 @@ docker-build: ## Build docker image with the manager.
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		-t ${IMG} -f Containerfile .
+
+.PHONY: docker-build-exporter-set-controller
+docker-build-exporter-set-controller: ## Build docker image for the exporter-set-controller.
+	$(CONTAINER_TOOL) build \
+		--build-arg GIT_VERSION=$(GIT_VERSION) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t ${EXPORTER_SET_CONTROLLER_IMG} -f Containerfile.exporter-set-controller .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
