@@ -4,7 +4,7 @@
 #
 # Uses Fedora as the base image because QEMU packages are not
 # available in UBI-minimal repositories.
-FROM registry.fedoraproject.org/fedora:44
+FROM registry.fedoraproject.org/fedora-minimal:44
 
 RUN dnf install --setopt=install_weak_deps=False -y \
         qemu-img \
