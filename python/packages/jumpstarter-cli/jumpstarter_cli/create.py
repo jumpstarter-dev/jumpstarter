@@ -11,6 +11,30 @@ from .common import opt_begin_time, opt_duration_partial, opt_exporter_name, opt
 from .login import relogin_client
 
 
+def _parse_key_value_pairs(
+    entries: tuple[str, ...],
+    label: str,
+    *,
+    max_key_len: int | None = None,
+    max_value_len: int | None = None,
+    max_entries: int | None = None,
+) -> dict[str, str]:
+    parsed = {}
+    for entry in entries:
+        if "=" not in entry:
+            raise click.UsageError(f"Invalid {label} format: {entry!r} (expected key=value)")
+        k, v = entry.split("=", 1)
+        if max_key_len and len(k) > max_key_len:
+            raise click.UsageError(f"{label.capitalize()} key too long: {k!r} (max {max_key_len} characters)")
+        if max_value_len and len(v) > max_value_len:
+            msg = f"{label.capitalize()} value too long for key {k!r} (max {max_value_len} characters)"
+            raise click.UsageError(msg)
+        parsed[k] = v
+    if max_entries and len(parsed) > max_entries:
+        raise click.UsageError(f"Too many {label} entries (max {max_entries})")
+    return parsed
+
+
 @click.group(cls=AliasedGroup)
 def create():
     """
@@ -104,26 +128,10 @@ def create_lease(
     if not selector and not exporter_name:
         raise click.UsageError("one of --selector/-l or --name/-n is required")
 
-    parsed_tags = {}
-    for tag in tags:
-        if "=" not in tag:
-            raise click.UsageError(f"Invalid tag format: {tag!r} (expected key=value)")
-        k, v = tag.split("=", 1)
-        parsed_tags[k] = v
-
-    parsed_context = {}
-    for entry in context_entries:
-        if "=" not in entry:
-            raise click.UsageError(f"Invalid context format: {entry!r} (expected key=value)")
-        k, v = entry.split("=", 1)
-        if len(k) > 32:
-            raise click.UsageError(f"Context key too long: {k!r} (max 32 characters)")
-        if len(v) > 64:
-            raise click.UsageError(f"Context value too long for key {k!r} (max 64 characters)")
-        parsed_context[k] = v
-
-    if len(parsed_context) > 8:
-        raise click.UsageError("Too many context entries (max 8)")
+    parsed_tags = _parse_key_value_pairs(tags, "tag")
+    parsed_context = _parse_key_value_pairs(
+        context_entries, "context", max_key_len=32, max_value_len=64, max_entries=8,
+    )
 
     lease = config.create_lease(
         selector=selector,
@@ -135,5 +143,14 @@ def create_lease(
         allow_disabled=allow_disabled,
         context=parsed_context or None,
     )
+
+    for label_key, message in lease.deprecated_labels.items():
+        warning = f"selector label '{label_key}' is deprecated"
+        if message:
+            warning += f": {message}"
+        click.echo(
+            click.style("Warning: ", fg="yellow") + warning,
+            err=True,
+        )
 
     model_print(lease, output)

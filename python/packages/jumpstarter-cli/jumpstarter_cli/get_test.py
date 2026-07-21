@@ -209,6 +209,102 @@ class TestGetExportersLogic:
         assert exporters.include_leases is True
 
 
+class TestGetExportersDeprecatedLabelsWarning:
+    def test_deprecated_labels_emit_warnings_with_message(self):
+        from unittest.mock import patch
+
+        exporters = ExporterList(
+            exporters=[
+                Exporter(
+                    namespace="default",
+                    name="test-exp",
+                    labels={"board": "rpi4", "old-key": "val"},
+                    deprecated_labels={"old-key": "Use new-key instead"},
+                ),
+            ],
+            next_page_token=None,
+        )
+
+        config = Mock()
+        config.list_exporters.return_value = exporters
+
+        from jumpstarter_cli.get import get_exporters
+
+        with patch("jumpstarter_cli.get.model_print"), patch("jumpstarter_cli.get.click") as mock_click:
+            mock_click.style.side_effect = lambda text, **kwargs: text
+            get_exporters.callback.__wrapped__.__wrapped__(
+                config=config, selector=None, output="text", with_options=[], allow_disabled=False,
+                show_hidden_labels=False, page_size=100,
+            )
+
+        mock_click.echo.assert_called_once()
+        warning_msg = mock_click.echo.call_args[0][0]
+        assert "old-key" in warning_msg
+        assert "test-exp" in warning_msg
+        assert "deprecated" in warning_msg
+        assert "Use new-key instead" in warning_msg
+
+    def test_deprecated_labels_emit_warnings_without_message(self):
+        from unittest.mock import patch
+
+        exporters = ExporterList(
+            exporters=[
+                Exporter(
+                    namespace="default",
+                    name="test-exp",
+                    labels={"board": "rpi4", "old-key": "val"},
+                    deprecated_labels={"old-key": ""},
+                ),
+            ],
+            next_page_token=None,
+        )
+
+        config = Mock()
+        config.list_exporters.return_value = exporters
+
+        from jumpstarter_cli.get import get_exporters
+
+        with patch("jumpstarter_cli.get.model_print"), patch("jumpstarter_cli.get.click") as mock_click:
+            mock_click.style.side_effect = lambda text, **kwargs: text
+            get_exporters.callback.__wrapped__.__wrapped__(
+                config=config, selector=None, output="text", with_options=[], allow_disabled=False,
+                show_hidden_labels=False, page_size=100,
+            )
+
+        mock_click.echo.assert_called_once()
+        warning_msg = mock_click.echo.call_args[0][0]
+        assert "old-key" in warning_msg
+        assert "deprecated" in warning_msg
+        assert "Use new-key instead" not in warning_msg
+
+    def test_no_warnings_when_no_deprecated_labels(self):
+        from unittest.mock import patch
+
+        exporters = ExporterList(
+            exporters=[
+                Exporter(
+                    namespace="default",
+                    name="test-exp",
+                    labels={"board": "rpi4"},
+                ),
+            ],
+            next_page_token=None,
+        )
+
+        config = Mock()
+        config.list_exporters.return_value = exporters
+
+        from jumpstarter_cli.get import get_exporters
+
+        with patch("jumpstarter_cli.get.model_print"), patch("jumpstarter_cli.get.click") as mock_click:
+            get_exporters.callback.__wrapped__.__wrapped__(
+                config=config, selector=None, output="text", with_options=[], allow_disabled=False,
+                show_hidden_labels=False, page_size=100,
+            )
+
+        mock_click.echo.assert_not_called()
+
+
 class TestGetExportersCallsPaginatedMethod:
     def test_get_exporters_calls_list_exporters(self):
         from unittest.mock import patch
@@ -428,6 +524,84 @@ class TestGetLeasesLogic:
         leases_from_server = LeaseList(leases=[], next_page_token=None)
 
         assert len(leases_from_server.leases) == 0
+
+
+class TestGetLeasesDeprecatedLabelsWarning:
+    def _make_lease(self, name="test-lease", deprecated_labels=None):
+        return Lease(
+            namespace="default",
+            name=name,
+            selector="legacy-board=rpi4",
+            exporter_name=None,
+            duration=timedelta(minutes=30),
+            effective_duration=None,
+            begin_time=None,
+            client="test-client",
+            exporter="test-exporter",
+            conditions=[],
+            effective_begin_time=None,
+            effective_end_time=None,
+            deprecated_labels=deprecated_labels or {},
+        )
+
+    def _make_config(self, leases):
+        config = Mock()
+        config.metadata = type("Metadata", (), {"name": "test-client"})()
+        config.list_leases = Mock(return_value=LeaseList(leases=leases, next_page_token=None))
+        return config
+
+    def test_deprecated_labels_emit_warnings_with_message(self):
+        from unittest.mock import patch
+
+        lease = self._make_lease(deprecated_labels={"legacy-board": "Use board instead"})
+        config = self._make_config([lease])
+
+        with patch("jumpstarter_cli.get.model_print"), patch("jumpstarter_cli.get.click") as mock_click:
+            mock_click.style.side_effect = lambda text, **kwargs: text
+            _unwrapped_get_leases(
+                config=config, selector=None, output=None, show_all=False, all_clients=False, tag_filter=None,
+                page_size=100,
+            )
+
+        mock_click.echo.assert_called_once()
+        warning_msg = mock_click.echo.call_args[0][0]
+        assert "legacy-board" in warning_msg
+        assert "test-lease" in warning_msg
+        assert "deprecated" in warning_msg
+        assert "Use board instead" in warning_msg
+
+    def test_deprecated_labels_emit_warnings_without_message(self):
+        from unittest.mock import patch
+
+        lease = self._make_lease(deprecated_labels={"legacy-board": ""})
+        config = self._make_config([lease])
+
+        with patch("jumpstarter_cli.get.model_print"), patch("jumpstarter_cli.get.click") as mock_click:
+            mock_click.style.side_effect = lambda text, **kwargs: text
+            _unwrapped_get_leases(
+                config=config, selector=None, output=None, show_all=False, all_clients=False, tag_filter=None,
+                page_size=100,
+            )
+
+        mock_click.echo.assert_called_once()
+        warning_msg = mock_click.echo.call_args[0][0]
+        assert "legacy-board" in warning_msg
+        assert "deprecated" in warning_msg
+        assert "Use board instead" not in warning_msg
+
+    def test_no_warnings_when_no_deprecated_labels(self):
+        from unittest.mock import patch
+
+        lease = self._make_lease()
+        config = self._make_config([lease])
+
+        with patch("jumpstarter_cli.get.model_print"), patch("jumpstarter_cli.get.click") as mock_click:
+            _unwrapped_get_leases(
+                config=config, selector=None, output=None, show_all=False, all_clients=False, tag_filter=None,
+                page_size=100,
+            )
+
+        mock_click.echo.assert_not_called()
 
 
 class TestGetLeasesShortFlags:

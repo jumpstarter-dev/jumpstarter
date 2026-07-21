@@ -479,6 +479,7 @@ grpc:
   keepalive:
     minTime: 1s
     permitWithoutStream: true
+deprecatedLabels: {}
 hiddenLabels: {}
 leasePolicy:
   maxTags: 10

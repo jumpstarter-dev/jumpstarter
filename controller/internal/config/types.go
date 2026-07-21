@@ -9,11 +9,12 @@ import (
 // Config represents the main controller configuration structure.
 // This matches the YAML structure in the ConfigMap's "config" key.
 type Config struct {
-	Authentication Authentication `json:"authentication" yaml:"authentication"`
-	Provisioning   Provisioning   `json:"provisioning" yaml:"provisioning"`
-	Grpc           Grpc           `json:"grpc" yaml:"grpc"`
-	LeasePolicy    LeasePolicy    `json:"leasePolicy,omitempty" yaml:"leasePolicy,omitempty"`
-	HiddenLabels   HiddenLabels   `json:"hiddenLabels,omitempty" yaml:"hiddenLabels,omitempty"`
+	Authentication   Authentication   `json:"authentication" yaml:"authentication"`
+	Provisioning     Provisioning     `json:"provisioning" yaml:"provisioning"`
+	Grpc             Grpc             `json:"grpc" yaml:"grpc"`
+	LeasePolicy      LeasePolicy      `json:"leasePolicy,omitempty" yaml:"leasePolicy,omitempty"`
+	HiddenLabels     HiddenLabels     `json:"hiddenLabels,omitempty" yaml:"hiddenLabels,omitempty"`
+	DeprecatedLabels DeprecatedLabels `json:"deprecatedLabels,omitempty" yaml:"deprecatedLabels,omitempty"`
 }
 
 // LeasePolicy defines policy constraints for leases.
@@ -24,6 +25,11 @@ type LeasePolicy struct {
 // HiddenLabels defines label keys to hide from exporter listings by default.
 type HiddenLabels struct {
 	Keys []string `json:"keys,omitempty" yaml:"keys,omitempty"`
+}
+
+// DeprecatedLabels defines label keys that trigger deprecation warnings.
+type DeprecatedLabels struct {
+	Keys map[string]string `json:"keys,omitempty" yaml:"keys,omitempty"`
 }
 
 // Authentication defines the authentication configuration for the controller.

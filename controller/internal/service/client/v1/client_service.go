@@ -43,22 +43,63 @@ type ClientService struct {
 	cpb.UnimplementedClientServiceServer
 	kclient.Client
 	auth.Auth
-	MaxTags        int32
-	Signer         *oidc.Signer
-	hiddenLabelSet map[string]struct{}
+	MaxTags            int32
+	Signer             *oidc.Signer
+	hiddenLabelSet     map[string]struct{}
+	deprecatedLabelSet map[string]struct{}
+	deprecatedMessages map[string]string
 }
 
-func NewClientService(client kclient.Client, auth auth.Auth, maxTags int32, signer *oidc.Signer, hiddenLabelKeys []string) *ClientService {
+func NewClientService(client kclient.Client, auth auth.Auth, maxTags int32, signer *oidc.Signer, hiddenLabelKeys []string, deprecatedLabelKeys map[string]string) *ClientService {
 	hiddenSet := make(map[string]struct{}, len(hiddenLabelKeys))
 	for _, k := range hiddenLabelKeys {
 		hiddenSet[k] = struct{}{}
 	}
+	deprecatedSet := make(map[string]struct{}, len(deprecatedLabelKeys))
+	for k := range deprecatedLabelKeys {
+		deprecatedSet[k] = struct{}{}
+	}
 	return &ClientService{
-		Client:         client,
-		Auth:           auth,
-		MaxTags:        maxTags,
-		Signer:         signer,
-		hiddenLabelSet: hiddenSet,
+		Client:             client,
+		Auth:               auth,
+		MaxTags:            maxTags,
+		Signer:             signer,
+		hiddenLabelSet:     hiddenSet,
+		deprecatedLabelSet: deprecatedSet,
+		deprecatedMessages: deprecatedLabelKeys,
+	}
+}
+
+func annotateDeprecatedLabels(exporter *cpb.Exporter, deprecatedMessages map[string]string) {
+	if len(deprecatedMessages) == 0 || len(exporter.Labels) == 0 {
+		return
+	}
+	if exporter.DeprecatedLabels == nil {
+		exporter.DeprecatedLabels = make(map[string]string)
+	}
+	for k := range exporter.Labels {
+		if msg, deprecated := deprecatedMessages[k]; deprecated {
+			exporter.DeprecatedLabels[k] = msg
+		}
+	}
+}
+
+func annotateLeaseDeprecatedLabels(lease *cpb.Lease, deprecatedMessages map[string]string) {
+	if len(deprecatedMessages) == 0 || lease.Selector == "" {
+		return
+	}
+	selector, err := labels.Parse(lease.Selector)
+	if err != nil {
+		return
+	}
+	requirements, _ := selector.Requirements()
+	for _, r := range requirements {
+		if msg, deprecated := deprecatedMessages[r.Key()]; deprecated {
+			if lease.DeprecatedLabels == nil {
+				lease.DeprecatedLabels = make(map[string]string)
+			}
+			lease.DeprecatedLabels[r.Key()] = msg
+		}
 	}
 }
 
@@ -95,7 +136,9 @@ func (s *ClientService) GetExporter(
 	}
 
 	result := jexporter.ToProtobuf()
+	annotateDeprecatedLabels(result, s.deprecatedMessages)
 	filterHiddenLabels(result, s.hiddenLabelSet, req.ShowHiddenLabels)
+	filterHiddenLabels(result, s.deprecatedLabelSet, req.ShowHiddenLabels)
 	return result, nil
 }
 
@@ -130,7 +173,9 @@ func (s *ClientService) ListExporters(
 
 	response := jexporters.ToProtobuf()
 	for _, exp := range response.Exporters {
+		annotateDeprecatedLabels(exp, s.deprecatedMessages)
 		filterHiddenLabels(exp, s.hiddenLabelSet, req.ShowHiddenLabels)
+		filterHiddenLabels(exp, s.deprecatedLabelSet, req.ShowHiddenLabels)
 	}
 	return response, nil
 }
@@ -151,7 +196,9 @@ func (s *ClientService) GetLease(ctx context.Context, req *cpb.GetLeaseRequest) 
 		return nil, err
 	}
 
-	return jlease.ToProtobuf(), nil
+	result := jlease.ToProtobuf()
+	annotateLeaseDeprecatedLabels(result, s.deprecatedMessages)
+	return result, nil
 }
 
 func (s *ClientService) ListLeases(ctx context.Context, req *cpb.ListLeasesRequest) (*cpb.ListLeasesResponse, error) {
@@ -221,7 +268,9 @@ func (s *ClientService) ListLeases(ctx context.Context, req *cpb.ListLeasesReque
 
 	var results []*cpb.Lease
 	for _, lease := range jleases.Items {
-		results = append(results, lease.ToProtobuf())
+		result := lease.ToProtobuf()
+		annotateLeaseDeprecatedLabels(result, s.deprecatedMessages)
+		results = append(results, result)
 	}
 
 	return &cpb.ListLeasesResponse{
@@ -277,7 +326,9 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 		return nil, err
 	}
 
-	return jlease.ToProtobuf(), nil
+	result := jlease.ToProtobuf()
+	annotateLeaseDeprecatedLabels(result, s.deprecatedMessages)
+	return result, nil
 }
 
 func validateLeaseTarget(lease *cpb.Lease) error {

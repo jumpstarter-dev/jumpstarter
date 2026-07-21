@@ -1160,6 +1160,10 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 		Keys: jumpstarter.Spec.HiddenLabels.Keys,
 	}
 
+	cfg.DeprecatedLabels = config.DeprecatedLabels{
+		Keys: jumpstarter.Spec.DeprecatedLabels.Keys,
+	}
+
 	// gRPC keepalive configuration
 	if jumpstarter.Spec.Controller.GRPC.Keepalive != nil {
 		ka := &cfg.Grpc.Keepalive
