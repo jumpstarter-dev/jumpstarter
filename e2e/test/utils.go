@@ -591,13 +591,16 @@ func WaitForExporter(name string) {
 
 // WaitForExporters waits for multiple exporters in parallel.
 func WaitForExporters(names ...string) {
-	// Brief delay
-	time.Sleep(exporterPostDelay)
-
+	var wg sync.WaitGroup
 	for _, name := range names {
-		name := name // capture
-		WaitForExporter(name)
+		wg.Add(1)
+		go func(n string) {
+			defer wg.Done()
+			defer GinkgoRecover()
+			WaitForExporter(n)
+		}(name)
 	}
+	wg.Wait()
 }
 
 // WaitForExporterOffline waits for an exporter to go offline.
