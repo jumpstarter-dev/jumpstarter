@@ -37,6 +37,7 @@ def get():
     default=False,
     help="Show labels hidden by controller config",
 )
+@click.option("--page-size", type=click.IntRange(min=1), default=100, help="Number of results per page for pagination")
 @handle_exceptions_with_reauthentication(relogin_client)
 def get_exporters(
     config,
@@ -45,6 +46,7 @@ def get_exporters(
     with_options: list[str],
     allow_disabled: bool,
     show_hidden_labels: bool,
+    page_size: int,
 ):
     """
     Display one or many exporters
@@ -60,6 +62,7 @@ def get_exporters(
         include_status=include_status,
         include_disabled=allow_disabled,
         show_hidden_labels=show_hidden_labels,
+        page_size=page_size,
     )
 
     model_print(exporters, output)
@@ -78,17 +81,24 @@ def get_exporters(
     default=None,
     help="Filter leases by tags (label selector syntax, e.g. build=1234)",
 )
+@click.option("--page-size", type=click.IntRange(min=1), default=100, help="Number of results per page for pagination")
 @handle_exceptions_with_reauthentication(relogin_client)
 def get_leases(
-    config, selector: str | None, output: OutputType, show_all: bool, all_clients: bool, tag_filter: str | None
+    config,
+    selector: str | None,
+    output: OutputType,
+    show_all: bool,
+    all_clients: bool,
+    tag_filter: str | None,
+    page_size: int,
 ):
     """
     Display one or many leases
     """
 
-    leases = config.list_leases(filter=selector, only_active=not show_all, tag_filter=tag_filter).filter_by_selector(
-        selector
-    )
+    leases = config.list_leases(
+        filter=selector, only_active=not show_all, tag_filter=tag_filter, page_size=page_size
+    ).filter_by_selector(selector)
 
     if not all_clients:
         leases = leases.filter_by_client(config.metadata.name)
