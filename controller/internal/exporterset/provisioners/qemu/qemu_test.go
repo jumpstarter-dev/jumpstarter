@@ -26,6 +26,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const mutatedValue = "mutated"
+
 func TestProvisioner_Name(t *testing.T) {
 	if got := New().Name(); got != ProvisionerName {
 		t.Errorf("Name() = %q, want %q", got, ProvisionerName)
@@ -76,8 +78,8 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 	}
 
 	// Mutations on the pod must not affect the ExporterSet template.
-	pod.Labels["app"] = "mutated"
-	pod.Annotations["example.com/owner"] = "mutated"
+	pod.Labels["app"] = mutatedValue
+	pod.Annotations["example.com/owner"] = mutatedValue
 	if got := exporterSet.Spec.Template.Metadata.Labels["app"]; got != "demo" {
 		t.Errorf("ExporterSet labels mutated: got %q", got)
 	}
@@ -136,7 +138,7 @@ func TestRenderPod_clonesSchedulingFromVTC(t *testing.T) {
 	if got := pod.Spec.NodeSelector["node-role.kubernetes.io/worker"]; got != "" {
 		t.Errorf("NodeSelector value = %q, want empty string", got)
 	}
-	pod.Spec.NodeSelector["node-role.kubernetes.io/worker"] = "mutated"
+	pod.Spec.NodeSelector["node-role.kubernetes.io/worker"] = mutatedValue
 	if _, ok := vtc.Spec.Scheduling.NodeSelector["node-role.kubernetes.io/worker"]; !ok {
 		t.Fatal("VTC NodeSelector key unexpectedly removed")
 	}
@@ -147,7 +149,7 @@ func TestRenderPod_clonesSchedulingFromVTC(t *testing.T) {
 	if len(pod.Spec.Tolerations) != 1 {
 		t.Fatalf("Tolerations len = %d, want 1", len(pod.Spec.Tolerations))
 	}
-	pod.Spec.Tolerations[0].Value = "mutated"
+	pod.Spec.Tolerations[0].Value = mutatedValue
 	if got := vtc.Spec.Scheduling.Tolerations[0].Value; got != "virtual" {
 		t.Errorf("VTC Tolerations mutated: got %q", got)
 	}
