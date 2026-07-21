@@ -82,6 +82,7 @@ type ControllerService struct {
 	ServerOptions []grpc.ServerOption
 	Router        config.Router
 	LeasePolicy   *config.LeasePolicy
+	HiddenLabels  *config.HiddenLabels
 	Signer        *oidc.Signer
 	listenQueues  sync.Map
 	leaseLocks    sync.Map
@@ -202,6 +203,13 @@ func (s *ControllerService) effectiveMaxTags() int32 {
 		return s.LeasePolicy.MaxTags
 	}
 	return defaultMaxTags
+}
+
+func (s *ControllerService) effectiveHiddenLabelKeys() []string {
+	if s.HiddenLabels != nil {
+		return s.HiddenLabels.Keys
+	}
+	return nil
 }
 
 type wrappedStream struct {
@@ -1138,7 +1146,7 @@ func (s *ControllerService) Start(ctx context.Context) error {
 	pb.RegisterControllerServiceServer(server, s)
 	cpb.RegisterClientServiceServer(
 		server,
-		clientsvcv1.NewClientService(s.Client, *s.getAuth(), s.effectiveMaxTags(), s.Signer),
+		clientsvcv1.NewClientService(s.Client, *s.getAuth(), s.effectiveMaxTags(), s.Signer, s.effectiveHiddenLabelKeys()),
 	)
 
 	// Register the standard gRPC health checking service (grpc.health.v1.Health).

@@ -177,6 +177,7 @@ def _register_lease_tools(mcp: FastMCP) -> None:
         selector: str | None = None,
         include_leases: bool = True,
         include_online: bool = True,
+        show_hidden_labels: bool = False,
     ) -> str:
         """List exporters registered on the Jumpstarter controller.
 
@@ -187,6 +188,7 @@ def _register_lease_tools(mcp: FastMCP) -> None:
             selector: Optional label selector to filter exporters (e.g. "target=qemu")
             include_leases: Include current lease info for each exporter (default: True)
             include_online: Include online/offline status (default: True)
+            show_hidden_labels: Show labels hidden by controller config (default: False)
         """
         config = await _get_config()
         result = await lease_tools.list_exporters(
@@ -194,6 +196,7 @@ def _register_lease_tools(mcp: FastMCP) -> None:
             selector=selector,
             include_leases=include_leases,
             include_online=include_online,
+            show_hidden_labels=show_hidden_labels,
         )
         return json.dumps(result, indent=2)
 

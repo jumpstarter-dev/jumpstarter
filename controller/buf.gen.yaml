@@ -6,7 +6,7 @@ managed:
     - module: buf.build/grpc-ecosystem/grpc-gateway
   override:
     - file_option: go_package_prefix
-      value: github.com/jumpstarter-dev/jumpstarter-controller/internal/protocol
+      value: github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol
 plugins:
   - remote: buf.build/protocolbuffers/go
     out: internal/protocol

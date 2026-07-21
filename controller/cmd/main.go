@@ -219,7 +219,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	authenticator, prefix, router, option, provisioning, leasePolicy, err := config.LoadConfiguration(
+	authenticator, prefix, router, option, provisioning, leasePolicy, hiddenLabels, err := config.LoadConfiguration(
 		context.Background(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
@@ -284,6 +284,7 @@ func main() {
 		Router:        router,
 		ServerOptions: option,
 		LeasePolicy:   leasePolicy,
+		HiddenLabels:  hiddenLabels,
 		Signer:        oidcSigner,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create service", "service", "Controller")

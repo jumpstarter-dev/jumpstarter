@@ -54,7 +54,8 @@ def add_exporter_row(table, exporter, options: WithOptions = None, lease_info: t
     if options.show_status:
         status_str = str(exporter.status) if exporter.status else "UNKNOWN"
         row_data.append(status_str)
-    row_data.append(",".join(("{}={}".format(k, v) for k, v in sorted(exporter.labels.items()))))
+    labels = exporter.labels
+    row_data.append(",".join(("{}={}".format(k, v) for k, v in sorted(labels.items()))))
     if options.show_leases:
         if lease_info:
             lease_client, lease_status, expected_release = lease_info
@@ -315,22 +316,19 @@ class ExporterList(BaseModel):
             return self.exporters
         return [e for e in self.exporters if e.enabled]
 
-    def rich_add_columns(self, table):
-        options = WithOptions(
+    def _display_options(self) -> WithOptions:
+        return WithOptions(
             show_online=self.include_online,
             show_leases=self.include_leases,
             show_status=self.include_status,
             show_disabled=self.include_disabled,
         )
-        Exporter.rich_add_columns(table, options)
+
+    def rich_add_columns(self, table):
+        Exporter.rich_add_columns(table, self._display_options())
 
     def rich_add_rows(self, table):
-        options = WithOptions(
-            show_online=self.include_online,
-            show_leases=self.include_leases,
-            show_status=self.include_status,
-            show_disabled=self.include_disabled,
-        )
+        options = self._display_options()
         for exporter in self._visible_exporters():
             exporter.rich_add_rows(table, options)
 
@@ -338,10 +336,12 @@ class ExporterList(BaseModel):
         for exporter in self._visible_exporters():
             exporter.rich_add_names(names)
 
+    def _dump_exporter(self, exporter, exclude_fields, **kwargs) -> dict:
+        return exporter.model_dump(exclude=exclude_fields, **kwargs)
+
     def model_dump_json(self, **kwargs):
         json_kwargs = {k: v for k, v in kwargs.items() if k in {"indent", "separators", "sort_keys", "ensure_ascii"}}
 
-        # Determine which fields to exclude
         exclude_fields = set()
         if not self.include_leases:
             exclude_fields.add("lease")
@@ -354,7 +354,7 @@ class ExporterList(BaseModel):
 
         data = {
             "exporters": [
-                exporter.model_dump(mode="json", exclude=exclude_fields)
+                self._dump_exporter(exporter, exclude_fields, mode="json")
                 for exporter in self._visible_exporters()
             ]
         }
@@ -373,7 +373,7 @@ class ExporterList(BaseModel):
 
         return {
             "exporters": [
-                exporter.model_dump(mode="json", exclude=exclude_fields)
+                self._dump_exporter(exporter, exclude_fields)
                 for exporter in self._visible_exporters()
             ]
         }
@@ -427,11 +427,12 @@ class ClientService:
     def __post_init__(self):
         self.stub = client_pb2_grpc.ClientServiceStub(channel=self.channel)
 
-    async def GetExporter(self, *, name: str):
+    async def GetExporter(self, *, name: str, show_hidden_labels: bool = False):
         with translate_grpc_exceptions():
             exporter = await self.stub.GetExporter(
                 client_pb2.GetExporterRequest(
                     name="namespaces/{}/exporters/{}".format(self.namespace, name),
+                    show_hidden_labels=show_hidden_labels,
                 )
             )
         return Exporter.from_protobuf(exporter)
@@ -442,6 +443,7 @@ class ClientService:
         page_size: int | None = None,
         page_token: str | None = None,
         filter: str | None = None,
+        show_hidden_labels: bool = False,
     ):
         with translate_grpc_exceptions():
             exporters = await self.stub.ListExporters(
@@ -450,6 +452,7 @@ class ClientService:
                     page_size=page_size,
                     page_token=page_token,
                     filter=filter,
+                    show_hidden_labels=show_hidden_labels,
                 )
             )
         return ExporterList.from_protobuf(exporters)

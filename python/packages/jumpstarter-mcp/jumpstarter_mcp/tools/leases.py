@@ -12,6 +12,7 @@ async def list_exporters(
     selector: str | None = None,
     include_leases: bool = True,
     include_online: bool = True,
+    show_hidden_labels: bool = False,
 ) -> list[dict]:
     """List exporters from the controller."""
     result = await config.list_exporters(
@@ -19,12 +20,14 @@ async def list_exporters(
         include_leases=include_leases,
         include_online=include_online,
         include_status=True,
+        show_hidden_labels=show_hidden_labels,
     )
     exporters = []
     for exporter in result.exporters:
+        labels = dict(exporter.labels)
         entry: dict = {
             "name": exporter.name,
-            "labels": dict(exporter.labels),
+            "labels": labels,
         }
         if include_online:
             entry["online"] = exporter.online

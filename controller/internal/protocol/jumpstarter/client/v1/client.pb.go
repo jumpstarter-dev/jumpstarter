@@ -297,9 +297,11 @@ func (x *Lease) GetAllowDisabled() bool {
 type GetExporterRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The resource name of the exporter.
-	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// When true, include labels hidden by controller configuration.
+	ShowHiddenLabels bool `protobuf:"varint,2,opt,name=show_hidden_labels,json=showHiddenLabels,proto3" json:"show_hidden_labels,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *GetExporterRequest) Reset() {
@@ -339,6 +341,13 @@ func (x *GetExporterRequest) GetName() string {
 	return ""
 }
 
+func (x *GetExporterRequest) GetShowHiddenLabels() bool {
+	if x != nil {
+		return x.ShowHiddenLabels
+	}
+	return false
+}
+
 // Request to list exporters.
 type ListExportersRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -349,9 +358,11 @@ type ListExportersRequest struct {
 	// Token for retrieving the next page of results.
 	PageToken string `protobuf:"bytes,3,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	// Filter expression for the results.
-	Filter        string `protobuf:"bytes,4,opt,name=filter,proto3" json:"filter,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Filter string `protobuf:"bytes,4,opt,name=filter,proto3" json:"filter,omitempty"`
+	// When true, include labels hidden by controller configuration.
+	ShowHiddenLabels bool `protobuf:"varint,5,opt,name=show_hidden_labels,json=showHiddenLabels,proto3" json:"show_hidden_labels,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ListExportersRequest) Reset() {
@@ -410,6 +421,13 @@ func (x *ListExportersRequest) GetFilter() string {
 		return x.Filter
 	}
 	return ""
+}
+
+func (x *ListExportersRequest) GetShowHiddenLabels() bool {
+	if x != nil {
+		return x.ShowHiddenLabels
+	}
+	return false
 }
 
 // Response containing a list of exporters.
@@ -975,16 +993,18 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\x13_effective_end_timeB\t\n" +
 	"\a_clientB\v\n" +
 	"\t_exporterB\x10\n" +
-	"\x0e_exporter_name\"J\n" +
+	"\x0e_exporter_name\"}\n" +
 	"\x12GetExporterRequest\x124\n" +
 	"\x04name\x18\x01 \x01(\tB \xe0A\x02\xfaA\x1a\n" +
-	"\x18jumpstarter.dev/ExporterR\x04name\"\xb3\x01\n" +
+	"\x18jumpstarter.dev/ExporterR\x04name\x121\n" +
+	"\x12show_hidden_labels\x18\x02 \x01(\bB\x03\xe0A\x01R\x10showHiddenLabels\"\xe6\x01\n" +
 	"\x14ListExportersRequest\x128\n" +
 	"\x06parent\x18\x01 \x01(\tB \xe0A\x02\xfaA\x1a\x12\x18jumpstarter.dev/ExporterR\x06parent\x12 \n" +
 	"\tpage_size\x18\x02 \x01(\x05B\x03\xe0A\x01R\bpageSize\x12\"\n" +
 	"\n" +
 	"page_token\x18\x03 \x01(\tB\x03\xe0A\x01R\tpageToken\x12\x1b\n" +
-	"\x06filter\x18\x04 \x01(\tB\x03\xe0A\x01R\x06filter\"~\n" +
+	"\x06filter\x18\x04 \x01(\tB\x03\xe0A\x01R\x06filter\x121\n" +
+	"\x12show_hidden_labels\x18\x05 \x01(\bB\x03\xe0A\x01R\x10showHiddenLabels\"~\n" +
 	"\x15ListExportersResponse\x12=\n" +
 	"\texporters\x18\x01 \x03(\v2\x1f.jumpstarter.client.v1.ExporterR\texporters\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"D\n" +
