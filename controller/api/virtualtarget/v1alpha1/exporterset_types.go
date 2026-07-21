@@ -119,17 +119,47 @@ type ExporterSetSpec struct {
 
 // ExporterSetStatus defines the observed state of ExporterSet.
 type ExporterSetStatus struct {
-	// Replicas is the total number of exporter instances.
+	// Replicas is the total number of exporter instances owned by this set.
 	Replicas int32 `json:"replicas"`
 
-	// ReadyReplicas is the number of instances that are registered and ready.
+	// ReadyReplicas is the number of instances that are online and registered.
 	ReadyReplicas int32 `json:"readyReplicas"`
 
-	// AvailableReplicas is the number of ready and unleased instances (warm pool).
+	// AvailableReplicas is the number of ready, unleased, and enabled instances (warm pool).
 	AvailableReplicas int32 `json:"availableReplicas"`
+
+	// UnavailableReplicas is the number of enabled instances that are not yet ready.
+	UnavailableReplicas int32 `json:"unavailableReplicas"`
 
 	// LeasedReplicas is the number of instances currently leased.
 	LeasedReplicas int32 `json:"leasedReplicas"`
+
+	// PodsPending is the number of owned pods in Pending phase.
+	PodsPending int32 `json:"podsPending"`
+
+	// PodsRunning is the number of owned pods in Running phase.
+	PodsRunning int32 `json:"podsRunning"`
+
+	// PodsFailed is the number of owned pods in Failed phase.
+	PodsFailed int32 `json:"podsFailed"`
+
+	// PodsUnknown is the number of owned pods in Unknown or Succeeded phase.
+	PodsUnknown int32 `json:"podsUnknown"`
+
+	// ExportersActive is the number of exporters currently serving a lease.
+	ExportersActive int32 `json:"exportersActive"`
+
+	// ExportersIdle is the number of exporters that are online, enabled, and not leased.
+	ExportersIdle int32 `json:"exportersIdle"`
+
+	// ExportersDisabled is the number of exporters with spec.enabled=false.
+	ExportersDisabled int32 `json:"exportersDisabled"`
+
+	// ExportersOffline is the number of enabled exporters that are not online.
+	ExportersOffline int32 `json:"exportersOffline"`
+
+	// Selector is the serialized label selector for HPA compatibility.
+	Selector string `json:"selector,omitempty"`
 
 	// Conditions represent the latest available observations of the ExporterSet state.
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
@@ -139,18 +169,23 @@ type ExporterSetStatus struct {
 type ExporterSetConditionType string
 
 const (
-	// ExporterSetConditionTypeHealthy indicates all desired replicas are ready.
-	ExporterSetConditionTypeHealthy ExporterSetConditionType = "Healthy"
-	// ExporterSetConditionTypeScalingLimited indicates scaling is constrained by limits.
-	ExporterSetConditionTypeScalingLimited ExporterSetConditionType = "ScalingLimited"
+	// ExporterSetConditionAvailable indicates minimum replicas are ready and serving.
+	ExporterSetConditionAvailable ExporterSetConditionType = "Available"
+	// ExporterSetConditionProgressing indicates the set is scaling or updating.
+	ExporterSetConditionProgressing ExporterSetConditionType = "Progressing"
+	// ExporterSetConditionDegraded indicates some replicas are failing or offline.
+	ExporterSetConditionDegraded ExporterSetConditionType = "Degraded"
+	// ExporterSetConditionScalingLimited indicates scaling is constrained by limits.
+	ExporterSetConditionScalingLimited ExporterSetConditionType = "ScalingLimited"
 )
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:subresource:scale:specpath=.spec.maxReplicas,statuspath=.status.replicas
+// +kubebuilder:subresource:scale:specpath=.spec.maxReplicas,statuspath=.status.replicas,selectorpath=.status.selector
 // +kubebuilder:printcolumn:name="Replicas",type="integer",JSONPath=".status.replicas"
 // +kubebuilder:printcolumn:name="Ready",type="integer",JSONPath=".status.readyReplicas"
 // +kubebuilder:printcolumn:name="Available",type="integer",JSONPath=".status.availableReplicas"
+// +kubebuilder:printcolumn:name="Unavailable",type="integer",JSONPath=".status.unavailableReplicas"
 // +kubebuilder:printcolumn:name="Leased",type="integer",JSONPath=".status.leasedReplicas"
 // +kubebuilder:printcolumn:name="Class",type="string",JSONPath=".spec.virtualTargetClassName"
 
