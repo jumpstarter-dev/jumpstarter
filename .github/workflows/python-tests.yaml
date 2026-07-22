@@ -137,6 +137,7 @@ jobs:
           && (needs.changes.outputs.renode_driver == 'true'
           || github.event_name == 'workflow_dispatch')
         run: |
+          brew trust renode/tap
           brew install renode/tap/renode
 
       - name: Cache Fedora Cloud images
