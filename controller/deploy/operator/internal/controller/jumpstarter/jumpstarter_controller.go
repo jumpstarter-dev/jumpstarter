@@ -80,8 +80,8 @@ type JumpstarterReconciler struct {
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // RBAC resources
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 
 // Leader election
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
@@ -185,6 +185,12 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Reconcile Router Deployment
 	if err := r.reconcileRouterDeployment(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Router Deployment")
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile ExporterSet provisioner controller Deployments
+	if err := r.reconcileExporterSetControllers(ctx, &jumpstarter); err != nil {
+		log.Error(err, "Failed to reconcile ExporterSet controllers")
 		return ctrl.Result{}, err
 	}
 
