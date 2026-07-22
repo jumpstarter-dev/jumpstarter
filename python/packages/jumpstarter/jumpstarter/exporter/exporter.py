@@ -29,6 +29,7 @@ from jumpstarter.config.tls import TLSConfigV1Alpha1
 from jumpstarter.exporter.hooks import HookExecutor
 from jumpstarter.exporter.lease_context import LeaseContext
 from jumpstarter.exporter.session import Session
+from jumpstarter.logging import clear_log_context, set_log_context
 
 if TYPE_CHECKING:
     from jumpstarter.driver import Driver
@@ -871,12 +872,18 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         before_lease_hook=Event(),
                     )
                     self._lease_context = lease_scope
+                    log_ctx = {"lease_id": status.lease_name, "exporter": self.name}
+                    if status.context:
+                        log_ctx.update(status.context)
+                    set_log_context(**log_ctx)
                     tg.start_soon(self.handle_lease, status.lease_name, tg, lease_scope)
 
                 if current_leased:
-                    logger.info("Currently leased by %s under %s", status.client_name, status.lease_name)
                     if self._lease_context:
                         self._lease_context.update_client(status.client_name)
+                        if status.client_name:
+                            set_log_context(client=status.client_name)
+                    logger.info("Currently leased by %s under %s", status.client_name, status.lease_name)
 
                     # Before-lease hook when transitioning from unleased to leased
                     if not previous_leased:
@@ -905,11 +912,12 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                             await lease_ctx.after_lease_hook_done.wait()
                         logger.info("afterLease hook completed")
 
-                    # Clear lease scope for next lease
+                    # Clear lease scope and log context for next lease
                     session_was_created = (
                         self._lease_context is not None and self._lease_context.session is not None
                     )
                     self._lease_context = None
+                    clear_log_context()
                     if session_was_created:
                         # Brief delay to ensure session is fully closed before next lease
                         # This prevents SSL corruption from overlapping connections
@@ -926,6 +934,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
                 self._previous_leased = current_leased
         self._tg = None
+        clear_log_context()
 
     async def serve_standalone_tcp(
         self,
@@ -944,6 +953,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         self._standalone = True
         lease_scope = LeaseContext(lease_name="standalone", before_lease_hook=Event())
         self._lease_context = lease_scope
+        set_log_context(exporter=self.name, lease_id="standalone")
 
         with TemporarySocket() as hook_path:
             hook_path_str = str(hook_path)

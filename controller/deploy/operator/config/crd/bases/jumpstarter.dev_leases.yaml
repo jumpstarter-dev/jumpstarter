@@ -77,6 +77,14 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              context:
+                additionalProperties:
+                  type: string
+                description: |-
+                  User-defined context metadata for the lease (e.g. build_id, image_digest, VCS ref).
+                  Immutable after creation. Maximum 8 entries; keys max 32 chars, values max 64 chars.
+                maxProperties: 8
+                type: object
               duration:
                 description: |-
                   Duration of the lease. Must be positive when provided.
@@ -174,6 +182,11 @@ spec:
                 > 0)
             - message: tags are immutable after creation
               rule: '!has(oldSelf.tags) || self.tags == oldSelf.tags'
+            - message: context is immutable after creation
+              rule: '!has(oldSelf.context) || self.context == oldSelf.context'
+            - message: context keys max 32 chars, values max 64 chars
+              rule: '!has(self.context) || self.context.all(k, size(k) <= 32 && size(self.context[k])
+                <= 64)'
           status:
             description: LeaseStatus defines the observed state of Lease.
             properties:

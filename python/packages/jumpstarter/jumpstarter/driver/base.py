@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from dataclasses import field
 from inspect import isasyncgenfunction, iscoroutinefunction
 from itertools import chain
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urlparse, urlunparse
 from uuid import UUID, uuid4
 
@@ -71,6 +71,9 @@ class Driver(
     Raw stream constructors can be marked with the `exportstream` decorator.
     """
 
+    driver_type: ClassVar[str] = "other"
+    """Driver category for observability (e.g. power, storage, network, serial, console, video, composite)."""
+
     children: dict[str, Driver] = field(default_factory=dict)
 
     resources: dict[UUID, Any] = field(default_factory=dict, init=False)
@@ -114,6 +117,11 @@ class Driver(
         """
         :meta private:
         """
+        op = request.method
+        self.logger.info(
+            "Operation started",
+            extra={"operation": op, "driver_type": self.driver_type},
+        )
         try:
             method = await self.__lookup_drivercall(request.method, context, MARKER_DRIVERCALL)
 
@@ -124,23 +132,66 @@ class Driver(
             else:
                 result = await to_thread.run_sync(method, *args)
 
+            self.logger.info(
+                "Operation completed",
+                extra={"operation": op, "driver_type": self.driver_type, "result": "success"},
+            )
             return jumpstarter_pb2.DriverCallResponse(
                 uuid=str(uuid4()),
                 result=encode_value(result),
             )
         except NotImplementedError as e:
+            self.logger.warning(
+                "Operation failed",
+                extra={"operation": op, "driver_type": self.driver_type,
+                       "result": "failure", "error_type": "not_implemented"},
+            )
             await context.abort(StatusCode.UNIMPLEMENTED, str(e))
         except ValueError as e:
+            self.logger.warning(
+                "Operation failed",
+                extra={"operation": op, "driver_type": self.driver_type,
+                       "result": "failure", "error_type": "validation_error"},
+            )
             await context.abort(StatusCode.INVALID_ARGUMENT, str(e))
         except TimeoutError as e:
+            self.logger.warning(
+                "Operation failed",
+                extra={"operation": op, "driver_type": self.driver_type,
+                       "result": "failure", "error_type": "timeout"},
+            )
             await context.abort(StatusCode.DEADLINE_EXCEEDED, str(e))
+        except ConnectionError as e:
+            self.logger.warning(
+                "Operation failed",
+                extra={"operation": op, "driver_type": self.driver_type,
+                       "result": "failure", "error_type": "connection_error"},
+            )
+            await context.abort(StatusCode.UNAVAILABLE, str(e))
+        except OSError as e:
+            self.logger.warning(
+                "Operation failed",
+                extra={"operation": op, "driver_type": self.driver_type,
+                       "result": "failure", "error_type": "device_error"},
+            )
+            await context.abort(StatusCode.INTERNAL, str(e))
         except Exception as e:
+            self.logger.warning(
+                "Operation failed",
+                extra={"operation": op, "driver_type": self.driver_type,
+                       "result": "failure", "error_type": "internal_error"},
+            )
             await context.abort(StatusCode.UNKNOWN, str(e))
 
     async def StreamingDriverCall(self, request, context):
         """
         :meta private:
         """
+        op = request.method
+        self.logger.info(
+            "Operation started",
+            extra={"operation": op, "driver_type": self.driver_type},
+        )
         try:
             method = await self.__lookup_drivercall(request.method, context, MARKER_STREAMING_DRIVERCALL)
 
@@ -158,13 +209,51 @@ class Driver(
                         uuid=str(uuid4()),
                         result=encode_value(result),
                     )
+            self.logger.info(
+                "Operation completed",
+                extra={"operation": op, "driver_type": self.driver_type, "result": "success"},
+            )
         except NotImplementedError as e:
+            self.logger.warning(
+                "Operation failed",
+                extra={"operation": op, "driver_type": self.driver_type,
+                       "result": "failure", "error_type": "not_implemented"},
+            )
             await context.abort(StatusCode.UNIMPLEMENTED, str(e))
         except ValueError as e:
+            self.logger.warning(
+                "Operation failed",
+                extra={"operation": op, "driver_type": self.driver_type,
+                       "result": "failure", "error_type": "validation_error"},
+            )
             await context.abort(StatusCode.INVALID_ARGUMENT, str(e))
         except TimeoutError as e:
+            self.logger.warning(
+                "Operation failed",
+                extra={"operation": op, "driver_type": self.driver_type,
+                       "result": "failure", "error_type": "timeout"},
+            )
             await context.abort(StatusCode.DEADLINE_EXCEEDED, str(e))
+        except ConnectionError as e:
+            self.logger.warning(
+                "Operation failed",
+                extra={"operation": op, "driver_type": self.driver_type,
+                       "result": "failure", "error_type": "connection_error"},
+            )
+            await context.abort(StatusCode.UNAVAILABLE, str(e))
+        except OSError as e:
+            self.logger.warning(
+                "Operation failed",
+                extra={"operation": op, "driver_type": self.driver_type,
+                       "result": "failure", "error_type": "device_error"},
+            )
+            await context.abort(StatusCode.INTERNAL, str(e))
         except Exception as e:
+            self.logger.warning(
+                "Operation failed",
+                extra={"operation": op, "driver_type": self.driver_type,
+                       "result": "failure", "error_type": "internal_error"},
+            )
             await context.abort(StatusCode.UNKNOWN, str(e))
 
     @asynccontextmanager

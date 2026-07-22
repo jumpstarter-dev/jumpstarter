@@ -5,6 +5,8 @@ from jumpstarter.driver import Driver, export
 
 @dataclass(kw_only=True)
 class UbootConsole(Driver):
+    driver_type = "console"
+
     prompt: str = "\n=>"
 
     @classmethod

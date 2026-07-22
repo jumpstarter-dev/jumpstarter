@@ -304,6 +304,8 @@ class Opendal(Driver):
 
 
 class FlasherInterface(metaclass=ABCMeta):
+    driver_type = "storage"
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_opendal.client.FlasherClient"
@@ -340,6 +342,8 @@ class MockFlasher(FlasherInterface, Driver):
 
 
 class StorageMuxInterface(metaclass=ABCMeta):
+    driver_type = "storage"
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_opendal.client.StorageMuxClient"

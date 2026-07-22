@@ -38,9 +38,9 @@ class ISCSI(Driver):
         root_dir (str): Root directory for the iSCSI storage
         iqn_prefix (str): iqn prefix
         target_name (str): Target name. Defaults to "target1"
-        host (str): IP address to bind the server to
-        port (int): Port number to listen on. Defaults to 3260
     """
+
+    driver_type = "storage"
 
     root_dir: str = "/var/lib/iscsi"
     iqn_prefix: str = "iqn.2024-06.dev.jumpstarter"

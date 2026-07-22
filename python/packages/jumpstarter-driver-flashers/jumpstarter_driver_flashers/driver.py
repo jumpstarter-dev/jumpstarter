@@ -16,6 +16,8 @@ from jumpstarter.driver import Driver, export
 class BaseFlasher(Driver):
     """driver for Jumpstarter"""
 
+    driver_type = "storage"
+
     flasher_bundle: str = field(default="quay.io/jumpstarter-dev/jumpstarter-flasher-test:latest")
     variant: None | str = field(default=None)
     manifest: str = field(default="manifest.yaml")

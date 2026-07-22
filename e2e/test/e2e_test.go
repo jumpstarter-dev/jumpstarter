@@ -398,6 +398,28 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
 			MustJmp("delete", "leases", "--all")
 		})
 
+		It("can create a lease with context metadata", func() {
+			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
+			MustJmp("config", "client", "use", "test-client-oidc")
+			DeferCleanup(func() {
+				MustJmp("delete", "leases", "--all")
+			})
+
+			out := MustJmp("create", "lease",
+				"--selector", "example.com/board=oidc",
+				"--duration", "1d",
+				"--context", "build_id=nightly-42",
+				"--context", "image_digest=sha256:abc",
+				"-o", "yaml")
+
+			// The CLI output is fetched from the API server, so if context
+			// appears here it was persisted in the CRD.
+			Expect(out).To(ContainSubstring("build_id"))
+			Expect(out).To(ContainSubstring("nightly-42"))
+			Expect(out).To(ContainSubstring("image_digest"))
+			Expect(out).To(ContainSubstring("sha256:abc"))
+		})
+
 		It("paginated lease listing returns all leases", func() {
 			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
 			MustJmp("config", "client", "use", "test-client-oidc")

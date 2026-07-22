@@ -244,6 +244,15 @@ func LeaseFromProtobuf(
 		}
 	}
 
+	// Store user context in spec
+	var specContext map[string]string
+	if len(req.Context) > 0 {
+		specContext = make(map[string]string, len(req.Context))
+		for k, v := range req.Context {
+			specContext[k] = v
+		}
+	}
+
 	return &Lease{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: key.Namespace,
@@ -255,6 +264,7 @@ func LeaseFromProtobuf(
 			Duration:  duration,
 			Selector:  *selector,
 			Tags:      specTags,
+			Context:   specContext,
 			ExporterRef: func() *corev1.LocalObjectReference {
 				if req.ExporterName == nil || *req.ExporterName == "" {
 					return nil
@@ -291,6 +301,7 @@ func (l *Lease) ToProtobuf() *cpb.Lease {
 		Conditions:    conditions,
 		Tags:          l.Spec.Tags,
 		AllowDisabled: l.Spec.AllowDisabled,
+		Context:       l.Spec.Context,
 	}
 	if l.Spec.ExporterRef != nil {
 		lease.ExporterName = ptr.To(l.Spec.ExporterRef.Name)

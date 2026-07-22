@@ -350,6 +350,8 @@ class MitmproxyDriver(Driver):
                   body: {ok: true}
     """
 
+    driver_type = "network"
+
     # ── Configuration (from exporter YAML) ──────────────────────
 
     listen: ListenConfig | dict = field(default_factory=dict)

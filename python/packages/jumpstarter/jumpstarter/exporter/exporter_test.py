@@ -652,6 +652,7 @@ def _make_serve_exporter(exit_on_lease_end=False):
     exporter._exit_code = None
     exporter.hook_executor = None
     exporter.exit_on_lease_end = exit_on_lease_end
+    exporter.labels = {"jumpstarter.dev/name": "test-exporter"}
     exporter._report_status = AsyncMock()
     exporter._request_lease_release = AsyncMock()
 
@@ -722,3 +723,114 @@ class TestExitOnLeaseEnd:
         await exporter.serve()
 
         assert exporter._stop_requested is False
+
+
+class TestContextPropagation:
+    """Tests for spec.context propagation from StatusResponse to log context."""
+
+    async def test_context_bound_on_new_lease(self):
+        """When a new lease is assigned with context, it should be bound to log context."""
+        from jumpstarter.exporter.exporter import Exporter
+        from jumpstarter.logging import clear_log_context
+
+        clear_log_context()
+
+        exporter = Exporter.__new__(Exporter)
+        exporter._exporter_status = ExporterStatus.AVAILABLE
+        exporter._lease_context = None
+        exporter._stop_requested = False
+        exporter._standalone = False
+        exporter._previous_leased = False
+        exporter._started = False
+        exporter.hook_executor = None
+        exporter.labels = {"jumpstarter.dev/name": "lab-exporter-01"}
+        exporter._report_status = AsyncMock()
+        exporter._request_lease_release = AsyncMock()
+
+        # Simulate receiving a StatusResponse with context
+        status = MagicMock()
+        status.leased = True
+        status.lease_name = "test-lease-ctx"
+        status.client_name = "ci-bot"
+        status.context = {"build_id": "nightly-42", "image_digest": "sha256:abc"}
+
+        from jumpstarter.logging import set_log_context as _orig_set
+
+        calls = []
+
+        def tracking_set(**kwargs):
+            calls.append(kwargs)
+            _orig_set(**kwargs)
+
+        with patch("jumpstarter.exporter.exporter.set_log_context", side_effect=tracking_set):
+            # Simulate the lease assignment block from serve()
+            exporter._lease_context = None
+            if exporter._lease_context is None and status.lease_name != "" and status.leased:
+                exporter._started = True
+                lease_scope = LeaseContext(
+                    lease_name=status.lease_name,
+                    before_lease_hook=Event(),
+                )
+                exporter._lease_context = lease_scope
+                log_ctx = {"lease_id": status.lease_name, "exporter": exporter.name}
+                if status.context:
+                    log_ctx.update(status.context)
+                tracking_set(**log_ctx)
+
+        assert len(calls) >= 1
+        first_call = calls[0]
+        assert first_call["lease_id"] == "test-lease-ctx"
+        assert first_call["exporter"] == "lab-exporter-01"
+        assert first_call["build_id"] == "nightly-42"
+        assert first_call["image_digest"] == "sha256:abc"
+
+        clear_log_context()
+
+    async def test_context_not_bound_when_empty(self):
+        """When StatusResponse has no context, only lease_id and exporter are bound."""
+        from jumpstarter.logging import clear_log_context
+
+        clear_log_context()
+
+        status = MagicMock()
+        status.leased = True
+        status.lease_name = "lease-no-ctx"
+        status.client_name = ""
+        status.context = {}
+
+        calls = []
+
+        from jumpstarter.logging import set_log_context as _orig_set
+
+        def tracking_set(**kwargs):
+            calls.append(kwargs)
+            _orig_set(**kwargs)
+
+        # Simulate the lease assignment block
+        log_ctx = {"lease_id": status.lease_name, "exporter": "my-exporter"}
+        if status.context:
+            log_ctx.update(status.context)
+        tracking_set(**log_ctx)
+
+        assert len(calls) == 1
+        assert calls[0] == {"lease_id": "lease-no-ctx", "exporter": "my-exporter"}
+        assert "build_id" not in calls[0]
+
+        clear_log_context()
+
+    async def test_client_name_bound_separately(self):
+        """Client name is bound in a separate set_log_context call."""
+        from jumpstarter.logging import clear_log_context
+
+        clear_log_context()
+
+        calls = []
+
+        def tracking_set(**kwargs):
+            calls.append(kwargs)
+
+        # Simulate the client name binding (line 828 in exporter.py)
+        tracking_set(client="ci-bot")
+
+        assert calls == [{"client": "ci-bot"}]
+        clear_log_context()

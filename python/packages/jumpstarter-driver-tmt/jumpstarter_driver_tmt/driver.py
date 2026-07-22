@@ -8,6 +8,8 @@ from jumpstarter.driver import Driver, export
 class TMT(Driver):
     """ driver for Jumpstarter"""
 
+    driver_type = "testing"
+
     reboot_cmd: str = ""
     default_username: str = ""
     default_password: str = ""

@@ -28,7 +28,6 @@ const (
 	ControllerService_Listen_FullMethodName       = "/jumpstarter.v1.ControllerService/Listen"
 	ControllerService_Status_FullMethodName       = "/jumpstarter.v1.ControllerService/Status"
 	ControllerService_Dial_FullMethodName         = "/jumpstarter.v1.ControllerService/Dial"
-	ControllerService_AuditStream_FullMethodName  = "/jumpstarter.v1.ControllerService/AuditStream"
 	ControllerService_GetLease_FullMethodName     = "/jumpstarter.v1.ControllerService/GetLease"
 	ControllerService_RequestLease_FullMethodName = "/jumpstarter.v1.ControllerService/RequestLease"
 	ControllerService_ReleaseLease_FullMethodName = "/jumpstarter.v1.ControllerService/ReleaseLease"
@@ -57,9 +56,6 @@ type ControllerServiceClient interface {
 	// Returns a stream token for connecting to the desired exporter.
 	// Leases are checked before token issuance.
 	Dial(ctx context.Context, in *DialRequest, opts ...grpc.CallOption) (*DialResponse, error)
-	// Stream audit events from the exporters.
-	// Audit events are used to track the exporter activity.
-	AuditStream(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[AuditStreamRequest, emptypb.Empty], error)
 	// Retrieve a lease by name.
 	GetLease(ctx context.Context, in *GetLeaseRequest, opts ...grpc.CallOption) (*GetLeaseResponse, error)
 	// Request a new lease for an exporter.
@@ -156,19 +152,6 @@ func (c *controllerServiceClient) Dial(ctx context.Context, in *DialRequest, opt
 	return out, nil
 }
 
-func (c *controllerServiceClient) AuditStream(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[AuditStreamRequest, emptypb.Empty], error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &ControllerService_ServiceDesc.Streams[2], ControllerService_AuditStream_FullMethodName, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &grpc.GenericClientStream[AuditStreamRequest, emptypb.Empty]{ClientStream: stream}
-	return x, nil
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type ControllerService_AuditStreamClient = grpc.ClientStreamingClient[AuditStreamRequest, emptypb.Empty]
-
 func (c *controllerServiceClient) GetLease(ctx context.Context, in *GetLeaseRequest, opts ...grpc.CallOption) (*GetLeaseResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetLeaseResponse)
@@ -231,9 +214,6 @@ type ControllerServiceServer interface {
 	// Returns a stream token for connecting to the desired exporter.
 	// Leases are checked before token issuance.
 	Dial(context.Context, *DialRequest) (*DialResponse, error)
-	// Stream audit events from the exporters.
-	// Audit events are used to track the exporter activity.
-	AuditStream(grpc.ClientStreamingServer[AuditStreamRequest, emptypb.Empty]) error
 	// Retrieve a lease by name.
 	GetLease(context.Context, *GetLeaseRequest) (*GetLeaseResponse, error)
 	// Request a new lease for an exporter.
@@ -269,9 +249,6 @@ func (UnimplementedControllerServiceServer) Status(*StatusRequest, grpc.ServerSt
 }
 func (UnimplementedControllerServiceServer) Dial(context.Context, *DialRequest) (*DialResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Dial not implemented")
-}
-func (UnimplementedControllerServiceServer) AuditStream(grpc.ClientStreamingServer[AuditStreamRequest, emptypb.Empty]) error {
-	return status.Error(codes.Unimplemented, "method AuditStream not implemented")
 }
 func (UnimplementedControllerServiceServer) GetLease(context.Context, *GetLeaseRequest) (*GetLeaseResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetLease not implemented")
@@ -400,13 +377,6 @@ func _ControllerService_Dial_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ControllerService_AuditStream_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(ControllerServiceServer).AuditStream(&grpc.GenericServerStream[AuditStreamRequest, emptypb.Empty]{ServerStream: stream})
-}
-
-// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
-type ControllerService_AuditStreamServer = grpc.ClientStreamingServer[AuditStreamRequest, emptypb.Empty]
-
 func _ControllerService_GetLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetLeaseRequest)
 	if err := dec(in); err != nil {
@@ -529,11 +499,6 @@ var ControllerService_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "Status",
 			Handler:       _ControllerService_Status_Handler,
 			ServerStreams: true,
-		},
-		{
-			StreamName:    "AuditStream",
-			Handler:       _ControllerService_AuditStream_Handler,
-			ClientStreams: true,
 		},
 	},
 	Metadata: "jumpstarter/v1/jumpstarter.proto",

@@ -42,6 +42,13 @@ def create():
     default=False,
     help="Allow leasing a disabled exporter (only effective with --name/-n)",
 )
+@click.option(
+    "--context",
+    "context_entries",
+    multiple=True,
+    help="Context metadata for the lease (key=value format, can be specified multiple times). "
+    "Used for observability correlation (e.g. build_id=abc123, image_digest=sha256:...).",
+)
 @opt_output_all
 @handle_exceptions_with_reauthentication(relogin_client)
 def create_lease(
@@ -53,6 +60,7 @@ def create_lease(
     lease_id: str | None,
     tags: tuple[str, ...],
     allow_disabled: bool,
+    context_entries: tuple[str, ...],
     output: OutputType,
 ):
     """
@@ -84,6 +92,13 @@ def create_lease(
 
         $ jmp create lease -l foo=bar --duration 1d --lease-id my-custom-lease-id
 
+    Attach context metadata for observability correlation:
+
+    .. code-block:: bash
+
+        $ jmp create lease -l foo=bar --duration 1h \\
+            --context build_id=nightly-42 --context image_digest=sha256:abc
+
     """
 
     if not selector and not exporter_name:
@@ -96,6 +111,20 @@ def create_lease(
         k, v = tag.split("=", 1)
         parsed_tags[k] = v
 
+    parsed_context = {}
+    for entry in context_entries:
+        if "=" not in entry:
+            raise click.UsageError(f"Invalid context format: {entry!r} (expected key=value)")
+        k, v = entry.split("=", 1)
+        if len(k) > 32:
+            raise click.UsageError(f"Context key too long: {k!r} (max 32 characters)")
+        if len(v) > 64:
+            raise click.UsageError(f"Context value too long for key {k!r} (max 64 characters)")
+        parsed_context[k] = v
+
+    if len(parsed_context) > 8:
+        raise click.UsageError("Too many context entries (max 8)")
+
     lease = config.create_lease(
         selector=selector,
         exporter_name=exporter_name,
@@ -104,6 +133,7 @@ def create_lease(
         lease_id=lease_id,
         tags=parsed_tags or None,
         allow_disabled=allow_disabled,
+        context=parsed_context or None,
     )
 
     model_print(lease, output)

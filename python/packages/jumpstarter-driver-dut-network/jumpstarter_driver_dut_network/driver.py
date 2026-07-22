@@ -117,6 +117,8 @@ class FilterConfig:
 class DutNetwork(Driver):
     """DUT network isolation with bridge, DHCP, DNS, and NAT."""
 
+    driver_type = "network"
+
     interface: str
     subnet: str = "192.168.100.0/24"
     gateway_ip: str = "192.168.100.1"

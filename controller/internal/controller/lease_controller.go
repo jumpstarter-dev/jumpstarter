@@ -82,6 +82,16 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		)
 	}
 
+	leaseLogValues := []interface{}{"lease_id", lease.Name, "client", lease.Spec.ClientRef.Name}
+	if lease.Spec.ExporterRef != nil {
+		leaseLogValues = append(leaseLogValues, "exporter", lease.Spec.ExporterRef.Name)
+	}
+	for k, v := range lease.Spec.Context {
+		leaseLogValues = append(leaseLogValues, k, v)
+	}
+	logger = logger.WithValues(leaseLogValues...)
+	ctx = ctrl.LoggerInto(ctx, logger)
+
 	var result ctrl.Result
 	if err := r.reconcileStatusExporterRef(ctx, &result, &lease); err != nil {
 		return result, err

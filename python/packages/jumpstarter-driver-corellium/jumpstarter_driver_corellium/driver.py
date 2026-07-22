@@ -23,6 +23,8 @@ class Corellium(Driver):
     Corellium top-level driver.
     """
 
+    driver_type = "composite"
+
     _api: ApiClient = field(init=False)
     project_id: str
     device_name: str

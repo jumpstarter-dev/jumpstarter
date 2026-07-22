@@ -236,6 +236,8 @@ class Renode(Driver):
     - ``extra_commands``: list of monitor commands for target-specific setup
     """
 
+    driver_type = "composite"
+
     platform: str
     uart: str = "sysbus.uart0"
     machine_name: str = "machine-0"

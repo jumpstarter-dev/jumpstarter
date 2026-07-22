@@ -5,6 +5,8 @@ from typing import Any
 
 
 class FlasherInterface(metaclass=ABCMeta):
+    driver_type = "storage"
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter.client.flasher.FlasherClient"

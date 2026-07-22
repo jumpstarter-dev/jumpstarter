@@ -39,6 +39,8 @@ class NVDemuxSerial(Driver):
         must use the same demuxer_path, device, and chip configuration.
     """
 
+    driver_type = "serial"
+
     demuxer_path: str
     device: str = field(default=NV_DEVICE_PATTERN)
     target: str = field(default="CCPLEX: 0")

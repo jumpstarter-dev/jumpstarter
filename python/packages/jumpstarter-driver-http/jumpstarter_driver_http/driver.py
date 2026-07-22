@@ -20,6 +20,8 @@ class HttpServerError(Exception):
 class HttpServer(Driver):
     """HTTP Server driver for Jumpstarter"""
 
+    driver_type = "network"
+
     root_dir: str = "/var/www"
     host: str | None = field(default=None)
     port: int = 8080

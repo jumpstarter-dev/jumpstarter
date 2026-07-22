@@ -574,4 +574,74 @@ var _ = Describe("Lease.ToProtobuf", func() {
 
 		Expect(pb.Tags).To(BeEmpty())
 	})
+
+	It("should include context in protobuf output", func() {
+		lease := &Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-lease",
+				Namespace: "default",
+			},
+			Spec: LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+				Duration:  &metav1.Duration{Duration: time.Hour},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"board": "rpi4"}},
+				Context:   map[string]string{"build_id": "abc123", "image_digest": "sha256:def"},
+			},
+		}
+
+		pb := lease.ToProtobuf()
+
+		Expect(pb.Context).To(HaveKeyWithValue("build_id", "abc123"))
+		Expect(pb.Context).To(HaveKeyWithValue("image_digest", "sha256:def"))
+	})
+
+	It("should handle nil context", func() {
+		lease := &Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-lease",
+				Namespace: "default",
+			},
+			Spec: LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+				Duration:  &metav1.Duration{Duration: time.Hour},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"board": "rpi4"}},
+			},
+		}
+
+		pb := lease.ToProtobuf()
+
+		Expect(pb.Context).To(BeEmpty())
+	})
+})
+
+var _ = Describe("LeaseFromProtobuf context", func() {
+	It("should map context from proto to spec", func() {
+		pbLease := &cpb.Lease{
+			Selector: "board=rpi4",
+			Duration: durationpb.New(time.Hour),
+			Context:  map[string]string{"build_id": "xyz", "vcs_ref": "main"},
+		}
+		key := types.NamespacedName{Name: "test-lease", Namespace: "default"}
+		clientRef := corev1.LocalObjectReference{Name: "test-client"}
+
+		lease, err := LeaseFromProtobuf(pbLease, key, clientRef)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(lease.Spec.Context).To(HaveKeyWithValue("build_id", "xyz"))
+		Expect(lease.Spec.Context).To(HaveKeyWithValue("vcs_ref", "main"))
+	})
+
+	It("should leave context nil when proto has no context", func() {
+		pbLease := &cpb.Lease{
+			Selector: "board=rpi4",
+			Duration: durationpb.New(time.Hour),
+		}
+		key := types.NamespacedName{Name: "test-lease", Namespace: "default"}
+		clientRef := corev1.LocalObjectReference{Name: "test-client"}
+
+		lease, err := LeaseFromProtobuf(pbLease, key, clientRef)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(lease.Spec.Context).To(BeNil())
+	})
 })

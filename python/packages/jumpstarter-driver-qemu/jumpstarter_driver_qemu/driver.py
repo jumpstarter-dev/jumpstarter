@@ -418,6 +418,8 @@ class Hostfwd(BaseModel):
 class Qemu(Driver):
     """QEMU virtual machine management driver."""
 
+    driver_type = "composite"
+
     arch: str = field(default_factory=platform.machine)
     cpu: str | None = None
 

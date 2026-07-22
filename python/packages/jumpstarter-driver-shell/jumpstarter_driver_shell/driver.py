@@ -32,6 +32,8 @@ BLOCKED_ENV_PREFIXES: tuple[str, ...] = (
 class Shell(Driver):
     """shell driver for Jumpstarter"""
 
+    driver_type = "shell"
+
     # methods field defines the methods exported and their shell scripts
     # Supports two formats:
     # 1. Simple string: method_name: "command"

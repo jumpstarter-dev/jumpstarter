@@ -23,6 +23,8 @@ import (
 
 // +kubebuilder:validation:XValidation:rule="((has(self.selector.matchLabels) && size(self.selector.matchLabels) > 0) || (has(self.selector.matchExpressions) && size(self.selector.matchExpressions) > 0)) || (has(self.exporterRef) && has(self.exporterRef.name) && size(self.exporterRef.name) > 0)",message="one of selector or exporterRef.name is required"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.tags) || self.tags == oldSelf.tags",message="tags are immutable after creation"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.context) || self.context == oldSelf.context",message="context is immutable after creation"
+// +kubebuilder:validation:XValidation:rule="!has(self.context) || self.context.all(k, size(k) <= 32 && size(self.context[k]) <= 64)",message="context keys max 32 chars, values max 64 chars"
 // LeaseSpec defines the desired state of Lease
 type LeaseSpec struct {
 	// The client that is requesting the lease
@@ -54,6 +56,10 @@ type LeaseSpec struct {
 	// Requested end time. If specified with BeginTime, Duration is calculated.
 	// Can be updated to extend or shorten active leases.
 	EndTime *metav1.Time `json:"endTime,omitempty"`
+	// User-defined context metadata for the lease (e.g. build_id, image_digest, VCS ref).
+	// Immutable after creation. Maximum 8 entries; keys max 32 chars, values max 64 chars.
+	// +kubebuilder:validation:MaxProperties=8
+	Context map[string]string `json:"context,omitempty"`
 }
 
 // LeaseStatus defines the observed state of Lease.
