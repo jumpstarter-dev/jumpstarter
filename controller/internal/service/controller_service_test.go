@@ -229,6 +229,100 @@ func TestCheckExporterStatusForDriverCalls(t *testing.T) {
 	}
 }
 
+func TestApplyUnregisterStatus(t *testing.T) {
+	t.Run("sets offline status with default message", func(t *testing.T) {
+		exporter := &jumpstarterdevv1alpha1.Exporter{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-exporter",
+				Namespace:  "default",
+				Generation: 1,
+			},
+			Status: jumpstarterdevv1alpha1.ExporterStatus{
+				ExporterStatusValue: jumpstarterdevv1alpha1.ExporterStatusAvailable,
+			},
+		}
+
+		applyUnregisterStatus(exporter, "")
+
+		if exporter.Status.ExporterStatusValue != jumpstarterdevv1alpha1.ExporterStatusOffline {
+			t.Errorf("ExporterStatusValue = %q, want %q", exporter.Status.ExporterStatusValue, jumpstarterdevv1alpha1.ExporterStatusOffline)
+		}
+		if exporter.Status.StatusMessage != "Exporter unregistered" {
+			t.Errorf("StatusMessage = %q, want %q", exporter.Status.StatusMessage, "Exporter unregistered")
+		}
+	})
+
+	t.Run("uses provided reason as status message", func(t *testing.T) {
+		exporter := &jumpstarterdevv1alpha1.Exporter{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-exporter",
+				Namespace:  "default",
+				Generation: 1,
+			},
+			Status: jumpstarterdevv1alpha1.ExporterStatus{
+				ExporterStatusValue: jumpstarterdevv1alpha1.ExporterStatusAvailable,
+			},
+		}
+
+		applyUnregisterStatus(exporter, "shutting down for maintenance")
+
+		if exporter.Status.StatusMessage != "shutting down for maintenance" {
+			t.Errorf("StatusMessage = %q, want %q", exporter.Status.StatusMessage, "shutting down for maintenance")
+		}
+	})
+
+	t.Run("sets Online condition to false", func(t *testing.T) {
+		exporter := &jumpstarterdevv1alpha1.Exporter{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-exporter",
+				Namespace:  "default",
+				Generation: 1,
+			},
+			Status: jumpstarterdevv1alpha1.ExporterStatus{
+				ExporterStatusValue: jumpstarterdevv1alpha1.ExporterStatusAvailable,
+			},
+		}
+
+		applyUnregisterStatus(exporter, "")
+
+		condition := meta.FindStatusCondition(exporter.Status.Conditions,
+			string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline))
+		if condition == nil {
+			t.Fatal("Online condition was not set")
+		}
+		if condition.Status != metav1.ConditionFalse {
+			t.Errorf("Online condition status = %v, want %v", condition.Status, metav1.ConditionFalse)
+		}
+	})
+
+	t.Run("sets Registered condition to false with message", func(t *testing.T) {
+		exporter := &jumpstarterdevv1alpha1.Exporter{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "test-exporter",
+				Namespace:  "default",
+				Generation: 1,
+			},
+		}
+
+		applyUnregisterStatus(exporter, "")
+
+		condition := meta.FindStatusCondition(exporter.Status.Conditions,
+			string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered))
+		if condition == nil {
+			t.Fatal("Registered condition was not set")
+		}
+		if condition.Status != metav1.ConditionFalse {
+			t.Errorf("Registered condition status = %v, want %v", condition.Status, metav1.ConditionFalse)
+		}
+		if condition.Reason != "Unregister" {
+			t.Errorf("Registered condition reason = %q, want %q", condition.Reason, "Unregister")
+		}
+		if condition.Message != "Exporter unregistered from the controller and became offline." {
+			t.Errorf("Registered condition message = %q, want %q", condition.Message, "Exporter unregistered from the controller and became offline.")
+		}
+	})
+}
+
 func TestSyncOnlineConditionWithStatus(t *testing.T) {
 	tests := []struct {
 		name           string
