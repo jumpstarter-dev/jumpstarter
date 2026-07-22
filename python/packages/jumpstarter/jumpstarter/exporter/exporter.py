@@ -36,6 +36,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# ReportStatus retry configuration
+_TRANSIENT_GRPC_CODES = frozenset({grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED})
+_REPORT_STATUS_MAX_RETRIES = 3
+_REPORT_STATUS_BACKOFF_BASE = 1.0
+
 
 async def _standalone_shutdown_waiter():
     """Wait forever; used so serve_standalone_tcp can be cancelled by stop()."""
@@ -348,6 +353,42 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         if self._lease_context is None:
             await self._report_status(ExporterStatus.AVAILABLE, "Exporter registered and available")
 
+    async def _send_report_status_rpc(self, request: jumpstarter_pb2.ReportStatusRequest) -> bool:
+        """Send ReportStatus RPC to the controller with retry on transient errors.
+
+        Args:
+            request: The ReportStatusRequest protobuf message to send
+
+        Returns:
+            True if the RPC succeeded (or controller doesn't support it), False otherwise
+        """
+        for attempt in range(_REPORT_STATUS_MAX_RETRIES + 1):
+            try:
+                async with self._controller_stub() as controller:
+                    await controller.ReportStatus(request)
+                return True
+            except grpc.aio.AioRpcError as e:
+                if e.code() == grpc.StatusCode.UNIMPLEMENTED:
+                    logger.warning("ReportStatus not supported by controller, status updates will be skipped")
+                    return False
+                if e.code() in _TRANSIENT_GRPC_CODES and attempt < _REPORT_STATUS_MAX_RETRIES:
+                    backoff = _REPORT_STATUS_BACKOFF_BASE * (2**attempt)
+                    logger.warning(
+                        "Transient error reporting status (attempt %d/%d), retrying in %.1fs: %s",
+                        attempt + 1,
+                        _REPORT_STATUS_MAX_RETRIES + 1,
+                        backoff,
+                        e,
+                    )
+                    await anyio.sleep(backoff)
+                    continue
+                logger.error("Failed to update status: %s", e)
+                return False
+            except Exception as e:
+                logger.error("Failed to update status: %s", e)
+                return False
+        return False
+
     async def _report_status(self, status: ExporterStatus, message: str = ""):
         """Report the exporter status with the controller and session."""
         self._exporter_status = status
@@ -361,22 +402,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             logger.debug("Updated status to %s: %s (standalone, no controller)", status, message)
             return
 
-        try:
-            async with self._controller_stub() as controller:
-                await controller.ReportStatus(
-                    jumpstarter_pb2.ReportStatusRequest(
-                        status=status.to_proto(),
-                        message=message,
-                    )
-                )
-            logger.info(f"Updated status to {status}: {message}")
-        except grpc.aio.AioRpcError as e:
-            if e.code() == grpc.StatusCode.UNIMPLEMENTED:
-                logger.warning("ReportStatus not supported by controller, status updates will be skipped")
-            else:
-                logger.error(f"Failed to update status: {e}")
-        except Exception as e:
-            logger.error(f"Failed to update status: {e}")
+        success = await self._send_report_status_rpc(
+            jumpstarter_pb2.ReportStatusRequest(
+                status=status.to_proto(),
+                message=message,
+            )
+        )
+        if success:
+            logger.info("Updated status to %s: %s", status, message)
 
     async def _request_lease_release(self):
         """Request the controller to release the current lease.
@@ -400,20 +433,17 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             self._lease_context.lease_ended.set()
             return
 
-        try:
-            async with self._controller_stub() as controller:
-                await controller.ReportStatus(
-                    jumpstarter_pb2.ReportStatusRequest(
-                        status=ExporterStatus.AVAILABLE.to_proto(),
-                        message="Lease released after afterLease hook",
-                        release_lease=True,
-                    )
-                )
+        success = await self._send_report_status_rpc(
+            jumpstarter_pb2.ReportStatusRequest(
+                status=ExporterStatus.AVAILABLE.to_proto(),
+                message="Lease released after afterLease hook",
+                release_lease=True,
+            )
+        )
+        if success:
             logger.info("Requested controller to release lease %s", self._lease_context.lease_name)
-        except Exception as e:
-            logger.error("Failed to request lease release: %s", e)
-            # Fall through - the client can still release the lease as a fallback,
-            # or the lease will eventually expire
+        else:
+            logger.error("Failed to request lease release")
 
         # Directly signal lease ended so handle_lease can exit.
         # The controller may not send another leased=False after our release request,
