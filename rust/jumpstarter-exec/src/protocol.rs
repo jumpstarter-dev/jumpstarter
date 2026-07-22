@@ -46,7 +46,7 @@ pub enum ClientMessage {
 }
 
 /// Messages sent from the serve server to the exec client.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "type")]
 pub enum ServerMessage {
     /// Child process started successfully.
@@ -59,4 +59,119 @@ pub enum ServerMessage {
     Exit { code: Option<i32> },
     /// An error occurred.
     Error { message: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_exec_roundtrip() {
+        let msg = ClientMessage::Exec {
+            argv: vec!["echo".into(), "hello".into()],
+            env: vec![("FOO".into(), "bar".into())],
+            cwd: Some("/tmp".into()),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: ClientMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ClientMessage::Exec { argv, env, cwd } => {
+                assert_eq!(argv, vec!["echo", "hello"]);
+                assert_eq!(env, vec![("FOO".to_string(), "bar".to_string())]);
+                assert_eq!(cwd, Some("/tmp".into()));
+            }
+            _ => panic!("expected Exec"),
+        }
+    }
+
+    #[test]
+    fn client_exec_defaults() {
+        let json = r#"{"type":"Exec","argv":["ls"]}"#;
+        let msg: ClientMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            ClientMessage::Exec { argv, env, cwd } => {
+                assert_eq!(argv, vec!["ls"]);
+                assert!(env.is_empty());
+                assert!(cwd.is_none());
+            }
+            _ => panic!("expected Exec"),
+        }
+    }
+
+    #[test]
+    fn client_stdin_roundtrip() {
+        let msg = ClientMessage::Stdin {
+            data: "aGVsbG8=".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: ClientMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            ClientMessage::Stdin { data } => assert_eq!(data, "aGVsbG8="),
+            _ => panic!("expected Stdin"),
+        }
+    }
+
+    #[test]
+    fn client_stdin_close_roundtrip() {
+        let json = serde_json::to_string(&ClientMessage::StdinClose).unwrap();
+        assert_eq!(json, r#"{"type":"StdinClose"}"#);
+    }
+
+    #[test]
+    fn client_signal_roundtrip() {
+        let msg = ClientMessage::Signal { signal: 15 };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"signal\":15"));
+    }
+
+    #[test]
+    fn server_started_roundtrip() {
+        let msg = ServerMessage::Started { pid: 42 };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, ServerMessage::Started { pid: 42 });
+    }
+
+    #[test]
+    fn server_exit_with_code() {
+        let msg = ServerMessage::Exit { code: Some(0) };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, ServerMessage::Exit { code: Some(0) });
+    }
+
+    #[test]
+    fn server_exit_signal_killed() {
+        let msg = ServerMessage::Exit { code: None };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, ServerMessage::Exit { code: None });
+    }
+
+    #[test]
+    fn server_error_roundtrip() {
+        let msg = ServerMessage::Error {
+            message: "boom".into(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed,
+            ServerMessage::Error {
+                message: "boom".into()
+            }
+        );
+    }
+
+    #[test]
+    fn tagged_discriminator() {
+        let json = r#"{"type":"Stdout","data":"AAAA"}"#;
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            msg,
+            ServerMessage::Stdout {
+                data: "AAAA".into()
+            }
+        );
+    }
 }

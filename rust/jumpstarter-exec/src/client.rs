@@ -12,11 +12,14 @@ pub fn exec(socket_path: &str, argv: Vec<String>) -> std::io::Result<i32> {
     let reader = BufReader::new(stream.try_clone()?);
     let writer: Arc<Mutex<UnixStream>> = Arc::new(Mutex::new(stream));
 
-    send(&writer, &ClientMessage::Exec {
-        argv,
-        env: vec![],
-        cwd: None,
-    })?;
+    send(
+        &writer,
+        &ClientMessage::Exec {
+            argv,
+            env: vec![],
+            cwd: None,
+        },
+    )?;
 
     // Forward local stdin to the remote child in a background thread.
     let w = Arc::clone(&writer);

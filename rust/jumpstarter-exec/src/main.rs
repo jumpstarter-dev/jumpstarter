@@ -1,9 +1,7 @@
-mod client;
-mod protocol;
-mod server;
-
 use std::env;
 use std::process;
+
+use jumpstarter_exec::{client, server};
 
 const DEFAULT_SOCKET: &str = "/shared/launcher.sock";
 
@@ -17,16 +15,16 @@ fn main() {
 
     match args[1].as_str() {
         "serve" => {
-            let socket = parse_option(&args[2..], "--socket")
-                .unwrap_or_else(|| DEFAULT_SOCKET.to_string());
+            let socket =
+                parse_option(&args[2..], "--socket").unwrap_or_else(|| DEFAULT_SOCKET.to_string());
             if let Err(e) = server::serve(&socket) {
                 eprintln!("jumpstarter-exec serve: {e}");
                 process::exit(1);
             }
         }
         "exec" => {
-            let socket = parse_option(&args[2..], "--socket")
-                .unwrap_or_else(|| DEFAULT_SOCKET.to_string());
+            let socket =
+                parse_option(&args[2..], "--socket").unwrap_or_else(|| DEFAULT_SOCKET.to_string());
 
             let separator = args.iter().position(|a| a == "--").unwrap_or_else(|| {
                 eprintln!("Usage: jumpstarter-exec exec [--socket <path>] -- <command> [args...]");
@@ -65,7 +63,5 @@ fn usage() {
 
 /// Parse a `--flag value` pair from a slice of arguments.
 fn parse_option(args: &[String], flag: &str) -> Option<String> {
-    args.windows(2)
-        .find(|w| w[0] == flag)
-        .map(|w| w[1].clone())
+    args.windows(2).find(|w| w[0] == flag).map(|w| w[1].clone())
 }

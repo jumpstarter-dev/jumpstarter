@@ -50,9 +50,12 @@ fn handle_connection(stream: UnixStream) -> std::io::Result<()> {
     };
 
     if argv.is_empty() {
-        send(&writer, &ServerMessage::Error {
-            message: "empty argv".into(),
-        })?;
+        send(
+            &writer,
+            &ServerMessage::Error {
+                message: "empty argv".into(),
+            },
+        )?;
         return Err(io_err("empty argv"));
     }
 
@@ -73,9 +76,12 @@ fn handle_connection(stream: UnixStream) -> std::io::Result<()> {
         Ok(c) => c,
         Err(e) => {
             let msg = format!("spawn failed: {e}");
-            let _ = send(&writer, &ServerMessage::Error {
-                message: msg.clone(),
-            });
+            let _ = send(
+                &writer,
+                &ServerMessage::Error {
+                    message: msg.clone(),
+                },
+            );
             return Err(io_err(&msg));
         }
     };
@@ -133,9 +139,12 @@ fn handle_connection(stream: UnixStream) -> std::io::Result<()> {
     let _ = stdout_handle.join();
     let _ = stderr_handle.join();
 
-    let _ = send(&writer, &ServerMessage::Exit {
-        code: status.code(),
-    });
+    let _ = send(
+        &writer,
+        &ServerMessage::Exit {
+            code: status.code(),
+        },
+    );
 
     Ok(())
 }
@@ -169,5 +178,5 @@ fn send(writer: &Mutex<UnixStream>, msg: &ServerMessage) -> std::io::Result<()> 
 }
 
 fn io_err(msg: &str) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::Other, msg)
+    std::io::Error::other(msg)
 }
