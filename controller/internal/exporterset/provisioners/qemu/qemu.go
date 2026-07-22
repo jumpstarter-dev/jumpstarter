@@ -121,57 +121,57 @@ func (p *Provisioner) RenderPod(
 			// Exporter runs as a native sidecar init container
 			// (KEP-753): starts before main containers and
 			// drains after them.
-		InitContainers: []corev1.Container{
-			{
-				Name:          "exporter",
-				Image:         DefaultExporterImage,
-				RestartPolicy: &restartAlways,
-				Command:       []string{"sh", "-c"},
-				Args: []string{
-					fmt.Sprintf(
-						"cp %s %s/jumpstarter-exec && exec sleep infinity",
-						jmpExecBinaryPath, sharedMountPath,
-					),
-				},
-				Env: []corev1.EnvVar{
-					{
-						Name:  "JUMPSTARTER_LAUNCHER_SOCKET",
-						Value: launcherSocketPath,
+			InitContainers: []corev1.Container{
+				{
+					Name:          "exporter",
+					Image:         DefaultExporterImage,
+					RestartPolicy: &restartAlways,
+					Command:       []string{"sh", "-c"},
+					Args: []string{
+						fmt.Sprintf(
+							"cp %s %s/jumpstarter-exec && exec sleep infinity",
+							jmpExecBinaryPath, sharedMountPath,
+						),
 					},
-				},
-				VolumeMounts: []corev1.VolumeMount{
-					{
-						Name:      sharedVolumeName,
-						MountPath: sharedMountPath,
+					Env: []corev1.EnvVar{
+						{
+							Name:  "JUMPSTARTER_LAUNCHER_SOCKET",
+							Value: launcherSocketPath,
+						},
 					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      sharedVolumeName,
+							MountPath: sharedMountPath,
+						},
+					},
+					// TODO: replace "sleep infinity" with the actual
+					// exporter startup command once driver config,
+					// controller endpoint, and credentials injection
+					// are implemented.
 				},
-				// TODO: replace "sleep infinity" with the actual
-				// exporter startup command once driver config,
-				// controller endpoint, and credentials injection
-				// are implemented.
 			},
-		},
 			// QEMU runtime is the main container — independent
 			// image that can be versioned separately.
 			Containers: []corev1.Container{
-			{
-				Name:  "target-runtime",
-				Image: DefaultQEMURuntimeImage,
-				VolumeMounts: []corev1.VolumeMount{
-					{
-						Name:      sharedVolumeName,
-						MountPath: sharedMountPath,
+				{
+					Name:  "target-runtime",
+					Image: DefaultQEMURuntimeImage,
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      sharedVolumeName,
+							MountPath: sharedMountPath,
+						},
 					},
+					// Command/Args are left unset so the container
+					// uses its Containerfile ENTRYPOINT/CMD, which
+					// waits for /shared/jumpstarter-exec then runs it in
+					// serve mode on the launcher socket.
+					//
+					// TODO: configure QEMU from merged
+					// parameters (CPU, memory, firmware, etc.)
 				},
-				// Command/Args are left unset so the container
-				// uses its Containerfile ENTRYPOINT/CMD, which
-				// waits for /shared/jumpstarter-exec then runs it in
-				// serve mode on the launcher socket.
-				//
-				// TODO: configure QEMU from merged
-				// parameters (CPU, memory, firmware, etc.)
 			},
-		},
 			Volumes: []corev1.Volume{
 				{
 					Name: sharedVolumeName,
