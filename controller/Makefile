@@ -5,6 +5,8 @@ IMG ?= quay.io/jumpstarter-dev/jumpstarter-controller:latest
 DOCKER_REPO = $(shell echo $(IMG) | cut -d: -f1)
 DOCKER_TAG  = $(shell echo $(IMG) | cut -d: -f2)
 EXPORTER_SET_CONTROLLER_IMG ?= quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest
+QEMU_RUNTIME_IMG ?= quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
+EXPORTER_IMG ?= quay.io/jumpstarter-dev/jumpstarter:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.30.0
 
@@ -141,6 +143,14 @@ docker-build-exporter-set-controller: ## Build docker image for the exporter-set
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		-t ${EXPORTER_SET_CONTROLLER_IMG} -f Containerfile.exporter-set-controller .
 
+.PHONY: docker-build-qemu-runtime
+docker-build-qemu-runtime: ## Build docker image for the qemu-runtime container.
+	$(CONTAINER_TOOL) build -t ${QEMU_RUNTIME_IMG} -f Containerfile.qemu-runtime .
+
+.PHONY: docker-build-exporter
+docker-build-exporter: ## Build the jumpstarter exporter image (includes jmp-exec).
+	$(CONTAINER_TOOL) build -t ${EXPORTER_IMG} -f ../python/Containerfile ..
+
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
@@ -213,6 +223,25 @@ deploy-with-operator-parallel:
 .PHONY: deploy-exporters
 deploy-exporters:
 	./hack/demoenv/prepare_exporters.sh
+
+.PHONY: deploy-exporterset
+deploy-exporterset: ## Deploy the exporter-set-controller manually (without operator). Builds images unless SKIP_BUILD=1.
+ifeq ($(SKIP_BUILD),)
+	$(MAKE) docker-build-exporter-set-controller
+	$(MAKE) docker-build-qemu-runtime
+	$(MAKE) docker-build-exporter
+endif
+	$(KUBECTL) apply -f deploy/operator/config/crd/bases/
+	$(KUBECTL) apply -f hack/deploy-exporterset-qemu.yaml
+
+.PHONY: deploy-exporterset-sample
+deploy-exporterset-sample: ## Apply the x86_64 sample VirtualTargetClass and ExporterSet.
+	$(KUBECTL) apply -f hack/sample-x86_64.yaml
+
+.PHONY: undeploy-exporterset
+undeploy-exporterset: ## Remove the manually deployed exporter-set-controller.
+	$(KUBECTL) delete --ignore-not-found=true -f hack/sample-x86_64.yaml
+	$(KUBECTL) delete --ignore-not-found=true -f hack/deploy-exporterset-qemu.yaml
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
