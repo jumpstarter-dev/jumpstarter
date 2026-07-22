@@ -1,13 +1,16 @@
+import logging
 import os
 from contextlib import ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 
 from anyio.from_thread import start_blocking_portal
+from pydantic import ValidationError
 
 from jumpstarter.client import client_from_path
 from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
 from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
 from jumpstarter.config.env import (
+    JMP_DRIVERS_ALLOW,
     JMP_EXPORTER,
     JMP_EXPORTER_LABELS,
     JMP_GRPC_INSECURE,
@@ -16,6 +19,8 @@ from jumpstarter.config.env import (
     JUMPSTARTER_GRPC_INSECURE,
     JUMPSTARTER_HOST,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -44,6 +49,27 @@ class ExporterMetadata:
         return cls(name=name, labels=labels, lease=lease)
 
 
+def _resolve_drivers_config() -> ClientConfigV1Alpha1Drivers:
+    """Resolve driver settings from env vars or the current client config.
+
+    Env vars (JMP_DRIVERS_ALLOW / JMP_DRIVERS_UNSAFE) take precedence.
+    Falls back to the active client config's driver settings, then defaults.
+    """
+    if os.environ.get(JMP_DRIVERS_ALLOW) or os.environ.get("JMP_DRIVERS_UNSAFE"):
+        return ClientConfigV1Alpha1Drivers()
+
+    try:
+        from jumpstarter.config.user import UserConfigV1Alpha1
+
+        user_config = UserConfigV1Alpha1.load()
+        if user_config.config.current_client is not None:
+            return user_config.config.current_client.drivers
+    except (FileNotFoundError, ValueError, ValidationError):
+        logger.debug("No client config found, using default driver settings")
+
+    return ClientConfigV1Alpha1Drivers()
+
+
 @asynccontextmanager
 async def env_async(portal, stack):
     """Provide a client for an existing JUMPSTARTER_HOST environment variable.
@@ -57,7 +83,7 @@ async def env_async(portal, stack):
     if host is None:
         raise EnvironmentVariableNotSetError(f"{JUMPSTARTER_HOST} not set")
 
-    drivers = ClientConfigV1Alpha1Drivers()
+    drivers = _resolve_drivers_config()
 
     insecure = os.environ.get(JMP_GRPC_INSECURE, "") == "1" or os.environ.get(JUMPSTARTER_GRPC_INSECURE, "") == "1"
     passphrase = os.environ.get(JMP_GRPC_PASSPHRASE) or None
