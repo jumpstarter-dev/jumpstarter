@@ -279,3 +279,157 @@ def test_login_maps_ssl_cert_error_during_oidc_to_friendly_message(monkeypatch) 
     assert result.exit_code != 0
     assert "TLS certificate validation failed" in result.output
     assert "Traceback" not in result.output
+
+
+def test_login_uses_device_flow_when_flag_is_passed(monkeypatch) -> None:
+    """When --device-flow is passed, device_authorization_grant is called instead of authorization_code_grant."""
+    auth_config = {
+        "grpcEndpoint": "grpc.example.com:443",
+        "namespace": "default",
+        "oidc": [{"issuer": "https://auth.example.com", "clientId": "test-client"}],
+    }
+
+    async def fake_fetch_auth_config(*args, **kwargs):
+        return auth_config
+
+    device_flow_called = False
+    auth_code_called = False
+
+    class FakeOidcConfig:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def device_authorization_grant(self):
+            nonlocal device_flow_called
+            device_flow_called = True
+            return {"access_token": "test-token"}
+
+        async def authorization_code_grant(self, **kwargs):
+            nonlocal auth_code_called
+            auth_code_called = True
+            return {"access_token": "test-token"}
+
+    monkeypatch.setattr("jumpstarter_cli.login.fetch_auth_config", fake_fetch_auth_config)
+    monkeypatch.setattr("jumpstarter_cli.login.Config", FakeOidcConfig)
+
+    runner = CliRunner()
+    runner.invoke(
+        jmp,
+        [
+            "login",
+            "test-client@login.example.com",
+            "--client-config",
+            "/tmp/nonexistent-client.yaml",
+            "--nointeractive",
+            "--unsafe",
+            "--device-flow",
+        ],
+    )
+
+    assert device_flow_called is True
+    assert auth_code_called is False
+
+
+def test_login_uses_device_flow_when_env_var_is_set(monkeypatch) -> None:
+    """When JMP_OIDC_DEVICE_FLOW=1, device_authorization_grant is called automatically."""
+    auth_config = {
+        "grpcEndpoint": "grpc.example.com:443",
+        "namespace": "default",
+        "oidc": [{"issuer": "https://auth.example.com", "clientId": "test-client"}],
+    }
+
+    async def fake_fetch_auth_config(*args, **kwargs):
+        return auth_config
+
+    device_flow_called = False
+    auth_code_called = False
+
+    class FakeOidcConfig:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def device_authorization_grant(self):
+            nonlocal device_flow_called
+            device_flow_called = True
+            return {"access_token": "test-token"}
+
+        async def authorization_code_grant(self, **kwargs):
+            nonlocal auth_code_called
+            auth_code_called = True
+            return {"access_token": "test-token"}
+
+    monkeypatch.setattr("jumpstarter_cli.login.fetch_auth_config", fake_fetch_auth_config)
+    monkeypatch.setattr("jumpstarter_cli.login.Config", FakeOidcConfig)
+    monkeypatch.setenv("JMP_OIDC_DEVICE_FLOW", "1")
+
+    runner = CliRunner()
+    runner.invoke(
+        jmp,
+        [
+            "login",
+            "test-client@login.example.com",
+            "--client-config",
+            "/tmp/nonexistent-client.yaml",
+            "--nointeractive",
+            "--unsafe",
+        ],
+    )
+
+    assert device_flow_called is True
+    assert auth_code_called is False
+
+
+def test_login_uses_auth_code_flow_without_device_flow_signals(monkeypatch) -> None:
+    """Without --device-flow or JMP_OIDC_DEVICE_FLOW, authorization_code_grant is used (no regression)."""
+    auth_config = {
+        "grpcEndpoint": "grpc.example.com:443",
+        "namespace": "default",
+        "oidc": [{"issuer": "https://auth.example.com", "clientId": "test-client"}],
+    }
+
+    async def fake_fetch_auth_config(*args, **kwargs):
+        return auth_config
+
+    device_flow_called = False
+    auth_code_called = False
+
+    class FakeOidcConfig:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def device_authorization_grant(self):
+            nonlocal device_flow_called
+            device_flow_called = True
+            return {"access_token": "test-token"}
+
+        async def authorization_code_grant(self, **kwargs):
+            nonlocal auth_code_called
+            auth_code_called = True
+            return {"access_token": "test-token"}
+
+    monkeypatch.setattr("jumpstarter_cli.login.fetch_auth_config", fake_fetch_auth_config)
+    monkeypatch.setattr("jumpstarter_cli.login.Config", FakeOidcConfig)
+    monkeypatch.delenv("JMP_OIDC_DEVICE_FLOW", raising=False)
+
+    runner = CliRunner()
+    runner.invoke(
+        jmp,
+        [
+            "login",
+            "test-client@login.example.com",
+            "--client-config",
+            "/tmp/nonexistent-client.yaml",
+            "--nointeractive",
+            "--unsafe",
+        ],
+    )
+
+    assert auth_code_called is True
+    assert device_flow_called is False
+
+
+def test_env_py_contains_jmp_oidc_device_flow_constant() -> None:
+    """The JMP_OIDC_DEVICE_FLOW constant must exist in env.py."""
+    from jumpstarter.config.env import JMP_OIDC_DEVICE_FLOW
+
+    assert JMP_OIDC_DEVICE_FLOW == "JMP_OIDC_DEVICE_FLOW"
