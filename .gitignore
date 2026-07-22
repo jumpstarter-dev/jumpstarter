@@ -21,7 +21,7 @@ dist/
 build/
 
 # Rust
-rust/jumpstarter-exec/target/
+rust/target/
 
 # Editor/IDE
 .vscode/

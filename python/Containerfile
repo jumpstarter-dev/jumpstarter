@@ -35,9 +35,9 @@ FROM registry.access.redhat.com/ubi10/ubi:latest AS rust-builder
 RUN dnf install -y rust-toolset && \
     dnf clean all && \
     rm -rf /var/cache/dnf
-COPY rust/jumpstarter-exec/ /src/jumpstarter-exec/
-WORKDIR /src/jumpstarter-exec
-RUN cargo build --release
+COPY rust/ /src/rust/
+WORKDIR /src/rust
+RUN cargo build --release -p jumpstarter-exec
 
 FROM builder AS wheels
 ADD . /src
@@ -47,5 +47,5 @@ FROM product
 RUN --mount=from=wheels,source=/src/python/dist,target=/dist \
     uv venv /jumpstarter && \
     VIRTUAL_ENV=/jumpstarter uv pip install /dist/*.whl
-COPY --from=rust-builder /src/jumpstarter-exec/target/release/jumpstarter-exec /jumpstarter/bin/jumpstarter-exec
+COPY --from=rust-builder /src/rust/target/release/jumpstarter-exec /jumpstarter/bin/jumpstarter-exec
 ENV PATH="/jumpstarter/bin:$PATH"
