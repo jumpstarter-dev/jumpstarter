@@ -261,7 +261,9 @@ class QemuPower(PowerInterface, Driver):
             "-vga",
             "none",
             "-serial",
-            "pty",
+            f"unix:{self.parent._serial_socket},server=on,wait=off"
+            if self.parent.launcher_socket
+            else "pty",
             "-netdev",
             ",".join(
                 ["user", "id=eth0"]
@@ -299,7 +301,7 @@ class QemuPower(PowerInterface, Driver):
 
         if root.exists():
             proc = await run_process(
-                ["qemu-img", "info", "--output=json", str(root)],
+                self.parent._wrap_command(["qemu-img", "info", "--output=json", str(root)]),
                 stdout=PIPE,
                 stderr=PIPE,
             )
@@ -338,7 +340,7 @@ class QemuPower(PowerInterface, Driver):
                 if requested > current_virtual_size:
                     self.logger.info(f"Resizing disk to {ByteSize(requested).human_readable()}")
                     proc = await run_process(
-                        ["qemu-img", "resize", str(root), str(requested)],
+                        self.parent._wrap_command(["qemu-img", "resize", str(root), str(requested)]),
                         stdout=PIPE,
                         stderr=PIPE,
                     )
@@ -361,7 +363,7 @@ class QemuPower(PowerInterface, Driver):
             "virtio-blk-pci,drive=cidata",
         ]
 
-        self._process = Popen(cmdline, stdin=PIPE)
+        self._process = Popen(self.parent._wrap_command(cmdline), stdin=PIPE)
 
         qmp = QMPClient(self.parent.hostname)
 
@@ -376,10 +378,11 @@ class QemuPower(PowerInterface, Driver):
                 except ConnectError:
                     await sleep(0.5)
 
-        chardevs = await qmp.execute("query-chardev")
-        pty = next(c for c in chardevs if c["label"] == "serial0")["filename"].lstrip("pty:")
-        Path(self.parent._pty).unlink(missing_ok=True)
-        Path(self.parent._pty).symlink_to(pty)
+        if not self.parent.launcher_socket:
+            chardevs = await qmp.execute("query-chardev")
+            pty = next(c for c in chardevs if c["label"] == "serial0")["filename"].lstrip("pty:")
+            Path(self.parent._pty).unlink(missing_ok=True)
+            Path(self.parent._pty).symlink_to(pty)
 
         await qmp.execute("system_reset")
         await qmp.disconnect()
@@ -441,6 +444,11 @@ class Qemu(Driver):
     fls_custom_binary_url: str | None = field(default=None)
     flash_timeout: int = field(default=30 * 60)  # 30 minutes
 
+    # Sidecar mode: path to the jmp-exec launcher socket.
+    # When set, commands are executed remotely in the runtime
+    # container via jmp-exec over this Unix socket.
+    launcher_socket: str | None = None
+
     _tmp_dir: TemporaryDirectory = field(init=False, default_factory=TemporaryDirectory)
 
     @classmethod
@@ -456,7 +464,12 @@ class Qemu(Driver):
 
         self.children["power"] = QemuPower(parent=self)
         self.children["flasher"] = QemuFlasher(parent=self)
-        self.children["console"] = PySerial(url=self._pty, check_present=False)
+
+        if self.launcher_socket:
+            self.children["console"] = UnixNetwork(path=self._serial_socket)
+        else:
+            self.children["console"] = PySerial(url=self._pty, check_present=False)
+
         self.children["vnc"] = UnixNetwork(path=self._vnc)
 
         if _vsock_available():
@@ -468,16 +481,35 @@ class Qemu(Driver):
                     self.children[k] = TcpNetwork(host=v.hostaddr, port=v.hostport)
 
     @property
+    def _work_dir(self) -> str:
+        if self.launcher_socket:
+            return "/shared"
+        return self._tmp_dir.name
+
+    @property
     def _pty(self) -> str:
-        return str(Path(self._tmp_dir.name) / "pty")
+        return str(Path(self._work_dir) / "pty")
+
+    @property
+    def _serial_socket(self) -> str:
+        return str(Path(self._work_dir) / "serial.sock")
 
     @property
     def _vnc(self) -> str:
-        return str(Path(self._tmp_dir.name) / "vnc")
+        return str(Path(self._work_dir) / "vnc")
 
     @property
     def _qmp(self) -> str:
-        return str(Path(self._tmp_dir.name) / "qmp")
+        return str(Path(self._work_dir) / "qmp")
+
+    def _wrap_command(self, cmd: list[str]) -> list[str]:
+        """Wrap a command with jmp-exec for remote execution in sidecar mode."""
+        if self.launcher_socket:
+            return [
+                str(Path(self._work_dir) / "jmp-exec"),
+                "exec", "--socket", self.launcher_socket, "--",
+            ] + cmd
+        return cmd
 
     @cached_property
     def _cid(self) -> int:
@@ -490,13 +522,13 @@ class Qemu(Driver):
     ) -> Path:
         match partition:
             case "root" | None:
-                path = Path(self._tmp_dir.name) / "root"
+                path = Path(self._work_dir) / "root"
             case "OVMF_CODE.fd":
-                path = Path(self._tmp_dir.name) / "OVMF_CODE.fd"
+                path = Path(self._work_dir) / "OVMF_CODE.fd"
             case "OVMF_VARS.fd":
-                path = Path(self._tmp_dir.name) / "OVMF_VARS.fd"
+                path = Path(self._work_dir) / "OVMF_VARS.fd"
             case "bios":
-                path = Path(self._tmp_dir.name) / "bios"
+                path = Path(self._work_dir) / "bios"
             case _:
                 raise ValueError(f"invalid partition name: {partition}")
 
