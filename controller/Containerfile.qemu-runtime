@@ -2,6 +2,10 @@
 # Provides QEMU tools for running virtual machines as part of
 # the sidecar pattern (paired with the jumpstarter exporter).
 #
+# At startup, waits for the exporter init container to copy
+# jmp-exec to /shared/, then runs it in serve mode to accept
+# remote command execution requests over a Unix socket.
+#
 # Uses Fedora as the base image because QEMU packages are not
 # available in UBI-minimal repositories.
 FROM registry.fedoraproject.org/fedora-minimal:44
@@ -13,7 +17,9 @@ RUN dnf install --setopt=install_weak_deps=False -y \
         virtiofsd && \
     dnf clean all
 
+COPY scripts/wait-for-binary.sh /usr/local/bin/wait-for-binary.sh
+
 USER 65532:65532
 
-# No ENTRYPOINT — the exporter sidecar will manage QEMU
-# lifecycle via a launcher/wrapper on the shared volume.
+ENTRYPOINT ["/usr/local/bin/wait-for-binary.sh"]
+CMD ["/shared/jmp-exec", "serve", "--socket", "/shared/launcher.sock"]
