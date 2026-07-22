@@ -20,7 +20,7 @@ fn main() {
             let socket = parse_option(&args[2..], "--socket")
                 .unwrap_or_else(|| DEFAULT_SOCKET.to_string());
             if let Err(e) = server::serve(&socket) {
-                eprintln!("jmp-exec serve: {e}");
+                eprintln!("jumpstarter-exec serve: {e}");
                 process::exit(1);
             }
         }
@@ -29,26 +29,26 @@ fn main() {
                 .unwrap_or_else(|| DEFAULT_SOCKET.to_string());
 
             let separator = args.iter().position(|a| a == "--").unwrap_or_else(|| {
-                eprintln!("Usage: jmp-exec exec [--socket <path>] -- <command> [args...]");
+                eprintln!("Usage: jumpstarter-exec exec [--socket <path>] -- <command> [args...]");
                 process::exit(1);
             });
 
             let argv: Vec<String> = args[separator + 1..].to_vec();
             if argv.is_empty() {
-                eprintln!("jmp-exec exec: no command specified after '--'");
+                eprintln!("jumpstarter-exec exec: no command specified after '--'");
                 process::exit(1);
             }
 
             match client::exec(&socket, argv) {
                 Ok(code) => process::exit(code),
                 Err(e) => {
-                    eprintln!("jmp-exec exec: {e}");
+                    eprintln!("jumpstarter-exec exec: {e}");
                     process::exit(1);
                 }
             }
         }
         other => {
-            eprintln!("jmp-exec: unknown subcommand '{other}'");
+            eprintln!("jumpstarter-exec: unknown subcommand '{other}'");
             usage();
             process::exit(1);
         }
@@ -56,7 +56,7 @@ fn main() {
 }
 
 fn usage() {
-    eprintln!("Usage: jmp-exec <serve|exec> [options]");
+    eprintln!("Usage: jumpstarter-exec <serve|exec> [options]");
     eprintln!();
     eprintln!("Subcommands:");
     eprintln!("  serve [--socket <path>]                 Listen for exec requests");

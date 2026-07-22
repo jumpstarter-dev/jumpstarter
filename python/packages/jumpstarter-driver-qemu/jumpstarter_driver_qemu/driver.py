@@ -444,9 +444,9 @@ class Qemu(Driver):
     fls_custom_binary_url: str | None = field(default=None)
     flash_timeout: int = field(default=30 * 60)  # 30 minutes
 
-    # Sidecar mode: path to the jmp-exec launcher socket.
+    # Sidecar mode: path to the jumpstarter-exec launcher socket.
     # When set, commands are executed remotely in the runtime
-    # container via jmp-exec over this Unix socket.
+    # container via jumpstarter-exec over this Unix socket.
     launcher_socket: str | None = None
 
     _tmp_dir: TemporaryDirectory = field(init=False, default_factory=TemporaryDirectory)
@@ -503,10 +503,10 @@ class Qemu(Driver):
         return str(Path(self._work_dir) / "qmp")
 
     def _wrap_command(self, cmd: list[str]) -> list[str]:
-        """Wrap a command with jmp-exec for remote execution in sidecar mode."""
+        """Wrap a command with jumpstarter-exec for remote execution in sidecar mode."""
         if self.launcher_socket:
             return [
-                str(Path(self._work_dir) / "jmp-exec"),
+                str(Path(self._work_dir) / "jumpstarter-exec"),
                 "exec", "--socket", self.launcher_socket, "--",
             ] + cmd
         return cmd

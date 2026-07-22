@@ -15,18 +15,18 @@ extern "C" {
 pub fn serve(socket_path: &str) -> std::io::Result<()> {
     let _ = std::fs::remove_file(socket_path);
     let listener = UnixListener::bind(socket_path)?;
-    eprintln!("jmp-exec: listening on {socket_path}");
+    eprintln!("jumpstarter-exec: listening on {socket_path}");
 
     for stream in listener.incoming() {
         match stream {
             Ok(s) => {
                 thread::spawn(move || {
                     if let Err(e) = handle_connection(s) {
-                        eprintln!("jmp-exec: connection error: {e}");
+                        eprintln!("jumpstarter-exec: connection error: {e}");
                     }
                 });
             }
-            Err(e) => eprintln!("jmp-exec: accept error: {e}"),
+            Err(e) => eprintln!("jumpstarter-exec: accept error: {e}"),
         }
     }
     Ok(())

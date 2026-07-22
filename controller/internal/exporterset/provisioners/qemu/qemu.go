@@ -53,11 +53,11 @@ const (
 	// container cannot exhaust node ephemeral storage.
 	sharedVolumeSizeLimit = "100Mi"
 
-	// jmpExecBinaryPath is the location of jmp-exec inside the
-	// exporter image (installed by the Rust builder stage).
-	jmpExecBinaryPath = "/jumpstarter/bin/jmp-exec"
+	// jmpExecBinaryPath is the location of jumpstarter-exec inside
+	// the exporter image (installed by the Rust builder stage).
+	jmpExecBinaryPath = "/jumpstarter/bin/jumpstarter-exec"
 
-	// launcherSocketPath is the Unix socket used by jmp-exec
+	// launcherSocketPath is the Unix socket used by jumpstarter-exec
 	// for remote command execution between the exporter and
 	// the QEMU runtime container.
 	launcherSocketPath = "/shared/launcher.sock"
@@ -129,7 +129,7 @@ func (p *Provisioner) RenderPod(
 				Command:       []string{"sh", "-c"},
 				Args: []string{
 					fmt.Sprintf(
-						"cp %s %s/jmp-exec && exec sleep infinity",
+						"cp %s %s/jumpstarter-exec && exec sleep infinity",
 						jmpExecBinaryPath, sharedMountPath,
 					),
 				},
@@ -165,7 +165,7 @@ func (p *Provisioner) RenderPod(
 				},
 				// Command/Args are left unset so the container
 				// uses its Containerfile ENTRYPOINT/CMD, which
-				// waits for /shared/jmp-exec then runs it in
+				// waits for /shared/jumpstarter-exec then runs it in
 				// serve mode on the launcher socket.
 				//
 				// TODO: configure QEMU from merged

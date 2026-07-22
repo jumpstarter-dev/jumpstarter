@@ -1,4 +1,4 @@
-// NDJSON protocol messages for jmp-exec.
+// NDJSON protocol messages for jumpstarter-exec.
 //
 // Communication between the exec client and the serve server uses
 // newline-delimited JSON (NDJSON) over a Unix stream socket.

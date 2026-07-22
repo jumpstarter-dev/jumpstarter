@@ -67,7 +67,7 @@ pub fn exec(socket_path: &str, argv: Vec<String>) -> std::io::Result<i32> {
                 break;
             }
             ServerMessage::Error { message } => {
-                eprintln!("jmp-exec: server error: {message}");
+                eprintln!("jumpstarter-exec: server error: {message}");
                 break;
             }
         }

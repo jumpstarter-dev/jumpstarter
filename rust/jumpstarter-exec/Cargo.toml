@@ -1,5 +1,5 @@
 [package]
-name = "jmp-exec"
+name = "jumpstarter-exec"
 version = "0.1.0"
 edition = "2021"
 description = "Remote command execution bridge for the jumpstarter sidecar pattern"
