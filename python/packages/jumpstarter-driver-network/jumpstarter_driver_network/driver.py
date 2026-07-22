@@ -75,6 +75,8 @@ def _format_address(host: str, port: int) -> str:
 
 
 class NetworkInterface(metaclass=ABCMeta):
+    driver_type = "network"
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_network.client.NetworkClient"

@@ -149,6 +149,7 @@ class Lease(BaseModel):
     selector: str
     exporter_name: str | None = None
     tags: dict[str, str] = Field(default_factory=dict)
+    context: dict[str, str] = Field(default_factory=dict)
     duration: timedelta
     effective_duration: timedelta | None = None
     begin_time: datetime | None = None
@@ -205,6 +206,7 @@ class Lease(BaseModel):
             selector=data.selector,
             exporter_name=data.exporter_name if data.exporter_name else None,
             tags=dict(data.tags) if data.tags else {},
+            context=dict(data.context) if data.context else {},
             duration=data.duration.ToTimedelta(),
             effective_duration=effective_duration,
             begin_time=begin_time,
@@ -498,6 +500,7 @@ class ClientService:
         lease_id: str | None = None,
         tags: dict[str, str] | None = None,
         allow_disabled: bool = False,
+        context: dict[str, str] | None = None,
     ):
         duration_pb = duration_pb2.Duration()
         duration_pb.FromTimedelta(duration)
@@ -512,6 +515,10 @@ class ClientService:
         if tags:
             for k, v in tags.items():
                 lease_pb.tags[k] = v
+
+        if context:
+            for k, v in context.items():
+                lease_pb.context[k] = v
 
         if begin_time:
             timestamp_pb = timestamp_pb2.Timestamp()

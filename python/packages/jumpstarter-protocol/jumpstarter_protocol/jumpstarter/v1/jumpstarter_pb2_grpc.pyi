@@ -122,22 +122,6 @@ _ControllerServiceDialType = typing_extensions.TypeVar(
     ],
 )
 
-_ControllerServiceAuditStreamType = typing_extensions.TypeVar(
-    '_ControllerServiceAuditStreamType',
-    grpc.StreamUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.AuditStreamRequest,
-        google.protobuf.empty_pb2.Empty,
-    ],
-    grpc.aio.StreamUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.AuditStreamRequest,
-        google.protobuf.empty_pb2.Empty,
-    ],
-    default=grpc.StreamUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.AuditStreamRequest,
-        google.protobuf.empty_pb2.Empty,
-    ],
-)
-
 _ControllerServiceGetLeaseType = typing_extensions.TypeVar(
     '_ControllerServiceGetLeaseType',
     grpc.UnaryUnaryMultiCallable[
@@ -202,7 +186,7 @@ _ControllerServiceListLeasesType = typing_extensions.TypeVar(
     ],
 )
 
-class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _ControllerServiceUnregisterType, _ControllerServiceReportStatusType, _ControllerServiceListenType, _ControllerServiceStatusType, _ControllerServiceDialType, _ControllerServiceAuditStreamType, _ControllerServiceGetLeaseType, _ControllerServiceRequestLeaseType, _ControllerServiceReleaseLeaseType, _ControllerServiceListLeasesType]):
+class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _ControllerServiceUnregisterType, _ControllerServiceReportStatusType, _ControllerServiceListenType, _ControllerServiceStatusType, _ControllerServiceDialType, _ControllerServiceGetLeaseType, _ControllerServiceRequestLeaseType, _ControllerServiceReleaseLeaseType, _ControllerServiceListLeasesType]):
     """A service where an exporter can connect to make itself available."""
 
     @typing.overload
@@ -230,10 +214,6 @@ class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _Cont
         grpc.UnaryUnaryMultiCallable[
             jumpstarter.v1.jumpstarter_pb2.DialRequest,
             jumpstarter.v1.jumpstarter_pb2.DialResponse,
-        ],
-        grpc.StreamUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.AuditStreamRequest,
-            google.protobuf.empty_pb2.Empty,
         ],
         grpc.UnaryUnaryMultiCallable[
             jumpstarter.v1.jumpstarter_pb2.GetLeaseRequest,
@@ -279,10 +259,6 @@ class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _Cont
             jumpstarter.v1.jumpstarter_pb2.DialRequest,
             jumpstarter.v1.jumpstarter_pb2.DialResponse,
         ],
-        grpc.aio.StreamUnaryMultiCallable[
-            jumpstarter.v1.jumpstarter_pb2.AuditStreamRequest,
-            google.protobuf.empty_pb2.Empty,
-        ],
         grpc.aio.UnaryUnaryMultiCallable[
             jumpstarter.v1.jumpstarter_pb2.GetLeaseRequest,
             jumpstarter.v1.jumpstarter_pb2.GetLeaseResponse,
@@ -326,11 +302,6 @@ class ControllerServiceStub(typing.Generic[_ControllerServiceRegisterType, _Cont
     Leases are checked before token issuance.
     """
 
-    AuditStream: _ControllerServiceAuditStreamType
-    """Stream audit events from the exporters.
-    Audit events are used to track the exporter activity.
-    """
-
     GetLease: _ControllerServiceGetLeaseType
     """Retrieve a lease by name."""
 
@@ -367,10 +338,6 @@ ControllerServiceAsyncStub: typing_extensions.TypeAlias = ControllerServiceStub[
     grpc.aio.UnaryUnaryMultiCallable[
         jumpstarter.v1.jumpstarter_pb2.DialRequest,
         jumpstarter.v1.jumpstarter_pb2.DialResponse,
-    ],
-    grpc.aio.StreamUnaryMultiCallable[
-        jumpstarter.v1.jumpstarter_pb2.AuditStreamRequest,
-        google.protobuf.empty_pb2.Empty,
     ],
     grpc.aio.UnaryUnaryMultiCallable[
         jumpstarter.v1.jumpstarter_pb2.GetLeaseRequest,
@@ -446,16 +413,6 @@ class ControllerServiceServicer(metaclass=abc.ABCMeta):
         """Dial an exporter through the router.
         Returns a stream token for connecting to the desired exporter.
         Leases are checked before token issuance.
-        """
-
-    @abc.abstractmethod
-    def AuditStream(
-        self,
-        request_iterator: _MaybeAsyncIterator[jumpstarter.v1.jumpstarter_pb2.AuditStreamRequest],
-        context: _ServicerContext,
-    ) -> typing.Union[google.protobuf.empty_pb2.Empty, collections.abc.Awaitable[google.protobuf.empty_pb2.Empty]]:
-        """Stream audit events from the exporters.
-        Audit events are used to track the exporter activity.
         """
 
     @abc.abstractmethod

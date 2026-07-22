@@ -32,18 +32,21 @@ def _opt_log_level_callback(ctx, param, value):
     traceback.install()
     # there is no way to determine if the command is invoked for jmp run or something else at this
     # point based on ctx and params, so we just look at sys.argv
-    if len(sys.argv) > 1 and sys.argv[1] == "run":
-        # on a exporter run we don't want to use RichHandler for logs, just plain logs for the system journal
-        basicConfig = partial(logging.basicConfig)
+    if "run" in sys.argv[1:]:
+        # Exporter run: use structured logging (JSON in production, text in dev)
+        from jumpstarter.logging import setup_logging
+
+        level = logging.getLevelName(value.upper()) if value else logging.INFO
+        setup_logging(component="exporter", log_format=_log_format_value, level=level)
     else:
         handler = RichHandler(show_path=False)
         handler.setFormatter(SourcePrefixFormatter())
         basicConfig = partial(logging.basicConfig, handlers=[handler])
 
-    if value:
-        basicConfig(level=value.upper())
-    else:
-        basicConfig(level=logging.INFO)
+        if value:
+            basicConfig(level=value.upper())
+        else:
+            basicConfig(level=logging.INFO)
 
 
 opt_log_level = click.option(
@@ -53,6 +56,25 @@ opt_log_level = click.option(
     help="Set the log level",
     expose_value=False,
     callback=_opt_log_level_callback,
+)
+
+_log_format_value: str = "auto"
+
+
+def _opt_log_format_callback(ctx, param, value):
+    global _log_format_value
+    _log_format_value = value or "auto"
+
+
+opt_log_format = click.option(
+    "--log-format",
+    "log_format",
+    type=click.Choice(["auto", "json", "text"]),
+    default="auto",
+    help="Log output format: auto (JSON if not TTY), json, or text. Only affects 'jmp run'.",
+    expose_value=False,
+    is_eager=True,
+    callback=_opt_log_format_callback,
 )
 
 

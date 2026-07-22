@@ -2167,3 +2167,71 @@ func TestRouterAuthenticateValidToken(t *testing.T) {
 		t.Errorf("expected subject 'stream-e2e-unit', got %q", subject)
 	}
 }
+
+func TestStatusResponseIncludesLeaseContext(t *testing.T) {
+	const testLease = "test-lease"
+	const testClient = "ci-client"
+
+	t.Run("context from lease spec is included in StatusResponse", func(t *testing.T) {
+		leaseContext := map[string]string{
+			"build_id":     "nightly-42",
+			"image_digest": "sha256:deadbeef",
+		}
+
+		leaseName := testLease
+		clientName := testClient
+
+		response := pb.StatusResponse{
+			Leased:     true,
+			LeaseName:  &leaseName,
+			ClientName: &clientName,
+			Context:    leaseContext,
+		}
+
+		if !response.Leased {
+			t.Fatal("expected leased to be true")
+		}
+		if response.GetLeaseName() != testLease {
+			t.Fatalf("expected lease_name %q, got %q", testLease, response.GetLeaseName())
+		}
+		if response.GetClientName() != testClient {
+			t.Fatalf("expected client_name %q, got %q", testClient, response.GetClientName())
+		}
+		if len(response.Context) != 2 {
+			t.Fatalf("expected 2 context entries, got %d", len(response.Context))
+		}
+		if response.Context["build_id"] != "nightly-42" {
+			t.Fatalf("expected build_id 'nightly-42', got %q", response.Context["build_id"])
+		}
+		if response.Context["image_digest"] != "sha256:deadbeef" {
+			t.Fatalf("expected image_digest 'sha256:deadbeef', got %q", response.Context["image_digest"])
+		}
+	})
+
+	t.Run("nil context when lease has no context", func(t *testing.T) {
+		leaseName := testLease
+		clientName := testClient
+		var leaseContext map[string]string
+
+		response := pb.StatusResponse{
+			Leased:     true,
+			LeaseName:  &leaseName,
+			ClientName: &clientName,
+			Context:    leaseContext,
+		}
+
+		if len(response.Context) != 0 {
+			t.Fatalf("expected empty context, got %d entries", len(response.Context))
+		}
+	})
+
+	t.Run("no context when not leased", func(t *testing.T) {
+		response := pb.StatusResponse{
+			Leased: false,
+		}
+
+		if response.Context != nil {
+			t.Fatalf("expected nil context when not leased, got %v", response.Context)
+		}
+	})
+}

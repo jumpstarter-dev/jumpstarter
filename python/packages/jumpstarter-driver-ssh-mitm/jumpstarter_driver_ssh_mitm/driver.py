@@ -211,6 +211,8 @@ class SSHMITM(Driver):
     connections. It is designed to be used as a child of SSHWrapper.
     """
 
+    driver_type = "network"
+
     default_username: str = ""
     ssh_identity: str | None = None
     ssh_identity_file: str | None = None

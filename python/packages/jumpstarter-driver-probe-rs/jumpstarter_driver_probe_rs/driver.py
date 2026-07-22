@@ -12,6 +12,8 @@ from jumpstarter.driver import Driver, export
 class ProbeRs(Driver):
     """probe-rs driver for Jumpstarter"""
 
+    driver_type = "debug"
+
     probe: str | None = None
     probe_rs_path: str = "probe-rs"
     chip: str | None = None

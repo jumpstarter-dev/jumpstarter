@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://jumpstarter.dev/schemas/log-entry.json",
+  "title": "Jumpstarter Structured Log Entry",
+  "description": "Schema for structured JSON log lines emitted by Jumpstarter long-running services (controller, router, exporter). One JSON object per line (JSONL format).",
+  "type": "object",
+  "required": ["ts", "level", "msg", "component"],
+  "properties": {
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp with timezone (UTC). Example: 2026-07-01T10:15:30.123456Z"
+    },
+    "level": {
+      "type": "string",
+      "enum": ["debug", "info", "warning", "error", "critical"],
+      "description": "Log severity level (always lowercase)."
+    },
+    "msg": {
+      "type": "string",
+      "description": "Human-readable log message."
+    },
+    "component": {
+      "type": "string",
+      "enum": ["controller", "router", "exporter", "cli", "telemetry"],
+      "description": "Service component that emitted this log line."
+    },
+    "logger": {
+      "type": "string",
+      "description": "Python logger name (e.g. 'jumpstarter.exporter.session'). Present in Python services only."
+    },
+    "lease_id": {
+      "type": "string",
+      "description": "Kubernetes Lease resource name. Present when a lease is active."
+    },
+    "exporter": {
+      "type": "string",
+      "description": "Exporter name (from jumpstarter.dev/name label or Kubernetes resource name)."
+    },
+    "client": {
+      "type": "string",
+      "description": "Client identity (Kubernetes Client resource name or token subject)."
+    },
+    "operation": {
+      "type": "string",
+      "description": "Driver operation method name (e.g. 'flash', 'on', 'off', 'dump', 'connect'). Present in operation start/end log lines."
+    },
+    "result": {
+      "type": "string",
+      "enum": ["success", "failure"],
+      "description": "Operation outcome. Present only in operation completion log lines."
+    },
+    "driver_type": {
+      "type": "string",
+      "enum": ["power", "storage", "network", "serial", "console", "video", "composite", "other"],
+      "description": "Category of the driver that performed the operation."
+    },
+    "error_type": {
+      "type": "string",
+      "enum": ["not_implemented", "validation_error", "timeout", "connection_error", "device_error", "internal_error"],
+      "description": "Failure classification. Present only on operation failure log lines."
+    },
+    "namespace": {
+      "type": "string",
+      "description": "Kubernetes namespace in which the service is running. Auto-detected from environment or service account."
+    }
+  },
+  "additionalProperties": true
+}

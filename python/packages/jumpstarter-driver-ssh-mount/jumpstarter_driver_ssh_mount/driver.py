@@ -8,6 +8,8 @@ from jumpstarter.driver import Driver
 class SSHMount(Driver):
     """SSHFS mount driver. Requires an 'ssh' child (SSHWrapper) with a 'tcp' sub-child."""
 
+    driver_type = "network"
+
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()

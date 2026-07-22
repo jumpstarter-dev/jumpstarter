@@ -9,6 +9,8 @@ from jumpstarter.driver import Driver, export
 class SSHWrapper(Driver):
     """SSH wrapper driver for Jumpstarter that provides SSH CLI functionality"""
 
+    driver_type = "network"
+
     default_username: str = ""
     ssh_command: str = "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
     ssh_identity: str | None = None

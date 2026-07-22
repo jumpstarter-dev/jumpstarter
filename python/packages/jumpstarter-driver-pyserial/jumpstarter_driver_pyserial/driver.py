@@ -94,6 +94,8 @@ class AsyncSerial(ObjectStream):
 
 @dataclass(kw_only=True)
 class PySerial(Driver):
+    driver_type = "serial"
+
     url: str
     baudrate: int = field(default=115200)
     check_present: bool = field(default=True)

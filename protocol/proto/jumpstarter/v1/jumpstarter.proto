@@ -35,10 +35,6 @@ service ControllerService {
   // Leases are checked before token issuance.
   rpc Dial(DialRequest) returns (DialResponse);
 
-  // Stream audit events from the exporters.
-  // Audit events are used to track the exporter activity.
-  rpc AuditStream(stream AuditStreamRequest) returns (google.protobuf.Empty);
-
   // Retrieve a lease by name.
   rpc GetLease(GetLeaseRequest) returns (GetLeaseResponse);
   // Request a new lease for an exporter.
@@ -96,6 +92,7 @@ message StatusResponse {
   bool leased = 1; // Whether the exporter is currently leased.
   optional string lease_name = 2; // Name of the active lease, if any.
   optional string client_name = 3; // Name of the connected client, if any.
+  map<string, string> context = 4; // User-defined lease context metadata.
 }
 
 // Request to dial an exporter through the router.
@@ -107,14 +104,6 @@ message DialRequest {
 message DialResponse {
   string router_endpoint = 1; // The router gRPC endpoint URL.
   string router_token = 2; // Authentication token for the router.
-}
-
-// An audit event sent from an exporter to the controller.
-message AuditStreamRequest {
-  string exporter_uuid = 1; // UUID of the exporter.
-  string driver_instance_uuid = 2; // UUID of the driver instance.
-  string severity = 3; // Severity level of the event.
-  string message = 4; // Human-readable event message.
 }
 
 // Request to report exporter status to the controller.
@@ -197,6 +186,10 @@ message LogStreamResponse {
   string severity = 2; // Log severity level.
   string message = 3; // Log message content.
   optional LogSource source = 4; // Source of the log message.
+  optional string driver_type = 5; // Driver category when source=DRIVER (e.g. "power", "storage").
+  optional string operation = 6; // Operation name when the log is part of a known operation.
+  optional google.protobuf.Timestamp timestamp = 7; // Explicit timestamp of the log entry.
+  map<string, string> structured_fields = 8; // Additional structured key-value fields.
 }
 
 // Request to reset the exporter connection.

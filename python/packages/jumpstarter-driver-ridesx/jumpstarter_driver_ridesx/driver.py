@@ -17,6 +17,8 @@ from jumpstarter.driver import Driver, export
 class RideSXDriver(Driver):
     """RideSX Driver"""
 
+    driver_type = "automotive"
+
     decompression_timeout: int = field(default=15 * 60)  # 15 minutes
     flash_timeout: int = field(default=30 * 60)  # 30 minutes
     continue_timeout: int = field(default=20 * 60)  # 20 minutes
@@ -404,6 +406,8 @@ class RideSXDriver(Driver):
 @dataclass(kw_only=True)
 class RideSXPowerDriver(Driver):
     """RideSX Power Driver"""
+
+    driver_type = "power"
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
