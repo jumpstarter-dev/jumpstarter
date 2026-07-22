@@ -20,6 +20,9 @@ __pycache__/
 dist/
 build/
 
+# Rust
+jmp-exec/target/
+
 # Editor/IDE
 .vscode/
 .idea/

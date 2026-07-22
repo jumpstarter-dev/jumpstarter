@@ -29,6 +29,16 @@ RUN ARCH=$(uname -m) && \
         ln -s /usr/local/bin/fls /usr/local/bin/fls-aarch64; \
     fi
 
+# Build the jmp-exec Rust binary for the sidecar remote-exec bridge.
+# Uses UBI 10 + rust-toolset for Red Hat-supported toolchain and glibc compatibility.
+FROM registry.access.redhat.com/ubi10/ubi:latest AS rust-builder
+RUN dnf install -y rust-toolset && \
+    dnf clean all && \
+    rm -rf /var/cache/dnf
+COPY jmp-exec/ /src/jmp-exec/
+WORKDIR /src/jmp-exec
+RUN cargo build --release
+
 FROM builder AS wheels
 ADD . /src
 RUN make -C /src/python build
@@ -37,4 +47,5 @@ FROM product
 RUN --mount=from=wheels,source=/src/python/dist,target=/dist \
     uv venv /jumpstarter && \
     VIRTUAL_ENV=/jumpstarter uv pip install /dist/*.whl
+COPY --from=rust-builder /src/jmp-exec/target/release/jmp-exec /jumpstarter/bin/jmp-exec
 ENV PATH="/jumpstarter/bin:$PATH"

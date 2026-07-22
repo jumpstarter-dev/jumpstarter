@@ -1,0 +1,15 @@
+[package]
+name = "jmp-exec"
+version = "0.1.0"
+edition = "2021"
+description = "Remote command execution bridge for the jumpstarter sidecar pattern"
+license = "Apache-2.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+[profile.release]
+strip = true
+lto = true
