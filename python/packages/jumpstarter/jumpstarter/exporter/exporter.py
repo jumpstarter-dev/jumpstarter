@@ -360,7 +360,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             request: The ReportStatusRequest protobuf message to send
 
         Returns:
-            True if the RPC succeeded (or controller doesn't support it), False otherwise
+            True if the RPC succeeded, False otherwise
         """
         for attempt in range(_REPORT_STATUS_MAX_RETRIES + 1):
             try:
@@ -369,6 +369,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 return True
             except grpc.aio.AioRpcError as e:
                 if e.code() == grpc.StatusCode.UNIMPLEMENTED:
+                    # Legacy support: ReportStatus added Nov 2025 (commit b76f6c87).
+                    # All production controllers support it; safe to remove in future versions.
                     logger.warning("ReportStatus not supported by controller, status updates will be skipped")
                     return False
                 if e.code() in _TRANSIENT_GRPC_CODES and attempt < _REPORT_STATUS_MAX_RETRIES:
@@ -433,17 +435,41 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             self._lease_context.lease_ended.set()
             return
 
-        success = await self._send_report_status_rpc(
-            jumpstarter_pb2.ReportStatusRequest(
-                status=ExporterStatus.AVAILABLE.to_proto(),
-                message="Lease released after afterLease hook",
-                release_lease=True,
-            )
-        )
-        if success:
+        # Phase 1: attempt release_lease=true once (non-idempotent, not safe to retry)
+        # If the controller processed the request but response was lost, retrying could
+        # release a newly-assigned lease. The controller has already ended the lease
+        # (it sent leased=false which triggered this hook), so this is a courtesy confirmation.
+        released = False
+        unimplemented = False
+        try:
+            async with self._controller_stub() as controller:
+                await controller.ReportStatus(
+                    jumpstarter_pb2.ReportStatusRequest(
+                        status=ExporterStatus.AVAILABLE.to_proto(),
+                        message="Lease released after afterLease hook",
+                        release_lease=True,
+                    )
+                )
+            released = True
             logger.info("Requested controller to release lease %s", self._lease_context.lease_name)
-        else:
-            logger.error("Failed to request lease release")
+        except grpc.aio.AioRpcError as e:
+            if e.code() == grpc.StatusCode.UNIMPLEMENTED:
+                # Legacy support: ReportStatus was added to the controller in Nov 2025.
+                # All production controllers deployed today support it, but we retain this
+                # guard for compatibility with any controllers built from commits before
+                # b76f6c87 (2025-11-25). Safe to remove in future versions.
+                logger.warning("ReportStatus not supported by controller, status updates will be skipped")
+                unimplemented = True
+            else:
+                logger.warning("Lease release RPC failed, will retry status update: %s", e)
+        except Exception as e:
+            logger.warning("Lease release RPC failed, will retry status update: %s", e)
+
+        # Phase 2: if release failed (but not UNIMPLEMENTED), retry just the AVAILABLE status
+        # (idempotent, safe to retry). The UNIMPLEMENTED check is legacy compatibility - skip
+        # fallback since old controllers don't support status reporting at all.
+        if not released and not unimplemented:
+            await self._report_status(ExporterStatus.AVAILABLE, "Recovery after failed lease release")
 
         # Directly signal lease ended so handle_lease can exit.
         # The controller may not send another leased=False after our release request,
