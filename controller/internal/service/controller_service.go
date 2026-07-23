@@ -74,20 +74,21 @@ import (
 // ControllerService exposes a gRPC service
 type ControllerService struct {
 	pb.UnimplementedControllerServiceServer
-	Client        client.WithWatch
-	Scheme        *runtime.Scheme
-	Authn         authentication.ContextAuthenticator
-	Authz         authorizer.Authorizer
-	Attr          authorization.ContextAttributesGetter
-	ServerOptions []grpc.ServerOption
-	Router        config.Router
-	LeasePolicy   *config.LeasePolicy
-	HiddenLabels  *config.HiddenLabels
-	Signer        *oidc.Signer
-	listenQueues  sync.Map
-	leaseLocks    sync.Map
-	authOnce      sync.Once
-	auth          *auth.Auth
+	Client           client.WithWatch
+	Scheme           *runtime.Scheme
+	Authn            authentication.ContextAuthenticator
+	Authz            authorizer.Authorizer
+	Attr             authorization.ContextAttributesGetter
+	ServerOptions    []grpc.ServerOption
+	Router           config.Router
+	LeasePolicy      *config.LeasePolicy
+	HiddenLabels     *config.HiddenLabels
+	DeprecatedLabels *config.DeprecatedLabels
+	Signer           *oidc.Signer
+	listenQueues     sync.Map
+	leaseLocks       sync.Map
+	authOnce         sync.Once
+	auth             *auth.Auth
 }
 
 type listenQueue struct {
@@ -208,6 +209,13 @@ func (s *ControllerService) effectiveMaxTags() int32 {
 func (s *ControllerService) effectiveHiddenLabelKeys() []string {
 	if s.HiddenLabels != nil {
 		return s.HiddenLabels.Keys
+	}
+	return nil
+}
+
+func (s *ControllerService) effectiveDeprecatedLabelKeys() map[string]string {
+	if s.DeprecatedLabels != nil {
+		return s.DeprecatedLabels.Keys
 	}
 	return nil
 }
@@ -1162,7 +1170,7 @@ func (s *ControllerService) Start(ctx context.Context) error {
 	pb.RegisterControllerServiceServer(server, s)
 	cpb.RegisterClientServiceServer(
 		server,
-		clientsvcv1.NewClientService(s.Client, *s.getAuth(), s.effectiveMaxTags(), s.Signer, s.effectiveHiddenLabelKeys()),
+		clientsvcv1.NewClientService(s.Client, *s.getAuth(), s.effectiveMaxTags(), s.Signer, s.effectiveHiddenLabelKeys(), s.effectiveDeprecatedLabelKeys()),
 	)
 
 	// Register the standard gRPC health checking service (grpc.health.v1.Health).

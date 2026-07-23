@@ -187,6 +187,10 @@ type JumpstarterSpec struct {
 	// Hidden labels configuration for hiding specific label keys from exporter listings.
 	// +optional
 	HiddenLabels HiddenLabelsConfig `json:"hiddenLabels,omitempty"`
+
+	// Deprecated labels configuration for warning users about label keys that should no longer be used.
+	// +optional
+	DeprecatedLabels DeprecatedLabelsConfig `json:"deprecatedLabels,omitempty"`
 }
 
 // HiddenLabelsConfig defines label keys to hide from exporter listings by default.
@@ -195,6 +199,15 @@ type HiddenLabelsConfig struct {
 	// Clients can pass show_hidden_labels=true to see all labels.
 	// +optional
 	Keys []string `json:"keys,omitempty"`
+}
+
+// DeprecatedLabelsConfig defines label keys that are deprecated and should trigger warnings.
+type DeprecatedLabelsConfig struct {
+	// Map of deprecated label keys to human-readable deprecation messages.
+	// When an exporter has any of these labels, clients will receive a deprecation warning
+	// with the corresponding message.
+	// +optional
+	Keys map[string]string `json:"keys,omitempty"`
 }
 
 // LeasePolicyConfig defines policy constraints for leases.

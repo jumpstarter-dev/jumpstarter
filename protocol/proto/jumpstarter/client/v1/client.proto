@@ -97,6 +97,9 @@ message Exporter {
   // Whether the exporter is enabled for lease assignment.
   // When false, the controller will not assign new leases to this exporter.
   optional bool enabled = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // Label keys on this exporter that the controller has marked as deprecated.
+  // Keys are the deprecated label names; values are optional human-readable messages.
+  map<string, string> deprecated_labels = 7 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // A lease resource representing a reservation of an exporter.
@@ -149,6 +152,9 @@ message Lease {
   bool allow_disabled = 14 [(google.api.field_behavior) = IMMUTABLE];
   // User-defined context metadata for the lease (e.g. build_id, image_digest, VCS ref).
   map<string, string> context = 15 [(google.api.field_behavior) = IMMUTABLE];
+  // Selector keys on this lease that the controller has marked as deprecated.
+  // Keys are the deprecated label names; values are optional human-readable messages.
+  map<string, string> deprecated_labels = 16 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request to retrieve an exporter.
