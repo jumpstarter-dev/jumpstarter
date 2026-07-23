@@ -29,9 +29,14 @@ RUN ARCH=$(uname -m) && \
         ln -s /usr/local/bin/fls /usr/local/bin/fls-aarch64; \
     fi
 
-# Build the jmp-exec Rust binary for the sidecar remote-exec bridge.
+# Build the jumpstarter-exec Rust binary for the sidecar remote-exec bridge.
 # Uses UBI 10 + rust-toolset for Red Hat-supported toolchain and glibc compatibility.
 FROM registry.access.redhat.com/ubi10/ubi:latest AS rust-builder
+# GIT_VERSION is already passed as a build-arg by CI (see build-images.yaml)
+# for hatch-vcs; forward it into the Rust build so jumpstarter-exec's
+# build.rs can embed the same version (see rust/jumpstarter-exec/build.rs).
+ARG GIT_VERSION=0.0.0-dev
+ENV GIT_VERSION=${GIT_VERSION}
 RUN dnf install -y rust-toolset && \
     dnf clean all && \
     rm -rf /var/cache/dnf

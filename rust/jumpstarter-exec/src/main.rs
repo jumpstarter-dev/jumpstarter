@@ -5,6 +5,9 @@ use jumpstarter_exec::{client, server};
 
 const DEFAULT_SOCKET: &str = "/shared/launcher.sock";
 
+/// Git-derived version, embedded at compile time by `build.rs`.
+const VERSION: &str = env!("GIT_VERSION");
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -14,6 +17,9 @@ fn main() {
     }
 
     match args[1].as_str() {
+        "version" => {
+            println!("jumpstarter-exec {VERSION}");
+        }
         "serve" => {
             let socket =
                 parse_option(&args[2..], "--socket").unwrap_or_else(|| DEFAULT_SOCKET.to_string());
@@ -54,11 +60,12 @@ fn main() {
 }
 
 fn usage() {
-    eprintln!("Usage: jumpstarter-exec <serve|exec> [options]");
+    eprintln!("Usage: jumpstarter-exec <serve|exec|version> [options]");
     eprintln!();
     eprintln!("Subcommands:");
-    eprintln!("  serve [--socket <path>]                 Listen for exec requests");
-    eprintln!("  exec  [--socket <path>] -- <cmd> [...]  Execute a command remotely");
+    eprintln!("  serve   [--socket <path>]                 Listen for exec requests");
+    eprintln!("  exec    [--socket <path>] -- <cmd> [...]  Execute a command remotely");
+    eprintln!("  version                                    Print version and exit");
 }
 
 /// Parse a `--flag value` pair from a slice of arguments.

@@ -521,3 +521,17 @@ fn e2e_nonexistent_command() {
     );
     server.kill().ok();
 }
+
+#[test]
+fn e2e_version_subcommand() {
+    let output = Command::new(binary_path())
+        .arg("version")
+        .output()
+        .expect("failed to run jumpstarter-exec version");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.starts_with("jumpstarter-exec "),
+        "unexpected version output: {stdout}"
+    );
+}

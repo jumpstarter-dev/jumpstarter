@@ -148,8 +148,10 @@ docker-build-qemu-runtime: ## Build docker image for the qemu-runtime container.
 	$(CONTAINER_TOOL) build -t ${QEMU_RUNTIME_IMG} -f Containerfile.qemu-runtime .
 
 .PHONY: docker-build-exporter
-docker-build-exporter: ## Build the jumpstarter exporter image (includes jmp-exec).
-	$(CONTAINER_TOOL) build -t ${EXPORTER_IMG} -f ../python/Containerfile ..
+docker-build-exporter: ## Build the jumpstarter exporter image (includes jumpstarter-exec).
+	$(CONTAINER_TOOL) build \
+		--build-arg GIT_VERSION=$(GIT_VERSION) \
+		-t ${EXPORTER_IMG} -f ../python/Containerfile ..
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
