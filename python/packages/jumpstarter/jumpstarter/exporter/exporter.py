@@ -403,13 +403,13 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             logger.debug("Updated status to %s: %s (standalone, no controller)", status, message)
             return
 
-        success = await self._send_report_status_rpc(
+        # Log success; _send_report_status_rpc already logs errors
+        if await self._send_report_status_rpc(
             jumpstarter_pb2.ReportStatusRequest(
                 status=status.to_proto(),
                 message=message,
             )
-        )
-        if success:
+        ):
             logger.info("Updated status to %s: %s", status, message)
 
     async def _request_lease_release(self):
@@ -451,10 +451,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             logger.info("Requested controller to release lease %s", self._lease_context.lease_name)
         except grpc.aio.AioRpcError as e:
             if e.code() == grpc.StatusCode.UNIMPLEMENTED:
-                # Legacy support: ReportStatus was added to the controller in Nov 2025.
-                # All production controllers deployed today support it, but we retain this
-                # guard for compatibility with any controllers built from commits before
-                # b76f6c87 (2025-11-25). Safe to remove in future versions.
+                # Legacy support (see _send_report_status_rpc for details): controllers before
+                # Nov 2025 don't support ReportStatus. Safe to remove in future versions.
                 logger.warning("ReportStatus not supported by controller, status updates will be skipped")
                 # Don't retry - controller doesn't support status reporting at all
             else:

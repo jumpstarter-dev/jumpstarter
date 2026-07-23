@@ -487,24 +487,36 @@ class TestBeforeLeaseHookRaceGuard:
         )
 
 
+def _setup_mock_controller_stub(exporter, side_effect=None):
+    """Helper to set up mock controller stub for testing ReportStatus.
+
+    Returns:
+        tuple: (mock_controller, stub_context_manager)
+    """
+    mock_controller = AsyncMock()
+    if side_effect is not None:
+        mock_controller.ReportStatus = AsyncMock(side_effect=side_effect)
+
+    stub_ctx = AsyncMock()
+    stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
+    stub_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    return mock_controller, stub_ctx
+
+
 class TestReportStatusGrpcErrorHandling:
     async def test_unimplemented_grpc_error_logs_warning(self, caplog):
         """When ReportStatus returns UNIMPLEMENTED, a warning is logged
         instead of an error."""
         exporter = _make_exporter_for_report_status()
 
-        mock_controller = AsyncMock()
         error = grpc.aio.AioRpcError(
             code=grpc.StatusCode.UNIMPLEMENTED,
             initial_metadata=grpc.aio.Metadata(),
             trailing_metadata=grpc.aio.Metadata(),
             details="Method not implemented",
         )
-        mock_controller.ReportStatus = AsyncMock(side_effect=error)
-
-        stub_ctx = AsyncMock()
-        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
-        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=error)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
             with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"):
@@ -525,18 +537,13 @@ class TestReportStatusGrpcErrorHandling:
         it retries and eventually logs at ERROR level."""
         exporter = _make_exporter_for_report_status()
 
-        mock_controller = AsyncMock()
         error = grpc.aio.AioRpcError(
             code=grpc.StatusCode.UNAVAILABLE,
             initial_metadata=grpc.aio.Metadata(),
             trailing_metadata=grpc.aio.Metadata(),
             details="Service unavailable",
         )
-        mock_controller.ReportStatus = AsyncMock(side_effect=error)
-
-        stub_ctx = AsyncMock()
-        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
-        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=error)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), \
                 patch("anyio.sleep") as mock_sleep:
@@ -551,6 +558,9 @@ class TestReportStatusGrpcErrorHandling:
         # Verify exponential backoff schedule
         backoff_values = [call.args[0] for call in mock_sleep.call_args_list]
         assert backoff_values == [1.0, 2.0, 4.0], f"Expected [1.0, 2.0, 4.0], got: {backoff_values}"
+
+        # 4 total attempts: 1 initial + 3 retries
+        assert mock_controller.ReportStatus.call_count == 4
 
         # Eventually logs ERROR after exhausting retries
         error_msgs = [r for r in caplog.records if r.levelno == logging.ERROR]
@@ -585,12 +595,7 @@ class TestReportStatusGrpcErrorHandling:
             # Third attempt succeeds
             delivered_statuses.append(ExporterStatus.from_proto(request.status))
 
-        mock_controller = AsyncMock()
-        mock_controller.ReportStatus = AsyncMock(side_effect=fail_twice_then_succeed)
-
-        stub_ctx = AsyncMock()
-        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
-        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=fail_twice_then_succeed)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), \
                 patch("anyio.sleep") as mock_sleep:
@@ -615,13 +620,7 @@ class TestReportStatusGrpcErrorHandling:
             trailing_metadata=grpc.aio.Metadata(),
             details="Permission denied",
         )
-
-        mock_controller = AsyncMock()
-        mock_controller.ReportStatus = AsyncMock(side_effect=permission_error)
-
-        stub_ctx = AsyncMock()
-        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
-        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=permission_error)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
             await exporter._report_status(ExporterStatus.AVAILABLE, "test")
@@ -634,13 +633,7 @@ class TestReportStatusGrpcErrorHandling:
         exporter = _make_exporter_for_report_status()
 
         connection_error = ConnectionError("Network unreachable")
-
-        mock_controller = AsyncMock()
-        mock_controller.ReportStatus = AsyncMock(side_effect=connection_error)
-
-        stub_ctx = AsyncMock()
-        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
-        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=connection_error)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
             await exporter._report_status(ExporterStatus.AVAILABLE, "test")
@@ -680,12 +673,7 @@ class TestReportStatusGrpcErrorHandling:
             # Second attempt (fallback via _report_status) succeeds
             delivered.append(request)
 
-        mock_controller = AsyncMock()
-        mock_controller.ReportStatus = AsyncMock(side_effect=fail_first_then_succeed)
-
-        stub_ctx = AsyncMock()
-        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
-        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=fail_first_then_succeed)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), patch("anyio.sleep"):
             await exporter._request_lease_release()
@@ -695,6 +683,46 @@ class TestReportStatusGrpcErrorHandling:
         assert delivered[0].release_lease is False  # Fallback sends status-only
         assert ExporterStatus.from_proto(delivered[0].status) == ExporterStatus.AVAILABLE
         assert call_count == 2
+
+    async def test_request_lease_release_exhausts_retries(self):
+        """When both Phase 1 and Phase 2 fail completely, lease_ended is still set
+        so handle_lease can exit (prevents being stuck forever)."""
+        exporter = _make_exporter_for_report_status()
+
+        lease_ctx = LeaseContext(
+            lease_name="test-lease",
+            before_lease_hook=Event(),
+            client_name="test-client",
+        )
+        exporter._lease_context = lease_ctx
+
+        unavailable_error = grpc.aio.AioRpcError(
+            code=grpc.StatusCode.UNAVAILABLE,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
+            details="Service unavailable",
+        )
+
+        call_count = 0
+
+        async def always_fail(request):
+            nonlocal call_count
+            call_count += 1
+            raise unavailable_error
+
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=always_fail)
+
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx), patch("anyio.sleep"):
+            await exporter._request_lease_release()
+
+        # Phase 1: 1 attempt (release_lease=true fails)
+        # Phase 2: 4 attempts via _send_report_status_rpc (all fail)
+        # Total: 5 calls
+        assert call_count == 5
+
+        # Critical: lease_ended must be set even when everything fails,
+        # otherwise handle_lease never exits
+        assert lease_ctx.lease_ended.is_set()
 
     async def test_request_lease_release_succeeds_on_first_attempt(self):
         """When release_lease=true succeeds immediately, no fallback to _report_status."""
@@ -712,12 +740,7 @@ class TestReportStatusGrpcErrorHandling:
         async def succeed_immediately(request):
             delivered.append(request)
 
-        mock_controller = AsyncMock()
-        mock_controller.ReportStatus = AsyncMock(side_effect=succeed_immediately)
-
-        stub_ctx = AsyncMock()
-        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
-        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=succeed_immediately)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
             await exporter._request_lease_release()
@@ -745,13 +768,7 @@ class TestReportStatusGrpcErrorHandling:
             trailing_metadata=grpc.aio.Metadata(),
             details="Method not implemented",
         )
-
-        mock_controller = AsyncMock()
-        mock_controller.ReportStatus = AsyncMock(side_effect=unimplemented_error)
-
-        stub_ctx = AsyncMock()
-        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
-        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=unimplemented_error)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
             await exporter._request_lease_release()
