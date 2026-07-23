@@ -412,6 +412,17 @@ func (r *JumpstarterReconciler) createExporterSetDeployment(jumpstarter *operato
 								"--health-probe-bind-address=:8081",
 								"--metrics-bind-address=0",
 							},
+							Env: []corev1.EnvVar{
+								{
+									Name: "NAMESPACE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath:  "metadata.namespace",
+											APIVersion: "v1",
+										},
+									},
+								},
+							},
 							Ports: []corev1.ContainerPort{
 								{
 									ContainerPort: 8081,
