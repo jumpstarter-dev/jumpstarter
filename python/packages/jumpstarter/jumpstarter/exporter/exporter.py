@@ -389,7 +389,6 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             except Exception as e:
                 logger.error("Failed to update status: %s", e)
                 return False
-        return False
 
     async def _report_status(self, status: ExporterStatus, message: str = ""):
         """Report the exporter status with the controller and session."""
@@ -439,8 +438,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         # If the controller processed the request but response was lost, retrying could
         # release a newly-assigned lease. The controller has already ended the lease
         # (it sent leased=false which triggered this hook), so this is a courtesy confirmation.
-        released = False
-        unimplemented = False
+        should_retry = False
         try:
             async with self._controller_stub() as controller:
                 await controller.ReportStatus(
@@ -450,7 +448,6 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         release_lease=True,
                     )
                 )
-            released = True
             logger.info("Requested controller to release lease %s", self._lease_context.lease_name)
         except grpc.aio.AioRpcError as e:
             if e.code() == grpc.StatusCode.UNIMPLEMENTED:
@@ -459,16 +456,16 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 # guard for compatibility with any controllers built from commits before
                 # b76f6c87 (2025-11-25). Safe to remove in future versions.
                 logger.warning("ReportStatus not supported by controller, status updates will be skipped")
-                unimplemented = True
+                # Don't retry - controller doesn't support status reporting at all
             else:
                 logger.warning("Lease release RPC failed, will retry status update: %s", e)
+                should_retry = True
         except Exception as e:
             logger.warning("Lease release RPC failed, will retry status update: %s", e)
+            should_retry = True
 
-        # Phase 2: if release failed (but not UNIMPLEMENTED), retry just the AVAILABLE status
-        # (idempotent, safe to retry). The UNIMPLEMENTED check is legacy compatibility - skip
-        # fallback since old controllers don't support status reporting at all.
-        if not released and not unimplemented:
+        # Phase 2: retry just the AVAILABLE status if Phase 1 failed (idempotent, safe to retry)
+        if should_retry:
             await self._report_status(ExporterStatus.AVAILABLE, "Recovery after failed lease release")
 
         # Directly signal lease ended so handle_lease can exit.
