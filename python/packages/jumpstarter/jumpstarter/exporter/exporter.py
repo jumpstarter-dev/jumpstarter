@@ -456,9 +456,15 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 logger.warning("ReportStatus not supported by controller, status updates will be skipped")
                 # Don't retry - controller doesn't support status reporting at all
             else:
+                # Conservative: retry all other gRPC errors (transient and non-transient).
+                # Phase 2 uses a fresh stub, so temporary connection issues may resolve.
+                # Alternative: restrict to only UNAVAILABLE/DEADLINE_EXCEEDED to avoid
+                # retrying auth failures (PERMISSION_DENIED) that would hit the same barrier.
                 logger.warning("Lease release RPC failed, will retry status update: %s", e)
                 should_retry = True
         except Exception as e:
+            # Conservative: retry non-gRPC exceptions. In practice, gRPC wraps all network
+            # errors in AioRpcError, so this catches unexpected cases defensively.
             logger.warning("Lease release RPC failed, will retry status update: %s", e)
             should_retry = True
 

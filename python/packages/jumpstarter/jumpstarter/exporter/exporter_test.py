@@ -531,6 +531,8 @@ class TestReportStatusGrpcErrorHandling:
         assert len(error_msgs) == 0, (
             f"No error should be logged for UNIMPLEMENTED, got: {[r.message for r in error_msgs]}"
         )
+        # Ensure no retry - UNIMPLEMENTED should fail fast
+        assert mock_controller.ReportStatus.call_count == 1
 
     async def test_other_grpc_error_logs_error(self, caplog):
         """When ReportStatus returns a gRPC error other than UNIMPLEMENTED,
