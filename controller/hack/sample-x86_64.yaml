@@ -11,7 +11,7 @@ apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
 kind: VirtualTargetClass
 metadata:
   name: qemu-x86-64
-  namespace: jumpstarter
+  namespace: jumpstarter-lab
 spec:
   provisioner: qemu.jumpstarter.dev
   bindingMode: Immediate
@@ -41,7 +41,7 @@ apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
 kind: ExporterSet
 metadata:
   name: x86-64-virtual
-  namespace: jumpstarter
+  namespace: jumpstarter-lab
 spec:
   minReplicas: 0
   maxReplicas: 5

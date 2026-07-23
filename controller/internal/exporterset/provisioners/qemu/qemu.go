@@ -123,10 +123,11 @@ func (p *Provisioner) RenderPod(
 			// drains after them.
 			InitContainers: []corev1.Container{
 				{
-					Name:          "exporter",
-					Image:         DefaultExporterImage,
-					RestartPolicy: &restartAlways,
-					Command:       []string{"sh", "-c"},
+					Name:            "exporter",
+					Image:           DefaultExporterImage,
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					RestartPolicy:   &restartAlways,
+					Command:         []string{"sh", "-c"},
 					Args: []string{
 						fmt.Sprintf(
 							"cp %s %s/jumpstarter-exec && exec sleep infinity",
@@ -155,8 +156,9 @@ func (p *Provisioner) RenderPod(
 			// image that can be versioned separately.
 			Containers: []corev1.Container{
 				{
-					Name:  "target-runtime",
-					Image: DefaultQEMURuntimeImage,
+					Name:            "target-runtime",
+					Image:           DefaultQEMURuntimeImage,
+					ImagePullPolicy: corev1.PullIfNotPresent,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      sharedVolumeName,

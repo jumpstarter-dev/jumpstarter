@@ -240,9 +240,14 @@ endif
 deploy-exporterset-sample: ## Apply the x86_64 sample VirtualTargetClass and ExporterSet.
 	$(KUBECTL) apply -f hack/sample-x86_64.yaml
 
+.PHONY: deploy-exporterset-sample-kind
+deploy-exporterset-sample-kind: ## Apply the kind-friendly sample (no KVM requirement) for local testing.
+	$(KUBECTL) apply -f hack/sample-x86_64-kind.yaml
+
 .PHONY: undeploy-exporterset
 undeploy-exporterset: ## Remove the manually deployed exporter-set-controller.
 	$(KUBECTL) delete --ignore-not-found=true -f hack/sample-x86_64.yaml
+	$(KUBECTL) delete --ignore-not-found=true -f hack/sample-x86_64-kind.yaml
 	$(KUBECTL) delete --ignore-not-found=true -f hack/deploy-exporterset-qemu.yaml
 
 .PHONY: undeploy

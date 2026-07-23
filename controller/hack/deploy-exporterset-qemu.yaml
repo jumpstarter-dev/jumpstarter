@@ -1,8 +1,12 @@
 # Manual deployment for the ExporterSet controller (QEMU provisioner).
 #
+# Deploys into the same namespace as the Jumpstarter controller/router
+# (jumpstarter-lab), matching what the operator will do when it owns
+# this component.
+#
 # Prerequisites:
 #   - Jumpstarter CRDs installed (ExporterSet, VirtualTargetClass, Exporter, Lease)
-#   - The jumpstarter namespace exists
+#   - The jumpstarter-lab namespace exists (created by `make deploy` / e2e-setup)
 #
 # Install CRDs first:
 #   kubectl apply -f deploy/operator/config/crd/bases/
@@ -11,15 +15,10 @@
 #   kubectl apply -f hack/deploy-exporterset-qemu.yaml
 ---
 apiVersion: v1
-kind: Namespace
-metadata:
-  name: jumpstarter
----
-apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: exporter-set-controller
-  namespace: jumpstarter
+  namespace: jumpstarter-lab
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -72,13 +71,13 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: exporter-set-controller
-    namespace: jumpstarter
+    namespace: jumpstarter-lab
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: exporter-set-controller
-  namespace: jumpstarter
+  namespace: jumpstarter-lab
   labels:
     app: exporter-set-controller
 spec:
@@ -95,6 +94,7 @@ spec:
       containers:
         - name: controller
           image: quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest
+          imagePullPolicy: IfNotPresent
           args:
             - "--provisioner=qemu.jumpstarter.dev"
             - "--leader-elect=false"
