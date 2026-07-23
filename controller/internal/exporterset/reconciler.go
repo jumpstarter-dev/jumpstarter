@@ -40,13 +40,13 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -126,10 +126,22 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			logger.Info("VirtualTargetClass not found",
 				"virtualTargetClassName", exporterSet.Spec.VirtualTargetClassName)
 
-			prevAvailable := meta.IsStatusConditionTrue(exporterSet.Status.Conditions, string(virtualtargetv1alpha1.ExporterSetConditionAvailable))
-			prevDegraded := meta.IsStatusConditionTrue(exporterSet.Status.Conditions, string(virtualtargetv1alpha1.ExporterSetConditionDegraded))
-			prevProgressing := meta.IsStatusConditionTrue(exporterSet.Status.Conditions, string(virtualtargetv1alpha1.ExporterSetConditionProgressing))
-			prevScalingLimited := meta.IsStatusConditionTrue(exporterSet.Status.Conditions, string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited))
+			prevAvailable := meta.IsStatusConditionTrue(
+				exporterSet.Status.Conditions,
+				string(virtualtargetv1alpha1.ExporterSetConditionAvailable),
+			)
+			prevDegraded := meta.IsStatusConditionTrue(
+				exporterSet.Status.Conditions,
+				string(virtualtargetv1alpha1.ExporterSetConditionDegraded),
+			)
+			prevProgressing := meta.IsStatusConditionTrue(
+				exporterSet.Status.Conditions,
+				string(virtualtargetv1alpha1.ExporterSetConditionProgressing),
+			)
+			prevScalingLimited := meta.IsStatusConditionTrue(
+				exporterSet.Status.Conditions,
+				string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited),
+			)
 
 			if countErr := r.reconcileStatusCounts(ctx, &exporterSet); countErr != nil {
 				return ctrl.Result{}, countErr
@@ -166,10 +178,22 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	)
 
 	// Snapshot condition state before changes (for event emission).
-	prevAvailable := meta.IsStatusConditionTrue(exporterSet.Status.Conditions, string(virtualtargetv1alpha1.ExporterSetConditionAvailable))
-	prevDegraded := meta.IsStatusConditionTrue(exporterSet.Status.Conditions, string(virtualtargetv1alpha1.ExporterSetConditionDegraded))
-	prevProgressing := meta.IsStatusConditionTrue(exporterSet.Status.Conditions, string(virtualtargetv1alpha1.ExporterSetConditionProgressing))
-	prevScalingLimited := meta.IsStatusConditionTrue(exporterSet.Status.Conditions, string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited))
+	prevAvailable := meta.IsStatusConditionTrue(
+		exporterSet.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionAvailable),
+	)
+	prevDegraded := meta.IsStatusConditionTrue(
+		exporterSet.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionDegraded),
+	)
+	prevProgressing := meta.IsStatusConditionTrue(
+		exporterSet.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionProgressing),
+	)
+	prevScalingLimited := meta.IsStatusConditionTrue(
+		exporterSet.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited),
+	)
 
 	ownedExporters, err := r.listOwnedExporters(ctx, &exporterSet)
 	if err != nil {
@@ -204,45 +228,15 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Scale-up logic. Uses potentiallyAvailable (replicas - leased) to avoid
 	// cache-race over-creation. One exporter per reconcile; Owns watch
 	// triggers subsequent cycles.
-	potentiallyAvailable := state.replicas - state.leased
-	if state.replicas < exporterSet.Spec.MinReplicas && potentiallyAvailable < exporterSet.Spec.MinReplicas {
-		if room := maxScaleUp(&exporterSet, state.replicas); room > 0 {
-			if err := r.scaleUp(ctx, &exporterSet, &vtc, mergedParameters, 1); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-	} else if state.available < exporterSet.Spec.MinAvailableReplicas &&
-		potentiallyAvailable < exporterSet.Spec.MinAvailableReplicas &&
-		!atMaxReplicas(&exporterSet, state.replicas) {
-		if room := maxScaleUp(&exporterSet, state.replicas); room > 0 {
-			if err := r.scaleUp(ctx, &exporterSet, &vtc, mergedParameters, 1); err != nil {
-				return ctrl.Result{}, err
-			}
-		}
-	} else if !atMaxReplicas(&exporterSet, state.replicas) {
-		// Demand-driven scale-up for pending leases with no available capacity.
-		pendingLeases, err := r.countPendingLeases(ctx, &exporterSet)
-		if err != nil {
-			logger.Error(err, "failed to count pending leases")
-		} else if pendingLeases > 0 && state.available == 0 {
-			if room := maxScaleUp(&exporterSet, state.replicas); room > 0 {
-				if err := r.scaleUp(ctx, &exporterSet, &vtc, mergedParameters, 1); err != nil {
-					return ctrl.Result{}, err
-				}
-			}
-		} else {
-			scaleDownResult, err := r.reconcileScaleDown(ctx, &exporterSet, ownedExporters, state)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
-			result = scaleDownResult
-		}
-	} else {
-		scaleDownResult, err := r.reconcileScaleDown(ctx, &exporterSet, ownedExporters, state)
+	scaled, err := r.reconcileScaleUp(ctx, &exporterSet, &vtc, mergedParameters, state)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if !scaled {
+		result, err = r.reconcileScaleDown(ctx, &exporterSet, ownedExporters, state)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		result = scaleDownResult
 	}
 
 	// Update status counts, conditions, and emit events.
@@ -340,7 +334,9 @@ func (r *ExporterSetReconciler) scaleUp(
 		}
 
 		if err := r.Create(ctx, pod); err != nil {
-			_ = r.Delete(ctx, exporter) // roll back headless exporter
+			if delErr := r.Delete(ctx, exporter); delErr != nil {
+				logger.Error(delErr, "failed to roll back Exporter after Pod creation failure", "exporter", exporter.Name)
+			}
 			return fmt.Errorf("unable to create Pod for Exporter %s: %w", exporter.Name, err)
 		}
 
@@ -389,6 +385,52 @@ func (r *ExporterSetReconciler) cleanupDisabledExporters(
 	}
 
 	return deleted, nil
+}
+
+// reconcileScaleUp evaluates the three scale-up rules in priority order and
+// creates one Exporter if any rule fires. Returns true if a scale-up was
+// attempted (caller should skip scale-down for this cycle).
+func (r *ExporterSetReconciler) reconcileScaleUp(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	vtc *virtualtargetv1alpha1.VirtualTargetClass,
+	params map[string]interface{},
+	state poolState,
+) (scaled bool, err error) {
+	logger := log.FromContext(ctx)
+	potentiallyAvailable := state.replicas - state.leased
+
+	// 1. Floor: never drop below minReplicas.
+	if state.replicas < es.Spec.MinReplicas && potentiallyAvailable < es.Spec.MinReplicas {
+		if maxScaleUp(es, state.replicas) > 0 {
+			return true, r.scaleUp(ctx, es, vtc, params, 1)
+		}
+		return false, nil
+	}
+
+	// 2. Warm buffer: keep minAvailableReplicas ready-and-unleased instances.
+	if state.available < es.Spec.MinAvailableReplicas &&
+		potentiallyAvailable < es.Spec.MinAvailableReplicas &&
+		!atMaxReplicas(es, state.replicas) {
+		if maxScaleUp(es, state.replicas) > 0 {
+			return true, r.scaleUp(ctx, es, vtc, params, 1)
+		}
+		return false, nil
+	}
+
+	// 3. Demand: pending Leases exist and no capacity is available.
+	if !atMaxReplicas(es, state.replicas) {
+		pending, err := r.countPendingLeases(ctx, es)
+		if err != nil {
+			logger.Error(err, "failed to count pending leases")
+			return false, nil
+		}
+		if pending > 0 && state.available == 0 && maxScaleUp(es, state.replicas) > 0 {
+			return true, r.scaleUp(ctx, es, vtc, params, 1)
+		}
+	}
+
+	return false, nil
 }
 
 // reconcileScaleDown disables one idle exporter per cooldown period.
@@ -784,10 +826,22 @@ func (r *ExporterSetReconciler) emitConditionEvents(
 		return
 	}
 
-	nowAvailable := meta.IsStatusConditionTrue(es.Status.Conditions, string(virtualtargetv1alpha1.ExporterSetConditionAvailable))
-	nowProgressing := meta.IsStatusConditionTrue(es.Status.Conditions, string(virtualtargetv1alpha1.ExporterSetConditionProgressing))
-	nowDegraded := meta.IsStatusConditionTrue(es.Status.Conditions, string(virtualtargetv1alpha1.ExporterSetConditionDegraded))
-	nowScalingLimited := meta.IsStatusConditionTrue(es.Status.Conditions, string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited))
+	nowAvailable := meta.IsStatusConditionTrue(
+		es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionAvailable),
+	)
+	nowProgressing := meta.IsStatusConditionTrue(
+		es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionProgressing),
+	)
+	nowDegraded := meta.IsStatusConditionTrue(
+		es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionDegraded),
+	)
+	nowScalingLimited := meta.IsStatusConditionTrue(
+		es.Status.Conditions,
+		string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited),
+	)
 
 	if !prevAvailable && nowAvailable {
 		r.Recorder.Eventf(es, corev1.EventTypeNormal, "ExporterSetAvailable",
