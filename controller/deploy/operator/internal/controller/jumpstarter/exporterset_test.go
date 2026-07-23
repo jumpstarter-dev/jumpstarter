@@ -1,5 +1,5 @@
 /*
-Copyright 2025.
+Copyright 2026 by the Jumpstarter Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -120,26 +120,33 @@ var _ = Describe("exporterSetPolicyRules", func() {
 		Expect(groups).To(HaveKey("coordination.k8s.io"))
 	})
 
-	It("should grant full CRUD on exportersets", func() {
+	It("should grant read-only access on exportersets (no create/update/delete)", func() {
 		for _, rule := range rules {
 			if containsString(rule.APIGroups, "virtualtarget.jumpstarter.dev") &&
 				containsString(rule.Resources, "exportersets") &&
-				!containsString(rule.Resources, "exportersets/status") {
-				Expect(rule.Verbs).To(ContainElements("get", "list", "watch", "create", "update", "patch", "delete"))
+				!containsString(rule.Resources, "exportersets/status") &&
+				!containsString(rule.Resources, "exportersets/scale") &&
+				!containsString(rule.Resources, "exportersets/finalizers") {
+				Expect(rule.Verbs).To(ContainElements("get", "list", "watch"))
+				Expect(rule.Verbs).NotTo(ContainElement("create"))
+				Expect(rule.Verbs).NotTo(ContainElement("update"))
+				Expect(rule.Verbs).NotTo(ContainElement("patch"))
+				Expect(rule.Verbs).NotTo(ContainElement("delete"))
 				return
 			}
 		}
-		Fail("no rule found granting full CRUD on exportersets")
+		Fail("no rule found granting read-only access on exportersets")
 	})
 
 	It("should grant status/scale/finalizer access on exportersets", func() {
-		foundStatus := false
+		foundStatusScale := false
 		foundFinalizers := false
 		for _, rule := range rules {
 			if containsString(rule.APIGroups, "virtualtarget.jumpstarter.dev") {
 				if containsString(rule.Resources, "exportersets/status") {
+					Expect(rule.Resources).To(ContainElement("exportersets/scale"))
 					Expect(rule.Verbs).To(ContainElements("get", "update", "patch"))
-					foundStatus = true
+					foundStatusScale = true
 				}
 				if containsString(rule.Resources, "exportersets/finalizers") {
 					Expect(rule.Verbs).To(ContainElement("update"))
@@ -147,7 +154,7 @@ var _ = Describe("exporterSetPolicyRules", func() {
 				}
 			}
 		}
-		Expect(foundStatus).To(BeTrue(), "missing exportersets/status rule")
+		Expect(foundStatusScale).To(BeTrue(), "missing exportersets/status and exportersets/scale rule")
 		Expect(foundFinalizers).To(BeTrue(), "missing exportersets/finalizers rule")
 	})
 
@@ -552,7 +559,7 @@ var _ = Describe("createExporterSetDeployment", func() {
 		Expect(res.Limits).To(HaveKeyWithValue(corev1.ResourceMemory, resource.MustParse("512Mi")))
 	})
 
-	It("should use custom resources when provided", func() {
+	It("should use custom global resources when provided", func() {
 		js.Spec.ExporterSets.Resources = corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceCPU: resource.MustParse("1"),
@@ -569,6 +576,36 @@ var _ = Describe("createExporterSetDeployment", func() {
 		res := dep.Spec.Template.Spec.Containers[0].Resources
 		Expect(res.Requests).To(HaveKeyWithValue(corev1.ResourceCPU, resource.MustParse("1")))
 		Expect(res.Limits).To(HaveKeyWithValue(corev1.ResourceCPU, resource.MustParse("2")))
+	})
+
+	It("should use per-provisioner resources override over global", func() {
+		js.Spec.ExporterSets.Resources = corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU: resource.MustParse("1"),
+			},
+		}
+
+		provResources := &corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("4"),
+				corev1.ResourceMemory: resource.MustParse("4Gi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("8"),
+				corev1.ResourceMemory: resource.MustParse("8Gi"),
+			},
+		}
+
+		dep := r.createExporterSetDeployment(js, operatorv1alpha1.ProvisionerConfig{
+			Name:      "qemu.jumpstarter.dev",
+			Resources: provResources,
+		})
+
+		res := dep.Spec.Template.Spec.Containers[0].Resources
+		Expect(res.Requests).To(HaveKeyWithValue(corev1.ResourceCPU, resource.MustParse("4")))
+		Expect(res.Requests).To(HaveKeyWithValue(corev1.ResourceMemory, resource.MustParse("4Gi")))
+		Expect(res.Limits).To(HaveKeyWithValue(corev1.ResourceCPU, resource.MustParse("8")))
+		Expect(res.Limits).To(HaveKeyWithValue(corev1.ResourceMemory, resource.MustParse("8Gi")))
 	})
 })
 

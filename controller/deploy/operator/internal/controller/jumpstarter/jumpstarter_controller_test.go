@@ -790,6 +790,18 @@ var _ = Describe("sanitizeProvisionerName", func() {
 		Expect(sanitizeProvisionerName("corellium.jumpstarter.dev")).To(Equal("corellium-jumpstarter-dev"))
 		Expect(sanitizeProvisionerName("UPPER.Case")).To(Equal("upper-case"))
 	})
+
+	It("strips characters invalid in DNS-1123 labels", func() {
+		Expect(sanitizeProvisionerName("foo_bar")).To(Equal("foobar"))
+		Expect(sanitizeProvisionerName("a/b")).To(Equal("ab"))
+		Expect(sanitizeProvisionerName("with spaces")).To(Equal("withspaces"))
+	})
+
+	It("trims leading and trailing dashes", func() {
+		Expect(sanitizeProvisionerName(".leading")).To(Equal("leading"))
+		Expect(sanitizeProvisionerName("trailing.")).To(Equal("trailing"))
+		Expect(sanitizeProvisionerName("..both..")).To(Equal("both"))
+	})
 })
 
 var _ = Describe("ensurePort", func() {

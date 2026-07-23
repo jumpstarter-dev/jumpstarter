@@ -1,5 +1,5 @@
 /*
-Copyright 2025.
+Copyright 2026 by the Jumpstarter Authors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package jumpstarter
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -46,10 +47,16 @@ func (r *JumpstarterReconciler) reconcileExporterSetControllers(ctx context.Cont
 	}
 
 	enabledProvisioners := make(map[string]bool)
+	sanitizedToOriginal := make(map[string]string)
 
 	for _, prov := range jumpstarter.Spec.ExporterSets.Provisioners {
 		enabled := prov.Enabled == nil || *prov.Enabled
 		sanitized := sanitizeProvisionerName(prov.Name)
+
+		if prev, exists := sanitizedToOriginal[sanitized]; exists {
+			return fmt.Errorf("provisioner names %q and %q collide after sanitization (both become %q)", prev, prov.Name, sanitized)
+		}
+		sanitizedToOriginal[sanitized] = prov.Name
 		enabledProvisioners[sanitized] = enabled
 
 		if !enabled {
@@ -440,7 +447,7 @@ func (r *JumpstarterReconciler) createExporterSetDeployment(jumpstarter *operato
 								SuccessThreshold:    1,
 								FailureThreshold:    3,
 							},
-							Resources:                defaultExporterSetControllerResources(esConfig.Resources),
+							Resources:                resolveExporterSetResources(esConfig.Resources, prov.Resources),
 							TerminationMessagePath:   "/dev/termination-log",
 							TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 							SecurityContext: &corev1.SecurityContext{
@@ -465,13 +472,14 @@ func (r *JumpstarterReconciler) createExporterSetDeployment(jumpstarter *operato
 }
 
 // exporterSetPolicyRules returns the RBAC rules needed by the exporter-set controller.
-// Derived from the kubebuilder RBAC annotations in PR #864's reconciler.go.
+// The controller watches ExporterSets and manages Pods/Exporters; it does not create or
+// delete ExporterSets themselves. update/patch on the main resource is needed for finalizers.
 func exporterSetPolicyRules() []rbacv1.PolicyRule {
 	return []rbacv1.PolicyRule{
 		{
 			APIGroups: []string{"virtualtarget.jumpstarter.dev"},
 			Resources: []string{"exportersets"},
-			Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
+			Verbs:     []string{"get", "list", "watch"},
 		},
 		{
 			APIGroups: []string{"virtualtarget.jumpstarter.dev"},
@@ -521,6 +529,15 @@ func exporterSetPolicyRules() []rbacv1.PolicyRule {
 	}
 }
 
+// resolveExporterSetResources returns per-provisioner resources if set,
+// then falls back to global resources, then to defaults.
+func resolveExporterSetResources(global corev1.ResourceRequirements, perProv *corev1.ResourceRequirements) corev1.ResourceRequirements {
+	if perProv != nil {
+		return defaultExporterSetControllerResources(*perProv)
+	}
+	return defaultExporterSetControllerResources(global)
+}
+
 // defaultExporterSetControllerResources returns sensible defaults for an exporter-set
 // controller pod if no explicit resource requirements are provided.
 func defaultExporterSetControllerResources(spec corev1.ResourceRequirements) corev1.ResourceRequirements {
@@ -539,8 +556,17 @@ func defaultExporterSetControllerResources(spec corev1.ResourceRequirements) cor
 	return spec
 }
 
+// invalidLabelChars matches any character not allowed in a DNS-1123 label value.
+var invalidLabelChars = regexp.MustCompile(`[^a-z0-9-]`)
+
 // sanitizeProvisionerName converts a provisioner name to a K8s-safe label/suffix value.
+// It lowercases, replaces dots with dashes, strips any remaining invalid characters,
+// and trims leading/trailing dashes.
 // Example: "qemu.jumpstarter.dev" → "qemu-jumpstarter-dev"
 func sanitizeProvisionerName(name string) string {
-	return strings.ToLower(strings.ReplaceAll(name, ".", "-"))
+	s := strings.ToLower(name)
+	s = strings.ReplaceAll(s, ".", "-")
+	s = invalidLabelChars.ReplaceAllString(s, "")
+	s = strings.Trim(s, "-")
+	return s
 }

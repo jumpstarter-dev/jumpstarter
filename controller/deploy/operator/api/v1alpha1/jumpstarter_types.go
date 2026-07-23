@@ -228,7 +228,11 @@ type ExporterSetsConfig struct {
 // ProvisionerConfig defines a single provisioner controller to deploy.
 type ProvisionerConfig struct {
 	// Name is the provisioner identifier (e.g. "qemu.jumpstarter.dev").
+	// Must be a DNS-subdomain-safe value: lowercase alphanumeric characters, '-' or '.',
+	// starting and ending with an alphanumeric character.
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`
 	Name string `json:"name"`
 
 	// Enabled controls whether a Deployment is created for this provisioner.
@@ -243,6 +247,10 @@ type ProvisionerConfig struct {
 	// +kubebuilder:default=1
 	// +kubebuilder:validation:Minimum=1
 	Replicas *int32 `json:"replicas,omitempty"`
+
+	// Resources overrides the global exporterSets.resources for this provisioner.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 // LeasePolicyConfig defines policy constraints for leases.

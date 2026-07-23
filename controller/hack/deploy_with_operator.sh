@@ -32,6 +32,7 @@ fi
 # load the container images into the cluster
 load_image "${IMG}"
 load_image "${OPERATOR_IMG}"
+load_image "${EXPORTER_SET_CONTROLLER_IMG}"
 
 # Deploy the operator
 echo -e "${GREEN}Deploying Jumpstarter operator ...${NC}"
@@ -203,6 +204,12 @@ ${LOGIN_ENDPOINT_CONFIG}
     grpc:
       endpoints:
 ${ROUTER_ENDPOINT_CONFIG}
+  exporterSets:
+    image: ${EXPORTER_SET_CONTROLLER_IMG}
+    imagePullPolicy: IfNotPresent
+    provisioners:
+      - name: qemu.jumpstarter.dev
+        enabled: true
 EOF
 
 echo -e "${GREEN}Generated Jumpstarter CR (saved to ${TMPFILE}):${NC}"
