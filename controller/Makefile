@@ -226,29 +226,18 @@ deploy-with-operator-parallel:
 deploy-exporters:
 	./hack/demoenv/prepare_exporters.sh
 
-.PHONY: deploy-exporterset
-deploy-exporterset: ## Deploy the exporter-set-controller manually (without operator). Builds images unless SKIP_BUILD=1.
-ifeq ($(SKIP_BUILD),)
-	$(MAKE) docker-build-exporter-set-controller
-	$(MAKE) docker-build-qemu-runtime
-	$(MAKE) docker-build-exporter
-endif
-	$(KUBECTL) apply -f deploy/operator/config/crd/bases/
-	$(KUBECTL) apply -f hack/deploy-exporterset-qemu.yaml
-
 .PHONY: deploy-exporterset-sample
-deploy-exporterset-sample: ## Apply the x86_64 sample VirtualTargetClass and ExporterSet.
+deploy-exporterset-sample: ## Apply the x86_64 sample VirtualTargetClass and ExporterSet (requires operator-deployed exporter-set-controller).
 	$(KUBECTL) apply -f hack/sample-x86_64.yaml
 
 .PHONY: deploy-exporterset-sample-kind
 deploy-exporterset-sample-kind: ## Apply the kind-friendly sample (no KVM requirement) for local testing.
 	$(KUBECTL) apply -f hack/sample-x86_64-kind.yaml
 
-.PHONY: undeploy-exporterset
-undeploy-exporterset: ## Remove the manually deployed exporter-set-controller.
+.PHONY: undeploy-exporterset-sample
+undeploy-exporterset-sample: ## Remove sample VirtualTargetClass and ExporterSet resources.
 	$(KUBECTL) delete --ignore-not-found=true -f hack/sample-x86_64.yaml
 	$(KUBECTL) delete --ignore-not-found=true -f hack/sample-x86_64-kind.yaml
-	$(KUBECTL) delete --ignore-not-found=true -f hack/deploy-exporterset-qemu.yaml
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.

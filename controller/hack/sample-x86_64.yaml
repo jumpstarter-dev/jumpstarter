@@ -1,7 +1,8 @@
 # Sample VirtualTargetClass and ExporterSet for x86_64 QEMU targets.
 #
-# Apply after deploying the exporter-set-controller:
-#   kubectl apply -f hack/sample-x86_64.yaml
+# Apply after the Jumpstarter operator has deployed the exporter-set-controller:
+#   make deploy-exporterset-sample
+#   # or: kubectl apply -f hack/sample-x86_64.yaml
 #
 # This creates:
 #   - A VirtualTargetClass for x86_64 QEMU VMs with KVM acceleration

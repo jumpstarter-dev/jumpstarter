@@ -12,8 +12,9 @@
 # on a cluster that exposes /dev/kvm via the kubevirt device plugin
 # and taints its KVM-capable nodes with jumpstarter.dev/kvm.
 #
-# Apply after deploying the exporter-set-controller:
-#   kubectl apply -f hack/sample-x86_64-kind.yaml
+# Apply after the Jumpstarter operator has deployed the exporter-set-controller:
+#   make deploy-exporterset-sample-kind
+#   # or: kubectl apply -f hack/sample-x86_64-kind.yaml
 ---
 apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
 kind: VirtualTargetClass
