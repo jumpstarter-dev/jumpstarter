@@ -1,5 +1,6 @@
 import ssl
 from json import JSONDecodeError
+from unittest.mock import MagicMock
 
 import click
 import pytest
@@ -9,6 +10,8 @@ from jumpstarter_cli_common.exceptions import (
     handle_exceptions,
     handle_exceptions_with_reauthentication,
 )
+
+from jumpstarter.common.exceptions import ConnectionError as JmpConnectionError
 
 
 @pytest.fixture
@@ -183,3 +186,79 @@ def test_handle_exceptions_maps_grpc_failed_precondition_without_details() -> No
 
     with pytest.raises(click.ClickException, match="precondition"):
         grpc_precondition_no_details_fn()
+
+
+# ---------------------------------------------------------------------------
+# Tests for automatic retry after successful re-authentication (NS-REQ-1/3)
+# ---------------------------------------------------------------------------
+
+
+def _make_expired_connection_error():
+    """Create a ConnectionError that looks like an expired-token error."""
+    exc = JmpConnectionError("token expired")
+    config = MagicMock(name="client_config")
+    exc.set_config(config)
+    return exc, config
+
+
+def test_reauth_retries_on_success() -> None:
+    """After successful re-auth the decorator retries and returns the result (TS-NS-1)."""
+    call_count = 0
+
+    def login_func(_config):
+        pass  # success
+
+    @handle_exceptions_with_reauthentication(login_func)
+    def fn():
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            exc, _ = _make_expired_connection_error()
+            raise exc
+        return "sentinel"
+
+    result = fn()
+    assert result == "sentinel"
+    assert call_count == 2
+
+
+def test_reauth_failure_raises_click_exception() -> None:
+    """If login_func raises, the decorator surfaces a ClickException (TS-NS-2)."""
+    call_count = 0
+
+    def login_func(_config):
+        raise RuntimeError("IdP unreachable")
+
+    @handle_exceptions_with_reauthentication(login_func)
+    def fn():
+        nonlocal call_count
+        call_count += 1
+        exc, _ = _make_expired_connection_error()
+        raise exc
+
+    with pytest.raises(click.ClickException, match="Re-authentication failed"):
+        fn()
+
+    # The wrapped function should have been called only once (no retry).
+    assert call_count == 1
+
+
+def test_reauth_retry_bounded_to_one_attempt() -> None:
+    """The decorator retries at most once; a second failure surfaces normally (TS-NS-3)."""
+    call_count = 0
+
+    def login_func(_config):
+        pass  # always succeeds
+
+    @handle_exceptions_with_reauthentication(login_func)
+    def fn():
+        nonlocal call_count
+        call_count += 1
+        exc, _ = _make_expired_connection_error()
+        raise exc
+
+    with pytest.raises(click.ClickException):
+        fn()
+
+    # Original call + exactly one retry = 2 total.
+    assert call_count == 2

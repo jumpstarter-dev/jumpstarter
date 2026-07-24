@@ -1,7 +1,9 @@
+import asyncio
 import json
 import os
 import ssl
 import time
+import warnings
 from dataclasses import dataclass
 from functools import wraps
 from typing import ClassVar
@@ -12,11 +14,18 @@ import click
 from aiohttp import web
 from anyio import create_memory_object_stream
 from anyio.to_thread import run_sync
-from authlib.integrations.requests_client import OAuth2Session
-from joserfc.jws import extract_compact
-from yarl import URL
 
-from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT
+# Suppress AuthlibDeprecationWarning emitted unconditionally during the authlib
+# import chain (authlib._joserfc_helpers -> authlib.jose).  The project already
+# uses joserfc directly for JWT operations; authlib is only needed for
+# OAuth2Session.  The warning provides no actionable information to end users.
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"authlib\.")
+
+from authlib.integrations.requests_client import OAuth2Session  # noqa: E402
+from joserfc.jws import extract_compact  # noqa: E402
+from yarl import URL  # noqa: E402
+
+from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT, JMP_OIDC_DEVICE_FLOW  # noqa: E402
 
 
 def _get_ssl_context() -> ssl.SSLContext:
@@ -46,11 +55,31 @@ def opt_oidc(f):
         default=True,
         help="Request offline_access scope (refresh token)",
     )
+    @click.option(
+        "--device-flow",
+        "device_flow",
+        is_flag=True,
+        default=False,
+        help="Use OAuth 2.0 Device Authorization Grant (RFC 8628) instead of authorization code flow. "
+        "Useful in headless or containerized environments where localhost callbacks are not available.",
+    )
     @wraps(f)
     def wrapper(*args, **kwds):
         return f(*args, **kwds)
 
     return wrapper
+
+
+def should_use_device_flow(device_flow_flag: bool) -> bool:
+    """Determine whether to use the device authorization grant flow.
+
+    Returns True if:
+    - The --device-flow CLI flag was explicitly passed, OR
+    - The JMP_OIDC_DEVICE_FLOW environment variable is set to "1"
+    """
+    if device_flow_flag:
+        return True
+    return os.environ.get(JMP_OIDC_DEVICE_FLOW) == "1"
 
 
 @dataclass(kw_only=True)
@@ -78,7 +107,15 @@ class Config:
 
     def client(self, **kwargs):
         session = OAuth2Session(client_id=self.client_id, scope=self._scopes(), **kwargs)
-        session.verify = False if self.insecure_tls else (os.environ.get("SSL_CERT_FILE") or certifi.where())
+        if self.insecure_tls:
+            session.verify = False
+            # The user has already opted into insecure TLS (via --insecure flag
+            # or config), so urllib3's InsecureRequestWarning is redundant noise.
+            import urllib3
+
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        else:
+            session.verify = os.environ.get("SSL_CERT_FILE") or certifi.where()
         return session
 
     async def token_exchange_grant(self, token: str, **kwargs):
@@ -176,6 +213,109 @@ class Config:
         return await run_sync(
             lambda: client.fetch_token(config["token_endpoint"], authorization_response=authorization_response)
         )
+
+    async def device_authorization_grant(self):
+        """Perform OAuth 2.0 Device Authorization Grant (RFC 8628).
+
+        This flow is suitable for headless or containerized environments where
+        a localhost callback server is not accessible from the user's browser.
+
+        The flow:
+        1. Request a device code from the authorization server.
+        2. Display a verification URL and user code to the user.
+        3. Poll the token endpoint until the user completes authorization.
+        """
+        config = await self.configuration()
+
+        device_endpoint = config.get("device_authorization_endpoint")
+        if not device_endpoint:
+            raise click.ClickException(
+                "The identity provider does not support Device Authorization Grant (RFC 8628). "
+                "The OIDC discovery document does not include a 'device_authorization_endpoint'. "
+                "Contact your IdP administrator to enable device flow, or use a different login method."
+            )
+
+        token_endpoint = config["token_endpoint"]
+
+        ssl_context: ssl.SSLContext | bool = False if self.insecure_tls else _get_ssl_context()
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
+
+        async with aiohttp.ClientSession(connector=connector) as session:
+            # Step 1: Request device authorization
+            async with session.post(
+                device_endpoint,
+                data={
+                    "client_id": self.client_id,
+                    "scope": " ".join(self._scopes()),
+                },
+            ) as response:
+                if response.status != 200:
+                    text = await response.text()
+                    raise click.ClickException(
+                        f"Device authorization request failed (HTTP {response.status}): {text}"
+                    )
+                device_data = await response.json()
+
+            device_code = device_data["device_code"]
+            interval = device_data.get("interval", 5)
+            expires_in = device_data.get("expires_in", 600)
+
+            # Step 2: Display verification URI to user
+            verification_uri_complete = device_data.get("verification_uri_complete")
+            if verification_uri_complete:
+                click.echo(f"To sign in, open the following URL in your browser:\n\n  {verification_uri_complete}\n")
+            else:
+                verification_uri = device_data.get("verification_uri")
+                user_code = device_data.get("user_code")
+                click.echo(
+                    f"To sign in, open the following URL in your browser:\n\n  {verification_uri}\n\n"
+                    f"Then enter the code: {user_code}\n"
+                )
+
+            click.echo("Waiting for authentication...")
+
+            # Step 3: Poll the token endpoint
+            deadline = time.monotonic() + expires_in
+            while time.monotonic() < deadline:
+                await asyncio.sleep(interval)
+
+                async with session.post(
+                    token_endpoint,
+                    data={
+                        "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                        "device_code": device_code,
+                        "client_id": self.client_id,
+                    },
+                ) as token_response:
+                    token_data = await token_response.json()
+
+                    if token_response.status == 200:
+                        return token_data
+
+                    error = token_data.get("error", "")
+                    if error == "authorization_pending":
+                        continue
+                    elif error == "slow_down":
+                        interval += 5
+                        continue
+                    elif error == "expired_token":
+                        raise click.ClickException(
+                            "Device authorization has expired. Please try again."
+                        )
+                    elif error == "access_denied":
+                        raise click.ClickException(
+                            "Authorization request was denied by the user."
+                        )
+                    else:
+                        error_description = token_data.get("error_description", "")
+                        raise click.ClickException(
+                            f"Device authorization failed: {error}"
+                            + (f" - {error_description}" if error_description else "")
+                        )
+
+            raise click.ClickException(
+                "Device authorization timed out waiting for user approval. Please try again."
+            )
 
 
 def decode_jwt(token: str):
