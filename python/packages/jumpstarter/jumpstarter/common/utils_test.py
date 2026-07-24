@@ -1,11 +1,12 @@
 import shutil
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from .utils import _build_common_env, _lease_env_vars, launch_shell
-from jumpstarter.utils.env import ExporterMetadata
+from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
+from jumpstarter.utils.env import ExporterMetadata, _resolve_drivers_config
 
 
 def test_launch_shell(tmp_path, monkeypatch):
@@ -271,3 +272,85 @@ async def test_fetch_exporter_labels_failure():
     await lease._fetch_exporter_labels()
 
     assert lease.exporter_labels == {}
+
+
+def test_resolve_drivers_config_env_allow_takes_precedence(monkeypatch):
+    monkeypatch.setenv("JMP_DRIVERS_ALLOW", "UNSAFE")
+    monkeypatch.delenv("JMP_DRIVERS_UNSAFE", raising=False)
+    drivers = _resolve_drivers_config()
+    assert drivers.unsafe is True
+    assert "UNSAFE" in drivers.allow
+
+
+def test_resolve_drivers_config_env_unsafe_takes_precedence(monkeypatch):
+    monkeypatch.delenv("JMP_DRIVERS_ALLOW", raising=False)
+    monkeypatch.setenv("JMP_DRIVERS_UNSAFE", "true")
+    drivers = _resolve_drivers_config()
+    assert drivers.unsafe is True
+
+
+def test_resolve_drivers_config_falls_back_to_client_config(monkeypatch):
+    monkeypatch.delenv("JMP_DRIVERS_ALLOW", raising=False)
+    monkeypatch.delenv("JMP_DRIVERS_UNSAFE", raising=False)
+
+    mock_drivers = ClientConfigV1Alpha1Drivers(allow=["my_driver.*"], unsafe=False)
+    mock_client = MagicMock()
+    mock_client.drivers = mock_drivers
+    mock_user_config = MagicMock()
+    mock_user_config.config.current_client = mock_client
+
+    with patch("jumpstarter.config.user.UserConfigV1Alpha1.load", return_value=mock_user_config):
+        drivers = _resolve_drivers_config()
+
+    assert drivers.allow == ["my_driver.*"]
+    assert drivers.unsafe is False
+
+
+def test_resolve_drivers_config_falls_back_to_client_config_unsafe(monkeypatch):
+    monkeypatch.delenv("JMP_DRIVERS_ALLOW", raising=False)
+    monkeypatch.delenv("JMP_DRIVERS_UNSAFE", raising=False)
+
+    mock_drivers = ClientConfigV1Alpha1Drivers(allow=["UNSAFE"], unsafe=True)
+    mock_client = MagicMock()
+    mock_client.drivers = mock_drivers
+    mock_user_config = MagicMock()
+    mock_user_config.config.current_client = mock_client
+
+    with patch("jumpstarter.config.user.UserConfigV1Alpha1.load", return_value=mock_user_config):
+        drivers = _resolve_drivers_config()
+
+    assert drivers.unsafe is True
+
+
+def test_resolve_drivers_config_defaults_when_no_config(monkeypatch):
+    monkeypatch.delenv("JMP_DRIVERS_ALLOW", raising=False)
+    monkeypatch.delenv("JMP_DRIVERS_UNSAFE", raising=False)
+
+    with patch("jumpstarter.config.user.UserConfigV1Alpha1.load", side_effect=FileNotFoundError("no config")):
+        drivers = _resolve_drivers_config()
+
+    assert drivers.allow == []
+    assert drivers.unsafe is False
+
+
+def test_resolve_drivers_config_defaults_when_no_current_client(monkeypatch):
+    monkeypatch.delenv("JMP_DRIVERS_ALLOW", raising=False)
+    monkeypatch.delenv("JMP_DRIVERS_UNSAFE", raising=False)
+
+    mock_user_config = MagicMock()
+    mock_user_config.config.current_client = None
+
+    with patch("jumpstarter.config.user.UserConfigV1Alpha1.load", return_value=mock_user_config):
+        drivers = _resolve_drivers_config()
+
+    assert drivers.allow == []
+    assert drivers.unsafe is False
+
+
+def test_resolve_drivers_config_propagates_unexpected_errors(monkeypatch):
+    monkeypatch.delenv("JMP_DRIVERS_ALLOW", raising=False)
+    monkeypatch.delenv("JMP_DRIVERS_UNSAFE", raising=False)
+
+    with patch("jumpstarter.config.user.UserConfigV1Alpha1.load", side_effect=RuntimeError("unexpected")):
+        with pytest.raises(RuntimeError, match="unexpected"):
+            _resolve_drivers_config()
