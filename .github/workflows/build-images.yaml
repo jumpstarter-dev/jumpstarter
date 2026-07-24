@@ -27,6 +27,7 @@ jobs:
       attestations: write
       id-token: write
     strategy:
+      fail-fast: false
       matrix:
         include:
           # Controller images
