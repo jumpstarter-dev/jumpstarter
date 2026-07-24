@@ -487,24 +487,36 @@ class TestBeforeLeaseHookRaceGuard:
         )
 
 
+def _setup_mock_controller_stub(exporter, side_effect=None):
+    """Helper to set up mock controller stub for testing ReportStatus.
+
+    Returns:
+        tuple: (mock_controller, stub_context_manager)
+    """
+    mock_controller = AsyncMock()
+    if side_effect is not None:
+        mock_controller.ReportStatus = AsyncMock(side_effect=side_effect)
+
+    stub_ctx = AsyncMock()
+    stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
+    stub_ctx.__aexit__ = AsyncMock(return_value=False)
+
+    return mock_controller, stub_ctx
+
+
 class TestReportStatusGrpcErrorHandling:
     async def test_unimplemented_grpc_error_logs_warning(self, caplog):
         """When ReportStatus returns UNIMPLEMENTED, a warning is logged
         instead of an error."""
         exporter = _make_exporter_for_report_status()
 
-        mock_controller = AsyncMock()
         error = grpc.aio.AioRpcError(
             code=grpc.StatusCode.UNIMPLEMENTED,
             initial_metadata=grpc.aio.Metadata(),
             trailing_metadata=grpc.aio.Metadata(),
             details="Method not implemented",
         )
-        mock_controller.ReportStatus = AsyncMock(side_effect=error)
-
-        stub_ctx = AsyncMock()
-        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
-        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=error)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
             with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"):
@@ -519,38 +531,252 @@ class TestReportStatusGrpcErrorHandling:
         assert len(error_msgs) == 0, (
             f"No error should be logged for UNIMPLEMENTED, got: {[r.message for r in error_msgs]}"
         )
+        # Ensure no retry - UNIMPLEMENTED should fail fast
+        assert mock_controller.ReportStatus.call_count == 1
 
     async def test_other_grpc_error_logs_error(self, caplog):
         """When ReportStatus returns a gRPC error other than UNIMPLEMENTED,
-        it is logged at ERROR level."""
+        it retries and eventually logs at ERROR level."""
         exporter = _make_exporter_for_report_status()
 
-        mock_controller = AsyncMock()
         error = grpc.aio.AioRpcError(
             code=grpc.StatusCode.UNAVAILABLE,
             initial_metadata=grpc.aio.Metadata(),
             trailing_metadata=grpc.aio.Metadata(),
             details="Service unavailable",
         )
-        mock_controller.ReportStatus = AsyncMock(side_effect=error)
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=error)
 
-        stub_ctx = AsyncMock()
-        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
-        stub_ctx.__aexit__ = AsyncMock(return_value=False)
-
-        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx), \
+                patch("anyio.sleep") as mock_sleep:
             with caplog.at_level(logging.DEBUG, logger="jumpstarter.exporter.exporter"):
                 await exporter._report_status(ExporterStatus.AVAILABLE, "test")
 
+        # Should log retry warnings (3 retries)
+        warning_msgs = [r for r in caplog.records if r.levelno == logging.WARNING]
+        retry_warnings = [r for r in warning_msgs if "Transient error" in r.message]
+        assert len(retry_warnings) == 3, f"Expected 3 retry warnings, got: {len(retry_warnings)}"
+
+        # Verify exponential backoff schedule
+        backoff_values = [call.args[0] for call in mock_sleep.call_args_list]
+        assert backoff_values == [1.0, 2.0, 4.0], f"Expected [1.0, 2.0, 4.0], got: {backoff_values}"
+
+        # 4 total attempts: 1 initial + 3 retries
+        assert mock_controller.ReportStatus.call_count == 4
+
+        # Eventually logs ERROR after exhausting retries
         error_msgs = [r for r in caplog.records if r.levelno == logging.ERROR]
         assert any("Failed to update status" in r.message for r in error_msgs), (
             f"Expected error about failed status update, got: {[r.message for r in caplog.records]}"
         )
         # Ensure no WARNING about "not supported" was logged
-        warning_msgs = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert not any("ReportStatus not supported" in r.message for r in warning_msgs), (
             "UNAVAILABLE error should not produce 'not supported' warning"
         )
+
+    async def test_report_status_retries_on_transient_failure(self):
+        """Transient gRPC errors (UNAVAILABLE, DEADLINE_EXCEEDED) are retried.
+        If the error resolves before exhausting retries, the status is delivered."""
+        exporter = _make_exporter_for_report_status()
+
+        unavailable_error = grpc.aio.AioRpcError(
+            code=grpc.StatusCode.UNAVAILABLE,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
+            details="Service unavailable",
+        )
+
+        delivered_statuses = []
+        call_count = 0
+
+        async def fail_twice_then_succeed(request):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise unavailable_error
+            # Third attempt succeeds
+            delivered_statuses.append(ExporterStatus.from_proto(request.status))
+
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=fail_twice_then_succeed)
+
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx), \
+                patch("anyio.sleep") as mock_sleep:
+            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+
+        # Status was delivered on the third attempt
+        assert ExporterStatus.AVAILABLE in delivered_statuses
+        assert call_count == 3
+
+        # Verify exponential backoff for the 2 retries before success
+        backoff_values = [call.args[0] for call in mock_sleep.call_args_list]
+        assert backoff_values == [1.0, 2.0], f"Expected [1.0, 2.0], got: {backoff_values}"
+
+    async def test_report_status_does_not_retry_non_transient_grpc_error(self):
+        """Non-transient gRPC errors (PERMISSION_DENIED, INVALID_ARGUMENT, etc.)
+        are not retried — fail fast."""
+        exporter = _make_exporter_for_report_status()
+
+        permission_error = grpc.aio.AioRpcError(
+            code=grpc.StatusCode.PERMISSION_DENIED,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
+            details="Permission denied",
+        )
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=permission_error)
+
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
+            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+
+        # Called exactly once (no retry)
+        assert mock_controller.ReportStatus.call_count == 1
+
+    async def test_report_status_does_not_retry_non_grpc_exception(self):
+        """Non-gRPC exceptions (ConnectionError, etc.) are not retried."""
+        exporter = _make_exporter_for_report_status()
+
+        connection_error = ConnectionError("Network unreachable")
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=connection_error)
+
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
+            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+
+        # Called exactly once (no retry)
+        assert mock_controller.ReportStatus.call_count == 1
+
+    async def test_request_lease_release_retries_on_transient_failure(self):
+        """When release_lease=true fails, _request_lease_release falls back to
+        retrying just the AVAILABLE status via _report_status."""
+        exporter = _make_exporter_for_report_status()
+
+        lease_ctx = LeaseContext(
+            lease_name="test-lease",
+            before_lease_hook=Event(),
+            client_name="test-client",
+        )
+        exporter._lease_context = lease_ctx
+
+        unavailable_error = grpc.aio.AioRpcError(
+            code=grpc.StatusCode.UNAVAILABLE,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
+            details="Service unavailable",
+        )
+
+        delivered = []
+        call_count = 0
+
+        async def fail_first_then_succeed(request):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # First attempt (release_lease=true) fails
+                assert request.release_lease is True
+                raise unavailable_error
+            # Second attempt (fallback via _report_status) succeeds
+            delivered.append(request)
+
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=fail_first_then_succeed)
+
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx), patch("anyio.sleep"):
+            await exporter._request_lease_release()
+
+        # First call with release_lease=true failed, second call (via _report_status) succeeded
+        assert len(delivered) == 1
+        assert delivered[0].release_lease is False  # Fallback sends status-only
+        assert ExporterStatus.from_proto(delivered[0].status) == ExporterStatus.AVAILABLE
+        assert call_count == 2
+
+    async def test_request_lease_release_exhausts_retries(self):
+        """When both Phase 1 and Phase 2 fail completely, lease_ended is still set
+        so handle_lease can exit (prevents being stuck forever)."""
+        exporter = _make_exporter_for_report_status()
+
+        lease_ctx = LeaseContext(
+            lease_name="test-lease",
+            before_lease_hook=Event(),
+            client_name="test-client",
+        )
+        exporter._lease_context = lease_ctx
+
+        unavailable_error = grpc.aio.AioRpcError(
+            code=grpc.StatusCode.UNAVAILABLE,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
+            details="Service unavailable",
+        )
+
+        call_count = 0
+
+        async def always_fail(request):
+            nonlocal call_count
+            call_count += 1
+            raise unavailable_error
+
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=always_fail)
+
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx), patch("anyio.sleep"):
+            await exporter._request_lease_release()
+
+        # Phase 1: 1 attempt (release_lease=true fails)
+        # Phase 2: 4 attempts via _send_report_status_rpc (all fail)
+        # Total: 5 calls
+        assert call_count == 5
+
+        # Critical: lease_ended must be set even when everything fails,
+        # otherwise handle_lease never exits
+        assert lease_ctx.lease_ended.is_set()
+
+    async def test_request_lease_release_succeeds_on_first_attempt(self):
+        """When release_lease=true succeeds immediately, no fallback to _report_status."""
+        exporter = _make_exporter_for_report_status()
+
+        lease_ctx = LeaseContext(
+            lease_name="test-lease",
+            before_lease_hook=Event(),
+            client_name="test-client",
+        )
+        exporter._lease_context = lease_ctx
+
+        delivered = []
+
+        async def succeed_immediately(request):
+            delivered.append(request)
+
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=succeed_immediately)
+
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
+            await exporter._request_lease_release()
+
+        # Only one call made (release_lease=true succeeded)
+        assert len(delivered) == 1
+        assert delivered[0].release_lease is True
+        assert ExporterStatus.from_proto(delivered[0].status) == ExporterStatus.AVAILABLE
+
+    async def test_request_lease_release_unimplemented_no_fallback(self):
+        """When controller returns UNIMPLEMENTED, no fallback to _report_status
+        (controller doesn't support status reporting at all)."""
+        exporter = _make_exporter_for_report_status()
+
+        lease_ctx = LeaseContext(
+            lease_name="test-lease",
+            before_lease_hook=Event(),
+            client_name="test-client",
+        )
+        exporter._lease_context = lease_ctx
+
+        unimplemented_error = grpc.aio.AioRpcError(
+            code=grpc.StatusCode.UNIMPLEMENTED,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
+            details="Method not implemented",
+        )
+        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=unimplemented_error)
+
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
+            await exporter._request_lease_release()
+
+        # Called exactly once (UNIMPLEMENTED means no fallback)
+        assert mock_controller.ReportStatus.call_count == 1
 
 
 class TestHandleLeaseStaleSkip:
