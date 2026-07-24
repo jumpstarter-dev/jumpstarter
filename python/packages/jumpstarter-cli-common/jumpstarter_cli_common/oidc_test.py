@@ -1,4 +1,5 @@
 import ssl
+import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import click
@@ -279,3 +280,48 @@ class TestDeviceAuthorizationGrant:
         ):
             with pytest.raises(click.ClickException, match="expired"):
                 await config.device_authorization_grant()
+
+
+# ---------------------------------------------------------------------------
+# Warning suppression tests (NS-REQ-4, NS-REQ-5)
+# ---------------------------------------------------------------------------
+
+
+class TestAuthlibDeprecationWarningSuppressed:
+    """TS-NS-4: importing oidc must not emit AuthlibDeprecationWarning."""
+
+    def test_no_authlib_deprecation_warning_on_import(self) -> None:
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            # Force re-evaluation of the filter + import chain
+            import importlib
+
+            import jumpstarter_cli_common.oidc
+
+            importlib.reload(jumpstarter_cli_common.oidc)
+
+        authlib_warnings = [
+            w
+            for w in caught
+            if issubclass(w.category, DeprecationWarning) and "authlib" in str(w.message).lower()
+        ]
+        assert authlib_warnings == [], f"Unexpected authlib deprecation warnings: {authlib_warnings}"
+
+
+class TestInsecureRequestWarningSuppressed:
+    """TS-NS-5: Config.client() with insecure_tls=True suppresses InsecureRequestWarning."""
+
+    def test_urllib3_insecure_request_warning_suppressed(self) -> None:
+        import urllib3.exceptions
+
+        config = Config(issuer="https://auth.example.com", client_id="test", insecure_tls=True)
+        config.client()
+
+        # After calling client() with insecure_tls=True, the urllib3
+        # InsecureRequestWarning should be in the warning filters.
+        matching_filters = [
+            f
+            for f in warnings.filters
+            if len(f) >= 3 and f[0] == "ignore" and f[2] is urllib3.exceptions.InsecureRequestWarning
+        ]
+        assert len(matching_filters) > 0, "InsecureRequestWarning was not suppressed"

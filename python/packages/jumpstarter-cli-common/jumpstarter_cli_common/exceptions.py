@@ -211,13 +211,26 @@ def handle_exceptions(func):
     return wrapped
 
 
+class _ReauthSucceeded(Exception):
+    """Internal signal that re-authentication succeeded and the caller should retry."""
+
+
 def _handle_connection_error_with_reauth(exc, login_func):
-    """Handle ConnectionError with reauthentication logic."""
+    """Handle ConnectionError with reauthentication logic.
+
+    If the error indicates an expired token, triggers re-authentication via
+    ``login_func`` and raises ``_ReauthSucceeded`` so the calling decorator
+    can retry the original operation.  Non-expired connection errors are
+    surfaced as ``ClickExceptionRed`` directly.
+    """
     if "expired" in str(exc).lower():
-        click.echo(click.style("Token is expired, triggering re-authentication", fg="red"))
+        click.echo(click.style("Token is expired, triggering re-authentication", fg="yellow"))
         config = exc.get_config()
-        login_func(config)
-        raise ClickExceptionRed("Please try again now") from None
+        try:
+            login_func(config)
+        except Exception as reauth_exc:
+            raise ClickExceptionRed(f"Re-authentication failed: {reauth_exc}") from None
+        raise _ReauthSucceeded() from None
     else:
         raise ClickExceptionRed(str(exc)) from None
 
@@ -239,26 +252,78 @@ def _handle_exception_group_with_reauth(eg, login_func) -> NoReturn:
     raise eg
 
 
+def _raise_if_mappable(exc: BaseException) -> None:
+    """Raise a user-friendly ClickException if *exc* maps to one, otherwise return."""
+    if cli_exc := _map_cli_exception(exc):
+        raise cli_exc from None
+
+
+def _try_reauth_or_handle(handler, exc, login_func, *, allow_reauth: bool) -> bool:
+    """Attempt re-auth via *handler*; return True if re-auth succeeded.
+
+    When *allow_reauth* is False the handler is called without catching
+    ``_ReauthSucceeded`` — any re-auth signal propagates as a normal error.
+    """
+    if allow_reauth:
+        try:
+            handler(exc, login_func)
+        except _ReauthSucceeded:
+            return True
+    else:
+        handler(exc, login_func)
+    return False
+
+
+def _call_with_exception_handling(func, args, kwargs, login_func, *, allow_reauth: bool):
+    """Call *func* and handle exceptions, optionally allowing re-authentication.
+
+    Returns ``(result, needs_retry)`` where *needs_retry* is ``True`` when
+    re-authentication succeeded and the caller should retry the call.
+    """
+    try:
+        return func(*args, **kwargs), False
+    except _ReauthSucceeded:
+        raise ClickExceptionRed("Unexpected re-auth signal") from None
+    except BaseExceptionGroup as eg:
+        if _try_reauth_or_handle(_handle_exception_group_with_reauth, eg, login_func, allow_reauth=allow_reauth):
+            return None, True
+    except (ConnectionError, JumpstarterException, click.ClickException) as e:
+        if isinstance(e, ConnectionError) and not allow_reauth:
+            raise ClickExceptionRed(str(e)) from None
+        if _try_reauth_or_handle(_handle_single_exception_with_reauth, e, login_func, allow_reauth=allow_reauth):
+            return None, True
+    except Exception as e:
+        _raise_if_mappable(e)
+        raise
+    except KeyboardInterrupt as e:
+        _raise_if_mappable(e)
+        raise
+    return None, False  # pragma: no cover — handlers above always raise or return
+
+
 def handle_exceptions_with_reauthentication(login_func):
-    """Decorator to handle exceptions in blocking functions, including those wrapped in BaseExceptionGroup."""
+    """Decorator to handle exceptions in blocking functions, including those wrapped in BaseExceptionGroup.
+
+    When a ``ConnectionError`` with an expired-token message is caught, the
+    decorator triggers re-authentication via *login_func* and **retries the
+    original call exactly once**.  If the retry also fails, the error is
+    surfaced normally — no infinite loop.
+    """
 
     def decorator(func):
         @wraps(func)
         def wrapped(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except BaseExceptionGroup as eg:
-                _handle_exception_group_with_reauth(eg, login_func)
-            except (ConnectionError, JumpstarterException, click.ClickException) as e:
-                _handle_single_exception_with_reauth(e, login_func)
-            except Exception as e:
-                if cli_exc := _map_cli_exception(e):
-                    raise cli_exc from None
-                raise
-            except KeyboardInterrupt as e:
-                if cli_exc := _map_cli_exception(e):
-                    raise cli_exc from None
-                raise
+            result, needs_retry = _call_with_exception_handling(
+                func, args, kwargs, login_func, allow_reauth=True
+            )
+            if not needs_retry:
+                return result
+
+            click.echo(click.style("Re-authenticated, retrying...", fg="yellow"))
+            result, _ = _call_with_exception_handling(
+                func, args, kwargs, login_func, allow_reauth=False
+            )
+            return result
 
         return wrapped
 

@@ -365,11 +365,27 @@ def _make_expired_jwt() -> str:
     return f"{header}.{payload}.{sig}"
 
 
+def _make_valid_jwt() -> str:
+    """Create a JWT with an exp claim in the future (no signature verification needed)."""
+
+    def b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+    header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    payload = b64url(json.dumps({"exp": int(time.time()) + 3600, "iss": "https://example.com"}).encode())
+    sig = b64url(b"fakesig")
+    return f"{header}.{payload}.{sig}"
+
+
 def test_expired_token_triggers_reauth():
     config = _DummyConfig()
     config.token = _make_expired_jwt()
 
-    login_mock = Mock()
+    def _login_side_effect(cfg):
+        # Simulate successful re-authentication by updating the token
+        cfg.token = _make_valid_jwt()
+
+    login_mock = Mock(side_effect=_login_side_effect)
 
     @handle_exceptions_with_reauthentication(login_mock)
     def run_shell():
@@ -385,8 +401,11 @@ def test_expired_token_triggers_reauth():
             None,
         )
 
-    with pytest.raises(click.ClickException, match="Please try again now"):
-        run_shell()
+    with patch(
+        "jumpstarter_cli.shell._run_shell_with_lease_async",
+        new=AsyncMock(return_value=0),
+    ):
+        run_shell()  # Should succeed after retry — no exception raised
 
     login_mock.assert_called_once_with(config)
 
