@@ -106,9 +106,23 @@ func (p *Provisioner) RenderPod(
 	exporterSet *virtualtargetv1alpha1.ExporterSet,
 	vtc *virtualtargetv1alpha1.VirtualTargetClass,
 	mergedParameters map[string]interface{},
+	exporter *jumpstarterdevv1alpha1.Exporter,
 ) (*corev1.Pod, error) {
 	restartAlways := corev1.ContainerRestartPolicyAlways
 	sizeLimit := resource.MustParse(sharedVolumeSizeLimit)
+
+	// JEP-0013 persistent log context for jumpstarter-exec (matches
+	// set_persistent_log_context in the Python exporter).
+	runtimeEnv := []corev1.EnvVar{}
+	if exporter != nil {
+		runtimeEnv = append(runtimeEnv, corev1.EnvVar{
+			Name: "JUMPSTARTER_EXEC_LOG_FIELDS",
+			Value: fmt.Sprintf(
+				"component=exporter,exporter=%s,namespace=%s",
+				exporter.Name, exporter.Namespace,
+			),
+		})
+	}
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -159,6 +173,7 @@ func (p *Provisioner) RenderPod(
 					Name:            "target-runtime",
 					Image:           DefaultQEMURuntimeImage,
 					ImagePullPolicy: corev1.PullIfNotPresent,
+					Env:             runtimeEnv,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      sharedVolumeName,

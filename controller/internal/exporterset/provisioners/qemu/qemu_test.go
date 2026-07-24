@@ -20,6 +20,7 @@ import (
 	"context"
 	"testing"
 
+	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -59,7 +60,7 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 		},
 	}
 
-	pod, err := New().RenderPod(context.Background(), exporterSet, vtc, nil)
+	pod, err := New().RenderPod(context.Background(), exporterSet, vtc, nil, nil)
 	if err != nil {
 		t.Fatalf("RenderPod() error = %v", err)
 	}
@@ -130,7 +131,7 @@ func TestRenderPod_clonesSchedulingFromVTC(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-set", Namespace: "default"},
 	}
 
-	pod, err := New().RenderPod(context.Background(), exporterSet, vtc, nil)
+	pod, err := New().RenderPod(context.Background(), exporterSet, vtc, nil, nil)
 	if err != nil {
 		t.Fatalf("RenderPod() error = %v", err)
 	}
@@ -161,5 +162,38 @@ func TestRenderPod_clonesSchedulingFromVTC(t *testing.T) {
 	pod.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU] = resource.MustParse("1")
 	if got := vtc.Spec.Scheduling.Resources.Requests[corev1.ResourceCPU]; !got.Equal(cpu) {
 		t.Errorf("VTC Resources mutated: got %v", got)
+	}
+}
+
+func TestRenderPod_injectsJumpstarterExecLogFields(t *testing.T) {
+	exporterSet := &virtualtargetv1alpha1.ExporterSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "demo-set", Namespace: "jumpstarter-lab"},
+	}
+	vtc := &virtualtargetv1alpha1.VirtualTargetClass{
+		Spec: virtualtargetv1alpha1.VirtualTargetClassSpec{Provisioner: ProvisionerName},
+	}
+	exporter := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "demo-set-abc12",
+			Namespace: "jumpstarter-lab",
+		},
+	}
+
+	pod, err := New().RenderPod(context.Background(), exporterSet, vtc, nil, exporter)
+	if err != nil {
+		t.Fatalf("RenderPod() error = %v", err)
+	}
+
+	env := pod.Spec.Containers[0].Env
+	var got string
+	for _, e := range env {
+		if e.Name == "JUMPSTARTER_EXEC_LOG_FIELDS" {
+			got = e.Value
+			break
+		}
+	}
+	want := "component=exporter,exporter=demo-set-abc12,namespace=jumpstarter-lab"
+	if got != want {
+		t.Errorf("JUMPSTARTER_EXEC_LOG_FIELDS = %q, want %q", got, want)
 	}
 }
