@@ -78,10 +78,11 @@ type JumpstarterReconciler struct {
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 
 // RBAC resources
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 
 // Leader election
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
@@ -120,6 +121,13 @@ type JumpstarterReconciler struct {
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporteraccesspolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporteraccesspolicies/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporteraccesspolicies/finalizers,verbs=update
+
+// virtualtarget.jumpstarter.dev CRD resources (needed to grant permissions to managed
+// exporter-set provisioner controllers, see exporterSetPolicyRules)
+// +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets,verbs=get;list;watch
+// +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets/status;exportersets/scale,verbs=get;update;patch
+// +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets/finalizers,verbs=update
+// +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=virtualtargetclasses,verbs=get;list;watch
 
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
@@ -185,6 +193,12 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Reconcile Router Deployment
 	if err := r.reconcileRouterDeployment(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Router Deployment")
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile ExporterSet provisioner controller Deployments
+	if err := r.reconcileExporterSetControllers(ctx, &jumpstarter); err != nil {
+		log.Error(err, "Failed to reconcile ExporterSet controllers")
 		return ctrl.Result{}, err
 	}
 

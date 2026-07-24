@@ -20,12 +20,15 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -87,6 +90,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	// This controller is only granted a namespaced Role (not a ClusterRole, see
+	// exporterSetPolicyRules in the operator), so its cache MUST be restricted to
+	// its own namespace. Without this, the informers issue cluster-scoped
+	// List/Watch calls that are rejected by the API server with "forbidden ...
+	// at the cluster scope", even though the namespaced Role grants the verb.
+	namespace := os.Getenv("NAMESPACE")
+	if namespace == "" {
+		setupLog.Error(fmt.Errorf("missing required environment variable"), "NAMESPACE environment variable is required")
+		os.Exit(1)
+	}
+
 	// Select the provisioner implementation based on the flag
 	prov, err := selectProvisioner(provisioner)
 	if err != nil {
@@ -96,12 +110,18 @@ func main() {
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
+		Cache: cache.Options{
+			DefaultNamespaces: map[string]cache.Config{
+				namespace: {},
+			},
+		},
 		Metrics: metricsserver.Options{
 			BindAddress: metricsAddr,
 		},
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "exporter-set-controller-" + provisioner,
+		HealthProbeBindAddress:  probeAddr,
+		LeaderElection:          enableLeaderElection,
+		LeaderElectionID:        "exporter-set-controller-" + provisioner,
+		LeaderElectionNamespace: namespace,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -109,10 +129,11 @@ func main() {
 	}
 
 	if err = (&exporterset.ExporterSetReconciler{
-		Client:      mgr.GetClient(),
-		Scheme:      mgr.GetScheme(),
-		Recorder:    mgr.GetEventRecorderFor("exporter-set-controller"),
-		Provisioner: prov,
+		Client:              mgr.GetClient(),
+		Scheme:              mgr.GetScheme(),
+		Recorder:            mgr.GetEventRecorderFor("exporter-set-controller"),
+		Provisioner:         prov,
+		LastScaleDownAction: make(map[types.NamespacedName]time.Time),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ExporterSet")
 		os.Exit(1)

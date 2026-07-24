@@ -21,6 +21,12 @@ runs:
         name: operator-image-${{ inputs.arch }}
         path: /tmp/artifacts
 
+    - name: Download exporterset-controller image
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      with:
+        name: exporterset-controller-image-${{ inputs.arch }}
+        path: /tmp/artifacts
+
     - name: Download python wheels
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
       with:
@@ -32,5 +38,6 @@ runs:
       run: |
         docker load < /tmp/artifacts/controller-image.tar
         docker load < /tmp/artifacts/operator-image.tar
+        docker load < /tmp/artifacts/exporterset-controller-image.tar
         mkdir -p controller/deploy/operator/dist
         cp /tmp/artifacts/operator-install.yaml controller/deploy/operator/dist/install.yaml
