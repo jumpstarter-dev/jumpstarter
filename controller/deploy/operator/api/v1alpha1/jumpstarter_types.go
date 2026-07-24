@@ -42,6 +42,10 @@ const (
 	// ConditionTypeRouterDeploymentsReady indicates whether all router deployments are available
 	ConditionTypeRouterDeploymentsReady = "RouterDeploymentsReady"
 
+	// ConditionTypeExporterSetControllersReady indicates whether all enabled ExporterSet
+	// provisioner controller deployments are available
+	ConditionTypeExporterSetControllersReady = "ExporterSetControllersReady"
+
 	// ConditionTypeReady indicates whether the overall Jumpstarter system is ready
 	ConditionTypeReady = "Ready"
 )
@@ -187,6 +191,12 @@ type JumpstarterSpec struct {
 	// Hidden labels configuration for hiding specific label keys from exporter listings.
 	// +optional
 	HiddenLabels HiddenLabelsConfig `json:"hiddenLabels,omitempty"`
+
+	// ExporterSets configuration for virtual scalable exporter provisioner controllers.
+	// When provisioners are listed and enabled, the operator creates a Deployment per
+	// provisioner using the same exporter-set-controller image with a --provisioner flag.
+	// +optional
+	ExporterSets *ExporterSetsConfig `json:"exporterSets,omitempty"`
 }
 
 // HiddenLabelsConfig defines label keys to hide from exporter listings by default.
@@ -195,6 +205,52 @@ type HiddenLabelsConfig struct {
 	// Clients can pass show_hidden_labels=true to see all labels.
 	// +optional
 	Keys []string `json:"keys,omitempty"`
+}
+
+// ExporterSetsConfig defines the configuration for ExporterSet provisioner controller deployments.
+type ExporterSetsConfig struct {
+	// Image for all provisioner controller Deployments.
+	// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest"
+	Image string `json:"image,omitempty"`
+
+	// ImagePullPolicy for provisioner controller containers.
+	// +kubebuilder:default="IfNotPresent"
+	// +kubebuilder:validation:Enum=Always;IfNotPresent;Never
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+
+	// Resources for provisioner controller pods.
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// Provisioners is the list of provisioner controllers to deploy.
+	Provisioners []ProvisionerConfig `json:"provisioners,omitempty"`
+}
+
+// ProvisionerConfig defines a single provisioner controller to deploy.
+type ProvisionerConfig struct {
+	// Name is the provisioner identifier (e.g. "qemu.jumpstarter.dev").
+	// Must be a DNS-subdomain-safe value: lowercase alphanumeric characters, '-' or '.',
+	// starting and ending with an alphanumeric character.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`
+	Name string `json:"name"`
+
+	// Enabled controls whether a Deployment is created for this provisioner.
+	// +kubebuilder:default=true
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// Image overrides the global exporterSets.image for this provisioner.
+	// +optional
+	Image string `json:"image,omitempty"`
+
+	// Replicas for this provisioner controller Deployment.
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=1
+	Replicas *int32 `json:"replicas,omitempty"`
+
+	// Resources overrides the global exporterSets.resources for this provisioner.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 // LeasePolicyConfig defines policy constraints for leases.

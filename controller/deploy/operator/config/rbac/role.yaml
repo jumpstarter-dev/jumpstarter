@@ -8,6 +8,7 @@ rules:
   - ""
   resources:
   - configmaps
+  - pods
   - secrets
   - serviceaccounts
   - services
@@ -203,8 +204,10 @@ rules:
   - roles
   verbs:
   - create
+  - delete
   - get
   - list
+  - patch
   - update
   - watch
 - apiGroups:
@@ -232,6 +235,30 @@ rules:
   - route.openshift.io
   resources:
   - routes/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - virtualtarget.jumpstarter.dev
+  resources:
+  - exportersets
+  - virtualtargetclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - virtualtarget.jumpstarter.dev
+  resources:
+  - exportersets/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - virtualtarget.jumpstarter.dev
+  resources:
+  - exportersets/scale
+  - exportersets/status
   verbs:
   - get
   - patch

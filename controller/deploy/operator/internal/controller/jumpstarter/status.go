@@ -111,6 +111,19 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 		messages = append(messages, routersMsg)
 	}
 
+	// Check ExporterSet controller deployments readiness (only if configured)
+	if js.Spec.ExporterSets != nil && hasEnabledProvisioners(js.Spec.ExporterSets.Provisioners) {
+		esReady, esMsg := r.checkExporterSetControllersReady(ctx, js)
+		setCondition(js, operatorv1alpha1.ConditionTypeExporterSetControllersReady,
+			esReady,
+			conditionReason(esReady, "AllControllersAvailable", "ControllersNotAvailable"),
+			esMsg)
+		if !esReady {
+			allReady = false
+			messages = append(messages, esMsg)
+		}
+	}
+
 	// Set overall Ready condition
 	readyMessage := "All components are ready"
 	if !allReady {
@@ -401,4 +414,63 @@ func conditionMessage(status bool, trueMessage, falseMessage string) string {
 		return trueMessage
 	}
 	return falseMessage
+}
+
+// checkExporterSetControllersReady checks if all enabled ExporterSet provisioner
+// controller deployments are available.
+func (r *JumpstarterReconciler) checkExporterSetControllersReady(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (bool, string) {
+	log := logf.FromContext(ctx)
+	allReady := true
+	var notReady []string
+
+	for _, prov := range js.Spec.ExporterSets.Provisioners {
+		enabled := prov.Enabled == nil || *prov.Enabled
+		if !enabled {
+			continue
+		}
+
+		sanitized := sanitizeProvisionerName(prov.Name)
+		deploymentName := fmt.Sprintf("%s-exporterset-%s", js.Name, sanitized)
+		deployment := &appsv1.Deployment{}
+		err := r.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: js.Namespace}, deployment)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				allReady = false
+				notReady = append(notReady, prov.Name)
+				continue
+			}
+			log.Error(err, "Failed to get ExporterSet controller deployment",
+				"deploymentName", deploymentName, "provisioner", prov.Name)
+			allReady = false
+			notReady = append(notReady, prov.Name)
+			continue
+		}
+
+		available := false
+		for _, cond := range deployment.Status.Conditions {
+			if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
+				available = true
+				break
+			}
+		}
+		if !available {
+			allReady = false
+			notReady = append(notReady, prov.Name)
+		}
+	}
+
+	if allReady {
+		return true, "All ExporterSet controller deployments are available"
+	}
+	return false, fmt.Sprintf("ExporterSet controller deployments not available for provisioners: %v", notReady)
+}
+
+// hasEnabledProvisioners returns true if at least one provisioner is enabled.
+func hasEnabledProvisioners(provisioners []operatorv1alpha1.ProvisionerConfig) bool {
+	for _, p := range provisioners {
+		if p.Enabled == nil || *p.Enabled {
+			return true
+		}
+	}
+	return false
 }

@@ -7,6 +7,7 @@ IP=${IP:-$(get_external_ip)}
 BASEDOMAIN=${BASEDOMAIN:-"jumpstarter.${IP}.nip.io"}
 IMG=${IMG:-quay.io/jumpstarter-dev/jumpstarter-controller:latest}
 OPERATOR_IMG=${OPERATOR_IMG:-$(make -C deploy/operator --no-print-directory -s print-img 2>/dev/null || echo "quay.io/jumpstarter-dev/jumpstarter-operator:latest")}
+EXPORTER_SET_CONTROLLER_IMG=${EXPORTER_SET_CONTROLLER_IMG:-quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest}
 
 # Determine endpoints based on NETWORKING_MODE and CLUSTER_TYPE
 if [ "${NETWORKING_MODE}" == "ingress" ]; then
@@ -44,4 +45,5 @@ export IMAGE_REPO
 export IMAGE_TAG
 export IMG
 export OPERATOR_IMG
+export EXPORTER_SET_CONTROLLER_IMG
 

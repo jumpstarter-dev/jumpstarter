@@ -189,13 +189,14 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 deploy: cluster grpcurl ## Deploy controller using the operator. Set SKIP_BUILD=1 to skip image builds. Set CLUSTER_TYPE=k3s for k3s.
 ifeq ($(SKIP_BUILD),)
 	$(MAKE) docker-build
+	$(MAKE) docker-build-exporter-set-controller
 	$(MAKE) build-operator
 endif
 	./hack/deploy_with_operator.sh
 
 
 .PHONY: deploy-operator
-deploy-operator: docker-build build-operator cluster grpcurl ## Deploy only the operator (without Jumpstarter CR)
+deploy-operator: docker-build docker-build-exporter-set-controller build-operator cluster grpcurl ## Deploy only the operator (without Jumpstarter CR)
 	NETWORKING_MODE=ingress DEPLOY_JUMPSTARTER=false ./hack/deploy_with_operator.sh
 
 .PHONY: test-operator-e2e
