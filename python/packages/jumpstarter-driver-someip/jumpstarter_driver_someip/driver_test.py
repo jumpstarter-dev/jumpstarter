@@ -3,9 +3,17 @@ import queue as _queue
 from unittest.mock import MagicMock, patch
 
 import pytest
+from opensomeip.message import Message
+from opensomeip.types import MessageId, MessageType, RequestId, ReturnCode
 from pydantic import ValidationError
 
-from .common import SomeIpEventNotification, SomeIpMessageResponse, SomeIpPayload, SomeIpServiceEntry
+from .common import (
+    SomeIpEventNotification,
+    SomeIpMessageResponse,
+    SomeIpOfferedService,
+    SomeIpPayload,
+    SomeIpServiceEntry,
+)
 from .driver import SomeIp
 from jumpstarter.client.core import DriverError
 from jumpstarter.common.utils import serve
@@ -81,12 +89,12 @@ def test_someip_send_message(mock_osip_cls):
 
     driver = SomeIp(host="127.0.0.1", port=30490)
     with serve(driver) as client:
-        client.send_message(0x1234, 0x0001, b"\xAA\xBB")
+        client.send_message(0x1234, 0x0001, b"\xaa\xbb")
         mock_client.send.assert_called_once()
         sent_msg = mock_client.send.call_args[0][0]
         assert sent_msg.message_id.service_id == 0x1234
         assert sent_msg.message_id.method_id == 0x0001
-        assert sent_msg.payload == b"\xAA\xBB"
+        assert sent_msg.payload == b"\xaa\xbb"
 
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")
@@ -412,8 +420,13 @@ def test_someip_rejects_out_of_range_16bit_ids(model_cls, field, value):
     """16-bit SOME/IP ID fields must reject values outside 0..0xFFFF."""
     defaults = {
         SomeIpMessageResponse: {
-            "service_id": 1, "method_id": 1, "client_id": 1, "session_id": 1,
-            "message_type": 0, "return_code": 0, "payload": "AA",
+            "service_id": 1,
+            "method_id": 1,
+            "client_id": 1,
+            "session_id": 1,
+            "message_type": 0,
+            "return_code": 0,
+            "payload": "AA",
         },
         SomeIpServiceEntry: {"service_id": 1, "instance_id": 1},
         SomeIpEventNotification: {"service_id": 1, "event_id": 1, "payload": "AA"},
@@ -450,6 +463,7 @@ def test_someip_tcp_transport_mode(mock_osip_cls):
 
     config = mock_osip_cls.call_args[0][0]
     from opensomeip import TransportMode
+
     assert config.transport_mode == TransportMode.TCP
 
 
@@ -571,18 +585,18 @@ def stateful_client(stateful_osip):
 
 def test_stateful_rpc_call_returns_canned_response(stateful_client, stateful_osip):
     """RPC call to a known service/method returns the pre-configured response."""
-    resp = stateful_client.rpc_call(0x1234, 0x0001, b"\xFF")
+    resp = stateful_client.rpc_call(0x1234, 0x0001, b"\xff")
     assert resp.service_id == 0x1234
     assert resp.method_id == 0x0001
     assert resp.payload == "0a0b0c"
     assert resp.return_code == 0x00
     assert len(stateful_osip._rpc_history) == 1
-    assert stateful_osip._rpc_history[0] == (0x1234, 0x0001, b"\xFF")
+    assert stateful_osip._rpc_history[0] == (0x1234, 0x0001, b"\xff")
 
 
 def test_stateful_rpc_call_unknown_echoes_payload(stateful_client, stateful_osip):
     """RPC call to an unknown service/method echoes the request payload."""
-    resp = stateful_client.rpc_call(0x9999, 0x0001, b"\xDE\xAD")
+    resp = stateful_client.rpc_call(0x9999, 0x0001, b"\xde\xad")
     assert resp.service_id == 0x9999
     assert resp.payload == "dead"
 
@@ -601,7 +615,7 @@ def test_stateful_multiple_rpc_calls(stateful_client, stateful_osip):
 
 def test_stateful_custom_rpc_response(stateful_client, stateful_osip):
     """Register a custom RPC response and verify it's returned."""
-    stateful_osip.register_rpc_response(0xAAAA, 0x0001, b"\xCA\xFE")
+    stateful_osip.register_rpc_response(0xAAAA, 0x0001, b"\xca\xfe")
     resp = stateful_client.rpc_call(0xAAAA, 0x0001, b"\x00")
     assert resp.payload == "cafe"
 
@@ -611,7 +625,7 @@ def test_stateful_custom_rpc_response(stateful_client, stateful_osip):
 
 def test_stateful_send_then_receive(stateful_client, stateful_osip):
     """send_message echoes into the receive queue; receive_message reads it."""
-    stateful_client.send_message(0x1234, 0x0001, b"\xAA\xBB")
+    stateful_client.send_message(0x1234, 0x0001, b"\xaa\xbb")
     resp = stateful_client.receive_message(timeout=1.0)
     assert resp.service_id == 0x1234
     assert resp.method_id == 0x0001
@@ -738,7 +752,7 @@ def test_stateful_discover_then_rpc_to_each_instance(stateful_client, stateful_o
     assert len(services) == 2
 
     for svc in services:
-        resp = stateful_client.rpc_call(svc.service_id, 0x0001, b"\xAA")
+        resp = stateful_client.rpc_call(svc.service_id, 0x0001, b"\xaa")
         assert resp.service_id == svc.service_id
 
     assert len(stateful_osip._rpc_history) == 2
@@ -752,7 +766,7 @@ def test_stateful_subscribe_receive_unsubscribe(stateful_client, stateful_osip):
     stateful_client.subscribe_eventgroup(1)
     assert 1 in stateful_osip._subscribed_eventgroups
 
-    stateful_osip.inject_event(0x1234, 0x8001, b"\xCA\xFE")
+    stateful_osip.inject_event(0x1234, 0x8001, b"\xca\xfe")
     event = stateful_client.receive_event(timeout=1.0)
     assert event.service_id == 0x1234
     assert event.event_id == 0x8001
@@ -857,7 +871,7 @@ def test_stateful_messaging_with_reconnect(stateful_client, stateful_osip):
 def test_stateful_event_session_with_reconnect(stateful_client, stateful_osip):
     """Subscribe, receive events, reconnect, re-subscribe, receive again."""
     stateful_client.subscribe_eventgroup(1)
-    stateful_osip.inject_event(0x1234, 0x8001, b"\xAA")
+    stateful_osip.inject_event(0x1234, 0x8001, b"\xaa")
     e1 = stateful_client.receive_event(timeout=1.0)
     assert e1.payload == "aa"
 
@@ -865,7 +879,7 @@ def test_stateful_event_session_with_reconnect(stateful_client, stateful_osip):
     assert stateful_osip._subscribed_eventgroups == set()
 
     stateful_client.subscribe_eventgroup(1)
-    stateful_osip.inject_event(0x1234, 0x8002, b"\xBB")
+    stateful_osip.inject_event(0x1234, 0x8002, b"\xbb")
     e2 = stateful_client.receive_event(timeout=1.0)
     assert e2.payload == "bb"
 
@@ -885,7 +899,7 @@ def test_stateful_discover_rpc_events_workflow(stateful_client, stateful_osip):
     assert resp2.payload == "01020304"
 
     stateful_client.subscribe_eventgroup(1)
-    stateful_osip.inject_event(0x1234, 0x8001, b"\xEE")
+    stateful_osip.inject_event(0x1234, 0x8001, b"\xee")
     event = stateful_client.receive_event(timeout=1.0)
     assert event.payload == "ee"
 
@@ -894,6 +908,259 @@ def test_stateful_discover_rpc_events_workflow(stateful_client, stateful_osip):
 
     assert len(stateful_osip._rpc_history) == 2
     assert stateful_osip._started is False
+
+
+# =========================================================================
+# Server / provider side tests
+#
+# The server verbs let the endpoint ACT AS an ECU (offer services, answer
+# RPC with canned responses, publish events). We patch the opensomeip
+# SomeIpServer so these run without real networking, and assert the driver
+# drives the underlying server API correctly.
+# =========================================================================
+
+
+class _FakeOsipServer:
+    """Minimal stand-in for opensomeip.SomeIpServer for server-side unit tests."""
+
+    def __init__(self, config=None):
+        self.config = config
+        self.started = False
+        self._offered: set = set()
+        self.handlers: dict = {}
+        self.registered_events: dict = {}
+        self.register_event_calls: list = []
+        self.published: list = []
+        self.fields: dict = {}
+
+    def start(self):
+        self.started = True
+
+    def stop(self):
+        self.started = False
+
+    def offer(self, service):
+        self._offered.add((service.service_id, service.instance_id, service.major_version, service.minor_version))
+
+    def stop_offer(self, service):
+        self._offered.discard((service.service_id, service.instance_id, service.major_version, service.minor_version))
+
+    @property
+    def offered_services(self):
+        out = []
+        for sid, iid, maj, minr in self._offered:
+            out.append(
+                type(
+                    "Svc",
+                    (),
+                    {
+                        "service_id": sid,
+                        "instance_id": iid,
+                        "major_version": maj,
+                        "minor_version": minr,
+                    },
+                )()
+            )
+        return out
+
+    def register_method(self, message_id, handler):
+        self.handlers[(message_id.service_id, message_id.method_id)] = handler
+
+    def register_event(self, event_id, eventgroup_id):
+        self.register_event_calls.append((event_id, eventgroup_id))
+        self.registered_events[event_id] = eventgroup_id
+
+    def publish_event(self, event_id, payload):
+        self.published.append((event_id, payload))
+
+    def set_field(self, event_id, payload):
+        self.fields[event_id] = payload
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_server_offer_and_list(mock_server_cls):
+    fake = _FakeOsipServer()
+    mock_server_cls.return_value = fake
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.offer_service(0x1801, 0x0001, major_version=2)
+        offered = client.list_offered_services()
+        assert len(offered) == 1
+        assert isinstance(offered[0], SomeIpOfferedService)
+        assert offered[0].service_id == 0x1801
+        assert offered[0].instance_id == 0x0001
+        assert offered[0].major_version == 2
+        assert fake.started is True
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_server_stop_offer(mock_server_cls):
+    fake = _FakeOsipServer()
+    mock_server_cls.return_value = fake
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.offer_service(0x1801, 0x0001)
+        assert len(client.list_offered_services()) == 1
+        client.stop_offer_service(0x1801, 0x0001)
+        assert client.list_offered_services() == []
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_server_set_method_response_registers_handler(mock_server_cls):
+    fake = _FakeOsipServer()
+    mock_server_cls.return_value = fake
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.set_method_response(0x1801, 0x0005, b"\xde\xad\xbe\xef")
+        # Handler registered exactly once for the method
+        assert (0x1801, 0x0005) in fake.handlers
+
+        # Invoke the registered handler as the RpcServer would, and check the reply
+
+        req = Message(message_id=MessageId(0x1801, 0x0005), request_id=RequestId(0x0001, 0x0007))
+        resp = fake.handlers[(0x1801, 0x0005)](req)
+        assert resp.payload == b"\xde\xad\xbe\xef"
+        assert resp.return_code == ReturnCode.E_OK
+        assert resp.message_type == MessageType.RESPONSE
+        # Response echoes the request's request_id (client/session correlation)
+        assert resp.request_id.session_id == 0x0007
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_server_method_response_updates_without_reregister(mock_server_cls):
+    fake = _FakeOsipServer()
+    mock_server_cls.return_value = fake
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.set_method_response(0x1801, 0x0005, b"\x01")
+        handler = fake.handlers[(0x1801, 0x0005)]
+        client.set_method_response(0x1801, 0x0005, b"\x02")
+        # Same handler object reused (registered once); response value updated live
+        assert fake.handlers[(0x1801, 0x0005)] is handler
+
+        req = Message(message_id=MessageId(0x1801, 0x0005), request_id=RequestId(1, 1))
+        assert handler(req).payload == b"\x02"
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_server_method_response_error_code(mock_server_cls):
+    fake = _FakeOsipServer()
+    mock_server_cls.return_value = fake
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.set_method_response(0x1801, 0x0006, b"", return_code=0x01)
+
+        req = Message(message_id=MessageId(0x1801, 0x0006), request_id=RequestId(1, 1))
+        resp = fake.handlers[(0x1801, 0x0006)](req)
+        assert resp.return_code == ReturnCode.E_NOT_OK
+        assert resp.message_type == MessageType.ERROR
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_server_clear_method_response_falls_back_to_empty_ok(mock_server_cls):
+    fake = _FakeOsipServer()
+    mock_server_cls.return_value = fake
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.set_method_response(0x1801, 0x0005, b"\xaa")
+        handler = fake.handlers[(0x1801, 0x0005)]
+        client.clear_method_response(0x1801, 0x0005)
+
+        req = Message(message_id=MessageId(0x1801, 0x0005), request_id=RequestId(1, 1))
+        resp = handler(req)
+        assert resp.payload == b""
+        assert resp.return_code == ReturnCode.E_OK
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_server_register_and_publish_event(mock_server_cls):
+    fake = _FakeOsipServer()
+    mock_server_cls.return_value = fake
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.register_event(0x1801, 0x8001, eventgroup_id=1)
+        assert fake.registered_events[0x8001] == 1
+
+        client.publish_event(0x1801, 0x8001, b"\x2d\x00")  # e.g. signal level payload
+        assert fake.published == [(0x8001, b"\x2d\x00")]
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_server_register_event_idempotent(mock_server_cls):
+    fake = _FakeOsipServer()
+    mock_server_cls.return_value = fake
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.register_event(0x1801, 0x8001, eventgroup_id=1)
+        client.register_event(0x1801, 0x8001, eventgroup_id=1)
+        # not re-registered with the underlying server for the same (event, group)
+        assert fake.register_event_calls == [(0x8001, 1)]
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_server_set_field(mock_server_cls):
+    fake = _FakeOsipServer()
+    mock_server_cls.return_value = fake
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.set_field(0x1801, 0x8002, b"\x01")
+        assert fake.fields[0x8002] == b"\x01"
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_server_stop_server_clears_state(mock_server_cls):
+    fake = _FakeOsipServer()
+    mock_server_cls.return_value = fake
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.set_method_response(0x1801, 0x0005, b"\xaa")
+        client.register_event(0x1801, 0x8001, eventgroup_id=1)
+        client.stop_server()
+        assert fake.started is False
+
+        # After stop, a new offer builds a fresh server and re-registers cleanly
+        fake2 = _FakeOsipServer()
+        mock_server_cls.return_value = fake2
+        client.offer_service(0x1802, 0x0001)
+        assert fake2.started is True
+        assert len(client.list_offered_services()) == 1
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_server_list_offered_when_not_started(mock_server_cls):
+    fake = _FakeOsipServer()
+    mock_server_cls.return_value = fake
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        # No offer yet -> server never created -> empty list, no crash
+        assert client.list_offered_services() == []
+        mock_server_cls.assert_not_called()
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_server_lazy_start(mock_server_cls):
+    """Server is not created at construction; created on first server verb."""
+    fake = _FakeOsipServer()
+    mock_server_cls.return_value = fake
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    mock_server_cls.assert_not_called()
+    with serve(driver) as client:
+        mock_server_cls.assert_not_called()
+        client.start_server()
+        mock_server_cls.assert_called_once()
+        assert fake.started is True
 
 
 # =========================================================================
@@ -931,7 +1198,7 @@ def test_someip_simulated_send_receive(mock_someip_server):
         transport_mode="TCP",
     )
     with serve(driver) as client:
-        client.send_message(0x1234, 0x0001, b"\xAA\xBB\xCC")
+        client.send_message(0x1234, 0x0001, b"\xaa\xbb\xcc")
         resp = client.receive_message(timeout=2.0)
         assert resp.service_id == 0x1234
         assert resp.payload == "aabbcc"
