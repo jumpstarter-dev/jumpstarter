@@ -2,6 +2,7 @@ import json
 import os
 import ssl
 import time
+import warnings
 from dataclasses import dataclass
 from functools import wraps
 from typing import ClassVar
@@ -12,11 +13,14 @@ import click
 from aiohttp import web
 from anyio import create_memory_object_stream
 from anyio.to_thread import run_sync
-from authlib.integrations.requests_client import OAuth2Session
-from joserfc.jws import extract_compact
-from yarl import URL
 
-from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"authlib\.")
+
+from authlib.integrations.requests_client import OAuth2Session  # noqa: E402
+from joserfc.jws import extract_compact  # noqa: E402
+from yarl import URL  # noqa: E402
+
+from jumpstarter.config.env import JMP_OIDC_CALLBACK_PORT  # noqa: E402
 
 
 def _get_ssl_context() -> ssl.SSLContext:
@@ -78,7 +82,15 @@ class Config:
 
     def client(self, **kwargs):
         session = OAuth2Session(client_id=self.client_id, scope=self._scopes(), **kwargs)
-        session.verify = False if self.insecure_tls else (os.environ.get("SSL_CERT_FILE") or certifi.where())
+        if self.insecure_tls:
+            session.verify = False
+            # The user has already opted into insecure TLS (via --insecure flag
+            # or config), so urllib3's InsecureRequestWarning is redundant noise.
+            import urllib3
+
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        else:
+            session.verify = os.environ.get("SSL_CERT_FILE") or certifi.where()
         return session
 
     async def token_exchange_grant(self, token: str, **kwargs):
