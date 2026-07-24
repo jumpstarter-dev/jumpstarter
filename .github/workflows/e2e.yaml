@@ -133,6 +133,45 @@ jobs:
             /tmp/operator-install.yaml
           retention-days: 1
 
+  build-exporterset-controller-image:
+    needs: changes
+    if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
+    strategy:
+      matrix:
+        include: ${{ fromJson(needs.changes.outputs.e2e-matrix) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Install Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: .go-version
+
+      - name: Cache exporterset-controller image
+        id: cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: /tmp/exporterset-controller-image.tar
+          key: exporterset-controller-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Containerfile.exporter-set-controller', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/exporter-set-controller/**', 'controller/api/**', 'controller/internal/**') }}
+
+      - name: Build exporterset-controller image
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          make -C controller docker-build-exporter-set-controller
+          docker save quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest -o /tmp/exporterset-controller-image.tar
+
+      - name: Upload exporterset-controller image
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: exporterset-controller-image-${{ matrix.arch }}
+          path: /tmp/exporterset-controller-image.tar
+          retention-days: 1
+
   build-python-wheels:
     needs: changes
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
@@ -176,7 +215,7 @@ jobs:
   # ===========================================================================
 
   e2e-tests:
-    needs: [changes, build-controller-image, build-operator-image, build-python-wheels]
+    needs: [changes, build-controller-image, build-operator-image, build-exporterset-controller-image, build-python-wheels]
     strategy:
       matrix:
         include: ${{ fromJson(needs.changes.outputs.e2e-matrix) }}
@@ -281,7 +320,7 @@ jobs:
           artifact-name: e2e-logs-compat-old-controller
 
   e2e-compat-old-client:
-    needs: [changes, build-controller-image, build-operator-image, build-python-wheels]
+    needs: [changes, build-controller-image, build-operator-image, build-exporterset-controller-image, build-python-wheels]
     # Skip on PRs — compat tests run in merge queue and workflow_dispatch.
     if: >-
       github.event_name != 'pull_request'
