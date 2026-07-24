@@ -118,7 +118,7 @@ class TestDeviceAuthorizationGrant:
                 response.text = AsyncMock(return_value="")
             else:
                 # Token endpoint
-                poll_count += 1
+                poll_count += 1  # ty: ignore[unresolved-reference]
                 if poll_count == 1:
                     response.status = 400
                     response.json = AsyncMock(return_value={"error": "authorization_pending"})
@@ -173,7 +173,7 @@ class TestDeviceAuthorizationGrant:
                 response.json = AsyncMock(return_value=device_response_data)
                 response.text = AsyncMock(return_value="")
             else:
-                poll_count += 1
+                poll_count += 1  # ty: ignore[unresolved-reference]
                 if poll_count == 1:
                     response.status = 400
                     response.json = AsyncMock(return_value={"error": "slow_down"})
