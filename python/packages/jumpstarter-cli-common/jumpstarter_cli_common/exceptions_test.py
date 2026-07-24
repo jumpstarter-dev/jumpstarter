@@ -211,7 +211,7 @@ def test_reauth_retries_on_success() -> None:
     @handle_exceptions_with_reauthentication(login_func)
     def fn():
         nonlocal call_count
-        call_count += 1
+        call_count += 1  # ty: ignore[unresolved-reference]
         if call_count == 1:
             exc, _ = _make_expired_connection_error()
             raise exc
@@ -232,7 +232,7 @@ def test_reauth_failure_raises_click_exception() -> None:
     @handle_exceptions_with_reauthentication(login_func)
     def fn():
         nonlocal call_count
-        call_count += 1
+        call_count += 1  # ty: ignore[unresolved-reference]
         exc, _ = _make_expired_connection_error()
         raise exc
 
@@ -253,7 +253,7 @@ def test_reauth_retry_bounded_to_one_attempt() -> None:
     @handle_exceptions_with_reauthentication(login_func)
     def fn():
         nonlocal call_count
-        call_count += 1
+        call_count += 1  # ty: ignore[unresolved-reference]
         exc, _ = _make_expired_connection_error()
         raise exc
 
