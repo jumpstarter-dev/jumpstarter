@@ -6,6 +6,12 @@
 # jumpstarter-exec to /shared/, then runs it in serve mode to accept
 # remote command execution requests over a Unix socket.
 #
+# jumpstarter-exec emits JEP-0013-style JSON logs to stderr by default.
+# Persistent correlation fields (exporter, namespace, component, …) come from
+# JUMPSTARTER_EXEC_LOG_FIELDS / --log-field (injected by the provisioner).
+# Set JUMPSTARTER_EXEC_DEBUG=1 (or pass --debug) to also log I/O
+# previews for stdin/stdout/stderr of executed commands.
+#
 # Uses Fedora as the base image because QEMU packages are not
 # available in UBI-minimal repositories.
 FROM registry.fedoraproject.org/fedora-minimal:44

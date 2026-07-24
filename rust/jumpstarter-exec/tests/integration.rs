@@ -535,3 +535,142 @@ fn e2e_version_subcommand() {
         "unexpected version output: {stdout}"
     );
 }
+
+#[test]
+fn e2e_debug_json_logs_commands_and_io() {
+    let dir = TempDir::new().unwrap();
+    let sock = dir.path().join("debug.sock");
+    let path = sock.to_str().unwrap().to_string();
+
+    let mut server = Command::new(binary_path())
+        .args([
+            "serve",
+            "--socket",
+            &path,
+            "--debug",
+            "--log-format",
+            "json",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn jumpstarter-exec serve --debug");
+
+    for _ in 0..50 {
+        if sock.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(sock.exists(), "server socket never appeared");
+
+    let (stdout, _, code) = run_exec(&path, &["echo", "hello-debug"], None);
+    assert_eq!(code, 0);
+    assert_eq!(stdout.trim(), "hello-debug");
+
+    server.kill().ok();
+    let stderr = {
+        let mut s = String::new();
+        if let Some(mut err) = server.stderr.take() {
+            use std::io::Read;
+            err.read_to_string(&mut s).ok();
+        }
+        s
+    };
+
+    // Listening line is always emitted (info).
+    assert!(
+        stderr.lines().any(|l| {
+            l.contains(r#""msg":"listening""#) && l.contains(r#""component":"jumpstarter-exec""#)
+        }),
+        "expected JSON listening log, got:\n{stderr}"
+    );
+
+    // Debug mode logs argv and I/O previews.
+    assert!(
+        stderr.lines().any(|l| {
+            l.contains(r#""msg":"exec started""#) && l.contains("echo") && l.contains("hello-debug")
+        }),
+        "expected exec started with argv, got:\n{stderr}"
+    );
+    assert!(
+        stderr
+            .lines()
+            .any(|l| l.contains(r#""msg":"stdout""#) && l.contains("hello-debug")),
+        "expected stdout preview log, got:\n{stderr}"
+    );
+    assert!(
+        stderr
+            .lines()
+            .any(|l| l.contains(r#""msg":"exec finished""#)),
+        "expected exec finished log, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn e2e_log_fields_appear_on_every_line() {
+    let dir = TempDir::new().unwrap();
+    let sock = dir.path().join("fields.sock");
+    let path = sock.to_str().unwrap().to_string();
+
+    let mut server = Command::new(binary_path())
+        .args([
+            "serve",
+            "--socket",
+            &path,
+            "--log-field",
+            "exporter=demo-abc",
+            "--log-field",
+            "namespace=jumpstarter-lab",
+            "--log-field",
+            "component=exporter",
+        ])
+        .env_remove("JUMPSTARTER_EXEC_LOG_FIELDS")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn serve with log fields");
+
+    for _ in 0..50 {
+        if sock.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(sock.exists(), "server socket never appeared");
+
+    let (_, _, code) = run_exec(&path, &["true"], None);
+    assert_eq!(code, 0);
+
+    server.kill().ok();
+    let stderr = {
+        let mut s = String::new();
+        if let Some(mut err) = server.stderr.take() {
+            use std::io::Read;
+            err.read_to_string(&mut s).ok();
+        }
+        s
+    };
+
+    let json_lines: Vec<&str> = stderr.lines().filter(|l| l.starts_with('{')).collect();
+    assert!(
+        !json_lines.is_empty(),
+        "expected JSON log lines, got:\n{stderr}"
+    );
+    for line in &json_lines {
+        assert!(
+            line.contains(r#""exporter":"demo-abc""#),
+            "missing exporter field in: {line}"
+        );
+        assert!(
+            line.contains(r#""namespace":"jumpstarter-lab""#),
+            "missing namespace field in: {line}"
+        );
+        assert!(
+            line.contains(r#""component":"exporter""#),
+            "missing component=exporter in: {line}"
+        );
+    }
+}
