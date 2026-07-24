@@ -16,8 +16,9 @@ limitations under the License.
 
 // Package qemu implements the qemu.jumpstarter.dev provisioner
 // for ExporterSets. It renders Pods using the sidecar pattern:
-// a native sidecar init container running the Jumpstarter exporter
-// alongside a main container running the QEMU runtime.
+// a one-shot init container that stages jumpstarter-exec onto a
+// shared volume, a native sidecar init container running the
+// Jumpstarter exporter, and a main container running the QEMU runtime.
 package qemu
 
 import (
@@ -52,12 +53,21 @@ const (
 	// sharedVolumeSizeLimit caps emptyDir usage so a misbehaving
 	// container cannot exhaust node ephemeral storage.
 	sharedVolumeSizeLimit = "100Mi"
+
+	// jmpExecBinaryPath is the location of jumpstarter-exec inside
+	// the exporter image (installed by the Rust builder stage).
+	jmpExecBinaryPath = "/jumpstarter/bin/jumpstarter-exec"
+
+	// launcherSocketPath is the Unix socket used by jumpstarter-exec
+	// for remote command execution between the exporter and
+	// the QEMU runtime container.
+	launcherSocketPath = "/shared/launcher.sock"
 )
 
 // Provisioner implements the qemu.jumpstarter.dev provisioner.
 // It renders Pods with a QEMU runtime container and an exporter
-// sidecar, communicating via Unix sockets on a shared emptyDir
-// volume.
+// sidecar, staging jumpstarter-exec via a one-shot init container
+// and communicating via Unix sockets on a shared emptyDir volume.
 type Provisioner struct{}
 
 // New creates a new QEMU provisioner.
@@ -73,8 +83,10 @@ func (p *Provisioner) Name() string {
 // RenderPod creates a Pod for a new QEMU-based exporter instance
 // using the native sidecar pattern (KEP-753):
 //
+//   - copy-jumpstarter-exec (regular init container) copies the
+//     jumpstarter-exec binary onto the shared volume and exits.
 //   - Exporter sidecar (init container with restartPolicy: Always)
-//     starts first and drains last; registers with the controller.
+//     starts next and drains last; registers with the controller.
 //   - QEMU runtime (main container) runs the virtual machine.
 //   - Shared emptyDir volume for Unix socket communication
 //     (QMP, serial console, launcher socket).
@@ -97,9 +109,23 @@ func (p *Provisioner) RenderPod(
 	exporterSet *virtualtargetv1alpha1.ExporterSet,
 	vtc *virtualtargetv1alpha1.VirtualTargetClass,
 	mergedParameters map[string]interface{},
+	exporter *jumpstarterdevv1alpha1.Exporter,
 ) (*corev1.Pod, error) {
 	restartAlways := corev1.ContainerRestartPolicyAlways
 	sizeLimit := resource.MustParse(sharedVolumeSizeLimit)
+
+	// JEP-0013 persistent log context for jumpstarter-exec (matches
+	// set_persistent_log_context in the Python exporter).
+	runtimeEnv := []corev1.EnvVar{}
+	if exporter != nil {
+		runtimeEnv = append(runtimeEnv, corev1.EnvVar{
+			Name: "JUMPSTARTER_EXEC_LOG_FIELDS",
+			Value: fmt.Sprintf(
+				"component=exporter,exporter=%s,namespace=%s",
+				exporter.Name, exporter.Namespace,
+			),
+		})
+	}
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -109,37 +135,73 @@ func (p *Provisioner) RenderPod(
 			Annotations:  maps.Clone(exporterSet.Spec.Template.Metadata.Annotations),
 		},
 		Spec: corev1.PodSpec{
-			// Exporter runs as a native sidecar init container
-			// (KEP-753): starts before main containers and
-			// drains after them.
 			InitContainers: []corev1.Container{
 				{
-					Name:          "exporter",
-					Image:         DefaultExporterImage,
-					RestartPolicy: &restartAlways,
+					// One-shot init: stage jumpstarter-exec onto the
+					// shared volume so target-runtime can start it.
+					// No restartPolicy — must exit before later
+					// containers are allowed to start.
+					Name:            "copy-jumpstarter-exec",
+					Image:           DefaultExporterImage,
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					Command: []string{
+						"cp",
+						jmpExecBinaryPath,
+						sharedMountPath + "/jumpstarter-exec",
+					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      sharedVolumeName,
 							MountPath: sharedMountPath,
 						},
 					},
-					// TODO: configure exporter with driver
-					// config from ExporterSet template, inject
-					// controller endpoint, credentials, etc.
+				},
+				{
+					// Native sidecar (KEP-753): starts after the
+					// copy init completes and drains after main
+					// containers.
+					Name:            "exporter",
+					Image:           DefaultExporterImage,
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					RestartPolicy:   &restartAlways,
+					Command:         []string{"sleep", "infinity"},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "JUMPSTARTER_LAUNCHER_SOCKET",
+							Value: launcherSocketPath,
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      sharedVolumeName,
+							MountPath: sharedMountPath,
+						},
+					},
+					// TODO: replace "sleep infinity" with the actual
+					// exporter startup command once driver config,
+					// controller endpoint, and credentials injection
+					// are implemented.
 				},
 			},
 			// QEMU runtime is the main container — independent
 			// image that can be versioned separately.
 			Containers: []corev1.Container{
 				{
-					Name:  "target-runtime",
-					Image: DefaultQEMURuntimeImage,
+					Name:            "target-runtime",
+					Image:           DefaultQEMURuntimeImage,
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					Env:             runtimeEnv,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      sharedVolumeName,
 							MountPath: sharedMountPath,
 						},
 					},
+					// Command/Args are left unset so the container
+					// uses its Containerfile ENTRYPOINT/CMD, which
+					// waits for /shared/jumpstarter-exec then runs it in
+					// serve mode on the launcher socket.
+					//
 					// TODO: configure QEMU from merged
 					// parameters (CPU, memory, firmware, etc.)
 				},

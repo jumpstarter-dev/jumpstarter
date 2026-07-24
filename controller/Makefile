@@ -5,6 +5,8 @@ IMG ?= quay.io/jumpstarter-dev/jumpstarter-controller:latest
 DOCKER_REPO = $(shell echo $(IMG) | cut -d: -f1)
 DOCKER_TAG  = $(shell echo $(IMG) | cut -d: -f2)
 EXPORTER_SET_CONTROLLER_IMG ?= quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest
+QEMU_RUNTIME_IMG ?= quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
+EXPORTER_IMG ?= quay.io/jumpstarter-dev/jumpstarter:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.30.0
 
@@ -141,6 +143,16 @@ docker-build-exporter-set-controller: ## Build docker image for the exporter-set
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		-t ${EXPORTER_SET_CONTROLLER_IMG} -f Containerfile.exporter-set-controller .
 
+.PHONY: docker-build-qemu-runtime
+docker-build-qemu-runtime: ## Build docker image for the qemu-runtime container.
+	$(CONTAINER_TOOL) build -t ${QEMU_RUNTIME_IMG} -f Containerfile.qemu-runtime .
+
+.PHONY: docker-build-exporter
+docker-build-exporter: ## Build the jumpstarter exporter image (includes jumpstarter-exec).
+	$(CONTAINER_TOOL) build \
+		--build-arg GIT_VERSION=$(GIT_VERSION) \
+		-t ${EXPORTER_IMG} -f ../python/Containerfile ..
+
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
@@ -213,6 +225,19 @@ deploy-with-operator-parallel:
 .PHONY: deploy-exporters
 deploy-exporters:
 	./hack/demoenv/prepare_exporters.sh
+
+.PHONY: deploy-exporterset-sample
+deploy-exporterset-sample: ## Apply the x86_64 sample VirtualTargetClass and ExporterSet (requires operator-deployed exporter-set-controller).
+	$(KUBECTL) apply -f hack/sample-x86_64.yaml
+
+.PHONY: deploy-exporterset-sample-kind
+deploy-exporterset-sample-kind: ## Apply the kind-friendly sample (no KVM requirement) for local testing.
+	$(KUBECTL) apply -f hack/sample-x86_64-kind.yaml
+
+.PHONY: undeploy-exporterset-sample
+undeploy-exporterset-sample: ## Remove sample VirtualTargetClass and ExporterSet resources.
+	$(KUBECTL) delete --ignore-not-found=true -f hack/sample-x86_64.yaml
+	$(KUBECTL) delete --ignore-not-found=true -f hack/sample-x86_64-kind.yaml
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.

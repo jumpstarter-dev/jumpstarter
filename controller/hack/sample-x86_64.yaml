@@ -1,0 +1,69 @@
+# Sample VirtualTargetClass and ExporterSet for x86_64 QEMU targets.
+#
+# Apply after the Jumpstarter operator has deployed the exporter-set-controller:
+#   make deploy-exporterset-sample
+#   # or: kubectl apply -f hack/sample-x86_64.yaml
+#
+# This creates:
+#   - A VirtualTargetClass for x86_64 QEMU VMs with KVM acceleration
+#   - An ExporterSet that manages a pool of virtual exporters
+---
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
+kind: VirtualTargetClass
+metadata:
+  name: qemu-x86-64
+  namespace: jumpstarter-lab
+spec:
+  provisioner: qemu.jumpstarter.dev
+  bindingMode: Immediate
+  reclaimPolicy: Delete
+  scheduling:
+    nodeSelector:
+      kubernetes.io/arch: amd64
+    tolerations:
+      - key: jumpstarter.dev/kvm
+        operator: Exists
+        effect: NoSchedule
+    resources:
+      limits:
+        devices.kubevirt.io/kvm: "1"
+      requests:
+        cpu: "2"
+        memory: 2Gi
+  parameters:
+    arch: x86_64
+    machineType: q35
+    resources:
+      cpu: 2
+      memory: 2Gi
+      storage: 20Gi
+---
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
+kind: ExporterSet
+metadata:
+  name: x86-64-virtual
+  namespace: jumpstarter-lab
+spec:
+  minReplicas: 0
+  maxReplicas: 5
+  minAvailableReplicas: 1
+  scaleDownCooldown: 5m
+  recycleStrategy: ExitAndReplace
+  virtualTargetClassName: qemu-x86-64
+  selector:
+    matchLabels:
+      board: x86-64-virtual
+  template:
+    metadata:
+      labels:
+        board: x86-64-virtual
+        arch: x86_64
+        virtual: "true"
+    spec:
+      drivers:
+        - type: jumpstarter_driver_qemu.driver.Qemu
+          config:
+            arch: x86_64
+            smp: 2
+            mem: 2G
+            launcher_socket: /shared/launcher.sock

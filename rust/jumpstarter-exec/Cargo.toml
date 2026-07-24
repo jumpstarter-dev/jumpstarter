@@ -1,0 +1,15 @@
+[package]
+name = "jumpstarter-exec"
+description = "Remote command execution bridge for the jumpstarter sidecar pattern"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

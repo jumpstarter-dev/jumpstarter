@@ -318,7 +318,7 @@ func (r *ExporterSetReconciler) scaleUp(
 
 		logger.Info("created Exporter", "exporter", exporter.Name)
 
-		pod, err := r.Provisioner.RenderPod(ctx, es, vtc, mergedParameters)
+		pod, err := r.Provisioner.RenderPod(ctx, es, vtc, mergedParameters, exporter)
 		if err != nil {
 			return fmt.Errorf("unable to render Pod for Exporter %s: %w", exporter.Name, err)
 		}

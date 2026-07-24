@@ -17,6 +17,7 @@ jobs:
       controller: ${{ steps.filter.outputs.controller }}
       protocol: ${{ steps.filter.outputs.protocol }}
       python: ${{ steps.filter.outputs.python }}
+      rust: ${{ steps.filter.outputs.rust }}
       renovate: ${{ steps.filter.outputs.renovate }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -32,6 +33,9 @@ jobs:
               - '.github/workflows/lint.yaml'
             python:
               - 'python/**'
+              - '.github/workflows/lint.yaml'
+            rust:
+              - 'rust/**'
               - '.github/workflows/lint.yaml'
             renovate:
               - 'renovate.jsonc'
@@ -101,6 +105,27 @@ jobs:
       - name: Run ty
         working-directory: python
         run: make ty
+
+  lint-rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Check formatting
+        working-directory: rust
+        run: make fmt
+
+      - name: Run clippy
+        working-directory: rust
+        run: make lint
 
   validate-renovate:
     needs: changes

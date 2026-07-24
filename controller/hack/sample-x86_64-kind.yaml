@@ -1,0 +1,69 @@
+# Sample VirtualTargetClass and ExporterSet for local kind testing.
+#
+# This is a variant of sample-x86_64.yaml for development/testing on a
+# kind cluster (or any host without /dev/kvm / the kubevirt device
+# plugin). It drops the `devices.kubevirt.io/kvm` resource request and
+# the `jumpstarter.dev/kvm` toleration so the Pod can actually schedule
+# -- QEMU then falls back to software (TCG) emulation instead of KVM
+# acceleration, which is fine for a functional/architecture smoke test
+# but much slower than a real x86_64+KVM cluster.
+#
+# For real deployments with KVM acceleration, use sample-x86_64.yaml
+# on a cluster that exposes /dev/kvm via the kubevirt device plugin
+# and taints its KVM-capable nodes with jumpstarter.dev/kvm.
+#
+# Apply after the Jumpstarter operator has deployed the exporter-set-controller:
+#   make deploy-exporterset-sample-kind
+#   # or: kubectl apply -f hack/sample-x86_64-kind.yaml
+---
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
+kind: VirtualTargetClass
+metadata:
+  name: qemu-x86-64-kind
+  namespace: jumpstarter-lab
+spec:
+  provisioner: qemu.jumpstarter.dev
+  bindingMode: Immediate
+  reclaimPolicy: Delete
+  scheduling:
+    resources:
+      requests:
+        cpu: "1"
+        memory: 1Gi
+  parameters:
+    arch: x86_64
+    machineType: q35
+    resources:
+      cpu: 1
+      memory: 1Gi
+      storage: 10Gi
+---
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
+kind: ExporterSet
+metadata:
+  name: x86-64-virtual-kind
+  namespace: jumpstarter-lab
+spec:
+  minReplicas: 0
+  maxReplicas: 2
+  minAvailableReplicas: 1
+  scaleDownCooldown: 5m
+  recycleStrategy: ExitAndReplace
+  virtualTargetClassName: qemu-x86-64-kind
+  selector:
+    matchLabels:
+      board: x86-64-virtual-kind
+  template:
+    metadata:
+      labels:
+        board: x86-64-virtual-kind
+        arch: x86_64
+        virtual: "true"
+    spec:
+      drivers:
+        - type: jumpstarter_driver_qemu.driver.Qemu
+          config:
+            arch: x86_64
+            smp: 1
+            mem: 1G
+            launcher_socket: /shared/launcher.sock

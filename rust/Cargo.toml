@@ -1,0 +1,26 @@
+# Jumpstarter Rust workspace.
+#
+# Sibling language root to `python/` and `controller/`.
+# See the rust-core-rewrite branch for the full crate decomposition;
+# this workspace grows incrementally as crates land on main.
+[workspace]
+resolver = "2"
+members = [
+    "jumpstarter-exec",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/jumpstarter-dev/jumpstarter"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+tempfile = "3"
+
+[profile.release]
+strip = true
+lto = true

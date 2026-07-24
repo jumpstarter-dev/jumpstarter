@@ -4,7 +4,7 @@
 #
 
 # Subdirectories containing projects
-SUBDIRS := python protocol controller e2e
+SUBDIRS := python protocol controller rust e2e
 
 # UV invocation for docs (must run from python/ where pyproject.toml lives)
 UV_DOCS = cd python && uv run --isolated --all-packages --group docs
@@ -46,6 +46,12 @@ help:
 	@echo "  make build-<project>  - Build specific project"
 	@echo "  make test-<project>   - Test specific project"
 	@echo "  make clean-<project>  - Clean specific project"
+	@echo ""
+	@echo ""
+	@echo "Rust targets:"
+	@echo "  make build-rust   - Build Rust workspace"
+	@echo "  make test-rust    - Run Rust tests"
+	@echo "  make clean-rust   - Clean Rust build artifacts"
 	@echo ""
 	@echo "Projects: $(SUBDIRS)"
 
@@ -150,7 +156,7 @@ fmt:
 	done
 
 # Per-project build targets
-.PHONY: build-python build-protocol build-controller build-e2e
+.PHONY: build-python build-protocol build-controller build-rust build-e2e
 build-python:
 	@if [ -f python/Makefile ]; then $(MAKE) -C python build; fi
 
@@ -160,11 +166,14 @@ build-protocol:
 build-controller:
 	@if [ -f controller/Makefile ]; then $(MAKE) -C controller build; fi
 
+build-rust:
+	@if [ -f rust/Makefile ]; then $(MAKE) -C rust build; fi
+
 build-e2e:
 	@if [ -f e2e/Makefile ]; then $(MAKE) -C e2e build; fi
 
 # Per-project test targets
-.PHONY: test-python test-protocol test-controller test-e2e
+.PHONY: test-python test-protocol test-controller test-rust test-e2e
 test-python:
 	@if [ -f python/Makefile ]; then $(MAKE) -C python test; fi
 
@@ -173,6 +182,9 @@ test-protocol:
 
 test-controller:
 	@if [ -f controller/Makefile ]; then $(MAKE) -C controller test; fi
+
+test-rust:
+	@if [ -f rust/Makefile ]; then $(MAKE) -C rust test; fi
 
 # Setup e2e testing environment (one-time)
 .PHONY: e2e-setup
@@ -243,7 +255,7 @@ e2e-compat-run:
 	@COMPAT_TEST=$(COMPAT_TEST) bash e2e/compat/run.sh
 
 # Per-project clean targets
-.PHONY: clean-python clean-protocol clean-controller clean-e2e
+.PHONY: clean-python clean-protocol clean-controller clean-rust clean-e2e
 clean-python:
 	@if [ -f python/Makefile ]; then $(MAKE) -C python clean; fi
 
@@ -252,6 +264,9 @@ clean-protocol:
 
 clean-controller:
 	@if [ -f controller/Makefile ]; then $(MAKE) -C controller clean; fi
+
+clean-rust:
+	@if [ -f rust/Makefile ]; then $(MAKE) -C rust clean; fi
 
 clean-e2e:
 	@if [ -f e2e/Makefile ]; then $(MAKE) -C e2e clean; fi

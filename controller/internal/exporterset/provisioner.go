@@ -48,14 +48,16 @@ type Provisioner interface {
 
 	// RenderPod creates a Pod spec for a new exporter instance.
 	// The reconciler provides the ExporterSet, the resolved
-	// VirtualTargetClass, and the deep-merged parameters. The
-	// provisioner returns a Pod ready to create. The reconciler
-	// sets OwnerReferences on the Pod before creation.
+	// VirtualTargetClass, the deep-merged parameters, and the
+	// Exporter CR that owns this instance. The provisioner returns
+	// a Pod ready to create. The reconciler sets OwnerReferences
+	// on the Pod before creation.
 	RenderPod(
 		ctx context.Context,
 		exporterSet *virtualtargetv1alpha1.ExporterSet,
 		vtc *virtualtargetv1alpha1.VirtualTargetClass,
 		mergedParameters map[string]interface{},
+		exporter *jumpstarterdevv1alpha1.Exporter,
 	) (*corev1.Pod, error)
 
 	// Cleanup is called when an exporter instance is being

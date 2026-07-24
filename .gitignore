@@ -20,6 +20,10 @@ __pycache__/
 dist/
 build/
 
+# Rust
+rust/target/
+rust/**/target/
+
 # Editor/IDE
 .vscode/
 .idea/
