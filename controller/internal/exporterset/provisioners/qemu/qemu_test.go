@@ -97,8 +97,22 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 		t.Errorf("SizeLimit = %v, want %v", pod.Spec.Volumes[0].EmptyDir.SizeLimit, wantLimit)
 	}
 
-	if len(pod.Spec.InitContainers) != 1 || pod.Spec.InitContainers[0].Name != "exporter" {
-		t.Errorf("unexpected init containers: %#v", pod.Spec.InitContainers)
+	if len(pod.Spec.InitContainers) != 2 {
+		t.Fatalf("unexpected init containers: %#v", pod.Spec.InitContainers)
+	}
+	copyInit := pod.Spec.InitContainers[0]
+	if copyInit.Name != "copy-jumpstarter-exec" {
+		t.Errorf("InitContainers[0].Name = %q, want copy-jumpstarter-exec", copyInit.Name)
+	}
+	if copyInit.RestartPolicy != nil {
+		t.Errorf("copy-jumpstarter-exec RestartPolicy = %v, want nil (one-shot init)", copyInit.RestartPolicy)
+	}
+	exporterInit := pod.Spec.InitContainers[1]
+	if exporterInit.Name != "exporter" {
+		t.Errorf("InitContainers[1].Name = %q, want exporter", exporterInit.Name)
+	}
+	if exporterInit.RestartPolicy == nil || *exporterInit.RestartPolicy != corev1.ContainerRestartPolicyAlways {
+		t.Errorf("exporter RestartPolicy = %v, want Always", exporterInit.RestartPolicy)
 	}
 	if len(pod.Spec.Containers) != 1 || pod.Spec.Containers[0].Name != "target-runtime" {
 		t.Errorf("unexpected containers: %#v", pod.Spec.Containers)
