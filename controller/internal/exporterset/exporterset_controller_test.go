@@ -131,6 +131,25 @@ var _ = Describe("ExporterSet Controller", func() {
 					"Exporter %s should be controller-owned by ExporterSet", exp.Name)
 			}
 
+			By("Simulating ExporterReconciler issuing credentials for each Exporter")
+			for i := range exporterList.Items {
+				exp := &exporterList.Items[i]
+				credSecret := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      exp.Name + "-exporter",
+						Namespace: ns,
+					},
+					Data: map[string][]byte{"token": []byte("test-token")},
+				}
+				Expect(envTestClient.Create(envTestCtx, credSecret)).To(Succeed())
+				exp.Status.Credential = &corev1.LocalObjectReference{Name: credSecret.Name}
+				Expect(envTestClient.Status().Update(envTestCtx, exp)).To(Succeed())
+			}
+
+			By("Reconciling once more to trigger Pod creation")
+			_, err := reconciler.Reconcile(envTestCtx, req)
+			Expect(err).NotTo(HaveOccurred())
+
 			By("Verifying Pods were created with correct ownership")
 			var podList corev1.PodList
 			Eventually(func() int {
