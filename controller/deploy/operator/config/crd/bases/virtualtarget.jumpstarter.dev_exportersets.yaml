@@ -176,6 +176,11 @@ spec:
                             config:
                               description: Config holds driver-specific configuration.
                               x-kubernetes-preserve-unknown-fields: true
+                            name:
+                              description: Name is the key used in the exporter config's
+                                export map (e.g. "power", "serial"). If omitted the
+                                controller derives a name from the last segment of Type.
+                              type: string
                             type:
                               description: Type is the fully qualified Python driver
                                 class name.

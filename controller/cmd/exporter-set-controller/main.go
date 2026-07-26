@@ -101,6 +101,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// GRPC_ENDPOINT is the controller's gRPC address injected into each exporter
+	// sidecar config so it can connect back to the controller on startup.
+	// Example: "jumpstarter.my-lab.svc.cluster.local:8082"
+	// Defaults to "localhost:8082" when unset (useful for local development).
+	if ep := os.Getenv("GRPC_ENDPOINT"); ep == "" {
+		setupLog.Info("GRPC_ENDPOINT not set; exporter sidecars will connect to localhost:8082")
+	}
+
 	// Select the provisioner implementation based on the flag
 	prov, err := selectProvisioner(provisioner)
 	if err != nil {
