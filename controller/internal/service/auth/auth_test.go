@@ -500,3 +500,55 @@ func TestAuthExporter_NoTokenLeak(t *testing.T) {
 		t.Errorf("raw bearer header leaked in auth log output:\n%s", logged)
 	}
 }
+
+func TestIsExporter(t *testing.T) {
+	authn := &stubAuthenticator{}
+	attr := &stubAttributesGetter{}
+	authz := &stubAuthorizer{}
+	a := newAuth(authn, authz, attr)
+
+	tests := []struct {
+		name     string
+		metadata metadata.MD
+		want     bool
+	}{
+		{
+			name:     "exporter kind",
+			metadata: metadata.Pairs("jumpstarter-kind", "Exporter"),
+			want:     true,
+		},
+		{
+			name:     "client kind",
+			metadata: metadata.Pairs("jumpstarter-kind", "Client"),
+			want:     false,
+		},
+		{
+			name:     "no metadata",
+			metadata: metadata.MD{},
+			want:     false,
+		},
+		{
+			name:     "missing kind",
+			metadata: metadata.Pairs("jumpstarter-namespace", "default"),
+			want:     false,
+		},
+		{
+			name:     "multiple kind values",
+			metadata: metadata.Pairs("jumpstarter-kind", "Exporter", "jumpstarter-kind", "Client"),
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			if len(tt.metadata) > 0 {
+				ctx = metadata.NewIncomingContext(ctx, tt.metadata)
+			}
+			got := a.IsExporter(ctx)
+			if got != tt.want {
+				t.Errorf("IsExporter() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

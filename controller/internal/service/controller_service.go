@@ -54,6 +54,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -1051,11 +1052,15 @@ func (s *ControllerService) releaseLeaseAsExporter(
 		Namespace: exporter.Namespace,
 		Name:      req.Name,
 	}, &lease); err != nil {
-		return nil, fmt.Errorf("failed to get lease: %w", err)
+		if apierrors.IsNotFound(err) {
+			return nil, status.Errorf(codes.NotFound, "lease %s not found", req.Name)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to get lease: %s", err)
 	}
 
 	if lease.Status.ExporterRef == nil || lease.Status.ExporterRef.Name != exporter.Name {
-		return nil, fmt.Errorf("ReleaseLease permission denied")
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"lease %s is not held by exporter %s", req.Name, exporter.Name)
 	}
 
 	// Idempotent: already ended or marked for release
@@ -1067,7 +1072,7 @@ func (s *ControllerService) releaseLeaseAsExporter(
 	lease.Spec.Release = true
 
 	if err := s.Client.Patch(ctx, &lease, original); err != nil {
-		return nil, fmt.Errorf("failed to mark lease for release: %w", err)
+		return nil, status.Errorf(codes.Internal, "failed to mark lease for release: %s", err)
 	}
 
 	return &pb.ReleaseLeaseResponse{}, nil
@@ -1077,8 +1082,12 @@ func (s *ControllerService) ReleaseLease(
 	ctx context.Context,
 	req *pb.ReleaseLeaseRequest,
 ) (*pb.ReleaseLeaseResponse, error) {
-	// Try exporter auth first, then client auth
-	if exporter, err := s.authenticateExporter(ctx); err == nil {
+	// Route based on jumpstarter-kind metadata to avoid spurious auth failures
+	if s.getAuth().IsExporter(ctx) {
+		exporter, err := s.authenticateExporter(ctx)
+		if err != nil {
+			return nil, err
+		}
 		return s.releaseLeaseAsExporter(ctx, exporter, req)
 	}
 

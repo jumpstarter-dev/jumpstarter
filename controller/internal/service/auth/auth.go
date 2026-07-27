@@ -8,6 +8,7 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authorization"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -92,6 +93,17 @@ func (s *Auth) VerifyExporter(ctx context.Context) (*jumpstarterdevv1alpha1.Expo
 	}
 
 	return jexporter, nil
+}
+
+// IsExporter checks the jumpstarter-kind metadata to determine if the caller
+// is an exporter without performing full authentication.
+func (s *Auth) IsExporter(ctx context.Context) bool {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return false
+	}
+	kinds := md.Get("jumpstarter-kind")
+	return len(kinds) == 1 && kinds[0] == "Exporter"
 }
 
 func (s *Auth) AuthExporter(ctx context.Context, namespace string) (*jumpstarterdevv1alpha1.Exporter, error) {

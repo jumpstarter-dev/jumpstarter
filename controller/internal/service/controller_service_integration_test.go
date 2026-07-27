@@ -375,7 +375,7 @@ var _ = Describe("ControllerService Integration", func() {
 			req := &pb.ReleaseLeaseRequest{Name: "lease-owned-by-other"}
 			_, err := controllerService.releaseLeaseAsExporter(ctx, exporter, req)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("permission denied"))
+			Expect(err.Error()).To(ContainSubstring("not held by exporter"))
 		})
 
 		It("should be idempotent when lease already marked for release", func() {
