@@ -439,6 +439,7 @@ def _make_exporter_for_report_status():
     exporter._exporter_status = ExporterStatus.AVAILABLE
     exporter._lease_context = None
     exporter._standalone = False
+    exporter._release_lease_unsupported = False
     return exporter
 
 
@@ -643,10 +644,54 @@ class TestReportStatusGrpcErrorHandling:
         # Called exactly once (no retry)
         assert mock_controller.ReportStatus.call_count == 1
 
-    async def test_request_lease_release_retries_on_transient_failure(self):
-        """When release_lease=true fails, _request_lease_release falls back to
-        retrying just the AVAILABLE status via _report_status."""
+    async def test_request_lease_release_succeeds_on_first_attempt(self):
+        """When ReleaseLease succeeds immediately, send AVAILABLE and exit."""
         exporter = _make_exporter_for_report_status()
+        exporter._release_lease_unsupported = False
+
+        lease_ctx = LeaseContext(
+            lease_name="test-lease",
+            before_lease_hook=Event(),
+            client_name="test-client",
+        )
+        exporter._lease_context = lease_ctx
+
+        release_calls = []
+        report_calls = []
+
+        async def capture_release(request):
+            release_calls.append(request)
+
+        async def capture_report(request):
+            report_calls.append(request)
+
+        mock_controller = AsyncMock()
+        mock_controller.ReleaseLease = AsyncMock(side_effect=capture_release)
+        mock_controller.ReportStatus = AsyncMock(side_effect=capture_report)
+
+        stub_ctx = AsyncMock()
+        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
+        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
+            await exporter._request_lease_release()
+
+        # ReleaseLease called once with correct lease name
+        assert len(release_calls) == 1
+        assert release_calls[0].name == "test-lease"
+
+        # ReportStatus called once (AVAILABLE only, no release_lease)
+        assert len(report_calls) == 1
+        assert report_calls[0].release_lease is False
+        assert ExporterStatus.from_proto(report_calls[0].status) == ExporterStatus.AVAILABLE
+
+        # Lease ended event set
+        assert lease_ctx.lease_ended.is_set()
+
+    async def test_request_lease_release_retries_on_transient_failure(self):
+        """When ReleaseLease fails with UNAVAILABLE on first attempt, retry and succeed."""
+        exporter = _make_exporter_for_report_status()
+        exporter._release_lease_unsupported = False
 
         lease_ctx = LeaseContext(
             lease_name="test-lease",
@@ -662,34 +707,45 @@ class TestReportStatusGrpcErrorHandling:
             details="Service unavailable",
         )
 
-        delivered = []
-        call_count = 0
+        release_calls = []
+        report_calls = []
+        release_call_count = 0
 
         async def fail_first_then_succeed(request):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                # First attempt (release_lease=true) fails
-                assert request.release_lease is True
+            nonlocal release_call_count
+            release_call_count += 1
+            if release_call_count == 1:
                 raise unavailable_error
-            # Second attempt (fallback via _report_status) succeeds
-            delivered.append(request)
+            release_calls.append(request)
 
-        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=fail_first_then_succeed)
+        async def capture_report(request):
+            report_calls.append(request)
+
+        mock_controller = AsyncMock()
+        mock_controller.ReleaseLease = AsyncMock(side_effect=fail_first_then_succeed)
+        mock_controller.ReportStatus = AsyncMock(side_effect=capture_report)
+
+        stub_ctx = AsyncMock()
+        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
+        stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), patch("anyio.sleep"):
             await exporter._request_lease_release()
 
-        # First call with release_lease=true failed, second call (via _report_status) succeeded
-        assert len(delivered) == 1
-        assert delivered[0].release_lease is False  # Fallback sends status-only
-        assert ExporterStatus.from_proto(delivered[0].status) == ExporterStatus.AVAILABLE
-        assert call_count == 2
+        # ReleaseLease called twice (failed once, succeeded on retry)
+        assert release_call_count == 2
+        assert len(release_calls) == 1
+        assert release_calls[0].name == "test-lease"
+
+        # ReportStatus called once (AVAILABLE)
+        assert len(report_calls) == 1
+        assert ExporterStatus.from_proto(report_calls[0].status) == ExporterStatus.AVAILABLE
 
     async def test_request_lease_release_exhausts_retries(self):
-        """When both Phase 1 and Phase 2 fail completely, lease_ended is still set
+        """When ReleaseLease and AVAILABLE status both fail, lease_ended is still set
         so handle_lease can exit (prevents being stuck forever)."""
         exporter = _make_exporter_for_report_status()
+        exporter._release_lease_unsupported = False
 
         lease_ctx = LeaseContext(
             lease_name="test-lease",
@@ -705,30 +761,45 @@ class TestReportStatusGrpcErrorHandling:
             details="Service unavailable",
         )
 
-        call_count = 0
+        release_call_count = 0
+        report_call_count = 0
 
-        async def always_fail(request):
-            nonlocal call_count
-            call_count += 1
+        async def always_fail_release(request):
+            nonlocal release_call_count
+            release_call_count += 1
             raise unavailable_error
 
-        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=always_fail)
+        async def always_fail_report(request):
+            nonlocal report_call_count
+            report_call_count += 1
+            raise unavailable_error
+
+        mock_controller = AsyncMock()
+        mock_controller.ReleaseLease = AsyncMock(side_effect=always_fail_release)
+        mock_controller.ReportStatus = AsyncMock(side_effect=always_fail_report)
+
+        stub_ctx = AsyncMock()
+        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
+        stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), patch("anyio.sleep"):
             await exporter._request_lease_release()
 
-        # Phase 1: 1 attempt (release_lease=true fails)
-        # Phase 2: 4 attempts via _send_report_status_rpc (all fail)
-        # Total: 5 calls
-        assert call_count == 5
+        # ReleaseLease: 4 attempts (all fail)
+        assert release_call_count == 4
+
+        # ReportStatus: 4 attempts via _send_report_status_rpc (all fail)
+        assert report_call_count == 4
 
         # Critical: lease_ended must be set even when everything fails,
         # otherwise handle_lease never exits
         assert lease_ctx.lease_ended.is_set()
 
-    async def test_request_lease_release_succeeds_on_first_attempt(self):
-        """When release_lease=true succeeds immediately, no fallback to _report_status."""
+    async def test_request_lease_release_falls_back_on_unsupported(self):
+        """When ReleaseLease fails with PERMISSION_DENIED, fall back to compat path."""
         exporter = _make_exporter_for_report_status()
+        exporter._release_lease_unsupported = False
+        exporter._exporter_status = ExporterStatus.AVAILABLE
 
         lease_ctx = LeaseContext(
             lease_name="test-lease",
@@ -737,25 +808,125 @@ class TestReportStatusGrpcErrorHandling:
         )
         exporter._lease_context = lease_ctx
 
-        delivered = []
+        permission_error = grpc.aio.AioRpcError(
+            code=grpc.StatusCode.PERMISSION_DENIED,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
+            details="Exporter auth not supported",
+        )
 
-        async def succeed_immediately(request):
-            delivered.append(request)
+        report_calls = []
 
-        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=succeed_immediately)
+        async def fail_with_permission(request):
+            raise permission_error
+
+        async def capture_report(request):
+            report_calls.append(request)
+
+        mock_controller = AsyncMock()
+        mock_controller.ReleaseLease = AsyncMock(side_effect=fail_with_permission)
+        mock_controller.ReportStatus = AsyncMock(side_effect=capture_report)
+
+        stub_ctx = AsyncMock()
+        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
+        stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
             await exporter._request_lease_release()
 
-        # Only one call made (release_lease=true succeeded)
-        assert len(delivered) == 1
-        assert delivered[0].release_lease is True
-        assert ExporterStatus.from_proto(delivered[0].status) == ExporterStatus.AVAILABLE
+        # ReleaseLease called once, failed with PERMISSION_DENIED
+        assert mock_controller.ReleaseLease.call_count == 1
 
-    async def test_request_lease_release_unimplemented_no_fallback(self):
-        """When controller returns UNIMPLEMENTED, no fallback to _report_status
-        (controller doesn't support status reporting at all)."""
+        # Fallback: ReportStatus called twice
+        # First call: release_lease=true with AFTER_LEASE_HOOK (AVAILABLE reverted)
+        # Second call: AVAILABLE
+        assert len(report_calls) == 2
+        assert report_calls[0].release_lease is True
+        assert ExporterStatus.from_proto(report_calls[0].status) == ExporterStatus.AFTER_LEASE_HOOK
+        assert report_calls[1].release_lease is False
+        assert ExporterStatus.from_proto(report_calls[1].status) == ExporterStatus.AVAILABLE
+
+        # _release_lease_unsupported should be cached
+        assert exporter._release_lease_unsupported is True
+
+    async def test_request_lease_release_skips_release_lease_when_cached_unsupported(self):
+        """When _release_lease_unsupported is True, skip ReleaseLease entirely."""
         exporter = _make_exporter_for_report_status()
+        exporter._release_lease_unsupported = True  # Cached from prior attempt
+        exporter._exporter_status = ExporterStatus.AVAILABLE
+
+        lease_ctx = LeaseContext(
+            lease_name="test-lease",
+            before_lease_hook=Event(),
+            client_name="test-client",
+        )
+        exporter._lease_context = lease_ctx
+
+        report_calls = []
+
+        async def capture_report(request):
+            report_calls.append(request)
+
+        mock_controller = AsyncMock()
+        mock_controller.ReleaseLease = AsyncMock()  # Should never be called
+        mock_controller.ReportStatus = AsyncMock(side_effect=capture_report)
+
+        stub_ctx = AsyncMock()
+        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
+        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
+            await exporter._request_lease_release()
+
+        # ReleaseLease NOT called (cached as unsupported)
+        assert mock_controller.ReleaseLease.call_count == 0
+
+        # Went straight to fallback path
+        assert len(report_calls) == 2
+        assert report_calls[0].release_lease is True
+        assert report_calls[1].release_lease is False
+
+    async def test_request_lease_release_preserves_failure_status_in_fallback(self):
+        """When falling back with a failure status, preserve it (don't revert to AFTER_LEASE_HOOK)."""
+        exporter = _make_exporter_for_report_status()
+        exporter._release_lease_unsupported = True
+        exporter._exporter_status = ExporterStatus.AFTER_LEASE_HOOK_FAILED  # Failure status
+
+        lease_ctx = LeaseContext(
+            lease_name="test-lease",
+            before_lease_hook=Event(),
+            client_name="test-client",
+        )
+        exporter._lease_context = lease_ctx
+
+        report_calls = []
+
+        async def capture_report(request):
+            report_calls.append(request)
+
+        mock_controller = AsyncMock()
+        mock_controller.ReportStatus = AsyncMock(side_effect=capture_report)
+
+        stub_ctx = AsyncMock()
+        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
+        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
+            await exporter._request_lease_release()
+
+        # First call: release_lease=true with AFTER_LEASE_HOOK_FAILED (preserved, not reverted)
+        assert report_calls[0].release_lease is True
+        assert ExporterStatus.from_proto(report_calls[0].status) == ExporterStatus.AFTER_LEASE_HOOK_FAILED
+
+        # Second call: AVAILABLE
+        assert report_calls[1].release_lease is False
+        assert ExporterStatus.from_proto(report_calls[1].status) == ExporterStatus.AVAILABLE
+
+    async def test_request_lease_release_unimplemented(self):
+        """When ReleaseLease returns UNIMPLEMENTED, treat as unsupported and fall back."""
+        exporter = _make_exporter_for_report_status()
+        exporter._release_lease_unsupported = False
+        exporter._exporter_status = ExporterStatus.AVAILABLE
 
         lease_ctx = LeaseContext(
             lease_name="test-lease",
@@ -770,13 +941,35 @@ class TestReportStatusGrpcErrorHandling:
             trailing_metadata=grpc.aio.Metadata(),
             details="Method not implemented",
         )
-        mock_controller, stub_ctx = _setup_mock_controller_stub(exporter, side_effect=unimplemented_error)
+
+        report_calls = []
+
+        async def fail_with_unimplemented(request):
+            raise unimplemented_error
+
+        async def capture_report(request):
+            report_calls.append(request)
+
+        mock_controller = AsyncMock()
+        mock_controller.ReleaseLease = AsyncMock(side_effect=fail_with_unimplemented)
+        mock_controller.ReportStatus = AsyncMock(side_effect=capture_report)
+
+        stub_ctx = AsyncMock()
+        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
+        stub_ctx.__aexit__ = AsyncMock(return_value=False)
 
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
             await exporter._request_lease_release()
 
-        # Called exactly once (UNIMPLEMENTED means no fallback)
-        assert mock_controller.ReportStatus.call_count == 1
+        # ReleaseLease called once (UNIMPLEMENTED)
+        assert mock_controller.ReleaseLease.call_count == 1
+
+        # Falls back to compat path
+        assert len(report_calls) == 2
+        assert report_calls[0].release_lease is True
+
+        # Cached as unsupported
+        assert exporter._release_lease_unsupported is True
 
 
 class TestHandleLeaseStaleSkip:
