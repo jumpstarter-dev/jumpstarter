@@ -35,8 +35,9 @@ import (
 
 var _ = Describe("ExporterSet Controller", func() {
 	const (
-		timeout  = 10 * time.Second
-		interval = 250 * time.Millisecond
+		timeout      = 10 * time.Second
+		interval     = 250 * time.Millisecond
+		testEndpoint = "grpc.test.example.com:8082"
 	)
 
 	var (
@@ -71,7 +72,7 @@ var _ = Describe("ExporterSet Controller", func() {
 	})
 
 	Context("When creating an ExporterSet with minReplicas", func() {
-		It("should create the correct number of Exporters and Pods", func() {
+		It("should create Exporters (phase 1) and Pods after credentials (phase 2)", func() {
 			es := &virtualtargetv1alpha1.ExporterSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-scale-up",
@@ -98,7 +99,7 @@ var _ = Describe("ExporterSet Controller", func() {
 				Expect(envTestClient.Delete(envTestCtx, es)).To(Succeed())
 			}()
 
-			By("Reconciling the ExporterSet — one Exporter per reconcile, minReplicas=2 needs two calls")
+			By("Phase 1: Reconciling creates Exporters (awaiting credentials)")
 			req := reconcile.Request{NamespacedName: types.NamespacedName{Name: es.Name, Namespace: ns}}
 			for range 2 {
 				_, err := reconciler.Reconcile(envTestCtx, req)
@@ -131,8 +132,56 @@ var _ = Describe("ExporterSet Controller", func() {
 					"Exporter %s should be controller-owned by ExporterSet", exp.Name)
 			}
 
-			By("Verifying Pods were created with correct ownership")
+			By("Verifying no Pods exist yet (credentials not ready)")
 			var podList corev1.PodList
+			Expect(envTestClient.List(envTestCtx, &podList,
+				client.InNamespace(ns),
+				client.MatchingLabels{labelExporterSetName: "test-scale-up"},
+			)).To(Succeed())
+			Expect(podList.Items).To(BeEmpty(),
+				"No Pods should exist before credentials are provisioned")
+
+			By("Phase 2: Simulating credentials and endpoint on Exporters")
+			caCM := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "jumpstarter-service-ca-cert",
+					Namespace: ns,
+				},
+				Data: map[string]string{
+					"ca.crt": "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n",
+				},
+			}
+			Expect(envTestClient.Create(envTestCtx, caCM)).To(Succeed())
+			defer func() { _ = envTestClient.Delete(envTestCtx, caCM) }()
+
+			Expect(envTestClient.List(envTestCtx, &exporterList,
+				client.InNamespace(ns),
+				client.MatchingLabels{"exporterset": "test-scale-up"},
+			)).To(Succeed())
+
+			for i := range exporterList.Items {
+				exp := &exporterList.Items[i]
+				credSecret := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cred-" + exp.Name,
+						Namespace: ns,
+					},
+					Data: map[string][]byte{
+						"token": []byte("test-token-" + exp.Name),
+					},
+				}
+				Expect(envTestClient.Create(envTestCtx, credSecret)).To(Succeed())
+
+				exp.Status.Credential = &corev1.LocalObjectReference{Name: credSecret.Name}
+				exp.Status.Endpoint = testEndpoint
+				Expect(envTestClient.Status().Update(envTestCtx, exp)).To(Succeed())
+			}
+
+			By("Reconciling again — should create config Secrets and Pods")
+			_, err := reconciler.Reconcile(envTestCtx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Verifying Pods were created with correct ownership")
 			Eventually(func() int {
 				err := envTestClient.List(envTestCtx, &podList,
 					client.InNamespace(ns),
@@ -144,7 +193,6 @@ var _ = Describe("ExporterSet Controller", func() {
 				return len(podList.Items)
 			}, timeout, interval).Should(Equal(2))
 
-			By("Verifying ownership chain: Pod owned by Exporter (not ExporterSet)")
 			exporterUIDs := make(map[types.UID]bool)
 			for _, exp := range exporterList.Items {
 				exporterUIDs[exp.UID] = true
@@ -172,6 +220,14 @@ var _ = Describe("ExporterSet Controller", func() {
 			for _, pod := range podList.Items {
 				Expect(pod.Labels[labelExporterSetName]).To(Equal("test-scale-up"))
 			}
+
+			By("Verifying config Secrets were created")
+			var secretList corev1.SecretList
+			Expect(envTestClient.List(envTestCtx, &secretList,
+				client.InNamespace(ns),
+				client.MatchingLabels{labelExporterSetName: "test-scale-up"},
+			)).To(Succeed())
+			Expect(secretList.Items).To(HaveLen(2))
 		})
 	})
 

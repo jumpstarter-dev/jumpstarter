@@ -228,7 +228,7 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Scale-up logic. Uses potentiallyAvailable (replicas - leased) to avoid
 	// cache-race over-creation. One exporter per reconcile; Owns watch
 	// triggers subsequent cycles.
-	scaled, err := r.reconcileScaleUp(ctx, &exporterSet, &vtc, mergedParameters, state)
+	scaled, err := r.reconcileScaleUp(ctx, &exporterSet, state)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -311,8 +311,6 @@ func computePoolState(exporters []jumpstarterdevv1alpha1.Exporter) poolState {
 func (r *ExporterSetReconciler) scaleUp(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
-	vtc *virtualtargetv1alpha1.VirtualTargetClass,
-	mergedParameters map[string]interface{},
 	count int32,
 ) error {
 	logger := log.FromContext(ctx)
@@ -440,8 +438,12 @@ func (r *ExporterSetReconciler) exporterHasPod(
 	}
 
 	for i := range podList.Items {
-		if isOwnedBy(&podList.Items[i], exporter.UID) {
-			return true, nil
+		for _, ref := range podList.Items[i].GetOwnerReferences() {
+			if ref.Controller != nil && *ref.Controller &&
+				ref.Kind == "Exporter" &&
+				ref.Name == exporter.Name {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
@@ -489,8 +491,6 @@ func (r *ExporterSetReconciler) cleanupDisabledExporters(
 func (r *ExporterSetReconciler) reconcileScaleUp(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
-	vtc *virtualtargetv1alpha1.VirtualTargetClass,
-	params map[string]interface{},
 	state poolState,
 ) (scaled bool, err error) {
 	logger := log.FromContext(ctx)
@@ -499,7 +499,7 @@ func (r *ExporterSetReconciler) reconcileScaleUp(
 	// 1. Floor: never drop below minReplicas.
 	if state.replicas < es.Spec.MinReplicas && potentiallyAvailable < es.Spec.MinReplicas {
 		if maxScaleUp(es, state.replicas) > 0 {
-			return true, r.scaleUp(ctx, es, vtc, params, 1)
+			return true, r.scaleUp(ctx, es, 1)
 		}
 		return false, nil
 	}
@@ -509,7 +509,7 @@ func (r *ExporterSetReconciler) reconcileScaleUp(
 		potentiallyAvailable < es.Spec.MinAvailableReplicas &&
 		!atMaxReplicas(es, state.replicas) {
 		if maxScaleUp(es, state.replicas) > 0 {
-			return true, r.scaleUp(ctx, es, vtc, params, 1)
+			return true, r.scaleUp(ctx, es, 1)
 		}
 		return false, nil
 	}
@@ -522,7 +522,7 @@ func (r *ExporterSetReconciler) reconcileScaleUp(
 			return false, nil
 		}
 		if pending > 0 && state.available == 0 && maxScaleUp(es, state.replicas) > 0 {
-			return true, r.scaleUp(ctx, es, vtc, params, 1)
+			return true, r.scaleUp(ctx, es, 1)
 		}
 	}
 

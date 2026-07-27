@@ -40,6 +40,7 @@ const (
 	kindExporter    = "Exporter"
 	kindExporterSet = "ExporterSet"
 	nsDefault       = "default"
+	testEndpoint    = "grpc.test.example.com:8082"
 )
 
 func newScheme(t *testing.T) *runtime.Scheme {
@@ -136,7 +137,7 @@ func newReconciler(t *testing.T, objs ...client.Object) (*ExporterSetReconciler,
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(objs...).
-		WithStatusSubresource(&virtualtargetv1alpha1.ExporterSet{}).
+		WithStatusSubresource(&virtualtargetv1alpha1.ExporterSet{}, &jumpstarterdevv1alpha1.Exporter{}).
 		Build()
 	r := &ExporterSetReconciler{
 		Client:      c,
@@ -216,7 +217,7 @@ func reconcileAndGet(t *testing.T, objs ...client.Object) virtualtargetv1alpha1.
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(objs...).
-		WithStatusSubresource(&virtualtargetv1alpha1.ExporterSet{}).
+		WithStatusSubresource(&virtualtargetv1alpha1.ExporterSet{}, &jumpstarterdevv1alpha1.Exporter{}).
 		Build()
 	r := &ExporterSetReconciler{
 		Client:      c,
@@ -269,9 +270,18 @@ func TestReconcile_provisionerMismatch(t *testing.T) {
 // --- Scale-up tests ---
 
 func TestReconcile_scaleUp_noExporters_createsMinReplicas(t *testing.T) {
-	r, c := newReconciler(t, makeExporterSet(), makeVTC())
+	caCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      caConfigMapName,
+			Namespace: nsDefault,
+		},
+		Data: map[string]string{
+			caConfigMapKey: "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n",
+		},
+	}
+	r, c := newReconciler(t, makeExporterSet(), makeVTC(), caCM)
 
-	// minReplicas=2: one Exporter per reconcile, Owns watch drives the next cycle.
+	// Phase 1: minReplicas=2, one Exporter per reconcile.
 	for range 2 {
 		reconcileOnce(t, r)
 	}
@@ -281,12 +291,12 @@ func TestReconcile_scaleUp_noExporters_createsMinReplicas(t *testing.T) {
 		t.Fatalf("expected 2 Exporters (minReplicas), got %d", len(exporters))
 	}
 
+	// No Pods yet — credentials not ready.
 	pods := listPods(t, c)
-	if len(pods) != 2 {
-		t.Fatalf("expected 2 Pods, got %d", len(pods))
+	if len(pods) != 0 {
+		t.Fatalf("expected 0 Pods before credentials, got %d", len(pods))
 	}
 
-	// Verify Exporter is owned by ExporterSet
 	for _, exp := range exporters {
 		if !isOwnedBy(&exp, testExporterSetUID) {
 			t.Errorf("Exporter %s not owned by ExporterSet", exp.Name)
@@ -296,7 +306,35 @@ func TestReconcile_scaleUp_noExporters_createsMinReplicas(t *testing.T) {
 		}
 	}
 
-	// Verify Pods are owned by their Exporters (not ExporterSet)
+	// Phase 2: simulate credentials and endpoint on each Exporter.
+	for i := range exporters {
+		exp := &exporters[i]
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "cred-" + exp.Name,
+				Namespace: nsDefault,
+			},
+			Data: map[string][]byte{
+				"token": []byte("test-token-" + exp.Name),
+			},
+		}
+		if err := c.Create(context.Background(), credSecret); err != nil {
+			t.Fatalf("create credential Secret: %v", err)
+		}
+		exp.Status.Credential = &corev1.LocalObjectReference{Name: credSecret.Name}
+		exp.Status.Endpoint = testEndpoint
+		if err := c.Status().Update(context.Background(), exp); err != nil {
+			t.Fatalf("update Exporter status: %v", err)
+		}
+	}
+
+	reconcileOnce(t, r)
+
+	pods = listPods(t, c)
+	if len(pods) != 2 {
+		t.Fatalf("expected 2 Pods after credentials, got %d", len(pods))
+	}
+
 	for _, pod := range pods {
 		ownedByExporter := false
 		for _, ref := range pod.OwnerReferences {
@@ -591,12 +629,56 @@ func TestReconcile_ownershipChain_exporterOwnedByExporterSet(t *testing.T) {
 }
 
 func TestReconcile_ownershipChain_podOwnedByExporter(t *testing.T) {
-	r, c := newReconciler(t, makeExporterSet(), makeVTC())
+	caCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      caConfigMapName,
+			Namespace: nsDefault,
+		},
+		Data: map[string]string{
+			caConfigMapKey: "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n",
+		},
+	}
+	r, c := newReconciler(t, makeExporterSet(), makeVTC(), caCM)
 
+	// Phase 1: create Exporters.
 	reconcileOnce(t, r)
 
 	exporters := listExporters(t, c)
+	if len(exporters) == 0 {
+		t.Fatal("expected at least 1 Exporter")
+	}
+
+	// Phase 2: simulate credentials.
+	for i := range exporters {
+		exp := &exporters[i]
+		credSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "cred-" + exp.Name,
+				Namespace: nsDefault,
+			},
+			Data: map[string][]byte{
+				"token": []byte("test-token-" + exp.Name),
+			},
+		}
+		if err := c.Create(context.Background(), credSecret); err != nil {
+			t.Fatalf("create credential Secret: %v", err)
+		}
+		exp.Status.Credential = &corev1.LocalObjectReference{Name: credSecret.Name}
+		exp.Status.Endpoint = testEndpoint
+		if err := c.Status().Update(context.Background(), exp); err != nil {
+			t.Fatalf("update Exporter status: %v", err)
+		}
+	}
+
+	reconcileOnce(t, r)
+
+	// Re-read exporters after reconcile.
+	exporters = listExporters(t, c)
 	pods := listPods(t, c)
+
+	if len(pods) == 0 {
+		t.Fatal("expected at least 1 Pod after credentials are ready")
+	}
 
 	exporterUIDs := make(map[types.UID]bool)
 	for _, exp := range exporters {
@@ -1432,7 +1514,7 @@ func TestReconcile_vtcNotFound_updatesAllConditionsAndCounters(t *testing.T) {
 	c := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(esObj, makeVTC(), exp1, exp2).
-		WithStatusSubresource(&virtualtargetv1alpha1.ExporterSet{}).
+		WithStatusSubresource(&virtualtargetv1alpha1.ExporterSet{}, &jumpstarterdevv1alpha1.Exporter{}).
 		Build()
 	r := &ExporterSetReconciler{
 		Client:      c,

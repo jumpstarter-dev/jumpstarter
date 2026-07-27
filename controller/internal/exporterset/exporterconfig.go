@@ -23,13 +23,13 @@ import (
 	"fmt"
 	"strings"
 
+	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"gopkg.in/yaml.v3"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -46,14 +46,14 @@ const (
 
 // exporterConfig represents the YAML structure of a Jumpstarter ExporterConfig.
 type exporterConfig struct {
-	APIVersion     string                       `yaml:"apiVersion"`
-	Kind           string                       `yaml:"kind"`
-	Metadata       exporterConfigMetadata       `yaml:"metadata"`
-	Endpoint       string                       `yaml:"endpoint"`
-	TLS            exporterConfigTLS            `yaml:"tls"`
-	Token          string                       `yaml:"token"`
+	APIVersion     string                          `yaml:"apiVersion"`
+	Kind           string                          `yaml:"kind"`
+	Metadata       exporterConfigMetadata          `yaml:"metadata"`
+	Endpoint       string                          `yaml:"endpoint"`
+	TLS            exporterConfigTLS               `yaml:"tls"`
+	Token          string                          `yaml:"token"`
 	Export         map[string]exporterConfigDriver `yaml:"export"`
-	ExitOnLeaseEnd bool                         `yaml:"exitOnLeaseEnd"`
+	ExitOnLeaseEnd bool                            `yaml:"exitOnLeaseEnd"`
 }
 
 type exporterConfigMetadata struct {
@@ -66,8 +66,8 @@ type exporterConfigTLS struct {
 }
 
 type exporterConfigDriver struct {
-	Type     string                 `yaml:"type"`
-	Config   map[string]interface{} `yaml:"config,omitempty"`
+	Type     string                          `yaml:"type"`
+	Config   map[string]interface{}          `yaml:"config,omitempty"`
 	Children map[string]exporterConfigDriver `yaml:"children,omitempty"`
 }
 
