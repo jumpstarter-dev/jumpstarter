@@ -176,13 +176,19 @@ func (p *Provisioner) RenderPod(
 		})
 	}
 
+	podMeta := metav1.ObjectMeta{
+		Namespace:   exporterSet.Namespace,
+		Labels:      maps.Clone(exporterSet.Spec.Template.Metadata.Labels),
+		Annotations: maps.Clone(exporterSet.Spec.Template.Metadata.Annotations),
+	}
+	if exporter != nil {
+		podMeta.Name = exporter.Name
+	} else {
+		podMeta.GenerateName = fmt.Sprintf("%s-", exporterSet.Name)
+	}
+
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: fmt.Sprintf("%s-", exporterSet.Name),
-			Namespace:    exporterSet.Namespace,
-			Labels:       maps.Clone(exporterSet.Spec.Template.Metadata.Labels),
-			Annotations:  maps.Clone(exporterSet.Spec.Template.Metadata.Annotations),
-		},
+		ObjectMeta: podMeta,
 		Spec: corev1.PodSpec{
 			InitContainers: []corev1.Container{
 				{

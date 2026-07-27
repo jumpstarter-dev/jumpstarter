@@ -202,6 +202,13 @@ func TestRenderPod_injectsJumpstarterExecLogFields(t *testing.T) {
 		t.Fatalf("RenderPod() error = %v", err)
 	}
 
+	if pod.Name != exporter.Name {
+		t.Errorf("Pod.Name = %q, want %q (must match Exporter name)", pod.Name, exporter.Name)
+	}
+	if pod.GenerateName != "" {
+		t.Errorf("Pod.GenerateName = %q, want empty when exporter is provided", pod.GenerateName)
+	}
+
 	env := pod.Spec.Containers[0].Env
 	var got string
 	for _, e := range env {
