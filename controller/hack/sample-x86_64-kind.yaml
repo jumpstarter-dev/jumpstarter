@@ -33,6 +33,9 @@ spec:
   parameters:
     arch: x86_64
     machineType: q35
+    images:
+      exporter: quay.io/jumpstarter-dev/jumpstarter:latest
+      runtime: quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
     resources:
       cpu: 1
       memory: 1Gi

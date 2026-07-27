@@ -98,10 +98,11 @@ func (p *Provisioner) Name() string {
 }
 
 // resolveImage replaces the :latest tag with the controller's own version tag.
-// If the version is unknown ("dev") or the image uses a non-latest tag
-// (admin override), the image is returned unchanged.
+// If the version is unknown ("dev"), dirty (contains "-g", indicating a
+// non-release git describe like "0.8.1-324-g02cf8552"), or the image uses
+// a non-latest tag (admin override), the image is returned unchanged.
 func (p *Provisioner) resolveImage(image string) string {
-	if p.Version == "" || p.Version == "dev" {
+	if p.Version == "" || p.Version == "dev" || strings.Contains(p.Version, "-g") {
 		return image
 	}
 	version := strings.TrimPrefix(p.Version, "v")
@@ -109,6 +110,18 @@ func (p *Provisioner) resolveImage(image string) string {
 		return base + ":" + version
 	}
 	return image
+}
+
+// imageFromParams reads an image override from mergedParameters["images"][key].
+// If the override exists, it is returned as-is (no resolveImage). Otherwise
+// the defaultImage is passed through resolveImage.
+func (p *Provisioner) imageFromParams(params map[string]interface{}, key, defaultImage string) string {
+	if images, ok := params["images"].(map[string]interface{}); ok {
+		if v, ok := images[key].(string); ok && v != "" {
+			return v
+		}
+	}
+	return p.resolveImage(defaultImage)
 }
 
 // RenderPod creates a Pod for a new QEMU-based exporter instance
@@ -134,8 +147,8 @@ func (p *Provisioner) RenderPod(
 	restartAlways := corev1.ContainerRestartPolicyAlways
 	sizeLimit := resource.MustParse(sharedVolumeSizeLimit)
 
-	exporterImage := p.resolveImage(DefaultExporterImage)
-	runtimeImage := p.resolveImage(DefaultQEMURuntimeImage)
+	exporterImage := p.imageFromParams(mergedParameters, "exporter", DefaultExporterImage)
+	runtimeImage := p.imageFromParams(mergedParameters, "runtime", DefaultQEMURuntimeImage)
 
 	// JEP-0013 persistent log context for jumpstarter-exec (matches
 	// set_persistent_log_context in the Python exporter).

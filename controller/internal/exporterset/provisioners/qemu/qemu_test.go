@@ -218,23 +218,23 @@ func TestRenderPod_injectsJumpstarterExecLogFields(t *testing.T) {
 
 func TestResolveImage_devPreservesLatest(t *testing.T) {
 	p := New("dev")
-	got := p.resolveImage("quay.io/jumpstarter-dev/jumpstarter:latest")
-	if got != "quay.io/jumpstarter-dev/jumpstarter:latest" {
+	got := p.resolveImage(DefaultExporterImage)
+	if got != DefaultExporterImage {
 		t.Errorf("resolveImage() = %q, want :latest preserved for dev", got)
 	}
 }
 
 func TestResolveImage_emptyVersionPreservesLatest(t *testing.T) {
 	p := New("")
-	got := p.resolveImage("quay.io/jumpstarter-dev/jumpstarter:latest")
-	if got != "quay.io/jumpstarter-dev/jumpstarter:latest" {
+	got := p.resolveImage(DefaultExporterImage)
+	if got != DefaultExporterImage {
 		t.Errorf("resolveImage() = %q, want :latest preserved for empty version", got)
 	}
 }
 
 func TestResolveImage_taggedVersionResolvesLatest(t *testing.T) {
 	p := New("v0.9.0")
-	got := p.resolveImage("quay.io/jumpstarter-dev/jumpstarter:latest")
+	got := p.resolveImage(DefaultExporterImage)
 	want := "quay.io/jumpstarter-dev/jumpstarter:0.9.0"
 	if got != want {
 		t.Errorf("resolveImage() = %q, want %q", got, want)
@@ -243,7 +243,7 @@ func TestResolveImage_taggedVersionResolvesLatest(t *testing.T) {
 
 func TestResolveImage_rcVersionResolvesLatest(t *testing.T) {
 	p := New("v0.9.0-rc.1")
-	got := p.resolveImage("quay.io/jumpstarter-dev/jumpstarter:latest")
+	got := p.resolveImage(DefaultExporterImage)
 	want := "quay.io/jumpstarter-dev/jumpstarter:0.9.0-rc.1"
 	if got != want {
 		t.Errorf("resolveImage() = %q, want %q", got, want)
@@ -280,6 +280,79 @@ func TestRenderPod_usesResolvedImages(t *testing.T) {
 	}
 	if pod.Spec.InitContainers[1].Image != wantExporter {
 		t.Errorf("exporter image = %q, want %q", pod.Spec.InitContainers[1].Image, wantExporter)
+	}
+	if pod.Spec.Containers[0].Image != wantRuntime {
+		t.Errorf("target-runtime image = %q, want %q", pod.Spec.Containers[0].Image, wantRuntime)
+	}
+}
+
+func TestResolveImage_dirtyGitVersionPreservesLatest(t *testing.T) {
+	p := New("v0.8.1-324-g02cf8552")
+	got := p.resolveImage(DefaultExporterImage)
+	if got != DefaultExporterImage {
+		t.Errorf("resolveImage() = %q, want :latest preserved for dirty git version", got)
+	}
+}
+
+func TestRenderPod_imageOverrideFromParameters(t *testing.T) {
+	p := New("v1.2.3")
+	exporterSet := &virtualtargetv1alpha1.ExporterSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "demo-set", Namespace: "default"},
+	}
+	vtc := &virtualtargetv1alpha1.VirtualTargetClass{
+		Spec: virtualtargetv1alpha1.VirtualTargetClassSpec{Provisioner: ProvisionerName},
+	}
+	params := map[string]interface{}{
+		"images": map[string]interface{}{
+			"exporter": "my-registry.example.com/jumpstarter:custom",
+			"runtime":  "my-registry.example.com/qemu-runtime:custom",
+		},
+	}
+
+	pod, err := p.RenderPod(context.Background(), exporterSet, vtc, params, nil)
+	if err != nil {
+		t.Fatalf("RenderPod() error = %v", err)
+	}
+
+	wantExporter := "my-registry.example.com/jumpstarter:custom"
+	wantRuntime := "my-registry.example.com/qemu-runtime:custom"
+
+	if pod.Spec.InitContainers[0].Image != wantExporter {
+		t.Errorf("copy-jumpstarter-exec image = %q, want %q", pod.Spec.InitContainers[0].Image, wantExporter)
+	}
+	if pod.Spec.InitContainers[1].Image != wantExporter {
+		t.Errorf("exporter image = %q, want %q", pod.Spec.InitContainers[1].Image, wantExporter)
+	}
+	if pod.Spec.Containers[0].Image != wantRuntime {
+		t.Errorf("target-runtime image = %q, want %q", pod.Spec.Containers[0].Image, wantRuntime)
+	}
+}
+
+func TestRenderPod_partialImageOverride(t *testing.T) {
+	p := New("v1.2.3")
+	exporterSet := &virtualtargetv1alpha1.ExporterSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "demo-set", Namespace: "default"},
+	}
+	vtc := &virtualtargetv1alpha1.VirtualTargetClass{
+		Spec: virtualtargetv1alpha1.VirtualTargetClassSpec{Provisioner: ProvisionerName},
+	}
+	params := map[string]interface{}{
+		"images": map[string]interface{}{
+			"runtime": "my-registry.example.com/qemu-runtime:custom",
+		},
+	}
+
+	pod, err := p.RenderPod(context.Background(), exporterSet, vtc, params, nil)
+	if err != nil {
+		t.Fatalf("RenderPod() error = %v", err)
+	}
+
+	// Exporter should still resolve via version since no override.
+	wantExporter := "quay.io/jumpstarter-dev/jumpstarter:1.2.3"
+	wantRuntime := "my-registry.example.com/qemu-runtime:custom"
+
+	if pod.Spec.InitContainers[0].Image != wantExporter {
+		t.Errorf("copy-jumpstarter-exec image = %q, want %q", pod.Spec.InitContainers[0].Image, wantExporter)
 	}
 	if pod.Spec.Containers[0].Image != wantRuntime {
 		t.Errorf("target-runtime image = %q, want %q", pod.Spec.Containers[0].Image, wantRuntime)
