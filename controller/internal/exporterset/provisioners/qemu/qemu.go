@@ -112,16 +112,22 @@ func (p *Provisioner) resolveImage(image string) string {
 	return image
 }
 
-// imageFromParams reads an image override from mergedParameters["images"][key].
-// If the override exists, it is returned as-is (no resolveImage). Otherwise
-// the defaultImage is passed through resolveImage.
-func (p *Provisioner) imageFromParams(params map[string]interface{}, key, defaultImage string) string {
-	if images, ok := params["images"].(map[string]interface{}); ok {
-		if v, ok := images[key].(string); ok && v != "" {
-			return v
+// resolveImageSpec returns the image from an ImageSpec override, falling back to
+// the default image passed through resolveImage. Also returns the pull policy.
+func (p *Provisioner) resolveImageSpec(spec *virtualtargetv1alpha1.ImageSpec, defaultImage string) (string, corev1.PullPolicy) {
+	image := p.resolveImage(defaultImage)
+	pullPolicy := corev1.PullIfNotPresent
+
+	if spec != nil {
+		if spec.Image != "" {
+			image = spec.Image
+		}
+		if spec.ImagePullPolicy != "" {
+			pullPolicy = spec.ImagePullPolicy
 		}
 	}
-	return p.resolveImage(defaultImage)
+
+	return image, pullPolicy
 }
 
 // RenderPod creates a Pod for a new QEMU-based exporter instance
@@ -142,13 +148,20 @@ func (p *Provisioner) RenderPod(
 	exporterSet *virtualtargetv1alpha1.ExporterSet,
 	vtc *virtualtargetv1alpha1.VirtualTargetClass,
 	mergedParameters map[string]interface{},
+	images *virtualtargetv1alpha1.ImageOverrides,
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) (*corev1.Pod, error) {
 	restartAlways := corev1.ContainerRestartPolicyAlways
 	sizeLimit := resource.MustParse(sharedVolumeSizeLimit)
 
-	exporterImage := p.imageFromParams(mergedParameters, "exporter", DefaultExporterImage)
-	runtimeImage := p.imageFromParams(mergedParameters, "runtime", DefaultQEMURuntimeImage)
+	var exporterSpec, runtimeSpec *virtualtargetv1alpha1.ImageSpec
+	if images != nil {
+		exporterSpec = images.Exporter
+		runtimeSpec = images.Runtime
+	}
+
+	exporterImage, exporterPullPolicy := p.resolveImageSpec(exporterSpec, DefaultExporterImage)
+	runtimeImage, runtimePullPolicy := p.resolveImageSpec(runtimeSpec, DefaultQEMURuntimeImage)
 
 	// JEP-0013 persistent log context for jumpstarter-exec (matches
 	// set_persistent_log_context in the Python exporter).
@@ -173,13 +186,9 @@ func (p *Provisioner) RenderPod(
 		Spec: corev1.PodSpec{
 			InitContainers: []corev1.Container{
 				{
-					// One-shot init: stage jumpstarter-exec onto the
-					// shared volume so target-runtime can start it.
-					// No restartPolicy — must exit before later
-					// containers are allowed to start.
 					Name:            "copy-jumpstarter-exec",
 					Image:           exporterImage,
-					ImagePullPolicy: corev1.PullIfNotPresent,
+					ImagePullPolicy: exporterPullPolicy,
 					Command: []string{
 						"cp",
 						jmpExecBinaryPath,
@@ -193,12 +202,9 @@ func (p *Provisioner) RenderPod(
 					},
 				},
 				{
-					// Native sidecar (KEP-753): starts after the
-					// copy init completes and drains after main
-					// containers.
 					Name:            "exporter",
 					Image:           exporterImage,
-					ImagePullPolicy: corev1.PullIfNotPresent,
+					ImagePullPolicy: exporterPullPolicy,
 					RestartPolicy:   &restartAlways,
 					Command:         []string{"jmp", "run", "--exporter-config", configMountPath + "/config.yaml"},
 					Env: []corev1.EnvVar{
@@ -215,13 +221,11 @@ func (p *Provisioner) RenderPod(
 					},
 				},
 			},
-			// QEMU runtime is the main container — independent
-			// image that can be versioned separately.
 			Containers: []corev1.Container{
 				{
 					Name:            "target-runtime",
 					Image:           runtimeImage,
-					ImagePullPolicy: corev1.PullIfNotPresent,
+					ImagePullPolicy: runtimePullPolicy,
 					Env:             runtimeEnv,
 					VolumeMounts: []corev1.VolumeMount{
 						{

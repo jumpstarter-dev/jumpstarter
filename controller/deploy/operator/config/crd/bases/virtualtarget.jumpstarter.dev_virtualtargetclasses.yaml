@@ -90,6 +90,47 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              images:
+                description: |-
+                  Images overrides the default container images used by the provisioner.
+                  ExporterSet-level images take precedence over these class-level defaults.
+                properties:
+                  exporter:
+                    description: Exporter overrides the exporter sidecar container
+                      image.
+                    properties:
+                      image:
+                        description: Image is the container image reference (e.g.
+                          "quay.io/org/repo:tag").
+                        type: string
+                      imagePullPolicy:
+                        description: ImagePullPolicy defines the pull policy for the
+                          container image.
+                        enum:
+                        - Always
+                        - Never
+                        - IfNotPresent
+                        type: string
+                    type: object
+                  runtime:
+                    description: |-
+                      Runtime overrides the provisioner-specific runtime container image
+                      (e.g. QEMU runtime for the qemu.jumpstarter.dev provisioner).
+                    properties:
+                      image:
+                        description: Image is the container image reference (e.g.
+                          "quay.io/org/repo:tag").
+                        type: string
+                      imagePullPolicy:
+                        description: ImagePullPolicy defines the pull policy for the
+                          container image.
+                        enum:
+                        - Always
+                        - Never
+                        - IfNotPresent
+                        type: string
+                    type: object
+                type: object
               parameters:
                 description: |-
                   Parameters holds provisioner-specific configuration as a nested object.

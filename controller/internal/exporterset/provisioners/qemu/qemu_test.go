@@ -60,7 +60,7 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 		},
 	}
 
-	pod, err := New("dev").RenderPod(context.Background(), exporterSet, vtc, nil, nil)
+	pod, err := New("dev").RenderPod(context.Background(), exporterSet, vtc, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("RenderPod() error = %v", err)
 	}
@@ -149,7 +149,7 @@ func TestRenderPod_clonesSchedulingFromVTC(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-set", Namespace: "default"},
 	}
 
-	pod, err := New("dev").RenderPod(context.Background(), exporterSet, vtc, nil, nil)
+	pod, err := New("dev").RenderPod(context.Background(), exporterSet, vtc, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("RenderPod() error = %v", err)
 	}
@@ -197,7 +197,7 @@ func TestRenderPod_injectsJumpstarterExecLogFields(t *testing.T) {
 		},
 	}
 
-	pod, err := New("dev").RenderPod(context.Background(), exporterSet, vtc, nil, exporter)
+	pod, err := New("dev").RenderPod(context.Background(), exporterSet, vtc, nil, nil, exporter)
 	if err != nil {
 		t.Fatalf("RenderPod() error = %v", err)
 	}
@@ -267,7 +267,7 @@ func TestRenderPod_usesResolvedImages(t *testing.T) {
 		Spec: virtualtargetv1alpha1.VirtualTargetClassSpec{Provisioner: ProvisionerName},
 	}
 
-	pod, err := p.RenderPod(context.Background(), exporterSet, vtc, nil, nil)
+	pod, err := p.RenderPod(context.Background(), exporterSet, vtc, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("RenderPod() error = %v", err)
 	}
@@ -294,7 +294,7 @@ func TestResolveImage_dirtyGitVersionPreservesLatest(t *testing.T) {
 	}
 }
 
-func TestRenderPod_imageOverrideFromParameters(t *testing.T) {
+func TestRenderPod_imageOverrideFromSpec(t *testing.T) {
 	p := New("v1.2.3")
 	exporterSet := &virtualtargetv1alpha1.ExporterSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-set", Namespace: "default"},
@@ -302,14 +302,17 @@ func TestRenderPod_imageOverrideFromParameters(t *testing.T) {
 	vtc := &virtualtargetv1alpha1.VirtualTargetClass{
 		Spec: virtualtargetv1alpha1.VirtualTargetClassSpec{Provisioner: ProvisionerName},
 	}
-	params := map[string]interface{}{
-		"images": map[string]interface{}{
-			"exporter": "my-registry.example.com/jumpstarter:custom",
-			"runtime":  "my-registry.example.com/qemu-runtime:custom",
+	images := &virtualtargetv1alpha1.ImageOverrides{
+		Exporter: &virtualtargetv1alpha1.ImageSpec{
+			Image:           "my-registry.example.com/jumpstarter:custom",
+			ImagePullPolicy: corev1.PullAlways,
+		},
+		Runtime: &virtualtargetv1alpha1.ImageSpec{
+			Image: "my-registry.example.com/qemu-runtime:custom",
 		},
 	}
 
-	pod, err := p.RenderPod(context.Background(), exporterSet, vtc, params, nil)
+	pod, err := p.RenderPod(context.Background(), exporterSet, vtc, nil, images, nil)
 	if err != nil {
 		t.Fatalf("RenderPod() error = %v", err)
 	}
@@ -320,11 +323,17 @@ func TestRenderPod_imageOverrideFromParameters(t *testing.T) {
 	if pod.Spec.InitContainers[0].Image != wantExporter {
 		t.Errorf("copy-jumpstarter-exec image = %q, want %q", pod.Spec.InitContainers[0].Image, wantExporter)
 	}
+	if pod.Spec.InitContainers[0].ImagePullPolicy != corev1.PullAlways {
+		t.Errorf("copy-jumpstarter-exec pullPolicy = %q, want Always", pod.Spec.InitContainers[0].ImagePullPolicy)
+	}
 	if pod.Spec.InitContainers[1].Image != wantExporter {
 		t.Errorf("exporter image = %q, want %q", pod.Spec.InitContainers[1].Image, wantExporter)
 	}
 	if pod.Spec.Containers[0].Image != wantRuntime {
 		t.Errorf("target-runtime image = %q, want %q", pod.Spec.Containers[0].Image, wantRuntime)
+	}
+	if pod.Spec.Containers[0].ImagePullPolicy != corev1.PullIfNotPresent {
+		t.Errorf("target-runtime pullPolicy = %q, want IfNotPresent (default)", pod.Spec.Containers[0].ImagePullPolicy)
 	}
 }
 
@@ -336,18 +345,17 @@ func TestRenderPod_partialImageOverride(t *testing.T) {
 	vtc := &virtualtargetv1alpha1.VirtualTargetClass{
 		Spec: virtualtargetv1alpha1.VirtualTargetClassSpec{Provisioner: ProvisionerName},
 	}
-	params := map[string]interface{}{
-		"images": map[string]interface{}{
-			"runtime": "my-registry.example.com/qemu-runtime:custom",
+	images := &virtualtargetv1alpha1.ImageOverrides{
+		Runtime: &virtualtargetv1alpha1.ImageSpec{
+			Image: "my-registry.example.com/qemu-runtime:custom",
 		},
 	}
 
-	pod, err := p.RenderPod(context.Background(), exporterSet, vtc, params, nil)
+	pod, err := p.RenderPod(context.Background(), exporterSet, vtc, nil, images, nil)
 	if err != nil {
 		t.Fatalf("RenderPod() error = %v", err)
 	}
 
-	// Exporter should still resolve via version since no override.
 	wantExporter := "quay.io/jumpstarter-dev/jumpstarter:1.2.3"
 	wantRuntime := "my-registry.example.com/qemu-runtime:custom"
 

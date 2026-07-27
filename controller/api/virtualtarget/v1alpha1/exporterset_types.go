@@ -115,6 +115,11 @@ type ExporterSetSpec struct {
 	// +kubebuilder:validation:Schemaless
 	Parameters *apiextensionsv1.JSON `json:"parameters,omitempty"`
 
+	// Images overrides the default container images used by the provisioner.
+	// These take precedence over VirtualTargetClass-level image settings.
+	// +optional
+	Images *ImageOverrides `json:"images,omitempty"`
+
 	// Selector defines the label selector for matching exporters owned by this set.
 	Selector metav1.LabelSelector `json:"selector"`
 

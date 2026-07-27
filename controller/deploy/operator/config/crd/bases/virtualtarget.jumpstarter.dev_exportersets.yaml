@@ -60,6 +60,47 @@ spec:
           spec:
             description: ExporterSetSpec defines the desired state of ExporterSet.
             properties:
+              images:
+                description: |-
+                  Images overrides the default container images used by the provisioner.
+                  These take precedence over VirtualTargetClass-level image settings.
+                properties:
+                  exporter:
+                    description: Exporter overrides the exporter sidecar container
+                      image.
+                    properties:
+                      image:
+                        description: Image is the container image reference (e.g.
+                          "quay.io/org/repo:tag").
+                        type: string
+                      imagePullPolicy:
+                        description: ImagePullPolicy defines the pull policy for the
+                          container image.
+                        enum:
+                        - Always
+                        - Never
+                        - IfNotPresent
+                        type: string
+                    type: object
+                  runtime:
+                    description: |-
+                      Runtime overrides the provisioner-specific runtime container image
+                      (e.g. QEMU runtime for the qemu.jumpstarter.dev provisioner).
+                    properties:
+                      image:
+                        description: Image is the container image reference (e.g.
+                          "quay.io/org/repo:tag").
+                        type: string
+                      imagePullPolicy:
+                        description: ImagePullPolicy defines the pull policy for the
+                          container image.
+                        enum:
+                        - Always
+                        - Never
+                        - IfNotPresent
+                        type: string
+                    type: object
+                type: object
               maxReplicas:
                 default: 4
                 description: |-

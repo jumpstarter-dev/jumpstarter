@@ -70,6 +70,31 @@ type CABundleRef struct {
 	Key string `json:"key,omitempty"`
 }
 
+// ImageSpec defines a container image with optional pull configuration.
+type ImageSpec struct {
+	// Image is the container image reference (e.g. "quay.io/org/repo:tag").
+	// +optional
+	Image string `json:"image,omitempty"`
+
+	// ImagePullPolicy defines the pull policy for the container image.
+	// +optional
+	// +kubebuilder:validation:Enum=Always;Never;IfNotPresent
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+}
+
+// ImageOverrides allows overriding the default container images used by the provisioner.
+// ExporterSet values take precedence over VirtualTargetClass values.
+type ImageOverrides struct {
+	// Exporter overrides the exporter sidecar container image.
+	// +optional
+	Exporter *ImageSpec `json:"exporter,omitempty"`
+
+	// Runtime overrides the provisioner-specific runtime container image
+	// (e.g. QEMU runtime for the qemu.jumpstarter.dev provisioner).
+	// +optional
+	Runtime *ImageSpec `json:"runtime,omitempty"`
+}
+
 // VirtualTargetClassSpec defines the desired state of VirtualTargetClass.
 type VirtualTargetClassSpec struct {
 	// Provisioner identifies which exporter-set controller handles this class.
@@ -111,6 +136,11 @@ type VirtualTargetClassSpec struct {
 	// to inject into rendered Pods for corporate/private TLS verification.
 	// +optional
 	CABundleConfigMapRef *CABundleRef `json:"caBundleConfigMapRef,omitempty"`
+
+	// Images overrides the default container images used by the provisioner.
+	// ExporterSet-level images take precedence over these class-level defaults.
+	// +optional
+	Images *ImageOverrides `json:"images,omitempty"`
 }
 
 // +kubebuilder:object:root=true

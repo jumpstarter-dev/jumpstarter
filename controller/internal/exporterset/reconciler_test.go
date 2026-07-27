@@ -1800,3 +1800,46 @@ func TestBuildExportMap_derivedDuplicateKey_returnsError(t *testing.T) {
 		t.Fatal("expected error for derived duplicate key, got nil")
 	}
 }
+
+func TestMergeImages_bothNil(t *testing.T) {
+	if got := mergeImages(nil, nil); got != nil {
+		t.Errorf("mergeImages(nil, nil) = %v, want nil", got)
+	}
+}
+
+func TestMergeImages_vtcOnly(t *testing.T) {
+	vtc := &virtualtargetv1alpha1.ImageOverrides{
+		Exporter: &virtualtargetv1alpha1.ImageSpec{Image: "vtc-exporter:1"},
+	}
+	got := mergeImages(vtc, nil)
+	if got.Exporter == nil || got.Exporter.Image != "vtc-exporter:1" {
+		t.Errorf("expected vtc exporter image, got %v", got)
+	}
+}
+
+func TestMergeImages_esOnly(t *testing.T) {
+	es := &virtualtargetv1alpha1.ImageOverrides{
+		Runtime: &virtualtargetv1alpha1.ImageSpec{Image: "es-runtime:2"},
+	}
+	got := mergeImages(nil, es)
+	if got.Runtime == nil || got.Runtime.Image != "es-runtime:2" {
+		t.Errorf("expected es runtime image, got %v", got)
+	}
+}
+
+func TestMergeImages_esOverridesVtc(t *testing.T) {
+	vtc := &virtualtargetv1alpha1.ImageOverrides{
+		Exporter: &virtualtargetv1alpha1.ImageSpec{Image: "vtc-exporter:1"},
+		Runtime:  &virtualtargetv1alpha1.ImageSpec{Image: "vtc-runtime:1", ImagePullPolicy: corev1.PullAlways},
+	}
+	es := &virtualtargetv1alpha1.ImageOverrides{
+		Runtime: &virtualtargetv1alpha1.ImageSpec{Image: "es-runtime:2"},
+	}
+	got := mergeImages(vtc, es)
+	if got.Exporter == nil || got.Exporter.Image != "vtc-exporter:1" {
+		t.Errorf("exporter should come from vtc, got %v", got.Exporter)
+	}
+	if got.Runtime == nil || got.Runtime.Image != "es-runtime:2" {
+		t.Errorf("runtime should be overridden by es, got %v", got.Runtime)
+	}
+}

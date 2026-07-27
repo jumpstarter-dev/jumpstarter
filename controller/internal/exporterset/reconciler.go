@@ -394,7 +394,7 @@ func (r *ExporterSetReconciler) ensureExporterPods(
 			continue
 		}
 
-		if err := r.createExporterPod(ctx, es, vtc, mergedParameters, exp); err != nil {
+		if err := r.createExporterPod(ctx, es, vtc, mergedParameters, mergeImages(vtc.Spec.Images, es.Spec.Images), exp); err != nil {
 			return waiting, err
 		}
 	}
@@ -441,11 +441,12 @@ func (r *ExporterSetReconciler) createExporterPod(
 	es *virtualtargetv1alpha1.ExporterSet,
 	vtc *virtualtargetv1alpha1.VirtualTargetClass,
 	mergedParameters map[string]interface{},
+	images *virtualtargetv1alpha1.ImageOverrides,
 	exp *jumpstarterdevv1alpha1.Exporter,
 ) error {
 	logger := log.FromContext(ctx)
 
-	pod, err := r.Provisioner.RenderPod(ctx, es, vtc, mergedParameters, exp)
+	pod, err := r.Provisioner.RenderPod(ctx, es, vtc, mergedParameters, images, exp)
 	if err != nil {
 		return fmt.Errorf("render Pod for %s: %w", exp.Name, err)
 	}
@@ -1390,4 +1391,27 @@ func deepMerge(base, override map[string]interface{}) map[string]interface{} {
 		result[k] = v
 	}
 	return result
+}
+
+// mergeImages merges VTC-level and ExporterSet-level image overrides.
+// ExporterSet values take precedence over VTC values at the ImageSpec level.
+func mergeImages(vtcImages, esImages *virtualtargetv1alpha1.ImageOverrides) *virtualtargetv1alpha1.ImageOverrides {
+	if vtcImages == nil && esImages == nil {
+		return nil
+	}
+	if vtcImages == nil {
+		return esImages.DeepCopy()
+	}
+	if esImages == nil {
+		return vtcImages.DeepCopy()
+	}
+
+	merged := vtcImages.DeepCopy()
+	if esImages.Exporter != nil {
+		merged.Exporter = esImages.Exporter.DeepCopy()
+	}
+	if esImages.Runtime != nil {
+		merged.Runtime = esImages.Runtime.DeepCopy()
+	}
+	return merged
 }
