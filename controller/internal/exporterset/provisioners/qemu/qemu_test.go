@@ -30,7 +30,7 @@ import (
 const mutatedValue = "mutated"
 
 func TestProvisioner_Name(t *testing.T) {
-	if got := New().Name(); got != ProvisionerName {
+	if got := New("dev").Name(); got != ProvisionerName {
 		t.Errorf("Name() = %q, want %q", got, ProvisionerName)
 	}
 }
@@ -60,7 +60,7 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 		},
 	}
 
-	pod, err := New().RenderPod(context.Background(), exporterSet, vtc, nil, nil, "test-config-secret")
+	pod, err := New("dev").RenderPod(context.Background(), exporterSet, vtc, nil, nil)
 	if err != nil {
 		t.Fatalf("RenderPod() error = %v", err)
 	}
@@ -88,8 +88,9 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 		t.Errorf("ExporterSet annotations mutated: got %q", got)
 	}
 
-	if len(pod.Spec.Volumes) != 2 {
-		t.Fatalf("expected 2 volumes (shared + config), got %d", len(pod.Spec.Volumes))
+	// Only shared volume — config volume is injected by the reconciler.
+	if len(pod.Spec.Volumes) != 1 {
+		t.Fatalf("expected 1 volume (shared), got %d", len(pod.Spec.Volumes))
 	}
 	if pod.Spec.Volumes[0].EmptyDir == nil {
 		t.Fatal("expected shared emptyDir volume at index 0")
@@ -98,9 +99,6 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 	if pod.Spec.Volumes[0].EmptyDir.SizeLimit == nil ||
 		!pod.Spec.Volumes[0].EmptyDir.SizeLimit.Equal(wantLimit) {
 		t.Errorf("SizeLimit = %v, want %v", pod.Spec.Volumes[0].EmptyDir.SizeLimit, wantLimit)
-	}
-	if pod.Spec.Volumes[1].Secret == nil || pod.Spec.Volumes[1].Secret.SecretName != "test-config-secret" {
-		t.Errorf("expected config secret volume, got %#v", pod.Spec.Volumes[1])
 	}
 
 	if len(pod.Spec.InitContainers) != 2 {
@@ -151,7 +149,7 @@ func TestRenderPod_clonesSchedulingFromVTC(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-set", Namespace: "default"},
 	}
 
-	pod, err := New().RenderPod(context.Background(), exporterSet, vtc, nil, nil, "test-config-secret")
+	pod, err := New("dev").RenderPod(context.Background(), exporterSet, vtc, nil, nil)
 	if err != nil {
 		t.Fatalf("RenderPod() error = %v", err)
 	}
@@ -199,7 +197,7 @@ func TestRenderPod_injectsJumpstarterExecLogFields(t *testing.T) {
 		},
 	}
 
-	pod, err := New().RenderPod(context.Background(), exporterSet, vtc, nil, exporter, "test-config-secret")
+	pod, err := New("dev").RenderPod(context.Background(), exporterSet, vtc, nil, exporter)
 	if err != nil {
 		t.Fatalf("RenderPod() error = %v", err)
 	}
@@ -215,5 +213,75 @@ func TestRenderPod_injectsJumpstarterExecLogFields(t *testing.T) {
 	want := "component=exporter,exporter=demo-set-abc12,namespace=jumpstarter-lab"
 	if got != want {
 		t.Errorf("JUMPSTARTER_EXEC_LOG_FIELDS = %q, want %q", got, want)
+	}
+}
+
+func TestResolveImage_devPreservesLatest(t *testing.T) {
+	p := New("dev")
+	got := p.resolveImage("quay.io/jumpstarter-dev/jumpstarter:latest")
+	if got != "quay.io/jumpstarter-dev/jumpstarter:latest" {
+		t.Errorf("resolveImage() = %q, want :latest preserved for dev", got)
+	}
+}
+
+func TestResolveImage_emptyVersionPreservesLatest(t *testing.T) {
+	p := New("")
+	got := p.resolveImage("quay.io/jumpstarter-dev/jumpstarter:latest")
+	if got != "quay.io/jumpstarter-dev/jumpstarter:latest" {
+		t.Errorf("resolveImage() = %q, want :latest preserved for empty version", got)
+	}
+}
+
+func TestResolveImage_taggedVersionResolvesLatest(t *testing.T) {
+	p := New("v0.9.0")
+	got := p.resolveImage("quay.io/jumpstarter-dev/jumpstarter:latest")
+	want := "quay.io/jumpstarter-dev/jumpstarter:0.9.0"
+	if got != want {
+		t.Errorf("resolveImage() = %q, want %q", got, want)
+	}
+}
+
+func TestResolveImage_rcVersionResolvesLatest(t *testing.T) {
+	p := New("v0.9.0-rc.1")
+	got := p.resolveImage("quay.io/jumpstarter-dev/jumpstarter:latest")
+	want := "quay.io/jumpstarter-dev/jumpstarter:0.9.0-rc.1"
+	if got != want {
+		t.Errorf("resolveImage() = %q, want %q", got, want)
+	}
+}
+
+func TestResolveImage_adminOverridePassesThrough(t *testing.T) {
+	p := New("v0.9.0")
+	got := p.resolveImage("quay.io/custom/image:v2.0")
+	if got != "quay.io/custom/image:v2.0" {
+		t.Errorf("resolveImage() = %q, want admin override unchanged", got)
+	}
+}
+
+func TestRenderPod_usesResolvedImages(t *testing.T) {
+	p := New("v1.2.3")
+	exporterSet := &virtualtargetv1alpha1.ExporterSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "demo-set", Namespace: "default"},
+	}
+	vtc := &virtualtargetv1alpha1.VirtualTargetClass{
+		Spec: virtualtargetv1alpha1.VirtualTargetClassSpec{Provisioner: ProvisionerName},
+	}
+
+	pod, err := p.RenderPod(context.Background(), exporterSet, vtc, nil, nil)
+	if err != nil {
+		t.Fatalf("RenderPod() error = %v", err)
+	}
+
+	wantExporter := "quay.io/jumpstarter-dev/jumpstarter:1.2.3"
+	wantRuntime := "quay.io/jumpstarter-dev/virtual/qemu-runtime:1.2.3"
+
+	if pod.Spec.InitContainers[0].Image != wantExporter {
+		t.Errorf("copy-jumpstarter-exec image = %q, want %q", pod.Spec.InitContainers[0].Image, wantExporter)
+	}
+	if pod.Spec.InitContainers[1].Image != wantExporter {
+		t.Errorf("exporter image = %q, want %q", pod.Spec.InitContainers[1].Image, wantExporter)
+	}
+	if pod.Spec.Containers[0].Image != wantRuntime {
+		t.Errorf("target-runtime image = %q, want %q", pod.Spec.Containers[0].Image, wantRuntime)
 	}
 }

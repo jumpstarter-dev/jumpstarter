@@ -18,6 +18,7 @@ package exporterset
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,7 +38,6 @@ import (
 const testExporterSetUID = types.UID("es-uid-1234")
 
 const (
-	kindExporter    = "Exporter"
 	kindExporterSet = "ExporterSet"
 	nsDefault       = "default"
 	testEndpoint    = "grpc.test.example.com:8082"
@@ -142,7 +142,7 @@ func newReconciler(t *testing.T, objs ...client.Object) (*ExporterSetReconciler,
 	r := &ExporterSetReconciler{
 		Client:      c,
 		Scheme:      scheme,
-		Provisioner: qemu.New(),
+		Provisioner: qemu.New("dev"),
 	}
 	return r, c
 }
@@ -199,11 +199,12 @@ func makePod(name string, phase corev1.PodPhase) *corev1.Pod {
 			Name:      name,
 			Namespace: nsDefault,
 			Labels:    map[string]string{"exporterset": "demo-set"},
+			// Pods are owned by Exporters, not ExporterSets directly.
 			OwnerReferences: []metav1.OwnerReference{{
-				APIVersion: "virtualtarget.jumpstarter.dev/v1alpha1",
-				Kind:       kindExporterSet,
-				Name:       "demo-set",
-				UID:        testExporterSetUID,
+				APIVersion: "jumpstarter.dev/v1alpha1",
+				Kind:       kindExporter,
+				Name:       name,
+				UID:        types.UID(name + "-uid"),
 				Controller: boolPtr(true),
 			}},
 		},
@@ -222,7 +223,7 @@ func reconcileAndGet(t *testing.T, objs ...client.Object) virtualtargetv1alpha1.
 	r := &ExporterSetReconciler{
 		Client:      c,
 		Scheme:      scheme,
-		Provisioner: qemu.New(),
+		Provisioner: qemu.New("dev"),
 	}
 
 	_, err := r.Reconcile(context.Background(), reconcile.Request{
@@ -1519,7 +1520,7 @@ func TestReconcile_vtcNotFound_updatesAllConditionsAndCounters(t *testing.T) {
 	r := &ExporterSetReconciler{
 		Client:      c,
 		Scheme:      scheme,
-		Provisioner: qemu.New(),
+		Provisioner: qemu.New("dev"),
 	}
 	req := reconcile.Request{
 		NamespacedName: types.NamespacedName{Name: "demo-set", Namespace: nsDefault},
@@ -1563,5 +1564,239 @@ func TestReconcile_vtcNotFound_updatesAllConditionsAndCounters(t *testing.T) {
 	degraded := meta.FindStatusCondition(es.Status.Conditions, "Degraded")
 	if degraded == nil {
 		t.Fatal("Expected Degraded condition")
+	}
+}
+
+// makeExporterWithCredential returns a credentialed "exp-1" exporter
+// (as if ExporterReconciler ran first).
+func makeExporterWithCredential() *jumpstarterdevv1alpha1.Exporter {
+	exp := makeExporter("exp-1", false, false, true)
+	exp.Status.Credential = &corev1.LocalObjectReference{Name: "exp-1-exporter"}
+	exp.Status.Endpoint = testEndpoint
+	return exp
+}
+
+// makeCredentialSecret returns the Secret that ExporterReconciler would create
+// for the given exporter name.
+func makeCredentialSecret(name string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name + "-exporter",
+			Namespace: nsDefault,
+		},
+		Data: map[string][]byte{"token": []byte("test-token-" + name)},
+	}
+}
+
+func makeCACM() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      caConfigMapName,
+			Namespace: nsDefault,
+		},
+		Data: map[string]string{
+			caConfigMapKey: "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----\n",
+		},
+	}
+}
+
+func TestEnsureExporterPods_waitingWithoutCredential(t *testing.T) {
+	es := makeExporterSet()
+	r, _ := newReconciler(t, es, makeVTC(), makeCACM(),
+		makeExporter("exp-1", false, false, true),
+	)
+
+	reconcileOnce(t, r)
+
+	pods := listPods(t, r.Client)
+	if len(pods) != 0 {
+		t.Errorf("got %d pods, want 0 (credential not yet issued)", len(pods))
+	}
+}
+
+func TestEnsureExporterPods_createsPodWhenCredentialReady(t *testing.T) {
+	es := makeExporterSet()
+	exp := makeExporterWithCredential()
+	credSecret := makeCredentialSecret("exp-1")
+
+	r, _ := newReconciler(t, es, makeVTC(), makeCACM(), exp, credSecret)
+
+	reconcileOnce(t, r)
+
+	var secrets corev1.SecretList
+	if err := r.List(context.Background(), &secrets,
+		client.InNamespace(nsDefault)); err != nil {
+		t.Fatal(err)
+	}
+	configFound := false
+	for _, s := range secrets.Items {
+		if s.Name == configSecretPrefix+"exp-1" {
+			configFound = true
+			if _, ok := s.Data[exporterConfigKey]; !ok {
+				t.Error("config Secret missing config key")
+			}
+		}
+	}
+	if !configFound {
+		t.Errorf("expected config Secret %q not found", configSecretPrefix+"exp-1")
+	}
+
+	pods := listPods(t, r.Client)
+	if len(pods) == 0 {
+		t.Error("expected a Pod to be created, got none")
+	}
+}
+
+func TestEnsureExporterPods_idempotent(t *testing.T) {
+	es := makeExporterSet()
+	exp := makeExporterWithCredential()
+	credSecret := makeCredentialSecret("exp-1")
+
+	r, _ := newReconciler(t, es, makeVTC(), makeCACM(), exp, credSecret)
+
+	reconcileOnce(t, r)
+	reconcileOnce(t, r)
+
+	pods := listPods(t, r.Client)
+	if len(pods) != 1 {
+		t.Errorf("got %d pods after 2 reconciles, want 1 (idempotent)", len(pods))
+	}
+}
+
+func TestEnsureExporterPods_configSecretHasEndpointAndToken(t *testing.T) {
+	es := makeExporterSet()
+	exp := makeExporterWithCredential()
+	credSecret := makeCredentialSecret("exp-1")
+
+	r, _ := newReconciler(t, es, makeVTC(), makeCACM(), exp, credSecret)
+	reconcileOnce(t, r)
+
+	var secret corev1.Secret
+	if err := r.Get(context.Background(),
+		types.NamespacedName{Name: configSecretPrefix + "exp-1", Namespace: nsDefault},
+		&secret); err != nil {
+		t.Fatalf("config Secret not found: %v", err)
+	}
+
+	configYAML, ok := secret.Data[exporterConfigKey]
+	if !ok {
+		t.Fatal("missing config key in config Secret")
+	}
+
+	content := string(configYAML)
+	for _, want := range []string{
+		"apiVersion: jumpstarter.dev/v1alpha1",
+		"kind: ExporterConfig",
+		"token: test-token-exp-1",
+		"endpoint:",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("config YAML missing %q\ngot:\n%s", want, content)
+		}
+	}
+}
+
+func TestEnsureExporterPods_driversAppearedInConfig(t *testing.T) {
+	es := makeExporterSet(func(e *virtualtargetv1alpha1.ExporterSet) {
+		e.Spec.Template.Spec.Drivers = []virtualtargetv1alpha1.DriverConfig{
+			{Name: "power", Type: "jumpstarter_driver_power.driver.QemuPower"},
+		}
+	})
+	exp := makeExporterWithCredential()
+	credSecret := makeCredentialSecret("exp-1")
+
+	r, _ := newReconciler(t, es, makeVTC(), makeCACM(), exp, credSecret)
+	reconcileOnce(t, r)
+
+	var secret corev1.Secret
+	if err := r.Get(context.Background(),
+		types.NamespacedName{Name: configSecretPrefix + "exp-1", Namespace: nsDefault},
+		&secret); err != nil {
+		t.Fatalf("config Secret not found: %v", err)
+	}
+
+	content := string(secret.Data[exporterConfigKey])
+	if !strings.Contains(content, "power:") {
+		t.Errorf("expected 'power:' in config YAML, got:\n%s", content)
+	}
+	if !strings.Contains(content, "QemuPower") {
+		t.Errorf("expected 'QemuPower' in config YAML, got:\n%s", content)
+	}
+}
+
+func TestEnsureExporterPods_skipsDisabledExporters(t *testing.T) {
+	es := makeExporterSet()
+	exp2 := makeExporter("exp-2", false, false, true)
+	exp2.Status.Credential = &corev1.LocalObjectReference{Name: "exp-2-exporter"}
+	exp2.Status.Endpoint = testEndpoint
+	exp2.Spec.Enabled = boolPtr(false)
+	credSecret := makeCredentialSecret("exp-2")
+
+	r, _ := newReconciler(t, es, makeVTC(), makeCACM(), exp2, credSecret)
+	reconcileOnce(t, r)
+
+	pods := listPods(t, r.Client)
+	if len(pods) != 0 {
+		t.Errorf("got %d pods for disabled exporter, want 0", len(pods))
+	}
+}
+
+func TestEnsureExporterPods_tokenRotationUpdatesConfigSecret(t *testing.T) {
+	es := makeExporterSet()
+	exp := makeExporterWithCredential()
+	credSecret := makeCredentialSecret("exp-1")
+
+	r, c := newReconciler(t, es, makeVTC(), makeCACM(), exp, credSecret)
+	reconcileOnce(t, r)
+
+	// Simulate token rotation.
+	var latestCred corev1.Secret
+	if err := c.Get(context.Background(),
+		types.NamespacedName{Name: "exp-1-exporter", Namespace: nsDefault},
+		&latestCred); err != nil {
+		t.Fatalf("get credential Secret: %v", err)
+	}
+	latestCred.Data["token"] = []byte("rotated-token-xyz")
+	if err := c.Update(context.Background(), &latestCred); err != nil {
+		t.Fatalf("update credential Secret: %v", err)
+	}
+
+	reconcileOnce(t, r)
+
+	var configSecret corev1.Secret
+	if err := c.Get(context.Background(),
+		types.NamespacedName{Name: configSecretPrefix + "exp-1", Namespace: nsDefault},
+		&configSecret); err != nil {
+		t.Fatalf("config Secret not found: %v", err)
+	}
+
+	content := string(configSecret.Data[exporterConfigKey])
+	if !strings.Contains(content, "rotated-token-xyz") {
+		t.Errorf("config Secret should contain rotated token\ngot:\n%s", content)
+	}
+	if strings.Contains(content, "test-token-exp-1") {
+		t.Errorf("config Secret still contains stale token\ngot:\n%s", content)
+	}
+}
+
+func TestBuildExportMap_duplicateKey_returnsError(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{Name: "power", Type: "jumpstarter_driver_power.driver.QemuPower"},
+		{Name: "power", Type: "jumpstarter_driver_power.driver.QemuPower2"},
+	}
+	_, err := buildExportMap(drivers)
+	if err == nil {
+		t.Fatal("expected error for duplicate driver key, got nil")
+	}
+}
+
+func TestBuildExportMap_derivedDuplicateKey_returnsError(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{Type: "vendor_a.driver.Serial"},
+		{Type: "vendor_b.driver.Serial"},
+	}
+	_, err := buildExportMap(drivers)
+	if err == nil {
+		t.Fatal("expected error for derived duplicate key, got nil")
 	}
 }

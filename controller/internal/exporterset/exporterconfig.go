@@ -23,13 +23,12 @@ import (
 	"fmt"
 	"strings"
 
-	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	sigsyaml "sigs.k8s.io/yaml"
 
-	"gopkg.in/yaml.v3"
+	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 )
 
 const (
@@ -42,84 +41,69 @@ const (
 
 	// exporterConfigKey is the key in the Secret data map.
 	exporterConfigKey = "config.yaml"
+
+	// configVolumeName is the volume name for the ExporterConfig Secret.
+	configVolumeName = "exporter-config"
+
+	// configMountPath is where the ExporterConfig Secret is mounted.
+	configMountPath = "/etc/jumpstarter/exporters"
+
+	// exporterContainerName is the init-container name in the sidecar Pod.
+	exporterContainerName = "exporter"
 )
 
 // exporterConfig represents the YAML structure of a Jumpstarter ExporterConfig.
+// Fields use json tags because sigs.k8s.io/yaml marshals through JSON.
 type exporterConfig struct {
-	APIVersion     string                          `yaml:"apiVersion"`
-	Kind           string                          `yaml:"kind"`
-	Metadata       exporterConfigMetadata          `yaml:"metadata"`
-	Endpoint       string                          `yaml:"endpoint"`
-	TLS            exporterConfigTLS               `yaml:"tls"`
-	Token          string                          `yaml:"token"`
-	Export         map[string]exporterConfigDriver `yaml:"export"`
-	ExitOnLeaseEnd bool                            `yaml:"exitOnLeaseEnd"`
+	APIVersion     string                          `json:"apiVersion"`
+	Kind           string                          `json:"kind"`
+	Metadata       exporterConfigMetadata          `json:"metadata"`
+	Endpoint       string                          `json:"endpoint"`
+	TLS            *exporterConfigTLS              `json:"tls,omitempty"`
+	Token          string                          `json:"token"`
+	Export         map[string]exporterConfigDriver `json:"export,omitempty"`
+	ExitOnLeaseEnd bool                            `json:"exitOnLeaseEnd"`
 }
 
 type exporterConfigMetadata struct {
-	Name      string `yaml:"name"`
-	Namespace string `yaml:"namespace"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
 }
 
 type exporterConfigTLS struct {
-	CA string `yaml:"ca"`
+	CA string `json:"ca"`
 }
 
 type exporterConfigDriver struct {
-	Type     string                          `yaml:"type"`
-	Config   map[string]interface{}          `yaml:"config,omitempty"`
-	Children map[string]exporterConfigDriver `yaml:"children,omitempty"`
+	Type     string                          `json:"type"`
+	Config   interface{}                     `json:"config,omitempty"`
+	Children map[string]exporterConfigDriver `json:"children,omitempty"`
 }
 
 // buildExporterConfigSecret builds a Secret containing the ExporterConfig YAML
-// for the given exporter instance. It reads the token from the credential Secret
-// and the CA from the well-known ConfigMap.
+// for the given exporter instance. The caBundle is read once per reconcile
+// and passed in to avoid repeated ConfigMap lookups.
 func (r *ExporterSetReconciler) buildExporterConfigSecret(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
 	exporter *jumpstarterdevv1alpha1.Exporter,
+	caBundle string,
 	mergedParameters map[string]interface{},
 ) (*corev1.Secret, error) {
-	// Fetch token from credential Secret.
-	if exporter.Status.Credential == nil {
-		return nil, fmt.Errorf("exporter %s has no credential reference", exporter.Name)
+	token, err := r.readCredentialToken(ctx, exporter)
+	if err != nil {
+		return nil, err
 	}
 
-	credSecret := &corev1.Secret{}
-	if err := r.Get(ctx, client.ObjectKey{
-		Namespace: exporter.Namespace,
-		Name:      exporter.Status.Credential.Name,
-	}, credSecret); err != nil {
-		return nil, fmt.Errorf("unable to get credential Secret %s: %w",
-			exporter.Status.Credential.Name, err)
-	}
+	caBase64 := base64.StdEncoding.EncodeToString([]byte(caBundle))
 
-	token := string(credSecret.Data["token"])
-	if token == "" {
-		return nil, fmt.Errorf("credential Secret %s has no 'token' key",
-			exporter.Status.Credential.Name)
-	}
-
-	// Fetch CA from the well-known ConfigMap.
-	caCM := &corev1.ConfigMap{}
-	if err := r.Get(ctx, client.ObjectKey{
-		Namespace: exporter.Namespace,
-		Name:      caConfigMapName,
-	}, caCM); err != nil {
-		return nil, fmt.Errorf("unable to get CA ConfigMap %s: %w", caConfigMapName, err)
-	}
-
-	caPEM := caCM.Data[caConfigMapKey]
-	if caPEM == "" {
-		return nil, fmt.Errorf("CA ConfigMap %s has no '%s' key", caConfigMapName, caConfigMapKey)
-	}
-	caBase64 := base64.StdEncoding.EncodeToString([]byte(caPEM))
-
-	// Build export map from template drivers, enriched by the provisioner.
 	drivers := es.Spec.Template.Spec.Drivers
 	drivers = r.Provisioner.EnrichExporterExport(drivers, mergedParameters)
 
-	exportMap := buildExportMap(drivers)
+	exportMap, err := buildExportMap(drivers)
+	if err != nil {
+		return nil, fmt.Errorf("build export map for %s: %w", exporter.Name, err)
+	}
 
 	cfg := exporterConfig{
 		APIVersion: "jumpstarter.dev/v1alpha1",
@@ -129,7 +113,7 @@ func (r *ExporterSetReconciler) buildExporterConfigSecret(
 			Namespace: exporter.Namespace,
 		},
 		Endpoint: exporter.Status.Endpoint,
-		TLS: exporterConfigTLS{
+		TLS: &exporterConfigTLS{
 			CA: caBase64,
 		},
 		Token:          token,
@@ -137,9 +121,10 @@ func (r *ExporterSetReconciler) buildExporterConfigSecret(
 		ExitOnLeaseEnd: true,
 	}
 
-	cfgYAML, err := yaml.Marshal(cfg)
+	cfgYAML, err := sigsyaml.Marshal(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("unable to marshal ExporterConfig: %w", err)
+		return nil, fmt.Errorf("marshal ExporterConfig for %s/%s: %w",
+			exporter.Namespace, exporter.Name, err)
 	}
 
 	secret := &corev1.Secret{
@@ -159,19 +144,22 @@ func (r *ExporterSetReconciler) buildExporterConfigSecret(
 }
 
 // buildExportMap converts a slice of DriverConfigs into the export map
-// used by the ExporterConfig YAML.
-func buildExportMap(drivers []virtualtargetv1alpha1.DriverConfig) map[string]exporterConfigDriver {
+// used by the ExporterConfig YAML. Returns an error on duplicate keys.
+func buildExportMap(drivers []virtualtargetv1alpha1.DriverConfig) (map[string]exporterConfigDriver, error) {
 	exportMap := make(map[string]exporterConfigDriver, len(drivers))
 
-	for _, d := range drivers {
-		name := d.Name
-		if name == "" {
-			name = deriveDriverName(d.Type)
+	for i, d := range drivers {
+		name := driverKey(d, i)
+
+		if _, exists := exportMap[name]; exists {
+			return nil, fmt.Errorf("duplicate driver key %q in ExporterSet drivers", name)
 		}
 
-		var config map[string]interface{}
+		var config interface{}
 		if d.Config != nil && d.Config.Raw != nil {
-			_ = json.Unmarshal(d.Config.Raw, &config)
+			if err := json.Unmarshal(d.Config.Raw, &config); err != nil {
+				return nil, fmt.Errorf("unmarshal config for driver %q: %w", name, err)
+			}
 		}
 
 		exportMap[name] = exporterConfigDriver{
@@ -180,11 +168,25 @@ func buildExportMap(drivers []virtualtargetv1alpha1.DriverConfig) map[string]exp
 		}
 	}
 
-	return exportMap
+	return exportMap, nil
+}
+
+// driverKey returns the export-map key for a DriverConfig: d.Name if set,
+// otherwise the last dot-segment of d.Type lowercased.
+func driverKey(d virtualtargetv1alpha1.DriverConfig, idx int) string {
+	if d.Name != "" {
+		return d.Name
+	}
+	parts := strings.Split(d.Type, ".")
+	if last := strings.ToLower(parts[len(parts)-1]); last != "" {
+		return last
+	}
+	return fmt.Sprintf("driver%d", idx)
 }
 
 // deriveDriverName extracts a short name from a fully qualified Python class name.
 // e.g. "jumpstarter_driver_qemu.driver.Qemu" -> "Qemu"
+// Deprecated: use driverKey instead for new code.
 func deriveDriverName(fqn string) string {
 	parts := strings.Split(fqn, ".")
 	if len(parts) == 0 {

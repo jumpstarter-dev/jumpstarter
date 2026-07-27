@@ -52,7 +52,7 @@ var _ = Describe("ExporterSet Controller", func() {
 		reconciler = &ExporterSetReconciler{
 			Client:      envTestClient,
 			Scheme:      envTestClient.Scheme(),
-			Provisioner: qemu.New(),
+			Provisioner: qemu.New("dev"),
 		}
 
 		vtc = &virtualtargetv1alpha1.VirtualTargetClass{

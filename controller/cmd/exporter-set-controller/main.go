@@ -160,7 +160,7 @@ func main() {
 func selectProvisioner(name string) (exporterset.Provisioner, error) {
 	switch name {
 	case qemu.ProvisionerName:
-		return qemu.New(), nil
+		return qemu.New(version), nil
 	default:
 		return nil, fmt.Errorf("unknown provisioner %q; supported: %s", name, qemu.ProvisionerName)
 	}

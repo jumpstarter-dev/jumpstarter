@@ -50,6 +50,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -65,6 +66,9 @@ const (
 	labelExporterSetName = "exporterset.jumpstarter.dev/name"
 
 	defaultScaleDownCooldown = 5 * time.Minute
+
+	// kindExporter is the Kind string used in OwnerReference lookups.
+	kindExporter = "Exporter"
 )
 
 // ExporterSetReconciler reconciles an ExporterSet object.
@@ -93,7 +97,7 @@ type ExporterSetReconciler struct {
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=leases,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 // Reconcile is the main reconciliation loop for ExporterSet resources.
@@ -239,25 +243,15 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
-	// Phase 2: ensure Pods exist for exporters with ready credentials.
-	podCreated, err := r.ensureExporterPods(ctx, &exporterSet, &vtc, mergedParameters, ownedExporters)
-	if err != nil {
-		return ctrl.Result{}, err
+	// Phase 2: create config Secrets + Pods for Exporters that now have credentials.
+	// Returns true when some Exporters are still waiting; we requeue to retry
+	// rather than relying solely on the Owns(&Exporter{}) watch event.
+	waiting, ensureErr := r.ensureExporterPods(ctx, &exporterSet, &vtc, mergedParameters, ownedExporters)
+	if ensureErr != nil {
+		return ctrl.Result{}, ensureErr
 	}
-	if podCreated {
-		// Requeue immediately to update status after Pod creation.
-		result = ctrl.Result{Requeue: true}
-	} else if !scaled {
-		// Requeue to check for exporters awaiting credentials.
-		for i := range ownedExporters {
-			exp := &ownedExporters[i]
-			if exp.IsEnabled() && (exp.Status.Credential == nil || exp.Status.Endpoint == "") {
-				if hasPod, _ := r.exporterHasPod(ctx, exp); !hasPod {
-					result = ctrl.Result{RequeueAfter: 5 * time.Second}
-					break
-				}
-			}
-		}
+	if waiting && result.RequeueAfter == 0 {
+		result.RequeueAfter = 5 * time.Second
 	}
 
 	// Update status counts, conditions, and emit events.
@@ -347,106 +341,275 @@ func (r *ExporterSetReconciler) scaleUp(
 	return nil
 }
 
-// ensureExporterPods creates config Secrets and Pods for Exporters whose
-// credentials and endpoint are ready but have no associated Pod yet.
-// Returns true if any Pod was created (triggers requeue).
+// ensureExporterPods creates a config Secret and Pod for each Exporter that
+// has credentials but no Pod yet. Config Secrets are always synced so token
+// rotation takes effect without a Pod restart (Kubernetes refreshes Secret-backed
+// volume mounts automatically).
+// Returns true if any Exporter is still waiting for its credential Secret.
 func (r *ExporterSetReconciler) ensureExporterPods(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
 	vtc *virtualtargetv1alpha1.VirtualTargetClass,
 	mergedParameters map[string]interface{},
 	ownedExporters []jumpstarterdevv1alpha1.Exporter,
-) (bool, error) {
+) (waiting bool, err error) {
 	logger := log.FromContext(ctx)
-	created := false
+
+	podsByExporter, err := r.listPodsByExporter(ctx, es)
+	if err != nil {
+		return false, err
+	}
+
+	// CA bundle is read lazily — only when at least one exporter needs it.
+	var caBundle string
+	var caRead bool
 
 	for i := range ownedExporters {
-		exporter := &ownedExporters[i]
+		exp := &ownedExporters[i]
 
-		if !exporter.IsEnabled() {
+		if !exp.IsEnabled() {
 			continue
 		}
 
-		// Skip if credentials or endpoint not ready yet.
-		if exporter.Status.Credential == nil || exporter.Status.Endpoint == "" {
+		if exp.Status.Credential == nil || exp.Status.Endpoint == "" {
+			logger.V(1).Info("waiting for credential", "exporter", exp.Name)
+			waiting = true
 			continue
 		}
 
-		// Check if a Pod already exists for this exporter.
-		if hasPod, err := r.exporterHasPod(ctx, exporter); err != nil {
-			return created, err
-		} else if hasPod {
-			continue
-		}
-
-		// Build and create the ExporterConfig Secret.
-		configSecret, err := r.buildExporterConfigSecret(ctx, es, exporter, mergedParameters)
-		if err != nil {
-			logger.Error(err, "unable to build ExporterConfig Secret", "exporter", exporter.Name)
-			continue
-		}
-
-		if err := ctrl.SetControllerReference(exporter, configSecret, r.Scheme); err != nil {
-			return created, fmt.Errorf("unable to set owner reference on config Secret: %w", err)
-		}
-
-		if err := r.Create(ctx, configSecret); err != nil {
-			if !apierrors.IsAlreadyExists(err) {
-				return created, fmt.Errorf("unable to create config Secret for %s: %w", exporter.Name, err)
+		if !caRead {
+			caBundle, err = r.readCABundle(ctx, vtc)
+			if err != nil {
+				return false, err
 			}
+			caRead = true
 		}
 
-		// Render and create the Pod.
-		pod, err := r.Provisioner.RenderPod(ctx, es, vtc, mergedParameters, exporter, configSecret.Name)
-		if err != nil {
-			return created, fmt.Errorf("unable to render Pod for Exporter %s: %w", exporter.Name, err)
+		// Sync config Secret on every reconcile so token rotation takes effect.
+		if err := r.syncConfigSecret(ctx, es, exp, caBundle, mergedParameters); err != nil {
+			return waiting, err
 		}
 
-		if pod.Labels == nil {
-			pod.Labels = make(map[string]string)
-		}
-		pod.Labels[labelExporterSetName] = es.Name
-
-		if err := ctrl.SetControllerReference(exporter, pod, r.Scheme); err != nil {
-			return created, fmt.Errorf("unable to set owner reference on Pod: %w", err)
+		if _, hasPod := podsByExporter[exp.Name]; hasPod {
+			continue
 		}
 
-		if err := r.Create(ctx, pod); err != nil {
-			return created, fmt.Errorf("unable to create Pod for Exporter %s: %w", exporter.Name, err)
+		if err := r.createExporterPod(ctx, es, vtc, mergedParameters, exp); err != nil {
+			return waiting, err
 		}
-
-		logger.Info("created Pod for Exporter", "exporter", exporter.Name, "pod", pod.Name)
-
-		if r.Recorder != nil {
-			r.Recorder.Eventf(es, corev1.EventTypeNormal, "PodCreated",
-				"Created Pod %s for Exporter %s", pod.Name, exporter.Name)
-		}
-		created = true
 	}
 
-	return created, nil
+	return waiting, nil
 }
 
-// exporterHasPod checks whether the given exporter owns a Pod.
-func (r *ExporterSetReconciler) exporterHasPod(
+// syncConfigSecret creates or updates the per-exporter config Secret so the
+// exporter sidecar always has a fresh token and correct configuration.
+func (r *ExporterSetReconciler) syncConfigSecret(
 	ctx context.Context,
-	exporter *jumpstarterdevv1alpha1.Exporter,
-) (bool, error) {
-	var podList corev1.PodList
-	if err := r.List(ctx, &podList, client.InNamespace(exporter.Namespace)); err != nil {
-		return false, fmt.Errorf("unable to list Pods: %w", err)
+	es *virtualtargetv1alpha1.ExporterSet,
+	exp *jumpstarterdevv1alpha1.Exporter,
+	caBundle string,
+	mergedParameters map[string]interface{},
+) error {
+	configSecret, err := r.buildExporterConfigSecret(ctx, es, exp, caBundle, mergedParameters)
+	if err != nil {
+		return fmt.Errorf("build config for %s: %w", exp.Name, err)
 	}
 
+	existing := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configSecret.Name,
+			Namespace: configSecret.Namespace,
+		},
+	}
+
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, existing, func() error {
+		if err := ctrl.SetControllerReference(exp, existing, r.Scheme); err != nil {
+			return fmt.Errorf("set owner on config Secret for %s: %w", exp.Name, err)
+		}
+		existing.Labels = configSecret.Labels
+		existing.Data = configSecret.Data
+		return nil
+	})
+	return err
+}
+
+// createExporterPod issues a Pod for a single Exporter that has credentials
+// but no Pod yet. The config Secret must already exist (syncConfigSecret).
+func (r *ExporterSetReconciler) createExporterPod(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	vtc *virtualtargetv1alpha1.VirtualTargetClass,
+	mergedParameters map[string]interface{},
+	exp *jumpstarterdevv1alpha1.Exporter,
+) error {
+	logger := log.FromContext(ctx)
+
+	pod, err := r.Provisioner.RenderPod(ctx, es, vtc, mergedParameters, exp)
+	if err != nil {
+		return fmt.Errorf("render Pod for %s: %w", exp.Name, err)
+	}
+
+	if !injectConfigVolume(pod, exp.Name) {
+		logger.Info("exporter container not found in pod spec; config volume not mounted",
+			"exporter", exp.Name, "expectedContainer", exporterContainerName)
+	}
+
+	injectCredentialsSecretRef(pod, vtc)
+
+	if pod.Labels == nil {
+		pod.Labels = make(map[string]string)
+	}
+	pod.Labels[labelExporterSetName] = es.Name
+
+	if err := ctrl.SetControllerReference(exp, pod, r.Scheme); err != nil {
+		return fmt.Errorf("set owner on Pod for %s: %w", exp.Name, err)
+	}
+
+	if err := r.Create(ctx, pod); err != nil {
+		return fmt.Errorf("create Pod for %s: %w", exp.Name, err)
+	}
+
+	logger.Info("created Pod for Exporter", "exporter", exp.Name, "pod", pod.Name)
+
+	if r.Recorder != nil {
+		r.Recorder.Eventf(es, corev1.EventTypeNormal, "PodCreated",
+			"Created Pod %s for Exporter %s", pod.Name, exp.Name)
+	}
+
+	return nil
+}
+
+// readCABundle fetches PEM CA data. If VTC specifies a CABundleConfigMapRef,
+// that is used. Otherwise falls back to the CertManager-generated ConfigMap.
+func (r *ExporterSetReconciler) readCABundle(
+	ctx context.Context,
+	vtc *virtualtargetv1alpha1.VirtualTargetClass,
+) (string, error) {
+	cmName := caConfigMapName
+	cmKey := caConfigMapKey
+
+	if vtc.Spec.CABundleConfigMapRef != nil {
+		cmName = vtc.Spec.CABundleConfigMapRef.Name
+		if vtc.Spec.CABundleConfigMapRef.Key != "" {
+			cmKey = vtc.Spec.CABundleConfigMapRef.Key
+		} else {
+			cmKey = "ca-bundle.crt"
+		}
+	}
+
+	var cm corev1.ConfigMap
+	if err := r.Get(ctx, client.ObjectKey{
+		Name:      cmName,
+		Namespace: vtc.Namespace,
+	}, &cm); err != nil {
+		return "", fmt.Errorf("get CA bundle ConfigMap %q: %w", cmName, err)
+	}
+
+	ca, ok := cm.Data[cmKey]
+	if !ok {
+		return "", fmt.Errorf("CA bundle ConfigMap %q missing key %q", cmName, cmKey)
+	}
+
+	return ca, nil
+}
+
+// readCredentialToken reads the JWT from the Exporter's credential Secret.
+func (r *ExporterSetReconciler) readCredentialToken(
+	ctx context.Context,
+	exp *jumpstarterdevv1alpha1.Exporter,
+) (string, error) {
+	var secret corev1.Secret
+	if err := r.Get(ctx, client.ObjectKey{
+		Name:      exp.Status.Credential.Name,
+		Namespace: exp.Namespace,
+	}, &secret); err != nil {
+		return "", fmt.Errorf("get credential Secret %q: %w", exp.Status.Credential.Name, err)
+	}
+
+	token, ok := secret.Data["token"]
+	if !ok {
+		return "", fmt.Errorf("credential Secret %q missing 'token' key", exp.Status.Credential.Name)
+	}
+
+	return string(token), nil
+}
+
+// listPodsByExporter returns a set of Exporter names that already have a Pod.
+func (r *ExporterSetReconciler) listPodsByExporter(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+) (map[string]struct{}, error) {
+	var podList corev1.PodList
+	if err := r.List(ctx, &podList,
+		client.InNamespace(es.Namespace),
+		client.MatchingLabels{labelExporterSetName: es.Name},
+	); err != nil {
+		return nil, fmt.Errorf("list Pods for ExporterSet %s: %w", es.Name, err)
+	}
+
+	byExporter := make(map[string]struct{}, len(podList.Items))
 	for i := range podList.Items {
-		for _, ref := range podList.Items[i].GetOwnerReferences() {
-			if ref.Controller != nil && *ref.Controller &&
-				ref.Kind == "Exporter" &&
-				ref.Name == exporter.Name {
-				return true, nil
+		for _, ref := range podList.Items[i].OwnerReferences {
+			if ref.Kind == kindExporter && ref.Controller != nil && *ref.Controller {
+				byExporter[ref.Name] = struct{}{}
 			}
 		}
 	}
-	return false, nil
+
+	return byExporter, nil
+}
+
+// injectConfigVolume adds the config Secret as a volume and mounts it in the
+// "exporter" init-container. Returns false if that container isn't found.
+func injectConfigVolume(pod *corev1.Pod, exporterName string) bool {
+	pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{
+		Name: configVolumeName,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: configSecretPrefix + exporterName,
+			},
+		},
+	})
+
+	for i := range pod.Spec.InitContainers {
+		if pod.Spec.InitContainers[i].Name == exporterContainerName {
+			pod.Spec.InitContainers[i].VolumeMounts = append(
+				pod.Spec.InitContainers[i].VolumeMounts,
+				corev1.VolumeMount{
+					Name:      configVolumeName,
+					MountPath: configMountPath,
+					ReadOnly:  true,
+				},
+			)
+			return true
+		}
+	}
+
+	return false
+}
+
+// injectCredentialsSecretRef mounts VTC.credentialsSecretRef as env vars in
+// the runtime container. Used by API-backed provisioners; QEMU ignores it.
+func injectCredentialsSecretRef(pod *corev1.Pod, vtc *virtualtargetv1alpha1.VirtualTargetClass) {
+	if vtc.Spec.CredentialsSecretRef == nil {
+		return
+	}
+
+	envFrom := corev1.EnvFromSource{
+		SecretRef: &corev1.SecretEnvSource{
+			LocalObjectReference: corev1.LocalObjectReference{
+				Name: vtc.Spec.CredentialsSecretRef.Name,
+			},
+		},
+	}
+
+	for i := range pod.Spec.Containers {
+		pod.Spec.Containers[i].EnvFrom = append(
+			pod.Spec.Containers[i].EnvFrom,
+			envFrom,
+		)
+	}
 }
 
 // cleanupDisabledExporters deletes disabled, unleased exporters. Returns true if any were deleted.
@@ -750,7 +913,10 @@ func (r *ExporterSetReconciler) reconcileStatusCounts(
 	var pending, running, failed, unknown int32
 
 	for i := range podList.Items {
-		if !isOwnedBy(&podList.Items[i], es.UID) {
+		// Pods are owned by Exporters (not ExporterSets directly); skip any
+		// that lack a controller owner of Kind=Exporter to avoid counting
+		// stray pods that happen to share the selector labels.
+		if !isOwnedByKind(&podList.Items[i], kindExporter) {
 			continue
 		}
 		switch podList.Items[i].Status.Phase {
@@ -1146,6 +1312,16 @@ func (r *ExporterSetReconciler) countPendingLeases(
 func isOwnedBy(obj client.Object, ownerUID types.UID) bool {
 	for _, ref := range obj.GetOwnerReferences() {
 		if ref.UID == ownerUID && ref.Controller != nil && *ref.Controller {
+			return true
+		}
+	}
+	return false
+}
+
+// isOwnedByKind reports whether the object's controller owner has the given Kind.
+func isOwnedByKind(obj client.Object, kind string) bool {
+	for _, ref := range obj.GetOwnerReferences() {
+		if ref.Kind == kind && ref.Controller != nil && *ref.Controller {
 			return true
 		}
 	}

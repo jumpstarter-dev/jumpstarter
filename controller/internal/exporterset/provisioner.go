@@ -40,14 +40,13 @@ type Provisioner interface {
 	// VirtualTargetClass, the deep-merged parameters, and the
 	// Exporter CR that owns this instance. The provisioner returns
 	// a Pod ready to create. The reconciler sets OwnerReferences
-	// on the Pod before creation.
+	// and injects the config volume after RenderPod returns.
 	RenderPod(
 		ctx context.Context,
 		exporterSet *virtualtargetv1alpha1.ExporterSet,
 		vtc *virtualtargetv1alpha1.VirtualTargetClass,
 		mergedParameters map[string]interface{},
 		exporter *jumpstarterdevv1alpha1.Exporter,
-		configSecretName string,
 	) (*corev1.Pod, error)
 
 	// EnrichExporterExport allows a provisioner to inject or override

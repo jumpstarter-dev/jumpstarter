@@ -26,6 +26,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"strings"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
@@ -65,9 +66,9 @@ const (
 	// the QEMU runtime container.
 	launcherSocketPath = "/shared/launcher.sock"
 
-	// configVolumeName is the volume for the ExporterConfig Secret.
-	configVolumeName = "exporter-config"
-	configMountPath  = "/etc/jumpstarter/exporters"
+	// configMountPath is where the ExporterConfig Secret is mounted
+	// inside the exporter sidecar.
+	configMountPath = "/etc/jumpstarter/exporters"
 
 	// QEMU driver type for identification during enrichment.
 	qemuDriverType = "jumpstarter_driver_qemu.driver.Qemu"
@@ -80,16 +81,34 @@ const (
 // It renders Pods with a QEMU runtime container and an exporter
 // sidecar, staging jumpstarter-exec via a one-shot init container
 // and communicating via Unix sockets on a shared emptyDir volume.
-type Provisioner struct{}
+type Provisioner struct {
+	// Version is the build-time version string (e.g. "v0.9.0", "dev").
+	// Used to resolve :latest image tags to the correct version.
+	Version string
+}
 
-// New creates a new QEMU provisioner.
-func New() *Provisioner {
-	return &Provisioner{}
+// New creates a new QEMU provisioner with the given build-time version.
+func New(version string) *Provisioner {
+	return &Provisioner{Version: version}
 }
 
 // Name returns the provisioner identifier.
 func (p *Provisioner) Name() string {
 	return ProvisionerName
+}
+
+// resolveImage replaces the :latest tag with the controller's own version tag.
+// If the version is unknown ("dev") or the image uses a non-latest tag
+// (admin override), the image is returned unchanged.
+func (p *Provisioner) resolveImage(image string) string {
+	if p.Version == "" || p.Version == "dev" {
+		return image
+	}
+	version := strings.TrimPrefix(p.Version, "v")
+	if base, ok := strings.CutSuffix(image, ":latest"); ok {
+		return base + ":" + version
+	}
+	return image
 }
 
 // RenderPod creates a Pod for a new QEMU-based exporter instance
@@ -104,18 +123,19 @@ func (p *Provisioner) Name() string {
 //     (QMP, serial console, launcher socket).
 //
 // The caller (reconciler) is responsible for setting
-// OwnerReferences on the Pod to ensure garbage collection when
-// the ExporterSet is deleted.
+// OwnerReferences on the Pod and injecting the config volume.
 func (p *Provisioner) RenderPod(
 	ctx context.Context,
 	exporterSet *virtualtargetv1alpha1.ExporterSet,
 	vtc *virtualtargetv1alpha1.VirtualTargetClass,
 	mergedParameters map[string]interface{},
 	exporter *jumpstarterdevv1alpha1.Exporter,
-	configSecretName string,
 ) (*corev1.Pod, error) {
 	restartAlways := corev1.ContainerRestartPolicyAlways
 	sizeLimit := resource.MustParse(sharedVolumeSizeLimit)
+
+	exporterImage := p.resolveImage(DefaultExporterImage)
+	runtimeImage := p.resolveImage(DefaultQEMURuntimeImage)
 
 	// JEP-0013 persistent log context for jumpstarter-exec (matches
 	// set_persistent_log_context in the Python exporter).
@@ -145,7 +165,7 @@ func (p *Provisioner) RenderPod(
 					// No restartPolicy — must exit before later
 					// containers are allowed to start.
 					Name:            "copy-jumpstarter-exec",
-					Image:           DefaultExporterImage,
+					Image:           exporterImage,
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Command: []string{
 						"cp",
@@ -164,7 +184,7 @@ func (p *Provisioner) RenderPod(
 					// copy init completes and drains after main
 					// containers.
 					Name:            "exporter",
-					Image:           DefaultExporterImage,
+					Image:           exporterImage,
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					RestartPolicy:   &restartAlways,
 					Command:         []string{"jmp", "run", "--exporter-config", configMountPath + "/config.yaml"},
@@ -179,11 +199,6 @@ func (p *Provisioner) RenderPod(
 							Name:      sharedVolumeName,
 							MountPath: sharedMountPath,
 						},
-						{
-							Name:      configVolumeName,
-							MountPath: configMountPath,
-							ReadOnly:  true,
-						},
 					},
 				},
 			},
@@ -192,7 +207,7 @@ func (p *Provisioner) RenderPod(
 			Containers: []corev1.Container{
 				{
 					Name:            "target-runtime",
-					Image:           DefaultQEMURuntimeImage,
+					Image:           runtimeImage,
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Env:             runtimeEnv,
 					VolumeMounts: []corev1.VolumeMount{
@@ -209,14 +224,6 @@ func (p *Provisioner) RenderPod(
 					VolumeSource: corev1.VolumeSource{
 						EmptyDir: &corev1.EmptyDirVolumeSource{
 							SizeLimit: &sizeLimit,
-						},
-					},
-				},
-				{
-					Name: configVolumeName,
-					VolumeSource: corev1.VolumeSource{
-						Secret: &corev1.SecretVolumeSource{
-							SecretName: configSecretName,
 						},
 					},
 				},
