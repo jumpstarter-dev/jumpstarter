@@ -8,7 +8,7 @@
 | **Status**        | Approved                                                       |
 | **Type**          | Standards Track                                                |
 | **Created**       | 2026-06-03                                                     |
-| **Updated**       | 2026-07-24                                                     |
+| **Updated**       | 2026-07-27                                                     |
 | **Discussion**    | https://github.com/jumpstarter-dev/jumpstarter/issues/41       |
 | **Requires**      |                                                                |
 | **Supersedes**    |                                                                |
@@ -150,6 +150,11 @@ spec:
     resources:
       limits:
         devices.kubevirt.io/kvm: "1"
+  images:                            # optional; overrides default container images
+    exporter:
+      image: quay.io/jumpstarter-dev/jumpstarter:v0.9.0
+    runtime:
+      image: quay.io/jumpstarter-dev/virtual/qemu-runtime:v0.9.0
   parameters:                        # nested object; provisioner interprets
     machineType: virt
     firmware:
@@ -814,6 +819,13 @@ spec:
     resources:
       limits:
         devices.kubevirt.io/kvm: "1"
+  images:                            # optional; overrides default container images
+    exporter:                        # exporter sidecar image
+      image: <string>               # e.g. quay.io/jumpstarter-dev/jumpstarter:v0.9.0
+      imagePullPolicy: <Always|Never|IfNotPresent>
+    runtime:                         # provisioner-specific runtime image
+      image: <string>               # e.g. quay.io/jumpstarter-dev/virtual/qemu-runtime:v0.9.0
+      imagePullPolicy: <Always|Never|IfNotPresent>
 ```
 
 **ExporterSet (common fields):**
@@ -828,6 +840,13 @@ spec:
   virtualTargetClassName: <string>   # VirtualTargetClass name in same namespace
   parameters:                       # optional nested overrides (deep-merged with class)
     <key>: <nested value>
+  images:                           # optional; overrides VTC-level image defaults
+    exporter:
+      image: <string>
+      imagePullPolicy: <Always|Never|IfNotPresent>
+    runtime:
+      image: <string>
+      imagePullPolicy: <Always|Never|IfNotPresent>
   selector:
     matchLabels:
       <key>: <value>
@@ -841,6 +860,35 @@ spec:
           type: <string>             # fully qualified Python driver class
           config: { ... }            # driver-specific config (schemaless)
 ```
+
+### Image Overrides
+
+Both `VirtualTargetClass` and `ExporterSet` expose an `spec.images` field with
+typed sub-fields for overriding the default container images used by the
+provisioner:
+
+- **`images.exporter`** — the exporter sidecar container image.
+- **`images.runtime`** — the provisioner-specific runtime container image
+  (e.g. QEMU runtime for `qemu.jumpstarter.dev`).
+
+Each sub-field is an `ImageSpec` with:
+
+- **`image`** — container image reference (e.g. `quay.io/org/repo:tag`).
+- **`imagePullPolicy`** — `Always`, `Never`, or `IfNotPresent`.
+
+**Merge semantics:** ExporterSet-level images fully override VTC-level images
+at the `ImageSpec` level (not individual fields within an `ImageSpec`). If an
+ExporterSet specifies `images.runtime`, it replaces the entire VTC-level
+`images.runtime`; VTC-level `images.exporter` is still inherited if the
+ExporterSet does not specify one. When neither VTC nor ExporterSet specifies
+an image, the provisioner falls back to its built-in default image, resolved
+to the controller's build-time version.
+
+**Use cases:**
+
+- **Development clusters:** Override images to `:latest` for local testing.
+- **Air-gapped environments:** Point to an internal registry mirror.
+- **Version pinning:** Pin specific versions independent of the controller release.
 
 ### Dictionary-Based Parameters
 
@@ -1629,6 +1677,9 @@ claim CRDs.
   map key naming; documented two-phase instance creation (Exporter CR first,
   Pod after credentials ready); added ExporterConfig injection with auto-enrichment
   (firmware paths, hostfwd, wrapper drivers)
+- 2026-07-27: Added typed `ImageOverrides` on `VirtualTargetClass` and
+  `ExporterSet` for structured image/imagePullPolicy overrides with ExporterSet
+  taking precedence over VTC; replaces previous unstructured parameters approach
 
 ## References
 
