@@ -226,16 +226,26 @@ var _ = Describe("exporterSetPolicyRules", func() {
 		Fail("no rule found for events")
 	})
 
-	It("should grant read-only access on secrets and configmaps", func() {
+	It("should grant read-write access on secrets and read-only on configmaps", func() {
+		secretFound := false
+		configmapFound := false
 		for _, rule := range rules {
 			if containsString(rule.APIGroups, "") &&
 				containsString(rule.Resources, "secrets") {
-				Expect(rule.Verbs).To(ContainElements("get", "list", "watch"))
+				Expect(rule.Verbs).To(ContainElements("get", "list", "watch", "create", "update", "patch"))
 				Expect(rule.Verbs).NotTo(ContainElement("delete"))
-				return
+				secretFound = true
+			}
+			if containsString(rule.APIGroups, "") &&
+				containsString(rule.Resources, "configmaps") {
+				Expect(rule.Verbs).To(ContainElements("get", "list", "watch"))
+				Expect(rule.Verbs).NotTo(ContainElement("create"))
+				Expect(rule.Verbs).NotTo(ContainElement("delete"))
+				configmapFound = true
 			}
 		}
-		Fail("no rule found for secrets/configmaps")
+		Expect(secretFound).To(BeTrue(), "no rule found for secrets")
+		Expect(configmapFound).To(BeTrue(), "no rule found for configmaps")
 	})
 })
 

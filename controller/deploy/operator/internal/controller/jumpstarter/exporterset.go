@@ -530,7 +530,7 @@ func exporterSetPolicyRules() []rbacv1.PolicyRule {
 		{
 			APIGroups: []string{""},
 			Resources: []string{"secrets"},
-			Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
+			Verbs:     []string{"get", "list", "watch", "create", "update", "patch"},
 		},
 		{
 			APIGroups: []string{""},
