@@ -37,7 +37,10 @@ func TestEnrichExporterExport_injectsLauncherSocket(t *testing.T) {
 		},
 	}
 
-	result := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	qemuDriver := findDriver(result, "qemu")
 	if qemuDriver == nil {
@@ -61,7 +64,10 @@ func TestEnrichExporterExport_injectsDefaultPartitionsX86(t *testing.T) {
 		},
 	}
 
-	result := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	config := unmarshalConfig(t, findDriver(result, "qemu").Config)
 	partitions, ok := config["default_partitions"].(map[string]interface{})
@@ -87,17 +93,20 @@ func TestEnrichExporterExport_injectsDefaultPartitionsAarch64(t *testing.T) {
 		},
 	}
 
-	result := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	config := unmarshalConfig(t, findDriver(result, "qemu").Config)
 	partitions, ok := config["default_partitions"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("default_partitions not a map: %T", config["default_partitions"])
 	}
-	if got := partitions["OVMF_CODE.fd"]; got != "/usr/share/edk2/aarch64/QEMU_EFI-pflash.raw" {
+	if got := partitions["OVMF_CODE.fd"]; got != "/usr/share/AAVMF/AAVMF_CODE.fd" {
 		t.Errorf("OVMF_CODE.fd = %v", got)
 	}
-	if got := partitions["OVMF_VARS.fd"]; got != "/usr/share/edk2/aarch64/vars-template-pflash.raw" {
+	if got := partitions["OVMF_VARS.fd"]; got != "/usr/share/AAVMF/AAVMF_VARS.fd" {
 		t.Errorf("OVMF_VARS.fd = %v", got)
 	}
 }
@@ -118,7 +127,10 @@ func TestEnrichExporterExport_respectsUserDefaultPartitions(t *testing.T) {
 		},
 	}
 
-	result := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	config := unmarshalConfig(t, findDriver(result, "qemu").Config)
 	partitions, ok := config["default_partitions"].(map[string]interface{})
@@ -141,7 +153,10 @@ func TestEnrichExporterExport_injectsHostfwdSSH(t *testing.T) {
 		},
 	}
 
-	result := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	config := unmarshalConfig(t, findDriver(result, "qemu").Config)
 	hostfwd, ok := config["hostfwd"].(map[string]interface{})
@@ -174,7 +189,10 @@ func TestEnrichExporterExport_autoInjectsTCPDriver(t *testing.T) {
 		},
 	}
 
-	result := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	tcp := findDriver(result, "tcp")
 	if tcp == nil {
@@ -201,7 +219,10 @@ func TestEnrichExporterExport_doesNotDuplicateExistingTCP(t *testing.T) {
 		},
 	}
 
-	result := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	tcpCount := 0
 	for _, d := range result {
@@ -232,7 +253,10 @@ func TestEnrichExporterExport_defaultsFromMergedParameters(t *testing.T) {
 		},
 	}
 
-	result := New("dev").EnrichExporterExport(drivers, params)
+	result, err := New("dev").EnrichExporterExport(drivers, params)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	config := unmarshalConfig(t, findDriver(result, "qemu").Config)
 	if got := config["arch"]; got != "aarch64" {

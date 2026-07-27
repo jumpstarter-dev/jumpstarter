@@ -12,10 +12,18 @@ set -eu
 BINARY="$1"
 shift
 
-echo "wait-for-binary: waiting for ${BINARY}..." >&2
+TIMEOUT="${WAIT_FOR_BINARY_TIMEOUT:-60}"
+elapsed=0
+
+echo "wait-for-binary: waiting for ${BINARY} (timeout ${TIMEOUT}s)..." >&2
 
 while [ ! -x "$BINARY" ]; do
-    sleep 0.1
+    if [ "$elapsed" -ge "$TIMEOUT" ]; then
+        echo "wait-for-binary: timed out after ${TIMEOUT}s waiting for ${BINARY}" >&2
+        exit 1
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
 done
 
 echo "wait-for-binary: found ${BINARY}, starting" >&2

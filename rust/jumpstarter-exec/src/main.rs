@@ -50,14 +50,14 @@ fn main() {
             }
         }
         "exec" => {
-            let rest = &args[2..];
-            let socket =
-                parse_option(rest, "--socket").unwrap_or_else(|| DEFAULT_SOCKET.to_string());
-
             let separator = args.iter().position(|a| a == "--").unwrap_or_else(|| {
                 eprintln!("Usage: jumpstarter-exec exec [--socket <path>] -- <command> [args...]");
                 process::exit(1);
             });
+
+            let opts_only = &args[2..separator];
+            let socket =
+                parse_option(opts_only, "--socket").unwrap_or_else(|| DEFAULT_SOCKET.to_string());
 
             let argv: Vec<String> = args[separator + 1..].to_vec();
             if argv.is_empty() {

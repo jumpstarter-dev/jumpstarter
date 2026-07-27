@@ -468,6 +468,10 @@ func (r *ExporterSetReconciler) createExporterPod(
 	}
 
 	if err := r.Create(ctx, pod); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.V(1).Info("Pod already exists", "exporter", exp.Name, "pod", pod.Name)
+			return nil
+		}
 		return fmt.Errorf("create Pod for %s: %w", exp.Name, err)
 	}
 

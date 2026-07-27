@@ -1396,8 +1396,25 @@ the `qemu.jumpstarter.dev` provisioner:
 - Injects `launcher_socket` pointing to the shared-volume Unix socket path.
 - Injects architecture-appropriate `default_partitions` (EDK2 firmware paths)
   unless the user already specified them.
-- Injects `hostfwd` settings for SSH access.
-- Auto-injects `tcp` and `ssh` wrapper drivers if not already present.
+- Injects `hostfwd` settings for SSH access unless already present.
+- Auto-injects a `tcp` wrapper driver if not already present.
+
+**Driver-name collision handling:** The `buildExportMap` function rejects
+duplicate keys in the export map. If two `DriverConfig` entries resolve to the
+same name (whether explicit or derived), the controller returns an error during
+config generation. Users must assign distinct `name` values to avoid collisions.
+
+**Pod naming:** The Pod created for each Exporter uses the Exporter's own name
+(`exporter.Name`) rather than a generated name. This 1:1 correspondence makes
+it straightforward to correlate Pods, Exporters, and their logs.
+
+**`exitOnLeaseEnd` derivation:** The `exitOnLeaseEnd` flag in the generated
+`ExporterConfig` is derived from `ExporterSet.spec.recycleStrategy`:
+
+- `ExitAndReplace` (default) → `exitOnLeaseEnd: true` — the exporter process
+  exits when its lease ends, causing the Pod to terminate and be replaced.
+- `InPlaceReuse` → `exitOnLeaseEnd: false` — the exporter stays running and
+  transitions back to available.
 
 ### Component Interaction
 
@@ -1680,6 +1697,9 @@ claim CRDs.
 - 2026-07-27: Added typed `ImageOverrides` on `VirtualTargetClass` and
   `ExporterSet` for structured image/imagePullPolicy overrides with ExporterSet
   taking precedence over VTC; replaces previous unstructured parameters approach
+- 2026-07-27: Documented driver-name collision rejection in `buildExportMap`,
+  Pod naming matching Exporter names, `exitOnLeaseEnd` derivation from
+  `recycleStrategy`, and provisioner enrichment precedence rules
 
 ## References
 

@@ -22,6 +22,8 @@ pub fn exec(socket_path: &str, argv: Vec<String>) -> std::io::Result<i32> {
     )?;
 
     // Forward local stdin to the remote child in a background thread.
+    // Not joined: the thread exits when the socket closes or EOF is read.
+    // Joining would block the exit path when stdin remains open (e.g. piped).
     let w = Arc::clone(&writer);
     let _stdin_thread = thread::spawn(move || {
         let stdin = std::io::stdin();

@@ -62,7 +62,7 @@ type exporterConfig struct {
 	TLS            *exporterConfigTLS              `json:"tls,omitempty"`
 	Token          string                          `json:"token"`
 	Export         map[string]exporterConfigDriver `json:"export,omitempty"`
-	ExitOnLeaseEnd bool                            `json:"exitOnLeaseEnd"`
+	ExitOnLeaseEnd bool                            `json:"	exitOnLeaseEnd"`
 }
 
 type exporterConfigMetadata struct {
@@ -98,7 +98,10 @@ func (r *ExporterSetReconciler) buildExporterConfigSecret(
 	caBase64 := base64.StdEncoding.EncodeToString([]byte(caBundle))
 
 	drivers := es.Spec.Template.Spec.Drivers
-	drivers = r.Provisioner.EnrichExporterExport(drivers, mergedParameters)
+	drivers, err = r.Provisioner.EnrichExporterExport(drivers, mergedParameters)
+	if err != nil {
+		return nil, fmt.Errorf("enrich drivers for %s: %w", exporter.Name, err)
+	}
 
 	exportMap, err := buildExportMap(drivers)
 	if err != nil {
@@ -118,7 +121,7 @@ func (r *ExporterSetReconciler) buildExporterConfigSecret(
 		},
 		Token:          token,
 		Export:         exportMap,
-		ExitOnLeaseEnd: true,
+		ExitOnLeaseEnd: es.Spec.RecycleStrategy != virtualtargetv1alpha1.RecycleStrategyInPlaceReuse,
 	}
 
 	cfgYAML, err := sigsyaml.Marshal(cfg)

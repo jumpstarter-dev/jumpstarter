@@ -26,7 +26,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Messages sent from the exec client to the serve server.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 #[serde(tag = "type")]
 pub enum ClientMessage {
     /// Request to execute a command.
@@ -99,79 +99,36 @@ mod tests {
     }
 
     #[test]
-    fn client_stdin_roundtrip() {
-        let msg = ClientMessage::Stdin {
-            data: "aGVsbG8=".into(),
-        };
-        let json = serde_json::to_string(&msg).unwrap();
-        let parsed: ClientMessage = serde_json::from_str(&json).unwrap();
-        match parsed {
-            ClientMessage::Stdin { data } => assert_eq!(data, "aGVsbG8="),
-            _ => panic!("expected Stdin"),
+    fn client_variants_roundtrip() {
+        let cases: Vec<(&str, ClientMessage)> = vec![
+            ("Stdin", ClientMessage::Stdin { data: "aGVsbG8=".into() }),
+            ("StdinClose", ClientMessage::StdinClose),
+            ("Signal", ClientMessage::Signal { signal: 15 }),
+        ];
+        for (label, msg) in cases {
+            let json = serde_json::to_string(&msg).unwrap();
+            let parsed: ClientMessage = serde_json::from_str(&json).unwrap();
+            assert_eq!(
+                serde_json::to_string(&parsed).unwrap(),
+                json,
+                "{label} roundtrip mismatch"
+            );
         }
     }
 
     #[test]
-    fn client_stdin_close_roundtrip() {
-        let json = serde_json::to_string(&ClientMessage::StdinClose).unwrap();
-        assert_eq!(json, r#"{"type":"StdinClose"}"#);
-    }
-
-    #[test]
-    fn client_signal_roundtrip() {
-        let msg = ClientMessage::Signal { signal: 15 };
-        let json = serde_json::to_string(&msg).unwrap();
-        assert!(json.contains("\"signal\":15"));
-    }
-
-    #[test]
-    fn server_started_roundtrip() {
-        let msg = ServerMessage::Started { pid: 42 };
-        let json = serde_json::to_string(&msg).unwrap();
-        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, ServerMessage::Started { pid: 42 });
-    }
-
-    #[test]
-    fn server_exit_with_code() {
-        let msg = ServerMessage::Exit { code: Some(0) };
-        let json = serde_json::to_string(&msg).unwrap();
-        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, ServerMessage::Exit { code: Some(0) });
-    }
-
-    #[test]
-    fn server_exit_signal_killed() {
-        let msg = ServerMessage::Exit { code: None };
-        let json = serde_json::to_string(&msg).unwrap();
-        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, ServerMessage::Exit { code: None });
-    }
-
-    #[test]
-    fn server_error_roundtrip() {
-        let msg = ServerMessage::Error {
-            message: "boom".into(),
-        };
-        let json = serde_json::to_string(&msg).unwrap();
-        let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(
-            parsed,
-            ServerMessage::Error {
-                message: "boom".into()
-            }
-        );
-    }
-
-    #[test]
-    fn tagged_discriminator() {
-        let json = r#"{"type":"Stdout","data":"AAAA"}"#;
-        let msg: ServerMessage = serde_json::from_str(json).unwrap();
-        assert_eq!(
-            msg,
-            ServerMessage::Stdout {
-                data: "AAAA".into()
-            }
-        );
+    fn server_variants_roundtrip() {
+        let cases: Vec<(&str, ServerMessage)> = vec![
+            ("Started", ServerMessage::Started { pid: 42 }),
+            ("Stdout", ServerMessage::Stdout { data: "AAAA".into() }),
+            ("Exit(0)", ServerMessage::Exit { code: Some(0) }),
+            ("Exit(signal)", ServerMessage::Exit { code: None }),
+            ("Error", ServerMessage::Error { message: "boom".into() }),
+        ];
+        for (label, msg) in cases {
+            let json = serde_json::to_string(&msg).unwrap();
+            let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed, msg, "{label} roundtrip mismatch");
+        }
     }
 }

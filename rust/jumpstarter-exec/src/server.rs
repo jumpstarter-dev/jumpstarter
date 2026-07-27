@@ -44,8 +44,20 @@ pub fn serve(socket_path: &str) -> std::io::Result<()> {
 pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> {
     let log = Arc::new(Logger::new(opts.log_format, opts.debug, opts.log_fields));
 
-    let _ = std::fs::remove_file(socket_path);
+    if std::path::Path::new(socket_path).exists() {
+        if UnixStream::connect(socket_path).is_ok() {
+            return Err(std::io::Error::other(format!(
+                "another server is already listening on {socket_path}"
+            )));
+        }
+        std::fs::remove_file(socket_path)?;
+    }
     let listener = UnixListener::bind(socket_path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o660))?;
+    }
     log.info(
         "listening",
         &[("socket", json!(socket_path)), ("debug", json!(opts.debug))],
@@ -116,23 +128,20 @@ fn handle_connection(stream: UnixStream, log: Arc<Logger>) -> std::io::Result<()
         cmd.current_dir(dir);
     }
 
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => {
-            let msg = format!("spawn failed: {e}");
-            log.error(
-                "spawn failed",
-                &[("argv", json!(argv)), ("error", json!(e.to_string()))],
-            );
-            let _ = send(
-                &writer,
-                &ServerMessage::Error {
-                    message: msg.clone(),
-                },
-            );
-            return Err(io_err(&msg));
-        }
-    };
+    let mut child = cmd.spawn().map_err(|e| {
+        log.error(
+            "spawn failed",
+            &[("argv", json!(argv)), ("error", json!(e.to_string()))],
+        );
+        let msg = format!("spawn failed: {e}");
+        let _ = send(
+            &writer,
+            &ServerMessage::Error {
+                message: msg.clone(),
+            },
+        );
+        io_err(&msg)
+    })?;
 
     let pid = child.id();
     log.info(
@@ -157,11 +166,11 @@ fn handle_connection(stream: UnixStream, log: Arc<Logger>) -> std::io::Result<()
         forward_output(child_stderr, &w, true, log_err.as_ref(), pid);
     });
 
-    // Read client messages and dispatch to child stdin / signals.
-    // If the client disconnects, kill the child so wait() returns.
     let child_stdin = Arc::new(Mutex::new(child_stdin));
     let stdin_ref = Arc::clone(&child_stdin);
     let log_in = Arc::clone(&log);
+    let reaped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let reaped_ref = Arc::clone(&reaped);
     let _reader_handle = thread::spawn(move || {
         for line in lines {
             let line = match line {
@@ -194,16 +203,22 @@ fn handle_connection(stream: UnixStream, log: Arc<Logger>) -> std::io::Result<()
                     *stdin_ref.lock().unwrap() = None;
                 }
                 ClientMessage::Signal { signal } => {
+                    if reaped_ref.load(std::sync::atomic::Ordering::Acquire) {
+                        break;
+                    }
                     log_in.debug("signal", &[("pid", json!(pid)), ("signal", json!(signal))]);
                     unsafe { kill(pid as i32, signal) };
                 }
                 _ => {}
             }
         }
-        unsafe { kill(pid as i32, 15) }; // SIGTERM on client disconnect
+        if !reaped_ref.load(std::sync::atomic::Ordering::Acquire) {
+            unsafe { kill(pid as i32, 15) }; // SIGTERM on client disconnect
+        }
     });
 
     let status = child.wait()?;
+    reaped.store(true, std::sync::atomic::Ordering::Release);
 
     let _ = stdout_handle.join();
     let _ = stderr_handle.join();

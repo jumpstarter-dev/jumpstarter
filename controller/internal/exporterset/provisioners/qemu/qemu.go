@@ -281,7 +281,7 @@ func (p *Provisioner) RenderPod(
 func (p *Provisioner) EnrichExporterExport(
 	drivers []virtualtargetv1alpha1.DriverConfig,
 	mergedParameters map[string]interface{},
-) []virtualtargetv1alpha1.DriverConfig {
+) ([]virtualtargetv1alpha1.DriverConfig, error) {
 	result := make([]virtualtargetv1alpha1.DriverConfig, 0, len(drivers)+1)
 	hasTCP := false
 
@@ -291,7 +291,11 @@ func (p *Provisioner) EnrichExporterExport(
 		}
 
 		if d.Type == qemuDriverType {
-			d = enrichQemuDriver(d, mergedParameters)
+			var err error
+			d, err = enrichQemuDriver(d, mergedParameters)
+			if err != nil {
+				return nil, err
+			}
 		}
 		result = append(result, d)
 	}
@@ -308,14 +312,16 @@ func (p *Provisioner) EnrichExporterExport(
 		})
 	}
 
-	return result
+	return result, nil
 }
 
 // enrichQemuDriver applies QEMU-specific defaults to a driver config entry.
-func enrichQemuDriver(d virtualtargetv1alpha1.DriverConfig, params map[string]interface{}) virtualtargetv1alpha1.DriverConfig {
+func enrichQemuDriver(d virtualtargetv1alpha1.DriverConfig, params map[string]interface{}) (virtualtargetv1alpha1.DriverConfig, error) {
 	config := make(map[string]interface{})
 	if d.Config != nil && d.Config.Raw != nil {
-		_ = json.Unmarshal(d.Config.Raw, &config)
+		if err := json.Unmarshal(d.Config.Raw, &config); err != nil {
+			return d, fmt.Errorf("unmarshal QEMU driver config: %w", err)
+		}
 	}
 
 	// Force launcher_socket.
@@ -349,7 +355,7 @@ func enrichQemuDriver(d virtualtargetv1alpha1.DriverConfig, params map[string]in
 
 	raw, _ := json.Marshal(config)
 	d.Config = &apiextensionsv1.JSON{Raw: raw}
-	return d
+	return d, nil
 }
 
 // defaultPartitionsForArch returns the firmware partition paths for the given architecture.
@@ -357,8 +363,8 @@ func defaultPartitionsForArch(arch string) map[string]string {
 	switch arch {
 	case "aarch64":
 		return map[string]string{
-			"OVMF_CODE.fd": "/usr/share/edk2/aarch64/QEMU_EFI-pflash.raw",
-			"OVMF_VARS.fd": "/usr/share/edk2/aarch64/vars-template-pflash.raw",
+			"OVMF_CODE.fd": "/usr/share/AAVMF/AAVMF_CODE.fd",
+			"OVMF_VARS.fd": "/usr/share/AAVMF/AAVMF_VARS.fd",
 		}
 	default:
 		return map[string]string{

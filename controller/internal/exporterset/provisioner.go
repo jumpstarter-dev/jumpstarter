@@ -59,7 +59,7 @@ type Provisioner interface {
 	EnrichExporterExport(
 		drivers []virtualtargetv1alpha1.DriverConfig,
 		mergedParameters map[string]interface{},
-	) []virtualtargetv1alpha1.DriverConfig
+	) ([]virtualtargetv1alpha1.DriverConfig, error)
 
 	// Cleanup is called when an exporter instance is being
 	// removed. The provisioner can use this to clean up external
