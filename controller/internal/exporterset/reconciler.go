@@ -93,7 +93,7 @@ type ExporterSetReconciler struct {
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=leases,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 // Reconcile is the main reconciliation loop for ExporterSet resources.
@@ -239,6 +239,27 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
+	// Phase 2: ensure Pods exist for exporters with ready credentials.
+	podCreated, err := r.ensureExporterPods(ctx, &exporterSet, &vtc, mergedParameters, ownedExporters)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if podCreated {
+		// Requeue immediately to update status after Pod creation.
+		result = ctrl.Result{Requeue: true}
+	} else if !scaled {
+		// Requeue to check for exporters awaiting credentials.
+		for i := range ownedExporters {
+			exp := &ownedExporters[i]
+			if exp.IsEnabled() && (exp.Status.Credential == nil || exp.Status.Endpoint == "") {
+				if hasPod, _ := r.exporterHasPod(ctx, exp); !hasPod {
+					result = ctrl.Result{RequeueAfter: 5 * time.Second}
+					break
+				}
+			}
+		}
+	}
+
 	// Update status counts, conditions, and emit events.
 	if err := r.reconcileStatusCounts(ctx, &exporterSet); err != nil {
 		return ctrl.Result{}, err
@@ -285,7 +306,8 @@ func computePoolState(exporters []jumpstarterdevv1alpha1.Exporter) poolState {
 	return s
 }
 
-// scaleUp creates Exporter + Pod pairs (ExporterSet → Exporter → Pod).
+// scaleUp creates Exporter CRs only (phase 1). Pod creation happens in
+// ensureExporterPods once credentials and endpoint are ready.
 func (r *ExporterSetReconciler) scaleUp(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
@@ -316,11 +338,70 @@ func (r *ExporterSetReconciler) scaleUp(
 			return fmt.Errorf("unable to create Exporter: %w", err)
 		}
 
-		logger.Info("created Exporter", "exporter", exporter.Name)
+		logger.Info("created Exporter (awaiting credentials)", "exporter", exporter.Name)
 
-		pod, err := r.Provisioner.RenderPod(ctx, es, vtc, mergedParameters, exporter)
+		if r.Recorder != nil {
+			r.Recorder.Eventf(es, corev1.EventTypeNormal, "ScaleUp",
+				"Created Exporter %s (awaiting credentials)", exporter.Name)
+		}
+	}
+
+	return nil
+}
+
+// ensureExporterPods creates config Secrets and Pods for Exporters whose
+// credentials and endpoint are ready but have no associated Pod yet.
+// Returns true if any Pod was created (triggers requeue).
+func (r *ExporterSetReconciler) ensureExporterPods(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	vtc *virtualtargetv1alpha1.VirtualTargetClass,
+	mergedParameters map[string]interface{},
+	ownedExporters []jumpstarterdevv1alpha1.Exporter,
+) (bool, error) {
+	logger := log.FromContext(ctx)
+	created := false
+
+	for i := range ownedExporters {
+		exporter := &ownedExporters[i]
+
+		if !exporter.IsEnabled() {
+			continue
+		}
+
+		// Skip if credentials or endpoint not ready yet.
+		if exporter.Status.Credential == nil || exporter.Status.Endpoint == "" {
+			continue
+		}
+
+		// Check if a Pod already exists for this exporter.
+		if hasPod, err := r.exporterHasPod(ctx, exporter); err != nil {
+			return created, err
+		} else if hasPod {
+			continue
+		}
+
+		// Build and create the ExporterConfig Secret.
+		configSecret, err := r.buildExporterConfigSecret(ctx, es, exporter, mergedParameters)
 		if err != nil {
-			return fmt.Errorf("unable to render Pod for Exporter %s: %w", exporter.Name, err)
+			logger.Error(err, "unable to build ExporterConfig Secret", "exporter", exporter.Name)
+			continue
+		}
+
+		if err := ctrl.SetControllerReference(exporter, configSecret, r.Scheme); err != nil {
+			return created, fmt.Errorf("unable to set owner reference on config Secret: %w", err)
+		}
+
+		if err := r.Create(ctx, configSecret); err != nil {
+			if !apierrors.IsAlreadyExists(err) {
+				return created, fmt.Errorf("unable to create config Secret for %s: %w", exporter.Name, err)
+			}
+		}
+
+		// Render and create the Pod.
+		pod, err := r.Provisioner.RenderPod(ctx, es, vtc, mergedParameters, exporter, configSecret.Name)
+		if err != nil {
+			return created, fmt.Errorf("unable to render Pod for Exporter %s: %w", exporter.Name, err)
 		}
 
 		if pod.Labels == nil {
@@ -328,27 +409,42 @@ func (r *ExporterSetReconciler) scaleUp(
 		}
 		pod.Labels[labelExporterSetName] = es.Name
 
-		// Exporter owns Pod; the label bridges the grandparent lookup.
 		if err := ctrl.SetControllerReference(exporter, pod, r.Scheme); err != nil {
-			return fmt.Errorf("unable to set owner reference on Pod: %w", err)
+			return created, fmt.Errorf("unable to set owner reference on Pod: %w", err)
 		}
 
 		if err := r.Create(ctx, pod); err != nil {
-			if delErr := r.Delete(ctx, exporter); delErr != nil {
-				logger.Error(delErr, "failed to roll back Exporter after Pod creation failure", "exporter", exporter.Name)
-			}
-			return fmt.Errorf("unable to create Pod for Exporter %s: %w", exporter.Name, err)
+			return created, fmt.Errorf("unable to create Pod for Exporter %s: %w", exporter.Name, err)
 		}
 
 		logger.Info("created Pod for Exporter", "exporter", exporter.Name, "pod", pod.Name)
 
 		if r.Recorder != nil {
-			r.Recorder.Eventf(es, corev1.EventTypeNormal, "ScaleUp",
-				"Created Exporter %s with Pod %s", exporter.Name, pod.Name)
+			r.Recorder.Eventf(es, corev1.EventTypeNormal, "PodCreated",
+				"Created Pod %s for Exporter %s", pod.Name, exporter.Name)
 		}
+		created = true
 	}
 
-	return nil
+	return created, nil
+}
+
+// exporterHasPod checks whether the given exporter owns a Pod.
+func (r *ExporterSetReconciler) exporterHasPod(
+	ctx context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) (bool, error) {
+	var podList corev1.PodList
+	if err := r.List(ctx, &podList, client.InNamespace(exporter.Namespace)); err != nil {
+		return false, fmt.Errorf("unable to list Pods: %w", err)
+	}
+
+	for i := range podList.Items {
+		if isOwnedBy(&podList.Items[i], exporter.UID) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // cleanupDisabledExporters deletes disabled, unleased exporters. Returns true if any were deleted.

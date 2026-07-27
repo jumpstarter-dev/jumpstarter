@@ -60,7 +60,7 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 		},
 	}
 
-	pod, err := New().RenderPod(context.Background(), exporterSet, vtc, nil, nil)
+	pod, err := New().RenderPod(context.Background(), exporterSet, vtc, nil, nil, "test-config-secret")
 	if err != nil {
 		t.Fatalf("RenderPod() error = %v", err)
 	}
@@ -88,13 +88,19 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 		t.Errorf("ExporterSet annotations mutated: got %q", got)
 	}
 
-	if len(pod.Spec.Volumes) != 1 || pod.Spec.Volumes[0].EmptyDir == nil {
-		t.Fatalf("expected shared emptyDir volume, got %#v", pod.Spec.Volumes)
+	if len(pod.Spec.Volumes) != 2 {
+		t.Fatalf("expected 2 volumes (shared + config), got %d", len(pod.Spec.Volumes))
+	}
+	if pod.Spec.Volumes[0].EmptyDir == nil {
+		t.Fatal("expected shared emptyDir volume at index 0")
 	}
 	wantLimit := resource.MustParse(sharedVolumeSizeLimit)
 	if pod.Spec.Volumes[0].EmptyDir.SizeLimit == nil ||
 		!pod.Spec.Volumes[0].EmptyDir.SizeLimit.Equal(wantLimit) {
 		t.Errorf("SizeLimit = %v, want %v", pod.Spec.Volumes[0].EmptyDir.SizeLimit, wantLimit)
+	}
+	if pod.Spec.Volumes[1].Secret == nil || pod.Spec.Volumes[1].Secret.SecretName != "test-config-secret" {
+		t.Errorf("expected config secret volume, got %#v", pod.Spec.Volumes[1])
 	}
 
 	if len(pod.Spec.InitContainers) != 2 {
@@ -145,7 +151,7 @@ func TestRenderPod_clonesSchedulingFromVTC(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "demo-set", Namespace: "default"},
 	}
 
-	pod, err := New().RenderPod(context.Background(), exporterSet, vtc, nil, nil)
+	pod, err := New().RenderPod(context.Background(), exporterSet, vtc, nil, nil, "test-config-secret")
 	if err != nil {
 		t.Fatalf("RenderPod() error = %v", err)
 	}
@@ -193,7 +199,7 @@ func TestRenderPod_injectsJumpstarterExecLogFields(t *testing.T) {
 		},
 	}
 
-	pod, err := New().RenderPod(context.Background(), exporterSet, vtc, nil, exporter)
+	pod, err := New().RenderPod(context.Background(), exporterSet, vtc, nil, exporter, "test-config-secret")
 	if err != nil {
 		t.Fatalf("RenderPod() error = %v", err)
 	}

@@ -61,9 +61,9 @@ spec:
         virtual: "true"
     spec:
       drivers:
-        - type: jumpstarter_driver_qemu.driver.Qemu
+        - name: qemu
+          type: jumpstarter_driver_qemu.driver.Qemu
           config:
             arch: x86_64
             smp: 2
             mem: 2G
-            launcher_socket: /shared/launcher.sock

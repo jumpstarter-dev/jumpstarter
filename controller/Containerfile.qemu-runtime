@@ -19,6 +19,9 @@ FROM registry.fedoraproject.org/fedora-minimal:44
 RUN dnf install --setopt=install_weak_deps=False -y \
         qemu-img \
         qemu-kvm \
+        qemu-system-aarch64 \
+        edk2-ovmf \
+        edk2-aarch64 \
         procps-ng \
         virtiofsd && \
     dnf clean all

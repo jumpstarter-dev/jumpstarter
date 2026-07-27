@@ -8,7 +8,7 @@
 | **Status**        | Approved                                                       |
 | **Type**          | Standards Track                                                |
 | **Created**       | 2026-06-03                                                     |
-| **Updated**       | 2026-06-18                                                     |
+| **Updated**       | 2026-07-24                                                     |
 | **Discussion**    | https://github.com/jumpstarter-dev/jumpstarter/issues/41       |
 | **Requires**      |                                                                |
 | **Supersedes**    |                                                                |
@@ -190,8 +190,10 @@ spec:
         virtual: "true"
     spec:
       drivers:
-        - type: jumpstarter_driver_power.driver.QemuPower
-        - type: jumpstarter_driver_network.driver.TcpNetwork
+        - name: qemu                   # optional; defaults to last segment of type
+          type: jumpstarter_driver_qemu.driver.Qemu
+        - name: tcp
+          type: jumpstarter_driver_network.driver.TcpNetwork
           config:
             port: 22
         - type: jumpstarter_driver_serial.driver.QemuSerial
@@ -464,8 +466,10 @@ spec:
         virtual: "true"
     spec:
       drivers:
-        - type: jumpstarter_driver_power.driver.QemuPower
-        - type: jumpstarter_driver_network.driver.TcpNetwork
+        - name: qemu
+          type: jumpstarter_driver_qemu.driver.Qemu
+        - name: tcp
+          type: jumpstarter_driver_network.driver.TcpNetwork
           config:
             port: 22
         - type: jumpstarter_driver_serial.driver.QemuSerial
@@ -831,7 +835,11 @@ spec:
     metadata:
       labels: { ... }
     spec:
-      drivers: [ ... ]
+      drivers:
+        - name: <string>             # optional; key in ExporterConfig export map
+                                     # defaults to last segment of type (e.g. "Qemu")
+          type: <string>             # fully qualified Python driver class
+          config: { ... }            # driver-specific config (schemaless)
 ```
 
 ### Dictionary-Based Parameters
@@ -1053,8 +1061,10 @@ spec:
         virtual: "true"
     spec:
       drivers:
-        - type: jumpstarter_driver_power.driver.QemuPower
-        - type: jumpstarter_driver_network.driver.TcpNetwork
+        - name: qemu
+          type: jumpstarter_driver_qemu.driver.Qemu
+        - name: tcp
+          type: jumpstarter_driver_network.driver.TcpNetwork
           config:
             port: 22
         - type: jumpstarter_driver_serial.driver.QemuSerial
@@ -1289,6 +1299,57 @@ Provisioning → Ready (warm pool) → Leased → Ready
 - **Ready:** Exporter registered and available for lease.
 - **Leased:** Exporter assigned to an active lease.
 - **Terminating:** Instance being deleted (scale-down or failure replace).
+
+### DriverConfig and ExporterConfig Generation
+
+Each driver entry in `ExporterSet.spec.template.spec.drivers` is a `DriverConfig`:
+
+```yaml
+drivers:
+  - name: qemu                  # optional; explicit key in ExporterConfig export map
+    type: jumpstarter_driver_qemu.driver.Qemu
+    config:
+      arch: x86_64
+      smp: 2
+      mem: 2G
+  - type: jumpstarter_driver_network.driver.TcpNetwork
+    config:
+      port: 2222
+```
+
+**`name` field:** An optional string that becomes the key in the generated
+`ExporterConfig`'s `export:` map. If omitted, the name is derived from the
+driver's `type` by taking the last dot-separated segment (e.g.
+`jumpstarter_driver_qemu.driver.Qemu` → `Qemu`). Explicit names are useful
+when multiple drivers share the same class name or when the provisioner's
+enrichment logic needs to locate a specific driver entry by name.
+
+**Two-phase instance creation:** The reconciler creates each `Exporter` CR
+first (phase 1). Only after the Jumpstarter controller provisions credentials
+and an endpoint for the Exporter (populating `status.credential` and
+`status.endpoint`) does the reconciler generate the `ExporterConfig` Secret
+and create the Pod (phase 2). This ensures the config always contains valid
+connection details.
+
+**ExporterConfig generation:** The controller builds a complete `ExporterConfig`
+YAML containing:
+
+- **endpoint** — The controller's gRPC endpoint from `Exporter.status.endpoint`.
+- **token** — Retrieved from the Secret referenced by `Exporter.status.credential`.
+- **tls.ca** — Base64-encoded CA certificate from the `jumpstarter-service-ca-cert`
+  ConfigMap (cert-manager integration).
+- **export** — A map of driver name → `{type, config}` built from the template
+  drivers list, enriched by the provisioner.
+
+**Provisioner enrichment (`EnrichExporterExport`):** Before persisting the
+config, the provisioner may inject or override driver entries. For example,
+the `qemu.jumpstarter.dev` provisioner:
+
+- Injects `launcher_socket` pointing to the shared-volume Unix socket path.
+- Injects architecture-appropriate `default_partitions` (EDK2 firmware paths)
+  unless the user already specified them.
+- Injects `hostfwd` settings for SSH access.
+- Auto-injects `tcp` and `ssh` wrapper drivers if not already present.
 
 ### Component Interaction
 
@@ -1564,6 +1625,10 @@ claim CRDs.
   provisioner model; added end-to-end flow section
 - 2026-06-18: Team review — dictionary `parameters`, removed typed VirtualTarget
   CRDs, namespaced `VirtualTargetClass`, deferred TTL (DD-7)
+- 2026-07-24: Added optional `name` field to `DriverConfig` for explicit export
+  map key naming; documented two-phase instance creation (Exporter CR first,
+  Pod after credentials ready); added ExporterConfig injection with auto-enrichment
+  (firmware paths, hostfwd, wrapper drivers)
 
 ## References
 
