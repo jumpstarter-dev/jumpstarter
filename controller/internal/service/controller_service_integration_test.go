@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 )
 
 var _ = Describe("ControllerService Integration", func() {
@@ -267,6 +268,190 @@ var _ = Describe("ControllerService Integration", func() {
 			err := controllerService.handleExporterLeaseRelease(ctx, exporter)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("not held by exporter"))
+		})
+	})
+
+	Context("releaseLeaseAsExporter", func() {
+		var (
+			controllerService *ControllerService
+			exporter          *jumpstarterdevv1alpha1.Exporter
+			lease             *jumpstarterdevv1alpha1.Lease
+		)
+
+		BeforeEach(func() {
+			controllerService = &ControllerService{
+				Client: k8sClient,
+			}
+		})
+
+		AfterEach(func() {
+			// Clean up resources
+			if exporter != nil {
+				_ = k8sClient.Delete(ctx, exporter)
+			}
+			if lease != nil {
+				_ = k8sClient.Delete(ctx, lease)
+			}
+		})
+
+		It("should release lease when called by owning exporter", func() {
+			// Create lease
+			lease = &jumpstarterdevv1alpha1.Lease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "lease-release-by-exporter",
+					Namespace: testNamespace,
+				},
+				Spec: jumpstarterdevv1alpha1.LeaseSpec{
+					ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+					Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
+					Release:   false,
+				},
+			}
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+
+			// Update lease status to have ExporterRef
+			lease.Status = jumpstarterdevv1alpha1.LeaseStatus{
+				ExporterRef: &corev1.LocalObjectReference{Name: "test-exporter"},
+				Ended:       false,
+			}
+			Expect(k8sClient.Status().Update(ctx, lease)).To(Succeed())
+
+			// Create exporter
+			exporter = &jumpstarterdevv1alpha1.Exporter{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-exporter",
+					Namespace: testNamespace,
+				},
+			}
+			Expect(k8sClient.Create(ctx, exporter)).To(Succeed())
+
+			// Call releaseLeaseAsExporter
+			req := &pb.ReleaseLeaseRequest{Name: "lease-release-by-exporter"}
+			resp, err := controllerService.releaseLeaseAsExporter(ctx, exporter, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp).NotTo(BeNil())
+
+			// Verify lease was marked for release
+			var updatedLease jumpstarterdevv1alpha1.Lease
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Namespace: testNamespace,
+				Name:      "lease-release-by-exporter",
+			}, &updatedLease)).To(Succeed())
+			Expect(updatedLease.Spec.Release).To(BeTrue())
+		})
+
+		It("should return permission denied when exporter doesn't own lease", func() {
+			// Create lease owned by different exporter
+			lease = &jumpstarterdevv1alpha1.Lease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "lease-owned-by-other",
+					Namespace: testNamespace,
+				},
+				Spec: jumpstarterdevv1alpha1.LeaseSpec{
+					ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+					Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
+					Release:   false,
+				},
+			}
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+
+			// Update lease status with different exporter
+			lease.Status = jumpstarterdevv1alpha1.LeaseStatus{
+				ExporterRef: &corev1.LocalObjectReference{Name: "other-exporter"},
+				Ended:       false,
+			}
+			Expect(k8sClient.Status().Update(ctx, lease)).To(Succeed())
+
+			// Create exporter
+			exporter = &jumpstarterdevv1alpha1.Exporter{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-exporter",
+					Namespace: testNamespace,
+				},
+			}
+			Expect(k8sClient.Create(ctx, exporter)).To(Succeed())
+
+			// Call releaseLeaseAsExporter
+			req := &pb.ReleaseLeaseRequest{Name: "lease-owned-by-other"}
+			_, err := controllerService.releaseLeaseAsExporter(ctx, exporter, req)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("permission denied"))
+		})
+
+		It("should be idempotent when lease already marked for release", func() {
+			// Create lease already marked for release
+			lease = &jumpstarterdevv1alpha1.Lease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "lease-already-releasing",
+					Namespace: testNamespace,
+				},
+				Spec: jumpstarterdevv1alpha1.LeaseSpec{
+					ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+					Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
+					Release:   true, // Already marked for release
+				},
+			}
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+
+			// Update lease status
+			lease.Status = jumpstarterdevv1alpha1.LeaseStatus{
+				ExporterRef: &corev1.LocalObjectReference{Name: "test-exporter"},
+				Ended:       false,
+			}
+			Expect(k8sClient.Status().Update(ctx, lease)).To(Succeed())
+
+			// Create exporter
+			exporter = &jumpstarterdevv1alpha1.Exporter{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-exporter",
+					Namespace: testNamespace,
+				},
+			}
+			Expect(k8sClient.Create(ctx, exporter)).To(Succeed())
+
+			// Call releaseLeaseAsExporter
+			req := &pb.ReleaseLeaseRequest{Name: "lease-already-releasing"}
+			resp, err := controllerService.releaseLeaseAsExporter(ctx, exporter, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp).NotTo(BeNil())
+		})
+
+		It("should be idempotent when lease already ended", func() {
+			// Create ended lease
+			lease = &jumpstarterdevv1alpha1.Lease{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "lease-already-ended",
+					Namespace: testNamespace,
+				},
+				Spec: jumpstarterdevv1alpha1.LeaseSpec{
+					ClientRef: corev1.LocalObjectReference{Name: "test-client"},
+					Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"test": "true"}},
+					Release:   false,
+				},
+			}
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+
+			// Update lease status as ended
+			lease.Status = jumpstarterdevv1alpha1.LeaseStatus{
+				ExporterRef: &corev1.LocalObjectReference{Name: "test-exporter"},
+				Ended:       true, // Already ended
+			}
+			Expect(k8sClient.Status().Update(ctx, lease)).To(Succeed())
+
+			// Create exporter
+			exporter = &jumpstarterdevv1alpha1.Exporter{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-exporter",
+					Namespace: testNamespace,
+				},
+			}
+			Expect(k8sClient.Create(ctx, exporter)).To(Succeed())
+
+			// Call releaseLeaseAsExporter
+			req := &pb.ReleaseLeaseRequest{Name: "lease-already-ended"}
+			resp, err := controllerService.releaseLeaseAsExporter(ctx, exporter, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp).NotTo(BeNil())
 		})
 	})
 })

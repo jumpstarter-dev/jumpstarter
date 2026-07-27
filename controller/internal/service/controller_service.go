@@ -1041,10 +1041,47 @@ func (s *ControllerService) RequestLease(
 	}, nil
 }
 
+func (s *ControllerService) releaseLeaseAsExporter(
+	ctx context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+	req *pb.ReleaseLeaseRequest,
+) (*pb.ReleaseLeaseResponse, error) {
+	var lease jumpstarterdevv1alpha1.Lease
+	if err := s.Client.Get(ctx, types.NamespacedName{
+		Namespace: exporter.Namespace,
+		Name:      req.Name,
+	}, &lease); err != nil {
+		return nil, fmt.Errorf("failed to get lease: %w", err)
+	}
+
+	if lease.Status.ExporterRef == nil || lease.Status.ExporterRef.Name != exporter.Name {
+		return nil, fmt.Errorf("ReleaseLease permission denied")
+	}
+
+	// Idempotent: already ended or marked for release
+	if lease.Status.Ended || lease.Spec.Release {
+		return &pb.ReleaseLeaseResponse{}, nil
+	}
+
+	original := client.MergeFrom(lease.DeepCopy())
+	lease.Spec.Release = true
+
+	if err := s.Client.Patch(ctx, &lease, original); err != nil {
+		return nil, fmt.Errorf("failed to mark lease for release: %w", err)
+	}
+
+	return &pb.ReleaseLeaseResponse{}, nil
+}
+
 func (s *ControllerService) ReleaseLease(
 	ctx context.Context,
 	req *pb.ReleaseLeaseRequest,
 ) (*pb.ReleaseLeaseResponse, error) {
+	// Try exporter auth first, then client auth
+	if exporter, err := s.authenticateExporter(ctx); err == nil {
+		return s.releaseLeaseAsExporter(ctx, exporter, req)
+	}
+
 	jclient, err := s.authenticateClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1060,6 +1097,11 @@ func (s *ControllerService) ReleaseLease(
 
 	if lease.Spec.ClientRef.Name != jclient.Name {
 		return nil, fmt.Errorf("ReleaseLease permission denied")
+	}
+
+	// Idempotent: already ended or marked for release
+	if lease.Status.Ended || lease.Spec.Release {
+		return &pb.ReleaseLeaseResponse{}, nil
 	}
 
 	original := client.MergeFrom(lease.DeepCopy())
