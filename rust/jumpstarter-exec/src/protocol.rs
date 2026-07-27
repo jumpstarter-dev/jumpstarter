@@ -101,7 +101,12 @@ mod tests {
     #[test]
     fn client_variants_roundtrip() {
         let cases: Vec<(&str, ClientMessage)> = vec![
-            ("Stdin", ClientMessage::Stdin { data: "aGVsbG8=".into() }),
+            (
+                "Stdin",
+                ClientMessage::Stdin {
+                    data: "aGVsbG8=".into(),
+                },
+            ),
             ("StdinClose", ClientMessage::StdinClose),
             ("Signal", ClientMessage::Signal { signal: 15 }),
         ];
@@ -120,10 +125,20 @@ mod tests {
     fn server_variants_roundtrip() {
         let cases: Vec<(&str, ServerMessage)> = vec![
             ("Started", ServerMessage::Started { pid: 42 }),
-            ("Stdout", ServerMessage::Stdout { data: "AAAA".into() }),
+            (
+                "Stdout",
+                ServerMessage::Stdout {
+                    data: "AAAA".into(),
+                },
+            ),
             ("Exit(0)", ServerMessage::Exit { code: Some(0) }),
             ("Exit(signal)", ServerMessage::Exit { code: None }),
-            ("Error", ServerMessage::Error { message: "boom".into() }),
+            (
+                "Error",
+                ServerMessage::Error {
+                    message: "boom".into(),
+                },
+            ),
         ];
         for (label, msg) in cases {
             let json = serde_json::to_string(&msg).unwrap();
