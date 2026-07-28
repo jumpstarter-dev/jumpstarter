@@ -61,7 +61,7 @@ type exporterConfig struct {
 	TLS            *exporterConfigTLS              `json:"tls,omitempty"`
 	Token          string                          `json:"token"`
 	Export         map[string]exporterConfigDriver `json:"export,omitempty"`
-	ExitOnLeaseEnd bool                            `json:"	exitOnLeaseEnd"`
+	ExitOnLeaseEnd bool                            `json:"exitOnLeaseEnd"`
 }
 
 type exporterConfigMetadata struct {
@@ -172,4 +172,3 @@ func buildExportMap(drivers []virtualtargetv1alpha1.DriverConfig) (map[string]ex
 
 	return exportMap, nil
 }
-
