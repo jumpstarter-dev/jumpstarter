@@ -2,8 +2,6 @@ package authorization
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"regexp"
 	"strings"
 
@@ -67,25 +65,6 @@ func stripOIDCPrefix(username string) string {
 
 	// Default: strip only the first part (provider prefix)
 	return strings.Join(parts[1:], ":")
-}
-
-func normalizeName(name string) string {
-	hash := sha256.Sum256([]byte(name))
-
-	sanitized := strings.ToLower(name)
-	sanitized = invalidChar.ReplaceAllString(sanitized, "-")
-	sanitized = multipleHyphen.ReplaceAllString(sanitized, "-")
-	sanitized = surroundingHyphen.ReplaceAllString(sanitized, "")
-
-	if len(sanitized) > 37 {
-		sanitized = sanitized[:37]
-	}
-
-	return strings.Join([]string{
-		"oidc",
-		sanitized,
-		hex.EncodeToString(hash[:3]),
-	}, "-")
 }
 
 // normalizeOIDCUsername normalizes an OIDC username into a Kubernetes-compliant resource name.
