@@ -21,7 +21,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -151,8 +150,8 @@ func (r *ExporterSetReconciler) buildExporterConfigSecret(
 func buildExportMap(drivers []virtualtargetv1alpha1.DriverConfig) (map[string]exporterConfigDriver, error) {
 	exportMap := make(map[string]exporterConfigDriver, len(drivers))
 
-	for i, d := range drivers {
-		name := driverKey(d, i)
+	for _, d := range drivers {
+		name := d.Name
 
 		if _, exists := exportMap[name]; exists {
 			return nil, fmt.Errorf("duplicate driver key %q in ExporterSet drivers", name)
@@ -174,26 +173,3 @@ func buildExportMap(drivers []virtualtargetv1alpha1.DriverConfig) (map[string]ex
 	return exportMap, nil
 }
 
-// driverKey returns the export-map key for a DriverConfig: d.Name if set,
-// otherwise the last dot-segment of d.Type lowercased.
-func driverKey(d virtualtargetv1alpha1.DriverConfig, idx int) string {
-	if d.Name != "" {
-		return d.Name
-	}
-	parts := strings.Split(d.Type, ".")
-	if last := strings.ToLower(parts[len(parts)-1]); last != "" {
-		return last
-	}
-	return fmt.Sprintf("driver%d", idx)
-}
-
-// deriveDriverName extracts a short name from a fully qualified Python class name.
-// e.g. "jumpstarter_driver_qemu.driver.Qemu" -> "Qemu"
-// Deprecated: use driverKey instead for new code.
-func deriveDriverName(fqn string) string {
-	parts := strings.Split(fqn, ".")
-	if len(parts) == 0 {
-		return fqn
-	}
-	return parts[len(parts)-1]
-}

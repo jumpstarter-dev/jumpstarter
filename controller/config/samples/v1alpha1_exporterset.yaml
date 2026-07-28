@@ -24,8 +24,11 @@ spec:
         virtual: "true"
     spec:
       drivers:
-        - type: jumpstarter_driver_power.driver.QemuPower
-        - type: jumpstarter_driver_network.driver.TcpNetwork
+        - name: power
+          type: jumpstarter_driver_power.driver.QemuPower
+        - name: tcp
+          type: jumpstarter_driver_network.driver.TcpNetwork
           config:
             port: 22
-        - type: jumpstarter_driver_serial.driver.QemuSerial
+        - name: serial
+          type: jumpstarter_driver_serial.driver.QemuSerial

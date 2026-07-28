@@ -34,9 +34,7 @@ const (
 // DriverConfig defines a single driver entry in an exporter template.
 type DriverConfig struct {
 	// Name is the key used in the ExporterConfig export map.
-	// If omitted, derived from the Type (last segment after the last dot).
-	// +optional
-	Name string `json:"name,omitempty"`
+	Name string `json:"name"`
 
 	// Type is the fully qualified Python driver class name.
 	Type string `json:"type"`

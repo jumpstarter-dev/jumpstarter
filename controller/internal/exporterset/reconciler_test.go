@@ -1790,17 +1790,6 @@ func TestBuildExportMap_duplicateKey_returnsError(t *testing.T) {
 	}
 }
 
-func TestBuildExportMap_derivedDuplicateKey_returnsError(t *testing.T) {
-	drivers := []virtualtargetv1alpha1.DriverConfig{
-		{Type: "vendor_a.driver.Serial"},
-		{Type: "vendor_b.driver.Serial"},
-	}
-	_, err := buildExportMap(drivers)
-	if err == nil {
-		t.Fatal("expected error for derived duplicate key, got nil")
-	}
-}
-
 func TestMergeImages_bothNil(t *testing.T) {
 	if got := mergeImages(nil, nil); got != nil {
 		t.Errorf("mergeImages(nil, nil) = %v, want nil", got)

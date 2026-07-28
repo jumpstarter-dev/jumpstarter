@@ -8,7 +8,7 @@
 | **Status**        | Approved                                                       |
 | **Type**          | Standards Track                                                |
 | **Created**       | 2026-06-03                                                     |
-| **Updated**       | 2026-07-27                                                     |
+| **Updated**       | 2026-07-28                                                     |
 | **Discussion**    | https://github.com/jumpstarter-dev/jumpstarter/issues/41       |
 | **Requires**      |                                                                |
 | **Supersedes**    |                                                                |
@@ -195,13 +195,14 @@ spec:
         virtual: "true"
     spec:
       drivers:
-        - name: qemu                   # optional; defaults to last segment of type
+        - name: qemu
           type: jumpstarter_driver_qemu.driver.Qemu
         - name: tcp
           type: jumpstarter_driver_network.driver.TcpNetwork
           config:
             port: 22
-        - type: jumpstarter_driver_serial.driver.QemuSerial
+        - name: serial
+          type: jumpstarter_driver_serial.driver.QemuSerial
 status:
   replicas: 5
   readyReplicas: 3
@@ -267,8 +268,10 @@ spec:
         virtual: "true"
     spec:
       drivers:
-        - type: jumpstarter_driver_android.driver.AdbDriver
-        - type: jumpstarter_driver_power.driver.EmulatorPower
+        - name: adb
+          type: jumpstarter_driver_android.driver.AdbDriver
+        - name: power
+          type: jumpstarter_driver_power.driver.EmulatorPower
 ```
 
 An `ExporterSet` with `minAvailableReplicas: 0` consumes no resources until a
@@ -477,7 +480,8 @@ spec:
           type: jumpstarter_driver_network.driver.TcpNetwork
           config:
             port: 22
-        - type: jumpstarter_driver_serial.driver.QemuSerial
+        - name: serial
+          type: jumpstarter_driver_serial.driver.QemuSerial
 ```
 
 **User actions:** None.
@@ -855,8 +859,7 @@ spec:
       labels: { ... }
     spec:
       drivers:
-        - name: <string>             # optional; key in ExporterConfig export map
-                                     # defaults to last segment of type (e.g. "Qemu")
+        - name: <string>             # required; key in ExporterConfig export map
           type: <string>             # fully qualified Python driver class
           config: { ... }            # driver-specific config (schemaless)
 ```
@@ -1115,7 +1118,8 @@ spec:
           type: jumpstarter_driver_network.driver.TcpNetwork
           config:
             port: 22
-        - type: jumpstarter_driver_serial.driver.QemuSerial
+        - name: serial
+          type: jumpstarter_driver_serial.driver.QemuSerial
 ```
 
 **Provisioner actions (off-cluster):**
@@ -1354,23 +1358,23 @@ Each driver entry in `ExporterSet.spec.template.spec.drivers` is a `DriverConfig
 
 ```yaml
 drivers:
-  - name: qemu                  # optional; explicit key in ExporterConfig export map
+  - name: qemu
     type: jumpstarter_driver_qemu.driver.Qemu
     config:
       arch: x86_64
       smp: 2
       mem: 2G
-  - type: jumpstarter_driver_network.driver.TcpNetwork
+  - name: tcp
+    type: jumpstarter_driver_network.driver.TcpNetwork
     config:
       port: 2222
 ```
 
-**`name` field:** An optional string that becomes the key in the generated
-`ExporterConfig`'s `export:` map. If omitted, the name is derived from the
-driver's `type` by taking the last dot-separated segment (e.g.
-`jumpstarter_driver_qemu.driver.Qemu` → `Qemu`). Explicit names are useful
-when multiple drivers share the same class name or when the provisioner's
-enrichment logic needs to locate a specific driver entry by name.
+**`name` field:** A required string that becomes the key in the generated
+`ExporterConfig`'s `export:` map. Names must be unique across all driver
+entries in the same template. Explicit names allow the provisioner's
+enrichment logic to locate specific driver entries by name and ensure
+predictable export map keys.
 
 **Two-phase instance creation:** The reconciler creates each `Exporter` CR
 first (phase 1). Only after the Jumpstarter controller provisions credentials
@@ -1400,9 +1404,8 @@ the `qemu.jumpstarter.dev` provisioner:
 - Auto-injects a `tcp` wrapper driver if not already present.
 
 **Driver-name collision handling:** The `buildExportMap` function rejects
-duplicate keys in the export map. If two `DriverConfig` entries resolve to the
-same name (whether explicit or derived), the controller returns an error during
-config generation. Users must assign distinct `name` values to avoid collisions.
+duplicate keys in the export map. If two `DriverConfig` entries share the
+same `name`, the controller returns an error during config generation.
 
 **Pod naming:** The Pod created for each Exporter uses the Exporter's own name
 (`exporter.Name`) rather than a generated name. This 1:1 correspondence makes
@@ -1690,9 +1693,9 @@ claim CRDs.
   provisioner model; added end-to-end flow section
 - 2026-06-18: Team review — dictionary `parameters`, removed typed VirtualTarget
   CRDs, namespaced `VirtualTargetClass`, deferred TTL (DD-7)
-- 2026-07-24: Added optional `name` field to `DriverConfig` for explicit export
-  map key naming; documented two-phase instance creation (Exporter CR first,
-  Pod after credentials ready); added ExporterConfig injection with auto-enrichment
+- 2026-07-24: Added `name` field to `DriverConfig` for export map key naming;
+  documented two-phase instance creation (Exporter CR first, Pod after
+  credentials ready); added ExporterConfig injection with auto-enrichment
   (firmware paths, hostfwd, wrapper drivers)
 - 2026-07-27: Added typed `ImageOverrides` on `VirtualTargetClass` and
   `ExporterSet` for structured image/imagePullPolicy overrides with ExporterSet
@@ -1700,6 +1703,9 @@ claim CRDs.
 - 2026-07-27: Documented driver-name collision rejection in `buildExportMap`,
   Pod naming matching Exporter names, `exitOnLeaseEnd` derivation from
   `recycleStrategy`, and provisioner enrichment precedence rules
+- 2026-07-28: Made `DriverConfig.name` mandatory (no longer derived from type);
+  removed `wait-for-binary.sh` script in favor of direct `jumpstarter-exec`
+  entrypoint in `qemu-runtime` container; updated all examples
 
 ## References
 

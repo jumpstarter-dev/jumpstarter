@@ -24,46 +24,6 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
-func TestDriverKey_explicit(t *testing.T) {
-	d := virtualtargetv1alpha1.DriverConfig{Name: "power", Type: "some.Type"}
-	if got := driverKey(d, 0); got != "power" {
-		t.Errorf("got %q, want %q", got, "power")
-	}
-}
-
-func TestDriverKey_derived(t *testing.T) {
-	d := virtualtargetv1alpha1.DriverConfig{Type: "a.b.c.MyDriver"}
-	if got := driverKey(d, 0); got != "mydriver" {
-		t.Errorf("got %q, want %q", got, "mydriver")
-	}
-}
-
-func TestDriverKey_fallback(t *testing.T) {
-	d := virtualtargetv1alpha1.DriverConfig{Type: ""}
-	if got := driverKey(d, 3); got != "driver3" {
-		t.Errorf("got %q, want %q", got, "driver3")
-	}
-}
-
-func TestDeriveDriverName(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"jumpstarter_driver_qemu.driver.Qemu", "Qemu"},
-		{"jumpstarter_driver_network.driver.TcpNetwork", "TcpNetwork"},
-		{"SingleWord", "SingleWord"},
-		{"", ""},
-	}
-
-	for _, tt := range tests {
-		got := deriveDriverName(tt.input)
-		if got != tt.want {
-			t.Errorf("deriveDriverName(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}
-
 func TestBuildExportMap(t *testing.T) {
 	config := map[string]interface{}{
 		"arch": "x86_64",
@@ -80,6 +40,7 @@ func TestBuildExportMap(t *testing.T) {
 			},
 		},
 		{
+			Name: "tcp",
 			Type: "jumpstarter_driver_network.driver.TcpNetwork",
 		},
 	}
@@ -108,17 +69,16 @@ func TestBuildExportMap(t *testing.T) {
 		t.Errorf("qemu config arch = %v", configMap["arch"])
 	}
 
-	// Derived key is now lowercased.
-	tcp, ok := result["tcpnetwork"]
+	tcp, ok := result["tcp"]
 	if !ok {
-		t.Fatal("'tcpnetwork' key not found (should derive from type, lowercased)")
+		t.Fatal("'tcp' key not found")
 	}
 	if tcp.Type != "jumpstarter_driver_network.driver.TcpNetwork" {
 		t.Errorf("tcp type = %q", tcp.Type)
 	}
 }
 
-func TestBuildExportMap_duplicateExplicitKey(t *testing.T) {
+func TestBuildExportMap_duplicateKey(t *testing.T) {
 	drivers := []virtualtargetv1alpha1.DriverConfig{
 		{Name: "power", Type: "jumpstarter_driver_power.driver.QemuPower"},
 		{Name: "power", Type: "jumpstarter_driver_power.driver.QemuPower2"},
@@ -126,16 +86,5 @@ func TestBuildExportMap_duplicateExplicitKey(t *testing.T) {
 	_, err := buildExportMap(drivers)
 	if err == nil {
 		t.Fatal("expected error for duplicate driver key, got nil")
-	}
-}
-
-func TestBuildExportMap_duplicateDerivedKey(t *testing.T) {
-	drivers := []virtualtargetv1alpha1.DriverConfig{
-		{Type: "vendor_a.driver.Serial"},
-		{Type: "vendor_b.driver.Serial"},
-	}
-	_, err := buildExportMap(drivers)
-	if err == nil {
-		t.Fatal("expected error for derived duplicate key, got nil")
 	}
 }
