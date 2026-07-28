@@ -2,7 +2,6 @@ import logging
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import TYPE_CHECKING, Any, Self
 
 import anyio
@@ -37,18 +36,18 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# ReportStatus retry configuration
+# gRPC retry configuration
 _TRANSIENT_GRPC_CODES = frozenset({grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED})
 _REPORT_STATUS_MAX_RETRIES = 3
 _REPORT_STATUS_BACKOFF_BASE = 1.0
 
-
-class _ReleaseLeaseResult(Enum):
-    """Result of _send_release_lease_rpc."""
-
-    SUCCESS = "success"
-    UNSUPPORTED = "unsupported"
-    FAILURE = "failure"
+# Status codes indicating old controller without exporter auth on ReleaseLease
+_RELEASE_LEASE_UNSUPPORTED_CODES = frozenset({
+    grpc.StatusCode.PERMISSION_DENIED,
+    grpc.StatusCode.INVALID_ARGUMENT,
+    grpc.StatusCode.UNAUTHENTICATED,
+    grpc.StatusCode.UNIMPLEMENTED,
+})
 
 
 async def _standalone_shutdown_waiter():
@@ -371,89 +370,68 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         if self._lease_context is None:
             await self._report_status(ExporterStatus.AVAILABLE, "Exporter registered and available")
 
+    async def _retry_rpc(
+        self,
+        rpc_call: Callable,
+        description: str,
+        *,
+        non_retryable_codes: frozenset[grpc.StatusCode] = frozenset(),
+    ) -> tuple[bool, grpc.StatusCode | None]:
+        """Retry a unary gRPC call with exponential backoff.
+
+        Args:
+            rpc_call: Async callable that takes a controller stub and performs the RPC
+            description: Human-readable description for log messages
+            non_retryable_codes: gRPC status codes that should cause immediate return
+                without retry (e.g. UNIMPLEMENTED for unsupported RPCs)
+
+        Returns:
+            (True, None) on success.
+            (False, status_code) on non-retryable error or retry exhaustion.
+            (False, None) on non-gRPC exception.
+        """
+        for attempt in range(_REPORT_STATUS_MAX_RETRIES + 1):
+            try:
+                async with self._controller_stub() as controller:
+                    await rpc_call(controller)
+                return True, None
+            except grpc.aio.AioRpcError as e:
+                if e.code() in non_retryable_codes:
+                    return False, e.code()
+                if e.code() in _TRANSIENT_GRPC_CODES and attempt < _REPORT_STATUS_MAX_RETRIES:
+                    backoff = _REPORT_STATUS_BACKOFF_BASE * (2**attempt)
+                    logger.warning(
+                        "Transient error %s (attempt %d/%d), retrying in %.1fs: %s",
+                        description,
+                        attempt + 1,
+                        _REPORT_STATUS_MAX_RETRIES + 1,
+                        backoff,
+                        e,
+                    )
+                    await anyio.sleep(backoff)
+                    continue
+                logger.error("Failed to %s: %s", description, e)
+                return False, e.code()
+            except Exception as e:
+                logger.error("Failed to %s: %s", description, e)
+                return False, None
+
     async def _send_report_status_rpc(self, request: jumpstarter_pb2.ReportStatusRequest) -> bool:
         """Send ReportStatus RPC to the controller with retry on transient errors.
 
-        Args:
-            request: The ReportStatusRequest protobuf message to send
-
         Returns:
-            True if the RPC succeeded, False if the controller doesn't support it or retries were exhausted
+            True if the RPC succeeded, False if unsupported or retries exhausted
         """
-        for attempt in range(_REPORT_STATUS_MAX_RETRIES + 1):
-            try:
-                async with self._controller_stub() as controller:
-                    await controller.ReportStatus(request)
-                return True
-            except grpc.aio.AioRpcError as e:
-                if e.code() == grpc.StatusCode.UNIMPLEMENTED:
-                    # Legacy support: ReportStatus added Nov 2025 (commit b76f6c87).
-                    # All production controllers support it; safe to remove in future versions.
-                    logger.warning("ReportStatus not supported by controller, status updates will be skipped")
-                    return False
-                if e.code() in _TRANSIENT_GRPC_CODES and attempt < _REPORT_STATUS_MAX_RETRIES:
-                    backoff = _REPORT_STATUS_BACKOFF_BASE * (2**attempt)
-                    logger.warning(
-                        "Transient error reporting status (attempt %d/%d), retrying in %.1fs: %s",
-                        attempt + 1,
-                        _REPORT_STATUS_MAX_RETRIES + 1,
-                        backoff,
-                        e,
-                    )
-                    await anyio.sleep(backoff)
-                    continue
-                logger.error("Failed to update status: %s", e)
-                return False
-            except Exception as e:
-                logger.error("Failed to update status: %s", e)
-                return False
-
-    async def _send_release_lease_rpc(self, lease_name: str) -> _ReleaseLeaseResult:
-        """Send ReleaseLease RPC with retry on transient errors.
-
-        Args:
-            lease_name: The name of the lease to release
-
-        Returns:
-            SUCCESS if the lease was released,
-            UNSUPPORTED if the controller doesn't support exporter auth on ReleaseLease,
-            FAILURE if retries were exhausted
-        """
-        for attempt in range(_REPORT_STATUS_MAX_RETRIES + 1):
-            try:
-                async with self._controller_stub() as controller:
-                    await controller.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=lease_name))
-                return _ReleaseLeaseResult.SUCCESS
-            except grpc.aio.AioRpcError as e:
-                # Auth rejection codes indicate old controller without exporter auth support
-                if e.code() in (
-                    grpc.StatusCode.PERMISSION_DENIED,
-                    grpc.StatusCode.INVALID_ARGUMENT,
-                    grpc.StatusCode.UNAUTHENTICATED,
-                    grpc.StatusCode.UNIMPLEMENTED,
-                ):
-                    logger.info(
-                        "Controller doesn't support ReleaseLease for exporters (%s), "
-                        "falling back to ReportStatus with release_lease",
-                        e.code().name,
-                    )
-                    return _ReleaseLeaseResult.UNSUPPORTED
-                if e.code() in _TRANSIENT_GRPC_CODES and attempt < _REPORT_STATUS_MAX_RETRIES:
-                    backoff = _REPORT_STATUS_BACKOFF_BASE * (2**attempt)
-                    logger.warning(
-                        "Transient error releasing lease (attempt %d/%d), retrying in %.1fs: %s",
-                        attempt + 1,
-                        _REPORT_STATUS_MAX_RETRIES + 1,
-                        backoff,
-                        e,
-                    )
-                    await anyio.sleep(backoff)
-                    continue
-                logger.error("Failed to release lease: %s", e)
-                return _ReleaseLeaseResult.FAILURE
-            except Exception as e:
-                logger.error("Failed to release lease: %s", e)
-                return _ReleaseLeaseResult.FAILURE
+        ok, code = await self._retry_rpc(
+            lambda ctrl: ctrl.ReportStatus(request),
+            "report status",
+            non_retryable_codes=frozenset({grpc.StatusCode.UNIMPLEMENTED}),
+        )
+        if not ok and code == grpc.StatusCode.UNIMPLEMENTED:
+            # Legacy support: ReportStatus added Nov 2025 (commit b76f6c87).
+            # All production controllers support it; safe to remove in future versions.
+            logger.warning("ReportStatus not supported by controller, status updates will be skipped")
+        return ok
 
     async def _report_status(self, status: ExporterStatus, message: str = ""):
         """Report the exporter status with the controller and session."""
@@ -477,7 +455,30 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         ):
             logger.info("Updated status to %s: %s", status, message)
 
-    async def _request_lease_release(self):  # noqa: C901
+    async def _send_compat_release(self, lease_name: str):
+        """Release lease via ReportStatus with release_lease=true (DEPRECATED).
+
+        Backward-compat fallback for controllers that don't support exporter auth
+        on ReleaseLease. Uses non-AVAILABLE status to block new lease assignment
+        (filterOutNotReadyExporters) until the final AVAILABLE status, preventing
+        retry from releasing a newly-assigned lease.
+
+        TODO: Remove when all controllers support ReleaseLease for exporters.
+        """
+        release_status = self._exporter_status
+        if release_status == ExporterStatus.AVAILABLE:
+            release_status = ExporterStatus.AFTER_LEASE_HOOK
+
+        if await self._send_report_status_rpc(
+            jumpstarter_pb2.ReportStatusRequest(
+                status=release_status.to_proto(),
+                message="Lease released (compat: ReportStatus with release_lease)",
+                release_lease=True,
+            )
+        ):
+            logger.info("Requested controller to release lease %s (compat path)", lease_name)
+
+    async def _request_lease_release(self):
         """Request the controller to release the current lease.
 
         Called after the afterLease hook completes to ensure the lease is
@@ -504,57 +505,28 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
         lease_name = self._lease_context.lease_name
 
-        # Try ReleaseLease RPC unless we've already discovered it's unsupported
-        use_compat_fallback = self._release_lease_unsupported
+        if self._release_lease_unsupported:
+            await self._send_compat_release(lease_name)
+        else:
+            ok, code = await self._retry_rpc(
+                lambda ctrl: ctrl.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=lease_name)),
+                "release lease",
+                non_retryable_codes=_RELEASE_LEASE_UNSUPPORTED_CODES,
+            )
 
-        if not self._release_lease_unsupported:
-            result = await self._send_release_lease_rpc(lease_name)
-
-            if result == _ReleaseLeaseResult.SUCCESS:
+            if ok:
                 logger.info("Released lease %s via ReleaseLease RPC", lease_name)
-                # Make exporter available and signal lease ended
-                await self._report_status(ExporterStatus.AVAILABLE, "Exporter available after lease release")
-                if self._lease_context and not self._lease_context.lease_ended.is_set():
-                    self._lease_context.lease_ended.set()
-                return
-
-            if result == _ReleaseLeaseResult.UNSUPPORTED:
-                # Cache the detection so we skip ReleaseLease on subsequent leases
+            elif code in _RELEASE_LEASE_UNSUPPORTED_CODES:
                 self._release_lease_unsupported = True
-                use_compat_fallback = True
                 logger.info(
-                    "Controller doesn't support exporter auth on ReleaseLease, using fallback for all future releases"
+                    "Controller doesn't support ReleaseLease for exporters (%s), "
+                    "falling back to ReportStatus with release_lease",
+                    code.name,
                 )
-                # Fall through to backward-compat path
+                await self._send_compat_release(lease_name)
+            else:
+                logger.warning("Failed to release lease %s after retries, proceeding to AVAILABLE", lease_name)
 
-            # result == FAILURE: couldn't reach controller after retries. Proceed to AVAILABLE
-            # to avoid blocking the exporter indefinitely.
-            if result == _ReleaseLeaseResult.FAILURE:
-                logger.warning("Failed to release lease %s after retries, exporter proceeding to AVAILABLE", lease_name)
-
-        # Backward-compat fallback (DEPRECATED)
-        # When the controller doesn't support exporter auth on ReleaseLease, fall back
-        # to ReportStatus with release_lease=true.
-        # TODO: Remove when all controllers support ReleaseLease for exporters.
-        if use_compat_fallback:
-            # Use current status unless it's AVAILABLE, in which case revert to AFTER_LEASE_HOOK.
-            # Non-AVAILABLE blocks new lease assignment (filterOutNotReadyExporters) until the
-            # final AVAILABLE status below, preventing retry from releasing a newly-assigned lease.
-            release_status = self._exporter_status
-            if release_status == ExporterStatus.AVAILABLE:
-                release_status = ExporterStatus.AFTER_LEASE_HOOK
-
-            # Send release_lease=true with non-AVAILABLE status (retry-safe: blocks lease assignment)
-            if await self._send_report_status_rpc(
-                jumpstarter_pb2.ReportStatusRequest(
-                    status=release_status.to_proto(),
-                    message="Lease released (compat: ReportStatus with release_lease)",
-                    release_lease=True,
-                )
-            ):
-                logger.info("Requested controller to release lease %s (compat path)", lease_name)
-
-        # Make exporter available (both paths converge here)
         await self._report_status(ExporterStatus.AVAILABLE, "Exporter available after lease release")
 
         # Directly signal lease ended so handle_lease can exit.

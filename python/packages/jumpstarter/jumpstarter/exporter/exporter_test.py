@@ -567,7 +567,7 @@ class TestReportStatusGrpcErrorHandling:
 
         # Eventually logs ERROR after exhausting retries
         error_msgs = [r for r in caplog.records if r.levelno == logging.ERROR]
-        assert any("Failed to update status" in r.message for r in error_msgs), (
+        assert any("Failed to report status" in r.message for r in error_msgs), (
             f"Expected error about failed status update, got: {[r.message for r in caplog.records]}"
         )
         # Ensure no WARNING about "not supported" was logged
