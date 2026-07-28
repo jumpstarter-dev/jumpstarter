@@ -37,9 +37,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # gRPC retry configuration
+# Worst case ~18 min (21 attempts × 30s timeout + backoff sum ~8 min).
+# The exporter has nothing useful to do while the controller is unreachable —
+# even a restart just fails at _register_with_controller (no retry).
 _TRANSIENT_GRPC_CODES = frozenset({grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED})
-_REPORT_STATUS_MAX_RETRIES = 3
-_REPORT_STATUS_BACKOFF_BASE = 1.0
+_RPC_MAX_RETRIES = 20
+_RPC_BACKOFF_BASE = 1.0
+_RPC_BACKOFF_CAP = 30.0
+_RPC_TIMEOUT = 30
 
 # Status codes indicating old controller without exporter auth on ReleaseLease
 _RELEASE_LEASE_UNSUPPORTED_CODES = frozenset({
@@ -219,6 +224,23 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     TODO: Remove this field when all controllers support ReleaseLease for exporters.
     """
 
+    _status_drain_active: bool = field(init=False, default=False)
+    """True only while serve()'s task group is running and the drain task is active.
+
+    When True, _report_status enqueues status updates for background processing.
+    When False (registration, unregistration), _report_status awaits directly.
+    """
+
+    _pending_status_request: jumpstarter_pb2.ReportStatusRequest | None = field(init=False, default=None)
+    """Latest status update pending delivery by the background drain task.
+
+    "Latest wins" semantics: if multiple _report_status calls happen while the
+    drain task is busy retrying, only the most recent one is sent.
+    """
+
+    _status_rpc_event: Event = field(init=False, default_factory=Event)
+    """Signals the drain task that a new status update is pending."""
+
     def stop(self, wait_for_lease_exit=False, should_unregister=False, exit_code: int | None = None):
         """Signal the exporter to stop.
 
@@ -390,7 +412,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             (False, status_code) on non-retryable error or retry exhaustion.
             (False, None) on non-gRPC exception.
         """
-        for attempt in range(_REPORT_STATUS_MAX_RETRIES + 1):
+        for attempt in range(_RPC_MAX_RETRIES + 1):
             try:
                 async with self._controller_stub() as controller:
                     await rpc_call(controller)
@@ -398,13 +420,13 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             except grpc.aio.AioRpcError as e:
                 if e.code() in non_retryable_codes:
                     return False, e.code()
-                if e.code() in _TRANSIENT_GRPC_CODES and attempt < _REPORT_STATUS_MAX_RETRIES:
-                    backoff = _REPORT_STATUS_BACKOFF_BASE * (2**attempt)
+                if e.code() in _TRANSIENT_GRPC_CODES and attempt < _RPC_MAX_RETRIES:
+                    backoff = min(_RPC_BACKOFF_BASE * (2**attempt), _RPC_BACKOFF_CAP)
                     logger.warning(
                         "Transient error %s (attempt %d/%d), retrying in %.1fs: %s",
                         description,
                         attempt + 1,
-                        _REPORT_STATUS_MAX_RETRIES + 1,
+                        _RPC_MAX_RETRIES + 1,
                         backoff,
                         e,
                     )
@@ -423,7 +445,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             True if the RPC succeeded, False if unsupported or retries exhausted
         """
         ok, code = await self._retry_rpc(
-            lambda ctrl: ctrl.ReportStatus(request),
+            lambda ctrl: ctrl.ReportStatus(request, timeout=_RPC_TIMEOUT),
             "report status",
             non_retryable_codes=frozenset({grpc.StatusCode.UNIMPLEMENTED}),
         )
@@ -432,6 +454,25 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             # All production controllers support it; safe to remove in future versions.
             logger.warning("ReportStatus not supported by controller, status updates will be skipped")
         return ok
+
+    async def _drain_status_reports(self):
+        """Background task that sends status updates to the controller.
+
+        Runs during serve() to make _report_status non-blocking. Uses "latest wins"
+        semantics: if multiple status updates arrive while retrying, only the most
+        recent one is sent. This prevents blocking the client connection path when
+        the controller is temporarily unreachable.
+        """
+        while True:
+            await self._status_rpc_event.wait()
+            self._status_rpc_event = Event()  # Reset for next update
+            request = self._pending_status_request
+            if request and await self._send_report_status_rpc(request):
+                logger.info(
+                    "Updated status to %s: %s",
+                    ExporterStatus.from_proto(request.status),
+                    request.message,
+                )
 
     async def _report_status(self, status: ExporterStatus, message: str = ""):
         """Report the exporter status with the controller and session."""
@@ -446,14 +487,19 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             logger.debug("Updated status to %s: %s (standalone, no controller)", status, message)
             return
 
-        # Log success; _send_report_status_rpc already logs errors
-        if await self._send_report_status_rpc(
-            jumpstarter_pb2.ReportStatusRequest(
-                status=status.to_proto(),
-                message=message,
-            )
-        ):
-            logger.info("Updated status to %s: %s", status, message)
+        request = jumpstarter_pb2.ReportStatusRequest(
+            status=status.to_proto(),
+            message=message,
+        )
+
+        if self._status_drain_active:
+            # During serve(): enqueue for background drain (non-blocking)
+            self._pending_status_request = request
+            self._status_rpc_event.set()
+        else:
+            # Outside serve() (registration, unregistration): send directly
+            if await self._send_report_status_rpc(request):
+                logger.info("Updated status to %s: %s", status, message)
 
     async def _send_compat_release(self, lease_name: str):
         """Release lease via ReportStatus with release_lease=true (DEPRECATED).
@@ -509,7 +555,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             await self._send_compat_release(lease_name)
         else:
             ok, code = await self._retry_rpc(
-                lambda ctrl: ctrl.ReleaseLease(jumpstarter_pb2.ReleaseLeaseRequest(name=lease_name)),
+                lambda ctrl: ctrl.ReleaseLease(
+                    jumpstarter_pb2.ReleaseLeaseRequest(name=lease_name), timeout=_RPC_TIMEOUT
+                ),
                 "release lease",
                 non_retryable_codes=_RELEASE_LEASE_UNSUPPORTED_CODES,
             )
@@ -962,6 +1010,11 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
         async with create_task_group() as tg:
             self._tg = tg
+            # Start background status drain (makes _report_status non-blocking)
+            self._status_rpc_event = Event()
+            self._pending_status_request = None
+            self._status_drain_active = True
+            tg.start_soon(self._drain_status_reports)
             # Start status stream with retry logic
             tg.start_soon(
                 self._retry_stream,
@@ -1048,6 +1101,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
                 self._previous_leased = current_leased
         self._tg = None
+        self._status_drain_active = False
         clear_log_context()
 
     async def serve_standalone_tcp(

@@ -16,6 +16,12 @@ import pytest
 from anyio import Event, create_task_group
 
 from jumpstarter.common import ExporterStatus
+from jumpstarter.exporter.exporter import (
+    _RPC_BACKOFF_BASE,
+    _RPC_BACKOFF_CAP,
+    _RPC_MAX_RETRIES,
+    _RPC_TIMEOUT,
+)
 from jumpstarter.exporter.lease_context import LeaseContext
 
 pytestmark = pytest.mark.anyio
@@ -553,17 +559,20 @@ class TestReportStatusGrpcErrorHandling:
             with caplog.at_level(logging.DEBUG, logger="jumpstarter.exporter.exporter"):
                 await exporter._report_status(ExporterStatus.AVAILABLE, "test")
 
-        # Should log retry warnings (3 retries)
+        # Should log retry warnings (_RPC_MAX_RETRIES)
         warning_msgs = [r for r in caplog.records if r.levelno == logging.WARNING]
         retry_warnings = [r for r in warning_msgs if "Transient error" in r.message]
-        assert len(retry_warnings) == 3, f"Expected 3 retry warnings, got: {len(retry_warnings)}"
+        assert len(retry_warnings) == _RPC_MAX_RETRIES, (
+            f"Expected {_RPC_MAX_RETRIES} retry warnings, got: {len(retry_warnings)}"
+        )
 
-        # Verify exponential backoff schedule
+        # Verify exponential backoff with cap at _RPC_BACKOFF_CAP
         backoff_values = [call.args[0] for call in mock_sleep.call_args_list]
-        assert backoff_values == [1.0, 2.0, 4.0], f"Expected [1.0, 2.0, 4.0], got: {backoff_values}"
+        expected_backoffs = [min(_RPC_BACKOFF_BASE * (2**i), _RPC_BACKOFF_CAP) for i in range(_RPC_MAX_RETRIES)]
+        assert backoff_values == expected_backoffs, f"Expected {expected_backoffs}, got: {backoff_values}"
 
-        # 4 total attempts: 1 initial + 3 retries
-        assert mock_controller.ReportStatus.call_count == 4
+        # _RPC_MAX_RETRIES + 1 total attempts
+        assert mock_controller.ReportStatus.call_count == _RPC_MAX_RETRIES + 1
 
         # Eventually logs ERROR after exhausting retries
         error_msgs = [r for r in caplog.records if r.levelno == logging.ERROR]
@@ -575,26 +584,30 @@ class TestReportStatusGrpcErrorHandling:
             "UNAVAILABLE error should not produce 'not supported' warning"
         )
 
-    async def test_report_status_retries_on_transient_failure(self):
+    @pytest.mark.parametrize("error_code", [
+        grpc.StatusCode.UNAVAILABLE,
+        grpc.StatusCode.DEADLINE_EXCEEDED,
+    ])
+    async def test_report_status_retries_on_transient_failure(self, error_code):
         """Transient gRPC errors (UNAVAILABLE, DEADLINE_EXCEEDED) are retried.
         If the error resolves before exhausting retries, the status is delivered."""
         exporter = _make_exporter_for_report_status()
 
-        unavailable_error = grpc.aio.AioRpcError(
-            code=grpc.StatusCode.UNAVAILABLE,
+        transient_error = grpc.aio.AioRpcError(
+            code=error_code,
             initial_metadata=grpc.aio.Metadata(),
             trailing_metadata=grpc.aio.Metadata(),
-            details="Service unavailable",
+            details=f"{error_code.name} error",
         )
 
         delivered_statuses = []
         call_count = 0
 
-        async def fail_twice_then_succeed(request):
+        async def fail_twice_then_succeed(request, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count <= 2:
-                raise unavailable_error
+                raise transient_error
             # Third attempt succeeds
             delivered_statuses.append(ExporterStatus.from_proto(request.status))
 
@@ -644,6 +657,55 @@ class TestReportStatusGrpcErrorHandling:
         # Called exactly once (no retry)
         assert mock_controller.ReportStatus.call_count == 1
 
+    async def test_rpc_timeout_parameter_passed(self):
+        """Verify that timeout=_RPC_TIMEOUT is passed to gRPC calls."""
+        exporter = _make_exporter_for_report_status()
+
+        captured_calls = []
+
+        async def capture_call(*args, **kwargs):
+            captured_calls.append(kwargs)
+
+        mock_controller = AsyncMock()
+        mock_controller.ReportStatus = AsyncMock(side_effect=capture_call)
+
+        stub_ctx = AsyncMock()
+        stub_ctx.__aenter__ = AsyncMock(return_value=mock_controller)
+        stub_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(exporter, "_controller_stub", return_value=stub_ctx):
+            await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+
+        # Verify timeout parameter was passed
+        assert len(captured_calls) == 1
+        assert "timeout" in captured_calls[0]
+        assert captured_calls[0]["timeout"] == _RPC_TIMEOUT
+
+    async def test_report_status_non_blocking_during_serve(self):
+        """Verify _report_status returns immediately when drain is active (serve running)."""
+        exporter = _make_exporter_for_report_status()
+
+        # Simulate serve() drain active
+        exporter._status_drain_active = True
+        exporter._status_rpc_event = Event()
+        exporter._pending_status_request = None
+
+        # Call _report_status — should return immediately without awaiting RPC
+        await exporter._report_status(ExporterStatus.AVAILABLE, "test")
+
+        # Verify it enqueued the request
+        assert exporter._pending_status_request is not None
+        assert exporter._pending_status_request.message == "test"
+        assert exporter._status_rpc_event.is_set()
+
+        # Now verify latest-wins: call again with different status
+        exporter._status_rpc_event = Event()  # Reset
+        await exporter._report_status(ExporterStatus.LEASE_READY, "ready")
+
+        # The pending request should be replaced
+        assert exporter._pending_status_request.message == "ready"
+        assert ExporterStatus.from_proto(exporter._pending_status_request.status) == ExporterStatus.LEASE_READY
+
     async def test_request_lease_release_succeeds_on_first_attempt(self):
         """When ReleaseLease succeeds immediately, send AVAILABLE and exit."""
         exporter = _make_exporter_for_report_status()
@@ -659,10 +721,10 @@ class TestReportStatusGrpcErrorHandling:
         release_calls = []
         report_calls = []
 
-        async def capture_release(request):
+        async def capture_release(request, **kwargs):
             release_calls.append(request)
 
-        async def capture_report(request):
+        async def capture_report(request, **kwargs):
             report_calls.append(request)
 
         mock_controller = AsyncMock()
@@ -711,14 +773,14 @@ class TestReportStatusGrpcErrorHandling:
         report_calls = []
         release_call_count = 0
 
-        async def fail_first_then_succeed(request):
+        async def fail_first_then_succeed(request, **kwargs):
             nonlocal release_call_count
             release_call_count += 1
             if release_call_count == 1:
                 raise unavailable_error
             release_calls.append(request)
 
-        async def capture_report(request):
+        async def capture_report(request, **kwargs):
             report_calls.append(request)
 
         mock_controller = AsyncMock()
@@ -764,12 +826,12 @@ class TestReportStatusGrpcErrorHandling:
         release_call_count = 0
         report_call_count = 0
 
-        async def always_fail_release(request):
+        async def always_fail_release(request, **kwargs):
             nonlocal release_call_count
             release_call_count += 1
             raise unavailable_error
 
-        async def always_fail_report(request):
+        async def always_fail_report(request, **kwargs):
             nonlocal report_call_count
             report_call_count += 1
             raise unavailable_error
@@ -785,11 +847,11 @@ class TestReportStatusGrpcErrorHandling:
         with patch.object(exporter, "_controller_stub", return_value=stub_ctx), patch("anyio.sleep"):
             await exporter._request_lease_release()
 
-        # ReleaseLease: 4 attempts (all fail)
-        assert release_call_count == 4
+        # ReleaseLease: _RPC_MAX_RETRIES + 1 attempts (all fail)
+        assert release_call_count == _RPC_MAX_RETRIES + 1
 
-        # ReportStatus: 4 attempts via _send_report_status_rpc (all fail)
-        assert report_call_count == 4
+        # ReportStatus: _RPC_MAX_RETRIES + 1 attempts via _send_report_status_rpc (all fail)
+        assert report_call_count == _RPC_MAX_RETRIES + 1
 
         # Critical: lease_ended must be set even when everything fails,
         # otherwise handle_lease never exits
@@ -817,10 +879,10 @@ class TestReportStatusGrpcErrorHandling:
 
         report_calls = []
 
-        async def fail_with_permission(request):
+        async def fail_with_permission(request, **kwargs):
             raise permission_error
 
-        async def capture_report(request):
+        async def capture_report(request, **kwargs):
             report_calls.append(request)
 
         mock_controller = AsyncMock()
@@ -864,7 +926,7 @@ class TestReportStatusGrpcErrorHandling:
 
         report_calls = []
 
-        async def capture_report(request):
+        async def capture_report(request, **kwargs):
             report_calls.append(request)
 
         mock_controller = AsyncMock()
@@ -901,7 +963,7 @@ class TestReportStatusGrpcErrorHandling:
 
         report_calls = []
 
-        async def capture_report(request):
+        async def capture_report(request, **kwargs):
             report_calls.append(request)
 
         mock_controller = AsyncMock()
@@ -944,10 +1006,10 @@ class TestReportStatusGrpcErrorHandling:
 
         report_calls = []
 
-        async def fail_with_unimplemented(request):
+        async def fail_with_unimplemented(request, **kwargs):
             raise unimplemented_error
 
-        async def capture_report(request):
+        async def capture_report(request, **kwargs):
             report_calls.append(request)
 
         mock_controller = AsyncMock()
@@ -1074,6 +1136,9 @@ def _make_serve_exporter(exit_on_lease_end=False):
     exporter.labels = {"jumpstarter.dev/name": "test-exporter"}
     exporter._report_status = AsyncMock()
     exporter._request_lease_release = AsyncMock()
+    exporter._status_drain_active = False
+    exporter._pending_status_request = None
+    exporter._status_rpc_event = Event()
 
     @asynccontextmanager
     async def fake_session():
@@ -1084,11 +1149,16 @@ def _make_serve_exporter(exit_on_lease_end=False):
 
 
 def _wire_status_stream(exporter, statuses):
-    """Replace _retry_stream with a function that feeds statuses into tx."""
+    """Replace _retry_stream with a function that feeds statuses into tx.
+
+    The stream sends the provided statuses then waits indefinitely (until cancelled),
+    matching production behavior where status streams are long-lived.
+    """
     async def fake_retry_stream(name, factory, tx, **kwargs):
         for s in statuses:
             await tx.send(s)
-        await tx.aclose()
+        # Don't close - wait until task group cancels us (matches production)
+        await anyio.sleep_forever()
 
     exporter._retry_stream = fake_retry_stream
 
@@ -1125,9 +1195,14 @@ class TestExitOnLeaseEnd:
             MagicMock(leased=False, lease_name="", client_name=""),
         ])
 
-        await exporter.serve()
-
-        assert exporter._stop_requested is False
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            # Give serve time to process the status
+            await anyio.sleep(0.1)
+            # Check that _stop_requested was NOT set
+            assert exporter._stop_requested is False
+            # Clean exit
+            tg.cancel_scope.cancel()
 
     async def test_serve_continues_when_disabled(self):
         """serve() does NOT set _stop_requested after lease ends when
@@ -1139,9 +1214,14 @@ class TestExitOnLeaseEnd:
         ])
         _wire_handle_lease(exporter)
 
-        await exporter.serve()
-
-        assert exporter._stop_requested is False
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            # Give serve time to process both statuses
+            await anyio.sleep(0.2)
+            # Check that _stop_requested was NOT set (exit_on_lease_end is False)
+            assert exporter._stop_requested is False
+            # Clean exit
+            tg.cancel_scope.cancel()
 
 
 class TestContextPropagation:
