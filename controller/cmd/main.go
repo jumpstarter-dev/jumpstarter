@@ -48,6 +48,7 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authorization"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/config"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/controller"
+	jmpmetrics "github.com/jumpstarter-dev/jumpstarter/controller/internal/metrics"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/service"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/service/login"
@@ -200,6 +201,8 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
+
+	jmpmetrics.RegisterDefaults()
 
 	oidcCert, err := service.NewSelfSignedCertificate("jumpstarter oidc", []string{"localhost"}, []net.IP{})
 	if err != nil {
