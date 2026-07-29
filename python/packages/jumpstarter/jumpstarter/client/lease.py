@@ -92,7 +92,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     grpc_options: dict[str, Any] = field(default_factory=dict)
     client_name: str | None = None  # Name of the current client, used for ownership validation
     acquisition_timeout: int = field(default=7200)  # Timeout in seconds for lease acquisition, polled in 5s intervals
-    dial_timeout: float = field(default=30.0)  # Timeout in seconds for Dial retry loop when exporter not ready
+    dial_timeout: float = field(default=60.0)  # Timeout in seconds for Dial retry loop when exporter not ready
     retry_timeout: float = field(default=300.0)  # Retry timeout for unreachable exporter (0 to disable)
     exporter_name: str = field(default="remote", init=False)  # Populated during acquisition
     exporter_labels: dict[str, str] = field(default_factory=dict, init=False)  # Populated during acquisition
@@ -405,9 +405,14 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         await self._dial_with_retry()
 
         async def _tunnel_handler(stream):
-            response = await self.controller.Dial(
-                jumpstarter_pb2.DialRequest(lease_name=self.name)
-            )
+            try:
+                response = await self.controller.Dial(
+                    jumpstarter_pb2.DialRequest(lease_name=self.name)
+                )
+            except AioRpcError as e:
+                raise ExporterUnreachableError(
+                    f"Per-connection Dial failed for {self.exporter_name}: {e.details()}"
+                ) from e
             async with connect_router_stream(
                 response.router_endpoint,
                 response.router_token,

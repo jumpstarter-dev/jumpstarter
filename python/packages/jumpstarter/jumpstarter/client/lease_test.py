@@ -836,3 +836,32 @@ class TestServeUnixAsync:
         assert token == "test-token"
         assert tls_config is lease.tls_config
         assert grpc_options is lease.grpc_options
+
+    @pytest.mark.anyio
+    async def test_serve_unix_async_per_connection_dial_failure_wrapped(self):
+        """Per-connection Dial failure raises ExporterUnreachableError instead of raw AioRpcError."""
+        from grpc import StatusCode
+
+        lease = object.__new__(Lease)
+        lease.name = "test-lease"
+        lease.exporter_name = "test-exporter"
+        lease.tls_config = Mock()
+        lease.grpc_options = {}
+        lease.controller = Mock()
+
+        # Mock the readiness check
+        async def mock_dial_with_retry():
+            pass
+
+        # Mock per-connection Dial to raise AioRpcError
+        async def mock_dial_failure(request):
+            raise AioRpcError(code=StatusCode.UNAVAILABLE, initial_metadata=None, trailing_metadata=None, details="exporter offline")
+
+        lease.controller.Dial = mock_dial_failure
+
+        with patch.object(lease, "_dial_with_retry", side_effect=mock_dial_with_retry):
+            async with lease.serve_unix_async() as socket_path:
+                # Connect to the Unix socket — handler should wrap AioRpcError
+                with pytest.raises(ExporterUnreachableError, match="Per-connection Dial failed"):
+                    async with await anyio.connect_unix(socket_path):
+                        await anyio.sleep(0.1)
