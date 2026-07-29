@@ -17,6 +17,7 @@ limitations under the License.
 package qemu
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -37,7 +38,7 @@ func TestEnrichExporterExport_injectsLauncherSocket(t *testing.T) {
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +65,7 @@ func TestEnrichExporterExport_injectsDefaultPartitionsX86(t *testing.T) {
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +94,7 @@ func TestEnrichExporterExport_injectsDefaultPartitionsAarch64(t *testing.T) {
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +128,7 @@ func TestEnrichExporterExport_respectsUserDefaultPartitions(t *testing.T) {
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +154,7 @@ func TestEnrichExporterExport_injectsHostfwdSSH(t *testing.T) {
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +190,7 @@ func TestEnrichExporterExport_autoInjectsTCPDriver(t *testing.T) {
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +220,7 @@ func TestEnrichExporterExport_doesNotDuplicateExistingTCP(t *testing.T) {
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, nil)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +254,7 @@ func TestEnrichExporterExport_defaultsFromMergedParameters(t *testing.T) {
 		},
 	}
 
-	result, err := New("dev").EnrichExporterExport(drivers, params)
+	result, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, params, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
