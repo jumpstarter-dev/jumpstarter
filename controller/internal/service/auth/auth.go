@@ -96,7 +96,7 @@ func (s *Auth) VerifyExporter(ctx context.Context) (*jumpstarterdevv1alpha1.Expo
 }
 
 // IsExporter checks the jumpstarter-kind metadata to determine if the caller
-// is an exporter without performing full authentication.
+// is an exporter.
 func (s *Auth) IsExporter(ctx context.Context) bool {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
