@@ -1144,8 +1144,11 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 							Image:           jumpstarter.Spec.Routers.Image,
 							ImagePullPolicy: jumpstarter.Spec.Routers.ImagePullPolicy,
 							Command:         []string{"/router"},
-							Env:             envVars,
-							VolumeMounts:    volumeMounts,
+							Args: []string{
+								"-metrics-bind-address=:8080",
+							},
+							Env:          envVars,
+							VolumeMounts: volumeMounts,
 							Ports: []corev1.ContainerPort{
 								{
 									ContainerPort: 8083,

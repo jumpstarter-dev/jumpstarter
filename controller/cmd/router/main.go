@@ -45,6 +45,10 @@ func main() {
 	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
 
+	var metricsAddr string
+	flag.StringVar(&metricsAddr, "metrics-bind-address", "0",
+		"The address the metric endpoint binds to. Use :8080 to enable. Set to 0 to disable.")
+
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)).WithValues("component", "router"))
@@ -57,6 +61,13 @@ func main() {
 		"gitCommit", gitCommit,
 		"buildDate", buildDate,
 	)
+
+	if listenAddr, err := startMetricsServer(metricsAddr); err != nil {
+		logger.Error(err, "failed to start metrics server", "bindAddress", metricsAddr)
+		os.Exit(1)
+	} else if listenAddr != "" {
+		logger.Info("Serving metrics server", "bindAddress", listenAddr)
+	}
 
 	cfg := ctrl.GetConfigOrDie()
 	client, err := kclient.New(cfg, kclient.Options{})
