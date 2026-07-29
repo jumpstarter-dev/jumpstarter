@@ -285,13 +285,15 @@ class QemuPower(PowerInterface, Driver):
         for device in devices:
             cmdline += ["-device", device]
 
-        if bios.exists():
+        if bios.exists() or self.parent._runtime_firmware_path(bios):
             cmdline += [
                 "-bios",
                 str(bios),
             ]
 
-        if ovmf_code.exists() and ovmf_vars.exists():
+        if (ovmf_code.exists() or self.parent._runtime_firmware_path(ovmf_code)) and (
+            ovmf_vars.exists() or self.parent._runtime_firmware_path(ovmf_vars)
+        ):
             cmdline += [
                 "-drive",
                 f"file={ovmf_code},if=pflash,format=raw,unit=0,readonly=on",
@@ -358,7 +360,7 @@ class QemuPower(PowerInterface, Driver):
 
         cmdline += [
             "-blockdev",
-            f"driver=vvfat,node-name=cidata,read-only=on,dir={self._cidata.name},label=CIDATA",
+            f"driver=vvfat,node-name=cidata,read-only=on,dir={self._cidata},label=CIDATA",
             "-device",
             "virtio-blk-pci,drive=cidata",
         ]
@@ -482,8 +484,16 @@ class Qemu(Driver):
 
     @property
     def _work_dir(self) -> str:
+        """Directory for sockets and jumpstarter-exec in sidecar mode."""
         if self.launcher_socket:
             return "/shared"
+        return self._tmp_dir.name
+
+    @property
+    def _disk_dir(self) -> str:
+        """Directory for flashable guest disk images (root, bios, …)."""
+        if self.launcher_socket:
+            return "/disk"
         return self._tmp_dir.name
 
     @property
@@ -515,6 +525,10 @@ class Qemu(Driver):
     def _cid(self) -> int:
         return randbits(32)
 
+    def _runtime_firmware_path(self, path: Path) -> bool:
+        """True when path is a default firmware path that lives in the runtime image."""
+        return self.launcher_socket is not None and path in self.default_partitions.values()
+
     def validate_partition(
         self,
         partition: str | None = None,
@@ -522,13 +536,13 @@ class Qemu(Driver):
     ) -> Path:
         match partition:
             case "root" | None:
-                path = Path(self._work_dir) / "root"
+                path = Path(self._disk_dir) / "root"
             case "OVMF_CODE.fd":
-                path = Path(self._work_dir) / "OVMF_CODE.fd"
+                path = Path(self._disk_dir) / "OVMF_CODE.fd"
             case "OVMF_VARS.fd":
-                path = Path(self._work_dir) / "OVMF_VARS.fd"
+                path = Path(self._disk_dir) / "OVMF_VARS.fd"
             case "bios":
-                path = Path(self._work_dir) / "bios"
+                path = Path(self._disk_dir) / "bios"
             case _:
                 raise ValueError(f"invalid partition name: {partition}")
 
@@ -537,10 +551,19 @@ class Qemu(Driver):
 
         return path
 
-    def cidata(self) -> TemporaryDirectory:
-        tmp = TemporaryDirectory()
+    def cidata(self) -> Path:
+        """Write cloud-init cidata files; return the directory path.
 
-        path = Path(tmp.name)
+        In sidecar mode the directory must be on the shared volume so the
+        runtime container can see it when QEMU is launched via jumpstarter-exec.
+        """
+        if self.launcher_socket:
+            path = Path(self._work_dir) / "cidata"
+            path.mkdir(parents=True, exist_ok=True)
+        else:
+            self._cidata_tmp = TemporaryDirectory()
+            path = Path(self._cidata_tmp.name)
+
         (path / "meta-data").write_text(
             yaml.safe_dump(
                 {
@@ -566,7 +589,7 @@ class Qemu(Driver):
             )
         )
 
-        return tmp
+        return path
 
     @export
     @validate_call(validate_return=True)

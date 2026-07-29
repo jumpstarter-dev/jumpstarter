@@ -118,6 +118,12 @@ type ExporterSetSpec struct {
 	// +optional
 	Images *ImageOverrides `json:"images,omitempty"`
 
+	// StorageClassName overrides VirtualTargetClass.spec.storageClassName for
+	// guest disk volumes. When nil, the class value is used. When set to an
+	// empty string, forces emptyDir even if the class names a StorageClass.
+	// +optional
+	StorageClassName *string `json:"storageClassName,omitempty"`
+
 	// Selector defines the label selector for matching exporters owned by this set.
 	Selector metav1.LabelSelector `json:"selector"`
 

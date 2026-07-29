@@ -181,6 +181,17 @@ var _ = Describe("exporterSetPolicyRules", func() {
 		Fail("no rule found granting full CRUD on pods")
 	})
 
+	It("should grant full CRUD on persistentvolumeclaims", func() {
+		for _, rule := range rules {
+			if containsString(rule.APIGroups, "") &&
+				containsString(rule.Resources, "persistentvolumeclaims") {
+				Expect(rule.Verbs).To(ContainElements("get", "list", "watch", "create", "update", "patch", "delete"))
+				return
+			}
+		}
+		Fail("no rule found granting full CRUD on persistentvolumeclaims")
+	})
+
 	It("should grant full CRUD on exporters", func() {
 		for _, rule := range rules {
 			if containsString(rule.APIGroups, "jumpstarter.dev") &&

@@ -524,6 +524,11 @@ func exporterSetPolicyRules() []rbacv1.PolicyRule {
 		},
 		{
 			APIGroups: []string{""},
+			Resources: []string{"persistentvolumeclaims"},
+			Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
+		},
+		{
+			APIGroups: []string{""},
 			Resources: []string{"events"},
 			Verbs:     []string{"create", "patch"},
 		},
