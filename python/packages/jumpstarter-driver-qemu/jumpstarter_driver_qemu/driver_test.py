@@ -205,6 +205,34 @@ def test_set_memory_size_invalid():
         driver.set_memory_size("invalid")
 
 
+def test_cidata_uses_tmp_by_default():
+    """Local mode keeps cloud-init vvfat content under a system temp dir."""
+    driver = Qemu()
+    cidata = driver.cidata()
+    try:
+        assert Path(cidata.name).exists()
+        assert (Path(cidata.name) / "meta-data").is_file()
+        assert (Path(cidata.name) / "user-data").is_file()
+        assert not str(cidata.name).startswith("/shared")
+    finally:
+        cidata.cleanup()
+
+
+def test_cidata_uses_shared_work_dir_with_launcher_socket(tmp_path):
+    """Sidecar mode must place cidata on the shared volume so QEMU can read it."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    driver = Qemu(launcher_socket=str(shared / "launcher.sock"))
+    with patch.object(Qemu, "_work_dir", property(lambda self: str(shared))):
+        cidata = driver.cidata()
+        try:
+            assert Path(cidata.name).is_relative_to(shared)
+            assert (Path(cidata.name) / "meta-data").is_file()
+            assert (Path(cidata.name) / "user-data").is_file()
+        finally:
+            cidata.cleanup()
+
+
 # OCI Flash Tests
 
 

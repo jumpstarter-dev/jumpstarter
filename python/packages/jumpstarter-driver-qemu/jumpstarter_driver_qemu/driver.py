@@ -538,7 +538,9 @@ class Qemu(Driver):
         return path
 
     def cidata(self) -> TemporaryDirectory:
-        tmp = TemporaryDirectory()
+        # In sidecar mode QEMU runs in the runtime container and can only
+        # see paths on the shared volume — never the exporter's /tmp.
+        tmp = TemporaryDirectory(dir=self._work_dir)
 
         path = Path(tmp.name)
         (path / "meta-data").write_text(
