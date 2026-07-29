@@ -18,6 +18,8 @@ package exporterset
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -264,11 +266,118 @@ func TestReconcile_provisionerMismatch(t *testing.T) {
 	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
 		es.Spec.VirtualTargetClassName = "other-class"
 	})
-	r, _ := newReconciler(t, vtc, es)
+	r, c := newReconciler(t, vtc, es)
 	result := reconcileOnce(t, r)
 	if result.RequeueAfter != 0 {
 		t.Fatalf("Reconcile() result = %#v, want no requeue", result)
 	}
+	updated := getExporterSet(t, c)
+	if len(updated.Finalizers) != 0 {
+		t.Errorf("provisioner mismatch added finalizers: %v", updated.Finalizers)
+	}
+}
+
+func TestReconcileFinalizer_cleanupErrorKeepsFinalizer(t *testing.T) {
+	cleanupErr := errors.New("remote API unavailable")
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		now := metav1.Now()
+		es.DeletionTimestamp = &now
+		es.Finalizers = []string{finalizerRemoteCleanupPrefix + qemu.ProvisionerName}
+	})
+	r, c := newReconciler(t, es, makeExporter("exporter-1", false, false, false))
+	prov := &failingCleanupProvisioner{Provisioner: r.Provisioner, err: cleanupErr}
+	r.Provisioner = prov
+
+	done, err := r.reconcileFinalizer(context.Background(), es)
+	if !errors.Is(err, cleanupErr) {
+		t.Fatalf("reconcileFinalizer() error = %v, want %v", err, cleanupErr)
+	}
+	if done {
+		t.Error("reconcileFinalizer() done = true after failed cleanup")
+	}
+	if prov.calls != 1 {
+		t.Errorf("Cleanup() calls = %d, want 1", prov.calls)
+	}
+
+	updated := getExporterSet(t, c)
+	if !containsString(updated.Finalizers, finalizerRemoteCleanupPrefix+qemu.ProvisionerName) {
+		t.Errorf("cleanup finalizer was removed after failed cleanup: %v", updated.Finalizers)
+	}
+}
+
+func TestReconcile_deletionWithoutVirtualTargetClassAttemptsCleanup(t *testing.T) {
+	cleanupErr := errors.New("cleanup context unavailable")
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		now := metav1.Now()
+		es.DeletionTimestamp = &now
+		es.Finalizers = []string{finalizerRemoteCleanupPrefix + qemu.ProvisionerName}
+	})
+	r, c := newReconciler(t, es, makeExporter("exporter-1", false, false, false))
+	prov := &failingCleanupProvisioner{Provisioner: r.Provisioner, err: cleanupErr}
+	r.Provisioner = prov
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: es.Name, Namespace: es.Namespace},
+	})
+	if !errors.Is(err, cleanupErr) {
+		t.Fatalf("Reconcile() error = %v, want %v", err, cleanupErr)
+	}
+	if prov.calls != 1 {
+		t.Errorf("Cleanup() calls = %d, want 1", prov.calls)
+	}
+	updated := getExporterSet(t, c)
+	if !containsString(updated.Finalizers, finalizerRemoteCleanupPrefix+qemu.ProvisionerName) {
+		t.Errorf("cleanup finalizer was removed without cleanup context: %v", updated.Finalizers)
+	}
+}
+
+type failingCleanupProvisioner struct {
+	Provisioner
+	err   error
+	calls int
+}
+
+func (p *failingCleanupProvisioner) Cleanup(
+	context.Context,
+	*virtualtargetv1alpha1.ExporterSet,
+	*jumpstarterdevv1alpha1.Exporter,
+) error {
+	p.calls++
+	return p.err
+}
+
+type renderBeforeEnrichProvisioner struct {
+	Provisioner
+	rendered bool
+}
+
+func (p *renderBeforeEnrichProvisioner) RenderPod(
+	ctx context.Context,
+	exporterSet *virtualtargetv1alpha1.ExporterSet,
+	vtc *virtualtargetv1alpha1.VirtualTargetClass,
+	mergedParameters map[string]any,
+	images *virtualtargetv1alpha1.ImageOverrides,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) (*corev1.Pod, error) {
+	p.rendered = true
+	return p.Provisioner.RenderPod(ctx, exporterSet, vtc, mergedParameters, images, exporter)
+}
+
+func (p *renderBeforeEnrichProvisioner) EnrichExporterExport(
+	ctx context.Context,
+	vtc *virtualtargetv1alpha1.VirtualTargetClass,
+	drivers []virtualtargetv1alpha1.DriverConfig,
+	mergedParameters map[string]any,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+) ([]virtualtargetv1alpha1.DriverConfig, error) {
+	if !p.rendered {
+		return nil, errors.New("EnrichExporterExport called before RenderPod")
+	}
+	return p.Provisioner.EnrichExporterExport(ctx, vtc, drivers, mergedParameters, exporter)
+}
+
+func containsString(values []string, want string) bool {
+	return slices.Contains(values, want)
 }
 
 // --- Scale-up tests ---
@@ -1830,6 +1939,30 @@ func TestEnsureExporterPods_createsPodWhenCredentialReady(t *testing.T) {
 	pods := listPods(t, r.Client)
 	if len(pods) == 0 {
 		t.Error("expected a Pod to be created, got none")
+	}
+}
+
+func TestEnsureExporterPods_rendersPodBeforeEnrichingConfig(t *testing.T) {
+	es := makeExporterSet()
+	vtc := makeVTC()
+	exp := makeExporterWithCredential()
+	credSecret := makeCredentialSecret("exp-1")
+	r, _ := newReconciler(t, es, vtc, makeCACM(), exp, credSecret)
+	prov := &renderBeforeEnrichProvisioner{Provisioner: r.Provisioner}
+	r.Provisioner = prov
+
+	waiting, err := r.ensureExporterPods(
+		context.Background(), es, vtc, map[string]any{},
+		[]jumpstarterdevv1alpha1.Exporter{*exp}, map[string][]corev1.Pod{},
+	)
+	if err != nil {
+		t.Fatalf("ensureExporterPods() error = %v", err)
+	}
+	if waiting {
+		t.Error("ensureExporterPods() waiting = true with ready credentials")
+	}
+	if !prov.rendered {
+		t.Error("RenderPod() was not called before EnrichExporterExport()")
 	}
 }
 
