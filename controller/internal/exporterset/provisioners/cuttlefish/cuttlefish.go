@@ -571,8 +571,11 @@ func volumes(storage storageConfig, rt runtimeConfig) []corev1.Volume {
 }
 
 func (p *Provisioner) EnrichExporterExport(
+	_ context.Context,
+	_ *virtualtargetv1alpha1.VirtualTargetClass,
 	drivers []virtualtargetv1alpha1.DriverConfig,
 	mergedParameters map[string]any,
+	_ *jumpstarterdevv1alpha1.Exporter,
 ) ([]virtualtargetv1alpha1.DriverConfig, error) {
 	enriched, _, err := enrichDrivers(drivers, mergedParameters)
 	return enriched, err

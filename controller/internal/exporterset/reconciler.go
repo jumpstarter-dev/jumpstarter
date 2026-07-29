@@ -85,6 +85,8 @@ const (
 
 	// kindExporter is the Kind string used in OwnerReference lookups.
 	kindExporter = "Exporter"
+
+	finalizerRemoteCleanupPrefix = "exporterset.jumpstarter.dev/remote-cleanup-"
 )
 
 // ExporterSetReconciler reconciles an ExporterSet object.
@@ -137,25 +139,32 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, fmt.Errorf("Reconcile: unable to get ExporterSet: %w", err)
 	}
 
-	var vtc virtualtargetv1alpha1.VirtualTargetClass
-	vtcKey := client.ObjectKey{
-		Namespace: exporterSet.Namespace,
-		Name:      exporterSet.Spec.VirtualTargetClassName,
+	// Deletion must be handled before resolving the VirtualTargetClass. If the
+	// class has already been removed, provisioner cleanup must fail explicitly
+	// and retain the finalizer rather than leaving the ExporterSet silently stuck.
+	if !exporterSet.DeletionTimestamp.IsZero() {
+		_, err := r.reconcileFinalizer(ctx, &exporterSet)
+		return ctrl.Result{}, err
 	}
-	if err := r.Get(ctx, vtcKey, &vtc); err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.Info("VirtualTargetClass not found",
-				"virtualTargetClassName", exporterSet.Spec.VirtualTargetClassName)
 
-			return r.reportUnavailable(ctx, &exporterSet, "VirtualTargetClassNotFound",
-				fmt.Sprintf("VirtualTargetClass %q not found", exporterSet.Spec.VirtualTargetClassName))
-		}
-		return ctrl.Result{}, fmt.Errorf("unable to get VirtualTargetClass %q: %w",
-			exporterSet.Spec.VirtualTargetClassName, err)
+	vtc, err := r.resolveVirtualTargetClass(ctx, &exporterSet)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if vtc == nil {
+		return ctrl.Result{}, nil
 	}
 
 	// Only reconcile ExporterSets whose class matches our provisioner
 	if vtc.Spec.Provisioner != r.Provisioner.Name() {
+		return ctrl.Result{}, nil
+	}
+
+	done, err := r.reconcileFinalizer(ctx, &exporterSet)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if done {
 		return ctrl.Result{}, nil
 	}
 
@@ -171,23 +180,7 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		"minAvailableReplicas", exporterSet.Spec.MinAvailableReplicas,
 	)
 
-	// Snapshot condition state before changes (for event emission).
-	prevAvailable := meta.IsStatusConditionTrue(
-		exporterSet.Status.Conditions,
-		string(virtualtargetv1alpha1.ExporterSetConditionAvailable),
-	)
-	prevDegraded := meta.IsStatusConditionTrue(
-		exporterSet.Status.Conditions,
-		string(virtualtargetv1alpha1.ExporterSetConditionDegraded),
-	)
-	prevProgressing := meta.IsStatusConditionTrue(
-		exporterSet.Status.Conditions,
-		string(virtualtargetv1alpha1.ExporterSetConditionProgressing),
-	)
-	prevScalingLimited := meta.IsStatusConditionTrue(
-		exporterSet.Status.Conditions,
-		string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited),
-	)
+	prev := snapshotConditions(&exporterSet)
 
 	// Exporters are found through spec.selector. If the labels this set stamps
 	// on its exporters don't satisfy it (e.g. the selector pins an
@@ -221,33 +214,21 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Clean up drained (disabled+unleased) exporters and ExitAndReplace
 	// terminal pods (Succeeded/Failed) before computing pool state.
-	if deleted, err := r.cleanupDisabledExporters(ctx, &exporterSet, ownedExporters); err != nil {
-		return ctrl.Result{}, err
-	} else if deleted {
-		// Update status and return; the next scale-down step fires on RequeueAfter.
-		if err := r.reconcileStatusCounts(ctx, &exporterSet); err != nil {
-			return ctrl.Result{}, err
-		}
-		r.reconcileConditions(&exporterSet)
-		if err := r.Status().Update(ctx, &exporterSet); err != nil {
-			return requeueConflict(logger, err)
-		}
-		r.emitConditionEvents(&exporterSet, prevAvailable, prevProgressing, prevDegraded, prevScalingLimited)
-		return ctrl.Result{}, nil
+	cleanupResult, cleaned, err := r.cleanupBeforeScale(
+		ctx,
+		&exporterSet,
+		ownedExporters,
+		podsByExporter,
+		prev.available,
+		prev.progressing,
+		prev.degraded,
+		prev.scalingLimited,
+	)
+	if err != nil {
+		return cleanupResult, err
 	}
-
-	if deleted, err := r.cleanupTerminalExporters(ctx, &exporterSet, ownedExporters, podsByExporter); err != nil {
-		return ctrl.Result{}, err
-	} else if deleted {
-		if err := r.reconcileStatusCounts(ctx, &exporterSet); err != nil {
-			return ctrl.Result{}, err
-		}
-		r.reconcileConditions(&exporterSet)
-		if err := r.Status().Update(ctx, &exporterSet); err != nil {
-			return requeueConflict(logger, err)
-		}
-		r.emitConditionEvents(&exporterSet, prevAvailable, prevProgressing, prevDegraded, prevScalingLimited)
-		return ctrl.Result{}, nil
+	if cleaned {
+		return cleanupResult, nil
 	}
 
 	state := computePoolState(ownedExporters)
@@ -276,7 +257,7 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Phase 2: create config Secrets + Pods for Exporters that now have credentials.
 	// Returns true when some Exporters are still waiting; we requeue to retry
 	// rather than relying solely on the Owns(&Exporter{}) watch event.
-	waiting, ensureErr := r.ensureExporterPods(ctx, &exporterSet, &vtc, mergedParameters, ownedExporters, podsByExporter)
+	waiting, ensureErr := r.ensureExporterPods(ctx, &exporterSet, vtc, mergedParameters, ownedExporters, podsByExporter)
 	if ensureErr != nil {
 		return ctrl.Result{}, ensureErr
 	}
@@ -292,9 +273,42 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err := r.Status().Update(ctx, &exporterSet); err != nil {
 		return requeueConflict(logger, err)
 	}
-	r.emitConditionEvents(&exporterSet, prevAvailable, prevProgressing, prevDegraded, prevScalingLimited)
+	r.emitConditionEvents(&exporterSet, prev.available, prev.progressing, prev.degraded, prev.scalingLimited)
 
 	return result, nil
+}
+
+func (r *ExporterSetReconciler) cleanupBeforeScale(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	exporters []jumpstarterdevv1alpha1.Exporter,
+	podsByExporter map[string][]corev1.Pod,
+	prevAvailable, prevProgressing, prevDegraded, prevScalingLimited bool,
+) (ctrl.Result, bool, error) {
+	deleted, err := r.cleanupDisabledExporters(ctx, es, exporters)
+	if err != nil {
+		return ctrl.Result{}, false, err
+	}
+	if !deleted {
+		deleted, err = r.cleanupTerminalExporters(ctx, es, exporters, podsByExporter)
+		if err != nil {
+			return ctrl.Result{}, false, err
+		}
+	}
+	if !deleted {
+		return ctrl.Result{}, false, nil
+	}
+
+	if err := r.reconcileStatusCounts(ctx, es); err != nil {
+		return ctrl.Result{}, false, err
+	}
+	r.reconcileConditions(es)
+	if err := r.Status().Update(ctx, es); err != nil {
+		result, err := requeueConflict(log.FromContext(ctx), err)
+		return result, true, err
+	}
+	r.emitConditionEvents(es, prevAvailable, prevProgressing, prevDegraded, prevScalingLimited)
+	return ctrl.Result{}, true, nil
 }
 
 // NetworkPolicyProvisioner isolates backend listeners before any workload Pod is created.
@@ -323,6 +337,117 @@ func (r *ExporterSetReconciler) syncNetworkPolicy(ctx context.Context, es *virtu
 		return fmt.Errorf("ensure runtime network isolation: %w", err)
 	}
 	return nil
+}
+
+// reconcileFinalizer handles the finalizer lifecycle: on deletion it runs
+// remote cleanup and removes the finalizer; otherwise it ensures the
+// finalizer is present. Returns (true, nil) when the caller should return
+// immediately (object is being deleted or finalizer was just added).
+func (r *ExporterSetReconciler) reconcileFinalizer(
+	ctx context.Context,
+	exporterSet *virtualtargetv1alpha1.ExporterSet,
+) (bool, error) {
+	logger := log.FromContext(ctx)
+	finalizer := finalizerRemoteCleanupPrefix + r.Provisioner.Name()
+
+	if !exporterSet.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(exporterSet, finalizer) {
+			ownedExporters, err := r.listOwnedExporters(ctx, exporterSet)
+			if err != nil {
+				return false, err
+			}
+			for i := range ownedExporters {
+				if err := r.Provisioner.Cleanup(ctx, exporterSet, &ownedExporters[i]); err != nil {
+					logger.Error(err, "failed to clean up remote resources for exporter",
+						"exporter", ownedExporters[i].Name)
+					return false, fmt.Errorf("clean up remote resources for exporter %s: %w", ownedExporters[i].Name, err)
+				}
+			}
+			controllerutil.RemoveFinalizer(exporterSet, finalizer)
+			if err := r.Update(ctx, exporterSet); err != nil {
+				return false, err
+			}
+		}
+		return true, nil
+	}
+
+	if !controllerutil.ContainsFinalizer(exporterSet, finalizer) {
+		controllerutil.AddFinalizer(exporterSet, finalizer)
+		if err := r.Update(ctx, exporterSet); err != nil {
+			return false, err
+		}
+	}
+
+	return false, nil
+}
+
+// resolveVirtualTargetClass fetches the VirtualTargetClass for an ExporterSet.
+// Returns (nil, nil) when the VTC is not found (status is updated in-place).
+func (r *ExporterSetReconciler) resolveVirtualTargetClass(
+	ctx context.Context,
+	exporterSet *virtualtargetv1alpha1.ExporterSet,
+) (*virtualtargetv1alpha1.VirtualTargetClass, error) {
+	logger := log.FromContext(ctx)
+
+	var vtc virtualtargetv1alpha1.VirtualTargetClass
+	vtcKey := client.ObjectKey{
+		Namespace: exporterSet.Namespace,
+		Name:      exporterSet.Spec.VirtualTargetClassName,
+	}
+	if err := r.Get(ctx, vtcKey, &vtc); err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.Info("VirtualTargetClass not found",
+				"virtualTargetClassName", exporterSet.Spec.VirtualTargetClassName)
+			prev := snapshotConditions(exporterSet)
+			if countErr := r.reconcileStatusCounts(ctx, exporterSet); countErr != nil {
+				return nil, countErr
+			}
+			r.reconcileConditions(exporterSet)
+			meta.SetStatusCondition(&exporterSet.Status.Conditions, metav1.Condition{
+				Type:               string(virtualtargetv1alpha1.ExporterSetConditionAvailable),
+				Status:             metav1.ConditionFalse,
+				ObservedGeneration: exporterSet.Generation,
+				Reason:             "VirtualTargetClassNotFound",
+				Message:            fmt.Sprintf("VirtualTargetClass %q not found", exporterSet.Spec.VirtualTargetClassName),
+			})
+			if updateErr := r.Status().Update(ctx, exporterSet); updateErr != nil {
+				if apierrors.IsConflict(updateErr) {
+					logger.Info("conflict on status update, will retry")
+				}
+				return nil, updateErr
+			}
+			r.emitConditionEvents(exporterSet, prev.available, prev.progressing, prev.degraded, prev.scalingLimited)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("unable to get VirtualTargetClass %q: %w",
+			exporterSet.Spec.VirtualTargetClassName, err)
+	}
+	return &vtc, nil
+}
+
+type conditionSnapshot struct {
+	available, progressing, degraded, scalingLimited bool
+}
+
+func snapshotConditions(es *virtualtargetv1alpha1.ExporterSet) conditionSnapshot {
+	return conditionSnapshot{
+		available: meta.IsStatusConditionTrue(
+			es.Status.Conditions,
+			string(virtualtargetv1alpha1.ExporterSetConditionAvailable),
+		),
+		progressing: meta.IsStatusConditionTrue(
+			es.Status.Conditions,
+			string(virtualtargetv1alpha1.ExporterSetConditionProgressing),
+		),
+		degraded: meta.IsStatusConditionTrue(
+			es.Status.Conditions,
+			string(virtualtargetv1alpha1.ExporterSetConditionDegraded),
+		),
+		scalingLimited: meta.IsStatusConditionTrue(
+			es.Status.Conditions,
+			string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited),
+		),
+	}
 }
 
 type poolState struct {
@@ -467,16 +592,16 @@ func (r *ExporterSetReconciler) ensureExporterPodsInCluster(
 			caRead = true
 		}
 
+		if _, hasPod := exportersWithPod[exp.Name]; !hasPod {
+			// Render the Pod first so API-backed provisioners can create remote
+			// resources needed while enriching the exporter configuration.
+			if err := r.createExporterPod(ctx, es, vtc, mergedParameters, mergeImages(vtc.Spec.Images, es.Spec.Images), exp); err != nil {
+				return waiting, err
+			}
+		}
+
 		// Sync config Secret on every reconcile so token rotation takes effect.
-		if err := r.syncConfigSecret(ctx, es, exp, caBundle, mergedParameters); err != nil {
-			return waiting, err
-		}
-
-		if _, hasPod := exportersWithPod[exp.Name]; hasPod {
-			continue
-		}
-
-		if err := r.createExporterPod(ctx, es, vtc, mergedParameters, mergeImages(vtc.Spec.Images, es.Spec.Images), exp); err != nil {
+		if err := r.syncConfigSecret(ctx, es, vtc, exp, caBundle, mergedParameters); err != nil {
 			return waiting, err
 		}
 	}
@@ -550,11 +675,12 @@ func (r *ExporterSetReconciler) ensureExporterDeployments(
 func (r *ExporterSetReconciler) syncConfigSecret(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
+	vtc *virtualtargetv1alpha1.VirtualTargetClass,
 	exp *jumpstarterdevv1alpha1.Exporter,
 	caBundle string,
 	mergedParameters map[string]any,
 ) error {
-	configSecret, err := r.buildExporterConfigSecret(ctx, es, exp, caBundle, mergedParameters)
+	configSecret, err := r.buildExporterConfigSecret(ctx, es, vtc, exp, caBundle, mergedParameters)
 	if err != nil {
 		return fmt.Errorf("build config for %s: %w", exp.Name, err)
 	}
@@ -578,7 +704,8 @@ func (r *ExporterSetReconciler) syncConfigSecret(
 }
 
 // createExporterPod issues a Pod for a single Exporter that has credentials
-// but no Pod yet. The config Secret must already exist (syncConfigSecret).
+// but no Pod yet. Kubernetes retries mounting the config Secret until the
+// subsequent syncConfigSecret call creates it.
 func (r *ExporterSetReconciler) createExporterPod(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
@@ -748,7 +875,8 @@ func injectConfigVolume(pod *corev1.Pod, exporterName string) bool {
 }
 
 // injectCredentialsSecretRef mounts VTC.credentialsSecretRef as env vars in
-// the runtime container. Used by API-backed provisioners; QEMU ignores it.
+// the exporter container only. Credentials are scoped to containers that need
+// them to avoid widening the blast radius via auxiliary containers (keepalive).
 func injectCredentialsSecretRef(pod *corev1.Pod, vtc *virtualtargetv1alpha1.VirtualTargetClass) {
 	if vtc.Spec.CredentialsSecretRef == nil {
 		return
@@ -762,11 +890,21 @@ func injectCredentialsSecretRef(pod *corev1.Pod, vtc *virtualtargetv1alpha1.Virt
 		},
 	}
 
+	for i := range pod.Spec.InitContainers {
+		if pod.Spec.InitContainers[i].Name == exporterContainerName {
+			pod.Spec.InitContainers[i].EnvFrom = append(
+				pod.Spec.InitContainers[i].EnvFrom,
+				envFrom,
+			)
+		}
+	}
 	for i := range pod.Spec.Containers {
-		pod.Spec.Containers[i].EnvFrom = append(
-			pod.Spec.Containers[i].EnvFrom,
-			envFrom,
-		)
+		if pod.Spec.Containers[i].Name == exporterContainerName {
+			pod.Spec.Containers[i].EnvFrom = append(
+				pod.Spec.Containers[i].EnvFrom,
+				envFrom,
+			)
+		}
 	}
 }
 
