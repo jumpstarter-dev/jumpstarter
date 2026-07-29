@@ -1273,7 +1273,7 @@ class TestRetryLoopLeaseExpired:
         @asynccontextmanager
         async def lease_async(
             selector, exporter_name, lease_name, duration, portal,
-            acquisition_timeout, retry_timeout=None,
+            acquisition_timeout, retry_timeout=None, dial_timeout=None,
         ):
             yield lease
 
@@ -1310,7 +1310,7 @@ class TestRetryLoopLeaseExpired:
         @asynccontextmanager
         async def lease_async(
             selector, exporter_name, lease_name, duration, portal,
-            acquisition_timeout, retry_timeout=None,
+            acquisition_timeout, retry_timeout=None, dial_timeout=None,
         ):
             yield lease
 

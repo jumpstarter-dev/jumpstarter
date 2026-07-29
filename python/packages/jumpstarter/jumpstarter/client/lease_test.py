@@ -855,13 +855,24 @@ class TestServeUnixAsync:
 
         # Mock per-connection Dial to raise AioRpcError
         async def mock_dial_failure(request):
-            raise AioRpcError(code=StatusCode.UNAVAILABLE, initial_metadata=None, trailing_metadata=None, details="exporter offline")
+            raise AioRpcError(
+                code=StatusCode.UNAVAILABLE,
+                initial_metadata=None,
+                trailing_metadata=None,
+                details="exporter offline",
+            )
 
         lease.controller.Dial = mock_dial_failure
 
+        # The ExceptionGroup surfaces when the TemporaryUnixListener task group
+        # tears down, so pytest.raises must wrap the entire serve_unix_async block.
         with patch.object(lease, "_dial_with_retry", side_effect=mock_dial_with_retry):
-            async with lease.serve_unix_async() as socket_path:
-                # Connect to the Unix socket — handler should wrap AioRpcError
-                with pytest.raises(ExporterUnreachableError, match="Per-connection Dial failed"):
+            with pytest.raises(BaseExceptionGroup) as exc_info:
+                async with lease.serve_unix_async() as socket_path:
                     async with await anyio.connect_unix(socket_path):
                         await anyio.sleep(0.1)
+
+            exceptions = exc_info.value.exceptions
+            assert len(exceptions) == 1
+            assert isinstance(exceptions[0], ExporterUnreachableError)
+            assert "Per-connection Dial failed" in str(exceptions[0])

@@ -528,6 +528,11 @@ async def _shell_with_signal_handling(  # noqa: C901
                             if unreachable is not None:
                                 if lease.lease_ended:
                                     break  # lease expired naturally — exit cleanly
+                                if lease.lease_transferred:
+                                    raise ExporterOfflineError(
+                                        "Lease has been transferred to another client. "
+                                        "Session is no longer valid."
+                                    ) from unreachable
                                 if connect_deadline is None:
                                     connect_deadline = time.monotonic() + lease.retry_timeout
                                 if time.monotonic() >= connect_deadline:
