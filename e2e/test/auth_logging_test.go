@@ -50,7 +50,6 @@ var _ = Describe("Auth Failure Logging E2E Tests", Label("auth-logging"), Ordere
 
 	var (
 		tracker            *ProcessTracker
-		ns                 string
 		tmpDir             string
 		exporterConfigPath string
 	)
@@ -73,19 +72,14 @@ var _ = Describe("Auth Failure Logging E2E Tests", Label("auth-logging"), Ordere
 
 	BeforeAll(func() {
 		tracker = NewProcessTracker()
-		ns = Namespace()
 
 		var err error
 		tmpDir, err = os.MkdirTemp("", "jmp-e2e-authlog-*")
 		Expect(err).NotTo(HaveOccurred())
 		exporterConfigPath = filepath.Join(tmpDir, exporterName+".yaml")
 
-		MustJmp("admin", "create", "client", "-n", ns, clientName,
-			"--unsafe", "--save")
-
-		MustJmp("admin", "create", "exporter", "-n", ns, exporterName,
-			"--out", exporterConfigPath,
-			"--label", "example.com/board=authlog")
+		CreateLegacyClient(clientName)
+		CreateLegacyExporter(exporterName, exporterConfigPath, "example.com/board=authlog")
 
 		// Give the exporter mock drivers so `jmp run` passes config
 		// validation and reaches the controller registration step.
@@ -95,8 +89,8 @@ var _ = Describe("Auth Failure Logging E2E Tests", Label("auth-logging"), Ordere
 
 	AfterAll(func() {
 		tracker.StopAll()
-		_, _ = Jmp("admin", "delete", "client", "--namespace", ns, clientName, "--delete")
-		_, _ = Jmp("admin", "delete", "exporter", "--namespace", ns, exporterName, "--delete")
+		DeleteClient(clientName)
+		DeleteExporter(exporterName)
 		tracker.Cleanup()
 		if tmpDir != "" {
 			_ = os.RemoveAll(tmpDir)
@@ -108,10 +102,7 @@ var _ = Describe("Auth Failure Logging E2E Tests", Label("auth-logging"), Ordere
 	})
 
 	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			tracker.DumpLogs(250)
-			DumpControllerLogs(250)
-		}
+		DumpOnFailure(250, tracker.DumpLogs)
 	})
 
 	It("controller logs client authentication failures with the peer address", func() {

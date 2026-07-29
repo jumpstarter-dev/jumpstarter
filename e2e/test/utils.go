@@ -41,6 +41,9 @@ const (
 	exporterPollPeriod  = 500 * time.Millisecond
 	exporterPostDelay   = 2 * time.Second
 	exporterProcessWait = 2 * time.Second
+
+	// DexIssuer is the in-cluster Dex OIDC issuer used by e2e login helpers.
+	DexIssuer = "https://dex.dex.svc.cluster.local:5556"
 )
 
 // --- Environment helpers ---
@@ -225,6 +228,99 @@ func MustJmp(args ...string) string {
 	out, err := Jmp(args...)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "jmp %v failed: %s", args, out)
 	return out
+}
+
+// --- Client / exporter provisioning helpers ---
+
+// CreateOIDCClient creates a Jumpstarter client CR with Dex OIDC identity.
+func CreateOIDCClient(name string) {
+	MustJmp("admin", "create", "client", "-n", Namespace(), name,
+		"--unsafe", "--nointeractive",
+		"--oidc-username", "dex:"+name)
+}
+
+// LoginOIDCClient performs jmp login for a Dex-backed client (password "password").
+func LoginOIDCClient(name string) {
+	ns := Namespace()
+	MustJmp("login", "--client", name,
+		"--endpoint", Endpoint(), "--namespace", ns, "--name", name,
+		"--issuer", DexIssuer,
+		"--username", name+"@example.com", "--password", "password", "--unsafe")
+}
+
+// EnsureOIDCClient deletes any existing client of this name, recreates it, and logs in.
+func EnsureOIDCClient(name string) {
+	DeleteClient(name)
+	CreateOIDCClient(name)
+	LoginOIDCClient(name)
+}
+
+// CreateLegacyClient creates a client with a controller-issued token (--save).
+func CreateLegacyClient(name string) {
+	MustJmp("admin", "create", "client", "-n", Namespace(), name, "--unsafe", "--save")
+}
+
+// DeleteClient best-effort deletes a client CR and its local credentials.
+func DeleteClient(name string) {
+	_, _ = Jmp("admin", "delete", "client", "--namespace", Namespace(), name, "--delete")
+}
+
+// CreateOIDCExporter creates an exporter CR with Dex OIDC identity and optional labels.
+func CreateOIDCExporter(name string, labels ...string) {
+	args := []string{
+		"admin", "create", "exporter", "-n", Namespace(), name,
+		"--nointeractive", "--oidc-username", "dex:" + name,
+	}
+	for _, label := range labels {
+		args = append(args, "--label", label)
+	}
+	MustJmp(args...)
+}
+
+// LoginOIDCExporter performs jmp login for a Dex-backed exporter config.
+func LoginOIDCExporter(name string) {
+	ns := Namespace()
+	MustJmp("login", "--exporter-config", SystemExporterConfigPath(name),
+		"--endpoint", Endpoint(), "--namespace", ns, "--name", name,
+		"--issuer", DexIssuer,
+		"--username", name+"@example.com", "--password", "password")
+}
+
+// CreateLegacyExporter creates an exporter with token auth, writing config to outPath.
+func CreateLegacyExporter(name, outPath string, labels ...string) {
+	args := []string{"admin", "create", "exporter", "-n", Namespace(), name, "--out", outPath}
+	for _, label := range labels {
+		args = append(args, "--label", label)
+	}
+	MustJmp(args...)
+}
+
+// DeleteExporter best-effort deletes an exporter CR and its local credentials.
+func DeleteExporter(name string) {
+	_, _ = Jmp("admin", "delete", "exporter", "--namespace", Namespace(), name, "--delete")
+}
+
+// DumpOnFailure dumps controller logs (and optional extras) when the current
+// Ginkgo spec failed. Intended for AfterEach hooks.
+func DumpOnFailure(maxLines int, extras ...func(int)) {
+	if !CurrentSpecReport().Failed() {
+		return
+	}
+	DumpControllerLogs(maxLines)
+	for _, extra := range extras {
+		extra(maxLines)
+	}
+}
+
+// WaitForDeploymentAvailable waits until a Deployment matching labelSelector is Available.
+func WaitForDeploymentAvailable(labelSelector string, timeout time.Duration) {
+	ns := Namespace()
+	EventuallyWithOffset(1, func() error {
+		_, err := Kubectl("-n", ns, "wait", "--timeout=60s",
+			"--for=condition=Available",
+			"deployment", "-l", labelSelector)
+		return err
+	}, timeout, 5*time.Second).Should(Succeed())
 }
 
 // Kubectl runs a kubectl command and returns the output.

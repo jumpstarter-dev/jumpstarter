@@ -1259,6 +1259,86 @@ class TestShutdownRuntimeSidecar:
             assert "--socket" in args
             assert str(sock) in args
 
+    def test_falls_back_to_binary_beside_socket(self, monkeypatch, tmp_path):
+        """When the default path is missing, use jumpstarter-exec next to the socket."""
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        with patch("subprocess.run") as run:
+            run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            # No binary= arg → default /shared/jumpstarter-exec missing → fall back.
+            assert shutdown_runtime_sidecar() is True
+            assert run.call_args.args[0][0] == str(binary)
+
+        # Explicit socket_path also works without the env var.
+        monkeypatch.delenv("JUMPSTARTER_LAUNCHER_SOCKET", raising=False)
+        with patch("subprocess.run") as run:
+            run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            assert shutdown_runtime_sidecar(socket_path=str(sock)) is True
+            assert run.call_args.args[0][0] == str(binary)
+
+    def test_missing_binary_returns_false(self, monkeypatch, tmp_path):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        missing = tmp_path / "does-not-exist"
+        assert shutdown_runtime_sidecar(binary=str(missing)) is False
+
+    def test_file_not_found_returns_false(self, monkeypatch, tmp_path):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        with patch("subprocess.run", side_effect=FileNotFoundError):
+            assert shutdown_runtime_sidecar(binary=str(binary)) is False
+
+    def test_timeout_returns_false(self, monkeypatch, tmp_path):
+        import subprocess
+
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        with patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd=["jumpstarter-exec"], timeout=1),
+        ):
+            assert shutdown_runtime_sidecar(binary=str(binary), timeout=1.0) is False
+
+    def test_nonzero_exit_returns_false(self, monkeypatch, tmp_path):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        with patch("subprocess.run") as run:
+            run.return_value = MagicMock(returncode=1, stdout="", stderr="boom")
+            assert shutdown_runtime_sidecar(binary=str(binary)) is False
+
 
 class TestContextPropagation:
     """Tests for spec.context propagation from StatusResponse to log context."""

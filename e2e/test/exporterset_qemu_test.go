@@ -54,22 +54,10 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 		Expect(imagePath).To(BeAnExistingFile())
 
 		By("waiting for exporterset-controller Deployment")
-		Eventually(func() error {
-			_, err := Kubectl("-n", ns, "wait", "--timeout=60s",
-				"--for=condition=Available",
-				"deployment", "-l", "component=exporterset-controller")
-			return err
-		}, 5*time.Minute, 5*time.Second).Should(Succeed())
+		WaitForDeploymentAvailable("component=exporterset-controller", 5*time.Minute)
 
 		By("creating and logging in e2e client")
-		_, _ = Jmp("admin", "delete", "client", "--namespace", ns, exporterSetQemuClientName, "--delete")
-		MustJmp("admin", "create", "client", "-n", ns, exporterSetQemuClientName,
-			"--unsafe", "--nointeractive",
-			"--oidc-username", "dex:"+exporterSetQemuClientName)
-		MustJmp("login", "--client", exporterSetQemuClientName,
-			"--endpoint", Endpoint(), "--namespace", ns, "--name", exporterSetQemuClientName,
-			"--issuer", "https://dex.dex.svc.cluster.local:5556",
-			"--username", exporterSetQemuClientName+"@example.com", "--password", "password", "--unsafe")
+		EnsureOIDCClient(exporterSetQemuClientName)
 
 		By("applying ExporterSet QEMU kind manifest")
 		MustKubectl("apply", "-f", manifest)
@@ -78,14 +66,11 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 	AfterAll(func() {
 		By("cleaning up ExporterSet resources and client")
 		_, _ = Kubectl("delete", "--ignore-not-found", "-f", manifest)
-		_, _ = Jmp("admin", "delete", "client", "--namespace", ns, exporterSetQemuClientName, "--delete")
+		DeleteClient(exporterSetQemuClientName)
 	})
 
 	AfterEach(func() {
-		if CurrentSpecReport().Failed() {
-			DumpControllerLogs(250)
-			DumpExporterSetQemuLogs(250)
-		}
+		DumpOnFailure(250, DumpExporterSetQemuLogs)
 	})
 
 	It("brings an Exporter Online with a Ready Pod", func() {

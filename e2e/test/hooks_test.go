@@ -29,7 +29,6 @@ import (
 var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 	var (
 		tracker            *ProcessTracker
-		ns                 string
 		exporterConfigPath string
 	)
 
@@ -64,34 +63,19 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 
 	BeforeAll(func() {
 		tracker = NewProcessTracker()
-		ns = Namespace()
 		exporterConfigPath = SystemExporterConfigPath("test-exporter-hooks")
 
-		// Create client and exporter for hooks tests
-		MustJmp("admin", "create", "client", "-n", ns, "test-client-hooks",
-			"--unsafe", "--nointeractive", "--oidc-username", "dex:test-client-hooks")
-
-		MustJmp("admin", "create", "exporter", "-n", ns, "test-exporter-hooks",
-			"--nointeractive", "--oidc-username", "dex:test-exporter-hooks",
-			"--label", "example.com/board=hooks")
-
-		MustJmp("login", "--client", "test-client-hooks",
-			"--endpoint", Endpoint(), "--namespace", ns, "--name", "test-client-hooks",
-			"--issuer", "https://dex.dex.svc.cluster.local:5556",
-			"--username", "test-client-hooks@example.com", "--password", "password", "--unsafe")
-
-		MustJmp("login", "--exporter-config", SystemExporterConfigPath("test-exporter-hooks"),
-			"--endpoint", Endpoint(), "--namespace", ns, "--name", "test-exporter-hooks",
-			"--issuer", "https://dex.dex.svc.cluster.local:5556",
-			"--username", "test-exporter-hooks@example.com", "--password", "password")
+		CreateOIDCClient("test-client-hooks")
+		CreateOIDCExporter("test-exporter-hooks", "example.com/board=hooks")
+		LoginOIDCClient("test-client-hooks")
+		LoginOIDCExporter("test-exporter-hooks")
 	})
 
 	AfterAll(func() {
 		tracker.StopAll()
 
-		// Clean up CRDs
-		_, _ = Jmp("admin", "delete", "client", "--namespace", ns, "test-client-hooks", "--delete")
-		_, _ = Jmp("admin", "delete", "exporter", "--namespace", ns, "test-exporter-hooks", "--delete")
+		DeleteClient("test-client-hooks")
+		DeleteExporter("test-exporter-hooks")
 
 		tracker.Cleanup()
 	})

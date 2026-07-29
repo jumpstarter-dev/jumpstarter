@@ -27,22 +27,17 @@ import (
 var _ = Describe("Exit On Lease End E2E Tests", Label("exit-on-lease-end"), Ordered, func() {
 	var (
 		tracker            *ProcessTracker
-		ns                 string
 		exporterConfigPath string
 	)
 
 	BeforeAll(func() {
 		tracker = NewProcessTracker()
-		ns = Namespace()
 		exporterConfigPath = SystemExporterConfigPath("test-exporter-exit-on-lease-end")
 
-		// Create client and exporter using legacy (token) auth — no OIDC/dex dependency.
-		MustJmp("admin", "create", "client", "-n", ns, "test-client-exit-on-lease-end",
-			"--unsafe", "--save")
-
-		MustJmp("admin", "create", "exporter", "-n", ns, "test-exporter-exit-on-lease-end",
-			"--out", exporterConfigPath,
-			"--label", "example.com/board=exit-on-lease-end")
+		// Legacy (token) auth — no OIDC/dex dependency.
+		CreateLegacyClient("test-client-exit-on-lease-end")
+		CreateLegacyExporter("test-exporter-exit-on-lease-end", exporterConfigPath,
+			"example.com/board=exit-on-lease-end")
 
 		// Merge the base exporter drivers + exitOnLeaseEnd overlay
 		overlayPath := filepath.Join(RepoRoot(), "e2e", "exporters", "exporter-exit-on-lease-end.yaml")
@@ -52,9 +47,8 @@ var _ = Describe("Exit On Lease End E2E Tests", Label("exit-on-lease-end"), Orde
 	AfterAll(func() {
 		tracker.StopAll()
 
-		// Clean up CRDs
-		_, _ = Jmp("admin", "delete", "client", "--namespace", ns, "test-client-exit-on-lease-end", "--delete")
-		_, _ = Jmp("admin", "delete", "exporter", "--namespace", ns, "test-exporter-exit-on-lease-end", "--delete")
+		DeleteClient("test-client-exit-on-lease-end")
+		DeleteExporter("test-exporter-exit-on-lease-end")
 
 		tracker.Cleanup()
 	})
@@ -64,8 +58,8 @@ var _ = Describe("Exit On Lease End E2E Tests", Label("exit-on-lease-end"), Orde
 	})
 
 	AfterEach(func() {
+		DumpOnFailure(250, tracker.DumpLogs)
 		if CurrentSpecReport().Failed() {
-			tracker.DumpLogs(250)
 			DumpControllerLogs(250)
 		}
 		// Stop any running exporter and wait for the controller to fully

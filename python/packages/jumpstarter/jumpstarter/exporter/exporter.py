@@ -1182,6 +1182,11 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         try:
             await self._run_control_plane(status_tx, status_rx)
         finally:
+            if self.exit_on_lease_end:
+                # Ensure the runtime container exits whenever this exporter is
+                # configured for ExitAndReplace (covers hook on_failure=exit and
+                # other stop paths that skip the lease-end branch above).
+                shutdown_runtime_sidecar()
             self._tg = None
             self._status_drain_active = False
             clear_log_context()
