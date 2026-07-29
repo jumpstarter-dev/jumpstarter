@@ -57,11 +57,20 @@ class Session(
 
     @contextmanager
     def __contextmanager__(self) -> Generator[Self]:
+        from jumpstarter.logging import set_log_context
+        from jumpstarter.metrics import get_registry
+
         logging.getLogger().addHandler(self._logging_handler)
         self.root_device.reset()
+        set_log_context(exporter=self.name)
+        get_registry().inc_active_sessions(exporter=self.name, delta=1.0)
         try:
             yield self
         finally:
+            try:
+                get_registry().inc_active_sessions(exporter=self.name, delta=-1.0)
+            except Exception:
+                pass
             try:
                 self.root_device.close()
             except Exception as e:
@@ -319,14 +328,15 @@ class Session(
     async def Stream(self, _request_iterator, context):
         request = StreamRequestMetadata(**dict(list(context.invocation_metadata()))).request
         logger.debug("Streaming(%s)", request)
-        async with self[request.uuid].Stream(request, context) as stream:
+        driver = self[request.uuid]
+        async with driver.Stream(request, context) as stream:
             metadata = []
             with suppress(TypedAttributeLookupError):
                 metadata.extend(stream.extra(MetadataStreamAttributes.metadata).items())
             await context.send_initial_metadata(metadata)
 
             async with RouterStream(context=context) as remote:
-                async with forward_stream(remote, stream):
+                async with forward_stream(remote, stream, metrics_driver_type=driver.driver_type):
                     event = Event()
                     context.add_done_callback(lambda _: event.set())
                     await event.wait()

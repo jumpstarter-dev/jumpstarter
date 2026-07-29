@@ -70,7 +70,15 @@ def _reap_zombie_processes(capture_child=None):
         logger.warning(f"PARENT: Error during zombie reaping: {e}")
 
 
-def _handle_child(config, parsed_bind=None, tls_insecure=False, tls_cert=None, tls_key=None, passphrase=None):  # noqa: C901
+def _handle_child(  # noqa: C901
+    config,
+    parsed_bind=None,
+    tls_insecure=False,
+    tls_cert=None,
+    tls_key=None,
+    passphrase=None,
+    metrics_bind_address=":8080",
+):
     """Handle child process with graceful shutdown."""
     async def serve_with_graceful_shutdown():  # noqa: C901
         received_signal = 0
@@ -98,6 +106,12 @@ def _handle_child(config, parsed_bind=None, tls_insecure=False, tls_cert=None, t
 
             # Start signal handler immediately
             signal_tg.start_soon(signal_handler)
+
+            from jumpstarter.metrics import start_metrics_server
+
+            listen_addr = start_metrics_server(metrics_bind_address)
+            if listen_addr:
+                logger.info("Serving metrics server at http://%s/metrics", listen_addr)
 
             if parsed_bind is not None:
                 host, port = parsed_bind
@@ -204,7 +218,13 @@ def _handle_parent(pid):
 
 
 def _serve_with_exc_handling(
-    config, parsed_bind=None, tls_insecure=False, tls_cert=None, tls_key=None, passphrase=None
+    config,
+    parsed_bind=None,
+    tls_insecure=False,
+    tls_cert=None,
+    tls_key=None,
+    passphrase=None,
+    metrics_bind_address=":8080",
 ):
     max_rapid_failures = config.failure_detection.max_rapid_failures
     rapid_failure_window = config.failure_detection.rapid_failure_window
@@ -253,7 +273,15 @@ def _serve_with_exc_handling(
                 rapid_failure_count = 0
         else:
             os.setsid() # Become group leader so all spawned subprocesses are reached by parent's signals
-            _handle_child(config, parsed_bind, tls_insecure, tls_cert, tls_key, passphrase)
+            _handle_child(
+                config,
+                parsed_bind,
+                tls_insecure,
+                tls_cert,
+                tls_key,
+                passphrase,
+                metrics_bind_address,
+            )
             sys.exit(1) # should never happen
 
 
@@ -294,8 +322,24 @@ def _serve_with_exc_handling(
     default=False,
     help="Exit after the current lease ends instead of waiting for a new one.",
 )
+@click.option(
+    "--metrics-bind-address",
+    "metrics_bind_address",
+    default=":8080",
+    show_default=True,
+    help="Address for HTTP GET /metrics (Prometheus/OpenMetrics). Use 0 to disable.",
+)
 @handle_exceptions
-def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase, exit_on_lease_end):
+def run(
+    config,
+    listener_bind,
+    tls_insecure,
+    tls_cert,
+    tls_key,
+    passphrase,
+    exit_on_lease_end,
+    metrics_bind_address,
+):
     """Run an exporter locally."""
     if listener_bind is not None and config is None:
         raise click.UsageError("--exporter-config (or --exporter) is required when using --tls-grpc-listener")
@@ -313,4 +357,12 @@ def run(config, listener_bind, tls_insecure, tls_cert, tls_key, passphrase, exit
     if exit_on_lease_end:
         config.exit_on_lease_end = True
     parsed_bind = _parse_listener_bind(listener_bind) if listener_bind is not None else None
-    return _serve_with_exc_handling(config, parsed_bind, tls_insecure, tls_cert, tls_key, passphrase)
+    return _serve_with_exc_handling(
+        config,
+        parsed_bind,
+        tls_insecure,
+        tls_cert,
+        tls_key,
+        passphrase,
+        metrics_bind_address,
+    )
