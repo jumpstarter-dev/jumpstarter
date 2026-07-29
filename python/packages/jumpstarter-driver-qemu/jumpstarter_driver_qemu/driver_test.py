@@ -227,6 +227,7 @@ def test_cidata_uses_shared_work_dir_with_launcher_socket(tmp_path):
         cidata = driver.cidata()
         try:
             assert Path(cidata.name).is_relative_to(shared)
+            assert oct(Path(cidata.name).stat().st_mode & 0o777) == "0o755"
             assert (Path(cidata.name) / "meta-data").is_file()
             assert (Path(cidata.name) / "user-data").is_file()
         finally:

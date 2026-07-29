@@ -154,7 +154,7 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 		Expect(string(out)).To(ContainSubstring("OK: matched marker"))
 	})
 
-	It("replaces the Pod after lease release (ExitAndReplace via jumpstarter-exec shutdown)", func() {
+	It("power cycles QEMU then rotates the Pod/Exporter and stays responsive", func() {
 		By("recording the current Running Pod name and UID")
 		var oldName, oldUID string
 		Eventually(func(g Gomega) {
@@ -172,11 +172,13 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 			oldUID = uid
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
-		By("leasing and releasing so exitOnLeaseEnd completes the Pod")
+		By("running j qemu power on / power off under jmp shell")
+		// One lease: start QEMU via the runtime sidecar, stop it, then release
+		// so exitOnLeaseEnd completes the Pod and ExitAndReplace recycles it.
 		MustJmp("shell", "--client", exporterSetQemuClientName,
 			"--selector", exporterSetQemuSelector,
 			"--duration", "5m",
-			"--", "j", "qemu", "--help")
+			"--", "sh", "-c", "j qemu power on && j qemu power off")
 
 		By("waiting for the old Pod/Exporter to be deleted and a single replacement Running")
 		Eventually(func(g Gomega) {
@@ -223,6 +225,12 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 			return out
 		}, 2*time.Minute, 5*time.Second).ShouldNot(BeEmpty())
 		WaitForExporter(exporterName)
+
+		By("verifying the replacement still responds to qemu power on/off")
+		MustJmp("shell", "--client", exporterSetQemuClientName,
+			"--selector", exporterSetQemuSelector,
+			"--duration", "5m",
+			"--", "sh", "-c", "j qemu power on && j qemu power off")
 	})
 })
 

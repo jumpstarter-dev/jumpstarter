@@ -540,9 +540,12 @@ class Qemu(Driver):
     def cidata(self) -> TemporaryDirectory:
         # In sidecar mode QEMU runs in the runtime container and can only
         # see paths on the shared volume — never the exporter's /tmp.
+        # Mode must be world-traversable: TemporaryDirectory defaults to 0o700,
+        # but the runtime sidecar runs as UID 65532 while the exporter is root.
         tmp = TemporaryDirectory(dir=self._work_dir)
-
         path = Path(tmp.name)
+        path.chmod(0o755)
+
         (path / "meta-data").write_text(
             yaml.safe_dump(
                 {
@@ -567,6 +570,7 @@ class Qemu(Driver):
                 }
             )
         )
+        # Files from write_text are 0o644 by default — readable by runtime UID.
 
         return tmp
 
