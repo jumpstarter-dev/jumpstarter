@@ -440,6 +440,25 @@ fn e2e_echo() {
 }
 
 #[test]
+fn e2e_shutdown_exits_serve() {
+    let (mut server, _dir, sock) = start_server_process();
+
+    let status = Command::new(binary_path())
+        .args(["shutdown", "--socket", &sock])
+        .status()
+        .expect("failed to run jumpstarter-exec shutdown");
+    assert!(status.success(), "shutdown should exit 0");
+
+    let wait = server
+        .wait()
+        .expect("failed to wait for serve process after shutdown");
+    assert!(
+        wait.success(),
+        "serve should exit 0 after shutdown, got {wait}"
+    );
+}
+
+#[test]
 fn e2e_stderr() {
     let (mut server, _dir, sock) = start_server_process();
     let (_, stderr, code) = run_exec(&sock, &["sh", "-c", "echo oops >&2"], None);

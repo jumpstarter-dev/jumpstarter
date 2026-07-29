@@ -84,6 +84,73 @@ def _severity_to_level(severity: str) -> int:
     return level
 
 
+# Sidecar launcher socket injected by the ExporterSet QEMU provisioner.
+_LAUNCHER_SOCKET_ENV = "JUMPSTARTER_LAUNCHER_SOCKET"
+_DEFAULT_JMP_EXEC = "/shared/jumpstarter-exec"
+
+
+def shutdown_runtime_sidecar(
+    *,
+    socket_path: str | None = None,
+    binary: str | None = None,
+    timeout: float = 10.0,
+) -> bool:
+    """Ask jumpstarter-exec serve (runtime container PID 1) to exit.
+
+    Required for ExitAndReplace: the runtime sidecar uses
+    ``restartPolicy: Always``, so exiting the exporter alone leaves the
+    runtime container running. Shutting down ``jumpstarter-exec serve``
+    lets the Pod complete so the ExporterSet controller replaces it.
+
+    Returns True if a shutdown was attempted, False if no launcher socket
+    is configured (non-sidecar / InPlaceReuse hosts).
+    """
+    import os
+    import subprocess
+    from pathlib import Path
+
+    sock = socket_path or os.environ.get(_LAUNCHER_SOCKET_ENV)
+    if not sock:
+        return False
+
+    exec_bin = Path(binary) if binary else Path(_DEFAULT_JMP_EXEC)
+    if not exec_bin.is_file():
+        # Fall back to the binary next to the socket (same shared volume).
+        candidate = Path(sock).parent / "jumpstarter-exec"
+        if candidate.is_file():
+            exec_bin = candidate
+        else:
+            logger.warning(
+                "jumpstarter-exec binary not found at %s or %s; cannot shut down runtime",
+                _DEFAULT_JMP_EXEC,
+                candidate,
+            )
+            return False
+
+    cmd = [str(exec_bin), "shutdown", "--socket", sock]
+    logger.info("Shutting down runtime sidecar via %s", " ".join(cmd))
+    try:
+        result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=timeout)
+    except FileNotFoundError:
+        logger.warning("jumpstarter-exec not executable at %s", exec_bin)
+        return False
+    except subprocess.TimeoutExpired:
+        logger.warning("jumpstarter-exec shutdown timed out after %ss", timeout)
+        return False
+
+    if result.returncode != 0:
+        logger.warning(
+            "jumpstarter-exec shutdown exited %s: stdout=%r stderr=%r",
+            result.returncode,
+            result.stdout,
+            result.stderr,
+        )
+        return False
+
+    logger.info("Runtime sidecar shutdown acknowledged")
+    return True
+
+
 async def _standalone_shutdown_waiter():
     """Wait forever; used so serve_standalone_tcp can be cancelled by stop()."""
     await anyio.sleep_forever()
@@ -1235,6 +1302,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
         if self.exit_on_lease_end and previous_leased:
             logger.info("Exporter configured to exit after lease, shutting down")
+            shutdown_runtime_sidecar()
             self._stop_requested = True
 
     def _check_stop_requested(self) -> bool:

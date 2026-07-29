@@ -73,6 +73,18 @@ fn main() {
                 }
             }
         }
+        "shutdown" => {
+            let rest = &args[2..];
+            let socket =
+                parse_option(rest, "--socket").unwrap_or_else(|| DEFAULT_SOCKET.to_string());
+            match jumpstarter_exec::client::shutdown(&socket) {
+                Ok(code) => process::exit(code),
+                Err(e) => {
+                    eprintln!("jumpstarter-exec shutdown: {e}");
+                    process::exit(1);
+                }
+            }
+        }
         other => {
             eprintln!("jumpstarter-exec: unknown subcommand '{other}'");
             usage();
@@ -82,7 +94,7 @@ fn main() {
 }
 
 fn usage() {
-    eprintln!("Usage: jumpstarter-exec <serve|exec|version> [options]");
+    eprintln!("Usage: jumpstarter-exec <serve|exec|shutdown|version> [options]");
     eprintln!();
     eprintln!("Subcommands:");
     eprintln!("  serve   [--socket <path>] [--debug] [--log-format json|text]");
@@ -90,6 +102,8 @@ fn usage() {
     eprintln!("          Listen for exec requests (JSON logs by default)");
     eprintln!("  exec    [--socket <path>] -- <cmd> [...]");
     eprintln!("          Execute a command remotely");
+    eprintln!("  shutdown [--socket <path>]");
+    eprintln!("          Ask serve to exit (ExitAndReplace / exitOnLeaseEnd)");
     eprintln!("  version  Print version and exit");
     eprintln!();
     eprintln!("Log context (JEP-0013 persistent fields on every line):");

@@ -1183,7 +1183,9 @@ class TestExitOnLeaseEnd:
         ])
         _wire_handle_lease(exporter)
 
-        await exporter.serve()
+        with patch("jumpstarter.exporter.exporter.shutdown_runtime_sidecar") as shutdown:
+            await exporter.serve()
+            shutdown.assert_called()
 
         assert exporter._stop_requested is True
 
@@ -1195,14 +1197,16 @@ class TestExitOnLeaseEnd:
             MagicMock(leased=False, lease_name="", client_name=""),
         ])
 
-        async with create_task_group() as tg:
-            tg.start_soon(exporter.serve)
-            # Give serve time to process the status
-            await anyio.sleep(0.1)
-            # Check that _stop_requested was NOT set
-            assert exporter._stop_requested is False
-            # Clean exit
-            tg.cancel_scope.cancel()
+        with patch("jumpstarter.exporter.exporter.shutdown_runtime_sidecar"):
+            async with create_task_group() as tg:
+                tg.start_soon(exporter.serve)
+                # Give serve time to process the status
+                await anyio.sleep(0.1)
+                # Check that _stop_requested was NOT set
+                assert exporter._stop_requested is False
+                # Clean exit (status stream stays open; cancel rather than hang)
+                tg.cancel_scope.cancel()
+
 
     async def test_serve_continues_when_disabled(self):
         """serve() does NOT set _stop_requested after lease ends when
@@ -1214,14 +1218,46 @@ class TestExitOnLeaseEnd:
         ])
         _wire_handle_lease(exporter)
 
-        async with create_task_group() as tg:
-            tg.start_soon(exporter.serve)
-            # Give serve time to process both statuses
-            await anyio.sleep(0.2)
-            # Check that _stop_requested was NOT set (exit_on_lease_end is False)
-            assert exporter._stop_requested is False
-            # Clean exit
-            tg.cancel_scope.cancel()
+        with patch("jumpstarter.exporter.exporter.shutdown_runtime_sidecar") as shutdown:
+            async with create_task_group() as tg:
+                tg.start_soon(exporter.serve)
+                # Give serve time to process both statuses
+                await anyio.sleep(0.2)
+                # Check that _stop_requested was NOT set (exit_on_lease_end is False)
+                assert exporter._stop_requested is False
+                shutdown.assert_not_called()
+                # Clean exit (status stream stays open; cancel rather than hang)
+                tg.cancel_scope.cancel()
+
+
+
+class TestShutdownRuntimeSidecar:
+    def test_noop_without_socket_env(self, monkeypatch):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        monkeypatch.delenv("JUMPSTARTER_LAUNCHER_SOCKET", raising=False)
+        assert shutdown_runtime_sidecar() is False
+
+    def test_runs_shutdown_command(self, monkeypatch, tmp_path):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")  # path only; connect is mocked via subprocess
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        with patch("subprocess.run") as run:
+            run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            assert shutdown_runtime_sidecar(binary=str(binary)) is True
+            run.assert_called_once()
+            args = run.call_args.args[0]
+            assert args[0] == str(binary)
+            assert args[1] == "shutdown"
+            assert "--socket" in args
+            assert str(sock) in args
 
 
 class TestContextPropagation:

@@ -67,8 +67,9 @@ pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> 
         match stream {
             Ok(s) => {
                 let log = Arc::clone(&log);
+                let socket = socket_path.to_string();
                 thread::spawn(move || {
-                    if let Err(e) = handle_connection(s, Arc::clone(&log)) {
+                    if let Err(e) = handle_connection(s, Arc::clone(&log), &socket) {
                         log.error("connection error", &[("error", json!(e.to_string()))]);
                     }
                 });
@@ -79,7 +80,11 @@ pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> 
     Ok(())
 }
 
-fn handle_connection(stream: UnixStream, log: Arc<Logger>) -> std::io::Result<()> {
+fn handle_connection(
+    stream: UnixStream,
+    log: Arc<Logger>,
+    socket_path: &str,
+) -> std::io::Result<()> {
     let reader = BufReader::new(stream.try_clone()?);
     let writer: Arc<Mutex<UnixStream>> = Arc::new(Mutex::new(stream));
     let mut lines = reader.lines();
@@ -91,11 +96,30 @@ fn handle_connection(stream: UnixStream, log: Arc<Logger>) -> std::io::Result<()
     let msg: ClientMessage =
         serde_json::from_str(&first_line).map_err(|e| io_err(&format!("invalid message: {e}")))?;
 
-    let (argv, env, cwd) = match msg {
-        ClientMessage::Exec { argv, env, cwd } => (argv, env, cwd),
-        _ => return Err(io_err("first message must be Exec")),
-    };
+    match msg {
+        ClientMessage::Shutdown => {
+            log.info("shutdown requested", &[("socket", json!(socket_path))]);
+            // Acknowledge before exiting so the client can observe success.
+            send(&writer, &ServerMessage::Exit { code: Some(0) })?;
+            // Drop the writer to flush the ack, remove the socket, then exit
+            // so the container's PID 1 terminates and Kubernetes replaces the Pod.
+            drop(writer);
+            let _ = std::fs::remove_file(socket_path);
+            std::process::exit(0);
+        }
+        ClientMessage::Exec { argv, env, cwd } => handle_exec(argv, env, cwd, lines, writer, log),
+        _ => Err(io_err("first message must be Exec or Shutdown")),
+    }
+}
 
+fn handle_exec(
+    argv: Vec<String>,
+    env: Vec<(String, String)>,
+    cwd: Option<String>,
+    lines: std::io::Lines<BufReader<UnixStream>>,
+    writer: Arc<Mutex<UnixStream>>,
+    log: Arc<Logger>,
+) -> std::io::Result<()> {
     if argv.is_empty() {
         send(
             &writer,

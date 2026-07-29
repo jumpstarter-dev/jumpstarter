@@ -47,6 +47,20 @@ pub fn exec(socket_path: &str, argv: Vec<String>) -> std::io::Result<i32> {
         }
     });
 
+    wait_for_exit(reader)
+}
+
+/// Ask a running `serve` process to exit (used for ExitAndReplace recycle).
+pub fn shutdown(socket_path: &str) -> std::io::Result<i32> {
+    let stream = UnixStream::connect(socket_path)?;
+    let reader = BufReader::new(stream.try_clone()?);
+    let writer: Arc<Mutex<UnixStream>> = Arc::new(Mutex::new(stream));
+
+    send(&writer, &ClientMessage::Shutdown)?;
+    wait_for_exit(reader)
+}
+
+fn wait_for_exit(reader: BufReader<UnixStream>) -> std::io::Result<i32> {
     let mut exit_code = 1;
     for line in reader.lines() {
         let line = line?;

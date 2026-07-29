@@ -47,7 +47,7 @@ const (
 	// configMountPath is where the ExporterConfig Secret is mounted.
 	configMountPath = "/etc/jumpstarter/exporters"
 
-	// exporterContainerName is the init-container name in the sidecar Pod.
+	// exporterContainerName is the main container that runs jmp run.
 	exporterContainerName = "exporter"
 )
 

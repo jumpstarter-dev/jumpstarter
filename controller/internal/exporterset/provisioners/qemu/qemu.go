@@ -135,11 +135,15 @@ func (p *Provisioner) resolveImageSpec(spec *virtualtargetv1alpha1.ImageSpec, de
 //
 //   - copy-jumpstarter-exec (regular init container) copies the
 //     jumpstarter-exec binary onto the shared volume and exits.
-//   - Exporter sidecar (init container with restartPolicy: Always)
-//     starts next and drains last; registers with the controller.
-//   - QEMU runtime (main container) runs the virtual machine.
-//   - Shared emptyDir volume for Unix socket communication
-//     (QMP, serial console, launcher socket).
+//   - target-runtime (native sidecar, restartPolicy: Always) starts
+//     next so launcher.sock is ready before the exporter; runs
+//     jumpstarter-exec serve / QEMU.
+//   - exporter (main container) runs `jmp run` — default kubectl logs
+//     target; when it exits (exitOnLeaseEnd / ExitAndReplace),
+//     Kubernetes terminates sidecars and the Pod completes.
+//     Pod restartPolicy is Never so a clean exporter exit is not
+//     restarted in-place (ExporterSet replaces the instance instead).
+//   - Shared emptyDir for Unix sockets (QMP, serial, launcher) and disk.
 //
 // The caller (reconciler) is responsible for setting
 // OwnerReferences on the Pod and injecting the config volume.
@@ -190,6 +194,9 @@ func (p *Provisioner) RenderPod(
 	pod := &corev1.Pod{
 		ObjectMeta: podMeta,
 		Spec: corev1.PodSpec{
+			// Never: ExitAndReplace relies on exporter (main) exit completing
+			// the Pod. Always would restart jmp run in-place and skip recycle.
+			RestartPolicy: corev1.RestartPolicyNever,
 			InitContainers: []corev1.Container{
 				{
 					Name:            "copy-jumpstarter-exec",
@@ -208,17 +215,14 @@ func (p *Provisioner) RenderPod(
 					},
 				},
 				{
-					Name:            "exporter",
-					Image:           exporterImage,
-					ImagePullPolicy: exporterPullPolicy,
+					// Native sidecar: starts before the main exporter so
+					// launcher.sock exists when jmp run begins. Torn down
+					// automatically when the exporter (main) container exits.
+					Name:            "target-runtime",
+					Image:           runtimeImage,
+					ImagePullPolicy: runtimePullPolicy,
 					RestartPolicy:   &restartAlways,
-					Command:         []string{"jmp", "run", "--exporter-config", configMountPath + "/config.yaml"},
-					Env: []corev1.EnvVar{
-						{
-							Name:  "JUMPSTARTER_LAUNCHER_SOCKET",
-							Value: launcherSocketPath,
-						},
-					},
+					Env:             runtimeEnv,
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      sharedVolumeName,
@@ -229,10 +233,16 @@ func (p *Provisioner) RenderPod(
 			},
 			Containers: []corev1.Container{
 				{
-					Name:            "target-runtime",
-					Image:           runtimeImage,
-					ImagePullPolicy: runtimePullPolicy,
-					Env:             runtimeEnv,
+					Name:            "exporter",
+					Image:           exporterImage,
+					ImagePullPolicy: exporterPullPolicy,
+					Command:         []string{"jmp", "run", "--exporter-config", configMountPath + "/config.yaml"},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "JUMPSTARTER_LAUNCHER_SOCKET",
+							Value: launcherSocketPath,
+						},
+					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      sharedVolumeName,
@@ -264,8 +274,13 @@ func (p *Provisioner) RenderPod(
 			pod.Spec.Tolerations = append([]corev1.Toleration(nil), vtc.Spec.Scheduling.Tolerations...)
 		}
 		if vtc.Spec.Scheduling.Resources != nil {
-			// Apply resource requirements to target-runtime
-			pod.Spec.Containers[0].Resources = *vtc.Spec.Scheduling.Resources.DeepCopy()
+			// CPU/memory belong on the runtime sidecar (where QEMU runs).
+			for i := range pod.Spec.InitContainers {
+				if pod.Spec.InitContainers[i].Name == "target-runtime" {
+					pod.Spec.InitContainers[i].Resources = *vtc.Spec.Scheduling.Resources.DeepCopy()
+					break
+				}
+			}
 		}
 	}
 
@@ -392,7 +407,30 @@ func setDefault(config map[string]interface{}, key string, params map[string]int
 	}
 
 	if val != nil {
+		// Kubernetes resource quantities use binary suffixes (Gi, Mi);
+		// the QEMU driver expects qemu-img style sizes (G, M).
+		if key == "disk_size" || key == "mem" {
+			val = normalizeQemuSize(val)
+		}
 		config[key] = val
+	}
+}
+
+// normalizeQemuSize converts Kubernetes binary quantity strings (e.g. "10Gi")
+// to the form expected by the QEMU driver / qemu-img (e.g. "10G").
+func normalizeQemuSize(v interface{}) interface{} {
+	s, ok := v.(string)
+	if !ok || len(s) < 2 {
+		return v
+	}
+	if s[len(s)-1] != 'i' {
+		return v
+	}
+	switch s[len(s)-2] {
+	case 'K', 'M', 'G', 'T', 'k', 'm', 'g', 't':
+		return s[:len(s)-1]
+	default:
+		return v
 	}
 }
 

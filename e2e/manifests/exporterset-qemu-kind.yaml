@@ -1,25 +1,12 @@
-# Sample VirtualTargetClass and ExporterSet for local kind testing.
+# Sample VirtualTargetClass + ExporterSet for exporterset-qemu e2e tests.
 #
-# This is a variant of sample-x86_64.yaml for development/testing on a
-# kind cluster (or any host without /dev/kvm / the kubevirt device
-# plugin). It drops the `devices.kubevirt.io/kvm` resource request and
-# the `jumpstarter.dev/kvm` toleration so the Pod can actually schedule
-# -- QEMU then falls back to software (TCG) emulation instead of KVM
-# acceleration, which is fine for a functional/architecture smoke test
-# but much slower than a real x86_64+KVM cluster.
-#
-# For real deployments with KVM acceleration, use sample-x86_64.yaml
-# on a cluster that exposes /dev/kvm via the kubevirt device plugin
-# and taints its KVM-capable nodes with jumpstarter.dev/kvm.
-#
-# Apply after the Jumpstarter operator has deployed the exporter-set-controller:
-#   make deploy-exporterset-sample-kind
-#   # or: kubectl apply -f hack/sample-x86_64-kind.yaml
+# Kind/TCG friendly (no KVM). Applied by e2e/test/exporterset_qemu_test.go.
+# Images default to locally loaded :latest tags used by Kind e2e setup.
 ---
 apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
 kind: VirtualTargetClass
 metadata:
-  name: qemu-x86-64-kind
+  name: qemu-x86-64-e2e
   namespace: jumpstarter-lab
 spec:
   provisioner: qemu.jumpstarter.dev
@@ -33,8 +20,10 @@ spec:
   images:
     exporter:
       image: quay.io/jumpstarter-dev/jumpstarter:latest
+      imagePullPolicy: IfNotPresent
     runtime:
       image: quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
+      imagePullPolicy: IfNotPresent
   parameters:
     arch: x86_64
     machineType: q35
@@ -46,22 +35,22 @@ spec:
 apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
 kind: ExporterSet
 metadata:
-  name: x86-64-virtual-kind
+  name: x86-64-virtual-e2e
   namespace: jumpstarter-lab
 spec:
   minReplicas: 0
-  maxReplicas: 2
+  maxReplicas: 1
   minAvailableReplicas: 1
   scaleDownCooldown: 5m
   recycleStrategy: ExitAndReplace
-  virtualTargetClassName: qemu-x86-64-kind
+  virtualTargetClassName: qemu-x86-64-e2e
   selector:
     matchLabels:
-      board: x86-64-virtual-kind
+      board: x86-64-virtual-e2e
   template:
     metadata:
       labels:
-        board: x86-64-virtual-kind
+        board: x86-64-virtual-e2e
         arch: x86_64
         virtual: "true"
     spec:

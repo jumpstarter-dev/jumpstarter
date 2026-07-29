@@ -33,6 +33,18 @@ fi
 load_image "${IMG}"
 load_image "${OPERATOR_IMG}"
 load_image "${EXPORTER_SET_CONTROLLER_IMG}"
+# Exporter + QEMU runtime images are required for ExporterSet QEMU e2e / samples.
+# Missing images are skipped so plain controller deploys still work.
+if container_image_exists "${EXPORTER_IMG}"; then
+  load_image "${EXPORTER_IMG}"
+else
+  echo -e "${YELLOW}Skipping load of exporter image (not present locally): ${EXPORTER_IMG}${NC}"
+fi
+if container_image_exists "${QEMU_RUNTIME_IMG}"; then
+  load_image "${QEMU_RUNTIME_IMG}"
+else
+  echo -e "${YELLOW}Skipping load of qemu-runtime image (not present locally): ${QEMU_RUNTIME_IMG}${NC}"
+fi
 
 # Deploy the operator
 echo -e "${GREEN}Deploying Jumpstarter operator ...${NC}"

@@ -111,15 +111,18 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 	if copyInit.RestartPolicy != nil {
 		t.Errorf("copy-jumpstarter-exec RestartPolicy = %v, want nil (one-shot init)", copyInit.RestartPolicy)
 	}
-	exporterInit := pod.Spec.InitContainers[1]
-	if exporterInit.Name != "exporter" {
-		t.Errorf("InitContainers[1].Name = %q, want exporter", exporterInit.Name)
+	runtimeInit := pod.Spec.InitContainers[1]
+	if runtimeInit.Name != "target-runtime" {
+		t.Errorf("InitContainers[1].Name = %q, want target-runtime", runtimeInit.Name)
 	}
-	if exporterInit.RestartPolicy == nil || *exporterInit.RestartPolicy != corev1.ContainerRestartPolicyAlways {
-		t.Errorf("exporter RestartPolicy = %v, want Always", exporterInit.RestartPolicy)
+	if runtimeInit.RestartPolicy == nil || *runtimeInit.RestartPolicy != corev1.ContainerRestartPolicyAlways {
+		t.Errorf("target-runtime RestartPolicy = %v, want Always", runtimeInit.RestartPolicy)
 	}
-	if len(pod.Spec.Containers) != 1 || pod.Spec.Containers[0].Name != "target-runtime" {
+	if len(pod.Spec.Containers) != 1 || pod.Spec.Containers[0].Name != "exporter" {
 		t.Errorf("unexpected containers: %#v", pod.Spec.Containers)
+	}
+	if pod.Spec.RestartPolicy != corev1.RestartPolicyNever {
+		t.Errorf("RestartPolicy = %q, want Never (ExitAndReplace)", pod.Spec.RestartPolicy)
 	}
 }
 
@@ -173,11 +176,11 @@ func TestRenderPod_clonesSchedulingFromVTC(t *testing.T) {
 		t.Errorf("VTC Tolerations mutated: got %q", got)
 	}
 
-	gotCPU := pod.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU]
+	gotCPU := pod.Spec.InitContainers[1].Resources.Requests[corev1.ResourceCPU]
 	if !gotCPU.Equal(cpu) {
 		t.Errorf("CPU request = %v, want %v", gotCPU, cpu)
 	}
-	pod.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU] = resource.MustParse("1")
+	pod.Spec.InitContainers[1].Resources.Requests[corev1.ResourceCPU] = resource.MustParse("1")
 	if got := vtc.Spec.Scheduling.Resources.Requests[corev1.ResourceCPU]; !got.Equal(cpu) {
 		t.Errorf("VTC Resources mutated: got %v", got)
 	}
@@ -209,7 +212,7 @@ func TestRenderPod_injectsJumpstarterExecLogFields(t *testing.T) {
 		t.Errorf("Pod.GenerateName = %q, want empty when exporter is provided", pod.GenerateName)
 	}
 
-	env := pod.Spec.Containers[0].Env
+	env := pod.Spec.InitContainers[1].Env
 	var got string
 	for _, e := range env {
 		if e.Name == "JUMPSTARTER_EXEC_LOG_FIELDS" {
@@ -285,11 +288,11 @@ func TestRenderPod_usesResolvedImages(t *testing.T) {
 	if pod.Spec.InitContainers[0].Image != wantExporter {
 		t.Errorf("copy-jumpstarter-exec image = %q, want %q", pod.Spec.InitContainers[0].Image, wantExporter)
 	}
-	if pod.Spec.InitContainers[1].Image != wantExporter {
-		t.Errorf("exporter image = %q, want %q", pod.Spec.InitContainers[1].Image, wantExporter)
+	if pod.Spec.InitContainers[1].Image != wantRuntime {
+		t.Errorf("target-runtime image = %q, want %q", pod.Spec.InitContainers[1].Image, wantRuntime)
 	}
-	if pod.Spec.Containers[0].Image != wantRuntime {
-		t.Errorf("target-runtime image = %q, want %q", pod.Spec.Containers[0].Image, wantRuntime)
+	if pod.Spec.Containers[0].Image != wantExporter {
+		t.Errorf("exporter image = %q, want %q", pod.Spec.Containers[0].Image, wantExporter)
 	}
 }
 
@@ -333,14 +336,17 @@ func TestRenderPod_imageOverrideFromSpec(t *testing.T) {
 	if pod.Spec.InitContainers[0].ImagePullPolicy != corev1.PullAlways {
 		t.Errorf("copy-jumpstarter-exec pullPolicy = %q, want Always", pod.Spec.InitContainers[0].ImagePullPolicy)
 	}
-	if pod.Spec.InitContainers[1].Image != wantExporter {
-		t.Errorf("exporter image = %q, want %q", pod.Spec.InitContainers[1].Image, wantExporter)
+	if pod.Spec.InitContainers[1].Image != wantRuntime {
+		t.Errorf("target-runtime image = %q, want %q", pod.Spec.InitContainers[1].Image, wantRuntime)
 	}
-	if pod.Spec.Containers[0].Image != wantRuntime {
-		t.Errorf("target-runtime image = %q, want %q", pod.Spec.Containers[0].Image, wantRuntime)
+	if pod.Spec.InitContainers[1].ImagePullPolicy != corev1.PullIfNotPresent {
+		t.Errorf("target-runtime pullPolicy = %q, want IfNotPresent (default)", pod.Spec.InitContainers[1].ImagePullPolicy)
 	}
-	if pod.Spec.Containers[0].ImagePullPolicy != corev1.PullIfNotPresent {
-		t.Errorf("target-runtime pullPolicy = %q, want IfNotPresent (default)", pod.Spec.Containers[0].ImagePullPolicy)
+	if pod.Spec.Containers[0].Image != wantExporter {
+		t.Errorf("exporter image = %q, want %q", pod.Spec.Containers[0].Image, wantExporter)
+	}
+	if pod.Spec.Containers[0].ImagePullPolicy != corev1.PullAlways {
+		t.Errorf("exporter pullPolicy = %q, want Always", pod.Spec.Containers[0].ImagePullPolicy)
 	}
 }
 
@@ -369,7 +375,10 @@ func TestRenderPod_partialImageOverride(t *testing.T) {
 	if pod.Spec.InitContainers[0].Image != wantExporter {
 		t.Errorf("copy-jumpstarter-exec image = %q, want %q", pod.Spec.InitContainers[0].Image, wantExporter)
 	}
-	if pod.Spec.Containers[0].Image != wantRuntime {
-		t.Errorf("target-runtime image = %q, want %q", pod.Spec.Containers[0].Image, wantRuntime)
+	if pod.Spec.InitContainers[1].Image != wantRuntime {
+		t.Errorf("target-runtime image = %q, want %q", pod.Spec.InitContainers[1].Image, wantRuntime)
+	}
+	if pod.Spec.Containers[0].Image != wantExporter {
+		t.Errorf("exporter image = %q, want %q", pod.Spec.Containers[0].Image, wantExporter)
 	}
 }

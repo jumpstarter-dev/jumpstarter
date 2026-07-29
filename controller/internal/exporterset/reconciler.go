@@ -204,11 +204,26 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Clean up drained (disabled+unleased) exporters before computing state.
+	// Clean up drained (disabled+unleased) exporters and ExitAndReplace
+	// terminal pods (Succeeded/Failed) before computing pool state.
 	if deleted, err := r.cleanupDisabledExporters(ctx, &exporterSet, ownedExporters); err != nil {
 		return ctrl.Result{}, err
 	} else if deleted {
 		// Update status and return; the next scale-down step fires on RequeueAfter.
+		if err := r.reconcileStatusCounts(ctx, &exporterSet); err != nil {
+			return ctrl.Result{}, err
+		}
+		r.reconcileConditions(&exporterSet)
+		if err := r.Status().Update(ctx, &exporterSet); err != nil {
+			return requeueConflict(logger, err)
+		}
+		r.emitConditionEvents(&exporterSet, prevAvailable, prevProgressing, prevDegraded, prevScalingLimited)
+		return ctrl.Result{}, nil
+	}
+
+	if deleted, err := r.cleanupTerminalExporters(ctx, &exporterSet, ownedExporters); err != nil {
+		return ctrl.Result{}, err
+	} else if deleted {
 		if err := r.reconcileStatusCounts(ctx, &exporterSet); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -577,16 +592,24 @@ func injectConfigVolume(pod *corev1.Pod, exporterName string) bool {
 		},
 	})
 
+	mount := corev1.VolumeMount{
+		Name:      configVolumeName,
+		MountPath: configMountPath,
+		ReadOnly:  true,
+	}
+
+	// Exporter is the main container (default logs / ExitAndReplace lifecycle).
+	for i := range pod.Spec.Containers {
+		if pod.Spec.Containers[i].Name == exporterContainerName {
+			pod.Spec.Containers[i].VolumeMounts = append(pod.Spec.Containers[i].VolumeMounts, mount)
+			return true
+		}
+	}
+
+	// Backward-compatible: older Pod templates ran exporter as a native sidecar.
 	for i := range pod.Spec.InitContainers {
 		if pod.Spec.InitContainers[i].Name == exporterContainerName {
-			pod.Spec.InitContainers[i].VolumeMounts = append(
-				pod.Spec.InitContainers[i].VolumeMounts,
-				corev1.VolumeMount{
-					Name:      configVolumeName,
-					MountPath: configMountPath,
-					ReadOnly:  true,
-				},
-			)
+			pod.Spec.InitContainers[i].VolumeMounts = append(pod.Spec.InitContainers[i].VolumeMounts, mount)
 			return true
 		}
 	}
@@ -651,6 +674,99 @@ func (r *ExporterSetReconciler) cleanupDisabledExporters(
 	}
 
 	return deleted, nil
+}
+
+// cleanupTerminalExporters deletes unleased exporters whose Pod has reached a
+// terminal phase (Succeeded or Failed). This is the ExitAndReplace recycle
+// path: exitOnLeaseEnd completes the Pod, then the controller deletes the
+// Exporter (cascading the Pod) so scale-up can refill minAvailableReplicas.
+// Without this, Offline/Succeeded instances inflate replicas, block warm-buffer
+// refill at maxReplicas, and leave Completed Pods behind.
+func (r *ExporterSetReconciler) cleanupTerminalExporters(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	exporters []jumpstarterdevv1alpha1.Exporter,
+) (bool, error) {
+	logger := log.FromContext(ctx)
+
+	podsByExporter, err := r.listPodsGroupedByExporter(ctx, es)
+	if err != nil {
+		return false, err
+	}
+
+	deleted := false
+	for i := range exporters {
+		exp := &exporters[i]
+		if exp.Status.LeaseRef != nil {
+			continue
+		}
+
+		pods := podsByExporter[exp.Name]
+		if !allPodsTerminal(pods) {
+			continue
+		}
+
+		if err := r.Provisioner.Cleanup(ctx, es, exp); err != nil {
+			return deleted, fmt.Errorf("unable to cleanup Exporter %s: %w", exp.Name, err)
+		}
+
+		if err := r.Delete(ctx, exp); err != nil && !apierrors.IsNotFound(err) {
+			return deleted, fmt.Errorf("unable to delete Exporter %s: %w", exp.Name, err)
+		}
+
+		logger.Info("deleted Exporter after terminal Pod (ExitAndReplace)",
+			"exporter", exp.Name, "pods", len(pods))
+
+		if r.Recorder != nil {
+			r.Recorder.Eventf(es, corev1.EventTypeNormal, "Recycle",
+				"Deleted Exporter %s after terminal Pod", exp.Name)
+		}
+		deleted = true
+	}
+
+	return deleted, nil
+}
+
+// listPodsGroupedByExporter maps Exporter names to their owned Pods.
+func (r *ExporterSetReconciler) listPodsGroupedByExporter(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+) (map[string][]corev1.Pod, error) {
+	var podList corev1.PodList
+	if err := r.List(ctx, &podList,
+		client.InNamespace(es.Namespace),
+		client.MatchingLabels{labelExporterSetName: es.Name},
+	); err != nil {
+		return nil, fmt.Errorf("list Pods for ExporterSet %s: %w", es.Name, err)
+	}
+
+	byExporter := make(map[string][]corev1.Pod)
+	for i := range podList.Items {
+		pod := podList.Items[i]
+		for _, ref := range pod.OwnerReferences {
+			if ref.Kind == kindExporter && ref.Controller != nil && *ref.Controller {
+				byExporter[ref.Name] = append(byExporter[ref.Name], pod)
+				break
+			}
+		}
+	}
+	return byExporter, nil
+}
+
+func allPodsTerminal(pods []corev1.Pod) bool {
+	if len(pods) == 0 {
+		return false
+	}
+	for i := range pods {
+		if !isTerminalPodPhase(pods[i].Status.Phase) {
+			return false
+		}
+	}
+	return true
+}
+
+func isTerminalPodPhase(phase corev1.PodPhase) bool {
+	return phase == corev1.PodSucceeded || phase == corev1.PodFailed
 }
 
 // reconcileScaleUp evaluates the three scale-up rules in priority order and
