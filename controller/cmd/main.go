@@ -218,7 +218,7 @@ func main() {
 	}
 
 	authenticator, prefix, router, option, provisioning, leasePolicy,
-		hiddenLabels, deprecatedLabels, err := config.LoadConfiguration(
+		hiddenLabels, deprecatedLabels, telemetry, err := config.LoadConfiguration(
 		context.Background(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
@@ -286,6 +286,7 @@ func main() {
 		HiddenLabels:     hiddenLabels,
 		DeprecatedLabels: deprecatedLabels,
 		Signer:           oidcSigner,
+		TelemetryConfig:  telemetry,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create service", "service", "Controller")
 		os.Exit(1)

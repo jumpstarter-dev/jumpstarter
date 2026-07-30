@@ -86,6 +86,7 @@ type ControllerService struct {
 	HiddenLabels     *config.HiddenLabels
 	DeprecatedLabels *config.DeprecatedLabels
 	Signer           *oidc.Signer
+	TelemetryConfig  *config.Telemetry
 	listenQueues     sync.Map
 	leaseLocks       sync.Map
 	authOnce         sync.Once
@@ -309,6 +310,31 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 	return &pb.RegisterResponse{
 		Uuid: string(exporter.UID),
 	}, nil
+}
+
+// GetServiceEndpoints returns optional service endpoints (e.g. telemetry) for the caller to discover.
+// Exporters call this after registration to find the telemetry service.
+// An empty list means no optional services are deployed.
+func (s *ControllerService) GetServiceEndpoints(
+	ctx context.Context,
+	req *pb.GetServiceEndpointsRequest,
+) (*pb.GetServiceEndpointsResponse, error) {
+	// Require a valid exporter token — endpoint discovery is not public.
+	if _, err := s.authenticateExporter(ctx); err != nil {
+		return nil, err
+	}
+
+	resp := &pb.GetServiceEndpointsResponse{}
+
+	if s.TelemetryConfig != nil && s.TelemetryConfig.Endpoint != "" {
+		resp.TelemetryEndpoints = append(resp.TelemetryEndpoints, &pb.TelemetryEndpoint{
+			Endpoint:    s.TelemetryConfig.Endpoint,
+			Certificate: s.TelemetryConfig.Certificate,
+			MinSeverity: cmp.Or(s.TelemetryConfig.MinSeverity, "info"),
+		})
+	}
+
+	return resp, nil
 }
 
 func (s *ControllerService) Unregister(

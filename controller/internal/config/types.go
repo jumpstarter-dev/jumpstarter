@@ -15,6 +15,24 @@ type Config struct {
 	LeasePolicy      LeasePolicy      `json:"leasePolicy,omitempty" yaml:"leasePolicy,omitempty"`
 	HiddenLabels     HiddenLabels     `json:"hiddenLabels,omitempty" yaml:"hiddenLabels,omitempty"`
 	DeprecatedLabels DeprecatedLabels `json:"deprecatedLabels,omitempty" yaml:"deprecatedLabels,omitempty"`
+	Telemetry        *Telemetry       `json:"telemetry,omitempty" yaml:"telemetry,omitempty"`
+}
+
+// Telemetry defines optional telemetry service discovery configuration.
+// When Endpoint is set, the controller advertises it to exporters and clients
+// via GetServiceEndpoints so they can push logs without holding cluster credentials.
+type Telemetry struct {
+	// Endpoint is the jumpstarter-telemetry gRPC address (e.g. "telemetry.jumpstarter.svc:9093").
+	// Leave empty to disable telemetry service discovery.
+	Endpoint string `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
+
+	// Certificate is an optional PEM-encoded CA certificate to trust for the telemetry endpoint.
+	// Leave empty to use the system certificate pool.
+	Certificate string `json:"certificate,omitempty" yaml:"certificate,omitempty"`
+
+	// MinSeverity is the minimum log severity to forward to the telemetry service.
+	// Accepted values: debug, info, warning, error.  Defaults to "info" when empty.
+	MinSeverity string `json:"minSeverity,omitempty" yaml:"minSeverity,omitempty"`
 }
 
 // LeasePolicy defines policy constraints for leases.
