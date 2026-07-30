@@ -1,4 +1,5 @@
 import logging
+import os
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -22,14 +23,17 @@ from google.protobuf import empty_pb2
 from jumpstarter_protocol import (
     jumpstarter_pb2,
     jumpstarter_pb2_grpc,
+    telemetry_pb2_grpc,
 )
 
 from jumpstarter.common import ExporterStatus, Metadata, TemporarySocket
 from jumpstarter.common.streams import connect_router_stream
+from jumpstarter.config.env import JMP_GRPC_INSECURE, JUMPSTARTER_GRPC_INSECURE
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 from jumpstarter.exporter.hooks import HookExecutor
 from jumpstarter.exporter.lease_context import LeaseContext
 from jumpstarter.exporter.session import Session
+from jumpstarter.exporter.telemetry import TelemetryLogHandler
 from jumpstarter.logging import clear_log_context, set_log_context
 
 if TYPE_CHECKING:
@@ -54,6 +58,30 @@ _RELEASE_LEASE_UNSUPPORTED_CODES = frozenset({
     grpc.StatusCode.UNAUTHENTICATED,
     grpc.StatusCode.UNIMPLEMENTED,
 })
+
+_SEVERITY_MAP = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+    "critical": logging.CRITICAL,
+}
+
+
+def _severity_to_level(severity: str) -> int:
+    """Map a JEP-0013 severity string to a Python logging level."""
+    key = severity.lower() if severity else ""
+    level = _SEVERITY_MAP.get(key)
+    if level is None:
+        if key:
+            import structlog
+            structlog.get_logger(__name__).warning(
+                "Unrecognized min_severity value, defaulting to info",
+                value=severity,
+                accepted=list(_SEVERITY_MAP),
+            )
+        return logging.INFO
+    return level
 
 
 async def _standalone_shutdown_waiter():
@@ -123,6 +151,13 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     """When True, the exporter exits after serving one lease.
 
     Triggers the existing _stop_requested mechanism after lease cleanup.
+    """
+
+    token: str = field(default="")
+    """Bearer token used to authenticate with the telemetry service.
+
+    Set from ExporterConfigV1Alpha1.token so PushLogs calls can include
+    the exporter's JWT as an Authorization header.
     """
 
     # Internal State Fields
@@ -224,6 +259,16 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     the auth rejection on every lease cycle.
     TODO: Remove this field when all controllers support ReleaseLease for exporters.
     """
+
+    _telemetry_handler: "TelemetryLogHandler | None" = field(init=False, default=None)
+    """Optional telemetry log handler that pushes log entries to jumpstarter-telemetry.
+
+    Created after successful registration when GetServiceEndpoints returns a
+    telemetry endpoint. None when telemetry is not configured or not available.
+    """
+
+    _telemetry_channel: grpc.aio.Channel | None = field(init=False, default=None)
+    """gRPC channel to the telemetry service. Closed on exporter shutdown."""
 
     _status_drain_active: bool = field(init=False, default=False)
     """True only while serve()'s task group is running and the drain task is active.
@@ -392,6 +437,63 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         # overwriting LEASE_READY with AVAILABLE
         if self._lease_context is None:
             await self._report_status(ExporterStatus.AVAILABLE, "Exporter registered and available")
+
+        # Discover optional telemetry service endpoint.
+        await self._setup_telemetry()
+
+    async def _setup_telemetry(self) -> None:
+        """Discover and connect to the optional telemetry service.
+
+        Calls GetServiceEndpoints on the controller. When a telemetry endpoint is
+        returned, a gRPC channel is created and TelemetryLogHandler is attached
+        to the root Python logger. Safe to call multiple times; subsequent calls
+        are no-ops if a handler is already configured.
+        """
+        if self._telemetry_handler is not None:
+            return
+
+        try:
+            async with self._controller_stub() as controller:
+                resp = await controller.GetServiceEndpoints(
+                    jumpstarter_pb2.GetServiceEndpointsRequest(),
+                    timeout=_RPC_TIMEOUT,
+                )
+        except grpc.aio.AioRpcError as e:
+            # Older controllers that don't support this RPC return UNIMPLEMENTED.
+            # Any other error is also non-fatal — telemetry is best-effort.
+            logger.debug("GetServiceEndpoints unavailable: %s", e.code())
+            return
+
+        if not resp.telemetry_endpoints:
+            logger.debug("No telemetry endpoint configured, skipping telemetry setup")
+            return
+
+        ep = resp.telemetry_endpoints[0]
+        logger.info("Connecting to telemetry service at %s (min_severity=%s)", ep.endpoint, ep.min_severity)
+
+        grpc_insecure = (
+            self.tls.insecure
+            or os.getenv(JMP_GRPC_INSECURE) == "1"
+            or os.getenv(JUMPSTARTER_GRPC_INSECURE) == "1"
+        )
+
+        if ep.certificate:
+            self._telemetry_channel = grpc.aio.secure_channel(
+                ep.endpoint,
+                grpc.ssl_channel_credentials(root_certificates=ep.certificate.encode()),
+            )
+        elif grpc_insecure:
+            self._telemetry_channel = grpc.aio.insecure_channel(ep.endpoint)
+        else:
+            self._telemetry_channel = grpc.aio.secure_channel(
+                ep.endpoint, grpc.ssl_channel_credentials()
+            )
+        stub = telemetry_pb2_grpc.TelemetryServiceStub(self._telemetry_channel)
+        handler = TelemetryLogHandler(stub, namespace=getattr(self, "namespace", "") or "", token=self.token)
+        handler.setLevel(_severity_to_level(ep.min_severity))
+        logging.getLogger().addHandler(handler)
+        self._telemetry_handler = handler
+        logger.info("Telemetry log handler attached")
 
     async def _retry_rpc(
         self,
@@ -1001,6 +1103,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
     async def serve(self):
         """Serve the exporter, handling leases until stopped."""
+        # Set exporter identity before anything else so every log line (including
+        # registration and telemetry setup) carries the correct exporter name.
+        set_log_context(exporter=self.name)
         async with self.session():
             pass
         status_tx, status_rx = create_memory_object_stream[jumpstarter_pb2.StatusResponse](max_buffer_size=5)
@@ -1010,6 +1115,15 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             self._tg = None
             self._status_drain_active = False
             clear_log_context()
+
+        # Flush any remaining telemetry entries before the process exits.
+        if self._telemetry_handler is not None:
+            logging.getLogger().removeHandler(self._telemetry_handler)
+            await self._telemetry_handler.close_async()
+            self._telemetry_handler = None
+        if self._telemetry_channel is not None:
+            await self._telemetry_channel.close()
+            self._telemetry_channel = None
 
     async def _run_control_plane(
         self,
@@ -1023,6 +1137,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             self._pending_status_request = None
             self._status_drain_active = True
             tg.start_soon(self._drain_status_reports)
+            if self._telemetry_handler is not None:
+                tg.start_soon(self._telemetry_handler.flush_loop)
             tg.start_soon(
                 self._retry_stream,
                 "Status",
@@ -1107,6 +1223,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         )
         self._lease_context = None
         clear_log_context()
+        set_log_context(exporter=self.name)
         if session_was_created:
             # Brief delay to ensure session is fully closed before next lease.
             # Prevents SSL corruption from overlapping connections.
