@@ -191,6 +191,14 @@ class TestPrepare:
         assert "lease_id" not in entry.extra_fields
         assert entry.lease == "lease-abc"
 
+    def test_none_contextvar_values_skipped(self, clean_structlog_context):
+        """None values in structlog context must not appear in the entry."""
+        structlog.contextvars.bind_contextvars(exporter=None, lease_id=None, build_id=None)
+        entry = make_handler().prepare(make_record())
+        assert entry.exporter == ""
+        assert entry.lease == ""
+        assert "build_id" not in entry.extra_fields
+
 
 
 class TestEmit:
@@ -250,6 +258,28 @@ class TestFlush:
         handler.emit(make_record("final entry"))
         await handler.close_async()
         handler._stub.PushLogs.assert_awaited_once()
+
+    @pytest.mark.anyio
+    async def test_flush_loop_flushes_when_queue_has_entries(self):
+        """flush_loop calls _flush when the queue is non-empty."""
+        handler = make_handler()
+        handler.emit(make_record("pending"))
+
+        flush_calls = []
+
+        async def fake_flush():
+            flush_calls.append(1)
+            handler._queue.clear()
+
+        with patch.object(handler, "_flush", side_effect=fake_flush):
+            with patch("jumpstarter.exporter.telemetry.sleep", new_callable=AsyncMock) as mock_sleep:
+                mock_sleep.side_effect = [None, Exception("stop")]
+                try:
+                    await handler.flush_loop()
+                except Exception:
+                    pass
+
+        assert len(flush_calls) >= 1
 
     @pytest.mark.anyio
     async def test_flush_respects_batch_size_limit(self):
