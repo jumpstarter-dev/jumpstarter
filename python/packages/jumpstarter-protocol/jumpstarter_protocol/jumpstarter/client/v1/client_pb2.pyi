@@ -51,12 +51,29 @@ class Exporter(google.protobuf.message.Message):
         ) -> None: ...
         def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
 
+    @typing.final
+    class DeprecatedLabelsEntry(google.protobuf.message.Message):
+        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+        KEY_FIELD_NUMBER: builtins.int
+        VALUE_FIELD_NUMBER: builtins.int
+        key: builtins.str
+        value: builtins.str
+        def __init__(
+            self,
+            *,
+            key: builtins.str = ...,
+            value: builtins.str = ...,
+        ) -> None: ...
+        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+
     NAME_FIELD_NUMBER: builtins.int
     LABELS_FIELD_NUMBER: builtins.int
     ONLINE_FIELD_NUMBER: builtins.int
     STATUS_FIELD_NUMBER: builtins.int
     STATUS_MESSAGE_FIELD_NUMBER: builtins.int
     ENABLED_FIELD_NUMBER: builtins.int
+    DEPRECATED_LABELS_FIELD_NUMBER: builtins.int
     name: builtins.str
     """The resource name of the exporter."""
     online: builtins.bool
@@ -73,6 +90,12 @@ class Exporter(google.protobuf.message.Message):
     def labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
         """The set of labels associated with the exporter."""
 
+    @property
+    def deprecated_labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+        """Label keys on this exporter that the controller has marked as deprecated.
+        Keys are the deprecated label names; values are optional human-readable messages.
+        """
+
     def __init__(
         self,
         *,
@@ -82,9 +105,10 @@ class Exporter(google.protobuf.message.Message):
         status: jumpstarter.v1.common_pb2.ExporterStatus.ValueType = ...,
         status_message: builtins.str = ...,
         enabled: builtins.bool | None = ...,
+        deprecated_labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_enabled", b"_enabled", "enabled", b"enabled"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_enabled", b"_enabled", "enabled", b"enabled", "labels", b"labels", "name", b"name", "online", b"online", "status", b"status", "status_message", b"status_message"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_enabled", b"_enabled", "deprecated_labels", b"deprecated_labels", "enabled", b"enabled", "labels", b"labels", "name", b"name", "online", b"online", "status", b"status", "status_message", b"status_message"]) -> None: ...
     def WhichOneof(self, oneof_group: typing.Literal["_enabled", b"_enabled"]) -> typing.Literal["enabled"] | None: ...
 
 Global___Exporter: typing_extensions.TypeAlias = Exporter
@@ -97,6 +121,22 @@ class Lease(google.protobuf.message.Message):
 
     @typing.final
     class TagsEntry(google.protobuf.message.Message):
+        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+        KEY_FIELD_NUMBER: builtins.int
+        VALUE_FIELD_NUMBER: builtins.int
+        key: builtins.str
+        value: builtins.str
+        def __init__(
+            self,
+            *,
+            key: builtins.str = ...,
+            value: builtins.str = ...,
+        ) -> None: ...
+        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+
+    @typing.final
+    class DeprecatedLabelsEntry(google.protobuf.message.Message):
         DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
         KEY_FIELD_NUMBER: builtins.int
@@ -125,6 +165,7 @@ class Lease(google.protobuf.message.Message):
     EXPORTER_NAME_FIELD_NUMBER: builtins.int
     TAGS_FIELD_NUMBER: builtins.int
     ALLOW_DISABLED_FIELD_NUMBER: builtins.int
+    DEPRECATED_LABELS_FIELD_NUMBER: builtins.int
     name: builtins.str
     """The resource name of the lease."""
     selector: builtins.str
@@ -171,6 +212,12 @@ class Lease(google.protobuf.message.Message):
     def tags(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
         """The set of tags associated with the lease."""
 
+    @property
+    def deprecated_labels(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+        """Selector keys on this lease that the controller has marked as deprecated.
+        Keys are the deprecated label names; values are optional human-readable messages.
+        """
+
     def __init__(
         self,
         *,
@@ -188,9 +235,10 @@ class Lease(google.protobuf.message.Message):
         exporter_name: builtins.str | None = ...,
         tags: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
         allow_disabled: builtins.bool = ...,
+        deprecated_labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "begin_time", b"begin_time", "client", b"client", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "allow_disabled", b"allow_disabled", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "name", b"name", "selector", b"selector", "tags", b"tags"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "allow_disabled", b"allow_disabled", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "deprecated_labels", b"deprecated_labels", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "name", b"name", "selector", b"selector", "tags", b"tags"]) -> None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_begin_time", b"_begin_time"]) -> typing.Literal["begin_time"] | None: ...
     @typing.overload

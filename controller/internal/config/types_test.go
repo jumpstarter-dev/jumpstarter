@@ -223,6 +223,59 @@ func TestHiddenLabelsOmitEmpty(t *testing.T) {
 	}
 }
 
+func TestDeprecatedLabelsRoundTrip(t *testing.T) {
+	original := Config{
+		DeprecatedLabels: DeprecatedLabels{
+			Keys: map[string]string{
+				"old-board":   "Use 'board-v2' instead",
+				"legacy-pool": "Removed in v2.0",
+			},
+		},
+	}
+
+	yamlData, err := yaml.Marshal(original)
+	if err != nil {
+		t.Fatalf("Failed to marshal config: %v", err)
+	}
+
+	var parsed Config
+	if err := yaml.Unmarshal(yamlData, &parsed); err != nil {
+		t.Fatalf("Failed to unmarshal config: %v", err)
+	}
+
+	if len(parsed.DeprecatedLabels.Keys) != 2 {
+		t.Fatalf("expected 2 deprecated label keys, got %d", len(parsed.DeprecatedLabels.Keys))
+	}
+
+	expected := map[string]string{
+		"old-board":   "Use 'board-v2' instead",
+		"legacy-pool": "Removed in v2.0",
+	}
+	for k, v := range expected {
+		if parsed.DeprecatedLabels.Keys[k] != v {
+			t.Errorf("deprecated label key %q: got %q, want %q", k, parsed.DeprecatedLabels.Keys[k], v)
+		}
+	}
+}
+
+func TestDeprecatedLabelsOmitEmpty(t *testing.T) {
+	original := Config{}
+
+	yamlData, err := yaml.Marshal(original)
+	if err != nil {
+		t.Fatalf("Failed to marshal config: %v", err)
+	}
+
+	var parsed Config
+	if err := yaml.Unmarshal(yamlData, &parsed); err != nil {
+		t.Fatalf("Failed to unmarshal config: %v", err)
+	}
+
+	if len(parsed.DeprecatedLabels.Keys) != 0 {
+		t.Fatalf("expected 0 deprecated label keys when omitted, got %d", len(parsed.DeprecatedLabels.Keys))
+	}
+}
+
 func TestParseDuration(t *testing.T) {
 	tests := []struct {
 		input    string

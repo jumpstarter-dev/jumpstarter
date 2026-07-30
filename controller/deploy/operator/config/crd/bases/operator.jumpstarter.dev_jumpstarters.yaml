@@ -1347,6 +1347,19 @@ spec:
                         type: object
                     type: object
                 type: object
+              deprecatedLabels:
+                description: Deprecated labels configuration for warning users about
+                  label keys that should no longer be used.
+                properties:
+                  keys:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      Map of deprecated label keys to human-readable deprecation messages.
+                      When an exporter has any of these labels, clients will receive a deprecation warning
+                      with the corresponding message.
+                    type: object
+                type: object
               hiddenLabels:
                 description: Hidden labels configuration for hiding specific label
                   keys from exporter listings.

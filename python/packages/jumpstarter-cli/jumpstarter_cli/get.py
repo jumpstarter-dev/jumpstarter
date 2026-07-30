@@ -62,6 +62,16 @@ def get_exporters(
         include_disabled=allow_disabled,
     )
 
+    for exp in exporters.exporters:
+        for label_key, message in exp.deprecated_labels.items():
+            warning = f"label '{label_key}' on exporter '{exp.name}' is deprecated"
+            if message:
+                warning += f": {message}"
+            click.echo(
+                click.style("Warning: ", fg="yellow") + warning,
+                err=True,
+            )
+
     model_print(exporters, output)
 
 
@@ -92,5 +102,15 @@ def get_leases(
 
     if not all_clients:
         leases = leases.filter_by_client(config.metadata.name)
+
+    for lease in leases.leases:
+        for label_key, message in lease.deprecated_labels.items():
+            warning = f"selector label '{label_key}' on lease '{lease.name}' is deprecated"
+            if message:
+                warning += f": {message}"
+            click.echo(
+                click.style("Warning: ", fg="yellow") + warning,
+                err=True,
+            )
 
     model_print(leases, output)

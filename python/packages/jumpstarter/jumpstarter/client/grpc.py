@@ -96,6 +96,7 @@ class Exporter(BaseModel):
     status: ExporterStatus | None = None
     enabled: bool = True
     lease: Lease | None = None
+    deprecated_labels: dict[str, str] = Field(default_factory=dict)
 
     @classmethod
     def from_protobuf(cls, data: client_pb2.Exporter) -> Exporter:
@@ -110,6 +111,7 @@ class Exporter(BaseModel):
             online=data.online,
             status=status,
             enabled=data.enabled if data.HasField("enabled") else True,
+            deprecated_labels=dict(data.deprecated_labels),
         )
 
     @classmethod
@@ -156,6 +158,7 @@ class Lease(BaseModel):
     conditions: list[kubernetes_pb2.Condition]
     effective_begin_time: datetime | None = None
     effective_end_time: datetime | None = None
+    deprecated_labels: dict[str, str] = Field(default_factory=dict)
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -212,6 +215,7 @@ class Lease(BaseModel):
             effective_begin_time=effective_begin_time,
             effective_end_time=effective_end_time,
             conditions=data.conditions,
+            deprecated_labels=dict(data.deprecated_labels),
         )
 
     @classmethod
