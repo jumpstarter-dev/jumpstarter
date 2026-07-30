@@ -478,13 +478,16 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         )
 
         if ep.certificate:
+            # Use CA certificate provided by the controller for the telemetry endpoint.
             self._telemetry_channel = grpc.aio.secure_channel(
                 ep.endpoint,
                 grpc.ssl_channel_credentials(root_certificates=ep.certificate.encode()),
             )
         elif grpc_insecure:
+            # Development/testing mode: plaintext gRPC, no TLS at all.
             self._telemetry_channel = grpc.aio.insecure_channel(ep.endpoint)
         else:
+            # Production: TLS with system CA pool.
             self._telemetry_channel = grpc.aio.secure_channel(
                 ep.endpoint, grpc.ssl_channel_credentials()
             )

@@ -13,6 +13,7 @@ from jumpstarter_protocol import telemetry_pb2, telemetry_pb2_grpc
 _BATCH_SIZE = 50
 _FLUSH_INTERVAL = 0.5  # seconds between automatic flushes
 _MAX_QUEUE_SIZE = 10_000  # entries; oldest are dropped when full
+_PUSH_TIMEOUT = 10.0  # seconds to wait for PushLogs RPC before giving up
 
 _WELL_KNOWN_KEYS = frozenset(("lease", "client", "exporter", "operation", "result", "driver_type"))
 _STDLIB_RECORD_ATTRS = frozenset(vars(logging.LogRecord("", 0, "", 0, "", (), None)).keys())
@@ -122,12 +123,16 @@ class TelemetryLogHandler(logging.Handler):
             return
 
         try:
-            await self._stub.PushLogs(telemetry_pb2.PushLogsRequest(entries=batch))
+            await self._stub.PushLogs(
+                telemetry_pb2.PushLogsRequest(entries=batch),
+                timeout=_PUSH_TIMEOUT,
+            )
         except Exception as exc:
             # Avoid recursive logging: write directly to stderr.
             print(f"[telemetry] PushLogs failed, {len(batch)} entries dropped: {exc}", file=sys.stderr)
 
     async def close_async(self) -> None:
-        """Flush remaining entries and close the handler."""
-        await self._flush()
+        """Flush all remaining entries and close the handler."""
+        while self._queue:
+            await self._flush()
         self.close()

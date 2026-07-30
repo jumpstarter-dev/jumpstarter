@@ -18,15 +18,19 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
+	"time"
 
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
+
+const maxEntriesPerBatch = 500
 
 // TelemetryService receives structured log entries from exporters and clients,
 // logs them via structured stdout, and will forward them to Loki in a future phase.
@@ -43,10 +47,21 @@ type TelemetryService struct {
 func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest) (*pb.PushLogsResponse, error) {
 	logger := ctrl.Log.WithName("telemetry")
 
-	for _, entry := range req.Entries {
+	entries := req.Entries
+	var dropped uint32
+	if len(entries) > maxEntriesPerBatch {
+		dropped = uint32(len(entries) - maxEntriesPerBatch)
+		entries = entries[:maxEntriesPerBatch]
+	}
+
+	for _, entry := range entries {
 		kvs := []any{
 			"component", entry.Component,
 			"exporter", entry.Exporter,
+			"severity", entry.Severity,
+		}
+		if entry.Timestamp != nil {
+			kvs = append(kvs, "ts", entry.Timestamp.AsTime().Format(time.RFC3339Nano))
 		}
 		if entry.Lease != "" {
 			kvs = append(kvs, "lease", entry.Lease)
@@ -77,7 +92,8 @@ func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest
 	}
 
 	return &pb.PushLogsResponse{
-		Accepted: uint32(len(req.Entries)),
+		Accepted: uint32(len(entries)),
+		Dropped:  dropped,
 	}, nil
 }
 
@@ -104,6 +120,9 @@ func (s *TelemetryService) Start(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		srv.GracefulStop()
+		if err := <-errCh; err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+			return err
+		}
 		return nil
 	case err := <-errCh:
 		return err

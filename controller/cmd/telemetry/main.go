@@ -79,6 +79,11 @@ func main() {
 	case sig := <-sigs:
 		logger.Info("received signal, shutting down", "signal", sig)
 		cancel()
+		// Wait for the service to finish its graceful stop before exiting.
+		if err := <-errCh; err != nil {
+			logger.Error(err, "telemetry service exited with error")
+			os.Exit(1)
+		}
 	case err := <-errCh:
 		if err != nil {
 			logger.Error(err, "telemetry service exited with error")
