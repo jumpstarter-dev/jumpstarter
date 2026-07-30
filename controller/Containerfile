@@ -8,13 +8,11 @@ ARG GIT_VERSION=unknown
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
-# Create a build directory owned by the build user (1001:0).
-# This avoids permission issues with rootless Podman where COPY
-# changes the working directory ownership to root.
-WORKDIR /build
-USER 0
-RUN chown 1001:0 /build
+# Set the user before WORKDIR so that podman creates /build with the
+# correct ownership (1001:0), avoiding the need for a root chown step
+# which breaks rootless crun on some CI runners.
 USER 1001
+WORKDIR /build
 
 # Copy the Go Modules manifests
 COPY --chown=1001:0 go.mod go.mod
