@@ -10,6 +10,8 @@ from .jumpstarter.v1 import (
     kubernetes_pb2_grpc,
     router_pb2,
     router_pb2_grpc,
+    telemetry_pb2,
+    telemetry_pb2_grpc,
 )
 
 __all__ = [
@@ -20,5 +22,7 @@ __all__ = [
     "kubernetes_pb2",
     "kubernetes_pb2_grpc",
     "router_pb2",
-    "router_pb2_grpc"
+    "router_pb2_grpc",
+    "telemetry_pb2",
+    "telemetry_pb2_grpc",
 ]

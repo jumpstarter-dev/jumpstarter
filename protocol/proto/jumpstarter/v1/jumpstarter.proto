@@ -43,6 +43,12 @@ service ControllerService {
   rpc ReleaseLease(ReleaseLeaseRequest) returns (ReleaseLeaseResponse);
   // List all leases.
   rpc ListLeases(ListLeasesRequest) returns (ListLeasesResponse);
+
+  // Discover optional service endpoints (e.g. telemetry).
+  // Exporters and clients call this after registration to find the telemetry service.
+  // Returns an empty list when no optional services are deployed.
+  // Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
+  rpc GetServiceEndpoints(GetServiceEndpointsRequest) returns (GetServiceEndpointsResponse);
 }
 
 // Registration request sent by an exporter to the controller.
@@ -258,4 +264,20 @@ message EndSessionRequest {}
 message EndSessionResponse {
   bool success = 1; // Whether the session ended successfully.
   optional string message = 2; // Human-readable result message.
+}
+
+// Request to discover optional service endpoints.
+message GetServiceEndpointsRequest {}
+
+// Response containing optional service endpoint addresses.
+message GetServiceEndpointsResponse {
+  // Empty when no optional services (e.g. telemetry) are deployed.
+  repeated TelemetryEndpoint telemetry_endpoints = 1;
+}
+
+// Address of an optional telemetry service endpoint.
+message TelemetryEndpoint {
+  string endpoint = 1;      // gRPC address (host:port).
+  string certificate = 2;   // Optional CA certificate PEM for TLS verification.
+  string min_severity = 3;  // Minimum log severity to forward (e.g. "info", "warning").
 }

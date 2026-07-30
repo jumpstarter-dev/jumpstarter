@@ -1,0 +1,42 @@
+// Copyright 2024 The Jumpstarter Authors
+
+syntax = "proto3";
+
+package jumpstarter.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// A service that receives structured logs from exporters and clients.
+// Implemented by jumpstarter-telemetry; not part of the controller.
+service TelemetryService {
+  // Push structured log entries to the telemetry service for Loki ingest.
+  rpc PushLogs(PushLogsRequest) returns (PushLogsResponse);
+}
+
+// Request to push log entries to the telemetry service.
+message PushLogsRequest {
+  repeated LogEntry entries = 1; // Log entries to push.
+}
+
+// Response to a PushLogs request.
+message PushLogsResponse {
+  uint32 accepted = 1; // Number of entries accepted.
+  uint32 dropped = 2;  // Number of entries dropped (backpressure).
+}
+
+// A structured log entry from an exporter or client.
+// Maps directly to a Loki log entry with stream labels and body fields.
+message LogEntry {
+  google.protobuf.Timestamp timestamp = 1; // When the log was emitted.
+  string severity = 2;     // Log severity: debug, info, warning, error, critical.
+  string message = 3;      // Human-readable log message.
+  string component = 4;    // Loki stream label: cli, exporter, controller, router, telemetry.
+  string exporter = 5;     // Loki stream label: exporter CRD name (bounded by cluster size).
+  string lease = 6;        // Log body only (high cardinality): active lease name.
+  string client = 7;       // Log body only (high cardinality): client CRD name.
+  string operation = 8;    // Log body: operation name (flash, power, etc.).
+  string result = 9;       // Log body: operation outcome (success, failure, etc.).
+  string driver_type = 10; // Log body: driver category (storage, power, network, etc.).
+  map<string, string> extra_fields = 11; // Additional structured key-value fields.
+                                         // Capped at 16 entries, 64-char keys, 256-char values.
+}
