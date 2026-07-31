@@ -76,7 +76,7 @@ run_ginkgo() {
     # "!exporterset-qemu" also matches the positive substring, so check negation first.
     if [[ "${label_filter}" != *"!exporterset-qemu"* ]] && \
        { [[ -z "${label_filter}" ]] || [[ "${label_filter}" == *"exporterset-qemu"* ]]; }; then
-        timeout="90m"
+        timeout="60m"
     fi
 
     local flags=(-v --show-node-events --trace --timeout "${timeout}")

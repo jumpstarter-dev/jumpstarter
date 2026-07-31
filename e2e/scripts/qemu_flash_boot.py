@@ -54,7 +54,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--disk-size",
-        default=os.environ.get("JUMPSTARTER_E2E_DISK_SIZE", "10G"),
+        default=os.environ.get("JUMPSTARTER_E2E_DISK_SIZE", "2G"),
         help="Disk size passed to qemu.set_disk_size before power on",
     )
     parser.add_argument(
@@ -96,10 +96,7 @@ def main() -> int:
                 print(f"OK: matched marker {markers[idx]!r}", flush=True)
         finally:
             print("power off...", flush=True)
-            try:
-                qemu.power.off()
-            except Exception as exc:  # noqa: BLE001 - best-effort cleanup
-                print(f"power off failed: {exc}", flush=True)
+            qemu.power.off()
 
     print("done", flush=True)
     return 0

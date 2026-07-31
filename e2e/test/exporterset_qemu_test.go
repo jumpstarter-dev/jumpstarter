@@ -102,16 +102,18 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 	})
 
 	It("leases, flashes Alpine, and boots to a console login marker", func() {
-		By("checking shared volume capacity is large enough for Alpine (~128Mi)")
+		By("waiting for a Running pod so we can read shared volume SizeLimit")
 		Eventually(func() string {
 			out, _ := Kubectl("-n", ns, "get", "pod",
 				"-l", exporterSetQemuSelector,
-				"-o", "jsonpath={.items[0].spec.volumes[?(@.name==\"shared\")].emptyDir.sizeLimit}")
+				"--field-selector=status.phase=Running",
+				"-o", "jsonpath={.items[0].metadata.name}")
 			return out
 		}, 2*time.Minute, 5*time.Second).ShouldNot(BeEmpty())
 
 		sizeLimit, _ := Kubectl("-n", ns, "get", "pod",
 			"-l", exporterSetQemuSelector,
+			"--field-selector=status.phase=Running",
 			"-o", "jsonpath={.items[0].spec.volumes[?(@.name==\"shared\")].emptyDir.sizeLimit}")
 		// Without the storage follow-up (#924), SizeLimit stays at 100Mi and
 		// flashing Alpine evicts the Pod. Skip until capacity is available.
@@ -129,7 +131,7 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 			"--",
 			"python3", script,
 			"--timeout", "900",
-			"--disk-size", "10G",
+			"--disk-size", "2G",
 			imagePath,
 		)
 		cmd.Env = append(os.Environ(), "JUMPSTARTER_GRPC_INSECURE=1")

@@ -62,9 +62,13 @@ var _ = Describe("Exit On Lease End E2E Tests", Label("exit-on-lease-end"), Orde
 		if CurrentSpecReport().Failed() {
 			DumpControllerLogs(250)
 		}
-		// Stop any running exporter and wait for the controller to fully
-		// process the disconnection before the next test starts a new one.
+		// Stop any running exporter between tests and wait until it is gone,
+		// then wait for the controller to process the disconnection.
 		tracker.StopAll()
+		Eventually(func() bool {
+			return tracker.IsProcessRunning()
+		}, 10*time.Second, 100*time.Millisecond).Should(BeFalse(),
+			"exporter process should stop after StopAll")
 		WaitForExporterOffline("test-exporter-exit-on-lease-end")
 	})
 

@@ -1,8 +1,11 @@
-use std::io::{BufRead, BufReader, Read, Write};
+use std::collections::HashSet;
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
@@ -35,6 +38,13 @@ impl Default for ServeOptions {
     }
 }
 
+struct RuntimeState {
+    shutdown: AtomicBool,
+    /// PIDs of in-flight Exec children so Shutdown can SIGTERM them
+    /// before the process returns (avoids zombies when we are PID 1).
+    children: Mutex<HashSet<u32>>,
+}
+
 /// Listen on `socket_path` with default options (JSON logs, debug off).
 pub fn serve(socket_path: &str) -> std::io::Result<()> {
     serve_with(socket_path, ServeOptions::default())
@@ -43,6 +53,10 @@ pub fn serve(socket_path: &str) -> std::io::Result<()> {
 /// Listen on `socket_path` with the given options.
 pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> {
     let log = Arc::new(Logger::new(opts.log_format, opts.debug, opts.log_fields));
+    let state = Arc::new(RuntimeState {
+        shutdown: AtomicBool::new(false),
+        children: Mutex::new(HashSet::new()),
+    });
 
     if std::path::Path::new(socket_path).exists() {
         if UnixStream::connect(socket_path).is_ok() {
@@ -53,6 +67,7 @@ pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> 
         std::fs::remove_file(socket_path)?;
     }
     let listener = UnixListener::bind(socket_path)?;
+    listener.set_nonblocking(true)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -63,20 +78,39 @@ pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> 
         &[("socket", json!(socket_path)), ("debug", json!(opts.debug))],
     );
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(s) => {
+    while !state.shutdown.load(Ordering::SeqCst) {
+        match listener.accept() {
+            Ok((s, _)) => {
                 let log = Arc::clone(&log);
+                let state = Arc::clone(&state);
                 let socket = socket_path.to_string();
                 thread::spawn(move || {
-                    if let Err(e) = handle_connection(s, Arc::clone(&log), &socket) {
+                    if let Err(e) = handle_connection(s, Arc::clone(&log), &socket, state) {
                         log.error("connection error", &[("error", json!(e.to_string()))]);
                     }
                 });
             }
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(50));
+            }
             Err(e) => log.error("accept error", &[("error", json!(e.to_string()))]),
         }
     }
+
+    // Best-effort: signal any remaining Exec children and give their
+    // handler threads a moment to wait()/reap before we return.
+    let leftover: Vec<u32> = state.children.lock().unwrap().iter().copied().collect();
+    for &pid in &leftover {
+        unsafe {
+            kill(pid as i32, 15);
+        }
+    }
+    if !leftover.is_empty() {
+        thread::sleep(Duration::from_millis(200));
+    }
+
+    let _ = std::fs::remove_file(socket_path);
+    log.info("shutdown complete", &[]);
     Ok(())
 }
 
@@ -84,6 +118,7 @@ fn handle_connection(
     stream: UnixStream,
     log: Arc<Logger>,
     socket_path: &str,
+    state: Arc<RuntimeState>,
 ) -> std::io::Result<()> {
     let reader = BufReader::new(stream.try_clone()?);
     let writer: Arc<Mutex<UnixStream>> = Arc::new(Mutex::new(stream));
@@ -99,15 +134,24 @@ fn handle_connection(
     match msg {
         ClientMessage::Shutdown => {
             log.info("shutdown requested", &[("socket", json!(socket_path))]);
-            // Acknowledge before exiting so the client can observe success.
+            // Acknowledge before stopping the accept loop so the client
+            // observes success. Do not process::exit — that skips Drop
+            // and can leave Exec children as zombies when we are PID 1.
             send(&writer, &ServerMessage::Exit { code: Some(0) })?;
-            // Drop the writer to flush the ack, remove the socket, then exit
-            // so the container's PID 1 terminates and Kubernetes replaces the Pod.
             drop(writer);
             let _ = std::fs::remove_file(socket_path);
-            std::process::exit(0);
+            let pids: Vec<u32> = state.children.lock().unwrap().iter().copied().collect();
+            for pid in pids {
+                unsafe {
+                    kill(pid as i32, 15);
+                }
+            }
+            state.shutdown.store(true, Ordering::SeqCst);
+            Ok(())
         }
-        ClientMessage::Exec { argv, env, cwd } => handle_exec(argv, env, cwd, lines, writer, log),
+        ClientMessage::Exec { argv, env, cwd } => {
+            handle_exec(argv, env, cwd, lines, writer, log, state)
+        }
         _ => Err(io_err("first message must be Exec or Shutdown")),
     }
 }
@@ -119,6 +163,7 @@ fn handle_exec(
     lines: std::io::Lines<BufReader<UnixStream>>,
     writer: Arc<Mutex<UnixStream>>,
     log: Arc<Logger>,
+    state: Arc<RuntimeState>,
 ) -> std::io::Result<()> {
     if argv.is_empty() {
         send(
@@ -168,6 +213,7 @@ fn handle_exec(
     })?;
 
     let pid = child.id();
+    state.children.lock().unwrap().insert(pid);
     log.info(
         "exec started",
         &[("pid", json!(pid)), ("argv", json!(argv))],
@@ -193,7 +239,7 @@ fn handle_exec(
     let child_stdin = Arc::new(Mutex::new(child_stdin));
     let stdin_ref = Arc::clone(&child_stdin);
     let log_in = Arc::clone(&log);
-    let reaped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let reaped = Arc::new(AtomicBool::new(false));
     let reaped_ref = Arc::clone(&reaped);
     let _reader_handle = thread::spawn(move || {
         for line in lines {
@@ -227,7 +273,7 @@ fn handle_exec(
                     *stdin_ref.lock().unwrap() = None;
                 }
                 ClientMessage::Signal { signal } => {
-                    if reaped_ref.load(std::sync::atomic::Ordering::Acquire) {
+                    if reaped_ref.load(Ordering::Acquire) {
                         break;
                     }
                     log_in.debug("signal", &[("pid", json!(pid)), ("signal", json!(signal))]);
@@ -236,13 +282,14 @@ fn handle_exec(
                 _ => {}
             }
         }
-        if !reaped_ref.load(std::sync::atomic::Ordering::Acquire) {
+        if !reaped_ref.load(Ordering::Acquire) {
             unsafe { kill(pid as i32, 15) }; // SIGTERM on client disconnect
         }
     });
 
     let status = child.wait()?;
-    reaped.store(true, std::sync::atomic::Ordering::Release);
+    reaped.store(true, Ordering::Release);
+    state.children.lock().unwrap().remove(&pid);
 
     let _ = stdout_handle.join();
     let _ = stderr_handle.join();
@@ -291,7 +338,7 @@ fn forward_output(
                     break;
                 }
             }
-            Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(ref e) if e.kind() == ErrorKind::Interrupted => continue,
             Err(_) => break,
         }
     }

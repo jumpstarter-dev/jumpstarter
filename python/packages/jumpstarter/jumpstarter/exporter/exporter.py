@@ -104,6 +104,9 @@ def shutdown_runtime_sidecar(
 
     Returns True if a shutdown was attempted, False if no launcher socket
     is configured (non-sidecar / InPlaceReuse hosts).
+
+    Callers on the async event loop must offload this via
+    ``await anyio.to_thread.run_sync(shutdown_runtime_sidecar)``.
     """
     import os
     import subprocess
@@ -131,8 +134,9 @@ def shutdown_runtime_sidecar(
     logger.info("Shutting down runtime sidecar via %s", " ".join(cmd))
     try:
         result = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=timeout)
-    except FileNotFoundError:
-        logger.warning("jumpstarter-exec not executable at %s", exec_bin)
+    except OSError as e:
+        # FileNotFoundError, PermissionError, and other pre-exec failures.
+        logger.warning("jumpstarter-exec not executable at %s: %s", exec_bin, e)
         return False
     except subprocess.TimeoutExpired:
         logger.warning("jumpstarter-exec shutdown timed out after %ss", timeout)
@@ -1307,7 +1311,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
         if self.exit_on_lease_end and previous_leased:
             logger.info("Exporter configured to exit after lease, shutting down")
-            shutdown_runtime_sidecar()
+            await anyio.to_thread.run_sync(shutdown_runtime_sidecar)
             self._stop_requested = True
 
     def _check_stop_requested(self) -> bool:

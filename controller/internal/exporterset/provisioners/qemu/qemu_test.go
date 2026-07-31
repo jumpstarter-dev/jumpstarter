@@ -118,8 +118,20 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 	if runtimeInit.RestartPolicy == nil || *runtimeInit.RestartPolicy != corev1.ContainerRestartPolicyAlways {
 		t.Errorf("target-runtime RestartPolicy = %v, want Always", runtimeInit.RestartPolicy)
 	}
+	if runtimeInit.SecurityContext == nil || runtimeInit.SecurityContext.RunAsUser == nil ||
+		*runtimeInit.SecurityContext.RunAsUser != 0 {
+		t.Errorf("target-runtime RunAsUser = %v, want 0", runtimeInit.SecurityContext)
+	}
 	if len(pod.Spec.Containers) != 1 || pod.Spec.Containers[0].Name != "exporter" {
 		t.Errorf("unexpected containers: %#v", pod.Spec.Containers)
+	}
+	exporter := pod.Spec.Containers[0]
+	if exporter.SecurityContext == nil || exporter.SecurityContext.RunAsUser == nil ||
+		*exporter.SecurityContext.RunAsUser != exporterNonRootUID {
+		t.Errorf("exporter RunAsUser = %v, want %d", exporter.SecurityContext, exporterNonRootUID)
+	}
+	if exporter.SecurityContext.RunAsNonRoot == nil || !*exporter.SecurityContext.RunAsNonRoot {
+		t.Errorf("exporter RunAsNonRoot = %v, want true", exporter.SecurityContext.RunAsNonRoot)
 	}
 	if pod.Spec.RestartPolicy != corev1.RestartPolicyNever {
 		t.Errorf("RestartPolicy = %q, want Never (ExitAndReplace)", pod.Spec.RestartPolicy)

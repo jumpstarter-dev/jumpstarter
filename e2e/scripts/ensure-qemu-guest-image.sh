@@ -2,7 +2,7 @@
 # Ensure the Alpine UEFI tiny guest image is available for exporterset-qemu e2e.
 #
 # Resolution order:
-#   1. JUMPSTARTER_E2E_QEMU_IMAGE (absolute path or URL — printed and exited)
+#   1. JUMPSTARTER_E2E_QEMU_IMAGE (absolute path to an existing image — printed and exited)
 #   2. Existing file at e2e/testdata/<default name>
 #   3. Copy from python/packages/jumpstarter-driver-qemu/images/ if present
 #   4. Download from ALPINE_IMAGE_URL

@@ -222,16 +222,15 @@ def test_cidata_uses_shared_work_dir_with_launcher_socket(tmp_path):
     """Sidecar mode must place cidata on the shared volume so QEMU can read it."""
     shared = tmp_path / "shared"
     shared.mkdir()
+    # Real _work_dir derives from the launcher socket parent directory.
     driver = Qemu(launcher_socket=str(shared / "launcher.sock"))
-    with patch.object(Qemu, "_work_dir", property(lambda self: str(shared))):
-        cidata = driver.cidata()
-        try:
-            assert Path(cidata.name).is_relative_to(shared)
-            assert oct(Path(cidata.name).stat().st_mode & 0o777) == "0o755"
-            assert (Path(cidata.name) / "meta-data").is_file()
-            assert (Path(cidata.name) / "user-data").is_file()
-        finally:
-            cidata.cleanup()
+    cidata = driver.cidata()
+    try:
+        assert Path(cidata.name).is_relative_to(shared)
+        assert (Path(cidata.name) / "meta-data").is_file()
+        assert (Path(cidata.name) / "user-data").is_file()
+    finally:
+        cidata.cleanup()
 
 
 # OCI Flash Tests

@@ -44,8 +44,12 @@ const (
 	// configVolumeName is the volume name for the ExporterConfig Secret.
 	configVolumeName = "exporter-config"
 
-	// configMountPath is where the ExporterConfig Secret is mounted.
-	configMountPath = "/etc/jumpstarter/exporters"
+	// ExporterConfigMountPath is where the ExporterConfig Secret is mounted
+	// inside the exporter container (QEMU provisioner and injectConfigVolume).
+	ExporterConfigMountPath = "/etc/jumpstarter/exporters"
+
+	// configMountPath is the unexported alias used within this package.
+	configMountPath = ExporterConfigMountPath
 
 	// exporterContainerName is the main container that runs jmp run.
 	exporterContainerName = "exporter"

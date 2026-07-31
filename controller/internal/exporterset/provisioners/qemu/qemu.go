@@ -66,9 +66,15 @@ const (
 	// the QEMU runtime container.
 	launcherSocketPath = "/shared/launcher.sock"
 
-	// configMountPath is where the ExporterConfig Secret is mounted
-	// inside the exporter sidecar.
-	configMountPath = "/etc/jumpstarter/exporters"
+	// exporterNonRootUID is the UID for the exporter main container.
+	// The runtime sidecar runs as root so it can read exporter-created
+	// paths on the shared volume without world-writable permissions.
+	exporterNonRootUID int64 = 65532
+
+	// exporterConfigPath is the jmp run config path. Must match
+	// exporterset.ExporterConfigMountPath + "/" + exporterConfigKey
+	// (cannot import the parent package — test import cycle).
+	exporterConfigPath = "/etc/jumpstarter/exporters/config.yaml"
 
 	// QEMU driver type for identification during enrichment.
 	qemuDriverType = "jumpstarter_driver_qemu.driver.Qemu"
@@ -157,6 +163,9 @@ func (p *Provisioner) RenderPod(
 ) (*corev1.Pod, error) {
 	restartAlways := corev1.ContainerRestartPolicyAlways
 	sizeLimit := resource.MustParse(sharedVolumeSizeLimit)
+	runAsRoot := int64(0)
+	runAsExporter := exporterNonRootUID
+	exporterNonRoot := true
 
 	var exporterSpec, runtimeSpec *virtualtargetv1alpha1.ImageSpec
 	if images != nil {
@@ -218,11 +227,17 @@ func (p *Provisioner) RenderPod(
 					// Native sidecar: starts before the main exporter so
 					// launcher.sock exists when jmp run begins. Torn down
 					// automatically when the exporter (main) container exits.
+					// Runs as root so QEMU can use KVM devices and read
+					// exporter-owned paths on the shared volume.
 					Name:            "target-runtime",
 					Image:           runtimeImage,
 					ImagePullPolicy: runtimePullPolicy,
 					RestartPolicy:   &restartAlways,
 					Env:             runtimeEnv,
+					SecurityContext: &corev1.SecurityContext{
+						RunAsUser:    &runAsRoot,
+						RunAsNonRoot: boolPtr(false),
+					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
 							Name:      sharedVolumeName,
@@ -236,12 +251,19 @@ func (p *Provisioner) RenderPod(
 					Name:            "exporter",
 					Image:           exporterImage,
 					ImagePullPolicy: exporterPullPolicy,
-					Command:         []string{"jmp", "run", "--exporter-config", configMountPath + "/config.yaml"},
+					Command: []string{
+						"jmp", "run", "--exporter-config",
+						exporterConfigPath,
+					},
 					Env: []corev1.EnvVar{
 						{
 							Name:  "JUMPSTARTER_LAUNCHER_SOCKET",
 							Value: launcherSocketPath,
 						},
+					},
+					SecurityContext: &corev1.SecurityContext{
+						RunAsUser:    &runAsExporter,
+						RunAsNonRoot: &exporterNonRoot,
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
@@ -450,6 +472,10 @@ func splitDot(s string) []string {
 func mustJSON(v interface{}) *apiextensionsv1.JSON {
 	raw, _ := json.Marshal(v)
 	return &apiextensionsv1.JSON{Raw: raw}
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
 
 // Cleanup handles teardown of QEMU-based exporter instances.

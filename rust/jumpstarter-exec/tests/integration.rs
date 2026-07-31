@@ -449,13 +449,27 @@ fn e2e_shutdown_exits_serve() {
         .expect("failed to run jumpstarter-exec shutdown");
     assert!(status.success(), "shutdown should exit 0");
 
-    let wait = server
-        .wait()
-        .expect("failed to wait for serve process after shutdown");
-    assert!(
-        wait.success(),
-        "serve should exit 0 after shutdown, got {wait}"
-    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        match server.try_wait() {
+            Ok(Some(wait)) => {
+                assert!(
+                    wait.success(),
+                    "serve should exit 0 after shutdown, got {wait}"
+                );
+                return;
+            }
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Ok(None) => {
+                let _ = server.kill();
+                let _ = server.wait();
+                panic!("serve did not exit within 5s after shutdown");
+            }
+            Err(e) => panic!("try_wait failed: {e}"),
+        }
+    }
 }
 
 #[test]

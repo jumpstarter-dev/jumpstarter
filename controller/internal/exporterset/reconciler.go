@@ -555,11 +555,11 @@ func (r *ExporterSetReconciler) readCredentialToken(
 	return string(token), nil
 }
 
-// listPodsByExporter returns a set of Exporter names that already have a Pod.
-func (r *ExporterSetReconciler) listPodsByExporter(
+// listPodsGroupedByExporter maps Exporter names to their owned Pods.
+func (r *ExporterSetReconciler) listPodsGroupedByExporter(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
-) (map[string]struct{}, error) {
+) (map[string][]corev1.Pod, error) {
 	var podList corev1.PodList
 	if err := r.List(ctx, &podList,
 		client.InNamespace(es.Namespace),
@@ -568,15 +568,34 @@ func (r *ExporterSetReconciler) listPodsByExporter(
 		return nil, fmt.Errorf("list Pods for ExporterSet %s: %w", es.Name, err)
 	}
 
-	byExporter := make(map[string]struct{}, len(podList.Items))
+	byExporter := make(map[string][]corev1.Pod)
 	for i := range podList.Items {
-		for _, ref := range podList.Items[i].OwnerReferences {
+		pod := podList.Items[i]
+		for _, ref := range pod.OwnerReferences {
 			if ref.Kind == kindExporter && ref.Controller != nil && *ref.Controller {
-				byExporter[ref.Name] = struct{}{}
+				byExporter[ref.Name] = append(byExporter[ref.Name], pod)
+				break
 			}
 		}
 	}
 
+	return byExporter, nil
+}
+
+// listPodsByExporter returns the set of Exporter names that already have a Pod.
+// Derived from listPodsGroupedByExporter so reconcile does not List twice.
+func (r *ExporterSetReconciler) listPodsByExporter(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+) (map[string]struct{}, error) {
+	grouped, err := r.listPodsGroupedByExporter(ctx, es)
+	if err != nil {
+		return nil, err
+	}
+	byExporter := make(map[string]struct{}, len(grouped))
+	for name := range grouped {
+		byExporter[name] = struct{}{}
+	}
 	return byExporter, nil
 }
 
@@ -725,32 +744,6 @@ func (r *ExporterSetReconciler) cleanupTerminalExporters(
 	}
 
 	return deleted, nil
-}
-
-// listPodsGroupedByExporter maps Exporter names to their owned Pods.
-func (r *ExporterSetReconciler) listPodsGroupedByExporter(
-	ctx context.Context,
-	es *virtualtargetv1alpha1.ExporterSet,
-) (map[string][]corev1.Pod, error) {
-	var podList corev1.PodList
-	if err := r.List(ctx, &podList,
-		client.InNamespace(es.Namespace),
-		client.MatchingLabels{labelExporterSetName: es.Name},
-	); err != nil {
-		return nil, fmt.Errorf("list Pods for ExporterSet %s: %w", es.Name, err)
-	}
-
-	byExporter := make(map[string][]corev1.Pod)
-	for i := range podList.Items {
-		pod := podList.Items[i]
-		for _, ref := range pod.OwnerReferences {
-			if ref.Kind == kindExporter && ref.Controller != nil && *ref.Controller {
-				byExporter[ref.Name] = append(byExporter[ref.Name], pod)
-				break
-			}
-		}
-	}
-	return byExporter, nil
 }
 
 func allPodsTerminal(pods []corev1.Pod) bool {
