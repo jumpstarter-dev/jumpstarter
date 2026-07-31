@@ -15,6 +15,7 @@ use crate::protocol::{ClientMessage, ServerMessage};
 
 extern "C" {
     fn kill(pid: i32, sig: i32) -> i32;
+    fn umask(mask: u32) -> u32;
 }
 
 /// Options for `serve`.
@@ -58,6 +59,16 @@ pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> 
         children: Mutex::new(HashSet::new()),
     });
 
+    // Shared-volume sidecar pattern: the exporter often runs as a different
+    // UID than this process (e.g. runtime root + exporter 65532). Clear the
+    // umask so Exec children (QEMU) create QMP/serial/VNC sockets that the
+    // peer can connect to (mode 0777). The listen socket is then tightened
+    // to 0666 below — still cross-UID, but not executable.
+    #[cfg(unix)]
+    unsafe {
+        umask(0);
+    }
+
     if std::path::Path::new(socket_path).exists() {
         if UnixStream::connect(socket_path).is_ok() {
             return Err(std::io::Error::other(format!(
@@ -71,7 +82,7 @@ pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o660))?;
+        std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o666))?;
     }
     log.info(
         "listening",

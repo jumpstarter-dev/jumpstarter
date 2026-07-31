@@ -47,6 +47,20 @@ fn start_server_process() -> (Child, TempDir, String) {
     }
     assert!(sock.exists(), "server socket never appeared");
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&sock)
+            .expect("stat socket")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(
+            mode, 0o666,
+            "listen socket must be world-accessible for cross-UID sidecar peers, got {mode:#o}"
+        );
+    }
+
     (child, dir, path)
 }
 

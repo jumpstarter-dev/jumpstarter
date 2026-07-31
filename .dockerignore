@@ -1,4 +1,5 @@
 # Build context for python/Containerfile is the repo root.
+# Keep .git — hatch-vcs metadata hooks call `git rev-parse` for URLs/version.
 rust/target/
 **/target/
 python/.venv/

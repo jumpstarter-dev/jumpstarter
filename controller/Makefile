@@ -145,7 +145,9 @@ docker-build-exporter-set-controller: ## Build docker image for the exporter-set
 
 .PHONY: docker-build-qemu-runtime
 docker-build-qemu-runtime: ## Build docker image for the qemu-runtime container.
-	$(CONTAINER_TOOL) build -t ${QEMU_RUNTIME_IMG} -f Containerfile.qemu-runtime .
+	$(CONTAINER_TOOL) build \
+		--build-arg GIT_VERSION=$(GIT_VERSION) \
+		-t ${QEMU_RUNTIME_IMG} -f Containerfile.qemu-runtime ..
 
 .PHONY: docker-build-exporter
 docker-build-exporter: ## Build the jumpstarter exporter image (includes jumpstarter-exec).
