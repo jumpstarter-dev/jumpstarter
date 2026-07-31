@@ -1,3 +1,4 @@
+import logging
 import sys
 import termios
 import tty
@@ -8,6 +9,8 @@ from anyio import EndOfStream, create_task_group
 from anyio.streams.file import FileReadStream, FileWriteStream
 
 from jumpstarter.client import DriverClient
+
+logger = logging.getLogger(__name__)
 
 
 class ConsoleExit(Exception):
@@ -77,8 +80,11 @@ class Console:
             elif data == b"\x1d":  # Ctrl-]
                 ctrl_bracket_count += 1
                 ctrl_b_count = 0
-                if ctrl_bracket_count == 3 and self.on_power_cycle is not None:
-                    await self.on_power_cycle()
+                if ctrl_bracket_count == 3:
+                    if self.on_power_cycle is not None:
+                        await self.on_power_cycle()
+                    else:
+                        logger.warning("Power cycle hotkey pressed but no power driver available")
                     ctrl_bracket_count = 0
                     continue
             else:

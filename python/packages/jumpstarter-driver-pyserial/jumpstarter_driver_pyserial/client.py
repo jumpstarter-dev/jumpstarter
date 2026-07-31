@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 KNOWN_POWER_CLIENTS = frozenset({
     "jumpstarter_driver_power.client.PowerClient",
     "jumpstarter_driver_power.client.VirtualPowerClient",
+    "jumpstarter_driver_ridesx.client.RideSXPowerClient",
+    "jumpstarter_driver_noyito_relay.client.NoyitoPowerClient",
+    "jumpstarter_driver_snmp.client.SNMPServerClient",
 })
 
 
@@ -174,12 +177,19 @@ class PySerialClient(DriverClient):
         )
         return None
 
-    def _collect_power_clients(self, client, result):
+    def _collect_power_clients(self, client, result, seen_uuids=None):
+        if seen_uuids is None:
+            seen_uuids = set()
+        client_uuid = getattr(client, 'uuid', None)
+        if client_uuid and client_uuid in seen_uuids:
+            return
+        if client_uuid:
+            seen_uuids.add(client_uuid)
         client_class = client.labels.get("jumpstarter.dev/client")
         if client_class in KNOWN_POWER_CLIENTS:
             result.append(client)
         for child in client.children.values():
-            self._collect_power_clients(child, result)
+            self._collect_power_clients(child, result, seen_uuids)
 
     def _make_power_cycle(self, power_client):
         method_label = self.labels.get("jumpstarter.dev/pyserial/power-control-method", "cycle")

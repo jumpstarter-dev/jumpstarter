@@ -154,3 +154,35 @@ def test_find_power_client_disabled_via_none():
     with serve(PySerial(url="loop://", power_control_method=None)) as client:
         object.__setattr__(client, "root", root)
         assert client._find_power_client() is None
+
+
+def test_collect_power_clients_dedup_proxy():
+    # Simulate Proxy scenario: same power driver instance appears twice in tree
+    # (once via proxy delegation, once via direct parent)
+    from uuid import uuid4
+    shared_uuid = uuid4()
+
+    power1 = MagicMock(spec=["children", "labels", "uuid"])
+    power1.children = {}
+    power1.labels = {
+        "jumpstarter.dev/client": "jumpstarter_driver_power.client.PowerClient",
+        "jumpstarter.dev/name": "power",
+    }
+    power1.uuid = shared_uuid
+
+    power2 = MagicMock(spec=["children", "labels", "uuid"])
+    power2.children = {}
+    power2.labels = {
+        "jumpstarter.dev/client": "jumpstarter_driver_power.client.PowerClient",
+        "jumpstarter.dev/name": "power",
+    }
+    power2.uuid = shared_uuid  # Same UUID as power1
+
+    root = MagicMock(spec=["children", "labels"])
+    root.children = {"power1": power1, "power2": power2}
+    root.labels = {}
+
+    with serve(PySerial(url="loop://")) as client:
+        object.__setattr__(client, "root", root)
+        # Should find only one power client despite two references
+        assert client._find_power_client() is power1
