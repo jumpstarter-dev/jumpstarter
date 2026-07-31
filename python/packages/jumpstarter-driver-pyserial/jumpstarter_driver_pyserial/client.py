@@ -1,3 +1,4 @@
+import logging
 import sys
 import time
 from contextlib import contextmanager
@@ -12,6 +13,13 @@ from pexpect.fdpexpect import fdspawn
 from .console import Console, ConsoleStreamDrop
 from jumpstarter.client import DriverClient
 from jumpstarter.client.decorators import driver_click_group
+
+logger = logging.getLogger(__name__)
+
+KNOWN_POWER_CLIENTS = frozenset({
+    "jumpstarter_driver_power.client.PowerClient",
+    "jumpstarter_driver_power.client.VirtualPowerClient",
+})
 
 
 class PySerialClient(DriverClient):
@@ -127,28 +135,84 @@ class PySerialClient(DriverClient):
         return bytes_read, bytes_sent
 
     def _find_power_client(self):
+        # Check if hotkey is disabled
+        method_label = self.labels.get("jumpstarter.dev/pyserial/power-control-method", "cycle")
+        if not method_label:
+            return None
+
         root = getattr(self, 'root', None)
         if root is None:
             return None
-        return self._search_power(root)
 
-    def _search_power(self, client):
-        for child in client.children.values():
-            if hasattr(child, "cycle") or (hasattr(child, "on") and hasattr(child, "off")):
-                return child
-            result = self._search_power(child)
-            if result is not None:
-                return result
+        # Explicit ref takes precedence
+        ref_label = self.labels.get("jumpstarter.dev/pyserial/power-control-ref")
+        if ref_label:
+            power_client = root.children.get(ref_label)
+            if power_client is None:
+                logger.warning(
+                    "power_control_ref '%s' not found in DUT tree — power cycle hotkey disabled",
+                    ref_label
+                )
+                return None
+            return power_client
+
+        # Auto-discovery: collect all power-capable clients
+        candidates = []
+        self._collect_power_clients(root, candidates)
+
+        if len(candidates) == 0:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
+
+        # Multiple candidates — ambiguous
+        names = [c.labels.get("jumpstarter.dev/name", "unknown") for c in candidates]
+        logger.warning(
+            "Multiple power drivers found (%s) — power cycle hotkey disabled. "
+            "Set power_control_ref to select one explicitly.",
+            ", ".join(names)
+        )
         return None
 
+    def _collect_power_clients(self, client, result):
+        client_class = client.labels.get("jumpstarter.dev/client")
+        if client_class in KNOWN_POWER_CLIENTS:
+            result.append(client)
+        for child in client.children.values():
+            self._collect_power_clients(child, result)
+
     def _make_power_cycle(self, power_client):
-        async def _cycle():
-            if hasattr(power_client, "cycle"):
-                await to_thread.run_sync(power_client.cycle)
+        method_label = self.labels.get("jumpstarter.dev/pyserial/power-control-method", "cycle")
+        methods = [m for m in method_label.split(",") if m]
+
+        # Pre-validate and parse all steps
+        steps = []
+        for method in methods:
+            if method.startswith("sleep:"):
+                try:
+                    delay = float(method.split(":", 1)[1])
+                    steps.append(("sleep", delay))
+                except (ValueError, IndexError):
+                    logger.warning("Invalid sleep step '%s' — power cycle hotkey disabled", method)
+                    return None
             else:
-                await to_thread.run_sync(power_client.off)
-                await sleep(2)
-                await to_thread.run_sync(power_client.on)
+                operation = getattr(power_client, method, None)
+                if callable(operation):
+                    steps.append(("operation", operation))
+                else:
+                    logger.warning(
+                        "Power client does not have callable method '%s' — power cycle hotkey disabled",
+                        method
+                    )
+                    return None
+
+        async def _cycle():
+            for kind, value in steps:
+                if kind == "sleep":
+                    await sleep(value)
+                else:
+                    await to_thread.run_sync(value)
+
         return _cycle
 
     def cli(self):  # noqa: C901

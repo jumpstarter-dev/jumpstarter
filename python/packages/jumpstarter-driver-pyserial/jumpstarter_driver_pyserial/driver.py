@@ -101,6 +101,18 @@ class PySerial(Driver):
     check_present: bool = field(default=True)
     cps: Optional[float] = field(default=None)  # characters per second throttling
     disable_hupcl: bool = field(default=False)
+    power_control_ref: Optional[str] = field(
+        default=None,
+        metadata={"description": "Explicit power device name from DUT tree for Ctrl-] hotkey (skips auto-discovery)"},
+    )
+    power_control_method: list[str] | str | None = field(
+        default_factory=lambda: ["cycle"],
+        metadata={
+            "description": "Power cycle method sequence for Ctrl-] hotkey. "
+            "Supports method names (cycle, reset, on, off) and sleep:N. "
+            "Set to [] or null to disable hotkey. Default: ['cycle']"
+        },
+    )
     _transport: Any = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
@@ -109,9 +121,28 @@ class PySerial(Driver):
         if self.check_present and self.url != LOOP:
             serial_for_url(self.url, baudrate=self.baudrate)
 
+        # Normalize power_control_method: None stays None, string becomes list
+        if isinstance(self.power_control_method, str):
+            object.__setattr__(self, "power_control_method", [self.power_control_method])
+
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_pyserial.client.PySerialClient"
+
+    def extra_labels(self) -> dict[str, str]:
+        labels = {}
+        if self.power_control_ref is not None:
+            labels["jumpstarter.dev/pyserial/power-control-ref"] = self.power_control_ref
+        if self.power_control_method is not None:
+            method_list = (
+                self.power_control_method
+                if isinstance(self.power_control_method, list)
+                else [self.power_control_method]
+            )
+            labels["jumpstarter.dev/pyserial/power-control-method"] = ",".join(method_list)
+        else:
+            labels["jumpstarter.dev/pyserial/power-control-method"] = ""
+        return labels
 
     def _maybe_disable_hupcl(self, serial_port: Any):
         """Disable HUPCL to avoid MCU reset on serial port close when supported."""
