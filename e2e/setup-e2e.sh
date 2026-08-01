@@ -338,6 +338,11 @@ main() {
     
     install_e2e_tools
     echo ""
+
+    log_info "Prefetching Alpine guest image for ExporterSet QEMU..."
+    bash "$SCRIPT_DIR/scripts/ensure-qemu-guest-image.sh" > /dev/null
+    log_info "✓ QEMU guest image ready"
+    echo ""
     
     deploy_dex
     echo ""

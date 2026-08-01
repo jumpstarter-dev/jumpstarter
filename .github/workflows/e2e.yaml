@@ -327,9 +327,6 @@ jobs:
             sudo modprobe "$mod" 2>/dev/null || true
           done
 
-      - name: Prefetch Alpine guest image for ExporterSet QEMU
-        run: bash e2e/scripts/ensure-qemu-guest-image.sh
-
       - name: Setup e2e test environment
         run: make e2e-setup
         env:
