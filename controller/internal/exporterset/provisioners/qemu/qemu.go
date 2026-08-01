@@ -58,8 +58,8 @@ const (
 	sharedVolumeSizeLimit = "100Mi"
 
 	// jmpExecBinaryPath is the location of jumpstarter-exec inside
-	// the QEMU runtime image (installed by Containerfile.qemu-runtime).
-	jmpExecBinaryPath = "/usr/local/bin/jumpstarter-exec"
+	// the exporter image (installed by the Rust builder stage).
+	jmpExecBinaryPath = "/jumpstarter/bin/jumpstarter-exec"
 
 	// launcherSocketPath is the Unix socket used by jumpstarter-exec
 	// for remote command execution between the exporter and
@@ -140,7 +140,7 @@ func (p *Provisioner) resolveImageSpec(spec *virtualtargetv1alpha1.ImageSpec, de
 // using the native sidecar pattern (KEP-753):
 //
 //   - copy-jumpstarter-exec (regular init container) copies the
-//     jumpstarter-exec binary from the QEMU runtime image onto the
+//     jumpstarter-exec binary from the exporter image onto the
 //     shared volume and exits.
 //   - target-runtime (native sidecar, restartPolicy: Always) starts
 //     next so launcher.sock is ready before the exporter; runs
@@ -210,8 +210,8 @@ func (p *Provisioner) RenderPod(
 			InitContainers: []corev1.Container{
 				{
 					Name:            "copy-jumpstarter-exec",
-					Image:           runtimeImage,
-					ImagePullPolicy: runtimePullPolicy,
+					Image:           exporterImage,
+					ImagePullPolicy: exporterPullPolicy,
 					Command: []string{
 						"cp",
 						jmpExecBinaryPath,

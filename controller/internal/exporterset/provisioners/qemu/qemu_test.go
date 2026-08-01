@@ -297,8 +297,8 @@ func TestRenderPod_usesResolvedImages(t *testing.T) {
 	wantExporter := "quay.io/jumpstarter-dev/jumpstarter:1.2.3"
 	wantRuntime := "quay.io/jumpstarter-dev/virtual/qemu-runtime:1.2.3"
 
-	if pod.Spec.InitContainers[0].Image != wantRuntime {
-		t.Errorf("copy-jumpstarter-exec image = %q, want %q", pod.Spec.InitContainers[0].Image, wantRuntime)
+	if pod.Spec.InitContainers[0].Image != wantExporter {
+		t.Errorf("copy-jumpstarter-exec image = %q, want %q", pod.Spec.InitContainers[0].Image, wantExporter)
 	}
 	if pod.Spec.InitContainers[1].Image != wantRuntime {
 		t.Errorf("target-runtime image = %q, want %q", pod.Spec.InitContainers[1].Image, wantRuntime)
@@ -342,11 +342,11 @@ func TestRenderPod_imageOverrideFromSpec(t *testing.T) {
 	wantExporter := "my-registry.example.com/jumpstarter:custom"
 	wantRuntime := "my-registry.example.com/qemu-runtime:custom"
 
-	if pod.Spec.InitContainers[0].Image != wantRuntime {
-		t.Errorf("copy-jumpstarter-exec image = %q, want %q", pod.Spec.InitContainers[0].Image, wantRuntime)
+	if pod.Spec.InitContainers[0].Image != wantExporter {
+		t.Errorf("copy-jumpstarter-exec image = %q, want %q", pod.Spec.InitContainers[0].Image, wantExporter)
 	}
-	if pod.Spec.InitContainers[0].ImagePullPolicy != corev1.PullIfNotPresent {
-		t.Errorf("copy-jumpstarter-exec pullPolicy = %q, want IfNotPresent (from runtime)", pod.Spec.InitContainers[0].ImagePullPolicy)
+	if pod.Spec.InitContainers[0].ImagePullPolicy != corev1.PullAlways {
+		t.Errorf("copy-jumpstarter-exec pullPolicy = %q, want Always", pod.Spec.InitContainers[0].ImagePullPolicy)
 	}
 	if pod.Spec.InitContainers[1].Image != wantRuntime {
 		t.Errorf("target-runtime image = %q, want %q", pod.Spec.InitContainers[1].Image, wantRuntime)
@@ -384,8 +384,8 @@ func TestRenderPod_partialImageOverride(t *testing.T) {
 	wantExporter := "quay.io/jumpstarter-dev/jumpstarter:1.2.3"
 	wantRuntime := "my-registry.example.com/qemu-runtime:custom"
 
-	if pod.Spec.InitContainers[0].Image != wantRuntime {
-		t.Errorf("copy-jumpstarter-exec image = %q, want %q", pod.Spec.InitContainers[0].Image, wantRuntime)
+	if pod.Spec.InitContainers[0].Image != wantExporter {
+		t.Errorf("copy-jumpstarter-exec image = %q, want %q", pod.Spec.InitContainers[0].Image, wantExporter)
 	}
 	if pod.Spec.InitContainers[1].Image != wantRuntime {
 		t.Errorf("target-runtime image = %q, want %q", pod.Spec.InitContainers[1].Image, wantRuntime)
