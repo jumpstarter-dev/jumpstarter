@@ -1012,9 +1012,10 @@ class TestHookExecutor:
         """Verify that an unexpected exception raised during the drain is caught
         by the except-Exception handler and does not propagate to the caller.
 
-        Patches _flush_lines so that the second call (inside the drain) raises
-        a RuntimeError. The hook should still complete successfully because the
-        drain's except-Exception block suppresses it.
+        Patches select.select (used only in the drain phase, not the main
+        read loop which uses anyio.wait_readable) to raise a RuntimeError.
+        The hook should still complete successfully because the drain's
+        except-Exception block suppresses it.
         """
         hook_config = HookConfigV1Alpha1(
             before_lease=HookInstanceConfigV1Alpha1(
@@ -1024,19 +1025,8 @@ class TestHookExecutor:
         )
         executor = HookExecutor(config=hook_config)
 
-        original_flush = _flush_lines
-        call_count = 0
-
-        def flush_lines_with_drain_error(buffer, output_lines):
-            nonlocal call_count
-            call_count += 1
-            result = original_flush(buffer, output_lines)
-            if call_count > 1:
-                raise RuntimeError("simulated drain error")
-            return result
-
         with (
-            patch("jumpstarter.exporter.hooks._flush_lines", side_effect=flush_lines_with_drain_error),
+            patch("jumpstarter.exporter.hooks.select.select", side_effect=RuntimeError("simulated drain error")),
             patch("jumpstarter.exporter.hooks.logger"),
         ):
             result = await executor.execute_before_lease_hook(lease_scope)

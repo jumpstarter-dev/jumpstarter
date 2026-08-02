@@ -1169,7 +1169,8 @@ class TestRetryLoopTimeout:
 
             exc = find_exception_in_group(exc, ExporterUnreachableError)
             assert exc is not None
-        assert "after 0s of retrying" in str(exc)
+        assert "test-exporter" in str(exc)
+        assert "unreachable" in str(exc).lower()
         assert state["call_count"] >= 1
 
     async def test_retries_when_wrapped_in_exception_group(self):

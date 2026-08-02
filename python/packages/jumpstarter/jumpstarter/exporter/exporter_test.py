@@ -1139,6 +1139,8 @@ def _make_serve_exporter(exit_on_lease_end=False):
     exporter._status_drain_active = False
     exporter._pending_status_request = None
     exporter._status_rpc_event = Event()
+    exporter._conns_tg = None
+    exporter._fatal_stream_error = None
 
     @asynccontextmanager
     async def fake_session():

@@ -162,7 +162,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
-			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Exporter shutting down|Connection to exporter lost)`))
+			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Exporter shutting down|Connection to exporter lost|unreachable after)`))
 
 			WaitForExporter("test-exporter-hooks")
 		})
@@ -175,7 +175,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
-			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Connection to exporter lost)`))
+			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Connection to exporter lost|unreachable after)`))
 
 			// The exporter should release the lease and return to Available
 			WaitForExporter("test-exporter-hooks")
@@ -186,7 +186,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err2).To(HaveOccurred())
-			Expect(out2).To(MatchRegexp(`(beforeLease hook fail|Connection to exporter lost)`))
+			Expect(out2).To(MatchRegexp(`(beforeLease hook fail|Connection to exporter lost|unreachable after)`))
 
 			// Exporter should recover again
 			WaitForExporter("test-exporter-hooks")
@@ -212,7 +212,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
-			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Exporter shutting down|Connection to exporter lost)`))
+			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Exporter shutting down|Connection to exporter lost|unreachable after)`))
 
 			// Exporter process should have exited (allow extra time on slower runners like ARM)
 			Eventually(func() bool {
