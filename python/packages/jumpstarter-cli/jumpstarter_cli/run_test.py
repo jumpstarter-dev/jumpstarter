@@ -289,7 +289,7 @@ class TestRunCommandAuthValidation:
         assert result.exit_code == 0
         assert "Generated random passphrase" in result.stderr
         mock_serve.assert_called_once()
-        forwarded_passphrase = mock_serve.call_args.kwargs.get("passphrase") or mock_serve.call_args.args[5]
+        forwarded_passphrase = mock_serve.call_args.kwargs["passphrase"]
         assert isinstance(forwarded_passphrase, str)
         assert len(forwarded_passphrase) > 0
 
