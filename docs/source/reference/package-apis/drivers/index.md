@@ -87,6 +87,7 @@ Drivers for virtual and emulated targets:
 - {doc}`QEMU <qemu>` (`jumpstarter-driver-qemu`) - QEMU virtual machine management
 - {doc}`Renode <renode>` (`jumpstarter-driver-renode`) - Renode embedded systems emulation
 - {doc}`Corellium <corellium>` (`jumpstarter-driver-corellium`) - Corellium virtualization platform
+- {doc}`Cuttlefish <cuttlefish>` (`jumpstarter-driver-cuttlefish`) - Android Cuttlefish virtual device management
 
 ### Utility
 
@@ -103,6 +104,7 @@ androidemulator.md
 ble.md
 can.md
 corellium.md
+cuttlefish.md
 doip.md
 dut-network.md
 dutlink.md

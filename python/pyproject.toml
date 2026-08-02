@@ -12,8 +12,9 @@ jumpstarter-driver-androidemulator = { workspace = true }
 jumpstarter-driver-ble = { workspace = true }
 jumpstarter-driver-can = { workspace = true }
 jumpstarter-driver-composite = { workspace = true }
-jumpstarter-driver-doip = { workspace = true }
 jumpstarter-driver-corellium = { workspace = true }
+jumpstarter-driver-cuttlefish = { workspace = true }
+jumpstarter-driver-doip = { workspace = true }
 jumpstarter-driver-dut-network = { workspace = true }
 jumpstarter-driver-dutlink = { workspace = true }
 jumpstarter-driver-energenie = { workspace = true }
