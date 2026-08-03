@@ -434,6 +434,15 @@ def _make_mock_lease():
     return lease
 
 
+def _fake_cancel_scope(*, cancel_called=False):
+    """Stand-in for anyio.CancelScope that monitor tests can drive."""
+    scope = Mock()
+    scope.cancel_called = cancel_called
+    scope.__enter__ = Mock(return_value=scope)
+    scope.__exit__ = Mock(return_value=False)
+    return scope
+
+
 class TestUpdateLeaseChannel:
     async def test_updates_channel_on_lease(self):
         config = _make_config()
@@ -666,7 +675,7 @@ class TestWarnRefreshFailed:
 class TestMonitorTokenExpiry:
     async def test_returns_immediately_when_no_token(self):
         config = Mock(spec=[])  # no token attribute
-        cancel_scope = Mock(cancel_called=False)
+        cancel_scope = _fake_cancel_scope()
 
         await _monitor_token_expiry(config, None, cancel_scope)
         # Should return without error
@@ -675,7 +684,7 @@ class TestMonitorTokenExpiry:
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds", return_value=None)
     async def test_returns_when_remaining_is_none(self, _mock_remaining, _mock_sleep):
         config = _make_config()
-        cancel_scope = Mock(cancel_called=False)
+        cancel_scope = _fake_cancel_scope()
 
         await _monitor_token_expiry(config, None, cancel_scope)
 
@@ -688,7 +697,7 @@ class TestMonitorTokenExpiry:
         mock_remaining.side_effect = [60, Exception("done")]
         mock_recovery.return_value = "Token refreshed automatically."
         config = _make_config()
-        cancel_scope = Mock(cancel_called=False)
+        cancel_scope = _fake_cancel_scope()
 
         await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
 
@@ -704,7 +713,7 @@ class TestMonitorTokenExpiry:
         mock_remaining.side_effect = [60, Exception("done")]
         mock_recovery.return_value = None  # all recovery failed
         config = _make_config()
-        cancel_scope = Mock(cancel_called=False)
+        cancel_scope = _fake_cancel_scope()
 
         await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
 
@@ -723,7 +732,7 @@ class TestMonitorTokenExpiry:
             Exception("done"),
         ]
         config = _make_config()
-        cancel_scope = Mock(cancel_called=False)
+        cancel_scope = _fake_cancel_scope()
 
         await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
 
@@ -736,17 +745,22 @@ class TestMonitorTokenExpiry:
     @patch("jumpstarter_cli.shell.get_token_remaining_seconds", return_value=500)
     async def test_sleeps_30s_when_above_threshold(self, _mock_remaining, mock_sleep):
         # Exit after one loop via cancel_called
-        call_count = 0
-
-        def check_cancelled():
-            nonlocal call_count
-            call_count += 1  # ty: ignore[unresolved-reference]
-            return call_count > 1
-
         config = _make_config()
 
-        class _CancelScope(Mock):
-            cancel_called = property(lambda self: check_cancelled())
+        class _CancelScope:
+            def __init__(self):
+                self._n = 0
+
+            @property
+            def cancel_called(self):
+                self._n += 1
+                return self._n > 1
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
 
         cancel_scope = _CancelScope()
 
@@ -762,7 +776,7 @@ class TestMonitorTokenExpiry:
         mock_remaining.side_effect = [60, Exception("done")]
         mock_recovery.return_value = None
         config = _make_config()
-        cancel_scope = Mock(cancel_called=False)
+        cancel_scope = _fake_cancel_scope()
 
         await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
 
@@ -777,7 +791,7 @@ class TestMonitorTokenExpiry:
         mock_remaining.side_effect = [60, Exception("done")]
         mock_recovery.return_value = None
         config = _make_config()
-        cancel_scope = Mock(cancel_called=False)
+        cancel_scope = _fake_cancel_scope()
 
         await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope)
 
@@ -795,7 +809,7 @@ class TestMonitorTokenExpiry:
         mock_remaining.side_effect = [60, -5, Exception("done")]
         mock_recovery.return_value = None  # all recovery fails
         config = _make_config()
-        cancel_scope = Mock(cancel_called=False)
+        cancel_scope = _fake_cancel_scope()
         token_state = {"expired_unrecovered": False}
 
         await _monitor_token_expiry(config, _make_mock_lease(), cancel_scope, token_state)
@@ -809,6 +823,18 @@ class TestMonitorTokenExpiry:
         assert len(yellow_calls) >= 1, "Expected yellow warning for near-expiry"
         assert len(red_calls) >= 1, "Expected red warning for actual expiry"
         assert token_state["expired_unrecovered"] is True
+
+    async def test_cancel_interrupts_sleep(self):
+        """monitor_scope.cancel() must abort the in-progress sleep so a
+        replacement monitor can start without piling up."""
+        config = _make_config()
+        with patch("jumpstarter_cli.shell.get_token_remaining_seconds", return_value=500):
+            with anyio.fail_after(2):
+                async with anyio.create_task_group() as tg:
+                    scope = anyio.CancelScope()
+                    tg.start_soon(_monitor_token_expiry, config, _make_mock_lease(), scope)
+                    await anyio.sleep(0.05)
+                    scope.cancel()
 
 
 class _FakeStatusMonitor:
@@ -1169,7 +1195,8 @@ class TestRetryLoopTimeout:
 
             exc = find_exception_in_group(exc, ExporterUnreachableError)
             assert exc is not None
-        assert "after 0s of retrying" in str(exc)
+        assert "test-exporter" in str(exc)
+        assert "unreachable" in str(exc).lower()
         assert state["call_count"] >= 1
 
     async def test_retries_when_wrapped_in_exception_group(self):

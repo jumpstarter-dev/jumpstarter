@@ -12,7 +12,7 @@ import anyio.to_thread
 import click
 import grpc
 import grpc.aio
-from anyio import create_task_group, get_cancelled_exc_class
+from anyio import CancelScope, create_task_group, get_cancelled_exc_class
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import find_exception_in_group, handle_exceptions_with_reauthentication
 from jumpstarter_cli_common.oidc import (
@@ -236,40 +236,43 @@ async def _monitor_token_expiry(config, lease, cancel_scope, token_state=None) -
     2. Updates the lease's gRPC channel with new credentials
     3. If refresh fails, periodically checks the config on disk for a token
        refreshed externally (e.g. via 'jmp login' from within the shell)
-    4. Never cancels the scope - the shell stays alive regardless
+    4. Never cancels the shell scope - the shell stays alive regardless.
+       The monitor must still enter *its own* cancel_scope so cancel()
+       aborts an in-progress sleep (otherwise retries pile up monitors).
     """
     token = getattr(config, "token", None)
     if not token:
         return
 
     warn_state = {"expiry": False, "refresh_failed": False, "token_expired": False}
-    while not cancel_scope.cancel_called:
-        try:
-            # Re-read config.token each iteration since it may have been refreshed
-            remaining = get_token_remaining_seconds(config.token)
-            if remaining is None:
-                return
+    with cancel_scope:
+        while not cancel_scope.cancel_called:
+            try:
+                # Re-read config.token each iteration since it may have been refreshed
+                remaining = get_token_remaining_seconds(config.token)
+                if remaining is None:
+                    return
 
-            if remaining <= _TOKEN_REFRESH_THRESHOLD_SECONDS:
-                await _handle_token_refresh(config, lease, remaining, warn_state, token_state)
-            elif remaining <= TOKEN_EXPIRY_WARNING_SECONDS and not warn_state["expiry"]:
-                duration = format_duration(remaining)
-                click.echo(
-                    click.style(
-                        f"\nToken expires in {duration}. Will attempt auto-refresh.",
-                        fg="yellow",
-                        bold=True,
+                if remaining <= _TOKEN_REFRESH_THRESHOLD_SECONDS:
+                    await _handle_token_refresh(config, lease, remaining, warn_state, token_state)
+                elif remaining <= TOKEN_EXPIRY_WARNING_SECONDS and not warn_state["expiry"]:
+                    duration = format_duration(remaining)
+                    click.echo(
+                        click.style(
+                            f"\nToken expires in {duration}. Will attempt auto-refresh.",
+                            fg="yellow",
+                            bold=True,
+                        )
                     )
-                )
-                warn_state["expiry"] = True
+                    warn_state["expiry"] = True
 
-            # Check more frequently as we approach expiry
-            if remaining <= _TOKEN_REFRESH_THRESHOLD_SECONDS:
-                await anyio.sleep(5)
-            else:
-                await anyio.sleep(30)
-        except Exception:
-            return
+                # Check more frequently as we approach expiry
+                if remaining <= _TOKEN_REFRESH_THRESHOLD_SECONDS:
+                    await anyio.sleep(5)
+                else:
+                    await anyio.sleep(30)
+            except Exception:
+                return
 
 
 async def _cancel_if_connection_lost(monitor, coro):
@@ -504,6 +507,7 @@ async def _shell_with_signal_handling(  # noqa: C901
             try:
                 async with anyio.from_thread.BlockingPortal() as portal:
                     connect_deadline = None
+                    connect_start = None
                     while True:
                         async with config.lease_async(
                             selector, exporter_name, lease_name, duration, portal, acquisition_timeout,
@@ -511,8 +515,10 @@ async def _shell_with_signal_handling(  # noqa: C901
                         ) as lease:
                             lease_used = lease
 
-                            # Start token monitoring only once we're in the shell
-                            tg.start_soon(_monitor_token_expiry, config, lease, tg.cancel_scope, token_state)
+                            monitor_scope = CancelScope()
+                            tg.start_soon(
+                                _monitor_token_expiry, config, lease, monitor_scope, token_state
+                            )
 
                             unreachable = None
                             try:
@@ -525,6 +531,8 @@ async def _shell_with_signal_handling(  # noqa: C901
                                     raise
                             except ExporterUnreachableError as exc:
                                 unreachable = exc
+                            finally:
+                                monitor_scope.cancel()
                             if unreachable is not None:
                                 if lease.lease_ended:
                                     break  # lease expired naturally — exit cleanly
@@ -534,11 +542,13 @@ async def _shell_with_signal_handling(  # noqa: C901
                                         "Session is no longer valid."
                                     ) from unreachable
                                 if connect_deadline is None:
-                                    connect_deadline = time.monotonic() + lease.retry_timeout
+                                    connect_start = time.monotonic()
+                                    connect_deadline = connect_start + lease.retry_timeout
                                 if time.monotonic() >= connect_deadline:
+                                    elapsed = time.monotonic() - connect_start
                                     raise ExporterUnreachableError(
                                         f"Exporter {lease.exporter_name} unreachable after "
-                                        f"{lease.retry_timeout:.0f}s of retrying"
+                                        f"{elapsed:.0f}s of retrying: {unreachable}"
                                     ) from unreachable
                                 logger.warning(
                                     "Exporter %s is unreachable, releasing lease and retrying...",
@@ -546,6 +556,8 @@ async def _shell_with_signal_handling(  # noqa: C901
                                 )
                                 logger.debug("Unreachable cause: %s", unreachable)
                                 continue  # lease released by __aexit__, loop re-acquires
+                            connect_deadline = None
+                            connect_start = None
                             if lease.release and lease.name and token_state["expired_unrecovered"]:
                                 _warn_about_expired_token(lease.name, selector)
                             break
