@@ -998,24 +998,26 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         if self._lease_context is lease_scope:
             self._lease_context = None
 
-    async def serve(self):  # noqa: C901
-        """
-        Serve the exporter.
-        """
-        # initial registration
+    async def serve(self):
+        """Serve the exporter, handling leases until stopped."""
         async with self.session():
             pass
-        # Buffer status updates to avoid blocking during short processing gaps
         status_tx, status_rx = create_memory_object_stream[jumpstarter_pb2.StatusResponse](max_buffer_size=5)
+        try:
+            await self._run_control_plane(status_tx, status_rx)
+        finally:
+            self._tg = None
+            self._status_drain_active = False
+            clear_log_context()
 
+    async def _run_control_plane(self, status_tx, status_rx):
+        """Start control-plane streams and process status updates."""
         async with create_task_group() as tg:
             self._tg = tg
-            # Start background status drain (makes _report_status non-blocking)
             self._status_rpc_event = Event()
             self._pending_status_request = None
             self._status_drain_active = True
             tg.start_soon(self._drain_status_reports)
-            # Start status stream with retry logic
             tg.start_soon(
                 self._retry_stream,
                 "Status",
@@ -1023,86 +1025,97 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 status_tx,
             )
             async for status in status_rx:
-                # Check for lease state transitions
-                previous_leased = self._previous_leased
-                current_leased = status.leased
+                if await self._apply_status(status, tg):
+                    break
 
-                # Check if this is a new lease assignment (no active lease context and we have a lease name)
-                # This handles both first lease and subsequent leases after the previous one ended
-                if self._lease_context is None and status.lease_name != "" and current_leased:
-                    self._started = True
-                    logger.info("Starting new lease: %s", status.lease_name)
-                    # Create lease scope and start handling the lease
-                    # The session will be created inside handle_lease and stay open for the lease duration
-                    lease_scope = LeaseContext(
-                        lease_name=status.lease_name,
-                        before_lease_hook=Event(),
+    async def _apply_status(
+        self,
+        status: jumpstarter_pb2.StatusResponse,
+        tg: TaskGroup,
+    ) -> bool:
+        """Process a single status update. Returns True to stop the status loop."""
+        previous_leased = self._previous_leased
+        current_leased = status.leased
+
+        if self._lease_context is None and status.lease_name != "" and current_leased:
+            self._on_lease_acquired(status, tg)
+
+        if current_leased:
+            self._on_lease_update(status)
+            if not previous_leased:
+                if self.hook_executor and self._lease_context:
+                    tg.start_soon(
+                        self.hook_executor.run_before_lease_hook,
+                        self._lease_context,
+                        self._report_status,
+                        self.stop,
+                        self._request_lease_release,
                     )
-                    self._lease_context = lease_scope
-                    log_ctx = {"lease_id": status.lease_name, "exporter": self.name}
-                    if status.context:
-                        log_ctx.update(status.context)
-                    set_log_context(**log_ctx)
-                    tg.start_soon(self.handle_lease, status.lease_name, tg, lease_scope)
+        else:
+            await self._on_lease_released(previous_leased)
 
-                if current_leased:
-                    if self._lease_context:
-                        self._lease_context.update_client(status.client_name)
-                        if status.client_name:
-                            set_log_context(client=status.client_name)
-                    logger.info("Currently leased by %s under %s", status.client_name, status.lease_name)
+        self._previous_leased = current_leased
+        return self._check_stop_requested() if not current_leased else False
 
-                    # Before-lease hook when transitioning from unleased to leased
-                    if not previous_leased:
-                        if self.hook_executor and self._lease_context:
-                            tg.start_soon(
-                                self.hook_executor.run_before_lease_hook,
-                                self._lease_context,
-                                self._report_status,
-                                self.stop,  # Pass shutdown callback
-                                self._request_lease_release,  # Pass lease release callback
-                            )
-                        # else: No hook configured - LEASE_READY is set inside handle_lease()
-                        # after session and Listen stream are established
-                else:
-                    logger.info("Currently not leased")
+    def _on_lease_acquired(
+        self,
+        status: jumpstarter_pb2.StatusResponse,
+        tg: TaskGroup,
+    ) -> None:
+        """Handle new lease assignment: create context and spawn lease handler."""
+        self._started = True
+        logger.info("Starting new lease: %s", status.lease_name)
+        lease_scope = LeaseContext(
+            lease_name=status.lease_name,
+            before_lease_hook=Event(),
+        )
+        self._lease_context = lease_scope
+        log_ctx: dict[str, str] = {"lease_id": status.lease_name, "exporter": self.name}
+        if status.context:
+            log_ctx.update(status.context)
+        set_log_context(**log_ctx)
+        tg.start_soon(self.handle_lease, status.lease_name, tg, lease_scope)
 
-                    # Lease ended: signal handle_lease() so it can exit its loop and run
-                    # cleanup/afterLease hook in its finally block (where session is still open)
-                    if previous_leased and self._lease_context:
-                        lease_ctx = self._lease_context
-                        logger.info("Lease ended, signaling handle_lease to run afterLease hook")
-                        lease_ctx.lease_ended.set()
+    def _on_lease_update(self, status: jumpstarter_pb2.StatusResponse) -> None:
+        """Update client info on every leased status tick."""
+        if self._lease_context:
+            self._lease_context.update_client(status.client_name)
+            if status.client_name:
+                set_log_context(client=status.client_name)
+        logger.info("Currently leased by %s under %s", status.client_name, status.lease_name)
 
-                        # Wait for the hook to complete
-                        with CancelScope(shield=True):
-                            await lease_ctx.after_lease_hook_done.wait()
-                        logger.info("afterLease hook completed")
+    async def _on_lease_released(self, previous_leased: bool) -> None:
+        """Handle not-leased status: signal handle_lease on transition, clean up context."""
+        logger.info("Currently not leased")
 
-                    # Clear lease scope and log context for next lease
-                    session_was_created = (
-                        self._lease_context is not None and self._lease_context.session is not None
-                    )
-                    self._lease_context = None
-                    clear_log_context()
-                    if session_was_created:
-                        # Brief delay to ensure session is fully closed before next lease
-                        # This prevents SSL corruption from overlapping connections
-                        await sleep(0.2)
-                    logger.debug("Ready for next lease")
+        if previous_leased and self._lease_context:
+            lease_ctx = self._lease_context
+            logger.info("Lease ended, signaling handle_lease to run afterLease hook")
+            lease_ctx.lease_ended.set()
 
-                    if self.exit_on_lease_end and previous_leased:
-                        logger.info("Exporter configured to exit after lease, shutting down")
-                        self._stop_requested = True
+            with CancelScope(shield=True):
+                await lease_ctx.after_lease_hook_done.wait()
+            logger.info("afterLease hook completed")
 
-                    if self._stop_requested:
-                        self.stop(should_unregister=self._deferred_unregister)
-                        break
-
-                self._previous_leased = current_leased
-        self._tg = None
-        self._status_drain_active = False
+        session_was_created = (
+            self._lease_context is not None and self._lease_context.session is not None
+        )
+        self._lease_context = None
         clear_log_context()
+        if session_was_created:
+            await sleep(0.2)
+        logger.debug("Ready for next lease")
+
+        if self.exit_on_lease_end and previous_leased:
+            logger.info("Exporter configured to exit after lease, shutting down")
+            self._stop_requested = True
+
+    def _check_stop_requested(self) -> bool:
+        """Check if stop was requested and initiate shutdown. Returns True to break the status loop."""
+        if self._stop_requested:
+            self.stop(should_unregister=self._deferred_unregister)
+            return True
+        return False
 
     async def serve_standalone_tcp(
         self,
