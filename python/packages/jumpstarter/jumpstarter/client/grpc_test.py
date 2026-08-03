@@ -556,7 +556,7 @@ class TestLeaseRichDisplay:
         table = Table()
         Lease.rich_add_columns(table)
         columns = [col.header for col in table.columns]
-        assert columns == ["NAME", "SELECTOR", "EXPIRES AT", "REMAINING", "CLIENT", "EXPORTER", "TAGS"]
+        assert columns == ["NAME", "SELECTOR", "EXPIRES AT", "REMAINING", "CLIENT", "EXPORTER", "TAGS", "SHARED WITH"]
 
     def test_rich_add_columns_excludes_begin_time_and_duration(self):
         table = Table()
@@ -907,3 +907,103 @@ async def test_lease_from_protobuf_empty_deprecated_labels():
 
     lease = Lease.from_protobuf(proto_lease)
     assert lease.deprecated_labels == {}
+
+
+@pytest.mark.anyio
+async def test_update_lease_with_share_add():
+    from jumpstarter_protocol import client_pb2
+
+    mock_channel = Mock()
+
+    response_lease = client_pb2.Lease(
+        selector="board=rpi4",
+        client="namespaces/default/clients/test-client",
+    )
+    response_lease.name = "namespaces/default/leases/test-lease"
+    response_lease.duration.FromTimedelta(timedelta(hours=1))
+    response_lease.shared_with.extend(["alice", "bob"])
+
+    mock_stub = Mock()
+    mock_stub.UpdateLease = AsyncMock(return_value=response_lease)
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+    svc.stub = mock_stub
+
+    result = await svc.UpdateLease(
+        name="test-lease",
+        duration=timedelta(hours=1),
+        add_shared_with=["alice", "bob"],
+    )
+
+    call_args = mock_stub.UpdateLease.call_args[0][0]
+    assert list(call_args.add_shared_with) == ["alice", "bob"]
+    assert result.shared_with == ["alice", "bob"]
+
+
+@pytest.mark.anyio
+async def test_update_lease_with_share_remove():
+    from jumpstarter_protocol import client_pb2
+
+    mock_channel = Mock()
+
+    response_lease = client_pb2.Lease(
+        selector="board=rpi4",
+        client="namespaces/default/clients/test-client",
+    )
+    response_lease.name = "namespaces/default/leases/test-lease"
+    response_lease.duration.FromTimedelta(timedelta(hours=1))
+
+    mock_stub = Mock()
+    mock_stub.UpdateLease = AsyncMock(return_value=response_lease)
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+    svc.stub = mock_stub
+
+    await svc.UpdateLease(
+        name="test-lease",
+        duration=timedelta(hours=1),
+        remove_shared_with=["alice"],
+    )
+
+    call_args = mock_stub.UpdateLease.call_args[0][0]
+    assert list(call_args.remove_shared_with) == ["alice"]
+
+
+@pytest.mark.anyio
+async def test_update_lease_share_only_no_update_mask():
+    from jumpstarter_protocol import client_pb2
+
+    mock_channel = Mock()
+
+    response_lease = client_pb2.Lease(
+        selector="board=rpi4",
+        client="namespaces/default/clients/test-client",
+    )
+    response_lease.name = "namespaces/default/leases/test-lease"
+    response_lease.duration.FromTimedelta(timedelta(hours=1))
+    response_lease.shared_with.extend(["alice"])
+
+    mock_stub = Mock()
+    mock_stub.UpdateLease = AsyncMock(return_value=response_lease)
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+    svc.stub = mock_stub
+
+    await svc.UpdateLease(
+        name="test-lease",
+        add_shared_with=["alice"],
+    )
+
+    call_args = mock_stub.UpdateLease.call_args[0][0]
+    assert list(call_args.update_mask.paths) == []
+    assert list(call_args.add_shared_with) == ["alice"]
+
+
+@pytest.mark.anyio
+async def test_update_lease_raises_when_no_changes():
+    mock_channel = Mock()
+
+    svc = ClientService(channel=mock_channel, namespace="default")
+
+    with pytest.raises(ValueError, match="At least one of"):
+        await svc.UpdateLease(name="test-lease")

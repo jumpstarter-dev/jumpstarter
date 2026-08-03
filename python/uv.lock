@@ -41,6 +41,7 @@ members = [
     "jumpstarter-driver-http-power",
     "jumpstarter-driver-iscsi",
     "jumpstarter-driver-mitmproxy",
+    "jumpstarter-driver-netsim",
     "jumpstarter-driver-network",
     "jumpstarter-driver-noyito-relay",
     "jumpstarter-driver-obd",
@@ -2142,6 +2143,7 @@ dependencies = [
     { name = "jumpstarter-driver-flashers" },
     { name = "jumpstarter-driver-gpiod" },
     { name = "jumpstarter-driver-http" },
+    { name = "jumpstarter-driver-netsim" },
     { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-obd" },
     { name = "jumpstarter-driver-opendal" },
@@ -2193,6 +2195,7 @@ requires-dist = [
     { name = "jumpstarter-driver-flashers", editable = "packages/jumpstarter-driver-flashers" },
     { name = "jumpstarter-driver-gpiod", editable = "packages/jumpstarter-driver-gpiod" },
     { name = "jumpstarter-driver-http", editable = "packages/jumpstarter-driver-http" },
+    { name = "jumpstarter-driver-netsim", editable = "packages/jumpstarter-driver-netsim" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-obd", editable = "packages/jumpstarter-driver-obd" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
@@ -2993,6 +2996,38 @@ dev = [
     { name = "pytest", specifier = ">=8.3.3" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "requests", specifier = ">=2.28.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-netsim"
+source = { editable = "packages/jumpstarter-driver-netsim" }
+dependencies = [
+    { name = "click" },
+    { name = "jumpstarter" },
+    { name = "requests" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "requests-mock" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.0.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "requests", specifier = ">=2.28.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+    { name = "requests-mock", specifier = ">=1.12.0" },
 ]
 
 [[package]]

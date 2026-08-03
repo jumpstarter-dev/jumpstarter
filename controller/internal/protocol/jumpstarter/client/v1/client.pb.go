@@ -176,8 +176,10 @@ type Lease struct {
 	// Selector keys on this lease that the controller has marked as deprecated.
 	// Keys are the deprecated label names; values are optional human-readable messages.
 	DeprecatedLabels map[string]string `protobuf:"bytes,16,rep,name=deprecated_labels,json=deprecatedLabels,proto3" json:"deprecated_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// The list of client resource names that this lease is shared with.
+	SharedWith    []string `protobuf:"bytes,17,rep,name=shared_with,json=sharedWith,proto3" json:"shared_with,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Lease) Reset() {
@@ -318,6 +320,13 @@ func (x *Lease) GetContext() map[string]string {
 func (x *Lease) GetDeprecatedLabels() map[string]string {
 	if x != nil {
 		return x.DeprecatedLabels
+	}
+	return nil
+}
+
+func (x *Lease) GetSharedWith() []string {
+	if x != nil {
+		return x.SharedWith
 	}
 	return nil
 }
@@ -776,9 +785,13 @@ type UpdateLeaseRequest struct {
 	// The lease resource with updated fields.
 	Lease *Lease `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
 	// The set of fields to update.
-	UpdateMask    *fieldmaskpb.FieldMask `protobuf:"bytes,2,opt,name=update_mask,json=updateMask,proto3" json:"update_mask,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	UpdateMask *fieldmaskpb.FieldMask `protobuf:"bytes,2,opt,name=update_mask,json=updateMask,proto3" json:"update_mask,omitempty"`
+	// Client names to add to the lease's shared_with list. Only the lease owner can modify sharing.
+	AddSharedWith []string `protobuf:"bytes,4,rep,name=add_shared_with,json=addSharedWith,proto3" json:"add_shared_with,omitempty"`
+	// Client names to remove from the lease's shared_with list. Only the lease owner can modify sharing.
+	RemoveSharedWith []string `protobuf:"bytes,5,rep,name=remove_shared_with,json=removeSharedWith,proto3" json:"remove_shared_with,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *UpdateLeaseRequest) Reset() {
@@ -821,6 +834,20 @@ func (x *UpdateLeaseRequest) GetLease() *Lease {
 func (x *UpdateLeaseRequest) GetUpdateMask() *fieldmaskpb.FieldMask {
 	if x != nil {
 		return x.UpdateMask
+	}
+	return nil
+}
+
+func (x *UpdateLeaseRequest) GetAddSharedWith() []string {
+	if x != nil {
+		return x.AddSharedWith
+	}
+	return nil
+}
+
+func (x *UpdateLeaseRequest) GetRemoveSharedWith() []string {
+	if x != nil {
+		return x.RemoveSharedWith
 	}
 	return nil
 }
@@ -993,7 +1020,7 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:_\xeaA\\\n" +
 	"\x18jumpstarter.dev/Exporter\x12+namespaces/{namespace}/exporters/{exporter}*\texporters2\bexporterB\n" +
 	"\n" +
-	"\b_enabled\"\x92\v\n" +
+	"\b_enabled\"\xb3\v\n" +
 	"\x05Lease\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tB\x03\xe0A\bR\x04name\x12\"\n" +
 	"\bselector\x18\x02 \x01(\tB\x06\xe0A\x02\xe0A\x05R\bselector\x12:\n" +
@@ -1016,7 +1043,9 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\x04tags\x18\r \x03(\v2&.jumpstarter.client.v1.Lease.TagsEntryB\x03\xe0A\x05R\x04tags\x12*\n" +
 	"\x0eallow_disabled\x18\x0e \x01(\bB\x03\xe0A\x05R\rallowDisabled\x12H\n" +
 	"\acontext\x18\x0f \x03(\v2).jumpstarter.client.v1.Lease.ContextEntryB\x03\xe0A\x05R\acontext\x12d\n" +
-	"\x11deprecated_labels\x18\x10 \x03(\v22.jumpstarter.client.v1.Lease.DeprecatedLabelsEntryB\x03\xe0A\x03R\x10deprecatedLabels\x1a7\n" +
+	"\x11deprecated_labels\x18\x10 \x03(\v22.jumpstarter.client.v1.Lease.DeprecatedLabelsEntryB\x03\xe0A\x03R\x10deprecatedLabels\x12\x1f\n" +
+	"\vshared_with\x18\x11 \x03(\tR\n" +
+	"sharedWith\x1a7\n" +
 	"\tTagsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a:\n" +
@@ -1069,11 +1098,13 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\x12CreateLeaseRequest\x125\n" +
 	"\x06parent\x18\x01 \x01(\tB\x1d\xe0A\x02\xfaA\x17\x12\x15jumpstarter.dev/LeaseR\x06parent\x12\x1e\n" +
 	"\blease_id\x18\x02 \x01(\tB\x03\xe0A\x01R\aleaseId\x127\n" +
-	"\x05lease\x18\x03 \x01(\v2\x1c.jumpstarter.client.v1.LeaseB\x03\xe0A\x02R\x05lease\"\x8f\x01\n" +
+	"\x05lease\x18\x03 \x01(\v2\x1c.jumpstarter.client.v1.LeaseB\x03\xe0A\x02R\x05lease\"\xe5\x01\n" +
 	"\x12UpdateLeaseRequest\x127\n" +
 	"\x05lease\x18\x01 \x01(\v2\x1c.jumpstarter.client.v1.LeaseB\x03\xe0A\x02R\x05lease\x12@\n" +
 	"\vupdate_mask\x18\x02 \x01(\v2\x1a.google.protobuf.FieldMaskB\x03\xe0A\x01R\n" +
-	"updateMask\"G\n" +
+	"updateMask\x12&\n" +
+	"\x0fadd_shared_with\x18\x04 \x03(\tR\raddSharedWith\x12,\n" +
+	"\x12remove_shared_with\x18\x05 \x03(\tR\x10removeSharedWith\"G\n" +
 	"\x12DeleteLeaseRequest\x121\n" +
 	"\x04name\x18\x01 \x01(\tB\x1d\xe0A\x02\xfaA\x17\n" +
 	"\x15jumpstarter.dev/LeaseR\x04name\"L\n" +

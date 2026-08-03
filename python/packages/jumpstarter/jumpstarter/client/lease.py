@@ -188,10 +188,11 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
             if existing_lease.effective_end_time:
                 raise LeaseError(f"lease {self.name} has already ended")
             if self.client_name and existing_lease.client != self.client_name:
-                raise LeaseError(
-                    f"lease {self.name} belongs to client '{existing_lease.client}', "
-                    f"not the current client '{self.client_name}'"
-                )
+                if self.client_name not in existing_lease.shared_with:
+                    raise LeaseError(
+                        f"lease {self.name} belongs to client '{existing_lease.client}', "
+                        f"not the current client '{self.client_name}'"
+                    )
             if self.selector is not None and existing_lease.selector != self.selector:
                 logger.warning(
                     "Existing lease from env or flag %s has selector '%s' but requested selector is '%s'. "
