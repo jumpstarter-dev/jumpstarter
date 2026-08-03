@@ -626,8 +626,10 @@ async def _shell_with_signal_handling(  # noqa: C901
     return exit_code
 
 
-def _format_lease_display(lease) -> str:
+def _format_lease_display(lease, viewer: str | None = None) -> str:
     parts = []
+    if viewer and viewer != lease.client and viewer in lease.shared_with:
+        parts.append(f"shared by {lease.client}")
     if lease.exporter:
         parts.append(f"exporter={lease.exporter}")
     if lease.selector:
@@ -643,7 +645,11 @@ def _format_lease_display(lease) -> str:
 async def _resolve_lease_from_active_async(config) -> str:
     lease_list = await config.list_leases(only_active=True)
     client_name = config.metadata.name
-    leases = [lease for lease in lease_list.leases if lease.client == client_name]
+    leases = [
+        lease
+        for lease in lease_list.leases
+        if lease.client == client_name or client_name in lease.shared_with
+    ]
 
     if not leases:
         raise click.UsageError(
@@ -657,7 +663,7 @@ async def _resolve_lease_from_active_async(config) -> str:
     if sys.stdin.isatty():
         click.echo("Multiple active leases found:\n")
         for i, lease in enumerate(leases, 1):
-            info = _format_lease_display(lease)
+            info = _format_lease_display(lease, viewer=client_name)
             click.echo(f"  {i}) {lease.name}")
             if info:
                 click.echo(f"     {info}")
@@ -670,7 +676,7 @@ async def _resolve_lease_from_active_async(config) -> str:
 
     lease_summaries = []
     for lease in leases:
-        info = _format_lease_display(lease)
+        info = _format_lease_display(lease, viewer=client_name)
         summary = f"{lease.name} ({info})" if info else lease.name
         lease_summaries.append(summary)
     raise click.UsageError(
