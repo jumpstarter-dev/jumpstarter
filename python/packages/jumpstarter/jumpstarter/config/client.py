@@ -264,6 +264,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         tags: dict[str, str] | None = None,
         allow_disabled: bool = False,
         context: dict[str, str] | None = None,
+        shared_with: list[str] | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.CreateLease(
@@ -275,6 +276,7 @@ class ClientConfigV1Alpha1(BaseSettings):
             tags=tags,
             allow_disabled=allow_disabled,
             context=context,
+            shared_with=shared_with,
         )
 
     @_blocking_compat
@@ -321,9 +323,18 @@ class ClientConfigV1Alpha1(BaseSettings):
         duration: timedelta | None = None,
         begin_time: datetime | None = None,
         client: str | None = None,
+        add_shared_with: list[str] | None = None,
+        remove_shared_with: list[str] | None = None,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
-        return await svc.UpdateLease(name=name, duration=duration, begin_time=begin_time, client=client)
+        return await svc.UpdateLease(
+            name=name,
+            duration=duration,
+            begin_time=begin_time,
+            client=client,
+            add_shared_with=add_shared_with,
+            remove_shared_with=remove_shared_with,
+        )
 
     @_blocking_compat
     @_handle_connection_error

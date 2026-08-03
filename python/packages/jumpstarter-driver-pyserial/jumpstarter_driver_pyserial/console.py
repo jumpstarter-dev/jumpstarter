@@ -14,8 +14,9 @@ class ConsoleExit(Exception):
 
 
 class Console:
-    def __init__(self, serial_client: DriverClient):
+    def __init__(self, serial_client: DriverClient, observe: bool = False):
         self.serial_client = serial_client
+        self.observe = observe
 
     def run(self):
         with self.setraw():
@@ -31,11 +32,15 @@ class Console:
             termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, original)
 
     async def __run(self):
-        async with self.serial_client.stream_async(method="connect") as stream:
+        method = "observe" if self.observe else "connect"
+        async with self.serial_client.stream_async(method=method) as stream:
             try:
                 async with create_task_group() as tg:
                     tg.start_soon(self.__serial_to_stdout, stream)
-                    tg.start_soon(self.__stdin_to_serial, stream)
+                    if self.observe:
+                        tg.start_soon(self.__stdin_exit_only)
+                    else:
+                        tg.start_soon(self.__stdin_to_serial, stream)
             except* ConsoleExit:
                 pass
 
@@ -45,6 +50,20 @@ class Console:
             data = await stream.receive()
             await stdout.send(data)
             sys.stdout.flush()
+
+    async def __stdin_exit_only(self):
+        stdin = FileReadStream(sys.stdin.buffer)
+        ctrl_b_count = 0
+        while True:
+            data = await stdin.receive(max_bytes=1)
+            if not data:
+                continue
+            if data == b"\x02":
+                ctrl_b_count += 1
+                if ctrl_b_count == 3:
+                    raise ConsoleExit
+            else:
+                ctrl_b_count = 0
 
     async def __stdin_to_serial(self, stream):
         stdin = FileReadStream(sys.stdin.buffer)

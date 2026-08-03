@@ -374,7 +374,7 @@ class TestRequestAsyncOwnership:
     async def test_raises_when_lease_belongs_to_different_client(self):
         """request_async should raise LeaseError when the lease belongs to another client."""
         lease = self._make_lease(client_name="my-client")
-        lease.get.return_value = Mock(client="other-client", selector=None, effective_end_time=None)
+        lease.get.return_value = Mock(client="other-client", selector=None, effective_end_time=None, shared_with=[])
 
         with pytest.raises(LeaseError, match="belongs to client 'other-client'"):
             await lease.request_async()

@@ -832,7 +832,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		return nil, err
 	}
 
-	if lease.Spec.ClientRef.Name != client.Name {
+	if !lease.IsAccessibleBy(client.Name) {
 		err := fmt.Errorf("permission denied")
 		logger.Error(err, "lease not held by client")
 		return nil, err
@@ -965,7 +965,7 @@ func (s *ControllerService) GetLease(
 		return nil, err
 	}
 
-	if lease.Spec.ClientRef.Name != client.Name {
+	if !lease.IsAccessibleBy(client.Name) {
 		return nil, fmt.Errorf("GetLease permission denied")
 	}
 
@@ -1143,8 +1143,10 @@ func (s *ControllerService) ReleaseLease(
 		return nil, err
 	}
 
-	if lease.Spec.ClientRef.Name != jclient.Name {
-		return nil, fmt.Errorf("ReleaseLease permission denied")
+	// Release is destructive and ends the lease for everyone, so it is restricted
+	// to the owner. Shared clients keep read/list/dial access via IsAccessibleBy.
+	if !lease.IsOwnedBy(jclient.Name) {
+		return nil, fmt.Errorf("ReleaseLease permission denied: only lease owner can release")
 	}
 
 	// Idempotent: already ended or marked for release
@@ -1183,7 +1185,7 @@ func (s *ControllerService) ListLeases(
 
 	var leaseNames []string
 	for _, lease := range leases.Items {
-		if lease.Spec.ClientRef.Name == jclient.Name {
+		if lease.IsAccessibleBy(jclient.Name) {
 			leaseNames = append(leaseNames, lease.Name)
 		}
 	}

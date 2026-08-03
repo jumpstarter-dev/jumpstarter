@@ -122,4 +122,14 @@ def get_leases(
     if not all_clients:
         leases = leases.filter_by_client(config.metadata.name)
 
-    model_print(leases, output)
+    for lease in leases.leases:
+        for label_key, message in lease.deprecated_labels.items():
+            warning = f"selector label '{label_key}' on lease '{lease.name}' is deprecated"
+            if message:
+                warning += f": {message}"
+            click.echo(
+                click.style("Warning: ", fg="yellow") + warning,
+                err=True,
+            )
+
+    model_print(leases, output, viewer=config.metadata.name)
