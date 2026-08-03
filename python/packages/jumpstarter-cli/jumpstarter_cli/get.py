@@ -123,4 +123,4 @@ def get_leases(
                 err=True,
             )
 
-    model_print(leases, output)
+    model_print(leases, output, viewer=config.metadata.name)

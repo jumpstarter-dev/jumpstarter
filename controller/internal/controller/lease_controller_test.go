@@ -2654,3 +2654,124 @@ var _ = Describe("pendingRequeueAfter", func() {
 		Entry("5m (capped)", 5*time.Minute, 30*time.Second),
 	)
 })
+
+var _ = Describe("jumpstarterdevv1alpha1.ClientAllowedByPolicy", func() {
+	var (
+		exporter *jumpstarterdevv1alpha1.Exporter
+		client   *jumpstarterdevv1alpha1.Client
+	)
+
+	BeforeEach(func() {
+		exporter = &jumpstarterdevv1alpha1.Exporter{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-exporter",
+				Namespace: "default",
+				Labels:    map[string]string{"board": "rpi4", "env": "lab"},
+			},
+		}
+		client = &jumpstarterdevv1alpha1.Client{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-client",
+				Namespace: "default",
+				Labels:    map[string]string{"team": "devops"},
+			},
+		}
+	})
+
+	It("should allow when client matches a policy's From selector", func() {
+		policies := []jumpstarterdevv1alpha1.ExporterAccessPolicy{{
+			Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+				ExporterSelector: metav1.LabelSelector{
+					MatchLabels: map[string]string{"board": "rpi4"},
+				},
+				Policies: []jumpstarterdevv1alpha1.Policy{{
+					From: []jumpstarterdevv1alpha1.From{{
+						ClientSelector: metav1.LabelSelector{
+							MatchLabels: map[string]string{"team": "devops"},
+						},
+					}},
+				}},
+			},
+		}}
+
+		Expect(jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies, exporter, client)).To(BeTrue())
+	})
+
+	It("should deny when client labels don't match any From selector", func() {
+		policies := []jumpstarterdevv1alpha1.ExporterAccessPolicy{{
+			Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+				ExporterSelector: metav1.LabelSelector{
+					MatchLabels: map[string]string{"board": "rpi4"},
+				},
+				Policies: []jumpstarterdevv1alpha1.Policy{{
+					From: []jumpstarterdevv1alpha1.From{{
+						ClientSelector: metav1.LabelSelector{
+							MatchLabels: map[string]string{"team": "security"},
+						},
+					}},
+				}},
+			},
+		}}
+
+		Expect(jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies, exporter, client)).To(BeFalse())
+	})
+
+	It("should deny when exporter labels don't match any policy", func() {
+		policies := []jumpstarterdevv1alpha1.ExporterAccessPolicy{{
+			Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+				ExporterSelector: metav1.LabelSelector{
+					MatchLabels: map[string]string{"board": "jetson"},
+				},
+				Policies: []jumpstarterdevv1alpha1.Policy{{
+					From: []jumpstarterdevv1alpha1.From{{
+						ClientSelector: metav1.LabelSelector{
+							MatchLabels: map[string]string{"team": "devops"},
+						},
+					}},
+				}},
+			},
+		}}
+
+		Expect(jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies, exporter, client)).To(BeFalse())
+	})
+
+	It("should deny when no policies exist", func() {
+		Expect(jumpstarterdevv1alpha1.ClientAllowedByPolicy(nil, exporter, client)).To(BeFalse())
+		Expect(jumpstarterdevv1alpha1.ClientAllowedByPolicy([]jumpstarterdevv1alpha1.ExporterAccessPolicy{}, exporter, client)).To(BeFalse())
+	})
+
+	It("should allow when any one of multiple policies matches", func() {
+		policies := []jumpstarterdevv1alpha1.ExporterAccessPolicy{
+			{
+				Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"board": "jetson"},
+					},
+					Policies: []jumpstarterdevv1alpha1.Policy{{
+						From: []jumpstarterdevv1alpha1.From{{
+							ClientSelector: metav1.LabelSelector{
+								MatchLabels: map[string]string{"team": "devops"},
+							},
+						}},
+					}},
+				},
+			},
+			{
+				Spec: jumpstarterdevv1alpha1.ExporterAccessPolicySpec{
+					ExporterSelector: metav1.LabelSelector{
+						MatchLabels: map[string]string{"board": "rpi4"},
+					},
+					Policies: []jumpstarterdevv1alpha1.Policy{{
+						From: []jumpstarterdevv1alpha1.From{{
+							ClientSelector: metav1.LabelSelector{
+								MatchLabels: map[string]string{"team": "devops"},
+							},
+						}},
+					}},
+				},
+			},
+		}
+
+		Expect(jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies, exporter, client)).To(BeTrue())
+	})
+})

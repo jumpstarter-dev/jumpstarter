@@ -164,6 +164,7 @@ class Lease(BaseModel):
     effective_begin_time: datetime | None = None
     effective_end_time: datetime | None = None
     deprecated_labels: dict[str, str] = Field(default_factory=dict)
+    shared_with: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -222,10 +223,11 @@ class Lease(BaseModel):
             effective_end_time=effective_end_time,
             conditions=data.conditions,
             deprecated_labels=dict(data.deprecated_labels),
+            shared_with=list(data.shared_with),
         )
 
     @classmethod
-    def rich_add_columns(cls, table):
+    def rich_add_columns(cls, table, **kwargs):
         table.add_column("NAME", no_wrap=True)
         table.add_column("SELECTOR")
         table.add_column("EXPIRES AT")
@@ -233,6 +235,7 @@ class Lease(BaseModel):
         table.add_column("CLIENT")
         table.add_column("EXPORTER")
         table.add_column("TAGS")
+        table.add_column("SHARED WITH")
 
     def _compute_expires_at(self):
         if self.effective_end_time:
@@ -263,21 +266,27 @@ class Lease(BaseModel):
             parts.append(f"{minutes}m")
         return " ".join(parts)
 
-    def rich_add_rows(self, table):
+    def rich_add_rows(self, table, viewer: str | None = None):
         expires_at = self._compute_expires_at()
         expires_at_str = expires_at.strftime("%Y-%m-%d %H:%M:%S") if expires_at else ""
         remaining_str = self._format_remaining(expires_at)
 
         tags_str = ",".join(f"{k}={v}" for k, v in sorted(self.tags.items()))
+        shared_str = ",".join(self.shared_with)
+
+        client_str = self.client
+        if viewer and viewer != self.client and viewer in self.shared_with:
+            client_str = f"{self.client} (shared)"
 
         table.add_row(
             self.name,
             self.selector,
             expires_at_str,
             remaining_str,
-            self.client,
+            client_str,
             self.exporter,
             tags_str,
+            shared_str,
         )
 
     def rich_add_names(self, names):
@@ -404,12 +413,12 @@ class LeaseList(BaseModel):
         )
 
     @classmethod
-    def rich_add_columns(cls, table):
-        Lease.rich_add_columns(table)
+    def rich_add_columns(cls, table, **kwargs):
+        Lease.rich_add_columns(table, **kwargs)
 
-    def rich_add_rows(self, table):
+    def rich_add_rows(self, table, viewer: str | None = None):
         for lease in self.leases:
-            lease.rich_add_rows(table)
+            lease.rich_add_rows(table, viewer=viewer)
 
     def rich_add_names(self, names):
         for lease in self.leases:
@@ -439,7 +448,11 @@ class LeaseList(BaseModel):
         return LeaseList(leases=filtered, next_page_token=None)
 
     def filter_by_client(self, client_name: str) -> LeaseList:
-        filtered = [lease for lease in self.leases if lease.client == client_name]
+        filtered = [
+            lease
+            for lease in self.leases
+            if lease.client == client_name or client_name in lease.shared_with
+        ]
         return LeaseList(leases=filtered, next_page_token=None)
 
 
@@ -524,6 +537,7 @@ class ClientService:
         tags: dict[str, str] | None = None,
         allow_disabled: bool = False,
         context: dict[str, str] | None = None,
+        shared_with: list[str] | None = None,
     ):
         duration_pb = duration_pb2.Duration()
         duration_pb.FromTimedelta(duration)
@@ -542,6 +556,9 @@ class ClientService:
         if context:
             for k, v in context.items():
                 lease_pb.context[k] = v
+
+        if shared_with:
+            lease_pb.shared_with.extend(shared_with)
 
         if begin_time:
             timestamp_pb = timestamp_pb2.Timestamp()
@@ -565,6 +582,8 @@ class ClientService:
         duration: timedelta | None = None,
         begin_time: datetime | None = None,
         client: str | None = None,
+        add_shared_with: list[str] | None = None,
+        remove_shared_with: list[str] | None = None,
     ):
         lease_pb = client_pb2.Lease(
             name="namespaces/{}/leases/{}".format(self.namespace, name),
@@ -588,19 +607,28 @@ class ClientService:
             lease_pb.client = client
             update_fields.append("client")
 
-        if not update_fields:
-            raise ValueError("At least one of duration, begin_time, or client must be provided")
+        has_share_changes = bool(add_shared_with) or bool(remove_shared_with)
+
+        if not update_fields and not has_share_changes:
+            raise ValueError(
+                "At least one of duration, begin_time, client, add_shared_with, or remove_shared_with must be provided"
+            )
 
         update_mask = field_mask_pb2.FieldMask()
-        update_mask.FromJsonString(",".join(update_fields))
+        if update_fields:
+            update_mask.FromJsonString(",".join(update_fields))
+
+        req = client_pb2.UpdateLeaseRequest(
+            lease=lease_pb,
+            update_mask=update_mask,
+        )
+        if add_shared_with:
+            req.add_shared_with.extend(add_shared_with)
+        if remove_shared_with:
+            req.remove_shared_with.extend(remove_shared_with)
 
         with translate_grpc_exceptions():
-            lease = await self.stub.UpdateLease(
-                client_pb2.UpdateLeaseRequest(
-                    lease=lease_pb,
-                    update_mask=update_mask,
-                )
-            )
+            lease = await self.stub.UpdateLease(req)
         return Lease.from_protobuf(lease)
 
     async def DeleteLease(self, *, name: str):

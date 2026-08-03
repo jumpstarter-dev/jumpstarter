@@ -162,6 +162,15 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
+              sharedWith:
+                description: |-
+                  List of client names that have shared access to this lease.
+                  Only the lease owner can modify this list.
+                items:
+                  type: string
+                maxItems: 10
+                type: array
+                x-kubernetes-list-type: set
               tags:
                 additionalProperties:
                   type: string
