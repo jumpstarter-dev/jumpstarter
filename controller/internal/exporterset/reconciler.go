@@ -57,6 +57,7 @@ import (
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/disk"
 )
 
 const (
@@ -436,6 +437,7 @@ func (r *ExporterSetReconciler) syncConfigSecret(
 
 // createExporterPod issues a Pod for a single Exporter that has credentials
 // but no Pod yet. The config Secret must already exist (syncConfigSecret).
+// When a StorageClass is configured, the guest-disk PVC is ensured first.
 func (r *ExporterSetReconciler) createExporterPod(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
@@ -445,6 +447,10 @@ func (r *ExporterSetReconciler) createExporterPod(
 	exp *jumpstarterdevv1alpha1.Exporter,
 ) error {
 	logger := log.FromContext(ctx)
+
+	if err := r.ensureDiskPVC(ctx, es, vtc, mergedParameters, exp); err != nil {
+		return err
+	}
 
 	pod, err := r.Provisioner.RenderPod(ctx, es, vtc, mergedParameters, images, exp)
 	if err != nil {
@@ -482,6 +488,62 @@ func (r *ExporterSetReconciler) createExporterPod(
 			"Created Pod %s for Exporter %s", pod.Name, exp.Name)
 	}
 
+	return nil
+}
+
+// ensureDiskPVC creates the guest-disk PVC when a StorageClass is configured.
+// No-op for emptyDir mode. The PVC is owned by the Exporter so ExitAndReplace
+// cascade deletes it with the instance.
+func (r *ExporterSetReconciler) ensureDiskPVC(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	vtc *virtualtargetv1alpha1.VirtualTargetClass,
+	mergedParameters map[string]interface{},
+	exp *jumpstarterdevv1alpha1.Exporter,
+) error {
+	storageClass := virtualtargetv1alpha1.EffectiveStorageClassName(vtc, es)
+	if storageClass == "" {
+		return nil
+	}
+
+	size, err := disk.SizeFromParameters(mergedParameters)
+	if err != nil {
+		return fmt.Errorf("disk size for %s: %w", exp.Name, err)
+	}
+
+	labels := maps.Clone(es.Spec.Template.Metadata.Labels)
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+	labels[labelExporterSetName] = es.Name
+
+	desired := disk.BuildPVC(exp.Namespace, exp.Name, storageClass, size, labels)
+
+	existing := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      desired.Name,
+			Namespace: desired.Namespace,
+		},
+	}
+
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, existing, func() error {
+		if err := ctrl.SetControllerReference(exp, existing, r.Scheme); err != nil {
+			return fmt.Errorf("set owner on disk PVC for %s: %w", exp.Name, err)
+		}
+		// Spec is immutable after creation for most fields; only set on create.
+		if existing.CreationTimestamp.IsZero() {
+			existing.Labels = desired.Labels
+			existing.Spec = desired.Spec
+		} else if existing.Labels == nil {
+			existing.Labels = desired.Labels
+		} else {
+			existing.Labels[labelExporterSetName] = es.Name
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("ensure disk PVC for %s: %w", exp.Name, err)
+	}
 	return nil
 }
 

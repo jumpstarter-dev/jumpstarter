@@ -186,6 +186,12 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
+              storageClassName:
+                description: |-
+                  StorageClassName overrides VirtualTargetClass.spec.storageClassName for
+                  guest disk volumes. When nil, the class value is used. When set to an
+                  empty string, forces emptyDir even if the class names a StorageClass.
+                type: string
               template:
                 description: Template defines the exporter template for instances
                   created by this set.
@@ -218,15 +224,15 @@ spec:
                               description: Config holds driver-specific configuration.
                               x-kubernetes-preserve-unknown-fields: true
                             name:
-                              description: |-
-                                Name is the key used in the ExporterConfig export map.
-                                If omitted, derived from the Type (last segment after the last dot).
+                              description: Name is the key used in the ExporterConfig
+                                export map.
                               type: string
                             type:
                               description: Type is the fully qualified Python driver
                                 class name.
                               type: string
                           required:
+                          - name
                           - type
                           type: object
                         type: array

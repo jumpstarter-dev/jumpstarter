@@ -141,6 +141,14 @@ type VirtualTargetClassSpec struct {
 	// ExporterSet-level images take precedence over these class-level defaults.
 	// +optional
 	Images *ImageOverrides `json:"images,omitempty"`
+
+	// StorageClassName selects the StorageClass for the guest disk PVC.
+	// When empty, the provisioner uses an emptyDir volume sized from
+	// parameters.resources.storage and sets ephemeral-storage
+	// requests/limits so the scheduler accounts for local disk usage.
+	// ExporterSet.spec.storageClassName can override this value.
+	// +optional
+	StorageClassName string `json:"storageClassName,omitempty"`
 }
 
 // +kubebuilder:object:root=true
