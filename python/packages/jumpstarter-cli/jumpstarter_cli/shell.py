@@ -504,6 +504,7 @@ async def _shell_with_signal_handling(  # noqa: C901
             try:
                 async with anyio.from_thread.BlockingPortal() as portal:
                     connect_deadline = None
+                    connect_start = None
                     while True:
                         async with config.lease_async(
                             selector, exporter_name, lease_name, duration, portal, acquisition_timeout,
@@ -534,11 +535,13 @@ async def _shell_with_signal_handling(  # noqa: C901
                                         "Session is no longer valid."
                                     ) from unreachable
                                 if connect_deadline is None:
-                                    connect_deadline = time.monotonic() + lease.retry_timeout
+                                    connect_start = time.monotonic()
+                                    connect_deadline = connect_start + lease.retry_timeout
                                 if time.monotonic() >= connect_deadline:
+                                    elapsed = time.monotonic() - connect_start
                                     raise ExporterUnreachableError(
                                         f"Exporter {lease.exporter_name} unreachable after "
-                                        f"{lease.retry_timeout:.0f}s of retrying"
+                                        f"{elapsed:.0f}s of retrying: {unreachable}"
                                     ) from unreachable
                                 logger.warning(
                                     "Exporter %s is unreachable, releasing lease and retrying...",

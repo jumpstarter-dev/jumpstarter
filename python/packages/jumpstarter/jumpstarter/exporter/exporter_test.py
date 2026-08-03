@@ -1352,7 +1352,6 @@ class TestHandleLeaseConnections:
 
     async def test_handle_lease_finally_clears_lease_context(self):
         """handle_lease finally block clears _lease_context when it matches lease_scope."""
-
         lease_ctx = make_lease_context(lease_name="cleanup-lease")
         exporter = make_exporter(lease_ctx)
         exporter.labels = {"jumpstarter.dev/name": "test-exporter"}
