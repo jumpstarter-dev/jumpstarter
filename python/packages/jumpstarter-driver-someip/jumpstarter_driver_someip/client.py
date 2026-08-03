@@ -35,7 +35,9 @@ class SomeIpDriverClient(DriverClient):
     ) -> SomeIpMessageResponse:
         """Make a SOME/IP RPC call and return the response."""
         msg = SomeIpPayload(data=payload.hex())
-        return SomeIpMessageResponse.model_validate(self.call("rpc_call", service_id, method_id, msg, timeout))
+        return SomeIpMessageResponse.model_validate(
+            self.call("rpc_call", service_id, method_id, msg, timeout)
+        )
 
     # --- Raw Messaging ---
 
@@ -51,7 +53,9 @@ class SomeIpDriverClient(DriverClient):
 
     def receive_message(self, timeout: float = 2.0) -> SomeIpMessageResponse:
         """Receive a raw SOME/IP message."""
-        return SomeIpMessageResponse.model_validate(self.call("receive_message", timeout))
+        return SomeIpMessageResponse.model_validate(
+            self.call("receive_message", timeout)
+        )
 
     # --- Service Discovery ---
 
@@ -77,7 +81,9 @@ class SomeIpDriverClient(DriverClient):
 
     def receive_event(self, timeout: float = 5.0) -> SomeIpEventNotification:
         """Receive the next event notification."""
-        return SomeIpEventNotification.model_validate(self.call("receive_event", timeout))
+        return SomeIpEventNotification.model_validate(
+            self.call("receive_event", timeout)
+        )
 
     # --- Connection Management ---
 
@@ -140,12 +146,20 @@ class SomeIpDriverClient(DriverClient):
         self.call("register_event", service_id, event_id, eventgroup_id)
 
     def publish_event(self, service_id: int, event_id: int, payload: bytes) -> None:
-        """Publish an event notification to subscribers of its event group."""
+        """Publish an event notification to subscribers of its event group.
+
+        ``service_id`` is accepted for API symmetry but currently unused;
+        events are addressed by ``event_id`` only.
+        """
         msg = SomeIpPayload(data=payload.hex())
         self.call("publish_event", service_id, event_id, msg)
 
     def set_field(self, service_id: int, event_id: int, payload: bytes) -> None:
-        """Set a field event value (served to new subscribers and notified)."""
+        """Set a field event value (served to new subscribers and notified).
+
+        ``service_id`` is accepted for API symmetry but currently unused;
+        fields are addressed by ``event_id`` only.
+        """
         msg = SomeIpPayload(data=payload.hex())
         self.call("set_field", service_id, event_id, msg)
 

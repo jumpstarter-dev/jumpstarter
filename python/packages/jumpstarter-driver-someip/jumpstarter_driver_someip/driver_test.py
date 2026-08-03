@@ -994,6 +994,23 @@ def test_server_offer_and_list(mock_server_cls):
         assert fake.started is True
 
 
+@pytest.mark.parametrize("reserved_instance_id", [0x0000, 0xFFFF])
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_server_offer_rejects_reserved_instance_ids(mock_server_cls, reserved_instance_id):
+    """Instance ID 0x0000 is reserved and 0xFFFF means 'all instances';
+    neither is a valid concrete instance to offer."""
+    fake = _FakeOsipServer()
+    mock_server_cls.return_value = fake
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        with pytest.raises(DriverError, match="instance_id"):
+            client.offer_service(0x1801, reserved_instance_id)
+        # Rejected before the server is even created; nothing is offered
+        assert client.list_offered_services() == []
+        mock_server_cls.assert_not_called()
+
+
 @patch("jumpstarter_driver_someip.driver.OsipServer")
 def test_server_stop_offer(mock_server_cls):
     fake = _FakeOsipServer()
@@ -1161,6 +1178,98 @@ def test_server_lazy_start(mock_server_cls):
         client.start_server()
         mock_server_cls.assert_called_once()
         assert fake.started is True
+
+
+# =========================================================================
+# Stateful loopback server tests
+#
+# These use the StatefulOsipServer / LoopbackOsipClient pair (conftest.py):
+# RPC calls made through the driver's client verbs are dispatched to the
+# handlers the driver registered through its server verbs, so each test
+# exercises the full simulated-ECU workflow (offer + canned response +
+# client RPC) through the gRPC boundary.
+# =========================================================================
+
+
+def _loopback_client_ctx(loopback_pair):
+    """Context manager: serve() a SomeIp driver backed by the loopback pair."""
+    server, osip_client = loopback_pair
+    with (
+        patch("jumpstarter_driver_someip.driver.OsipServer", return_value=server),
+        patch("jumpstarter_driver_someip.driver.OsipClient", return_value=osip_client),
+    ):
+        instance = SomeIp(host="127.0.0.1", port=30490)
+        with serve(instance) as c:
+            yield c
+
+
+@pytest.fixture
+def loopback_client(loopback_pair):
+    yield from _loopback_client_ctx(loopback_pair)
+
+
+def test_loopback_offer_discover_rpc(loopback_client):
+    """Simulated-ECU loop: offer a service, configure a canned response, and
+    call it back through the client RPC verbs."""
+    loopback_client.offer_service(0x1801, 0x0001, major_version=2)
+
+    services = loopback_client.find_service(0x1801, timeout=0.1)
+    assert len(services) == 1
+    assert services[0].instance_id == 0x0001
+    assert services[0].major_version == 2
+
+    loopback_client.set_method_response(0x1801, 0x0005, b"\xde\xad\xbe\xef")
+    resp = loopback_client.rpc_call(0x1801, 0x0005, b"\x00")
+    assert resp.service_id == 0x1801
+    assert resp.method_id == 0x0005
+    assert resp.payload == "deadbeef"
+    assert resp.return_code == 0x00
+
+
+def test_loopback_method_response_update_takes_effect(loopback_client):
+    """Updating a canned response changes what subsequent RPC calls read."""
+    loopback_client.offer_service(0x1801)
+    loopback_client.set_method_response(0x1801, 0x0005, b"\x01")
+    assert loopback_client.rpc_call(0x1801, 0x0005, b"").payload == "01"
+
+    loopback_client.set_method_response(0x1801, 0x0005, b"\x02")
+    assert loopback_client.rpc_call(0x1801, 0x0005, b"").payload == "02"
+
+
+def test_loopback_method_error_return_code(loopback_client):
+    """A canned error return code is surfaced to the RPC caller."""
+    loopback_client.offer_service(0x1801)
+    loopback_client.set_method_response(0x1801, 0x0006, b"", return_code=0x01)
+
+    resp = loopback_client.rpc_call(0x1801, 0x0006, b"")
+    assert resp.return_code == 0x01
+
+
+def test_loopback_publish_event_roundtrip(loopback_client):
+    """Events published by the server side reach a subscribed client."""
+    loopback_client.register_event(0x1801, 0x8001, eventgroup_id=1)
+    loopback_client.subscribe_eventgroup(1)
+
+    loopback_client.publish_event(0x1801, 0x8001, b"\xca\xfe")
+    event = loopback_client.receive_event(timeout=1.0)
+    assert event.event_id == 0x8001
+    assert event.payload == "cafe"
+
+
+def test_loopback_stop_server_clears_canned_responses(loopback_client):
+    """Canned responses must not survive stop_server + restart."""
+    loopback_client.offer_service(0x1801)
+    loopback_client.set_method_response(0x1801, 0x0005, b"\xaa")
+    assert loopback_client.rpc_call(0x1801, 0x0005, b"").payload == "aa"
+
+    loopback_client.stop_server()
+
+    # After a restart the stale payload is gone; the handler serves the
+    # empty E_OK default until reconfigured.
+    loopback_client.offer_service(0x1801)
+    resp = loopback_client.rpc_call(0x1801, 0x0005, b"")
+    assert resp.payload == ""
+    assert resp.return_code == 0x00
 
 
 # =========================================================================

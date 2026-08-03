@@ -33,6 +33,10 @@ logger = logging.getLogger(__name__)
 
 _VALID_TRANSPORT_MODES = {"TCP", "UDP"}
 
+# SOME/IP reserves Instance ID 0x0000; 0xFFFF means "all instances" and is
+# only valid in find/subscribe contexts, never as a concrete offered instance.
+_RESERVED_INSTANCE_IDS = {0x0000, 0xFFFF}
+
 
 def _message_to_response(msg: Message) -> SomeIpMessageResponse:
     return SomeIpMessageResponse(
@@ -386,6 +390,11 @@ class SomeIp(Driver):
         minor_version: int = 0,
     ) -> None:
         """Offer a service instance for discovery (acts as the providing ECU)."""
+        if instance_id in _RESERVED_INSTANCE_IDS:
+            raise ValueError(
+                f"Invalid instance_id 0x{instance_id:04X}: 0x0000 is reserved and "
+                "0xFFFF means 'all instances'; neither can be offered."
+            )
         service = ServiceInstance(
             service_id=service_id,
             instance_id=instance_id,
@@ -476,24 +485,39 @@ class SomeIp(Driver):
     @export
     @validate_call(validate_return=True)
     def publish_event(self, service_id: int, event_id: int, payload: SomeIpPayload) -> None:
-        """Publish an event notification to subscribers of its event group."""
+        """Publish an event notification to subscribers of its event group.
+
+        ``service_id`` is accepted for API symmetry with the other server
+        verbs but is currently unused: opensomeip addresses events by
+        ``event_id`` only (one server endpoint per driver instance).
+        """
         self._ensure_server().publish_event(event_id, bytes.fromhex(payload.data))
 
     @export
     @validate_call(validate_return=True)
     def set_field(self, service_id: int, event_id: int, payload: SomeIpPayload) -> None:
-        """Set a field event value (served to new subscribers and notified)."""
+        """Set a field event value (served to new subscribers and notified).
+
+        ``service_id`` is accepted for API symmetry with the other server
+        verbs but is currently unused: opensomeip addresses fields by
+        ``event_id`` only (one server endpoint per driver instance).
+        """
         self._ensure_server().set_field(event_id, bytes.fromhex(payload.data))
 
     @export
     @validate_call(validate_return=True)
     def stop_server(self) -> None:
-        """Stop the SOME/IP server, withdrawing all offers."""
+        """Stop the SOME/IP server, withdrawing all offers.
+
+        All server state is discarded: canned method responses, registered
+        methods, and registered events must be reconfigured after a restart.
+        """
         if self._osip_server is not None:
             try:
                 self._osip_server.stop()
             except Exception:
                 logger.warning("failed to stop opensomeip server", exc_info=True)
             self._osip_server = None
+            self._method_responses.clear()
             self._registered_methods.clear()
             self._registered_events.clear()
