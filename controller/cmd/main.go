@@ -217,8 +217,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	authenticator, prefix, router, option, provisioning, leasePolicy,
-		hiddenLabels, deprecatedLabels, telemetry, err := config.LoadConfiguration(
+	cfg, err := config.LoadConfiguration(
 		context.Background(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
@@ -273,20 +272,20 @@ func main() {
 	if err = (&service.ControllerService{
 		Client: watchClient,
 		Scheme: mgr.GetScheme(),
-		Authn:  authentication.NewBearerTokenAuthenticator(authenticator),
-		Authz:  authorization.NewBasicAuthorizer(watchClient, prefix, provisioning.Enabled),
+		Authn:  authentication.NewBearerTokenAuthenticator(cfg.Authenticator),
+		Authz:  authorization.NewBasicAuthorizer(watchClient, cfg.Prefix, cfg.Provisioning.Enabled),
 		Attr: authorization.NewMetadataAttributesGetter(authorization.MetadataAttributesGetterConfig{
 			NamespaceKey: "jumpstarter-namespace",
 			ResourceKey:  "jumpstarter-kind",
 			NameKey:      "jumpstarter-name",
 		}),
-		Router:           router,
-		ServerOptions:    option,
-		LeasePolicy:      leasePolicy,
-		HiddenLabels:     hiddenLabels,
-		DeprecatedLabels: deprecatedLabels,
+		Router:           cfg.Router,
+		ServerOptions:    cfg.ServerOptions,
+		LeasePolicy:      cfg.LeasePolicy,
+		HiddenLabels:     cfg.HiddenLabels,
+		DeprecatedLabels: cfg.DeprecatedLabels,
 		Signer:           oidcSigner,
-		TelemetryConfig:  telemetry,
+		TelemetryConfig:  cfg.Telemetry,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create service", "service", "Controller")
 		os.Exit(1)

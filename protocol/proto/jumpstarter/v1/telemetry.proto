@@ -1,4 +1,4 @@
-// Copyright 2024 The Jumpstarter Authors
+// Copyright 2026 The Jumpstarter Authors
 
 syntax = "proto3";
 
@@ -39,4 +39,5 @@ message LogEntry {
   string driver_type = 10; // Log body: driver category (storage, power, network, etc.).
   map<string, string> extra_fields = 11; // Additional structured key-value fields.
                                          // Capped at 16 entries, 64-char keys, 256-char values.
+  string namespace = 12;   // Loki stream label: Kubernetes namespace (bounded by cluster size).
 }

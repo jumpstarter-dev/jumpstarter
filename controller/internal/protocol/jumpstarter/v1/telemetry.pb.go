@@ -137,6 +137,7 @@ type LogEntry struct {
 	Result        string                 `protobuf:"bytes,9,opt,name=result,proto3" json:"result,omitempty"`                                                                                                         // Log body: operation outcome (success, failure, etc.).
 	DriverType    string                 `protobuf:"bytes,10,opt,name=driver_type,json=driverType,proto3" json:"driver_type,omitempty"`                                                                              // Log body: driver category (storage, power, network, etc.).
 	ExtraFields   map[string]string      `protobuf:"bytes,11,rep,name=extra_fields,json=extraFields,proto3" json:"extra_fields,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Additional structured key-value fields.
+	Namespace     string                 `protobuf:"bytes,12,opt,name=namespace,proto3" json:"namespace,omitempty"`                                                                                                  // Loki stream label: Kubernetes namespace (bounded by cluster size).
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -248,6 +249,13 @@ func (x *LogEntry) GetExtraFields() map[string]string {
 	return nil
 }
 
+func (x *LogEntry) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
 var File_jumpstarter_v1_telemetry_proto protoreflect.FileDescriptor
 
 const file_jumpstarter_v1_telemetry_proto_rawDesc = "" +
@@ -257,7 +265,7 @@ const file_jumpstarter_v1_telemetry_proto_rawDesc = "" +
 	"\aentries\x18\x01 \x03(\v2\x18.jumpstarter.v1.LogEntryR\aentries\"H\n" +
 	"\x10PushLogsResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\rR\baccepted\x12\x18\n" +
-	"\adropped\x18\x02 \x01(\rR\adropped\"\xc7\x03\n" +
+	"\adropped\x18\x02 \x01(\rR\adropped\"\xe5\x03\n" +
 	"\bLogEntry\x128\n" +
 	"\ttimestamp\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12\x1a\n" +
 	"\bseverity\x18\x02 \x01(\tR\bseverity\x12\x18\n" +
@@ -271,7 +279,8 @@ const file_jumpstarter_v1_telemetry_proto_rawDesc = "" +
 	"\vdriver_type\x18\n" +
 	" \x01(\tR\n" +
 	"driverType\x12L\n" +
-	"\fextra_fields\x18\v \x03(\v2).jumpstarter.v1.LogEntry.ExtraFieldsEntryR\vextraFields\x1a>\n" +
+	"\fextra_fields\x18\v \x03(\v2).jumpstarter.v1.LogEntry.ExtraFieldsEntryR\vextraFields\x12\x1c\n" +
+	"\tnamespace\x18\f \x01(\tR\tnamespace\x1a>\n" +
 	"\x10ExtraFieldsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x012a\n" +

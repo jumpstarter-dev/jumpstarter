@@ -326,11 +326,11 @@ func (s *ControllerService) GetServiceEndpoints(
 
 	resp := &pb.GetServiceEndpointsResponse{}
 
-	if s.TelemetryConfig != nil && s.TelemetryConfig.Endpoint != "" {
+	if s.TelemetryConfig != nil && s.TelemetryConfig.Enabled {
 		resp.TelemetryEndpoints = append(resp.TelemetryEndpoints, &pb.TelemetryEndpoint{
 			Endpoint:    s.TelemetryConfig.Endpoint,
 			Certificate: s.TelemetryConfig.Certificate,
-			MinSeverity: cmp.Or(s.TelemetryConfig.MinSeverity, "info"),
+			MinSeverity: cmp.Or(s.TelemetryConfig.Logging.Filter.MinSeverity, "info"),
 		})
 	}
 

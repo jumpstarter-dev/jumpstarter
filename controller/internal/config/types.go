@@ -1,9 +1,12 @@
 package config
 
 import (
+	"fmt"
 	"time"
 
+	"google.golang.org/grpc"
 	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
+	"k8s.io/apiserver/pkg/authentication/authenticator"
 )
 
 // Config represents the main controller configuration structure.
@@ -18,21 +21,57 @@ type Config struct {
 	Telemetry        *Telemetry       `json:"telemetry,omitempty" yaml:"telemetry,omitempty"`
 }
 
-// Telemetry defines optional telemetry service discovery configuration.
-// When Endpoint is set, the controller advertises it to exporters and clients
-// via GetServiceEndpoints so they can push logs without holding cluster credentials.
+// Telemetry configures the optional jumpstarter-telemetry service.
+// When Enabled is true the controller advertises the telemetry endpoint to
+// exporters and clients via GetServiceEndpoints so they can push logs without
+// holding cluster credentials.
 type Telemetry struct {
-	// Endpoint is the jumpstarter-telemetry gRPC address (e.g. "telemetry.jumpstarter.svc:9093").
-	// Leave empty to disable telemetry service discovery.
+	// Enabled controls whether the telemetry service is active.
+	// When true the controller advertises the endpoint returned by GetServiceEndpoints.
+	Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
+
+	// Endpoint is an optional override for the telemetry gRPC address.
+	// When empty and Enabled is true, defaults to
+	// "jumpstarter-telemetry.<namespace>:9093" derived from the controller namespace.
 	Endpoint string `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
 
-	// Certificate is an optional PEM-encoded CA certificate to trust for the telemetry endpoint.
-	// Leave empty to use the system certificate pool.
+	// Certificate is reserved for a future phase where the telemetry service manages
+	// its own TLS credentials. Leave empty for Phase 1 deployments — the telemetry
+	// server listens on plaintext gRPC and exporters that receive a certificate here
+	// will fail to connect.
 	Certificate string `json:"certificate,omitempty" yaml:"certificate,omitempty"`
 
-	// MinSeverity is the minimum log severity to forward to the telemetry service.
-	// Accepted values: debug, info, warning, error.  Defaults to "info" when empty.
-	MinSeverity string `json:"minSeverity,omitempty" yaml:"minSeverity,omitempty"`
+	// Logging configures the log ingestion path to the telemetry service.
+	Logging TelemetryLogging `json:"logging,omitempty" yaml:"logging,omitempty"`
+}
+
+// TelemetryLogging configures the log push path to the telemetry service.
+type TelemetryLogging struct {
+	Filter TelemetryLoggingFilter `json:"filter,omitempty" yaml:"filter,omitempty"`
+}
+
+// TelemetryLoggingFilter controls which log entries are forwarded to the telemetry service.
+type TelemetryLoggingFilter struct {
+	// MinSeverity is the minimum log severity to forward.
+	// Accepted values: debug, info, warning, error, critical. Defaults to "info" when empty.
+	MinSeverity string `json:"min_severity,omitempty" yaml:"min_severity,omitempty"`
+}
+
+var validSeverities = map[string]struct{}{
+	"debug": {}, "info": {}, "warning": {}, "error": {}, "critical": {},
+}
+
+// Validate returns an error if any field contains an invalid value.
+func (t *Telemetry) Validate() error {
+	if t.Logging.Filter.MinSeverity != "" {
+		if _, ok := validSeverities[t.Logging.Filter.MinSeverity]; !ok {
+			return fmt.Errorf(
+				"telemetry.logging.filter.minSeverity %q is not valid, accepted values: debug, info, warning, error, critical",
+				t.Logging.Filter.MinSeverity,
+			)
+		}
+	}
+	return nil
 }
 
 // LeasePolicy defines policy constraints for leases.
@@ -114,6 +153,21 @@ type Keepalive struct {
 	// MaxConnectionAgeGrace is the grace period for closing connections that exceed MaxConnectionAge.
 	// Default: infinity (not set)
 	MaxConnectionAgeGrace string `json:"maxConnectionAgeGrace,omitempty" yaml:"maxConnectionAgeGrace,omitempty"`
+}
+
+// LoadedConfig holds all values returned by LoadConfiguration.
+// Using a single struct avoids a long list of return values and makes
+// it easy to add new fields without touching every call site.
+type LoadedConfig struct {
+	Authenticator    authenticator.Token
+	Prefix           string
+	Router           Router
+	ServerOptions    []grpc.ServerOption
+	Provisioning     *Provisioning
+	LeasePolicy      *LeasePolicy
+	HiddenLabels     *HiddenLabels
+	DeprecatedLabels *DeprecatedLabels
+	Telemetry        *Telemetry
 }
 
 // Router represents the router configuration mapping.

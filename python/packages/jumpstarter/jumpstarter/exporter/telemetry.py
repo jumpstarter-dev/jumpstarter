@@ -10,10 +10,18 @@ from anyio import sleep
 from google.protobuf.timestamp_pb2 import Timestamp
 from jumpstarter_protocol import telemetry_pb2, telemetry_pb2_grpc
 
+# Batch up to 50 entries per PushLogs call — small enough to stay well under
+# default gRPC message size limits, large enough to amortize per-RPC overhead.
 _BATCH_SIZE = 50
-_FLUSH_INTERVAL = 0.5  # seconds between automatic flushes
-_MAX_QUEUE_SIZE = 10_000  # entries; oldest are dropped when full
-_PUSH_TIMEOUT = 10.0  # seconds to wait for PushLogs RPC before giving up
+# Flush twice per second so log entries arrive at the sink with low latency
+# without spinning the event loop.
+_FLUSH_INTERVAL = 0.5
+# Cap the in-process queue so a slow or unreachable telemetry service can never
+# grow memory without bound; oldest entries are evicted when the limit is hit.
+_MAX_QUEUE_SIZE = 10_000
+# Give up on a PushLogs call after 10 s — telemetry is best-effort and must
+# not stall the flush loop or the shutdown path.
+_PUSH_TIMEOUT = 10.0
 
 _WELL_KNOWN_KEYS = frozenset(("lease", "client", "exporter", "operation", "result", "driver_type"))
 _STDLIB_RECORD_ATTRS = frozenset(vars(logging.LogRecord("", 0, "", 0, "", (), None)).keys())
@@ -23,6 +31,8 @@ _CONTEXT_KEY_MAP = {"lease_id": "lease"}
 # Context keys that map to first-class proto fields (skip from extra_fields).
 _CONTEXT_PROTO_KEYS = _WELL_KNOWN_KEYS | frozenset(_CONTEXT_KEY_MAP.keys())
 
+# JEP-0013 limits for extra_fields: at most 16 pairs, keys ≤ 64 chars,
+# values ≤ 256 chars. These match the limits enforced by the telemetry service.
 _MAX_EXTRA_FIELDS = 16
 _MAX_KEY_LEN = 64
 _MAX_VAL_LEN = 256
@@ -48,9 +58,16 @@ class TelemetryLogHandler(logging.Handler):
     on telemetry availability.
     """
 
-    def __init__(self, stub: telemetry_pb2_grpc.TelemetryServiceStub) -> None:
+    def __init__(
+        self,
+        stub: telemetry_pb2_grpc.TelemetryServiceStub,
+        namespace: str = "",
+        token: str = "",
+    ) -> None:
         super().__init__()
         self._stub = stub
+        self._namespace = namespace
+        self._token = token
         self._queue: deque[telemetry_pb2.LogEntry] = deque(maxlen=_MAX_QUEUE_SIZE)
 
     def prepare(self, record: logging.LogRecord) -> telemetry_pb2.LogEntry:
@@ -68,6 +85,7 @@ class TelemetryLogHandler(logging.Handler):
             severity=_severity(record.levelname),
             message=record.getMessage(),
             component="exporter",
+            namespace=self._namespace,
         )
 
         extra: dict[str, str] = {}
@@ -122,10 +140,12 @@ class TelemetryLogHandler(logging.Handler):
         if not batch:
             return
 
+        metadata = [("authorization", f"Bearer {self._token}")] if self._token else []
         try:
             await self._stub.PushLogs(
                 telemetry_pb2.PushLogsRequest(entries=batch),
                 timeout=_PUSH_TIMEOUT,
+                metadata=metadata,
             )
         except Exception as exc:
             # Avoid recursive logging: write directly to stderr.

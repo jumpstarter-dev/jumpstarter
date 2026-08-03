@@ -37,10 +37,10 @@ def make_record(
     return record
 
 
-def make_handler() -> TelemetryLogHandler:
+def make_handler(namespace: str = "", token: str = "") -> TelemetryLogHandler:
     stub = MagicMock()
     stub.PushLogs = AsyncMock()
-    return TelemetryLogHandler(stub)
+    return TelemetryLogHandler(stub, namespace=namespace, token=token)
 
 
 @pytest.fixture(autouse=False)
@@ -163,6 +163,18 @@ class TestPrepare:
         for key in stdlib_names:
             assert key not in entry.extra_fields, f"stdlib attr {key!r} leaked into extra_fields"
 
+    def test_namespace_from_handler_set_on_entry(self):
+        """namespace passed to TelemetryLogHandler is stamped on every LogEntry."""
+        handler = make_handler(namespace="my-namespace")
+        entry = handler.prepare(make_record())
+        assert entry.namespace == "my-namespace"
+
+    def test_namespace_empty_by_default(self):
+        """When no namespace is passed the field is empty and the Go identity check is skipped."""
+        handler = make_handler()
+        entry = handler.prepare(make_record())
+        assert entry.namespace == ""
+
     def test_structlog_contextvars_lease_id_maps_to_lease_field(self, clean_structlog_context):
         """lease_id in structlog context maps to the proto lease field, not extra_fields."""
         structlog.contextvars.bind_contextvars(lease_id="ctx-lease-99", exporter="ctx-exporter")
@@ -225,6 +237,24 @@ class TestEmit:
 
 
 class TestFlush:
+    @pytest.mark.anyio
+    async def test_flush_sends_bearer_token_in_metadata(self):
+        handler = make_handler(token="my-jwt")
+        handler.emit(make_record("hello"))
+        await handler._flush()
+
+        _, kwargs = handler._stub.PushLogs.call_args
+        assert ("authorization", "Bearer my-jwt") in kwargs["metadata"]
+
+    @pytest.mark.anyio
+    async def test_flush_no_metadata_when_token_empty(self):
+        handler = make_handler(token="")
+        handler.emit(make_record("hello"))
+        await handler._flush()
+
+        _, kwargs = handler._stub.PushLogs.call_args
+        assert kwargs["metadata"] == []
+
     @pytest.mark.anyio
     async def test_flush_sends_batch_to_stub(self):
         handler = make_handler()

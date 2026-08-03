@@ -1,5 +1,5 @@
 /*
-Copyright 2024.
+Copyright 2026.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -32,6 +32,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/service"
 )
 
@@ -50,8 +51,8 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)).WithValues("component", "telemetry"))
-	logger := ctrl.Log.WithName("setup")
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	logger := ctrl.Log.WithName("setup").WithValues("component", "telemetry")
 
 	logger.Info("Jumpstarter Telemetry starting",
 		"version", version,
@@ -63,8 +64,19 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	signer, err := oidc.NewSignerFromSeed(
+		[]byte(os.Getenv("CONTROLLER_KEY")),
+		"https://localhost:8085",
+		"jumpstarter",
+	)
+	if err != nil {
+		logger.Error(err, "unable to create token verifier")
+		os.Exit(1)
+	}
+
 	svc := &service.TelemetryService{
 		BindAddr: bindAddr,
+		Signer:   signer,
 	}
 
 	errCh := make(chan error, 1)
