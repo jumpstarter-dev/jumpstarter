@@ -89,12 +89,12 @@ def test_someip_send_message(mock_osip_cls):
 
     driver = SomeIp(host="127.0.0.1", port=30490)
     with serve(driver) as client:
-        client.send_message(0x1234, 0x0001, b"\xaa\xbb")
+        client.send_message(0x1234, 0x0001, b"\xAA\xBB")
         mock_client.send.assert_called_once()
         sent_msg = mock_client.send.call_args[0][0]
         assert sent_msg.message_id.service_id == 0x1234
         assert sent_msg.message_id.method_id == 0x0001
-        assert sent_msg.payload == b"\xaa\xbb"
+        assert sent_msg.payload == b"\xAA\xBB"
 
 
 @patch("jumpstarter_driver_someip.driver.OsipClient")
@@ -420,13 +420,8 @@ def test_someip_rejects_out_of_range_16bit_ids(model_cls, field, value):
     """16-bit SOME/IP ID fields must reject values outside 0..0xFFFF."""
     defaults = {
         SomeIpMessageResponse: {
-            "service_id": 1,
-            "method_id": 1,
-            "client_id": 1,
-            "session_id": 1,
-            "message_type": 0,
-            "return_code": 0,
-            "payload": "AA",
+            "service_id": 1, "method_id": 1, "client_id": 1, "session_id": 1,
+            "message_type": 0, "return_code": 0, "payload": "AA",
         },
         SomeIpServiceEntry: {"service_id": 1, "instance_id": 1},
         SomeIpEventNotification: {"service_id": 1, "event_id": 1, "payload": "AA"},
@@ -463,7 +458,6 @@ def test_someip_tcp_transport_mode(mock_osip_cls):
 
     config = mock_osip_cls.call_args[0][0]
     from opensomeip import TransportMode
-
     assert config.transport_mode == TransportMode.TCP
 
 
@@ -585,18 +579,18 @@ def stateful_client(stateful_osip):
 
 def test_stateful_rpc_call_returns_canned_response(stateful_client, stateful_osip):
     """RPC call to a known service/method returns the pre-configured response."""
-    resp = stateful_client.rpc_call(0x1234, 0x0001, b"\xff")
+    resp = stateful_client.rpc_call(0x1234, 0x0001, b"\xFF")
     assert resp.service_id == 0x1234
     assert resp.method_id == 0x0001
     assert resp.payload == "0a0b0c"
     assert resp.return_code == 0x00
     assert len(stateful_osip._rpc_history) == 1
-    assert stateful_osip._rpc_history[0] == (0x1234, 0x0001, b"\xff")
+    assert stateful_osip._rpc_history[0] == (0x1234, 0x0001, b"\xFF")
 
 
 def test_stateful_rpc_call_unknown_echoes_payload(stateful_client, stateful_osip):
     """RPC call to an unknown service/method echoes the request payload."""
-    resp = stateful_client.rpc_call(0x9999, 0x0001, b"\xde\xad")
+    resp = stateful_client.rpc_call(0x9999, 0x0001, b"\xDE\xAD")
     assert resp.service_id == 0x9999
     assert resp.payload == "dead"
 
@@ -615,7 +609,7 @@ def test_stateful_multiple_rpc_calls(stateful_client, stateful_osip):
 
 def test_stateful_custom_rpc_response(stateful_client, stateful_osip):
     """Register a custom RPC response and verify it's returned."""
-    stateful_osip.register_rpc_response(0xAAAA, 0x0001, b"\xca\xfe")
+    stateful_osip.register_rpc_response(0xAAAA, 0x0001, b"\xCA\xFE")
     resp = stateful_client.rpc_call(0xAAAA, 0x0001, b"\x00")
     assert resp.payload == "cafe"
 
@@ -625,7 +619,7 @@ def test_stateful_custom_rpc_response(stateful_client, stateful_osip):
 
 def test_stateful_send_then_receive(stateful_client, stateful_osip):
     """send_message echoes into the receive queue; receive_message reads it."""
-    stateful_client.send_message(0x1234, 0x0001, b"\xaa\xbb")
+    stateful_client.send_message(0x1234, 0x0001, b"\xAA\xBB")
     resp = stateful_client.receive_message(timeout=1.0)
     assert resp.service_id == 0x1234
     assert resp.method_id == 0x0001
@@ -752,7 +746,7 @@ def test_stateful_discover_then_rpc_to_each_instance(stateful_client, stateful_o
     assert len(services) == 2
 
     for svc in services:
-        resp = stateful_client.rpc_call(svc.service_id, 0x0001, b"\xaa")
+        resp = stateful_client.rpc_call(svc.service_id, 0x0001, b"\xAA")
         assert resp.service_id == svc.service_id
 
     assert len(stateful_osip._rpc_history) == 2
@@ -766,7 +760,7 @@ def test_stateful_subscribe_receive_unsubscribe(stateful_client, stateful_osip):
     stateful_client.subscribe_eventgroup(1)
     assert 1 in stateful_osip._subscribed_eventgroups
 
-    stateful_osip.inject_event(0x1234, 0x8001, b"\xca\xfe")
+    stateful_osip.inject_event(0x1234, 0x8001, b"\xCA\xFE")
     event = stateful_client.receive_event(timeout=1.0)
     assert event.service_id == 0x1234
     assert event.event_id == 0x8001
@@ -871,7 +865,7 @@ def test_stateful_messaging_with_reconnect(stateful_client, stateful_osip):
 def test_stateful_event_session_with_reconnect(stateful_client, stateful_osip):
     """Subscribe, receive events, reconnect, re-subscribe, receive again."""
     stateful_client.subscribe_eventgroup(1)
-    stateful_osip.inject_event(0x1234, 0x8001, b"\xaa")
+    stateful_osip.inject_event(0x1234, 0x8001, b"\xAA")
     e1 = stateful_client.receive_event(timeout=1.0)
     assert e1.payload == "aa"
 
@@ -879,7 +873,7 @@ def test_stateful_event_session_with_reconnect(stateful_client, stateful_osip):
     assert stateful_osip._subscribed_eventgroups == set()
 
     stateful_client.subscribe_eventgroup(1)
-    stateful_osip.inject_event(0x1234, 0x8002, b"\xbb")
+    stateful_osip.inject_event(0x1234, 0x8002, b"\xBB")
     e2 = stateful_client.receive_event(timeout=1.0)
     assert e2.payload == "bb"
 
@@ -899,7 +893,7 @@ def test_stateful_discover_rpc_events_workflow(stateful_client, stateful_osip):
     assert resp2.payload == "01020304"
 
     stateful_client.subscribe_eventgroup(1)
-    stateful_osip.inject_event(0x1234, 0x8001, b"\xee")
+    stateful_osip.inject_event(0x1234, 0x8001, b"\xEE")
     event = stateful_client.receive_event(timeout=1.0)
     assert event.payload == "ee"
 
@@ -1307,7 +1301,7 @@ def test_someip_simulated_send_receive(mock_someip_server):
         transport_mode="TCP",
     )
     with serve(driver) as client:
-        client.send_message(0x1234, 0x0001, b"\xaa\xbb\xcc")
+        client.send_message(0x1234, 0x0001, b"\xAA\xBB\xCC")
         resp = client.receive_message(timeout=2.0)
         assert resp.service_id == 0x1234
         assert resp.payload == "aabbcc"

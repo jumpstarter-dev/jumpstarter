@@ -111,7 +111,9 @@ class SomeIp(Driver):
 
         transport_upper = self.transport_mode.upper()
         if transport_upper not in _VALID_TRANSPORT_MODES:
-            raise ValueError(f"Invalid transport_mode: {self.transport_mode!r}. Must be 'TCP' or 'UDP'.")
+            raise ValueError(
+                f"Invalid transport_mode: {self.transport_mode!r}. Must be 'TCP' or 'UDP'."
+            )
 
         if get_ext() is None:
             raise RuntimeError(
