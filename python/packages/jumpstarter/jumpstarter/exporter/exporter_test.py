@@ -1124,7 +1124,6 @@ def _make_serve_exporter(exit_on_lease_end=False):
     exporter._lease_context = None
     exporter._stop_requested = False
     exporter._standalone = False
-    exporter._previous_leased = False
     exporter._tg = None
     exporter._started = False
     exporter._registered = True
@@ -1239,7 +1238,6 @@ class TestContextPropagation:
         exporter._lease_context = None
         exporter._stop_requested = False
         exporter._standalone = False
-        exporter._previous_leased = False
         exporter._started = False
         exporter.hook_executor = None
         exporter.labels = {"jumpstarter.dev/name": "lab-exporter-01"}
