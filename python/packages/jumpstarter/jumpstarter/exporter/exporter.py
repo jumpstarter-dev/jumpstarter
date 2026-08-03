@@ -999,7 +999,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         lease_scope.after_lease_hook_done.set()
         return True
 
-    async def handle_lease(self, lease_name: str, tg: TaskGroup, lease_scope: LeaseContext) -> None:
+    async def handle_lease(self, lease_name: str, conns_tg: TaskGroup, lease_scope: LeaseContext) -> None:
         """Handle all incoming client connections for a lease.
 
         This method orchestrates the complete lifecycle of managing connections during
@@ -1015,7 +1015,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
         Args:
             lease_name: Name of the lease to handle connections for
-            tg: TaskGroup for spawning concurrent connection handler tasks
+            conns_tg: Data-plane TaskGroup for spawning connection handler tasks
             lease_scope: LeaseScope with before_lease_hook event (session/socket set here)
 
         Note:
@@ -1075,7 +1075,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 # session creation (e.g., BEFORE_LEASE_HOOK when hooks are configured).
 
                 # Start task to handle EndSession requests (runs afterLease hook when client signals done)
-                tg.start_soon(self._handle_end_session, lease_scope)
+                # Runs on control-plane group so it's cancelled with Status/Listen, not data-plane
+                self._tg.start_soon(self._handle_end_session, lease_scope)
 
                 # Process client connections until lease ends
                 # The lease can end via:
@@ -1113,7 +1114,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                                     lease_name,
                                     request.router_endpoint,
                                 )
-                                tg.start_soon(
+                                conns_tg.start_soon(
                                     self._handle_client_conn,
                                     lease_scope.socket_path,
                                     request.router_endpoint,
@@ -1163,21 +1164,23 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             pass
         status_tx, status_rx = create_memory_object_stream[jumpstarter_pb2.StatusResponse](max_buffer_size=5)
         try:
-            await self._run_control_plane(status_tx, status_rx)
-            if self._fatal_stream_error:
-                name, err = self._fatal_stream_error
-                logger.warning(
-                    "Control plane down (%s: %s)",
-                    name,
-                    err,
-                )
+            async with create_task_group() as conns_tg:
+                await self._run_control_plane(status_tx, status_rx, conns_tg)
+                if self._fatal_stream_error:
+                    name, err = self._fatal_stream_error
+                    logger.warning(
+                        "Control plane down (%s: %s), cancelling active connections",
+                        name,
+                        err,
+                    )
+                conns_tg.cancel_scope.cancel()
         finally:
             self._tg = None
             self._fatal_stream_error = None
             self._status_drain_active = False
             clear_log_context()
 
-    async def _run_control_plane(self, status_tx, status_rx):
+    async def _run_control_plane(self, status_tx, status_rx, conns_tg: TaskGroup):
         """Start control-plane streams and process status updates."""
         async with create_task_group() as tg:
             self._tg = tg
@@ -1192,13 +1195,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 status_tx,
             )
             async for status in status_rx:
-                if await self._apply_status(status, tg):
+                if await self._apply_status(status, tg, conns_tg):
                     break
 
     async def _apply_status(
         self,
         status: jumpstarter_pb2.StatusResponse,
         tg: TaskGroup,
+        conns_tg: TaskGroup,
     ) -> bool:
         """Process a single status update. Returns True to stop the status loop."""
         previous_state = self._lease_state
@@ -1206,7 +1210,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
         if current_leased:
             if previous_state == LeaseState.IDLE and status.lease_name != "":
-                self._on_lease_acquired(status, tg)
+                self._on_lease_acquired(status, tg, conns_tg)
             elif (
                 previous_state == LeaseState.LEASED
                 and self._lease_context
@@ -1229,6 +1233,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         self,
         status: jumpstarter_pb2.StatusResponse,
         tg: TaskGroup,
+        conns_tg: TaskGroup,
     ) -> None:
         """Handle new lease assignment: create context and spawn lease handler."""
         self._started = True
@@ -1250,7 +1255,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 self.stop,
                 self._request_lease_release,
             )
-        tg.start_soon(self.handle_lease, status.lease_name, tg, lease_scope)
+        conns_tg.start_soon(self.handle_lease, status.lease_name, conns_tg, lease_scope)
 
     def _on_lease_update(self, status: jumpstarter_pb2.StatusResponse) -> None:
         """Update client info on every leased status tick."""
