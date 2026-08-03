@@ -1332,3 +1332,55 @@ class TestContextPropagation:
 
         assert calls == [{"client": "ci-bot"}]
         clear_log_context()
+
+
+class TestTaskGroupIsolation:
+    """Verify that control-plane failure does not cancel data-plane connections.
+
+    The split: inner tg (control-plane: Status/Listen streams) and outer
+    conns_tg (data-plane: handle_lease, _handle_client_conn).  When
+    _cancel_with_fatal_error cancels tg, connections on conns_tg must
+    remain alive until serve() explicitly cancels conns_tg.
+    """
+
+    @pytest.mark.anyio
+    async def test_conn_alive_after_control_plane_cancel(self):
+        """Between _cancel_with_fatal_error and serve() cancelling conns_tg,
+        connection tasks on conns_tg are still running."""
+        exporter = _make_serve_exporter()
+        conn_alive_after_cp_cancel = False
+        conn_started = Event()
+        cp_cancelled = Event()
+
+        async def fake_conn():
+            nonlocal conn_alive_after_cp_cancel
+            conn_started.set()
+            await cp_cancelled.wait()
+            conn_alive_after_cp_cancel = True
+
+        async def fake_retry_stream(name, factory, tx, **kwargs):
+            if name == "Status":
+                await tx.send(
+                    MagicMock(leased=True, lease_name="test-lease", client_name="c", context={})
+                )
+                await conn_started.wait()
+                exporter._cancel_with_fatal_error("Status", Exception("controller gone"))
+                cp_cancelled.set()
+            else:
+                await anyio.sleep_forever()
+
+        exporter._retry_stream = fake_retry_stream
+
+        async def fake_handle_lease(lease_name, conns_tg, lease_ctx):
+            conns_tg.start_soon(fake_conn)
+            await lease_ctx.lease_ended.wait()
+            lease_ctx.after_lease_hook_done.set()
+
+        exporter.handle_lease = fake_handle_lease
+
+        await exporter.serve()
+
+        assert conn_alive_after_cp_cancel, (
+            "Connection task was killed before serve() cancelled conns_tg — "
+            "control-plane cancellation leaked into data-plane"
+        )
