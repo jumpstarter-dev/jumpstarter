@@ -616,8 +616,34 @@ func (pt *ProcessTracker) DumpLogs(_ int) {
 	}
 }
 
-// StopAll cancels all restart loops, kills all tracked processes, and
-// any orphans matching the pattern.
+// TrackedPIDs returns a copy of currently tracked process IDs.
+func (pt *ProcessTracker) TrackedPIDs() []int {
+	out := make([]int, len(pt.pids))
+	copy(out, pt.pids)
+	return out
+}
+
+// isPIDAlive reports whether pid still exists (signal 0).
+func isPIDAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
+}
+
+// AnyPIDAlive reports whether any of the given PIDs is still running.
+func AnyPIDAlive(pids []int) bool {
+	for _, pid := range pids {
+		if isPIDAlive(pid) {
+			return true
+		}
+	}
+	return false
+}
+
+// StopAll cancels all restart loops, kills all tracked processes, waits
+// until those PIDs are gone, then clears the tracker and kills orphans.
 func (pt *ProcessTracker) StopAll() {
 	// Cancel all restart-loop goroutines first
 	for _, cancel := range pt.cancels {
@@ -625,13 +651,22 @@ func (pt *ProcessTracker) StopAll() {
 	}
 	pt.cancels = nil
 
-	for _, pid := range pt.pids {
+	pids := pt.TrackedPIDs()
+	for _, pid := range pids {
 		proc, err := os.FindProcess(pid)
 		if err != nil {
 			continue
 		}
 		_ = proc.Signal(syscall.SIGKILL)
 		_, _ = proc.Wait()
+	}
+
+	// Wait until tracked PIDs are actually gone before clearing the list,
+	// so callers that snapshot PIDs (or poll IsProcessRunning) observe a
+	// real termination rather than an emptied tracker.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) && AnyPIDAlive(pids) {
+		time.Sleep(50 * time.Millisecond)
 	}
 	pt.pids = nil
 
@@ -649,17 +684,7 @@ func (pt *ProcessTracker) Cleanup() {
 
 // IsProcessRunning checks if any tracked process is still running.
 func (pt *ProcessTracker) IsProcessRunning() bool {
-	for _, pid := range pt.pids {
-		proc, err := os.FindProcess(pid)
-		if err != nil {
-			continue
-		}
-		// Signal 0 tests if process exists
-		if proc.Signal(syscall.Signal(0)) == nil {
-			return true
-		}
-	}
-	return false
+	return AnyPIDAlive(pt.pids)
 }
 
 // --- Exporter wait helpers ---

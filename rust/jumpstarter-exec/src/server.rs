@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -39,11 +39,63 @@ impl Default for ServeOptions {
     }
 }
 
+/// Shared lifecycle for Shutdown vs Exec: shutdown flag and in-flight
+/// child PIDs share one mutex so a concurrent Exec cannot register a
+/// child after Shutdown has snapshotted (and orphan it without SIGTERM).
+struct Lifecycle {
+    shutdown: bool,
+    children: HashSet<u32>,
+}
+
 struct RuntimeState {
-    shutdown: AtomicBool,
-    /// PIDs of in-flight Exec children so Shutdown can SIGTERM them
-    /// before the process returns (avoids zombies when we are PID 1).
-    children: Mutex<HashSet<u32>>,
+    lifecycle: Mutex<Lifecycle>,
+}
+
+impl RuntimeState {
+    fn new() -> Self {
+        Self {
+            lifecycle: Mutex::new(Lifecycle {
+                shutdown: false,
+                children: HashSet::new(),
+            }),
+        }
+    }
+
+    fn is_shutdown(&self) -> bool {
+        self.lifecycle.lock().unwrap().shutdown
+    }
+
+    /// Mark shutdown and return PIDs that need SIGTERM.
+    fn begin_shutdown(&self) -> Vec<u32> {
+        let mut life = self.lifecycle.lock().unwrap();
+        life.shutdown = true;
+        life.children.iter().copied().collect()
+    }
+
+    /// Register a newly spawned Exec child, or reject it if shutdown already
+    /// started (caller must terminate/reap the child).
+    fn register_child(&self, pid: u32) -> bool {
+        let mut life = self.lifecycle.lock().unwrap();
+        if life.shutdown {
+            return false;
+        }
+        life.children.insert(pid);
+        true
+    }
+
+    fn unregister_child(&self, pid: u32) {
+        self.lifecycle.lock().unwrap().children.remove(&pid);
+    }
+
+    fn child_pids(&self) -> Vec<u32> {
+        self.lifecycle
+            .lock()
+            .unwrap()
+            .children
+            .iter()
+            .copied()
+            .collect()
+    }
 }
 
 /// Listen on `socket_path` with default options (JSON logs, debug off).
@@ -54,10 +106,7 @@ pub fn serve(socket_path: &str) -> std::io::Result<()> {
 /// Listen on `socket_path` with the given options.
 pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> {
     let log = Arc::new(Logger::new(opts.log_format, opts.debug, opts.log_fields));
-    let state = Arc::new(RuntimeState {
-        shutdown: AtomicBool::new(false),
-        children: Mutex::new(HashSet::new()),
-    });
+    let state = Arc::new(RuntimeState::new());
 
     // Shared-volume sidecar pattern: the exporter often runs as a different
     // UID than this process (e.g. runtime root + exporter 65532). Clear the
@@ -89,7 +138,7 @@ pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> 
         &[("socket", json!(socket_path)), ("debug", json!(opts.debug))],
     );
 
-    while !state.shutdown.load(Ordering::SeqCst) {
+    while !state.is_shutdown() {
         match listener.accept() {
             Ok((s, _)) => {
                 let log = Arc::clone(&log);
@@ -110,7 +159,7 @@ pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> 
 
     // Best-effort: signal any remaining Exec children and give their
     // handler threads a moment to wait()/reap before we return.
-    let leftover: Vec<u32> = state.children.lock().unwrap().iter().copied().collect();
+    let leftover = state.child_pids();
     for &pid in &leftover {
         unsafe {
             kill(pid as i32, 15);
@@ -151,13 +200,14 @@ fn handle_connection(
             send(&writer, &ServerMessage::Exit { code: Some(0) })?;
             drop(writer);
             let _ = std::fs::remove_file(socket_path);
-            let pids: Vec<u32> = state.children.lock().unwrap().iter().copied().collect();
+            // Mark shutdown under the same lock used for child registration,
+            // then SIGTERM the snapshotted PIDs.
+            let pids = state.begin_shutdown();
             for pid in pids {
                 unsafe {
                     kill(pid as i32, 15);
                 }
             }
-            state.shutdown.store(true, Ordering::SeqCst);
             Ok(())
         }
         ClientMessage::Exec { argv, env, cwd } => {
@@ -165,6 +215,14 @@ fn handle_connection(
         }
         _ => Err(io_err("first message must be Exec or Shutdown")),
     }
+}
+
+fn terminate_child(mut child: Child) {
+    let pid = child.id();
+    unsafe {
+        kill(pid as i32, 15);
+    }
+    let _ = child.wait();
 }
 
 fn handle_exec(
@@ -224,7 +282,22 @@ fn handle_exec(
     })?;
 
     let pid = child.id();
-    state.children.lock().unwrap().insert(pid);
+    if !state.register_child(pid) {
+        // Shutdown won the race: do not leave an untracked child running.
+        log.info(
+            "exec rejected: server shutting down",
+            &[("pid", json!(pid)), ("argv", json!(argv))],
+        );
+        terminate_child(child);
+        let msg = "server is shutting down".to_string();
+        let _ = send(
+            &writer,
+            &ServerMessage::Error {
+                message: msg.clone(),
+            },
+        );
+        return Err(io_err(&msg));
+    }
     log.info(
         "exec started",
         &[("pid", json!(pid)), ("argv", json!(argv))],
@@ -300,7 +373,7 @@ fn handle_exec(
 
     let status = child.wait()?;
     reaped.store(true, Ordering::Release);
-    state.children.lock().unwrap().remove(&pid);
+    state.unregister_child(pid);
 
     let _ = stdout_handle.join();
     let _ = stderr_handle.join();

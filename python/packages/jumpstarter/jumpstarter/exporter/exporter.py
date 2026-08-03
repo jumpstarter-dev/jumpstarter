@@ -95,15 +95,16 @@ def shutdown_runtime_sidecar(
     binary: str | None = None,
     timeout: float = 10.0,
 ) -> bool:
-    """Ask jumpstarter-exec serve (runtime container PID 1) to exit.
+    """Ask jumpstarter-exec serve (runtime container PID 1) to exit cleanly.
 
-    Required for ExitAndReplace: the runtime sidecar uses
-    ``restartPolicy: Always``, so exiting the exporter alone leaves the
-    runtime container running. Shutting down ``jumpstarter-exec serve``
-    lets the Pod complete so the ExporterSet controller replaces it.
+    With native sidecars (KEP-753), kubelet already terminates ``target-runtime``
+    after the exporter (main) container exits, so Pod completion does not depend
+    on this call. Invoking ``jumpstarter-exec shutdown`` is best-effort: it
+    SIGTERMs in-flight Exec children (e.g. QEMU) for a faster, cleaner teardown
+    than waiting for the Pod termination grace period.
 
-    Returns True if a shutdown was attempted, False if no launcher socket
-    is configured (non-sidecar / InPlaceReuse hosts).
+    Returns True if a shutdown was attempted successfully, False if no launcher
+    socket is configured (non-sidecar / InPlaceReuse hosts) or shutdown failed.
 
     Callers on the async event loop must offload this via
     ``await anyio.to_thread.run_sync(shutdown_runtime_sidecar)``.
@@ -1190,7 +1191,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 # Ensure the runtime container exits whenever this exporter is
                 # configured for ExitAndReplace (covers hook on_failure=exit and
                 # other stop paths that skip the lease-end branch above).
-                shutdown_runtime_sidecar()
+                await anyio.to_thread.run_sync(shutdown_runtime_sidecar)
             self._tg = None
             self._status_drain_active = False
             clear_log_context()
