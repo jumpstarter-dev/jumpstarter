@@ -243,7 +243,7 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 
 .PHONY: protobuf-gen
 protobuf-gen:
-	podman run --volume "$(shell pwd):/workspace" --workdir /workspace docker.io/bufbuild/buf:latest generate
+	podman run --volume "$(shell cd .. && pwd):/workspace" --workdir /workspace/controller docker.io/bufbuild/buf:latest generate
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.

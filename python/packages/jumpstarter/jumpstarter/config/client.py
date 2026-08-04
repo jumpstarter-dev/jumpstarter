@@ -199,6 +199,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         include_leases: bool = False,
         include_online: bool = False,
         include_status: bool = False,
+        include_disabled: bool = False,
         page_size: int = 100,
         show_hidden_labels: bool = False,
     ):
@@ -222,6 +223,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         result = ExporterList(exporters=all_exporters, next_page_token=None)
         result.include_online = include_online
         result.include_status = include_status
+        result.include_disabled = include_disabled
 
         if not include_leases:
             return result
@@ -243,6 +245,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 name=exporter.name,
                 labels=exporter.labels,
                 online=exporter.online,
+                enabled=exporter.enabled,
                 lease=lease,
             )
             exporters_with_leases.append(exporter_with_lease)
@@ -260,6 +263,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         begin_time: datetime | None = None,
         lease_id: str | None = None,
         tags: dict[str, str] | None = None,
+        allow_disabled: bool = False,
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
         return await svc.CreateLease(
@@ -269,6 +273,7 @@ class ClientConfigV1Alpha1(BaseSettings):
             begin_time=begin_time,
             lease_id=lease_id,
             tags=tags,
+            allow_disabled=allow_disabled,
         )
 
     @_blocking_compat

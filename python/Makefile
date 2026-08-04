@@ -121,7 +121,7 @@ build:
 	uv build --all --out-dir dist
 
 protobuf-gen:
-	podman run --volume "$(shell pwd):/workspace" --workdir /workspace docker.io/bufbuild/buf:latest generate
+	podman run --volume "$(shell cd .. && pwd):/workspace" --workdir /workspace/python docker.io/bufbuild/buf:latest generate
 	# Fix Python imports: convert absolute imports to relative imports
 	# In jumpstarter/client/v1: from jumpstarter.v1 import -> from ...v1 import
 	find packages/jumpstarter-protocol/jumpstarter_protocol/jumpstarter/client/v1 -name "*_pb2*.py" -type f -exec sed -i.bak \

@@ -224,11 +224,13 @@ class TestGetExportersCallsPaginatedMethod:
             get_exporters.callback.__wrapped__.__wrapped__(
                 config=config, selector=None, output="text", with_options=[],
                 show_hidden_labels=False,
+                allow_disabled=False,
             )
 
         config.list_exporters.assert_called_once_with(
             filter=None, include_leases=False, include_online=False, include_status=False,
             show_hidden_labels=False,
+            include_disabled=False,
         )
 
     def test_get_leases_calls_list_leases(self):

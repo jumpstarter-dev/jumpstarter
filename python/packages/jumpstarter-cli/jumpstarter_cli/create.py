@@ -36,6 +36,12 @@ def create():
     multiple=True,
     help="Tag to set on the lease (key=value format, can be specified multiple times)",
 )
+@click.option(
+    "--allow-disabled",
+    is_flag=True,
+    default=False,
+    help="Allow leasing a disabled exporter (only effective with --name/-n)",
+)
 @opt_output_all
 @handle_exceptions_with_reauthentication(relogin_client)
 def create_lease(
@@ -46,6 +52,7 @@ def create_lease(
     begin_time: datetime | None,
     lease_id: str | None,
     tags: tuple[str, ...],
+    allow_disabled: bool,
     output: OutputType,
 ):
     """
@@ -96,6 +103,7 @@ def create_lease(
         begin_time=begin_time,
         lease_id=lease_id,
         tags=parsed_tags or None,
+        allow_disabled=allow_disabled,
     )
 
     model_print(lease, output)

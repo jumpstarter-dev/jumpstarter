@@ -49,6 +49,14 @@ spec:
           spec:
             description: LeaseSpec defines the desired state of Lease
             properties:
+              allowDisabled:
+                description: |-
+                  AllowDisabled permits leasing a disabled exporter when used with ExporterRef.
+                  When true and ExporterRef is set, the controller will allow leasing an exporter
+                  even if its spec.enabled field is false. This is useful for investigating
+                  broken exporters that have been administratively disabled.
+                  Ignored for selector-based leases (disabled exporters are always filtered out).
+                type: boolean
               beginTime:
                 description: |-
                   Requested start time. If omitted, lease starts when exporter is acquired.
