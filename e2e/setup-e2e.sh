@@ -62,6 +62,8 @@ E2E_TOOLS_BIN="$REPO_ROOT/.e2e/bin"
 CFSSL_VERSION="1.6.5"
 # renovate: datasource=github-releases depName=mikefarah/yq
 YQ_VERSION="v4.52.5"
+# renovate: datasource=helm depName=dex
+DEX_CHART_VERSION="0.24.1"
 
 # SHA256 checksums for prebuilt binaries (from upstream release assets)
 get_expected_sha256() {
@@ -222,7 +224,8 @@ deploy_dex() {
     # Install dex via helm (upgrade --install is idempotent)
     log_info "Installing dex via helm..."
     helm repo add dex https://charts.dexidp.io
-    helm upgrade --install --namespace dex --wait -f "$SCRIPT_DIR"/dex.values.yaml dex dex/dex
+    helm upgrade --install --namespace dex --wait --version "$DEX_CHART_VERSION" \
+        -f "$SCRIPT_DIR"/dex.values.yaml dex dex/dex
     
     # Install CA certificate
     log_info "Installing CA certificate..."

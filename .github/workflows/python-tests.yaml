@@ -52,6 +52,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.should_run == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.runs-on }}
+    env:
+      # renovate: datasource=custom.fedora-cloud-qcow2 depName=fedora-cloud-base-generic
+      FEDORA_CLOUD_VERSION: 43-1.6
     strategy:
       matrix:
         runs-on: ${{ fromJson(needs.changes.outputs.runners) }}
@@ -150,13 +153,9 @@ jobs:
         with:
           path: python/packages/jumpstarter-driver-qemu/images
           key: fedora-cloud-${{ env.FEDORA_CLOUD_VERSION }}
-        env:
-          FEDORA_CLOUD_VERSION: "43-1.6"
 
       - name: Download Fedora Cloud images
         if: steps.cache-fedora-cloud-images.outputs.cache-hit != 'true'
-        env:
-          FEDORA_CLOUD_VERSION: "43-1.6"
         run: |
           FEDORA_RELEASE="${FEDORA_CLOUD_VERSION%%-*}"
           for arch in aarch64 x86_64; do

@@ -240,7 +240,9 @@ test-e2e: e2e-run
 # Compatibility E2E testing (cross-version tests, separate from main e2e)
 COMPAT_SCENARIO ?= old-controller
 COMPAT_TEST ?= old-controller
+# renovate: datasource=github-releases depName=jumpstarter-dev/jumpstarter
 COMPAT_CONTROLLER_TAG ?= v0.8.1
+# renovate: datasource=pypi depName=jumpstarter
 COMPAT_CLIENT_VERSION ?= 0.7.4
 
 .PHONY: e2e-compat-setup

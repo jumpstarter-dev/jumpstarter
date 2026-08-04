@@ -22,6 +22,19 @@
     "**/vendor/**",
     "**/examples/**"
   ],
+  "customDatasources": {
+    // Fedora Cloud qcow2 images have no built-in datasource. The official
+    // releases.json feed lists every GA image; the transform extracts the
+    // MAJOR-BUILD version (e.g. 43-1.6) from the x86_64 Cloud Base Generic
+    // qcow2 filename. Sorting comes from the regex versioning packageRule.
+    "fedora-cloud-qcow2": {
+      "defaultRegistryUrlTemplate": "https://fedoraproject.org/releases.json",
+      "format": "json",
+      "transformTemplates": [
+        "{ \"releases\": [$[arch=\"x86_64\" and variant=\"Cloud\" and $contains(link, \"Cloud-Base-Generic\") and $contains(link, \".qcow2\")].{ \"version\": $match(link, /Generic-(\\d+-\\d+\\.\\d+)\\./).groups[0] }] }"
+      ]
+    }
+  },
   "customManagers": [
     {
       // .go-version tracks go-toolset Docker tags, not golang-version releases.
@@ -91,13 +104,15 @@
       ]
     },
     {
-      "description": "Track GitHub release binaries in shell scripts via inline annotations",
+      "description": "Track version variables in shell scripts (plain and ${VAR:-default} assignments) via inline annotations",
       "customType": "regex",
       "managerFilePatterns": [
-        "/(^|/)[^/]+\\.sh$/"
+        "/(^|/)[^/]+\\.sh$/",
+        "/(^|/)hack/utils$/"
       ],
       "matchStrings": [
-        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n[A-Z0-9_]+=(?:\"|')(?<currentValue>[^\"']+)(?:\"|')"
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n[A-Z0-9_]+=(?:\"|')(?<currentValue>[^\"'$]+)(?:\"|')",
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n(?:export\\s+)?[A-Z0-9_]+=(?:\"|')?\\$\\{[A-Z0-9_]+:-(?<currentValue>[^}\"']+)\\}(?:\"|')?"
       ]
     },
     {
@@ -107,7 +122,7 @@
         "/(^|/)\\.github/workflows/[^/]+\\.ya?ml$/"
       ],
       "matchStrings": [
-        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n\\s+[A-Z0-9_]+:\\s*(?<currentValue>[^\\s]+)"
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n\\s+[A-Z0-9_]+:\\s*(?:\"|')?(?<currentValue>[^\\s\"']+)(?:\"|')?"
       ]
     },
     {
@@ -117,7 +132,7 @@
         "/(^|/)[^/]+\\.go$/"
       ],
       "matchStrings": [
-        "//\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\n\\s+\\w+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+        "//\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n\\s+\\w+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
       ]
     },
     {
@@ -127,7 +142,7 @@
         "/(^|/)[^/]+\\.py$/"
       ],
       "matchStrings": [
-        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)\\n[A-Z0-9_]+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n\\s*\\w+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
       ]
     },
     {
@@ -164,6 +179,16 @@
       ],
       "depNameTemplate": "mypy-protobuf",
       "datasourceTemplate": "pypi"
+    },
+    {
+      "description": "Track annotated buf remote plugin pins in buf.gen.yaml (Go codegen plugins)",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)buf\\.gen\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>[^\\s]+)\\s+depName=(?<depName>[^\\s]+)(?:\\s+extractVersion=(?<extractVersion>[^\\s]+))?\\n\\s*-\\s*remote:\\s*buf\\.build/[^:\\s]+:(?<currentValue>[^\\s]+)"
+      ]
     }
   ],
   "packageRules": [
@@ -396,6 +421,69 @@
         "protocolbuffers/protobuf",
         "mypy-protobuf"
       ]
+    },
+    {
+      "description": "Group buf remote Go codegen plugins (protobuf-go, protoc-gen-go-grpc, grpc-gateway)",
+      "groupName": "buf-go-plugins",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "protocolbuffers/protobuf-go",
+        "grpc/grpc-go",
+        "grpc-ecosystem/grpc-gateway"
+      ]
+    },
+    {
+      "description": "Group FLS references (Containerfile ARG + flashers CLI default)",
+      "groupName": "fls",
+      "matchDepNames": [
+        "jumpstarter-dev/fls"
+      ]
+    },
+    {
+      "description": "Group compat-test targets (latest released controller tag + published PyPI client)",
+      "groupName": "compat-test-targets",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "jumpstarter-dev/jumpstarter",
+        "jumpstarter"
+      ]
+    },
+    {
+      "description": "OVMF prebuilt releases use edk2-stableYYYYMM[.NN]-rN tags",
+      "matchDepNames": [
+        "rust-osdev/ovmf-prebuilt"
+      ],
+      "versioning": "regex:^edk2-stable(?<major>\\d+)(?:\\.(?<minor>\\d+))?-r(?<patch>\\d+)$"
+    },
+    {
+      "description": "ingress-nginx deploy manifests are tagged controller-vX.Y.Z",
+      "matchDepNames": [
+        "kubernetes/ingress-nginx"
+      ],
+      "versioning": "regex:^controller-v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$"
+    },
+    {
+      "description": "Dex helm chart lives in the dexidp chart repository",
+      "matchDatasources": [
+        "helm"
+      ],
+      "matchDepNames": [
+        "dex"
+      ],
+      "registryUrls": [
+        "https://charts.dexidp.io"
+      ]
+    },
+    {
+      "description": "Fedora Cloud qcow2 versions sort as MAJOR-BUILD (e.g. 43-1.6)",
+      "matchDatasources": [
+        "custom.fedora-cloud-qcow2"
+      ],
+      "versioning": "regex:^(?<major>\\d+)-(?<minor>\\d+)\\.(?<patch>\\d+)$"
     }
   ]
 }

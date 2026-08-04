@@ -13,6 +13,7 @@ get_script_dir() {
 export KIND=${KIND:-bin/kind}
 export GRPCURL=${GRPCURL:-bin/grpcurl}
 export NETWORKING_MODE=${NETWORKING_MODE:-nodeport}
+# renovate: datasource=github-releases depName=cert-manager/cert-manager
 export CERTMANAGER_VERSION=${CERTMANAGER_VERSION:-v1.19.2}
 export CLUSTER_TYPE=${CLUSTER_TYPE:-kind}
 export K3S_KUBECONFIG=${K3S_KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}
@@ -148,6 +149,7 @@ kind_load_image() {
 
 # Install nginx ingress in kind cluster
 # This function deploys nginx ingress and waits for it to be ready
+# renovate: datasource=github-releases depName=kubernetes/ingress-nginx
 NGINX_INGRESS_VERSION=${NGINX_INGRESS_VERSION:-controller-v1.12.1}
 
 install_nginx_ingress() {

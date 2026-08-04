@@ -8,13 +8,16 @@ managed:
     - file_option: go_package_prefix
       value: github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol
 plugins:
-  - remote: buf.build/protocolbuffers/go
+  # renovate: datasource=github-releases depName=protocolbuffers/protobuf-go
+  - remote: buf.build/protocolbuffers/go:v1.36.11
     out: internal/protocol
     opt: paths=source_relative
-  - remote: buf.build/grpc/go
+  # renovate: datasource=github-tags depName=grpc/grpc-go extractVersion=^cmd/protoc-gen-go-grpc/(?<version>v.+)$
+  - remote: buf.build/grpc/go:v1.6.2
     out: internal/protocol
     opt: paths=source_relative
-  - remote: buf.build/grpc-ecosystem/gateway
+  # renovate: datasource=github-releases depName=grpc-ecosystem/grpc-gateway
+  - remote: buf.build/grpc-ecosystem/gateway:v2.29.0
     out: internal/protocol
     opt: paths=source_relative
 inputs:

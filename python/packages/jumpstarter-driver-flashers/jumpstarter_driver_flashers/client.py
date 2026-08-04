@@ -1537,6 +1537,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         @click.option(
             "--fls-version",
             type=str,
+            # renovate: datasource=github-releases depName=jumpstarter-dev/fls
             default="0.3.0",
             help="Download an specific fls version from the github releases",
         )

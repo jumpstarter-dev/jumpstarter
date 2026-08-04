@@ -26,7 +26,9 @@ export JS_NAMESPACE="${JS_NAMESPACE:-jumpstarter-lab}"
 
 # Scenario configuration
 COMPAT_SCENARIO="${COMPAT_SCENARIO:-old-controller}"
+# renovate: datasource=github-releases depName=jumpstarter-dev/jumpstarter
 COMPAT_CONTROLLER_TAG="${COMPAT_CONTROLLER_TAG:-v0.8.1}"
+# renovate: datasource=pypi depName=jumpstarter
 COMPAT_CLIENT_VERSION="${COMPAT_CLIENT_VERSION:-0.7.4}"
 
 # Color output
