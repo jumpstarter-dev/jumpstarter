@@ -68,9 +68,10 @@ var _ = Describe("Exit On Lease End E2E Tests", Label("exit-on-lease-end"), Orde
 			tracker.DumpLogs(250)
 			DumpControllerLogs(250)
 		}
-		// Stop any running exporter between tests
+		// Stop any running exporter and wait for the controller to fully
+		// process the disconnection before the next test starts a new one.
 		tracker.StopAll()
-		time.Sleep(time.Second)
+		WaitForExporterOffline("test-exporter-exit-on-lease-end")
 	})
 
 	It("exporter exits after serving one lease", func() {
