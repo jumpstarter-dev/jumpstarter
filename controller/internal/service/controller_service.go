@@ -55,6 +55,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -1035,10 +1036,55 @@ func (s *ControllerService) RequestLease(
 	}, nil
 }
 
+func (s *ControllerService) releaseLeaseAsExporter(
+	ctx context.Context,
+	exporter *jumpstarterdevv1alpha1.Exporter,
+	req *pb.ReleaseLeaseRequest,
+) (*pb.ReleaseLeaseResponse, error) {
+	var lease jumpstarterdevv1alpha1.Lease
+	if err := s.Client.Get(ctx, types.NamespacedName{
+		Namespace: exporter.Namespace,
+		Name:      req.Name,
+	}, &lease); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, status.Errorf(codes.NotFound, "lease %s not found", req.Name)
+		}
+		return nil, status.Errorf(codes.Internal, "failed to get lease: %s", err)
+	}
+
+	if lease.Status.ExporterRef == nil || lease.Status.ExporterRef.Name != exporter.Name {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"lease %s is not held by exporter %s", req.Name, exporter.Name)
+	}
+
+	// Idempotent: already ended or marked for release
+	if lease.Status.Ended || lease.Spec.Release {
+		return &pb.ReleaseLeaseResponse{}, nil
+	}
+
+	original := client.MergeFrom(lease.DeepCopy())
+	lease.Spec.Release = true
+
+	if err := s.Client.Patch(ctx, &lease, original); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to mark lease for release: %s", err)
+	}
+
+	return &pb.ReleaseLeaseResponse{}, nil
+}
+
 func (s *ControllerService) ReleaseLease(
 	ctx context.Context,
 	req *pb.ReleaseLeaseRequest,
 ) (*pb.ReleaseLeaseResponse, error) {
+	// Route based on jumpstarter-kind metadata to avoid spurious auth failures
+	if auth.NewAuth(s.Client, s.Authn, s.Authz, s.Attr).IsExporter(ctx) {
+		exporter, err := s.authenticateExporter(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return s.releaseLeaseAsExporter(ctx, exporter, req)
+	}
+
 	jclient, err := s.authenticateClient(ctx)
 	if err != nil {
 		return nil, err
@@ -1054,6 +1100,11 @@ func (s *ControllerService) ReleaseLease(
 
 	if lease.Spec.ClientRef.Name != jclient.Name {
 		return nil, fmt.Errorf("ReleaseLease permission denied")
+	}
+
+	// Idempotent: already ended or marked for release
+	if lease.Status.Ended || lease.Spec.Release {
+		return &pb.ReleaseLeaseResponse{}, nil
 	}
 
 	original := client.MergeFrom(lease.DeepCopy())
