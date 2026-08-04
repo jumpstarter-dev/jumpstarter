@@ -65,13 +65,13 @@ jobs:
           fetch-depth: 0
 
       - name: Install Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: .go-version
 
       - name: Cache controller image
         id: cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/controller-image.tar
           key: controller-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Containerfile', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/**', 'controller/api/**', 'controller/internal/**') }}
@@ -104,13 +104,13 @@ jobs:
           fetch-depth: 0
 
       - name: Install Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: .go-version
 
       - name: Cache operator artifacts
         id: cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             /tmp/operator-image.tar
@@ -148,13 +148,13 @@ jobs:
           fetch-depth: 0
 
       - name: Install Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: .go-version
 
       - name: Cache exporterset-controller image
         id: cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/exporterset-controller-image.tar
           key: exporterset-controller-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Containerfile.exporter-set-controller', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/exporter-set-controller/**', 'controller/api/**', 'controller/internal/**') }}
@@ -193,7 +193,7 @@ jobs:
 
       - name: Cache python wheels
         id: cache
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: python/dist
           key: python-wheels-${{ hashFiles('python/**/*.py', 'python/**/pyproject.toml', 'python/uv.lock') }}
@@ -234,7 +234,7 @@ jobs:
           python-version-file: .py-version
 
       - name: Install Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: .go-version
 
@@ -298,7 +298,7 @@ jobs:
           python-version-file: .py-version
 
       - name: Install Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: .go-version
 
@@ -340,7 +340,7 @@ jobs:
           python-version-file: .py-version
 
       - name: Install Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: .go-version
 
