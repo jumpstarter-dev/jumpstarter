@@ -67,9 +67,16 @@ class TestLabelSatisfiesExpressionUnknownOperator:
         with pytest.raises(ValueError, match="unknown label selector operator"):
             _label_satisfies_expression({"key": "val"}, "key", "", ["val"])
 
+    def test_raises_when_key_absent(self):
+        with pytest.raises(ValueError, match="unknown label selector operator"):
+            _label_satisfies_expression({}, "key", "bogus", ["val"])
+
+    def test_empty_string_operator_raises_when_key_absent(self):
+        with pytest.raises(ValueError, match="unknown label selector operator"):
+            _label_satisfies_expression({"other": "val"}, "key", "", ["val"])
+
 
 class TestSelectorContains:
-
     def test_exact_match_labels(self):
         assert selector_contains("board=rpi", "board=rpi") is True
 

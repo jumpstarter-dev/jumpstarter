@@ -72,12 +72,10 @@ def _label_satisfies_expression(sel_labels: dict[str, str], key: str, operator: 
         return key not in sel_labels
     if operator in ("notin", "!="):
         return key not in sel_labels or sel_labels[key] not in values
-    if key not in sel_labels:
-        return False
     if operator == "in":
-        return sel_labels[key] in values
+        return key in sel_labels and sel_labels[key] in values
     if operator == "exists":
-        return True
+        return key in sel_labels
     raise ValueError(f"unknown label selector operator: {operator!r}")
 
 
@@ -87,6 +85,9 @@ def selector_contains(selector: str, requirements: str) -> bool:
     Returns True if all matchLabels in `requirements` are present in `selector`
     and all matchExpressions in `requirements` are satisfied by `selector`
     (either by exact match in matchExpressions or by evaluation against matchLabels).
+
+    Raises ValueError if `requirements` contains an expression with an unknown
+    operator that is not exactly matched by the selector's matchExpressions.
     """
     if not requirements or not requirements.strip():
         return True
