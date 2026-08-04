@@ -253,7 +253,11 @@ openshift_load_image() {
 
   echo -e "${GREEN}Pushing ${image} to OpenShift internal registry as ${internal_ref} ...${NC}" >&2
 
-  podman login -u kubeadmin -p "$(oc whoami -t)" --tls-verify=false "${registry_host}" > /dev/null
+  local xtrace_on=0
+  [[ $- == *x* ]] && xtrace_on=1
+  set +x 2>/dev/null
+  oc whoami -t | podman login -u kubeadmin --password-stdin --tls-verify=false "${registry_host}" > /dev/null
+  [[ $xtrace_on -eq 1 ]] && set -x
   "${CONTAINER_TOOL:-podman}" tag "${image}" "${external_ref}"
   if ! "${CONTAINER_TOOL:-podman}" push --tls-verify=false "${external_ref}" > /dev/null; then
     echo "Error pushing ${image} to OpenShift internal registry." >&2
