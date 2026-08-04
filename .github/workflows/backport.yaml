@@ -29,6 +29,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
           token: ${{ steps.app-token.outputs.token }}
+          allow-unsafe-pr-checkout: true
 
       - name: Create backport PRs
         uses: korthout/backport-action@2e830a1d0b8269505846ddd407a70876913ad1f8 # v4.6.0
