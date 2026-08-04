@@ -424,8 +424,14 @@ class LeaseList(BaseModel):
             try:
                 if selector_contains(lease.selector, filter_selector):
                     filtered.append(lease)
-            except ValueError:
-                logger.warning("skipping lease %s: unable to evaluate selector %r", lease.name, lease.selector)
+            except ValueError as error:
+                logger.warning(
+                    "skipping lease %s: cannot evaluate filter %r against selector %r: %s",
+                    lease.name,
+                    filter_selector,
+                    lease.selector,
+                    error,
+                )
         return LeaseList(leases=filtered, next_page_token=None)
 
     def filter_by_client(self, client_name: str) -> LeaseList:

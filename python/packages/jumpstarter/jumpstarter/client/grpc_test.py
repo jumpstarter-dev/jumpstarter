@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, timedelta
 from io import StringIO
 from unittest.mock import AsyncMock, Mock, patch
@@ -681,6 +682,18 @@ class TestLeaseListFilterBySelector:
         ):
             result = leases.filter_by_selector("board=rpi")
         assert [lease.name for lease in result.leases] == ["good"]
+
+    def test_filter_warning_names_lease_filter_and_error(self, caplog):
+        leases = LeaseList(leases=[self.create_lease(name="bad", selector="board=jetson")], next_page_token=None)
+        with patch(
+            "jumpstarter.client.grpc.selector_contains",
+            side_effect=ValueError("unknown label selector operator: 'bogus'"),
+        ):
+            with caplog.at_level(logging.WARNING, logger="jumpstarter.client.grpc"):
+                leases.filter_by_selector("board in rpi")
+        assert "bad" in caplog.text
+        assert "board in rpi" in caplog.text
+        assert "unknown label selector operator: 'bogus'" in caplog.text
 
 
 @pytest.mark.asyncio
