@@ -10,14 +10,23 @@ get_script_dir() {
 }
 
 # Environment variable defaults
+export CLUSTER_TYPE=${CLUSTER_TYPE:-kind}
 export KIND=${KIND:-bin/kind}
 export GRPCURL=${GRPCURL:-bin/grpcurl}
-export NETWORKING_MODE=${NETWORKING_MODE:-nodeport}
+# OpenShift has no NodePort-friendly local port mapping, so Routes are the natural default there.
+if [ "${CLUSTER_TYPE}" = "openshift" ]; then
+  export NETWORKING_MODE=${NETWORKING_MODE:-route}
+else
+  export NETWORKING_MODE=${NETWORKING_MODE:-nodeport}
+fi
 export CERTMANAGER_VERSION=${CERTMANAGER_VERSION:-v1.19.2}
-export CLUSTER_TYPE=${CLUSTER_TYPE:-kind}
 export K3S_KUBECONFIG=${K3S_KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}
+# Namespace used to host locally-built images pushed to the OpenShift internal
+# registry when CLUSTER_TYPE=openshift (see openshift_load_image).
+export OPENSHIFT_IMAGE_NAMESPACE=${OPENSHIFT_IMAGE_NAMESPACE:-jumpstarter-lab}
 
 # Color codes for terminal output
+export RED='\033[0;31m'
 export GREEN='\033[0;32m'
 export NC='\033[0m' # No Color
 
@@ -36,12 +45,21 @@ get_external_ip() {
 # Validate CLUSTER_TYPE and exit if unknown
 _require_valid_cluster_type() {
   case "${CLUSTER_TYPE}" in
-    kind|k3s) ;;
+    kind|k3s|openshift) ;;
     *)
-      echo "Unknown CLUSTER_TYPE=${CLUSTER_TYPE}. Use 'kind' or 'k3s'"
+      echo "Unknown CLUSTER_TYPE=${CLUSTER_TYPE}. Use 'kind', 'k3s', or 'openshift'"
       exit 1
       ;;
   esac
+}
+
+# Print instructions for logging into an existing OpenShift/CRC cluster.
+_print_openshift_login_help() {
+  echo -e "${RED}No active OpenShift context found.${NC}"
+  echo "For CLUSTER_TYPE=openshift, log in to your cluster first, e.g. for CRC:"
+  echo "  eval \$(crc oc-env)"
+  echo "  oc login -u kubeadmin -p \$(crc console --credentials -o json | jq -r .clusterConfig.password) \\"
+  echo "    \$(crc console --credentials -o json | jq -r .clusterConfig.url)"
 }
 
 set_kubectl_context() {
@@ -60,18 +78,35 @@ set_kubectl_context() {
       export KUBECONFIG="${user_kubeconfig}"
       echo -e "${GREEN}Using k3s kubeconfig (copied to ${user_kubeconfig})${NC}"
       ;;
+    openshift)
+      # CLUSTER_TYPE=openshift does not manage login/context (context names vary
+      # per cluster/login flow); it just uses whatever context is already active.
+      if ! kubectl cluster-info > /dev/null 2>&1; then
+        _print_openshift_login_help
+        exit 1
+      fi
+      echo -e "${GREEN}Using existing OpenShift context: $(kubectl config current-context)${NC}"
+      ;;
   esac
 }
 
+# Loads a locally built image into the target cluster and updates LOADED_IMAGE
+# with the image reference that should actually be used to deploy it (this
+# only differs from the input for CLUSTER_TYPE=openshift, see
+# openshift_load_image).
 load_image() {
   _require_valid_cluster_type
   local image=$1
+  LOADED_IMAGE="${image}"
   case "${CLUSTER_TYPE}" in
     kind)
       kind_load_image "${image}"
       ;;
     k3s)
       echo -e "${GREEN}k3s pulls images directly from registries, skipping load for ${image}${NC}"
+      ;;
+    openshift)
+      LOADED_IMAGE=$(openshift_load_image "${image}")
       ;;
   esac
 }
@@ -96,6 +131,15 @@ create_cluster() {
       echo -e "${GREEN}Waiting for k3s node to be ready...${NC}"
       kubectl wait --for=condition=ready node --all --timeout=120s
       ;;
+    openshift)
+      # CLUSTER_TYPE=openshift does not manage cluster lifecycle (bring your own
+      # OpenShift/CRC cluster and log in before running); just verify we're connected.
+      if ! kubectl cluster-info > /dev/null 2>&1; then
+        _print_openshift_login_help
+        exit 1
+      fi
+      echo -e "${GREEN}Using existing OpenShift cluster: $(kubectl config current-context)${NC}"
+      ;;
   esac
 }
 
@@ -112,6 +156,9 @@ delete_cluster() {
       else
         echo -e "${GREEN}k3s uninstall script not found, skipping${NC}"
       fi
+      ;;
+    openshift)
+      echo -e "${GREEN}CLUSTER_TYPE=openshift does not manage cluster lifecycle, skipping delete (use 'crc stop'/'crc delete' if using CRC)${NC}"
       ;;
   esac
 }
@@ -144,6 +191,76 @@ kind_load_image() {
     echo "Error loading image ${image}."
     exit 1
   fi
+}
+
+# Get the hostname of the OpenShift internal image registry's default route,
+# exposing the route if it isn't already. The result is cached in
+# _OPENSHIFT_REGISTRY_HOST for the rest of the script's run.
+openshift_registry_host() {
+  if [ -z "${_OPENSHIFT_REGISTRY_HOST:-}" ]; then
+    kubectl patch configs.imageregistry.operator.openshift.io/cluster \
+      --type=merge -p '{"spec":{"defaultRoute":true}}' > /dev/null
+
+    echo -e "${GREEN} * Waiting for the OpenShift image registry route ...${NC}" >&2
+    local timeout=60
+    _OPENSHIFT_REGISTRY_HOST=""
+    while [ -z "${_OPENSHIFT_REGISTRY_HOST}" ]; do
+      _OPENSHIFT_REGISTRY_HOST=$(kubectl get route default-route -n openshift-image-registry -o jsonpath='{.spec.host}' 2>/dev/null || true)
+      if [ -n "${_OPENSHIFT_REGISTRY_HOST}" ]; then
+        break
+      fi
+      sleep 2
+      timeout=$((timeout - 2))
+      if [ ${timeout} -le 0 ]; then
+        echo "Timed out waiting for the OpenShift image registry default route" >&2
+        exit 1
+      fi
+    done
+  fi
+  echo "${_OPENSHIFT_REGISTRY_HOST}"
+}
+
+# Load a locally built image into an OpenShift cluster by pushing it to the
+# cluster's internal image registry (there is no local-load mechanism like
+# kind's, and CRC's podman socket does not share storage with CRI-O). Prints
+# the in-cluster pull spec (image-registry.openshift-image-registry.svc:5000/...)
+# that manifests should use instead of the original registry/tag.
+# Requires the `oc` CLI and a container tool (${CONTAINER_TOOL:-podman}) logged
+# in locally with the image already present.
+openshift_load_image() {
+  local image=$1
+  local name tag registry_host external_ref internal_ref
+
+  if ! command -v oc &> /dev/null; then
+    echo -e "${RED}The 'oc' CLI is required for CLUSTER_TYPE=openshift image loading${NC}" >&2
+    exit 1
+  fi
+
+  kubectl create namespace "${OPENSHIFT_IMAGE_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - > /dev/null
+  # Allow every service account in the cluster to pull from this namespace,
+  # since the operator and Jumpstarter components run in different namespaces.
+  oc policy add-role-to-group system:image-puller system:serviceaccounts \
+    --namespace="${OPENSHIFT_IMAGE_NAMESPACE}" > /dev/null 2>&1 || true
+
+  registry_host=$(openshift_registry_host)
+
+  name=$(basename "${image%%:*}")
+  tag="${image##*:}"
+  [ "${tag}" = "${image}" ] && tag="latest"
+
+  external_ref="${registry_host}/${OPENSHIFT_IMAGE_NAMESPACE}/${name}:${tag}"
+  internal_ref="image-registry.openshift-image-registry.svc:5000/${OPENSHIFT_IMAGE_NAMESPACE}/${name}:${tag}"
+
+  echo -e "${GREEN}Pushing ${image} to OpenShift internal registry as ${internal_ref} ...${NC}" >&2
+
+  podman login -u kubeadmin -p "$(oc whoami -t)" --tls-verify=false "${registry_host}" > /dev/null
+  "${CONTAINER_TOOL:-podman}" tag "${image}" "${external_ref}"
+  if ! "${CONTAINER_TOOL:-podman}" push --tls-verify=false "${external_ref}" > /dev/null; then
+    echo "Error pushing ${image} to OpenShift internal registry." >&2
+    exit 1
+  fi
+
+  echo "${internal_ref}"
 }
 
 # Install nginx ingress in kind cluster

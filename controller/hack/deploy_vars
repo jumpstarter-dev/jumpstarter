@@ -2,9 +2,20 @@
 # Common deployment variables for Jumpstarter hack scripts
 # This file should be sourced after utils
 
-# Calculate external IP and networking configuration
-IP=${IP:-$(get_external_ip)}
-BASEDOMAIN=${BASEDOMAIN:-"jumpstarter.${IP}.nip.io"}
+# Calculate BASEDOMAIN. OpenShift clusters have their own routable wildcard
+# domain (e.g. apps-crc.testing), so we detect it instead of using a nip.io
+# domain derived from the local outbound IP.
+if [ -z "${BASEDOMAIN:-}" ] && [ "${CLUSTER_TYPE}" == "openshift" ]; then
+    OPENSHIFT_CLUSTER_DOMAIN=$(kubectl get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}' 2>/dev/null || true)
+    if [ -z "${OPENSHIFT_CLUSTER_DOMAIN}" ]; then
+        echo "Could not auto-detect the OpenShift cluster domain (ingresses.config.openshift.io/cluster). Set BASEDOMAIN explicitly."
+        exit 1
+    fi
+    BASEDOMAIN="jumpstarter.${OPENSHIFT_CLUSTER_DOMAIN}"
+else
+    IP=${IP:-$(get_external_ip)}
+    BASEDOMAIN=${BASEDOMAIN:-"jumpstarter.${IP}.nip.io"}
+fi
 IMG=${IMG:-quay.io/jumpstarter-dev/jumpstarter-controller:latest}
 OPERATOR_IMG=${OPERATOR_IMG:-$(make -C deploy/operator --no-print-directory -s print-img 2>/dev/null || echo "quay.io/jumpstarter-dev/jumpstarter-operator:latest")}
 EXPORTER_SET_CONTROLLER_IMG=${EXPORTER_SET_CONTROLLER_IMG:-quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest}
@@ -13,6 +24,11 @@ EXPORTER_SET_CONTROLLER_IMG=${EXPORTER_SET_CONTROLLER_IMG:-quay.io/jumpstarter-d
 if [ "${NETWORKING_MODE}" == "ingress" ]; then
     GRPC_ENDPOINT="grpc.${BASEDOMAIN}:5443"
     GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:5443"
+    LOGIN_ENDPOINT="login.${BASEDOMAIN}"
+elif [ "${NETWORKING_MODE}" == "route" ]; then
+    # OpenShift Routes always terminate on the router's standard HTTPS port (443)
+    GRPC_ENDPOINT="grpc.${BASEDOMAIN}:443"
+    GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:443"
     LOGIN_ENDPOINT="login.${BASEDOMAIN}"
 elif [ "${CLUSTER_TYPE}" == "k3s" ]; then
     # k3s exposes NodePorts directly on the host, no port mapping needed

@@ -33,7 +33,8 @@ endif
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= podman
 
-# Cluster type: kind (default) or k3s
+# Cluster type: kind (default), k3s, or openshift (bring your own logged-in
+# OpenShift/CRC cluster)
 CLUSTER_TYPE ?= kind
 export CLUSTER_TYPE
 
@@ -308,9 +309,12 @@ cluster:
 else ifeq ($(CLUSTER_TYPE),kind)
 cluster: $(KIND)
 	$(KIND) get clusters | grep jumpstarter || $(KIND) create cluster --name jumpstarter --config hack/kind_cluster.yaml
+else ifeq ($(CLUSTER_TYPE),openshift)
+cluster:
+	@source hack/utils && create_cluster
 else
 cluster:
-	$(error Unknown CLUSTER_TYPE=$(CLUSTER_TYPE). Use 'kind' or 'k3s')
+	$(error Unknown CLUSTER_TYPE=$(CLUSTER_TYPE). Use 'kind', 'k3s', or 'openshift')
 endif
 
 ifeq ($(CLUSTER_TYPE),k3s)
@@ -319,9 +323,12 @@ clean:
 else ifeq ($(CLUSTER_TYPE),kind)
 clean: $(KIND)
 	$(KIND) delete cluster --name jumpstarter
+else ifeq ($(CLUSTER_TYPE),openshift)
+clean:
+	@source hack/utils && delete_cluster
 else
 clean:
-	$(error Unknown CLUSTER_TYPE=$(CLUSTER_TYPE). Use 'kind' or 'k3s')
+	$(error Unknown CLUSTER_TYPE=$(CLUSTER_TYPE). Use 'kind', 'k3s', or 'openshift')
 endif
 
 
