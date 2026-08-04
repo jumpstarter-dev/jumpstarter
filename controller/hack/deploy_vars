@@ -5,16 +5,18 @@
 # Calculate BASEDOMAIN. OpenShift clusters have their own routable wildcard
 # domain (e.g. apps-crc.testing), so we detect it instead of using a nip.io
 # domain derived from the local outbound IP.
-if [ -z "${BASEDOMAIN:-}" ] && [ "${CLUSTER_TYPE}" == "openshift" ]; then
-    OPENSHIFT_CLUSTER_DOMAIN=$(kubectl get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}' 2>/dev/null || true)
-    if [ -z "${OPENSHIFT_CLUSTER_DOMAIN}" ]; then
-        echo "Could not auto-detect the OpenShift cluster domain (ingresses.config.openshift.io/cluster). Set BASEDOMAIN explicitly."
-        exit 1
+if [ -z "${BASEDOMAIN:-}" ]; then
+    if [ "${CLUSTER_TYPE}" == "openshift" ]; then
+        OPENSHIFT_CLUSTER_DOMAIN=$(kubectl get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}' 2>/dev/null || true)
+        if [ -z "${OPENSHIFT_CLUSTER_DOMAIN}" ]; then
+            echo "Could not auto-detect the OpenShift cluster domain (ingresses.config.openshift.io/cluster). Set BASEDOMAIN explicitly."
+            exit 1
+        fi
+        BASEDOMAIN="jumpstarter.${OPENSHIFT_CLUSTER_DOMAIN}"
+    else
+        IP=${IP:-$(get_external_ip)}
+        BASEDOMAIN="jumpstarter.${IP}.nip.io"
     fi
-    BASEDOMAIN="jumpstarter.${OPENSHIFT_CLUSTER_DOMAIN}"
-else
-    IP=${IP:-$(get_external_ip)}
-    BASEDOMAIN=${BASEDOMAIN:-"jumpstarter.${IP}.nip.io"}
 fi
 IMG=${IMG:-quay.io/jumpstarter-dev/jumpstarter-controller:latest}
 OPERATOR_IMG=${OPERATOR_IMG:-$(make -C deploy/operator --no-print-directory -s print-img 2>/dev/null || echo "quay.io/jumpstarter-dev/jumpstarter-operator:latest")}
