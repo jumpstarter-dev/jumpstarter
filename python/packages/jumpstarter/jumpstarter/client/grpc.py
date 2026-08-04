@@ -377,9 +377,13 @@ class ExporterList(BaseModel):
         if not self.include_disabled:
             exclude_fields.add("enabled")
 
+        caller_exclude = kwargs.pop("exclude", None)
+        if caller_exclude:
+            exclude_fields |= set(caller_exclude)
+
         return {
             "exporters": [
-                self._dump_exporter(exporter, exclude_fields)
+                self._dump_exporter(exporter, exclude_fields, **kwargs)
                 for exporter in self._visible_exporters()
             ]
         }
