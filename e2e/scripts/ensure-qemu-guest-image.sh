@@ -41,6 +41,8 @@ fi
 
 echo "Downloading Alpine guest image from ${ALPINE_IMAGE_URL}" >&2
 tmp="${DEST}.partial"
+trap 'rm -f "${tmp}"' EXIT
 curl -fL --retry 3 --retry-delay 2 -o "${tmp}" "${ALPINE_IMAGE_URL}"
 mv "${tmp}" "${DEST}"
+trap - EXIT
 echo "${DEST}"

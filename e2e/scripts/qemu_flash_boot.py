@@ -88,13 +88,11 @@ def main() -> int:
                 idx = p.expect(markers + [pexpect.TIMEOUT, pexpect.EOF], timeout=args.timeout)
                 if idx >= len(markers):
                     print("FAILED: timed out / EOF waiting for Alpine boot marker", flush=True)
-                    try:
-                        qemu.power.off()
-                    except Exception as exc:  # noqa: BLE001 - best-effort cleanup
-                        print(f"power off after failure also failed: {exc}", flush=True)
                     return 1
                 print(f"OK: matched marker {markers[idx]!r}", flush=True)
         finally:
+            # Always power off (success and failure). Failures here propagate so
+            # a broken success-path power.off is not silently ignored.
             print("power off...", flush=True)
             qemu.power.off()
 

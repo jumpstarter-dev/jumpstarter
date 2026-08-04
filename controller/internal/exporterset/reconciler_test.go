@@ -669,6 +669,60 @@ func TestReconcile_exitAndReplace_keepsLeasedTerminalExporter(t *testing.T) {
 	}
 }
 
+func TestReconcile_inPlaceReuse_keepsFailedUnleasedExporter(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 0
+		es.Spec.MaxReplicas = 1
+		es.Spec.MinAvailableReplicas = 1
+		es.Spec.RecycleStrategy = virtualtargetv1alpha1.RecycleStrategyInPlaceReuse
+	})
+
+	r, c := newReconciler(t,
+		es, makeVTC(),
+		makeExporter("exp-oom", false, false, true),
+		makePod("exp-oom", corev1.PodFailed),
+	)
+
+	reconcileOnce(t, r)
+
+	exporters := listExporters(t, c)
+	if len(exporters) != 1 {
+		t.Fatalf("expected InPlaceReuse Failed exporter kept, got %d", len(exporters))
+	}
+}
+
+func TestReconcile_exitAndReplace_keepsExporterWithNoPods(t *testing.T) {
+	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
+		es.Spec.MinReplicas = 0
+		es.Spec.MaxReplicas = 1
+		es.Spec.MinAvailableReplicas = 1
+		es.Spec.RecycleStrategy = virtualtargetv1alpha1.RecycleStrategyExitAndReplace
+	})
+
+	// Fresh exporter awaiting Pod creation must not be deleted: allPodsTerminal
+	// returns false for an empty pod slice.
+	r, c := newReconciler(t,
+		es, makeVTC(),
+		makeExporter("exp-new", false, false, true),
+	)
+
+	reconcileOnce(t, r)
+
+	exporters := listExporters(t, c)
+	if len(exporters) != 1 {
+		t.Fatalf("expected exporter with no pods kept, got %d", len(exporters))
+	}
+}
+
+func TestAllPodsTerminal_emptyReturnsFalse(t *testing.T) {
+	if allPodsTerminal(nil) {
+		t.Fatal("allPodsTerminal(nil) = true, want false")
+	}
+	if allPodsTerminal([]corev1.Pod{}) {
+		t.Fatal("allPodsTerminal([]) = true, want false")
+	}
+}
+
 func TestReconcile_exitAndReplace_maxReplicasRefillsAfterDelete(t *testing.T) {
 	caCM := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{

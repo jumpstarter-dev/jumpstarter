@@ -204,6 +204,12 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// Single Pod List shared by terminal cleanup and ensureExporterPods.
+	podsByExporter, err := r.listPodsGroupedByExporter(ctx, &exporterSet)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Clean up drained (disabled+unleased) exporters and ExitAndReplace
 	// terminal pods (Succeeded/Failed) before computing pool state.
 	if deleted, err := r.cleanupDisabledExporters(ctx, &exporterSet, ownedExporters); err != nil {
@@ -221,7 +227,7 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
-	if deleted, err := r.cleanupTerminalExporters(ctx, &exporterSet, ownedExporters); err != nil {
+	if deleted, err := r.cleanupTerminalExporters(ctx, &exporterSet, ownedExporters, podsByExporter); err != nil {
 		return ctrl.Result{}, err
 	} else if deleted {
 		if err := r.reconcileStatusCounts(ctx, &exporterSet); err != nil {
@@ -261,7 +267,7 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Phase 2: create config Secrets + Pods for Exporters that now have credentials.
 	// Returns true when some Exporters are still waiting; we requeue to retry
 	// rather than relying solely on the Owns(&Exporter{}) watch event.
-	waiting, ensureErr := r.ensureExporterPods(ctx, &exporterSet, &vtc, mergedParameters, ownedExporters)
+	waiting, ensureErr := r.ensureExporterPods(ctx, &exporterSet, &vtc, mergedParameters, ownedExporters, podsByExporter)
 	if ensureErr != nil {
 		return ctrl.Result{}, ensureErr
 	}
@@ -367,12 +373,14 @@ func (r *ExporterSetReconciler) ensureExporterPods(
 	vtc *virtualtargetv1alpha1.VirtualTargetClass,
 	mergedParameters map[string]interface{},
 	ownedExporters []jumpstarterdevv1alpha1.Exporter,
+	podsByExporter map[string][]corev1.Pod,
 ) (waiting bool, err error) {
 	logger := log.FromContext(ctx)
 
-	podsByExporter, err := r.listPodsByExporter(ctx, es)
-	if err != nil {
-		return false, err
+	// Existence set derived from the shared Reconcile Pod list (no second List).
+	exportersWithPod := make(map[string]struct{}, len(podsByExporter))
+	for name := range podsByExporter {
+		exportersWithPod[name] = struct{}{}
 	}
 
 	// CA bundle is read lazily — only when at least one exporter needs it.
@@ -405,7 +413,7 @@ func (r *ExporterSetReconciler) ensureExporterPods(
 			return waiting, err
 		}
 
-		if _, hasPod := podsByExporter[exp.Name]; hasPod {
+		if _, hasPod := exportersWithPod[exp.Name]; hasPod {
 			continue
 		}
 
@@ -582,23 +590,6 @@ func (r *ExporterSetReconciler) listPodsGroupedByExporter(
 	return byExporter, nil
 }
 
-// listPodsByExporter returns the set of Exporter names that already have a Pod.
-// Derived from listPodsGroupedByExporter so reconcile does not List twice.
-func (r *ExporterSetReconciler) listPodsByExporter(
-	ctx context.Context,
-	es *virtualtargetv1alpha1.ExporterSet,
-) (map[string]struct{}, error) {
-	grouped, err := r.listPodsGroupedByExporter(ctx, es)
-	if err != nil {
-		return nil, err
-	}
-	byExporter := make(map[string]struct{}, len(grouped))
-	for name := range grouped {
-		byExporter[name] = struct{}{}
-	}
-	return byExporter, nil
-}
-
 // injectConfigVolume adds the config Secret as a volume and mounts it in the
 // "exporter" init-container. Returns false if that container isn't found.
 func injectConfigVolume(pod *corev1.Pod, exporterName string) bool {
@@ -701,17 +692,21 @@ func (r *ExporterSetReconciler) cleanupDisabledExporters(
 // Exporter (cascading the Pod) so scale-up can refill minAvailableReplicas.
 // Without this, Offline/Succeeded instances inflate replicas, block warm-buffer
 // refill at maxReplicas, and leave Completed Pods behind.
+//
+// InPlaceReuse skips this path: a Failed/Succeeded Pod must not permanently
+// delete the Exporter CR (lease-end reuse keeps the instance).
+// podsByExporter comes from a single List in Reconcile.
 func (r *ExporterSetReconciler) cleanupTerminalExporters(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
 	exporters []jumpstarterdevv1alpha1.Exporter,
+	podsByExporter map[string][]corev1.Pod,
 ) (bool, error) {
-	logger := log.FromContext(ctx)
-
-	podsByExporter, err := r.listPodsGroupedByExporter(ctx, es)
-	if err != nil {
-		return false, err
+	if es.Spec.RecycleStrategy == virtualtargetv1alpha1.RecycleStrategyInPlaceReuse {
+		return false, nil
 	}
+
+	logger := log.FromContext(ctx)
 
 	deleted := false
 	for i := range exporters {

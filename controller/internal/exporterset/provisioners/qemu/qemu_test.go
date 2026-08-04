@@ -112,8 +112,8 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 		t.Errorf("copy-jumpstarter-exec RestartPolicy = %v, want nil (one-shot init)", copyInit.RestartPolicy)
 	}
 	runtimeInit := pod.Spec.InitContainers[1]
-	if runtimeInit.Name != "target-runtime" {
-		t.Errorf("InitContainers[1].Name = %q, want target-runtime", runtimeInit.Name)
+	if runtimeInit.Name != runtimeContainerName {
+		t.Errorf("InitContainers[1].Name = %q, want %s", runtimeInit.Name, runtimeContainerName)
 	}
 	if runtimeInit.RestartPolicy == nil || *runtimeInit.RestartPolicy != corev1.ContainerRestartPolicyAlways {
 		t.Errorf("target-runtime RestartPolicy = %v, want Always", runtimeInit.RestartPolicy)
@@ -136,6 +136,19 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 	if pod.Spec.RestartPolicy != corev1.RestartPolicyNever {
 		t.Errorf("RestartPolicy = %q, want Never (ExitAndReplace)", pod.Spec.RestartPolicy)
 	}
+
+	assertSharedMount := func(name string, mounts []corev1.VolumeMount) {
+		t.Helper()
+		for _, m := range mounts {
+			if m.Name == sharedVolumeName && m.MountPath == sharedMountPath {
+				return
+			}
+		}
+		t.Errorf("%s missing VolumeMount %s -> %s; got %#v", name, sharedVolumeName, sharedMountPath, mounts)
+	}
+	assertSharedMount("copy-jumpstarter-exec", copyInit.VolumeMounts)
+	assertSharedMount(runtimeContainerName, runtimeInit.VolumeMounts)
+	assertSharedMount("exporter", exporter.VolumeMounts)
 }
 
 func TestRenderPod_clonesSchedulingFromVTC(t *testing.T) {

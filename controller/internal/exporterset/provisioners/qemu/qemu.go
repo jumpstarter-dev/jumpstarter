@@ -57,6 +57,10 @@ const (
 	// container cannot exhaust node ephemeral storage.
 	sharedVolumeSizeLimit = "100Mi"
 
+	// runtimeContainerName is the native sidecar that runs jumpstarter-exec /
+	// QEMU. Kept as a const so scheduling and RenderPod stay in sync.
+	runtimeContainerName = "target-runtime"
+
 	// jmpExecBinaryPath is the location of jumpstarter-exec inside
 	// the exporter image (installed by the Rust builder stage).
 	jmpExecBinaryPath = "/jumpstarter/bin/jumpstarter-exec"
@@ -230,7 +234,7 @@ func (p *Provisioner) RenderPod(
 					// automatically when the exporter (main) container exits.
 					// Runs as root so QEMU can use KVM devices and read
 					// exporter-owned paths on the shared volume.
-					Name:            "target-runtime",
+					Name:            runtimeContainerName,
 					Image:           runtimeImage,
 					ImagePullPolicy: runtimePullPolicy,
 					RestartPolicy:   &restartAlways,
@@ -299,7 +303,7 @@ func (p *Provisioner) RenderPod(
 		if vtc.Spec.Scheduling.Resources != nil {
 			// CPU/memory belong on the runtime sidecar (where QEMU runs).
 			for i := range pod.Spec.InitContainers {
-				if pod.Spec.InitContainers[i].Name == "target-runtime" {
+				if pod.Spec.InitContainers[i].Name == runtimeContainerName {
 					pod.Spec.InitContainers[i].Resources = *vtc.Spec.Scheduling.Resources.DeepCopy()
 					break
 				}
