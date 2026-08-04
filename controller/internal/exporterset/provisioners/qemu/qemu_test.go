@@ -65,6 +65,13 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 		t.Fatalf("RenderPod() error = %v", err)
 	}
 
+	assertRenderPodMetadata(t, pod, exporterSet)
+	assertRenderPodSharedVolume(t, pod)
+	assertRenderPodContainers(t, pod)
+}
+
+func assertRenderPodMetadata(t *testing.T, pod *corev1.Pod, exporterSet *virtualtargetv1alpha1.ExporterSet) {
+	t.Helper()
 	if pod.GenerateName != "demo-set-" {
 		t.Errorf("GenerateName = %q, want %q", pod.GenerateName, "demo-set-")
 	}
@@ -87,7 +94,10 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 	if got := exporterSet.Spec.Template.Metadata.Annotations["example.com/owner"]; got != "team-a" {
 		t.Errorf("ExporterSet annotations mutated: got %q", got)
 	}
+}
 
+func assertRenderPodSharedVolume(t *testing.T, pod *corev1.Pod) {
+	t.Helper()
 	// Only shared volume — config volume is injected by the reconciler.
 	if len(pod.Spec.Volumes) != 1 {
 		t.Fatalf("expected 1 volume (shared), got %d", len(pod.Spec.Volumes))
@@ -100,7 +110,10 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 		!pod.Spec.Volumes[0].EmptyDir.SizeLimit.Equal(wantLimit) {
 		t.Errorf("SizeLimit = %v, want %v", pod.Spec.Volumes[0].EmptyDir.SizeLimit, wantLimit)
 	}
+}
 
+func assertRenderPodContainers(t *testing.T, pod *corev1.Pod) {
+	t.Helper()
 	if len(pod.Spec.InitContainers) != 2 {
 		t.Fatalf("unexpected init containers: %#v", pod.Spec.InitContainers)
 	}
@@ -137,18 +150,19 @@ func TestRenderPod_copiesMetadataAndAppliesDefaults(t *testing.T) {
 		t.Errorf("RestartPolicy = %q, want Never (ExitAndReplace)", pod.Spec.RestartPolicy)
 	}
 
-	assertSharedMount := func(name string, mounts []corev1.VolumeMount) {
-		t.Helper()
-		for _, m := range mounts {
-			if m.Name == sharedVolumeName && m.MountPath == sharedMountPath {
-				return
-			}
+	assertSharedMount(t, "copy-jumpstarter-exec", copyInit.VolumeMounts)
+	assertSharedMount(t, runtimeContainerName, runtimeInit.VolumeMounts)
+	assertSharedMount(t, "exporter", exporter.VolumeMounts)
+}
+
+func assertSharedMount(t *testing.T, name string, mounts []corev1.VolumeMount) {
+	t.Helper()
+	for _, m := range mounts {
+		if m.Name == sharedVolumeName && m.MountPath == sharedMountPath {
+			return
 		}
-		t.Errorf("%s missing VolumeMount %s -> %s; got %#v", name, sharedVolumeName, sharedMountPath, mounts)
 	}
-	assertSharedMount("copy-jumpstarter-exec", copyInit.VolumeMounts)
-	assertSharedMount(runtimeContainerName, runtimeInit.VolumeMounts)
-	assertSharedMount("exporter", exporter.VolumeMounts)
+	t.Errorf("%s missing VolumeMount %s -> %s; got %#v", name, sharedVolumeName, sharedMountPath, mounts)
 }
 
 func TestRenderPod_clonesSchedulingFromVTC(t *testing.T) {
