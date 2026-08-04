@@ -31,7 +31,7 @@ RUN ARCH=$(uname -m) && \
 
 # Build the jumpstarter-exec Rust binary for the sidecar remote-exec bridge.
 # Uses UBI 10 + rust-toolset for Red Hat-supported toolchain and glibc compatibility.
-FROM registry.access.redhat.com/ubi10/ubi:latest@sha256:9ae6ff53ac9fd3f06558278019d7eec370cbef59a413599b6e81bc39f65184c5 AS rust-builder
+FROM registry.access.redhat.com/ubi10/ubi:latest@sha256:aad065f8857f86a136994c648ecc714f8cb59c96bf25ae54320e59e155dfca09 AS rust-builder
 # GIT_VERSION is already passed as a build-arg by CI (see build-images.yaml)
 # for hatch-vcs; forward it into the Rust build so jumpstarter-exec's
 # build.rs can embed the same version (see rust/jumpstarter-exec/build.rs).
