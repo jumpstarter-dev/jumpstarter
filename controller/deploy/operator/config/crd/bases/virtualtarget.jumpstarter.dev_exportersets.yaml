@@ -216,19 +216,37 @@ spec:
                           properties:
                             config:
                               description: Config holds driver-specific configuration.
+                              type: object
                               x-kubernetes-preserve-unknown-fields: true
                             name:
+                              description: Name is the key used in the ExporterConfig
+                                export map.
+                              type: string
+                            ref:
                               description: |-
-                                Name is the key used in the ExporterConfig export map.
-                                If omitted, derived from the Type (last segment after the last dot).
+                                Ref is a dot-separated path referencing a nested child driver
+                                to surface at the root level. Mutually exclusive with Type.
+                                Segments must be non-empty (no leading/trailing/consecutive dots).
+                              pattern: ^[^.]+([.][^.]+)*$
                               type: string
                             type:
-                              description: Type is the fully qualified Python driver
-                                class name.
+                              description: |-
+                                Type is the fully qualified Python driver class name.
+                                Mutually exclusive with Ref.
+                              minLength: 1
                               type: string
                           required:
-                          - type
+                          - name
                           type: object
+                          x-kubernetes-validations:
+                          - message: either type or ref must be set
+                            rule: has(self.type) || has(self.ref)
+                          - message: type and ref are mutually exclusive
+                            rule: '!(has(self.type) && has(self.ref))'
+                          - message: ref entries must not have config
+                            rule: '!has(self.ref) || !has(self.config)'
+                          - message: name is required
+                            rule: has(self.name) && size(self.name) > 0
                         type: array
                     type: object
                 type: object

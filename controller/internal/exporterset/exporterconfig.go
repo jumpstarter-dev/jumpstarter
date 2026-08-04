@@ -74,7 +74,8 @@ type exporterConfigTLS struct {
 }
 
 type exporterConfigDriver struct {
-	Type     string                          `json:"type"`
+	Type     string                          `json:"type,omitempty"`
+	Ref      string                          `json:"ref,omitempty"`
 	Config   interface{}                     `json:"config,omitempty"`
 	Children map[string]exporterConfigDriver `json:"children,omitempty"`
 }
@@ -155,6 +156,13 @@ func buildExportMap(drivers []virtualtargetv1alpha1.DriverConfig) (map[string]ex
 
 		if _, exists := exportMap[name]; exists {
 			return nil, fmt.Errorf("duplicate driver key %q in ExporterSet drivers", name)
+		}
+
+		if d.Ref != "" {
+			exportMap[name] = exporterConfigDriver{
+				Ref: d.Ref,
+			}
+			continue
 		}
 
 		var config interface{}
