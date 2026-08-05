@@ -8,14 +8,17 @@ USE_CERTMANAGER=${USE_CERTMANAGER:-true}
 # Source common utilities
 source "${SCRIPT_DIR}/utils"
 
-# Source common deployment variables
-source "${SCRIPT_DIR}/deploy_vars"
-
 set_kubectl_context
+
+# Source common deployment variables (depends on kubectl being ready, e.g. to
+# auto-detect the OpenShift cluster domain)
+source "${SCRIPT_DIR}/deploy_vars"
 
 # Install nginx ingress if in ingress mode
 if [ "${NETWORKING_MODE}" = "ingress" ]; then
     install_nginx_ingress
+elif [ "${NETWORKING_MODE}" = "route" ]; then
+    echo -e "${GREEN}Deploying with OpenShift Routes ...${NC}"
 else
     echo -e "${GREEN}Deploying with nodeport ...${NC}"
 fi
@@ -29,14 +32,30 @@ if [ "${USE_CERTMANAGER}" = "true" ]; then
     fi
 fi
 
-# load the container images into the cluster
+# Load the container images into the cluster. For CLUSTER_TYPE=openshift this
+# also rewrites IMG/OPERATOR_IMG/EXPORTER_SET_CONTROLLER_IMG to the pushed
+# internal-registry pull spec, since the originals aren't reachable from the cluster.
 load_image "${IMG}"
+IMG="${LOADED_IMAGE}"
 load_image "${OPERATOR_IMG}"
+OPERATOR_IMG="${LOADED_IMAGE}"
 load_image "${EXPORTER_SET_CONTROLLER_IMG}"
+EXPORTER_SET_CONTROLLER_IMG="${LOADED_IMAGE}"
+
+# Recompute the repo/tag split now that IMG may have been rewritten above
+IMAGE_TAG="${IMG##*:}"
+IMAGE_REPO="${IMG%:*}"
 
 # Deploy the operator
 echo -e "${GREEN}Deploying Jumpstarter operator ...${NC}"
 kubectl apply -f deploy/operator/dist/install.yaml
+
+# On OpenShift, install.yaml bakes in the original (unreachable) operator image
+# reference, so point the deployment at the one we actually pushed.
+if [ "${CLUSTER_TYPE}" = "openshift" ]; then
+  kubectl set image deployment/jumpstarter-operator-controller-manager \
+    manager="${OPERATOR_IMG}" -n jumpstarter-operator-system
+fi
 
 # If operator deployment already exists, restart it to pick up the new image
 if kubectl get deployment jumpstarter-operator-controller-manager -n jumpstarter-operator-system > /dev/null 2>&1; then
@@ -90,6 +109,29 @@ END
           ingress:
             enabled: true
             class: "nginx"
+END
+)
+elif [ "${NETWORKING_MODE}" == "route" ]; then
+  # OpenShift Routes always listen on the router's standard HTTPS port (443),
+  # so no custom port can be specified in the address.
+  CONTROLLER_ENDPOINT_CONFIG=$(cat <<-END
+        - address: grpc.${BASEDOMAIN}
+          route:
+            enabled: true
+END
+)
+  ROUTER_ENDPOINT_CONFIG=$(cat <<-END
+        - address: router.${BASEDOMAIN}
+          route:
+            enabled: true
+END
+)
+  LOGIN_ENDPOINT_CONFIG=$(cat <<-END
+    login:
+      endpoints:
+        - address: login.${BASEDOMAIN}
+          route:
+            enabled: true
 END
 )
 else
