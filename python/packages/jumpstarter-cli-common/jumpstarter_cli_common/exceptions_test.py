@@ -262,3 +262,64 @@ def test_reauth_retry_bounded_to_one_attempt() -> None:
 
     # Original call + exactly one retry = 2 total.
     assert call_count == 2
+
+
+class _MockGrpcError(Exception):
+    def __init__(self, code_name: str, details: str):
+        super().__init__(details)
+        self._code_name = code_name
+        self._details = details
+
+    def code(self):
+        return type("Code", (), {"name": self._code_name})()
+
+    def details(self):
+        return self._details
+
+
+_WRAPPED_CONSOLE_IN_USE = (
+    "Unexpected <class 'jumpstarter.streams.fanout.ExclusiveSessionActive'>: "
+    "Console in use. Use --observe or release-console."
+)
+
+
+def test_handle_exceptions_maps_exclusive_session_active() -> None:
+    from jumpstarter.streams.fanout import ExclusiveSessionActive
+
+    @handle_exceptions
+    def fn():
+        raise ExclusiveSessionActive()
+
+    with pytest.raises(click.ClickException, match="Console in use") as exc_info:
+        fn()
+    assert "Unexpected" not in str(exc_info.value)
+
+
+def test_handle_exceptions_maps_wrapped_console_in_use_grpc_error() -> None:
+    from anyio import BrokenResourceError
+
+    @handle_exceptions
+    def fn():
+        raise BrokenResourceError from _MockGrpcError("UNKNOWN", _WRAPPED_CONSOLE_IN_USE)
+
+    with pytest.raises(click.ClickException, match="Console in use") as exc_info:
+        fn()
+    assert "Unexpected" not in str(exc_info.value)
+
+
+@pytest.mark.anyio
+async def test_async_handle_exceptions_maps_console_in_use_in_exception_group() -> None:
+    from anyio import BrokenResourceError
+
+    @async_handle_exceptions
+    async def fn():
+        try:
+            raise _MockGrpcError("UNKNOWN", _WRAPPED_CONSOLE_IN_USE)
+        except _MockGrpcError as grpc_exc:
+            wrapped = BrokenResourceError()
+            wrapped.__cause__ = grpc_exc
+            raise ExceptionGroup("unhandled errors in a TaskGroup", [wrapped]) from None
+
+    with pytest.raises(click.ClickException, match="Console in use") as exc_info:
+        await fn()
+    assert "Unexpected" not in str(exc_info.value)

@@ -1,9 +1,6 @@
 import inspect
 from unittest.mock import Mock, patch
 
-import click
-import pytest
-
 from jumpstarter_cli.share import share_add, share_list, share_remove
 
 
@@ -43,45 +40,26 @@ def test_share_remove_calls_update_lease():
 
 def test_share_list_shows_shared_clients(capsys):
     lease_entry = Mock()
-    lease_entry.name = "my-lease"
     lease_entry.shared_with = ["alice", "bob"]
 
-    leases_result = Mock()
-    leases_result.leases = [lease_entry]
-
     config = Mock()
-    config.list_leases.return_value = leases_result
+    config.get_lease.return_value = lease_entry
 
     inspect.unwrap(share_list.callback)(config=config, lease="my-lease")
 
-    config.list_leases.assert_called_once_with(only_active=True)
+    config.get_lease.assert_called_once_with("my-lease")
     captured = capsys.readouterr()
     assert "my-lease" in captured.out
     assert "alice" in captured.out
     assert "bob" in captured.out
 
 
-def test_share_list_not_found():
-    leases_result = Mock()
-    leases_result.leases = []
-
-    config = Mock()
-    config.list_leases.return_value = leases_result
-
-    with pytest.raises(click.ClickException, match="not found"):
-        inspect.unwrap(share_list.callback)(config=config, lease="no-such-lease")
-
-
 def test_share_list_not_shared(capsys):
     lease_entry = Mock()
-    lease_entry.name = "my-lease"
     lease_entry.shared_with = []
 
-    leases_result = Mock()
-    leases_result.leases = [lease_entry]
-
     config = Mock()
-    config.list_leases.return_value = leases_result
+    config.get_lease.return_value = lease_entry
 
     inspect.unwrap(share_list.callback)(config=config, lease="my-lease")
 

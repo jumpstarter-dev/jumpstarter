@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import anyio
+import pytest
 from anyio import create_memory_object_stream
 from anyio.streams.stapled import StapledObjectStream
 
@@ -17,6 +18,32 @@ def test_bare_pyserial():
         with client.stream() as stream:
             stream.send(b"hello")
             assert "hello".startswith(stream.receive().decode("utf-8"))
+
+
+def test_second_exclusive_connect_surfaces_console_in_use():
+    """A second exclusive stream should fail with a clean 'console in use' error."""
+    with serve(PySerial(url="loop://")) as client:
+        with client.stream() as _held:
+            with pytest.raises(Exception) as exc_info:
+                with client.stream() as stream:
+                    stream.receive()
+
+    combined = []
+    cause = exc_info.value
+    seen: set[int] = set()
+    while cause is not None and id(cause) not in seen:
+        seen.add(id(cause))
+        combined.append(str(cause))
+        details = getattr(cause, "details", None)
+        if callable(details):
+            combined.append(str(details()))
+        next_cause = cause.__cause__
+        if next_cause is None and not getattr(cause, "__suppress_context__", False):
+            next_cause = cause.__context__
+        cause = next_cause
+    text = "\n".join(combined)
+    assert "Console in use" in text
+    assert "Unexpected <class" not in text
 
 
 def test_bare_open_pyserial():
@@ -259,6 +286,9 @@ def test_close_closes_transport(monkeypatch):
             data = await stream.receive()
             assert data == b"test-data"
 
+        # With always_on fan-out, transport stays open after connect() exits.
+        # It's cleaned up when the fan-out shuts down (last client detaches or close()).
+        await driver._get_fanout().close()
         assert driver._transport is None
 
     anyio.run(_run)
