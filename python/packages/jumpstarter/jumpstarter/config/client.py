@@ -281,6 +281,12 @@ class ClientConfigV1Alpha1(BaseSettings):
 
     @_blocking_compat
     @_handle_connection_error
+    async def get_lease(self, name: str):
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace)
+        return await svc.GetLease(name=name)
+
+    @_blocking_compat
+    @_handle_connection_error
     async def delete_lease(
         self,
         name: str,
