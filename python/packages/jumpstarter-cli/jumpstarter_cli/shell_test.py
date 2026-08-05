@@ -1339,3 +1339,76 @@ class TestRetryLoopLeaseExpired:
 
         assert exit_code == 0
         assert state["call_count"] == 3
+
+
+class TestRetryLoopUserInterrupt:
+    """SIGINT must exit, not reacquire, even if Dial surfaces as Unreachable."""
+
+    def _config_with_lease(self, lease):
+        config = _DummyConfig()
+
+        @asynccontextmanager
+        async def lease_async(
+            selector, exporter_name, lease_name, duration, portal,
+            acquisition_timeout, retry_timeout=None, dial_timeout=None, **kwargs,
+        ):
+            yield lease
+
+        config.lease_async = lease_async
+        return config
+
+    def _lease(self):
+        lease = Mock()
+        lease.release = True
+        lease.name = "test-lease"
+        lease.exporter_name = "test-exporter"
+        lease.retry_timeout = 10.0
+        lease.lease_ended = False
+        lease.lease_transferred = False
+        return lease
+
+    async def test_does_not_retry_when_cancel_scope_already_cancelled(self):
+        lease = self._lease()
+        config = self._config_with_lease(lease)
+        state = {"call_count": 0}
+
+        async def fake_run(*args):
+            state["call_count"] += 1
+            cancel_scope = args[4]
+            cancel_scope.cancel()
+            raise ExporterUnreachableError("dial cancelled")
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run),
+        ):
+            exit_code = await _shell_with_signal_handling(
+                config, None, None, None, timedelta(minutes=1), False, (), None
+            )
+
+        assert exit_code == 2
+        assert state["call_count"] == 1
+
+    async def test_does_not_retry_when_unreachable_is_mixed_with_cancellation(self):
+        lease = self._lease()
+        config = self._config_with_lease(lease)
+        state = {"call_count": 0}
+        cancelled_exc_class = anyio.get_cancelled_exc_class()
+
+        async def fake_run(*_):
+            state["call_count"] += 1
+            raise BaseExceptionGroup(
+                "task group",
+                [ExporterUnreachableError("dial cancelled"), cancelled_exc_class()],
+            )
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run),
+        ):
+            exit_code = await _shell_with_signal_handling(
+                config, None, None, None, timedelta(minutes=1), False, (), None
+            )
+
+        assert exit_code == 2
+        assert state["call_count"] == 1

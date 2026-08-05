@@ -69,15 +69,7 @@ def share_list(config, lease: str):
     \b
         $ jmp share list my-lease
     """
-    leases = config.list_leases(only_active=True)
-    target = None
-    for l in leases.leases:
-        if l.name == lease:
-            target = l
-            break
-
-    if target is None:
-        raise click.ClickException(f"Lease {lease!r} not found")
+    target = config.get_lease(lease)
 
     if not target.shared_with:
         click.echo(f"Lease {lease} is not shared with anyone.")
