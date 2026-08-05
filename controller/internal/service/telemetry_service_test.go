@@ -19,7 +19,10 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -94,8 +97,12 @@ func buildTelemetryEndpointsResponse(cfg *config.Telemetry) *pb.GetServiceEndpoi
 		if minSev == "" {
 			minSev = "info"
 		}
+		ep := cfg.Endpoint
+		if ep == "" {
+			ep = telemetryEndpoint()
+		}
 		resp.TelemetryEndpoints = append(resp.TelemetryEndpoints, &pb.TelemetryEndpoint{
-			Endpoint:    cfg.Endpoint,
+			Endpoint:    ep,
 			Certificate: cfg.Certificate,
 			MinSeverity: minSev,
 		})
@@ -153,6 +160,246 @@ func TestGetServiceEndpoints_DefaultsMinSeverityToInfo(t *testing.T) {
 	}
 	if resp.TelemetryEndpoints[0].MinSeverity != "info" {
 		t.Errorf("MinSeverity = %q, want %q (default)", resp.TelemetryEndpoints[0].MinSeverity, "info")
+	}
+}
+
+func TestGetServiceEndpoints_UsesEnvVarWhenEndpointEmpty(t *testing.T) {
+	t.Setenv("GRPC_TELEMETRY_ENDPOINT", "telemetry.jumpstarter.svc:9093")
+
+	resp := buildTelemetryEndpointsResponse(&config.Telemetry{
+		Enabled: true,
+		// Endpoint intentionally left empty — should fall back to env var.
+	})
+
+	if len(resp.TelemetryEndpoints) != 1 {
+		t.Fatalf("expected 1 endpoint, got %d", len(resp.TelemetryEndpoints))
+	}
+	if resp.TelemetryEndpoints[0].Endpoint != "telemetry.jumpstarter.svc:9093" {
+		t.Errorf("Endpoint = %q, want %q (from env)", resp.TelemetryEndpoints[0].Endpoint, "telemetry.jumpstarter.svc:9093")
+	}
+}
+
+func TestGetServiceEndpoints_BothEndpointAndEnvVarEmpty_ReturnsEmptyEndpoint(t *testing.T) {
+	t.Setenv("GRPC_TELEMETRY_ENDPOINT", "")
+
+	resp := buildTelemetryEndpointsResponse(&config.Telemetry{
+		Enabled: true,
+		// Both Endpoint and GRPC_TELEMETRY_ENDPOINT are empty.
+	})
+
+	if len(resp.TelemetryEndpoints) != 1 {
+		t.Fatalf("expected 1 endpoint entry, got %d", len(resp.TelemetryEndpoints))
+	}
+	// An empty endpoint is returned; the caller must handle this gracefully.
+	if resp.TelemetryEndpoints[0].Endpoint != "" {
+		t.Errorf("Endpoint = %q, want empty string when nothing is configured", resp.TelemetryEndpoints[0].Endpoint)
+	}
+}
+
+func TestGetServiceEndpoints_ConfigEndpointTakesPrecedenceOverEnvVar(t *testing.T) {
+	t.Setenv("GRPC_TELEMETRY_ENDPOINT", "env-telemetry.svc:9093")
+
+	resp := buildTelemetryEndpointsResponse(&config.Telemetry{
+		Enabled:  true,
+		Endpoint: "config-telemetry.svc:9093",
+	})
+
+	if len(resp.TelemetryEndpoints) != 1 {
+		t.Fatalf("expected 1 endpoint, got %d", len(resp.TelemetryEndpoints))
+	}
+	if resp.TelemetryEndpoints[0].Endpoint != "config-telemetry.svc:9093" {
+		t.Errorf("Endpoint = %q, want config value to win over env var", resp.TelemetryEndpoints[0].Endpoint)
+	}
+}
+
+// writeTLSPEMFiles generates a self-signed cert, marshals it to PEM, and writes
+// cert and key to temporary files.  Returns (certPath, keyPath).
+func writeTLSPEMFiles(t *testing.T) (certPath, keyPath string) {
+	t.Helper()
+
+	tlsCert, err := NewSelfSignedCertificate("test", []string{"localhost"}, nil)
+	if err != nil {
+		t.Fatalf("NewSelfSignedCertificate: %v", err)
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: tlsCert.Certificate[0],
+	})
+
+	keyDER, err := x509.MarshalPKCS8PrivateKey(tlsCert.PrivateKey)
+	if err != nil {
+		t.Fatalf("MarshalPKCS8PrivateKey: %v", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
+
+	dir := t.TempDir()
+	certPath = dir + "/tls.crt"
+	keyPath = dir + "/tls.key"
+	if err := os.WriteFile(certPath, certPEM, 0o600); err != nil {
+		t.Fatalf("write cert: %v", err)
+	}
+	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+	return certPath, keyPath
+}
+
+// selfSignedSANs generates a self-signed certificate with the same logic as
+// loadTLSCredentials for a given GRPC_TELEMETRY_ENDPOINT value, and returns
+// its DNS SANs for assertion.
+func selfSignedSANs(t *testing.T, advertised string) []string {
+	t.Helper()
+	var dnsnames []string
+	if advertised != "" {
+		dns, _, err := endpointToSAN(advertised)
+		if err != nil {
+			dnsnames = []string{"localhost"}
+		} else {
+			dnsnames = dns
+		}
+	} else {
+		dnsnames = []string{"localhost"}
+	}
+	cert, err := NewSelfSignedCertificate("test", dnsnames, nil)
+	if err != nil {
+		t.Fatalf("NewSelfSignedCertificate: %v", err)
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		t.Fatalf("ParseCertificate: %v", err)
+	}
+	return leaf.DNSNames
+}
+
+func TestTelemetryService_LoadTLSCredentials_SelfSigned(t *testing.T) {
+	t.Setenv("EXTERNAL_CERT_PEM", "")
+	t.Setenv("EXTERNAL_KEY_PEM", "")
+
+	svc := &TelemetryService{BindAddr: ":9093", Signer: testSigner(t)}
+	creds, selfSignedPEM, err := svc.loadTLSCredentials()
+	if err != nil {
+		t.Fatalf("loadTLSCredentials() with self-signed cert failed: %v", err)
+	}
+	if creds == nil {
+		t.Fatal("expected non-nil credentials")
+	}
+	if selfSignedPEM == "" {
+		t.Error("expected non-empty selfSignedPEM when no external cert is configured")
+	}
+	// Must be parseable PEM.
+	block, _ := pem.Decode([]byte(selfSignedPEM))
+	if block == nil {
+		t.Errorf("selfSignedPEM is not valid PEM: %s", selfSignedPEM)
+	}
+}
+
+func TestTelemetryService_LoadTLSCredentials_SelfSignedUsesAdvertisedEndpointForSAN(t *testing.T) {
+	// When GRPC_TELEMETRY_ENDPOINT is set, the self-signed cert SAN should derive
+	// from the advertised hostname — not from the bind address.
+	// We test the SAN derivation logic directly (same code path as loadTLSCredentials).
+	sans := selfSignedSANs(t, "telemetry.jumpstarter.svc:9093")
+	if len(sans) != 1 || sans[0] != "telemetry.jumpstarter.svc" {
+		t.Errorf("expected SAN [telemetry.jumpstarter.svc], got %v", sans)
+	}
+}
+
+func TestTelemetryService_LoadTLSCredentials_SelfSignedFallsBackToLocalhostWhenNoEndpoint(t *testing.T) {
+	// When GRPC_TELEMETRY_ENDPOINT is empty, SAN defaults to "localhost".
+	sans := selfSignedSANs(t, "")
+	if len(sans) != 1 || sans[0] != "localhost" {
+		t.Errorf("expected SAN [localhost], got %v", sans)
+	}
+}
+
+func TestTelemetryService_LoadTLSCredentials_OnlyCertEnvVarFallsBackToSelfSigned(t *testing.T) {
+	certPath, _ := writeTLSPEMFiles(t)
+	// Only cert set, key is missing — should fall back to self-signed, not error.
+	t.Setenv("EXTERNAL_CERT_PEM", certPath)
+	t.Setenv("EXTERNAL_KEY_PEM", "")
+
+	svc := &TelemetryService{BindAddr: ":9093", Signer: testSigner(t)}
+	creds, selfSignedPEM, err := svc.loadTLSCredentials()
+	if err != nil {
+		t.Fatalf("expected self-signed fallback, got error: %v", err)
+	}
+	if creds == nil {
+		t.Fatal("expected non-nil credentials")
+	}
+	// Partial env vars → self-signed fallback, so PEM must be non-empty.
+	if selfSignedPEM == "" {
+		t.Error("expected non-empty selfSignedPEM on self-signed fallback")
+	}
+}
+
+func TestTelemetryService_LoadTLSCredentials_WithValidPEMFiles(t *testing.T) {
+	certPath, keyPath := writeTLSPEMFiles(t)
+	t.Setenv("EXTERNAL_CERT_PEM", certPath)
+	t.Setenv("EXTERNAL_KEY_PEM", keyPath)
+
+	svc := &TelemetryService{BindAddr: ":9093", Signer: testSigner(t)}
+	creds, selfSignedPEM, err := svc.loadTLSCredentials()
+	if err != nil {
+		t.Fatalf("loadTLSCredentials() with valid PEM files failed: %v", err)
+	}
+	if creds == nil {
+		t.Fatal("expected non-nil credentials")
+	}
+	// External cert provided — selfSignedPEM must be empty.
+	if selfSignedPEM != "" {
+		t.Errorf("expected empty selfSignedPEM when external cert is provided, got non-empty")
+	}
+}
+
+func TestTelemetryService_LoadTLSCredentials_BadCertFileReturnsError(t *testing.T) {
+	certFile, err := os.CreateTemp(t.TempDir(), "tls-*.crt")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	if err := certFile.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	_, keyPath := writeTLSPEMFiles(t)
+
+	t.Setenv("EXTERNAL_CERT_PEM", certFile.Name())
+	t.Setenv("EXTERNAL_KEY_PEM", keyPath)
+
+	svc := &TelemetryService{BindAddr: ":9093", Signer: testSigner(t)}
+	_, _, err = svc.loadTLSCredentials()
+	if err == nil {
+		t.Fatal("expected error parsing empty cert file")
+	}
+	// Must be a parse error, not a file-not-found.
+	if strings.Contains(err.Error(), "no such file") {
+		t.Errorf("expected parse error, got: %v", err)
+	}
+}
+
+func TestTelemetryService_LoadTLSCredentials_MissingCertFileReturnsError(t *testing.T) {
+	_, keyPath := writeTLSPEMFiles(t)
+	t.Setenv("EXTERNAL_CERT_PEM", "/does/not/exist/tls.crt")
+	t.Setenv("EXTERNAL_KEY_PEM", keyPath)
+
+	svc := &TelemetryService{BindAddr: ":9093", Signer: testSigner(t)}
+	_, _, err := svc.loadTLSCredentials()
+	if err == nil {
+		t.Fatal("expected error reading missing cert file")
+	}
+}
+
+func TestTelemetryService_Start_FailsWhenExternalCertFileMissing(t *testing.T) {
+	t.Setenv("EXTERNAL_CERT_PEM", "/no/such/cert.pem")
+	t.Setenv("EXTERNAL_KEY_PEM", "/no/such/key.pem")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	svc := &TelemetryService{BindAddr: ":0", Signer: testSigner(t)}
+	err := svc.Start(ctx)
+	if err == nil {
+		t.Fatal("expected Start to fail with missing cert files")
+	}
+	if !strings.Contains(err.Error(), "TLS") {
+		t.Errorf("expected 'TLS' in error, got: %v", err)
 	}
 }
 

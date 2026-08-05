@@ -21,6 +21,10 @@ func routerEndpoint() string {
 	return ep
 }
 
+func telemetryEndpoint() string {
+	return os.Getenv("GRPC_TELEMETRY_ENDPOINT")
+}
+
 func endpointToSAN(endpoint string) ([]string, []net.IP, error) {
 	host, _, err := net.SplitHostPort(endpoint)
 	if err != nil {

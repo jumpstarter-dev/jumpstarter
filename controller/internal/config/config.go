@@ -127,12 +127,6 @@ func LoadConfiguration(
 		if err := config.Telemetry.Validate(); err != nil {
 			return nil, err
 		}
-		// Auto-derive the gRPC address when the operator has not overridden it.
-		// The well-known service name follows the same pattern as the controller
-		// and router: <service>.<namespace>.svc (in-cluster DNS).
-		if config.Telemetry.Endpoint == "" {
-			config.Telemetry.Endpoint = "jumpstarter-telemetry." + key.Namespace + ":9093"
-		}
 		telemetry = config.Telemetry
 	}
 

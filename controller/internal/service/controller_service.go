@@ -327,8 +327,11 @@ func (s *ControllerService) GetServiceEndpoints(
 	resp := &pb.GetServiceEndpointsResponse{}
 
 	if s.TelemetryConfig != nil && s.TelemetryConfig.Enabled {
+		// Prefer the explicit ConfigMap endpoint; fall back to GRPC_TELEMETRY_ENDPOINT
+		// so the operator can pass the address via env var without touching the ConfigMap.
+		ep := cmp.Or(s.TelemetryConfig.Endpoint, telemetryEndpoint())
 		resp.TelemetryEndpoints = append(resp.TelemetryEndpoints, &pb.TelemetryEndpoint{
-			Endpoint:    s.TelemetryConfig.Endpoint,
+			Endpoint:    ep,
 			Certificate: s.TelemetryConfig.Certificate,
 			MinSeverity: cmp.Or(s.TelemetryConfig.Logging.Filter.MinSeverity, "info"),
 		})
