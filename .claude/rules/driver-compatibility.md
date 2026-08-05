@@ -1,0 +1,1 @@
+../../.cursor/rules/driver-compatibility.mdc

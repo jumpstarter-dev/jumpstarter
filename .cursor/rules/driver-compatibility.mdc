@@ -1,0 +1,81 @@
+---
+description: when modifying driver client classes, exported RPC methods, client() class paths, or migrating drivers away from opendal
+alwaysApply: false
+---
+# Driver Client/Exporter Compatibility
+
+Exporters and clients are released and upgraded independently. A lab may run an
+older exporter for months while clients update weekly, or vice versa. Any change
+to a driver must keep both directions working: old client ↔ new exporter and
+new client ↔ old exporter.
+
+## How client classes are resolved (the critical invariant)
+
+The exporter reports the string returned by the driver's `client()` classmethod
+(e.g. `"jumpstarter_driver_qemu.client.QemuFlasherClient"`). The client imports
+that class dynamically **from its own environment**.
+
+- **NEVER change the string returned by `client()` for a released driver.**
+  If an old client receives a class path that does not exist in its installed
+  packages, it fails with `ImportError` when leasing the exporter. This breakage
+  is invisible to unit tests — it only appears with mixed versions in the field.
+- When moving an interface ABC between packages (e.g. opendal → core), check
+  every driver that inherits from it: drivers that explicitly override
+  `client()` (qemu, esp32, pi-pico, probe-rs) are safe; drivers relying on the
+  ABC's default `client()` would silently start reporting a new string.
+- New drivers should always explicitly override `client()` with a path in their
+  own package, so future refactors of shared base classes cannot change what
+  they report.
+
+## Wire protocol surfaces that must stay stable
+
+- **RPC method names and argument shapes** used via `self.call(...)` and
+  `self.streamingcall(...)` (e.g. `call("flash", handle, target)`). Changes must
+  be additive; the driver side must keep accepting the old call shape.
+- **Resource handle types**: `ClientStreamResource` (streamed from client) and
+  `PresignedRequestResource` (GET and PUT), handled by `Driver.resource()` in
+  `python/packages/jumpstarter/jumpstarter/driver/base.py`. Do not add new
+  resource types without confirming old exporters reject them gracefully.
+
+## Client-side Python API changes
+
+Public client methods (e.g. `flash()`, `dump()`) are user-facing API consumed
+by user scripts and the `j` CLI inside `jmp shell`:
+
+- Prefer deprecating a parameter (warn, ignore) for at least one release before
+  removing it; always document removals and the migration path in release notes.
+- Keep `j` CLI command names and flags stable.
+
+## Version pinning between packages
+
+Released sdists exact-pin all `jumpstarter*` dependencies via the
+`hatch-pin-jumpstarter` build hook, so a published driver package can never be
+installed against a mismatched core. Do not add manual version bounds on
+`jumpstarter*` dependencies in `pyproject.toml`; keep them unversioned.
+
+## Opendal migration series (issue #441)
+
+The pattern established by PR #535 (QEMU driver) for removing the
+`jumpstarter-driver-opendal` dependency from a driver:
+
+1. Use `jumpstarter.driver.flasher.FlasherInterface` (core) instead of the
+   opendal ABC, and `jumpstarter.client.flasher.FlasherClient` (core) instead
+   of the opendal client. Local files stream via `resource_async`; `http(s)://`
+   URLs pass through as `PresignedRequestResource` (the exporter downloads them
+   directly with aiohttp).
+2. Verify the driver's `client()` string is unchanged by the migration (see the
+   invariant above) — this is what makes the migration safe for old clients.
+3. Keep RPC names and signatures identical to the opendal-based version.
+4. The `operator=` kwarg does not exist in the core client. Users with S3 or
+   other authenticated backends must pre-sign URLs themselves and pass the URL
+   as the path. Call this out in release notes for each migrated driver.
+5. Reuse or subclass the core `FlasherClient` rather than duplicating its logic
+   in per-driver clients.
+
+## Testing expectations
+
+When touching file-transfer paths (flash/dump/storage), mock-based routing
+tests are not sufficient. Add an end-to-end test using the in-process harness
+(`jumpstarter.common.utils.serve`, see existing `driver_test.py` files in qemu
+or esp32) that exercises the real client → exporter resource flow: flashing
+from a local file, flashing from an HTTP URL, and dumping in both directions.
