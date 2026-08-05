@@ -37,10 +37,7 @@ class Console:
             try:
                 async with create_task_group() as tg:
                     tg.start_soon(self.__serial_to_stdout, stream)
-                    if self.observe:
-                        tg.start_soon(self.__stdin_exit_only)
-                    else:
-                        tg.start_soon(self.__stdin_to_serial, stream)
+                    tg.start_soon(self.__read_stdin, None if self.observe else stream)
             except* ConsoleExit:
                 pass
 
@@ -51,7 +48,7 @@ class Console:
             await stdout.send(data)
             sys.stdout.flush()
 
-    async def __stdin_exit_only(self):
+    async def __read_stdin(self, stream=None):
         stdin = FileReadStream(sys.stdin.buffer)
         ctrl_b_count = 0
         while True:
@@ -64,18 +61,5 @@ class Console:
                     raise ConsoleExit
             else:
                 ctrl_b_count = 0
-
-    async def __stdin_to_serial(self, stream):
-        stdin = FileReadStream(sys.stdin.buffer)
-        ctrl_b_count = 0
-        while True:
-            data = await stdin.receive(max_bytes=1)
-            if not data:
-                continue
-            if data == b"\x02":  # Ctrl-B
-                ctrl_b_count += 1
-                if ctrl_b_count == 3:
-                    raise ConsoleExit
-            else:
-                ctrl_b_count = 0
-            await stream.send(data)
+            if stream is not None:
+                await stream.send(data)
