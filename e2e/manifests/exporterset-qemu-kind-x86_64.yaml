@@ -1,6 +1,7 @@
-# Sample VirtualTargetClass + ExporterSet for exporterset-qemu e2e tests.
+# Sample VirtualTargetClass + ExporterSet for exporterset-qemu e2e (x86_64).
 #
-# Kind/TCG friendly (no KVM). Applied by e2e/test/exporterset_qemu_test.go.
+# Kind/TCG friendly (no KVM). Applied by e2e/test/exporterset_qemu_test.go
+# when the host arch is x86_64/amd64 (see e2e/scripts/qemu-guest-arch.sh).
 # Images default to locally loaded :latest tags used by Kind e2e setup.
 ---
 apiVersion: virtualtarget.jumpstarter.dev/v1alpha1

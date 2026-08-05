@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Ensure the Alpine UEFI tiny guest image is available for exporterset-qemu e2e.
 #
+# Guest arch follows JUMPSTARTER_E2E_QEMU_ARCH or the host (see qemu-guest-arch.sh).
+#
 # Resolution order:
 #   1. JUMPSTARTER_E2E_QEMU_IMAGE (absolute path to an existing image — printed and exited)
-#   2. Existing file at e2e/testdata/<default name>
+#   2. Existing file at e2e/testdata/<arch image name>
 #   3. Copy from python/packages/jumpstarter-driver-qemu/images/ if present
 #   4. Download from ALPINE_IMAGE_URL
 #
@@ -13,8 +15,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=qemu-guest-arch.sh
+source "${SCRIPT_DIR}/qemu-guest-arch.sh"
+
 TESTDATA_DIR="${REPO_ROOT}/e2e/testdata"
-IMAGE_NAME="${JUMPSTARTER_E2E_QEMU_IMAGE_NAME:-nocloud_alpine-3.22.4-x86_64-uefi-tiny-r0.qcow2}"
+IMAGE_NAME="${JUMPSTARTER_E2E_QEMU_IMAGE_NAME:-${ALPINE_IMAGE_NAME}}"
 DEST="${TESTDATA_DIR}/${IMAGE_NAME}"
 # Pinned Alpine nocloud UEFI tiny image (~128Mi). Override with JUMPSTARTER_E2E_QEMU_IMAGE_URL.
 ALPINE_IMAGE_URL="${JUMPSTARTER_E2E_QEMU_IMAGE_URL:-https://dl-cdn.alpinelinux.org/alpine/v3.22/releases/cloud/${IMAGE_NAME}}"
@@ -39,7 +44,7 @@ if [ -f "${QEMU_PKG_IMAGE}" ]; then
   exit 0
 fi
 
-echo "Downloading Alpine guest image from ${ALPINE_IMAGE_URL}" >&2
+echo "Downloading Alpine guest image (${GUEST_ARCH}) from ${ALPINE_IMAGE_URL}" >&2
 tmp="${DEST}.partial"
 trap 'rm -f "${tmp}"' EXIT
 curl -fL --retry 3 --retry-delay 2 -o "${tmp}" "${ALPINE_IMAGE_URL}"

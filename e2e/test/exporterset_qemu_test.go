@@ -27,11 +27,40 @@ import (
 	. "github.com/onsi/gomega"    //nolint:revive
 )
 
-const (
-	exporterSetQemuClientName = "test-client-exporterset-qemu"
-	exporterSetQemuSelector   = "board=x86-64-virtual-e2e"
-	exporterSetQemuManifest   = "e2e/manifests/exporterset-qemu-kind.yaml"
-)
+const exporterSetQemuClientName = "test-client-exporterset-qemu"
+
+// qemuGuestArch holds native ExporterSet QEMU e2e identifiers for the host.
+type qemuGuestArch struct {
+	Arch       string
+	Board      string
+	Selector   string
+	QemuBinary string
+	Manifest   string
+}
+
+func loadQemuGuestArch() qemuGuestArch {
+	GinkgoHelper()
+	out := MustRunCmd("bash", filepath.Join(RepoRoot(), "e2e", "scripts", "qemu-guest-arch.sh"))
+	vals := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		vals[k] = v
+	}
+	Expect(vals["GUEST_ARCH"]).NotTo(BeEmpty(), "qemu-guest-arch.sh missing GUEST_ARCH")
+	Expect(vals["BOARD"]).NotTo(BeEmpty(), "qemu-guest-arch.sh missing BOARD")
+	Expect(vals["QEMU_BINARY"]).NotTo(BeEmpty(), "qemu-guest-arch.sh missing QEMU_BINARY")
+	Expect(vals["MANIFEST"]).NotTo(BeEmpty(), "qemu-guest-arch.sh missing MANIFEST")
+	return qemuGuestArch{
+		Arch:       vals["GUEST_ARCH"],
+		Board:      vals["BOARD"],
+		Selector:   "board=" + vals["BOARD"],
+		QemuBinary: vals["QEMU_BINARY"],
+		Manifest:   vals["MANIFEST"],
+	}
+}
 
 var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordered, func() {
 	var (
@@ -39,12 +68,17 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 		manifest  string
 		imagePath string
 		script    string
+		guest     qemuGuestArch
 	)
 
 	BeforeAll(func() {
 		ns = Namespace()
-		manifest = filepath.Join(RepoRoot(), exporterSetQemuManifest)
+		guest = loadQemuGuestArch()
+		manifest = filepath.Join(RepoRoot(), guest.Manifest)
 		script = filepath.Join(RepoRoot(), "e2e", "scripts", "qemu_flash_boot.py")
+
+		By(fmt.Sprintf("using native QEMU guest arch %s (%s, %s)", guest.Arch, guest.QemuBinary, guest.Manifest))
+		Expect(manifest).To(BeAnExistingFile())
 
 		By("ensuring Alpine guest image is available")
 		out := MustRunCmd("bash", filepath.Join(RepoRoot(), "e2e", "scripts", "ensure-qemu-guest-image.sh"))
@@ -52,6 +86,8 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 		imagePath = lines[len(lines)-1]
 		Expect(imagePath).NotTo(BeEmpty())
 		Expect(imagePath).To(BeAnExistingFile())
+		Expect(imagePath).To(ContainSubstring(guest.Arch),
+			"guest image path should match detected arch %s", guest.Arch)
 
 		By("waiting for exporterset-controller Deployment")
 		WaitForDeploymentAvailable("component=exporterset-controller", 5*time.Minute)
@@ -65,12 +101,16 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 
 	AfterAll(func() {
 		By("cleaning up ExporterSet resources and client")
-		_, _ = Kubectl("delete", "--ignore-not-found", "-f", manifest)
+		if manifest != "" {
+			_, _ = Kubectl("delete", "--ignore-not-found", "-f", manifest)
+		}
 		DeleteClient(exporterSetQemuClientName)
 	})
 
 	AfterEach(func() {
-		DumpOnFailure(250, DumpExporterSetQemuLogs)
+		DumpOnFailure(250, func(maxLines int) {
+			DumpExporterSetQemuLogs(maxLines, guest.Selector)
+		})
 	})
 
 	It("brings an Exporter Online with a Ready Pod", func() {
@@ -78,7 +118,7 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 		var exporterName string
 		Eventually(func() string {
 			out, _ := Kubectl("-n", ns, "get", "exporter",
-				"-l", exporterSetQemuSelector,
+				"-l", guest.Selector,
 				"-o", "jsonpath={.items[0].metadata.name}")
 			exporterName = out
 			return out
@@ -99,20 +139,27 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 				"-o", "jsonpath={.status.containerStatuses[*].ready}")
 			return out
 		}, 5*time.Minute, 5*time.Second).Should(ContainSubstring("true"))
+
+		By(fmt.Sprintf("verifying runtime image provides %s", guest.QemuBinary))
+		// fedora-minimal has no `which`; use a shell builtin.
+		binPath, err := Kubectl("-n", ns, "exec", exporterName, "-c", "target-runtime",
+			"--", "sh", "-c", "command -v "+guest.QemuBinary)
+		Expect(err).NotTo(HaveOccurred(), "command -v %s: %s", guest.QemuBinary, binPath)
+		Expect(strings.TrimSpace(binPath)).To(ContainSubstring(guest.QemuBinary))
 	})
 
 	It("leases, flashes Alpine, and boots to a console login marker", func() {
 		By("waiting for a Running pod so we can read shared volume SizeLimit")
 		Eventually(func() string {
 			out, _ := Kubectl("-n", ns, "get", "pod",
-				"-l", exporterSetQemuSelector,
+				"-l", guest.Selector,
 				"--field-selector=status.phase=Running",
 				"-o", "jsonpath={.items[0].metadata.name}")
 			return out
 		}, 2*time.Minute, 5*time.Second).ShouldNot(BeEmpty())
 
 		sizeLimit, _ := Kubectl("-n", ns, "get", "pod",
-			"-l", exporterSetQemuSelector,
+			"-l", guest.Selector,
 			"--field-selector=status.phase=Running",
 			"-o", "jsonpath={.items[0].spec.volumes[?(@.name==\"shared\")].emptyDir.sizeLimit}")
 		// Without the storage follow-up (#924), SizeLimit stays at 100Mi and
@@ -126,7 +173,7 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 		cmd := JmpCmd(
 			"shell",
 			"--client", exporterSetQemuClientName,
-			"--selector", exporterSetQemuSelector,
+			"--selector", guest.Selector,
 			"--duration", "1h",
 			"--",
 			"python3", script,
@@ -146,7 +193,7 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 		var oldName, oldUID string
 		Eventually(func(g Gomega) {
 			out, err := Kubectl("-n", ns, "get", "pod",
-				"-l", exporterSetQemuSelector,
+				"-l", guest.Selector,
 				"--field-selector=status.phase=Running",
 				"-o", "jsonpath={.items[0].metadata.name}")
 			g.Expect(err).NotTo(HaveOccurred())
@@ -159,13 +206,23 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 			oldUID = uid
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
-		By("running j qemu power on / power off under jmp shell")
-		// One lease: start QEMU via the runtime sidecar, stop it, then release
-		// so exitOnLeaseEnd completes the Pod and ExitAndReplace recycles it.
+		By(fmt.Sprintf("power on, assert %s is running, then power off", guest.QemuBinary))
+		// One lease: start QEMU via the runtime sidecar, confirm the expected
+		// qemu-system-* binary is the process that started, stop it, then
+		// release so exitOnLeaseEnd completes the Pod and ExitAndReplace recycles it.
+		powerScript := fmt.Sprintf(`
+set -eu
+j qemu power on
+pod=$(kubectl -n %q get pod -l %q --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')
+ps_out=$(kubectl -n %q exec "$pod" -c target-runtime -- ps -eo args=)
+echo "$ps_out"
+echo "$ps_out" | grep -F %q
+j qemu power off
+`, ns, guest.Selector, ns, guest.QemuBinary)
 		MustJmp("shell", "--client", exporterSetQemuClientName,
-			"--selector", exporterSetQemuSelector,
+			"--selector", guest.Selector,
 			"--duration", "5m",
-			"--", "sh", "-c", "j qemu power on && j qemu power off")
+			"--", "sh", "-c", powerScript)
 
 		By("waiting for the old Pod/Exporter to be deleted and a single replacement Running")
 		Eventually(func(g Gomega) {
@@ -177,7 +234,7 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 			g.Expect(err).To(HaveOccurred(), "old Exporter %s should be deleted after ExitAndReplace", oldName)
 
 			podNames, err := Kubectl("-n", ns, "get", "pod",
-				"-l", exporterSetQemuSelector,
+				"-l", guest.Selector,
 				"--field-selector=status.phase=Running",
 				"-o", "jsonpath={range .items[*]}{.metadata.name}{' '}{end}")
 			g.Expect(err).NotTo(HaveOccurred())
@@ -195,7 +252,7 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 			g.Expect(ready).To(ContainSubstring("true"))
 
 			exporters, err := Kubectl("-n", ns, "get", "exporter",
-				"-l", exporterSetQemuSelector,
+				"-l", guest.Selector,
 				"-o", "jsonpath={range .items[*]}{.metadata.name}{' '}{end}")
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(strings.Fields(strings.TrimSpace(exporters))).To(HaveLen(1),
@@ -206,7 +263,7 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 		var exporterName string
 		Eventually(func() string {
 			out, _ := Kubectl("-n", ns, "get", "exporter",
-				"-l", exporterSetQemuSelector,
+				"-l", guest.Selector,
 				"-o", "jsonpath={.items[0].metadata.name}")
 			exporterName = out
 			return out
@@ -215,7 +272,7 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 
 		By("verifying the replacement still responds to qemu power on/off")
 		MustJmp("shell", "--client", exporterSetQemuClientName,
-			"--selector", exporterSetQemuSelector,
+			"--selector", guest.Selector,
 			"--duration", "5m",
 			"--", "sh", "-c", "j qemu power on && j qemu power off")
 	})
@@ -223,12 +280,15 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 
 // DumpExporterSetQemuLogs prints recent logs from exporterset-controller and
 // virtual QEMU pods for failure diagnosis.
-func DumpExporterSetQemuLogs(maxLines int) {
+func DumpExporterSetQemuLogs(maxLines int, selector string) {
 	ns := Namespace()
-	_, _ = fmt.Fprintf(GinkgoWriter, "=== ExporterSet / QEMU pod logs (last %d lines) ===\n", maxLines)
+	if selector == "" {
+		selector = "virtual=true"
+	}
+	_, _ = fmt.Fprintf(GinkgoWriter, "=== ExporterSet / QEMU pod logs (last %d lines, %s) ===\n", maxLines, selector)
 
 	out, _ := Kubectl("-n", ns, "get", "pods",
-		"-l", exporterSetQemuSelector,
+		"-l", selector,
 		"-o", "jsonpath={range .items[*]}{.metadata.name}{'\\n'}{end}")
 	for _, name := range strings.Split(strings.TrimSpace(out), "\n") {
 		if name == "" {

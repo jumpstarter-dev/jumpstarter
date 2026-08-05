@@ -340,6 +340,9 @@ main() {
     echo ""
 
     log_info "Prefetching Alpine guest image for ExporterSet QEMU..."
+    # shellcheck source=scripts/qemu-guest-arch.sh
+    source "$SCRIPT_DIR/scripts/qemu-guest-arch.sh"
+    log_info "QEMU guest arch: ${GUEST_ARCH} (${QEMU_BINARY})"
     bash "$SCRIPT_DIR/scripts/ensure-qemu-guest-image.sh" > /dev/null
     log_info "✓ QEMU guest image ready"
     echo ""
