@@ -342,10 +342,12 @@ class ExporterList(BaseModel):
         for exporter in self._visible_exporters():
             exporter.rich_add_names(names)
 
+    def _dump_exporter(self, exporter, exclude_fields, **kwargs) -> dict:
+        return exporter.model_dump(exclude=exclude_fields, **kwargs)
+
     def model_dump_json(self, **kwargs):
         json_kwargs = {k: v for k, v in kwargs.items() if k in {"indent", "separators", "sort_keys", "ensure_ascii"}}
 
-        # Determine which fields to exclude
         exclude_fields = set()
         if not self.include_leases:
             exclude_fields.add("lease")
@@ -358,7 +360,7 @@ class ExporterList(BaseModel):
 
         data = {
             "exporters": [
-                exporter.model_dump(mode="json", exclude=exclude_fields)
+                self._dump_exporter(exporter, exclude_fields, mode="json")
                 for exporter in self._visible_exporters()
             ]
         }
@@ -375,9 +377,13 @@ class ExporterList(BaseModel):
         if not self.include_disabled:
             exclude_fields.add("enabled")
 
+        caller_exclude = kwargs.pop("exclude", None)
+        if caller_exclude:
+            exclude_fields |= set(caller_exclude)
+
         return {
             "exporters": [
-                exporter.model_dump(mode="json", exclude=exclude_fields)
+                self._dump_exporter(exporter, exclude_fields, **kwargs)
                 for exporter in self._visible_exporters()
             ]
         }
