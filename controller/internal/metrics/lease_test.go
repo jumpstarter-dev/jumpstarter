@@ -17,12 +17,17 @@ limitations under the License.
 package metrics
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
+	"github.com/go-logr/logr/funcr"
+	jlog "github.com/jumpstarter-dev/jumpstarter/controller/internal/log"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 func TestLeaseAcquisitionsMetricName(t *testing.T) {
@@ -38,11 +43,12 @@ func TestRecordLeaseAcquisitionIncrementsCounter(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 
-	m.RecordAcquisition(ResultSuccess, map[string]string{
+	ctx := context.Background()
+	m.RecordAcquisition(ctx, ResultSuccess, map[string]string{
 		"client":   "p16v",
 		"lease_id": "lease-abc",
 	})
-	m.RecordAcquisition(ResultFailure, map[string]string{
+	m.RecordAcquisition(ctx, ResultFailure, map[string]string{
 		"client":   "p16v",
 		"lease_id": "lease-def",
 	})
@@ -83,7 +89,7 @@ func TestRecordLeaseAcquisitionAttachesExemplars(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 
-	m.RecordAcquisition(ResultSuccess, map[string]string{
+	m.RecordAcquisition(context.Background(), ResultSuccess, map[string]string{
 		"client":   "ci-bot",
 		"lease_id": "lease-xyz",
 		"ignored":  "should-not-appear",
@@ -125,13 +131,13 @@ func TestRecordLeaseAcquisitionAttachesExemplars(t *testing.T) {
 	}
 }
 
-func TestOpenMetricsTextContainsSeries(t *testing.T) {
+func TestPrometheusTextContainsSeries(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := NewLeaseMetrics()
 	if err := m.Register(reg); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	m.RecordAcquisition(ResultSuccess, map[string]string{"client": "c", "lease_id": "l"})
+	m.RecordAcquisition(context.Background(), ResultSuccess, map[string]string{"client": "c", "lease_id": "l"})
 
 	var b strings.Builder
 	families, err := reg.Gather()
@@ -145,10 +151,82 @@ func TestOpenMetricsTextContainsSeries(t *testing.T) {
 	}
 	out := b.String()
 	if !strings.Contains(out, LeaseAcquisitionsTotal) {
-		t.Fatalf("OpenMetrics text missing %s:\n%s", LeaseAcquisitionsTotal, out)
+		t.Fatalf("Prometheus text missing %s:\n%s", LeaseAcquisitionsTotal, out)
 	}
 	if !strings.Contains(out, `result="success"`) {
-		t.Fatalf("OpenMetrics text missing result label:\n%s", out)
+		t.Fatalf("Prometheus text missing result label:\n%s", out)
+	}
+}
+
+func TestRecordAcquisitionTruncatesOverBudgetExemplars(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewLeaseMetrics()
+	if err := m.Register(reg); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	var logged []string
+	logger := funcr.New(func(_, args string) {
+		logged = append(logged, args)
+	}, funcr.Options{Verbosity: jlog.LevelWarning})
+	ctx := log.IntoContext(context.Background(), logger)
+
+	// Combined key+value runes exceed OpenMetrics' 128 limit; must not panic,
+	// must still increment, and must attach a constrained exemplar.
+	long := strings.Repeat("a", 200)
+	m.RecordAcquisition(ctx, ResultSuccess, map[string]string{
+		"client":   long,
+		"lease_id": long,
+	})
+
+	if len(logged) == 0 {
+		t.Fatal("expected warning log when exemplar budget is exceeded")
+	}
+	if !strings.Contains(logged[0], "OpenMetrics budget") {
+		t.Fatalf("unexpected log message %q", logged[0])
+	}
+
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
+	var found *dto.MetricFamily
+	for _, f := range families {
+		if f.GetName() == LeaseAcquisitionsTotal {
+			found = f
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("metric %s not found", LeaseAcquisitionsTotal)
+	}
+	if sampleValue(found, map[string]string{"result": ResultSuccess}) != 1 {
+		t.Fatal("counter must increment even when exemplars are truncated")
+	}
+
+	var metric *dto.Metric
+	for _, met := range found.Metric {
+		if labelValue(met, "result") == ResultSuccess {
+			metric = met
+			break
+		}
+	}
+	if metric == nil || metric.GetCounter() == nil || metric.GetCounter().GetExemplar() == nil {
+		t.Fatal("expected constrained exemplar on success observation")
+	}
+	ex := exemplarMap(metric.GetCounter().GetExemplar())
+	total := 0
+	for k, v := range ex {
+		total += utf8.RuneCountInString(k) + utf8.RuneCountInString(v)
+	}
+	if total > maxExemplarRunes {
+		t.Fatalf("exemplar rune budget exceeded: %d > %d (%v)", total, maxExemplarRunes, ex)
+	}
+	if ex["client"] == "" {
+		t.Fatal("expected truncated client exemplar to be retained")
+	}
+	if utf8.RuneCountInString(ex["client"]) > maxExemplarRunes-utf8.RuneCountInString("client") {
+		t.Fatalf("client exemplar value too long: %q", ex["client"])
 	}
 }
 

@@ -243,7 +243,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 				Name:      lease.Spec.ExporterRef.Name,
 			}, &exporter); err != nil {
 				if k8serrors.IsNotFound(err) {
-					setUnsatisfiableAndRecord(lease,
+					setUnsatisfiableAndRecord(ctx, lease,
 						"ExporterNotFound",
 						"Requested exporter %s was not found",
 						lease.Spec.ExporterRef.Name,
@@ -253,7 +253,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 				return fmt.Errorf("reconcileStatusExporterRef: failed to get requested exporter: %w", err)
 			}
 			if !selector.Empty() && !selector.Matches(labels.Set(exporter.Labels)) {
-				setUnsatisfiableAndRecord(lease,
+				setUnsatisfiableAndRecord(ctx, lease,
 					"SelectorMismatch",
 					"Requested exporter %s does not match selector %s",
 					exporter.Name,
@@ -263,7 +263,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			}
 			// Check if the explicitly requested exporter is disabled
 			if !exporter.IsEnabled() && !lease.Spec.AllowDisabled {
-				setUnsatisfiableAndRecord(lease,
+				setUnsatisfiableAndRecord(ctx, lease,
 					"ExporterDisabled",
 					"Requested exporter %s is disabled. "+
 						"To lease a disabled exporter, set spec.allowDisabled: true on the Lease, "+
@@ -282,7 +282,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			// Filter out disabled exporters from selector-based listing
 			matchingExporters = filterOutDisabledExporters(listed.Items)
 			if len(matchingExporters) == 0 && len(listed.Items) > 0 {
-				setUnsatisfiableAndRecord(lease,
+				setUnsatisfiableAndRecord(ctx, lease,
 					"AllDisabled",
 					"All %d exporters matching the selector are disabled",
 					len(listed.Items),
@@ -302,12 +302,12 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 				if len(desc) > 4096 {
 					desc = desc[:4096] + "..."
 				}
-				setUnsatisfiableAndRecord(lease, "NoAccess",
+				setUnsatisfiableAndRecord(ctx, lease, "NoAccess",
 					"While there are %d exporters matching the selector, none of them are approved by any policy for your client. Matching policies: %s",
 					len(matchingExporters), desc,
 				)
 			} else {
-				setUnsatisfiableAndRecord(lease, "NoAccess",
+				setUnsatisfiableAndRecord(ctx, lease, "NoAccess",
 					"While there are %d exporters matching the selector, none of them are approved by any policy for your client",
 					len(matchingExporters),
 				)
@@ -337,7 +337,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 		orderedExporters := orderApprovedExporters(onlineApprovedExporters)
 
 		if len(orderedExporters) > 0 && orderedExporters[0].Policy.SpotAccess {
-			setUnsatisfiableAndRecord(lease, "SpotAccess",
+			setUnsatisfiableAndRecord(ctx, lease, "SpotAccess",
 				"The only possible exporters are under spot access (i.e. %s), but spot access is still not implemented",
 				orderedExporters[0].Exporter.Name)
 			return nil
@@ -390,14 +390,14 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 		lease.Status.ExporterRef = &corev1.LocalObjectReference{
 			Name: selected.Exporter.Name,
 		}
-		recordLeaseAcquisition(lease, jmpmetrics.ResultSuccess)
+		recordLeaseAcquisition(ctx, lease, jmpmetrics.ResultSuccess)
 		return nil
 	}
 
 	return nil
 }
 
-func recordLeaseAcquisition(lease *jumpstarterdevv1alpha1.Lease, result string) {
+func recordLeaseAcquisition(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease, result string) {
 	exemplars := map[string]string{}
 	if lease != nil {
 		exemplars["lease_id"] = lease.Name
@@ -405,17 +405,17 @@ func recordLeaseAcquisition(lease *jumpstarterdevv1alpha1.Lease, result string) 
 			exemplars["client"] = lease.Spec.ClientRef.Name
 		}
 	}
-	jmpmetrics.Default.RecordAcquisition(result, exemplars)
+	jmpmetrics.Default.RecordAcquisition(ctx, result, exemplars)
 }
 
-func setUnsatisfiableAndRecord(lease *jumpstarterdevv1alpha1.Lease, reason, messageFormat string, a ...any) {
+func setUnsatisfiableAndRecord(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease, reason, messageFormat string, a ...any) {
 	already := meta.IsStatusConditionTrue(
 		lease.Status.Conditions,
 		string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
 	)
 	lease.SetStatusUnsatisfiable(reason, messageFormat, a...)
 	if !already {
-		recordLeaseAcquisition(lease, jmpmetrics.ResultFailure)
+		recordLeaseAcquisition(ctx, lease, jmpmetrics.ResultFailure)
 	}
 }
 

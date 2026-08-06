@@ -17,61 +17,50 @@ limitations under the License.
 package jumpstarter
 
 import (
-	"testing"
-
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// Stdlib unit test (no envtest): asserts Controller Deployment metrics bind for JEP-0013 Phase 2.
-func TestControllerDeploymentMetricsBind(t *testing.T) {
-	r := &JumpstarterReconciler{}
-	js := &operatorv1alpha1.Jumpstarter{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "jumpstarter",
-			Namespace: "jumpstarter-lab",
-		},
-		Spec: operatorv1alpha1.JumpstarterSpec{
-			Controller: operatorv1alpha1.ControllerConfig{
-				Image:           "example.com/controller:test",
-				ImagePullPolicy: corev1.PullIfNotPresent,
-				Replicas:        1,
+var _ = Describe("createControllerDeployment metrics bind", func() {
+	var r *JumpstarterReconciler
+	var js *operatorv1alpha1.Jumpstarter
+
+	BeforeEach(func() {
+		r = &JumpstarterReconciler{}
+		js = &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "jumpstarter",
+				Namespace: "jumpstarter-lab",
 			},
-		},
-	}
-
-	dep := r.createControllerDeployment(js, "testhash")
-	if dep == nil {
-		t.Fatal("expected non-nil deployment")
-	}
-	if len(dep.Spec.Template.Spec.Containers) == 0 {
-		t.Fatal("expected at least one container")
-	}
-
-	c := dep.Spec.Template.Spec.Containers[0]
-	foundArg := false
-	for _, arg := range c.Args {
-		if arg == "-metrics-bind-address=:8080" {
-			foundArg = true
-			break
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				Controller: operatorv1alpha1.ControllerConfig{
+					Image:           "example.com/controller:test",
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					Replicas:        1,
+				},
+			},
 		}
-	}
-	if !foundArg {
-		t.Fatalf("expected -metrics-bind-address=:8080 in args, got %#v", c.Args)
-	}
+	})
 
-	foundPort := false
-	for _, p := range c.Ports {
-		if p.Name == "metrics" {
-			foundPort = true
-			if p.ContainerPort != 8080 {
-				t.Fatalf("metrics port = %d, want 8080", p.ContainerPort)
+	It("exposes -metrics-bind-address=:8080 and metrics port 8080", func() {
+		dep := r.createControllerDeployment(js, "testhash")
+		Expect(dep).NotTo(BeNil())
+		Expect(dep.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+
+		c := dep.Spec.Template.Spec.Containers[0]
+		Expect(c.Args).To(ContainElement("-metrics-bind-address=:8080"))
+
+		var metricsPort *corev1.ContainerPort
+		for i := range c.Ports {
+			if c.Ports[i].Name == "metrics" {
+				metricsPort = &c.Ports[i]
+				break
 			}
-			break
 		}
-	}
-	if !foundPort {
-		t.Fatal("expected container port named metrics")
-	}
-}
+		Expect(metricsPort).NotTo(BeNil(), "expected container port named metrics")
+		Expect(metricsPort.ContainerPort).To(Equal(int32(8080)))
+	})
+})

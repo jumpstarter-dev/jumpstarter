@@ -18,7 +18,12 @@ limitations under the License.
 package metrics
 
 import (
+	"context"
+	"unicode/utf8"
+
+	jlog "github.com/jumpstarter-dev/jumpstarter/controller/internal/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
@@ -28,6 +33,10 @@ const (
 
 	ResultSuccess = "success"
 	ResultFailure = "failure"
+
+	// maxExemplarRunes is the OpenMetrics 1.0 combined label name+value rune limit.
+	// Exceeding it makes prometheus.ExemplarAdder.AddWithExemplar panic.
+	maxExemplarRunes = 128
 )
 
 // DefaultExemplarKeys are the JEP-0013 default exemplar allowlist keys.
@@ -68,7 +77,9 @@ func (m *LeaseMetrics) MustRegisterWithControllerRuntime() {
 
 // RecordAcquisition increments jumpstarter_lease_acquisitions_total for result
 // and attaches exemplar labels from the allowlist (client, lease_id when present).
-func (m *LeaseMetrics) RecordAcquisition(result string, exemplars map[string]string) {
+// Invalid or over-budget exemplar values are truncated or dropped; the counter
+// always increments. Budget truncation/drops are logged at Warning (logr V(1)).
+func (m *LeaseMetrics) RecordAcquisition(ctx context.Context, result string, exemplars map[string]string) {
 	if m == nil || m.acquisitions == nil {
 		return
 	}
@@ -76,7 +87,17 @@ func (m *LeaseMetrics) RecordAcquisition(result string, exemplars map[string]str
 	if err != nil {
 		return
 	}
-	labels := filterExemplarLabels(exemplars)
+	filtered := filterExemplarLabels(exemplars)
+	labels, constrained := constrainExemplarLabels(filtered)
+	if constrained {
+		jlog.Warning(log.FromContext(ctx),
+			"lease acquisition exemplar exceeded OpenMetrics budget; truncated or dropped labels",
+			"budget_runes", maxExemplarRunes,
+			"result", result,
+			"original", filtered,
+			"constrained", labels,
+		)
+	}
 	if len(labels) > 0 {
 		if adder, ok := metric.(prometheus.ExemplarAdder); ok {
 			adder.AddWithExemplar(1, labels)
@@ -100,6 +121,65 @@ func filterExemplarLabels(in map[string]string) prometheus.Labels {
 		return nil
 	}
 	return out
+}
+
+// constrainExemplarLabels validates UTF-8 and fits labels into the OpenMetrics
+// 128-rune exemplar budget in DefaultExemplarKeys order. Values are truncated
+// when needed; keys that cannot fit (even truncated) are dropped.
+// The bool is true when any label was truncated or dropped for the budget.
+func constrainExemplarLabels(in prometheus.Labels) (prometheus.Labels, bool) {
+	if len(in) == 0 {
+		return nil, false
+	}
+	out := prometheus.Labels{}
+	constrained := false
+	remaining := maxExemplarRunes
+	for _, key := range DefaultExemplarKeys {
+		v, ok := in[key]
+		if !ok || v == "" {
+			continue
+		}
+		if !utf8.ValidString(key) || !utf8.ValidString(v) {
+			constrained = true
+			continue
+		}
+		keyRunes := utf8.RuneCountInString(key)
+		if keyRunes >= remaining {
+			constrained = true
+			continue
+		}
+		valueBudget := remaining - keyRunes
+		valueRunes := utf8.RuneCountInString(v)
+		if valueRunes > valueBudget {
+			constrained = true
+			v = truncateRunes(v, valueBudget)
+			if v == "" {
+				continue
+			}
+			valueRunes = utf8.RuneCountInString(v)
+		}
+		out[key] = v
+		remaining -= keyRunes + valueRunes
+	}
+	if len(out) == 0 {
+		return nil, constrained
+	}
+	return out, constrained
+}
+
+func truncateRunes(s string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	if utf8.RuneCountInString(s) <= maxRunes {
+		return s
+	}
+	i := 0
+	for n := 0; n < maxRunes; n++ {
+		_, size := utf8.DecodeRuneInString(s[i:])
+		i += size
+	}
+	return s[:i]
 }
 
 // Default is the process-wide lease metrics instance used by the controller.
