@@ -36,6 +36,37 @@ func TestLeaseAcquisitionsMetricName(t *testing.T) {
 	}
 }
 
+func TestRegisterInitializesZeroSeries(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewLeaseMetrics()
+	if err := m.Register(reg); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
+	var found *dto.MetricFamily
+	for _, f := range families {
+		if f.GetName() == LeaseAcquisitionsTotal {
+			found = f
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("metric %s not found after register", LeaseAcquisitionsTotal)
+	}
+	success := sampleValue(found, map[string]string{"result": ResultSuccess})
+	failure := sampleValue(found, map[string]string{"result": ResultFailure})
+	if success != 0 {
+		t.Fatalf("success count = %v, want 0 before observations", success)
+	}
+	if failure != 0 {
+		t.Fatalf("failure count = %v, want 0 before observations", failure)
+	}
+}
+
 func TestRecordLeaseAcquisitionIncrementsCounter(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := NewLeaseMetrics()

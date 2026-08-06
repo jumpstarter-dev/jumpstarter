@@ -60,19 +60,36 @@ func NewLeaseMetrics() *LeaseMetrics {
 	}
 }
 
-// Register registers collectors with the given registerer.
+// Register registers collectors with the given registerer and pre-creates
+// the success/failure series at zero so scrapes are never missing samples.
 func (m *LeaseMetrics) Register(r prometheus.Registerer) error {
-	return r.Register(m.acquisitions)
+	if err := r.Register(m.acquisitions); err != nil {
+		return err
+	}
+	m.initializeSeries()
+	return nil
 }
 
 // MustRegister registers collectors and panics on error.
 func (m *LeaseMetrics) MustRegister(r prometheus.Registerer) {
 	r.MustRegister(m.acquisitions)
+	m.initializeSeries()
 }
 
 // MustRegisterWithControllerRuntime registers on the controller-runtime metrics registry.
 func (m *LeaseMetrics) MustRegisterWithControllerRuntime() {
 	m.MustRegister(ctrlmetrics.Registry)
+}
+
+// initializeSeries ensures result=success and result=failure time series exist at 0.
+// CounterVec is lazily created; without this, /metrics shows HELP/TYPE but no samples
+// until the first observation (https://prometheus.io/docs/practices/instrumentation/#avoid-missing-metrics).
+func (m *LeaseMetrics) initializeSeries() {
+	if m == nil || m.acquisitions == nil {
+		return
+	}
+	_, _ = m.acquisitions.GetMetricWithLabelValues(ResultSuccess)
+	_, _ = m.acquisitions.GetMetricWithLabelValues(ResultFailure)
 }
 
 // RecordAcquisition increments jumpstarter_lease_acquisitions_total for result

@@ -94,6 +94,12 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	ctx = ctrl.LoggerInto(ctx, logger)
 
 	var result ctrl.Result
+	priorExporterRef := lease.Status.ExporterRef
+	priorUnsatisfiable := meta.IsStatusConditionTrue(
+		lease.Status.Conditions,
+		string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+	)
+
 	if err := r.reconcileStatusExporterRef(ctx, &result, &lease); err != nil {
 		return result, err
 	}
@@ -109,6 +115,10 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if err := r.Status().Update(ctx, &lease); err != nil {
 		return RequeueConflict(logger, result, err)
 	}
+
+	// Record acquisition only after status is persisted so a failed Update
+	// cannot double-count on requeue (success or failure).
+	recordLeaseAcquisitionTransition(ctx, &lease, priorExporterRef, priorUnsatisfiable)
 
 	if lease.Labels == nil {
 		lease.Labels = make(map[string]string)
@@ -243,7 +253,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 				Name:      lease.Spec.ExporterRef.Name,
 			}, &exporter); err != nil {
 				if k8serrors.IsNotFound(err) {
-					setUnsatisfiableAndRecord(ctx, lease,
+					lease.SetStatusUnsatisfiable(
 						"ExporterNotFound",
 						"Requested exporter %s was not found",
 						lease.Spec.ExporterRef.Name,
@@ -253,7 +263,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 				return fmt.Errorf("reconcileStatusExporterRef: failed to get requested exporter: %w", err)
 			}
 			if !selector.Empty() && !selector.Matches(labels.Set(exporter.Labels)) {
-				setUnsatisfiableAndRecord(ctx, lease,
+				lease.SetStatusUnsatisfiable(
 					"SelectorMismatch",
 					"Requested exporter %s does not match selector %s",
 					exporter.Name,
@@ -263,7 +273,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			}
 			// Check if the explicitly requested exporter is disabled
 			if !exporter.IsEnabled() && !lease.Spec.AllowDisabled {
-				setUnsatisfiableAndRecord(ctx, lease,
+				lease.SetStatusUnsatisfiable(
 					"ExporterDisabled",
 					"Requested exporter %s is disabled. "+
 						"To lease a disabled exporter, set spec.allowDisabled: true on the Lease, "+
@@ -282,7 +292,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			// Filter out disabled exporters from selector-based listing
 			matchingExporters = filterOutDisabledExporters(listed.Items)
 			if len(matchingExporters) == 0 && len(listed.Items) > 0 {
-				setUnsatisfiableAndRecord(ctx, lease,
+				lease.SetStatusUnsatisfiable(
 					"AllDisabled",
 					"All %d exporters matching the selector are disabled",
 					len(listed.Items),
@@ -302,12 +312,12 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 				if len(desc) > 4096 {
 					desc = desc[:4096] + "..."
 				}
-				setUnsatisfiableAndRecord(ctx, lease, "NoAccess",
+				lease.SetStatusUnsatisfiable("NoAccess",
 					"While there are %d exporters matching the selector, none of them are approved by any policy for your client. Matching policies: %s",
 					len(matchingExporters), desc,
 				)
 			} else {
-				setUnsatisfiableAndRecord(ctx, lease, "NoAccess",
+				lease.SetStatusUnsatisfiable("NoAccess",
 					"While there are %d exporters matching the selector, none of them are approved by any policy for your client",
 					len(matchingExporters),
 				)
@@ -337,7 +347,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 		orderedExporters := orderApprovedExporters(onlineApprovedExporters)
 
 		if len(orderedExporters) > 0 && orderedExporters[0].Policy.SpotAccess {
-			setUnsatisfiableAndRecord(ctx, lease, "SpotAccess",
+			lease.SetStatusUnsatisfiable("SpotAccess",
 				"The only possible exporters are under spot access (i.e. %s), but spot access is still not implemented",
 				orderedExporters[0].Exporter.Name)
 			return nil
@@ -390,11 +400,48 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 		lease.Status.ExporterRef = &corev1.LocalObjectReference{
 			Name: selected.Exporter.Name,
 		}
-		recordLeaseAcquisition(ctx, lease, jmpmetrics.ResultSuccess)
 		return nil
 	}
 
 	return nil
+}
+
+// leaseAcquisitionTransitionResult returns the metric result for a persisted
+// status transition, or ("", false) when no acquisition should be recorded.
+// Recording is based on the pre-reconcile persisted snapshot so requeues after
+// a successful Status().Update do not double-count.
+func leaseAcquisitionTransitionResult(
+	priorExporterRef *corev1.LocalObjectReference,
+	priorUnsatisfiable bool,
+	lease *jumpstarterdevv1alpha1.Lease,
+) (string, bool) {
+	if lease == nil {
+		return "", false
+	}
+	if priorExporterRef == nil && lease.Status.ExporterRef != nil {
+		return jmpmetrics.ResultSuccess, true
+	}
+	nowUnsatisfiable := meta.IsStatusConditionTrue(
+		lease.Status.Conditions,
+		string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+	)
+	if !priorUnsatisfiable && nowUnsatisfiable {
+		return jmpmetrics.ResultFailure, true
+	}
+	return "", false
+}
+
+func recordLeaseAcquisitionTransition(
+	ctx context.Context,
+	lease *jumpstarterdevv1alpha1.Lease,
+	priorExporterRef *corev1.LocalObjectReference,
+	priorUnsatisfiable bool,
+) {
+	result, ok := leaseAcquisitionTransitionResult(priorExporterRef, priorUnsatisfiable, lease)
+	if !ok {
+		return
+	}
+	recordLeaseAcquisition(ctx, lease, result)
 }
 
 func recordLeaseAcquisition(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease, result string) {
@@ -406,17 +453,6 @@ func recordLeaseAcquisition(ctx context.Context, lease *jumpstarterdevv1alpha1.L
 		}
 	}
 	jmpmetrics.Default.RecordAcquisition(ctx, result, exemplars)
-}
-
-func setUnsatisfiableAndRecord(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease, reason, messageFormat string, a ...any) {
-	already := meta.IsStatusConditionTrue(
-		lease.Status.Conditions,
-		string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
-	)
-	lease.SetStatusUnsatisfiable(reason, messageFormat, a...)
-	if !already {
-		recordLeaseAcquisition(ctx, lease, jmpmetrics.ResultFailure)
-	}
 }
 
 // attachMatchingPolicies attaches the matching policies to the list of online exporters
