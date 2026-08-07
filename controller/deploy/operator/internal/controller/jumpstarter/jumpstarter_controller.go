@@ -21,8 +21,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"hash"
 	"net"
 	"sort"
 	"strings"
@@ -184,8 +186,14 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	configMapHash := configMapDataHash(desiredConfigMap)
 
+	// Compute TLS secret hashes so that certificate renewals trigger rolling restarts.
+	controllerTLSHash, err := r.getControllerTLSSecretHash(ctx, &jumpstarter)
+	if err != nil {
+		log.Error(err, "Failed to compute controller TLS secret hash")
+		return ctrl.Result{}, err
+	}
 	// Reconcile Controller Deployment
-	if err := r.reconcileControllerDeployment(ctx, &jumpstarter, configMapHash); err != nil {
+	if err := r.reconcileControllerDeployment(ctx, &jumpstarter, configMapHash, controllerTLSHash); err != nil {
 		log.Error(err, "Failed to reconcile Controller Deployment")
 		return ctrl.Result{}, err
 	}
@@ -238,10 +246,35 @@ func (r *JumpstarterReconciler) emitEventf(js *operatorv1alpha1.Jumpstarter, eve
 	r.Recorder.Eventf(js, eventType, reason, msgFmt, args...)
 }
 
+// getControllerTLSSecretHash resolves the controller TLS secret name and returns its data hash.
+func (r *JumpstarterReconciler) getControllerTLSSecretHash(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) (string, error) {
+	var tlsSecretName string
+	if jumpstarter.Spec.CertManager.Enabled {
+		tlsSecretName = GetControllerCertSecretName(jumpstarter)
+	} else if jumpstarter.Spec.Controller.GRPC.TLS.CertSecret != "" {
+		tlsSecretName = jumpstarter.Spec.Controller.GRPC.TLS.CertSecret
+	}
+	return r.getTLSSecretHash(ctx, jumpstarter.Namespace, tlsSecretName)
+}
+
+// routerTLSSecretName returns the TLS secret name for a router replica.
+// An empty string means no TLS secret is configured.
+func routerTLSSecretName(jumpstarter *operatorv1alpha1.Jumpstarter, replicaIndex int32) string {
+	if jumpstarter.Spec.CertManager.Enabled {
+		return GetRouterCertSecretName(jumpstarter, replicaIndex)
+	}
+	return jumpstarter.Spec.Routers.GRPC.TLS.CertSecret
+}
+
+// getRouterTLSSecretHash resolves the router TLS secret name for a given replica and returns its data hash.
+func (r *JumpstarterReconciler) getRouterTLSSecretHash(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, replicaIndex int32) (string, error) {
+	return r.getTLSSecretHash(ctx, jumpstarter.Namespace, routerTLSSecretName(jumpstarter, replicaIndex))
+}
+
 // reconcileControllerDeployment reconciles the controller deployment
-func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash string) error {
+func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash, tlsSecretHash string) error {
 	log := logf.FromContext(ctx)
-	desiredDeployment := r.createControllerDeployment(jumpstarter, configMapHash)
+	desiredDeployment := r.createControllerDeployment(jumpstarter, configMapHash, tlsSecretHash)
 
 	existingDeployment := &appsv1.Deployment{}
 	existingDeployment.Name = desiredDeployment.Name
@@ -319,9 +352,23 @@ func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Contex
 func (r *JumpstarterReconciler) reconcileRouterDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
 
+	// Cache hashes by secret name so a shared CertSecret is fetched once across replicas.
+	tlsHashBySecret := make(map[string]string)
+
 	// Create one deployment per replica
 	for i := int32(0); i < jumpstarter.Spec.Routers.Replicas; i++ {
-		desiredDeployment := r.createRouterDeployment(jumpstarter, i)
+		secretName := routerTLSSecretName(jumpstarter, i)
+		routerTLSHash, ok := tlsHashBySecret[secretName]
+		if !ok {
+			var err error
+			routerTLSHash, err = r.getTLSSecretHash(ctx, jumpstarter.Namespace, secretName)
+			if err != nil {
+				log.Error(err, "Failed to compute router TLS secret hash", "replica", i)
+				return err
+			}
+			tlsHashBySecret[secretName] = routerTLSHash
+		}
+		desiredDeployment := r.createRouterDeployment(jumpstarter, i, routerTLSHash)
 
 		existingDeployment := &appsv1.Deployment{}
 		existingDeployment.Name = desiredDeployment.Name
@@ -652,6 +699,15 @@ func generateRandomKey(length int) (string, error) {
 
 // updateStatus is implemented in status.go
 
+// writeHashField writes a length-prefixed field so adjacent key/value concatenations
+// cannot collide (e.g. {"a":"xb","b":"y"} vs {"a":"x","b":"by"}).
+func writeHashField(h hash.Hash, data []byte) {
+	var lenBuf [8]byte
+	binary.BigEndian.PutUint64(lenBuf[:], uint64(len(data)))
+	_, _ = h.Write(lenBuf[:])
+	_, _ = h.Write(data)
+}
+
 // configMapDataHash computes a deterministic SHA-256 hash over the Data keys and values
 // of a ConfigMap. Used as a pod template annotation to trigger rolling restarts when
 // the controller config changes (e.g. OIDC CA rotation).
@@ -663,14 +719,47 @@ func configMapDataHash(cm *corev1.ConfigMap) string {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		h.Write([]byte(k))
-		h.Write([]byte(cm.Data[k]))
+		writeHashField(h, []byte(k))
+		writeHashField(h, []byte(cm.Data[k]))
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// secretDataHash computes a deterministic SHA-256 hash over the Data keys and values
+// of a Secret. Used as a pod template annotation to trigger rolling restarts when
+// TLS certificates are renewed.
+func secretDataHash(secret *corev1.Secret) string {
+	h := sha256.New()
+	keys := make([]string, 0, len(secret.Data))
+	for k := range secret.Data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		writeHashField(h, []byte(k))
+		writeHashField(h, secret.Data[k])
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// getTLSSecretHash fetches a TLS secret by name and returns its data hash.
+// Returns an empty string if the secret does not exist yet.
+func (r *JumpstarterReconciler) getTLSSecretHash(ctx context.Context, namespace, name string) (string, error) {
+	if name == "" {
+		return "", nil
+	}
+	var secret corev1.Secret
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &secret); err != nil {
+		if errors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to get TLS secret %s: %w", name, err)
+	}
+	return secretDataHash(&secret), nil
+}
+
 // createControllerDeployment creates a deployment for the controller
-func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash string) *appsv1.Deployment {
+func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash, tlsSecretHash string) *appsv1.Deployment {
 	labels := map[string]string{
 		"component":  "controller",
 		"app":        "jumpstarter-controller",
@@ -818,10 +907,8 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-					Annotations: map[string]string{
-						"jumpstarter.dev/configmap-sha256": configMapHash,
-					},
+					Labels:      labels,
+					Annotations: r.buildControllerPodAnnotations(jumpstarter, configMapHash, tlsSecretHash),
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy:                 corev1.RestartPolicyAlways,
@@ -918,8 +1005,38 @@ func boolPtr(b bool) *bool {
 	return &b
 }
 
+// buildControllerPodAnnotations builds the pod template annotations for the controller deployment.
+// Includes config/TLS hashes for rolling restart on changes, plus any user-provided pod annotations.
+func (r *JumpstarterReconciler) buildControllerPodAnnotations(jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash, tlsSecretHash string) map[string]string {
+	annotations := make(map[string]string)
+	for k, v := range jumpstarter.Spec.Controller.PodAnnotations {
+		annotations[k] = v
+	}
+	annotations["jumpstarter.dev/configmap-sha256"] = configMapHash
+	if tlsSecretHash != "" {
+		annotations["jumpstarter.dev/tls-secret-sha256"] = tlsSecretHash
+	}
+	return annotations
+}
+
+// buildRouterPodAnnotations builds the pod template annotations for a router deployment.
+// Includes TLS hash for rolling restart on cert renewal, plus any user-provided pod annotations.
+func (r *JumpstarterReconciler) buildRouterPodAnnotations(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSecretHash string) map[string]string {
+	annotations := make(map[string]string)
+	for k, v := range jumpstarter.Spec.Routers.PodAnnotations {
+		annotations[k] = v
+	}
+	if tlsSecretHash != "" {
+		annotations["jumpstarter.dev/tls-secret-sha256"] = tlsSecretHash
+	}
+	if len(annotations) == 0 {
+		return nil
+	}
+	return annotations
+}
+
 // createRouterDeployment creates a deployment for a specific router replica
-func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, replicaIndex int32) *appsv1.Deployment {
+func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, replicaIndex int32, tlsSecretHash string) *appsv1.Deployment {
 	// Base app label that ALL services for this replica will select
 	// Individual services will be named with endpoint suffixes, but all select the same pods
 	baseAppLabel := fmt.Sprintf("%s-router-%d", jumpstarter.Name, replicaIndex)
@@ -965,13 +1082,9 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 	var volumeMounts []corev1.VolumeMount
 	var volumes []corev1.Volume
 
-	// Add TLS certificate mount when cert-manager is enabled OR when manual cert secret is provided
-	var tlsSecretName string
-	if jumpstarter.Spec.CertManager.Enabled {
-		tlsSecretName = GetRouterCertSecretName(jumpstarter, replicaIndex)
-	} else if jumpstarter.Spec.Routers.GRPC.TLS.CertSecret != "" {
-		tlsSecretName = jumpstarter.Spec.Routers.GRPC.TLS.CertSecret
-	}
+	// Add TLS certificate mount when cert-manager is enabled OR when manual cert secret is provided.
+	// Use routerTLSSecretName so the mounted secret matches the hash annotation.
+	tlsSecretName := routerTLSSecretName(jumpstarter, replicaIndex)
 
 	if tlsSecretName != "" {
 		envVars = append(envVars,
@@ -1018,7 +1131,8 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
+					Labels:      labels,
+					Annotations: r.buildRouterPodAnnotations(jumpstarter, tlsSecretHash),
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy:                 corev1.RestartPolicyAlways,
@@ -1542,37 +1656,56 @@ func defaultRouterResources(spec corev1.ResourceRequirements) corev1.ResourceReq
 	return spec
 }
 
-// Index field names used to look up Jumpstarter CRs from referenced CA resources.
+// Index field names used to look up Jumpstarter CRs from referenced resources.
 const (
-	// indexCASecret is the field index that maps each Jumpstarter CR to the
-	// "namespace/name" keys of Secrets referenced as JWT CA certificates.
-	indexCASecret = ".spec.authentication.jwt.certificateAuthoritySecret"
+	// indexReferencedSecret is the field index that maps each Jumpstarter CR to the
+	// "namespace/name" keys of all Secrets it references (JWT CA certs + TLS certs).
+	indexReferencedSecret = ".spec.referencedSecrets"
 	// indexCAConfigMap is the field index that maps each Jumpstarter CR to the
 	// "namespace/name" keys of ConfigMaps referenced as JWT CA certificates.
 	indexCAConfigMap = ".spec.authentication.jwt.certificateAuthorityConfigMap"
 )
 
 // SetupWithManager sets up the controller with the Manager.
-// In addition to watching owned resources, it watches any Secrets and ConfigMaps
-// referenced as JWT CA certificates so that CA rotations are picked up automatically.
+// In addition to watching owned resources, it watches Secrets (JWT CA certs and TLS certs)
+// and ConfigMaps referenced as JWT CA certificates so that rotations trigger reconciliation.
 func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// Index Jumpstarter CRs by the Secrets they reference as CA certificates.
+	// Index Jumpstarter CRs by all Secrets they reference (JWT CA certs + TLS certs).
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(),
 		&operatorv1alpha1.Jumpstarter{},
-		indexCASecret,
+		indexReferencedSecret,
 		func(obj client.Object) []string {
 			jumpstarter := obj.(*operatorv1alpha1.Jumpstarter)
 			var keys []string
+
+			// JWT CA certificate secrets
 			for _, jwtCfg := range jumpstarter.Spec.Authentication.JWT {
 				if ref := jwtCfg.CertificateAuthoritySecret; ref != nil {
 					keys = append(keys, jumpstarter.Namespace+"/"+ref.Name)
 				}
 			}
+
+			// Controller TLS cert secret
+			if jumpstarter.Spec.CertManager.Enabled {
+				keys = append(keys, jumpstarter.Namespace+"/"+GetControllerCertSecretName(jumpstarter))
+			} else if s := jumpstarter.Spec.Controller.GRPC.TLS.CertSecret; s != "" {
+				keys = append(keys, jumpstarter.Namespace+"/"+s)
+			}
+
+			// Router TLS cert secrets
+			if jumpstarter.Spec.CertManager.Enabled {
+				for i := int32(0); i < jumpstarter.Spec.Routers.Replicas; i++ {
+					keys = append(keys, jumpstarter.Namespace+"/"+GetRouterCertSecretName(jumpstarter, i))
+				}
+			} else if s := jumpstarter.Spec.Routers.GRPC.TLS.CertSecret; s != "" {
+				keys = append(keys, jumpstarter.Namespace+"/"+s)
+			}
+
 			return keys
 		},
 	); err != nil {
-		return fmt.Errorf("failed to set up %s index: %w", indexCASecret, err)
+		return fmt.Errorf("failed to set up %s index: %w", indexReferencedSecret, err)
 	}
 
 	// Index Jumpstarter CRs by the ConfigMaps they reference as CA certificates.
@@ -1595,16 +1728,16 @@ func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	// mapSecretToJumpstarters returns a reconcile request for every Jumpstarter
-	// CR that references the changed Secret as a JWT CA certificate.
+	// CR that references the changed Secret (JWT CA cert or TLS cert).
 	mapSecretToJumpstarters := func(ctx context.Context, obj client.Object) []ctrl.Request {
 		secret := obj.(*corev1.Secret)
 		key := secret.Namespace + "/" + secret.Name
 
 		var jumpstarterList operatorv1alpha1.JumpstarterList
 		if err := mgr.GetClient().List(ctx, &jumpstarterList, client.MatchingFields{
-			indexCASecret: key,
+			indexReferencedSecret: key,
 		}); err != nil {
-			logf.FromContext(ctx).Error(err, "Failed to list Jumpstarters for Secret CA ref", "secret", key)
+			logf.FromContext(ctx).Error(err, "Failed to list Jumpstarters for Secret ref", "secret", key)
 			return nil
 		}
 
@@ -1645,8 +1778,8 @@ func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&rbacv1.Role{}).
 		Owns(&rbacv1.RoleBinding{}).
 		// Note: Secrets and ServiceAccounts are intentionally NOT owned to prevent deletion.
-		// However, we do watch Secrets and ConfigMaps referenced as JWT CA certificates so
-		// that CA rotations are picked up automatically and the ConfigMap is updated.
+		// We watch Secrets referenced as JWT CA certificates and TLS certs so that
+		// rotations trigger reconciliation and rolling restarts via hash annotations.
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(mapSecretToJumpstarters)).
 		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(mapConfigMapToJumpstarters)).
 		Complete(r)

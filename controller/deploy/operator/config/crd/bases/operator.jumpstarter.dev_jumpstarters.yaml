@@ -1076,6 +1076,11 @@ spec:
                             type: string
                         type: object
                     type: object
+                  podAnnotations:
+                    additionalProperties:
+                      type: string
+                    description: Custom annotations to add to controller pod templates.
+                    type: object
                   replicas:
                     default: 2
                     description: |-
@@ -1833,6 +1838,11 @@ spec:
                     - IfNotPresent
                     - Never
                     type: string
+                  podAnnotations:
+                    additionalProperties:
+                      type: string
+                    description: Custom annotations to add to router pod templates.
+                    type: object
                   replicas:
                     default: 3
                     description: |-
