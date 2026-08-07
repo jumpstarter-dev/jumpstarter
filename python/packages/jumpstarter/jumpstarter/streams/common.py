@@ -11,6 +11,13 @@ from anyio import (
 from anyio.abc import AnyByteStream
 from anyio.streams.stapled import StapledObjectStream
 
+from jumpstarter.metrics.registry import (
+    StreamDirection,
+    exemplars_from_log_context,
+    exporter_from_log_context,
+    get_registry,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,15 +25,9 @@ async def copy_stream(
     dst: AnyByteStream,
     src: AnyByteStream,
     *,
-    metrics_direction: str | None = None,
+    metrics_direction: StreamDirection | None = None,
     metrics_driver_type: str = "other",
 ):
-    from jumpstarter.metrics.registry import (
-        exemplars_from_log_context,
-        exporter_from_log_context,
-        get_registry,
-    )
-
     try:
         async for v in src:
             if metrics_direction is not None:

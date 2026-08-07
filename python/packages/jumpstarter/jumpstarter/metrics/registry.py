@@ -1,6 +1,8 @@
-"""Exporter-local Prometheus metrics registry (JEP-0013 Phase 2)."""
+"""Exporter-local Prometheus metrics registry."""
 
 from __future__ import annotations
+
+from typing import Literal
 
 import structlog
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
@@ -8,11 +10,22 @@ from prometheus_client.openmetrics.exposition import generate_latest as generate
 
 DEFAULT_EXEMPLAR_KEYS = ("client", "lease_id")
 
+OperationResult = Literal["success", "failure"]
+StreamDirection = Literal["tx", "rx"]
+ErrorType = Literal[
+    "not_implemented",
+    "validation_error",
+    "timeout",
+    "connection_error",
+    "device_error",
+    "internal_error",
+]
+
 _REGISTRY: MetricsRegistry | None = None
 
 
 def filter_exemplars(exemplars: dict[str, str] | None) -> dict[str, str] | None:
-    """Keep only the JEP default exemplar keys with non-empty values."""
+    """Keep only the default exemplar keys with non-empty values."""
     if not exemplars:
         return None
     filtered = {
@@ -36,7 +49,7 @@ def exporter_from_log_context(default: str = "unknown") -> str:
 
 
 class MetricsRegistry:
-    """Process-local CollectorRegistry holding JEP-named exporter series."""
+    """Process-local CollectorRegistry holding exporter metric series."""
 
     def __init__(self) -> None:
         self._registry = CollectorRegistry()
@@ -54,7 +67,7 @@ class MetricsRegistry:
         )
         self._errors = Counter(
             "jumpstarter_operation_errors_total",
-            "Errors by class (timeout, device, …).",
+            "Errors by class (timeout, device, ...).",
             ["exporter", "operation", "driver_type", "error_type"],
             registry=self._registry,
         )
@@ -80,11 +93,11 @@ class MetricsRegistry:
         *,
         exporter: str,
         operation: str,
-        result: str,
+        result: OperationResult,
         driver_type: str,
         duration_seconds: float,
         exemplars: dict[str, str] | None = None,
-        error_type: str | None = None,
+        error_type: ErrorType | None = None,
     ) -> None:
         labels = {
             "exporter": exporter,
@@ -108,10 +121,11 @@ class MetricsRegistry:
         *,
         exporter: str,
         driver_type: str,
-        direction: str,
+        direction: StreamDirection,
         nbytes: int,
         exemplars: dict[str, str] | None = None,
     ) -> None:
+        # Zero/negative transfers are not observed (no counter change).
         if nbytes <= 0:
             return
         self._stream_bytes.labels(

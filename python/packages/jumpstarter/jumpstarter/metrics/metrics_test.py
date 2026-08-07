@@ -1,19 +1,27 @@
-"""JEP-0013 Phase 2 exporter metrics tests."""
+"""Exporter-local Prometheus metrics tests."""
 
 from __future__ import annotations
 
 import re
-import urllib.error
 import urllib.request
 
 import pytest
+import structlog
 
+from jumpstarter.client.core import DriverError, DriverMethodNotImplemented
+from jumpstarter.driver import Driver, export
 from jumpstarter.metrics import (
     DEFAULT_EXEMPLAR_KEYS,
     get_registry,
     reset_registry_for_tests,
     start_metrics_server,
 )
+from jumpstarter.metrics.registry import (
+    exemplars_from_log_context,
+    exporter_from_log_context,
+    filter_exemplars,
+)
+from jumpstarter.metrics.server import _parse_bind_addr
 
 SERIES = (
     "jumpstarter_operations_total",
@@ -31,8 +39,61 @@ def _fresh_registry():
     reset_registry_for_tests()
 
 
+def _sample_value(reg, name: str, labels: dict[str, str]) -> float | None:
+    for family in reg.collector_registry.collect():
+        for sample in family.samples:
+            if sample.name != name:
+                continue
+            if all(sample.labels.get(k) == v for k, v in labels.items()):
+                return float(sample.value)
+    return None
+
+
 def test_default_exemplar_keys():
     assert DEFAULT_EXEMPLAR_KEYS == ("client", "lease_id")
+
+
+def test_filter_exemplars_allowlist_and_empty():
+    assert filter_exemplars(None) is None
+    assert filter_exemplars({}) is None
+    assert filter_exemplars({"client": "", "lease_id": "x"}) == {"lease_id": "x"}
+    assert filter_exemplars({"client": "c", "lease_id": "l", "ignored": "nope"}) == {
+        "client": "c",
+        "lease_id": "l",
+    }
+
+
+def test_exemplars_and_exporter_from_log_context():
+    structlog.contextvars.clear_contextvars()
+    assert exemplars_from_log_context() is None
+    assert exporter_from_log_context() == "unknown"
+
+    structlog.contextvars.bind_contextvars(client="ci-bot", lease_id="lease-1", exporter="lab-01")
+    try:
+        assert exemplars_from_log_context() == {"client": "ci-bot", "lease_id": "lease-1"}
+        assert exporter_from_log_context() == "lab-01"
+    finally:
+        structlog.contextvars.clear_contextvars()
+
+
+def test_parse_bind_addr_defaults_to_loopback():
+    assert _parse_bind_addr(":8080") == ("127.0.0.1", 8080)
+    assert _parse_bind_addr("8080") == ("127.0.0.1", 8080)
+    assert _parse_bind_addr("0.0.0.0:9090") == ("0.0.0.0", 9090)
+    assert _parse_bind_addr("127.0.0.1:0")[0] == "127.0.0.1"
+
+
+def test_add_stream_bytes_ignores_non_positive():
+    reg = get_registry()
+    reg.add_stream_bytes(exporter="lab-01", driver_type="serial", direction="tx", nbytes=0)
+    reg.add_stream_bytes(exporter="lab-01", driver_type="serial", direction="tx", nbytes=-5)
+    body = reg.generate_latest().decode()
+    # Series may be absent entirely until a positive observation.
+    assert 'direction="tx"' not in body or _sample_value(
+        reg,
+        "jumpstarter_stream_bytes_total",
+        {"exporter": "lab-01", "driver_type": "serial", "direction": "tx"},
+    ) in (None, 0.0)
 
 
 def test_generate_latest_contains_named_series_after_increments():
@@ -68,7 +129,6 @@ def test_generate_latest_contains_named_series_after_increments():
     for name in SERIES:
         assert name in body, f"expected series {name} in exposition"
 
-    assert 'jumpstarter_operations_total{' in body or "jumpstarter_operations_total{" in body
     assert 'exporter="lab-01"' in body
     assert 'operation="on"' in body
     assert 'result="success"' in body
@@ -78,7 +138,37 @@ def test_generate_latest_contains_named_series_after_increments():
     )
     assert 'error_type="timeout"' in body
     assert 'direction="tx"' in body
-    assert "jumpstarter_active_sessions" in body
+
+    success = _sample_value(
+        reg,
+        "jumpstarter_operations_total",
+        {
+            "exporter": "lab-01",
+            "operation": "on",
+            "result": "success",
+            "driver_type": "power",
+        },
+    )
+    assert success == 1.0
+
+    errors = _sample_value(
+        reg,
+        "jumpstarter_operation_errors_total",
+        {
+            "exporter": "lab-01",
+            "operation": "flash",
+            "driver_type": "storage",
+            "error_type": "timeout",
+        },
+    )
+    assert errors == 1.0
+
+    stream = _sample_value(
+        reg,
+        "jumpstarter_stream_bytes_total",
+        {"exporter": "lab-01", "driver_type": "serial", "direction": "tx"},
+    )
+    assert stream == 128.0
 
 
 def test_exemplars_include_client_and_lease_id():
@@ -92,7 +182,6 @@ def test_exemplars_include_client_and_lease_id():
         exemplars={"client": "ci-bot", "lease_id": "lease-xyz"},
     )
     body = reg.generate_latest().decode()
-    # OpenMetrics exemplar form: # {client="...",lease_id="..."}
     assert re.search(r'client="ci-bot"', body)
     assert re.search(r'lease_id="lease-xyz"', body)
     assert "# {" in body or " # {" in body
@@ -117,6 +206,44 @@ def test_metrics_server_disabled_when_addr_zero():
     assert start_metrics_server("") == ""
 
 
+class _TimeoutDriver(Driver):
+    driver_type = "power"
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @export
+    def boom(self):
+        raise TimeoutError("deadline exceeded")
+
+
+def test_driver_call_maps_timeout_error_type():
+    from jumpstarter.common.utils import serve
+
+    with serve(_TimeoutDriver()) as client:
+        with pytest.raises(DriverError):
+            client.call("boom")
+        body = get_registry().generate_latest().decode()
+        assert 'error_type="timeout"' in body
+        assert 'operation="boom"' in body
+        assert 'result="failure"' in body
+
+
+def test_unknown_driver_method_does_not_record_operation_metric():
+    """AbortError from method lookup must not create an operation time series."""
+    from jumpstarter_driver_power.driver import MockPower
+
+    from jumpstarter.common.utils import serve
+
+    with serve(MockPower()) as client:
+        with pytest.raises(DriverMethodNotImplemented):
+            client.call("definitely_not_a_real_method_xyz")
+        body = get_registry().generate_latest().decode()
+        assert "definitely_not_a_real_method_xyz" not in body
+        assert 'error_type="internal_error"' not in body
+
+
 def test_driver_call_increments_operations_and_active_sessions():
     """Minimal wiring: Session + DriverCall should bump named series."""
     from jumpstarter_driver_power.driver import MockPower
@@ -131,3 +258,20 @@ def test_driver_call_increments_operations_and_active_sessions():
         assert 'driver_type="power"' in body
         assert 'result="success"' in body
         assert 'operation="on"' in body or 'operation="On"' in body
+
+        success = _sample_value(
+            get_registry(),
+            "jumpstarter_operations_total",
+            {
+                "exporter": "unknown",
+                "operation": "on",
+                "result": "success",
+                "driver_type": "power",
+            },
+        )
+        if success is None:
+            # Exporter label comes from session name when set.
+            assert 'result="success"' in body
+            assert 'operation="on"' in body or 'operation="On"' in body
+        else:
+            assert success == 1.0

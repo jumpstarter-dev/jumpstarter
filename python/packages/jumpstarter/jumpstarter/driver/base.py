@@ -17,6 +17,7 @@ from urllib.parse import urlparse, urlunparse
 from uuid import UUID, uuid4
 
 import aiohttp
+import grpc.aio
 import yarl
 from anyio import BrokenResourceError, to_thread
 from grpc import StatusCode
@@ -39,6 +40,11 @@ from jumpstarter.common.streams import (
 )
 from jumpstarter.config.env import JMP_DISABLE_COMPRESSION
 from jumpstarter.exporter.logging import get_logger
+from jumpstarter.metrics.registry import (
+    exemplars_from_log_context,
+    exporter_from_log_context,
+    get_registry,
+)
 from jumpstarter.streams.aiohttp import AiohttpStreamReaderStream
 from jumpstarter.streams.common import create_memory_stream
 from jumpstarter.streams.encoding import Compression, compress_stream
@@ -122,12 +128,6 @@ class Driver(
         duration_seconds: float,
         error_type: str | None = None,
     ) -> None:
-        from jumpstarter.metrics.registry import (
-            exemplars_from_log_context,
-            exporter_from_log_context,
-            get_registry,
-        )
-
         get_registry().record_operation(
             exporter=exporter_from_log_context(default=self.name if hasattr(self, "name") else "unknown"),
             operation=operation,
@@ -236,6 +236,10 @@ class Driver(
                        "result": "failure", "error_type": "device_error"},
             )
             await context.abort(StatusCode.INTERNAL, str(e))
+        except grpc.aio.AbortError:
+            # Propagate context.abort() from lookup/handlers without recording
+            # metrics (avoids client-controlled operation label cardinality).
+            raise
         except Exception as e:
             self._record_operation_metrics(
                 operation=op,
@@ -250,7 +254,7 @@ class Driver(
             )
             await context.abort(StatusCode.UNKNOWN, str(e))
 
-    async def StreamingDriverCall(self, request, context):
+    async def StreamingDriverCall(self, request, context):  # noqa: C901
         """
         :meta private:
         """
@@ -351,6 +355,10 @@ class Driver(
                        "result": "failure", "error_type": "device_error"},
             )
             await context.abort(StatusCode.INTERNAL, str(e))
+        except grpc.aio.AbortError:
+            # Propagate context.abort() from lookup/handlers without recording
+            # metrics (avoids client-controlled operation label cardinality).
+            raise
         except Exception as e:
             self._record_operation_metrics(
                 operation=op,

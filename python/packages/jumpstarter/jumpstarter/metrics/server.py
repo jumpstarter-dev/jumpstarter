@@ -11,13 +11,18 @@ from .registry import MetricsRegistry, get_registry
 
 
 def _parse_bind_addr(addr: str) -> tuple[str, int]:
-    """Parse bind address forms: ':8080', '127.0.0.1:0', '8080'."""
+    """Parse bind address forms: ':8080', '127.0.0.1:0', '8080'.
+
+    When the host is omitted, default to loopback. Metrics endpoints are
+    typically scraped via localhost/sidecar; use an explicit 0.0.0.0 host
+    when remote scrape is required.
+    """
     if ":" in addr:
         host, _, port_s = addr.rpartition(":")
         if host == "":
-            host = "0.0.0.0"
+            host = "127.0.0.1"
     else:
-        host = "0.0.0.0"
+        host = "127.0.0.1"
         port_s = addr
     return host, int(port_s)
 

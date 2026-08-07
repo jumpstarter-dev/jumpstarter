@@ -70,7 +70,11 @@ class Session(
             try:
                 get_registry().inc_active_sessions(exporter=self.name, delta=-1.0)
             except Exception:
-                pass
+                logger.warning(
+                    "Failed to decrement active sessions metric for exporter %s",
+                    self.name,
+                    exc_info=True,
+                )
             try:
                 self.root_device.close()
             except Exception as e:

@@ -1,4 +1,4 @@
-"""Exporter-local Prometheus metrics (JEP-0013 Phase 2)."""
+"""Exporter-local Prometheus metrics."""
 
 from .registry import (
     DEFAULT_EXEMPLAR_KEYS,
