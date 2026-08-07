@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -28,13 +29,21 @@ import (
 )
 
 func TestMetricsEndpointServesPrometheusText(t *testing.T) {
-	addr, err := startMetricsServer("127.0.0.1:0")
+	addr, shutdown, err := startMetricsServer("127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("startMetricsServer: %v", err)
 	}
 	if addr == "" {
 		t.Fatal("expected non-empty listen address")
 	}
+	if shutdown == nil {
+		t.Fatal("expected non-nil shutdown func when server is enabled")
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = shutdown(ctx)
+	})
 
 	client := &http.Client{Timeout: 2 * time.Second}
 	var resp *http.Response
@@ -100,11 +109,50 @@ func familyNames(families map[string]*dto.MetricFamily) []string {
 }
 
 func TestMetricsServerDisabledWhenAddrZero(t *testing.T) {
-	addr, err := startMetricsServer("0")
+	addr, shutdown, err := startMetricsServer("0")
 	if err != nil {
 		t.Fatalf("startMetricsServer(0): %v", err)
 	}
 	if addr != "" {
 		t.Fatalf("expected empty addr when disabled, got %q", addr)
+	}
+	if shutdown != nil {
+		t.Fatal("expected nil shutdown func when server is disabled")
+	}
+}
+
+func TestMetricsServerShutdown(t *testing.T) {
+	addr, shutdown, err := startMetricsServer("127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("startMetricsServer: %v", err)
+	}
+	if shutdown == nil {
+		t.Fatal("expected non-nil shutdown func")
+	}
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	var lastErr error
+	for i := 0; i < 20; i++ {
+		var resp *http.Response
+		resp, lastErr = client.Get("http://" + addr + "/metrics")
+		if lastErr == nil {
+			_ = resp.Body.Close()
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if lastErr != nil {
+		t.Fatalf("GET /metrics before shutdown: %v", lastErr)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := shutdown(ctx); err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+
+	_, err = client.Get("http://" + addr + "/metrics")
+	if err == nil {
+		t.Fatal("expected GET /metrics to fail after shutdown")
 	}
 }

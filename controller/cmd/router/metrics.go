@@ -17,25 +17,28 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 // startMetricsServer starts an HTTP server exposing GET /metrics.
-// addr "0" or empty disables the server and returns ("", nil).
+// addr "0" or empty disables the server and returns ("", nil, nil).
 // addr ending with ":0" binds an ephemeral port; the returned listen address
 // is host:port suitable for http.Get.
-func startMetricsServer(addr string) (string, error) {
+// The returned shutdown func gracefully stops the server (nil when disabled).
+func startMetricsServer(addr string) (string, func(context.Context) error, error) {
 	if addr == "" || addr == "0" {
-		return "", nil
+		return "", nil, nil
 	}
 
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	mux := http.NewServeMux()
@@ -51,8 +54,10 @@ func startMetricsServer(addr string) (string, error) {
 		IdleTimeout: 5 * time.Minute,
 	}
 	go func() {
-		_ = srv.Serve(ln)
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			ctrl.Log.WithName("metrics").Error(err, "metrics server stopped unexpectedly")
+		}
 	}()
 
-	return ln.Addr().String(), nil
+	return ln.Addr().String(), srv.Shutdown, nil
 }

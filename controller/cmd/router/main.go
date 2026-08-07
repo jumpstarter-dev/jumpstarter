@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	kclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -62,10 +63,12 @@ func main() {
 		"buildDate", buildDate,
 	)
 
-	if listenAddr, err := startMetricsServer(metricsAddr); err != nil {
+	var shutdownMetrics func(context.Context) error
+	if listenAddr, shutdown, err := startMetricsServer(metricsAddr); err != nil {
 		logger.Error(err, "failed to start metrics server", "bindAddress", metricsAddr)
 		os.Exit(1)
 	} else if listenAddr != "" {
+		shutdownMetrics = shutdown
 		logger.Info("Serving metrics server", "bindAddress", listenAddr)
 	}
 
@@ -99,4 +102,12 @@ func main() {
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-sigs
 	logger.Info("received signal, exiting", "signal", sig)
+
+	if shutdownMetrics != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownMetrics(shutdownCtx); err != nil {
+			logger.Error(err, "failed to shut down metrics server")
+		}
+	}
 }
