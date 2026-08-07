@@ -1043,6 +1043,33 @@ class TestHookExecutor:
             assert result is None
 
     @macos_pty_xfail
+    async def test_main_loop_non_oserror_is_caught(self, lease_scope) -> None:
+        """Verify that a non-OSError exception in the main read loop is caught
+        by the except-Exception handler and does not propagate to the caller.
+        """
+        hook_config = HookConfigV1Alpha1(
+            before_lease=HookInstanceConfigV1Alpha1(
+                script="echo MAIN_LOOP_ERROR",
+                timeout=10,
+            ),
+        )
+        executor = HookExecutor(config=hook_config)
+
+        def flush_lines_always_error(buffer, output_lines):
+            raise ValueError("simulated non-OSError")
+
+        with (
+              patch("jumpstarter.exporter.hooks._flush_lines", side_effect=flush_lines_always_error),
+              patch("jumpstarter.exporter.hooks.logger") as mock_logger,
+          ):
+              result = await executor.execute_before_lease_hook(lease_scope)
+              assert result is None
+              debug_calls = [str(c) for c in mock_logger.debug.call_args_list]
+              assert any("unexpected error in loop" in c for c in debug_calls), (
+                  f"Expected main-loop exception handler to log, got: {debug_calls}"
+              )
+
+    @macos_pty_xfail
     async def test_drain_retries_empty_select_then_captures_data(self, lease_scope) -> None:
         """Verify that the drain retries after empty select() calls and still
         captures data that arrives later.

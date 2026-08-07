@@ -427,6 +427,11 @@ class HookExecutor:
                                 # PTY closed or read error
                                 logger.debug("read_pty_output: OSError in loop: %s", e)
                                 break
+
+                            except Exception as e:
+                                logger.debug("read_pty_output: unexpected error in loop: %s", e)
+                                break
+
                     finally:
                         # Drain any remaining data from the PTY buffer.
                         # On macOS, PTY output may still be in the kernel buffer
