@@ -3662,6 +3662,7 @@ name = "jumpstarter-driver-ustreamer"
 source = { editable = "packages/jumpstarter-driver-ustreamer" }
 dependencies = [
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-video" },
     { name = "pillow" },
 ]
 
@@ -3674,6 +3675,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-video", editable = "packages/jumpstarter-driver-video" },
     { name = "pillow", specifier = ">=10.4.0" },
 ]
 

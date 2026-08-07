@@ -12,6 +12,7 @@ from tempfile import TemporaryDirectory
 
 from aiohttp import ClientSession, UnixConnector
 from anyio import connect_unix
+from jumpstarter_driver_video.driver import VideoInterface
 
 from .common import UStreamerState
 from jumpstarter.driver import Driver, export, exportstream
@@ -53,9 +54,7 @@ def _get_preexec_fn() -> Callable[[], None] | None:
 
 
 @dataclass(kw_only=True)
-class UStreamer(Driver):
-    driver_type = "video"
-
+class UStreamer(VideoInterface, Driver):
     executable: str = field(default_factory=find_ustreamer)
     args: dict[str, str] = field(default_factory=dict)
     tempdir: TemporaryDirectory = field(default_factory=TemporaryDirectory)
@@ -107,6 +106,10 @@ class UStreamer(Driver):
                 length = len(data)
                 self.logger.debug(f"snapshot: {length} bytes")
                 return b64encode(data).decode("ascii")
+
+    @export
+    def stream_path(self) -> str:
+        return "/stream"
 
     @exportstream
     @asynccontextmanager
