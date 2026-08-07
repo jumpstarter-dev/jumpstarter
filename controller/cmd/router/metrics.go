@@ -19,6 +19,7 @@ package main
 import (
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -40,7 +41,15 @@ func startMetricsServer(addr string) (string, error) {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
 
-	srv := &http.Server{Handler: mux}
+	srv := &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		// IdleTimeout is generous so Prometheus scrape keepalives survive
+		// typical scrape intervals without churning connections.
+		IdleTimeout: 5 * time.Minute,
+	}
 	go func() {
 		_ = srv.Serve(ln)
 	}()

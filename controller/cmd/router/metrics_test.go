@@ -22,6 +22,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
 )
 
 func TestMetricsEndpointServesPrometheusText(t *testing.T) {
@@ -46,7 +49,7 @@ func TestMetricsEndpointServesPrometheusText(t *testing.T) {
 	if lastErr != nil {
 		t.Fatalf("GET /metrics: %v", lastErr)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
@@ -59,11 +62,41 @@ func TestMetricsEndpointServesPrometheusText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
-	text := string(body)
-	// Default Go process metrics should appear; do not require undocumented jumpstarter_* series.
-	if !strings.Contains(text, "go_") && !strings.Contains(text, "process_") && !strings.Contains(text, "promhttp_") {
-		t.Fatalf("expected Prometheus exposition with go_/process_ metrics, got:\n%s", text)
+
+	// Validate Prometheus exposition contract (not substring heuristics).
+	var parser expfmt.TextParser
+	families, err := parser.TextToMetricFamilies(strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatalf("parse Prometheus exposition: %v\nbody:\n%s", err, body)
 	}
+	if len(families) == 0 {
+		t.Fatal("expected at least one metric family from default promhttp handler")
+	}
+
+	// Default Go process metrics should appear; do not require undocumented jumpstarter_* series.
+	hasGo, hasProcess := false, false
+	for name := range families {
+		switch {
+		case strings.HasPrefix(name, "go_"):
+			hasGo = true
+		case strings.HasPrefix(name, "process_"):
+			hasProcess = true
+		}
+	}
+	if !hasGo {
+		t.Fatalf("expected go_* metric family, got families: %v", familyNames(families))
+	}
+	if !hasProcess {
+		t.Fatalf("expected process_* metric family, got families: %v", familyNames(families))
+	}
+}
+
+func familyNames(families map[string]*dto.MetricFamily) []string {
+	names := make([]string, 0, len(families))
+	for name := range families {
+		names = append(names, name)
+	}
+	return names
 }
 
 func TestMetricsServerDisabledWhenAddrZero(t *testing.T) {
