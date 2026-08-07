@@ -31,9 +31,10 @@ export:
 
 | Parameter | Description                                    | Type | Required | Default                    |
 | --------- | ---------------------------------------------- | ---- | -------- | -------------------------- |
-| adb_path  | Path to the ADB executable on the exporter     | str  | no       | "adb" (resolved from PATH) |
-| host      | Host address of the ADB server on the exporter | str  | no       | "127.0.0.1"                |
-| port      | Port of the ADB server on the exporter         | int  | no       | 15037                      |
+| adb_path        | Path to the ADB executable on the exporter          | str   | no       | "adb" (resolved from PATH) |
+| host            | Host address of the ADB server on the exporter      | str   | no       | "127.0.0.1"                |
+| port            | Port of the ADB server on the exporter              | int   | no       | 15037                      |
+| connect_timeout | Timeout (seconds) for `connect`/`disconnect` commands | float | no       | 30.0                       |
 
 ### Port Assignment
 
@@ -101,6 +102,81 @@ For native `adb` or external tools, export the env vars printed by the
 
 The `nodaemon` command is not supported as it would start a local ADB server
 process, ignoring the tunnel entirely.
+
+### Connecting to a remote device
+
+When the Android device is **not** attached to the exporter over USB but is
+reachable over the network (for example a virtual device such as
+[Cuttlefish](https://source.android.com/docs/devices/cuttlefish), or a device
+exposing `adb` over TCP/IP), the exporter's ADB server must `connect` to it
+before any `adb` command will see it.
+
+The `connect_device` / `disconnect_device` driver methods run
+`adb connect <host:port>` / `adb disconnect <host:port>` on the exporter. The
+address is supplied by the caller — this driver does **not** discover or scan
+for devices. Timeouts and command failures raise, so callers can react instead
+of receiving a silent error string.
+
+#### From the CLI
+
+`connect` and `disconnect` are also plain adb commands, so they pass through the
+tunnel like any other:
+
+```bash
+# Connect the exporter's ADB server to a networked device, then use it
+j adb connect 10.0.0.5:6520
+j adb devices
+j adb shell getprop ro.product.model
+j adb disconnect 10.0.0.5:6520
+```
+
+#### From a parent (composite) driver
+
+The intended use case is a higher-level driver that owns the device lifecycle
+and knows the address deterministically — no IP discovery needed. For example,
+the Cuttlefish driver embeds an `AdbServer` child and connects to a pinned
+address derived from its own config (`host` + an ADB port computed from the
+instance number) after the virtual device is created:
+
+```python
+class CuttlefishServer(CompositeInterface, Driver):
+    def __post_init__(self):
+        super().__post_init__()
+        # AdbServer runs on the exporter; the parent drives connect/disconnect
+        self.children["adb"] = AdbServer(host="127.0.0.1", port=self.adb_server_port)
+
+    def _adb_device(self) -> str:
+        # Address is known from config, never scanned
+        return f"{self.host}:{6520 + self.instance_num - 1}"
+
+    def _connect(self):
+        adb = self.children["adb"]
+        device = self._adb_device()
+        try:
+            adb.connect_device(device)
+        except (subprocess.CalledProcessError, TimeoutError) as e:
+            # Device may not be up yet; the boot-wait loop below reconnects.
+            self.logger.warning("ADB connect to %s failed (%s); retrying while waiting for boot", device, e)
+        # unexpected exceptions (config/programming errors) propagate
+
+    def _wait_for_boot(self):
+        adb = self.children["adb"]
+        device = self._adb_device()
+        deadline = time.monotonic() + self.boot_timeout
+        while time.monotonic() < deadline:
+            try:
+                adb.connect_device(device)
+                if self._is_booted(device):
+                    return
+            except (subprocess.CalledProcessError, TimeoutError):
+                pass
+            time.sleep(3)
+        raise TimeoutError(f"{device} did not come online within {self.boot_timeout}s")
+```
+
+Because `connect_device` raises on failure or timeout, the parent catches only
+the *expected* connection failures (letting configuration or programming errors
+propagate) and drives its own retry loop rather than parsing return strings.
 
 ### Integration with Android Ecosystem Tools
 
@@ -207,12 +283,12 @@ with client.adb.forward_adb(port=0) as (host, port):
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_adb.driver.AdbServer()
-    :members: start_server, kill_server, list_devices
+    :members: start_server, kill_server, connect_device, disconnect_device, list_devices
 ```
 
 ### Client
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_adb.client.AdbClient()
-    :members: forward_adb, start_server, kill_server, list_devices
+    :members: forward_adb, start_server, kill_server, connect_device, disconnect_device, list_devices
 ```

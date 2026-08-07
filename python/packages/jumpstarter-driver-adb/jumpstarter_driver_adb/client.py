@@ -79,6 +79,14 @@ class AdbClient(DriverClient):
         """Kill ADB server on the exporter."""
         return self.call("kill_server")
 
+    def connect_device(self, device: str) -> str:
+        """Connect to an ADB device by address (host:port)."""
+        return self.call("connect_device", device)
+
+    def disconnect_device(self, device: str) -> str:
+        """Disconnect an ADB device by address (host:port)."""
+        return self.call("disconnect_device", device)
+
     def list_devices(self) -> str:
         """List devices visible to the exporter's ADB server."""
         return self.call("list_devices")
