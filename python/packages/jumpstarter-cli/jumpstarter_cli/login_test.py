@@ -281,7 +281,7 @@ def test_login_maps_ssl_cert_error_during_oidc_to_friendly_message(monkeypatch) 
     assert "Traceback" not in result.output
 
 
-def test_login_uses_device_flow_when_flag_is_passed(monkeypatch) -> None:
+def test_login_uses_device_flow_when_flag_is_passed(monkeypatch, tmp_path) -> None:
     """When --device-flow is passed, device_authorization_grant is called instead of authorization_code_grant."""
     auth_config = {
         "grpcEndpoint": "grpc.example.com:443",
@@ -313,24 +313,25 @@ def test_login_uses_device_flow_when_flag_is_passed(monkeypatch) -> None:
     monkeypatch.setattr("jumpstarter_cli.login.Config", FakeOidcConfig)
 
     runner = CliRunner()
-    runner.invoke(
+    result = runner.invoke(
         jmp,
         [
             "login",
             "test-client@login.example.com",
             "--client-config",
-            "/tmp/nonexistent-client.yaml",
+            str(tmp_path / "nonexistent-client.yaml"),
             "--nointeractive",
             "--unsafe",
             "--device-flow",
         ],
     )
 
+    assert result.exit_code == 0, result.output
     assert device_flow_called is True
     assert auth_code_called is False
 
 
-def test_login_uses_device_flow_when_env_var_is_set(monkeypatch) -> None:
+def test_login_uses_device_flow_when_env_var_is_set(monkeypatch, tmp_path) -> None:
     """When JMP_OIDC_DEVICE_FLOW=1, device_authorization_grant is called automatically."""
     auth_config = {
         "grpcEndpoint": "grpc.example.com:443",
@@ -363,23 +364,24 @@ def test_login_uses_device_flow_when_env_var_is_set(monkeypatch) -> None:
     monkeypatch.setenv("JMP_OIDC_DEVICE_FLOW", "1")
 
     runner = CliRunner()
-    runner.invoke(
+    result = runner.invoke(
         jmp,
         [
             "login",
             "test-client@login.example.com",
             "--client-config",
-            "/tmp/nonexistent-client.yaml",
+            str(tmp_path / "nonexistent-client.yaml"),
             "--nointeractive",
             "--unsafe",
         ],
     )
 
+    assert result.exit_code == 0, result.output
     assert device_flow_called is True
     assert auth_code_called is False
 
 
-def test_login_uses_auth_code_flow_without_device_flow_signals(monkeypatch) -> None:
+def test_login_uses_auth_code_flow_without_device_flow_signals(monkeypatch, tmp_path) -> None:
     """Without --device-flow or JMP_OIDC_DEVICE_FLOW, authorization_code_grant is used (no regression)."""
     auth_config = {
         "grpcEndpoint": "grpc.example.com:443",
@@ -412,18 +414,19 @@ def test_login_uses_auth_code_flow_without_device_flow_signals(monkeypatch) -> N
     monkeypatch.delenv("JMP_OIDC_DEVICE_FLOW", raising=False)
 
     runner = CliRunner()
-    runner.invoke(
+    result = runner.invoke(
         jmp,
         [
             "login",
             "test-client@login.example.com",
             "--client-config",
-            "/tmp/nonexistent-client.yaml",
+            str(tmp_path / "nonexistent-client.yaml"),
             "--nointeractive",
             "--unsafe",
         ],
     )
 
+    assert result.exit_code == 0, result.output
     assert auth_code_called is True
     assert device_flow_called is False
 

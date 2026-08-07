@@ -47,7 +47,7 @@ class TestShouldUseDeviceFlow:
         assert should_use_device_flow(device_flow_flag=False) is False
 
     def test_flag_takes_priority_over_env(self, monkeypatch) -> None:
-        monkeypatch.delenv("JMP_OIDC_DEVICE_FLOW", raising=False)
+        monkeypatch.setenv("JMP_OIDC_DEVICE_FLOW", "0")
         assert should_use_device_flow(device_flow_flag=True) is True
 
 

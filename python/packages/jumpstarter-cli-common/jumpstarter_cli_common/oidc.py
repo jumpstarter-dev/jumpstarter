@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 import ssl
@@ -12,7 +11,7 @@ import aiohttp
 import certifi
 import click
 from aiohttp import web
-from anyio import create_memory_object_stream
+from anyio import create_memory_object_stream, sleep
 from anyio.to_thread import run_sync
 
 # Suppress AuthlibDeprecationWarning emitted unconditionally during the authlib
@@ -214,7 +213,7 @@ class Config:
             lambda: client.fetch_token(config["token_endpoint"], authorization_response=authorization_response)
         )
 
-    async def device_authorization_grant(self):
+    async def device_authorization_grant(self):  # noqa: C901
         """Perform OAuth 2.0 Device Authorization Grant (RFC 8628).
 
         This flow is suitable for headless or containerized environments where
@@ -254,9 +253,17 @@ class Config:
                     raise click.ClickException(
                         f"Device authorization request failed (HTTP {response.status}): {text}"
                     )
-                device_data = await response.json()
+                try:
+                    device_data = await response.json()
+                except (aiohttp.ContentTypeError, json.JSONDecodeError) as e:
+                    raise click.ClickException(f"Device authorization response was not valid JSON: {e}") from e
 
-            device_code = device_data["device_code"]
+            try:
+                device_code = device_data["device_code"]
+            except KeyError as e:
+                raise click.ClickException(
+                    "Device authorization response is missing the required 'device_code' field."
+                ) from e
             interval = device_data.get("interval", 5)
             expires_in = device_data.get("expires_in", 600)
 
@@ -277,7 +284,7 @@ class Config:
             # Step 3: Poll the token endpoint
             deadline = time.monotonic() + expires_in
             while time.monotonic() < deadline:
-                await asyncio.sleep(interval)
+                await sleep(interval)
 
                 async with session.post(
                     token_endpoint,
