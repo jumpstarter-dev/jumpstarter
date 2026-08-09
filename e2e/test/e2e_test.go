@@ -26,7 +26,7 @@ import (
 	. "github.com/onsi/gomega"    //nolint:revive
 )
 
-var _ = Describe("Core E2E Tests", Label("core"), Ordered, func() {
+var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, func() {
 	var tracker *ProcessTracker
 
 	BeforeAll(func() {

@@ -26,7 +26,7 @@ import (
 	. "github.com/onsi/gomega"    //nolint:revive
 )
 
-var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
+var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, ContinueOnFailure, func() {
 	var (
 		tracker            *ProcessTracker
 		exporterConfigPath string

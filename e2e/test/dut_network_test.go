@@ -51,7 +51,7 @@ func sudoArgs(args ...string) (string, []string) {
 	return args[0], args[1:]
 }
 
-var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, func() {
+var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, ContinueOnFailure, func() {
 	var (
 		tracker      *ProcessTracker
 		listenerPort = 19091

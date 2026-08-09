@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/gomega"    //nolint:revive
 )
 
-var _ = Describe("Exit On Lease End E2E Tests", Label("exit-on-lease-end"), Ordered, func() {
+var _ = Describe("Exit On Lease End E2E Tests", Label("exit-on-lease-end"), Ordered, ContinueOnFailure, func() {
 	var (
 		tracker            *ProcessTracker
 		exporterConfigPath string
