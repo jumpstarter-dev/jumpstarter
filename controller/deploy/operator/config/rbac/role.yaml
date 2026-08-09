@@ -243,10 +243,11 @@ rules:
   - virtualtarget.jumpstarter.dev
   resources:
   - exportersets
-  - virtualtargetclasses
   verbs:
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - virtualtarget.jumpstarter.dev
@@ -263,3 +264,11 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - virtualtarget.jumpstarter.dev
+  resources:
+  - virtualtargetclasses
+  verbs:
+  - get
+  - list
+  - watch
