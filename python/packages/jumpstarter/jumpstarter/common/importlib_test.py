@@ -10,12 +10,12 @@ def test_import_class():
     with pytest.raises(MissingDriverError):
         import_class("os.invalid", [], True)
 
-    with pytest.raises(ImportError):
+    with pytest.raises(MissingDriverError):
         import_class("os.open", [], False)
 
     import_class("os.open", ["os.*"], False)
 
-    with pytest.raises(ImportError):
+    with pytest.raises(MissingDriverError):
         import_class("os.open", ["sys.*"], False)
 
     with pytest.raises(ImportError):
