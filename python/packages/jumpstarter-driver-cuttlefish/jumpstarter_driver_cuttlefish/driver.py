@@ -192,7 +192,7 @@ class Cuttlefish(Driver):
 
         deadline = time.monotonic() + timeout
         adb_path = adb.adb_path
-        adb_env = adb._adb_env()
+        adb_env = adb.adb_env()
 
         self.logger.info("Waiting for %s to come online", device)
         while time.monotonic() < deadline:

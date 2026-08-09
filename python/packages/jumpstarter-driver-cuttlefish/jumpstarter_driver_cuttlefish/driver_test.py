@@ -120,7 +120,6 @@ def test_wait_500_error_plain_text(requests_mock, drv):
 @patch("jumpstarter_driver_cuttlefish.driver.time.sleep")
 def test_wait_timeout(mock_sleep, requests_mock, drv):
     """Operation that never completes should raise CuttlefishTimeout."""
-    requests_mock.post(f"{BASE}/cvds", json={"name": "op-1", "done": False})
     requests_mock.post(f"{BASE}/operations/op-1/:wait", exc=requests.Timeout)
     with pytest.raises(CuttlefishTimeout, match="timed out"):
         drv._wait_for_operation("op-1", timeout=0.1)
@@ -333,7 +332,7 @@ def test_wait_boot_wrapper_zero_timeout(drv):
 def test_wait_boot_success(mock_run, drv):
     mock_adb = MagicMock()
     mock_adb.adb_path = "/usr/bin/adb"
-    mock_adb._adb_env.return_value = {}
+    mock_adb.adb_env.return_value = {}
     drv.children["adb"] = mock_adb
 
     call_count = [0]
@@ -355,7 +354,7 @@ def test_wait_boot_success(mock_run, drv):
 def test_wait_boot_timeout(mock_run, mock_sleep, drv):
     mock_adb = MagicMock()
     mock_adb.adb_path = "/usr/bin/adb"
-    mock_adb._adb_env.return_value = {}
+    mock_adb.adb_env.return_value = {}
     drv.children["adb"] = mock_adb
 
     mock_run.return_value = subprocess.CompletedProcess([], 0, stdout="")

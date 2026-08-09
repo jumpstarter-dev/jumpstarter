@@ -62,7 +62,7 @@ class AdbServer(TcpNetwork):
     def close(self):
         self.kill_server()
 
-    def _adb_env(self) -> dict[str, str]:
+    def adb_env(self) -> dict[str, str]:
         """Environment with ANDROID_ADB_SERVER_PORT set."""
         return {**os.environ, "ANDROID_ADB_SERVER_PORT": str(self.port)}
 
@@ -77,7 +77,7 @@ class AdbServer(TcpNetwork):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                env=self._adb_env(),
+                env=self.adb_env(),
             )
             if result.stdout.strip():
                 self.logger.info(result.stdout.strip())
@@ -98,7 +98,7 @@ class AdbServer(TcpNetwork):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                env=self._adb_env(),
+                env=self.adb_env(),
             )
             if result.stdout.strip():
                 self.logger.info(result.stdout.strip())
@@ -116,7 +116,7 @@ class AdbServer(TcpNetwork):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                env=self._adb_env(),
+                env=self.adb_env(),
             )
             return result.stdout
         except subprocess.CalledProcessError as e:
