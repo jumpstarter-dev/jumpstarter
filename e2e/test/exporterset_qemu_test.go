@@ -62,7 +62,9 @@ func loadQemuGuestArch() qemuGuestArch {
 	}
 }
 
-var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordered, func() {
+// Serial: boots VMs under TCG emulation, which will starve every other spec
+// on the runner if it shares the CPU.
+var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordered, Serial, func() {
 	var (
 		ns        string
 		manifest  string

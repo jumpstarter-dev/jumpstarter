@@ -26,7 +26,10 @@ import (
 	. "github.com/onsi/gomega"    //nolint:revive
 )
 
-var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, func() {
+// Serial: these specs select the active client with `jmp config client use`,
+// which writes the shared client config, so they cannot run alongside other
+// containers that read it.
+var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, Serial, func() {
 	var tracker *ProcessTracker
 
 	BeforeAll(func() {
