@@ -117,11 +117,10 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 		By("waiting for ExporterSet to create an exporter")
 		var exporterName string
 		Eventually(func() string {
-			out, _ := Kubectl("-n", ns, "get", "exporter",
+			exporterName = KubectlQuery("-n", ns, "get", "exporter",
 				"-l", guest.Selector,
 				"-o", "jsonpath={.items[0].metadata.name}")
-			exporterName = out
-			return out
+			return exporterName
 		}, 5*time.Minute, 5*time.Second).ShouldNot(BeEmpty())
 
 		By(fmt.Sprintf("waiting for exporter %s Online/Registered/Available", exporterName))
@@ -129,15 +128,13 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 
 		By("waiting for Pod Ready")
 		Eventually(func() string {
-			out, _ := Kubectl("-n", ns, "get", "pod", exporterName,
+			return KubectlQuery("-n", ns, "get", "pod", exporterName,
 				"-o", "jsonpath={.status.phase}")
-			return out
 		}, 5*time.Minute, 5*time.Second).Should(Equal("Running"))
 
 		Eventually(func() string {
-			out, _ := Kubectl("-n", ns, "get", "pod", exporterName,
+			return KubectlQuery("-n", ns, "get", "pod", exporterName,
 				"-o", "jsonpath={.status.containerStatuses[*].ready}")
-			return out
 		}, 5*time.Minute, 5*time.Second).Should(ContainSubstring("true"))
 
 		By(fmt.Sprintf("verifying runtime image provides %s", guest.QemuBinary))
@@ -151,14 +148,13 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 	It("leases, flashes Alpine, and boots to a console login marker", func() {
 		By("waiting for a Running pod so we can read shared volume SizeLimit")
 		Eventually(func() string {
-			out, _ := Kubectl("-n", ns, "get", "pod",
+			return KubectlQuery("-n", ns, "get", "pod",
 				"-l", guest.Selector,
 				"--field-selector=status.phase=Running",
 				"-o", "jsonpath={.items[0].metadata.name}")
-			return out
 		}, 2*time.Minute, 5*time.Second).ShouldNot(BeEmpty())
 
-		sizeLimit, _ := Kubectl("-n", ns, "get", "pod",
+		sizeLimit := KubectlQuery("-n", ns, "get", "pod",
 			"-l", guest.Selector,
 			"--field-selector=status.phase=Running",
 			"-o", "jsonpath={.items[0].spec.volumes[?(@.name==\"shared\")].emptyDir.sizeLimit}")
@@ -262,11 +258,10 @@ j qemu power off
 		By("waiting for the replacement exporter to become Available")
 		var exporterName string
 		Eventually(func() string {
-			out, _ := Kubectl("-n", ns, "get", "exporter",
+			exporterName = KubectlQuery("-n", ns, "get", "exporter",
 				"-l", guest.Selector,
 				"-o", "jsonpath={.items[0].metadata.name}")
-			exporterName = out
-			return out
+			return exporterName
 		}, 2*time.Minute, 5*time.Second).ShouldNot(BeEmpty())
 		WaitForExporter(exporterName)
 

@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -333,6 +334,23 @@ func MustKubectl(args ...string) string {
 	out, err := Kubectl(args...)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "kubectl %v failed: %s", args, out)
 	return out
+}
+
+// KubectlQuery runs a kubectl query and returns its stdout, or "" if kubectl
+// failed. Use it for values polled inside Eventually.
+//
+// Kubectl folds stderr into the returned string, which is wrong for a polled
+// query: `-o jsonpath={.items[0].metadata.name}` against an empty list exits
+// non-zero and prints "array index out of bounds", so a poll written as
+// Eventually(...).ShouldNot(BeEmpty()) accepts that error text as a result and
+// stops waiting on the very first attempt. Returning "" keeps the poll running
+// until the resource actually appears.
+func KubectlQuery(args ...string) string {
+	stdout, _, err := RunCmdSplit("kubectl", args...)
+	if err != nil {
+		return ""
+	}
+	return stdout
 }
 
 // ReadYAMLField reads a top-level field from a YAML file and returns its
@@ -689,9 +707,16 @@ func (pt *ProcessTracker) IsProcessRunning() bool {
 
 // --- Exporter wait helpers ---
 
+// validExporterName matches a Kubernetes resource name, so that a caller
+// passing a captured kubectl error string produces a clear failure here rather
+// than an unreadable `kubectl wait exporters.jumpstarter.dev/error: ...`.
+var validExporterName = regexp.MustCompile(`^[a-z0-9]([-.a-z0-9]*[a-z0-9])?$`)
+
 // WaitForExporter waits for an exporter to become Online, Registered, and Available.
 func WaitForExporter(name string) {
 	ns := Namespace()
+	ExpectWithOffset(1, validExporterName.MatchString(name)).To(BeTrue(),
+		"WaitForExporter called with an invalid exporter name %q", name)
 	exporterRef := fmt.Sprintf("exporters.jumpstarter.dev/%s", name)
 
 	// Brief delay to avoid catching pre-disconnect state
@@ -703,9 +728,8 @@ func WaitForExporter(name string) {
 
 	// Poll until exporterStatus is Available
 	Eventually(func() string {
-		out, _ := Kubectl("-n", ns, "get", exporterRef,
+		return KubectlQuery("-n", ns, "get", exporterRef,
 			"-o", "jsonpath={.status.exporterStatus}")
-		return out
 	}, defaultWaitTimeout, exporterPollPeriod).Should(Equal("Available"),
 		"timed out waiting for %s to reach Available status", name)
 }
