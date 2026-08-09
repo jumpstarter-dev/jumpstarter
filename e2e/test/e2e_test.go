@@ -26,10 +26,11 @@ import (
 	. "github.com/onsi/gomega"    //nolint:revive
 )
 
-// Serial: these specs select the active client with `jmp config client use`,
-// which writes the shared client config, so they cannot run alongside other
-// containers that read it.
-var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, Serial, func() {
+// Every jmp invocation here names its client explicitly with --client rather
+// than selecting one with `jmp config client use`. That call writes the shared
+// client config, which is process-global state: it would make these specs
+// unsafe to run alongside any other container that reads it.
+var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, func() {
 	var tracker *ProcessTracker
 
 	BeforeAll(func() {
@@ -364,55 +365,63 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, Se
 	Context("Lease operations", func() {
 		It("can operate on leases", func() {
 			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
-			MustJmp("config", "client", "use", "test-client-oidc")
 
-			MustJmp("create", "lease", "--selector", "example.com/board=oidc", "--duration", "1d")
-			MustJmp("get", "leases")
-			MustJmp("get", "exporters")
+			MustJmp("create", "lease", "--client", "test-client-oidc",
+				"--selector", "example.com/board=oidc", "--duration", "1d")
+			MustJmp("get", "leases", "--client", "test-client-oidc")
+			MustJmp("get", "exporters", "--client", "test-client-oidc")
 
 			// Verify label selector filtering (regression test for #36)
-			out, err := Jmp("get", "leases", "--selector", "example.com/board=oidc", "-o", "yaml")
+			out, err := Jmp("get", "leases", "--client", "test-client-oidc",
+				"--selector", "example.com/board=oidc", "-o", "yaml")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring("example.com/board=oidc"))
 
-			out, err = Jmp("get", "leases", "--selector", "example.com/board=doesnotexist")
+			out, err = Jmp("get", "leases", "--client", "test-client-oidc",
+				"--selector", "example.com/board=doesnotexist")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(Equal("No resources found."))
 
 			// Test complex selectors with matchExpressions
-			MustJmp("create", "lease", "--selector", "example.com/board=sa,!nonexistent", "--duration", "1d")
+			MustJmp("create", "lease", "--client", "test-client-oidc",
+				"--selector", "example.com/board=sa,!nonexistent", "--duration", "1d")
 
-			out, err = Jmp("get", "leases", "--selector", "example.com/board=sa", "-o", "yaml")
+			out, err = Jmp("get", "leases", "--client", "test-client-oidc",
+				"--selector", "example.com/board=sa", "-o", "yaml")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring("example.com/board=sa"))
 
-			out, err = Jmp("get", "leases", "--selector", "!nonexistent", "-o", "yaml")
+			out, err = Jmp("get", "leases", "--client", "test-client-oidc",
+				"--selector", "!nonexistent", "-o", "yaml")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring("!nonexistent"))
 
-			out, err = Jmp("get", "leases", "--selector", "example.com/board=sa,!production", "-o", "yaml")
+			out, err = Jmp("get", "leases", "--client", "test-client-oidc",
+				"--selector", "example.com/board=sa,!production", "-o", "yaml")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring("example.com/board=sa"))
 
-			out, err = Jmp("get", "leases", "--selector", "example.com/board=sa,!example.com/board")
+			out, err = Jmp("get", "leases", "--client", "test-client-oidc",
+				"--selector", "example.com/board=sa,!example.com/board")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(Equal("No resources found."))
 
-			out, err = Jmp("get", "leases", "--selector", "example.com/board=sa,!nonexistent,region=us")
+			out, err = Jmp("get", "leases", "--client", "test-client-oidc",
+				"--selector", "example.com/board=sa,!nonexistent,region=us")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(Equal("No resources found."))
 
-			MustJmp("delete", "leases", "--all")
+			MustJmp("delete", "leases", "--client", "test-client-oidc", "--all")
 		})
 
 		It("can create a lease with context metadata", func() {
 			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
-			MustJmp("config", "client", "use", "test-client-oidc")
 			DeferCleanup(func() {
-				MustJmp("delete", "leases", "--all")
+				MustJmp("delete", "leases", "--client", "test-client-oidc", "--all")
 			})
 
 			out := MustJmp("create", "lease",
+				"--client", "test-client-oidc",
 				"--selector", "example.com/board=oidc",
 				"--duration", "1d",
 				"--context", "build_id=nightly-42",
@@ -429,7 +438,6 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, Se
 
 		It("paginated lease listing returns all leases", func() {
 			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
-			MustJmp("config", "client", "use", "test-client-oidc")
 
 			// As with the exporter pagination spec, the leases are fixtures for
 			// the client's pagination, so create them in a single apply.
@@ -451,17 +459,17 @@ spec:
 			}
 			MustKubectlApply(manifest.String())
 
-			out, err := Jmp("get", "leases", "--page-size", "5", "-o", "name")
+			out, err := Jmp("get", "leases", "--client", "test-client-oidc",
+				"--page-size", "5", "-o", "name")
 			Expect(err).NotTo(HaveOccurred(), out)
 			lines := strings.Split(strings.TrimSpace(out), "\n")
 			Expect(lines).To(HaveLen(10))
 
-			MustJmp("delete", "leases", "--all")
+			MustJmp("delete", "leases", "--client", "test-client-oidc", "--all")
 		})
 
 		It("paginated exporter listing returns all exporters", func() {
 			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
-			MustJmp("config", "client", "use", "test-client-oidc")
 
 			// The exporters are fixtures for the client's pagination, so
 			// create them in a single apply rather than one jmp process each.
@@ -481,7 +489,8 @@ spec:
 			}
 			MustKubectlApply(manifest.String())
 
-			out, err := Jmp("get", "exporters", "--selector", "pagination=true", "--page-size", "5", "-o", "name")
+			out, err := Jmp("get", "exporters", "--client", "test-client-oidc",
+				"--selector", "pagination=true", "--page-size", "5", "-o", "name")
 			Expect(err).NotTo(HaveOccurred(), out)
 			lines := strings.Split(strings.TrimSpace(out), "\n")
 			Expect(lines).To(HaveLen(10))
@@ -492,24 +501,22 @@ spec:
 
 		It("lease listing shows expires at and remaining columns", func() {
 			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
-			MustJmp("config", "client", "use", "test-client-oidc")
-
-			MustJmp("create", "lease", "--selector", "example.com/board=oidc", "--duration", "1d")
+			MustJmp("create", "lease", "--client", "test-client-oidc",
+				"--selector", "example.com/board=oidc", "--duration", "1d")
 
 			out, err := RunCmdWithEnv(map[string]string{"COLUMNS": "200"},
-				"jmp", "get", "leases")
+				"jmp", "get", "leases", "--client", "test-client-oidc")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring("EXPIRES AT"))
 			Expect(out).To(ContainSubstring("REMAINING"))
 
-			MustJmp("delete", "leases", "--all")
+			MustJmp("delete", "leases", "--client", "test-client-oidc", "--all")
 		})
 
 		It("can transfer lease to another client", func() {
 			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
-			MustJmp("config", "client", "use", "test-client-oidc")
-
-			out := MustJmp("create", "lease", "--selector", "example.com/board=oidc",
+			out := MustJmp("create", "lease", "--client", "test-client-oidc",
+				"--selector", "example.com/board=oidc",
 				"--duration", "1d", "-o", "yaml")
 
 			// Parse the lease YAML to extract the lease name.
@@ -525,7 +532,8 @@ spec:
 			MustKubectl("-n", ns, "wait", "--timeout", "60s", "--for=condition=Ready",
 				fmt.Sprintf("leases.jumpstarter.dev/%s", leaseName))
 
-			out, err := Jmp("update", "lease", leaseName, "--to-client", "test-client-legacy", "-o", "yaml")
+			out, err := Jmp("update", "lease", leaseName, "--client", "test-client-oidc",
+				"--to-client", "test-client-legacy", "-o", "yaml")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring("test-client-legacy"))
 
