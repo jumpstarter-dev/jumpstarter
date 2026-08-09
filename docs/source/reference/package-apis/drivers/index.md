@@ -29,6 +29,7 @@ Drivers that provide various communication interfaces:
 
 - {doc}`ADB <adb>` (`jumpstarter-driver-adb`) - Android Debug Bridge tunneling
 - {doc}`BLE <ble>` (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
+- {doc}`BT Peer <bt-peer>` (`jumpstarter-driver-bt-peer`) - Bluetooth peer device powered by bumble
 - {doc}`CAN <can>` (`jumpstarter-driver-can`) - Controller Area Network communication
 - {doc}`HTTP <http>` (`jumpstarter-driver-http`) - HTTP communication
 - {doc}`mitmproxy <mitmproxy>` (`jumpstarter-driver-mitmproxy`) - HTTP/HTTPS interception, mocking, and traffic recording
@@ -101,6 +102,7 @@ General-purpose utility drivers:
 adb.md
 androidemulator.md
 ble.md
+bt-peer.md
 can.md
 corellium.md
 doip.md

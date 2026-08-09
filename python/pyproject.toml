@@ -10,6 +10,7 @@ jumpstarter-cli-driver = { workspace = true }
 jumpstarter-driver-adb = { workspace = true }
 jumpstarter-driver-androidemulator = { workspace = true }
 jumpstarter-driver-ble = { workspace = true }
+jumpstarter-driver-bt-peer = { workspace = true }
 jumpstarter-driver-can = { workspace = true }
 jumpstarter-driver-composite = { workspace = true }
 jumpstarter-driver-doip = { workspace = true }
