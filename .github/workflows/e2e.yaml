@@ -10,6 +10,10 @@ permissions:
 
 env:
   CONTAINER_TOOL: docker
+  # Retry a failed spec once before failing the job. Retries are reported as
+  # flakes in the ginkgo summary, so this hides nothing; it only stops a single
+  # infrastructure hiccup from failing an unrelated PR.
+  E2E_FLAKE_ATTEMPTS: "2"
 
 jobs:
   changes:

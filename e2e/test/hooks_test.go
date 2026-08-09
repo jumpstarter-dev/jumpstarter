@@ -26,7 +26,7 @@ import (
 	. "github.com/onsi/gomega"    //nolint:revive
 )
 
-var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
+var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, ContinueOnFailure, func() {
 	var (
 		tracker            *ProcessTracker
 		exporterConfigPath string
@@ -127,6 +127,20 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 	// ====================================================================
 	// Group B: beforeLease Failure Modes
 	// ====================================================================
+
+	// beforeLeaseFailureOutput matches every client-visible outcome of a failing
+	// beforeLease hook.
+	//
+	// The client and the exporter race here: the exporter ends the lease the
+	// moment the hook fails, so which message the client prints depends on how
+	// far it got first. It may have seen the hook's own output, the shutdown
+	// notice, a dropped connection, or — if the exporter tore the lease down
+	// before the client's very first RPC — nothing at all, in which case the
+	// client reports the exporter as unreachable. All of these mean the hook
+	// failed and the lease ended, which is what these specs assert.
+	const beforeLeaseFailureOutput = `(beforeLease hook fail|Exporter shutting down|Connection to exporter lost|` +
+		`did not respond to initial status check|unreachable after)`
+
 	Context("Group B: beforeLease Failure Modes", func() {
 		It("B1: beforeLease onFailure=warn allows shell to proceed", func() {
 			startHooksExporter("exporter-hooks-before-fail-warn.yaml")
@@ -146,7 +160,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
-			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Exporter shutting down|Connection to exporter lost)`))
+			Expect(out).To(MatchRegexp(beforeLeaseFailureOutput))
 
 			WaitForExporter("test-exporter-hooks")
 		})
@@ -159,7 +173,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
-			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Connection to exporter lost)`))
+			Expect(out).To(MatchRegexp(beforeLeaseFailureOutput))
 
 			// The exporter should release the lease and return to Available
 			WaitForExporter("test-exporter-hooks")
@@ -170,7 +184,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err2).To(HaveOccurred())
-			Expect(out2).To(MatchRegexp(`(beforeLease hook fail|Connection to exporter lost)`))
+			Expect(out2).To(MatchRegexp(beforeLeaseFailureOutput))
 
 			// Exporter should recover again
 			WaitForExporter("test-exporter-hooks")
@@ -196,7 +210,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, func() {
 				"--retry-timeout", "0",
 				"--selector", "example.com/board=hooks", "j", "power", "on")
 			Expect(err).To(HaveOccurred())
-			Expect(out).To(MatchRegexp(`(beforeLease hook fail|Exporter shutting down|Connection to exporter lost)`))
+			Expect(out).To(MatchRegexp(beforeLeaseFailureOutput))
 
 			// Exporter process should have exited (allow extra time on slower runners like ARM)
 			Eventually(func() bool {

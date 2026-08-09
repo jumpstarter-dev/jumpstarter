@@ -79,7 +79,14 @@ run_ginkgo() {
         timeout="60m"
     fi
 
-    local flags=(-v --show-node-events --trace --timeout "${timeout}")
+    # Retry a failed spec instead of failing the whole suite. The e2e suite talks
+    # to a real cluster over the network, so a spec can fail for reasons that have
+    # nothing to do with the code under test (a slow DNS answer, a pod scheduled
+    # late, a router connection dropped). A retried spec is still reported as
+    # flaky in the summary, so genuine instability stays visible.
+    local flake_attempts="${E2E_FLAKE_ATTEMPTS:-1}"
+
+    local flags=(-v --show-node-events --trace --timeout "${timeout}" --flake-attempts "${flake_attempts}")
     if [ -n "$label_filter" ]; then
         flags+=(--label-filter "$label_filter")
     fi
