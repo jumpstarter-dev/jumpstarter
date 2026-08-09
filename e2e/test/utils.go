@@ -25,6 +25,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -457,11 +458,32 @@ func (lb *logBuffer) Close() {
 	}
 }
 
+// procSpec identifies an exporter by the flag/value pair it was started with,
+// e.g. {"--exporter", "hooks-exporter"} or {"--exporter-config", "/tmp/x.yaml"}.
+// `jmp run` forks and the child calls setsid() without re-execing, so the child
+// carries the same argv as the tracked parent and can be found by matching it.
+type procSpec struct {
+	flag  string
+	value string
+}
+
 // ProcessTracker manages background exporter processes.
 type ProcessTracker struct {
 	pids    []int
+	specs   []procSpec
 	logs    map[string]*logBuffer
 	cancels []context.CancelFunc
+}
+
+// track records a started process and the argv identity that finds its forked
+// child, so StopAll can sweep an orphan without touching exporters belonging to
+// another ginkgo process.
+func (pt *ProcessTracker) track(pid int, flag, value string) {
+	pt.pids = append(pt.pids, pid)
+	spec := procSpec{flag: flag, value: value}
+	if !slices.Contains(pt.specs, spec) {
+		pt.specs = append(pt.specs, spec)
+	}
 }
 
 // NewProcessTracker creates a new ProcessTracker.
@@ -524,7 +546,7 @@ func (pt *ProcessTracker) StartExporterLoop(exporterName string, jmpBin ...strin
 			// Track the PID under the parent lock-free path; this is safe
 			// because StopAll first cancels the context so this goroutine
 			// will not spawn new processes concurrently.
-			pt.pids = append(pt.pids, pid)
+			pt.track(pid, "--exporter", exporterName)
 
 			if restartCount > 0 {
 				GinkgoWriter.Printf("Restarted exporter %s (PID %d, restart #%d)\n", exporterName, pid, restartCount)
@@ -552,7 +574,7 @@ func (pt *ProcessTracker) StartExporterSingle(exporterName string) *exec.Cmd {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	err := cmd.Start()
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "failed to start exporter %s", exporterName)
-	pt.pids = append(pt.pids, cmd.Process.Pid)
+	pt.track(cmd.Process.Pid, "--exporter", exporterName)
 	GinkgoWriter.Printf("Started exporter %s (PID %d)\n", exporterName, cmd.Process.Pid)
 
 	// Reap the child process in the background so it doesn't become a zombie.
@@ -577,7 +599,7 @@ func (pt *ProcessTracker) StartExporterWithConfig(name, configPath string) *exec
 
 	err := cmd.Start()
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "failed to start exporter with config %s", configPath)
-	pt.pids = append(pt.pids, cmd.Process.Pid)
+	pt.track(cmd.Process.Pid, "--exporter-config", configPath)
 	GinkgoWriter.Printf("Started exporter %s (PID %d) with config %s\n", name, cmd.Process.Pid, configPath)
 
 	// Reap the child process in the background so it doesn't become a zombie.
@@ -608,7 +630,7 @@ func (pt *ProcessTracker) StartDirectExporter(configFile string, port int, passp
 
 	err := cmd.Start()
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "failed to start direct exporter with config %s", configFile)
-	pt.pids = append(pt.pids, cmd.Process.Pid)
+	pt.track(cmd.Process.Pid, "--exporter-config", configFile)
 	GinkgoWriter.Printf("Started direct exporter (PID %d) on port %d\n", cmd.Process.Pid, port)
 	return cmd, stderrBuf
 }
@@ -748,8 +770,66 @@ func (pt *ProcessTracker) StopAll() {
 	}
 	pt.pids = nil
 
-	// Kill orphaned jmp exporter processes
-	_ = exec.Command("pkill", "-9", "-f", "jmp run --exporter").Run()
+	pt.sweepOrphans()
+}
+
+// sweepOrphans SIGKILLs any surviving `jmp run` process that matches one of the
+// argv identities this tracker started. It is a safety net for the SIGKILL
+// fallback above: killing the parent orphans the forked child, which keeps the
+// parent's argv.
+//
+// This is deliberately not a `pkill -f "jmp run --exporter"`. That pattern is
+// global, so under `ginkgo --procs` one process's cleanup would reap every other
+// process's exporters, and being a substring match it also matched the
+// `--exporter-config` runs it was never meant to touch. Matching whole argv
+// elements against the specs this tracker recorded avoids both.
+func (pt *ProcessTracker) sweepOrphans() {
+	if len(pt.specs) == 0 {
+		return
+	}
+
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return
+	}
+
+	self := os.Getpid()
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || pid == self {
+			continue
+		}
+
+		raw, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "cmdline"))
+		if err != nil {
+			continue // process exited, or not ours to read
+		}
+		argv := strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00")
+		if !pt.argvMatches(argv) {
+			continue
+		}
+
+		GinkgoWriter.Printf("Killing orphaned exporter process %d (%s)\n", pid, strings.Join(argv, " "))
+		if proc, err := os.FindProcess(pid); err == nil {
+			_ = proc.Signal(syscall.SIGKILL)
+		}
+	}
+}
+
+// argvMatches reports whether argv is a `jmp run` invocation carrying one of the
+// tracked flag/value pairs as adjacent, whole arguments.
+func (pt *ProcessTracker) argvMatches(argv []string) bool {
+	if len(argv) < 3 || !slices.Contains(argv, "run") {
+		return false
+	}
+	for _, spec := range pt.specs {
+		for i := 0; i < len(argv)-1; i++ {
+			if argv[i] == spec.flag && argv[i+1] == spec.value {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Cleanup stops all processes and closes log files.
