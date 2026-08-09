@@ -452,8 +452,23 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                         if success:
                                             # Wait for hook to complete using background monitor
                                             # This allows afterLease logs to be displayed in real-time
+                                            # OFFLINE is terminal here for the
+                                            # same reason it is when waiting on
+                                            # the beforeLease hook: an
+                                            # afterLease hook with
+                                            # onFailure=exit reports
+                                            # AFTER_LEASE_HOOK_FAILED and
+                                            # overwrites it with OFFLINE in the
+                                            # next breath, so a poll landing
+                                            # after the overwrite would wait out
+                                            # the full timeout for a status the
+                                            # exporter has already moved past.
                                             result = await monitor.wait_for_any_of(
-                                                [ExporterStatus.AVAILABLE, ExporterStatus.AFTER_LEASE_HOOK_FAILED],
+                                                [
+                                                    ExporterStatus.AVAILABLE,
+                                                    ExporterStatus.AFTER_LEASE_HOOK_FAILED,
+                                                    ExporterStatus.OFFLINE,
+                                                ],
                                                 timeout=300.0,
                                             )
                                             if result == ExporterStatus.AVAILABLE:
@@ -465,7 +480,10 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                                                         click.style(f"Warning: {warning_text}", fg="yellow", bold=True)
                                                     )
                                                 logger.info("afterLease hook completed")
-                                            elif result == ExporterStatus.AFTER_LEASE_HOOK_FAILED:
+                                            elif result in (
+                                                ExporterStatus.AFTER_LEASE_HOOK_FAILED,
+                                                ExporterStatus.OFFLINE,
+                                            ):
                                                 reason = monitor.status_message or "afterLease hook failed"
                                                 raise ExporterOfflineError(reason)
                                             elif monitor.connection_lost:

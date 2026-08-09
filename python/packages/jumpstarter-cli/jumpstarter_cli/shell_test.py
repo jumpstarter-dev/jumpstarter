@@ -909,6 +909,30 @@ class TestRunShellWithLeaseAsync:
         assert exit_code == 42
         client.end_session_async.assert_not_called()
 
+    async def test_offline_during_after_lease_hook_fails_fast(self):
+        """An afterLease hook with onFailure=exit reports AFTER_LEASE_HOOK_FAILED
+        and overwrites it with OFFLINE before shutting down, so a client that
+        only watches for the failure status waits out the full timeout."""
+        monitor = _FakeStatusMonitor(statuses=[ExporterStatus.LEASE_READY, ExporterStatus.OFFLINE])
+        client = _build_fake_client(
+            monitor,
+            get_status_return=ExporterStatus.LEASE_READY,
+            end_session_return=True,
+        )
+        lease = _make_shell_lease(release=True, lease_ended=False)
+        cancel_scope = Mock(cancel_called=False)
+
+        @asynccontextmanager
+        async def fake_client_from_path(*_a, **_kw):
+            yield client
+
+        with (
+            patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
+            patch("jumpstarter_cli.shell._run_shell_only", return_value=0),
+        ):
+            with pytest.raises(ExporterOfflineError):
+                await _run_shell_with_lease_async(lease, False, None, (), cancel_scope)
+
     async def test_calls_end_session_when_lease_not_ended(self):
         monitor = _FakeStatusMonitor(statuses=[ExporterStatus.LEASE_READY, ExporterStatus.AVAILABLE])
         client = _build_fake_client(
