@@ -338,11 +338,28 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                             logger.info("Waiting for beforeLease hook to complete...")
 
                             # Wait for LEASE_READY or hook failure using background monitor
+                            # OFFLINE is a terminal outcome here, not just a
+                            # transient blip. A beforeLease hook with
+                            # onFailure=exit reports BEFORE_LEASE_HOOK_FAILED
+                            # and immediately overwrites it with OFFLINE before
+                            # tearing the session down. If our poll lands after
+                            # that overwrite, the hook-failed status is gone and
+                            # nothing else we are waiting for will ever arrive,
+                            # so without OFFLINE in the target list we sit here
+                            # for the full timeout.
                             result = await monitor.wait_for_any_of(
-                                [ExporterStatus.LEASE_READY, ExporterStatus.BEFORE_LEASE_HOOK_FAILED], timeout=300.0
+                                [
+                                    ExporterStatus.LEASE_READY,
+                                    ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
+                                    ExporterStatus.OFFLINE,
+                                ],
+                                timeout=300.0,
                             )
 
-                            if result == ExporterStatus.BEFORE_LEASE_HOOK_FAILED:
+                            if result in (
+                                ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
+                                ExporterStatus.OFFLINE,
+                            ):
                                 reason = monitor.status_message or "beforeLease hook failed"
                                 raise ExporterOfflineError(reason)
                             elif result is None:
