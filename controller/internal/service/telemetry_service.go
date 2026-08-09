@@ -18,15 +18,13 @@ package service
 
 import (
 	"context"
-	"crypto/tls"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
@@ -206,64 +204,36 @@ func truncate(s string, n int) string {
 	return s[:b]
 }
 
-// loadTLSCredentials loads TLS credentials for the gRPC server.
-// It reads EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM env vars (file paths set by the
-// operator via Secret volume mounts). When either is absent it falls back to a
-// self-signed certificate so that traffic is always encrypted.
-//
-// selfSignedPEM is non-empty only when a self-signed certificate was generated.
-// Callers should log it so the operator can copy it into the ConfigMap's
-// telemetry.certificate field — exporters need this PEM to verify the TLS connection.
-func (s *TelemetryService) loadTLSCredentials() (creds credentials.TransportCredentials, selfSignedPEM string, err error) {
-	certPEMPath := os.Getenv("EXTERNAL_CERT_PEM")
-	keyPEMPath := os.Getenv("EXTERNAL_KEY_PEM")
-
-	var cert *tls.Certificate
-	if certPEMPath != "" && keyPEMPath != "" {
-		certPEMBytes, readErr := os.ReadFile(certPEMPath)
-		if readErr != nil {
-			return nil, "", fmt.Errorf("failed to read external certificate file: %w", readErr)
-		}
-		keyPEMBytes, readErr := os.ReadFile(keyPEMPath)
-		if readErr != nil {
-			return nil, "", fmt.Errorf("failed to read external key file: %w", readErr)
-		}
-		parsedCert, parseErr := tls.X509KeyPair(certPEMBytes, keyPEMBytes)
-		if parseErr != nil {
-			return nil, "", fmt.Errorf("failed to parse external certificate: %w", parseErr)
-		}
-		cert = &parsedCert
-	} else {
-		// Derive the TLS SAN from the advertised endpoint (what clients connect to),
-		// not from the bind address (which is a local port like ":9093").
-		// Same pattern as the router and controller services.
-		// IMPORTANT: GRPC_TELEMETRY_ENDPOINT must be set on the telemetry pod itself
-		// so the SAN matches the endpoint the controller advertises to exporters.
-		advertised := telemetryEndpoint()
-		var dnsnames []string
-		var ipaddresses []net.IP
-		if advertised != "" {
-			var sanErr error
-			dnsnames, ipaddresses, sanErr = endpointToSAN(advertised)
-			if sanErr != nil {
-				dnsnames = []string{"localhost"}
-			}
-		} else {
-			// No advertised endpoint configured — development/local mode.
+// loadTLSCredentials loads TLS credentials for the telemetry gRPC server.
+// It derives the self-signed certificate SAN from the advertised endpoint
+// (GRPC_TELEMETRY_ENDPOINT) so that TLS hostname verification succeeds when
+// exporters connect. Falls back to "localhost" in development/local mode.
+// Returns an error if GRPC_TELEMETRY_ENDPOINT is set but malformed.
+// Delegates cert loading to the shared LoadTLSCredentials helper.
+func (s *TelemetryService) loadTLSCredentials() (credentials.TransportCredentials, string, error) {
+	// Derive SANs from the advertised endpoint (what clients connect to),
+	// not from the bind address (which is a local port like ":9093").
+	// IMPORTANT: GRPC_TELEMETRY_ENDPOINT must be set on the telemetry pod itself
+	// so the SAN matches the endpoint the controller advertises to exporters.
+	advertised, err := telemetryEndpoint()
+	if err != nil {
+		return nil, "", err
+	}
+	var dnsnames []string
+	var ipaddresses []net.IP
+	if advertised != "" {
+		var sanErr error
+		dnsnames, ipaddresses, sanErr = endpointToSAN(advertised)
+		if sanErr != nil {
+			ctrl.Log.WithName("telemetry").Error(sanErr, "failed to derive SAN from advertised endpoint; falling back to localhost",
+				"endpoint", advertised)
 			dnsnames = []string{"localhost"}
 		}
-		var genErr error
-		cert, genErr = NewSelfSignedCertificate("jumpstarter telemetry", dnsnames, ipaddresses)
-		if genErr != nil {
-			return nil, "", genErr
-		}
-		// Encode the leaf cert as PEM so the caller can log it for the operator.
-		selfSignedPEM = string(pem.EncodeToMemory(&pem.Block{
-			Type:  "CERTIFICATE",
-			Bytes: cert.Certificate[0],
-		}))
+	} else {
+		// No advertised endpoint configured — development/local mode.
+		dnsnames = []string{"localhost"}
 	}
-	return credentials.NewServerTLSFromCert(cert), selfSignedPEM, nil
+	return LoadTLSCredentials("jumpstarter telemetry", dnsnames, ipaddresses)
 }
 
 // Start starts the TelemetryService gRPC server and blocks until ctx is cancelled.
@@ -287,7 +257,10 @@ func (s *TelemetryService) Start(ctx context.Context) error {
 		return fmt.Errorf("telemetry: listen %s: %w", s.BindAddr, err)
 	}
 
-	srv := grpc.NewServer(grpc.Creds(creds))
+	srv := grpc.NewServer(
+		grpc.Creds(creds),
+		grpc.ChainUnaryInterceptor(recovery.UnaryServerInterceptor()),
+	)
 	pb.RegisterTelemetryServiceServer(srv, s)
 	reflection.Register(srv)
 
@@ -306,6 +279,7 @@ func (s *TelemetryService) Start(ctx context.Context) error {
 		}
 		return nil
 	case err := <-errCh:
+		srv.Stop()
 		return err
 	}
 }

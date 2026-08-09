@@ -1,8 +1,11 @@
 package config
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"net"
+	"os"
 	"time"
 
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
@@ -41,6 +44,34 @@ func LoadRouterConfiguration(
 	}
 
 	return serverOptions, nil
+}
+
+// resolveTelemetryConfig validates and resolves the telemetry endpoint for a
+// Telemetry config block. The GRPC_TELEMETRY_ENDPOINT env var takes priority
+// over the ConfigMap value, allowing operators to override at the pod level.
+// Returns nil when t is nil or disabled.
+func resolveTelemetryConfig(t *Telemetry) (*Telemetry, error) {
+	if t == nil || !t.Enabled {
+		return nil, nil
+	}
+	if err := t.Validate(); err != nil {
+		return nil, err
+	}
+	// Env var takes priority over ConfigMap, allowing operators to override
+	// at the pod level without modifying the ConfigMap. Resolving here ensures
+	// LoadedConfig.Telemetry.Endpoint is always the complete value — callers
+	// don't need to re-check the env var.
+	t.Endpoint = cmp.Or(os.Getenv("GRPC_TELEMETRY_ENDPOINT"), t.Endpoint)
+	if ep := t.Endpoint; ep != "" {
+		host, _, err := net.SplitHostPort(ep)
+		if err != nil {
+			return nil, fmt.Errorf("telemetry endpoint %q is not a valid host:port: %w", ep, err)
+		}
+		if host == "" {
+			return nil, fmt.Errorf("telemetry endpoint %q has no host", ep)
+		}
+	}
+	return t, nil
 }
 
 func LoadConfiguration(
@@ -122,12 +153,9 @@ func LoadConfiguration(
 		return nil, err
 	}
 
-	var telemetry *Telemetry
-	if config.Telemetry != nil && config.Telemetry.Enabled {
-		if err := config.Telemetry.Validate(); err != nil {
-			return nil, err
-		}
-		telemetry = config.Telemetry
+	telemetry, err := resolveTelemetryConfig(config.Telemetry)
+	if err != nil {
+		return nil, err
 	}
 
 	return &LoadedConfig{

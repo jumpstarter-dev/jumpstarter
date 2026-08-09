@@ -29,7 +29,9 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/config"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -88,44 +90,32 @@ func TestGetServiceEndpoints_RequiresAuthentication(t *testing.T) {
 	}
 }
 
-// buildTelemetryEndpointsResponse exercises the response-building logic
-// without going through the auth gate, for isolated unit testing.
-func buildTelemetryEndpointsResponse(cfg *config.Telemetry) *pb.GetServiceEndpointsResponse {
-	resp := &pb.GetServiceEndpointsResponse{}
-	if cfg != nil && cfg.Enabled {
-		minSev := cfg.Logging.Filter.MinSeverity
-		if minSev == "" {
-			minSev = "info"
-		}
-		ep := cfg.Endpoint
-		if ep == "" {
-			ep = telemetryEndpoint()
-		}
-		resp.TelemetryEndpoints = append(resp.TelemetryEndpoints, &pb.TelemetryEndpoint{
-			Endpoint:    ep,
-			Certificate: cfg.Certificate,
-			MinSeverity: minSev,
-		})
-	}
-	return resp
-}
-
 func TestGetServiceEndpoints_NilConfig_ReturnsEmptyList(t *testing.T) {
-	resp := buildTelemetryEndpointsResponse(nil)
+	svc, ctx := authSuccessServiceCtx(t, nil)
+
+	resp, err := svc.GetServiceEndpoints(ctx, &pb.GetServiceEndpointsRequest{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(resp.TelemetryEndpoints) != 0 {
 		t.Errorf("expected empty telemetry_endpoints, got %d", len(resp.TelemetryEndpoints))
 	}
 }
 
 func TestGetServiceEndpoints_DisabledConfig_ReturnsEmptyList(t *testing.T) {
-	resp := buildTelemetryEndpointsResponse(&config.Telemetry{Enabled: false, Endpoint: "telemetry:9093"})
+	svc, ctx := authSuccessServiceCtx(t, &config.Telemetry{Enabled: false, Endpoint: "telemetry:9093"})
+
+	resp, err := svc.GetServiceEndpoints(ctx, &pb.GetServiceEndpointsRequest{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(resp.TelemetryEndpoints) != 0 {
 		t.Errorf("expected empty telemetry_endpoints when disabled, got %d", len(resp.TelemetryEndpoints))
 	}
 }
 
 func TestGetServiceEndpoints_WithEndpoint_ReturnsEndpoint(t *testing.T) {
-	resp := buildTelemetryEndpointsResponse(&config.Telemetry{
+	svc, ctx := authSuccessServiceCtx(t, &config.Telemetry{
 		Enabled:     true,
 		Endpoint:    "telemetry.jumpstarter.svc:9093",
 		Certificate: "--- PEM ---",
@@ -133,6 +123,11 @@ func TestGetServiceEndpoints_WithEndpoint_ReturnsEndpoint(t *testing.T) {
 			Filter: config.TelemetryLoggingFilter{MinSeverity: "warning"},
 		},
 	})
+
+	resp, err := svc.GetServiceEndpoints(ctx, &pb.GetServiceEndpointsRequest{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(resp.TelemetryEndpoints) != 1 {
 		t.Fatalf("expected 1 telemetry endpoint, got %d", len(resp.TelemetryEndpoints))
@@ -150,10 +145,15 @@ func TestGetServiceEndpoints_WithEndpoint_ReturnsEndpoint(t *testing.T) {
 }
 
 func TestGetServiceEndpoints_DefaultsMinSeverityToInfo(t *testing.T) {
-	resp := buildTelemetryEndpointsResponse(&config.Telemetry{
+	svc, ctx := authSuccessServiceCtx(t, &config.Telemetry{
 		Enabled:  true,
 		Endpoint: "telemetry:9093",
 	})
+
+	resp, err := svc.GetServiceEndpoints(ctx, &pb.GetServiceEndpointsRequest{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(resp.TelemetryEndpoints) != 1 {
 		t.Fatalf("expected 1 endpoint, got %d", len(resp.TelemetryEndpoints))
@@ -163,52 +163,18 @@ func TestGetServiceEndpoints_DefaultsMinSeverityToInfo(t *testing.T) {
 	}
 }
 
-func TestGetServiceEndpoints_UsesEnvVarWhenEndpointEmpty(t *testing.T) {
-	t.Setenv("GRPC_TELEMETRY_ENDPOINT", "telemetry.jumpstarter.svc:9093")
+func TestGetServiceEndpoints_EnabledNoEndpoint_FailedPrecondition(t *testing.T) {
+	// This test exercises the empty-endpoint guard in the real GetServiceEndpoints
+	// handler — after authentication succeeds. Previously all GetServiceEndpoints
+	// tests used a failing authenticator, so this branch was never reached.
+	svc, ctx := authSuccessServiceCtx(t, &config.Telemetry{Enabled: true, Endpoint: ""})
 
-	resp := buildTelemetryEndpointsResponse(&config.Telemetry{
-		Enabled: true,
-		// Endpoint intentionally left empty — should fall back to env var.
-	})
-
-	if len(resp.TelemetryEndpoints) != 1 {
-		t.Fatalf("expected 1 endpoint, got %d", len(resp.TelemetryEndpoints))
+	_, err := svc.GetServiceEndpoints(ctx, &pb.GetServiceEndpointsRequest{})
+	if err == nil {
+		t.Fatal("expected error when telemetry enabled but endpoint is empty, got nil")
 	}
-	if resp.TelemetryEndpoints[0].Endpoint != "telemetry.jumpstarter.svc:9093" {
-		t.Errorf("Endpoint = %q, want %q (from env)", resp.TelemetryEndpoints[0].Endpoint, "telemetry.jumpstarter.svc:9093")
-	}
-}
-
-func TestGetServiceEndpoints_BothEndpointAndEnvVarEmpty_ReturnsEmptyEndpoint(t *testing.T) {
-	t.Setenv("GRPC_TELEMETRY_ENDPOINT", "")
-
-	resp := buildTelemetryEndpointsResponse(&config.Telemetry{
-		Enabled: true,
-		// Both Endpoint and GRPC_TELEMETRY_ENDPOINT are empty.
-	})
-
-	if len(resp.TelemetryEndpoints) != 1 {
-		t.Fatalf("expected 1 endpoint entry, got %d", len(resp.TelemetryEndpoints))
-	}
-	// An empty endpoint is returned; the caller must handle this gracefully.
-	if resp.TelemetryEndpoints[0].Endpoint != "" {
-		t.Errorf("Endpoint = %q, want empty string when nothing is configured", resp.TelemetryEndpoints[0].Endpoint)
-	}
-}
-
-func TestGetServiceEndpoints_ConfigEndpointTakesPrecedenceOverEnvVar(t *testing.T) {
-	t.Setenv("GRPC_TELEMETRY_ENDPOINT", "env-telemetry.svc:9093")
-
-	resp := buildTelemetryEndpointsResponse(&config.Telemetry{
-		Enabled:  true,
-		Endpoint: "config-telemetry.svc:9093",
-	})
-
-	if len(resp.TelemetryEndpoints) != 1 {
-		t.Fatalf("expected 1 endpoint, got %d", len(resp.TelemetryEndpoints))
-	}
-	if resp.TelemetryEndpoints[0].Endpoint != "config-telemetry.svc:9093" {
-		t.Errorf("Endpoint = %q, want config value to win over env var", resp.TelemetryEndpoints[0].Endpoint)
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("expected codes.FailedPrecondition, got %v", status.Code(err))
 	}
 }
 
@@ -245,33 +211,6 @@ func writeTLSPEMFiles(t *testing.T) (certPath, keyPath string) {
 	return certPath, keyPath
 }
 
-// selfSignedSANs generates a self-signed certificate with the same logic as
-// loadTLSCredentials for a given GRPC_TELEMETRY_ENDPOINT value, and returns
-// its DNS SANs for assertion.
-func selfSignedSANs(t *testing.T, advertised string) []string {
-	t.Helper()
-	var dnsnames []string
-	if advertised != "" {
-		dns, _, err := endpointToSAN(advertised)
-		if err != nil {
-			dnsnames = []string{"localhost"}
-		} else {
-			dnsnames = dns
-		}
-	} else {
-		dnsnames = []string{"localhost"}
-	}
-	cert, err := NewSelfSignedCertificate("test", dnsnames, nil)
-	if err != nil {
-		t.Fatalf("NewSelfSignedCertificate: %v", err)
-	}
-	leaf, err := x509.ParseCertificate(cert.Certificate[0])
-	if err != nil {
-		t.Fatalf("ParseCertificate: %v", err)
-	}
-	return leaf.DNSNames
-}
-
 func TestTelemetryService_LoadTLSCredentials_SelfSigned(t *testing.T) {
 	t.Setenv("EXTERNAL_CERT_PEM", "")
 	t.Setenv("EXTERNAL_KEY_PEM", "")
@@ -295,40 +234,88 @@ func TestTelemetryService_LoadTLSCredentials_SelfSigned(t *testing.T) {
 }
 
 func TestTelemetryService_LoadTLSCredentials_SelfSignedUsesAdvertisedEndpointForSAN(t *testing.T) {
-	// When GRPC_TELEMETRY_ENDPOINT is set, the self-signed cert SAN should derive
-	// from the advertised hostname — not from the bind address.
-	// We test the SAN derivation logic directly (same code path as loadTLSCredentials).
-	sans := selfSignedSANs(t, "telemetry.jumpstarter.svc:9093")
-	if len(sans) != 1 || sans[0] != "telemetry.jumpstarter.svc" {
-		t.Errorf("expected SAN [telemetry.jumpstarter.svc], got %v", sans)
+	// The self-signed cert SAN must match the advertised endpoint hostname so
+	// that TLS hostname verification succeeds when exporters connect.
+	t.Setenv("EXTERNAL_CERT_PEM", "")
+	t.Setenv("EXTERNAL_KEY_PEM", "")
+	t.Setenv("GRPC_TELEMETRY_ENDPOINT", "telemetry.jumpstarter.svc:9093")
+
+	svc := &TelemetryService{BindAddr: ":9093", Signer: testSigner(t)}
+	_, selfSignedPEM, err := svc.loadTLSCredentials()
+	if err != nil {
+		t.Fatalf("loadTLSCredentials() failed: %v", err)
+	}
+	if selfSignedPEM == "" {
+		t.Fatal("expected non-empty selfSignedPEM")
+	}
+
+	block, _ := pem.Decode([]byte(selfSignedPEM))
+	if block == nil {
+		t.Fatal("selfSignedPEM is not valid PEM")
+	}
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("ParseCertificate: %v", err)
+	}
+	if len(leaf.DNSNames) != 1 || leaf.DNSNames[0] != "telemetry.jumpstarter.svc" {
+		t.Errorf("expected SAN [telemetry.jumpstarter.svc], got %v", leaf.DNSNames)
 	}
 }
 
 func TestTelemetryService_LoadTLSCredentials_SelfSignedFallsBackToLocalhostWhenNoEndpoint(t *testing.T) {
-	// When GRPC_TELEMETRY_ENDPOINT is empty, SAN defaults to "localhost".
-	sans := selfSignedSANs(t, "")
-	if len(sans) != 1 || sans[0] != "localhost" {
-		t.Errorf("expected SAN [localhost], got %v", sans)
+	// When GRPC_TELEMETRY_ENDPOINT is unset, the self-signed cert SAN defaults to "localhost".
+	t.Setenv("EXTERNAL_CERT_PEM", "")
+	t.Setenv("EXTERNAL_KEY_PEM", "")
+	t.Setenv("GRPC_TELEMETRY_ENDPOINT", "")
+
+	svc := &TelemetryService{BindAddr: ":9093", Signer: testSigner(t)}
+	_, selfSignedPEM, err := svc.loadTLSCredentials()
+	if err != nil {
+		t.Fatalf("loadTLSCredentials() failed: %v", err)
+	}
+
+	block, _ := pem.Decode([]byte(selfSignedPEM))
+	if block == nil {
+		t.Fatal("selfSignedPEM is not valid PEM")
+	}
+	leaf, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatalf("ParseCertificate: %v", err)
+	}
+	if len(leaf.DNSNames) != 1 || leaf.DNSNames[0] != "localhost" {
+		t.Errorf("expected SAN [localhost], got %v", leaf.DNSNames)
 	}
 }
 
-func TestTelemetryService_LoadTLSCredentials_OnlyCertEnvVarFallsBackToSelfSigned(t *testing.T) {
+func TestTelemetryService_LoadTLSCredentials_OnlyCertEnvVarReturnsError(t *testing.T) {
 	certPath, _ := writeTLSPEMFiles(t)
-	// Only cert set, key is missing — should fall back to self-signed, not error.
+	// Only cert set, key missing — must fail to avoid hiding a broken Secret mount.
 	t.Setenv("EXTERNAL_CERT_PEM", certPath)
 	t.Setenv("EXTERNAL_KEY_PEM", "")
 
 	svc := &TelemetryService{BindAddr: ":9093", Signer: testSigner(t)}
-	creds, selfSignedPEM, err := svc.loadTLSCredentials()
-	if err != nil {
-		t.Fatalf("expected self-signed fallback, got error: %v", err)
+	_, _, err := svc.loadTLSCredentials()
+	if err == nil {
+		t.Fatal("expected error when only EXTERNAL_CERT_PEM is set")
 	}
-	if creds == nil {
-		t.Fatal("expected non-nil credentials")
+	if !strings.Contains(err.Error(), "EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM must be set together") {
+		t.Errorf("unexpected error message: %v", err)
 	}
-	// Partial env vars → self-signed fallback, so PEM must be non-empty.
-	if selfSignedPEM == "" {
-		t.Error("expected non-empty selfSignedPEM on self-signed fallback")
+}
+
+func TestTelemetryService_LoadTLSCredentials_OnlyKeyEnvVarReturnsError(t *testing.T) {
+	_, keyPath := writeTLSPEMFiles(t)
+	// Only key set, cert missing — must fail.
+	t.Setenv("EXTERNAL_CERT_PEM", "")
+	t.Setenv("EXTERNAL_KEY_PEM", keyPath)
+
+	svc := &TelemetryService{BindAddr: ":9093", Signer: testSigner(t)}
+	_, _, err := svc.loadTLSCredentials()
+	if err == nil {
+		t.Fatal("expected error when only EXTERNAL_KEY_PEM is set")
+	}
+	if !strings.Contains(err.Error(), "EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM must be set together") {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }
 
@@ -384,6 +371,42 @@ func TestTelemetryService_LoadTLSCredentials_MissingCertFileReturnsError(t *test
 	_, _, err := svc.loadTLSCredentials()
 	if err == nil {
 		t.Fatal("expected error reading missing cert file")
+	}
+}
+
+func TestTelemetryService_LoadTLSCredentials_MissingKeyFileReturnsError(t *testing.T) {
+	certPath, _ := writeTLSPEMFiles(t)
+	t.Setenv("EXTERNAL_CERT_PEM", certPath)
+	t.Setenv("EXTERNAL_KEY_PEM", "/does/not/exist/tls.key")
+
+	svc := &TelemetryService{BindAddr: ":9093", Signer: testSigner(t)}
+	_, _, err := svc.loadTLSCredentials()
+	if err == nil {
+		t.Fatal("expected error reading missing key file")
+	}
+	if !strings.Contains(err.Error(), "key") {
+		t.Errorf("expected 'key' in error message, got: %v", err)
+	}
+}
+
+func TestTelemetryService_LoadTLSCredentials_ValidCertInvalidKeyReturnsError(t *testing.T) {
+	certPath, _ := writeTLSPEMFiles(t)
+
+	keyFile, err := os.CreateTemp(t.TempDir(), "tls-*.key")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	if err := keyFile.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	t.Setenv("EXTERNAL_CERT_PEM", certPath)
+	t.Setenv("EXTERNAL_KEY_PEM", keyFile.Name())
+
+	svc := &TelemetryService{BindAddr: ":9093", Signer: testSigner(t)}
+	_, _, err = svc.loadTLSCredentials()
+	if err == nil {
+		t.Fatal("expected error parsing mismatched cert/key pair")
 	}
 }
 
@@ -702,6 +725,82 @@ func TestTelemetryService_PushLogs_StripsReservedExtraFieldKeys(t *testing.T) {
 	}
 	if resp.Accepted != 1 {
 		t.Errorf("Accepted = %d, want 1", resp.Accepted)
+	}
+}
+
+func TestTelemetryEndpoint(t *testing.T) {
+	tests := []struct {
+		name    string
+		env     string
+		want    string
+		wantErr bool
+	}{
+		{"empty", "", "", false},
+		{"valid host:port", "telemetry.svc:9093", "telemetry.svc:9093", false},
+		{"valid IP:port", "10.0.0.1:9093", "10.0.0.1:9093", false},
+		{"missing port", "telemetry.svc", "", true},
+		{"just port", ":9093", "", true},
+		{"garbage", "not a valid endpoint!", "", true},
+		{"has scheme", "http://host:9093", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("GRPC_TELEMETRY_ENDPOINT", tt.env)
+			got, err := telemetryEndpoint()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("telemetryEndpoint() expected error for %q, got %q", tt.env, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("telemetryEndpoint() unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("telemetryEndpoint() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEndpointToSAN(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		wantDNS  []string
+		wantIPs  int
+		wantErr  bool
+	}{
+		{"valid hostname:port", "telemetry.svc:9093", []string{"telemetry.svc"}, 0, false},
+		{"valid IP:port", "10.0.0.1:9093", nil, 1, false},
+		{"port-only is rejected", ":9093", nil, 0, true},
+		{"missing port", "telemetry.svc", nil, 0, true},
+		{"empty string", "", nil, 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dns, ips, err := endpointToSAN(tt.endpoint)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for %q, got dns=%v ips=%v", tt.endpoint, dns, ips)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(dns) != len(tt.wantDNS) {
+				t.Errorf("dns = %v, want %v", dns, tt.wantDNS)
+			}
+			for i := range tt.wantDNS {
+				if i < len(dns) && dns[i] != tt.wantDNS[i] {
+					t.Errorf("dns[%d] = %q, want %q", i, dns[i], tt.wantDNS[i])
+				}
+			}
+			if len(ips) != tt.wantIPs {
+				t.Errorf("got %d IPs, want %d", len(ips), tt.wantIPs)
+			}
+		})
 	}
 }
 
