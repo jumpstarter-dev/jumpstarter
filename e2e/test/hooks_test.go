@@ -53,8 +53,12 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, ContinueOnFailure, 
 			return
 		}
 
+		runningConfig = ""
 		tracker.StopAll()
-		time.Sleep(time.Second)
+		// The controller must observe the old exporter leave before we wait for
+		// the new one; otherwise WaitForExporter is satisfied by the conditions
+		// the dead process left behind.
+		WaitForExporterOffline("test-exporter-hooks")
 
 		ClearHooksConfig(exporterConfigPath)
 		MergeExporterConfig(exporterConfigPath, exporterOverlay(configFile))
@@ -67,7 +71,7 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, ContinueOnFailure, 
 	// startHooksExporterSingle starts without a restart loop (for exit-mode tests).
 	startHooksExporterSingle := func(configFile string) {
 		tracker.StopAll()
-		time.Sleep(time.Second)
+		WaitForExporterOffline("test-exporter-hooks")
 		runningConfig = ""
 
 		ClearHooksConfig(exporterConfigPath)

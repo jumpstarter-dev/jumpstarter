@@ -29,6 +29,17 @@ import (
 
 const exporterSetQemuClientName = "test-client-exporterset-qemu"
 
+// Poll periods for the waits in this file. The conditions here are reached by a
+// controller reacting to an event rather than by anything on a fixed schedule,
+// so the poll period is almost entirely overshoot once the condition holds.
+const (
+	// qemuPollPeriod is for waits that run a single kubectl query per attempt.
+	qemuPollPeriod = time.Second
+	// qemuComposePollPeriod is for waits that run several queries per attempt,
+	// where the attempt itself already costs a good fraction of a second.
+	qemuComposePollPeriod = 2 * time.Second
+)
+
 // qemuGuestArch holds native ExporterSet QEMU e2e identifiers for the host.
 type qemuGuestArch struct {
 	Arch       string
@@ -62,7 +73,9 @@ func loadQemuGuestArch() qemuGuestArch {
 	}
 }
 
-var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordered, func() {
+// Serial: boots VMs under TCG emulation, which will starve every other spec
+// on the runner if it shares the CPU.
+var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordered, Serial, func() {
 	var (
 		ns        string
 		manifest  string
@@ -121,7 +134,7 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 				"-l", guest.Selector,
 				"-o", "jsonpath={.items[0].metadata.name}")
 			return exporterName
-		}, 5*time.Minute, 5*time.Second).ShouldNot(BeEmpty())
+		}, 5*time.Minute, qemuPollPeriod).ShouldNot(BeEmpty())
 
 		By(fmt.Sprintf("waiting for exporter %s Online/Registered/Available", exporterName))
 		WaitForExporter(exporterName)
@@ -130,12 +143,12 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 		Eventually(func() string {
 			return KubectlQuery("-n", ns, "get", "pod", exporterName,
 				"-o", "jsonpath={.status.phase}")
-		}, 5*time.Minute, 5*time.Second).Should(Equal("Running"))
+		}, 5*time.Minute, qemuPollPeriod).Should(Equal("Running"))
 
 		Eventually(func() string {
 			return KubectlQuery("-n", ns, "get", "pod", exporterName,
 				"-o", "jsonpath={.status.containerStatuses[*].ready}")
-		}, 5*time.Minute, 5*time.Second).Should(ContainSubstring("true"))
+		}, 5*time.Minute, qemuPollPeriod).Should(ContainSubstring("true"))
 
 		By(fmt.Sprintf("verifying runtime image provides %s", guest.QemuBinary))
 		// fedora-minimal has no `which`; use a shell builtin.
@@ -152,7 +165,7 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 				"-l", guest.Selector,
 				"--field-selector=status.phase=Running",
 				"-o", "jsonpath={.items[0].metadata.name}")
-		}, 2*time.Minute, 5*time.Second).ShouldNot(BeEmpty())
+		}, 2*time.Minute, qemuPollPeriod).ShouldNot(BeEmpty())
 
 		sizeLimit := KubectlQuery("-n", ns, "get", "pod",
 			"-l", guest.Selector,
@@ -200,7 +213,7 @@ var _ = Describe("ExporterSet QEMU E2E Tests", Label("exporterset-qemu"), Ordere
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(uid).NotTo(BeEmpty())
 			oldUID = uid
-		}, 2*time.Minute, 5*time.Second).Should(Succeed())
+		}, 2*time.Minute, qemuComposePollPeriod).Should(Succeed())
 
 		By(fmt.Sprintf("power on, assert %s is running, then power off", guest.QemuBinary))
 		// One lease: start QEMU via the runtime sidecar, confirm the expected
@@ -253,7 +266,7 @@ j qemu power off
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(strings.Fields(strings.TrimSpace(exporters))).To(HaveLen(1),
 				"expected exactly one Exporter after recycle, got %q", exporters)
-		}, 5*time.Minute, 5*time.Second).Should(Succeed())
+		}, 5*time.Minute, qemuComposePollPeriod).Should(Succeed())
 
 		By("waiting for the replacement exporter to become Available")
 		var exporterName string
@@ -262,7 +275,7 @@ j qemu power off
 				"-l", guest.Selector,
 				"-o", "jsonpath={.items[0].metadata.name}")
 			return exporterName
-		}, 2*time.Minute, 5*time.Second).ShouldNot(BeEmpty())
+		}, 2*time.Minute, qemuPollPeriod).ShouldNot(BeEmpty())
 		WaitForExporter(exporterName)
 
 		By("verifying the replacement still responds to qemu power on/off")

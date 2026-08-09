@@ -25,6 +25,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,8 +41,17 @@ const (
 	defaultNamespace    = "jumpstarter-lab"
 	defaultWaitTimeout  = 5 * time.Minute
 	exporterPollPeriod  = 500 * time.Millisecond
-	exporterPostDelay   = 2 * time.Second
 	exporterProcessWait = 2 * time.Second
+
+	// stopGracePeriod is how long StopAll gives a SIGTERMed exporter to
+	// unregister before falling back to SIGKILL. It matches the exporter's own
+	// unregistration timeout (exporter.py, _unregister_with_controller). It is
+	// an upper bound, not a fixed cost: StopAll polls and returns as soon as
+	// the process is gone, which is well under a second in the normal case.
+	stopGracePeriod = 10 * time.Second
+	// stopKillTimeout is how long StopAll waits after the SIGKILL fallback.
+	stopKillTimeout = 10 * time.Second
+	stopPollPeriod  = 50 * time.Millisecond
 
 	// DexIssuer is the in-cluster Dex OIDC issuer used by e2e login helpers.
 	DexIssuer = "https://dex.dex.svc.cluster.local:5556"
@@ -448,11 +458,35 @@ func (lb *logBuffer) Close() {
 	}
 }
 
+// procSpec identifies an exporter by the flag/value pair it was started with,
+// e.g. {"--exporter", "hooks-exporter"} or {"--exporter-config", "/tmp/x.yaml"}.
+// `jmp run` forks and the child calls setsid() without re-execing, so the child
+// carries the same argv as the tracked parent and can be found by matching it.
+type procSpec struct {
+	flag  string
+	value string
+}
+
 // ProcessTracker manages background exporter processes.
 type ProcessTracker struct {
+	mu      sync.Mutex
 	pids    []int
+	specs   []procSpec
 	logs    map[string]*logBuffer
 	cancels []context.CancelFunc
+}
+
+// track records a started process and the argv identity that finds its forked
+// child, so StopAll can sweep an orphan without touching exporters belonging to
+// another ginkgo process.
+func (pt *ProcessTracker) track(pid int, flag, value string) {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
+	pt.pids = append(pt.pids, pid)
+	spec := procSpec{flag: flag, value: value}
+	if !slices.Contains(pt.specs, spec) {
+		pt.specs = append(pt.specs, spec)
+	}
 }
 
 // NewProcessTracker creates a new ProcessTracker.
@@ -512,10 +546,7 @@ func (pt *ProcessTracker) StartExporterLoop(exporterName string, jmpBin ...strin
 			}
 
 			pid := cmd.Process.Pid
-			// Track the PID under the parent lock-free path; this is safe
-			// because StopAll first cancels the context so this goroutine
-			// will not spawn new processes concurrently.
-			pt.pids = append(pt.pids, pid)
+			pt.track(pid, "--exporter", exporterName)
 
 			if restartCount > 0 {
 				GinkgoWriter.Printf("Restarted exporter %s (PID %d, restart #%d)\n", exporterName, pid, restartCount)
@@ -543,7 +574,7 @@ func (pt *ProcessTracker) StartExporterSingle(exporterName string) *exec.Cmd {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	err := cmd.Start()
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "failed to start exporter %s", exporterName)
-	pt.pids = append(pt.pids, cmd.Process.Pid)
+	pt.track(cmd.Process.Pid, "--exporter", exporterName)
 	GinkgoWriter.Printf("Started exporter %s (PID %d)\n", exporterName, cmd.Process.Pid)
 
 	// Reap the child process in the background so it doesn't become a zombie.
@@ -568,7 +599,7 @@ func (pt *ProcessTracker) StartExporterWithConfig(name, configPath string) *exec
 
 	err := cmd.Start()
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "failed to start exporter with config %s", configPath)
-	pt.pids = append(pt.pids, cmd.Process.Pid)
+	pt.track(cmd.Process.Pid, "--exporter-config", configPath)
 	GinkgoWriter.Printf("Started exporter %s (PID %d) with config %s\n", name, cmd.Process.Pid, configPath)
 
 	// Reap the child process in the background so it doesn't become a zombie.
@@ -599,7 +630,7 @@ func (pt *ProcessTracker) StartDirectExporter(configFile string, port int, passp
 
 	err := cmd.Start()
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "failed to start direct exporter with config %s", configFile)
-	pt.pids = append(pt.pids, cmd.Process.Pid)
+	pt.track(cmd.Process.Pid, "--exporter-config", configFile)
 	GinkgoWriter.Printf("Started direct exporter (PID %d) on port %d\n", cmd.Process.Pid, port)
 	return cmd, stderrBuf
 }
@@ -651,6 +682,8 @@ func (pt *ProcessTracker) DumpLogs(_ int) {
 
 // TrackedPIDs returns a copy of currently tracked process IDs.
 func (pt *ProcessTracker) TrackedPIDs() []int {
+	pt.mu.Lock()
+	defer pt.mu.Unlock()
 	out := make([]int, len(pt.pids))
 	copy(out, pt.pids)
 	return out
@@ -675,36 +708,139 @@ func AnyPIDAlive(pids []int) bool {
 	return false
 }
 
-// StopAll cancels all restart loops, kills all tracked processes, waits
+// signalPIDs best-effort sends sig to each of the given PIDs.
+func signalPIDs(pids []int, sig syscall.Signal) {
+	for _, pid := range pids {
+		proc, err := os.FindProcess(pid)
+		if err != nil {
+			continue
+		}
+		_ = proc.Signal(sig)
+	}
+}
+
+// waitPIDsGone reports whether all the given PIDs have exited within timeout.
+func waitPIDsGone(pids []int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !AnyPIDAlive(pids) {
+			return true
+		}
+		time.Sleep(stopPollPeriod)
+	}
+	return !AnyPIDAlive(pids)
+}
+
+// StopAll cancels all restart loops, terminates all tracked processes, waits
 // until those PIDs are gone, then clears the tracker and kills orphans.
+//
+// Termination is SIGTERM first, SIGKILL only as a fallback. `jmp run` forks and
+// the child calls setsid(), so the tracked PID is the parent: a SIGKILL there
+// leaves the exporter itself orphaned with its controller registration intact,
+// and the controller then has to time out the heartbeat before the exporter
+// counts as gone. On SIGTERM the parent forwards the signal to the child's
+// process group, the child reports OFFLINE and unregisters, and the parent
+// exits only once it has reaped the child — so the parent being gone means the
+// exporter really has left the controller.
 func (pt *ProcessTracker) StopAll() {
-	// Cancel all restart-loop goroutines first
+	// Cancel all restart-loop goroutines first so track() won't be called
+	// concurrently from this point on.
 	for _, cancel := range pt.cancels {
 		cancel()
 	}
 	pt.cancels = nil
 
 	pids := pt.TrackedPIDs()
+	signalPIDs(pids, syscall.SIGTERM)
+
+	// Reap in the background. A zombie still answers signal 0, so a child that
+	// nobody waited on would look alive for the whole grace period. Processes
+	// started through StartExporter* already have a Wait goroutine; the extra
+	// waiter just loses the race and gets an error, which is harmless.
 	for _, pid := range pids {
-		proc, err := os.FindProcess(pid)
-		if err != nil {
-			continue
+		if proc, err := os.FindProcess(pid); err == nil {
+			go func() { _, _ = proc.Wait() }()
 		}
-		_ = proc.Signal(syscall.SIGKILL)
-		_, _ = proc.Wait()
 	}
 
 	// Wait until tracked PIDs are actually gone before clearing the list,
 	// so callers that snapshot PIDs (or poll IsProcessRunning) observe a
 	// real termination rather than an emptied tracker.
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) && AnyPIDAlive(pids) {
-		time.Sleep(50 * time.Millisecond)
+	if !waitPIDsGone(pids, stopGracePeriod) {
+		GinkgoWriter.Printf("Exporter PIDs %v did not exit on SIGTERM, sending SIGKILL\n", pids)
+		signalPIDs(pids, syscall.SIGKILL)
+		waitPIDsGone(pids, stopKillTimeout)
 	}
-	pt.pids = nil
 
-	// Kill orphaned jmp exporter processes
-	_ = exec.Command("pkill", "-9", "-f", "jmp run --exporter").Run()
+	pt.mu.Lock()
+	pt.pids = nil
+	pt.mu.Unlock()
+
+	pt.sweepOrphans()
+}
+
+// sweepOrphans SIGKILLs any surviving `jmp run` process that matches one of the
+// argv identities this tracker started. It is a safety net for the SIGKILL
+// fallback above: killing the parent orphans the forked child, which keeps the
+// parent's argv.
+//
+// This is deliberately not a `pkill -f "jmp run --exporter"`. That pattern is
+// global, so under `ginkgo --procs` one process's cleanup would reap every other
+// process's exporters, and being a substring match it also matched the
+// `--exporter-config` runs it was never meant to touch. Matching whole argv
+// elements against the specs this tracker recorded avoids both.
+func (pt *ProcessTracker) sweepOrphans() {
+	pt.mu.Lock()
+	specs := make([]procSpec, len(pt.specs))
+	copy(specs, pt.specs)
+	pt.mu.Unlock()
+
+	if len(specs) == 0 {
+		return
+	}
+
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return
+	}
+
+	self := os.Getpid()
+	for _, entry := range entries {
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || pid == self {
+			continue
+		}
+
+		raw, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "cmdline"))
+		if err != nil {
+			continue // process exited, or not ours to read
+		}
+		argv := strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00")
+		if !argvMatchesSpecs(argv, specs) {
+			continue
+		}
+
+		GinkgoWriter.Printf("Killing orphaned exporter process %d (%s)\n", pid, strings.Join(argv, " "))
+		if proc, err := os.FindProcess(pid); err == nil {
+			_ = proc.Signal(syscall.SIGKILL)
+		}
+	}
+}
+
+// argvMatches reports whether argv is a `jmp run` invocation carrying one of the
+// tracked flag/value pairs as adjacent, whole arguments.
+func argvMatchesSpecs(argv []string, specs []procSpec) bool {
+	if len(argv) < 3 || !slices.Contains(argv, "run") {
+		return false
+	}
+	for _, spec := range specs {
+		for i := 0; i < len(argv)-1; i++ {
+			if argv[i] == spec.flag && argv[i+1] == spec.value {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Cleanup stops all processes and closes log files.
@@ -717,7 +853,8 @@ func (pt *ProcessTracker) Cleanup() {
 
 // IsProcessRunning checks if any tracked process is still running.
 func (pt *ProcessTracker) IsProcessRunning() bool {
-	return AnyPIDAlive(pt.pids)
+	pids := pt.TrackedPIDs()
+	return AnyPIDAlive(pids)
 }
 
 // --- Exporter wait helpers ---
@@ -727,26 +864,47 @@ func (pt *ProcessTracker) IsProcessRunning() bool {
 // than an unreadable `kubectl wait exporters.jumpstarter.dev/error: ...`.
 var validExporterName = regexp.MustCompile(`^[a-z0-9]([-.a-z0-9]*[a-z0-9])?$`)
 
-// WaitForExporter waits for an exporter to become Online, Registered, and Available.
+// exporterFree is the value exporterState returns for an exporter that is
+// Available with no lease outstanding.
+const exporterFree = "Available|"
+
+// exporterState reads an exporter's status and its outstanding lease in a
+// single query, so the two can never be read from different revisions.
+func exporterState(ns, exporterRef string) string {
+	return KubectlQuery("-n", ns, "get", exporterRef,
+		"-o", "jsonpath={.status.exporterStatus}|{.status.leaseRef.name}")
+}
+
+// WaitForExporter waits for an exporter to become Online, Registered, and
+// Available with no lease outstanding.
+//
+// Waiting for the lease to clear is what makes this safe to call right after a
+// `jmp shell` returns. The controller has not necessarily processed the release
+// yet at that point, so exporterStatus can still read Available from before the
+// lease ever started, and a wait that only looked at the status would be
+// satisfied by that stale value. status.leaseRef is derived from the active,
+// non-ended leases (exporter_controller.go, reconcileStatusLeaseRef), so it
+// only empties once the release has actually been reconciled.
+//
+// A caller that just stopped an exporter has the same problem one step earlier
+// — the conditions still describe the process that went away — and must wait
+// for WaitForExporterOffline before calling this.
 func WaitForExporter(name string) {
 	ns := Namespace()
 	ExpectWithOffset(1, validExporterName.MatchString(name)).To(BeTrue(),
 		"WaitForExporter called with an invalid exporter name %q", name)
 	exporterRef := fmt.Sprintf("exporters.jumpstarter.dev/%s", name)
 
-	// Brief delay to avoid catching pre-disconnect state
-	time.Sleep(exporterPostDelay)
-
 	// Wait for Online + Registered conditions
 	MustRunCmd("kubectl", "-n", ns, "wait", "--timeout", "5m",
 		"--for=condition=Online", "--for=condition=Registered", exporterRef)
 
-	// Poll until exporterStatus is Available
-	Eventually(func() string {
-		return KubectlQuery("-n", ns, "get", exporterRef,
-			"-o", "jsonpath={.status.exporterStatus}")
-	}, defaultWaitTimeout, exporterPollPeriod).Should(Equal("Available"),
-		"timed out waiting for %s to reach Available status", name)
+	// Poll until the exporter is Available and holds no lease
+	EventuallyWithOffset(1, func() string {
+		return exporterState(ns, exporterRef)
+	}, defaultWaitTimeout, exporterPollPeriod).Should(Equal(exporterFree),
+		"timed out waiting for %s to be Available with no outstanding lease "+
+			"(reported as <exporterStatus>|<leaseRef>)", name)
 }
 
 // WaitForExporters waits for multiple exporters in parallel.
@@ -763,16 +921,25 @@ func WaitForExporters(names ...string) {
 	wg.Wait()
 }
 
-// WaitForExporterOffline waits for an exporter to go offline.
+// WaitForExporterOffline waits for an exporter to stop reporting itself Online.
+//
+// The query goes through RunCmdSplit rather than Kubectl because an empty
+// result is one of the accepted answers (the Online condition may not be set
+// yet) and Kubectl folds stderr into its output: a failed query would otherwise
+// be indistinguishable from "the exporter is offline" and end the wait on the
+// first attempt.
 func WaitForExporterOffline(name string) {
 	ns := Namespace()
 	exporterRef := fmt.Sprintf("exporters.jumpstarter.dev/%s", name)
 
-	Eventually(func() bool {
-		out, _ := Kubectl("-n", ns, "get", exporterRef,
+	EventuallyWithOffset(1, func() bool {
+		out, _, err := RunCmdSplit("kubectl", "-n", ns, "get", exporterRef,
 			"-o", `jsonpath={.status.conditions[?(@.type=="Online")].status}`)
+		if err != nil {
+			return false
+		}
 		return out == "False" || out == "Unknown" || out == ""
-	}, 200*time.Second, time.Second).Should(BeTrue(),
+	}, 200*time.Second, exporterPollPeriod).Should(BeTrue(),
 		"timed out waiting for %s to go offline", name)
 }
 

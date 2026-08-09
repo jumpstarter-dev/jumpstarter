@@ -51,7 +51,9 @@ func sudoArgs(args ...string) (string, []string) {
 	return args[0], args[1:]
 }
 
-var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, ContinueOnFailure, func() {
+// Serial: builds veth pairs, bridges and nftables rules in the host network
+// namespace, and drives dnsmasq. There is only one host to share.
+var _ = Describe("DUT Network E2E Tests", Label("dut-network"), Ordered, ContinueOnFailure, Serial, func() {
 	var (
 		tracker      *ProcessTracker
 		listenerPort = 19091

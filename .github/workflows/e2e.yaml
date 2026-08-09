@@ -14,6 +14,10 @@ env:
   # flakes in the ginkgo summary, so this hides nothing; it only stops a single
   # infrastructure hiccup from failing an unrelated PR.
   E2E_FLAKE_ATTEMPTS: "2"
+  # Run the non-Serial containers two at a time. The runner has 4 CPUs and the
+  # suite spends most of its time waiting on the cluster, so a second process
+  # overlaps the two long containers (hooks, core) rather than competing for CPU.
+  E2E_PROCS: "2"
 
 jobs:
   changes:
