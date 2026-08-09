@@ -336,6 +336,21 @@ func MustKubectl(args ...string) string {
 	return out
 }
 
+// MustKubectlApply pipes a manifest to `kubectl apply -f -` and fails the test
+// on error. Use it to create a batch of fixture resources in one call; the jmp
+// admin CLI creates them one process at a time, which is far slower than the
+// test needs when the resources are only there to be listed.
+func MustKubectlApply(manifest string) string {
+	cmd := exec.Command("kubectl", "-n", Namespace(), "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	err := cmd.Run()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "kubectl apply failed: %s", out.String())
+	return strings.TrimSpace(out.String())
+}
+
 // KubectlQuery runs a kubectl query and returns its stdout, or "" if kubectl
 // failed. Use it for values polled inside Eventually.
 //

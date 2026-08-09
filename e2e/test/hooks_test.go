@@ -30,6 +30,9 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, ContinueOnFailure, 
 	var (
 		tracker            *ProcessTracker
 		exporterConfigPath string
+		// runningConfig is the overlay the exporter currently running in loop
+		// mode was started with, or "" when no reusable exporter is running.
+		runningConfig string
 	)
 
 	exporterOverlay := func(configFile string) string {
@@ -38,7 +41,18 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, ContinueOnFailure, 
 
 	// startHooksExporter stops the previous exporter, applies the config overlay,
 	// and starts the exporter in a restart loop.
+	//
+	// Restarting costs several seconds per spec, so an exporter already running
+	// in loop mode with the same overlay is reused. The specs leave no state
+	// behind that outlives a lease, so the only thing that has to match is the
+	// config. Exit-mode specs clear runningConfig because they deliberately
+	// leave the exporter dead.
 	startHooksExporter := func(configFile string) {
+		if runningConfig == configFile {
+			WaitForExporter("test-exporter-hooks")
+			return
+		}
+
 		tracker.StopAll()
 		time.Sleep(time.Second)
 
@@ -47,12 +61,14 @@ var _ = Describe("Hooks E2E Tests", Label("hooks"), Ordered, ContinueOnFailure, 
 
 		tracker.StartExporterLoop("test-exporter-hooks")
 		WaitForExporter("test-exporter-hooks")
+		runningConfig = configFile
 	}
 
 	// startHooksExporterSingle starts without a restart loop (for exit-mode tests).
 	startHooksExporterSingle := func(configFile string) {
 		tracker.StopAll()
 		time.Sleep(time.Second)
+		runningConfig = ""
 
 		ClearHooksConfig(exporterConfigPath)
 		MergeExporterConfig(exporterConfigPath, exporterOverlay(configFile))

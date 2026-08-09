@@ -428,10 +428,25 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, fu
 			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
 			MustJmp("config", "client", "use", "test-client-oidc")
 
+			// As with the exporter pagination spec, the leases are fixtures for
+			// the client's pagination, so create them in a single apply.
+			var manifest strings.Builder
 			for i := 1; i <= 10; i++ {
-				out, err := Jmp("create", "lease", "--selector", "example.com/board=oidc", "--duration", "1d")
-				Expect(err).NotTo(HaveOccurred(), out)
+				fmt.Fprintf(&manifest, `---
+apiVersion: jumpstarter.dev/v1alpha1
+kind: Lease
+metadata:
+  name: pagination-lease-%d
+spec:
+  clientRef:
+    name: test-client-oidc
+  duration: 24h
+  selector:
+    matchLabels:
+      example.com/board: oidc
+`, i)
 			}
+			MustKubectlApply(manifest.String())
 
 			out, err := Jmp("get", "leases", "--page-size", "5", "-o", "name")
 			Expect(err).NotTo(HaveOccurred(), out)
@@ -445,23 +460,31 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, fu
 			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
 			MustJmp("config", "client", "use", "test-client-oidc")
 
-			ns := Namespace()
+			// The exporters are fixtures for the client's pagination, so
+			// create them in a single apply rather than one jmp process each.
+			var manifest strings.Builder
 			for i := 1; i <= 10; i++ {
 				name := fmt.Sprintf("pagination-exp-%d", i)
-				out, err := Jmp("admin", "create", "exporter", "-n", ns, name,
-					"--nointeractive", "-l", "pagination=true",
-					"--oidc-username", fmt.Sprintf("dex:%s", name))
-				Expect(err).NotTo(HaveOccurred(), out)
+				fmt.Fprintf(&manifest, `---
+apiVersion: jumpstarter.dev/v1alpha1
+kind: Exporter
+metadata:
+  name: %s
+  labels:
+    pagination: "true"
+spec:
+  username: dex:%s
+`, name, name)
 			}
+			MustKubectlApply(manifest.String())
 
 			out, err := Jmp("get", "exporters", "--selector", "pagination=true", "--page-size", "5", "-o", "name")
 			Expect(err).NotTo(HaveOccurred(), out)
 			lines := strings.Split(strings.TrimSpace(out), "\n")
 			Expect(lines).To(HaveLen(10))
 
-			for i := 1; i <= 10; i++ {
-				MustJmp("admin", "delete", "exporter", "--namespace", ns, fmt.Sprintf("pagination-exp-%d", i), "--delete")
-			}
+			MustKubectl("-n", Namespace(), "delete", "exporters.jumpstarter.dev",
+				"-l", "pagination=true", "--wait=false")
 		})
 
 		It("lease listing shows expires at and remaining columns", func() {
