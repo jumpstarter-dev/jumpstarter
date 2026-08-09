@@ -275,6 +275,35 @@ deploy_controller() {
 # shellcheck source=lib/install.sh
 source "$SCRIPT_DIR/lib/install.sh"
 
+# Pin the ingress hostnames in /etc/hosts so that host-side clients (jmp, curl)
+# never depend on public DNS.
+#
+# baseDomain is a nip.io wildcard name of the form jumpstarter.<IP>.nip.io, so
+# every jmp invocation would otherwise resolve <prefix>.jumpstarter.<IP>.nip.io
+# against a public resolver. A slow or rate-limited lookup burns the client's
+# whole connect budget and surfaces as "Timeout connecting to grpc....:8082".
+# The IP is already embedded in the name, so we can serve the same answer
+# locally. Non-nip.io base domains are left alone.
+pin_basedomain_hosts_entries() {
+    local basedomain="$1"
+    local ip
+
+    ip=$(echo "${basedomain}" | sed -nE 's/^.*\.([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\.nip\.io$/\1/p')
+    if [ -z "${ip}" ]; then
+        log_info "baseDomain ${basedomain} is not a nip.io name, leaving DNS resolution alone"
+        return 0
+    fi
+
+    if grep -Fq "grpc.${basedomain}" /etc/hosts 2>/dev/null; then
+        log_info "✓ ${basedomain} entries already in /etc/hosts"
+        return 0
+    fi
+
+    log_warn "About to add ${basedomain} entries to /etc/hosts (requires sudo)"
+    echo "${ip} ${basedomain} grpc.${basedomain} router.${basedomain} login.${basedomain}" | sudo tee -a /etc/hosts
+    log_info "✓ Pinned ${basedomain} to ${ip} in /etc/hosts"
+}
+
 # Step 6: Setup test environment
 setup_test_environment() {
     log_info "Setting up test environment..."
@@ -290,6 +319,7 @@ setup_test_environment() {
         log_error "Failed to get baseDomain from Jumpstarter CR in namespace ${JS_NAMESPACE}"
         exit 1
     fi
+    pin_basedomain_hosts_entries "${BASEDOMAIN}"
     export ENDPOINT="grpc.${BASEDOMAIN}:8082"
     export LOGIN_ENDPOINT="login.${BASEDOMAIN}:8086"
     log_info "Controller endpoint: $ENDPOINT"
