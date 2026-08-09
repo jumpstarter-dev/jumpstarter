@@ -1,18 +1,29 @@
 package auth
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter-controller/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
+	jlog "github.com/jumpstarter-dev/jumpstarter-controller/internal/log"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	grpcpeer "google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
-	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type stubAuthenticator struct {
@@ -23,6 +34,15 @@ type stubAuthenticator struct {
 
 func (s *stubAuthenticator) AuthenticateContext(_ context.Context) (*authenticator.Response, bool, error) {
 	return s.resp, s.ok, s.err
+}
+
+type recordingTokenAuthenticator struct {
+	received string
+}
+
+func (r *recordingTokenAuthenticator) AuthenticateToken(_ context.Context, token string) (*authenticator.Response, bool, error) {
+	r.received = token
+	return nil, false, fmt.Errorf("token verification failed")
 }
 
 type stubAttributesGetter struct {
@@ -42,6 +62,27 @@ type stubAuthorizer struct {
 
 func (s *stubAuthorizer) Authorize(_ context.Context, _ authorizer.Attributes) (authorizer.Decision, string, error) {
 	return s.decision, s.reason, s.err
+}
+
+type fakeAddr struct {
+	network string
+	addr    string
+}
+
+func (a fakeAddr) Network() string { return a.network }
+func (a fakeAddr) String() string  { return a.addr }
+
+func ctxWithPeer(addr string) context.Context {
+	return grpcpeer.NewContext(context.Background(), &grpcpeer.Peer{
+		Addr: fakeAddr{network: "tcp", addr: addr},
+	})
+}
+
+func captureLog(t *testing.T, ctx context.Context) (context.Context, *bytes.Buffer) {
+	t.Helper()
+	var buf bytes.Buffer
+	logger := ctrlzap.New(ctrlzap.UseDevMode(true), ctrlzap.WriteTo(&buf))
+	return jlog.LogContext(logf.IntoContext(ctx, logger)), &buf
 }
 
 func buildScheme() *runtime.Scheme {
@@ -110,5 +151,380 @@ func TestIsExporter(t *testing.T) {
 				t.Errorf("IsExporter() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestAuthClient_TokenVerificationFailure_LogsPeerAndError(t *testing.T) {
+	authn := &stubAuthenticator{err: fmt.Errorf("bad token")}
+	attr := &stubAttributesGetter{}
+	authz := &stubAuthorizer{}
+
+	ctx := ctxWithPeer("192.168.1.10:5000")
+	ctx, buf := captureLog(t, ctx)
+
+	a := newAuth(authn, authz, attr)
+	_, err := a.AuthClient(ctx, "default")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	logged := buf.String()
+
+	// Must contain the standardised message.
+	if !strings.Contains(logged, "client authentication failed") {
+		t.Errorf("expected log message 'client authentication failed', got:\n%s", logged)
+	}
+	// Must include the peer IP.
+	if !strings.Contains(logged, "192.168.1.10") {
+		t.Errorf("expected peer IP '192.168.1.10' in log, got:\n%s", logged)
+	}
+	// Must include the error text.
+	if !strings.Contains(logged, "bad token") {
+		t.Errorf("expected error text 'bad token' in log, got:\n%s", logged)
+	}
+}
+
+func TestAuthClient_NamespaceMismatch_LogsClientNameAndPeer(t *testing.T) {
+	// Build a real Client CR so VerifyClientObjectToken succeeds.
+	clientObj := &jumpstarterdevv1alpha1.Client{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "team-a",
+			Name:      "my-client",
+		},
+	}
+
+	authn := &stubAuthenticator{
+		resp: &authenticator.Response{User: &user.DefaultInfo{Name: "u"}},
+		ok:   true,
+	}
+	attr := &stubAttributesGetter{
+		attrs: authorizer.AttributesRecord{
+			User:      &user.DefaultInfo{Name: "u"},
+			Namespace: "team-a",
+			Resource:  "Client",
+			Name:      "my-client",
+		},
+	}
+	authz := &stubAuthorizer{decision: authorizer.DecisionAllow}
+
+	a := newAuth(authn, authz, attr, clientObj)
+
+	ctx := ctxWithPeer("10.20.30.40:9090")
+	ctx, buf := captureLog(t, ctx)
+
+	// Ask for namespace "team-b" while the client belongs to "team-a".
+	_, err := a.AuthClient(ctx, "team-b")
+	if err == nil {
+		t.Fatal("expected namespace mismatch error, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok || st.Code() != codes.PermissionDenied {
+		t.Errorf("expected PermissionDenied, got %v", err)
+	}
+
+	logged := buf.String()
+
+	if !strings.Contains(logged, "client authentication failed") {
+		t.Errorf("expected 'client authentication failed' in log, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "my-client") {
+		t.Errorf("expected client name 'my-client' in log, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "10.20.30.40") {
+		t.Errorf("expected peer IP in log, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "namespace mismatch") {
+		t.Errorf("expected 'namespace mismatch' error in log, got:\n%s", logged)
+	}
+}
+
+func TestAuthClient_Success_NoAuthFailureLog(t *testing.T) {
+	clientObj := &jumpstarterdevv1alpha1.Client{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "c"},
+	}
+	authn := &stubAuthenticator{
+		resp: &authenticator.Response{User: &user.DefaultInfo{Name: "u"}},
+		ok:   true,
+	}
+	attr := &stubAttributesGetter{
+		attrs: authorizer.AttributesRecord{
+			User: &user.DefaultInfo{Name: "u"}, Namespace: "ns", Resource: "Client", Name: "c",
+		},
+	}
+	authz := &stubAuthorizer{decision: authorizer.DecisionAllow}
+
+	ctx := ctxWithPeer("10.0.0.1:1234")
+	ctx, buf := captureLog(t, ctx)
+
+	a := newAuth(authn, authz, attr, clientObj)
+	client, err := a.AuthClient(ctx, "ns")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if client.Name != "c" {
+		t.Errorf("expected client name 'c', got %q", client.Name)
+	}
+
+	logged := buf.String()
+	if strings.Contains(logged, "authentication failed") {
+		t.Errorf("successful auth should produce no failure log, got:\n%s", logged)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// AuthExporter logging tests
+// ---------------------------------------------------------------------------
+
+func TestAuthExporter_TokenVerificationFailure_LogsPeerAndError(t *testing.T) {
+	authn := &stubAuthenticator{err: fmt.Errorf("expired token")}
+	attr := &stubAttributesGetter{}
+	authz := &stubAuthorizer{}
+
+	ctx := ctxWithPeer("172.16.0.100:6000")
+	ctx, buf := captureLog(t, ctx)
+
+	a := newAuth(authn, authz, attr)
+	_, err := a.AuthExporter(ctx, "default")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	logged := buf.String()
+
+	if !strings.Contains(logged, "exporter authentication failed") {
+		t.Errorf("expected 'exporter authentication failed', got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "172.16.0.100") {
+		t.Errorf("expected peer IP in log, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "expired token") {
+		t.Errorf("expected error text in log, got:\n%s", logged)
+	}
+}
+
+func TestAuthExporter_NamespaceMismatch_LogsExporterNameAndPeer(t *testing.T) {
+	exporterObj := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "prod", Name: "my-exporter"},
+	}
+
+	authn := &stubAuthenticator{
+		resp: &authenticator.Response{User: &user.DefaultInfo{Name: "u"}},
+		ok:   true,
+	}
+	attr := &stubAttributesGetter{
+		attrs: authorizer.AttributesRecord{
+			User: &user.DefaultInfo{Name: "u"}, Namespace: "prod", Resource: "Exporter", Name: "my-exporter",
+		},
+	}
+	authz := &stubAuthorizer{decision: authorizer.DecisionAllow}
+
+	ctx := ctxWithPeer("10.0.0.99:4444")
+	ctx, buf := captureLog(t, ctx)
+
+	a := newAuth(authn, authz, attr, exporterObj)
+
+	// Ask for namespace "staging" while exporter belongs to "prod".
+	_, err := a.AuthExporter(ctx, "staging")
+	if err == nil {
+		t.Fatal("expected namespace mismatch error, got nil")
+	}
+
+	st, ok := status.FromError(err)
+	if !ok || st.Code() != codes.PermissionDenied {
+		t.Errorf("expected PermissionDenied, got %v", err)
+	}
+
+	logged := buf.String()
+
+	if !strings.Contains(logged, "exporter authentication failed") {
+		t.Errorf("expected 'exporter authentication failed' in log, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "my-exporter") {
+		t.Errorf("expected exporter name in log, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "10.0.0.99") {
+		t.Errorf("expected peer IP in log, got:\n%s", logged)
+	}
+}
+
+func TestAuthExporter_Success_NoAuthFailureLog(t *testing.T) {
+	exporterObj := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "e"},
+	}
+	authn := &stubAuthenticator{
+		resp: &authenticator.Response{User: &user.DefaultInfo{Name: "u"}},
+		ok:   true,
+	}
+	attr := &stubAttributesGetter{
+		attrs: authorizer.AttributesRecord{
+			User: &user.DefaultInfo{Name: "u"}, Namespace: "ns", Resource: "Exporter", Name: "e",
+		},
+	}
+	authz := &stubAuthorizer{decision: authorizer.DecisionAllow}
+
+	ctx := ctxWithPeer("10.0.0.1:1234")
+	ctx, buf := captureLog(t, ctx)
+
+	a := newAuth(authn, authz, attr, exporterObj)
+	exporter, err := a.AuthExporter(ctx, "ns")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if exporter.Name != "e" {
+		t.Errorf("expected exporter name 'e', got %q", exporter.Name)
+	}
+
+	logged := buf.String()
+	if strings.Contains(logged, "authentication failed") {
+		t.Errorf("successful auth should produce no failure log, got:\n%s", logged)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// VerifyClient / VerifyExporter logging tests — the namespace-free variants
+// used by ControllerService's authenticate helpers.
+// ---------------------------------------------------------------------------
+
+func TestVerifyClient_TokenVerificationFailure_LogsPeerAndError(t *testing.T) {
+	authn := &stubAuthenticator{err: fmt.Errorf("bad token")}
+	attr := &stubAttributesGetter{}
+	authz := &stubAuthorizer{}
+
+	ctx := ctxWithPeer("192.168.1.11:5001")
+	ctx, buf := captureLog(t, ctx)
+
+	a := newAuth(authn, authz, attr)
+	_, err := a.VerifyClient(ctx)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, "client authentication failed") {
+		t.Errorf("expected 'client authentication failed', got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "192.168.1.11") {
+		t.Errorf("expected peer IP in log, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "bad token") {
+		t.Errorf("expected error text in log, got:\n%s", logged)
+	}
+	// The interceptor-applied LogContext owns the "peer" key; the auth layer
+	// must not add it a second time.
+	if n := strings.Count(logged, `"peer"`); n != 1 {
+		t.Errorf(`expected exactly one "peer" key in log output, found %d:\n%s`, n, logged)
+	}
+}
+
+func TestVerifyExporter_TokenVerificationFailure_LogsPeerAndError(t *testing.T) {
+	authn := &stubAuthenticator{err: fmt.Errorf("expired token")}
+	attr := &stubAttributesGetter{}
+	authz := &stubAuthorizer{}
+
+	ctx := ctxWithPeer("172.16.0.101:6001")
+	ctx, buf := captureLog(t, ctx)
+
+	a := newAuth(authn, authz, attr)
+	_, err := a.VerifyExporter(ctx)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, "exporter authentication failed") {
+		t.Errorf("expected 'exporter authentication failed', got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "172.16.0.101") {
+		t.Errorf("expected peer IP in log, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, "expired token") {
+		t.Errorf("expected error text in log, got:\n%s", logged)
+	}
+	if n := strings.Count(logged, `"peer"`); n != 1 {
+		t.Errorf(`expected exactly one "peer" key in log output, found %d:\n%s`, n, logged)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Token leak tests — verify that sensitive token values never appear in logs.
+//
+// The sensitive token is injected as real incoming gRPC metadata and the Auth
+// is built with the production BearerTokenAuthenticator, so the token travels
+// the same extraction path as production traffic (metadata ->
+// BearerTokenFromContext -> AuthenticateToken). The tests then prove the
+// token was actually seen by the verifier before asserting it is absent from
+// the log output — a regression that logs the authorization header or request
+// metadata would make them fail.
+// ---------------------------------------------------------------------------
+
+// sensitiveToken is the bearer token value that must never appear in logs.
+const sensitiveToken = "header.payload.signature-secret-value"
+
+// ctxWithBearerToken returns ctx with incoming gRPC metadata carrying
+// "authorization: Bearer <token>", like a real authenticated request.
+func ctxWithBearerToken(ctx context.Context, token string) context.Context {
+	return metadata.NewIncomingContext(ctx, metadata.Pairs("authorization", "Bearer "+token))
+}
+
+func TestAuthClient_NoTokenLeak(t *testing.T) {
+	rec := &recordingTokenAuthenticator{}
+	authn := authentication.NewBearerTokenAuthenticator(rec)
+	attr := &stubAttributesGetter{}
+	authz := &stubAuthorizer{}
+
+	ctx := ctxWithBearerToken(ctxWithPeer("10.0.0.1:1234"), sensitiveToken)
+	ctx, buf := captureLog(t, ctx)
+
+	a := newAuth(authn, authz, attr)
+	if _, err := a.AuthClient(ctx, "default"); err == nil {
+		t.Fatal("expected authentication to fail, got nil error")
+	}
+
+	// The token must have traversed the production extraction path — this is
+	// what makes the absence assertions below meaningful.
+	if rec.received != sensitiveToken {
+		t.Fatalf("token authenticator received %q, want %q", rec.received, sensitiveToken)
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, "client authentication failed") {
+		t.Fatalf("expected 'client authentication failed' in log, got:\n%s", logged)
+	}
+	if strings.Contains(logged, sensitiveToken) {
+		t.Errorf("JWT token value leaked in auth log output:\n%s", logged)
+	}
+	if strings.Contains(logged, "Bearer") {
+		t.Errorf("raw bearer header leaked in auth log output:\n%s", logged)
+	}
+}
+
+func TestAuthExporter_NoTokenLeak(t *testing.T) {
+	rec := &recordingTokenAuthenticator{}
+	authn := authentication.NewBearerTokenAuthenticator(rec)
+	attr := &stubAttributesGetter{}
+	authz := &stubAuthorizer{}
+
+	ctx := ctxWithBearerToken(ctxWithPeer("10.0.0.1:1234"), sensitiveToken)
+	ctx, buf := captureLog(t, ctx)
+
+	a := newAuth(authn, authz, attr)
+	if _, err := a.AuthExporter(ctx, "default"); err == nil {
+		t.Fatal("expected authentication to fail, got nil error")
+	}
+
+	if rec.received != sensitiveToken {
+		t.Fatalf("token authenticator received %q, want %q", rec.received, sensitiveToken)
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, "exporter authentication failed") {
+		t.Fatalf("expected 'exporter authentication failed' in log, got:\n%s", logged)
+	}
+	if strings.Contains(logged, sensitiveToken) {
+		t.Errorf("JWT token value leaked in auth log output:\n%s", logged)
+	}
+	if strings.Contains(logged, "Bearer") {
+		t.Errorf("raw bearer header leaked in auth log output:\n%s", logged)
 	}
 }

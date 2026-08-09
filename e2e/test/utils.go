@@ -425,6 +425,31 @@ func (pt *ProcessTracker) StartExporterSingle(exporterName string) *exec.Cmd {
 	return cmd
 }
 
+// StartExporterWithConfig starts an exporter once from an explicit config file
+// (no restart loop), captures its output under the given name, and tracks the
+// PID. Unlike StartExporterSingle it does not resolve the config by exporter
+// name, so tests can point it at temporary/modified config files.
+func (pt *ProcessTracker) StartExporterWithConfig(name, configPath string) *exec.Cmd {
+	lb := pt.getOrCreateLog(name)
+
+	cmd := exec.Command(JmpPath(), "run", "--exporter-config", configPath)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Stdout = lb
+	cmd.Stderr = lb
+
+	err := cmd.Start()
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "failed to start exporter with config %s", configPath)
+	pt.pids = append(pt.pids, cmd.Process.Pid)
+	GinkgoWriter.Printf("Started exporter %s (PID %d) with config %s\n", name, cmd.Process.Pid, configPath)
+
+	// Reap the child process in the background so it doesn't become a zombie.
+	go func() {
+		_ = cmd.Wait()
+	}()
+
+	return cmd
+}
+
 // StartDirectExporter starts an exporter with --tls-grpc-listener (direct mode).
 func (pt *ProcessTracker) StartDirectExporter(configFile string, port int, passphrase string, captureStderr bool) (*exec.Cmd, *logBuffer) {
 	args := []string{"run", "--exporter-config", configFile,
@@ -614,6 +639,23 @@ func WaitForDirectExporterPort(port int) {
 
 // --- Debug helpers ---
 
+// ControllerLogsSince returns controller pod logs emitted after sinceTime
+// (RFC3339). It queries both label selectors used across deployment flavors
+// and concatenates whatever it finds.
+func ControllerLogsSince(sinceTime string) string {
+	ns := Namespace()
+	var sb strings.Builder
+	for _, selector := range []string{"component=controller", "control-plane=controller-manager"} {
+		out, _ := Kubectl("-n", ns, "logs", "-l", selector,
+			"--since-time="+sinceTime, "--tail=-1")
+		if strings.TrimSpace(out) != "" {
+			sb.WriteString(out)
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
+}
+
 // DumpControllerLogs prints the last N lines of controller/router logs.
 func DumpControllerLogs(maxLines int) {
 	ns := Namespace()
@@ -672,6 +714,24 @@ func MergeExporterConfig(exporterConfigPath, overlayFile string) {
 	merged, err := yaml.Marshal(base)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "marshalling merged config")
 	ExpectWithOffset(1, os.WriteFile(exporterConfigPath, merged, 0644)).To(Succeed())
+}
+
+// SetYAMLField sets a top-level field of a YAML file to the given string
+// value, preserving all other fields.
+func SetYAMLField(filePath, field, value string) {
+	data, err := os.ReadFile(filePath)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "reading %s", filePath)
+
+	var doc map[string]interface{}
+	ExpectWithOffset(1, yaml.Unmarshal(data, &doc)).To(Succeed())
+	if doc == nil {
+		doc = make(map[string]interface{})
+	}
+	doc[field] = value
+
+	out, err := yaml.Marshal(doc)
+	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "marshalling %s", filePath)
+	ExpectWithOffset(1, os.WriteFile(filePath, out, 0o600)).To(Succeed())
 }
 
 // ClearHooksConfig removes the hooks section from an exporter config
