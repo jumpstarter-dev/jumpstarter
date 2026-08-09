@@ -50,6 +50,9 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
 
     Tries to connect to all resolved IPs in parallel and returns credentials
     from the first successful connection.
+
+    ``timeout`` applies independently to DNS resolution and connection, so
+    worst-case wall time is approximately ``2 * timeout``.
     """
     try:
         parsed = urlparse(f"//{target}")
