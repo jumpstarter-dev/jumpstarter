@@ -91,13 +91,15 @@ func main() {
 		Signer:   signer,
 	}
 
+	// Register signal handler before starting the service so no signal
+	// is missed in the window between goroutine start and Notify.
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- svc.Start(ctx)
 	}()
-
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
 	select {
 	case sig := <-sigs:

@@ -30,6 +30,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/config"
 	jlog "github.com/jumpstarter-dev/jumpstarter/controller/internal/log"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc"
@@ -39,9 +40,11 @@ import (
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
@@ -2059,6 +2062,57 @@ type noopAuthorizer struct{}
 
 func (noopAuthorizer) Authorize(_ context.Context, _ authorizer.Attributes) (authorizer.Decision, string, error) {
 	return authorizer.DecisionNoOpinion, "", nil
+}
+
+// passingAuthenticator always authenticates successfully with a fixed user name.
+type passingAuthenticator struct{ userName string }
+
+func (p *passingAuthenticator) AuthenticateContext(_ context.Context) (*authenticator.Response, bool, error) {
+	return &authenticator.Response{User: &user.DefaultInfo{Name: p.userName}}, true, nil
+}
+
+// exporterAttributesGetter returns attributes that identify a fixed Exporter object.
+type exporterAttributesGetter struct{ namespace, name string }
+
+func (e *exporterAttributesGetter) ContextAttributes(_ context.Context, u user.Info) (authorizer.Attributes, error) {
+	return authorizer.AttributesRecord{
+		User:      u,
+		Namespace: e.namespace,
+		Resource:  "Exporter",
+		Name:      e.name,
+	}, nil
+}
+
+// passingAuthorizer always allows.
+type passingAuthorizer struct{}
+
+func (passingAuthorizer) Authorize(_ context.Context, _ authorizer.Attributes) (authorizer.Decision, string, error) {
+	return authorizer.DecisionAllow, "", nil
+}
+
+// authSuccessServiceCtx builds a ControllerService whose authentication always
+// succeeds. A pre-populated Exporter object is stored in the fake client so
+// that VerifyExporterObjectToken can fetch it.
+func authSuccessServiceCtx(t *testing.T, cfg *config.Telemetry) (*ControllerService, context.Context) {
+	t.Helper()
+
+	scheme := k8sruntime.NewScheme()
+	if err := jumpstarterdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add scheme: %v", err)
+	}
+	exporter := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-exporter", Namespace: "default"},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(exporter).Build()
+
+	svc := &ControllerService{
+		Client:          fakeClient,
+		Authn:           &passingAuthenticator{userName: "test-user"},
+		Authz:           passingAuthorizer{},
+		Attr:            &exporterAttributesGetter{namespace: "default", name: "test-exporter"},
+		TelemetryConfig: cfg,
+	}
+	return svc, context.Background()
 }
 
 // authFailureServiceCtx builds a ControllerService whose authentication always
