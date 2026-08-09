@@ -135,6 +135,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: .go-version
+          cache-dependency-path: "**/go.sum"
 
       - name: Build operator installer manifest
         if: ${{ matrix.generate_installer && steps.check.outputs.skip != 'true' }}
