@@ -72,19 +72,20 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture
+@pytest.fixture(scope="class")
 def proxy_port():
     return _free_port()
 
 
-@pytest.fixture
+@pytest.fixture(scope="class")
 def web_port():
     return _free_port()
 
 
-@pytest.fixture
-def client(tmp_path, proxy_port, web_port):
+@pytest.fixture(scope="class")
+def client(tmp_path_factory, proxy_port, web_port):
     """Create a MitmproxyDriver wrapped in Jumpstarter's local serve harness."""
+    tmp_path = tmp_path_factory.mktemp("mitmproxy")
     instance = MitmproxyDriver(
         listen={"host": "127.0.0.1", "port": proxy_port},
         web={"host": "127.0.0.1", "port": web_port},
@@ -159,169 +160,134 @@ class TestProxyLifecycle:
 class TestMockEndpoints:
     """Mock configuration + real HTTP requests through the proxy."""
 
-    def test_simple_mock_response(self, client, proxy_port):
-        _start_mock_with_endpoints(client, proxy_port, [
-            ("GET", "/api/v1/status", {
-                "body": {"id": "test-001", "online": True},
-            }),
-        ])
+    @pytest.fixture(autouse=True)
+    def _proxy_lifecycle(self, client, proxy_port):
+        """Start the proxy once for the class, clear mocks between tests."""
+        client.clear_mocks()
+        if not client.is_running():
+            client.start("mock")
+            assert _wait_for_port("127.0.0.1", proxy_port)
+        yield
 
-        try:
-            response = requests.get(
-                "http://example.com/api/v1/status",
-                proxies={"http": f"http://127.0.0.1:{proxy_port}"},
-                timeout=10,
-            )
-            assert response.status_code == 200
-            data = response.json()
-            assert data["id"] == "test-001"
-            assert data["online"] is True
-        finally:
-            client.stop()
+    def test_simple_mock_response(self, client, proxy_port):
+        client.set_mock("GET", "/api/v1/status", body={"id": "test-001", "online": True})
+        time.sleep(0.3)
+
+        response = requests.get(
+            "http://example.com/api/v1/status",
+            proxies={"http": f"http://127.0.0.1:{proxy_port}"},
+            timeout=10,
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == "test-001"
+        assert data["online"] is True
 
     def test_multiple_mock_endpoints(self, client, proxy_port):
-        _start_mock_with_endpoints(client, proxy_port, [
-            ("GET", "/api/v1/health", {"body": {"ok": True}}),
-            ("POST", "/api/v1/telemetry", {
-                "status": 202, "body": {"accepted": True},
-            }),
-        ])
+        client.set_mock("GET", "/api/v1/health", body={"ok": True})
+        client.set_mock("POST", "/api/v1/telemetry", status=202, body={"accepted": True})
+        time.sleep(0.3)
 
-        try:
-            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+        proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
 
-            resp_get = requests.get(
-                "http://example.com/api/v1/health",
-                proxies=proxies, timeout=10,
-            )
-            assert resp_get.status_code == 200
-            assert resp_get.json()["ok"] is True
+        resp_get = requests.get(
+            "http://example.com/api/v1/health",
+            proxies=proxies, timeout=10,
+        )
+        assert resp_get.status_code == 200
+        assert resp_get.json()["ok"] is True
 
-            resp_post = requests.post(
-                "http://example.com/api/v1/telemetry",
-                proxies=proxies, timeout=10,
-            )
-            assert resp_post.status_code == 202
-            assert resp_post.json()["accepted"] is True
-        finally:
-            client.stop()
+        resp_post = requests.post(
+            "http://example.com/api/v1/telemetry",
+            proxies=proxies, timeout=10,
+        )
+        assert resp_post.status_code == 202
+        assert resp_post.json()["accepted"] is True
 
     def test_mock_error_status_codes(self, client, proxy_port):
-        _start_mock_with_endpoints(client, proxy_port, [
-            ("GET", "/api/v1/missing", {
-                "status": 404, "body": {"error": "not found"},
-            }),
-            ("GET", "/api/v1/broken", {
-                "status": 500, "body": {"error": "internal error"},
-            }),
-        ])
+        client.set_mock("GET", "/api/v1/missing", status=404, body={"error": "not found"})
+        client.set_mock("GET", "/api/v1/broken", status=500, body={"error": "internal error"})
+        time.sleep(0.3)
 
-        try:
-            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+        proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
 
-            resp_404 = requests.get(
-                "http://example.com/api/v1/missing",
-                proxies=proxies, timeout=10,
-            )
-            assert resp_404.status_code == 404
-            assert resp_404.json()["error"] == "not found"
+        resp_404 = requests.get(
+            "http://example.com/api/v1/missing",
+            proxies=proxies, timeout=10,
+        )
+        assert resp_404.status_code == 404
+        assert resp_404.json()["error"] == "not found"
 
-            resp_500 = requests.get(
-                "http://example.com/api/v1/broken",
-                proxies=proxies, timeout=10,
-            )
-            assert resp_500.status_code == 500
-            assert resp_500.json()["error"] == "internal error"
-        finally:
-            client.stop()
+        resp_500 = requests.get(
+            "http://example.com/api/v1/broken",
+            proxies=proxies, timeout=10,
+        )
+        assert resp_500.status_code == 500
+        assert resp_500.json()["error"] == "internal error"
 
     def test_clear_mocks(self, client, proxy_port):
         client.set_mock("GET", "/a", body={"x": 1})
         client.set_mock("GET", "/b", body={"x": 2})
-        client.start("mock")
 
-        try:
-            result = client.clear_mocks()
-            assert "Cleared 2" in result
+        result = client.clear_mocks()
+        assert "Cleared 2" in result
 
-            mocks = client.list_mocks()
-            assert len(mocks) == 0
-        finally:
-            client.stop()
+        mocks = client.list_mocks()
+        assert len(mocks) == 0
 
     def test_remove_single_mock(self, client, proxy_port):
         client.set_mock("GET", "/keep", body={"x": 1})
         client.set_mock("GET", "/remove", body={"x": 2})
-        client.start("mock")
 
-        try:
-            client.remove_mock("GET", "/remove")
+        client.remove_mock("GET", "/remove")
 
-            mocks = client.list_mocks()
-            assert "GET /keep" in mocks
-            assert "GET /remove" not in mocks
-        finally:
-            client.stop()
+        mocks = client.list_mocks()
+        assert "GET /keep" in mocks
+        assert "GET /remove" not in mocks
 
     def test_context_manager_mock_endpoint(self, client, proxy_port):
-        _start_mock_with_endpoints(client, proxy_port, [
-            ("GET", "/api/v1/base", {"body": {"base": True}}),
-        ])
+        client.set_mock("GET", "/api/v1/base", body={"base": True})
+        time.sleep(0.3)
 
-        try:
-            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+        proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
 
-            # Verify base mock works
-            resp_base = requests.get(
-                "http://example.com/api/v1/base",
+        resp_base = requests.get(
+            "http://example.com/api/v1/base",
+            proxies=proxies, timeout=10,
+        )
+        assert resp_base.status_code == 200
+        assert resp_base.json()["base"] is True
+
+        with client.mock_endpoint(
+            "GET", "/api/v1/temp",
+            body={"temporary": True},
+        ):
+            time.sleep(1)
+            response = requests.get(
+                "http://example.com/api/v1/temp",
                 proxies=proxies, timeout=10,
             )
-            assert resp_base.status_code == 200
-            assert resp_base.json()["base"] is True
+            assert response.status_code == 200
+            assert response.json()["temporary"] is True
 
-            # Use mock_endpoint context manager to add a temporary mock
-            with client.mock_endpoint(
-                "GET", "/api/v1/temp",
-                body={"temporary": True},
-            ):
-                # Allow addon to detect config change
-                time.sleep(1)
-                response = requests.get(
-                    "http://example.com/api/v1/temp",
-                    proxies=proxies, timeout=10,
-                )
-                assert response.status_code == 200
-                assert response.json()["temporary"] is True
-
-            # After exiting the context manager, mock should be removed
-            mocks = client.list_mocks()
-            assert "GET /api/v1/temp" not in mocks
-        finally:
-            client.stop()
+        mocks = client.list_mocks()
+        assert "GET /api/v1/temp" not in mocks
 
     def test_hot_reload_mocks(self, client, proxy_port):
         """Verify that mocks added after start are picked up via hot-reload."""
-        client.start("mock")
-        assert _wait_for_port("127.0.0.1", proxy_port)
+        client.set_mock(
+            "GET", "/api/v1/hotreload",
+            body={"reloaded": True},
+        )
+        time.sleep(0.3)
 
-        try:
-            # Set mock after proxy is already running
-            client.set_mock(
-                "GET", "/api/v1/hotreload",
-                body={"reloaded": True},
-            )
-            # Give the addon time to detect the file change on next request
-            time.sleep(1)
-
-            response = requests.get(
-                "http://example.com/api/v1/hotreload",
-                proxies={"http": f"http://127.0.0.1:{proxy_port}"},
-                timeout=10,
-            )
-            assert response.status_code == 200
-            assert response.json()["reloaded"] is True
-        finally:
-            client.stop()
+        response = requests.get(
+            "http://example.com/api/v1/hotreload",
+            proxies={"http": f"http://127.0.0.1:{proxy_port}"},
+            timeout=10,
+        )
+        assert response.status_code == 200
+        assert response.json()["reloaded"] is True
 
 
 class TestPassthrough:
@@ -359,190 +325,134 @@ class TestPassthrough:
 class TestRequestCapture:
     """End-to-end tests for request capture via the proxy."""
 
+    @pytest.fixture(autouse=True)
+    def _proxy_lifecycle(self, client, proxy_port):
+        """Start the proxy once for the class, clear state between tests."""
+        client.clear_mocks()
+        client.set_mock("GET", "/api/v1/status", body={"id": "test-001", "online": True})
+        client.set_mock("GET", "/api/v1/health", body={"ok": True})
+        client.set_mock("GET", "/api/v1/delayed", body={"ok": True})
+        client.set_mock("GET", "/api/v1/first", body={"n": 1})
+        client.set_mock("GET", "/api/v1/second", body={"n": 2})
+        client.set_mock("GET", "/api/v1/third", body={"n": 3})
+        if not client.is_running():
+            client.start("mock")
+            assert _wait_for_port("127.0.0.1", proxy_port)
+        time.sleep(0.3)
+        client.clear_captured_requests()
+        yield
+
     def test_captured_requests_appear(self, client, proxy_port):
-        _start_mock_with_endpoints(client, proxy_port, [
-            ("GET", "/api/v1/status", {
-                "body": {"id": "test-001", "online": True},
-            }),
-        ])
+        requests.get(
+            "http://example.com/api/v1/status",
+            proxies={"http": f"http://127.0.0.1:{proxy_port}"},
+            timeout=10,
+        )
+        result = client.wait_for_request("GET", "/api/v1/status", 5.0)
+        assert result["method"] == "GET"
+        assert result["path"] == "/api/v1/status"
+        assert result["response_status"] == 200
+        assert result["was_mocked"] is True
 
-        try:
-            client.clear_captured_requests()
+    def test_clear_captured_requests(self, client, proxy_port):
+        requests.get(
+            "http://example.com/api/v1/health",
+            proxies={"http": f"http://127.0.0.1:{proxy_port}"},
+            timeout=10,
+        )
+        client.wait_for_request("GET", "/api/v1/health", 5.0)
 
+        result = client.clear_captured_requests()
+        assert "Cleared" in result
+
+        captured = client.get_captured_requests()
+        assert len(captured) == 0
+
+    def test_wait_for_request(self, client, proxy_port):
+        def delayed_request():
+            time.sleep(1)
+            requests.get(
+                "http://example.com/api/v1/delayed",
+                proxies={"http": f"http://127.0.0.1:{proxy_port}"},
+                timeout=10,
+            )
+
+        t = threading.Thread(target=delayed_request)
+        t.start()
+
+        result = client.wait_for_request("GET", "/api/v1/delayed", 10.0)
+        assert result["method"] == "GET"
+        assert result["path"] == "/api/v1/delayed"
+
+        t.join(timeout=5)
+
+    def test_wait_for_request_timeout(self, client, proxy_port):
+        with pytest.raises(TimeoutError):
+            client.wait_for_request("GET", "/api/nonexistent", 1.0)
+
+    def test_capture_context_manager(self, client, proxy_port):
+        with client.capture() as cap:
             requests.get(
                 "http://example.com/api/v1/status",
                 proxies={"http": f"http://127.0.0.1:{proxy_port}"},
                 timeout=10,
             )
-            # Wait for the capture event to arrive
-            result = client.wait_for_request("GET", "/api/v1/status", 5.0)
-            assert result["method"] == "GET"
-            assert result["path"] == "/api/v1/status"
-            assert result["response_status"] == 200
-            assert result["was_mocked"] is True
-        finally:
-            client.stop()
+            cap.wait_for_request("GET", "/api/v1/status", 5.0)
 
-    def test_clear_captured_requests(self, client, proxy_port):
-        _start_mock_with_endpoints(client, proxy_port, [
-            ("GET", "/api/v1/health", {"body": {"ok": True}}),
-        ])
-
-        try:
-            requests.get(
-                "http://example.com/api/v1/health",
-                proxies={"http": f"http://127.0.0.1:{proxy_port}"},
-                timeout=10,
-            )
-            # Wait for capture
-            client.wait_for_request("GET", "/api/v1/health", 5.0)
-
-            result = client.clear_captured_requests()
-            assert "Cleared" in result
-
-            captured = client.get_captured_requests()
-            assert len(captured) == 0
-        finally:
-            client.stop()
-
-    def test_wait_for_request(self, client, proxy_port):
-        _start_mock_with_endpoints(client, proxy_port, [
-            ("GET", "/api/v1/delayed", {"body": {"ok": True}}),
-        ])
-
-        try:
-            client.clear_captured_requests()
-
-            # Send request after a short delay in background
-            def delayed_request():
-                time.sleep(1)
-                requests.get(
-                    "http://example.com/api/v1/delayed",
-                    proxies={"http": f"http://127.0.0.1:{proxy_port}"},
-                    timeout=10,
-                )
-
-            t = threading.Thread(target=delayed_request)
-            t.start()
-
-            result = client.wait_for_request("GET", "/api/v1/delayed", 10.0)
-            assert result["method"] == "GET"
-            assert result["path"] == "/api/v1/delayed"
-
-            t.join(timeout=5)
-        finally:
-            client.stop()
-
-    def test_wait_for_request_timeout(self, client, proxy_port):
-        _start_mock_with_endpoints(client, proxy_port, [
-            ("GET", "/api/v1/status", {"body": {"ok": True}}),
-        ])
-
-        try:
-            client.clear_captured_requests()
-            with pytest.raises(TimeoutError):
-                client.wait_for_request("GET", "/api/nonexistent", 1.0)
-        finally:
-            client.stop()
-
-    def test_capture_context_manager(self, client, proxy_port):
-        _start_mock_with_endpoints(client, proxy_port, [
-            ("GET", "/api/v1/status", {
-                "body": {"id": "test-001"},
-            }),
-        ])
-
-        try:
-            with client.capture() as cap:
-                requests.get(
-                    "http://example.com/api/v1/status",
-                    proxies={"http": f"http://127.0.0.1:{proxy_port}"},
-                    timeout=10,
-                )
-                cap.wait_for_request("GET", "/api/v1/status", 5.0)
-
-            # After exit, snapshot is frozen
-            assert len(cap.requests) >= 1
-            assert cap.requests[0]["method"] == "GET"
-        finally:
-            client.stop()
+        assert len(cap.requests) >= 1
+        assert cap.requests[0]["method"] == "GET"
 
     def test_assert_request_made(self, client, proxy_port):
-        _start_mock_with_endpoints(client, proxy_port, [
-            ("GET", "/api/v1/health", {"body": {"ok": True}}),
-        ])
+        requests.get(
+            "http://example.com/api/v1/health",
+            proxies={"http": f"http://127.0.0.1:{proxy_port}"},
+            timeout=10,
+        )
+        client.wait_for_request("GET", "/api/v1/health", 5.0)
 
-        try:
-            client.clear_captured_requests()
+        result = client.assert_request_made("GET", "/api/v1/health")
+        assert result["method"] == "GET"
 
-            requests.get(
-                "http://example.com/api/v1/health",
-                proxies={"http": f"http://127.0.0.1:{proxy_port}"},
-                timeout=10,
-            )
-            # Wait for capture to arrive
-            client.wait_for_request("GET", "/api/v1/health", 5.0)
-
-            # Should pass
-            result = client.assert_request_made("GET", "/api/v1/health")
-            assert result["method"] == "GET"
-
-            # Should fail
-            with pytest.raises(AssertionError, match="not captured"):
-                client.assert_request_made("POST", "/api/v1/missing")
-        finally:
-            client.stop()
+        with pytest.raises(AssertionError, match="not captured"):
+            client.assert_request_made("POST", "/api/v1/missing")
 
     def test_multiple_requests_captured_in_order(self, client, proxy_port):
-        _start_mock_with_endpoints(client, proxy_port, [
-            ("GET", "/api/v1/first", {"body": {"n": 1}}),
-            ("GET", "/api/v1/second", {"body": {"n": 2}}),
-            ("GET", "/api/v1/third", {"body": {"n": 3}}),
-        ])
+        proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
 
-        try:
-            client.clear_captured_requests()
-            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+        requests.get("http://example.com/api/v1/first", proxies=proxies, timeout=10)
+        requests.get("http://example.com/api/v1/second", proxies=proxies, timeout=10)
+        requests.get("http://example.com/api/v1/third", proxies=proxies, timeout=10)
 
-            requests.get(
-                "http://example.com/api/v1/first",
-                proxies=proxies, timeout=10,
-            )
-            requests.get(
-                "http://example.com/api/v1/second",
-                proxies=proxies, timeout=10,
-            )
-            requests.get(
-                "http://example.com/api/v1/third",
-                proxies=proxies, timeout=10,
-            )
+        client.wait_for_request("GET", "/api/v1/third", 5.0)
 
-            # Wait for the last request to be captured
-            client.wait_for_request("GET", "/api/v1/third", 5.0)
+        captured = client.get_captured_requests()
+        assert len(captured) >= 3
 
-            captured = client.get_captured_requests()
-            assert len(captured) >= 3
+        paths = [r["path"] for r in captured]
+        assert "/api/v1/first" in paths
+        assert "/api/v1/second" in paths
+        assert "/api/v1/third" in paths
 
-            paths = [r["path"] for r in captured]
-            assert "/api/v1/first" in paths
-            assert "/api/v1/second" in paths
-            assert "/api/v1/third" in paths
-
-            # Verify ordering: first should appear before second,
-            # second before third
-            idx_first = paths.index("/api/v1/first")
-            idx_second = paths.index("/api/v1/second")
-            idx_third = paths.index("/api/v1/third")
-            assert idx_first < idx_second < idx_third
-        finally:
-            client.stop()
+        idx_first = paths.index("/api/v1/first")
+        idx_second = paths.index("/api/v1/second")
+        idx_third = paths.index("/api/v1/third")
+        assert idx_first < idx_second < idx_third
 
 
 class TestConditionalMocks:
     """Conditional mock rules with real HTTP requests through the proxy."""
 
+    @pytest.fixture(autouse=True)
+    def _proxy_lifecycle(self, client, proxy_port):
+        """Start the proxy once for the class, clear mocks between tests."""
+        client.clear_mocks()
+        if not client.is_running():
+            client.start("mock")
+            assert _wait_for_port("127.0.0.1", proxy_port)
+        yield
+
     def test_conditional_body_json_match(self, client, proxy_port):
-        """POST with matching JSON body → 200, non-matching → 401."""
+        """POST with matching JSON body -> 200, non-matching -> 401."""
         client.set_mock_conditional("POST", "/api/auth", [
             {
                 "match": {"body_json": {"username": "admin",
@@ -552,34 +462,28 @@ class TestConditionalMocks:
             },
             {"status": 401, "body": {"error": "unauthorized"}},
         ])
-        client.start("mock")
-        assert _wait_for_port("127.0.0.1", proxy_port)
+        time.sleep(0.3)
 
-        try:
-            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+        proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
 
-            # Matching credentials → 200
-            resp_ok = requests.post(
-                "http://example.com/api/auth",
-                json={"username": "admin", "password": "secret"},
-                proxies=proxies, timeout=10,
-            )
-            assert resp_ok.status_code == 200
-            assert resp_ok.json()["token"] == "mock-token-001"
+        resp_ok = requests.post(
+            "http://example.com/api/auth",
+            json={"username": "admin", "password": "secret"},
+            proxies=proxies, timeout=10,
+        )
+        assert resp_ok.status_code == 200
+        assert resp_ok.json()["token"] == "mock-token-001"
 
-            # Wrong credentials → 401 (fallback)
-            resp_fail = requests.post(
-                "http://example.com/api/auth",
-                json={"username": "hacker", "password": "wrong"},
-                proxies=proxies, timeout=10,
-            )
-            assert resp_fail.status_code == 401
-            assert resp_fail.json()["error"] == "unauthorized"
-        finally:
-            client.stop()
+        resp_fail = requests.post(
+            "http://example.com/api/auth",
+            json={"username": "hacker", "password": "wrong"},
+            proxies=proxies, timeout=10,
+        )
+        assert resp_fail.status_code == 401
+        assert resp_fail.json()["error"] == "unauthorized"
 
     def test_conditional_header_match(self, client, proxy_port):
-        """GET with matching header → 200, without → 401."""
+        """GET with matching header -> 200, without -> 401."""
         client.set_mock_conditional("GET", "/api/data", [
             {
                 "match": {"headers": {"Authorization": "Bearer tok123"}},
@@ -588,32 +492,26 @@ class TestConditionalMocks:
             },
             {"status": 401, "body": {"error": "unauthorized"}},
         ])
-        client.start("mock")
-        assert _wait_for_port("127.0.0.1", proxy_port)
+        time.sleep(0.3)
 
-        try:
-            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+        proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
 
-            # With correct auth header → 200
-            resp_ok = requests.get(
-                "http://example.com/api/data",
-                headers={"Authorization": "Bearer tok123"},
-                proxies=proxies, timeout=10,
-            )
-            assert resp_ok.status_code == 200
-            assert resp_ok.json()["items"] == [1, 2, 3]
+        resp_ok = requests.get(
+            "http://example.com/api/data",
+            headers={"Authorization": "Bearer tok123"},
+            proxies=proxies, timeout=10,
+        )
+        assert resp_ok.status_code == 200
+        assert resp_ok.json()["items"] == [1, 2, 3]
 
-            # Without auth header → 401
-            resp_fail = requests.get(
-                "http://example.com/api/data",
-                proxies=proxies, timeout=10,
-            )
-            assert resp_fail.status_code == 401
-        finally:
-            client.stop()
+        resp_fail = requests.get(
+            "http://example.com/api/data",
+            proxies=proxies, timeout=10,
+        )
+        assert resp_fail.status_code == 401
 
     def test_conditional_query_match(self, client, proxy_port):
-        """GET with matching query param → 200, without → default."""
+        """GET with matching query param -> 200, without -> default."""
         client.set_mock_conditional("GET", "/api/search", [
             {
                 "match": {"query": {"q": "hello"}},
@@ -622,29 +520,23 @@ class TestConditionalMocks:
             },
             {"status": 200, "body": {"results": []}},
         ])
-        client.start("mock")
-        assert _wait_for_port("127.0.0.1", proxy_port)
+        time.sleep(0.3)
 
-        try:
-            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+        proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
 
-            # Matching query param
-            resp_match = requests.get(
-                "http://example.com/api/search?q=hello",
-                proxies=proxies, timeout=10,
-            )
-            assert resp_match.status_code == 200
-            assert resp_match.json()["results"] == ["hello world"]
+        resp_match = requests.get(
+            "http://example.com/api/search?q=hello",
+            proxies=proxies, timeout=10,
+        )
+        assert resp_match.status_code == 200
+        assert resp_match.json()["results"] == ["hello world"]
 
-            # No query param → fallback
-            resp_default = requests.get(
-                "http://example.com/api/search",
-                proxies=proxies, timeout=10,
-            )
-            assert resp_default.status_code == 200
-            assert resp_default.json()["results"] == []
-        finally:
-            client.stop()
+        resp_default = requests.get(
+            "http://example.com/api/search",
+            proxies=proxies, timeout=10,
+        )
+        assert resp_default.status_code == 200
+        assert resp_default.json()["results"] == []
 
     def test_conditional_with_template(self, client, proxy_port):
         """Rule containing body_template with dynamic expressions."""
@@ -659,35 +551,38 @@ class TestConditionalMocks:
             },
             {"status": 200, "body": {"mode": "static"}},
         ])
-        client.start("mock")
-        assert _wait_for_port("127.0.0.1", proxy_port)
+        time.sleep(0.3)
 
-        try:
-            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+        proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
 
-            # With dynamic header → template response
-            resp = requests.get(
-                "http://example.com/api/echo",
-                headers={"X-Mode": "dynamic"},
-                proxies=proxies, timeout=10,
-            )
-            assert resp.status_code == 200
-            data = resp.json()
-            assert data["mode"] == "dynamic"
-            assert "/api/echo" in data["path"]
+        resp = requests.get(
+            "http://example.com/api/echo",
+            headers={"X-Mode": "dynamic"},
+            proxies=proxies, timeout=10,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["mode"] == "dynamic"
+        assert "/api/echo" in data["path"]
 
-            # Without header → static fallback
-            resp_static = requests.get(
-                "http://example.com/api/echo",
-                proxies=proxies, timeout=10,
-            )
-            assert resp_static.json()["mode"] == "static"
-        finally:
-            client.stop()
+        resp_static = requests.get(
+            "http://example.com/api/echo",
+            proxies=proxies, timeout=10,
+        )
+        assert resp_static.json()["mode"] == "static"
 
 
 class TestEnhancedTemplates:
     """Tests for enhanced template expressions with real HTTP requests."""
+
+    @pytest.fixture(autouse=True)
+    def _proxy_lifecycle(self, client, proxy_port):
+        """Start the proxy once for the class, clear mocks between tests."""
+        client.clear_mocks()
+        if not client.is_running():
+            client.start("mock")
+            assert _wait_for_port("127.0.0.1", proxy_port)
+        yield
 
     def test_request_body_json_in_template(self, client, proxy_port):
         """Echo a JSON field from request body via template."""
@@ -695,21 +590,17 @@ class TestEnhancedTemplates:
             "POST", "/api/echo",
             template={"echoed_name": "{{request_body_json(name)}}"},
         )
-        client.start("mock")
-        assert _wait_for_port("127.0.0.1", proxy_port)
+        time.sleep(0.3)
 
-        try:
-            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+        proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
 
-            resp = requests.post(
-                "http://example.com/api/echo",
-                json={"name": "Alice", "age": 30},
-                proxies=proxies, timeout=10,
-            )
-            assert resp.status_code == 200
-            assert resp.json()["echoed_name"] == "Alice"
-        finally:
-            client.stop()
+        resp = requests.post(
+            "http://example.com/api/echo",
+            json={"name": "Alice", "age": 30},
+            proxies=proxies, timeout=10,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["echoed_name"] == "Alice"
 
     def test_request_query_in_template(self, client, proxy_port):
         """Echo a query param in the response via template."""
@@ -717,20 +608,16 @@ class TestEnhancedTemplates:
             "GET", "/api/greet",
             template={"greeting": "Hello, {{request_query(name)}}!"},
         )
-        client.start("mock")
-        assert _wait_for_port("127.0.0.1", proxy_port)
+        time.sleep(0.3)
 
-        try:
-            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+        proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
 
-            resp = requests.get(
-                "http://example.com/api/greet?name=Bob",
-                proxies=proxies, timeout=10,
-            )
-            assert resp.status_code == 200
-            assert resp.json()["greeting"] == "Hello, Bob!"
-        finally:
-            client.stop()
+        resp = requests.get(
+            "http://example.com/api/greet?name=Bob",
+            proxies=proxies, timeout=10,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["greeting"] == "Hello, Bob!"
 
     def test_state_in_template(self, client, proxy_port):
         """Set state then read it via {{state(key)}} in template."""
@@ -739,28 +626,32 @@ class TestEnhancedTemplates:
             "GET", "/api/whoami",
             template={"user": "{{state(current_user)}}"},
         )
-        client.start("mock")
-        assert _wait_for_port("127.0.0.1", proxy_port)
+        time.sleep(0.3)
 
-        try:
-            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+        proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
 
-            resp = requests.get(
-                "http://example.com/api/whoami",
-                proxies=proxies, timeout=10,
-            )
-            assert resp.status_code == 200
-            assert resp.json()["user"] == "Alice"
-        finally:
-            client.stop()
+        resp = requests.get(
+            "http://example.com/api/whoami",
+            proxies=proxies, timeout=10,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["user"] == "Alice"
 
 
 class TestAuthScenario:
     """Full auth token flow using conditional rules."""
 
+    @pytest.fixture(autouse=True)
+    def _proxy_lifecycle(self, client, proxy_port):
+        """Start the proxy once for the class, clear mocks between tests."""
+        client.clear_mocks()
+        if not client.is_running():
+            client.start("mock")
+            assert _wait_for_port("127.0.0.1", proxy_port)
+        yield
+
     def test_auth_token_flow(self, client, proxy_port):
-        """Login with credentials → get token → use token for data."""
-        # Auth endpoint: correct creds → token, else 401
+        """Login with credentials -> get token -> use token for data."""
         client.set_mock_conditional("POST", "/api/auth", [
             {
                 "match": {"body_json": {"username": "admin",
@@ -770,8 +661,6 @@ class TestAuthScenario:
             },
             {"status": 401, "body": {"error": "unauthorized"}},
         ])
-
-        # Data endpoint: valid token → data, else 401
         client.set_mock_conditional("GET", "/api/data", [
             {
                 "match": {"headers": {
@@ -782,45 +671,36 @@ class TestAuthScenario:
             },
             {"status": 401, "body": {"error": "unauthorized"}},
         ])
+        time.sleep(0.3)
 
-        client.start("mock")
-        assert _wait_for_port("127.0.0.1", proxy_port)
+        proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
 
-        try:
-            proxies = {"http": f"http://127.0.0.1:{proxy_port}"}
+        login_resp = requests.post(
+            "http://example.com/api/auth",
+            json={"username": "admin", "password": "secret"},
+            proxies=proxies, timeout=10,
+        )
+        assert login_resp.status_code == 200
+        token = login_resp.json()["token"]
+        assert token == "mock-token-001"
 
-            # Step 1: Login with correct credentials
-            login_resp = requests.post(
-                "http://example.com/api/auth",
-                json={"username": "admin", "password": "secret"},
-                proxies=proxies, timeout=10,
-            )
-            assert login_resp.status_code == 200
-            token = login_resp.json()["token"]
-            assert token == "mock-token-001"
+        data_resp = requests.get(
+            "http://example.com/api/data",
+            headers={"Authorization": f"Bearer {token}"},
+            proxies=proxies, timeout=10,
+        )
+        assert data_resp.status_code == 200
+        assert data_resp.json()["items"] == [1, 2, 3]
 
-            # Step 2: Access data with token
-            data_resp = requests.get(
-                "http://example.com/api/data",
-                headers={"Authorization": f"Bearer {token}"},
-                proxies=proxies, timeout=10,
-            )
-            assert data_resp.status_code == 200
-            assert data_resp.json()["items"] == [1, 2, 3]
+        unauth_resp = requests.get(
+            "http://example.com/api/data",
+            proxies=proxies, timeout=10,
+        )
+        assert unauth_resp.status_code == 401
 
-            # Step 3: Access data without token → 401
-            unauth_resp = requests.get(
-                "http://example.com/api/data",
-                proxies=proxies, timeout=10,
-            )
-            assert unauth_resp.status_code == 401
-
-            # Step 4: Login with wrong credentials → 401
-            bad_login = requests.post(
-                "http://example.com/api/auth",
-                json={"username": "hacker", "password": "nope"},
-                proxies=proxies, timeout=10,
-            )
-            assert bad_login.status_code == 401
-        finally:
-            client.stop()
+        bad_login = requests.post(
+            "http://example.com/api/auth",
+            json={"username": "hacker", "password": "nope"},
+            proxies=proxies, timeout=10,
+        )
+        assert bad_login.status_code == 401
