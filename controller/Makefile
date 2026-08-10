@@ -223,6 +223,10 @@ ifeq ($(SKIP_BUILD),)
 endif
 	./hack/deploy_with_operator.sh
 
+.PHONY: deploy-ci
+deploy-ci: cluster grpcurl $(if $(SKIP_BUILD),,docker-build-ci build-operator-ci) ## CI-optimized deploy: host-compiled binaries, no multi-stage container builds.
+	./hack/deploy_with_operator.sh
+
 
 .PHONY: deploy-operator
 deploy-operator: docker-build docker-build-exporter-set-controller build-operator cluster grpcurl ## Deploy only the operator (without Jumpstarter CR)
@@ -234,11 +238,12 @@ deploy-operator-ci: docker-build-ci build-operator-ci cluster grpcurl ## CI-opti
 
 .PHONY: test-operator-e2e
 test-operator-e2e: grpcurl deploy-operator
-	make -C deploy/operator test-e2e
+	$(MAKE) -C deploy/operator test-e2e
 
 .PHONY: test-operator-e2e-ci
 test-operator-e2e-ci: grpcurl deploy-operator-ci ## CI-optimized e2e test (host-compiled Go, cached modules).
-	make -C deploy/operator test-e2e
+	$(MAKE) -C deploy/operator test-e2e
+
 .PHONY: operator-logs
 operator-logs:
 	kubectl logs -n jumpstarter-operator-system -l app.kubernetes.io/name=jumpstarter-operator -f
