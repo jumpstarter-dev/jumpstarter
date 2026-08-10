@@ -66,12 +66,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Free up runner disk space
-        uses: mathio/gha-cleanup@aca3d43a05bf564f5fc69acb929a65b01797f22b # v1.1.2
-        with:
-          remove-browsers: true
-          verbose: true
-
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
@@ -96,19 +90,8 @@ jobs:
           sudo chmod 0666 /dev/kvm /dev/vhost-vsock /dev/vhost-net
 
           sudo apt-get update
-          sudo apt-get install -y qemu-system-arm qemu-system-x86 rpm2cpio cpio
-
-      - name: Install libgpiod-dev (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgpiod-dev liblgpio-dev
-
-      - name: Install nftables and dnsmasq (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y nftables dnsmasq-base isc-dhcp-client dnsutils
+          sudo apt-get install -y qemu-system-arm qemu-system-x86 rpm2cpio cpio \
+            libgpiod-dev liblgpio-dev nftables dnsmasq-base isc-dhcp-client dnsutils
 
       - name: Load kernel modules for DUT network tests (Linux)
         if: runner.os == 'Linux'

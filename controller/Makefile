@@ -218,6 +218,14 @@ ifeq ($(SKIP_BUILD),)
 endif
 	./hack/deploy_with_operator.sh
 
+.PHONY: deploy-ci
+deploy-ci: cluster grpcurl ## CI-optimized deploy: host-compiled binaries, no multi-stage container builds.
+ifeq ($(SKIP_BUILD),)
+	$(MAKE) docker-build-ci
+	$(MAKE) build-operator-ci
+endif
+	./hack/deploy_with_operator.sh
+
 
 .PHONY: deploy-operator
 deploy-operator: docker-build docker-build-exporter-set-controller build-operator cluster grpcurl ## Deploy only the operator (without Jumpstarter CR)

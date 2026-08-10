@@ -15,9 +15,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        with:
+          go-version-file: controller/go.mod
+          cache-dependency-path: controller/go.sum
+
       - name: Run make deploy
         working-directory: controller
-        run: make deploy
+        run: make deploy-ci -j --output-sync=target
 
   e2e-test-operator:
     runs-on: ubuntu-latest
