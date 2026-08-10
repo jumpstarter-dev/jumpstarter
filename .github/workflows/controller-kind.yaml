@@ -27,6 +27,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        with:
+          go-version-file: controller/go.mod
+          cache-dependency-path: controller/go.sum
+
       - name: Run operator e2e test
         working-directory: controller
-        run: make test-operator-e2e -j3 --output-sync=target
+        run: make test-operator-e2e-ci -j3 --output-sync=target

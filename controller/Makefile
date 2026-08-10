@@ -110,6 +110,10 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 build-operator:
 	make -C deploy/operator build-installer docker-build
 
+.PHONY: build-operator-ci
+build-operator-ci:
+	make -C deploy/operator build-installer docker-build-ci
+
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
 	go build -ldflags "$(LDFLAGS)" -o bin/manager cmd/main.go
@@ -134,6 +138,14 @@ docker-build: ## Build docker image with the manager.
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		-t ${IMG} -f Containerfile .
+
+.PHONY: docker-build-ci
+docker-build-ci: ## Build docker images from pre-compiled host binaries (fast CI path).
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/manager cmd/main.go
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/router cmd/router/main.go
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/exporter-set-controller cmd/exporter-set-controller/main.go
+	$(CONTAINER_TOOL) build -t ${IMG} -f Containerfile.ci bin/
+	$(CONTAINER_TOOL) build -t ${EXPORTER_SET_CONTROLLER_IMG} -f Containerfile.exporter-set-controller.ci bin/
 
 .PHONY: docker-build-exporter-set-controller
 docker-build-exporter-set-controller: ## Build docker image for the exporter-set-controller.
@@ -211,8 +223,16 @@ endif
 deploy-operator: docker-build docker-build-exporter-set-controller build-operator cluster grpcurl ## Deploy only the operator (without Jumpstarter CR)
 	NETWORKING_MODE=ingress DEPLOY_JUMPSTARTER=false ./hack/deploy_with_operator.sh
 
+.PHONY: deploy-operator-ci
+deploy-operator-ci: docker-build-ci build-operator-ci cluster grpcurl ## CI-optimized: host-compiled binaries, no multi-stage container builds.
+	NETWORKING_MODE=ingress DEPLOY_JUMPSTARTER=false ./hack/deploy_with_operator.sh
+
 .PHONY: test-operator-e2e
 test-operator-e2e: grpcurl deploy-operator
+	make -C deploy/operator test-e2e
+
+.PHONY: test-operator-e2e-ci
+test-operator-e2e-ci: grpcurl deploy-operator-ci ## CI-optimized e2e test (host-compiled Go, cached modules).
 	make -C deploy/operator test-e2e
 .PHONY: operator-logs
 operator-logs:

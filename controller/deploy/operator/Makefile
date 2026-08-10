@@ -177,6 +177,11 @@ docker-build: ## Build docker image with the manager.
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		-t ${IMG} ../../ -f ../../Containerfile.operator
 
+.PHONY: docker-build-ci
+docker-build-ci: ## CI-optimized: host-compiled binary, no multi-stage build.
+	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/manager cmd/main.go
+	$(CONTAINER_TOOL) build -t ${IMG} -f ../../Containerfile.operator.ci bin/
+
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	$(CONTAINER_TOOL) push ${IMG}
