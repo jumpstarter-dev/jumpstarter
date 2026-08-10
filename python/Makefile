@@ -39,7 +39,14 @@ pkg-test-%: packages/%
 	@mkdir -p $(LOGS_DIR)
 	@rm -f $(LOGS_DIR)/$*.failed
 	@bash -c 'set -o pipefail; \
-	PYTHONUNBUFFERED=1 uv run --isolated --directory $< pytest 2>&1 | tee $(LOGS_DIR)/$*.log; \
+	cov_addopts=""; \
+	if [ -n "$(COV_PACKAGES)" ]; then \
+		if echo " $(COV_PACKAGES) " | grep -q " $* "; then \
+			cov_addopts="--cov=. --cov-report=xml"; \
+		fi; \
+	fi; \
+	PYTHONUNBUFFERED=1 PYTEST_ADDOPTS="$$cov_addopts $${PYTEST_ADDOPTS:-}" \
+	uv run --isolated --directory $< pytest 2>&1 | tee $(LOGS_DIR)/$*.log; \
 	rc=$$?; \
 	if [ $$rc -ne 0 ] && [ $$rc -ne 5 ]; then \
 		touch $(LOGS_DIR)/$*.failed; \

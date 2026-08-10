@@ -25,7 +25,7 @@ Homepage = "https://jumpstarter.dev"
 source_archive = "https://github.com/jumpstarter-dev/jumpstarter/archive/{commit_hash}.zip"
 
 [tool.pytest.ini_options]
-addopts = "--cov --cov-report=html --cov-report=xml -rs"
+addopts = "-rs"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_dut_network"]

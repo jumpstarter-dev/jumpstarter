@@ -145,7 +145,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: python/packages/jumpstarter-driver-qemu/images
-          key: fedora-cloud-43-1.6
+          key: fedora-cloud-43-1.6-preconfigured-v1
 
       - name: Download Fedora Cloud images
         if: steps.cache-fedora-cloud-images.outputs.cache-hit != 'true'
@@ -155,12 +155,36 @@ jobs:
               "https://iad.mirror.rackspace.com/fedora/releases/43/Cloud/${arch}/images/Fedora-Cloud-Base-Generic-43-1.6.${arch}.qcow2"
           done
 
+      - name: Pre-configure Fedora Cloud images for fast boot
+        if: runner.os == 'Linux' && steps.cache-fedora-cloud-images.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get install -y libguestfs-tools
+          arch=x86_64
+          img="python/packages/jumpstarter-driver-qemu/images/Fedora-Cloud-Base-Generic-43-1.6.${arch}.qcow2"
+          sudo virt-customize -a "$img" \
+            --hostname demo \
+            --run-command 'useradd -m -s /bin/bash jumpstarter' \
+            --password jumpstarter:password:password \
+            --run-command 'echo "jumpstarter ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/jumpstarter' \
+            --run-command 'systemctl disable cloud-init cloud-init-local cloud-config cloud-final' \
+            --run-command 'rm -rf /var/lib/cloud' \
+            --selinux-relabel
+
       - name: Run pytest
         working-directory: python
         env:
-          PYTEST_ADDOPTS: "--cov-report=xml --log-level=CRITICAL --log-cli-level=CRITICAL"
+          PYTEST_ADDOPTS: "--log-level=CRITICAL --log-cli-level=CRITICAL"
         run: |
-          make test -j4 LOGS_DIR=${{ runner.temp }}/test-logs
+          changed_pkgs=$(git diff --name-only --relative origin/${{ github.base_ref || 'main' }}...HEAD -- packages/ \
+            | sed -n 's|^packages/\([^/]*\)/.*|\1|p' | sort -u | tr '\n' ' ')
+          echo "Coverage-enabled packages: ${changed_pkgs:-all (fallback)}"
+          if [ -z "$changed_pkgs" ]; then
+            # Fallback: workflow_dispatch or merge_group without a base ref
+            export PYTEST_ADDOPTS="--cov=. --cov-report=xml $PYTEST_ADDOPTS"
+            make test -j8 LOGS_DIR=${{ runner.temp }}/test-logs
+          else
+            make test -j8 LOGS_DIR=${{ runner.temp }}/test-logs COV_PACKAGES="$changed_pkgs"
+          fi
 
       - name: Upload test logs
         if: always()

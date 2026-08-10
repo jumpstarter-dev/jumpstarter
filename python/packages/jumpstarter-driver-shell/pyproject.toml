@@ -11,7 +11,6 @@ dependencies = ["anyio>=4.10.0", "jumpstarter", "click>=8.1.8"]
 [project.entry-points."jumpstarter.drivers"]
 Shell = "jumpstarter_driver_shell.driver:Shell"
 [tool.pytest.ini_options]
-addopts = "--cov --cov-report=html --cov-report=xml"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_shell"]
