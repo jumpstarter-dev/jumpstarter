@@ -161,7 +161,7 @@ jobs:
           sudo apt-get install -y libguestfs-tools
           arch=x86_64
           img="python/packages/jumpstarter-driver-qemu/images/Fedora-Cloud-Base-Generic-43-1.6.${arch}.qcow2"
-          sudo virt-customize -a "$img" \
+          sudo virt-customize --no-network -a "$img" \
             --hostname demo \
             --run-command 'useradd -m -s /bin/bash jumpstarter' \
             --password jumpstarter:password:password \
