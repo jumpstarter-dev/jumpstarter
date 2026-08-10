@@ -145,7 +145,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: python/packages/jumpstarter-driver-qemu/images
-          key: fedora-cloud-43-1.6-preconfigured-v1
+          key: fedora-cloud-43-1.6-preconfigured-v2
 
       - name: Download Fedora Cloud images
         if: steps.cache-fedora-cloud-images.outputs.cache-hit != 'true'
@@ -168,6 +168,9 @@ jobs:
             --run-command 'echo "jumpstarter ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/jumpstarter' \
             --run-command 'systemctl disable cloud-init cloud-init-local cloud-config cloud-final' \
             --run-command 'rm -rf /var/lib/cloud' \
+            --run-command 'ssh-keygen -A' \
+            --run-command 'sed -i "s/^#*PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config' \
+            --run-command 'systemctl enable sshd' \
             --selinux-relabel
 
       - name: Run pytest

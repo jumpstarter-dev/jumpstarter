@@ -35,4 +35,4 @@ jobs:
 
       - name: Run operator e2e test
         working-directory: controller
-        run: make test-operator-e2e-ci -j3 --output-sync=target
+        run: make test-operator-e2e-ci -j --output-sync=target
