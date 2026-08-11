@@ -82,9 +82,12 @@ func TestMetricsEndpointServesPrometheusText(t *testing.T) {
 		t.Fatal("expected at least one metric family from default promhttp handler")
 	}
 
-	// Default Go process metrics should appear; do not require undocumented jumpstarter_* series.
+	// Default Go process metrics should appear; reject undocumented jumpstarter_* series.
 	hasGo, hasProcess := false, false
 	for name := range families {
+		if strings.HasPrefix(name, "jumpstarter_") {
+			t.Fatalf("unexpected undocumented metric family %q; got families: %v", name, familyNames(families))
+		}
 		switch {
 		case strings.HasPrefix(name, "go_"):
 			hasGo = true
