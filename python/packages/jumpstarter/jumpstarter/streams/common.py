@@ -29,14 +29,19 @@ async def copy_stream(
     metrics_driver_type: str = "other",
 ):
     try:
+        # Capture once per copy; context should be stable for the stream lifetime.
+        if metrics_direction is not None:
+            metrics_exporter = exporter_from_log_context()
+            metrics_exemplars = exemplars_from_log_context()
+            metrics_registry = get_registry()
         async for v in src:
             if metrics_direction is not None:
-                get_registry().add_stream_bytes(
-                    exporter=exporter_from_log_context(),
+                metrics_registry.add_stream_bytes(
+                    exporter=metrics_exporter,
                     driver_type=metrics_driver_type,
                     direction=metrics_direction,
                     nbytes=len(v) if isinstance(v, (bytes, bytearray, memoryview)) else 0,
-                    exemplars=exemplars_from_log_context(),
+                    exemplars=metrics_exemplars,
                 )
             await dst.send(v)
         with suppress(
