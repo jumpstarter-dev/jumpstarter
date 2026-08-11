@@ -158,6 +158,12 @@ class Driver(
             else:
                 result = await to_thread.run_sync(method, *args)
 
+            # Encode before recording success so serialization failures are
+            # counted only as failures (not success then failure).
+            response = jumpstarter_pb2.DriverCallResponse(
+                uuid=str(uuid4()),
+                result=encode_value(result),
+            )
             self._record_operation_metrics(
                 operation=op,
                 result="success",
@@ -167,10 +173,7 @@ class Driver(
                 "Operation completed",
                 extra={"operation": op, "driver_type": self.driver_type, "result": "success"},
             )
-            return jumpstarter_pb2.DriverCallResponse(
-                uuid=str(uuid4()),
-                result=encode_value(result),
-            )
+            return response
         except NotImplementedError as e:
             self._record_operation_metrics(
                 operation=op,

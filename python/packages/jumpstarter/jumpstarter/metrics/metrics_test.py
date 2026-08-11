@@ -230,6 +230,53 @@ def test_driver_call_maps_timeout_error_type():
         assert 'result="failure"' in body
 
 
+class _Unencodable:
+    """Intentionally not JSON-serializable for encode_value failure tests."""
+
+
+class _UnencodableResultDriver(Driver):
+    driver_type = "power"
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    @export
+    def boom(self):
+        return _Unencodable()
+
+
+def test_driver_call_encode_failure_records_failure_not_success():
+    """Success metrics must not be recorded if response serialization fails."""
+    from jumpstarter.common.utils import serve
+
+    with serve(_UnencodableResultDriver()) as client:
+        with pytest.raises(DriverError):
+            client.call("boom")
+        success = _sample_value(
+            get_registry(),
+            "jumpstarter_operations_total",
+            {
+                "exporter": "unknown",
+                "operation": "boom",
+                "result": "success",
+                "driver_type": "power",
+            },
+        )
+        failure = _sample_value(
+            get_registry(),
+            "jumpstarter_operations_total",
+            {
+                "exporter": "unknown",
+                "operation": "boom",
+                "result": "failure",
+                "driver_type": "power",
+            },
+        )
+        assert success in (None, 0.0)
+        assert failure == 1.0
+
+
 def test_unknown_driver_method_does_not_record_operation_metric():
     """AbortError from method lookup must not create an operation time series."""
     from jumpstarter_driver_power.driver import MockPower
