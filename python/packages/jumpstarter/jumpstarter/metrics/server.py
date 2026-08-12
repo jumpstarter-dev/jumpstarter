@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 
@@ -9,9 +10,11 @@ from prometheus_client.openmetrics.exposition import CONTENT_TYPE_LATEST
 
 from .registry import MetricsRegistry, get_registry
 
+logger = logging.getLogger(__name__)
+
 
 def _parse_bind_addr(addr: str) -> tuple[str, int]:
-    """Parse bind address forms: ':8080', '127.0.0.1:0', '8080'.
+    """Parse bind address forms: ':8080', '127.0.0.1:0', '8080', ':0'.
 
     When the host is omitted, default to loopback. Metrics endpoints are
     typically scraped via localhost/sidecar; use an explicit 0.0.0.0 host
@@ -33,6 +36,9 @@ def start_metrics_server(addr: str, registry: MetricsRegistry | None = None) -> 
     addr \"0\" or empty disables the server and returns \"\".
     addr ending with \":0\" binds an ephemeral port; the returned listen address
     is host:port suitable for urllib/http.Get.
+
+    Bind failures (e.g. address already in use) are non-fatal: a warning is
+    logged and \"\" is returned so the exporter can continue without metrics.
     """
     if addr == "" or addr == "0":
         return ""
@@ -55,7 +61,17 @@ def start_metrics_server(addr: str, registry: MetricsRegistry | None = None) -> 
         def log_message(self, fmt: str, *args) -> None:
             return
 
-    server = ThreadingHTTPServer((host, port), Handler)
+    try:
+        server = ThreadingHTTPServer((host, port), Handler)
+    except OSError as e:
+        logger.warning(
+            "Failed to bind metrics server at %s:%s (%s); continuing without /metrics",
+            host,
+            port,
+            e,
+        )
+        return ""
+
     thread = Thread(target=server.serve_forever, name="jumpstarter-metrics", daemon=True)
     thread.start()
 

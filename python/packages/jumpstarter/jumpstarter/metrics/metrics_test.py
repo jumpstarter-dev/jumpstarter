@@ -80,6 +80,7 @@ def test_parse_bind_addr_defaults_to_loopback():
     assert _parse_bind_addr(":8080") == ("127.0.0.1", 8080)
     assert _parse_bind_addr("8080") == ("127.0.0.1", 8080)
     assert _parse_bind_addr("0.0.0.0:9090") == ("0.0.0.0", 9090)
+    assert _parse_bind_addr(":0") == ("127.0.0.1", 0)
     assert _parse_bind_addr("127.0.0.1:0")[0] == "127.0.0.1"
 
 
@@ -204,6 +205,30 @@ def test_metrics_http_endpoint_serves_prometheus_text():
 def test_metrics_server_disabled_when_addr_zero():
     assert start_metrics_server("0") == ""
     assert start_metrics_server("") == ""
+
+
+def test_metrics_server_ephemeral_bind_returns_concrete_port():
+    listen = start_metrics_server(":0")
+    assert listen.startswith("127.0.0.1:")
+    port = int(listen.rsplit(":", 1)[1])
+    assert port > 0
+    with urllib.request.urlopen(f"http://{listen}/metrics", timeout=2) as resp:
+        assert resp.status == 200
+
+
+def test_metrics_server_bind_failure_is_non_fatal():
+    """A taken fixed port must not abort the exporter process."""
+    import socket
+
+    holder = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    holder.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    holder.bind(("127.0.0.1", 0))
+    holder.listen(1)
+    occupied_port = holder.getsockname()[1]
+    try:
+        assert start_metrics_server(f"127.0.0.1:{occupied_port}") == ""
+    finally:
+        holder.close()
 
 
 class _TimeoutDriver(Driver):

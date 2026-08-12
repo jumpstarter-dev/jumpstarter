@@ -77,7 +77,7 @@ def _handle_child(  # noqa: C901
     tls_cert=None,
     tls_key=None,
     passphrase=None,
-    metrics_bind_address=":8080",
+    metrics_bind_address=":0",
 ):
     """Handle child process with graceful shutdown."""
     async def serve_with_graceful_shutdown():  # noqa: C901
@@ -224,7 +224,7 @@ def _serve_with_exc_handling(
     tls_cert=None,
     tls_key=None,
     passphrase=None,
-    metrics_bind_address=":8080",
+    metrics_bind_address=":0",
 ):
     max_rapid_failures = config.failure_detection.max_rapid_failures
     rapid_failure_window = config.failure_detection.rapid_failure_window
@@ -325,9 +325,12 @@ def _serve_with_exc_handling(
 @click.option(
     "--metrics-bind-address",
     "metrics_bind_address",
-    default=":8080",
+    default=":0",
     show_default=True,
-    help="Address for HTTP GET /metrics (Prometheus/OpenMetrics). Use 0 to disable.",
+    help=(
+        "Address for HTTP GET /metrics (Prometheus/OpenMetrics). "
+        "Default :0 binds an ephemeral loopback port. Use 0 to disable."
+    ),
 )
 @handle_exceptions
 def run(
