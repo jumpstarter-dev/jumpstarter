@@ -210,6 +210,12 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// Reconcile Telemetry (Deployment + ClusterIP Service)
+	if err := r.reconcileTelemetry(ctx, &jumpstarter); err != nil {
+		log.Error(err, "Failed to reconcile Telemetry")
+		return ctrl.Result{}, err
+	}
+
 	// Reconcile Services
 	if err := r.reconcileServices(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Services")
@@ -851,6 +857,14 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 		},
 	}
 
+	// Add telemetry endpoint env var when telemetry is enabled
+	if jumpstarter.Spec.Telemetry != nil && jumpstarter.Spec.Telemetry.Enabled {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "GRPC_TELEMETRY_ENDPOINT",
+			Value: telemetryEndpointFor(jumpstarter.Namespace),
+		})
+	}
+
 	var volumeMounts []corev1.VolumeMount
 	var volumes []corev1.Volume
 
@@ -1290,6 +1304,30 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 
 	cfg.DeprecatedLabels = config.DeprecatedLabels{
 		Keys: jumpstarter.Spec.DeprecatedLabels.Keys,
+	}
+
+	// Telemetry configuration
+	if jumpstarter.Spec.Telemetry != nil && jumpstarter.Spec.Telemetry.Enabled {
+		t := jumpstarter.Spec.Telemetry
+		telemetryCfg := &config.Telemetry{
+			Enabled:  true,
+			Endpoint: telemetryEndpointFor(jumpstarter.Namespace),
+		}
+		if t.Logging.Filter.MinSeverity != "" {
+			telemetryCfg.Logging.Filter.MinSeverity = t.Logging.Filter.MinSeverity
+		}
+		// Resolve the CA certificate for TLS verification by exporters.
+		// When cert-manager is enabled in self-signed mode, read it from the CA secret.
+		// When an external issuer is used, use its CA bundle if provided.
+		if jumpstarter.Spec.CertManager.Enabled {
+			caCert, err := r.resolveTelemetryCA(ctx, jumpstarter)
+			if err != nil {
+				logf.FromContext(ctx).V(1).Info("Telemetry CA not yet available, will retry", "error", err)
+			} else if caCert != "" {
+				telemetryCfg.Certificate = caCert
+			}
+		}
+		cfg.Telemetry = telemetryCfg
 	}
 
 	// gRPC keepalive configuration

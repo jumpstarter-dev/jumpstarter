@@ -2090,6 +2090,125 @@ spec:
                       type: object
                     type: array
                 type: object
+              telemetry:
+                description: |-
+                  Telemetry configuration for the optional telemetry service.
+                  When enabled, the operator deploys a jumpstarter-telemetry service that receives
+                  structured log entries from exporters via gRPC. The controller advertises the
+                  telemetry endpoint to exporters so they can push logs without cluster credentials.
+                properties:
+                  enabled:
+                    default: false
+                    description: |-
+                      Enable the telemetry service deployment.
+                      When enabled, the operator deploys a jumpstarter-telemetry pod and a ClusterIP
+                      Service, and configures the controller to advertise the endpoint to exporters.
+                    type: boolean
+                  image:
+                    default: quay.io/jumpstarter-dev/jumpstarter-telemetry:latest
+                    description: Container image for the telemetry pod in 'registry/repository/image:tag'
+                      format.
+                    type: string
+                  imagePullPolicy:
+                    default: IfNotPresent
+                    description: Image pull policy for the telemetry container.
+                    enum:
+                    - Always
+                    - IfNotPresent
+                    - Never
+                    type: string
+                  logging:
+                    description: Logging configuration for the telemetry log ingestion
+                      path.
+                    properties:
+                      filter:
+                        description: Filter controls which log entries are forwarded
+                          to the telemetry service.
+                        properties:
+                          minSeverity:
+                            default: info
+                            description: |-
+                              Minimum log severity to forward.
+                              Accepted values: debug, info, warning, error, critical. Defaults to "info".
+                            enum:
+                            - debug
+                            - info
+                            - warning
+                            - error
+                            - critical
+                            type: string
+                        type: object
+                    type: object
+                  replicas:
+                    default: 1
+                    description: |-
+                      Number of telemetry replicas to run.
+                      Multiple replicas provide HA; each exporter connects to exactly one replica
+                      via a persistent MetricsStream, so Prometheus sum-by queries across replicas
+                      yield exact totals without double-counting (see JEP-0013 DD-8).
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  resources:
+                    description: Resource requirements for the telemetry pod.
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This field depends on the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
+                type: object
             type: object
           status:
             description: |-

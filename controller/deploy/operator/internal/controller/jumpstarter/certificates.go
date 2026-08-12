@@ -114,6 +114,13 @@ func (r *JumpstarterReconciler) reconcileCertificates(ctx context.Context, js *o
 		}
 	}
 
+	// Create telemetry certificate if telemetry is enabled
+	if js.Spec.Telemetry != nil && js.Spec.Telemetry.Enabled {
+		if err := r.reconcileTelemetryCertificate(ctx, js, issuerRef); err != nil {
+			return fmt.Errorf("failed to reconcile telemetry certificate: %w", err)
+		}
+	}
+
 	// Reconcile CA ConfigMap AFTER certificates are created
 	// This ensures cert-manager has had a chance to create the CA secret
 	// which we need to populate the ConfigMap for the login service
@@ -367,6 +374,28 @@ func (r *JumpstarterReconciler) reconcileRouterCertificate(ctx context.Context, 
 		"router-index": fmt.Sprintf("%d", replicaIndex),
 	}
 	return r.reconcileServerCertificate(ctx, js, issuerRef, certName, "router", dnsNames, extraLabels)
+}
+
+// reconcileTelemetryCertificate creates the TLS certificate for the telemetry service.
+func (r *JumpstarterReconciler) reconcileTelemetryCertificate(ctx context.Context, js *operatorv1alpha1.Jumpstarter, issuerRef cmmeta.ObjectReference) error {
+	certName := js.Name + telemetryCertSuffix
+	includeInternalNames := !isExternalIssuer(js)
+	dnsNames := r.collectTelemetryDNSNames(js, includeInternalNames)
+	return r.reconcileServerCertificate(ctx, js, issuerRef, certName, "telemetry", dnsNames, nil)
+}
+
+// collectTelemetryDNSNames collects all DNS names for the telemetry certificate.
+func (r *JumpstarterReconciler) collectTelemetryDNSNames(js *operatorv1alpha1.Jumpstarter, includeInternalNames bool) []string {
+	var dnsNames []string
+	if includeInternalNames {
+		dnsNames = append(dnsNames,
+			telemetryServiceName,
+			fmt.Sprintf("%s.%s", telemetryServiceName, js.Namespace),
+			fmt.Sprintf("%s.%s.svc", telemetryServiceName, js.Namespace),
+			fmt.Sprintf("%s.%s.svc.cluster.local", telemetryServiceName, js.Namespace),
+		)
+	}
+	return dnsNames
 }
 
 // collectControllerDNSNames collects all DNS names for the controller certificate.
