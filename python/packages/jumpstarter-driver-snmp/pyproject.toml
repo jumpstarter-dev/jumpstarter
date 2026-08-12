@@ -3,7 +3,7 @@ name = "jumpstarter-driver-snmp"
 dynamic = ["version", "urls"]
 description = "SNMP driver"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 license = "Apache-2.0"
 authors = [{ name = "Benny Zlotnik", email = "bzlotnik@redhat.com" }]
 

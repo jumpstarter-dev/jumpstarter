@@ -98,7 +98,7 @@ docs = [
     { name = "sphinx-click", specifier = ">=6.0.0" },
     { name = "sphinx-copybutton", specifier = ">=0.5.2" },
     { name = "sphinx-inline-tabs", specifier = ">=2023.4.21" },
-    { name = "sphinx-substitution-extensions", specifier = ">=2024.10.17" },
+    { name = "sphinx-substitution-extensions", specifier = ">=2026.6.17" },
     { name = "sphinxcontrib-mermaid", specifier = ">=2.0.1" },
     { name = "sphinxcontrib-programoutput", specifier = ">=0.19" },
 ]
