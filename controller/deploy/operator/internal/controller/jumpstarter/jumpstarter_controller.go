@@ -210,15 +210,21 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile Telemetry (Deployment + ClusterIP Service)
-	if err := r.reconcileTelemetry(ctx, &jumpstarter); err != nil {
-		log.Error(err, "Failed to reconcile Telemetry")
+	// Reconcile Telemetry Deployment (Service is reconciled below in the networking stage)
+	if err := r.reconcileTelemetryDeploymentStage(ctx, &jumpstarter); err != nil {
+		log.Error(err, "Failed to reconcile Telemetry deployment")
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile Services
+	// Reconcile Services (controller, router, login endpoints, and telemetry ClusterIP)
 	if err := r.reconcileServices(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Services")
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile Telemetry ClusterIP Service (part of the networking stage)
+	if err := r.reconcileTelemetryServiceStage(ctx, &jumpstarter); err != nil {
+		log.Error(err, "Failed to reconcile Telemetry service")
 		return ctrl.Result{}, err
 	}
 

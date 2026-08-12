@@ -41,16 +41,26 @@ const (
 	telemetryComponentApp = "jumpstarter-telemetry"
 )
 
-// reconcileTelemetry reconciles telemetry Deployment and Service.
+// reconcileTelemetryDeploymentStage reconciles only the telemetry Deployment (and cleanup).
+// It is called from the Deployment stage of the reconcile loop, before Services.
 // Certificate reconciliation is handled in certificates.go alongside other certs.
-// When telemetry is disabled, existing telemetry resources are cleaned up.
-func (r *JumpstarterReconciler) reconcileTelemetry(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
+func (r *JumpstarterReconciler) reconcileTelemetryDeploymentStage(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	if jumpstarter.Spec.Telemetry == nil || !jumpstarter.Spec.Telemetry.Enabled {
 		return r.cleanupTelemetry(ctx, jumpstarter)
 	}
 
 	if err := r.reconcileTelemetryDeployment(ctx, jumpstarter); err != nil {
 		return fmt.Errorf("failed to reconcile telemetry deployment: %w", err)
+	}
+
+	return nil
+}
+
+// reconcileTelemetryServiceStage reconciles only the telemetry ClusterIP Service.
+// It is called from the Services/networking stage of the reconcile loop.
+func (r *JumpstarterReconciler) reconcileTelemetryServiceStage(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
+	if jumpstarter.Spec.Telemetry == nil || !jumpstarter.Spec.Telemetry.Enabled {
+		return nil
 	}
 
 	if err := r.reconcileTelemetryService(ctx, jumpstarter); err != nil {
@@ -89,11 +99,10 @@ func (r *JumpstarterReconciler) reconcileTelemetryDeployment(ctx context.Context
 		if diffErr != nil {
 			log.V(1).Info("Failed to generate deployment diff", "error", diffErr)
 		} else if diff != "" {
-			fmt.Printf("\n=== Telemetry deployment differences detected ===\n")
-			fmt.Printf("Name: %s\n", existingDeployment.Name)
-			fmt.Printf("Namespace: %s\n", existingDeployment.Namespace)
-			fmt.Printf("\n%s\n", diff)
-			fmt.Printf("==================================================\n\n")
+			log.V(1).Info("Telemetry deployment differences detected",
+				"name", existingDeployment.Name,
+				"namespace", existingDeployment.Namespace,
+				"diff", diff)
 		}
 
 		existingDeployment.Labels = desiredDeployment.Labels
@@ -192,13 +201,7 @@ func (r *JumpstarterReconciler) createTelemetryDeployment(jumpstarter *operatorv
 		replicas = *t.Replicas
 	}
 
-	telemetryEndpoint := telemetryEndpointFor(jumpstarter.Namespace)
-
 	envVars := []corev1.EnvVar{
-		{
-			Name:  "GRPC_TELEMETRY_ENDPOINT",
-			Value: telemetryEndpoint,
-		},
 		{
 			Name: "CONTROLLER_KEY",
 			ValueFrom: &corev1.EnvVarSource{

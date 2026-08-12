@@ -111,7 +111,7 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 		messages = append(messages, routersMsg)
 	}
 
-	// Check telemetry deployment readiness (only if enabled)
+	// Check telemetry deployment readiness (only if enabled), clear stale condition when disabled.
 	if js.Spec.Telemetry != nil && js.Spec.Telemetry.Enabled {
 		telReady, telMsg := r.checkTelemetryDeploymentReady(ctx, js)
 		setCondition(js, operatorv1alpha1.ConditionTypeTelemetryDeploymentReady,
@@ -122,6 +122,8 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 			allReady = false
 			messages = append(messages, telMsg)
 		}
+	} else {
+		meta.RemoveStatusCondition(&js.Status.Conditions, operatorv1alpha1.ConditionTypeTelemetryDeploymentReady)
 	}
 
 	// Check ExporterSet controller deployments readiness (only if configured)
