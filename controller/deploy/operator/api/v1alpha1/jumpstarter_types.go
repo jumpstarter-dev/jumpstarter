@@ -46,6 +46,9 @@ const (
 	// provisioner controller deployments are available
 	ConditionTypeExporterSetControllersReady = "ExporterSetControllersReady"
 
+	// ConditionTypeTelemetryDeploymentReady indicates whether the telemetry deployment is available
+	ConditionTypeTelemetryDeploymentReady = "TelemetryDeploymentReady"
+
 	// ConditionTypeReady indicates whether the overall Jumpstarter system is ready
 	ConditionTypeReady = "Ready"
 )
@@ -201,6 +204,13 @@ type JumpstarterSpec struct {
 	// Deprecated labels configuration for warning users about label keys that should no longer be used.
 	// +optional
 	DeprecatedLabels DeprecatedLabelsConfig `json:"deprecatedLabels,omitempty"`
+
+	// Telemetry configuration for the optional telemetry service.
+	// When enabled, the operator deploys a jumpstarter-telemetry service that receives
+	// structured log entries from exporters via gRPC. The controller advertises the
+	// telemetry endpoint to exporters so they can push logs without cluster credentials.
+	// +optional
+	Telemetry *TelemetryConfig `json:"telemetry,omitempty"`
 }
 
 // HiddenLabelsConfig defines label keys to hide from exporter listings by default.
@@ -264,6 +274,55 @@ type DeprecatedLabelsConfig struct {
 	// with the corresponding message.
 	// +optional
 	Keys map[string]string `json:"keys,omitempty"`
+}
+
+// TelemetryConfig defines configuration for the telemetry service deployment.
+// When enabled, the operator creates a Deployment and ClusterIP Service for
+// jumpstarter-telemetry, which receives structured log entries from exporters.
+type TelemetryConfig struct {
+	// Enable the telemetry service deployment.
+	// When enabled, the operator deploys a jumpstarter-telemetry pod and a ClusterIP
+	// Service, and configures the controller to advertise the endpoint to exporters.
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Container image for the telemetry pod in 'registry/repository/image:tag' format.
+	// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-telemetry:latest"
+	Image string `json:"image,omitempty"`
+
+	// Image pull policy for the telemetry container.
+	// +kubebuilder:default="IfNotPresent"
+	// +kubebuilder:validation:Enum=Always;IfNotPresent;Never
+	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+
+	// Number of telemetry replicas to run.
+	// Multiple replicas provide HA; each exporter connects to exactly one replica
+	// via a persistent MetricsStream, so Prometheus sum-by queries across replicas
+	// yield exact totals without double-counting (see JEP-0013 DD-8).
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=1
+	Replicas *int32 `json:"replicas,omitempty"`
+
+	// Resource requirements for the telemetry pod.
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// Logging configuration for the telemetry log ingestion path.
+	Logging TelemetryLoggingConfig `json:"logging,omitempty"`
+}
+
+// TelemetryLoggingConfig configures the log push path to the telemetry service.
+type TelemetryLoggingConfig struct {
+	// Filter controls which log entries are forwarded to the telemetry service.
+	Filter TelemetryLoggingFilterConfig `json:"filter,omitempty"`
+}
+
+// TelemetryLoggingFilterConfig controls which log entries are forwarded to the telemetry service.
+type TelemetryLoggingFilterConfig struct {
+	// Minimum log severity to forward.
+	// Accepted values: debug, info, warning, error, critical. Defaults to "info".
+	// +kubebuilder:default="info"
+	// +kubebuilder:validation:Enum=debug;info;warning;error;critical
+	MinSeverity string `json:"minSeverity,omitempty"`
 }
 
 // LeasePolicyConfig defines policy constraints for leases.
