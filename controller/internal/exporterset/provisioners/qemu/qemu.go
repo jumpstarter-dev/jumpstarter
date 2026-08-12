@@ -53,9 +53,13 @@ const (
 	sharedVolumeName = "shared"
 	sharedMountPath  = "/shared"
 
-	// sharedVolumeSizeLimit caps emptyDir usage so a misbehaving
-	// container cannot exhaust node ephemeral storage.
-	sharedVolumeSizeLimit = "100Mi"
+	// defaultSharedVolumeSizeLimit caps emptyDir usage so a misbehaving
+	// container cannot exhaust node ephemeral storage. It is only a
+	// fallback: the shared volume also receives the images the flasher
+	// writes (/shared/root), so a class declares
+	// parameters.resources.storage to size the volume for the images it
+	// expects to flash.
+	defaultSharedVolumeSizeLimit = "100Mi"
 
 	// runtimeContainerName is the native sidecar that runs jumpstarter-exec /
 	// QEMU. Kept as a const so scheduling and RenderPod stay in sync.
@@ -86,6 +90,30 @@ const (
 	// Wrapper driver types auto-injected.
 	tcpDriverType = "jumpstarter_driver_network.driver.TcpNetwork"
 )
+
+// sharedVolumeSize resolves the shared emptyDir size limit from the merged
+// class/set parameters (resources.storage), falling back to the default when
+// the parameter is absent. An unparsable value is an error rather than a
+// silent fallback to a limit the flash would exceed.
+func sharedVolumeSize(mergedParameters map[string]interface{}) (resource.Quantity, error) {
+	res, ok := mergedParameters["resources"].(map[string]interface{})
+	if !ok {
+		return resource.MustParse(defaultSharedVolumeSizeLimit), nil
+	}
+	raw, ok := res["storage"]
+	if !ok {
+		return resource.MustParse(defaultSharedVolumeSizeLimit), nil
+	}
+	s, ok := raw.(string)
+	if !ok {
+		return resource.Quantity{}, fmt.Errorf("resources.storage must be a string quantity, got %T", raw)
+	}
+	parsed, err := resource.ParseQuantity(s)
+	if err != nil {
+		return resource.Quantity{}, fmt.Errorf("invalid resources.storage %q: %w", s, err)
+	}
+	return parsed, nil
+}
 
 // Provisioner implements the qemu.jumpstarter.dev provisioner.
 // It renders Pods with a QEMU runtime container and an exporter
@@ -167,7 +195,10 @@ func (p *Provisioner) RenderPod(
 	exporter *jumpstarterdevv1alpha1.Exporter,
 ) (*corev1.Pod, error) {
 	restartAlways := corev1.ContainerRestartPolicyAlways
-	sizeLimit := resource.MustParse(sharedVolumeSizeLimit)
+	sizeLimit, err := sharedVolumeSize(mergedParameters)
+	if err != nil {
+		return nil, err
+	}
 	runAsRoot := int64(0)
 	runAsExporter := exporterNonRootUID
 	exporterNonRoot := true

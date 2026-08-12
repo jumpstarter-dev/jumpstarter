@@ -105,10 +105,71 @@ func assertRenderPodSharedVolume(t *testing.T, pod *corev1.Pod) {
 	if pod.Spec.Volumes[0].EmptyDir == nil {
 		t.Fatal("expected shared emptyDir volume at index 0")
 	}
-	wantLimit := resource.MustParse(sharedVolumeSizeLimit)
+	wantLimit := resource.MustParse(defaultSharedVolumeSizeLimit)
 	if pod.Spec.Volumes[0].EmptyDir.SizeLimit == nil ||
 		!pod.Spec.Volumes[0].EmptyDir.SizeLimit.Equal(wantLimit) {
 		t.Errorf("SizeLimit = %v, want %v", pod.Spec.Volumes[0].EmptyDir.SizeLimit, wantLimit)
+	}
+}
+
+func TestRenderPod_sharedVolumeSizeFromParameters(t *testing.T) {
+	exporterSet := &virtualtargetv1alpha1.ExporterSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "demo-set", Namespace: "default"},
+	}
+	vtc := &virtualtargetv1alpha1.VirtualTargetClass{
+		Spec: virtualtargetv1alpha1.VirtualTargetClassSpec{Provisioner: ProvisionerName},
+	}
+
+	tests := []struct {
+		name    string
+		params  map[string]interface{}
+		want    string
+		wantErr bool
+	}{
+		{
+			name:   "no parameters falls back to the default",
+			params: nil,
+			want:   defaultSharedVolumeSizeLimit,
+		},
+		{
+			name:   "no storage parameter falls back to the default",
+			params: map[string]interface{}{"resources": map[string]interface{}{"cpu": "2"}},
+			want:   defaultSharedVolumeSizeLimit,
+		},
+		{
+			name:   "storage sizes the shared volume for flashed images",
+			params: map[string]interface{}{"resources": map[string]interface{}{"storage": "20G"}},
+			want:   "20G",
+		},
+		{
+			name:    "unparsable storage is an error, not a silent fallback",
+			params:  map[string]interface{}{"resources": map[string]interface{}{"storage": "twenty"}},
+			wantErr: true,
+		},
+		{
+			name:    "non-string storage is an error",
+			params:  map[string]interface{}{"resources": map[string]interface{}{"storage": 20}},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod, err := New("dev").RenderPod(context.Background(), exporterSet, vtc, tt.params, nil, nil)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("RenderPod() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("RenderPod() error = %v", err)
+			}
+			want := resource.MustParse(tt.want)
+			got := pod.Spec.Volumes[0].EmptyDir.SizeLimit
+			if got == nil || !got.Equal(want) {
+				t.Errorf("SizeLimit = %v, want %v", got, want)
+			}
+		})
 	}
 }
 
