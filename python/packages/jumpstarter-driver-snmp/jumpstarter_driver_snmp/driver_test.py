@@ -55,7 +55,6 @@ def setup_mock_snmp_engine():
         },
     ],
 )
-@pytest.mark.asyncio
 async def test_snmp_auth_configurations(auth_config):
     """Test different SNMP authentication configurations"""
     with (
@@ -104,7 +103,6 @@ async def test_snmp_auth_configurations(auth_config):
 
 @patch("pysnmp.entity.config.add_v3_user")
 @patch("pysnmp.entity.engine.SnmpEngine")
-@pytest.mark.asyncio
 async def test_power_on_command(mock_engine, mock_add_user):
     """Test power on command execution"""
     mock_engine.return_value = setup_mock_snmp_engine()
@@ -130,7 +128,6 @@ async def test_power_on_command(mock_engine, mock_add_user):
 
 @patch("pysnmp.entity.config.add_v3_user")
 @patch("pysnmp.entity.engine.SnmpEngine")
-@pytest.mark.asyncio
 async def test_power_off_command(mock_engine, mock_add_user):
     """Test power off command execution"""
     mock_engine.return_value = setup_mock_snmp_engine()

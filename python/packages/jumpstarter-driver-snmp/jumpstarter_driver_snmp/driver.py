@@ -200,6 +200,8 @@ class SNMPServer(Driver):
 
             return f"Power {state.name} command sent successfully"
 
+        except SNMPError:
+            raise
         except Exception as e:
             error_msg = f"SNMP set failed: {str(e)}"
             self.logger.error(error_msg)
