@@ -1,8 +1,10 @@
 import json
 from dataclasses import dataclass, field
 from typing import Any, Generator, Optional
+from urllib.parse import urlsplit
 
 import requests
+import requests.auth
 from jumpstarter_driver_power.common import PowerReading
 from jumpstarter_driver_power.driver import PowerInterface
 
@@ -35,8 +37,15 @@ class HttpBasicAuth:
 
 
 @dataclass(kw_only=True)
+class HttpDigestAuth:
+    user: str = field(default="")
+    password: str = field(default="")
+
+
+@dataclass(kw_only=True)
 class HttpAuthConfig:
     basic: Optional[HttpBasicAuth] = field(default=None)
+    digest: Optional[HttpDigestAuth] = field(default=None)
 
 
 @dataclass(kw_only=True)
@@ -64,19 +73,41 @@ class HttpPower(PowerInterface, Driver):
             self.power_off = HttpEndpointConfig(**self.power_off)
         if self.power_read and isinstance(self.power_read, dict):
             self.power_read = HttpEndpointConfig(**self.power_read)
-        if self.auth and isinstance(self.auth, dict):
+        # Presence, not truthiness: an empty mapping is still a configured auth block.
+        if isinstance(self.auth, dict):
             self.auth = HttpAuthConfig(**self.auth)
-        if self.auth and self.auth.basic and isinstance(self.auth.basic, dict):
+        if self.auth is not None and isinstance(self.auth.basic, dict):
             self.auth.basic = HttpBasicAuth(**self.auth.basic)
+        if self.auth is not None and isinstance(self.auth.digest, dict):
+            self.auth.digest = HttpDigestAuth(**self.auth.digest)
+        if self.auth is not None and self.auth.basic is not None and self.auth.digest is not None:
+            raise ValueError("auth.basic and auth.digest are mutually exclusive, configure only one of them")
 
+        # requests.auth.HTTPDigestAuth keeps the server nonce in handler-local state, so one handler is
+        # reused per origin to avoid a 401 challenge on every request. Handlers are never
+        # shared across origins, whose nonces and realms are unrelated.
+        self._digest_auth: dict[tuple[str, str], requests.auth.HTTPDigestAuth] = {}
+
+    def _build_auth(self, url: str) -> Optional[requests.auth.AuthBase]:
+        """Build the requests auth handler for ``url`` from the configured credentials"""
+        if self.auth is None:
+            return None
+        if self.auth.basic is not None:
+            return requests.auth.HTTPBasicAuth(self.auth.basic.user, self.auth.basic.password)
+        if self.auth.digest is not None:
+            origin = urlsplit(url)[:2]  # origin is (scheme, netloc)
+            if origin not in self._digest_auth:
+                self._digest_auth[origin] = requests.auth.HTTPDigestAuth(
+                    self.auth.digest.user, self.auth.digest.password
+                )
+            return self._digest_auth[origin]
+        return None
 
     def _make_http_request(self, endpoint_config: HttpEndpointConfig) -> str:
         """Make HTTP request to the specified endpoint"""
-        auth = None
-        if self.auth and self.auth.basic:
-            auth = (self.auth.basic.user, self.auth.basic.password)
         method = endpoint_config.method.upper()
         url = endpoint_config.url
+        auth = self._build_auth(url)
         kwargs = {
             'auth': auth,
         }

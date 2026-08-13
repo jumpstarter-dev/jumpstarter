@@ -1,9 +1,12 @@
+import re
 import threading
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
+import requests.auth
 
-from .driver import HttpEndpointConfig, HttpPower
+from .driver import HttpAuthConfig, HttpDigestAuth, HttpEndpointConfig, HttpPower
 from jumpstarter.common.utils import serve
 
 
@@ -163,3 +166,142 @@ def test_read_without_endpoint_raises():
     drv = _power(None)
     with pytest.raises(ValueError, match="not configured"):
         list(drv.read())
+
+
+CHALLENGE = 'Digest realm="r", nonce="n", qop="auth", algorithm=MD5'
+# Without qop the client adds no cnonce, so the response is fully determined by the
+# challenge and the credentials — which is what lets the test below pin a fixed value.
+NO_QOP_CHALLENGE = 'Digest realm="r", nonce="n", algorithm=MD5'
+
+
+class AuthHandler(BaseHTTPRequestHandler):
+    """Records Authorization headers; /digest paths demand a digest handshake first."""
+
+    def log_message(self, format, *args):
+        pass
+
+    def do_GET(self):
+        auth = self.headers.get("Authorization")
+        self.server.auth_headers.append(auth)
+        if self.path.startswith("/digest") and not (auth or "").startswith("Digest "):
+            self.send_response(401)
+            self.send_header("WWW-Authenticate", NO_QOP_CHALLENGE if "noqop" in self.path else CHALLENGE)
+        else:
+            self.send_response(200)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+
+@contextmanager
+def _auth_server():
+    server = HTTPServer(("localhost", 0), AuthHandler)
+    server.auth_headers = []  # ty: ignore[unresolved-attribute]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server, f"http://localhost:{server.server_address[1]}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+
+def test_dict_config_is_reconstructed():
+    """Exporter YAML arrives as plain dicts, which __post_init__ has to rebuild into the config types."""
+    config = {
+        "power_on": {"url": "http://x/on"},
+        "power_off": {"url": "http://x/off"},
+        "power_read": {"url": "http://x/read", "voltage_path": "emeter.voltage"},
+        "auth": {"digest": {"user": "u", "password": "p"}},
+    }
+    drv = HttpPower(**config)
+    assert isinstance(drv.power_on, HttpEndpointConfig)
+    assert isinstance(drv.power_off, HttpEndpointConfig)
+    assert isinstance(drv.power_read, HttpEndpointConfig)
+    assert drv.power_read.voltage_path == "emeter.voltage"
+    assert isinstance(drv.auth, HttpAuthConfig)
+    assert isinstance(drv.auth.digest, HttpDigestAuth)
+    assert drv.auth.digest.user == "u"
+
+
+def _auth_power(auth, on_url="http://x/on", off_url="http://x/off"):
+    return HttpPower(
+        power_on=HttpEndpointConfig(url=on_url),
+        power_off=HttpEndpointConfig(url=off_url),
+        auth=auth,
+    )
+
+
+@pytest.mark.parametrize(
+    ("auth", "expected"),
+    [
+        ({"basic": {"user": "u", "password": "p"}}, "Basic dTpw"),
+        ({"digest": {"user": "u", "password": "p"}}, 'Digest username="u"'),
+    ],
+    ids=["basic", "digest"],
+)
+def test_auth_sends_credentials(auth, expected):
+    with _auth_server() as (server, base_url):
+        _auth_power(auth, f"{base_url}/{next(iter(auth))}").on()
+        assert expected in server.auth_headers[-1]
+
+
+def test_digest_challenge_is_skipped_after_the_first_request():
+    with _auth_server() as (server, base_url):
+        drv = _auth_power({"digest": {"user": "u", "password": "p"}}, f"{base_url}/digest/on", f"{base_url}/digest/off")
+        drv.on()
+        drv.off()
+        # Only the very first request is challenged: the cached handler keeps the negotiated
+        # nonce, so the second endpoint on the same origin authenticates without another 401.
+        challenged = [header is None for header in server.auth_headers]
+        assert challenged == [True, False, False], server.auth_headers
+
+
+# RFC 2069: response = MD5(HA1:nonce:HA2) with HA1 = MD5("u:r:p") and HA2 = MD5("GET:/digest-noqop").
+# Precomputed from the RFC by hand so the test is an independent oracle, not a restatement
+# of the implementation's own arithmetic.
+EXPECTED_DIGEST_RESPONSE = "c4fc7e43cb6786ea4121bda32e36f196"
+
+
+def test_digest_response_matches_a_known_value():
+    with _auth_server() as (server, base_url):
+        _auth_power({"digest": {"user": "u", "password": "p"}}, f"{base_url}/digest-noqop").on()
+        header = server.auth_headers[-1] or ""
+        match = re.search(r'response="([0-9a-f]{32})"', header)
+        assert match is not None, f"no digest response in {header!r}"
+        assert match[1] == EXPECTED_DIGEST_RESPONSE
+
+
+@pytest.mark.parametrize(
+    ("scheme", "handler"),
+    [("basic", requests.auth.HTTPBasicAuth), ("digest", requests.auth.HTTPDigestAuth)],
+)
+def test_build_auth_selects_handler(scheme, handler):
+    auth = {scheme: {"user": "u", "password": "p"}}
+    assert isinstance(_auth_power(auth)._build_auth("http://x/on"), handler)
+
+
+def test_build_auth_without_credentials():
+    assert _auth_power(None)._build_auth("http://x/on") is None
+    assert _auth_power({})._build_auth("http://x/on") is None
+
+
+@pytest.mark.parametrize(
+    ("scheme", "handler"),
+    [("basic", requests.auth.HTTPBasicAuth), ("digest", requests.auth.HTTPDigestAuth)],
+)
+def test_empty_auth_block_is_still_configured(scheme, handler):
+    # An empty mapping is falsy but still a configured block, so it must be deserialized
+    assert isinstance(_auth_power({scheme: {}})._build_auth("http://x/on"), handler)
+
+
+@pytest.mark.parametrize("basic", [{"user": "u", "password": "p"}, {}], ids=["populated", "empty"])
+def test_basic_and_digest_are_mutually_exclusive(basic):
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        _auth_power({"basic": basic, "digest": {"user": "u", "password": "p"}})
+
+
+def test_digest_handler_is_reused_per_origin():
+    drv = _auth_power({"digest": {"user": "u", "password": "p"}})
+    # One handler per origin keeps the negotiated nonce, so repeat requests skip the 401.
+    assert drv._build_auth("http://x/on") is drv._build_auth("http://x/off")
+    assert drv._build_auth("http://x/on") is not drv._build_auth("http://y/on")
