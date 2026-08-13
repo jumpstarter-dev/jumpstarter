@@ -152,6 +152,12 @@ docker-build-ci: ## Build docker images from pre-compiled host binaries (fast CI
 	$(CONTAINER_TOOL) build --build-arg BIN=manager -t $(IMG) -f Containerfile.prebuilt bin/ci-stage/controller
 	$(CONTAINER_TOOL) build --build-arg BIN=exporter-set-controller -t $(EXPORTER_SET_CONTROLLER_IMG) -f Containerfile.prebuilt bin/ci-stage/esc
 
+.PHONY: docker-build-exporter-set-controller-ci
+docker-build-exporter-set-controller-ci: ## CI-optimized: host-compiled ESC binary, no multi-stage build.
+	rm -rf bin/ci-stage/esc && mkdir -p bin/ci-stage/esc
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/esc/exporter-set-controller cmd/exporter-set-controller/main.go
+	$(CONTAINER_TOOL) build --build-arg BIN=exporter-set-controller -t $(EXPORTER_SET_CONTROLLER_IMG) -f Containerfile.prebuilt bin/ci-stage/esc
+
 .PHONY: docker-build-exporter-set-controller
 docker-build-exporter-set-controller: ## Build docker image for the exporter-set-controller.
 	$(CONTAINER_TOOL) build \

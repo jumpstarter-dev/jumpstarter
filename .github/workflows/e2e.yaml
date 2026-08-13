@@ -83,12 +83,12 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/controller-image.tar
-          key: controller-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Containerfile', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/**', 'controller/api/**', 'controller/internal/**') }}
+          key: controller-image-${{ matrix.arch }}-${{ hashFiles('.go-version', 'controller/Makefile', 'controller/Containerfile', 'controller/Containerfile.prebuilt', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/**', 'controller/api/**', 'controller/internal/**') }}
 
       - name: Build controller image
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          make -C controller docker-build
+          make -C controller docker-build-ci
           docker save quay.io/jumpstarter-dev/jumpstarter-controller:latest -o /tmp/controller-image.tar
 
       - name: Upload controller image
@@ -125,12 +125,12 @@ jobs:
           path: |
             /tmp/operator-image.tar
             /tmp/operator-install.yaml
-          key: operator-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Containerfile.operator', 'controller/go.mod', 'controller/go.sum', 'controller/deploy/operator/**', 'controller/api/**', 'controller/internal/**') }}
+          key: operator-image-${{ matrix.arch }}-${{ hashFiles('.go-version', 'controller/Makefile', 'controller/Containerfile.operator', 'controller/Containerfile.prebuilt', 'controller/go.mod', 'controller/go.sum', 'controller/deploy/operator/**', 'controller/api/**', 'controller/internal/**') }}
 
       - name: Build operator image and installer manifest
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          make -C controller/deploy/operator docker-build build-installer VERSION=latest
+          make -C controller/deploy/operator docker-build-ci build-installer VERSION=latest
           docker save quay.io/jumpstarter-dev/jumpstarter-operator:latest -o /tmp/operator-image.tar
           cp controller/deploy/operator/dist/install.yaml /tmp/operator-install.yaml
 
@@ -168,12 +168,12 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: /tmp/exporterset-controller-image.tar
-          key: exporterset-controller-image-${{ matrix.arch }}-${{ hashFiles('controller/Makefile', 'controller/Containerfile.exporter-set-controller', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/exporter-set-controller/**', 'controller/api/**', 'controller/internal/**') }}
+          key: exporterset-controller-image-${{ matrix.arch }}-${{ hashFiles('.go-version', 'controller/Makefile', 'controller/Containerfile.exporter-set-controller', 'controller/Containerfile.prebuilt', 'controller/go.mod', 'controller/go.sum', 'controller/cmd/exporter-set-controller/**', 'controller/api/**', 'controller/internal/**') }}
 
       - name: Build exporterset-controller image
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          make -C controller docker-build-exporter-set-controller
+          make -C controller docker-build-exporter-set-controller-ci
           docker save quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest -o /tmp/exporterset-controller-image.tar
 
       - name: Upload exporterset-controller image
