@@ -117,6 +117,8 @@ class QemuFlasher(FlasherInterface, Driver):
         )
 
         fls_cmd = [fls_binary, "from-url", oci_url, target_path]
+        if self.parent.fls_cacert:
+            fls_cmd += ["--cacert", self.parent.fls_cacert]
 
         fls_env = None
         if creds.is_authenticated:
@@ -442,6 +444,11 @@ class Qemu(Driver):
     fls_version: str | None = field(default=None)
     fls_allow_custom_binaries: bool = field(default=False)
     fls_custom_binary_url: str | None = field(default=None)
+    # CA certificate PEM path passed to fls as --cacert, for registries
+    # fronted by a private CA. fls trusts only its compiled-in roots, so
+    # without this a pull from such a registry fails the TLS handshake
+    # with no way to fix it from configuration.
+    fls_cacert: str | None = field(default=None)
     flash_timeout: int = field(default=30 * 60)  # 30 minutes
 
     # Sidecar mode: path to the jumpstarter-exec launcher socket.
