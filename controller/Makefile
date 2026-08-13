@@ -27,6 +27,8 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+GOARCH ?= $(shell go env GOARCH)
+
 # CONTAINER_TOOL defines the container tool to be used for building images.
 # Be aware that the target commands are only tested with Docker which is
 # scaffolded by default. However, you might want to replace it to use other
@@ -108,7 +110,13 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 ##@ Build
 .PHONY: build-operator
 build-operator:
-	make -C deploy/operator build-installer docker-build
+	$(MAKE) -C deploy/operator build-installer
+	$(MAKE) -C deploy/operator docker-build
+
+.PHONY: build-operator-ci
+build-operator-ci:
+	$(MAKE) -C deploy/operator build-installer
+	$(MAKE) -C deploy/operator docker-build-ci
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
@@ -134,6 +142,15 @@ docker-build: ## Build docker image with the manager.
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_DATE=$(BUILD_DATE) \
 		-t ${IMG} -f Containerfile .
+
+.PHONY: docker-build-ci
+docker-build-ci: ## Build docker images from pre-compiled host binaries (fast CI path).
+	rm -rf bin/ci-stage && mkdir -p bin/ci-stage/controller bin/ci-stage/esc
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/controller/manager cmd/main.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/controller/router cmd/router/main.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/esc/exporter-set-controller cmd/exporter-set-controller/main.go
+	$(CONTAINER_TOOL) build --build-arg BIN=manager -t $(IMG) -f Containerfile.prebuilt bin/ci-stage/controller
+	$(CONTAINER_TOOL) build --build-arg BIN=exporter-set-controller -t $(EXPORTER_SET_CONTROLLER_IMG) -f Containerfile.prebuilt bin/ci-stage/esc
 
 .PHONY: docker-build-exporter-set-controller
 docker-build-exporter-set-controller: ## Build docker image for the exporter-set-controller.
@@ -206,14 +223,27 @@ ifeq ($(SKIP_BUILD),)
 endif
 	./hack/deploy_with_operator.sh
 
+.PHONY: deploy-ci
+deploy-ci: cluster grpcurl $(if $(SKIP_BUILD),,docker-build-ci build-operator-ci) ## CI-optimized deploy: host-compiled binaries, no multi-stage container builds.
+	./hack/deploy_with_operator.sh
+
 
 .PHONY: deploy-operator
 deploy-operator: docker-build docker-build-exporter-set-controller build-operator cluster grpcurl ## Deploy only the operator (without Jumpstarter CR)
 	NETWORKING_MODE=ingress DEPLOY_JUMPSTARTER=false ./hack/deploy_with_operator.sh
 
+.PHONY: deploy-operator-ci
+deploy-operator-ci: docker-build-ci build-operator-ci cluster grpcurl ## CI-optimized: host-compiled binaries, no multi-stage container builds.
+	NETWORKING_MODE=ingress DEPLOY_JUMPSTARTER=false ./hack/deploy_with_operator.sh
+
 .PHONY: test-operator-e2e
 test-operator-e2e: grpcurl deploy-operator
-	make -C deploy/operator test-e2e
+	$(MAKE) -C deploy/operator test-e2e
+
+.PHONY: test-operator-e2e-ci
+test-operator-e2e-ci: grpcurl deploy-operator-ci ## CI-optimized e2e test (host-compiled Go, cached modules).
+	$(MAKE) -C deploy/operator test-e2e
+
 .PHONY: operator-logs
 operator-logs:
 	kubectl logs -n jumpstarter-operator-system -l app.kubernetes.io/name=jumpstarter-operator -f

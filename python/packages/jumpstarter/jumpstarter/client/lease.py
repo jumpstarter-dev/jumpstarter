@@ -122,15 +122,19 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     async def _create(self):
         logger.debug("Creating lease request for selector %s for duration %s", self.selector, self.duration)
         with translate_grpc_exceptions():
-            self.name = (
-                await self.svc.CreateLease(
-                    selector=self.selector,
-                    exporter_name=self.requested_exporter_name,
-                    duration=self.duration,
-                    lease_id=self.name,
-                    tags=self.tags or None,
-                )
-            ).name
+            lease = await self.svc.CreateLease(
+                selector=self.selector,
+                exporter_name=self.requested_exporter_name,
+                duration=self.duration,
+                lease_id=self.name,
+                tags=self.tags or None,
+            )
+            self.name = lease.name
+            for label_key, message in lease.deprecated_labels.items():
+                warning = f"selector label '{label_key}' is deprecated"
+                if message:
+                    warning += f": {message}"
+                logger.warning(warning)
         logger.info("Acquiring lease %s for selector %s for duration %s", self.name, self.selector, self.duration)
 
     async def get(self):

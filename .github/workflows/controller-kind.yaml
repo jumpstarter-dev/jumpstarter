@@ -6,6 +6,9 @@ on:
     paths:
       - 'controller/**'
 
+permissions:
+  contents: read
+
 jobs:
   deploy-kind:
     runs-on: ubuntu-latest
@@ -15,9 +18,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: controller/go.mod
+          cache-dependency-path: |
+            controller/go.sum
+            controller/deploy/operator/go.sum
+
       - name: Run make deploy
         working-directory: controller
-        run: make deploy
+        run: make deploy-ci -j4 --output-sync=target
 
   e2e-test-operator:
     runs-on: ubuntu-latest
@@ -27,6 +38,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: controller/go.mod
+          cache-dependency-path: |
+            controller/go.sum
+            controller/deploy/operator/go.sum
+
       - name: Run operator e2e test
         working-directory: controller
-        run: make test-operator-e2e
+        run: make test-operator-e2e-ci -j4 --output-sync=target

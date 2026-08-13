@@ -134,6 +134,13 @@ func (in *ConfigMapKeySelector) DeepCopy() *ConfigMapKeySelector {
 func (in *ControllerConfig) DeepCopyInto(out *ControllerConfig) {
 	*out = *in
 	in.Resources.DeepCopyInto(&out.Resources)
+	if in.PodAnnotations != nil {
+		in, out := &in.PodAnnotations, &out.PodAnnotations
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	in.ExporterOptions.DeepCopyInto(&out.ExporterOptions)
 	in.RestAPI.DeepCopyInto(&out.RestAPI)
 	in.GRPC.DeepCopyInto(&out.GRPC)
@@ -767,6 +774,13 @@ func (in *RouteConfig) DeepCopy() *RouteConfig {
 func (in *RoutersConfig) DeepCopyInto(out *RoutersConfig) {
 	*out = *in
 	in.Resources.DeepCopyInto(&out.Resources)
+	if in.PodAnnotations != nil {
+		in, out := &in.PodAnnotations, &out.PodAnnotations
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.TopologySpreadConstraints != nil {
 		in, out := &in.TopologySpreadConstraints, &out.TopologySpreadConstraints
 		*out = make([]v1.TopologySpreadConstraint, len(*in))

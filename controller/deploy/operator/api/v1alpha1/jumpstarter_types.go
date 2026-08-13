@@ -298,6 +298,9 @@ type RoutersConfig struct {
 	// +kubebuilder:validation:Minimum=1
 	Replicas int32 `json:"replicas,omitempty"`
 
+	// Custom annotations to add to router pod templates.
+	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
+
 	// Topology spread constraints for router pod distribution.
 	// Ensures router pods are distributed evenly across nodes and zones.
 	// Useful for high availability and fault tolerance.
@@ -332,6 +335,9 @@ type ControllerConfig struct {
 	// +kubebuilder:default=2
 	// +kubebuilder:validation:Minimum=1
 	Replicas int32 `json:"replicas,omitempty"`
+
+	// Custom annotations to add to controller pod templates.
+	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
 
 	// Exporter options configuration.
 	// Controls how exporters connect and behave when communicating with the controller.

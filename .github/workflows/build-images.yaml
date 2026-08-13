@@ -135,6 +135,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: .go-version
+          cache-dependency-path: "**/go.sum"
 
       - name: Build operator installer manifest
         if: ${{ matrix.generate_installer && steps.check.outputs.skip != 'true' }}
@@ -205,7 +206,7 @@ jobs:
             BUILD_DATE=${{ steps.build-args.outputs.build_date }}
 
       - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         if: ${{ env.PUSH == 'true' && steps.check.outputs.skip != 'true' }}
         with:
           subject-name: ${{ env.REGISTRY }}/${{ matrix.image_name }}

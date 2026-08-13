@@ -29,21 +29,38 @@ if [ "${USE_CERTMANAGER}" = "true" ]; then
     fi
 fi
 
-# load the container images into the cluster
-load_image "${IMG}"
-load_image "${OPERATOR_IMG}"
-load_image "${EXPORTER_SET_CONTROLLER_IMG}"
-# Exporter + QEMU runtime images are required for ExporterSet QEMU e2e / samples.
-# Missing images are skipped so plain controller deploys still work.
+# Load container images into the cluster in parallel. Each `kind load` is I/O
+# bound (piping a tarball into the node's containerd), so overlapping them cuts
+# wall-clock to roughly the cost of the single largest image.
+_load_pids=()
+_load_failed=0
+
+load_image "${IMG}" &
+_load_pids+=($!)
+load_image "${OPERATOR_IMG}" &
+_load_pids+=($!)
+load_image "${EXPORTER_SET_CONTROLLER_IMG}" &
+_load_pids+=($!)
+
 if container_image_exists "${EXPORTER_IMG}"; then
-  load_image "${EXPORTER_IMG}"
+  load_image "${EXPORTER_IMG}" &
+  _load_pids+=($!)
 else
   echo -e "${YELLOW}Skipping load of exporter image (not present locally): ${EXPORTER_IMG}${NC}"
 fi
 if container_image_exists "${QEMU_RUNTIME_IMG}"; then
-  load_image "${QEMU_RUNTIME_IMG}"
+  load_image "${QEMU_RUNTIME_IMG}" &
+  _load_pids+=($!)
 else
   echo -e "${YELLOW}Skipping load of qemu-runtime image (not present locally): ${QEMU_RUNTIME_IMG}${NC}"
+fi
+
+for pid in "${_load_pids[@]}"; do
+  wait "${pid}" || _load_failed=1
+done
+if [ "${_load_failed}" -eq 1 ]; then
+  echo -e "${RED}One or more images failed to load${NC}"
+  exit 1
 fi
 
 # Deploy the operator

@@ -35,7 +35,7 @@ import (
 // with legacy (controller-issued) tokens so the token lives in a local config
 // file where the test can corrupt it. It is intentionally NOT labelled for the
 // compat suites — old controller images do not have auth-failure logging.
-var _ = Describe("Auth Failure Logging E2E Tests", Label("auth-logging"), Ordered, func() {
+var _ = Describe("Auth Failure Logging E2E Tests", Label("auth-logging"), Ordered, ContinueOnFailure, func() {
 	const (
 		clientName   = "test-client-authlog"
 		exporterName = "test-exporter-authlog"
