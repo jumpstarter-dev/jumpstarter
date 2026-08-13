@@ -41,10 +41,10 @@ jobs:
           # Merge queue and workflow_dispatch run the full matrix
           # (all Python versions on both Linux and macOS).
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo 'python-versions=["3.14"]' >> "$GITHUB_OUTPUT"
+            echo 'python-versions=["3.12", "3.13", "3.14"]' >> "$GITHUB_OUTPUT"
             echo 'runners=["ubuntu-24.04"]' >> "$GITHUB_OUTPUT"
           else
-            echo 'python-versions=["3.14"]' >> "$GITHUB_OUTPUT"
+            echo 'python-versions=["3.12", "3.13", "3.14"]' >> "$GITHUB_OUTPUT"
             echo 'runners=["ubuntu-24.04", "macos-15"]' >> "$GITHUB_OUTPUT"
           fi
 
