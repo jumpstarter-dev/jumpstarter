@@ -58,6 +58,14 @@ jumpstarter-protocol = { workspace = true }
 jumpstarter-testing = { workspace = true }
 hatch-pin-jumpstarter = { workspace = true }
 
+[tool.uv]
+# pydantic >=2.12 requires typing-extensions >=4.14.1, but mitmproxy caps
+# typing-extensions <=4.14 on Python <3.13. On Python >=3.14 we need
+# pydantic >=2.12 so that pydantic-core ships pre-built cp314 wheels.
+constraint-dependencies = [
+    "pydantic>=2.12 ; python_version >= '3.14'",
+]
+
 [dependency-groups]
 docs = [
     "sphinx<9.1.1",
