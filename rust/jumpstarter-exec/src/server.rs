@@ -109,13 +109,13 @@ pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> 
     let state = Arc::new(RuntimeState::new());
 
     // Shared-volume sidecar pattern: the exporter often runs as a different
-    // UID than this process (e.g. runtime root + exporter 65532). Clear the
-    // umask so Exec children (QEMU) create QMP/serial/VNC sockets that the
-    // peer can connect to (mode 0777). The listen socket is then tightened
-    // to 0666 below — still cross-UID, but not executable.
+    // UID than this process (e.g. runtime root + exporter 65532).
+    // Mask execute bits during bind() so the listen socket is born 0o666
+    // (cross-UID accessible, not executable). Then clear umask so Exec
+    // children (QEMU) create QMP/serial/VNC sockets with mode 0o777.
     #[cfg(unix)]
     unsafe {
-        umask(0);
+        umask(0o111);
     }
 
     if std::path::Path::new(socket_path).exists() {
@@ -128,10 +128,10 @@ pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> 
     }
     let listener = UnixListener::bind(socket_path)?;
     listener.set_nonblocking(true)?;
+
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(socket_path, std::fs::Permissions::from_mode(0o666))?;
+    unsafe {
+        umask(0);
     }
     log.info(
         "listening",
