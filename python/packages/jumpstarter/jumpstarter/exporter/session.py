@@ -57,7 +57,7 @@ class Session(
 
     @contextmanager
     def __contextmanager__(self) -> Generator[Self]:
-        from jumpstarter.logging import set_log_context
+        from jumpstarter.logging import set_log_context, unbind_log_context
         from jumpstarter.metrics import get_registry
 
         logging.getLogger().addHandler(self._logging_handler)
@@ -75,6 +75,7 @@ class Session(
                     self.name,
                     exc_info=True,
                 )
+            unbind_log_context("exporter")
             try:
                 self.root_device.close()
             except Exception as e:
