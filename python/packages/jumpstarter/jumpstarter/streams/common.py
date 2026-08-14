@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
+from functools import partial
 
 from anyio import (
     BrokenResourceError,
@@ -64,8 +65,6 @@ async def copy_stream(
 
 @asynccontextmanager
 async def forward_stream(a, b, *, metrics_driver_type: str | None = None):
-    from functools import partial
-
     async with a, b:
         async with create_task_group() as tg:
             if metrics_driver_type is None:

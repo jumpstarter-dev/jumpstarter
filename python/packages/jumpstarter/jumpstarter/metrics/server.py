@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 
 ShutdownFunc = Callable[[], None]
 
+# Bound slow/idle scrape clients; backlog caps concurrent accept queue depth.
+_METRICS_REQUEST_TIMEOUT_S = 30
+_METRICS_REQUEST_QUEUE_SIZE = 16
+
 
 def _parse_bind_addr(addr: str) -> tuple[str, int]:
     """Parse bind address forms: ':8080', '127.0.0.1:0', '8080', ':0'.
@@ -57,6 +61,8 @@ def start_metrics_server(
     reg = registry if registry is not None else get_registry()
 
     class Handler(BaseHTTPRequestHandler):
+        timeout = _METRICS_REQUEST_TIMEOUT_S
+
         def do_GET(self):  # noqa: N802
             if self.path.split("?", 1)[0] != "/metrics":
                 self.send_error(404)
@@ -68,12 +74,14 @@ def start_metrics_server(
             self.end_headers()
             self.wfile.write(body)
 
-        def log_message(self, fmt: str, *args) -> None:
+        def log_message(self, format: str, *args) -> None:  # noqa: A002
             return
 
     try:
         host, port = _parse_bind_addr(addr)
         server = ThreadingHTTPServer((host, port), Handler)
+        server.request_queue_size = _METRICS_REQUEST_QUEUE_SIZE
+        server.timeout = _METRICS_REQUEST_TIMEOUT_S
     except (OSError, ValueError) as e:
         logger.warning(
             "Failed to start metrics server for bind address %r (%s); continuing without /metrics",

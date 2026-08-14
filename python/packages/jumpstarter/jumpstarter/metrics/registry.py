@@ -135,7 +135,7 @@ class MetricsRegistry:
     def set_active_sessions(self, *, exporter: str, value: float) -> None:
         self._active_sessions.labels(exporter=exporter).set(value)
 
-    def inc_active_sessions(self, *, exporter: str, delta: float = 1.0) -> None:
+    def adjust_active_sessions(self, *, exporter: str, delta: float = 1.0) -> None:
         self._active_sessions.labels(exporter=exporter).inc(delta)
 
     def generate_latest(self) -> bytes:
@@ -149,11 +149,4 @@ _REGISTRY = MetricsRegistry()
 
 
 def get_registry() -> MetricsRegistry:
-    return _REGISTRY
-
-
-def reset_registry_for_tests() -> MetricsRegistry:
-    """Replace the process-wide registry (tests only)."""
-    global _REGISTRY
-    _REGISTRY = MetricsRegistry()
     return _REGISTRY

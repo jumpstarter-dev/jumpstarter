@@ -19,6 +19,8 @@ from jumpstarter_protocol import (
 from .logging import LogHandler
 from jumpstarter.common import ExporterStatus, LogSource, Metadata, TemporarySocket
 from jumpstarter.common.streams import StreamRequestMetadata
+from jumpstarter.logging import set_log_context, unbind_log_context
+from jumpstarter.metrics import get_registry
 from jumpstarter.streams.common import forward_stream
 from jumpstarter.streams.metadata import MetadataStreamAttributes
 from jumpstarter.streams.router import RouterStream
@@ -57,18 +59,15 @@ class Session(
 
     @contextmanager
     def __contextmanager__(self) -> Generator[Self]:
-        from jumpstarter.logging import set_log_context, unbind_log_context
-        from jumpstarter.metrics import get_registry
-
         logging.getLogger().addHandler(self._logging_handler)
         self.root_device.reset()
         set_log_context(exporter=self.name)
-        get_registry().inc_active_sessions(exporter=self.name, delta=1.0)
+        get_registry().adjust_active_sessions(exporter=self.name, delta=1.0)
         try:
             yield self
         finally:
             try:
-                get_registry().inc_active_sessions(exporter=self.name, delta=-1.0)
+                get_registry().adjust_active_sessions(exporter=self.name, delta=-1.0)
             except Exception:
                 logger.warning(
                     "Failed to decrement active sessions metric for exporter %s",

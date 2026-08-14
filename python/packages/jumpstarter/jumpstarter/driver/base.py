@@ -45,6 +45,15 @@ from jumpstarter.metrics.registry import (
     exporter_from_log_context,
     get_registry,
 )
+
+# Ordered most-specific first: ConnectionError is an OSError subclass.
+_DRIVER_CALL_ERRORS: tuple[tuple[type[BaseException], str, StatusCode], ...] = (
+    (NotImplementedError, "not_implemented", StatusCode.UNIMPLEMENTED),
+    (ValueError, "validation_error", StatusCode.INVALID_ARGUMENT),
+    (TimeoutError, "timeout", StatusCode.DEADLINE_EXCEEDED),
+    (ConnectionError, "connection_error", StatusCode.UNAVAILABLE),
+    (OSError, "device_error", StatusCode.INTERNAL),
+)
 from jumpstarter.streams.aiohttp import AiohttpStreamReaderStream
 from jumpstarter.streams.common import create_memory_stream
 from jumpstarter.streams.encoding import Compression, compress_stream
@@ -152,6 +161,43 @@ class Driver(
                 exc_info=True,
             )
 
+    async def _handle_driver_exception(self, exc: BaseException, op: str, started: float, context) -> None:
+        for exc_type, error_type, status in _DRIVER_CALL_ERRORS:
+            if isinstance(exc, exc_type):
+                self._record_operation_metrics(
+                    operation=op,
+                    result="failure",
+                    duration_seconds=time.perf_counter() - started,
+                    error_type=error_type,
+                )
+                self.logger.warning(
+                    "Operation failed",
+                    extra={
+                        "operation": op,
+                        "driver_type": self.driver_type,
+                        "result": "failure",
+                        "error_type": error_type,
+                    },
+                )
+                await context.abort(status, str(exc))
+                return
+        self._record_operation_metrics(
+            operation=op,
+            result="failure",
+            duration_seconds=time.perf_counter() - started,
+            error_type="internal_error",
+        )
+        self.logger.warning(
+            "Operation failed",
+            extra={
+                "operation": op,
+                "driver_type": self.driver_type,
+                "result": "failure",
+                "error_type": "internal_error",
+            },
+        )
+        await context.abort(StatusCode.UNKNOWN, str(exc))
+
     async def DriverCall(self, request, context):
         """
         :meta private:
@@ -188,90 +234,14 @@ class Driver(
                 extra={"operation": op, "driver_type": self.driver_type, "result": "success"},
             )
             return response
-        except NotImplementedError as e:
-            self._record_operation_metrics(
-                operation=op,
-                result="failure",
-                duration_seconds=time.perf_counter() - started,
-                error_type="not_implemented",
-            )
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "not_implemented"},
-            )
-            await context.abort(StatusCode.UNIMPLEMENTED, str(e))
-        except ValueError as e:
-            self._record_operation_metrics(
-                operation=op,
-                result="failure",
-                duration_seconds=time.perf_counter() - started,
-                error_type="validation_error",
-            )
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "validation_error"},
-            )
-            await context.abort(StatusCode.INVALID_ARGUMENT, str(e))
-        except TimeoutError as e:
-            self._record_operation_metrics(
-                operation=op,
-                result="failure",
-                duration_seconds=time.perf_counter() - started,
-                error_type="timeout",
-            )
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "timeout"},
-            )
-            await context.abort(StatusCode.DEADLINE_EXCEEDED, str(e))
-        except ConnectionError as e:
-            self._record_operation_metrics(
-                operation=op,
-                result="failure",
-                duration_seconds=time.perf_counter() - started,
-                error_type="connection_error",
-            )
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "connection_error"},
-            )
-            await context.abort(StatusCode.UNAVAILABLE, str(e))
-        except OSError as e:
-            self._record_operation_metrics(
-                operation=op,
-                result="failure",
-                duration_seconds=time.perf_counter() - started,
-                error_type="device_error",
-            )
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "device_error"},
-            )
-            await context.abort(StatusCode.INTERNAL, str(e))
         except grpc.aio.AbortError:
             # Propagate context.abort() from lookup/handlers without recording
             # metrics (avoids client-controlled operation label cardinality).
             raise
         except Exception as e:
-            self._record_operation_metrics(
-                operation=op,
-                result="failure",
-                duration_seconds=time.perf_counter() - started,
-                error_type="internal_error",
-            )
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "internal_error"},
-            )
-            await context.abort(StatusCode.UNKNOWN, str(e))
+            await self._handle_driver_exception(e, op, started, context)
 
-    async def StreamingDriverCall(self, request, context):  # noqa: C901
+    async def StreamingDriverCall(self, request, context):
         """
         :meta private:
         """
@@ -307,88 +277,12 @@ class Driver(
                 "Operation completed",
                 extra={"operation": op, "driver_type": self.driver_type, "result": "success"},
             )
-        except NotImplementedError as e:
-            self._record_operation_metrics(
-                operation=op,
-                result="failure",
-                duration_seconds=time.perf_counter() - started,
-                error_type="not_implemented",
-            )
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "not_implemented"},
-            )
-            await context.abort(StatusCode.UNIMPLEMENTED, str(e))
-        except ValueError as e:
-            self._record_operation_metrics(
-                operation=op,
-                result="failure",
-                duration_seconds=time.perf_counter() - started,
-                error_type="validation_error",
-            )
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "validation_error"},
-            )
-            await context.abort(StatusCode.INVALID_ARGUMENT, str(e))
-        except TimeoutError as e:
-            self._record_operation_metrics(
-                operation=op,
-                result="failure",
-                duration_seconds=time.perf_counter() - started,
-                error_type="timeout",
-            )
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "timeout"},
-            )
-            await context.abort(StatusCode.DEADLINE_EXCEEDED, str(e))
-        except ConnectionError as e:
-            self._record_operation_metrics(
-                operation=op,
-                result="failure",
-                duration_seconds=time.perf_counter() - started,
-                error_type="connection_error",
-            )
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "connection_error"},
-            )
-            await context.abort(StatusCode.UNAVAILABLE, str(e))
-        except OSError as e:
-            self._record_operation_metrics(
-                operation=op,
-                result="failure",
-                duration_seconds=time.perf_counter() - started,
-                error_type="device_error",
-            )
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "device_error"},
-            )
-            await context.abort(StatusCode.INTERNAL, str(e))
         except grpc.aio.AbortError:
             # Propagate context.abort() from lookup/handlers without recording
             # metrics (avoids client-controlled operation label cardinality).
             raise
         except Exception as e:
-            self._record_operation_metrics(
-                operation=op,
-                result="failure",
-                duration_seconds=time.perf_counter() - started,
-                error_type="internal_error",
-            )
-            self.logger.warning(
-                "Operation failed",
-                extra={"operation": op, "driver_type": self.driver_type,
-                       "result": "failure", "error_type": "internal_error"},
-            )
-            await context.abort(StatusCode.UNKNOWN, str(e))
+            await self._handle_driver_exception(e, op, started, context)
 
     @asynccontextmanager
     async def Stream(self, request, context):

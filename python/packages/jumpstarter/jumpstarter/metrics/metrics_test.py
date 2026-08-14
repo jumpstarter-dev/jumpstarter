@@ -14,9 +14,9 @@ from jumpstarter.driver import Driver, export
 from jumpstarter.metrics import (
     DEFAULT_EXEMPLAR_KEYS,
     get_registry,
-    reset_registry_for_tests,
     start_metrics_server,
 )
+from jumpstarter.metrics._testing import reset_registry_for_tests
 from jumpstarter.metrics.registry import (
     exemplars_from_log_context,
     exporter_from_log_context,
@@ -193,9 +193,11 @@ def test_exemplars_include_client_and_lease_id():
         exemplars={"client": "ci-bot", "lease_id": "lease-xyz"},
     )
     body = reg.generate_latest().decode()
-    assert re.search(r'client="ci-bot"', body)
-    assert re.search(r'lease_id="lease-xyz"', body)
-    assert "# {" in body or " # {" in body
+    assert re.search(
+        r'jumpstarter_operations_total.*# \{.*client="ci-bot".*lease_id="lease-xyz"',
+        body,
+        re.DOTALL,
+    )
 
 
 def test_metrics_http_endpoint_serves_prometheus_text():
