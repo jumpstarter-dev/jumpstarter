@@ -149,7 +149,7 @@ class Cuttlefish(Driver):
         """
         result = self._request("GET", "/cvds")
         if not isinstance(result, dict):
-            return []
+            raise CuttlefishError(f"unexpected response from GET /cvds: {result!r}")
         all_cvds = result.get("cvds", [])
         own_group = self._cvd_group or self.group
         return [c for c in all_cvds if c.get("group") == own_group]

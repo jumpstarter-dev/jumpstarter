@@ -276,7 +276,8 @@ def test_get_existing_cvds_unreachable(requests_mock, drv):
 
 def test_get_existing_cvds_non_dict(requests_mock, drv):
     requests_mock.get(f"{BASE}/cvds", text="not json")
-    assert drv._get_existing_cvds() == []
+    with pytest.raises(CuttlefishError, match="unexpected response"):
+        drv._get_existing_cvds()
 
 
 def test_auto_connect_adb(drv):
