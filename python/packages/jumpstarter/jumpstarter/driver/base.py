@@ -128,15 +128,29 @@ class Driver(
         duration_seconds: float,
         error_type: str | None = None,
     ) -> None:
-        get_registry().record_operation(
-            exporter=exporter_from_log_context(default=self.name if hasattr(self, "name") else "unknown"),
-            operation=operation,
-            result=result,
-            driver_type=self.driver_type,
-            duration_seconds=duration_seconds,
-            exemplars=exemplars_from_log_context(),
-            error_type=error_type,
-        )
+        # Metrics must never discard a computed gRPC response or change the
+        # abort status: keep recording failures isolated from the RPC path.
+        try:
+            get_registry().record_operation(
+                exporter=exporter_from_log_context(default=self.name if hasattr(self, "name") else "unknown"),
+                operation=operation,
+                result=result,
+                driver_type=self.driver_type,
+                duration_seconds=duration_seconds,
+                exemplars=exemplars_from_log_context(),
+                error_type=error_type,
+            )
+        except Exception:
+            self.logger.warning(
+                "Failed to record operation metrics",
+                extra={
+                    "operation": operation,
+                    "driver_type": self.driver_type,
+                    "result": result,
+                    "error_type": error_type,
+                },
+                exc_info=True,
+            )
 
     async def DriverCall(self, request, context):
         """

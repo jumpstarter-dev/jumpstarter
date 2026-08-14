@@ -302,6 +302,22 @@ def test_driver_call_encode_failure_records_failure_not_success():
         assert failure == 1.0
 
 
+def test_driver_call_succeeds_when_metrics_recording_raises(monkeypatch):
+    """Metrics failures must not discard a successful DriverCall response."""
+    from jumpstarter_driver_power.driver import MockPower
+
+    from jumpstarter.common.utils import serve
+    from jumpstarter.metrics.registry import MetricsRegistry
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("metrics broken")
+
+    monkeypatch.setattr(MetricsRegistry, "record_operation", _boom)
+
+    with serve(MockPower()) as client:
+        client.on()
+
+
 def test_unknown_driver_method_does_not_record_operation_metric():
     """AbortError from method lookup must not create an operation time series."""
     from jumpstarter_driver_power.driver import MockPower
