@@ -255,6 +255,13 @@ def test_metrics_server_bind_failure_is_non_fatal():
         holder.close()
 
 
+def test_metrics_server_invalid_bind_addr_is_non_fatal():
+    """Non-numeric ports must not abort the exporter process."""
+    listen, shutdown = start_metrics_server("127.0.0.1:not-a-port")
+    assert listen == ""
+    assert shutdown is None
+
+
 class _TimeoutDriver(Driver):
     driver_type = "power"
 

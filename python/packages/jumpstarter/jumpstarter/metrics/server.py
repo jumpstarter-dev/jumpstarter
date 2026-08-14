@@ -45,9 +45,9 @@ def start_metrics_server(
     addr ending with \":0\" binds an ephemeral port; the returned listen address
     is host:port suitable for urllib/http.Get.
 
-    Bind failures (e.g. address already in use) are non-fatal: a warning is
-    logged and (\"\", None) is returned so the exporter can continue without
-    metrics.
+    Bind failures (e.g. address already in use) and invalid bind addresses
+    (non-numeric port) are non-fatal: a warning is logged and (\"\", None) is
+    returned so the exporter can continue without metrics.
 
     Call ``shutdown()`` to stop the background server (no-op when None).
     """
@@ -55,7 +55,6 @@ def start_metrics_server(
         return "", None
 
     reg = registry if registry is not None else get_registry()
-    host, port = _parse_bind_addr(addr)
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802
@@ -73,12 +72,12 @@ def start_metrics_server(
             return
 
     try:
+        host, port = _parse_bind_addr(addr)
         server = ThreadingHTTPServer((host, port), Handler)
-    except OSError as e:
+    except (OSError, ValueError) as e:
         logger.warning(
-            "Failed to bind metrics server at %s:%s (%s); continuing without /metrics",
-            host,
-            port,
+            "Failed to start metrics server for bind address %r (%s); continuing without /metrics",
+            addr,
             e,
         )
         return "", None
