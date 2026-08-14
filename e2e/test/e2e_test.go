@@ -70,7 +70,7 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, fu
 	// Client and Exporter creation
 	// -------------------------------------------------------------------
 	Context("Admin CLI resource creation", func() {
-		It("can create clients with admin cli", func() {
+		BeforeAll(func() {
 			ns := Namespace()
 
 			// Idempotent under flake-retries: a prior failed attempt may have
@@ -93,20 +93,12 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, fu
 				"--unsafe", "--save")
 			Expect(err).NotTo(HaveOccurred(), out)
 
-			out, err = Jmp("config", "client", "list", "-o", "yaml")
-			Expect(err).NotTo(HaveOccurred(), out)
-			Expect(out).To(ContainSubstring("test-client-legacy"))
-		})
-
-		It("can create exporters with admin cli", func() {
-			ns := Namespace()
-
 			// Idempotent under flake-retries (see client creation above).
 			for _, name := range []string{"test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy"} {
 				EnsureExporterDeleted(ns, name)
 			}
 
-			out, err := Jmp("admin", "create", "exporter", "-n", ns, "test-exporter-oidc",
+			out, err = Jmp("admin", "create", "exporter", "-n", ns, "test-exporter-oidc",
 				"--nointeractive", "--oidc-username", "dex:test-exporter-oidc",
 				"--label", "example.com/board=oidc")
 			Expect(err).NotTo(HaveOccurred(), out)
@@ -125,8 +117,16 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, fu
 			exporterConfigPath := SystemExporterConfigPath("test-exporter-legacy")
 			overlayPath := filepath.Join(RepoRoot(), "e2e", "exporters", "exporter.yaml")
 			MergeExporterConfig(exporterConfigPath, overlayPath)
+		})
 
-			out, err = Jmp("config", "exporter", "list", "-o", "yaml")
+		It("clients were created", func() {
+			out, err := Jmp("config", "client", "list", "-o", "yaml")
+			Expect(err).NotTo(HaveOccurred(), out)
+			Expect(out).To(ContainSubstring("test-client-legacy"))
+		})
+
+		It("exporters were created", func() {
+			out, err := Jmp("config", "exporter", "list", "-o", "yaml")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring("test-exporter-legacy"))
 		})
