@@ -21,8 +21,6 @@ ErrorType = Literal[
     "internal_error",
 ]
 
-_REGISTRY: MetricsRegistry | None = None
-
 
 def filter_exemplars(exemplars: dict[str, str] | None) -> dict[str, str] | None:
     """Keep only the default exemplar keys with non-empty values."""
@@ -144,10 +142,13 @@ class MetricsRegistry:
         return generate_latest_openmetrics(self._registry)
 
 
+# Eager singleton: the asyncio serve path and ThreadingHTTPServer scrape
+# handler can call get_registry() concurrently; lazy init would race and
+# discard counters already recorded on the first instance.
+_REGISTRY = MetricsRegistry()
+
+
 def get_registry() -> MetricsRegistry:
-    global _REGISTRY
-    if _REGISTRY is None:
-        _REGISTRY = MetricsRegistry()
     return _REGISTRY
 
 

@@ -40,6 +40,15 @@ def _fresh_registry():
     reset_registry_for_tests()
 
 
+def test_get_registry_returns_eager_singleton():
+    first = get_registry()
+    second = get_registry()
+    assert first is second
+    replaced = reset_registry_for_tests()
+    assert replaced is get_registry()
+    assert replaced is not first
+
+
 def _sample_value(reg, name: str, labels: dict[str, str]) -> float | None:
     for family in reg.collector_registry.collect():
         for sample in family.samples:
