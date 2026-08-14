@@ -109,50 +109,54 @@ def _handle_child(  # noqa: C901
 
             from jumpstarter.metrics import start_metrics_server
 
-            listen_addr = start_metrics_server(metrics_bind_address)
+            listen_addr, shutdown_metrics = start_metrics_server(metrics_bind_address)
             if listen_addr:
                 logger.info("Serving metrics server at http://%s/metrics", listen_addr)
 
-            if parsed_bind is not None:
-                host, port = parsed_bind
-                tls_credentials = None
-                if tls_insecure:
+            try:
+                if parsed_bind is not None:
+                    host, port = parsed_bind
+                    tls_credentials = None
+                    if tls_insecure:
+                        if passphrase:
+                            click.echo(
+                                "WARNING: --passphrase has no effect without TLS; "
+                                "the passphrase will be transmitted in plaintext",
+                                err=True,
+                            )
+                    elif tls_cert and tls_key:
+                        tls_credentials = _tls_server_credentials(tls_cert, tls_key)
+
+                    interceptors = None
                     if passphrase:
-                        click.echo(
-                            "WARNING: --passphrase has no effect without TLS; "
-                            "the passphrase will be transmitted in plaintext",
-                            err=True,
-                        )
-                elif tls_cert and tls_key:
-                    tls_credentials = _tls_server_credentials(tls_cert, tls_key)
+                        from jumpstarter.exporter.auth import PassphraseInterceptor
+                        interceptors = [PassphraseInterceptor(passphrase)]
 
-                interceptors = None
-                if passphrase:
-                    from jumpstarter.exporter.auth import PassphraseInterceptor
-                    interceptors = [PassphraseInterceptor(passphrase)]
+                    exporter_exit_code = None
+                    async with config.create_exporter(standalone=True) as exporter:
+                        try:
+                            await exporter.serve_standalone_tcp(
+                                host, port,
+                                tls_credentials=tls_credentials,
+                                interceptors=interceptors,
+                            )
+                        except* Exception as excgroup:
+                            _handle_exporter_exceptions(excgroup)
+                        exporter_exit_code = exporter.exit_code
+                else:
+                    # Create exporter and run it (controller mode)
+                    exporter_exit_code = None
+                    async with config.create_exporter() as exporter:
+                        try:
+                            await exporter.serve()
+                        except* Exception as excgroup:
+                            _handle_exporter_exceptions(excgroup)
 
-                exporter_exit_code = None
-                async with config.create_exporter(standalone=True) as exporter:
-                    try:
-                        await exporter.serve_standalone_tcp(
-                            host, port,
-                            tls_credentials=tls_credentials,
-                            interceptors=interceptors,
-                        )
-                    except* Exception as excgroup:
-                        _handle_exporter_exceptions(excgroup)
-                    exporter_exit_code = exporter.exit_code
-            else:
-                # Create exporter and run it (controller mode)
-                exporter_exit_code = None
-                async with config.create_exporter() as exporter:
-                    try:
-                        await exporter.serve()
-                    except* Exception as excgroup:
-                        _handle_exporter_exceptions(excgroup)
-
-                    # Check if exporter set an exit code (e.g., from hook failure with on_failure='exit')
-                    exporter_exit_code = exporter.exit_code
+                        # Check if exporter set an exit code (e.g., from hook failure with on_failure='exit')
+                        exporter_exit_code = exporter.exit_code
+            finally:
+                if shutdown_metrics is not None:
+                    shutdown_metrics()
 
             # Cancel the signal handler after exporter completes
             signal_tg.cancel_scope.cancel()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import urllib.error
 import urllib.request
 
 import pytest
@@ -191,29 +192,50 @@ def test_exemplars_include_client_and_lease_id():
 def test_metrics_http_endpoint_serves_prometheus_text():
     reg = get_registry()
     reg.set_active_sessions(exporter="lab-01", value=2)
-    listen = start_metrics_server("127.0.0.1:0", registry=reg)
+    listen, shutdown = start_metrics_server("127.0.0.1:0", registry=reg)
     assert listen, "expected non-empty listen address"
-
-    with urllib.request.urlopen(f"http://{listen}/metrics", timeout=2) as resp:
-        assert resp.status == 200
-        body = resp.read().decode()
-        ctype = resp.headers.get("Content-Type", "")
-    assert "text/plain" in ctype or "openmetrics" in ctype
-    assert "jumpstarter_active_sessions" in body
+    assert shutdown is not None
+    try:
+        with urllib.request.urlopen(f"http://{listen}/metrics", timeout=2) as resp:
+            assert resp.status == 200
+            body = resp.read().decode()
+            ctype = resp.headers.get("Content-Type", "")
+        assert "text/plain" in ctype or "openmetrics" in ctype
+        assert "jumpstarter_active_sessions" in body
+    finally:
+        shutdown()
 
 
 def test_metrics_server_disabled_when_addr_zero():
-    assert start_metrics_server("0") == ""
-    assert start_metrics_server("") == ""
+    listen, shutdown = start_metrics_server("0")
+    assert listen == ""
+    assert shutdown is None
+    listen, shutdown = start_metrics_server("")
+    assert listen == ""
+    assert shutdown is None
 
 
 def test_metrics_server_ephemeral_bind_returns_concrete_port():
-    listen = start_metrics_server(":0")
-    assert listen.startswith("127.0.0.1:")
-    port = int(listen.rsplit(":", 1)[1])
-    assert port > 0
+    listen, shutdown = start_metrics_server(":0")
+    assert shutdown is not None
+    try:
+        assert listen.startswith("127.0.0.1:")
+        port = int(listen.rsplit(":", 1)[1])
+        assert port > 0
+        with urllib.request.urlopen(f"http://{listen}/metrics", timeout=2) as resp:
+            assert resp.status == 200
+    finally:
+        shutdown()
+
+
+def test_metrics_server_shutdown_stops_listening():
+    listen, shutdown = start_metrics_server("127.0.0.1:0")
+    assert listen and shutdown is not None
     with urllib.request.urlopen(f"http://{listen}/metrics", timeout=2) as resp:
         assert resp.status == 200
+    shutdown()
+    with pytest.raises(urllib.error.URLError):
+        urllib.request.urlopen(f"http://{listen}/metrics", timeout=1)
 
 
 def test_metrics_server_bind_failure_is_non_fatal():
@@ -226,7 +248,9 @@ def test_metrics_server_bind_failure_is_non_fatal():
     holder.listen(1)
     occupied_port = holder.getsockname()[1]
     try:
-        assert start_metrics_server(f"127.0.0.1:{occupied_port}") == ""
+        listen, shutdown = start_metrics_server(f"127.0.0.1:{occupied_port}")
+        assert listen == ""
+        assert shutdown is None
     finally:
         holder.close()
 

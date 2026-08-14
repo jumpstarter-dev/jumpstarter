@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 
@@ -11,6 +12,8 @@ from prometheus_client.openmetrics.exposition import CONTENT_TYPE_LATEST
 from .registry import MetricsRegistry, get_registry
 
 logger = logging.getLogger(__name__)
+
+ShutdownFunc = Callable[[], None]
 
 
 def _parse_bind_addr(addr: str) -> tuple[str, int]:
@@ -30,18 +33,26 @@ def _parse_bind_addr(addr: str) -> tuple[str, int]:
     return host, int(port_s)
 
 
-def start_metrics_server(addr: str, registry: MetricsRegistry | None = None) -> str:
+def start_metrics_server(
+    addr: str, registry: MetricsRegistry | None = None
+) -> tuple[str, ShutdownFunc | None]:
     """Start an HTTP server exposing GET /metrics.
 
-    addr \"0\" or empty disables the server and returns \"\".
+    Returns ``(listen_address, shutdown)``. When metrics are disabled or bind
+    fails, returns ``(\"\", None)``.
+
+    addr \"0\" or empty disables the server.
     addr ending with \":0\" binds an ephemeral port; the returned listen address
     is host:port suitable for urllib/http.Get.
 
     Bind failures (e.g. address already in use) are non-fatal: a warning is
-    logged and \"\" is returned so the exporter can continue without metrics.
+    logged and (\"\", None) is returned so the exporter can continue without
+    metrics.
+
+    Call ``shutdown()`` to stop the background server (no-op when None).
     """
     if addr == "" or addr == "0":
-        return ""
+        return "", None
 
     reg = registry if registry is not None else get_registry()
     host, port = _parse_bind_addr(addr)
@@ -70,13 +81,17 @@ def start_metrics_server(addr: str, registry: MetricsRegistry | None = None) -> 
             port,
             e,
         )
-        return ""
+        return "", None
 
     thread = Thread(target=server.serve_forever, name="jumpstarter-metrics", daemon=True)
     thread.start()
+
+    def shutdown() -> None:
+        server.shutdown()
+        server.server_close()
 
     bound_host, bound_port = server.server_address[:2]
     # Prefer loopback-friendly host for ephemeral binds used in tests.
     if bound_host in ("0.0.0.0", "::", ""):
         bound_host = "127.0.0.1"
-    return f"{bound_host}:{bound_port}"
+    return f"{bound_host}:{bound_port}", shutdown
