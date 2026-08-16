@@ -19,6 +19,7 @@ package v1
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -322,6 +323,21 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 		return nil, err
 	}
 
+	if len(jlease.Spec.SharedWith) > 10 {
+		return nil, status.Errorf(codes.InvalidArgument, "shared_with list exceeds maximum of 10 entries")
+	}
+	if len(jlease.Spec.SharedWith) > 0 {
+		for _, name := range jlease.Spec.SharedWith {
+			if name == jclient.Name {
+				return nil, status.Errorf(codes.InvalidArgument, "cannot share lease with the owner")
+			}
+			var sharedClient jumpstarterdevv1alpha1.Client
+			if err := s.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &sharedClient); err != nil {
+				return nil, status.Errorf(codes.InvalidArgument, "shared client %q not found", name)
+			}
+		}
+	}
+
 	if err := s.Create(ctx, jlease); err != nil {
 		return nil, err
 	}
@@ -361,66 +377,52 @@ func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseReq
 		return nil, err
 	}
 
-	if jlease.Spec.ClientRef.Name != jclient.Name {
+	hasShareChanges := len(req.AddSharedWith) > 0 || len(req.RemoveSharedWith) > 0
+	hasTransfer := req.Lease.Client != nil && *req.Lease.Client != ""
+
+	if hasTransfer && hasShareChanges {
+		return nil, fmt.Errorf("UpdateLease: cannot transfer and modify sharing in the same request")
+	}
+
+	if hasShareChanges {
+		if !jlease.IsOwnedBy(jclient.Name) {
+			return nil, fmt.Errorf("UpdateLease permission denied: only lease owner can modify sharing")
+		}
+	} else if !jlease.IsAccessibleBy(jclient.Name) {
 		return nil, fmt.Errorf("UpdateLease permission denied")
 	}
 
 	original := kclient.MergeFrom(jlease.DeepCopy())
 
-	// Only parse time fields from protobuf if any are being updated
-	if req.Lease.BeginTime != nil || req.Lease.Duration != nil || req.Lease.EndTime != nil {
-		desired, err := jumpstarterdevv1alpha1.LeaseFromProtobuf(req.Lease, *key,
-			corev1.LocalObjectReference{
-				Name: jclient.Name,
-			},
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		// BeginTime can only be updated before lease starts; only if explicitly provided
-		if req.Lease.BeginTime != nil {
-			if jlease.Status.ExporterRef != nil {
-				if jlease.Spec.BeginTime == nil || !jlease.Spec.BeginTime.Equal(desired.Spec.BeginTime) {
-					return nil, fmt.Errorf("cannot update BeginTime: lease has already started")
-				}
-			}
-			jlease.Spec.BeginTime = desired.Spec.BeginTime
-		}
-		// Update Duration only if provided; preserve existing otherwise
-		if req.Lease.Duration != nil {
-			jlease.Spec.Duration = desired.Spec.Duration
-		}
-		// Update EndTime only if provided; preserve existing otherwise
-		if req.Lease.EndTime != nil {
-			jlease.Spec.EndTime = desired.Spec.EndTime
-		}
-	}
-
-	// Transfer lease to a new client if specified
-	if req.Lease.Client != nil && *req.Lease.Client != "" {
-		// Only active leases can be transferred (has exporter, not ended)
-		if jlease.Status.ExporterRef == nil {
-			return nil, fmt.Errorf("cannot transfer lease: lease has not started yet")
+	hasTimeChanges := req.Lease.BeginTime != nil || req.Lease.Duration != nil || req.Lease.EndTime != nil
+	if hasTimeChanges {
+		if !jlease.IsOwnedBy(jclient.Name) {
+			return nil, fmt.Errorf("UpdateLease permission denied: only lease owner can modify time fields")
 		}
 		if jlease.Status.Ended {
-			return nil, fmt.Errorf("cannot transfer lease: lease has already ended")
+			return nil, fmt.Errorf("cannot modify time fields: lease has already ended")
 		}
-		newClientKey, err := utils.ParseClientIdentifier(*req.Lease.Client)
+	}
+
+	if err := s.updateLeaseTimeFields(req.Lease, key, jclient.Name, &jlease); err != nil {
+		return nil, err
+	}
+
+	if err := s.transferLease(ctx, req.Lease, key, jclient.Name, &jlease); err != nil {
+		return nil, err
+	}
+
+	if hasShareChanges {
+		if jlease.Status.Ended {
+			return nil, fmt.Errorf("cannot modify sharing: lease has already ended")
+		}
+		newShared, err := s.applySharedWithChanges(ctx, &jlease, key.Namespace, req.AddSharedWith, req.RemoveSharedWith)
 		if err != nil {
 			return nil, err
 		}
-		if newClientKey.Namespace != key.Namespace {
-			return nil, fmt.Errorf("cannot transfer lease to client in different namespace")
-		}
-		var newClient jumpstarterdevv1alpha1.Client
-		if err := s.Get(ctx, *newClientKey, &newClient); err != nil {
-			return nil, fmt.Errorf("target client not found: %w", err)
-		}
-		jlease.Spec.ClientRef.Name = newClientKey.Name
+		jlease.Spec.SharedWith = newShared
 	}
 
-	// Recalculate missing field or validate consistency (only if time fields were updated)
 	if req.Lease.BeginTime != nil || req.Lease.Duration != nil || req.Lease.EndTime != nil {
 		if err := jumpstarterdevv1alpha1.ReconcileLeaseTimeFields(&jlease.Spec.BeginTime, &jlease.Spec.EndTime, &jlease.Spec.Duration); err != nil {
 			return nil, err
@@ -432,6 +434,109 @@ func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseReq
 	}
 
 	return jlease.ToProtobuf(), nil
+}
+
+func (s *ClientService) updateLeaseTimeFields(
+	lease *cpb.Lease,
+	key *types.NamespacedName,
+	clientName string,
+	jlease *jumpstarterdevv1alpha1.Lease,
+) error {
+	if lease.BeginTime == nil && lease.Duration == nil && lease.EndTime == nil {
+		return nil
+	}
+
+	desired, err := jumpstarterdevv1alpha1.LeaseFromProtobuf(lease, *key,
+		corev1.LocalObjectReference{Name: clientName},
+	)
+	if err != nil {
+		return err
+	}
+
+	if lease.BeginTime != nil {
+		if jlease.Status.ExporterRef != nil {
+			if jlease.Spec.BeginTime == nil || !jlease.Spec.BeginTime.Equal(desired.Spec.BeginTime) {
+				return fmt.Errorf("cannot update BeginTime: lease has already started")
+			}
+		}
+		jlease.Spec.BeginTime = desired.Spec.BeginTime
+	}
+	if lease.Duration != nil {
+		jlease.Spec.Duration = desired.Spec.Duration
+	}
+	if lease.EndTime != nil {
+		jlease.Spec.EndTime = desired.Spec.EndTime
+	}
+	return nil
+}
+
+func (s *ClientService) transferLease(
+	ctx context.Context,
+	lease *cpb.Lease,
+	key *types.NamespacedName,
+	clientName string,
+	jlease *jumpstarterdevv1alpha1.Lease,
+) error {
+	if lease.Client == nil || *lease.Client == "" {
+		return nil
+	}
+	if !jlease.IsOwnedBy(clientName) {
+		return fmt.Errorf("UpdateLease permission denied: only lease owner can transfer")
+	}
+	if jlease.Status.ExporterRef == nil {
+		return fmt.Errorf("cannot transfer lease: lease has not started yet")
+	}
+	if jlease.Status.Ended {
+		return fmt.Errorf("cannot transfer lease: lease has already ended")
+	}
+	newClientKey, err := utils.ParseClientIdentifier(*lease.Client)
+	if err != nil {
+		return err
+	}
+	if newClientKey.Namespace != key.Namespace {
+		return fmt.Errorf("cannot transfer lease to client in different namespace")
+	}
+	var newClient jumpstarterdevv1alpha1.Client
+	if err := s.Get(ctx, *newClientKey, &newClient); err != nil {
+		return fmt.Errorf("target client not found: %w", err)
+	}
+
+	if err := s.validateClientPolicyAccess(ctx, key.Namespace, jlease, &newClient); err != nil {
+		return err
+	}
+
+	jlease.Spec.ClientRef.Name = newClientKey.Name
+	jlease.Spec.SharedWith = nil
+	return nil
+}
+
+func (s *ClientService) validateClientPolicyAccess(
+	ctx context.Context,
+	namespace string,
+	jlease *jumpstarterdevv1alpha1.Lease,
+	targetClient *jumpstarterdevv1alpha1.Client,
+) error {
+	if jlease.Status.ExporterRef == nil {
+		return nil
+	}
+	var policyList jumpstarterdevv1alpha1.ExporterAccessPolicyList
+	if err := s.List(ctx, &policyList, kclient.InNamespace(namespace)); err != nil {
+		return fmt.Errorf("failed to list access policies: %w", err)
+	}
+	if len(policyList.Items) == 0 {
+		return nil
+	}
+	var exporter jumpstarterdevv1alpha1.Exporter
+	if err := s.Get(ctx, types.NamespacedName{
+		Namespace: namespace,
+		Name:      jlease.Status.ExporterRef.Name,
+	}, &exporter); err != nil {
+		return fmt.Errorf("failed to get exporter: %w", err)
+	}
+	if !jumpstarterdevv1alpha1.ClientAllowedByPolicy(policyList.Items, &exporter, targetClient) {
+		return fmt.Errorf("target client %q not authorized for this exporter by policy", targetClient.Name)
+	}
+	return nil
 }
 
 func (s *ClientService) DeleteLease(ctx context.Context, req *cpb.DeleteLeaseRequest) (*emptypb.Empty, error) {
@@ -450,8 +555,8 @@ func (s *ClientService) DeleteLease(ctx context.Context, req *cpb.DeleteLeaseReq
 		return nil, err
 	}
 
-	if jlease.Spec.ClientRef.Name != jclient.Name {
-		return nil, fmt.Errorf("DeleteLease permission denied")
+	if !jlease.IsOwnedBy(jclient.Name) {
+		return nil, fmt.Errorf("DeleteLease permission denied: only lease owner can release")
 	}
 
 	if jlease.Spec.Release {
@@ -522,4 +627,60 @@ func (s *ClientService) RotateToken(ctx context.Context, req *cpb.RotateTokenReq
 		Token:  token,
 		Expiry: expiry,
 	}, nil
+}
+
+func (s *ClientService) applySharedWithChanges(
+	ctx context.Context,
+	jlease *jumpstarterdevv1alpha1.Lease,
+	namespace string,
+	addClients, removeClients []string,
+) ([]string, error) {
+	shared := make([]string, len(jlease.Spec.SharedWith))
+	copy(shared, jlease.Spec.SharedWith)
+
+	for _, name := range removeClients {
+		shared = slices.DeleteFunc(shared, func(s string) bool { return s == name })
+	}
+
+	var policies []jumpstarterdevv1alpha1.ExporterAccessPolicy
+	var exporter *jumpstarterdevv1alpha1.Exporter
+	if len(addClients) > 0 && jlease.Status.ExporterRef != nil {
+		var policyList jumpstarterdevv1alpha1.ExporterAccessPolicyList
+		if err := s.List(ctx, &policyList, kclient.InNamespace(namespace)); err != nil {
+			return nil, fmt.Errorf("failed to list access policies: %w", err)
+		}
+		policies = policyList.Items
+		if len(policies) > 0 {
+			var exp jumpstarterdevv1alpha1.Exporter
+			if err := s.Get(ctx, types.NamespacedName{
+				Namespace: namespace,
+				Name:      jlease.Status.ExporterRef.Name,
+			}, &exp); err != nil {
+				return nil, fmt.Errorf("failed to get exporter: %w", err)
+			}
+			exporter = &exp
+		}
+	}
+
+	for _, name := range addClients {
+		if name == jlease.Spec.ClientRef.Name {
+			return nil, fmt.Errorf("cannot share lease with the owner")
+		}
+		if slices.Contains(shared, name) {
+			continue
+		}
+		var sharedClient jumpstarterdevv1alpha1.Client
+		if err := s.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &sharedClient); err != nil {
+			return nil, fmt.Errorf("shared client %q not found: %w", name, err)
+		}
+		if exporter != nil && !jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies, exporter, &sharedClient) {
+			return nil, fmt.Errorf("client %q not authorized for this exporter", name)
+		}
+		shared = append(shared, name)
+	}
+
+	if len(shared) > 10 {
+		return nil, fmt.Errorf("shared_with list exceeds maximum of 10 entries")
+	}
+	return shared, nil
 }

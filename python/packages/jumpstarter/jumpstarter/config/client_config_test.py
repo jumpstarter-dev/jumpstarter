@@ -447,6 +447,7 @@ async def test_create_lease_passes_exporter_name():
         tags=None,
         allow_disabled=False,
         context=None,
+        shared_with=None,
     )
 
 

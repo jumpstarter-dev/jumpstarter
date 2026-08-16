@@ -520,12 +520,21 @@ async def _shell_with_signal_handling(  # noqa: C901
                                     lease, exporter_logs, config, command, tg.cancel_scope
                                 )
                             except BaseExceptionGroup as eg:
+                                # SIGINT cancels in-flight Dial, which is mapped to
+                                # ExporterUnreachableError. If we extract only that
+                                # error we swallow CancelledError and reacquire.
+                                if find_exception_in_group(eg, cancelled_exc_class):
+                                    exit_code = 2
+                                    break
                                 unreachable = find_exception_in_group(eg, ExporterUnreachableError)
                                 if unreachable is None:
                                     raise
                             except ExporterUnreachableError as exc:
                                 unreachable = exc
                             if unreachable is not None:
+                                if tg.cancel_scope.cancel_called:
+                                    exit_code = 2
+                                    break
                                 if lease.lease_ended:
                                     break  # lease expired naturally — exit cleanly
                                 if lease.lease_transferred:
@@ -550,31 +559,39 @@ async def _shell_with_signal_handling(  # noqa: C901
                                 _warn_about_expired_token(lease.name, selector)
                             break
             except BaseExceptionGroup as eg:
-                for exc in eg.exceptions:
-                    if isinstance(exc, TimeoutError):
-                        raise exc from None
-                unreachable_exc = find_exception_in_group(eg, ExporterUnreachableError)
-                if unreachable_exc:
-                    raise unreachable_exc from None
-                offline_exc = find_exception_in_group(eg, ExporterOfflineError)
-                if offline_exc:
-                    raise offline_exc from None
-                lease_exc = find_exception_in_group(eg, LeaseError)
-                if lease_exc:
-                    raise lease_exc from None
-                if lease_used is not None:
-                    if lease_used.lease_ended:
-                        # Lease expired naturally (e.g. during beforeLease hook)
-                        # - exit gracefully instead of showing a scary error
-                        pass
-                    elif lease_used.lease_transferred:
-                        raise ExporterOfflineError(
-                            "Lease has been transferred to another client. Session is no longer valid."
-                        ) from None
-                    else:
-                        raise ExporterOfflineError("Connection to exporter lost") from None
+                if find_exception_in_group(eg, cancelled_exc_class):
+                    token = getattr(config, "token", None)
+                    if lease_used and token:
+                        remaining = get_token_remaining_seconds(token)
+                        if remaining is not None and remaining <= 0:
+                            _warn_about_expired_token(lease_used.name, selector)
+                    exit_code = 2
                 else:
-                    raise
+                    for exc in eg.exceptions:
+                        if isinstance(exc, TimeoutError):
+                            raise exc from None
+                    unreachable_exc = find_exception_in_group(eg, ExporterUnreachableError)
+                    if unreachable_exc:
+                        raise unreachable_exc from None
+                    offline_exc = find_exception_in_group(eg, ExporterOfflineError)
+                    if offline_exc:
+                        raise offline_exc from None
+                    lease_exc = find_exception_in_group(eg, LeaseError)
+                    if lease_exc:
+                        raise lease_exc from None
+                    if lease_used is not None:
+                        if lease_used.lease_ended:
+                            # Lease expired naturally (e.g. during beforeLease hook)
+                            # - exit gracefully instead of showing a scary error
+                            pass
+                        elif lease_used.lease_transferred:
+                            raise ExporterOfflineError(
+                                "Lease has been transferred to another client. Session is no longer valid."
+                            ) from None
+                        else:
+                            raise ExporterOfflineError("Connection to exporter lost") from None
+                    else:
+                        raise
             except cancelled_exc_class:
                 # Check if cancellation was due to token expiry
                 token = getattr(config, "token", None)
@@ -590,8 +607,10 @@ async def _shell_with_signal_handling(  # noqa: C901
     return exit_code
 
 
-def _format_lease_display(lease) -> str:
+def _format_lease_display(lease, viewer: str | None = None) -> str:
     parts = []
+    if viewer and viewer != lease.client and viewer in lease.shared_with:
+        parts.append(f"shared by {lease.client}")
     if lease.exporter:
         parts.append(f"exporter={lease.exporter}")
     if lease.selector:
@@ -607,7 +626,11 @@ def _format_lease_display(lease) -> str:
 async def _resolve_lease_from_active_async(config) -> str:
     lease_list = await config.list_leases(only_active=True)
     client_name = config.metadata.name
-    leases = [lease for lease in lease_list.leases if lease.client == client_name]
+    leases = [
+        lease
+        for lease in lease_list.leases
+        if lease.client == client_name or client_name in lease.shared_with
+    ]
 
     if not leases:
         raise click.UsageError(
@@ -621,7 +644,7 @@ async def _resolve_lease_from_active_async(config) -> str:
     if sys.stdin.isatty():
         click.echo("Multiple active leases found:\n")
         for i, lease in enumerate(leases, 1):
-            info = _format_lease_display(lease)
+            info = _format_lease_display(lease, viewer=client_name)
             click.echo(f"  {i}) {lease.name}")
             if info:
                 click.echo(f"     {info}")
@@ -634,7 +657,7 @@ async def _resolve_lease_from_active_async(config) -> str:
 
     lease_summaries = []
     for lease in leases:
-        info = _format_lease_display(lease)
+        info = _format_lease_display(lease, viewer=client_name)
         summary = f"{lease.name} ({info})" if info else lease.name
         lease_summaries.append(summary)
     raise click.UsageError(

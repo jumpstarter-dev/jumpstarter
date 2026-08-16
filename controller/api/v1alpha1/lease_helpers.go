@@ -274,6 +274,7 @@ func LeaseFromProtobuf(
 			AllowDisabled: req.AllowDisabled,
 			BeginTime:     beginTime,
 			EndTime:       endTime,
+			SharedWith:    req.SharedWith,
 		},
 	}, nil
 }
@@ -302,6 +303,7 @@ func (l *Lease) ToProtobuf() *cpb.Lease {
 		Tags:          l.Spec.Tags,
 		AllowDisabled: l.Spec.AllowDisabled,
 		Context:       l.Spec.Context,
+		SharedWith:    l.Spec.SharedWith,
 	}
 	if l.Spec.ExporterRef != nil {
 		lease.ExporterName = ptr.To(l.Spec.ExporterRef.Name)
@@ -394,6 +396,45 @@ func (l *Lease) SetStatusCondition(
 		Reason:  reason,
 		Message: fmt.Sprintf(messageFormat, a...),
 	})
+}
+
+func (l *Lease) IsAccessibleBy(clientName string) bool {
+	if l.Spec.ClientRef.Name == clientName {
+		return true
+	}
+	return slices.Contains(l.Spec.SharedWith, clientName)
+}
+
+func (l *Lease) IsOwnedBy(clientName string) bool {
+	return l.Spec.ClientRef.Name == clientName
+}
+
+func ClientAllowedByPolicy(
+	policies []ExporterAccessPolicy,
+	exporter *Exporter,
+	jclient *Client,
+) bool {
+	for _, policy := range policies {
+		exporterSelector, err := metav1.LabelSelectorAsSelector(&policy.Spec.ExporterSelector)
+		if err != nil {
+			continue
+		}
+		if !exporterSelector.Matches(labels.Set(exporter.Labels)) {
+			continue
+		}
+		for _, p := range policy.Spec.Policies {
+			for _, from := range p.From {
+				clientSelector, err := metav1.LabelSelectorAsSelector(&from.ClientSelector)
+				if err != nil {
+					continue
+				}
+				if clientSelector.Matches(labels.Set(jclient.Labels)) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (l *Lease) GetExporterName() string {

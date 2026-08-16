@@ -109,6 +109,14 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return RequeueConflict(logger, result, err)
 	}
 
+	// SharedWith pruning must happen AFTER Status().Update() — that call
+	// refreshes the object from the API server, reverting in-memory spec
+	// mutations. Placing it here ensures the spec change is included in
+	// the r.Update() call below.
+	if err := r.reconcileSharedWithPolicies(ctx, &lease); err != nil {
+		return result, err
+	}
+
 	if lease.Labels == nil {
 		lease.Labels = make(map[string]string)
 	}
@@ -479,6 +487,52 @@ func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jum
 		}
 	}
 	return approvedExporters, unmatchedDescriptions, nil
+}
+
+func (r *LeaseReconciler) reconcileSharedWithPolicies(
+	ctx context.Context,
+	lease *jumpstarterdevv1alpha1.Lease,
+) error {
+	if len(lease.Spec.SharedWith) == 0 || lease.Status.ExporterRef == nil || lease.Status.Ended {
+		return nil
+	}
+
+	var policies jumpstarterdevv1alpha1.ExporterAccessPolicyList
+	if err := r.List(ctx, &policies, client.InNamespace(lease.Namespace)); err != nil {
+		return fmt.Errorf("reconcileSharedWithPolicies: failed to list policies: %w", err)
+	}
+
+	if len(policies.Items) == 0 {
+		return nil
+	}
+
+	var exporter jumpstarterdevv1alpha1.Exporter
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: lease.Namespace,
+		Name:      lease.Status.ExporterRef.Name,
+	}, &exporter); err != nil {
+		return fmt.Errorf("reconcileSharedWithPolicies: failed to get exporter: %w", err)
+	}
+
+	logger := log.FromContext(ctx)
+	var allowed []string
+	for _, clientName := range lease.Spec.SharedWith {
+		var jclient jumpstarterdevv1alpha1.Client
+		if err := r.Get(ctx, types.NamespacedName{
+			Namespace: lease.Namespace,
+			Name:      clientName,
+		}, &jclient); err != nil {
+			logger.Info("removing shared client: not found", "client", clientName)
+			continue
+		}
+		if jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies.Items, &exporter, &jclient) {
+			allowed = append(allowed, clientName)
+		} else {
+			logger.Info("removing shared client: denied by policy", "client", clientName)
+		}
+	}
+	lease.Spec.SharedWith = allowed
+	return nil
 }
 
 // ListMatchingExporters returns a list of exporters that match the selector of the lease

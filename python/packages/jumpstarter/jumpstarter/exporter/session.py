@@ -20,6 +20,7 @@ from .logging import LogHandler
 from jumpstarter.common import ExporterStatus, LogSource, Metadata, TemporarySocket
 from jumpstarter.common.streams import StreamRequestMetadata
 from jumpstarter.streams.common import forward_stream
+from jumpstarter.streams.fanout import ExclusiveSessionActive, ReadOnlyStreamError, WriteTokenRevokedError
 from jumpstarter.streams.metadata import MetadataStreamAttributes
 from jumpstarter.streams.router import RouterStream
 
@@ -319,17 +320,22 @@ class Session(
     async def Stream(self, _request_iterator, context):
         request = StreamRequestMetadata(**dict(list(context.invocation_metadata()))).request
         logger.debug("Streaming(%s)", request)
-        async with self[request.uuid].Stream(request, context) as stream:
-            metadata = []
-            with suppress(TypedAttributeLookupError):
-                metadata.extend(stream.extra(MetadataStreamAttributes.metadata).items())
-            await context.send_initial_metadata(metadata)
+        try:
+            async with self[request.uuid].Stream(request, context) as stream:
+                metadata = []
+                with suppress(TypedAttributeLookupError):
+                    metadata.extend(stream.extra(MetadataStreamAttributes.metadata).items())
+                await context.send_initial_metadata(metadata)
 
-            async with RouterStream(context=context) as remote:
-                async with forward_stream(remote, stream):
-                    event = Event()
-                    context.add_done_callback(lambda _: event.set())
-                    await event.wait()
+                async with RouterStream(context=context) as remote:
+                    async with forward_stream(remote, stream):
+                        event = Event()
+                        context.add_done_callback(lambda _: event.set())
+                        await event.wait()
+        except (ExclusiveSessionActive, WriteTokenRevokedError, ReadOnlyStreamError) as e:
+            # Abort with the exception message so clients see a gRPC status
+            # instead of grpcio's "Unexpected <class ...>" UNKNOWN wrapper.
+            await context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(e))
 
     async def LogStream(self, request, context):
         while not context.done():

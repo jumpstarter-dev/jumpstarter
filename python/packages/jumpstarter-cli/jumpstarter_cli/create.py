@@ -73,6 +73,13 @@ def create():
     help="Context metadata for the lease (key=value format, can be specified multiple times). "
     "Used for observability correlation (e.g. build_id=abc123, image_digest=sha256:...).",
 )
+@click.option(
+    "--share",
+    "share_with",
+    type=str,
+    default=None,
+    help="Comma-separated list of client names to share the lease with.",
+)
 @opt_output_all
 @handle_exceptions_with_reauthentication(relogin_client)
 def create_lease(
@@ -85,6 +92,7 @@ def create_lease(
     tags: tuple[str, ...],
     allow_disabled: bool,
     context_entries: tuple[str, ...],
+    share_with: str | None,
     output: OutputType,
 ):
     """
@@ -133,6 +141,8 @@ def create_lease(
         context_entries, "context", max_key_len=32, max_value_len=64, max_entries=8,
     )
 
+    shared_clients = [s.strip() for s in share_with.split(",")] if share_with else None
+
     lease = config.create_lease(
         selector=selector,
         exporter_name=exporter_name,
@@ -142,6 +152,7 @@ def create_lease(
         tags=parsed_tags or None,
         allow_disabled=allow_disabled,
         context=parsed_context or None,
+        shared_with=shared_clients,
     )
 
     for label_key, message in lease.deprecated_labels.items():

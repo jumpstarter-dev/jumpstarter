@@ -26,6 +26,7 @@ def test_create_lease_passes_exporter_name_to_config():
             tags=(),
             allow_disabled=False,
             context_entries=(),
+            share_with=None,
             output="yaml",
         )
 
@@ -38,6 +39,7 @@ def test_create_lease_passes_exporter_name_to_config():
         tags=None,
         allow_disabled=False,
         context=None,
+        shared_with=None,
     )
     model_print.assert_called_once_with(lease, "yaml")
 
@@ -54,6 +56,7 @@ def test_create_lease_requires_selector_or_name():
             tags=(),
             allow_disabled=False,
             context_entries=(),
+            share_with=None,
             output="yaml",
         )
 
@@ -75,6 +78,7 @@ def test_create_lease_passes_tags_to_config():
             tags=("team=devops", "ci-job=12345"),
             allow_disabled=False,
             context_entries=(),
+            share_with=None,
             output="yaml",
         )
 
@@ -87,6 +91,7 @@ def test_create_lease_passes_tags_to_config():
         tags={"team": "devops", "ci-job": "12345"},
         allow_disabled=False,
         context=None,
+        shared_with=None,
     )
 
 
@@ -107,6 +112,7 @@ def test_create_lease_empty_tags_passes_none():
             tags=(),
             allow_disabled=False,
             context_entries=(),
+            share_with=None,
             output="yaml",
         )
 
@@ -119,6 +125,7 @@ def test_create_lease_empty_tags_passes_none():
         tags=None,
         allow_disabled=False,
         context=None,
+        shared_with=None,
     )
 
 
@@ -134,6 +141,7 @@ def test_create_lease_invalid_tag_format():
             tags=("invalid-no-equals",),
             allow_disabled=False,
             context_entries=(),
+            share_with=None,
             output="yaml",
         )
 
@@ -155,6 +163,7 @@ def test_create_lease_passes_context_to_config():
             tags=(),
             allow_disabled=False,
             context_entries=("build_id=nightly-42", "image_digest=sha256:abc"),
+            share_with=None,
             output="yaml",
         )
 
@@ -167,6 +176,7 @@ def test_create_lease_passes_context_to_config():
         tags=None,
         allow_disabled=False,
         context={"build_id": "nightly-42", "image_digest": "sha256:abc"},
+        shared_with=None,
     )
 
 
@@ -187,6 +197,7 @@ def test_create_lease_empty_context_passes_none():
             tags=(),
             allow_disabled=False,
             context_entries=(),
+            share_with=None,
             output="yaml",
         )
 
@@ -199,6 +210,7 @@ def test_create_lease_empty_context_passes_none():
         tags=None,
         allow_disabled=False,
         context=None,
+        shared_with=None,
     )
 
 
@@ -214,6 +226,7 @@ def test_create_lease_invalid_context_format():
             tags=(),
             allow_disabled=False,
             context_entries=("no-equals-sign",),
+            share_with=None,
             output="yaml",
         )
 
@@ -231,6 +244,7 @@ def test_create_lease_context_key_too_long():
             tags=(),
             allow_disabled=False,
             context_entries=(f"{long_key}=val",),
+            share_with=None,
             output="yaml",
         )
 
@@ -248,6 +262,7 @@ def test_create_lease_context_value_too_long():
             tags=(),
             allow_disabled=False,
             context_entries=(f"key={long_val}",),
+            share_with=None,
             output="yaml",
         )
 
@@ -265,6 +280,7 @@ def test_create_lease_too_many_context_entries():
             tags=(),
             allow_disabled=False,
             context_entries=entries,
+            share_with=None,
             output="yaml",
         )
 
@@ -288,6 +304,7 @@ def test_create_lease_emits_deprecated_label_warnings():
             tags=(),
             allow_disabled=False,
             context_entries=(),
+            share_with=None,
             output="yaml",
         )
 
@@ -319,6 +336,7 @@ def test_create_lease_emits_deprecated_label_warning_without_message():
             tags=(),
             allow_disabled=False,
             context_entries=(),
+            share_with=None,
             output="yaml",
         )
 
@@ -347,6 +365,7 @@ def test_create_lease_no_warnings_when_no_deprecated_labels():
             tags=(),
             allow_disabled=False,
             context_entries=(),
+            share_with=None,
             output="yaml",
         )
 

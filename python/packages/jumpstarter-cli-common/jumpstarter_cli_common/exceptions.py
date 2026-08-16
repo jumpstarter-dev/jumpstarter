@@ -20,6 +20,35 @@ def _append_details(base_message: str, details: str) -> str:
     return f"{base_message} Details: {details}" if details else base_message
 
 
+def _extract_console_in_use_message(text: str) -> str | None:
+    """Pull the user-facing exclusive-console message out of a wrapped error string."""
+    marker = "Console in use"
+    idx = text.find(marker)
+    if idx == -1:
+        return None
+    return text[idx:]
+
+
+def _exception_chain(exc: BaseException):
+    """Yield *exc* and related exceptions (groups, __cause__, then __context__)."""
+    seen: set[int] = set()
+
+    def walk(current: BaseException):
+        if id(current) in seen:
+            return
+        seen.add(id(current))
+        yield current
+        if isinstance(current, BaseExceptionGroup):
+            for child in current.exceptions:
+                yield from walk(child)
+        if current.__cause__ is not None:
+            yield from walk(current.__cause__)
+        if current.__context__ is not None and not current.__suppress_context__:
+            yield from walk(current.__context__)
+
+    yield from walk(exc)
+
+
 def _map_runtime_exception(exc: BaseException, message: str, message_lower: str) -> click.ClickException | None:
     if isinstance(exc, TimeoutError):
         timeout_hint = (
@@ -96,6 +125,9 @@ def _map_grpc_exception(exc: BaseException) -> click.ClickException | None:
     code, details = _extract_grpc_code_and_details(exc)
     details_lower = details.lower()
 
+    if console_msg := _extract_console_in_use_message(details):
+        return ClickExceptionRed(console_msg)
+
     if code == "DEADLINE_EXCEEDED":
         return ClickExceptionRed(
             _append_details(
@@ -155,14 +187,15 @@ def _map_common_exception(exc: BaseException) -> click.ClickException | None:
 
 
 def _map_cli_exception(exc: BaseException) -> click.ClickException | None:
-    if common_exc := _map_common_exception(exc):
-        return common_exc
-    if isinstance(exc, JumpstarterException):
-        return ClickExceptionRed(str(exc))
-    if isinstance(exc, KeyboardInterrupt):
-        return ClickExceptionRed("Cancelled by user.")
-    if isinstance(exc, click.ClickException):
-        return exc
+    for candidate in _exception_chain(exc):
+        if common_exc := _map_common_exception(candidate):
+            return common_exc
+        if isinstance(candidate, JumpstarterException):
+            return ClickExceptionRed(str(candidate))
+        if isinstance(candidate, KeyboardInterrupt):
+            return ClickExceptionRed("Cancelled by user.")
+        if isinstance(candidate, click.ClickException):
+            return candidate
     return None
 
 

@@ -46,6 +46,7 @@ class PySerialClient(DriverClient):
         input_enabled: bool = False,
         append: bool = False,
         no_output: bool = False,
+        observe: bool = False,
     ):
         """
         Pipe serial port data to stdout or a file, optionally reading from stdin.
@@ -55,8 +56,10 @@ class PySerialClient(DriverClient):
             input_enabled: If True, also pipe stdin to serial port.
             append: If True, append to file instead of overwriting.
             no_output: If True, do not read serial output; only forward stdin to serial.
+            observe: If True, use observe mode (read-only).
         """
-        async with self.stream_async(method="connect") as stream:
+        method = "observe" if observe else "connect"
+        async with self.stream_async(method=method) as stream:
             # Fire-and-forget mode: only forward stdin and exit when stdin reaches EOF.
             if no_output:
                 if input_enabled:
@@ -132,10 +135,14 @@ class PySerialClient(DriverClient):
             pass
 
         @base.command()
-        def start_console():
+        @click.option("--observe", is_flag=True, default=False, help="Watch-only mode (read-only)")
+        def start_console(observe):
             """Start serial port console"""
-            click.echo("\nStarting serial port console ... exit with CTRL+B x 3 times\n")
-            console = Console(serial_client=self)
+            if observe:
+                click.echo("\nStarting serial console in observe mode (read-only) ... exit with CTRL+B x 3 times\n")
+            else:
+                click.echo("\nStarting serial port console ... exit with CTRL+B x 3 times\n")
+            console = Console(serial_client=self, observe=observe)
             console.run()
 
         @base.command()
@@ -170,7 +177,13 @@ class PySerialClient(DriverClient):
             default=False,
             help="Disable serial output handling. Send stdin to serial and exit at EOF.",
         )
-        def pipe(output, input_flag, no_input, append, no_output):  # noqa: C901
+        @click.option(
+            "--observe",
+            is_flag=True,
+            default=False,
+            help="Watch-only mode (read-only). Use when another session has exclusive access.",
+        )
+        def pipe(output, input_flag, no_input, append, no_output, observe):  # noqa: C901
             """Pipe serial port data to stdout or file.
 
             By default, reads from the serial port and writes to stdout.
@@ -198,6 +211,12 @@ class PySerialClient(DriverClient):
 
               cat commands.txt | j serial pipe --no-output # Fire-and-forget: send and exit at EOF
             """
+            if observe and input_flag:
+                raise click.UsageError("Cannot use both --observe and --input")
+
+            if observe and no_output:
+                raise click.UsageError("Cannot use both --observe and --no-output")
+
             if input_flag and no_input:
                 raise click.UsageError("Cannot use both --input and --no-input")
 
@@ -248,8 +267,30 @@ class PySerialClient(DriverClient):
                 click.echo(msg, err=True)
 
             try:
-                self.portal.call(self._pipe_serial, output, input_enabled, append, no_output)
+                self.portal.call(self._pipe_serial, output, input_enabled, append, no_output, observe)
             except KeyboardInterrupt:
                 click.echo("\nStopped.", err=True)
+
+        @base.command("release-console")
+        def release_console():
+            """Force-release the serial console write token"""
+            self.call("release_console")
+            click.echo("Write token released.", err=True)
+
+        @base.command("console-status")
+        def console_status():
+            """Show serial console session status"""
+            status = self.call("console_status")
+            holder = status.get("write_token_holder")
+            observers = status.get("observer_count", 0)
+            total = status.get("total_clients", 0)
+            running = status.get("reader_running", False)
+            scrollback = status.get("scrollback_bytes", 0)
+
+            click.echo(f"Write token holder: {holder or '(none)'}")
+            click.echo(f"Observers: {observers}")
+            click.echo(f"Total clients: {total}")
+            click.echo(f"Reader running: {running}")
+            click.echo(f"Scrollback: {scrollback} bytes")
 
         return base

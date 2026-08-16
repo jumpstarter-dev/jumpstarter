@@ -60,6 +60,11 @@ type LeaseSpec struct {
 	// Immutable after creation. Maximum 8 entries; keys max 32 chars, values max 64 chars.
 	// +kubebuilder:validation:MaxProperties=8
 	Context map[string]string `json:"context,omitempty"`
+	// List of client names that have shared access to this lease.
+	// Only the lease owner can modify this list.
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=10
+	SharedWith []string `json:"sharedWith,omitempty"`
 }
 
 // LeaseStatus defines the observed state of Lease.
