@@ -482,6 +482,7 @@ func (r *JumpstarterReconciler) checkExporterSetControllersReady(ctx context.Con
 
 // checkTelemetryDeploymentReady checks if the telemetry deployment is available.
 func (r *JumpstarterReconciler) checkTelemetryDeploymentReady(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (bool, string) {
+	log := logf.FromContext(ctx)
 	deploymentName := fmt.Sprintf("%s-telemetry", js.Name)
 	deployment := &appsv1.Deployment{}
 	err := r.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: js.Namespace}, deployment)
@@ -489,7 +490,8 @@ func (r *JumpstarterReconciler) checkTelemetryDeploymentReady(ctx context.Contex
 		if errors.IsNotFound(err) {
 			return false, fmt.Sprintf("Telemetry deployment %s not found", deploymentName)
 		}
-		return false, fmt.Sprintf("Error getting telemetry deployment: %v", err)
+		log.Error(err, "failed to get telemetry deployment", "deployment", deploymentName)
+		return false, "error querying telemetry deployment; check operator logs for details"
 	}
 
 	for _, cond := range deployment.Status.Conditions {

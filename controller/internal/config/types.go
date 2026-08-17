@@ -61,7 +61,7 @@ type TelemetryLogging struct {
 type TelemetryLoggingFilter struct {
 	// MinSeverity is the minimum log severity to forward.
 	// Accepted values: debug, info, warning, error, critical. Defaults to "info" when empty.
-	MinSeverity string `json:"min_severity,omitempty" yaml:"min_severity,omitempty"`
+	MinSeverity string `json:"minSeverity,omitempty" yaml:"minSeverity,omitempty"`
 }
 
 var validSeverities = map[string]struct{}{

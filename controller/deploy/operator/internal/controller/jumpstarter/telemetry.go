@@ -20,9 +20,11 @@ import (
 	"context"
 	"fmt"
 
+	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -39,6 +41,8 @@ const (
 	telemetryCertSuffix   = "-telemetry-tls"
 	telemetryServiceName  = "jumpstarter-telemetry"
 	telemetryComponentApp = "jumpstarter-telemetry"
+	telemetrySASuffix     = "-telemetry"
+	grpcPortName          = "grpc"
 )
 
 // reconcileTelemetryDeploymentStage reconciles only the telemetry Deployment (and cleanup).
@@ -49,6 +53,10 @@ func (r *JumpstarterReconciler) reconcileTelemetryDeploymentStage(ctx context.Co
 		return r.cleanupTelemetry(ctx, jumpstarter)
 	}
 
+	if err := r.reconcileTelemetryServiceAccount(ctx, jumpstarter); err != nil {
+		return fmt.Errorf("failed to reconcile telemetry service account: %w", err)
+	}
+
 	if err := r.reconcileTelemetryDeployment(ctx, jumpstarter); err != nil {
 		return fmt.Errorf("failed to reconcile telemetry deployment: %w", err)
 	}
@@ -56,11 +64,42 @@ func (r *JumpstarterReconciler) reconcileTelemetryDeploymentStage(ctx context.Co
 	return nil
 }
 
+// reconcileTelemetryServiceAccount creates a dedicated, no-RBAC ServiceAccount for
+// the telemetry pod. The telemetry binary has no need for Kubernetes API access;
+// giving it the controller-manager SA would grant it far more privilege than required.
+func (r *JumpstarterReconciler) reconcileTelemetryServiceAccount(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
+	log := logf.FromContext(ctx)
+	saName := jumpstarter.Name + telemetrySASuffix
+
+	desired := &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      saName,
+			Namespace: jumpstarter.Namespace,
+			Labels:    telemetryLabels(jumpstarter),
+		},
+	}
+
+	existing := &corev1.ServiceAccount{}
+	existing.Name = saName
+	existing.Namespace = jumpstarter.Namespace
+
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existing, func() error {
+		existing.Labels = desired.Labels
+		return controllerutil.SetControllerReference(jumpstarter, existing, r.Scheme)
+	})
+	if err != nil {
+		return err
+	}
+
+	log.V(1).Info("Telemetry ServiceAccount reconciled", "name", saName, "operation", op)
+	return nil
+}
+
 // reconcileTelemetryServiceStage reconciles only the telemetry ClusterIP Service.
 // It is called from the Services/networking stage of the reconcile loop.
 func (r *JumpstarterReconciler) reconcileTelemetryServiceStage(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	if jumpstarter.Spec.Telemetry == nil || !jumpstarter.Spec.Telemetry.Enabled {
-		return nil
+		return r.cleanupTelemetryService(ctx, jumpstarter)
 	}
 
 	if err := r.reconcileTelemetryService(ctx, jumpstarter); err != nil {
@@ -70,10 +109,28 @@ func (r *JumpstarterReconciler) reconcileTelemetryServiceStage(ctx context.Conte
 	return nil
 }
 
+// cleanupTelemetryService removes only the telemetry Service when telemetry is disabled.
+// This provides symmetric cleanup so the Service isn't orphaned if the reconcile loop
+// order changes (e.g. services reconciled before deployments).
+func (r *JumpstarterReconciler) cleanupTelemetryService(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
+	log := logf.FromContext(ctx)
+
+	svc := &corev1.Service{}
+	svc.Name = telemetryServiceName
+	svc.Namespace = jumpstarter.Namespace
+	if err := r.Delete(ctx, svc); err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete telemetry service: %w", err)
+	} else if err == nil {
+		log.Info("Deleted telemetry service", "name", telemetryServiceName)
+	}
+
+	return nil
+}
+
 // reconcileTelemetryDeployment creates or updates the telemetry Deployment.
 func (r *JumpstarterReconciler) reconcileTelemetryDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
-	desiredDeployment := r.createTelemetryDeployment(jumpstarter)
+	desiredDeployment := createTelemetryDeployment(jumpstarter)
 
 	existingDeployment := &appsv1.Deployment{}
 	existingDeployment.Name = desiredDeployment.Name
@@ -92,7 +149,8 @@ func (r *JumpstarterReconciler) reconcileTelemetryDeployment(ctx context.Context
 
 		if !deploymentNeedsUpdate(existingDeployment, desiredDeployment) {
 			log.V(1).Info("Telemetry deployment is up to date", "name", existingDeployment.Name)
-			return nil
+			// Always ensure owner reference is set even if no other updates needed
+			return controllerutil.SetControllerReference(jumpstarter, existingDeployment, r.Scheme)
 		}
 
 		diff, diffErr := generateDiff(existingDeployment, desiredDeployment)
@@ -119,8 +177,14 @@ func (r *JumpstarterReconciler) reconcileTelemetryDeployment(ctx context.Context
 		return err
 	}
 
-	log.Info("Telemetry deployment reconciled",
-		"name", existingDeployment.Name, "namespace", existingDeployment.Namespace, "operation", op)
+	switch op {
+	case controllerutil.OperationResultNone:
+		log.V(1).Info("Telemetry deployment is up to date",
+			"name", existingDeployment.Name, "namespace", existingDeployment.Namespace)
+	default:
+		log.Info("Telemetry deployment reconciled",
+			"name", existingDeployment.Name, "namespace", existingDeployment.Namespace, "operation", op)
+	}
 
 	switch op {
 	case controllerutil.OperationResultCreated:
@@ -152,7 +216,7 @@ func (r *JumpstarterReconciler) reconcileTelemetryService(ctx context.Context, j
 			Selector: labels,
 			Ports: []corev1.ServicePort{
 				{
-					Name:       "grpc",
+					Name:       grpcPortName,
 					Port:       int32(telemetryPort),
 					TargetPort: intstr.FromInt(telemetryPort),
 					Protocol:   corev1.ProtocolTCP,
@@ -166,15 +230,8 @@ func (r *JumpstarterReconciler) reconcileTelemetryService(ctx context.Context, j
 	existingService.Namespace = desiredService.Namespace
 
 	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, existingService, func() error {
-		if existingService.CreationTimestamp.IsZero() {
-			existingService.Labels = desiredService.Labels
-			existingService.Spec.Type = desiredService.Spec.Type
-			existingService.Spec.Selector = desiredService.Spec.Selector
-			existingService.Spec.Ports = desiredService.Spec.Ports
-			return controllerutil.SetControllerReference(jumpstarter, existingService, r.Scheme)
-		}
-
 		existingService.Labels = desiredService.Labels
+		existingService.Spec.Type = desiredService.Spec.Type
 		existingService.Spec.Selector = desiredService.Spec.Selector
 		existingService.Spec.Ports = desiredService.Spec.Ports
 		return controllerutil.SetControllerReference(jumpstarter, existingService, r.Scheme)
@@ -185,65 +242,35 @@ func (r *JumpstarterReconciler) reconcileTelemetryService(ctx context.Context, j
 		return err
 	}
 
-	log.Info("Telemetry service reconciled",
-		"name", existingService.Name, "namespace", existingService.Namespace, "operation", op)
+	switch op {
+	case controllerutil.OperationResultNone:
+		log.V(1).Info("Telemetry service is up to date",
+			"name", existingService.Name, "namespace", existingService.Namespace)
+	case controllerutil.OperationResultCreated:
+		log.Info("Telemetry service reconciled",
+			"name", existingService.Name, "namespace", existingService.Namespace, "operation", op)
+		r.emitEventf(jumpstarter, corev1.EventTypeNormal, "TelemetryServiceCreated",
+			"Telemetry service created: name=%s namespace=%s",
+			existingService.Name, existingService.Namespace)
+	case controllerutil.OperationResultUpdated:
+		log.Info("Telemetry service reconciled",
+			"name", existingService.Name, "namespace", existingService.Namespace, "operation", op)
+		r.emitEventf(jumpstarter, corev1.EventTypeNormal, "TelemetryServiceUpdated",
+			"Telemetry service updated: name=%s namespace=%s",
+			existingService.Name, existingService.Namespace)
+	}
 
 	return nil
 }
 
 // createTelemetryDeployment builds the desired Deployment for the telemetry service.
-func (r *JumpstarterReconciler) createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv1.Deployment {
+func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv1.Deployment {
 	t := jumpstarter.Spec.Telemetry
 	labels := telemetryLabels(jumpstarter)
 
 	replicas := int32(1)
 	if t.Replicas != nil {
 		replicas = *t.Replicas
-	}
-
-	envVars := []corev1.EnvVar{
-		{
-			Name: "CONTROLLER_KEY",
-			ValueFrom: &corev1.EnvVarSource{
-				SecretKeyRef: &corev1.SecretKeySelector{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: "jumpstarter-controller-secret",
-					},
-					Key: "key",
-				},
-			},
-		},
-	}
-
-	var volumeMounts []corev1.VolumeMount
-	var volumes []corev1.Volume
-
-	// Add TLS certificate mount when cert-manager is enabled
-	var tlsSecretName string
-	if jumpstarter.Spec.CertManager.Enabled {
-		tlsSecretName = GetTelemetryCertSecretName(jumpstarter)
-	}
-
-	if tlsSecretName != "" {
-		envVars = append(envVars,
-			corev1.EnvVar{Name: "EXTERNAL_CERT_PEM", Value: "/tls/tls.crt"},
-			corev1.EnvVar{Name: "EXTERNAL_KEY_PEM", Value: "/tls/tls.key"},
-		)
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "tls-certs",
-			MountPath: "/tls",
-			ReadOnly:  true,
-		})
-		defaultMode := int32(420)
-		volumes = append(volumes, corev1.Volume{
-			Name: "tls-certs",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName:  tlsSecretName,
-					DefaultMode: &defaultMode,
-				},
-			},
-		})
 	}
 
 	return &appsv1.Deployment{
@@ -283,12 +310,23 @@ func (r *JumpstarterReconciler) createTelemetryDeployment(jumpstarter *operatorv
 							Args: []string{
 								fmt.Sprintf("--grpc-bind=:%d", telemetryPort),
 							},
-							Env:          envVars,
-							VolumeMounts: volumeMounts,
+							Env: []corev1.EnvVar{
+								{
+									Name: "CONTROLLER_KEY",
+									ValueFrom: &corev1.EnvVarSource{
+										SecretKeyRef: &corev1.SecretKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: "jumpstarter-controller-secret",
+											},
+											Key: "key",
+										},
+									},
+								},
+							},
 							Ports: []corev1.ContainerPort{
 								{
 									ContainerPort: int32(telemetryPort),
-									Name:          "grpc",
+									Name:          grpcPortName,
 									Protocol:      corev1.ProtocolTCP,
 								},
 							},
@@ -320,21 +358,20 @@ func (r *JumpstarterReconciler) createTelemetryDeployment(jumpstarter *operatorv
 							TerminationMessagePath:   "/dev/termination-log",
 							TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 							SecurityContext: &corev1.SecurityContext{
-								AllowPrivilegeEscalation: boolPtr(false),
+								AllowPrivilegeEscalation: ptr.To(false),
 								Capabilities: &corev1.Capabilities{
 									Drop: []corev1.Capability{"ALL"},
 								},
 							},
 						},
 					},
-					Volumes: volumes,
 					SecurityContext: &corev1.PodSecurityContext{
-						RunAsNonRoot: boolPtr(true),
+						RunAsNonRoot: ptr.To(true),
 						SeccompProfile: &corev1.SeccompProfile{
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
 					},
-					ServiceAccountName: fmt.Sprintf("%s-controller-manager", jumpstarter.Name),
+					ServiceAccountName: jumpstarter.Name + telemetrySASuffix,
 				},
 			},
 		},
@@ -342,8 +379,8 @@ func (r *JumpstarterReconciler) createTelemetryDeployment(jumpstarter *operatorv
 }
 
 // cleanupTelemetry removes telemetry resources when telemetry is disabled.
-// Owned resources (Deployment, Service) are deleted; the CR's garbage collection
-// will handle removing any cert-manager Certificate.
+// GC cannot remove the cert-manager Certificate while the Jumpstarter CR still
+// exists (GC only fires when the owner is deleted), so it is deleted explicitly.
 func (r *JumpstarterReconciler) cleanupTelemetry(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
 
@@ -359,20 +396,31 @@ func (r *JumpstarterReconciler) cleanupTelemetry(ctx context.Context, jumpstarte
 			"Telemetry deployment deleted: name=%s", deploymentName)
 	}
 
-	svc := &corev1.Service{}
-	svc.Name = telemetryServiceName
-	svc.Namespace = jumpstarter.Namespace
-	if err := r.Delete(ctx, svc); err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete telemetry service: %w", err)
+	certName := getTelemetryCertSecretName(jumpstarter)
+	cert := &certmanagerv1.Certificate{}
+	cert.Name = certName
+	cert.Namespace = jumpstarter.Namespace
+	if err := r.Delete(ctx, cert); err != nil && !errors.IsNotFound(err) && !meta.IsNoMatchError(err) {
+		return fmt.Errorf("failed to delete telemetry certificate: %w", err)
 	} else if err == nil {
-		log.Info("Deleted telemetry service", "name", telemetryServiceName)
+		log.Info("Deleted telemetry certificate", "name", certName)
+	}
+
+	saName := jumpstarter.Name + telemetrySASuffix
+	sa := &corev1.ServiceAccount{}
+	sa.Name = saName
+	sa.Namespace = jumpstarter.Namespace
+	if err := r.Delete(ctx, sa); err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete telemetry service account: %w", err)
+	} else if err == nil {
+		log.Info("Deleted telemetry service account", "name", saName)
 	}
 
 	return nil
 }
 
-// GetTelemetryCertSecretName returns the name of the telemetry TLS secret.
-func GetTelemetryCertSecretName(js *operatorv1alpha1.Jumpstarter) string {
+// getTelemetryCertSecretName returns the name of the telemetry TLS secret.
+func getTelemetryCertSecretName(js *operatorv1alpha1.Jumpstarter) string {
 	return js.Name + telemetryCertSuffix
 }
 

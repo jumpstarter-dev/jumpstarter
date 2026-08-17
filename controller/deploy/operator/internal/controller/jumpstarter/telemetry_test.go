@@ -243,6 +243,14 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			Namespace: crNamespace,
 		}, svc)
 		Expect(errors.IsNotFound(err)).To(BeTrue(), "telemetry service should not exist")
+
+		By("verifying no telemetry ServiceAccount exists")
+		sa := &corev1.ServiceAccount{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      crName + telemetrySASuffix,
+			Namespace: crNamespace,
+		}, sa)
+		Expect(errors.IsNotFound(err)).To(BeTrue(), "telemetry service account should not exist")
 	})
 
 	It("cleans up telemetry resources when telemetry is disabled after being enabled", func() {
@@ -292,63 +300,19 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			Namespace: crNamespace,
 		}, svc)
 		Expect(errors.IsNotFound(err)).To(BeTrue(), "telemetry service should be deleted")
-	})
 
-	It("sets GRPC_TELEMETRY_ENDPOINT env var on the controller deployment", func() {
-		By("creating a Jumpstarter CR with telemetry enabled")
-		spec := makeJumpstarterSpec()
-		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
-			Enabled: true,
-			Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
-		}
-		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
-			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
-			Spec:       spec,
-		})).To(Succeed())
-
-		doReconcile()
-
-		By("verifying the controller deployment has GRPC_TELEMETRY_ENDPOINT")
-		controllerDep := &appsv1.Deployment{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{
-			Name:      crName + "-controller",
+		By("verifying the dedicated ServiceAccount is also deleted")
+		sa := &corev1.ServiceAccount{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      crName + telemetrySASuffix,
 			Namespace: crNamespace,
-		}, controllerDep)).To(Succeed())
+		}, sa)
+		Expect(errors.IsNotFound(err)).To(BeTrue(), "telemetry service account should be deleted")
 
-		container := controllerDep.Spec.Template.Spec.Containers[0]
-		found := false
-		expectedEndpoint := telemetryEndpointFor(crNamespace)
-		for _, env := range container.Env {
-			if env.Name == "GRPC_TELEMETRY_ENDPOINT" {
-				found = true
-				Expect(env.Value).To(Equal(expectedEndpoint))
-				break
-			}
-		}
-		Expect(found).To(BeTrue(), "GRPC_TELEMETRY_ENDPOINT should be set on controller container")
-	})
-
-	It("does not set GRPC_TELEMETRY_ENDPOINT on controller when telemetry is disabled", func() {
-		By("creating a Jumpstarter CR without telemetry")
-		spec := makeJumpstarterSpec()
-		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
-			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
-			Spec:       spec,
-		})).To(Succeed())
-
-		doReconcile()
-
-		controllerDep := &appsv1.Deployment{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{
-			Name:      crName + "-controller",
-			Namespace: crNamespace,
-		}, controllerDep)).To(Succeed())
-
-		container := controllerDep.Spec.Template.Spec.Containers[0]
-		for _, env := range container.Env {
-			Expect(env.Name).NotTo(Equal("GRPC_TELEMETRY_ENDPOINT"),
-				"GRPC_TELEMETRY_ENDPOINT should not be set when telemetry is disabled")
-		}
+		By("verifying telemetry is absent from the controller ConfigMap")
+		configData := getConfigData()
+		Expect(configData).NotTo(ContainSubstring("telemetry"),
+			"telemetry should not appear in ConfigMap after disabling")
 	})
 
 	It("propagates telemetry config into the controller ConfigMap", func() {
@@ -438,8 +402,10 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		Expect(cond.Reason).To(Equal("DeploymentAvailable"))
 	})
 
-	It("mounts TLS certs when cert-manager is enabled", func() {
-		By("verifying TLS volume setup in the deployment spec (unit test)")
+	It("does not mount TLS certs even when cert-manager is enabled (TLS serving not yet supported by the binary)", func() {
+		// EXTERNAL_CERT_PEM/EXTERNAL_KEY_PEM and the tls-certs volume are intentionally
+		// omitted until the telemetry binary is updated to serve TLS.
+		// CONTROLLER_KEY is always set for token validation (not TLS-related).
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-tls", Namespace: "default"},
 			Spec: operatorv1alpha1.JumpstarterSpec{
@@ -452,58 +418,22 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			},
 		}
 
-		r := newReconciler()
-		dep := r.createTelemetryDeployment(js)
-
-		By("verifying EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM env vars are set")
-		container := dep.Spec.Template.Spec.Containers[0]
-		envNames := make(map[string]string)
-		for _, env := range container.Env {
-			envNames[env.Name] = env.Value
-		}
-		Expect(envNames).To(HaveKey("EXTERNAL_CERT_PEM"))
-		Expect(envNames).To(HaveKey("EXTERNAL_KEY_PEM"))
-		Expect(envNames["EXTERNAL_CERT_PEM"]).To(Equal("/tls/tls.crt"))
-		Expect(envNames["EXTERNAL_KEY_PEM"]).To(Equal("/tls/tls.key"))
-
-		By("verifying a tls-certs volume mount exists")
-		Expect(container.VolumeMounts).To(HaveLen(1))
-		Expect(container.VolumeMounts[0].Name).To(Equal("tls-certs"))
-		Expect(container.VolumeMounts[0].MountPath).To(Equal("/tls"))
-		Expect(container.VolumeMounts[0].ReadOnly).To(BeTrue())
-
-		By("verifying the volume references the expected secret")
-		Expect(dep.Spec.Template.Spec.Volumes).To(HaveLen(1))
-		vol := dep.Spec.Template.Spec.Volumes[0]
-		Expect(vol.Name).To(Equal("tls-certs"))
-		Expect(vol.Secret.SecretName).To(Equal(GetTelemetryCertSecretName(js)))
-	})
-
-	It("does not mount TLS certs when cert-manager is disabled", func() {
-		js := &operatorv1alpha1.Jumpstarter{
-			ObjectMeta: metav1.ObjectMeta{Name: "test-no-tls", Namespace: "default"},
-			Spec: operatorv1alpha1.JumpstarterSpec{
-				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
-				Telemetry: &operatorv1alpha1.TelemetryConfig{
-					Enabled: true,
-					Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
-				},
-			},
-		}
-
-		r := newReconciler()
-		dep := r.createTelemetryDeployment(js)
+		dep := createTelemetryDeployment(js)
 
 		container := dep.Spec.Template.Spec.Containers[0]
+		// CONTROLLER_KEY should be set for token validation
+		Expect(container.Env).To(HaveLen(1))
+		Expect(container.Env[0].Name).To(Equal("CONTROLLER_KEY"))
+		// TLS-related env vars should NOT be set
 		for _, env := range container.Env {
 			Expect(env.Name).NotTo(Equal("EXTERNAL_CERT_PEM"))
 			Expect(env.Name).NotTo(Equal("EXTERNAL_KEY_PEM"))
 		}
-		Expect(container.VolumeMounts).To(BeEmpty())
-		Expect(dep.Spec.Template.Spec.Volumes).To(BeEmpty())
+		Expect(container.VolumeMounts).To(BeNil())
+		Expect(dep.Spec.Template.Spec.Volumes).To(BeNil())
 	})
 
-	It("uses the same service account as the controller deployment", func() {
+	It("uses a dedicated service account separate from the controller", func() {
 		spec := makeJumpstarterSpec()
 		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
 			Enabled: true,
@@ -522,14 +452,15 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			Namespace: crNamespace,
 		}, telemetryDep)).To(Succeed())
 
-		controllerDep := &appsv1.Deployment{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{
-			Name:      crName + "-controller",
-			Namespace: crNamespace,
-		}, controllerDep)).To(Succeed())
+		expectedSA := crName + telemetrySASuffix
+		Expect(telemetryDep.Spec.Template.Spec.ServiceAccountName).To(Equal(expectedSA))
 
-		Expect(telemetryDep.Spec.Template.Spec.ServiceAccountName).To(
-			Equal(controllerDep.Spec.Template.Spec.ServiceAccountName))
+		By("verifying the dedicated ServiceAccount exists with no RBAC bindings")
+		sa := &corev1.ServiceAccount{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      expectedSA,
+			Namespace: crNamespace,
+		}, sa)).To(Succeed())
 	})
 
 	It("updates the deployment when the CR spec changes", func() {
@@ -593,12 +524,12 @@ var _ = Describe("telemetryLabels", func() {
 	})
 })
 
-var _ = Describe("GetTelemetryCertSecretName", func() {
+var _ = Describe("getTelemetryCertSecretName", func() {
 	It("returns the correct secret name", func() {
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: "jumpstarter"},
 		}
-		Expect(GetTelemetryCertSecretName(js)).To(Equal("jumpstarter-telemetry-tls"))
+		Expect(getTelemetryCertSecretName(js)).To(Equal("jumpstarter-telemetry-tls"))
 	})
 })
 
@@ -750,5 +681,72 @@ var _ = Describe("resolveTelemetryCA", func() {
 		_, err := r.resolveTelemetryCA(ctx, js)
 		Expect(err).To(HaveOccurred())
 		Expect(strings.ToLower(err.Error())).To(ContainSubstring("not found"))
+	})
+
+	It("returns an error when the CA secret exists but is missing tls.crt", func() {
+		By("creating a CA secret without tls.crt key")
+		caSecretName := "test-ca-no-cert" + caCertificateSuffix
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: caSecretName, Namespace: crNamespace},
+			Data:       map[string][]byte{"other-key": []byte("some-data")},
+		})).To(Succeed())
+
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-ca-no-cert", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: true},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		_, err := r.resolveTelemetryCA(ctx, js)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("missing tls.crt"))
+	})
+
+	It("returns ('', nil) when an external IssuerRef has a nil CABundle", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-ca-no-bundle", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{
+					Enabled: true,
+					Server: &operatorv1alpha1.ServerCertConfig{
+						IssuerRef: &operatorv1alpha1.IssuerReference{
+							Name: "my-issuer",
+							Kind: "ClusterIssuer",
+							// CABundle intentionally nil
+						},
+					},
+				},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		ca, err := r.resolveTelemetryCA(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ca).To(BeEmpty())
+	})
+
+	It("returns ('', nil) when an external IssuerRef has an empty CABundle", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-ca-empty-bundle", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{
+					Enabled: true,
+					Server: &operatorv1alpha1.ServerCertConfig{
+						IssuerRef: &operatorv1alpha1.IssuerReference{
+							Name:     "my-issuer",
+							Kind:     "ClusterIssuer",
+							CABundle: []byte{},
+						},
+					},
+				},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		ca, err := r.resolveTelemetryCA(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ca).To(BeEmpty())
 	})
 })
