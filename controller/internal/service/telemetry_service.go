@@ -32,6 +32,7 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // JEP-0013 limits for extra_fields, mirroring the client-side limits.
@@ -97,9 +98,12 @@ func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest
 	}
 	claimedNamespace := parts[1]
 	claimedName := parts[2]
+	if claimedNamespace == "" || claimedName == "" {
+		return nil, status.Errorf(codes.PermissionDenied, "token has incomplete exporter identity")
+	}
 
-	// Use a plain logger — the entry's own component field carries the source identity.
-	logger := ctrl.Log.WithName("telemetry")
+	// Use context-based logger so tests can inject their own via logf.IntoContext.
+	logger := log.FromContext(ctx).WithName("telemetry")
 
 	entries := req.Entries
 	var dropped uint32
@@ -122,13 +126,15 @@ func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest
 			continue
 		}
 
+		// Always log the authenticated identity. After the mismatch checks
+		// above, any non-empty entry fields already match the token; using
+		// the token values makes the server the source of truth for Loki
+		// stream labels even when the entry omitted them.
 		kvs := []any{
 			"component", entry.Component,
-			"exporter", entry.Exporter,
+			"exporter", claimedName,
+			"namespace", claimedNamespace,
 			"severity", entry.Severity,
-		}
-		if entry.Namespace != "" {
-			kvs = append(kvs, "namespace", entry.Namespace)
 		}
 		if entry.Timestamp != nil {
 			kvs = append(kvs, "ts", entry.Timestamp.AsTime().Format(time.RFC3339Nano))

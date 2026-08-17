@@ -17,6 +17,7 @@ limitations under the License.
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -26,6 +27,8 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc/metadata"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 // testSigner returns a deterministic Signer built from a fixed seed for use in tests.
@@ -265,6 +268,40 @@ func TestTelemetryService_PushLogs_RejectsNonExporterToken(t *testing.T) {
 	}
 }
 
+func TestTelemetryService_PushLogs_RejectsEmptyNamespaceInToken(t *testing.T) {
+	signer := testSigner(t)
+	svc := &TelemetryService{BindAddr: ":0", Signer: signer}
+	// Token with empty namespace: exporter::my-exporter:uid1
+	ctx := authedCtx(t, signer, "exporter::my-exporter:uid1")
+
+	_, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{
+		{Severity: "info", Message: "test"},
+	}})
+	if err == nil {
+		t.Fatal("expected PushLogs to reject token with empty namespace")
+	}
+	if !strings.Contains(err.Error(), "incomplete exporter identity") {
+		t.Errorf("expected 'incomplete exporter identity' in error, got: %v", err)
+	}
+}
+
+func TestTelemetryService_PushLogs_RejectsEmptyExporterNameInToken(t *testing.T) {
+	signer := testSigner(t)
+	svc := &TelemetryService{BindAddr: ":0", Signer: signer}
+	// Token with empty exporter name: exporter:my-namespace::uid1
+	ctx := authedCtx(t, signer, "exporter:my-namespace::uid1")
+
+	_, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{
+		{Severity: "info", Message: "test"},
+	}})
+	if err == nil {
+		t.Fatal("expected PushLogs to reject token with empty exporter name")
+	}
+	if !strings.Contains(err.Error(), "incomplete exporter identity") {
+		t.Errorf("expected 'incomplete exporter identity' in error, got: %v", err)
+	}
+}
+
 func TestTelemetryService_PushLogs_RejectsWrongExporter(t *testing.T) {
 	signer := testSigner(t)
 	svc := &TelemetryService{BindAddr: ":0", Signer: signer}
@@ -325,6 +362,49 @@ func TestTelemetryService_PushLogs_AcceptsMatchingNamespaceAndExporter(t *testin
 	}
 	if resp.Accepted != 1 {
 		t.Errorf("Accepted = %d, want 1", resp.Accepted)
+	}
+}
+
+func TestTelemetryService_PushLogs_InjectsAuthenticatedIdentityWhenOmitted(t *testing.T) {
+	// Exporter and namespace are required Loki stream labels.
+	// When entries omit these fields, the server injects the authenticated
+	// values from the token so that all log entries have proper identity context.
+
+	// Capture log output to verify injected values using context-based logging.
+	var logBuf bytes.Buffer
+	testLogger := zap.New(zap.WriteTo(&logBuf))
+
+	signer := testSigner(t)
+	svc := &TelemetryService{BindAddr: ":0", Signer: signer}
+
+	// Create context with auth token and inject test logger.
+	ctx := authedCtx(t, signer, "exporter:my-namespace:my-exporter:uid1")
+	ctx = logf.IntoContext(ctx, testLogger)
+
+	// Entry with no exporter or namespace — should be accepted and the server
+	// will inject the authenticated values (my-exporter, my-namespace) from the token.
+	entry := &pb.LogEntry{
+		Severity: "info",
+		Message:  "entry without explicit identity",
+	}
+	resp, err := svc.PushLogs(ctx, &pb.PushLogsRequest{Entries: []*pb.LogEntry{entry}})
+	if err != nil {
+		t.Fatalf("PushLogs returned unexpected error: %v", err)
+	}
+	if resp.Accepted != 1 {
+		t.Errorf("Accepted = %d, want 1 (entry should be accepted with injected identity)", resp.Accepted)
+	}
+	if resp.Dropped != 0 {
+		t.Errorf("Dropped = %d, want 0", resp.Dropped)
+	}
+
+	// Verify the injected values appear in log output.
+	logged := logBuf.String()
+	if !strings.Contains(logged, `"exporter":"my-exporter"`) {
+		t.Errorf("expected injected exporter 'my-exporter' in log output, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, `"namespace":"my-namespace"`) {
+		t.Errorf("expected injected namespace 'my-namespace' in log output, got:\n%s", logged)
 	}
 }
 

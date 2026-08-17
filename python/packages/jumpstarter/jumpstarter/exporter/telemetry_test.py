@@ -170,7 +170,7 @@ class TestPrepare:
         assert entry.namespace == "my-namespace"
 
     def test_namespace_empty_by_default(self):
-        """When no namespace is passed the field is empty and the Go identity check is skipped."""
+        """When no namespace is passed the field is empty; the telemetry service fills it from the token."""
         handler = make_handler()
         entry = handler.prepare(make_record())
         assert entry.namespace == ""
