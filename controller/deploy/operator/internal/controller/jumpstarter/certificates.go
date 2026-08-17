@@ -378,7 +378,7 @@ func (r *JumpstarterReconciler) reconcileRouterCertificate(ctx context.Context, 
 
 // reconcileTelemetryCertificate creates the TLS certificate for the telemetry service.
 func (r *JumpstarterReconciler) reconcileTelemetryCertificate(ctx context.Context, js *operatorv1alpha1.Jumpstarter, issuerRef cmmeta.ObjectReference) error {
-	certName := GetTelemetryCertSecretName(js)
+	certName := getTelemetryCertSecretName(js)
 	includeInternalNames := !isExternalIssuer(js)
 	dnsNames := r.collectTelemetryDNSNames(js, includeInternalNames)
 	return r.reconcileServerCertificate(ctx, js, issuerRef, certName, "telemetry", dnsNames, nil)
