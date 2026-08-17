@@ -45,6 +45,11 @@ from jumpstarter.metrics.registry import (
     exporter_from_log_context,
     get_registry,
 )
+from jumpstarter.streams.aiohttp import AiohttpStreamReaderStream
+from jumpstarter.streams.common import create_memory_stream
+from jumpstarter.streams.encoding import Compression, compress_stream
+from jumpstarter.streams.metadata import MetadataStream
+from jumpstarter.streams.progress import ProgressStream
 
 # Ordered most-specific first: ConnectionError is an OSError subclass.
 _DRIVER_CALL_ERRORS: tuple[tuple[type[BaseException], str, StatusCode], ...] = (
@@ -54,11 +59,6 @@ _DRIVER_CALL_ERRORS: tuple[tuple[type[BaseException], str, StatusCode], ...] = (
     (ConnectionError, "connection_error", StatusCode.UNAVAILABLE),
     (OSError, "device_error", StatusCode.INTERNAL),
 )
-from jumpstarter.streams.aiohttp import AiohttpStreamReaderStream
-from jumpstarter.streams.common import create_memory_stream
-from jumpstarter.streams.encoding import Compression, compress_stream
-from jumpstarter.streams.metadata import MetadataStream
-from jumpstarter.streams.progress import ProgressStream
 
 SUPPORTED_CONTENT_ENCODINGS = (
     {}
