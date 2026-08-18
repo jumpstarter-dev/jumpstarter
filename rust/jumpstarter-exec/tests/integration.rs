@@ -23,9 +23,27 @@ fn binary_path() -> PathBuf {
 }
 
 /// Wait (up to 10s) for the server's listening socket to appear.
-fn wait_for_socket(sock: &std::path::Path) {
+///
+/// The socket file is created synchronously by `UnixListener::bind`, so its
+/// presence is the readiness signal. If the server *process* dies before
+/// binding (spawn failure, panic, bind error), polling the file alone would
+/// block for the full deadline and then report a bare "never appeared" with no
+/// cause. So we also poll the child: on early exit, drain its stderr and fail
+/// immediately with the exit status and logs.
+fn wait_for_socket(sock: &std::path::Path, child: &mut Child) {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     while !sock.exists() {
+        if let Some(status) = child.try_wait().expect("poll server process") {
+            let mut stderr = String::new();
+            if let Some(mut err) = child.stderr.take() {
+                use std::io::Read;
+                err.read_to_string(&mut stderr).ok();
+            }
+            panic!(
+                "server process exited early ({status}) before creating socket {}; stderr:\n{stderr}",
+                sock.display()
+            );
+        }
         assert!(
             std::time::Instant::now() < deadline,
             "server socket never appeared at {}",
@@ -43,7 +61,7 @@ fn start_server_process() -> (Child, TempDir, String) {
     let sock = dir.path().join("e2e.sock");
     let path = sock.to_str().unwrap().to_string();
 
-    let child = Command::new(binary_path())
+    let mut child = Command::new(binary_path())
         .args(["serve", "--socket", &path])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -52,7 +70,7 @@ fn start_server_process() -> (Child, TempDir, String) {
         .expect("failed to spawn jumpstarter-exec serve");
 
     // Wait for the socket to appear.
-    wait_for_socket(&sock);
+    wait_for_socket(&sock, &mut child);
 
     #[cfg(unix)]
     {
@@ -108,10 +126,41 @@ fn start_server() -> (TempDir, String) {
     let sock = dir.path().join("test.sock");
     let path = sock.to_str().unwrap().to_string();
     let p = path.clone();
+    // Propagate the serve() result (and thread panics) back so a bind failure
+    // is reported immediately instead of masquerading as a socket-wait timeout.
+    let (tx, rx) = std::sync::mpsc::channel();
     thread::spawn(move || {
-        server::serve(&p).ok();
+        let _ = tx.send(server::serve(&p));
     });
-    thread::sleep(Duration::from_millis(100));
+    // Wait until the server thread has bound (the socket file appears) rather
+    // than assuming a fixed delay is enough — a blind sleep flakes under CPU
+    // starvation, where the thread may not reach bind() in time.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !sock.exists() {
+        match rx.try_recv() {
+            // serve() returned an error before binding (e.g. bind failed).
+            Ok(Err(e)) => panic!("in-process server failed to start: {e}"),
+            // serve() only returns Ok on shutdown; before the socket exists
+            // that means it exited without ever binding.
+            Ok(Ok(())) => panic!(
+                "in-process server exited before binding socket {}",
+                sock.display()
+            ),
+            // Sender dropped without sending: the serve thread panicked.
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => panic!(
+                "in-process server thread panicked before binding socket {}",
+                sock.display()
+            ),
+            // Still starting up.
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "in-process server socket never appeared at {}",
+            sock.display()
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
     (dir, path)
 }
 
@@ -671,7 +720,7 @@ fn e2e_debug_json_logs_commands_and_io() {
         .spawn()
         .expect("failed to spawn jumpstarter-exec serve --debug");
 
-    wait_for_socket(&sock);
+    wait_for_socket(&sock, &mut server);
 
     let (stdout, _, code) = run_exec(&path, &["echo", "hello-debug"], None);
     assert_eq!(code, 0);
@@ -741,7 +790,7 @@ fn e2e_log_fields_appear_on_every_line() {
         .spawn()
         .expect("failed to spawn serve with log fields");
 
-    wait_for_socket(&sock);
+    wait_for_socket(&sock, &mut server);
 
     let (_, _, code) = run_exec(&path, &["true"], None);
     assert_eq!(code, 0);
