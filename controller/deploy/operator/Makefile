@@ -3,13 +3,13 @@
 # To re-generate a bundle for another specific version without changing the standard setup, you can:
 # - use the VERSION as arg of the bundle target (e.g make bundle VERSION=0.0.2)
 # - use environment variables to overwrite this value (e.g export VERSION=0.0.2)
-VERSION ?= 0.9.0-rc.2
+VERSION ?= 0.9.0
 
 # REPLACES defines the previous operator version this release replaces in the OLM upgrade graph.
 # Used to generate the release-config.yaml for FBC auto-release.
 # Set to empty for the first release in a channel.
 # See: https://redhat-openshift-ecosystem.github.io/operator-pipelines/users/fbc_autorelease/
-REPLACES ?= jumpstarter-operator.v0.9.0-rc.1
+REPLACES ?= jumpstarter-operator.v0.9.0-rc.2
 
 # FBC_CHANNELS defines the FBC catalog channels for this release.
 FBC_CHANNELS ?= alpha
