@@ -22,6 +22,19 @@ fn binary_path() -> PathBuf {
     path
 }
 
+/// Wait (up to 10s) for the server's listening socket to appear.
+fn wait_for_socket(sock: &std::path::Path) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !sock.exists() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "server socket never appeared at {}",
+            sock.display()
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
 /// Start `jumpstarter-exec serve` as a real subprocess, returning the
 /// child handle, the temp dir (whose lifetime keeps the socket alive),
 /// and the socket path.
@@ -39,13 +52,7 @@ fn start_server_process() -> (Child, TempDir, String) {
         .expect("failed to spawn jumpstarter-exec serve");
 
     // Wait for the socket to appear.
-    for _ in 0..50 {
-        if sock.exists() {
-            break;
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    assert!(sock.exists(), "server socket never appeared");
+    wait_for_socket(&sock);
 
     #[cfg(unix)]
     {
@@ -664,13 +671,7 @@ fn e2e_debug_json_logs_commands_and_io() {
         .spawn()
         .expect("failed to spawn jumpstarter-exec serve --debug");
 
-    for _ in 0..50 {
-        if sock.exists() {
-            break;
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    assert!(sock.exists(), "server socket never appeared");
+    wait_for_socket(&sock);
 
     let (stdout, _, code) = run_exec(&path, &["echo", "hello-debug"], None);
     assert_eq!(code, 0);
@@ -740,13 +741,7 @@ fn e2e_log_fields_appear_on_every_line() {
         .spawn()
         .expect("failed to spawn serve with log fields");
 
-    for _ in 0..50 {
-        if sock.exists() {
-            break;
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    assert!(sock.exists(), "server socket never appeared");
+    wait_for_socket(&sock);
 
     let (_, _, code) = run_exec(&path, &["true"], None);
     assert_eq!(code, 0);
