@@ -137,6 +137,9 @@ pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> 
         "listening",
         &[("socket", json!(socket_path)), ("debug", json!(opts.debug))],
     );
+    // Ensure listening log is flushed so tests that poll the socket get
+    // visible evidence that the server is ready.
+    let _ = std::io::stderr().flush();
 
     while !state.is_shutdown() {
         match listener.accept() {
@@ -366,9 +369,8 @@ fn handle_exec(
                 _ => {}
             }
         }
-        if !reaped_ref.load(Ordering::Acquire) {
-            unsafe { kill(pid as i32, 15) }; // SIGTERM on client disconnect
-        }
+        // Don't kill child on client disconnect; let it finish naturally.
+        // The main thread will reap it with wait() after forwarding threads exit.
     });
 
     let status = child.wait()?;
