@@ -1,0 +1,35 @@
+---
+description: keep e2e README synchronized with e2e tests and runners
+alwaysApply: false
+---
+# E2E Documentation Synchronization
+
+Keep `e2e/README.md` synchronized with the current E2E test implementation.
+
+## When This Rule Applies
+
+Apply this rule whenever changes touch E2E behavior or execution paths, especially:
+
+- `e2e/test/*.go` (new/renamed/removed lanes, labels, or specs)
+- `e2e/setup-e2e.sh`, `e2e/run-e2e.sh`, `e2e/compat/*.sh`
+- `.github/workflows/e2e.yaml`
+- `Makefile` E2E targets
+- E2E manifests/configs that alter prerequisites or expected checks
+
+## Required Updates
+
+When E2E behavior changes, update `e2e/README.md` in the same PR:
+
+1. Keep lane names, labels, and source files accurate.
+2. Keep each test row aligned with real prerequisites, steps, and pass checks.
+3. Keep global setup/run prerequisites and CI execution notes current.
+4. Keep compatibility versions and skip conditions in sync with code/workflows.
+
+## Validation Checklist
+
+Before finishing:
+
+- Verify `Describe(... Label(...))` and `It("...")` names match README entries.
+- Verify commands/flags in README match scripts and tests.
+- Prefer concrete resource names over shorthand aliases.
+- If the PR is docs-only, still cross-check against current `e2e/test` sources.
