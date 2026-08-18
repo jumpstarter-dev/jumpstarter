@@ -3,7 +3,7 @@ module github.com/jumpstarter-dev/jumpstarter/controller
 go 1.24.0
 
 require (
-	filippo.io/keygen v0.0.0-20240718133620-7f162efbbd87
+	filippo.io/keygen v1.0.0
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-jose/go-jose/v4 v4.1.3
 	github.com/go-logr/logr v1.4.3
@@ -31,7 +31,7 @@ require (
 
 require (
 	cel.dev/expr v0.25.1 // indirect
-	filippo.io/bigmod v0.0.3 // indirect
+	filippo.io/bigmod v0.1.1-0.20260103110540-f8a47775ebe5 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
