@@ -46,7 +46,7 @@ var _ = Describe("createControllerDeployment metrics bind", func() {
 	})
 
 	It("exposes -metrics-bind-address=:8080 and metrics port 8080", func() {
-		dep := r.createControllerDeployment(js, "testhash")
+		dep := r.createControllerDeployment(js, "testhash", "")
 		Expect(dep).NotTo(BeNil())
 		Expect(dep.Spec.Template.Spec.Containers).NotTo(BeEmpty())
 
