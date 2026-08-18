@@ -1,5 +1,6 @@
 ---
 description: keep e2e README synchronized with e2e tests and runners
+globs: e2e/test/*.go,e2e/setup-e2e.sh,e2e/run-e2e.sh,e2e/lib/*.sh,e2e/compat/*.sh,e2e/manifests/*.yaml,e2e/exporters/*.yaml,.github/actions/**/*,.github/workflows/e2e.yaml,Makefile,e2e/README.md
 alwaysApply: false
 ---
 # E2E Documentation Synchronization
