@@ -17,6 +17,7 @@ from pydantic import validate_call
 from .adapter import AsyncFileStream
 from .common import Capability, HashAlgo, Metadata, Mode, PresignedRequest
 from jumpstarter.driver import Driver, export
+from jumpstarter.streams.encoding import AutoDecompressIterator
 
 
 @dataclass(kw_only=True)
@@ -390,7 +391,9 @@ class MockStorageMux(StorageMuxInterface, Driver):
     async def write(self, src: str):
         async with await FileWriteStream.from_path(self.file.name) as stream:
             async with self.resource(src) as res:
-                async for chunk in res:
+                # match write_to_storage_device: compressed images are
+                # detected by file signature and decompressed transparently
+                async for chunk in AutoDecompressIterator(source=res):
                     await stream.send(chunk)
 
     @export
