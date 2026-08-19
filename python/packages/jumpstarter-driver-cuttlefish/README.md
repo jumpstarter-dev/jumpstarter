@@ -170,10 +170,11 @@ export:
 | adb_server_port | ADB server port on the exporter     | int  | no       | 15037       |
 | boot_timeout    | Seconds to wait for boot on power on| int  | no       | 300         |
 | env_config      | Default env_config for CVD creation | dict | no       | {}          |
+| artifacts_dir   | Directory the storage child stages build artifacts into (the directory `env_config` reads the build from). Unset disables `flash`. | str  | no       | ""          |
 
 This is a **composite driver** with three children:
 - **power** — `VirtualPowerInterface`: `j power on`, `j power off [--destroy]`, `j power cycle`
-- **storage** — `FlasherInterface`: not yet implemented (planned: HO artifact upload API)
+- **storage** — `FlasherInterface`: `j storage flash` stages CVD build artifacts into `artifacts_dir` — the image zip (`<product>-img[-<build>].zip`) and the host package (`cvd-host_package.tar.gz`), each detected from its magic bytes. Sources may be local files or HTTP(S) URLs (downloaded by the exporter). A first boot needs both: `j storage flash -t image:<img.zip> -t host_package:cvd-host_package.tar.gz`, then `j power on`.
 - **adb** — ADB server for device communication
 
 The exporter config also typically includes sibling drivers:

@@ -1,11 +1,14 @@
 import json
 import subprocess
+import tarfile
+import zipfile
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 
 from .driver import Cuttlefish, CuttlefishError, CuttlefishTimeout
+from jumpstarter.common.utils import serve
 
 BASE = "http://localhost:2080"
 
@@ -487,10 +490,121 @@ def test_cvd_power_read_not_implemented(drv):
         list(power.read())
 
 
-def test_cvd_flasher_flash_not_implemented(drv):
-    flasher = drv.children["storage"]
-    with pytest.raises(NotImplementedError):
-        flasher.flash("source")
+def _serve_flasher(artifacts_dir):
+    """A served Cuttlefish client whose flasher stages into artifacts_dir."""
+    return serve(Cuttlefish(group="cvd_1", name="dev1", artifacts_dir=str(artifacts_dir)))
+
+
+def _flash_error(client, *args, **kwargs) -> str:
+    """Flash expecting failure; return every exception message, flattened.
+
+    A driver-side error can surface bare or wrapped in an ExceptionGroup,
+    depending on whether the resource-forwarding task was still running when
+    the call failed — so tests match on the flattened messages, not the type.
+    """
+
+    def messages(exc):
+        if isinstance(exc, BaseExceptionGroup):
+            return "; ".join(messages(e) for e in exc.exceptions)
+        return str(exc)
+
+    try:
+        with pytest.raises(BaseException) as ei:
+            client.storage.flash(*args, **kwargs)
+    finally:
+        # A flash that dies mid-transfer leaks the client's rich live
+        # progress display, and the next flash in the test run then fails
+        # with "Only one live display may be requested at a time".
+        from rich import get_console
+
+        get_console().clear_live()
+    return messages(ei.value)
+
+
+def _image_zip(tmp_path, names=("super.img", "boot.img")):
+    path = tmp_path / "aosp_cf_x86_64_auto-img-1234.zip"
+    with zipfile.ZipFile(path, "w") as z:
+        for name in names:
+            z.writestr(name, f"contents of {name}")
+    return path
+
+
+def _host_package(tmp_path):
+    path = tmp_path / "cvd-host_package.tar.gz"
+    payload = tmp_path / "cvd"
+    payload.write_bytes(b"#!/bin/sh\n")
+    payload.chmod(0o755)
+    with tarfile.open(path, "w:gz") as t:
+        t.add(payload, arcname="bin/cvd")
+    return path
+
+
+def test_cvd_flasher_flash_image(tmp_path, drv):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    with _serve_flasher(artifacts) as client:
+        client.storage.flash(_image_zip(tmp_path))
+    assert (artifacts / "super.img").read_text() == "contents of super.img"
+    assert (artifacts / "boot.img").exists()
+    # nothing staged is left behind
+    assert not list(artifacts.glob(".cvd-flash-*"))
+
+
+def test_cvd_flasher_flash_host_package(tmp_path, drv):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    with _serve_flasher(artifacts) as client:
+        client.storage.flash(_host_package(tmp_path), target="host_package")
+    extracted = artifacts / "bin" / "cvd"
+    assert extracted.read_bytes() == b"#!/bin/sh\n"
+    assert extracted.stat().st_mode & 0o100  # owner exec survives the data filter
+
+
+def test_cvd_flasher_reflash_overwrites(tmp_path, drv):
+    """A second flash replaces existing files (fresh inodes, not ETXTBSY)."""
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "super.img").write_text("stale")
+    before = (artifacts / "super.img").stat().st_ino
+    with _serve_flasher(artifacts) as client:
+        client.storage.flash(_image_zip(tmp_path))
+    after = artifacts / "super.img"
+    assert after.read_text() == "contents of super.img"
+    assert after.stat().st_ino != before
+
+
+def test_cvd_flasher_target_mismatch(tmp_path, drv):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    with _serve_flasher(artifacts) as client:
+        assert "was detected as 'image'" in _flash_error(client, _image_zip(tmp_path), target="host_package")
+
+
+def test_cvd_flasher_unknown_target(tmp_path, drv):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    with _serve_flasher(artifacts) as client:
+        assert "unknown flash target" in _flash_error(client, _image_zip(tmp_path), target="bootloader")
+
+
+def test_cvd_flasher_unrecognized_archive(tmp_path, drv):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    junk = tmp_path / "junk.bin"
+    junk.write_bytes(b"\x00\x01\x02\x03garbage")
+    with _serve_flasher(artifacts) as client:
+        assert "unrecognized artifact" in _flash_error(client, junk)
+    assert not list(artifacts.iterdir())
+
+
+def test_cvd_flasher_artifacts_dir_unset(tmp_path, drv):
+    with serve(Cuttlefish(group="cvd_1", name="dev1")) as client:
+        assert "artifacts_dir is not configured" in _flash_error(client, _image_zip(tmp_path))
+
+
+def test_cvd_flasher_artifacts_dir_missing(tmp_path, drv):
+    with _serve_flasher(tmp_path / "nonexistent") as client:
+        assert "does not exist on the exporter" in _flash_error(client, _image_zip(tmp_path))
 
 
 def test_cvd_flasher_dump_not_implemented(drv):

@@ -1,10 +1,16 @@
 import json
 import subprocess
+import tarfile
+import tempfile
 import time
+import zipfile
 from collections.abc import Generator
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import requests
+from anyio import to_thread
+from anyio.streams.file import FileWriteStream
 from jumpstarter_driver_adb.driver import AdbServer
 from jumpstarter_driver_power.driver import PowerReading, VirtualPowerInterface
 
@@ -38,6 +44,7 @@ class Cuttlefish(Driver):
     adb_server_port: int = 15037
     boot_timeout: int = 300
     env_config: dict = field(default_factory=dict)
+    artifacts_dir: str = ""
     webrtc_url: str = ""
     _cvd_group: str | None = field(default=None, init=False, repr=False)
     _cvd_name: str | None = field(default=None, init=False, repr=False)
@@ -397,7 +404,10 @@ class CvdPower(VirtualPowerInterface, Driver):
             self.logger.info("Creating CVD from env_config")
             try:
                 result = self.parent._do_operation(
-                    "POST", "/cvds", {"env_config": self.parent.env_config}, timeout=600,
+                    "POST",
+                    "/cvds",
+                    {"env_config": self.parent.env_config},
+                    timeout=600,
                 )
             except CuttlefishError as e:
                 msg = str(e)
@@ -449,19 +459,106 @@ class CvdPower(VirtualPowerInterface, Driver):
         raise NotImplementedError("no power telemetry for virtual devices")
 
 
+ZIP_MAGIC = b"PK\x03\x04"
+GZIP_MAGIC = b"\x1f\x8b"
+
+
 @dataclass(kw_only=True)
 class CvdFlasher(FlasherInterface, Driver):
-    """Flasher for Cuttlefish devices (not yet implemented).
+    """Flasher for Cuttlefish devices.
 
-    Planned: upload artifacts to Host Orchestrator via its upload API.
+    "Flashing" a CVD is staging its build artifacts: the image zip
+    (``<product>-img[-<build>].zip``) and the host package
+    (``cvd-host_package.tar.gz``) are extracted into the directory named by
+    the parent driver's ``artifacts_dir`` config — the directory its
+    ``env_config`` should reference as the build source. The next
+    ``power.on()`` creates the CVD from whatever is staged there; flashing
+    does not itself stop or restart a running device.
+
+    Sources may be local files (streamed from the client) or HTTP(S) URLs
+    (downloaded by the exporter). The archive kind is detected from its magic
+    bytes — zip means image set, gzip means host package tar — and an explicit
+    target ("image" or "host_package") only validates that detection. A first
+    boot needs both archives::
+
+        j storage flash -t image:aosp_cf_x86_64_auto-img-1234.zip \\
+                        -t host_package:cvd-host_package.tar.gz
     """
 
     parent: Cuttlefish
 
     @export
-    def flash(self, source, target: str | None = None) -> None:
-        raise NotImplementedError("CvdFlasher.flash() not yet implemented")
+    async def flash(self, source, target: str | None = None) -> None:
+        if target not in (None, "image", "host_package"):
+            raise CuttlefishError(f"unknown flash target {target!r} (expected 'image' or 'host_package')")
+        root = self._artifacts_root()
+        # Stage next to the destination so the temp file shares its
+        # filesystem (and its free-space budget) with the extraction.
+        with tempfile.NamedTemporaryFile(dir=root, prefix=".cvd-flash-", delete=False) as tmp:
+            staged = Path(tmp.name)
+        try:
+            async with await FileWriteStream.from_path(staged) as stream:
+                async with self.resource(source) as res:
+                    async for chunk in res:
+                        await stream.send(chunk)
+            await to_thread.run_sync(self._extract, staged, root, target)
+        finally:
+            staged.unlink(missing_ok=True)
 
     @export
     def dump(self, target, partition: str | None = None) -> None:
         raise NotImplementedError("dump not supported for Cuttlefish devices")
+
+    def _artifacts_root(self) -> Path:
+        configured = self.parent.artifacts_dir
+        if not configured:
+            raise CuttlefishError(
+                "artifacts_dir is not configured on the cuttlefish driver — "
+                "set it to the directory env_config reads the build artifacts from"
+            )
+        root = Path(configured)
+        if not root.is_dir():
+            raise CuttlefishError(f"artifacts_dir {configured} does not exist on the exporter")
+        return root
+
+    def _extract(self, staged: Path, root: Path, target: str | None) -> None:
+        with staged.open("rb") as f:
+            magic = f.read(4)
+        if magic.startswith(ZIP_MAGIC):
+            kind = "image"
+        elif magic.startswith(GZIP_MAGIC):
+            kind = "host_package"
+        else:
+            raise CuttlefishError("unrecognized artifact: expected a CVD image zip or a gzipped host package tar")
+        if target is not None and target != kind:
+            raise CuttlefishError(f"target {target!r} given but the archive was detected as {kind!r}")
+
+        if kind == "image":
+            with zipfile.ZipFile(staged) as z:
+                names = [i.filename for i in z.infolist() if not i.is_dir()]
+                self._unlink_existing(root, names)
+                self.logger.info("Extracting %d image files into %s", len(names), root)
+                z.extractall(root)
+        else:
+            with tarfile.open(staged, "r:gz") as t:
+                names = [m.name for m in t.getmembers() if m.isfile()]
+                self._unlink_existing(root, names)
+                self.logger.info("Extracting %d host package files into %s", len(names), root)
+                t.extractall(root, filter="data")
+
+    def _unlink_existing(self, root: Path, names: list[str]) -> None:
+        """Remove regular files the extraction is about to overwrite.
+
+        A still-running CVD keeps binaries executing out of the artifacts
+        directory, and opening one for writing fails with ETXTBSY — while
+        unlinking it is always legal. Re-flashing therefore gives every file
+        a fresh inode instead of failing on whichever file happens to be
+        executing.
+        """
+        resolved_root = root.resolve()
+        for name in names:
+            dest = (root / name).resolve()
+            if not dest.is_relative_to(resolved_root):
+                continue  # extractall sanitizes such members; never touch paths outside root
+            if dest.is_file() and not dest.is_symlink():
+                dest.unlink(missing_ok=True)
