@@ -11,6 +11,8 @@ from anyio import create_task_group, open_signal_receiver
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
 
+from jumpstarter.metrics import start_metrics_server
+
 logger = logging.getLogger(__name__)
 
 
@@ -106,8 +108,6 @@ def _handle_child(  # noqa: C901
 
             # Start signal handler immediately
             signal_tg.start_soon(signal_handler)
-
-            from jumpstarter.metrics import start_metrics_server
 
             listen_addr, shutdown_metrics = start_metrics_server(metrics_bind_address)
             if listen_addr:
