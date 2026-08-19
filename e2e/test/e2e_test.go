@@ -73,6 +73,13 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, fu
 		It("can create clients with admin cli", func() {
 			ns := Namespace()
 
+			// Idempotent under flake-retries: a prior failed attempt may have
+			// left some of these clients behind, which would fail re-creation
+			// with AlreadyExists.
+			for _, name := range []string{"test-client-oidc", "test-client-sa", "test-client-legacy"} {
+				EnsureClientDeleted(ns, name)
+			}
+
 			out, err := Jmp("admin", "create", "client", "-n", ns, "test-client-oidc",
 				"--unsafe", "--nointeractive", "--oidc-username", "dex:test-client-oidc")
 			Expect(err).NotTo(HaveOccurred(), out)
@@ -93,6 +100,11 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, fu
 
 		It("can create exporters with admin cli", func() {
 			ns := Namespace()
+
+			// Idempotent under flake-retries (see client creation above).
+			for _, name := range []string{"test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy"} {
+				EnsureExporterDeleted(ns, name)
+			}
 
 			out, err := Jmp("admin", "create", "exporter", "-n", ns, "test-exporter-oidc",
 				"--nointeractive", "--oidc-username", "dex:test-exporter-oidc",

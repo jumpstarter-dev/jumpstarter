@@ -346,6 +346,30 @@ func MustKubectl(args ...string) string {
 	return out
 }
 
+// EnsureClientDeleted removes any leftover client CR (and its local config file)
+// so the client-creation spec is idempotent under Ginkgo flake-retries: a prior
+// failed attempt can leave a client behind, which would make re-creation fail
+// with AlreadyExists. It ignores a missing client and waits until the CR is
+// fully gone, so a subsequent create cannot race a pending deletion.
+func EnsureClientDeleted(ns, name string) {
+	_, _ = Jmp("admin", "delete", "client", "--namespace", ns, name, "--delete")
+	EventuallyWithOffset(1, func() bool {
+		out, err := Kubectl("-n", ns, "get", "clients.jumpstarter.dev/"+name, "--ignore-not-found", "-o", "name")
+		return err == nil && strings.TrimSpace(out) == ""
+	}, defaultWaitTimeout, exporterPollPeriod).Should(BeTrue(),
+		"timed out waiting for leftover client %s to be deleted", name)
+}
+
+// EnsureExporterDeleted is the exporter counterpart of EnsureClientDeleted.
+func EnsureExporterDeleted(ns, name string) {
+	_, _ = Jmp("admin", "delete", "exporter", "--namespace", ns, name, "--delete")
+	EventuallyWithOffset(1, func() bool {
+		out, err := Kubectl("-n", ns, "get", "exporters.jumpstarter.dev/"+name, "--ignore-not-found", "-o", "name")
+		return err == nil && strings.TrimSpace(out) == ""
+	}, defaultWaitTimeout, exporterPollPeriod).Should(BeTrue(),
+		"timed out waiting for leftover exporter %s to be deleted", name)
+}
+
 // MustKubectlApply pipes a manifest to `kubectl apply -f -` and fails the test
 // on error. Use it to create a batch of fixture resources in one call; the jmp
 // admin CLI creates them one process at a time, which is far slower than the
