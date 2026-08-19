@@ -46,7 +46,7 @@ var _ = Describe("createRouterDeployment metrics bind", func() {
 	})
 
 	It("exposes metrics-bind-address=:8080 and metrics port 8080", func() {
-		dep := r.createRouterDeployment(js, 0)
+		dep := r.createRouterDeployment(js, 0, "")
 		Expect(dep).NotTo(BeNil())
 		Expect(dep.Spec.Template.Spec.Containers).NotTo(BeEmpty())
 
