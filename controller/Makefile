@@ -147,7 +147,7 @@ docker-build: ## Build docker image with the manager.
 docker-build-ci: ## Build docker images from pre-compiled host binaries (fast CI path).
 	rm -rf bin/ci-stage && mkdir -p bin/ci-stage/controller bin/ci-stage/esc
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/controller/manager cmd/main.go
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/controller/router cmd/router/main.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/controller/router ./cmd/router
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) go build -ldflags "$(LDFLAGS)" -o bin/ci-stage/esc/exporter-set-controller cmd/exporter-set-controller/main.go
 	$(CONTAINER_TOOL) build --build-arg BIN=manager -t $(IMG) -f Containerfile.prebuilt bin/ci-stage/controller
 	$(CONTAINER_TOOL) build --build-arg BIN=exporter-set-controller -t $(EXPORTER_SET_CONTROLLER_IMG) -f Containerfile.prebuilt bin/ci-stage/esc
