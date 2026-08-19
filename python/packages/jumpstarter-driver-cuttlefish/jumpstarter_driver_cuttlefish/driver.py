@@ -1,3 +1,4 @@
+import fnmatch
 import json
 import subprocess
 import tarfile
@@ -13,7 +14,9 @@ from anyio import to_thread
 from anyio.streams.file import FileWriteStream
 from jumpstarter_driver_adb.driver import AdbServer
 from jumpstarter_driver_power.driver import PowerReading, VirtualPowerInterface
+from oras.provider import Registry
 
+from jumpstarter.common.oci import OciCredentials, resolve_oci_credentials
 from jumpstarter.driver import Driver, export
 from jumpstarter.driver.flasher import FlasherInterface
 
@@ -45,6 +48,10 @@ class Cuttlefish(Driver):
     boot_timeout: int = 300
     env_config: dict = field(default_factory=dict)
     artifacts_dir: str = ""
+    # Plain HTTP for the registry `flash oci://...` pulls from. Private-CA
+    # trust needs no config here: the pull is a requests session, so the
+    # exporter's REQUESTS_CA_BUNDLE / CURL_CA_BUNDLE is honored as-is.
+    oci_insecure: bool = False
     webrtc_url: str = ""
     _cvd_group: str | None = field(default=None, init=False, repr=False)
     _cvd_name: str | None = field(default=None, init=False, repr=False)
@@ -462,6 +469,29 @@ class CvdPower(VirtualPowerInterface, Driver):
 ZIP_MAGIC = b"PK\x03\x04"
 GZIP_MAGIC = b"\x1f\x8b"
 
+OCI_SCHEME = "oci://"
+FLASH_TARGETS = ("image", "host_package")
+
+# Name patterns used ONLY to break a tie when a bundle carries more than one
+# archive of a kind (an AAOS bundle often ships otatools.zip beside the image
+# zip). `*-img*.zip` deliberately matches both spellings: a local `cvd fetch`
+# build writes `<product>-img.zip`, a published build `<product>-img-<n>.zip`.
+ARTIFACT_GLOBS = {
+    "image": "*-img*.zip",
+    "host_package": "cvd-host_package.tar.gz",
+}
+
+
+def _sniff_kind(path: Path) -> str | None:
+    """Classify a CVD artifact by magic bytes: zip = image set, gzip = host package."""
+    with path.open("rb") as f:
+        magic = f.read(4)
+    if magic.startswith(ZIP_MAGIC):
+        return "image"
+    if magic.startswith(GZIP_MAGIC):
+        return "host_package"
+    return None
+
 
 @dataclass(kw_only=True)
 class CvdFlasher(FlasherInterface, Driver):
@@ -475,22 +505,37 @@ class CvdFlasher(FlasherInterface, Driver):
     ``power.on()`` creates the CVD from whatever is staged there; flashing
     does not itself stop or restart a running device.
 
-    Sources may be local files (streamed from the client) or HTTP(S) URLs
-    (downloaded by the exporter). The archive kind is detected from its magic
-    bytes — zip means image set, gzip means host package tar — and an explicit
-    target ("image" or "host_package") only validates that detection. A first
-    boot needs both archives::
+    Sources may be local files (streamed from the client), HTTP(S) URLs
+    (downloaded by the exporter) or an ``oci://`` reference to a published
+    CVD bundle (pulled by the exporter). The archive kind is detected from its
+    magic bytes — zip means image set, gzip means host package tar — and an
+    explicit target ("image" or "host_package") only validates that detection.
+    A first boot needs both archives::
 
         j storage flash -t image:aosp_cf_x86_64_auto-img-1234.zip \\
                         -t host_package:cvd-host_package.tar.gz
+
+    A bundle carries both, so one reference is a whole flash::
+
+        j storage flash oci://quay.io/org/aaos-cvd:1234
     """
 
     parent: Cuttlefish
 
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_cuttlefish.client.CvdFlasherClient"
+
     @export
     async def flash(self, source, target: str | None = None) -> None:
-        if target not in (None, "image", "host_package"):
-            raise CuttlefishError(f"unknown flash target {target!r} (expected 'image' or 'host_package')")
+        # oci:// is a source SCHEME, not a resource handle: the bundle is
+        # pulled exporter-side and its members handed to the same staging
+        # path a streamed file takes. CvdFlasherClient routes oci:// straight
+        # to flash_oci, so this branch is for programmatic callers.
+        if isinstance(source, str) and source.startswith(OCI_SCHEME):
+            await self.flash_oci(source, target)
+            return
+        self._validate_target(target)
         root = self._artifacts_root()
         # Stage next to the destination so the temp file shares its
         # filesystem (and its free-space budget) with the extraction.
@@ -506,8 +551,129 @@ class CvdFlasher(FlasherInterface, Driver):
             staged.unlink(missing_ok=True)
 
     @export
+    async def flash_oci(
+        self,
+        oci_url: str,
+        target: str | None = None,
+        oci_username: str | None = None,
+        oci_password: str | None = None,
+    ) -> list[str]:
+        """Stage a published CVD bundle, pulled exporter-side.
+
+        A CVD bundle is ONE OCI artifact carrying BOTH build artifacts as
+        layers — the image zip and ``cvd-host_package.tar.gz``. So the whole
+        bundle is pulled and both artifacts are located inside it, rather than
+        the caller naming a layer per target: a published build is already a
+        complete flash, and asking for its two halves by name would only be a
+        way to get one of them wrong::
+
+            j storage flash oci://quay.io/org/aaos-cvd:1234
+
+        The two-target form keeps the meaning it has for loose files — naming
+        one target narrows the bundle to that artifact. ``-t image:oci://…``
+        stages only the image zip and leaves the staged host package alone,
+        which is the fast path when only the build changed.
+
+        Artifacts are picked out of the bundle by magic bytes, never by
+        globbing its file names: a local ``cvd fetch`` build writes
+        ``<product>-img.zip`` while a published one writes
+        ``<product>-img-<build>.zip``, and a glob that knows only one of those
+        silently stages nothing. Names are consulted only to break a tie when
+        a bundle carries several archives of a kind.
+
+        A bundle carrying only one of the two is staged and warned about, not
+        refused: re-staging just the image over an already-staged host package
+        is the normal inner loop. It is only a FIRST boot that needs both, and
+        this driver cannot tell a first boot from a re-flash — the warning
+        names what is missing so a bare artifacts_dir fails loudly at
+        ``power.on()`` rather than mysteriously.
+
+        Args:
+            oci_url: bundle reference (must start with ``oci://``)
+            target: stage only this kind ("image" or "host_package")
+            oci_username: registry username for OCI authentication
+            oci_password: registry password for OCI authentication
+
+        Returns:
+            The kinds staged, e.g. ``["image", "host_package"]``.
+        """
+        if not oci_url.startswith(OCI_SCHEME):
+            raise CuttlefishError(f"OCI URL must start with oci://, got: {oci_url}")
+        self._validate_target(target)
+        root = self._artifacts_root()
+        creds = resolve_oci_credentials(oci_url, username=oci_username, password=oci_password)
+
+        # Pull inside artifacts_dir, for the same reason the streamed path
+        # stages its temp file there: one filesystem, one free-space budget,
+        # and the pulled copy is gone before flash returns.
+        with tempfile.TemporaryDirectory(dir=root, prefix=".cvd-oci-") as tmp:
+            pulled = Path(tmp)
+            await to_thread.run_sync(self._pull_bundle, oci_url, creds, pulled)
+            found = await to_thread.run_sync(self._select_bundle_artifacts, pulled)
+            wanted = FLASH_TARGETS if target is None else (target,)
+            staged = [kind for kind in wanted if kind in found]
+            if not staged:
+                raise CuttlefishError(
+                    f"{oci_url} carries no {' or '.join(wanted)} artifact "
+                    f"(found: {', '.join(sorted(p.name for p in found.values())) or 'nothing recognizable'})"
+                )
+            for kind in staged:
+                await to_thread.run_sync(self._extract, found[kind], root, kind)
+
+        missing = [kind for kind in wanted if kind not in found]
+        if missing:
+            self.logger.warning(
+                "%s carried no %s — a first boot needs both the image zip and the host package",
+                oci_url,
+                " or ".join(missing),
+            )
+        return staged
+
+    @export
     def dump(self, target, partition: str | None = None) -> None:
         raise NotImplementedError("dump not supported for Cuttlefish devices")
+
+    def _validate_target(self, target: str | None) -> None:
+        if target not in (None, *FLASH_TARGETS):
+            raise CuttlefishError(f"unknown flash target {target!r} (expected 'image' or 'host_package')")
+
+    def _pull_bundle(self, oci_url: str, creds: OciCredentials, outdir: Path) -> None:
+        reference = oci_url[len(OCI_SCHEME) :]
+        registry = Registry(insecure=self.parent.oci_insecure)
+        if creds.is_authenticated:
+            # set_basic_auth, not login(): login() drives a docker client and
+            # writes the host's auth file, neither of which an exporter has.
+            registry.auth.set_basic_auth(creds.username, creds.plain_password)
+        self.logger.info("Pulling CVD bundle %s", reference)
+        registry.pull(target=reference, outdir=str(outdir))
+
+    def _select_bundle_artifacts(self, pulled: Path) -> dict[str, Path]:
+        """Find the image zip and the host package in a pulled bundle.
+
+        The tree is walked rather than reading pull()'s return value: a
+        directory-media-type layer is unpacked in place, so what lands on disk
+        is not always what was named in the manifest.
+        """
+        candidates: dict[str, list[Path]] = {kind: [] for kind in FLASH_TARGETS}
+        for path in sorted(p for p in pulled.rglob("*") if p.is_file() and not p.is_symlink()):
+            kind = _sniff_kind(path)
+            if kind is not None:
+                candidates[kind].append(path)
+
+        found: dict[str, Path] = {}
+        for kind, paths in candidates.items():
+            if len(paths) == 1:
+                found[kind] = paths[0]
+            elif len(paths) > 1:
+                preferred = [p for p in paths if fnmatch.fnmatch(p.name, ARTIFACT_GLOBS[kind])]
+                if len(preferred) != 1:
+                    raise CuttlefishError(
+                        f"bundle carries {len(paths)} candidate {kind} archives "
+                        f"({', '.join(p.name for p in paths)}) and none is unambiguously "
+                        f"{ARTIFACT_GLOBS[kind]} — flash the one you want as a file instead"
+                    )
+                found[kind] = preferred[0]
+        return found
 
     def _artifacts_root(self) -> Path:
         configured = self.parent.artifacts_dir
@@ -522,13 +688,8 @@ class CvdFlasher(FlasherInterface, Driver):
         return root
 
     def _extract(self, staged: Path, root: Path, target: str | None) -> None:
-        with staged.open("rb") as f:
-            magic = f.read(4)
-        if magic.startswith(ZIP_MAGIC):
-            kind = "image"
-        elif magic.startswith(GZIP_MAGIC):
-            kind = "host_package"
-        else:
+        kind = _sniff_kind(staged)
+        if kind is None:
             raise CuttlefishError("unrecognized artifact: expected a CVD image zip or a gzipped host package tar")
         if target is not None and target != kind:
             raise CuttlefishError(f"target {target!r} given but the archive was detected as {kind!r}")

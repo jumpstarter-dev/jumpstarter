@@ -6,7 +6,13 @@ import click
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_power.client import VirtualPowerClient
 
+from jumpstarter.client import FlasherClient
 from jumpstarter.client.base import StubDriverClient
+from jumpstarter.client.flasher import PathBuf
+from jumpstarter.common.exceptions import ArgumentError
+from jumpstarter.streams.encoding import Compression
+
+OCI_SCHEME = "oci://"
 
 
 def _parse(raw: str) -> dict | list | str:
@@ -74,6 +80,37 @@ class CvdPowerClient(VirtualPowerClient):
             _run_with_progress("Power cycling", lambda: self.cycle(wait))
 
         return power
+
+
+class CvdFlasherClient(FlasherClient):
+    """Flasher client for Cuttlefish, with OCI bundle support.
+
+    An ``oci://`` reference is not a path, and the generic FlasherClient would
+    resolve it as one — so it is intercepted here and handed to the driver's
+    ``flash_oci``, which pulls the bundle exporter-side. Nothing crosses the
+    client link, which is the whole point: a CVD bundle is tens of gigabytes.
+
+    Both spellings route: ``flash("oci://…")`` for a whole bundle, and
+    ``flash({"image": "oci://…"})`` — what ``-t image:oci://…`` parses to —
+    for one artifact out of it.
+    """
+
+    def flash(
+        self,
+        path: PathBuf | dict[str, PathBuf],
+        *,
+        target: str | None = None,
+        compression: Compression | None = None,
+    ):
+        if isinstance(path, dict):
+            if target is not None:
+                raise ArgumentError("'target' parameter is not valid when flashing multiple images")
+            return {name: self.flash(source, target=name, compression=compression) for name, source in path.items()}
+
+        if isinstance(path, str) and path.startswith(OCI_SCHEME):
+            return self.call("flash_oci", path, target)
+
+        return super().flash(path, target=target, compression=compression)
 
 
 class CuttlefishClient(CompositeClient):

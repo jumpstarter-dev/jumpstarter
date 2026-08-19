@@ -171,10 +171,11 @@ export:
 | boot_timeout    | Seconds to wait for boot on power on| int  | no       | 300         |
 | env_config      | Default env_config for CVD creation | dict | no       | {}          |
 | artifacts_dir   | Directory the storage child stages build artifacts into (the directory `env_config` reads the build from). Unset disables `flash`. | str  | no       | ""          |
+| oci_insecure    | Pull `oci://` bundles over plain HTTP. Private-CA trust needs no config here — the pull is a `requests` session, so the exporter's `REQUESTS_CA_BUNDLE` is honored. | bool | no       | false       |
 
 This is a **composite driver** with three children:
 - **power** — `VirtualPowerInterface`: `j power on`, `j power off [--destroy]`, `j power cycle`
-- **storage** — `FlasherInterface`: `j storage flash` stages CVD build artifacts into `artifacts_dir` — the image zip (`<product>-img[-<build>].zip`) and the host package (`cvd-host_package.tar.gz`), each detected from its magic bytes. Sources may be local files or HTTP(S) URLs (downloaded by the exporter). A first boot needs both: `j storage flash -t image:<img.zip> -t host_package:cvd-host_package.tar.gz`, then `j power on`.
+- **storage** — `FlasherInterface`: `j storage flash` stages CVD build artifacts into `artifacts_dir` — the image zip (`<product>-img[-<build>].zip`) and the host package (`cvd-host_package.tar.gz`), each detected from its magic bytes. Sources may be local files, HTTP(S) URLs (downloaded by the exporter) or an `oci://` reference to a published CVD bundle (pulled by the exporter). A first boot needs both artifacts: `j storage flash -t image:<img.zip> -t host_package:cvd-host_package.tar.gz`, then `j power on` — or, from a bundle carrying both, just `j storage flash oci://<registry>/<repo>:<tag>`. Naming one target narrows a bundle to that artifact (`-t image:oci://…`), which is the fast path when only the build changed. Registry credentials come from `OCI_USERNAME`/`OCI_PASSWORD` or the exporter's container auth file.
 - **adb** — ADB server for device communication
 
 The exporter config also typically includes sibling drivers:

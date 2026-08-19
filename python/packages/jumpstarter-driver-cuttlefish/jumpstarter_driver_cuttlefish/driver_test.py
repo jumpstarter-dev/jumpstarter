@@ -1,7 +1,9 @@
+import io
 import json
 import subprocess
 import tarfile
 import zipfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -490,9 +492,9 @@ def test_cvd_power_read_not_implemented(drv):
         list(power.read())
 
 
-def _serve_flasher(artifacts_dir):
+def _serve_flasher(artifacts_dir, **kwargs):
     """A served Cuttlefish client whose flasher stages into artifacts_dir."""
-    return serve(Cuttlefish(group="cvd_1", name="dev1", artifacts_dir=str(artifacts_dir)))
+    return serve(Cuttlefish(group="cvd_1", name="dev1", artifacts_dir=str(artifacts_dir), **kwargs))
 
 
 def _flash_error(client, *args, **kwargs) -> str:
@@ -521,21 +523,30 @@ def _flash_error(client, *args, **kwargs) -> str:
     return messages(ei.value)
 
 
-def _image_zip(tmp_path, names=("super.img", "boot.img")):
-    path = tmp_path / "aosp_cf_x86_64_auto-img-1234.zip"
+def _write_image_zip(path, names=("super.img", "boot.img")):
     with zipfile.ZipFile(path, "w") as z:
         for name in names:
             z.writestr(name, f"contents of {name}")
+
+
+def _write_host_package(path):
+    payload = b"#!/bin/sh\n"
+    with tarfile.open(path, "w:gz") as t:
+        info = tarfile.TarInfo("bin/cvd")
+        info.size = len(payload)
+        info.mode = 0o755
+        t.addfile(info, io.BytesIO(payload))
+
+
+def _image_zip(tmp_path, names=("super.img", "boot.img")):
+    path = tmp_path / "aosp_cf_x86_64_auto-img-1234.zip"
+    _write_image_zip(path, names)
     return path
 
 
 def _host_package(tmp_path):
     path = tmp_path / "cvd-host_package.tar.gz"
-    payload = tmp_path / "cvd"
-    payload.write_bytes(b"#!/bin/sh\n")
-    payload.chmod(0o755)
-    with tarfile.open(path, "w:gz") as t:
-        t.add(payload, arcname="bin/cvd")
+    _write_host_package(path)
     return path
 
 
@@ -605,6 +616,201 @@ def test_cvd_flasher_artifacts_dir_unset(tmp_path, drv):
 def test_cvd_flasher_artifacts_dir_missing(tmp_path, drv):
     with _serve_flasher(tmp_path / "nonexistent") as client:
         assert "does not exist on the exporter" in _flash_error(client, _image_zip(tmp_path))
+
+
+BUNDLE_REF = "oci://quay.io/org/aaos-cvd:1234"
+
+
+def _fake_registry(contents):
+    """A stand-in oras Registry whose pull() lays `contents` out in outdir.
+
+    `contents` maps a name inside the bundle to a writer taking the
+    destination path — the same shape `oras pull -o <dir>` leaves on disk.
+    Returns the class to patch in, plus the list it records instances into,
+    so a test can assert on how the registry was constructed and authed.
+    """
+    created = []
+
+    class FakeRegistry:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.auth = MagicMock()
+            self.target = None
+            created.append(self)
+
+        def pull(self, *, target, outdir):
+            self.target = target
+            written = []
+            for name, write in contents.items():
+                path = Path(outdir) / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                write(path)
+                written.append(str(path))
+            return written
+
+    return FakeRegistry, created
+
+
+def _bundle(client, contents, source=BUNDLE_REF, **kwargs):
+    """Flash an oci:// bundle; returns (flash result, registry instances)."""
+    fake, created = _fake_registry(contents)
+    with patch("jumpstarter_driver_cuttlefish.driver.Registry", fake):
+        return client.storage.flash(source, **kwargs), created
+
+
+def _bundle_error(client, contents, source=BUNDLE_REF, **kwargs) -> str:
+    fake, _ = _fake_registry(contents)
+    with patch("jumpstarter_driver_cuttlefish.driver.Registry", fake):
+        return _flash_error(client, source, **kwargs)
+
+
+BOTH = {
+    "aosp_cf_x86_64_auto-img-1234.zip": _write_image_zip,
+    "cvd-host_package.tar.gz": _write_host_package,
+}
+
+
+def test_cvd_flasher_flash_oci_stages_whole_bundle(tmp_path, drv):
+    """One bundle reference is one complete flash: both artifacts staged."""
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    with _serve_flasher(artifacts) as client:
+        staged, created = _bundle(client, BOTH)
+    assert staged == ["image", "host_package"]
+    assert (artifacts / "super.img").read_text() == "contents of super.img"
+    assert (artifacts / "bin" / "cvd").read_bytes() == b"#!/bin/sh\n"
+    # the oci:// prefix is fls/oras scheme sugar, not part of the reference
+    assert created[0].target == "quay.io/org/aaos-cvd:1234"
+    # the pulled copy does not outlive the flash
+    assert not list(artifacts.glob(".cvd-oci-*"))
+
+
+def test_cvd_flasher_flash_oci_local_build_naming(tmp_path, drv):
+    """A local `cvd fetch` image zip has no build number; a bundle may also
+    carry otatools.zip. Magic bytes find both, the name tie-break picks right."""
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    contents = {
+        "otatools.zip": lambda p: _write_image_zip(p, names=("otatools/bin/lpmake",)),
+        "aosp_cf_x86_64_auto-img.zip": _write_image_zip,
+        "cvd-host_package.tar.gz": _write_host_package,
+    }
+    with _serve_flasher(artifacts) as client:
+        staged, _ = _bundle(client, contents)
+    assert staged == ["image", "host_package"]
+    assert (artifacts / "super.img").exists()
+    assert not (artifacts / "otatools").exists()
+
+
+def test_cvd_flasher_flash_oci_nested_layout(tmp_path, drv):
+    """Layers unpacked into subdirectories are still found."""
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    contents = {
+        "images/aosp_cf_x86_64_auto-img-1234.zip": _write_image_zip,
+        "host/cvd-host_package.tar.gz": _write_host_package,
+    }
+    with _serve_flasher(artifacts) as client:
+        staged, _ = _bundle(client, contents)
+    assert staged == ["image", "host_package"]
+    assert (artifacts / "boot.img").exists()
+
+
+def test_cvd_flasher_flash_oci_single_target(tmp_path, drv):
+    """`-t image:oci://…` stages only the image out of the bundle."""
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    fake, _ = _fake_registry(BOTH)
+    with _serve_flasher(artifacts) as client:
+        with patch("jumpstarter_driver_cuttlefish.driver.Registry", fake):
+            result = client.storage.flash({"image": BUNDLE_REF})
+    assert result == {"image": ["image"]}
+    assert (artifacts / "super.img").exists()
+    assert not (artifacts / "bin").exists()
+
+
+def test_cvd_flasher_flash_oci_partial_bundle(tmp_path, drv):
+    """Half a bundle stages what it has — a re-flash of one artifact is normal."""
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    with _serve_flasher(artifacts) as client:
+        staged, _ = _bundle(client, {"cvd-host_package.tar.gz": _write_host_package})
+    assert staged == ["host_package"]
+    assert (artifacts / "bin" / "cvd").exists()
+
+
+def test_cvd_flasher_flash_oci_target_absent_from_bundle(tmp_path, drv):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    with _serve_flasher(artifacts) as client:
+        message = _bundle_error(client, {"cvd-host_package.tar.gz": _write_host_package}, target="image")
+    assert "carries no image artifact" in message
+    assert "cvd-host_package.tar.gz" in message
+
+
+def test_cvd_flasher_flash_oci_empty_bundle(tmp_path, drv):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    with _serve_flasher(artifacts) as client:
+        message = _bundle_error(client, {"README.md": lambda p: p.write_bytes(b"not an archive")})
+    assert "nothing recognizable" in message
+    assert not list(artifacts.iterdir())
+
+
+def test_cvd_flasher_flash_oci_ambiguous_artifacts(tmp_path, drv):
+    """Two equally image-looking zips are a refusal, never a coin flip."""
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    contents = {
+        "aosp_cf_x86_64_auto-img-1234.zip": _write_image_zip,
+        "aosp_cf_x86_64_phone-img-5678.zip": _write_image_zip,
+    }
+    with _serve_flasher(artifacts) as client:
+        message = _bundle_error(client, contents)
+    assert "2 candidate image archives" in message
+    assert not list(artifacts.iterdir())
+
+
+def test_cvd_flasher_flash_oci_credentials(tmp_path, drv, monkeypatch):
+    """Credentials reach the registry client, never the reference."""
+    monkeypatch.setenv("OCI_USERNAME", "bot")
+    monkeypatch.setenv("OCI_PASSWORD", "s3cret")
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    with _serve_flasher(artifacts) as client:
+        _, created = _bundle(client, BOTH)
+    created[0].auth.set_basic_auth.assert_called_once_with("bot", "s3cret")
+    assert created[0].kwargs == {"insecure": False}
+
+
+def test_cvd_flasher_flash_oci_insecure(tmp_path, drv):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    with _serve_flasher(artifacts, oci_insecure=True) as client:
+        _, created = _bundle(client, BOTH)
+    assert created[0].kwargs == {"insecure": True}
+
+
+def test_cvd_flasher_flash_oci_rejects_other_schemes(tmp_path, drv):
+    """flash_oci is not a general downloader; http(s) goes through flash."""
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    with _serve_flasher(artifacts) as client:
+        with pytest.raises(BaseException) as ei:
+            client.storage.call("flash_oci", "https://example.com/img.zip", None)
+    assert "must start with oci://" in str(ei.value)
+
+
+def test_cvd_flasher_flash_oci_unknown_target(tmp_path, drv):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    with _serve_flasher(artifacts) as client:
+        assert "unknown flash target" in _bundle_error(client, BOTH, target="bootloader")
+
+
+def test_cvd_flasher_flash_oci_artifacts_dir_unset(tmp_path, drv):
+    with serve(Cuttlefish(group="cvd_1", name="dev1")) as client:
+        assert "artifacts_dir is not configured" in _bundle_error(client, BOTH)
 
 
 def test_cvd_flasher_dump_not_implemented(drv):
