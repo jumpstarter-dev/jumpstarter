@@ -898,8 +898,12 @@ func (r *JumpstarterReconciler) createControllerDeployment(jumpstarter *operator
 			Strategy: appsv1.DeploymentStrategy{
 				Type: appsv1.RollingUpdateDeploymentStrategyType,
 				RollingUpdate: &appsv1.RollingUpdateDeployment{
-					MaxSurge:       &intstr.IntOrString{Type: intstr.String, StrVal: "25%"},
-					MaxUnavailable: &intstr.IntOrString{Type: intstr.String, StrVal: "25%"},
+					MaxSurge: &intstr.IntOrString{Type: intstr.String, StrVal: "25%"},
+					// The controller is active/passive: only the leader pod passes
+					// readiness (see leaderElectionCheck), so at most 1 replica will
+					// ever be ready. Allow all standby replicas to be unavailable so
+					// the Deployment can reach the Available condition.
+					MaxUnavailable: &intstr.IntOrString{Type: intstr.Int, IntVal: max(jumpstarter.Spec.Controller.Replicas-1, 1)},
 				},
 			},
 			Selector: &metav1.LabelSelector{
