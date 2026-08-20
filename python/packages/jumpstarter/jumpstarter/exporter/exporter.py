@@ -312,7 +312,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     """Stashed status from a lease reassignment, replayed after handle_lease's
     finally clears _lease_context so the new lease can be acquired."""
 
-    _status_replay_tx: MemoryObjectSendStream | None = field(init=False, default=None)
+    _status_replay_tx: MemoryObjectSendStream[jumpstarter_pb2.StatusResponse] | None = field(
+        init=False, default=None
+    )
     """Send side of the status channel, used to replay _pending_lease_status
     back into the status loop after a lease transition."""
     _lease_context: LeaseContext | None = field(init=False, default=None)
@@ -1212,17 +1214,21 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     clear_log_context()
                     set_log_context(exporter=self.name)
                     logger.debug("Ready for next lease")
-                    pending = self._pending_lease_status
-                    if pending is not None:
-                        self._pending_lease_status = None
-                        if self._status_replay_tx is not None:
-                            try:
-                                await self._status_replay_tx.send(pending)
-                            except (anyio.ClosedResourceError, anyio.EndOfStream):
-                                logger.debug(
-                                    "Status channel closed, skipping replay for %s",
-                                    pending.lease_name,
-                                )
+                # Replay a stashed reassignment status regardless of who cleared
+                # _lease_context. On the reassign-then-leased=False ordering,
+                # _on_lease_released may clear the field before we reach this finally;
+                # gating the replay on ownership above would drop the pending lease.
+                pending = self._pending_lease_status
+                if pending is not None:
+                    self._pending_lease_status = None
+                    if self._status_replay_tx is not None:
+                        try:
+                            await self._status_replay_tx.send(pending)
+                        except (anyio.ClosedResourceError, anyio.EndOfStream):
+                            logger.debug(
+                                "Status channel closed, skipping replay for %s",
+                                pending.lease_name,
+                            )
 
     async def serve(self):
         """Serve the exporter, handling leases until stopped."""
@@ -1322,6 +1328,17 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
         return self._check_stop_requested() if not current_leased else False
 
+    def _lease_log_context(self, status: jumpstarter_pb2.StatusResponse) -> dict[str, str]:
+        """Build the log context dict for a newly-assigned lease.
+
+        Extracted so tests can verify context propagation without duplicating
+        this logic separately from _on_lease_acquired.
+        """
+        log_ctx: dict[str, str] = {"lease_id": status.lease_name, "exporter": self.name}
+        if status.context:
+            log_ctx.update(status.context)
+        return log_ctx
+
     def _on_lease_acquired(
         self,
         status: jumpstarter_pb2.StatusResponse,
@@ -1335,10 +1352,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             before_lease_hook=Event(),
         )
         self._lease_context = lease_scope
-        log_ctx: dict[str, str] = {"lease_id": status.lease_name, "exporter": self.name}
-        if status.context:
-            log_ctx.update(status.context)
-        set_log_context(**log_ctx)
+        set_log_context(**self._lease_log_context(status))
         if self.hook_executor:
             tg.start_soon(
                 self.hook_executor.run_before_lease_hook,
@@ -1360,33 +1374,52 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     async def _on_lease_released(self, previous_state: LeaseState) -> None:
         """Handle not-leased status: signal handle_lease on transition, check exit_on_lease_end.
 
-        Clears _lease_context before waiting for the afterLease hook so that
-        subsequent status ticks see IDLE. handle_lease's outer finally is the
-        fallback if this path never runs (cancellation).
+        Primary cleanup path: signals lease_ended, waits (shielded) for the
+        afterLease hook, then clears _lease_context. _lease_context is kept set
+        for the whole hook so _report_status still reaches the client session
+        (it gates the session update on _lease_context). The status loop is
+        sequential, so no other ticks are processed while we wait. A brief
+        settle delay runs before clearing so the next lease can't grab this
+        slot before handle_lease finishes tearing down the session.
+
+        handle_lease's outer finally is the fallback when this path never
+        runs (e.g. task cancellation, or handle_lease finishing before the
+        controller sends leased=False).
         """
         logger.info("Currently not leased")
 
         if previous_state == LeaseState.LEASED and self._lease_context:
             lease_ctx = self._lease_context
-            self._last_completed_lease = lease_ctx.lease_name
-            self._lease_context = None
             if self.exit_on_lease_end:
                 # Refuse new leases immediately, but keep the runtime up until
                 # afterLease finishes — shutdown SIGTERMs Exec children (QEMU)
                 # that hooks may still be talking to.
                 self._stop_requested = True
-            clear_log_context()
-            set_log_context(exporter=self.name)
 
             logger.info("Lease ended, signaling handle_lease to run afterLease hook")
             lease_ctx.lease_ended.set()
 
+            # Keep _lease_context set while the afterLease hook runs. _report_status
+            # gates its session/client update on _lease_context, so clearing it here
+            # would silently drop status updates the hook emits (they would reach the
+            # controller RPC but never the client). Clear only after the hook is done.
             with CancelScope(shield=True):
                 await lease_ctx.after_lease_hook_done.wait()
             logger.info("afterLease hook completed")
 
-            if self.exit_on_lease_end:
-                await anyio.to_thread.run_sync(shutdown_runtime_sidecar)
+            if lease_ctx.session is not None:
+                # Brief delay to ensure session is fully closed before next lease.
+                # Prevents SSL corruption from overlapping connections.
+                await sleep(0.2)
+
+            self._last_completed_lease = lease_ctx.lease_name
+            self._lease_context = None
+            clear_log_context()
+            set_log_context(exporter=self.name)
+            # exit_on_lease_end shutdown runs once, in serve()'s finally, after
+            # the control-plane loop unwinds. _stop_requested (set above) is
+            # what drives that unwind, so the hook is already done by the time
+            # it fires there — no need to call shutdown_runtime_sidecar here too.
 
     def _check_stop_requested(self) -> bool:
         """Check if stop was requested and initiate shutdown. Returns True to break the status loop."""
