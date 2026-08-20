@@ -42,23 +42,51 @@ def make_lease_context(lease_name="test-lease", client_name="test-client"):
     return ctx
 
 
-def make_exporter(lease_ctx, hook_executor=None):
+def _make_base_exporter(**overrides):
+    """Shared exporter factory: initializes all fields that handle_lease,
+    _apply_status, and serve() may touch so test helpers stay in sync
+    when new init=False fields are added."""
     from jumpstarter.exporter.exporter import Exporter
 
+    defaults = {
+        "_exporter_status": ExporterStatus.AVAILABLE,
+        "_lease_context": None,
+        "_stop_requested": False,
+        "_standalone": False,
+        "_started": False,
+        "_tg": None,
+        "_registered": False,
+        "_unregister": False,
+        "_deferred_unregister": True,
+        "_exit_code": None,
+        "_release_lease_unsupported": False,
+        "hook_executor": None,
+        "exit_on_lease_end": False,
+        "labels": {"jumpstarter.dev/name": "test-exporter"},
+        "_last_completed_lease": None,
+        "_pending_lease_status": None,
+        "_status_replay_tx": None,
+        "_status_drain_active": False,
+        "_pending_status_request": None,
+        "_status_rpc_event": Event(),
+        "_fatal_stream_error": None,
+        "_report_status": AsyncMock(),
+        "_request_lease_release": AsyncMock(),
+        "_telemetry_handler": None,
+        "_telemetry_channel": None,
+    }
+    defaults.update(overrides)
     exporter = Exporter.__new__(Exporter)
-    exporter._exporter_status = ExporterStatus.AVAILABLE
-    exporter._lease_context = lease_ctx
-    exporter._stop_requested = False
-    exporter._standalone = False
-    exporter.hook_executor = hook_executor
-    exporter._last_completed_lease = None
-    exporter._pending_lease_status = None
-    exporter._status_replay_tx = None
-    exporter.exit_on_lease_end = False
-    exporter._report_status = AsyncMock()
-    exporter._request_lease_release = AsyncMock()
-    exporter.labels = {"jumpstarter.dev/name": "test-exporter"}
+    for k, v in defaults.items():
+        setattr(exporter, k, v)
     return exporter
+
+
+def make_exporter(lease_ctx, hook_executor=None):
+    return _make_base_exporter(
+        _lease_context=lease_ctx,
+        hook_executor=hook_executor,
+    )
 
 
 class TestLeaseEndDuringHook:
@@ -444,14 +472,16 @@ class TestIdempotentLeaseEnd:
 
 
 def _make_exporter_for_report_status():
-    """Create an Exporter with real _report_status for testing gRPC error handling."""
+    """Create an Exporter with real methods for testing gRPC error handling.
+
+    Unlike the other factories, this restores the real _report_status and
+    _request_lease_release so tests can verify retry logic and error paths.
+    """
     from jumpstarter.exporter.exporter import Exporter
 
-    exporter = Exporter.__new__(Exporter)
-    exporter._exporter_status = ExporterStatus.AVAILABLE
-    exporter._lease_context = None
-    exporter._standalone = False
-    exporter._release_lease_unsupported = False
+    exporter = _make_base_exporter()
+    exporter._report_status = Exporter._report_status.__get__(exporter, Exporter)
+    exporter._request_lease_release = Exporter._request_lease_release.__get__(exporter, Exporter)
     return exporter
 
 
@@ -1123,22 +1153,7 @@ class TestApplyStatus:
     """Tests for _apply_status state machine transitions."""
 
     def _make_idle_exporter(self, hook_executor=None):
-        from jumpstarter.exporter.exporter import Exporter
-
-        exporter = Exporter.__new__(Exporter)
-        exporter._exporter_status = ExporterStatus.AVAILABLE
-        exporter._lease_context = None
-        exporter._stop_requested = False
-        exporter._standalone = False
-        exporter._started = False
-        exporter.hook_executor = hook_executor
-        exporter.labels = {"jumpstarter.dev/name": "test-exporter"}
-        exporter._last_completed_lease = None
-        exporter._pending_lease_status = None
-        exporter._status_replay_tx = None
-        exporter._report_status = AsyncMock()
-        exporter._request_lease_release = AsyncMock()
-        return exporter
+        return _make_base_exporter(hook_executor=hook_executor)
 
     async def test_reassignment_signals_old_lease_ended(self):
         """When already LEASED with lease A, receiving lease B signals teardown
@@ -1581,27 +1596,10 @@ def _make_serve_exporter(exit_on_lease_end=False):
     """Build an Exporter suitable for serve() tests with mocked I/O."""
     from contextlib import asynccontextmanager
 
-    from jumpstarter.exporter.exporter import Exporter
-
-    exporter = Exporter.__new__(Exporter)
-    exporter._exporter_status = ExporterStatus.AVAILABLE
-    exporter._lease_context = None
-    exporter._stop_requested = False
-    exporter._standalone = False
-    exporter._tg = None
-    exporter._started = False
-    exporter._registered = True
-    exporter._unregister = False
-    exporter._deferred_unregister = True
-    exporter._exit_code = None
-    exporter.hook_executor = None
-    exporter.exit_on_lease_end = exit_on_lease_end
-    exporter.labels = {"jumpstarter.dev/name": "test-exporter"}
-    exporter._report_status = AsyncMock()
-    exporter._request_lease_release = AsyncMock()
-    exporter._status_drain_active = False
-    exporter._pending_status_request = None
-    exporter._status_rpc_event = Event()
+    exporter = _make_base_exporter(
+        exit_on_lease_end=exit_on_lease_end,
+        _registered=True,
+    )
 
     @asynccontextmanager
     async def fake_session():

@@ -1360,9 +1360,15 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     async def _on_lease_released(self, previous_state: LeaseState) -> None:
         """Handle not-leased status: signal handle_lease on transition, check exit_on_lease_end.
 
-        Clears _lease_context before waiting for the afterLease hook so that
-        subsequent status ticks see IDLE. handle_lease's outer finally is the
-        fallback if this path never runs (cancellation).
+        Primary cleanup path: clears _lease_context before signaling
+        lease_ended and waiting for the afterLease hook. The status loop
+        is sequential, so no other ticks are processed while we wait.
+        Clearing early matters for the replay path: handle_lease's outer
+        finally can replay _pending_lease_status once it sees IDLE.
+
+        handle_lease's outer finally is the fallback when this path never
+        runs (e.g. task cancellation, or handle_lease finishing before the
+        controller sends leased=False).
         """
         logger.info("Currently not leased")
 
