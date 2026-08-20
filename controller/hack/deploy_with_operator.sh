@@ -213,7 +213,7 @@ ${AUTH_CONFIG}
   controller:
     image: ${IMAGE_REPO}
     imagePullPolicy: IfNotPresent
-    replicas: 1
+    replicas: 2
     resources:
       requests:
         cpu: 100m

@@ -21,7 +21,9 @@ import (
 	"crypto/tls"
 	"encoding/pem"
 	"flag"
+	"fmt"
 	"net"
+	"net/http"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -40,6 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
@@ -324,7 +327,7 @@ func main() {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
 	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+	if err := mgr.AddReadyzCheck("readyz", leaderElectionCheck(mgr)); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
@@ -383,4 +386,20 @@ func jwtAuthenticatorsToOIDCConfigs(authenticators []apiserverv1beta1.JWTAuthent
 		})
 	}
 	return configs
+}
+
+// leaderElectionCheck returns a healthz.Checker that reports not-ready until
+// the manager has been elected leader (or leader election is disabled).
+// This ensures that non-leader replicas are removed from Service endpoints,
+// preventing traffic from reaching pods that are not actively reconciling
+// or serving gRPC.
+func leaderElectionCheck(mgr manager.Manager) healthz.Checker {
+	return func(_ *http.Request) error {
+		select {
+		case <-mgr.Elected():
+			return nil
+		default:
+			return fmt.Errorf("not yet leader")
+		}
+	}
 }
