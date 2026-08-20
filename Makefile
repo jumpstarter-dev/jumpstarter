@@ -205,6 +205,13 @@ e2e-exporterset-qemu:
 	@echo "Running ExporterSet QEMU e2e tests..."
 	@GINKGO_LABEL_FILTER=exporterset-qemu bash e2e/run-e2e.sh
 
+# Prints a lane-grouped index of all e2e specs (group + name + labels + source),
+# generated via `ginkgo --dry-run`. Use it to check e2e/README.md's lane/test/
+# source accuracy; requires no live cluster.
+.PHONY: e2e-spec-index
+e2e-spec-index:
+	@./e2e/scripts/gen-spec-index.sh
+
 # Convenience alias for running e2e tests
 .PHONY: e2e
 e2e: e2e-run
