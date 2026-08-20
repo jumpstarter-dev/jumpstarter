@@ -5,6 +5,7 @@ from typing import Any, Generator, Optional
 import requests
 from jumpstarter_driver_power.common import PowerReading
 from jumpstarter_driver_power.driver import PowerInterface
+from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 
 from jumpstarter.driver import Driver, export
 
@@ -35,8 +36,15 @@ class HttpBasicAuth:
 
 
 @dataclass(kw_only=True)
+class HttpDigestAuth:
+    user: str = field(default="")
+    password: str = field(default="")
+
+
+@dataclass(kw_only=True)
 class HttpAuthConfig:
     basic: Optional[HttpBasicAuth] = field(default=None)
+    digest: Optional[HttpDigestAuth] = field(default=None)
 
 
 @dataclass(kw_only=True)
@@ -68,13 +76,24 @@ class HttpPower(PowerInterface, Driver):
             self.auth = HttpAuthConfig(**self.auth)
         if self.auth and self.auth.basic and isinstance(self.auth.basic, dict):
             self.auth.basic = HttpBasicAuth(**self.auth.basic)
+        if self.auth and self.auth.digest and isinstance(self.auth.digest, dict):
+            self.auth.digest = HttpDigestAuth(**self.auth.digest)
+        if self.auth and self.auth.basic and self.auth.digest:
+            raise ValueError("auth.basic and auth.digest are mutually exclusive, configure only one of them")
 
+    def _build_auth(self):
+        """Build the requests auth handler from the configured credentials"""
+        if not self.auth:
+            return None
+        if self.auth.basic:
+            return HTTPBasicAuth(self.auth.basic.user, self.auth.basic.password)
+        if self.auth.digest:
+            return HTTPDigestAuth(self.auth.digest.user, self.auth.digest.password)
+        return None
 
     def _make_http_request(self, endpoint_config: HttpEndpointConfig) -> str:
         """Make HTTP request to the specified endpoint"""
-        auth = None
-        if self.auth and self.auth.basic:
-            auth = (self.auth.basic.user, self.auth.basic.password)
+        auth = self._build_auth()
         method = endpoint_config.method.upper()
         url = endpoint_config.url
         kwargs = {
