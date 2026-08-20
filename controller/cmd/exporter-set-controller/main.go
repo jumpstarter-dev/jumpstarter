@@ -19,7 +19,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
 	"time"
 
@@ -32,13 +31,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/provisioners/qemu"
+	jmphealthz "github.com/jumpstarter-dev/jumpstarter/controller/internal/healthz"
 )
 
 var (
@@ -145,7 +144,7 @@ func main() {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
 	}
-	if err := mgr.AddReadyzCheck("readyz", leaderElectionCheck(mgr)); err != nil {
+	if err := mgr.AddReadyzCheck("readyz", jmphealthz.LeaderElectionCheck(mgr)); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
@@ -165,18 +164,5 @@ func selectProvisioner(name string) (exporterset.Provisioner, error) {
 		return qemu.New(version), nil
 	default:
 		return nil, fmt.Errorf("unknown provisioner %q; supported: %s", name, qemu.ProvisionerName)
-	}
-}
-
-// leaderElectionCheck returns a healthz.Checker that reports not-ready until
-// the manager has been elected leader (or leader election is disabled).
-func leaderElectionCheck(mgr manager.Manager) healthz.Checker {
-	return func(_ *http.Request) error {
-		select {
-		case <-mgr.Elected():
-			return nil
-		default:
-			return fmt.Errorf("not yet leader")
-		}
 	}
 }

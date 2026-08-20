@@ -19,8 +19,6 @@ package main
 import (
 	"crypto/tls"
 	"flag"
-	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 
@@ -37,10 +35,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	jmphealthz "github.com/jumpstarter-dev/jumpstarter/controller/internal/healthz"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/internal/controller/jumpstarter"
@@ -257,7 +256,7 @@ func main() {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
 	}
-	if err := mgr.AddReadyzCheck("readyz", leaderElectionCheck(mgr)); err != nil {
+	if err := mgr.AddReadyzCheck("readyz", jmphealthz.LeaderElectionCheck(mgr)); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
@@ -266,18 +265,5 @@ func main() {
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
-	}
-}
-
-// leaderElectionCheck returns a healthz.Checker that reports not-ready until
-// the manager has been elected leader (or leader election is disabled).
-func leaderElectionCheck(mgr manager.Manager) healthz.Checker {
-	return func(_ *http.Request) error {
-		select {
-		case <-mgr.Elected():
-			return nil
-		default:
-			return fmt.Errorf("not yet leader")
-		}
 	}
 }
