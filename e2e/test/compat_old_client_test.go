@@ -26,7 +26,8 @@ import (
 	. "github.com/onsi/gomega"    //nolint:revive
 )
 
-var _ = Describe("Compat: Old Client E2E Tests", Label("compat", "old-client"), Ordered, func() {
+// Serial: installs an older client into the shared environment.
+var _ = Describe("Compat: Old Client E2E Tests", Label("compat", "old-client"), Ordered, Serial, func() {
 	var (
 		tracker    *ProcessTracker
 		ns         string

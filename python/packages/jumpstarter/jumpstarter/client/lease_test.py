@@ -417,6 +417,48 @@ class TestRefreshChannel:
         mock_svc_cls.assert_called_once()
 
 
+class TestCreateDeprecatedLabels:
+    """Tests for deprecation warnings emitted during Lease._create."""
+
+    def _make_lease(self):
+        lease = object.__new__(Lease)
+        lease.selector = "device=ti-jacinto"
+        lease.requested_exporter_name = None
+        lease.duration = timedelta(minutes=30)
+        lease.name = None
+        lease.tags = {}
+        lease.svc = Mock()
+        return lease
+
+    @pytest.mark.anyio
+    async def test_warns_for_deprecated_selector_labels(self, caplog):
+        lease = self._make_lease()
+        created = Mock(
+            deprecated_labels={"device": "Use -n <exporter name> instead of -l device=<exporter-name>"},
+        )
+        created.name = "lease-1"
+        lease.svc.CreateLease = AsyncMock(return_value=created)
+
+        with caplog.at_level(logging.WARNING):
+            await lease._create()
+
+        assert lease.name == "lease-1"
+        assert "selector label 'device' is deprecated" in caplog.text
+        assert "Use -n <exporter name>" in caplog.text
+
+    @pytest.mark.anyio
+    async def test_no_warning_when_no_deprecated_labels(self, caplog):
+        lease = self._make_lease()
+        created = Mock(deprecated_labels={})
+        created.name = "lease-1"
+        lease.svc.CreateLease = AsyncMock(return_value=created)
+
+        with caplog.at_level(logging.WARNING):
+            await lease._create()
+
+        assert "deprecated" not in caplog.text
+
+
 class TestNotifyLeaseEnding:
     """Tests for Lease._notify_lease_ending."""
 

@@ -24,6 +24,7 @@ import (
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	jmpmetrics "github.com/jumpstarter-dev/jumpstarter/controller/internal/metrics"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -93,6 +94,12 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	ctx = ctrl.LoggerInto(ctx, logger)
 
 	var result ctrl.Result
+	priorExporterRef := lease.Status.ExporterRef
+	priorUnsatisfiable := meta.IsStatusConditionTrue(
+		lease.Status.Conditions,
+		string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+	)
+
 	if err := r.reconcileStatusExporterRef(ctx, &result, &lease); err != nil {
 		return result, err
 	}
@@ -108,6 +115,10 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if err := r.Status().Update(ctx, &lease); err != nil {
 		return RequeueConflict(logger, result, err)
 	}
+
+	// Record acquisition only after status is persisted so a failed Update
+	// cannot double-count on requeue (success or failure).
+	recordLeaseAcquisitionTransition(ctx, &lease, priorExporterRef, priorUnsatisfiable)
 
 	if lease.Labels == nil {
 		lease.Labels = make(map[string]string)
@@ -393,6 +404,55 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 	}
 
 	return nil
+}
+
+// leaseAcquisitionTransitionResult returns the metric result for a persisted
+// status transition, or ("", false) when no acquisition should be recorded.
+// Recording is based on the pre-reconcile persisted snapshot so requeues after
+// a successful Status().Update do not double-count.
+func leaseAcquisitionTransitionResult(
+	priorExporterRef *corev1.LocalObjectReference,
+	priorUnsatisfiable bool,
+	lease *jumpstarterdevv1alpha1.Lease,
+) (string, bool) {
+	if lease == nil {
+		return "", false
+	}
+	if priorExporterRef == nil && lease.Status.ExporterRef != nil {
+		return jmpmetrics.ResultSuccess, true
+	}
+	nowUnsatisfiable := meta.IsStatusConditionTrue(
+		lease.Status.Conditions,
+		string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
+	)
+	if !priorUnsatisfiable && nowUnsatisfiable {
+		return jmpmetrics.ResultFailure, true
+	}
+	return "", false
+}
+
+func recordLeaseAcquisitionTransition(
+	ctx context.Context,
+	lease *jumpstarterdevv1alpha1.Lease,
+	priorExporterRef *corev1.LocalObjectReference,
+	priorUnsatisfiable bool,
+) {
+	result, ok := leaseAcquisitionTransitionResult(priorExporterRef, priorUnsatisfiable, lease)
+	if !ok {
+		return
+	}
+	recordLeaseAcquisition(ctx, lease, result)
+}
+
+func recordLeaseAcquisition(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease, result string) {
+	exemplars := map[string]string{}
+	if lease != nil {
+		exemplars["lease_id"] = lease.Name
+		if lease.Spec.ClientRef.Name != "" {
+			exemplars["client"] = lease.Spec.ClientRef.Name
+		}
+	}
+	jmpmetrics.Default.RecordAcquisition(ctx, result, exemplars)
 }
 
 // attachMatchingPolicies attaches the matching policies to the list of online exporters

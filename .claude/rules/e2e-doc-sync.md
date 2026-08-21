@@ -1,0 +1,1 @@
+../../.cursor/rules/e2e-doc-sync.mdc

@@ -929,3 +929,61 @@ class EndSessionResponse(google.protobuf.message.Message):
     def WhichOneof(self, oneof_group: typing.Literal["_message", b"_message"]) -> typing.Literal["message"] | None: ...
 
 Global___EndSessionResponse: typing_extensions.TypeAlias = EndSessionResponse
+
+@typing.final
+class GetServiceEndpointsRequest(google.protobuf.message.Message):
+    """Request to discover optional service endpoints."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    def __init__(
+        self,
+    ) -> None: ...
+
+Global___GetServiceEndpointsRequest: typing_extensions.TypeAlias = GetServiceEndpointsRequest
+
+@typing.final
+class GetServiceEndpointsResponse(google.protobuf.message.Message):
+    """Response containing optional service endpoint addresses."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    TELEMETRY_ENDPOINTS_FIELD_NUMBER: builtins.int
+    @property
+    def telemetry_endpoints(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___TelemetryEndpoint]:
+        """Empty when no optional services (e.g. telemetry) are deployed."""
+
+    def __init__(
+        self,
+        *,
+        telemetry_endpoints: collections.abc.Iterable[Global___TelemetryEndpoint] | None = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["telemetry_endpoints", b"telemetry_endpoints"]) -> None: ...
+
+Global___GetServiceEndpointsResponse: typing_extensions.TypeAlias = GetServiceEndpointsResponse
+
+@typing.final
+class TelemetryEndpoint(google.protobuf.message.Message):
+    """Address of an optional telemetry service endpoint."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    ENDPOINT_FIELD_NUMBER: builtins.int
+    CERTIFICATE_FIELD_NUMBER: builtins.int
+    MIN_SEVERITY_FIELD_NUMBER: builtins.int
+    endpoint: builtins.str
+    """gRPC address (host:port)."""
+    certificate: builtins.str
+    """Optional CA certificate PEM for TLS verification."""
+    min_severity: builtins.str
+    """Minimum log severity to forward (e.g. "info", "warning")."""
+    def __init__(
+        self,
+        *,
+        endpoint: builtins.str = ...,
+        certificate: builtins.str = ...,
+        min_severity: builtins.str = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["certificate", b"certificate", "endpoint", b"endpoint", "min_severity", b"min_severity"]) -> None: ...
+
+Global___TelemetryEndpoint: typing_extensions.TypeAlias = TelemetryEndpoint

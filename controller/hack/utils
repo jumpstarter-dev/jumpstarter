@@ -20,6 +20,7 @@ export K3S_KUBECONFIG=${K3S_KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}
 
 # Color codes for terminal output
 export GREEN='\033[0;32m'
+export YELLOW='\033[1;33m'
 export NC='\033[0m' # No Color
 
 # Get external IP address
@@ -75,6 +76,20 @@ load_image() {
       echo -e "${GREEN}k3s pulls images directly from registries, skipping load for ${image}${NC}"
       ;;
   esac
+}
+
+# Return 0 if the image exists in the local container tool store.
+container_image_exists() {
+  local image=$1
+  local tool=${CONTAINER_TOOL:-}
+  if [ -z "${tool}" ]; then
+    if command -v podman >/dev/null 2>&1; then
+      tool=podman
+    else
+      tool=docker
+    fi
+  fi
+  ${tool} image inspect "${image}" >/dev/null 2>&1
 }
 
 create_cluster() {
@@ -223,6 +238,35 @@ wait_for_jumpstarter_resources() {
     --for=condition=ready pod \
     --selector=app=jumpstarter-router-0 \
     --timeout=180s
+
+  # Wait for the controller to acquire its leader lease — without this the
+  # controller pod is "Available" but cannot reconcile, so any operation that
+  # depends on reconciliation (e.g. legacy exporter secret creation) will time
+  # out.
+  #
+  # We check renewTime freshness (within the last 30s) rather than just
+  # holderIdentity presence, because a stale lease from a dead pod retains
+  # its holderIdentity until a new leader overwrites it.
+  echo -e "${GREEN} * Waiting for controller leader election ...${NC}"
+  local le_elapsed=0
+  while [ $le_elapsed -lt 120 ]; do
+    renew_time=$(kubectl get lease a38b78e7.jumpstarter.dev -n "${namespace}" \
+      -o jsonpath='{.spec.renewTime}' 2>/dev/null)
+    if [ -n "$renew_time" ]; then
+      renew_epoch=$(date -d "$renew_time" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%S" "${renew_time%%.*}" +%s 2>/dev/null)
+      now_epoch=$(date +%s)
+      if [ -n "$renew_epoch" ] && [ $((now_epoch - renew_epoch)) -lt 30 ]; then
+        echo -e "${GREEN} * Controller acquired leader lease (renewTime: ${renew_time})${NC}"
+        break
+      fi
+    fi
+    sleep 2
+    le_elapsed=$((le_elapsed + 2))
+  done
+  if [ $le_elapsed -ge 120 ]; then
+    echo -e "${RED}ERROR: Controller did not acquire leader lease within 120s${NC}"
+    exit 1
+  fi
 }
 
 # Wait for gRPC endpoint to be ready

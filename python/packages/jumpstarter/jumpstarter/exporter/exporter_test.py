@@ -1148,15 +1148,18 @@ def _make_serve_exporter(exit_on_lease_end=False):
     return exporter
 
 
-def _wire_status_stream(exporter, statuses):
+def _wire_status_stream(exporter, statuses, sent: Event | None = None):
     """Replace _retry_stream with a function that feeds statuses into tx.
 
     The stream sends the provided statuses then waits indefinitely (until cancelled),
     matching production behavior where status streams are long-lived.
+    If ``sent`` is provided, it is set after all statuses have been queued.
     """
     async def fake_retry_stream(name, factory, tx, **kwargs):
         for s in statuses:
             await tx.send(s)
+        if sent is not None:
+            sent.set()
         # Don't close - wait until task group cancels us (matches production)
         await anyio.sleep_forever()
 
@@ -1183,7 +1186,9 @@ class TestExitOnLeaseEnd:
         ])
         _wire_handle_lease(exporter)
 
-        await exporter.serve()
+        with patch("jumpstarter.exporter.exporter.shutdown_runtime_sidecar") as shutdown:
+            await exporter.serve()
+            shutdown.assert_called()
 
         assert exporter._stop_requested is True
 
@@ -1191,37 +1196,179 @@ class TestExitOnLeaseEnd:
         """serve() does NOT set _stop_requested on startup when no lease
         has been served yet (previous_leased is False)."""
         exporter = _make_serve_exporter(exit_on_lease_end=True)
+        statuses_sent = Event()
         _wire_status_stream(exporter, [
             MagicMock(leased=False, lease_name="", client_name=""),
-        ])
+        ], sent=statuses_sent)
 
-        async with create_task_group() as tg:
-            tg.start_soon(exporter.serve)
-            # Give serve time to process the status
-            await anyio.sleep(0.1)
-            # Check that _stop_requested was NOT set
-            assert exporter._stop_requested is False
-            # Clean exit
-            tg.cancel_scope.cancel()
+        with patch("jumpstarter.exporter.exporter.shutdown_runtime_sidecar"):
+            async with create_task_group() as tg:
+                tg.start_soon(exporter.serve)
+                await statuses_sent.wait()
+                # Yield so serve() can process the queued status.
+                await anyio.sleep(0)
+                assert exporter._stop_requested is False
+                tg.cancel_scope.cancel()
 
     async def test_serve_continues_when_disabled(self):
         """serve() does NOT set _stop_requested after lease ends when
         exit_on_lease_end is False — the exporter loops for next lease."""
         exporter = _make_serve_exporter(exit_on_lease_end=False)
+        statuses_sent = Event()
         _wire_status_stream(exporter, [
             MagicMock(leased=True, lease_name="test-lease", client_name="test"),
             MagicMock(leased=False, lease_name="", client_name=""),
-        ])
+        ], sent=statuses_sent)
         _wire_handle_lease(exporter)
 
-        async with create_task_group() as tg:
-            tg.start_soon(exporter.serve)
-            # Give serve time to process both statuses
-            await anyio.sleep(0.2)
-            # Check that _stop_requested was NOT set (exit_on_lease_end is False)
-            assert exporter._stop_requested is False
-            # Clean exit
-            tg.cancel_scope.cancel()
+        with patch("jumpstarter.exporter.exporter.shutdown_runtime_sidecar") as shutdown:
+            async with create_task_group() as tg:
+                tg.start_soon(exporter.serve)
+                await statuses_sent.wait()
+                # Wait until the lease→unleased transition has been applied.
+                with anyio.fail_after(2):
+                    while not exporter._started or exporter._lease_context is not None:
+                        await anyio.sleep(0.01)
+                assert exporter._stop_requested is False
+                shutdown.assert_not_called()
+                tg.cancel_scope.cancel()
+
+
+
+class TestShutdownRuntimeSidecar:
+    def test_noop_without_socket_env(self, monkeypatch):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        monkeypatch.delenv("JUMPSTARTER_LAUNCHER_SOCKET", raising=False)
+        assert shutdown_runtime_sidecar() is False
+
+    def test_runs_shutdown_command(self, monkeypatch, tmp_path):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")  # path only; connect is mocked via subprocess
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        with patch("subprocess.run") as run:
+            run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            assert shutdown_runtime_sidecar(binary=str(binary)) is True
+            run.assert_called_once()
+            args = run.call_args.args[0]
+            assert args[0] == str(binary)
+            assert args[1] == "shutdown"
+            assert "--socket" in args
+            assert str(sock) in args
+
+    def test_falls_back_to_binary_beside_socket(self, monkeypatch, tmp_path):
+        """When the default path is missing, use jumpstarter-exec next to the socket."""
+        from pathlib import Path
+
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        real_is_file = Path.is_file
+
+        def is_file_no_default(self):
+            # Treat the packaged default path as absent so we exercise fallback.
+            if str(self) == "/shared/jumpstarter-exec":
+                return False
+            return real_is_file(self)
+
+        with (
+            patch.object(Path, "is_file", is_file_no_default),
+            patch("subprocess.run") as run,
+        ):
+            run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            assert shutdown_runtime_sidecar() is True
+            assert run.call_args.args[0][0] == str(binary)
+
+        monkeypatch.delenv("JUMPSTARTER_LAUNCHER_SOCKET", raising=False)
+        with (
+            patch.object(Path, "is_file", is_file_no_default),
+            patch("subprocess.run") as run,
+        ):
+            run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            assert shutdown_runtime_sidecar(socket_path=str(sock)) is True
+            assert run.call_args.args[0][0] == str(binary)
+
+    def test_missing_binary_returns_false(self, monkeypatch, tmp_path):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        missing = tmp_path / "does-not-exist"
+        assert shutdown_runtime_sidecar(binary=str(missing)) is False
+
+    def test_file_not_found_returns_false(self, monkeypatch, tmp_path):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        with patch("subprocess.run", side_effect=FileNotFoundError):
+            assert shutdown_runtime_sidecar(binary=str(binary)) is False
+
+    def test_permission_error_returns_false(self, monkeypatch, tmp_path):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        with patch("subprocess.run", side_effect=PermissionError("denied")):
+            assert shutdown_runtime_sidecar(binary=str(binary)) is False
+
+    def test_timeout_returns_false(self, monkeypatch, tmp_path):
+        import subprocess
+
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        with patch(
+            "subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd=["jumpstarter-exec"], timeout=1),
+        ):
+            assert shutdown_runtime_sidecar(binary=str(binary), timeout=1.0) is False
+
+    def test_nonzero_exit_returns_false(self, monkeypatch, tmp_path):
+        from jumpstarter.exporter.exporter import shutdown_runtime_sidecar
+
+        sock = tmp_path / "launcher.sock"
+        sock.write_text("")
+        binary = tmp_path / "jumpstarter-exec"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+        monkeypatch.setenv("JUMPSTARTER_LAUNCHER_SOCKET", str(sock))
+
+        with patch("subprocess.run") as run:
+            run.return_value = MagicMock(returncode=1, stdout="", stderr="boom")
+            assert shutdown_runtime_sidecar(binary=str(binary)) is False
 
 
 class TestContextPropagation:

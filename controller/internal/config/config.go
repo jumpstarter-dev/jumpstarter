@@ -11,7 +11,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -51,27 +50,27 @@ func LoadConfiguration(
 	key client.ObjectKey,
 	signer *oidc.Signer,
 	certificateAuthority string,
-) (authenticator.Token, string, Router, []grpc.ServerOption, *Provisioning, *LeasePolicy, *HiddenLabels, *DeprecatedLabels, error) {
+) (*LoadedConfig, error) {
 	var configmap corev1.ConfigMap
 	if err := client.Get(ctx, key, &configmap); err != nil {
-		return nil, "", nil, nil, nil, nil, nil, nil, err
+		return nil, err
 	}
 
 	rawRouter, ok := configmap.Data["router"]
 	if !ok {
-		return nil, "", nil, nil, nil, nil, nil, nil, fmt.Errorf("LoadConfiguration: missing router section")
+		return nil, fmt.Errorf("LoadConfiguration: missing router section")
 	}
 
 	var router Router
 	if err := yaml.Unmarshal([]byte(rawRouter), &router); err != nil {
-		return nil, "", nil, nil, nil, nil, nil, nil, err
+		return nil, err
 	}
 
 	rawAuthenticationConfiguration, ok := configmap.Data["authentication"]
 	if ok {
 		// backwards compatibility
 		// TODO: remove in 0.7.0
-		authenticator, prefix, err := oidc.LoadAuthenticationConfiguration(
+		auth, prefix, err := oidc.LoadAuthenticationConfiguration(
 			ctx,
 			scheme,
 			[]byte(rawAuthenticationConfiguration),
@@ -79,28 +78,35 @@ func LoadConfiguration(
 			certificateAuthority,
 		)
 		if err != nil {
-			return nil, "", nil, nil, nil, nil, nil, nil, err
+			return nil, err
 		}
 
-		return authenticator, prefix, router, []grpc.ServerOption{
-			grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
-				MinTime:             1 * time.Second,
-				PermitWithoutStream: true,
-			}),
-		}, &Provisioning{Enabled: false}, &LeasePolicy{MaxTags: 10}, nil, nil, nil
+		return &LoadedConfig{
+			Authenticator: auth,
+			Prefix:        prefix,
+			Router:        router,
+			ServerOptions: []grpc.ServerOption{
+				grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+					MinTime:             1 * time.Second,
+					PermitWithoutStream: true,
+				}),
+			},
+			Provisioning: &Provisioning{Enabled: false},
+			LeasePolicy:  &LeasePolicy{MaxTags: 10},
+		}, nil
 	}
 
 	rawConfig, ok := configmap.Data["config"]
 	if !ok {
-		return nil, "", nil, nil, nil, nil, nil, nil, fmt.Errorf("LoadConfiguration: missing config section")
+		return nil, fmt.Errorf("LoadConfiguration: missing config section")
 	}
 
 	var config Config
 	if err := yaml.UnmarshalStrict([]byte(rawConfig), &config); err != nil {
-		return nil, "", nil, nil, nil, nil, nil, nil, err
+		return nil, err
 	}
 
-	authenticator, prefix, err := LoadAuthenticationConfiguration(
+	auth, prefix, err := LoadAuthenticationConfiguration(
 		ctx,
 		scheme,
 		config.Authentication,
@@ -108,13 +114,37 @@ func LoadConfiguration(
 		certificateAuthority,
 	)
 	if err != nil {
-		return nil, "", nil, nil, nil, nil, nil, nil, err
+		return nil, err
 	}
 
 	serverOptions, err := LoadGrpcConfiguration(config.Grpc)
 	if err != nil {
-		return nil, "", nil, nil, nil, nil, nil, nil, err
+		return nil, err
 	}
 
-	return authenticator, prefix, router, serverOptions, &config.Provisioning, &config.LeasePolicy, &config.HiddenLabels, &config.DeprecatedLabels, nil
+	var telemetry *Telemetry
+	if config.Telemetry != nil && config.Telemetry.Enabled {
+		if err := config.Telemetry.Validate(); err != nil {
+			return nil, err
+		}
+		// Auto-derive the gRPC address when the operator has not overridden it.
+		// The well-known service name follows the same pattern as the controller
+		// and router: <service>.<namespace>.svc (in-cluster DNS).
+		if config.Telemetry.Endpoint == "" {
+			config.Telemetry.Endpoint = "jumpstarter-telemetry." + key.Namespace + ":9093"
+		}
+		telemetry = config.Telemetry
+	}
+
+	return &LoadedConfig{
+		Authenticator:    auth,
+		Prefix:           prefix,
+		Router:           router,
+		ServerOptions:    serverOptions,
+		Provisioning:     &config.Provisioning,
+		LeasePolicy:      &config.LeasePolicy,
+		HiddenLabels:     &config.HiddenLabels,
+		DeprecatedLabels: &config.DeprecatedLabels,
+		Telemetry:        telemetry,
+	}, nil
 }

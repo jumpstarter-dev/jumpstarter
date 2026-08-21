@@ -36,11 +36,12 @@ help:
 	@echo "  make docs-test       - Run documentation tests"
 	@echo ""
 	@echo "End-to-end testing:"
-	@echo "  make e2e-setup  - Setup e2e test environment (one-time)"
-	@echo "  make e2e-run    - Run e2e tests (requires e2e-setup first)"
-	@echo "  make e2e        - Same as e2e-run"
-	@echo "  make e2e-full   - Full setup + run (for CI or first time)"
-	@echo "  make e2e-clean  - Clean up e2e test environment (delete cluster, certs, etc.)"
+	@echo "  make e2e-setup             - Setup e2e test environment (one-time)"
+	@echo "  make e2e-run               - Run full e2e suite (includes ExporterSet QEMU)"
+	@echo "  make e2e                   - Same as e2e-run"
+	@echo "  make e2e-exporterset-qemu  - Run ExporterSet QEMU e2e only"
+	@echo "  make e2e-full              - Full setup + run (for CI or first time)"
+	@echo "  make e2e-clean             - Clean up e2e test environment (delete cluster, certs, etc.)"
 	@echo ""
 	@echo "Per-project targets:"
 	@echo "  make build-<project>  - Build specific project"
@@ -197,6 +198,19 @@ e2e-setup:
 e2e-run:
 	@echo "Running e2e tests..."
 	@bash e2e/run-e2e.sh
+
+# Focused local run of ExporterSet QEMU e2e (also covered by make e2e-run / CI).
+.PHONY: e2e-exporterset-qemu
+e2e-exporterset-qemu:
+	@echo "Running ExporterSet QEMU e2e tests..."
+	@GINKGO_LABEL_FILTER=exporterset-qemu bash e2e/run-e2e.sh
+
+# Prints a lane-grouped index of all e2e specs (group + name + labels + source),
+# generated via `ginkgo --dry-run`. Use it to check e2e/README.md's lane/test/
+# source accuracy; requires no live cluster.
+.PHONY: e2e-spec-index
+e2e-spec-index:
+	@./e2e/scripts/gen-spec-index.sh
 
 # Convenience alias for running e2e tests
 .PHONY: e2e

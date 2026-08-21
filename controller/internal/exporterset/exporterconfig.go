@@ -44,10 +44,14 @@ const (
 	// configVolumeName is the volume name for the ExporterConfig Secret.
 	configVolumeName = "exporter-config"
 
-	// configMountPath is where the ExporterConfig Secret is mounted.
-	configMountPath = "/etc/jumpstarter/exporters"
+	// ExporterConfigMountPath is where the ExporterConfig Secret is mounted
+	// inside the exporter container (QEMU provisioner and injectConfigVolume).
+	ExporterConfigMountPath = "/etc/jumpstarter/exporters"
 
-	// exporterContainerName is the init-container name in the sidecar Pod.
+	// configMountPath is the unexported alias used within this package.
+	configMountPath = ExporterConfigMountPath
+
+	// exporterContainerName is the main container that runs jmp run.
 	exporterContainerName = "exporter"
 )
 
@@ -74,7 +78,8 @@ type exporterConfigTLS struct {
 }
 
 type exporterConfigDriver struct {
-	Type     string                          `json:"type"`
+	Type     string                          `json:"type,omitempty"`
+	Ref      string                          `json:"ref,omitempty"`
 	Config   interface{}                     `json:"config,omitempty"`
 	Children map[string]exporterConfigDriver `json:"children,omitempty"`
 }
@@ -155,6 +160,13 @@ func buildExportMap(drivers []virtualtargetv1alpha1.DriverConfig) (map[string]ex
 
 		if _, exists := exportMap[name]; exists {
 			return nil, fmt.Errorf("duplicate driver key %q in ExporterSet drivers", name)
+		}
+
+		if d.Ref != "" {
+			exportMap[name] = exporterConfigDriver{
+				Ref: d.Ref,
+			}
+			continue
 		}
 
 		var config interface{}

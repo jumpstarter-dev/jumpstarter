@@ -1,0 +1,17 @@
+# Build context for python/Containerfile is the repo root.
+# Keep .git — hatch-vcs metadata hooks call `git rev-parse` for URLs/version.
+rust/target/
+**/target/
+python/.venv/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+e2e/testdata/
+.github/
+docs/_build/
+controller/bin/
+*.qcow2
+*.img
+*.raw

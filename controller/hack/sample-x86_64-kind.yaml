@@ -72,3 +72,4 @@ spec:
             arch: x86_64
             smp: 1
             mem: 1G
+            disk_size: 2G

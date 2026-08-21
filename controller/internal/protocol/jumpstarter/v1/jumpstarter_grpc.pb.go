@@ -22,16 +22,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ControllerService_Register_FullMethodName     = "/jumpstarter.v1.ControllerService/Register"
-	ControllerService_Unregister_FullMethodName   = "/jumpstarter.v1.ControllerService/Unregister"
-	ControllerService_ReportStatus_FullMethodName = "/jumpstarter.v1.ControllerService/ReportStatus"
-	ControllerService_Listen_FullMethodName       = "/jumpstarter.v1.ControllerService/Listen"
-	ControllerService_Status_FullMethodName       = "/jumpstarter.v1.ControllerService/Status"
-	ControllerService_Dial_FullMethodName         = "/jumpstarter.v1.ControllerService/Dial"
-	ControllerService_GetLease_FullMethodName     = "/jumpstarter.v1.ControllerService/GetLease"
-	ControllerService_RequestLease_FullMethodName = "/jumpstarter.v1.ControllerService/RequestLease"
-	ControllerService_ReleaseLease_FullMethodName = "/jumpstarter.v1.ControllerService/ReleaseLease"
-	ControllerService_ListLeases_FullMethodName   = "/jumpstarter.v1.ControllerService/ListLeases"
+	ControllerService_Register_FullMethodName            = "/jumpstarter.v1.ControllerService/Register"
+	ControllerService_Unregister_FullMethodName          = "/jumpstarter.v1.ControllerService/Unregister"
+	ControllerService_ReportStatus_FullMethodName        = "/jumpstarter.v1.ControllerService/ReportStatus"
+	ControllerService_Listen_FullMethodName              = "/jumpstarter.v1.ControllerService/Listen"
+	ControllerService_Status_FullMethodName              = "/jumpstarter.v1.ControllerService/Status"
+	ControllerService_Dial_FullMethodName                = "/jumpstarter.v1.ControllerService/Dial"
+	ControllerService_GetLease_FullMethodName            = "/jumpstarter.v1.ControllerService/GetLease"
+	ControllerService_RequestLease_FullMethodName        = "/jumpstarter.v1.ControllerService/RequestLease"
+	ControllerService_ReleaseLease_FullMethodName        = "/jumpstarter.v1.ControllerService/ReleaseLease"
+	ControllerService_ListLeases_FullMethodName          = "/jumpstarter.v1.ControllerService/ListLeases"
+	ControllerService_GetServiceEndpoints_FullMethodName = "/jumpstarter.v1.ControllerService/GetServiceEndpoints"
 )
 
 // ControllerServiceClient is the client API for ControllerService service.
@@ -64,6 +65,11 @@ type ControllerServiceClient interface {
 	ReleaseLease(ctx context.Context, in *ReleaseLeaseRequest, opts ...grpc.CallOption) (*ReleaseLeaseResponse, error)
 	// List all leases.
 	ListLeases(ctx context.Context, in *ListLeasesRequest, opts ...grpc.CallOption) (*ListLeasesResponse, error)
+	// Discover optional service endpoints (e.g. telemetry).
+	// Exporters and clients call this after registration to find the telemetry service.
+	// Returns an empty list when no optional services are deployed.
+	// Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
+	GetServiceEndpoints(ctx context.Context, in *GetServiceEndpointsRequest, opts ...grpc.CallOption) (*GetServiceEndpointsResponse, error)
 }
 
 type controllerServiceClient struct {
@@ -192,6 +198,16 @@ func (c *controllerServiceClient) ListLeases(ctx context.Context, in *ListLeases
 	return out, nil
 }
 
+func (c *controllerServiceClient) GetServiceEndpoints(ctx context.Context, in *GetServiceEndpointsRequest, opts ...grpc.CallOption) (*GetServiceEndpointsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetServiceEndpointsResponse)
+	err := c.cc.Invoke(ctx, ControllerService_GetServiceEndpoints_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ControllerServiceServer is the server API for ControllerService service.
 // All implementations must embed UnimplementedControllerServiceServer
 // for forward compatibility.
@@ -222,6 +238,11 @@ type ControllerServiceServer interface {
 	ReleaseLease(context.Context, *ReleaseLeaseRequest) (*ReleaseLeaseResponse, error)
 	// List all leases.
 	ListLeases(context.Context, *ListLeasesRequest) (*ListLeasesResponse, error)
+	// Discover optional service endpoints (e.g. telemetry).
+	// Exporters and clients call this after registration to find the telemetry service.
+	// Returns an empty list when no optional services are deployed.
+	// Older controllers return UNIMPLEMENTED; callers must treat that as an empty list.
+	GetServiceEndpoints(context.Context, *GetServiceEndpointsRequest) (*GetServiceEndpointsResponse, error)
 	mustEmbedUnimplementedControllerServiceServer()
 }
 
@@ -261,6 +282,9 @@ func (UnimplementedControllerServiceServer) ReleaseLease(context.Context, *Relea
 }
 func (UnimplementedControllerServiceServer) ListLeases(context.Context, *ListLeasesRequest) (*ListLeasesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListLeases not implemented")
+}
+func (UnimplementedControllerServiceServer) GetServiceEndpoints(context.Context, *GetServiceEndpointsRequest) (*GetServiceEndpointsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetServiceEndpoints not implemented")
 }
 func (UnimplementedControllerServiceServer) mustEmbedUnimplementedControllerServiceServer() {}
 func (UnimplementedControllerServiceServer) testEmbeddedByValue()                           {}
@@ -449,6 +473,24 @@ func _ControllerService_ListLeases_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ControllerService_GetServiceEndpoints_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetServiceEndpointsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).GetServiceEndpoints(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControllerService_GetServiceEndpoints_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).GetServiceEndpoints(ctx, req.(*GetServiceEndpointsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ControllerService_ServiceDesc is the grpc.ServiceDesc for ControllerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -487,6 +529,10 @@ var ControllerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListLeases",
 			Handler:    _ControllerService_ListLeases_Handler,
+		},
+		{
+			MethodName: "GetServiceEndpoints",
+			Handler:    _ControllerService_GetServiceEndpoints_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

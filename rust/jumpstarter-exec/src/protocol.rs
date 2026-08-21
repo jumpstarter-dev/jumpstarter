@@ -37,6 +37,13 @@ pub enum ClientMessage {
         #[serde(default)]
         cwd: Option<String>,
     },
+    /// Ask the serve process to exit (tear down the runtime container).
+    ///
+    /// Used by the exporter sidecar on `exitOnLeaseEnd` / ExitAndReplace so
+    /// the main container leaves and Kubernetes replaces the Pod. Without
+    /// this, a native sidecar with `restartPolicy: Always` would simply
+    /// restart while `jumpstarter-exec serve` kept running.
+    Shutdown,
     /// Stdin data for the running child process (base64-encoded).
     Stdin { data: String },
     /// Close the child's stdin.
@@ -101,6 +108,7 @@ mod tests {
     #[test]
     fn client_variants_roundtrip() {
         let cases: Vec<(&str, ClientMessage)> = vec![
+            ("Shutdown", ClientMessage::Shutdown),
             (
                 "Stdin",
                 ClientMessage::Stdin {

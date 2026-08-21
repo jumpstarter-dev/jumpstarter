@@ -26,7 +26,8 @@ import (
 	. "github.com/onsi/gomega"    //nolint:revive
 )
 
-var _ = Describe("Compat: Old Controller E2E Tests", Label("compat", "old-controller"), Ordered, func() {
+// Serial: replaces the running controller and switches the active client.
+var _ = Describe("Compat: Old Controller E2E Tests", Label("compat", "old-controller"), Ordered, Serial, func() {
 	var (
 		tracker *ProcessTracker
 		ns      string

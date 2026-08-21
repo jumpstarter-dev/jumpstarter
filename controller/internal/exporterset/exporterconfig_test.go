@@ -88,3 +88,64 @@ func TestBuildExportMap_duplicateKey(t *testing.T) {
 		t.Fatal("expected error for duplicate driver key, got nil")
 	}
 }
+
+func TestBuildExportMap_refEntry(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{Name: "qemu", Type: "jumpstarter_driver_qemu.driver.Qemu"},
+		{Name: "console", Ref: "qemu.console"},
+	}
+
+	result, err := buildExportMap(drivers)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(result))
+	}
+
+	console, ok := result["console"]
+	if !ok {
+		t.Fatal("'console' key not found")
+	}
+	if console.Ref != "qemu.console" {
+		t.Errorf("console ref = %q, want %q", console.Ref, "qemu.console")
+	}
+	if console.Type != "" {
+		t.Errorf("console type = %q, want empty", console.Type)
+	}
+	if console.Config != nil {
+		t.Errorf("console config = %v, want nil", console.Config)
+	}
+}
+
+func TestBuildExportMap_refWithExplicitName(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{Name: "my-console", Ref: "qemu.console"},
+	}
+
+	result, err := buildExportMap(drivers)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	myConsole, ok := result["my-console"]
+	if !ok {
+		t.Fatalf("expected explicit key %q, got keys %v", "my-console", result)
+	}
+	if myConsole.Ref != "qemu.console" {
+		t.Errorf("my-console ref = %q, want %q", myConsole.Ref, "qemu.console")
+	}
+}
+
+func TestBuildExportMap_refDuplicateName(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{Name: "console", Type: "jumpstarter_driver_pyserial.driver.PySerial"},
+		{Name: "console", Ref: "qemu.console"},
+	}
+
+	_, err := buildExportMap(drivers)
+	if err == nil {
+		t.Fatal("expected error for duplicate driver key, got nil")
+	}
+}

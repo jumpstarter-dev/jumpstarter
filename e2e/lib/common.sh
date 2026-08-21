@@ -71,7 +71,31 @@ run_ginkgo() {
     local label_filter="${1:-}"
     shift || true
 
-    local flags=(-v --show-node-events --trace --timeout 30m)
+    local timeout="30m"
+    # Full suite and ExporterSet QEMU runs need TCG headroom (flash/boot when enabled).
+    # "!exporterset-qemu" also matches the positive substring, so check negation first.
+    if [[ "${label_filter}" != *"!exporterset-qemu"* ]] && \
+       { [[ -z "${label_filter}" ]] || [[ "${label_filter}" == *"exporterset-qemu"* ]]; }; then
+        timeout="60m"
+    fi
+
+    # Retry a failed spec instead of failing the whole suite. The e2e suite talks
+    # to a real cluster over the network, so a spec can fail for reasons that have
+    # nothing to do with the code under test (a slow DNS answer, a pod scheduled
+    # late, a router connection dropped). A retried spec is still reported as
+    # flaky in the summary, so genuine instability stays visible.
+    local flake_attempts="${E2E_FLAKE_ATTEMPTS:-1}"
+
+    # Run top-level containers concurrently when asked. Off by default: the
+    # suite shares one cluster and one runner, so more processes is not free.
+    # Containers that touch host-global state or the shared client config are
+    # marked Serial and still run one at a time, after the parallel ones.
+    local procs="${E2E_PROCS:-1}"
+
+    local flags=(-v --show-node-events --trace --timeout "${timeout}" --flake-attempts "${flake_attempts}")
+    if [ "${procs}" -gt 1 ]; then
+        flags+=(--procs "${procs}")
+    fi
     if [ -n "$label_filter" ]; then
         flags+=(--label-filter "$label_filter")
     fi

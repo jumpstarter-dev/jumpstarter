@@ -1,0 +1,13 @@
+# CI-only runtime image for host-compiled Go binaries.
+#
+# BIN selects which binary becomes the default entrypoint.
+# COPY ${BIN} /entrypoint works because COPY supports ARG expansion,
+# while ENTRYPOINT does not (and ubi-micro has no shell for shell-form).
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.8-1786321990@sha256:7e7f79ab747bf2b452e3043dd89f388e92be4c7fdcc8b815b58adf6c99c39c95
+ARG BIN
+WORKDIR /
+COPY . .
+# ENTRYPOINT can't expand ARG; fixed path lets one file serve all three images
+COPY ${BIN} /entrypoint
+USER 65532:65532
+ENTRYPOINT ["/entrypoint"]

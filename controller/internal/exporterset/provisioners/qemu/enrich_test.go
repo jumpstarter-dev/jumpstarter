@@ -265,11 +265,29 @@ func TestEnrichExporterExport_defaultsFromMergedParameters(t *testing.T) {
 	if got := config["smp"]; got != float64(4) {
 		t.Errorf("smp = %v, want 4", got)
 	}
-	if got := config["mem"]; got != "4Gi" {
-		t.Errorf("mem = %v, want 4Gi", got)
+	if got := config["mem"]; got != "4G" {
+		t.Errorf("mem = %v, want 4G", got)
 	}
-	if got := config["disk_size"]; got != "40Gi" {
-		t.Errorf("disk_size = %v, want 40Gi", got)
+	if got := config["disk_size"]; got != "40G" {
+		t.Errorf("disk_size = %v, want 40G", got)
+	}
+}
+
+func TestNormalizeQemuSize(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"10Gi", "10G"},
+		{"512Mi", "512M"},
+		{"1Ti", "1T"},
+		{"2G", "2G"},
+		{"128M", "128M"},
+	}
+	for _, tc := range cases {
+		got := normalizeQemuSize(tc.in)
+		if got != tc.want {
+			t.Errorf("normalizeQemuSize(%q) = %v, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 

@@ -29,6 +29,7 @@ Drivers that provide various communication interfaces:
 
 - {doc}`ADB <adb>` (`jumpstarter-driver-adb`) - Android Debug Bridge tunneling
 - {doc}`BLE <ble>` (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
+- {doc}`BT Peer <bt-peer>` (`jumpstarter-driver-bt-peer`) - Bluetooth peer device powered by bumble
 - {doc}`CAN <can>` (`jumpstarter-driver-can`) - Controller Area Network communication
 - {doc}`HTTP <http>` (`jumpstarter-driver-http`) - HTTP communication
 - {doc}`mitmproxy <mitmproxy>` (`jumpstarter-driver-mitmproxy`) - HTTP/HTTPS interception, mocking, and traffic recording
@@ -87,6 +88,7 @@ Drivers for virtual and emulated targets:
 - {doc}`QEMU <qemu>` (`jumpstarter-driver-qemu`) - QEMU virtual machine management
 - {doc}`Renode <renode>` (`jumpstarter-driver-renode`) - Renode embedded systems emulation
 - {doc}`Corellium <corellium>` (`jumpstarter-driver-corellium`) - Corellium virtualization platform
+- {doc}`Cuttlefish <cuttlefish>` (`jumpstarter-driver-cuttlefish`) - Android Cuttlefish virtual device management
 
 ### Utility
 
@@ -101,8 +103,10 @@ General-purpose utility drivers:
 adb.md
 androidemulator.md
 ble.md
+bt-peer.md
 can.md
 corellium.md
+cuttlefish.md
 doip.md
 dut-network.md
 dutlink.md

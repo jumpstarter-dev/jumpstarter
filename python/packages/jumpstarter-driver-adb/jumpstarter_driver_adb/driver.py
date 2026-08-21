@@ -1,3 +1,4 @@
+import math
 import os
 import shutil
 import subprocess
@@ -21,7 +22,7 @@ class AdbServer(TcpNetwork):
     adb_path: str = "adb"
     host: str = "127.0.0.1"
     port: int = 15037
-
+    connect_timeout: float = 30.0
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_adb.client.AdbClient"
@@ -34,6 +35,14 @@ class AdbServer(TcpNetwork):
             raise ConfigurationError(f"Port must be an integer: {self.port}")
         if self.port < 1 or self.port > 65535:
             raise ConfigurationError(f"Invalid port number: {self.port}")
+
+        if (
+            isinstance(self.connect_timeout, bool)
+            or not isinstance(self.connect_timeout, (int, float))
+            or not math.isfinite(self.connect_timeout)
+            or self.connect_timeout <= 0
+        ):
+            raise ConfigurationError(f"connect_timeout must be a positive number: {self.connect_timeout}")
 
         # Resolve adb binary
         if self.adb_path == "adb":
@@ -59,10 +68,11 @@ class AdbServer(TcpNetwork):
         self.start_server()
         self.logger.info(f"ADB server running on {self.host}:{self.port}")
 
+
     def close(self):
         self.kill_server()
 
-    def _adb_env(self) -> dict[str, str]:
+    def adb_env(self) -> dict[str, str]:
         """Environment with ANDROID_ADB_SERVER_PORT set."""
         return {**os.environ, "ANDROID_ADB_SERVER_PORT": str(self.port)}
 
@@ -77,7 +87,7 @@ class AdbServer(TcpNetwork):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                env=self._adb_env(),
+                env=self.adb_env(),
             )
             if result.stdout.strip():
                 self.logger.info(result.stdout.strip())
@@ -98,13 +108,74 @@ class AdbServer(TcpNetwork):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                env=self._adb_env(),
+                env=self.adb_env(),
             )
             if result.stdout.strip():
                 self.logger.info(result.stdout.strip())
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to kill ADB server: {e}")
         return self.port
+
+    def _connect_device(self, device: str) -> str:
+        self.logger.info(f"Connecting to device {device}")
+        try:
+            result = subprocess.run(
+                [self.adb_path, "connect", device],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=self.adb_env(),
+                timeout=self.connect_timeout,
+            )
+            output = result.stdout.strip()
+            self.logger.info(output)
+            return output
+        except subprocess.TimeoutExpired as e:
+            self.logger.error(f"Timed out connecting to device {device} after {self.connect_timeout}s")
+            raise TimeoutError(f"adb connect {device} timed out after {self.connect_timeout}s") from e
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or "").strip()
+            self.logger.error(f"Failed to connect to device {device}: {stderr or e}")
+            raise
+
+    @export
+    def connect_device(self, device: str) -> str:
+        """Connect to an ADB device by address (host:port).
+
+        Raises on failure or timeout so callers can react instead of
+        silently receiving an error string.
+        """
+        return self._connect_device(device)
+
+    @export
+    def disconnect_device(self, device: str) -> str:
+        """Disconnect an ADB device by address (host:port).
+
+        Raises on failure or timeout so callers can react instead of
+        silently receiving an error string.
+        """
+        self.logger.info(f"Disconnecting device {device}")
+        try:
+            result = subprocess.run(
+                [self.adb_path, "disconnect", device],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=self.adb_env(),
+                timeout=self.connect_timeout,
+            )
+            output = result.stdout.strip()
+            self.logger.info(output)
+            return output
+        except subprocess.TimeoutExpired as e:
+            self.logger.error(f"Timed out disconnecting device {device} after {self.connect_timeout}s")
+            raise TimeoutError(f"adb disconnect {device} timed out after {self.connect_timeout}s") from e
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or "").strip()
+            self.logger.error(f"Failed to disconnect device {device}: {stderr or e}")
+            raise
 
     @export
     def list_devices(self) -> str:
@@ -116,7 +187,7 @@ class AdbServer(TcpNetwork):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                env=self._adb_env(),
+                env=self.adb_env(),
             )
             return result.stdout
         except subprocess.CalledProcessError as e:

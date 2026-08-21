@@ -50,6 +50,9 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
 
     Tries to connect to all resolved IPs in parallel and returns credentials
     from the first successful connection.
+
+    ``timeout`` applies independently to DNS resolution and connection, so
+    worst-case wall time is approximately ``2 * timeout``.
     """
     try:
         parsed = urlparse(f"//{target}")
@@ -57,24 +60,31 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
     except ValueError as e:
         raise ConfigurationError(f"Failed parsing {target}") from e
 
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+
+    # Resolve all IP addresses for the hostname.
+    #
+    # Resolution gets its own budget, separate from the connect budget below. A
+    # slow or rate-limited resolver would otherwise consume the whole timeout and
+    # surface as "Timeout connecting to <host>:<port>" with no per-IP errors,
+    # pointing at the server when the name was never resolved in the first place.
+    loop = asyncio.get_running_loop()
     try:
         with fail_after(timeout):
-            ssl_context = ssl.create_default_context()
-            ssl_context.check_hostname = False
-            ssl_context.verify_mode = ssl.CERT_NONE
+            addr_info = await loop.getaddrinfo(parsed.hostname, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
+    except socket.gaierror as e:
+        raise ConnectionError(f"Failed resolving {parsed.hostname}") from e
+    except TimeoutError as e:
+        raise ConnectionError(f"Timeout resolving {parsed.hostname} after {timeout}s") from e
 
-            # Resolve all IP addresses for the hostname
-            loop = asyncio.get_running_loop()
-            addr_info = await loop.getaddrinfo(
-                parsed.hostname, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM
-            )
+    # Log resolved IPs
+    resolved_ips = [sockaddr[0] for _, _, _, _, sockaddr in addr_info]
+    logger.debug(f"Resolved {parsed.hostname} to {len(resolved_ips)} IP(s): {', '.join(resolved_ips)}")
 
-            # Log resolved IPs
-            resolved_ips = [sockaddr[0] for _, _, _, _, sockaddr in addr_info]
-            logger.debug(
-                f"Resolved {parsed.hostname} to {len(resolved_ips)} IP(s): {', '.join(resolved_ips)}"
-            )
-
+    try:
+        with fail_after(timeout):
             # Try all IPs in parallel - race for first success
             # Wrap tasks to include IP info with results/exceptions
             async def try_with_ip(ip_address: str):
@@ -121,10 +131,11 @@ async def _ssl_channel_credentials_insecure(target: str, timeout: float) -> grpc
                 for task in tasks:
                     if not task.done():
                         task.cancel()
-    except socket.gaierror as e:
-        raise ConnectionError(f"Failed resolving {parsed.hostname}") from e
     except TimeoutError as e:
-        raise ConnectionError(f"Timeout connecting to {parsed.hostname}:{port}") from e
+        raise ConnectionError(
+            f"Timeout connecting to {parsed.hostname}:{port} after {timeout}s "
+            f"(resolved to {', '.join(resolved_ips)})"
+        ) from e
 
 
 async def ssl_channel_credentials(target: str, tls_config, timeout=5):

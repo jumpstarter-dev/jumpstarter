@@ -2,12 +2,17 @@
 # Jumpstarter End-to-End Test Runner
 # This script runs the e2e test suite (assumes setup-e2e.sh was run first)
 #
-# The tests are implemented using Go + Ginkgo. Label filters can be used to
-# run specific subsets:
-#   --label-filter "core"            - run core tests only
-#   --label-filter "hooks"           - run hooks tests only
-#   --label-filter "direct-listener" - run direct-listener tests only
-#   --label-filter "!operator-only"  - skip operator-specific tests
+# The tests are implemented using Go + Ginkgo. By default the full suite runs,
+# including ExporterSet QEMU (label exporterset-qemu). Label filters select
+# subsets:
+#   --label-filter "core"                 - run core tests only
+#   --label-filter "hooks"                - run hooks tests only
+#   --label-filter "direct-listener"      - run direct-listener tests only
+#   --label-filter "exporterset-qemu"     - ExporterSet QEMU only (needs qemu images)
+#   --label-filter "!exporterset-qemu"   - skip ExporterSet QEMU
+#   --label-filter "!operator-only"       - skip operator-specific tests
+#
+# Override with GINKGO_LABEL_FILTER for focused local runs.
 
 set -euo pipefail
 

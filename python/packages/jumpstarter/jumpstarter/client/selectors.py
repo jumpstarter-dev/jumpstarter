@@ -67,11 +67,27 @@ def extract_match_labels_filter(selector: str | None) -> str | None:
     return ",".join(f"{k}={v}" for k, v in match_labels.items())
 
 
-def selector_contains(selector: str, requirements: str) -> bool:
-    """Check if selector contains all criteria from requirements.
+def _label_satisfies_expression(sel_labels: dict[str, str], key: str, operator: str, values: list[str]) -> bool:
+    if operator == "!exists":
+        return key not in sel_labels
+    if operator in ("notin", "!="):
+        return key not in sel_labels or sel_labels[key] not in values
+    if operator == "in":
+        return key in sel_labels and sel_labels[key] in values
+    if operator == "exists":
+        return key in sel_labels
+    raise ValueError(f"unknown label selector operator: {operator!r}")
 
-    Returns True if all matchLabels and matchExpressions in `requirements`
-    are present in `selector`.
+
+def selector_contains(selector: str, requirements: str) -> bool:
+    """Check if selector satisfies all criteria from requirements.
+
+    Returns True if all matchLabels in `requirements` are present in `selector`
+    and all matchExpressions in `requirements` are satisfied by `selector`
+    (either by exact match in matchExpressions or by evaluation against matchLabels).
+
+    Raises ValueError if `requirements` contains an expression with an unknown
+    operator that is not exactly matched by the selector's matchExpressions.
     """
     if not requirements or not requirements.strip():
         return True
@@ -84,13 +100,12 @@ def selector_contains(selector: str, requirements: str) -> bool:
         if sel_labels.get(key) != value:
             return False
 
-    # All required matchExpressions must be in selector's matchExpressions
+    # All required matchExpressions must be satisfied by selector's
+    # matchExpressions or matchLabels
     for r_key, r_op, r_vals in req_exprs:
-        found = False
-        for s_key, s_op, s_vals in sel_exprs:
-            if s_key == r_key and s_op == r_op and set(s_vals) == set(r_vals):
-                found = True
-                break
+        found = any(s_key == r_key and s_op == r_op and set(s_vals) == set(r_vals) for s_key, s_op, s_vals in sel_exprs)
+        if not found:
+            found = _label_satisfies_expression(sel_labels, r_key, r_op, r_vals)
         if not found:
             return False
 

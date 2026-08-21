@@ -38,6 +38,10 @@ config:
       hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
       username: "test-exporter-hooks"
       userID: "c6ed6f40-6689-6a7e-c64c-55d0a9a5871f"
+    - email: "test-client-exporterset-qemu@example.com"
+      hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W" # password
+      username: "test-client-exporterset-qemu"
+      userID: "d7fe7051-7790-7b8f-d75d-66e1b0b69820"
   connectors:
     - name: kubernetes
       type: oidc

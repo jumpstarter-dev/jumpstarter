@@ -1,0 +1,65 @@
+# Sample VirtualTargetClass + ExporterSet for exporterset-qemu e2e (x86_64).
+#
+# Kind/TCG friendly (no KVM). Applied by e2e/test/exporterset_qemu_test.go
+# when the host arch is x86_64/amd64 (see e2e/scripts/qemu-guest-arch.sh).
+# Images default to locally loaded :latest tags used by Kind e2e setup.
+---
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
+kind: VirtualTargetClass
+metadata:
+  name: qemu-x86-64-e2e
+  namespace: jumpstarter-lab
+spec:
+  provisioner: qemu.jumpstarter.dev
+  bindingMode: Immediate
+  reclaimPolicy: Delete
+  scheduling:
+    resources:
+      requests:
+        cpu: "1"
+        memory: 1Gi
+  images:
+    exporter:
+      image: quay.io/jumpstarter-dev/jumpstarter:latest
+      imagePullPolicy: IfNotPresent
+    runtime:
+      image: quay.io/jumpstarter-dev/virtual/qemu-runtime:latest
+      imagePullPolicy: IfNotPresent
+  parameters:
+    arch: x86_64
+    machineType: q35
+    resources:
+      cpu: 1
+      memory: 1Gi
+      storage: 10Gi
+---
+apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
+kind: ExporterSet
+metadata:
+  name: x86-64-virtual-e2e
+  namespace: jumpstarter-lab
+spec:
+  minReplicas: 0
+  maxReplicas: 1
+  minAvailableReplicas: 1
+  scaleDownCooldown: 5m
+  recycleStrategy: ExitAndReplace
+  virtualTargetClassName: qemu-x86-64-e2e
+  selector:
+    matchLabels:
+      board: x86-64-virtual-e2e
+  template:
+    metadata:
+      labels:
+        board: x86-64-virtual-e2e
+        arch: x86_64
+        virtual: "true"
+    spec:
+      drivers:
+        - name: qemu
+          type: jumpstarter_driver_qemu.driver.Qemu
+          config:
+            arch: x86_64
+            smp: 1
+            mem: 1G
+            disk_size: 10G
