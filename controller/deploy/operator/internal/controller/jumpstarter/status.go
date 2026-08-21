@@ -111,6 +111,21 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 		messages = append(messages, routersMsg)
 	}
 
+	// Check telemetry deployment readiness (only if enabled), clear stale condition when disabled.
+	if js.Spec.Telemetry != nil && js.Spec.Telemetry.Enabled {
+		telReady, telMsg := r.checkTelemetryDeploymentReady(ctx, js)
+		setCondition(js, operatorv1alpha1.ConditionTypeTelemetryDeploymentReady,
+			telReady,
+			conditionReason(telReady, "DeploymentAvailable", "DeploymentNotAvailable"),
+			telMsg)
+		if !telReady {
+			allReady = false
+			messages = append(messages, telMsg)
+		}
+	} else {
+		meta.RemoveStatusCondition(&js.Status.Conditions, operatorv1alpha1.ConditionTypeTelemetryDeploymentReady)
+	}
+
 	// Check ExporterSet controller deployments readiness (only if configured)
 	if js.Spec.ExporterSets != nil && hasEnabledProvisioners(js.Spec.ExporterSets.Provisioners) {
 		esReady, esMsg := r.checkExporterSetControllersReady(ctx, js)
@@ -463,6 +478,30 @@ func (r *JumpstarterReconciler) checkExporterSetControllersReady(ctx context.Con
 		return true, "All ExporterSet controller deployments are available"
 	}
 	return false, fmt.Sprintf("ExporterSet controller deployments not available for provisioners: %v", notReady)
+}
+
+// checkTelemetryDeploymentReady checks if the telemetry deployment is available.
+func (r *JumpstarterReconciler) checkTelemetryDeploymentReady(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (bool, string) {
+	deploymentName := fmt.Sprintf("%s-telemetry", js.Name)
+	deployment := &appsv1.Deployment{}
+	err := r.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: js.Namespace}, deployment)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, fmt.Sprintf("Telemetry deployment %s not found", deploymentName)
+		}
+		return false, fmt.Sprintf("Error getting telemetry deployment: %v", err)
+	}
+
+	for _, cond := range deployment.Status.Conditions {
+		if cond.Type == appsv1.DeploymentAvailable {
+			if cond.Status == corev1.ConditionTrue {
+				return true, fmt.Sprintf("Telemetry deployment %s is available", deploymentName)
+			}
+			return false, fmt.Sprintf("Telemetry deployment %s not available: %s", deploymentName, cond.Message)
+		}
+	}
+
+	return false, fmt.Sprintf("Telemetry deployment %s has no Available condition", deploymentName)
 }
 
 // hasEnabledProvisioners returns true if at least one provisioner is enabled.

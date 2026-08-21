@@ -210,9 +210,21 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile Services
+	// Reconcile Telemetry Deployment (Service is reconciled below in the networking stage)
+	if err := r.reconcileTelemetryDeploymentStage(ctx, &jumpstarter); err != nil {
+		log.Error(err, "Failed to reconcile Telemetry deployment")
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile Services (controller, router, login endpoints, and telemetry ClusterIP)
 	if err := r.reconcileServices(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Services")
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile Telemetry ClusterIP Service (part of the networking stage)
+	if err := r.reconcileTelemetryServiceStage(ctx, &jumpstarter); err != nil {
+		log.Error(err, "Failed to reconcile Telemetry service")
 		return ctrl.Result{}, err
 	}
 
@@ -1290,6 +1302,20 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 
 	cfg.DeprecatedLabels = config.DeprecatedLabels{
 		Keys: jumpstarter.Spec.DeprecatedLabels.Keys,
+	}
+
+	// Telemetry configuration.
+	// Certificate is intentionally omitted until the telemetry binary supports TLS serving.
+	if jumpstarter.Spec.Telemetry != nil && jumpstarter.Spec.Telemetry.Enabled {
+		t := jumpstarter.Spec.Telemetry
+		telemetryCfg := &config.Telemetry{
+			Enabled:  true,
+			Endpoint: telemetryEndpointFor(jumpstarter.Namespace),
+		}
+		if t.Logging.Filter.MinSeverity != "" {
+			telemetryCfg.Logging.Filter.MinSeverity = t.Logging.Filter.MinSeverity
+		}
+		cfg.Telemetry = telemetryCfg
 	}
 
 	// gRPC keepalive configuration
