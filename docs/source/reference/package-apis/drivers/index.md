@@ -89,6 +89,7 @@ Drivers for virtual and emulated targets:
 - {doc}`Renode <renode>` (`jumpstarter-driver-renode`) - Renode embedded systems emulation
 - {doc}`Corellium <corellium>` (`jumpstarter-driver-corellium`) - Corellium virtualization platform
 - {doc}`Cuttlefish <cuttlefish>` (`jumpstarter-driver-cuttlefish`) - Android Cuttlefish virtual device management
+- {doc}`Netsim <netsim>` (`jumpstarter-driver-netsim`) - Android netsim virtual radio control (Bluetooth, WiFi, UWB)
 
 ### Utility
 
@@ -118,6 +119,7 @@ http.md
 http-power.md
 iscsi.md
 mitmproxy.md
+netsim.md
 network.md
 noyito-relay.md
 obd.md
