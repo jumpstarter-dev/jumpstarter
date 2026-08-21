@@ -382,12 +382,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     status ticks after handle_lease's finally has cleaned up."""
 
     _pending_lease_status: jumpstarter_pb2.StatusResponse | None = field(init=False, default=None)
-    """Stashed status from a lease reassignment, replayed after handle_lease's
-    finally clears _lease_context so the new lease can be acquired."""
+    """Stashed status from a lease reassignment, replayed after handle_lease
+    finalizes so the new lease can be acquired. Needed because the controller
+    Status stream suppresses duplicate ticks via proto.Equal."""
 
     _status_replay_tx: MemoryObjectSendStream | None = field(init=False, default=None)
     """Send side of the status channel, used to replay _pending_lease_status
     back into the status loop after a lease transition."""
+
     _lease_context: LeaseContext | None = field(init=False, default=None)
     """Encapsulates all resources associated with the current lease.
 
@@ -1130,6 +1132,60 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 yield session, main_path, hook_path
         logger.info("Session closed")
 
+    def _ensure_hook_event_set(self, lease_scope: LeaseContext) -> None:
+        """Set before_lease_hook if no hook executor is configured.
+
+        When conn_tg is cancelled before the no-hook path reaches
+        lease_scope.before_lease_hook.set(), the flag remains unset and
+        _cleanup_after_lease (shielded) deadlocks.  Only apply when NO
+        hooks are configured - with hooks, run_before_lease_hook's
+        finally block sets the event after updating skip_after_lease_hook.
+        """
+        if not self.hook_executor and not lease_scope.before_lease_hook.is_set():
+            lease_scope.before_lease_hook.set()
+
+    async def _finalize_lease_context(self, lease_scope: LeaseContext) -> None:
+        """Clean up lease context ownership after handle_lease exits.
+
+        Ensures event flags are set (preventing deadlocks in shielded
+        cleanup), adds a brief delay after session teardown to prevent
+        SSL corruption from overlapping connections, and clears context.
+
+        Shielded from cancellation so that _lease_context is always
+        cleared even when the task group is cancelled mid-cleanup.
+        """
+        with CancelScope(shield=True):
+            # Always unblock waiters for this lease_scope, even if
+            # _on_lease_released already cleared the exporter-level field.
+            if not lease_scope.before_lease_hook.is_set():
+                lease_scope.before_lease_hook.set()
+            if not lease_scope.after_lease_hook_done.is_set():
+                lease_scope.after_lease_hook_done.set()
+            if self._lease_context is not lease_scope:
+                return
+            if lease_scope.session is not None:
+                # Brief delay to ensure session is fully closed before next lease.
+                # Prevents SSL corruption from overlapping connections.
+                await sleep(0.2)
+            self._last_completed_lease = lease_scope.lease_name
+            self._lease_context = None
+            if self.exit_on_lease_end:
+                self._stop_requested = True
+            clear_log_context()
+            set_log_context(exporter=self.name)
+            logger.debug("Ready for next lease")
+            pending = self._pending_lease_status
+            if pending is not None:
+                self._pending_lease_status = None
+                if self._status_replay_tx is not None:
+                    try:
+                        await self._status_replay_tx.send(pending)
+                    except (anyio.ClosedResourceError, anyio.EndOfStream):
+                        logger.debug(
+                            "Status channel closed, skipping replay for %s",
+                            pending.lease_name,
+                        )
+
     async def _cleanup_after_lease(self, lease_scope: LeaseContext) -> None:
         """Run afterLease hook cleanup when handle_lease exits.
 
@@ -1207,7 +1263,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         lease_scope.after_lease_hook_done.set()
         return True
 
-    async def handle_lease(self, lease_name: str, tg: TaskGroup, lease_scope: LeaseContext) -> None:  # noqa: C901
+    async def handle_lease(self, lease_name: str, conns_tg: TaskGroup, lease_scope: LeaseContext) -> None:
         """Handle all incoming client connections for a lease.
 
         This method orchestrates the complete lifecycle of managing connections during
@@ -1223,7 +1279,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
         Args:
             lease_name: Name of the lease to handle connections for
-            tg: TaskGroup for spawning concurrent connection handler tasks
+            conns_tg: Data-plane TaskGroup for spawning connection handler tasks
             lease_scope: LeaseScope with before_lease_hook event (session/socket set here)
 
         Note:
@@ -1245,157 +1301,104 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             if await self._skip_stale_lease(lease_name, lease_scope, "before session creation"):
                 return
 
-            logger.info("Listening for incoming connection requests on lease %s", lease_name)
+            # Create session for the lease duration and populate lease_scope
+            # Uses dual sockets: main socket for clients, hook socket for j commands
+            async with self.session_for_lease() as (session, main_path, hook_path):
+                # Populate the lease scope with session and socket paths
+                lease_scope.session = session
+                lease_scope.socket_path = main_path
+                lease_scope.hook_socket_path = hook_path  # Isolated socket for hook j commands
+                # Link session to lease context for EndSession RPC
+                session.lease_context = lease_scope
+                # Sync status from LeaseContext to Session (status may have been updated
+                # before session was created, e.g., BEFORE_LEASE_HOOK when hooks are configured)
+                session.update_status(lease_scope.current_status, lease_scope.status_message)
+                logger.debug("Session sockets: main=%s, hook=%s", main_path, hook_path)
 
-            # Buffer Listen responses to avoid blocking when responses arrive before
-            # process_connections starts iterating. This prevents a race condition where
-            # the client dials immediately after lease acquisition but before the session is ready.
-            listen_tx, listen_rx = create_memory_object_stream[jumpstarter_pb2.ListenResponse](max_buffer_size=10)
-            try:
-                # Create session for the lease duration and populate lease_scope
-                # Uses dual sockets: main socket for clients, hook socket for j commands
-                async with self.session_for_lease() as (session, main_path, hook_path):
-                    # Populate the lease scope with session and socket paths
-                    lease_scope.session = session
-                    lease_scope.socket_path = main_path
-                    lease_scope.hook_socket_path = hook_path  # Isolated socket for hook j commands
-                    # Link session to lease context for EndSession RPC
-                    session.lease_context = lease_scope
-                    # Sync status from LeaseContext to Session (status may have been updated
-                    # before session was created, e.g., BEFORE_LEASE_HOOK when hooks are configured)
-                    session.update_status(lease_scope.current_status, lease_scope.status_message)
-                    logger.debug("Session sockets: main=%s, hook=%s", main_path, hook_path)
+                if await self._skip_stale_lease(lease_name, lease_scope, "during session setup"):
+                    return
 
-                    # Check if lease ended during session creation - serve() often
-                    # processes the buffered leased=False while session_for_lease is
-                    # setting up sockets and gRPC servers.  Bailing here avoids the
-                    # Listen stream, conn_tg, and _cleanup_after_lease overhead.
-                    # The session context manager handles teardown on return.
-                    if await self._skip_stale_lease(lease_name, lease_scope, "during session setup"):
-                        return
+                logger.info("Listening for incoming connection requests on lease %s", lease_name)
+                listen_tx, listen_rx = create_memory_object_stream[jumpstarter_pb2.ListenResponse](max_buffer_size=10)
 
-                    # Accept connections immediately - driver calls will be gated internally
-                    # until the beforeLease hook completes. This allows LogStream to work
-                    # during hook execution for real-time log streaming.
-                    logger.info("Accepting connections (driver calls gated until beforeLease hook completes)")
+                # Accept connections immediately - driver calls will be gated internally
+                # until the beforeLease hook completes. This allows LogStream to work
+                # during hook execution for real-time log streaming.
+                logger.info("Accepting connections (driver calls gated until beforeLease hook completes)")
 
-                    # Note: Status is managed by _report_status() which updates both LeaseContext
-                    # and Session. The sync above handles the case where status was updated before
-                    # session creation (e.g., BEFORE_LEASE_HOOK when hooks are configured).
+                # Note: Status is managed by _report_status() which updates both LeaseContext
+                # and Session. The sync above handles the case where status was updated before
+                # session creation (e.g., BEFORE_LEASE_HOOK when hooks are configured).
 
-                    # Start task to handle EndSession requests (runs afterLease hook when client signals done)
-                    tg.start_soon(self._handle_end_session, lease_scope)
+                # Start task to handle EndSession requests (runs afterLease hook when client signals done)
+                # Runs on control-plane group so it's cancelled with Status/Listen, not data-plane
+                self._tg.start_soon(self._handle_end_session, lease_scope)
 
-                    # Process client connections until lease ends
-                    # The lease can end via:
-                    # 1. listen_rx stream closing (controller stops sending)
-                    # 2. lease_ended event being set (serve() detected lease status change)
-                    # Type: request is jumpstarter_pb2.ListenResponse with router_endpoint and router_token fields
-                    try:
-                        async with create_task_group() as conn_tg:
-                            # Start listening for connection requests with retry logic
-                            # This is inside conn_tg so it gets cancelled when the lease ends
-                            conn_tg.start_soon(functools.partial(
-                                self._retry_stream,
-                                stream_name="Listen",
-                                stream_factory=self._listen_stream_factory(lease_name),
-                                send_tx=listen_tx,
-                                on_terminal=lambda name, err: (
-                                    logger.info("Listen stream ended (%s: %s), signaling lease end", name, err),
-                                    lease_scope.lease_ended.set(),
-                                ),
-                            ))
+                # Process client connections until lease ends
+                # The lease can end via:
+                # 1. listen_rx stream closing (controller stops sending)
+                # 2. lease_ended event being set (serve() detected lease status change)
+                # Type: request is jumpstarter_pb2.ListenResponse with router_endpoint and router_token fields
+                try:
+                    async with create_task_group() as conn_tg:
+                        conn_tg.start_soon(functools.partial(
+                            self._retry_stream,
+                            stream_name="Listen",
+                            stream_factory=self._listen_stream_factory(lease_name),
+                            send_tx=listen_tx,
+                            on_terminal=lambda name, err: (
+                                logger.info("Listen stream ended (%s: %s), signaling lease end", name, err),
+                                lease_scope.lease_ended.set(),
+                            ),
+                        ))
 
-                            async def wait_for_lease_end():
-                                """Wait for lease_ended event and cancel the connection loop."""
-                                await lease_scope.lease_ended.wait()
-                                logger.info("Lease ended event received, stopping connection handling")
-                                conn_tg.cancel_scope.cancel()
+                        async def wait_for_lease_end():
+                            """Wait for lease_ended event and cancel the connection loop."""
+                            await lease_scope.lease_ended.wait()
+                            logger.info("Lease ended event received, stopping connection handling")
+                            conn_tg.cancel_scope.cancel()
 
-                            async def process_connections():
-                                """Process incoming connection requests."""
-                                # Wait for beforeLease hook to complete before routing connections.
-                                # The Listen buffer holds early Dials; we process them after ready.
-                                await lease_scope.before_lease_hook.wait()
-                                logger.debug("Starting to process connection requests from Listen stream")
-                                async for request in listen_rx:
-                                    logger.info(
-                                        "Handling new connection request on lease %s (router=%s)",
-                                        lease_name,
-                                        request.router_endpoint,
-                                    )
-                                    tg.start_soon(
-                                        self._handle_client_conn,
-                                        lease_scope.socket_path,
-                                        request.router_endpoint,
-                                        request.router_token,
-                                        self.tls,
-                                        self.grpc_options,
-                                    )
-
-                            conn_tg.start_soon(wait_for_lease_end)
-                            conn_tg.start_soon(process_connections)
-
-                            # Report LEASE_READY if no beforeLease hook is configured.
-                            # This MUST happen after Listen stream is started so the
-                            # controller can forward client Dial requests.
-                            if not self.hook_executor:
-                                await self._report_status(ExporterStatus.LEASE_READY, "Ready for commands")
-                                lease_scope.before_lease_hook.set()
-                    finally:
-                        # Ensure before_lease_hook is set so _cleanup_after_lease never
-                        # blocks forever.  When conn_tg is cancelled before the no-hook
-                        # path reaches lease_scope.before_lease_hook.set(), this flag
-                        # remains unset and _cleanup_after_lease (shielded) deadlocks.
-                        # Only apply this fallback when NO hooks are configured - when
-                        # hooks ARE configured, run_before_lease_hook's finally block
-                        # sets the event after updating skip_after_lease_hook. Setting
-                        # it here prematurely would race with that flag update.
-                        if not self.hook_executor and not lease_scope.before_lease_hook.is_set():
-                            lease_scope.before_lease_hook.set()
-                        # Run afterLease hook before closing the session
-                        # This ensures the socket is still available for driver calls within the hook
-                        # Shield from cancellation so the hook can complete even during shutdown
-                        await self._cleanup_after_lease(lease_scope)
-            finally:
-                with CancelScope(shield=True):
-                    await listen_tx.aclose()
-                    await listen_rx.aclose()
-        finally:
-            # Unblock _on_lease_released even if we no longer own _lease_context
-            # (it may already have snapshot-cleared the exporter field and be
-            # waiting on after_lease_hook_done).
-            with CancelScope(shield=True):
-                if not lease_scope.before_lease_hook.is_set():
-                    lease_scope.before_lease_hook.set()
-                if not lease_scope.after_lease_hook_done.is_set():
-                    lease_scope.after_lease_hook_done.set()
-                # Fallback ownership cleanup when _on_lease_released did not run
-                # (cancellation / handle_lease finishing before leased=False).
-                if self._lease_context is lease_scope:
-                    session_was_created = lease_scope.session is not None
-                    if session_was_created:
-                        # Brief delay to ensure session is fully closed before next lease.
-                        # Prevents SSL corruption from overlapping connections.
-                        await sleep(0.2)
-                    self._last_completed_lease = lease_scope.lease_name
-                    self._lease_context = None
-                    if self.exit_on_lease_end:
-                        self._stop_requested = True
-                    clear_log_context()
-                    set_log_context(exporter=self.name)
-                    logger.debug("Ready for next lease")
-                    pending = self._pending_lease_status
-                    if pending is not None:
-                        self._pending_lease_status = None
-                        if self._status_replay_tx is not None:
-                            try:
-                                await self._status_replay_tx.send(pending)
-                            except (anyio.ClosedResourceError, anyio.EndOfStream):
-                                logger.debug(
-                                    "Status channel closed, skipping replay for %s",
-                                    pending.lease_name,
+                        async def process_connections():
+                            """Process incoming connection requests."""
+                            # Wait for beforeLease hook to complete before routing connections.
+                            # The Listen buffer holds early Dials; we process them after ready.
+                            await lease_scope.before_lease_hook.wait()
+                            logger.debug("Starting to process connection requests from Listen stream")
+                            async for request in listen_rx:
+                                logger.info(
+                                    "Handling new connection request on lease %s (router=%s)",
+                                    lease_name,
+                                    request.router_endpoint,
                                 )
+                                conns_tg.start_soon(
+                                    self._handle_client_conn,
+                                    lease_scope.socket_path,
+                                    request.router_endpoint,
+                                    request.router_token,
+                                    self.tls,
+                                    self.grpc_options,
+                                )
+
+                        conn_tg.start_soon(wait_for_lease_end)
+                        conn_tg.start_soon(process_connections)
+
+                        # Report LEASE_READY if no beforeLease hook is configured.
+                        # This MUST happen after Listen stream is started so the
+                        # controller can forward client Dial requests.
+                        if not self.hook_executor:
+                            await self._report_status(ExporterStatus.LEASE_READY, "Ready for commands")
+                            lease_scope.before_lease_hook.set()
+                finally:
+                    self._ensure_hook_event_set(lease_scope)
+                    with CancelScope(shield=True):
+                        await listen_tx.aclose()
+                        await listen_rx.aclose()
+                    # Run afterLease hook before closing the session
+                    # This ensures the socket is still available for driver calls within the hook
+                    # Shield from cancellation so the hook can complete even during shutdown
+                    await self._cleanup_after_lease(lease_scope)
+        finally:
+            await self._finalize_lease_context(lease_scope)
 
     async def serve(self):
         """Serve the exporter, handling leases until stopped."""
@@ -1406,14 +1409,22 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             pass
         status_tx, status_rx = create_memory_object_stream[jumpstarter_pb2.StatusResponse](max_buffer_size=5)
         try:
-            await self._run_control_plane(status_tx, status_rx)
-            if self._fatal_stream_error:
-                name, err = self._fatal_stream_error
-                logger.warning(
-                    "Control plane down (%s: %s)",
-                    name,
-                    err,
-                )
+            async with create_task_group() as conns_tg:
+                await self._run_control_plane(status_tx, status_rx, conns_tg)
+                if self._fatal_stream_error:
+                    name, err = self._fatal_stream_error
+                    logger.warning(
+                        "Control plane down (%s: %s), cancelling active connections",
+                        name,
+                        err,
+                    )
+                # The control plane has stopped, so serve() is returning and conns_tg
+                # must finish. handle_lease blocks on lease_ended, which nobody sets
+                # here: the lease is still valid on the controller, we've only lost
+                # contact with it. Cancelling unsticks handle_lease; its shielded
+                # _cleanup_after_lease still runs the afterLease hook and closes the
+                # session, which drops the tunnels.
+                conns_tg.cancel_scope.cancel()
         finally:
             if self.exit_on_lease_end:
                 # Ensure the runtime container exits whenever this exporter is
@@ -1438,6 +1449,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         self,
         status_tx: MemoryObjectSendStream[jumpstarter_pb2.StatusResponse],
         status_rx: MemoryObjectReceiveStream[jumpstarter_pb2.StatusResponse],
+        conns_tg: TaskGroup,
     ) -> None:
         """Start control-plane streams and process status updates."""
         async with create_task_group() as tg:
@@ -1457,13 +1469,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 on_exhausted=self._on_status_exhausted,
             ))
             async for status in status_rx:
-                if await self._apply_status(status, tg):
+                if await self._apply_status(status, tg, conns_tg):
                     break
 
     async def _apply_status(
         self,
         status: jumpstarter_pb2.StatusResponse,
         tg: TaskGroup,
+        conns_tg: TaskGroup,
     ) -> bool:
         """Process a single status update. Returns True to stop the status loop."""
         previous_state = self._lease_state
@@ -1477,7 +1490,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 if status.lease_name == self._last_completed_lease:
                     logger.debug("Ignoring trailing status for completed lease %s", status.lease_name)
                     return False
-                self._on_lease_acquired(status, tg)
+                self._on_lease_acquired(status, tg, conns_tg)
             elif (
                 previous_state == LeaseState.LEASED
                 and self._lease_context
@@ -1485,9 +1498,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             ):
                 # Controller reassigned the exporter to a different lease.
                 # Stash the new status and signal the old lease to tear down.
-                # handle_lease's finally block replays the stashed status
-                # after clearing _lease_context. The controller won't
-                # re-send it because proto.Equal suppresses duplicates.
+                # _finalize_lease_context replays the stashed status after
+                # clearing _lease_context. The controller won't re-send it
+                # because proto.Equal suppresses duplicates.
                 self._pending_lease_status = status
                 if not self._lease_context.lease_ended.is_set():
                     logger.warning(
@@ -1508,6 +1521,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         self,
         status: jumpstarter_pb2.StatusResponse,
         tg: TaskGroup,
+        conns_tg: TaskGroup,
     ) -> None:
         """Handle new lease assignment: create context and spawn lease handler."""
         self._started = True
@@ -1529,7 +1543,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 self.stop,
                 self._request_lease_release,
             )
-        tg.start_soon(self.handle_lease, status.lease_name, tg, lease_scope)
+        conns_tg.start_soon(self.handle_lease, status.lease_name, conns_tg, lease_scope)
 
     def _on_lease_update(self, status: jumpstarter_pb2.StatusResponse) -> None:
         """Update client info on every leased status tick."""

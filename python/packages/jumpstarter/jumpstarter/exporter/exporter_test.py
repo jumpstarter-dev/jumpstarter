@@ -1171,7 +1171,7 @@ class TestApplyStatus:
         status.context = {}
 
         async with create_task_group() as tg:
-            result = await exporter._apply_status(status, tg)
+            result = await exporter._apply_status(status, tg, tg)
             tg.cancel_scope.cancel()
 
         assert result is False
@@ -1194,7 +1194,7 @@ class TestApplyStatus:
 
         with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.exporter"):
             async with create_task_group() as tg:
-                await exporter._apply_status(status, tg)
+                await exporter._apply_status(status, tg, tg)
                 tg.cancel_scope.cancel()
 
         assert "reassigned" not in caplog.text
@@ -1211,7 +1211,7 @@ class TestApplyStatus:
         status.context = {}
 
         async with create_task_group() as tg:
-            result = await exporter._apply_status(status, tg)
+            result = await exporter._apply_status(status, tg, tg)
             tg.cancel_scope.cancel()
 
         assert result is False
@@ -1234,7 +1234,7 @@ class TestApplyStatus:
         status.context = {}
 
         async with create_task_group() as tg:
-            result = await exporter._apply_status(status, tg)
+            result = await exporter._apply_status(status, tg, tg)
             await anyio.sleep(0.05)
             tg.cancel_scope.cancel()
 
@@ -1269,7 +1269,7 @@ class TestApplyStatus:
         status.context = {"env": "staging"}
 
         async with create_task_group() as tg:
-            await exporter._apply_status(status, tg)
+            await exporter._apply_status(status, tg, tg)
             await anyio.sleep(0.05)
             tg.cancel_scope.cancel()
 
@@ -1291,7 +1291,7 @@ class TestApplyStatus:
         status.context = {}
 
         async with create_task_group() as tg:
-            await exporter._apply_status(status, tg)
+            await exporter._apply_status(status, tg, tg)
             tg.cancel_scope.cancel()
 
         assert lease_ctx.lease_ended.is_set()
@@ -1311,7 +1311,7 @@ class TestApplyStatus:
         status.context = {}
 
         async with create_task_group() as tg:
-            result = await exporter._apply_status(status, tg)
+            result = await exporter._apply_status(status, tg, tg)
             tg.cancel_scope.cancel()
 
         assert result is False
@@ -1336,7 +1336,7 @@ class TestApplyStatus:
         status.context = {}
 
         async with create_task_group() as tg:
-            await exporter._apply_status(status, tg)
+            await exporter._apply_status(status, tg, tg)
             await anyio.sleep(0)
             tg.cancel_scope.cancel()
 
@@ -1357,7 +1357,7 @@ class TestApplyStatus:
         status.context = {}
 
         async with create_task_group() as tg:
-            await exporter._apply_status(status, tg)
+            await exporter._apply_status(status, tg, tg)
             tg.cancel_scope.cancel()
 
         assert exporter._last_completed_lease is None
@@ -1411,6 +1411,7 @@ class TestHandleLeaseConnections:
         exporter._cleanup_after_lease = AsyncMock()
 
         async with create_task_group() as tg:
+            exporter._tg = tg
             tg.start_soon(exporter.handle_lease, "conn-lease", tg, lease_ctx)
             with fail_after(5):
                 await conn_arrived.wait()
@@ -1454,6 +1455,7 @@ class TestHandleLeaseConnections:
         exporter._listen_stream_factory = MagicMock(return_value=MagicMock())
 
         async with create_task_group() as tg:
+            exporter._tg = tg
             tg.start_soon(exporter.handle_lease, "fallback-lease", tg, lease_ctx)
             await anyio.sleep(0.1)
             lease_ctx.lease_ended.set()
@@ -1527,8 +1529,8 @@ class TestHandleLeaseConnections:
         assert exporter._lease_context is None
         assert exporter._last_completed_lease == "cancel-settle"
 
-    async def test_handle_lease_closes_listen_streams_when_stale_during_setup(self):
-        """Stale-lease return during session setup must close the Listen streams."""
+    async def test_handle_lease_skips_listen_streams_when_stale_during_setup(self):
+        """Stale-lease return during session setup must not create Listen streams."""
         from contextlib import asynccontextmanager
 
         from jumpstarter.exporter import exporter as exporter_mod
@@ -1560,7 +1562,7 @@ class TestHandleLeaseConnections:
 
         exporter._skip_stale_lease = fake_skip
 
-        closed = []
+        created = {"n": 0}
         original_create = exporter_mod.create_memory_object_stream
 
         class TrackingFactory:
@@ -1568,28 +1570,16 @@ class TestHandleLeaseConnections:
                 return self
 
             def __call__(self, *args, **kwargs):
-                tx, rx = original_create(*args, **kwargs)
-                orig_tx, orig_rx = tx.aclose, rx.aclose
-
-                async def close_tx():
-                    closed.append("tx")
-                    await orig_tx()
-
-                async def close_rx():
-                    closed.append("rx")
-                    await orig_rx()
-
-                tx.aclose = close_tx
-                rx.aclose = close_rx
-                return tx, rx
+                created["n"] += 1
+                return original_create(*args, **kwargs)
 
         with patch.object(exporter_mod, "create_memory_object_stream", TrackingFactory()):
             async with create_task_group() as tg:
                 await exporter.handle_lease("stale-setup", tg, lease_ctx)
 
         assert skip_calls["n"] == 2
-        assert "tx" in closed
-        assert "rx" in closed
+        assert created["n"] == 0
+        assert exporter._lease_context is None
 
 
 def _make_serve_exporter(exit_on_lease_end=False):
@@ -1849,7 +1839,7 @@ class TestOnLeaseReleasedClearsContext:
         status.context = {}
 
         async with create_task_group() as tg:
-            await exporter._apply_status(status, tg)
+            await exporter._apply_status(status, tg, tg)
             tg.cancel_scope.cancel()
 
         assert exporter._lease_context is None
@@ -1881,11 +1871,60 @@ class TestOnLeaseReleasedClearsContext:
         with patch("jumpstarter.exporter.exporter.shutdown_runtime_sidecar", tracking_shutdown):
             async with create_task_group() as tg:
                 tg.start_soon(finish_hook)
-                await exporter._apply_status(status, tg)
+                await exporter._apply_status(status, tg, tg)
                 tg.cancel_scope.cancel()
 
         assert hook_done_at_shutdown == [True]
         assert exporter._stop_requested is True
+
+    async def test_finalize_skips_when_already_cleared(self):
+        """_finalize_lease_context is a no-op after _on_lease_released cleared context."""
+        exporter = _make_serve_exporter()
+        lease_ctx = make_lease_context(lease_name="lease-A")
+        lease_ctx.after_lease_hook_done.set()
+        exporter._lease_context = lease_ctx
+
+        status = MagicMock()
+        status.leased = False
+        status.lease_name = ""
+        status.client_name = ""
+        status.context = {}
+
+        async with create_task_group() as tg:
+            await exporter._apply_status(status, tg, tg)
+            tg.cancel_scope.cancel()
+
+        assert exporter._lease_context is None
+        # finalize should be a no-op (identity check fails)
+        await exporter._finalize_lease_context(lease_ctx)
+        assert exporter._last_completed_lease == "lease-A"
+
+
+class TestExitOnLeaseEndRace:
+    """_finalize_lease_context sets _stop_requested when exit_on_lease_end is True,
+    ensuring the exporter stops even if cancellation interrupts _on_lease_released."""
+
+    async def test_finalize_sets_stop_requested(self):
+        exporter = _make_serve_exporter(exit_on_lease_end=True)
+        lease_ctx = make_lease_context(lease_name="final-lease")
+        exporter._lease_context = lease_ctx
+
+        await exporter._finalize_lease_context(lease_ctx)
+
+        assert exporter._stop_requested is True
+        assert exporter._lease_context is None
+        assert exporter._last_completed_lease == "final-lease"
+
+    async def test_finalize_does_not_set_stop_when_disabled(self):
+        exporter = _make_serve_exporter(exit_on_lease_end=False)
+        lease_ctx = make_lease_context(lease_name="normal-lease")
+        exporter._lease_context = lease_ctx
+
+        await exporter._finalize_lease_context(lease_ctx)
+
+        assert exporter._stop_requested is False
+        assert exporter._lease_context is None
+        assert exporter._last_completed_lease == "normal-lease"
 
 
 class TestContextPropagation:
@@ -1996,3 +2035,95 @@ class TestContextPropagation:
 
         assert calls == [{"client": "ci-bot"}]
         clear_log_context()
+
+
+class TestTaskGroupIsolation:
+    """Verify that control-plane failure does not cancel data-plane connections.
+
+    The split: inner tg (control-plane: Status/Listen streams) and outer
+    conns_tg (data-plane: handle_lease, _handle_client_conn).  When
+    _cancel_with_fatal_error cancels tg, connections on conns_tg must
+    remain alive until serve() explicitly cancels conns_tg.
+    """
+
+    @pytest.mark.anyio
+    async def test_conn_alive_after_control_plane_cancel(self):
+        """Between _cancel_with_fatal_error and serve() cancelling conns_tg,
+        connection tasks on conns_tg are still running."""
+        exporter = _make_serve_exporter()
+        conn_alive_after_cp_cancel = False
+        conn_started = Event()
+        cp_cancelled = Event()
+
+        async def fake_conn():
+            nonlocal conn_alive_after_cp_cancel
+            conn_started.set()
+            await cp_cancelled.wait()
+            conn_alive_after_cp_cancel = True
+
+        async def fake_retry_stream(name, factory, tx, **kwargs):
+            if name == "Status":
+                await tx.send(
+                    MagicMock(leased=True, lease_name="test-lease", client_name="c", context={})
+                )
+                await conn_started.wait()
+                exporter._cancel_with_fatal_error("Status", Exception("controller gone"))
+                cp_cancelled.set()
+            else:
+                await anyio.sleep_forever()
+
+        exporter._retry_stream = fake_retry_stream
+
+        async def fake_handle_lease(lease_name, conns_tg, lease_ctx):
+            conns_tg.start_soon(fake_conn)
+            await lease_ctx.lease_ended.wait()
+            lease_ctx.after_lease_hook_done.set()
+
+        exporter.handle_lease = fake_handle_lease
+
+        await exporter.serve()
+
+        assert conn_alive_after_cp_cancel, (
+            "Connection task was killed before serve() cancelled conns_tg - "
+            "control-plane cancellation leaked into data-plane"
+        )
+
+    @pytest.mark.anyio
+    async def test_conns_cancelled_on_shutdown(self):
+        """serve() cancels conns_tg on exit, even with a long-running connection."""
+        exporter = _make_serve_exporter()
+        conn_cancelled = False
+
+        async def long_conn():
+            nonlocal conn_cancelled
+            try:
+                await anyio.sleep_forever()
+            except anyio.get_cancelled_exc_class():
+                conn_cancelled = True
+                raise
+
+        async def fake_retry_stream(stream_name, stream_factory, send_tx, **kwargs):
+            if stream_name == "Status":
+                await send_tx.send(
+                    MagicMock(leased=True, lease_name="test-lease", client_name="c", context={})
+                )
+                await anyio.sleep(0.1)
+                await send_tx.send(MagicMock(leased=False, lease_name="", client_name="", context={}))
+                await anyio.sleep(0.1)
+                exporter.stop()
+            else:
+                await anyio.sleep_forever()
+
+        exporter._retry_stream = fake_retry_stream
+
+        async def fake_handle_lease(lease_name, conns_tg, lease_ctx):
+            conns_tg.start_soon(long_conn)
+            await lease_ctx.lease_ended.wait()
+            lease_ctx.after_lease_hook_done.set()
+
+        exporter.handle_lease = fake_handle_lease
+
+        with fail_after(3):
+            await exporter.serve()
+
+        assert conn_cancelled, "Long-running connection was not cancelled by serve()"
