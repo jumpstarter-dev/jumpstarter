@@ -331,6 +331,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         acquisition_timeout: timedelta | None = None,
         retry_timeout: timedelta | None = None,
         dial_timeout: timedelta | None = None,
+        allow_disabled: bool = False,
     ):
         from jumpstarter.client import Lease
 
@@ -369,6 +370,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 tls_config=self.tls,
                 grpc_options=self.grpcOptions,
                 client_name=self.metadata.name,
+                allow_disabled=allow_disabled,
                 acquisition_timeout=acquisition_timeout_seconds,
                 dial_timeout=dial_timeout_seconds,
                 retry_timeout=retry_timeout_seconds,
