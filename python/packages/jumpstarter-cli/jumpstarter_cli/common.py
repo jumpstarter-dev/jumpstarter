@@ -173,6 +173,13 @@ opt_dial_timeout = partial(
     ),
 )
 
+opt_allow_disabled = click.option(
+    "--allow-disabled",
+    is_flag=True,
+    default=False,
+    help="Allow leasing a disabled exporter (only effective with --name/-n)",
+)
+
 opt_begin_time = click.option(
     "--begin-time",
     "begin_time",

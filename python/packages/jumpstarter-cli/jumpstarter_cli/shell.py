@@ -26,6 +26,7 @@ from jumpstarter_cli_common.signal import signal_handler
 
 from .common import (
     opt_acquisition_timeout,
+    opt_allow_disabled,
     opt_dial_timeout,
     opt_duration_partial,
     opt_exporter_name,
@@ -700,12 +701,7 @@ async def _shell_direct_async(
 @opt_exporter_name
 @opt_duration_partial(default=timedelta(minutes=30), show_default="00:30:00")
 @click.option("--exporter-logs", is_flag=True, help="Enable exporter log streaming")
-@click.option(
-    "--allow-disabled",
-    is_flag=True,
-    default=False,
-    help="Allow leasing a disabled exporter (only effective with --name/-n)",
-)
+@opt_allow_disabled
 @opt_acquisition_timeout()
 @opt_retry_timeout()
 @opt_dial_timeout()
