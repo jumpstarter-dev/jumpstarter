@@ -277,7 +277,7 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 					"ExporterDisabled",
 					"Requested exporter %s is disabled. "+
 						"To lease a disabled exporter, set spec.allowDisabled: true on the Lease, "+
-						"or use --allow-disabled with jmp create lease",
+						"or use --allow-disabled with jmp create lease or jmp shell",
 					exporter.Name,
 				)
 				return nil
