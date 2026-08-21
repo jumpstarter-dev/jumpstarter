@@ -119,13 +119,13 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, fu
 			MergeExporterConfig(exporterConfigPath, overlayPath)
 		})
 
-		It("clients were created", func() {
+		It("can create clients with admin cli", func() {
 			out, err := Jmp("config", "client", "list", "-o", "yaml")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring("test-client-legacy"))
 		})
 
-		It("exporters were created", func() {
+		It("can create exporters with admin cli", func() {
 			out, err := Jmp("config", "exporter", "list", "-o", "yaml")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring("test-exporter-legacy"))
