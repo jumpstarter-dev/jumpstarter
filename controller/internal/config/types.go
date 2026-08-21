@@ -30,15 +30,22 @@ type Telemetry struct {
 	// When true the controller advertises the endpoint returned by GetServiceEndpoints.
 	Enabled bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 
-	// Endpoint is an optional override for the telemetry gRPC address.
-	// When empty and Enabled is true, defaults to
-	// "jumpstarter-telemetry.<namespace>:9093" derived from the controller namespace.
+	// Endpoint is an optional override for the telemetry gRPC address advertised
+	// to exporters. When empty the controller reads GRPC_TELEMETRY_ENDPOINT from its
+	// own environment (set by the operator on the controller Deployment).
 	Endpoint string `json:"endpoint,omitempty" yaml:"endpoint,omitempty"`
 
-	// Certificate is reserved for a future phase where the telemetry service manages
-	// its own TLS credentials. Leave empty for Phase 1 deployments — the telemetry
-	// server listens on plaintext gRPC and exporters that receive a certificate here
-	// will fail to connect.
+	// Certificate is the PEM-encoded CA certificate that exporters use to verify
+	// the telemetry server's TLS certificate.
+	//
+	// When the operator provisions the telemetry service with a cert-manager-issued
+	// certificate, set this to the issuer's CA certificate.
+	//
+	// When the telemetry service runs in self-signed mode (no EXTERNAL_CERT_PEM /
+	// EXTERNAL_KEY_PEM set), it logs the generated certificate PEM at startup under
+	// the key "certPEM". Copy that value here so exporters can pin and verify it.
+	// A self-signed certificate is not trusted by the system CA pool, so leaving
+	// this field empty means exporters cannot establish a verified TLS connection.
 	Certificate string `json:"certificate,omitempty" yaml:"certificate,omitempty"`
 
 	// Logging configures the log ingestion path to the telemetry service.

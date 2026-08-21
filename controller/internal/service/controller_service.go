@@ -327,6 +327,11 @@ func (s *ControllerService) GetServiceEndpoints(
 	resp := &pb.GetServiceEndpointsResponse{}
 
 	if s.TelemetryConfig != nil && s.TelemetryConfig.Enabled {
+		// Endpoint is resolved at config-load time (ConfigMap value or GRPC_TELEMETRY_ENDPOINT
+		// env var fallback), so TelemetryConfig.Endpoint is always the complete value here.
+		if s.TelemetryConfig.Endpoint == "" {
+			return nil, status.Error(codes.FailedPrecondition, "telemetry is enabled but no endpoint is configured; set telemetry.endpoint in the ConfigMap or GRPC_TELEMETRY_ENDPOINT on the controller pod")
+		}
 		resp.TelemetryEndpoints = append(resp.TelemetryEndpoints, &pb.TelemetryEndpoint{
 			Endpoint:    s.TelemetryConfig.Endpoint,
 			Certificate: s.TelemetryConfig.Certificate,
@@ -1196,32 +1201,9 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		return err
 	}
 
-	// Load external certificate if provided via environment variables.
-	// Environment variables EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM should contain the PEM-encoded
-	// certificate and private key respectively. If both are set, they are used; otherwise
-	// a self-signed certificate is generated.
-	var cert *tls.Certificate
-	certPEMPath := os.Getenv("EXTERNAL_CERT_PEM")
-	keyPEMPath := os.Getenv("EXTERNAL_KEY_PEM")
-	if certPEMPath != "" && keyPEMPath != "" {
-		certPEMBytes, err := os.ReadFile(certPEMPath)
-		if err != nil {
-			return fmt.Errorf("failed to read external certificate file: %w", err)
-		}
-		keyPEMBytes, err := os.ReadFile(keyPEMPath)
-		if err != nil {
-			return fmt.Errorf("failed to read external key file: %w", err)
-		}
-		parsedCert, err := tls.X509KeyPair(certPEMBytes, keyPEMBytes)
-		if err != nil {
-			return fmt.Errorf("failed to parse external certificate: %w", err)
-		}
-		cert = &parsedCert
-	} else {
-		cert, err = NewSelfSignedCertificate("jumpstarter controller", dnsnames, ipaddresses)
-		if err != nil {
-			return err
-		}
+	cert, _, err := LoadTLSCertificate("jumpstarter controller", dnsnames, ipaddresses)
+	if err != nil {
+		return err
 	}
 
 	opts := append(s.ServerOptions,
@@ -1264,8 +1246,11 @@ func (s *ControllerService) Start(ctx context.Context) error {
 	// Register gRPC gateway
 	gwmux := gwruntime.NewServeMux()
 
+	// The controller multiplexes gRPC (h2) and REST (http/1.1) on a single port,
+	// so it needs NextProtos — which LoadTLSCredentials doesn't expose.
 	listener, err := tls.Listen("tcp", ":8082", &tls.Config{
 		Certificates: []tls.Certificate{*cert},
+		MinVersion:   tls.VersionTLS12,
 		NextProtos:   []string{"http/1.1", "h2"},
 	})
 	if err != nil {

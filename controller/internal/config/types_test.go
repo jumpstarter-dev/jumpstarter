@@ -276,6 +276,78 @@ func TestDeprecatedLabelsOmitEmpty(t *testing.T) {
 	}
 }
 
+func TestTelemetryEndpointResolution(t *testing.T) {
+	tests := []struct {
+		name         string
+		configValue  string
+		envValue     string
+		wantEndpoint string
+		wantErr      bool
+	}{
+		{
+			name:         "env var takes precedence over ConfigMap",
+			configValue:  "telemetry.ns.svc:9093",
+			envValue:     "env-telemetry:9093",
+			wantEndpoint: "env-telemetry:9093",
+		},
+		{
+			name:         "ConfigMap fallback when env var is empty",
+			configValue:  "telemetry.ns.svc:9093",
+			wantEndpoint: "telemetry.ns.svc:9093",
+		},
+		{
+			name:         "both empty yields empty endpoint (no error)",
+			wantEndpoint: "",
+		},
+		{
+			name:        "malformed ConfigMap value is rejected",
+			configValue: "no-port",
+			wantErr:     true,
+		},
+		{
+			name:     "malformed env var is rejected",
+			envValue: "garbage-no-port",
+			wantErr:  true,
+		},
+		{
+			name:        "port-only ConfigMap value is rejected",
+			configValue: ":9093",
+			wantErr:     true,
+		},
+		{
+			name:     "port-only env var is rejected",
+			envValue: ":9093",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("GRPC_TELEMETRY_ENDPOINT", tt.envValue)
+
+			cfg := &Telemetry{Enabled: true, Endpoint: tt.configValue}
+			resolved, err := resolveTelemetryConfig(cfg)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected validation error, got nil (resolved=%+v)", resolved)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			var gotEndpoint string
+			if resolved != nil {
+				gotEndpoint = resolved.Endpoint
+			}
+			if gotEndpoint != tt.wantEndpoint {
+				t.Errorf("resolved.Endpoint = %q, want %q", gotEndpoint, tt.wantEndpoint)
+			}
+		})
+	}
+}
+
 func TestParseDuration(t *testing.T) {
 	tests := []struct {
 		input    string

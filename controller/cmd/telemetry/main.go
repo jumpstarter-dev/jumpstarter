@@ -18,6 +18,18 @@ limitations under the License.
 // via the PushLogs gRPC RPC and writes them to structured stdout for downstream
 // log shippers (Promtail, Grafana Alloy, Vector) to forward to Loki.
 //
+// TLS: always enabled. Set EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM to file paths of
+// operator-mounted cert/key (e.g. from a cert-manager Secret); when absent a
+// self-signed certificate is generated. The self-signed cert PEM is logged at
+// startup — copy it into the controller ConfigMap's telemetry.certificate field
+// so exporters can verify the TLS connection.
+//
+// Endpoint: GRPC_TELEMETRY_ENDPOINT must be set on BOTH this pod and the controller
+// pod to the same value (e.g. "jumpstarter-telemetry.jumpstarter.svc:9093").
+// The telemetry service uses it to generate the correct SAN in the self-signed
+// certificate; the controller uses it to advertise the address to exporters via
+// GetServiceEndpoints. A mismatch causes TLS hostname verification failures.
+//
 // Future phases will add direct Loki push and MetricsStream for reverse-scrape
 // of exporter prometheus_client registries.
 package main
@@ -79,13 +91,15 @@ func main() {
 		Signer:   signer,
 	}
 
+	// Register signal handler before starting the service so no signal
+	// is missed in the window between goroutine start and Notify.
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- svc.Start(ctx)
 	}()
-
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
 	select {
 	case sig := <-sigs:

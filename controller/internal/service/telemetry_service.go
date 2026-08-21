@@ -24,11 +24,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -56,12 +58,11 @@ var reservedExtraFieldKeys = map[string]struct{}{
 // TelemetryService receives structured log entries from exporters and clients,
 // logs them via structured stdout, and will forward them to Loki in a future phase.
 //
-// Phase 1 design: the server listens on plaintext gRPC only. TLS termination is
-// expected to be handled by a sidecar (e.g. Envoy) or service mesh in production
-// deployments. The Certificate field advertised via GetServiceEndpoints is reserved
-// for a future phase where the telemetry binary manages its own TLS credentials.
-// Do NOT configure the Certificate field in the ConfigMap for Phase 1 deployments —
-// exporters that receive a certificate will attempt a TLS handshake that will fail.
+// TLS: the server always uses TLS. When EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM
+// env vars point to certificate/key files (mounted by the operator from a Secret),
+// those are loaded. Otherwise a self-signed certificate is generated — traffic is
+// still encrypted, but clients cannot verify the server identity without the CA cert
+// in the ConfigMap telemetry.certificate field.
 type TelemetryService struct {
 	pb.UnimplementedTelemetryServiceServer
 
@@ -203,16 +204,63 @@ func truncate(s string, n int) string {
 	return s[:b]
 }
 
+// loadTLSCredentials loads TLS credentials for the telemetry gRPC server.
+// It derives the self-signed certificate SAN from the advertised endpoint
+// (GRPC_TELEMETRY_ENDPOINT) so that TLS hostname verification succeeds when
+// exporters connect. Falls back to "localhost" in development/local mode.
+// Returns an error if GRPC_TELEMETRY_ENDPOINT is set but malformed.
+// Delegates cert loading to the shared LoadTLSCredentials helper.
+func (s *TelemetryService) loadTLSCredentials() (credentials.TransportCredentials, string, error) {
+	// Derive SANs from the advertised endpoint (what clients connect to),
+	// not from the bind address (which is a local port like ":9093").
+	// IMPORTANT: GRPC_TELEMETRY_ENDPOINT must be set on the telemetry pod itself
+	// so the SAN matches the endpoint the controller advertises to exporters.
+	advertised, err := telemetryEndpoint()
+	if err != nil {
+		return nil, "", err
+	}
+	var dnsnames []string
+	var ipaddresses []net.IP
+	if advertised != "" {
+		var sanErr error
+		dnsnames, ipaddresses, sanErr = endpointToSAN(advertised)
+		if sanErr != nil {
+			ctrl.Log.WithName("telemetry").Error(sanErr, "failed to derive SAN from advertised endpoint; falling back to localhost",
+				"endpoint", advertised)
+			dnsnames = []string{"localhost"}
+		}
+	} else {
+		// No advertised endpoint configured — development/local mode.
+		dnsnames = []string{"localhost"}
+	}
+	return LoadTLSCredentials("jumpstarter telemetry", dnsnames, ipaddresses)
+}
+
 // Start starts the TelemetryService gRPC server and blocks until ctx is cancelled.
 func (s *TelemetryService) Start(ctx context.Context) error {
 	logger := ctrl.Log.WithName("telemetry").WithValues("component", "telemetry")
+
+	creds, selfSignedPEM, err := s.loadTLSCredentials()
+	if err != nil {
+		return fmt.Errorf("telemetry: load TLS credentials: %w", err)
+	}
+	if selfSignedPEM != "" {
+		// Log the self-signed cert so the operator can copy it into the controller
+		// ConfigMap's telemetry.certificate field. Exporters need this PEM to verify
+		// the TLS connection — a self-signed cert is not trusted by the system CA pool.
+		logger.Info("Using self-signed TLS certificate; copy certPEM into the controller ConfigMap telemetry.certificate so exporters can verify TLS",
+			"certPEM", selfSignedPEM)
+	}
 
 	lis, err := net.Listen("tcp", s.BindAddr)
 	if err != nil {
 		return fmt.Errorf("telemetry: listen %s: %w", s.BindAddr, err)
 	}
 
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(
+		grpc.Creds(creds),
+		grpc.ChainUnaryInterceptor(recovery.UnaryServerInterceptor()),
+	)
 	pb.RegisterTelemetryServiceServer(srv, s)
 	reflection.Register(srv)
 
@@ -231,6 +279,7 @@ func (s *TelemetryService) Start(ctx context.Context) error {
 		}
 		return nil
 	case err := <-errCh:
+		srv.Stop()
 		return err
 	}
 }
