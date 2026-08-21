@@ -160,6 +160,20 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Static defaults are handled by kubebuilder annotations in the CRD schema
 	r.EndpointReconciler.ApplyDefaults(&jumpstarter.Spec, jumpstarter.Namespace)
 
+	// Clamp controller replicas to 1: the controller uses in-memory state for
+	// gRPC stream coordination (Dial/Listen pairing), so only one replica can
+	// serve traffic correctly. Multiple replicas would cause connection failures
+	// when Dial and Listen land on different pods.
+	if jumpstarter.Spec.Controller.Replicas > 1 {
+		log.Info("WARNING: controller.replicas > 1 is not yet supported — the controller "+
+			"uses in-memory state for gRPC stream coordination. Clamping to 1.",
+			"requested", jumpstarter.Spec.Controller.Replicas)
+		r.emitEventf(&jumpstarter, corev1.EventTypeWarning, "ReplicasClamped",
+			"controller.replicas=%d is not yet supported (in-memory gRPC state requires a single replica), clamping to 1",
+			jumpstarter.Spec.Controller.Replicas)
+		jumpstarter.Spec.Controller.Replicas = 1
+	}
+
 	// Reconcile RBAC resources first
 	if err := r.reconcileRBAC(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile RBAC")
