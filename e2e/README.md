@@ -28,8 +28,8 @@ Prereq (all): dex + controller/operator running, namespace `jumpstarter-lab` cre
 | Test Name | Prerequisite | Steps | Pass Check |
 |---|---|---|---|
 | serves landing page | login endpoint up | `curl` login endpoint | body contains "Jumpstarter" and "jmp login" |
-| clients were created | BeforeAll setup | `jmp admin create client` for oidc/sa/legacy variants (in BeforeAll) | `jmp config client list` shows `test-client-legacy` |
-| exporters were created | BeforeAll setup | `jmp admin create exporter` for oidc/sa/legacy, merge driver overlay (in BeforeAll) | `jmp config exporter list` shows `test-exporter-legacy` |
+| can create clients with admin cli | — | `jmp admin create client` for oidc/sa/legacy variants | no error; `jmp config client list` shows `test-client-legacy` |
+| can create exporters with admin cli | — | `jmp admin create exporter` for oidc/sa/legacy, merge driver overlay | no error; `jmp config exporter list` shows `test-exporter-legacy` |
 | can login with oidc test-client-oidc | client created | `jmp login` via dex username/password | no error; client listed |
 | can login with oidc test-client-oidc-provisioning | dex issuer up | `jmp login` with empty `--name` (auto-provision) | client `test-client-oidc-provisioning-example-com` listed |
 | can login with oidc test-client-sa | SA `test-client-sa` exists | create k8s token, `jmp login --connector-id kubernetes` | client `test-client-sa` listed |
