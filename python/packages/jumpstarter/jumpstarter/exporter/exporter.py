@@ -1,5 +1,8 @@
+import functools
 import logging
 import os
+import random
+import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -155,6 +158,76 @@ def shutdown_runtime_sidecar(
 
     logger.info("Runtime sidecar shutdown acknowledged")
     return True
+
+
+# Streams retry the unary transient codes plus INTERNAL/UNKNOWN: the Go
+# controller can surface those during rolling updates (e.g. INTERNAL when
+# the context is cancelled mid-send).
+_RETRYABLE_STREAM_CODES = _TRANSIENT_GRPC_CODES | frozenset({
+    grpc.StatusCode.INTERNAL,
+    grpc.StatusCode.UNKNOWN,
+})
+
+
+class _StreamClosedImmediately(Exception):
+    """Stream connected and returned zero items; treated as retryable degradation."""
+
+
+def _is_retryable(e: Exception) -> bool:
+    """Classify whether a streaming error warrants retry or is terminal."""
+    if isinstance(e, _StreamClosedImmediately):
+        return True
+    if isinstance(e, grpc.aio.AioRpcError):
+        return e.code() in _RETRYABLE_STREAM_CODES
+    if isinstance(e, ConnectionError):
+        return True
+    return False
+
+
+@dataclass
+class _GraceWindow:
+    """Wall-clock degradation window for stream retries."""
+
+    period: float
+    since: float | None = field(default=None, init=False)
+
+    def mark_failure(self) -> float:
+        now = time.monotonic()
+        if self.since is None:
+            self.since = now
+        return now - self.since
+
+    def elapsed(self) -> float:
+        if self.since is None:
+            return 0.0
+        return time.monotonic() - self.since
+
+    def expired(self) -> bool:
+        return self.since is not None and time.monotonic() - self.since > self.period
+
+    def reset(self):
+        self.since = None
+
+
+@dataclass
+class _Backoff:
+    """Exponential backoff with jitter for stream retries."""
+
+    max_delay: float
+    delay: float = field(default=0.5, init=False)
+    _initial: float = field(default=0.5, init=False)
+
+    def __post_init__(self):
+        self._initial = min(0.5, self.max_delay)
+        self.delay = self._initial
+
+    def reset(self):
+        self.delay = self._initial
+
+    async def wait(self):
+        jitter = random.uniform(0, self.delay * 0.3)
+        await sleep(self.delay + jitter)
+        self.delay = min(self.delay * 2, self.max_delay)
 
 
 class LeaseState(Enum):
@@ -369,6 +442,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     _status_rpc_event: Event = field(init=False, default_factory=Event)
     """Signals the drain task that a new status update is pending."""
 
+    _fatal_stream_error: tuple[str, Exception] | None = field(init=False, default=None)
+    """Set by _cancel_with_fatal_error when a stream hits a terminal error."""
+
     @property
     def _lease_state(self) -> LeaseState:
         return LeaseState.LEASED if self._lease_context is not None else LeaseState.IDLE
@@ -423,55 +499,148 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         finally:
             await channel.close()
 
+    def _cancel_with_fatal_error(self, stream_name: str, error: Exception):
+        self._fatal_stream_error = (stream_name, error)
+        if self._tg is not None:
+            self._tg.cancel_scope.cancel()
+
+    def _on_status_exhausted(self, stream_name: str, error: Exception):
+        pass
+
+    async def _stream_once(
+        self,
+        stream_name: str,
+        stream_factory: Callable[[jumpstarter_pb2_grpc.ControllerServiceStub], AsyncGenerator],
+        send_tx: MemoryObjectSendStream[Any],
+        window: _GraceWindow,
+        backoff: _Backoff,
+    ) -> Exception | None:
+        """Run one stream connection attempt.
+
+        Returns None if data was yielded (window/backoff reset inline),
+        or the failure exception for the caller to handle.
+        Raises ClosedResourceError/BrokenResourceError for channel closure.
+        """
+        yielded_items = False
+        try:
+            async with self._controller_stub() as controller:
+                logger.debug("%s stream connected to controller", stream_name)
+                async for item in stream_factory(controller):
+                    yielded_items = True
+                    if window.since is not None:
+                        logger.info(
+                            "%s stream recovered after %.1fs",
+                            stream_name,
+                            window.elapsed(),
+                        )
+                        window.reset()
+                        backoff.reset()
+                    await send_tx.send(item)
+        except (anyio.ClosedResourceError, anyio.BrokenResourceError):
+            raise
+        except Exception as e:
+            return e
+        else:
+            if yielded_items:
+                window.reset()
+                backoff.reset()
+                return None
+            return _StreamClosedImmediately(
+                f"{stream_name} stream closed immediately"
+            )
+
     async def _retry_stream(
         self,
         stream_name: str,
         stream_factory: Callable[[jumpstarter_pb2_grpc.ControllerServiceStub], AsyncGenerator],
-        send_tx,
-        retries: int = 5,
-        backoff: float = 1.0,  # Reduced from 3.0 for faster recovery from transient errors
-    ):
-        """Generic retry wrapper for gRPC streaming calls.
+        send_tx: MemoryObjectSendStream[Any],
+        grace_period: float = 300.0,
+        max_backoff: float = 10.0,
+        on_terminal: Callable[[str, Exception], None] | None = None,
+        on_exhausted: Callable[[str, Exception], None] | None = None,
+    ) -> None:
+        """Resilient retry wrapper for gRPC streaming calls.
 
-        Args:
-            stream_name: Name of the stream for logging purposes
-            stream_factory: Function that takes a controller stub and returns an async generator
-            send_tx: Transmission channel to send stream items to
-            retries: Maximum number of retry attempts
-            backoff: Seconds to wait between retries
+        Retries for up to grace_period seconds after the first failure, with
+        exponential backoff and jitter. Data flowing through resets the window.
+        Terminal (non-retryable) errors invoke on_terminal immediately.
+        When on_exhausted is set, grace window expiry calls it, resets the
+        window, and continues retrying instead of stopping.
         """
-        retries_left = retries
-        while True:
-            received_data = False
-            try:
-                async with self._controller_stub() as controller:
-                    logger.debug("%s stream connected to controller", stream_name)
-                    async for item in stream_factory(controller):
-                        received_data = True
-                        logger.debug("%s stream received item", stream_name)
-                        await send_tx.send(item)
-            except Exception as e:
-                if received_data:
-                    logger.debug("%s stream retry counter reset after receiving data", stream_name)
-                    retries_left = retries
-                if retries_left > 0:
-                    retries_left -= 1
-                    # Check for common transient errors that warrant faster retry
-                    error_str = str(e)
-                    is_transient = "Stream removed" in error_str or "UNAVAILABLE" in error_str
-                    retry_delay = 0.5 if is_transient else backoff
-                    logger.info(
-                        "%s stream interrupted, restarting in %ss, %s retries left: %s",
-                        stream_name,
-                        retry_delay,
-                        retries_left,
-                        e,
+        if on_terminal is None:
+            on_terminal = self._cancel_with_fatal_error
+        window = _GraceWindow(grace_period)
+        backoff = _Backoff(max_backoff)
+        warned = False
+
+        async with send_tx:
+            while True:
+                try:
+                    failure = await self._stream_once(
+                        stream_name, stream_factory, send_tx, window, backoff
                     )
-                    await sleep(retry_delay)
+                except (anyio.ClosedResourceError, anyio.BrokenResourceError):
+                    logger.debug("%s send channel closed, exiting", stream_name)
+                    return
+
+                if failure is None:
+                    warned = False
+                    await backoff.wait()
+                    continue
+
+                if not _is_retryable(failure):
+                    logger.error("%s stream hit terminal error: %s", stream_name, failure)
+                    on_terminal(stream_name, failure)
+                    return
+
+                fresh = window.since is None
+                degraded = window.mark_failure()
+                if window.expired():
+                    if on_exhausted is not None:
+                        logger.warning(
+                            "%s stream unavailable for %.0fs, still retrying: %s",
+                            stream_name,
+                            degraded,
+                            failure,
+                        )
+                        on_exhausted(stream_name, failure)
+                        window.reset()
+                        backoff.reset()
+                        warned = True
+                        await backoff.wait()
+                        continue
+                    else:
+                        logger.error(
+                            "%s stream failed after %.1fs grace period: %s",
+                            stream_name,
+                            degraded,
+                            failure,
+                        )
+                        on_terminal(stream_name, failure)
+                        return
+
+                if fresh:
+                    warned = False
+                if not warned:
+                    warned = True
+                    logger.warning(
+                        "%s stream degraded, retrying in %.1fs for %.0fs: %s",
+                        stream_name,
+                        backoff.delay,
+                        grace_period,
+                        failure,
+                    )
                 else:
-                    raise
-            else:
-                retries_left = retries
+                    logger.info(
+                        "%s stream retrying in %.1fs (degraded %.1fs/%.0fs): %s",
+                        stream_name,
+                        backoff.delay,
+                        degraded,
+                        grace_period,
+                        failure,
+                    )
+
+                await backoff.wait()
 
     def _listen_stream_factory(
         self, lease_name: str
@@ -1126,12 +1295,16 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         async with create_task_group() as conn_tg:
                             # Start listening for connection requests with retry logic
                             # This is inside conn_tg so it gets cancelled when the lease ends
-                            conn_tg.start_soon(
+                            conn_tg.start_soon(functools.partial(
                                 self._retry_stream,
-                                "Listen",
-                                self._listen_stream_factory(lease_name),
-                                listen_tx,
-                            )
+                                stream_name="Listen",
+                                stream_factory=self._listen_stream_factory(lease_name),
+                                send_tx=listen_tx,
+                                on_terminal=lambda name, err: (
+                                    logger.info("Listen stream ended (%s: %s), signaling lease end", name, err),
+                                    lease_scope.lease_ended.set(),
+                                ),
+                            ))
 
                             async def wait_for_lease_end():
                                 """Wait for lease_ended event and cancel the connection loop."""
@@ -1234,6 +1407,13 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         status_tx, status_rx = create_memory_object_stream[jumpstarter_pb2.StatusResponse](max_buffer_size=5)
         try:
             await self._run_control_plane(status_tx, status_rx)
+            if self._fatal_stream_error:
+                name, err = self._fatal_stream_error
+                logger.warning(
+                    "Control plane down (%s: %s)",
+                    name,
+                    err,
+                )
         finally:
             if self.exit_on_lease_end:
                 # Ensure the runtime container exits whenever this exporter is
@@ -1241,6 +1421,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 # other stop paths that skip the lease-end branch above).
                 await anyio.to_thread.run_sync(shutdown_runtime_sidecar)
             self._tg = None
+            self._fatal_stream_error = None
             self._status_drain_active = False
             clear_log_context()
 
@@ -1268,12 +1449,13 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             tg.start_soon(self._drain_status_reports)
             if self._telemetry_handler is not None:
                 tg.start_soon(self._telemetry_handler.flush_loop)
-            tg.start_soon(
+            tg.start_soon(functools.partial(
                 self._retry_stream,
                 "Status",
                 self._status_stream_factory(),
                 status_tx,
-            )
+                on_exhausted=self._on_status_exhausted,
+            ))
             async for status in status_rx:
                 if await self._apply_status(status, tg):
                     break
