@@ -7,7 +7,7 @@ from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentic
 from jumpstarter_cli_common.opt import OutputType, opt_output_all
 from jumpstarter_cli_common.print import model_print
 
-from .common import opt_begin_time, opt_duration_partial, opt_exporter_name, opt_selector
+from .common import opt_allow_disabled, opt_begin_time, opt_duration_partial, opt_exporter_name, opt_selector
 from .login import relogin_client
 
 
@@ -60,12 +60,7 @@ def create():
     multiple=True,
     help="Tag to set on the lease (key=value format, can be specified multiple times)",
 )
-@click.option(
-    "--allow-disabled",
-    is_flag=True,
-    default=False,
-    help="Allow leasing a disabled exporter (only effective with --name/-n)",
-)
+@opt_allow_disabled
 @click.option(
     "--context",
     "context_entries",

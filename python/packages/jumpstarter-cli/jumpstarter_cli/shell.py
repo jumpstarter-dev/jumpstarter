@@ -26,6 +26,7 @@ from jumpstarter_cli_common.signal import signal_handler
 
 from .common import (
     opt_acquisition_timeout,
+    opt_allow_disabled,
     opt_dial_timeout,
     opt_duration_partial,
     opt_exporter_name,
@@ -480,7 +481,7 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
 
 async def _shell_with_signal_handling(  # noqa: C901
     config, selector, exporter_name, lease_name, duration, exporter_logs, command, acquisition_timeout,
-    retry_timeout=None, dial_timeout=None,
+    retry_timeout=None, dial_timeout=None, allow_disabled=False,
 ):
     """Handle lease acquisition and shell execution with signal handling."""
     exit_code = 0
@@ -508,6 +509,7 @@ async def _shell_with_signal_handling(  # noqa: C901
                         async with config.lease_async(
                             selector, exporter_name, lease_name, duration, portal, acquisition_timeout,
                             retry_timeout=retry_timeout, dial_timeout=dial_timeout,
+                            allow_disabled=allow_disabled,
                         ) as lease:
                             lease_used = lease
 
@@ -699,6 +701,7 @@ async def _shell_direct_async(
 @opt_exporter_name
 @opt_duration_partial(default=timedelta(minutes=30), show_default="00:30:00")
 @click.option("--exporter-logs", is_flag=True, help="Enable exporter log streaming")
+@opt_allow_disabled
 @opt_acquisition_timeout()
 @opt_retry_timeout()
 @opt_dial_timeout()
@@ -731,6 +734,7 @@ def shell(
     exporter_name,
     duration,
     exporter_logs,
+    allow_disabled,
     acquisition_timeout,
     retry_timeout,
     dial_timeout,
@@ -784,6 +788,7 @@ def shell(
                 acquisition_timeout,
                 retry_timeout,
                 dial_timeout,
+                allow_disabled,
             )
             sys.exit(exit_code)
 
