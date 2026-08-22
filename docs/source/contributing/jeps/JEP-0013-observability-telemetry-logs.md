@@ -1601,6 +1601,17 @@ all subsequent phases have E2E coverage from the start.
   - document tested pairs; W3C Trace Context in gRPC remains
   best-effort across Python and Go (no OTel SDK requirement to
   propagate `traceparent` where needed).
+- **`operation` as a Prometheus label (Phase 2):** exporter series use
+  `@export` method names (`on`, `off`, `flash`, …) as the `operation`
+  label. The set is finite per process (loaded drivers), and unknown
+  methods are not recorded. If cardinality grows in the field, evaluate
+  moving `operation` from a series label to an exemplar key (see
+  *Cardinality guidelines*).
+- **Per-chunk `jumpstarter_stream_bytes_total` increments (Phase 2):**
+  `copy_stream` calls `Counter.inc()` once per chunk. That is in-process
+  and uses independent tx/rx label sets, so Phase 2 accepts it. If flash
+  or storage throughput regresses, batch byte counts and flush
+  periodically instead of incrementing on every chunk.
 
 ## Rejected Alternatives
 
@@ -1669,6 +1680,11 @@ all subsequent phases have E2E coverage from the start.
 - Event retention: Loki retention policy (per-tenant, per-stream retention
   classes) for annotated log events (**DD-2**); whether Jumpstarter should
   document recommended retention defaults or leave this to operators.
+- Whether the exporter `operation` metric label should stay a bounded
+  series dimension or move to exemplars if cardinality grows (see
+  *Risks*).
+- Whether `jumpstarter_stream_bytes_total` should batch per-chunk
+  increments if flash performance degrades (see *Risks*).
 
 ## Future Possibilities
 

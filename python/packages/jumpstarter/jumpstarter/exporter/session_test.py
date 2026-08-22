@@ -28,6 +28,19 @@ class CompositeDriver_(Driver):
         return "jumpstarter.client.DriverClient"
 
 
+def test_session_unbinds_exporter_log_context():
+    """Session must clear the exporter correlation field on exit."""
+    import structlog
+
+    from jumpstarter.logging import clear_log_context
+
+    clear_log_context()
+    driver = SimpleDriver()
+    with Session(uuid=driver.uuid, labels=driver.labels, root_device=driver) as session:
+        assert structlog.contextvars.get_contextvars().get("exporter") == session.name
+    assert "exporter" not in structlog.contextvars.get_contextvars()
+
+
 def test_get_report_includes_descriptions():
     """Test that GetReport includes descriptions for drivers that have them"""
     # Create drivers with and without descriptions
