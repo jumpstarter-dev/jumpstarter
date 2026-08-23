@@ -15,6 +15,11 @@ from jumpstarter.metrics import start_metrics_server
 
 logger = logging.getLogger(__name__)
 
+# Phase 2 interim: always expose local HTTP /metrics on ephemeral loopback.
+# Phase 3 replaces this with Telemetry reverse-scrape (unix/memory or in-process);
+# bind address is intentionally not a user-facing CLI option.
+_METRICS_BIND_ADDRESS = ":0"
+
 
 def _parse_listener_bind(value: str) -> tuple[str, int]:
     """Parse '[host:]port' into (host, port). Default host is 0.0.0.0."""
@@ -79,7 +84,6 @@ def _handle_child(  # noqa: C901
     tls_cert=None,
     tls_key=None,
     passphrase=None,
-    metrics_bind_address=":0",
 ):
     """Handle child process with graceful shutdown."""
     async def serve_with_graceful_shutdown():  # noqa: C901
@@ -109,9 +113,8 @@ def _handle_child(  # noqa: C901
             # Start signal handler immediately
             signal_tg.start_soon(signal_handler)
 
-            listen_addr, shutdown_metrics = start_metrics_server(metrics_bind_address)
-            if listen_addr:
-                logger.info("Serving metrics server at http://%s/metrics", listen_addr)
+            listen_addr, shutdown_metrics = start_metrics_server(_METRICS_BIND_ADDRESS)
+            logger.info("Serving metrics server at http://%s/metrics", listen_addr)
 
             try:
                 if parsed_bind is not None:
@@ -228,7 +231,6 @@ def _serve_with_exc_handling(
     tls_cert=None,
     tls_key=None,
     passphrase=None,
-    metrics_bind_address=":0",
 ):
     max_rapid_failures = config.failure_detection.max_rapid_failures
     rapid_failure_window = config.failure_detection.rapid_failure_window
@@ -284,7 +286,6 @@ def _serve_with_exc_handling(
                 tls_cert,
                 tls_key,
                 passphrase,
-                metrics_bind_address,
             )
             sys.exit(1) # should never happen
 
@@ -326,16 +327,6 @@ def _serve_with_exc_handling(
     default=False,
     help="Exit after the current lease ends instead of waiting for a new one.",
 )
-@click.option(
-    "--metrics-bind-address",
-    "metrics_bind_address",
-    default=":0",
-    show_default=True,
-    help=(
-        "Address for HTTP GET /metrics (Prometheus/OpenMetrics). "
-        "Default :0 binds an ephemeral loopback port. Use 0 to disable."
-    ),
-)
 @handle_exceptions
 def run(
     config,
@@ -345,7 +336,6 @@ def run(
     tls_key,
     passphrase,
     exit_on_lease_end,
-    metrics_bind_address,
 ):
     """Run an exporter locally."""
     if listener_bind is not None and config is None:
@@ -371,5 +361,4 @@ def run(
         tls_cert,
         tls_key,
         passphrase,
-        metrics_bind_address,
     )

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
@@ -10,8 +9,6 @@ from threading import Thread
 from prometheus_client.openmetrics.exposition import CONTENT_TYPE_LATEST
 
 from .registry import MetricsRegistry, get_registry
-
-logger = logging.getLogger(__name__)
 
 ShutdownFunc = Callable[[], None]
 
@@ -42,16 +39,16 @@ def start_metrics_server(
 ) -> tuple[str, ShutdownFunc | None]:
     """Start an HTTP server exposing GET /metrics.
 
-    Returns ``(listen_address, shutdown)``. When metrics are disabled or bind
-    fails, returns ``(\"\", None)``.
+    Returns ``(listen_address, shutdown)``. When metrics are disabled
+    (addr \"0\" or empty), returns ``(\"\", None)``.
 
-    addr \"0\" or empty disables the server.
     addr ending with \":0\" binds an ephemeral port; the returned listen address
     is host:port suitable for urllib/http.Get.
 
     Bind failures (e.g. address already in use) and invalid bind addresses
-    (non-numeric port) are non-fatal: a warning is logged and (\"\", None) is
-    returned so the exporter can continue without metrics.
+    (non-numeric port) raise so a missing ``/metrics`` endpoint is fatal and
+    visible to administrators. Explicit disable via \"0\" / \"\" remains the only
+    quiet off path.
 
     Call ``shutdown()`` to stop the background server (no-op when None).
     """
@@ -77,21 +74,13 @@ def start_metrics_server(
         def log_message(self, format: str, *args) -> None:  # noqa: A002
             return
 
-    try:
-        host, port = _parse_bind_addr(addr)
-        # bind_and_activate=False so request_queue_size is applied before listen().
-        server = ThreadingHTTPServer((host, port), Handler, bind_and_activate=False)
-        server.request_queue_size = _METRICS_REQUEST_QUEUE_SIZE
-        server.timeout = _METRICS_REQUEST_TIMEOUT_S
-        server.server_bind()
-        server.server_activate()
-    except (OSError, ValueError) as e:
-        logger.warning(
-            "Failed to start metrics server for bind address %r (%s); continuing without /metrics",
-            addr,
-            e,
-        )
-        return "", None
+    host, port = _parse_bind_addr(addr)
+    # bind_and_activate=False so request_queue_size is applied before listen().
+    server = ThreadingHTTPServer((host, port), Handler, bind_and_activate=False)
+    server.request_queue_size = _METRICS_REQUEST_QUEUE_SIZE
+    server.timeout = _METRICS_REQUEST_TIMEOUT_S
+    server.server_bind()
+    server.server_activate()
 
     thread = Thread(target=server.serve_forever, name="jumpstarter-metrics", daemon=True)
     thread.start()

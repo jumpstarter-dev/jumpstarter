@@ -249,8 +249,8 @@ def test_metrics_server_shutdown_stops_listening():
         urllib.request.urlopen(f"http://{listen}/metrics", timeout=1)
 
 
-def test_metrics_server_bind_failure_is_non_fatal():
-    """A taken fixed port must not abort the exporter process."""
+def test_metrics_server_bind_failure_is_fatal():
+    """A taken fixed port must abort metrics startup."""
     import socket
 
     holder = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -259,18 +259,16 @@ def test_metrics_server_bind_failure_is_non_fatal():
     holder.listen(1)
     occupied_port = holder.getsockname()[1]
     try:
-        listen, shutdown = start_metrics_server(f"127.0.0.1:{occupied_port}")
-        assert listen == ""
-        assert shutdown is None
+        with pytest.raises(OSError):
+            start_metrics_server(f"127.0.0.1:{occupied_port}")
     finally:
         holder.close()
 
 
-def test_metrics_server_invalid_bind_addr_is_non_fatal():
-    """Non-numeric ports must not abort the exporter process."""
-    listen, shutdown = start_metrics_server("127.0.0.1:not-a-port")
-    assert listen == ""
-    assert shutdown is None
+def test_metrics_server_invalid_bind_addr_is_fatal():
+    """Non-numeric ports must abort metrics startup."""
+    with pytest.raises(ValueError):
+        start_metrics_server("127.0.0.1:not-a-port")
 
 
 class _TimeoutDriver(Driver):
