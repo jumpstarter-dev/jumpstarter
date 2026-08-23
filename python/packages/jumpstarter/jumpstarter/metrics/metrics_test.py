@@ -405,3 +405,49 @@ def test_driver_call_increments_operations_and_active_sessions():
             assert 'operation="on"' in body or 'operation="On"' in body
         else:
             assert success == 1.0
+
+
+class _SlowHangDriver(Driver):
+    driver_type = "testing"
+
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+    def __post_init__(self):
+        super().__post_init__()
+        import threading
+
+        self._ready = threading.Event()
+
+    @export
+    async def hang(self):
+        import anyio
+
+        self._ready.set()
+        await anyio.sleep(30)
+        return "done"
+
+
+def test_client_cancelled_driver_call_does_not_record_operation_metric():
+    """Client-initiated cancel must not create operation or error series."""
+    import concurrent.futures
+    import time
+
+    from jumpstarter.common.utils import serve
+
+    driver = _SlowHangDriver()
+    with serve(driver) as client:
+        fut = client.portal.start_task_soon(client.call_async, "hang")
+        assert driver._ready.wait(timeout=5), "driver hang() never started"
+        assert fut.cancel(), "expected in-flight DriverCall future to cancel"
+        try:
+            fut.result(timeout=5)
+        except (concurrent.futures.CancelledError, Exception):
+            pass
+
+        # Allow any late server-side cleanup before asserting the registry.
+        time.sleep(0.1)
+        body = get_registry().generate_latest().decode()
+        assert 'operation="hang"' not in body
+        assert "jumpstarter_operation_errors_total{" not in body

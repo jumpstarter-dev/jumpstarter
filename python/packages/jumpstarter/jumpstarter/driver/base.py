@@ -41,6 +41,8 @@ from jumpstarter.common.streams import (
 from jumpstarter.config.env import JMP_DISABLE_COMPRESSION
 from jumpstarter.exporter.logging import get_logger
 from jumpstarter.metrics.registry import (
+    ErrorType,
+    OperationResult,
     exemplars_from_log_context,
     exporter_from_log_context,
     get_registry,
@@ -52,7 +54,7 @@ from jumpstarter.streams.metadata import MetadataStream
 from jumpstarter.streams.progress import ProgressStream
 
 # Ordered most-specific first: ConnectionError is an OSError subclass.
-_DRIVER_CALL_ERRORS: tuple[tuple[type[BaseException], str, StatusCode], ...] = (
+_DRIVER_CALL_ERRORS: tuple[tuple[type[BaseException], ErrorType, StatusCode], ...] = (
     (NotImplementedError, "not_implemented", StatusCode.UNIMPLEMENTED),
     (ValueError, "validation_error", StatusCode.INVALID_ARGUMENT),
     (TimeoutError, "timeout", StatusCode.DEADLINE_EXCEEDED),
@@ -133,9 +135,9 @@ class Driver(
         self,
         *,
         operation: str,
-        result: str,
+        result: OperationResult,
         duration_seconds: float,
-        error_type: str | None = None,
+        error_type: ErrorType | None = None,
     ) -> None:
         # Metrics must never discard a computed gRPC response or change the
         # abort status: keep recording failures isolated from the RPC path.
@@ -161,7 +163,13 @@ class Driver(
                 exc_info=True,
             )
 
-    async def _handle_driver_exception(self, exc: BaseException, op: str, started: float, context) -> None:
+    async def _handle_driver_exception(
+        self,
+        exc: BaseException,
+        op: str,
+        started: float,
+        context: grpc.aio.ServicerContext,
+    ) -> None:
         for exc_type, error_type, status in _DRIVER_CALL_ERRORS:
             if isinstance(exc, exc_type):
                 self._record_operation_metrics(

@@ -79,9 +79,12 @@ def start_metrics_server(
 
     try:
         host, port = _parse_bind_addr(addr)
-        server = ThreadingHTTPServer((host, port), Handler)
+        # bind_and_activate=False so request_queue_size is applied before listen().
+        server = ThreadingHTTPServer((host, port), Handler, bind_and_activate=False)
         server.request_queue_size = _METRICS_REQUEST_QUEUE_SIZE
         server.timeout = _METRICS_REQUEST_TIMEOUT_S
+        server.server_bind()
+        server.server_activate()
     except (OSError, ValueError) as e:
         logger.warning(
             "Failed to start metrics server for bind address %r (%s); continuing without /metrics",
