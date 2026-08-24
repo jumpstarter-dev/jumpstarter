@@ -46,11 +46,14 @@ const (
 
 const maxEntriesPerBatch = 500
 
+// logFieldExporter is the structured log field key carrying the exporter name.
+const logFieldExporter = "exporter"
+
 // reservedExtraFieldKeys are the top-level log fields that the server owns.
 // Allowing these through extra_fields would let an exporter shadow trusted
 // values (e.g. inject a fake "exporter" key) in downstream log parsers.
 var reservedExtraFieldKeys = map[string]struct{}{
-	"component": {}, "exporter": {}, "severity": {}, "namespace": {},
+	"component": {}, logFieldExporter: {}, "severity": {}, "namespace": {},
 	"ts": {}, "lease": {}, "client": {}, "operation": {}, "result": {},
 	"driver_type": {},
 }
@@ -133,7 +136,7 @@ func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest
 		// stream labels even when the entry omitted them.
 		kvs := []any{
 			"component", entry.Component,
-			"exporter", claimedName,
+			logFieldExporter, claimedName,
 			"namespace", claimedNamespace,
 			"severity", entry.Severity,
 		}

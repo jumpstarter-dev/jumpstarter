@@ -34,6 +34,8 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 )
 
+const reasonSeen = "Seen"
+
 // ExporterReconciler reconciles a Exporter object
 type ExporterReconciler struct {
 	client.Client
@@ -199,7 +201,7 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: exporter.Generation,
-			Reason:             "Seen",
+			Reason:             reasonSeen,
 			Message:            "Never seen",
 		})
 		// Do NOT set ExporterStatusValue to Offline here.
@@ -215,7 +217,7 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: exporter.Generation,
-			Reason:             "Seen",
+			Reason:             reasonSeen,
 			Message:            "Last seen more than 1 minute ago",
 		})
 		// Reset status to OFFLINE when exporter hasn't been seen recently
@@ -241,7 +243,7 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 				Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 				Status:             metav1.ConditionTrue,
 				ObservedGeneration: exporter.Generation,
-				Reason:             "Seen",
+				Reason:             reasonSeen,
 				Message:            "Last seen less than 1 minute ago",
 			})
 			// marking the exporter online, requeue after 30 seconds
