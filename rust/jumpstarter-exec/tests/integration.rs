@@ -673,6 +673,73 @@ fn e2e_concurrent_exec() {
     server.kill().ok();
 }
 
+/// Two `serve` processes racing to start on the same socket path: exactly
+/// one must win and stay reachable, the other must fail cleanly with
+/// "already listening" rather than silently displacing the winner.
+#[test]
+fn e2e_concurrent_start_loses_cleanly() {
+    let dir = TempDir::new().unwrap();
+    let sock = dir.path().join("race.sock");
+    let path = sock.to_str().unwrap().to_string();
+
+    let spawn = || {
+        Command::new(binary_path())
+            .args(["serve", "--socket", &path])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("failed to spawn jumpstarter-exec serve")
+    };
+    let mut a = spawn();
+    let mut b = spawn();
+
+    // Whichever wins the publish race, the socket must appear promptly.
+    wait_for_socket(&sock, &mut a);
+
+    // Wait for the loser to exit.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let (status_a, status_b) = loop {
+        let sa = a.try_wait().expect("poll a");
+        let sb = b.try_wait().expect("poll b");
+        if sa.is_some() || sb.is_some() {
+            break (sa, sb);
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "neither process exited; concurrent-start race did not resolve"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+
+    assert!(
+        status_a.is_some() ^ status_b.is_some(),
+        "expected exactly one process to exit as the loser, got a={status_a:?} b={status_b:?}"
+    );
+    let (loser, winner) = if status_a.is_some() {
+        (&mut a, &mut b)
+    } else {
+        (&mut b, &mut a)
+    };
+
+    let mut stderr = String::new();
+    if let Some(mut err) = loser.stderr.take() {
+        use std::io::Read;
+        err.read_to_string(&mut stderr).ok();
+    }
+    assert!(
+        stderr.contains("another server is already listening"),
+        "expected loser to report 'already listening', got: {stderr}"
+    );
+
+    // The winner's listener must still be reachable through socket_path.
+    let (stdout, _, code) = run_exec(&path, &["echo", "still-alive"], None);
+    assert_eq!(code, 0);
+    assert_eq!(stdout.trim(), "still-alive");
+
+    winner.kill().ok();
+}
+
 #[test]
 fn e2e_nonexistent_command() {
     let (mut server, _dir, sock) = start_server_process();

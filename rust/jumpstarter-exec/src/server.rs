@@ -103,21 +103,56 @@ pub fn serve(socket_path: &str) -> std::io::Result<()> {
     serve_with(socket_path, ServeOptions::default())
 }
 
+/// Bind a Unix listener that is world-accessible (mode 0o666) the instant it
+/// appears at `socket_path`, with no window where it exists at another mode.
+/// Binds on a private temp path in the same directory, chmods it there, then
+/// publishes it at `socket_path` via `hard_link` — see the comment in
+/// `serve_with` for why this avoids `umask()`.
+///
+/// `hard_link` (not `rename`) is deliberate: `rename` atomically *replaces*
+/// an existing destination, so two `serve` processes racing to start on the
+/// same path could both publish successfully, with the loser's rename
+/// silently orphaning the winner's listener (still running, but no longer
+/// reachable through socket_path). `hard_link` fails with `AlreadyExists`
+/// instead of clobbering, so the loser gets a clean "already listening"
+/// error and the winner's listener is never displaced.
+fn bind_listen_socket(socket_path: &str) -> std::io::Result<UnixListener> {
+    let tmp_path = format!("{socket_path}.tmp-{}", std::process::id());
+    let result = (|| {
+        let listener = UnixListener::bind(&tmp_path)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o666))?;
+        }
+        listener.set_nonblocking(true)?;
+        match std::fs::hard_link(&tmp_path, socket_path) {
+            Ok(()) => Ok(listener),
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => Err(std::io::Error::other(format!(
+                "another server is already listening on {socket_path}"
+            ))),
+            Err(e) => Err(e),
+        }
+    })();
+    let _ = std::fs::remove_file(&tmp_path);
+    result
+}
+
 /// Listen on `socket_path` with the given options.
 pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> {
     let log = Arc::new(Logger::new(opts.log_format, opts.debug, opts.log_fields));
     let state = Arc::new(RuntimeState::new());
 
     // Shared-volume sidecar pattern: the exporter often runs as a different
-    // UID than this process (e.g. runtime root + exporter 65532).
-    // Mask execute bits during bind() so the listen socket is born 0o666
-    // (cross-UID accessible, not executable). Then clear umask so Exec
-    // children (QEMU) create QMP/serial/VNC sockets with mode 0o777.
-    #[cfg(unix)]
-    unsafe {
-        umask(0o111);
-    }
-
+    // UID than this process (e.g. runtime root + exporter 65532). The listen
+    // socket must be born at exactly 0o666 (cross-UID accessible, not
+    // executable) with no window where it exists at any other mode, so we
+    // bind on a private temp path, chmod it there, then atomically rename
+    // onto socket_path. This deliberately avoids umask(): umask is
+    // process-global, not per-thread, so temporarily narrowing it around
+    // bind() would corrupt file/dir permissions created by any other thread
+    // sharing this process in that window (e.g. concurrent in-process tests
+    // calling serve() alongside unrelated TempDir::new() calls).
     if std::path::Path::new(socket_path).exists() {
         if UnixStream::connect(socket_path).is_ok() {
             return Err(std::io::Error::other(format!(
@@ -126,9 +161,13 @@ pub fn serve_with(socket_path: &str, opts: ServeOptions) -> std::io::Result<()> 
         }
         std::fs::remove_file(socket_path)?;
     }
-    let listener = UnixListener::bind(socket_path)?;
-    listener.set_nonblocking(true)?;
+    let listener = bind_listen_socket(socket_path)?;
 
+    // Clear umask once, permanently, for the rest of this process's life, so
+    // Exec children (QEMU) create QMP/serial/VNC sockets with mode 0o777.
+    // Safe to leave cleared for good: this process is a dedicated
+    // single-purpose sidecar, so no unrelated thread depends on the ambient
+    // umask after this point.
     #[cfg(unix)]
     unsafe {
         umask(0);
