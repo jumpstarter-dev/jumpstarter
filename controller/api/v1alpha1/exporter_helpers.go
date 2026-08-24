@@ -39,7 +39,7 @@ func (e *Exporter) ToProtobuf() *cpb.Exporter {
 	return &cpb.Exporter{
 		Name:          utils.UnparseExporterIdentifier(kclient.ObjectKeyFromObject(e)),
 		Labels:        e.Labels,
-		Online:        isOnline,
+		Online:        isOnline, //nolint:staticcheck // populated for older clients still reading this field
 		Status:        stringToProtoStatus(e.Status.ExporterStatusValue),
 		StatusMessage: e.Status.StatusMessage,
 		Enabled:       proto.Bool(e.IsEnabled()),
