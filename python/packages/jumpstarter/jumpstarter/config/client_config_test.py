@@ -451,6 +451,28 @@ async def test_create_lease_passes_exporter_name():
 
 
 @pytest.mark.asyncio
+async def test_get_lease_calls_get_lease():
+    config = ClientConfigV1Alpha1(
+        alias="testclient",
+        metadata=ObjectMeta(namespace="default", name="testclient"),
+        endpoint="jumpstarter.my-lab.com:1443",
+        token="token",
+        drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*"], unsafe=False),
+    )
+    mock_service = Mock()
+    mock_service.GetLease = AsyncMock(return_value="lease")
+
+    with (
+        patch("jumpstarter.config.client.ClientConfigV1Alpha1.channel", AsyncMock(return_value=Mock())),
+        patch("jumpstarter.config.client.ClientService", return_value=mock_service),
+    ):
+        result = await config.get_lease(name="01a0153c-277c-7992-9476-8ff0f68ba6f8")
+
+    assert result == "lease"
+    mock_service.GetLease.assert_awaited_once_with(name="01a0153c-277c-7992-9476-8ff0f68ba6f8")
+
+
+@pytest.mark.asyncio
 async def test_list_leases_paginates():
     from jumpstarter.client.grpc import Lease, LeaseList
 

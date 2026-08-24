@@ -80,6 +80,7 @@ def get_exporters(
 
 @get.command(name="leases")
 @opt_config(exporter=False)
+@click.argument("name", required=False, default=None)
 @opt_selector
 @opt_output_all
 @click.option("-a", "--all", "show_all", is_flag=True, default=False, help="Include expired leases")
@@ -101,10 +102,18 @@ def get_leases(
     all_clients: bool,
     tag_filter: str | None,
     page_size: int,
+    name: str | None = None,
 ):
     """
     Display one or many leases
     """
+
+    if name:
+        if selector or tag_filter:
+            raise click.UsageError("NAME cannot be combined with --selector or --tag-filter")
+        lease = config.get_lease(name=name)
+        model_print(lease, output)
+        return
 
     leases = config.list_leases(
         filter=selector, only_active=not show_all, tag_filter=tag_filter, page_size=page_size
@@ -112,15 +121,5 @@ def get_leases(
 
     if not all_clients:
         leases = leases.filter_by_client(config.metadata.name)
-
-    for lease in leases.leases:
-        for label_key, message in lease.deprecated_labels.items():
-            warning = f"selector label '{label_key}' on lease '{lease.name}' is deprecated"
-            if message:
-                warning += f": {message}"
-            click.echo(
-                click.style("Warning: ", fg="yellow") + warning,
-                err=True,
-            )
 
     model_print(leases, output)
