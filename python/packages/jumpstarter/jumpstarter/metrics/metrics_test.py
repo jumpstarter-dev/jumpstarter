@@ -449,3 +449,70 @@ def test_client_cancelled_driver_call_does_not_record_operation_metric():
         body = get_registry().generate_latest().decode()
         assert 'operation="hang"' not in body
         assert "jumpstarter_operation_errors_total{" not in body
+
+
+@pytest.mark.anyio
+async def test_copy_stream_records_stream_bytes_from_chunks():
+    """copy_stream with metrics_direction must observe chunk lengths, not registry helpers."""
+    from anyio import create_memory_object_stream
+
+    from jumpstarter.streams.common import copy_stream
+
+    chunks = (b"abc", b"defg")
+    src_tx, src_rx = create_memory_object_stream[bytes](8)
+    dst_tx, dst_rx = create_memory_object_stream[bytes](8)
+
+    structlog.contextvars.bind_contextvars(
+        client="ci-bot",
+        lease_id="lease-stream",
+        exporter="lab-01",
+    )
+    try:
+        for chunk in chunks:
+            await src_tx.send(chunk)
+        await src_tx.aclose()
+        await copy_stream(
+            dst_tx,
+            src_rx,
+            metrics_direction="tx",
+            metrics_driver_type="serial",
+        )
+        received = b"".join([await dst_rx.receive() for _ in chunks])
+        await dst_tx.aclose()
+        await dst_rx.aclose()
+    finally:
+        structlog.contextvars.clear_contextvars()
+
+    assert received == b"".join(chunks)
+    assert (
+        _sample_value(
+            get_registry(),
+            "jumpstarter_stream_bytes_total",
+            {
+                "exporter": "lab-01",
+                "driver_type": "serial",
+                "direction": "tx",
+            },
+        )
+        == float(sum(len(c) for c in chunks))
+    )
+
+
+@pytest.mark.anyio
+async def test_copy_stream_without_metrics_direction_does_not_record():
+    from anyio import create_memory_object_stream
+
+    from jumpstarter.streams.common import copy_stream
+
+    src_tx, src_rx = create_memory_object_stream[bytes](8)
+    dst_tx, dst_rx = create_memory_object_stream[bytes](8)
+    await src_tx.send(b"no-metrics")
+    await src_tx.aclose()
+    await copy_stream(dst_tx, src_rx)
+    assert await dst_rx.receive() == b"no-metrics"
+    await dst_tx.aclose()
+    await dst_rx.aclose()
+
+    body = get_registry().generate_latest().decode()
+    assert "jumpstarter_stream_bytes_total{" not in body
+
