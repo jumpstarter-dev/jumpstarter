@@ -2777,6 +2777,7 @@ dependencies = [
     { name = "anyio" },
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-power" },
+    { name = "requests" },
 ]
 
 [package.dev-dependencies]
@@ -2790,6 +2791,7 @@ requires-dist = [
     { name = "anyio", specifier = ">=4.10.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
+    { name = "requests", specifier = ">=2.32.5" },
 ]
 
 [package.metadata.requires-dev]
