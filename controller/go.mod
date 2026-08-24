@@ -1,6 +1,6 @@
 module github.com/jumpstarter-dev/jumpstarter/controller
 
-go 1.26.0
+go 1.26.3
 
 require (
 	filippo.io/keygen v0.0.0-20240718133620-7f162efbbd87

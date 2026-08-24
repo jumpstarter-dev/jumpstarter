@@ -1,6 +1,6 @@
 module github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator
 
-go 1.26.0
+go 1.26.3
 
 require (
 	github.com/cert-manager/cert-manager v1.18.6
