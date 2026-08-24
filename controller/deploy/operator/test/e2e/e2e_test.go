@@ -116,7 +116,7 @@ var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 			req := clientset.CoreV1().Pods(namespace).GetLogs(controllerPodName, &corev1.PodLogOptions{})
 			podLogs, err := req.Stream(ctx)
 			if err == nil {
-				defer podLogs.Close()
+				defer func() { _ = podLogs.Close() }()
 				buf := new(bytes.Buffer)
 				_, _ = io.Copy(buf, podLogs)
 				_, _ = fmt.Fprintf(GinkgoWriter, "Controller logs:\n %s", buf.String())
@@ -144,7 +144,7 @@ var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 			req = clientset.CoreV1().Pods(namespace).GetLogs("curl-metrics", &corev1.PodLogOptions{})
 			metricsLogs, err := req.Stream(ctx)
 			if err == nil {
-				defer metricsLogs.Close()
+				defer func() { _ = metricsLogs.Close() }()
 				buf := new(bytes.Buffer)
 				_, _ = io.Copy(buf, metricsLogs)
 				_, _ = fmt.Fprintf(GinkgoWriter, "Metrics logs:\n %s", buf.String())
@@ -251,8 +251,7 @@ var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 			Expect(err).NotTo(HaveOccurred(), "Metrics service should exist")
 
 			By("getting the service account token")
-			token, err := serviceAccountToken()
-			Expect(err).NotTo(HaveOccurred())
+			token := serviceAccountToken()
 			Expect(token).NotTo(BeEmpty())
 
 			By("waiting for the metrics endpoint to be ready")
@@ -282,7 +281,7 @@ var _ = Describe("Manager", Ordered, ContinueOnFailure, func() {
 				req := clientset.CoreV1().Pods(namespace).GetLogs(controllerPodName, &corev1.PodLogOptions{})
 				podLogs, err := req.Stream(ctx)
 				g.Expect(err).NotTo(HaveOccurred())
-				defer podLogs.Close()
+				defer func() { _ = podLogs.Close() }()
 				buf := new(bytes.Buffer)
 				_, _ = io.Copy(buf, podLogs)
 				g.Expect(buf.String()).To(ContainSubstring("controller-runtime.metrics\tServing metrics server"),
@@ -611,8 +610,12 @@ provisioning:
 				current := &jumpstarterdevv1alpha1.Exporter{}
 				getErr := k8sClient.Get(ctx, types.NamespacedName{Name: exporterName, Namespace: dynamicTestNamespace}, current)
 				g.Expect(getErr).NotTo(HaveOccurred())
-				g.Expect(meta.IsStatusConditionTrue(current.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline))).To(BeTrue())
-				g.Expect(meta.IsStatusConditionTrue(current.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered))).To(BeTrue())
+				g.Expect(meta.IsStatusConditionTrue(
+					current.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
+				)).To(BeTrue())
+				g.Expect(meta.IsStatusConditionTrue(
+					current.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered),
+				)).To(BeTrue())
 			}, 2*time.Minute).Should(Succeed())
 
 			By("forcing exporter into offline state by setting an old lastSeen timestamp")
@@ -632,7 +635,9 @@ provisioning:
 			}, 2*time.Minute).Should(Succeed())
 
 			By("capturing baseline ExporterOnline event count before reconnect")
-			onlineEventCountBeforeReconnect := countEventReasonForObject(dynamicTestNamespace, "Exporter", exporterName, "ExporterOnline")
+			onlineEventCountBeforeReconnect := countEventReasonForObject(
+				dynamicTestNamespace, "Exporter", exporterName, "ExporterOnline",
+			)
 
 			By("setting exporter back to online state")
 			Eventually(func(g Gomega) {
@@ -655,9 +660,9 @@ provisioning:
 
 		It("should allow access to grpc endpoints", func() {
 			By("checking endpoint grpc access to controller")
-			waitForGRPCEndpoint("grpc.jumpstarter.127.0.0.1.nip.io:8082", 1*time.Minute)
+			waitForGRPCEndpoint("grpc.jumpstarter.127.0.0.1.nip.io:8082")
 			By("checking endpoint grpc access to router")
-			waitForGRPCEndpoint("router.jumpstarter.127.0.0.1.nip.io:8083", 1*time.Minute)
+			waitForGRPCEndpoint("router.jumpstarter.127.0.0.1.nip.io:8083")
 		})
 
 		It("should create new routers if the number of replicas is increased", func() {
@@ -864,15 +869,15 @@ provisioning:
 
 				provisioning, ok := configObj["provisioning"].(map[string]interface{})
 				g.Expect(ok).To(BeTrue())
-				g.Expect(provisioning["enabled"]).To(Equal(true))
+				g.Expect(provisioning["enabled"]).To(BeTrue())
 			}, 1*time.Minute).Should(Succeed())
 		})
 
 		It("should allow access to ingress grpc endpoints", func() {
 			By("checking endpoint grpc access to controller")
-			waitForGRPCEndpoint("grpc.jumpstarter.127.0.0.1.nip.io:5443", 1*time.Minute)
+			waitForGRPCEndpoint("grpc.jumpstarter.127.0.0.1.nip.io:5443")
 			By("checking endpoint grpc access to router")
-			waitForGRPCEndpoint("router.jumpstarter.127.0.0.1.nip.io:5443", 1*time.Minute)
+			waitForGRPCEndpoint("router.jumpstarter.127.0.0.1.nip.io:5443")
 		})
 
 		AfterAll(func() {
@@ -960,7 +965,9 @@ spec:
           nodeport:
             enabled: true
             port: 30041
-`, jumpstarterName, loginTLSTestNamespace, baseDomain, image, baseDomain, loginTLSSecretName, baseDomain, image, baseDomain)
+`,
+				jumpstarterName, loginTLSTestNamespace, baseDomain, image, baseDomain,
+				loginTLSSecretName, baseDomain, image, baseDomain)
 
 			err = applyYAML(jumpstarterYAML)
 			Expect(err).NotTo(HaveOccurred(), "Failed to create Jumpstarter CR with login TLS config")
@@ -1506,7 +1513,7 @@ spec:
 				g.Expect(cert.Spec.IsCA).To(BeTrue())
 			}, 1*time.Minute).Should(Succeed())
 
-			waitForCertificateReady(certManagerTestNamespace, caCertName, 2*time.Minute)
+			waitForCertificateReady(certManagerTestNamespace, caCertName)
 		})
 
 		It("should create the CA issuer", func() {
@@ -1538,7 +1545,7 @@ spec:
 				g.Expect(cert.Spec.IsCA).To(BeFalse())
 			}, 1*time.Minute).Should(Succeed())
 
-			waitForCertificateReady(certManagerTestNamespace, controllerCertName, 2*time.Minute)
+			waitForCertificateReady(certManagerTestNamespace, controllerCertName)
 
 			By("verifying the controller TLS secret exists")
 			verifyTLSSecret(certManagerTestNamespace, controllerCertName)
@@ -1557,7 +1564,7 @@ spec:
 				g.Expect(cert.Spec.IsCA).To(BeFalse())
 			}, 1*time.Minute).Should(Succeed())
 
-			waitForCertificateReady(certManagerTestNamespace, routerCertName, 2*time.Minute)
+			waitForCertificateReady(certManagerTestNamespace, routerCertName)
 
 			By("verifying the router TLS secret exists")
 			verifyTLSSecret(certManagerTestNamespace, routerCertName)
@@ -1871,7 +1878,7 @@ spec:
 				g.Expect(cert.Spec.DNSNames).To(ContainElement("grpc." + baseDomain))
 			}, 1*time.Minute).Should(Succeed())
 
-			waitForCertificateReady(externalIssuerTestNamespace, controllerCertName, 2*time.Minute)
+			waitForCertificateReady(externalIssuerTestNamespace, controllerCertName)
 
 			By("verifying the controller TLS secret exists")
 			verifyTLSSecret(externalIssuerTestNamespace, controllerCertName)
@@ -1897,7 +1904,7 @@ spec:
 				g.Expect(cert.Spec.DNSNames).To(ContainElement("router-0." + baseDomain))
 			}, 1*time.Minute).Should(Succeed())
 
-			waitForCertificateReady(externalIssuerTestNamespace, routerCertName, 2*time.Minute)
+			waitForCertificateReady(externalIssuerTestNamespace, routerCertName)
 
 			By("verifying the router TLS secret exists")
 			verifyTLSSecret(externalIssuerTestNamespace, routerCertName)
@@ -2093,7 +2100,7 @@ dSignatureRotatedSignatureRotatedSignatureRotatedSignatureRotatedSig==
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.
 // It uses the Kubernetes TokenRequest API to generate a token by directly calling the API.
-func serviceAccountToken() (string, error) {
+func serviceAccountToken() string {
 	var token string
 	verifyTokenCreation := func(g Gomega) {
 		// Create a token request for the service account
@@ -2117,7 +2124,7 @@ func serviceAccountToken() (string, error) {
 	}
 	Eventually(verifyTokenCreation).Should(Succeed())
 
-	return token, nil
+	return token
 }
 
 // getMetricsOutput retrieves and returns the logs from the curl pod used to access the metrics endpoint.
@@ -2126,7 +2133,7 @@ func getMetricsOutput() string {
 	req := clientset.CoreV1().Pods(namespace).GetLogs("curl-metrics", &corev1.PodLogOptions{})
 	podLogs, err := req.Stream(ctx)
 	Expect(err).NotTo(HaveOccurred(), "Failed to retrieve logs from curl pod")
-	defer podLogs.Close()
+	defer func() { _ = podLogs.Close() }()
 
 	buf := new(bytes.Buffer)
 	_, _ = io.Copy(buf, podLogs)
@@ -2181,10 +2188,7 @@ func applyYAML(yamlContent string) error {
 
 // waitForGRPCEndpoint waits for a gRPC endpoint to be ready by attempting to list services using grpcurl.
 // It uses Eventually from Gomega to poll the endpoint until it responds or times out.
-// Args:
-//   - endpoint: the gRPC endpoint address (e.g., "grpc.jumpstarter.127.0.0.1.nip.io:8082")
-//   - timeout: maximum time to wait for the endpoint to be ready (default is used from Eventually if not specified)
-func waitForGRPCEndpoint(endpoint string, timeout time.Duration) {
+func waitForGRPCEndpoint(endpoint string) {
 	By(fmt.Sprintf("waiting for gRPC endpoint %s to be ready", endpoint))
 
 	// Get grpcurl path from environment or use default
@@ -2205,7 +2209,7 @@ func waitForGRPCEndpoint(endpoint string, timeout time.Duration) {
 		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("gRPC endpoint %s is not ready", endpoint))
 	}
 
-	Eventually(checkEndpoint, timeout, 2*time.Second).Should(Succeed())
+	Eventually(checkEndpoint, 1*time.Minute, 2*time.Second).Should(Succeed())
 }
 
 // verifyCondition checks if a Jumpstarter resource has a specific condition with the expected status.
@@ -2220,6 +2224,10 @@ func verifyCondition(js *operatorv1alpha1.Jumpstarter, condType string, expected
 
 // waitForCondition waits for a Jumpstarter resource to have a specific condition with the expected status.
 // It polls the resource until the condition is met or the timeout is reached.
+//
+// resource-condition helper, not a single-scenario one; hardcoding the name would misrepresent it.
+//
+//nolint:unparam // name is only exercised with one value today, but this is a generic
 func waitForCondition(namespace, name, condType string, expectedStatus metav1.ConditionStatus, timeout time.Duration) {
 	By(fmt.Sprintf("waiting for condition %s to be %s", condType, expectedStatus))
 
@@ -2330,7 +2338,7 @@ func waitForClusterIssuerReady(name string, timeout time.Duration) {
 }
 
 // waitForCertificateReady waits for a Certificate to have a Ready condition.
-func waitForCertificateReady(namespace, name string, timeout time.Duration) {
+func waitForCertificateReady(namespace, name string) {
 	By(fmt.Sprintf("waiting for Certificate %s to be ready", name))
 
 	checkReady := func(g Gomega) {
@@ -2352,7 +2360,7 @@ func waitForCertificateReady(namespace, name string, timeout time.Duration) {
 		g.Expect(false).To(BeTrue(), fmt.Sprintf("Certificate %s has no Ready condition", name))
 	}
 
-	Eventually(checkReady, timeout, 2*time.Second).Should(Succeed())
+	Eventually(checkReady, 2*time.Minute, 2*time.Second).Should(Succeed())
 }
 
 // verifyTLSSecret checks that a TLS secret exists and has the expected keys.

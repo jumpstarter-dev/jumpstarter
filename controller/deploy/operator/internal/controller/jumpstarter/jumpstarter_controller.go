@@ -569,7 +569,7 @@ func (r *JumpstarterReconciler) reconcileConfigMaps(ctx context.Context, jumpsta
 		}
 
 		// ConfigMap exists, check if update is needed
-		if !configMapNeedsUpdate(existingConfigMap, desiredConfigMap, log) {
+		if !configMapNeedsUpdate(existingConfigMap, desiredConfigMap) {
 			log.V(1).Info("ConfigMap is up to date, skipping update",
 				"name", existingConfigMap.Name,
 				"namespace", existingConfigMap.Namespace)

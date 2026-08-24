@@ -19,7 +19,6 @@ package jumpstarter
 import (
 	"fmt"
 
-	"github.com/go-logr/logr"
 	"github.com/pmezard/go-difflib/difflib"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -45,7 +44,7 @@ func deploymentNeedsUpdate(existing, desired *appsv1.Deployment) bool {
 }
 
 // configMapNeedsUpdate checks if a configmap needs to be updated using K8s semantic equality.
-func configMapNeedsUpdate(existing, desired *corev1.ConfigMap, log logr.Logger) bool {
+func configMapNeedsUpdate(existing, desired *corev1.ConfigMap) bool {
 	// Compare labels (only if desired.Labels is non-nil)
 	if desired.Labels != nil && !equality.Semantic.DeepEqual(existing.Labels, desired.Labels) {
 		return true
