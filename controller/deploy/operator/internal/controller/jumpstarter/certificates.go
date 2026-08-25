@@ -108,7 +108,11 @@ func (r *JumpstarterReconciler) reconcileCertificates(ctx context.Context, js *o
 	}
 
 	// Create router certificates (one per replica)
-	for i := int32(0); i < js.Spec.Routers.Replicas; i++ {
+	certReplicas := int32(0)
+	if js.Spec.Routers.Replicas != nil {
+		certReplicas = *js.Spec.Routers.Replicas
+	}
+	for i := int32(0); i < certReplicas; i++ {
 		if err := r.reconcileRouterCertificate(ctx, js, issuerRef, i); err != nil {
 			return fmt.Errorf("failed to reconcile router %d certificate: %w", i, err)
 		}

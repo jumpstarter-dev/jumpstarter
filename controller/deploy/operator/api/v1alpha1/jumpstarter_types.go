@@ -258,8 +258,9 @@ type ProvisionerConfig struct {
 	Image string `json:"image,omitempty"`
 
 	// Replicas for this provisioner controller Deployment.
+	// Set to 0 to suspend the provisioner (Deployment stays but no pods run).
 	// +kubebuilder:default=1
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=0
 	Replicas *int32 `json:"replicas,omitempty"`
 
 	// Resources overrides the global exporterSets.resources for this provisioner.
@@ -299,8 +300,10 @@ type TelemetryConfig struct {
 	// Multiple replicas provide HA; each exporter connects to exactly one replica
 	// via a persistent MetricsStream, so Prometheus sum-by queries across replicas
 	// yield exact totals without double-counting (see JEP-0013 DD-8).
+	// Set to 0 to suspend the telemetry deployment (Deployment stays but no pods run,
+	// Service and other resources are preserved).
 	// +kubebuilder:default=1
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=0
 	Replicas *int32 `json:"replicas,omitempty"`
 
 	// Resource requirements for the telemetry pod.
@@ -352,10 +355,12 @@ type RoutersConfig struct {
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// Number of router replicas to run.
-	// Must be a positive integer. Minimum recommended value is 3 for high availability.
+	// Set to 0 to suspend all routers (existing Deployments are scaled to 0 pods, Services and
+	// certificates are preserved so the configuration can be restored without reconfiguration).
+	// Minimum recommended value is 3 for high availability.
 	// +kubebuilder:default=3
-	// +kubebuilder:validation:Minimum=1
-	Replicas int32 `json:"replicas,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	Replicas *int32 `json:"replicas,omitempty"`
 
 	// Custom annotations to add to router pod templates.
 	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
@@ -390,13 +395,14 @@ type ControllerConfig struct {
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// Number of controller replicas to run.
-	// Currently only 1 replica is supported because the controller uses in-memory
+	// Set to 0 to suspend the controller (Deployment stays but no pods run, all other resources are preserved).
+	// Currently only 1 running replica is supported because the controller uses in-memory
 	// state for gRPC stream coordination (Dial/Listen). Values greater than 1 will
 	// be clamped to 1 with a warning. See https://github.com/jumpstarter-dev/jumpstarter/issues/1013
 	// for the tracking issue on HA controller support.
 	// +kubebuilder:default=1
-	// +kubebuilder:validation:Minimum=1
-	Replicas int32 `json:"replicas,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	Replicas *int32 `json:"replicas,omitempty"`
 
 	// Custom annotations to add to controller pod templates.
 	PodAnnotations map[string]string `json:"podAnnotations,omitempty"`
