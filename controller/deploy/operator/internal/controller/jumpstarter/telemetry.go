@@ -273,6 +273,49 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv
 		replicas = *t.Replicas
 	}
 
+	// Base environment variables - CONTROLLER_KEY is always required for token validation
+	envVars := []corev1.EnvVar{
+		{
+			Name: "CONTROLLER_KEY",
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: "jumpstarter-controller-secret",
+					},
+					Key: "key",
+				},
+			},
+		},
+	}
+
+	var volumeMounts []corev1.VolumeMount
+	var volumes []corev1.Volume
+
+	// Add TLS certificate mount when cert-manager is enabled
+	if jumpstarter.Spec.CertManager.Enabled {
+		tlsSecretName := getTelemetryCertSecretName(jumpstarter)
+		envVars = append(envVars,
+			corev1.EnvVar{Name: "EXTERNAL_CERT_PEM", Value: "/tls/tls.crt"},
+			corev1.EnvVar{Name: "EXTERNAL_KEY_PEM", Value: "/tls/tls.key"},
+		)
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "tls-certs",
+			MountPath: "/tls",
+			ReadOnly:  true,
+		})
+		// Set DefaultMode explicitly to avoid reconciliation loop
+		defaultMode := int32(420)
+		volumes = append(volumes, corev1.Volume{
+			Name: "tls-certs",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  tlsSecretName,
+					DefaultMode: &defaultMode,
+				},
+			},
+		})
+	}
+
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-telemetry", jumpstarter.Name),
@@ -310,19 +353,8 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv
 							Args: []string{
 								fmt.Sprintf("--grpc-bind=:%d", telemetryPort),
 							},
-							Env: []corev1.EnvVar{
-								{
-									Name: "CONTROLLER_KEY",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "jumpstarter-controller-secret",
-											},
-											Key: "key",
-										},
-									},
-								},
-							},
+							Env:          envVars,
+							VolumeMounts: volumeMounts,
 							Ports: []corev1.ContainerPort{
 								{
 									ContainerPort: int32(telemetryPort),
@@ -365,6 +397,7 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv
 							},
 						},
 					},
+					Volumes: volumes,
 					SecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: ptr.To(true),
 						SeccompProfile: &corev1.SeccompProfile{

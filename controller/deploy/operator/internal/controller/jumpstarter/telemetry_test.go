@@ -341,6 +341,25 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		Expect(configData).To(ContainSubstring("warning"))
 	})
 
+	It("does not include telemetry certificate in ConfigMap when cert-manager is disabled", func() {
+		By("creating a Jumpstarter CR with telemetry enabled but cert-manager disabled")
+		spec := makeJumpstarterSpec()
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled: true,
+			Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+		}
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		})).To(Succeed())
+
+		doReconcile()
+
+		configData := getConfigData()
+		Expect(configData).To(ContainSubstring("telemetry"))
+		Expect(configData).NotTo(ContainSubstring("certificate:"))
+	})
+
 	It("does not include telemetry in ConfigMap when disabled", func() {
 		By("creating a Jumpstarter CR without telemetry")
 		spec := makeJumpstarterSpec()
@@ -402,10 +421,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		Expect(cond.Reason).To(Equal("DeploymentAvailable"))
 	})
 
-	It("does not mount TLS certs even when cert-manager is enabled (TLS serving not yet supported by the binary)", func() {
-		// EXTERNAL_CERT_PEM/EXTERNAL_KEY_PEM and the tls-certs volume are intentionally
-		// omitted until the telemetry binary is updated to serve TLS.
-		// CONTROLLER_KEY is always set for token validation (not TLS-related).
+	It("mounts TLS certs when cert-manager is enabled", func() {
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-tls", Namespace: "default"},
 			Spec: operatorv1alpha1.JumpstarterSpec{
@@ -421,16 +437,53 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		dep := createTelemetryDeployment(js)
 
 		container := dep.Spec.Template.Spec.Containers[0]
-		// CONTROLLER_KEY should be set for token validation
+
+		// Should have CONTROLLER_KEY + TLS env vars
+		Expect(container.Env).To(HaveLen(3))
+		envNames := make(map[string]string)
+		for _, env := range container.Env {
+			envNames[env.Name] = env.Value
+		}
+		Expect(envNames).To(HaveKey("CONTROLLER_KEY"))
+		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_CERT_PEM", "/tls/tls.crt"))
+		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_KEY_PEM", "/tls/tls.key"))
+
+		// Should have TLS volume mount
+		Expect(container.VolumeMounts).To(HaveLen(1))
+		Expect(container.VolumeMounts[0].Name).To(Equal("tls-certs"))
+		Expect(container.VolumeMounts[0].MountPath).To(Equal("/tls"))
+		Expect(container.VolumeMounts[0].ReadOnly).To(BeTrue())
+
+		// Should have TLS volume
+		Expect(dep.Spec.Template.Spec.Volumes).To(HaveLen(1))
+		Expect(dep.Spec.Template.Spec.Volumes[0].Name).To(Equal("tls-certs"))
+		Expect(dep.Spec.Template.Spec.Volumes[0].Secret.SecretName).To(Equal("test-tls-telemetry-tls"))
+	})
+
+	It("does not mount TLS certs when cert-manager is disabled", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-no-tls", Namespace: "default"},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled:         true,
+					Image:           "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+					ImagePullPolicy: corev1.PullIfNotPresent,
+				},
+			},
+		}
+
+		dep := createTelemetryDeployment(js)
+
+		container := dep.Spec.Template.Spec.Containers[0]
+
+		// Only CONTROLLER_KEY should be set (no TLS env vars)
 		Expect(container.Env).To(HaveLen(1))
 		Expect(container.Env[0].Name).To(Equal("CONTROLLER_KEY"))
-		// TLS-related env vars should NOT be set
-		for _, env := range container.Env {
-			Expect(env.Name).NotTo(Equal("EXTERNAL_CERT_PEM"))
-			Expect(env.Name).NotTo(Equal("EXTERNAL_KEY_PEM"))
-		}
-		Expect(container.VolumeMounts).To(BeNil())
-		Expect(dep.Spec.Template.Spec.Volumes).To(BeNil())
+
+		// No volume mounts or volumes
+		Expect(container.VolumeMounts).To(BeEmpty())
+		Expect(dep.Spec.Template.Spec.Volumes).To(BeEmpty())
 	})
 
 	It("uses a dedicated service account separate from the controller", func() {
@@ -748,5 +801,94 @@ var _ = Describe("resolveTelemetryCA", func() {
 		ca, err := r.resolveTelemetryCA(ctx, js)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ca).To(BeEmpty())
+	})
+})
+
+var _ = Describe("buildConfig telemetry certificate", func() {
+	var crNamespace string
+	ctx := context.Background()
+
+	BeforeEach(func() {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "config-test-"}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		crNamespace = ns.Name
+	})
+
+	AfterEach(func() {
+		_ = k8sClient.Delete(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: crNamespace},
+		})
+	})
+
+	It("includes certificate in telemetry config when cert-manager is enabled and CA exists", func() {
+		By("creating the CA secret")
+		caSecretName := "test-cfg" + caCertificateSuffix
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: caSecretName, Namespace: crNamespace},
+			Data:       map[string][]byte{"tls.crt": []byte(testPEM)},
+		})).To(Succeed())
+
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: true},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+				},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		cfg, err := r.buildConfig(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(cfg.Telemetry).NotTo(BeNil())
+		Expect(cfg.Telemetry.Enabled).To(BeTrue())
+		Expect(cfg.Telemetry.Certificate).To(ContainSubstring("BEGIN CERTIFICATE"))
+	})
+
+	It("does not include certificate when cert-manager is disabled", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-no-tls", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+				},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		cfg, err := r.buildConfig(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(cfg.Telemetry).NotTo(BeNil())
+		Expect(cfg.Telemetry.Enabled).To(BeTrue())
+		Expect(cfg.Telemetry.Certificate).To(BeEmpty())
+	})
+
+	It("does not fail when CA secret is missing (logs warning instead)", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-missing-ca", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: true},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+				},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		cfg, err := r.buildConfig(ctx, js)
+		// Should not fail - logs warning but continues
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(cfg.Telemetry).NotTo(BeNil())
+		Expect(cfg.Telemetry.Enabled).To(BeTrue())
+		// Certificate is empty because CA secret doesn't exist
+		Expect(cfg.Telemetry.Certificate).To(BeEmpty())
 	})
 })

@@ -1305,7 +1305,6 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 	}
 
 	// Telemetry configuration.
-	// Certificate is intentionally omitted until the telemetry binary supports TLS serving.
 	if jumpstarter.Spec.Telemetry != nil && jumpstarter.Spec.Telemetry.Enabled {
 		t := jumpstarter.Spec.Telemetry
 		telemetryCfg := &config.Telemetry{
@@ -1314,6 +1313,18 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 		}
 		if t.Logging.Filter.MinSeverity != "" {
 			telemetryCfg.Logging.Filter.MinSeverity = t.Logging.Filter.MinSeverity
+		}
+		// Include CA certificate when cert-manager is enabled so exporters can verify TLS
+		if jumpstarter.Spec.CertManager.Enabled {
+			caCert, err := r.resolveTelemetryCA(ctx, jumpstarter)
+			if err != nil {
+				// Log but don't fail - telemetry will still work with self-signed cert
+				// and exporters will use insecure mode if certificate is missing
+				logf.FromContext(ctx).V(1).Info("Could not resolve telemetry CA certificate",
+					"error", err)
+			} else if caCert != "" {
+				telemetryCfg.Certificate = caCert
+			}
 		}
 		cfg.Telemetry = telemetryCfg
 	}
