@@ -1407,11 +1407,11 @@ class TestHandleLeaseConnections:
         exporter._handle_client_conn = fake_handle_client_conn
         exporter._handle_end_session = AsyncMock()
 
-        async def fake_retry_stream(name, factory, tx, **kwargs):
+        async def fake_retry_stream(stream_name, stream_factory, send_tx, **kwargs):
             conn_request = MagicMock()
             conn_request.router_endpoint = "router.example.com:443"
             conn_request.router_token = "tok123"
-            await tx.send(conn_request)
+            await send_tx.send(conn_request)
             await anyio.sleep_forever()
 
         exporter._retry_stream = fake_retry_stream
@@ -1467,8 +1467,8 @@ class TestHandleLeaseConnections:
 
         exporter._cleanup_after_lease = AsyncMock(side_effect=fake_cleanup_after_lease)
 
-        async def fake_retry_stream(name, factory, tx, **kwargs):
-            await tx.aclose()
+        async def fake_retry_stream(stream_name, stream_factory, send_tx, **kwargs):
+            await send_tx.aclose()
 
         exporter._retry_stream = fake_retry_stream
         exporter._listen_stream_factory = MagicMock(return_value=MagicMock())
@@ -1662,9 +1662,9 @@ def _wire_status_stream(exporter, statuses, sent: Event | None = None):
     matching production behavior where status streams are long-lived.
     If ``sent`` is provided, it is set after all statuses have been queued.
     """
-    async def fake_retry_stream(name, factory, tx, **kwargs):
+    async def fake_retry_stream(stream_name, stream_factory, send_tx, **kwargs):
         for s in statuses:
-            await tx.send(s)
+            await send_tx.send(s)
         if sent is not None:
             sent.set()
         # Don't close - wait until task group cancels us (matches production)
