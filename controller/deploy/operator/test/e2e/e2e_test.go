@@ -571,7 +571,7 @@ provisioning:
 		})
 
 		It("should emit controller update events when controller spec changes", func() {
-			By("adding a pod annotation to trigger a controller deployment update")
+			By("changing the controller image pull policy to trigger a deployment update")
 			jumpstarter := &operatorv1alpha1.Jumpstarter{}
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      "jumpstarter",
@@ -579,10 +579,8 @@ provisioning:
 			}, jumpstarter)
 			Expect(err).NotTo(HaveOccurred())
 
-			if jumpstarter.Spec.Controller.PodAnnotations == nil {
-				jumpstarter.Spec.Controller.PodAnnotations = map[string]string{}
-			}
-			jumpstarter.Spec.Controller.PodAnnotations["e2e-test/trigger"] = "deployment-update"
+			originalPolicy := jumpstarter.Spec.Controller.ImagePullPolicy
+			jumpstarter.Spec.Controller.ImagePullPolicy = corev1.PullAlways
 			Expect(k8sClient.Update(ctx, jumpstarter)).To(Succeed())
 			DeferCleanup(func() {
 				restore := &operatorv1alpha1.Jumpstarter{}
@@ -593,11 +591,11 @@ provisioning:
 				if getErr != nil {
 					return
 				}
-				delete(restore.Spec.Controller.PodAnnotations, "e2e-test/trigger")
+				restore.Spec.Controller.ImagePullPolicy = originalPolicy
 				_ = k8sClient.Update(ctx, restore)
 			})
 
-			By("verifying the controller deployment reflects the new pod annotation")
+			By("verifying the controller deployment reflects the updated image pull policy")
 			Eventually(func(g Gomega) {
 				deployment := &appsv1.Deployment{}
 				getErr := k8sClient.Get(ctx, types.NamespacedName{
@@ -605,7 +603,8 @@ provisioning:
 					Namespace: dynamicTestNamespace,
 				}, deployment)
 				g.Expect(getErr).NotTo(HaveOccurred())
-				g.Expect(deployment.Spec.Template.Annotations).To(HaveKeyWithValue("e2e-test/trigger", "deployment-update"))
+				g.Expect(deployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+				g.Expect(deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy).To(Equal(corev1.PullAlways))
 			}, 2*time.Minute).Should(Succeed())
 
 			By("verifying ControllerDeploymentUpdated event was emitted on Jumpstarter resource")
