@@ -514,8 +514,8 @@ provisioning:
 			Eventually(verifyConfigMap, 1*time.Minute).Should(Succeed())
 		})
 
-		It("should emit controller update events when controller spec changes", func() {
-			By("updating Jumpstarter controller replicas to trigger a deployment update")
+		It("should clamp controller replicas > 1 to 1 with a warning event", func() {
+			By("updating Jumpstarter controller replicas to 3")
 			jumpstarter := &operatorv1alpha1.Jumpstarter{}
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      "jumpstarter",
@@ -523,8 +523,7 @@ provisioning:
 			}, jumpstarter)
 			Expect(err).NotTo(HaveOccurred())
 
-			originalReplicas := jumpstarter.Spec.Controller.Replicas
-			jumpstarter.Spec.Controller.Replicas = originalReplicas + 1
+			jumpstarter.Spec.Controller.Replicas = 3
 			Expect(k8sClient.Update(ctx, jumpstarter)).To(Succeed())
 			DeferCleanup(func() {
 				restore := &operatorv1alpha1.Jumpstarter{}
@@ -535,11 +534,11 @@ provisioning:
 				if getErr != nil {
 					return
 				}
-				restore.Spec.Controller.Replicas = originalReplicas
+				restore.Spec.Controller.Replicas = 1
 				_ = k8sClient.Update(ctx, restore)
 			})
 
-			By("verifying the controller deployment reflects the updated replica count")
+			By("verifying the controller deployment still has 1 replica (clamped)")
 			Eventually(func(g Gomega) {
 				deployment := &appsv1.Deployment{}
 				getErr := k8sClient.Get(ctx, types.NamespacedName{
@@ -548,7 +547,65 @@ provisioning:
 				}, deployment)
 				g.Expect(getErr).NotTo(HaveOccurred())
 				g.Expect(deployment.Spec.Replicas).NotTo(BeNil())
-				g.Expect(*deployment.Spec.Replicas).To(Equal(originalReplicas + 1))
+				g.Expect(*deployment.Spec.Replicas).To(Equal(int32(1)))
+			}, 2*time.Minute).Should(Succeed())
+
+			By("verifying ReplicasClamped warning event was emitted")
+			Eventually(func(g Gomega) {
+				eventList := &corev1.EventList{}
+				listErr := k8sClient.List(ctx, eventList, client.InNamespace(dynamicTestNamespace))
+				g.Expect(listErr).NotTo(HaveOccurred())
+
+				found := false
+				for _, event := range eventList.Items {
+					if event.InvolvedObject.Kind == "Jumpstarter" &&
+						event.InvolvedObject.Name == "jumpstarter" &&
+						event.Reason == "ReplicasClamped" &&
+						event.Type == "Warning" {
+						found = true
+						break
+					}
+				}
+				g.Expect(found).To(BeTrue(), "expected ReplicasClamped warning event for jumpstarter")
+			}, 2*time.Minute).Should(Succeed())
+		})
+
+		It("should emit controller update events when controller spec changes", func() {
+			By("adding a pod annotation to trigger a controller deployment update")
+			jumpstarter := &operatorv1alpha1.Jumpstarter{}
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "jumpstarter",
+				Namespace: dynamicTestNamespace,
+			}, jumpstarter)
+			Expect(err).NotTo(HaveOccurred())
+
+			if jumpstarter.Spec.Controller.PodAnnotations == nil {
+				jumpstarter.Spec.Controller.PodAnnotations = map[string]string{}
+			}
+			jumpstarter.Spec.Controller.PodAnnotations["e2e-test/trigger"] = "deployment-update"
+			Expect(k8sClient.Update(ctx, jumpstarter)).To(Succeed())
+			DeferCleanup(func() {
+				restore := &operatorv1alpha1.Jumpstarter{}
+				getErr := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter",
+					Namespace: dynamicTestNamespace,
+				}, restore)
+				if getErr != nil {
+					return
+				}
+				delete(restore.Spec.Controller.PodAnnotations, "e2e-test/trigger")
+				_ = k8sClient.Update(ctx, restore)
+			})
+
+			By("verifying the controller deployment reflects the new pod annotation")
+			Eventually(func(g Gomega) {
+				deployment := &appsv1.Deployment{}
+				getErr := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      "jumpstarter-controller",
+					Namespace: dynamicTestNamespace,
+				}, deployment)
+				g.Expect(getErr).NotTo(HaveOccurred())
+				g.Expect(deployment.Spec.Template.Annotations).To(HaveKeyWithValue("e2e-test/trigger", "deployment-update"))
 			}, 2*time.Minute).Should(Succeed())
 
 			By("verifying ControllerDeploymentUpdated event was emitted on Jumpstarter resource")
