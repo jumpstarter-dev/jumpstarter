@@ -48,8 +48,9 @@ Prereq (all): dex + controller/operator running, namespace `jumpstarter-lab` cre
 | legacy client config contains CA certificate and works with secure TLS | exporters running | inspect `test-client-legacy.yaml` `tls.ca`; run `jmp get exporters` without `JUMPSTARTER_GRPC_INSECURE` | CA present; command succeeds over real TLS |
 | can operate on leases | exporters running | create lease, list leases/exporters, test label-selector filters (`=`, `!`, multi-expr), delete all | selector filtering returns correct/empty results |
 | can create a lease with context metadata | exporters running | `create lease --context k=v` x2, fetch yaml | CRD-persisted context keys/values present in output |
-| paginated lease listing returns all leases | exporters running | create 10 leases, `get leases --page-size 5 -o name` | exactly 10 lines returned across pages |
+| paginated lease listing returns all leases | exporters running | create 10 unmatched leases labeled `pagination=true`, `get leases --all --selector pagination=true --page-size 5 -o name` | exactly 10 lines returned across pages (ended/unsatisfiable included) |
 | paginated exporter listing returns all exporters | exporters running | create 10 exporters w/ shared label, list with `--page-size 5` | exactly 10 names returned |
+| cycles leases on one exporter without sticking at LeaseReady | exporters running; `lease-churn` (excluded from `make e2e-run` / CI) | create+delete lease on `test-exporter-oidc` ×20, wait `Available\|` after each release | exporter returns to `Available\|` after every cycle |
 | lease listing shows expires at and remaining columns | exporters running | create lease, `get leases` with wide COLUMNS | output has "EXPIRES AT" and "REMAINING" |
 | can transfer lease to another client | exporters running | create lease, wait Ready, `update lease --to-client test-client-legacy` | updated lease yaml shows new client |
 | can lease and connect to exporters | exporters running | `jmp shell --selector ... j power on` for oidc/sa/legacy/provisioning clients | all shells succeed |
@@ -229,14 +230,21 @@ venv/binary isn't found.
 
 - **Lanes = Ginkgo `Label(...)`** on each top-level `Describe`; selected via
   `GINKGO_LABEL_FILTER` / `--label-filter` (see `e2e/run-e2e.sh` header comment).
-  CI's `e2e-tests` job effectively runs the full suite (including
-  `exporterset-qemu`); `e2e-compat-old-controller`/`e2e-compat-old-client` jobs run
+  CI's `e2e-tests` job runs `make e2e-run`, which defaults to
+  `--label-filter '!lease-churn'` (still includes `exporterset-qemu`).
+  `e2e-compat-old-controller`/`e2e-compat-old-client` jobs run
   only on merge-queue/dispatch via `compat/run.sh`. PRs run amd64 only;
   merge-queue and `workflow_dispatch` also run arm64.
 - **`operator-only`** is a secondary label on 2 individual `It`s inside the `core`
   lane (`can login with simplified login` and `legacy client config contains CA
   certificate and works with secure TLS`) — excluded when running against a
   plain controller (non-operator) deployment via `--label-filter "!operator-only"`.
+- **`lease-churn`** is a secondary label on `cycles leases on one exporter without
+  sticking at LeaseReady` inside `core`. It is excluded from `make e2e-run` / CI
+  (`!lease-churn`). Run it with `make e2e-lease-churn` (`GINKGO_LABEL_FILTER=core`),
+  which still runs the Ordered core setup specs. It cannot be `Serial`: Ginkgo
+  rejects that decorator on an `It` inside a non-Serial Ordered container; the
+  parent Ordered suite already sequences it against other core lease specs.
 - Failure log dumping is lane-specific infrastructure (for example: core and
   exit-on-lease-end dump exporter + controller logs; exporterset-qemu dumps
   exporterset/QEMU pod logs).

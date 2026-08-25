@@ -342,11 +342,11 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, fu
 			token := MustRunCmd("bash", "-c", fmt.Sprintf("echo '%s' | base64 -d", tokenB64))
 
 			env := map[string]string{
-				"JMP_NAMESPACE":    ns,
+				"JMP_NAMESPACE":     ns,
 				"JMP_DRIVERS_ALLOW": "*",
-				"JMP_NAME":         "test-client-legacy",
-				"JMP_ENDPOINT":     endpoint,
-				"JMP_TOKEN":        token,
+				"JMP_NAME":          "test-client-legacy",
+				"JMP_ENDPOINT":      endpoint,
+				"JMP_TOKEN":         token,
 			}
 			out, err := RunCmdWithEnv(env, "jmp", "shell",
 				"--selector", "example.com/board=oidc", "j", "power", "on")
@@ -453,6 +453,11 @@ var _ = Describe("Core E2E Tests", Label("core"), Ordered, ContinueOnFailure, fu
 
 			// As with the exporter pagination spec, the leases are fixtures for
 			// the client's pagination, so create them in a single apply.
+			// Spec selector must not match a live exporter: assigning and then
+			// delete --all of 10 overlapping leases races session teardown and
+			// can stick the exporter at LeaseReady. Unmatched leases become
+			// Unsatisfiable/Ended; jmp get leases hides those unless --all.
+			// metadata.labels is what --selector filters on the server.
 			var manifest strings.Builder
 			for i := 1; i <= 10; i++ {
 				fmt.Fprintf(&manifest, `---
@@ -460,24 +465,28 @@ apiVersion: jumpstarter.dev/v1alpha1
 kind: Lease
 metadata:
   name: pagination-lease-%d
+  labels:
+    pagination: "true"
 spec:
   clientRef:
     name: test-client-oidc
   duration: 24h
   selector:
     matchLabels:
-      example.com/board: oidc
+      pagination: "true"
 `, i)
 			}
 			MustKubectlApply(manifest.String())
+			DeferCleanup(func() {
+				MustKubectl("-n", Namespace(), "delete", "leases.jumpstarter.dev",
+					"-l", "pagination=true")
+			})
 
 			out, err := Jmp("get", "leases", "--client", "test-client-oidc",
-				"--page-size", "5", "-o", "name")
+				"--all", "--selector", "pagination=true", "--page-size", "5", "-o", "name")
 			Expect(err).NotTo(HaveOccurred(), out)
 			lines := strings.Split(strings.TrimSpace(out), "\n")
 			Expect(lines).To(HaveLen(10))
-
-			MustJmp("delete", "leases", "--client", "test-client-oidc", "--all")
 		})
 
 		It("paginated exporter listing returns all exporters", func() {
@@ -509,6 +518,47 @@ spec:
 
 			MustKubectl("-n", Namespace(), "delete", "exporters.jumpstarter.dev",
 				"-l", "pagination=true", "--wait=false")
+		})
+
+		// Opt-in: Label("lease-churn") is excluded from make e2e-run / CI
+		// (GINKGO_LABEL_FILTER=!lease-churn). Run with make e2e-lease-churn.
+		// Lives in this Ordered container so it cannot overlap other core
+		// lease specs; Ginkgo forbids Serial on an It here (the outer
+		// Ordered is not Serial). Wait for Available| after each assigned
+		// release; do not delete with --wait=false.
+		It("cycles leases on one exporter without sticking at LeaseReady", Label("lease-churn"), func() {
+			WaitForExporters("test-exporter-oidc", "test-exporter-sa", "test-exporter-legacy")
+			ns := Namespace()
+			exporterRef := "exporters.jumpstarter.dev/test-exporter-oidc"
+
+			// ContinueOnFailure on the parent Ordered container means a failed
+			// assertion below stops this spec but lets later specs keep running.
+			// Register cleanup up front so a lease created in a cycle that then
+			// fails its assertion cannot bleed into those specs.
+			DeferCleanup(func() {
+				MustJmp("delete", "leases", "--client", "test-client-oidc", "--all")
+			})
+
+			for i := 1; i <= 20; i++ {
+				leaseName := strings.TrimSpace(MustJmp("create", "lease",
+					"--client", "test-client-oidc", "--selector", "example.com/board=oidc",
+					"--duration", "1d", "-o", "name"))
+				Expect(leaseName).NotTo(BeEmpty(), "cycle %d: create lease returned no name", i)
+
+				// Prove the lease actually attached to this exporter: the
+				// leaseRef.name half of exporterState (after the |) must equal the
+				// lease we just created, not merely differ from Available|.
+				Eventually(func() string {
+					return exporterState(ns, exporterRef)
+				}, defaultWaitTimeout, exporterPollPeriod).Should(HaveSuffix("|"+leaseName),
+					"cycle %d: lease %s did not assign", i, leaseName)
+
+				MustJmp("delete", "leases", "--client", "test-client-oidc", "--all")
+				Eventually(func() string {
+					return exporterState(ns, exporterRef)
+				}, defaultWaitTimeout, exporterPollPeriod).Should(Equal(exporterFree),
+					"cycle %d: exporter stuck after release (want Available|)", i)
+			}
 		})
 
 		It("lease listing shows expires at and remaining columns", func() {

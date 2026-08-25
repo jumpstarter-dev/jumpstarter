@@ -37,9 +37,10 @@ help:
 	@echo ""
 	@echo "End-to-end testing:"
 	@echo "  make e2e-setup             - Setup e2e test environment (one-time)"
-	@echo "  make e2e-run               - Run full e2e suite (includes ExporterSet QEMU)"
+	@echo "  make e2e-run               - Run e2e suite (excludes lease-churn; includes ExporterSet QEMU)"
 	@echo "  make e2e                   - Same as e2e-run"
 	@echo "  make e2e-exporterset-qemu  - Run ExporterSet QEMU e2e only"
+	@echo "  make e2e-lease-churn       - Run core e2e including lease-churn cycles"
 	@echo "  make e2e-full              - Full setup + run (for CI or first time)"
 	@echo "  make e2e-clean             - Clean up e2e test environment (delete cluster, certs, etc.)"
 	@echo ""
@@ -193,17 +194,24 @@ e2e-setup:
 	@echo "Setting up e2e test environment..."
 	@bash e2e/setup-e2e.sh
 
-# Run e2e tests
+# Run e2e tests (excludes lease-churn; override with GINKGO_LABEL_FILTER)
 .PHONY: e2e-run
 e2e-run:
 	@echo "Running e2e tests..."
-	@bash e2e/run-e2e.sh
+	@GINKGO_LABEL_FILTER="$(or $(GINKGO_LABEL_FILTER),!lease-churn)" bash e2e/run-e2e.sh
 
 # Focused local run of ExporterSet QEMU e2e (also covered by make e2e-run / CI).
 .PHONY: e2e-exporterset-qemu
 e2e-exporterset-qemu:
 	@echo "Running ExporterSet QEMU e2e tests..."
 	@GINKGO_LABEL_FILTER=exporterset-qemu bash e2e/run-e2e.sh
+
+# Core lane including the lease-churn cycle spec (create/release ×20).
+# Needs the Ordered core setup specs, so this is `core` not `lease-churn` alone.
+.PHONY: e2e-lease-churn
+e2e-lease-churn:
+	@echo "Running core e2e tests including lease-churn..."
+	@GINKGO_LABEL_FILTER=core bash e2e/run-e2e.sh
 
 # Prints a lane-grouped index of all e2e specs (group + name + labels + source),
 # generated via `ginkgo --dry-run`. Use it to check e2e/README.md's lane/test/

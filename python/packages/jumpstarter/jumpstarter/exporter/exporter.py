@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -51,6 +52,12 @@ _RPC_MAX_RETRIES = 20
 _RPC_BACKOFF_BASE = 1.0
 _RPC_BACKOFF_CAP = 30.0
 _RPC_TIMEOUT = 30
+
+# How long after a lease ends to wait for handle_lease's LeaseFinished before
+# warning. The loop waits for LeaseFinished indefinitely (it is a real
+# happens-before edge, not a timer), so this only logs — it never releases the
+# slot — keeping a wedged teardown diagnosable without reintroducing a timeout.
+_LEASE_FINISHED_WATCHDOG = 30.0
 
 # Status codes indicating old controller without exporter auth on ReleaseLease
 _RELEASE_LEASE_UNSUPPORTED_CODES = frozenset({
@@ -160,6 +167,19 @@ def shutdown_runtime_sidecar(
 class LeaseState(Enum):
     IDLE = "idle"
     LEASED = "leased"
+
+
+@dataclass
+class LeaseFinished:
+    """Control-plane message: a handle_lease task has fully torn down its lease.
+
+    Sent by handle_lease's finally after session_for_lease has exited (gRPC
+    graceful stop included), so receiving it means the transport is gone. The
+    control-plane loop is the sole writer of _lease_context; handle_lease hands
+    the slot back with this message instead of clearing it from its own task.
+    """
+
+    lease_ctx: LeaseContext
 
 
 async def _standalone_shutdown_waiter():
@@ -305,18 +325,21 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     """
 
     _last_completed_lease: str | None = field(init=False, default=None)
-    """Name of the most recently completed lease, used to filter trailing
-    status ticks after handle_lease's finally has cleaned up."""
+    """Name of the most recently completed lease. Set by the control-plane loop
+    when it processes LeaseFinished; suppresses trailing leased=true ticks for a
+    lease that has already torn down."""
 
     _pending_lease_status: jumpstarter_pb2.StatusResponse | None = field(init=False, default=None)
-    """Stashed status from a lease reassignment, replayed after handle_lease's
-    finally clears _lease_context so the new lease can be acquired."""
+    """Stashed status from a lease reassignment, replayed by the control-plane
+    loop when it processes LeaseFinished (after the old slot is released) so the
+    new lease can be acquired."""
 
-    _status_replay_tx: MemoryObjectSendStream[jumpstarter_pb2.StatusResponse] | None = field(
+    _control_tx: "MemoryObjectSendStream[jumpstarter_pb2.StatusResponse | LeaseFinished] | None" = field(
         init=False, default=None
     )
-    """Send side of the status channel, used to replay _pending_lease_status
-    back into the status loop after a lease transition."""
+    """Send side of the control-plane channel. handle_lease posts LeaseFinished
+    here to hand its slot back to the loop, and the loop replays
+    _pending_lease_status through it after a lease transition."""
     _lease_context: LeaseContext | None = field(init=False, default=None)
     """Encapsulates all resources associated with the current lease.
 
@@ -1191,44 +1214,31 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     await listen_tx.aclose()
                     await listen_rx.aclose()
         finally:
-            # Unblock _on_lease_released even if we no longer own _lease_context
-            # (it may already have snapshot-cleared the exporter field and be
-            # waiting on after_lease_hook_done).
+            # Hand the slot back to the control-plane loop, the sole writer of
+            # _lease_context. This task only sets events on its own LeaseContext
+            # and posts one message; it never clears the slot or replays status
+            # itself, so there is no second writer to race.
             with CancelScope(shield=True):
                 if not lease_scope.before_lease_hook.is_set():
                     lease_scope.before_lease_hook.set()
                 if not lease_scope.after_lease_hook_done.is_set():
                     lease_scope.after_lease_hook_done.set()
-                # Fallback ownership cleanup when _on_lease_released did not run
-                # (cancellation / handle_lease finishing before leased=False).
-                if self._lease_context is lease_scope:
-                    session_was_created = lease_scope.session is not None
-                    if session_was_created:
-                        # Brief delay to ensure session is fully closed before next lease.
-                        # Prevents SSL corruption from overlapping connections.
-                        await sleep(0.2)
-                    self._last_completed_lease = lease_scope.lease_name
-                    self._lease_context = None
-                    if self.exit_on_lease_end:
-                        self._stop_requested = True
-                    clear_log_context()
-                    set_log_context(exporter=self.name)
-                    logger.debug("Ready for next lease")
-                # Replay a stashed reassignment status regardless of who cleared
-                # _lease_context. On the reassign-then-leased=False ordering,
-                # _on_lease_released may clear the field before we reach this finally;
-                # gating the replay on ownership above would drop the pending lease.
-                pending = self._pending_lease_status
-                if pending is not None:
-                    self._pending_lease_status = None
-                    if self._status_replay_tx is not None:
-                        try:
-                            await self._status_replay_tx.send(pending)
-                        except (anyio.ClosedResourceError, anyio.EndOfStream):
-                            logger.debug(
-                                "Status channel closed, skipping replay for %s",
-                                pending.lease_name,
-                            )
+                # session_for_lease has fully exited by now (gRPC graceful stop
+                # included), so LeaseFinished is the "transport is gone" signal
+                # the loop waits for before releasing the slot. Sent on every
+                # exit path: normal leased=false, reassignment, stale lease, and
+                # cancellation — so the loop always gets its finalize trigger.
+                # send_nowait, not send: this runs shielded during shutdown, and
+                # a blocking send with the loop already gone would hang the task
+                # group forever. The channel is unbounded, so this never blocks.
+                if self._control_tx is not None:
+                    try:
+                        self._control_tx.send_nowait(LeaseFinished(lease_scope))
+                    except (anyio.ClosedResourceError, anyio.BrokenResourceError):
+                        logger.debug(
+                            "Control channel closed, slot release for lease %s skipped",
+                            lease_scope.lease_name,
+                        )
 
     async def serve(self):
         """Serve the exporter, handling leases until stopped."""
@@ -1237,7 +1247,17 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         set_log_context(exporter=self.name)
         async with self.session():
             pass
-        status_tx, status_rx = create_memory_object_stream[jumpstarter_pb2.StatusResponse](max_buffer_size=5)
+        # Unbounded on purpose. The control-plane loop is the sole receiver AND,
+        # when it replays a stashed reassignment, a producer. With a bounded
+        # buffer, anyio hands a freed slot straight to a blocked sender on
+        # receive(), so a full buffer plus the loop's own send would deadlock the
+        # consumer, and handle_lease's shielded LeaseFinished send could hang
+        # shutdown. Producers are bounded (live leases + one RPC stream), so an
+        # unbounded buffer costs nothing and removes both hangs. Sends use
+        # send_nowait, which never blocks against math.inf.
+        status_tx, status_rx = create_memory_object_stream[jumpstarter_pb2.StatusResponse | LeaseFinished](
+            max_buffer_size=math.inf
+        )
         try:
             await self._run_control_plane(status_tx, status_rx)
         finally:
@@ -1261,13 +1281,13 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
     async def _run_control_plane(
         self,
-        status_tx: MemoryObjectSendStream[jumpstarter_pb2.StatusResponse],
-        status_rx: MemoryObjectReceiveStream[jumpstarter_pb2.StatusResponse],
+        status_tx: MemoryObjectSendStream[jumpstarter_pb2.StatusResponse | LeaseFinished],
+        status_rx: MemoryObjectReceiveStream[jumpstarter_pb2.StatusResponse | LeaseFinished],
     ) -> None:
         """Start control-plane streams and process status updates."""
         async with create_task_group() as tg:
             self._tg = tg
-            self._status_replay_tx = status_tx
+            self._control_tx = status_tx
             self._status_rpc_event = Event()
             self._pending_status_request = None
             self._status_drain_active = True
@@ -1280,8 +1300,15 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 self._status_stream_factory(),
                 status_tx,
             )
-            async for status in status_rx:
-                if await self._apply_status(status, tg):
+            # One loop, one writer of _lease_context. Status ticks come from the
+            # controller RPC; LeaseFinished comes from handle_lease when it has
+            # torn a lease down. Both are handled here, sequentially.
+            async for message in status_rx:
+                if isinstance(message, LeaseFinished):
+                    if await self._on_lease_finished(message.lease_ctx):
+                        break
+                    continue
+                if await self._apply_status(message, tg):
                     break
 
     async def _apply_status(
@@ -1309,9 +1336,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             ):
                 # Controller reassigned the exporter to a different lease.
                 # Stash the new status and signal the old lease to tear down.
-                # handle_lease's finally block replays the stashed status
-                # after clearing _lease_context. The controller won't
-                # re-send it because proto.Equal suppresses duplicates.
+                # The loop replays the stashed status from _on_lease_finished,
+                # once LeaseFinished for the old lease has released the slot. The
+                # controller won't re-send it because proto.Equal suppresses
+                # duplicates.
                 self._pending_lease_status = status
                 if not self._lease_context.lease_ended.is_set():
                     logger.warning(
@@ -1320,11 +1348,17 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         status.lease_name,
                     )
                     self._lease_context.lease_ended.set()
+                    tg.start_soon(self._lease_finished_watchdog, self._lease_context)
                 return False
 
             self._on_lease_update(status)
         else:
-            await self._on_lease_released(previous_state)
+            await self._on_lease_released(previous_state, tg)
+            if self._lease_context is not None:
+                # A lease is tearing down. The slot is released, and the stop
+                # decision made, when LeaseFinished arrives (_on_lease_finished),
+                # so exit_on_lease_end keeps the runtime up until the hook is done.
+                return False
 
         return self._check_stop_requested() if not current_leased else False
 
@@ -1371,20 +1405,74 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 set_log_context(client=status.client_name)
         logger.info("Currently leased by %s under %s", status.client_name, status.lease_name)
 
-    async def _on_lease_released(self, previous_state: LeaseState) -> None:
-        """Handle not-leased status: signal handle_lease on transition, check exit_on_lease_end.
+    async def _on_lease_finished(self, lease_ctx: LeaseContext) -> bool:
+        """Release a finished lease's slot. Runs only in the control-plane loop.
 
-        Primary cleanup path: signals lease_ended, waits (shielded) for the
-        afterLease hook, then clears _lease_context. _lease_context is kept set
-        for the whole hook so _report_status still reaches the client session
-        (it gates the session update on _lease_context). The status loop is
-        sequential, so no other ticks are processed while we wait. A brief
-        settle delay runs before clearing so the next lease can't grab this
-        slot before handle_lease finishes tearing down the session.
+        handle_lease posts LeaseFinished from its finally, after session_for_lease
+        has exited (gRPC graceful stop included). Receiving it *is* the
+        "transport is gone" happens-before edge, so there is no timing-based
+        settle to guess at — the old 0.2s sleep it replaced never actually
+        covered that teardown.
 
-        handle_lease's outer finally is the fallback when this path never
-        runs (e.g. task cancellation, or handle_lease finishing before the
-        controller sends leased=False).
+        No ownership re-check is needed: the loop is the sole writer of
+        _lease_context, and it only acquires a replacement by replaying a stashed
+        reassignment at the end of this handler. So when LeaseFinished arrives,
+        the slot is still this lease.
+
+        Returns True if the loop should stop (exit_on_lease_end / requested stop).
+        """
+        if self._lease_context is not lease_ctx:
+            # Defensive: with the loop as sole writer, only reacquiring a
+            # replacement after releasing the slot, this should not happen —
+            # LeaseFinished for a lease that still owns the slot is the only
+            # reachable case. Kept as a guard so a future second writer can't
+            # silently wipe an unrelated lease.
+            logger.debug("Lease %s not the current slot owner, ignoring LeaseFinished", lease_ctx.lease_name)
+            return self._check_stop_requested()
+
+        self._last_completed_lease = lease_ctx.lease_name
+        self._lease_context = None
+        if self.exit_on_lease_end:
+            # _on_lease_released sets this on the leased=false tick; setting it
+            # here too covers exit paths that never saw that tick (cancellation,
+            # stale lease, handle_lease finishing first).
+            self._stop_requested = True
+        # structlog contextvars live in this (loop) task, so clearing here is
+        # what actually drops the lease's log fields — a clear in handle_lease's
+        # task would not reach the loop.
+        clear_log_context()
+        set_log_context(exporter=self.name)
+        logger.debug("Ready for next lease")
+
+        # Now that the slot is free, replay a stashed reassignment so the loop
+        # acquires the new lease on the next iteration.
+        pending = self._pending_lease_status
+        if pending is not None:
+            self._pending_lease_status = None
+            if self._control_tx is not None:
+                try:
+                    # send_nowait, not send: this is the loop sending into the
+                    # channel it is the sole receiver of. A blocking send here
+                    # would deadlock — nothing else drains it. The channel is
+                    # unbounded, so this always succeeds unless it is closed.
+                    self._control_tx.send_nowait(pending)
+                except (anyio.ClosedResourceError, anyio.BrokenResourceError):
+                    logger.debug("Control channel closed, skipping replay for %s", pending.lease_name)
+
+        return self._check_stop_requested()
+
+    async def _on_lease_released(self, previous_state: LeaseState, tg: TaskGroup) -> None:
+        """Handle a not-leased status tick: signal the lease to tear down.
+
+        This does not block or clear _lease_context. It only sets lease_ended,
+        which handle_lease is waiting on to run the afterLease hook and tear the
+        session down. handle_lease then posts LeaseFinished, and the loop
+        releases the slot in _on_lease_finished. Keeping the slot set until then
+        is what lets _report_status still reach the client session while the
+        afterLease hook runs (it gates its session update on _lease_context).
+
+        Not blocking here is the point: the loop stays responsive during Ending,
+        and slot release happens on the LeaseFinished message, not inline.
         """
         logger.info("Currently not leased")
 
@@ -1393,33 +1481,38 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             if self.exit_on_lease_end:
                 # Refuse new leases immediately, but keep the runtime up until
                 # afterLease finishes — shutdown SIGTERMs Exec children (QEMU)
-                # that hooks may still be talking to.
+                # that hooks may still be talking to. The loop breaks only once
+                # LeaseFinished arrives (see _on_lease_finished), so the hook has
+                # completed by the time serve()'s finally runs the shutdown.
                 self._stop_requested = True
 
-            logger.info("Lease ended, signaling handle_lease to run afterLease hook")
-            lease_ctx.lease_ended.set()
+            if not lease_ctx.lease_ended.is_set():
+                logger.info("Lease ended, signaling handle_lease to run afterLease hook")
+                lease_ctx.lease_ended.set()
+                # Diagnostic only: the loop waits for LeaseFinished with no
+                # timeout, so a wedged handle_lease would park the exporter in
+                # Ending forever (still reporting leased). Warn if that happens;
+                # never release the slot on a timer.
+                tg.start_soon(self._lease_finished_watchdog, lease_ctx)
 
-            # Keep _lease_context set while the afterLease hook runs. _report_status
-            # gates its session/client update on _lease_context, so clearing it here
-            # would silently drop status updates the hook emits (they would reach the
-            # controller RPC but never the client). Clear only after the hook is done.
-            with CancelScope(shield=True):
-                await lease_ctx.after_lease_hook_done.wait()
-            logger.info("afterLease hook completed")
+    async def _lease_finished_watchdog(self, lease_ctx: LeaseContext) -> None:
+        """Warn if a lease stays in Ending too long waiting for LeaseFinished.
 
-            if lease_ctx.session is not None:
-                # Brief delay to ensure session is fully closed before next lease.
-                # Prevents SSL corruption from overlapping connections.
-                await sleep(0.2)
-
-            self._last_completed_lease = lease_ctx.lease_name
-            self._lease_context = None
-            clear_log_context()
-            set_log_context(exporter=self.name)
-            # exit_on_lease_end shutdown runs once, in serve()'s finally, after
-            # the control-plane loop unwinds. _stop_requested (set above) is
-            # what drives that unwind, so the hook is already done by the time
-            # it fires there — no need to call shutdown_runtime_sidecar here too.
+        Spawned when lease_ended is set. The loop releases the slot only on
+        LeaseFinished, with no timeout — the right behavior, since it is a real
+        happens-before edge rather than a guess. But a handle_lease that never
+        posts (e.g. wedged teardown) would leave the exporter reporting leased
+        while serving nothing, invisible from outside. This logs once so the
+        stall is diagnosable; it never touches _lease_context.
+        """
+        await anyio.sleep(_LEASE_FINISHED_WATCHDOG)
+        if self._lease_context is lease_ctx:
+            logger.warning(
+                "Lease %s ended %ss ago but handle_lease has not posted LeaseFinished; "
+                "exporter is stuck in Ending and still reporting leased",
+                lease_ctx.lease_name,
+                _LEASE_FINISHED_WATCHDOG,
+            )
 
     def _check_stop_requested(self) -> bool:
         """Check if stop was requested and initiate shutdown. Returns True to break the status loop."""
