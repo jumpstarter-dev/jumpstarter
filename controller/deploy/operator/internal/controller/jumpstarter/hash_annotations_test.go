@@ -429,3 +429,166 @@ var _ = Describe("getRouterTLSSecretHash", func() {
 		Expect(hashMissing).To(BeEmpty())
 	})
 })
+
+var _ = Describe("getTelemetryTLSSecretHash", func() {
+	var r *JumpstarterReconciler
+
+	BeforeEach(func() {
+		r = &JumpstarterReconciler{Client: k8sClient}
+	})
+
+	It("should return empty hash when no TLS is configured", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "default",
+			},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					// No TLS.CertSecret configured
+				},
+			},
+		}
+		hash, err := r.getTelemetryTLSSecretHash(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(hash).To(BeEmpty())
+	})
+
+	It("should return empty hash when cert-manager secret does not exist yet", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-telemetry-hash",
+				Namespace: "default",
+			},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: true},
+			},
+		}
+		hash, err := r.getTelemetryTLSSecretHash(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(hash).To(BeEmpty())
+	})
+
+	It("should return hash when cert-manager telemetry TLS secret exists", func() {
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-telemetry-tls-telemetry-tls",
+				Namespace: "default",
+			},
+			Data: map[string][]byte{
+				"tls.crt": []byte("telemetry-cert"),
+				"tls.key": []byte("telemetry-key"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+		defer func() {
+			Expect(k8sClient.Delete(ctx, secret)).To(Succeed())
+		}()
+
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-telemetry-tls",
+				Namespace: "default",
+			},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: true},
+			},
+		}
+		hash, err := r.getTelemetryTLSSecretHash(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(hash).To(HaveLen(64))
+	})
+
+	It("should return hash when manual telemetry TLS secret exists", func() {
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "my-manual-telemetry-tls",
+				Namespace: "default",
+			},
+			Data: map[string][]byte{
+				"tls.crt": []byte("manual-telemetry-cert"),
+				"tls.key": []byte("manual-telemetry-key"),
+			},
+		}
+		Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+		defer func() {
+			Expect(k8sClient.Delete(ctx, secret)).To(Succeed())
+		}()
+
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-manual-tls",
+				Namespace: "default",
+			},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					GRPC: operatorv1alpha1.TelemetryGRPCConfig{
+						TLS: operatorv1alpha1.TLSConfig{
+							CertSecret: "my-manual-telemetry-tls",
+						},
+					},
+				},
+			},
+		}
+		hash, err := r.getTelemetryTLSSecretHash(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(hash).To(HaveLen(64))
+	})
+})
+
+var _ = Describe("telemetryTLSSecretName", func() {
+	It("returns cert-manager secret name when cert-manager is enabled", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-js"},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: true},
+			},
+		}
+		Expect(telemetryTLSSecretName(js)).To(Equal("my-js-telemetry-tls"))
+	})
+
+	It("returns manual CertSecret when cert-manager is disabled", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-js"},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					GRPC: operatorv1alpha1.TelemetryGRPCConfig{
+						TLS: operatorv1alpha1.TLSConfig{
+							CertSecret: "custom-tls-secret",
+						},
+					},
+				},
+			},
+		}
+		Expect(telemetryTLSSecretName(js)).To(Equal("custom-tls-secret"))
+	})
+
+	It("returns empty string when no TLS is configured", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-js"},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+				},
+			},
+		}
+		Expect(telemetryTLSSecretName(js)).To(BeEmpty())
+	})
+
+	It("returns empty string when telemetry is nil", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-js"},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+			},
+		}
+		Expect(telemetryTLSSecretName(js)).To(BeEmpty())
+	})
+})

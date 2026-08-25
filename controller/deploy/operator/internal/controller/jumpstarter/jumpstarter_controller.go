@@ -246,8 +246,13 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Requeue after 30 minutes to check for changes
-	return ctrl.Result{RequeueAfter: 30 * time.Minute}, nil
+	// Requeue periodically to pick up changes. Use a shorter interval while the
+	// telemetry CA secret is not yet ready so the controller ConfigMap converges quickly.
+	requeueAfter := 30 * time.Minute
+	if r.telemetryCANeedsRequeue(ctx, &jumpstarter) {
+		requeueAfter = telemetryCARequeueInterval
+	}
+	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
 // emitEventf emits a Kubernetes event on the Jumpstarter object.
@@ -1318,9 +1323,10 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 		if jumpstarter.Spec.CertManager.Enabled {
 			caCert, err := r.resolveTelemetryCA(ctx, jumpstarter)
 			if err != nil {
-				// Log but don't fail - telemetry will still work with self-signed cert
-				// and exporters will use insecure mode if certificate is missing
-				logf.FromContext(ctx).V(1).Info("Could not resolve telemetry CA certificate",
+				// Log at default verbosity so operators notice during initial cert-manager setup.
+				// Reconciliation continues without a certificate; telemetryCANeedsRequeue
+				// triggers a short requeue until the CA secret is ready.
+				logf.FromContext(ctx).Info("Could not resolve telemetry CA certificate; exporters cannot verify telemetry TLS until the CA is available",
 					"error", err)
 			} else if caCert != "" {
 				telemetryCfg.Certificate = caCert
@@ -1737,6 +1743,15 @@ func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}
 			} else if s := jumpstarter.Spec.Routers.GRPC.TLS.CertSecret; s != "" {
 				keys = append(keys, jumpstarter.Namespace+"/"+s)
+			}
+
+			// Telemetry TLS cert secret
+			if jumpstarter.Spec.Telemetry != nil && jumpstarter.Spec.Telemetry.Enabled {
+				if jumpstarter.Spec.CertManager.Enabled {
+					keys = append(keys, jumpstarter.Namespace+"/"+GetTelemetryCertSecretName(jumpstarter))
+				} else if s := jumpstarter.Spec.Telemetry.GRPC.TLS.CertSecret; s != "" {
+					keys = append(keys, jumpstarter.Namespace+"/"+s)
+				}
 			}
 
 			return keys

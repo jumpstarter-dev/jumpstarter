@@ -434,7 +434,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			},
 		}
 
-		dep := createTelemetryDeployment(js)
+		dep := createTelemetryDeployment(js, "fake-tls-hash")
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
@@ -458,9 +458,58 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		Expect(dep.Spec.Template.Spec.Volumes).To(HaveLen(1))
 		Expect(dep.Spec.Template.Spec.Volumes[0].Name).To(Equal("tls-certs"))
 		Expect(dep.Spec.Template.Spec.Volumes[0].Secret.SecretName).To(Equal("test-tls-telemetry-tls"))
+
+		// Should have TLS hash annotation for rolling restart on cert renewal
+		Expect(dep.Spec.Template.Annotations).To(HaveKeyWithValue("jumpstarter.dev/tls-secret-sha256", "fake-tls-hash"))
 	})
 
-	It("does not mount TLS certs when cert-manager is disabled", func() {
+	It("mounts TLS certs with manual CertSecret when cert-manager is disabled", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-manual-tls", Namespace: "default"},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: false},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled:         true,
+					Image:           "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					GRPC: operatorv1alpha1.TelemetryGRPCConfig{
+						TLS: operatorv1alpha1.TLSConfig{
+							CertSecret: "my-custom-telemetry-tls",
+						},
+					},
+				},
+			},
+		}
+
+		dep := createTelemetryDeployment(js, "manual-tls-hash")
+
+		container := dep.Spec.Template.Spec.Containers[0]
+
+		// Should have CONTROLLER_KEY + TLS env vars
+		Expect(container.Env).To(HaveLen(3))
+		envNames := make(map[string]string)
+		for _, env := range container.Env {
+			envNames[env.Name] = env.Value
+		}
+		Expect(envNames).To(HaveKey("CONTROLLER_KEY"))
+		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_CERT_PEM", "/tls/tls.crt"))
+		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_KEY_PEM", "/tls/tls.key"))
+
+		// Should have TLS volume mount
+		Expect(container.VolumeMounts).To(HaveLen(1))
+		Expect(container.VolumeMounts[0].Name).To(Equal("tls-certs"))
+		Expect(container.VolumeMounts[0].MountPath).To(Equal("/tls"))
+
+		// Should have TLS volume with manual secret name
+		Expect(dep.Spec.Template.Spec.Volumes).To(HaveLen(1))
+		Expect(dep.Spec.Template.Spec.Volumes[0].Name).To(Equal("tls-certs"))
+		Expect(dep.Spec.Template.Spec.Volumes[0].Secret.SecretName).To(Equal("my-custom-telemetry-tls"))
+
+		// Should have TLS hash annotation
+		Expect(dep.Spec.Template.Annotations).To(HaveKeyWithValue("jumpstarter.dev/tls-secret-sha256", "manual-tls-hash"))
+	})
+
+	It("does not mount TLS certs when no TLS is configured", func() {
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-no-tls", Namespace: "default"},
 			Spec: operatorv1alpha1.JumpstarterSpec{
@@ -469,11 +518,13 @@ var _ = Describe("Telemetry Lifecycle", func() {
 					Enabled:         true,
 					Image:           "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
 					ImagePullPolicy: corev1.PullIfNotPresent,
+					// No TLS.CertSecret configured
 				},
 			},
 		}
 
-		dep := createTelemetryDeployment(js)
+		// Empty hash when no TLS is configured
+		dep := createTelemetryDeployment(js, "")
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
@@ -484,6 +535,9 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		// No volume mounts or volumes
 		Expect(container.VolumeMounts).To(BeEmpty())
 		Expect(dep.Spec.Template.Spec.Volumes).To(BeEmpty())
+
+		// No TLS hash annotation when no TLS is configured
+		Expect(dep.Spec.Template.Annotations).To(BeNil())
 	})
 
 	It("uses a dedicated service account separate from the controller", func() {
@@ -577,12 +631,12 @@ var _ = Describe("telemetryLabels", func() {
 	})
 })
 
-var _ = Describe("getTelemetryCertSecretName", func() {
+var _ = Describe("GetTelemetryCertSecretName", func() {
 	It("returns the correct secret name", func() {
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: "jumpstarter"},
 		}
-		Expect(getTelemetryCertSecretName(js)).To(Equal("jumpstarter-telemetry-tls"))
+		Expect(GetTelemetryCertSecretName(js)).To(Equal("jumpstarter-telemetry-tls"))
 	})
 })
 
@@ -848,6 +902,37 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 		Expect(cfg.Telemetry.Certificate).To(ContainSubstring("BEGIN CERTIFICATE"))
 	})
 
+	It("includes CABundle from external issuer in telemetry config", func() {
+		externalCABundle := "-----BEGIN CERTIFICATE-----\nEXTERNAL-CA-BUNDLE\n-----END CERTIFICATE-----"
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-external", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{
+					Enabled: true,
+					Server: &operatorv1alpha1.ServerCertConfig{
+						IssuerRef: &operatorv1alpha1.IssuerReference{
+							Name:     "my-external-issuer",
+							Kind:     "ClusterIssuer",
+							CABundle: []byte(externalCABundle),
+						},
+					},
+				},
+				Telemetry: &operatorv1alpha1.TelemetryConfig{
+					Enabled: true,
+					Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+				},
+			},
+		}
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		cfg, err := r.buildConfig(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(cfg.Telemetry).NotTo(BeNil())
+		Expect(cfg.Telemetry.Enabled).To(BeTrue())
+		Expect(cfg.Telemetry.Certificate).To(Equal(externalCABundle))
+	})
+
 	It("does not include certificate when cert-manager is disabled", func() {
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-no-tls", Namespace: crNamespace},
@@ -869,7 +954,7 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 		Expect(cfg.Telemetry.Certificate).To(BeEmpty())
 	})
 
-	It("does not fail when CA secret is missing (logs warning instead)", func() {
+	It("does not fail when CA secret is missing (logs at default verbosity instead)", func() {
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-cfg-missing-ca", Namespace: crNamespace},
 			Spec: operatorv1alpha1.JumpstarterSpec{
@@ -883,12 +968,101 @@ var _ = Describe("buildConfig telemetry certificate", func() {
 
 		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
 		cfg, err := r.buildConfig(ctx, js)
-		// Should not fail - logs warning but continues
+		// Should not fail - logs at default verbosity but continues
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(cfg.Telemetry).NotTo(BeNil())
 		Expect(cfg.Telemetry.Enabled).To(BeTrue())
 		// Certificate is empty because CA secret doesn't exist
 		Expect(cfg.Telemetry.Certificate).To(BeEmpty())
+	})
+})
+
+var _ = Describe("telemetryCANeedsRequeue", func() {
+	var crNamespace string
+	ctx := context.Background()
+
+	BeforeEach(func() {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "tel-requeue-test-"}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		crNamespace = ns.Name
+	})
+
+	AfterEach(func() {
+		_ = k8sClient.Delete(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: crNamespace},
+		})
+	})
+
+	telemetryEnabledSpec := func() operatorv1alpha1.JumpstarterSpec {
+		return operatorv1alpha1.JumpstarterSpec{
+			CertManager: operatorv1alpha1.CertManagerConfig{Enabled: true},
+			Telemetry: &operatorv1alpha1.TelemetryConfig{
+				Enabled: true,
+				Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+			},
+		}
+	}
+
+	It("returns false when telemetry is disabled", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "no-telemetry", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: true},
+			},
+		}
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		Expect(r.telemetryCANeedsRequeue(ctx, js)).To(BeFalse())
+	})
+
+	It("returns false when cert-manager is disabled", func() {
+		spec := telemetryEnabledSpec()
+		spec.CertManager.Enabled = false
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "no-cm", Namespace: crNamespace},
+			Spec:       spec,
+		}
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		Expect(r.telemetryCANeedsRequeue(ctx, js)).To(BeFalse())
+	})
+
+	It("returns false for external issuer without CABundle", func() {
+		spec := telemetryEnabledSpec()
+		spec.CertManager.Server = &operatorv1alpha1.ServerCertConfig{
+			IssuerRef: &operatorv1alpha1.IssuerReference{
+				Name: "letsencrypt-prod",
+				Kind: "ClusterIssuer",
+			},
+		}
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "external-issuer", Namespace: crNamespace},
+			Spec:       spec,
+		}
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		Expect(r.telemetryCANeedsRequeue(ctx, js)).To(BeFalse())
+	})
+
+	It("returns true when self-signed CA secret is missing", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "missing-ca", Namespace: crNamespace},
+			Spec:       telemetryEnabledSpec(),
+		}
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		Expect(r.telemetryCANeedsRequeue(ctx, js)).To(BeTrue())
+	})
+
+	It("returns false when self-signed CA secret exists", func() {
+		caSecretName := "ready-ca" + caCertificateSuffix
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: caSecretName, Namespace: crNamespace},
+			Data:       map[string][]byte{"tls.crt": []byte(testPEM)},
+		})).To(Succeed())
+
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "ready-ca", Namespace: crNamespace},
+			Spec:       telemetryEnabledSpec(),
+		}
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		Expect(r.telemetryCANeedsRequeue(ctx, js)).To(BeFalse())
 	})
 })

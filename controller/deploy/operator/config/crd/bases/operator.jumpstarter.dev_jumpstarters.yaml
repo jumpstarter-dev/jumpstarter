@@ -2104,6 +2104,28 @@ spec:
                       When enabled, the operator deploys a jumpstarter-telemetry pod and a ClusterIP
                       Service, and configures the controller to advertise the endpoint to exporters.
                     type: boolean
+                  grpc:
+                    description: |-
+                      gRPC configuration for the telemetry service.
+                      Use this to configure TLS when not using cert-manager.
+                    properties:
+                      tls:
+                        description: |-
+                          TLS configuration for secure gRPC communication with the telemetry service.
+                          When spec.certManager.enabled is true, this is ignored and certificates are
+                          automatically managed by cert-manager.
+                          When spec.certManager.enabled is false, you can provide your own TLS secret here.
+                        properties:
+                          certSecret:
+                            description: |-
+                              Name of the Kubernetes secret containing the TLS certificate and private key.
+                              The secret must contain 'tls.crt' and 'tls.key' keys.
+                              If spec.certManager.enabled is true, this secret will be automatically managed and
+                              configured by cert-manager.
+                            pattern: ^[a-z0-9]([a-z0-9\-\.]*[a-z0-9])?$
+                            type: string
+                        type: object
+                    type: object
                   image:
                     default: quay.io/jumpstarter-dev/jumpstarter-telemetry:latest
                     description: Container image for the telemetry pod in 'registry/repository/image:tag'
