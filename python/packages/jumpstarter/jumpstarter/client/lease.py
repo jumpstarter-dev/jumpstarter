@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Self
 
+import anyio
 import grpc
 from anyio import (
     AsyncContextManagerMixin,
@@ -74,6 +75,14 @@ class DirectLease(ContextManagerMixin, AsyncContextManagerMixin):
         yield
 
 
+# Per-attempt Dial RPC timeout in handle_async's retry loop. Deliberately much
+# shorter than dial_timeout/retry_timeout (the overall retry budgets): a single
+# attempt allowed to run for the full budget can silently consume most of it
+# before the caller sees any sign of trouble, turning a transient blip into
+# what looks like an indefinite hang.
+_DIAL_ATTEMPT_TIMEOUT = 10.0
+
+
 @dataclass(kw_only=True)
 class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     channel: Channel
@@ -102,6 +111,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     )  # Called when lease is ending
     lease_ended: bool = field(default=False, init=False)  # Set when lease expires naturally
     lease_transferred: bool = field(default=False, init=False)  # Set when lease is transferred to another client
+    _connected: bool = field(default=False, init=False)  # True after first successful Dial
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -331,104 +341,127 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
         with self.portal.wrap_async_context_manager(self) as value:
             yield value
 
-    async def _dial_with_retry(self):
-        """Dial the controller with exponential backoff, waiting for the exporter to be ready.
-
-        Returns DialResponse on success.
-        Raises ExporterUnreachableError on timeout or unrecoverable error.
-        """
-        logger.debug("Dialing controller for lease %s", self.name)
+    async def handle_async(self, stream: "anyio.abc.SocketStream") -> None:  # noqa: C901
+        logger.debug("Connecting to Lease with name %s", self.name)
+        started = time.monotonic()
         base_delay = 0.3
         max_delay = 2.0
-        deadline = time.monotonic() + self.dial_timeout
+        dial_deadline = started + self.dial_timeout
+        unavail_budget = self.retry_timeout if self._connected else self.dial_timeout
+        unavailable_deadline = started + unavail_budget if unavail_budget > 0 else None
         attempt = 0
-        while True:
-            try:
-                return await self.controller.Dial(jumpstarter_pb2.DialRequest(lease_name=self.name))
-            except AioRpcError as e:
-                if e.code() == grpc.StatusCode.FAILED_PRECONDITION and "not ready" in str(e.details()):
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
+        warned_unavailable = False
+        try:
+            while True:
+                try:
+                    # Cap each RPC by _DIAL_ATTEMPT_TIMEOUT (not the overall
+                    # dial_timeout/retry_timeout budget) so one hung Dial can't
+                    # silently consume most of the retry window before the
+                    # loop gets a chance to retry. Also cap by remaining loop
+                    # time so we do not wait past the deadline.
+                    now = time.monotonic()
+                    loop_deadline = (
+                        unavailable_deadline if unavailable_deadline is not None else dial_deadline
+                    )
+                    dial_remaining = max(min(_DIAL_ATTEMPT_TIMEOUT, loop_deadline - now), 0.1)
+                    response = await self.controller.Dial(
+                        jumpstarter_pb2.DialRequest(lease_name=self.name),
+                        timeout=dial_remaining,
+                    )
+                    break
+                except AioRpcError as e:
+                    details_lower = str(e.details()).lower()
+                    if e.code() == grpc.StatusCode.FAILED_PRECONDITION and "hook failed" not in details_lower:
+                        remaining = dial_deadline - time.monotonic()
+                        if remaining <= 0:
+                            elapsed = time.monotonic() - started
+                            logger.debug(
+                                "Exporter %s not ready and dial timeout (%.1fs) exceeded after %d attempts",
+                                self.exporter_name,
+                                self.dial_timeout,
+                                attempt + 1,
+                            )
+                            raise ExporterUnreachableError(
+                                f"Exporter {self.exporter_name} not ready after {elapsed:.0f}s: {e.details()}"
+                            ) from e
+                        delay = min(base_delay * (2 ** min(attempt, 10)), max_delay, remaining)
                         logger.debug(
-                            "Exporter not ready and dial timeout (%.1fs) exceeded after %d attempts",
-                            self.dial_timeout,
+                            "Exporter not ready (%s), retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
+                            e.details(),
+                            delay,
                             attempt + 1,
+                            remaining,
                         )
-                        raise ExporterUnreachableError(
-                            f"Exporter {self.exporter_name} not ready after {self.dial_timeout:.0f}s"
-                        ) from e
-                    delay = min(base_delay * (2 ** min(attempt, 10)), max_delay, remaining)
-                    logger.debug(
-                        "Exporter not ready, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
-                        delay,
-                        attempt + 1,
-                        remaining,
-                    )
-                    await sleep(delay)
-                    attempt += 1
-                    continue
-                if e.code() == grpc.StatusCode.UNAVAILABLE:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        logger.warning(
-                            "Exporter unavailable and dial timeout (%.1fs) exceeded after %d attempts",
-                            self.dial_timeout,
+                        await sleep(delay)
+                        attempt += 1
+                        continue
+                    if e.code() in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
+                        if unavailable_deadline is None:
+                            logger.warning("Exporter %s unavailable and retry disabled", self.exporter_name)
+                            raise ExporterUnreachableError(
+                                f"Exporter {self.exporter_name} unavailable (retry disabled): {e.details()}"
+                            ) from e
+                        remaining = unavailable_deadline - time.monotonic()
+                        if remaining <= 0:
+                            elapsed = time.monotonic() - started
+                            logger.warning(
+                                "Exporter %s unavailable, retry budget (%.1fs) exceeded after %d attempts",
+                                self.exporter_name,
+                                unavail_budget,
+                                attempt + 1,
+                            )
+                            raise ExporterUnreachableError(
+                                f"Exporter {self.exporter_name} permanently unavailable after "
+                                f"{elapsed:.0f}s of retrying: {e.details()}"
+                            ) from e
+                        if not warned_unavailable:
+                            warned_unavailable = True
+                            logger.warning(
+                                "Controller/exporter %s unavailable, retrying for %.0fs...",
+                                self.exporter_name,
+                                unavail_budget,
+                            )
+                        delay = min(base_delay * (2 ** min(attempt, 10)), max_delay, remaining)
+                        logger.info(
+                            "Exporter unavailable, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
+                            delay,
                             attempt + 1,
+                            remaining,
                         )
+                        await sleep(delay)
+                        attempt += 1
+                        continue
+                    if (
+                        e.code() == grpc.StatusCode.PERMISSION_DENIED
+                        or "permission denied" in str(e.details()).lower()
+                    ):
+                        self.lease_transferred = True
                         raise ExporterUnreachableError(
-                            f"Exporter {self.exporter_name} unavailable after {self.dial_timeout:.0f}s"
+                            f"Lease {self.name} has been transferred to another client"
                         ) from e
-                    delay = min(base_delay * (2 ** min(attempt, 10)), max_delay, remaining)
-                    logger.warning(
-                        "Exporter unavailable, retrying Dial in %.1fs (attempt %d, %.1fs remaining)",
-                        delay,
-                        attempt + 1,
-                        remaining,
-                    )
-                    await sleep(delay)
-                    attempt += 1
-                    continue
-                # Exporter went offline or lease ended - raise immediately
-                if "permission denied" in str(e.details()).lower():
-                    self.lease_transferred = True
-                    logger.warning(
-                        "Lease %s has been transferred to another client. Your session is no longer valid.",
-                        self.name,
-                    )
                     raise ExporterUnreachableError(
-                        f"Lease {self.name} transferred to another client"
+                        f"Connection to exporter {self.exporter_name} lost: {e.details()}"
                     ) from e
-                logger.warning("Connection to exporter lost: %s", e.details())
+            try:
+                async with connect_router_stream(
+                    response.router_endpoint, response.router_token, stream, self.tls_config, self.grpc_options
+                ):
+                    self._connected = True
+            except grpc.aio.AioRpcError as e:
                 raise ExporterUnreachableError(
-                    f"Connection to exporter {self.exporter_name} lost: {e.details()}"
+                    f"Router {response.router_endpoint} unreachable: {e.details()}"
                 ) from e
+            except OSError as e:
+                raise ExporterUnreachableError(
+                    f"Router {response.router_endpoint} connection failed: {e}"
+                ) from e
+        except BaseException:
+            await stream.aclose()
+            raise
 
     @asynccontextmanager
     async def serve_unix_async(self):
-        # Wait for exporter readiness before accepting connections.
-        # The response is intentionally discarded — each connection needs
-        # its own Dial to get a unique router tunnel.
-        await self._dial_with_retry()
-
-        async def _tunnel_handler(stream):
-            try:
-                response = await self.controller.Dial(
-                    jumpstarter_pb2.DialRequest(lease_name=self.name)
-                )
-            except AioRpcError as e:
-                raise ExporterUnreachableError(
-                    f"Per-connection Dial failed for {self.exporter_name}: {e.details()}"
-                ) from e
-            async with connect_router_stream(
-                response.router_endpoint,
-                response.router_token,
-                stream,
-                self.tls_config,
-                self.grpc_options,
-            ):
-                pass
-
-        async with TemporaryUnixListener(_tunnel_handler) as path:
+        async with TemporaryUnixListener(self.handle_async) as path:
             logger.debug("Serving Unix socket at %s", path)
             yield path
 
