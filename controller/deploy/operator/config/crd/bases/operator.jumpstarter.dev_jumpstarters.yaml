@@ -1077,10 +1077,12 @@ spec:
                         type: object
                     type: object
                   replicas:
-                    default: 2
+                    default: 1
                     description: |-
                       Number of controller replicas to run.
-                      Must be a positive integer. Minimum recommended value is 2 for high availability.
+                      Currently only 1 replica is supported because the controller uses in-memory
+                      state for gRPC stream coordination (Dial/Listen). Values greater than 1 will
+                      be clamped to 1 with a warning. See issue 1013 for HA controller support.
                     format: int32
                     minimum: 1
                     type: integer

@@ -272,8 +272,11 @@ type ControllerConfig struct {
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// Number of controller replicas to run.
-	// Must be a positive integer. Minimum recommended value is 2 for high availability.
-	// +kubebuilder:default=2
+	// Currently only 1 replica is supported because the controller uses in-memory
+	// state for gRPC stream coordination (Dial/Listen). Values greater than 1 will
+	// be clamped to 1 with a warning. See https://github.com/jumpstarter-dev/jumpstarter/issues/1013
+	// for the tracking issue on HA controller support.
+	// +kubebuilder:default=1
 	// +kubebuilder:validation:Minimum=1
 	Replicas int32 `json:"replicas,omitempty"`
 
