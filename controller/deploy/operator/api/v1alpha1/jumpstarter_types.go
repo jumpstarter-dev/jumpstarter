@@ -314,8 +314,48 @@ type TelemetryConfig struct {
 	GRPC TelemetryGRPCConfig `json:"grpc,omitempty"`
 
 	// Metrics configures reverse-scrape fan-out and Prometheus exposition
-	// (JEP-0013). Loki and ServiceMonitor fields are later phases.
+	// (JEP-0013). ServiceMonitor fields are a later phase.
 	Metrics TelemetryMetricsConfig `json:"metrics,omitempty"`
+
+	// Loki configures optional HTTP push of ingested logs to a Loki-compatible
+	// endpoint. When url is empty, telemetry runs metrics-only.
+	Loki TelemetryLokiConfig `json:"loki,omitempty"`
+
+	// Backpressure configures the Loki log push ring buffer.
+	Backpressure TelemetryBackpressureConfig `json:"backpressure,omitempty"`
+}
+
+// TelemetryLokiConfig configures Loki HTTP push from the telemetry service.
+type TelemetryLokiConfig struct {
+	// Loki push endpoint (http:// or https://). Optional — telemetry can run
+	// metrics-only without Loki. grpc:// is reserved but not implemented yet.
+	URL string `json:"url,omitempty"`
+
+	// Secret with Loki credentials (username/password and/or token keys).
+	// See JEP-0013 DD-5: only the telemetry pod holds Loki credentials.
+	SecretRef string `json:"secretRef,omitempty"`
+
+	// TLS settings for the Loki endpoint.
+	TLS TelemetryLokiTLSConfig `json:"tls,omitempty"`
+}
+
+// TelemetryLokiTLSConfig configures TLS for the Loki push endpoint.
+type TelemetryLokiTLSConfig struct {
+	// Secret containing a CA bundle (ca.crt key) to trust for the Loki endpoint.
+	CASecretRef string `json:"caSecretRef,omitempty"`
+
+	// Disable TLS certificate verification (development/testing only).
+	// +kubebuilder:default=false
+	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
+}
+
+// TelemetryBackpressureConfig configures the Loki log push ring buffer.
+type TelemetryBackpressureConfig struct {
+	// Ring buffer depth for Loki log push. On overflow, dropped entries are
+	// replaced by a single drop-marker LogEntry.
+	// +kubebuilder:default=10000
+	// +kubebuilder:validation:Minimum=1
+	QueueDepth int32 `json:"queueDepth,omitempty"`
 }
 
 // TelemetryGRPCConfig defines gRPC configuration for the telemetry service.
