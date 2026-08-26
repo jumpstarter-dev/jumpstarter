@@ -188,6 +188,13 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// Ensure signing secrets exist before any Deployment that references them
+	// (CONTROLLER_KEY on controller/telemetry, ROUTER_KEY on router).
+	if err := r.reconcileSecrets(ctx, &jumpstarter); err != nil {
+		log.Error(err, "Failed to reconcile Secrets")
+		return ctrl.Result{}, err
+	}
+
 	// Build the desired controller ConfigMap once and compute its hash up front.
 	// The hash is embedded in the controller pod template annotation so that a config
 	// change (e.g. OIDC CA rotation) triggers a rolling restart without waiting for the
@@ -242,15 +249,9 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile ConfigMaps (after deployments and services, before secrets)
+	// Reconcile ConfigMaps (after deployments and services)
 	if err := r.reconcileConfigMaps(ctx, &jumpstarter, desiredConfigMap); err != nil {
 		log.Error(err, "Failed to reconcile ConfigMaps")
-		return ctrl.Result{}, err
-	}
-
-	// Reconcile Secrets
-	if err := r.reconcileSecrets(ctx, &jumpstarter); err != nil {
-		log.Error(err, "Failed to reconcile Secrets")
 		return ctrl.Result{}, err
 	}
 
@@ -1322,7 +1323,6 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 	}
 
 	// Telemetry configuration.
-	// Certificate is intentionally omitted until the telemetry binary supports TLS serving.
 	if jumpstarter.Spec.Telemetry != nil && jumpstarter.Spec.Telemetry.Enabled {
 		t := jumpstarter.Spec.Telemetry
 		telemetryCfg := &config.Telemetry{
@@ -1331,6 +1331,15 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 		}
 		if t.Logging.Filter.MinSeverity != "" {
 			telemetryCfg.Logging.Filter.MinSeverity = t.Logging.Filter.MinSeverity
+		}
+		if jumpstarter.Spec.CertManager.Enabled {
+			ca, err := r.resolveTelemetryCA(ctx, jumpstarter)
+			if err != nil {
+				return config.Config{}, fmt.Errorf("resolve telemetry CA: %w", err)
+			}
+			// Empty ca is valid for public external issuers (system trust). Self-signed
+			// mode returns an error from resolveTelemetryCA until the CA secret is ready.
+			telemetryCfg.Certificate = ca
 		}
 		cfg.Telemetry = telemetryCfg
 	}

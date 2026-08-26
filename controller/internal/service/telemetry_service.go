@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
@@ -73,6 +74,9 @@ type TelemetryService struct {
 	// Tokens are issued by the controller from the same CONTROLLER_KEY seed,
 	// so the telemetry binary can verify them locally without a k8s client.
 	Signer *oidc.Signer
+
+	// Logger overrides log.FromContext when set (used by tests to capture output).
+	Logger *logr.Logger
 }
 
 // PushLogs receives a batch of structured log entries and writes them via the
@@ -103,8 +107,8 @@ func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest
 		return nil, status.Errorf(codes.PermissionDenied, "token has incomplete exporter identity")
 	}
 
-	// Use context-based logger so tests can inject their own via logf.IntoContext.
-	logger := log.FromContext(ctx).WithName("telemetry")
+	// Use context-based logger so tests can inject their own via Logger or logf.IntoContext.
+	logger := s.pushLogsLogger(ctx)
 
 	entries := req.Entries
 	var dropped uint32
@@ -187,6 +191,13 @@ func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest
 	}, nil
 }
 
+func (s *TelemetryService) pushLogsLogger(ctx context.Context) logr.Logger {
+	if s.Logger != nil {
+		return s.Logger.WithName("telemetry")
+	}
+	return log.FromContext(ctx).WithName("telemetry")
+}
+
 // truncate returns s truncated to at most n bytes (rune-safe: truncates at rune boundary).
 func truncate(s string, n int) string {
 	if len(s) <= n {
@@ -236,6 +247,14 @@ func (s *TelemetryService) loadTLSCredentials() (credentials.TransportCredential
 	return LoadTLSCredentials("jumpstarter telemetry", dnsnames, ipaddresses)
 }
 
+// injectLoggerUnaryInterceptor attaches the process-wide logger to each gRPC
+// request context. gRPC may carry a discard logger in ctx; PushLogs uses
+// log.FromContext, so we re-bind the global logger at the RPC boundary.
+func injectLoggerUnaryInterceptor(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	ctx = log.IntoContext(ctx, log.FromContext(context.Background()))
+	return handler(ctx, req)
+}
+
 // Start starts the TelemetryService gRPC server and blocks until ctx is cancelled.
 func (s *TelemetryService) Start(ctx context.Context) error {
 	logger := ctrl.Log.WithName("telemetry").WithValues("component", "telemetry")
@@ -259,7 +278,10 @@ func (s *TelemetryService) Start(ctx context.Context) error {
 
 	srv := grpc.NewServer(
 		grpc.Creds(creds),
-		grpc.ChainUnaryInterceptor(recovery.UnaryServerInterceptor()),
+		grpc.ChainUnaryInterceptor(
+			recovery.UnaryServerInterceptor(),
+			injectLoggerUnaryInterceptor,
+		),
 	)
 	pb.RegisterTelemetryServiceServer(srv, s)
 	reflection.Register(srv)

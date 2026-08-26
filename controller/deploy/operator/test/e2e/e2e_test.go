@@ -2474,6 +2474,32 @@ func verifyDeploymentHasTLSMount(g Gomega, namespace, name string) {
 	g.Expect(hasKeyEnv).To(BeTrue(), fmt.Sprintf("deployment %s missing EXTERNAL_KEY_PEM env var", name))
 }
 
+// verifyDeploymentHasControllerKey checks that a deployment sources CONTROLLER_KEY from
+// jumpstarter-controller-secret. PushLogs bearer-token verification requires the same
+// signing seed as the controller.
+func verifyDeploymentHasControllerKey(g Gomega, namespace, name string) {
+	deployment := &appsv1.Deployment{}
+	err := k8sClient.Get(ctx, types.NamespacedName{
+		Name:      name,
+		Namespace: namespace,
+	}, deployment)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(deployment.Spec.Template.Spec.Containers).NotTo(BeEmpty())
+
+	var found bool
+	for _, env := range deployment.Spec.Template.Spec.Containers[0].Env {
+		if env.Name != "CONTROLLER_KEY" {
+			continue
+		}
+		g.Expect(env.ValueFrom).NotTo(BeNil())
+		g.Expect(env.ValueFrom.SecretKeyRef).NotTo(BeNil())
+		g.Expect(env.ValueFrom.SecretKeyRef.Name).To(Equal("jumpstarter-controller-secret"))
+		g.Expect(env.ValueFrom.SecretKeyRef.Key).To(Equal("key"))
+		found = true
+	}
+	g.Expect(found).To(BeTrue(), fmt.Sprintf("deployment %s missing CONTROLLER_KEY env var", name))
+}
+
 // verifyDeploymentHasNoTLSMount checks that a deployment does NOT have TLS configuration.
 // This is used with Gomega assertions to verify the deployment has been reconciled without TLS.
 func verifyDeploymentHasNoTLSMount(g Gomega, namespace, name string) {
