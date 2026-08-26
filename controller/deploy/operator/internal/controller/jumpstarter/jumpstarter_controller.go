@@ -242,7 +242,7 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile ConfigMaps (after deployments and services, before secrets)
+	// Reconcile ConfigMaps (after deployments and services)
 	if err := r.reconcileConfigMaps(ctx, &jumpstarter, desiredConfigMap); err != nil {
 		log.Error(err, "Failed to reconcile ConfigMaps")
 		return ctrl.Result{}, err
