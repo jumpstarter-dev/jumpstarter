@@ -54,6 +54,11 @@ logger = logging.getLogger(__name__)
 # Refresh token when less than this many seconds remain
 _TOKEN_REFRESH_THRESHOLD_SECONDS = 120
 
+# How often a shared (non-owner) client re-checks that it still has access to
+# the lease. This bounds the exposure window between an owner revoking a share
+# and the shared client's live session tearing itself down.
+_SHARED_ACCESS_POLL_SECONDS = 15
+
 
 def _run_shell_only(lease, config, command, path: str, motd: str | None = None) -> int:
     """Run just the shell command without log streaming."""
@@ -271,6 +276,52 @@ async def _monitor_token_expiry(config, lease, cancel_scope, token_state=None) -
                 await anyio.sleep(30)
         except Exception:
             return
+
+
+async def _monitor_shared_access(lease, cancel_scope) -> None:
+    """Cooperatively exit a shared client's session when its access is revoked.
+
+    Revoking a share (owner running `jmp share remove`, or an access-policy
+    change dropping the client from the lease's effective set) does NOT forcibly
+    tear down a router stream the exporter has already established — the
+    controller only stops granting *new* connections. So to honor a revocation
+    for a live session, the shared client polls its own lease and exits when it
+    is no longer in the effective (granted) share set.
+
+    This is a *soft*, cooperative guarantee with a bounded exposure window (up to
+    one poll interval): a shared client that ignores this signal, or whose clock
+    is stopped, keeps its existing stream until the exporter itself drops it. The
+    hard guarantee remains the owner's: `jmp delete lease` / release ends the
+    lease for everyone. (A transfer has the same live-stream gap today.)
+
+    Only shared (non-owner) clients are monitored — an owner losing the lease is
+    handled by the natural lease_ended / delete path.
+    """
+    client_name = lease.client_name
+    if not client_name:
+        return
+    while not cancel_scope.cancel_called:
+        try:
+            fresh = await lease.get()
+        except Exception:
+            # Transient list/get failures must not tear down a healthy session;
+            # keep the stream and retry on the next tick.
+            logger.debug("shared-access monitor: could not refresh lease %s", lease.name, exc_info=True)
+            await anyio.sleep(_SHARED_ACCESS_POLL_SECONDS)
+            continue
+        # Owners are never revoked this way; only react to lost *shared* access.
+        if client_name != fresh.client and not fresh.is_accessible_by(client_name):
+            lease.lease_revoked = True
+            click.echo(
+                click.style(
+                    "\nShared access to this lease has been revoked. Exiting session.",
+                    fg="yellow",
+                    bold=True,
+                )
+            )
+            cancel_scope.cancel()
+            return
+        await anyio.sleep(_SHARED_ACCESS_POLL_SECONDS)
 
 
 async def _cancel_if_connection_lost(monitor, coro):
@@ -515,6 +566,8 @@ async def _shell_with_signal_handling(  # noqa: C901
 
                             # Start token monitoring only once we're in the shell
                             tg.start_soon(_monitor_token_expiry, config, lease, tg.cancel_scope, token_state)
+                            # Shared clients cooperatively exit if their access is revoked
+                            tg.start_soon(_monitor_shared_access, lease, tg.cancel_scope)
 
                             unreachable = None
                             try:

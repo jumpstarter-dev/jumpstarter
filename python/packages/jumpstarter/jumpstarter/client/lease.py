@@ -102,6 +102,7 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
     )  # Called when lease is ending
     lease_ended: bool = field(default=False, init=False)  # Set when lease expires naturally
     lease_transferred: bool = field(default=False, init=False)  # Set when lease is transferred to another client
+    lease_revoked: bool = field(default=False, init=False)  # Set when this (shared) client loses shared access
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):

@@ -16,6 +16,7 @@ from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentic
 from jumpstarter_cli.shell import (
     _attempt_token_recovery,
     _cancel_if_connection_lost,
+    _monitor_shared_access,
     _monitor_token_expiry,
     _resolve_lease_from_active_async,
     _run_shell_with_lease_async,
@@ -1412,3 +1413,66 @@ class TestRetryLoopUserInterrupt:
 
         assert exit_code == 2
         assert state["call_count"] == 1
+
+
+class _FakeCancelScope:
+    """Minimal stand-in for anyio.CancelScope used by the shared-access monitor."""
+
+    def __init__(self):
+        self.cancel_called = False
+
+    def cancel(self):
+        self.cancel_called = True
+
+
+async def test_monitor_shared_access_exits_when_revoked(capsys):
+    # A shared client that has dropped out of the effective set must set the
+    # revoked flag and cancel the shell scope so the live session tears down.
+    lease = Mock()
+    lease.name = "test-lease"
+    lease.client_name = "alice"
+    lease.lease_revoked = False
+    fresh = Mock(client="owner")
+    fresh.is_accessible_by = Mock(return_value=False)
+    lease.get = AsyncMock(return_value=fresh)
+    scope = _FakeCancelScope()
+
+    await _monitor_shared_access(lease, scope)
+
+    assert lease.lease_revoked is True
+    assert scope.cancel_called is True
+    fresh.is_accessible_by.assert_called_once_with("alice")
+    assert "revoked" in capsys.readouterr().out.lower()
+
+
+async def test_monitor_shared_access_keeps_session_while_granted():
+    # A shared client that still has effective access is left alone.
+    lease = Mock()
+    lease.name = "test-lease"
+    lease.client_name = "alice"
+    lease.lease_revoked = False
+    fresh = Mock(client="owner")
+    fresh.is_accessible_by = Mock(return_value=True)
+    lease.get = AsyncMock(return_value=fresh)
+    scope = _FakeCancelScope()
+
+    async def fake_sleep(_):
+        scope.cancel_called = True  # break the poll loop after one iteration
+
+    with patch("jumpstarter_cli.shell.anyio.sleep", side_effect=fake_sleep):
+        await _monitor_shared_access(lease, scope)
+
+    assert lease.lease_revoked is False
+
+
+async def test_monitor_shared_access_noop_without_client_name():
+    # Without a known client identity the monitor cannot make a decision.
+    lease = Mock()
+    lease.client_name = None
+    lease.get = AsyncMock()
+    scope = _FakeCancelScope()
+
+    await _monitor_shared_access(lease, scope)
+
+    lease.get.assert_not_called()
+    assert scope.cancel_called is False
