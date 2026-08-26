@@ -4,10 +4,11 @@ import subprocess
 import sys
 import tempfile
 from contextlib import contextmanager
-from threading import Event
 from typing import Generator
 
+import anyio
 import click
+from anyio import get_cancelled_exc_class
 from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 
 from jumpstarter.client import DriverClient
@@ -22,6 +23,36 @@ def _validate_adb_args(args: tuple[str, ...]) -> None:
     for arg in args:
         if arg in _UNSUPPORTED_ADB_COMMANDS:
             raise click.UsageError(f"'{arg}' is not supported through the Jumpstarter ADB tunnel")
+
+
+def _wait_for_interrupt(client: DriverClient) -> None:
+    """Block until the CLI is interrupted, then return so teardown can run.
+
+    The wait must happen **in the event loop**, not in this thread.
+
+    Driver CLIs run in a worker thread driven by a ``BlockingPortal``, while
+    ``jmp shell`` handles Ctrl+C with ``anyio.open_signal_receiver`` and cancels
+    the enclosing task group. A thread-side wait — ``Event().wait()``,
+    ``time.sleep()``, or ``signal.signal()`` — cannot observe either: Python
+    delivers signals only to the main thread, and anyio cancellation only unwinds
+    tasks. So the CLI printed "SIGINT pressed, terminating" while the worker
+    thread kept waiting, the caller's ``finally`` never ran (leaving a stale
+    ``adb connect`` entry behind), and a second Ctrl+C hung in
+    ``threading._shutdown``.
+
+    Sleeping through the portal puts the wait in a real task, so the cancel scope
+    unwinds it and ``portal.call`` re-raises here, letting teardown proceed.
+    """
+    try:
+        client.portal.call(anyio.sleep_forever)
+    except (KeyboardInterrupt, SystemExit, GeneratorExit, RuntimeError):
+        # RuntimeError covers the portal already being shut down when we ask.
+        return
+    except BaseException as e:
+        # anyio's cancelled exception derives from BaseException, not Exception.
+        if type(e) is get_cancelled_exc_class():
+            return
+        raise
 
 
 def _read_tunnel_state() -> dict | None:
@@ -260,10 +291,7 @@ class AdbClient(DriverClient):
                         click.echo(f"{device} -> {attached}")
                     click.echo("\nAttached to your local ADB server; Android Studio will list them.")
                     click.echo("Press Ctrl+C to detach.")
-                    try:
-                        Event().wait()
-                    except KeyboardInterrupt:
-                        pass
+                    _wait_for_interrupt(self)
                 click.echo("detached")
                 return 0
 
@@ -292,7 +320,7 @@ class AdbClient(DriverClient):
                         click.echo(f"  export ANDROID_ADB_SERVER_PORT={addr[1]}")
                         click.echo("")
                         click.echo("Press Ctrl+C to stop")
-                        Event().wait()
+                        _wait_for_interrupt(self)
                     finally:
                         _remove_tunnel_state()
                 return 0
