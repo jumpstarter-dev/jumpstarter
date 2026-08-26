@@ -303,7 +303,11 @@ func (l *Lease) ToProtobuf() *cpb.Lease {
 		Tags:          l.Spec.Tags,
 		AllowDisabled: l.Spec.AllowDisabled,
 		Context:       l.Spec.Context,
-		SharedWith:    l.Spec.SharedWith,
+		// shared_with is the owner's desired intent (Spec); effective_shared_with is
+		// the controller-derived set actually granted (Status), after policy/existence
+		// filtering. A name in the former but not the latter was denied or doesn't exist.
+		SharedWith:          l.Spec.SharedWith,
+		EffectiveSharedWith: l.Status.SharedWith,
 	}
 	if l.Spec.ExporterRef != nil {
 		lease.ExporterName = ptr.To(l.Spec.ExporterRef.Name)

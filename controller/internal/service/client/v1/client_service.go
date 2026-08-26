@@ -324,8 +324,8 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 		return nil, err
 	}
 
-	if len(jlease.Spec.SharedWith) > 10 {
-		return nil, status.Errorf(codes.InvalidArgument, "shared_with list exceeds maximum of 10 entries")
+	if len(jlease.Spec.SharedWith) > jumpstarterdevv1alpha1.MaxSharedWithEntries {
+		return nil, status.Errorf(codes.InvalidArgument, "shared_with list exceeds maximum of %d entries", jumpstarterdevv1alpha1.MaxSharedWithEntries)
 	}
 	if len(jlease.Spec.SharedWith) > 0 {
 		var deduped []string
@@ -394,6 +394,13 @@ func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseReq
 		return nil, status.Error(codes.InvalidArgument, "UpdateLease: cannot transfer and modify sharing in the same request")
 	}
 
+	// Sharing is modified only via add_shared_with/remove_shared_with. Reject a
+	// populated lease.shared_with rather than silently dropping it, so callers
+	// don't believe a wholesale replacement took effect.
+	if len(req.Lease.SharedWith) > 0 {
+		return nil, status.Error(codes.InvalidArgument, "UpdateLease: use add_shared_with/remove_shared_with to modify sharing, not lease.shared_with")
+	}
+
 	if hasShareChanges {
 		if !jlease.IsOwnedBy(jclient.Name) {
 			return nil, status.Error(codes.PermissionDenied, "UpdateLease permission denied: only lease owner can modify sharing")
@@ -402,7 +409,14 @@ func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseReq
 		return nil, status.Error(codes.PermissionDenied, "UpdateLease permission denied")
 	}
 
-	original := kclient.MergeFrom(jlease.DeepCopy())
+	// Share changes are a read-modify-write on Spec.SharedWith; use an optimistic
+	// lock so concurrent add/remove calls conflict instead of clobbering each other.
+	var original kclient.Patch
+	if hasShareChanges {
+		original = kclient.MergeFromWithOptions(jlease.DeepCopy(), kclient.MergeFromWithOptimisticLock{})
+	} else {
+		original = kclient.MergeFrom(jlease.DeepCopy())
+	}
 
 	hasTimeChanges := req.Lease.BeginTime != nil || req.Lease.Duration != nil || req.Lease.EndTime != nil
 	if hasTimeChanges {
@@ -705,8 +719,8 @@ func (s *ClientService) applySharedWithChanges(
 		shared = append(shared, name)
 	}
 
-	if len(shared) > 10 {
-		return nil, status.Errorf(codes.InvalidArgument, "shared_with list exceeds maximum of 10 entries")
+	if len(shared) > jumpstarterdevv1alpha1.MaxSharedWithEntries {
+		return nil, status.Errorf(codes.InvalidArgument, "shared_with list exceeds maximum of %d entries", jumpstarterdevv1alpha1.MaxSharedWithEntries)
 	}
 	return shared, nil
 }

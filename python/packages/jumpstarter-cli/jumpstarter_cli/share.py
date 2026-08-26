@@ -75,6 +75,11 @@ def share_list(config, lease: str):
         click.echo(f"Lease {lease} is not shared with anyone.")
         return
 
+    # shared_with is the owner's desired intent; effective_shared_with is what the
+    # controller actually granted after policy/existence filtering. Names in the
+    # former but not the latter were denied by policy or refer to a missing client.
+    effective = set(target.effective_shared_with)
     click.echo(f"Lease {lease} shared with:")
     for client_name in target.shared_with:
-        click.echo(f"  {client_name}")
+        suffix = "" if client_name in effective else "  (not active: denied by policy or client not found)"
+        click.echo(f"  {client_name}{suffix}")
