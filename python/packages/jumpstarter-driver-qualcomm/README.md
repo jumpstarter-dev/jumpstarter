@@ -85,9 +85,13 @@ export:
 
 ### CLI
 
+Both the firmware archive and `--manifest` accept local paths or `http://` / `https://` URLs. Firmware URLs are downloaded on the exporter (direct HTTP GET). Manifest URLs are fetched by the client before the flash request is sent.
+
 ```bash
 j firmware flash ./sx4-r00021.1a.tar.xz
-j firmware flash ./sx4-r00021.1a.tar.xz --manifest ./es22.yaml
+j firmware flash https://example.com/firmware/sx4-r00021.1a.tar.xz --manifest ./es22.yaml
+j firmware flash https://example.com/firmware/sx4-r00021.1a.tar.xz \
+  --manifest https://example.com/manifests/es22.yaml
 j firmware flash ./sx4-r00021.1a.tar.xz --manifest ./es22.yaml --cached
 j firmware flash --manifest ./es22.yaml --cached
 j firmware id -v
@@ -100,7 +104,7 @@ Use `--cached` to keep the extracted firmware under `work_dir/<manifest.data.fol
 
 ## Firmware archive (`.tar.xz`)
 
-Firmware is distributed as a compressed tar archive. The driver accepts local paths, URLs, and other Jumpstarter file sources. Archives may be `.tar`, `.tar.xz`, `.tar.gz`, or other formats supported by the streaming decompressor.
+Firmware is distributed as a compressed tar archive. The driver accepts local paths and `http://` / `https://` URLs for the archive argument. Archives may be `.tar`, `.tar.xz`, `.tar.gz`, or other formats supported by the streaming decompressor.
 
 ### Layout
 

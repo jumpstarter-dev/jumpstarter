@@ -111,12 +111,12 @@ class QualcommFlasherClient(StreamingFlasherClient, CompositeClient):
             pass
 
         @base.command()
-        @click.argument("file", required=False)
+        @click.argument("file", required=False, metavar="FILE|URL")
         @click.option(
             "--manifest",
             type=str,
             help=(
-                "Manifest YAML file or URL. Required with --cached. "
+                "Manifest YAML file or http(s) URL. Required with --cached. "
                 "Optional when the archive contains jumpstarter_manifest.yaml."
             ),
         )
@@ -126,11 +126,13 @@ class QualcommFlasherClient(StreamingFlasherClient, CompositeClient):
             help="Keep extracted firmware on the exporter and reuse it on subsequent flashes.",
         )
         def flash(file, manifest, cached):
-            """Flash firmware using QDL"""
+            """Flash firmware using QDL from a local path or http(s) URL"""
             if cached and not manifest:
                 raise click.ClickException("--manifest is required when using --cached")
             if not cached and not file:
-                raise click.ClickException("FILE is required unless re-flashing from an existing cache with --cached")
+                raise click.ClickException(
+                    "FILE|URL is required unless re-flashing from an existing cache with --cached"
+                )
             try:
                 for status in self.flash_stream(file, manifest=manifest, cached=cached):
                     click.echo(self.render_flash_status(status))
