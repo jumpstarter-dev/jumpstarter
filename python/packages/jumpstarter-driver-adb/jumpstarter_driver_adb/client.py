@@ -91,6 +91,82 @@ class AdbClient(DriverClient):
         """List devices visible to the exporter's ADB server."""
         return self.call("list_devices")
 
+    def devices(self) -> list[str]:
+        """Return the serials of usable devices on the exporter.
+
+        Read live on every call, so a device plugged in — or an emulator started —
+        after the lease began is included. The exporter's ADB server is the
+        inventory; this driver keeps no device list of its own.
+        """
+        serials = []
+        for line in self.list_devices().splitlines():
+            line = line.strip()
+            if not line or line.startswith("*") or line.startswith("List of devices"):
+                continue
+            fields = line.split()
+            # Only `device`; offline/unauthorized cannot be forwarded.
+            if len(fields) >= 2 and fields[1] == "device":
+                serials.append(fields[0])
+        return serials
+
+    # Exporter-side slot plumbing. Private: `attach()` is the interface, and
+    # calling these directly means managing forwards and tunnels by hand.
+
+    def _attach_device(self, device: str, adbd_port: int = 5555) -> str:
+        """Publish a device's adbd on an exporter forward slot; return the slot name."""
+        return self.call("attach_device", device, adbd_port)
+
+    def _detach_device(self, device: str) -> None:
+        """Release a device's forward slot on the exporter."""
+        self.call("detach_device", device)
+
+    def _list_attached(self) -> dict:
+        """Return ``{slot_port: device}`` for devices attached on the exporter."""
+        return self.call("list_attached")
+
+    @contextmanager
+    def attach(
+        self,
+        device: str,
+        *,
+        adbd_port: int = 5555,
+        adb: str = "adb",
+        local_port: int = 0,
+    ) -> Generator[str, None, None]:
+        """Add a remote device to the ADB server this machine already uses.
+
+        Three steps, none of them clever: the exporter forwards the device's adbd
+        onto a slot, Jumpstarter tunnels that slot here, and plain ``adb connect``
+        adds it to the local server. Because ``adb connect`` is additive, the
+        device lands in the *default* server — the one Android Studio, tradefed,
+        gradle, and a bare ``adb`` all talk to — with no environment variables, no
+        ``adb.server.port``, and no IDE restart.
+
+        Args:
+            device: ADB serial from :meth:`devices`.
+            adbd_port: adbd's TCP port on the device.
+            adb: path to the local adb binary.
+            local_port: local port to bind; 0 lets the OS choose. The device's
+                address is whatever this resolves to — deliberately not something
+                this driver invents, since ADB owns device addressing.
+
+        Yields:
+            The ``host:port`` the device was attached as.
+        """
+        slot = self._attach_device(device, adbd_port)
+        with TcpPortforwardAdapter(client=self.children[slot], local_port=local_port) as addr:
+            target = f"{addr[0]}:{addr[1]}"
+            subprocess.run([adb, "connect", target], check=True, capture_output=True, text=True, timeout=60)
+            try:
+                yield target
+            finally:
+                # Leave no stale `offline` entry in the developer's ADB server.
+                subprocess.run([adb, "disconnect", target], check=False, capture_output=True, text=True, timeout=30)
+                try:
+                    self._detach_device(device)
+                except Exception as e:  # noqa: BLE001 - teardown is best-effort
+                    self.logger.debug("detach %s failed: %s", device, e)
+
     def cli(self):
         @click.command(context_settings={"ignore_unknown_options": True})
         @click.option(
@@ -134,6 +210,13 @@ class AdbClient(DriverClient):
 
             \b
             Jumpstarter-specific commands:
+              attach    Add the exporter's devices to the ADB server this machine
+                        already uses, via plain `adb connect`. Works when you do
+                        NOT own that server -- Android Studio keeps 5037 and
+                        respawns it in ~3s if killed, so it cannot be taken over.
+                        Devices appear in Studio's chooser with no configuration.
+                        Defaults to every usable device; name serials to pick.
+                        Blocks until Ctrl+C, then detaches cleanly.
               tunnel    Create a persistent ADB tunnel to a local port
                         (auto-assigned by default, use -P to pick a specific
                         port). Other j adb commands will automatically reuse
@@ -154,6 +237,35 @@ class AdbClient(DriverClient):
                 return 0
 
             _validate_adb_args(args)
+
+            if args[0] == "attach":
+                targets = [a for a in args[1:] if not a.startswith("-")]
+                if not targets:
+                    # Whatever the exporter's ADB server sees right now, including
+                    # anything hotplugged since the lease began.
+                    targets = self.devices()
+                if not targets:
+                    click.echo("No usable devices on the exporter.", err=True)
+                    return 1
+
+                from contextlib import ExitStack
+
+                with ExitStack() as stack:
+                    for device in targets:
+                        try:
+                            attached = stack.enter_context(self.attach(device, adb=adb, local_port=port))
+                        except (RuntimeError, subprocess.CalledProcessError) as e:
+                            click.echo(f"error: could not attach {device}: {e}", err=True)
+                            return 1
+                        click.echo(f"{device} -> {attached}")
+                    click.echo("\nAttached to your local ADB server; Android Studio will list them.")
+                    click.echo("Press Ctrl+C to detach.")
+                    try:
+                        Event().wait()
+                    except KeyboardInterrupt:
+                        pass
+                click.echo("detached")
+                return 0
 
             if args[0] == "tunnel":
                 state = _read_tunnel_state()
