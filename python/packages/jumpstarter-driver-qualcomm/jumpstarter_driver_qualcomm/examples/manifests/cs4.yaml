@@ -1,0 +1,44 @@
+name: "SA8650P CS4 Firmware"
+description: "CS4 (8650 ADAS) QDL flash workflow"
+data:
+  folder: "r00010.1"
+  extract_to_folder: true
+  abl_image: "abl/mar_2026_mkorpershoek/qam8650p_abl_signed.elf"
+  cdt_image:
+    v1: "cdt/LEMANSAU_QAM_1.1.0.bin"
+    v2: "cdt/LEMANSAU_QAM_1.1.0.bin"
+    v3: "cdt/LEMANSAU_QAM_1.2.0.bin"
+    v4: "cdt/LEMANSAU_QAM_1.2.0.bin"
+steps:
+  - set_mode: edl
+    check_dmesg: "USB QTI_HS"
+
+  - sleep: 5
+
+  - name: "UFS provisioning"
+    retry_mode: edl
+    qdl:
+      storage: ufs
+      programmer: prog_firehose_ddr.elf
+      files:
+        - provision_default.xml
+
+  - sleep: 10
+
+  - name: "Flash UFS"
+    retry_mode: edl
+    qdl:
+      storage: ufs
+      programmer: prog_firehose_ddr.elf
+      files:
+        - "rawprogram*.xml"
+        - "patch*.xml"
+
+  - sleep: 10
+
+  - set_mode: fastboot
+
+  - name: "check fastboot device"
+    retry_mode: fastboot
+    fastboot:
+      continue: false
