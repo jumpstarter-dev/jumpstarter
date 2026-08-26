@@ -1,6 +1,6 @@
-from jumpstarter_driver_qualcomm.executor import build_qdl_command, fix_provision_default_xml
-from jumpstarter_driver_qualcomm.firmware_id import identify_firmware_variant
-from jumpstarter_driver_qualcomm.schema import QdlConfig, QdlStep
+from jumpstarter_driver_ridesx.qdl.executor import build_qdl_command, fix_provision_default_xml
+from jumpstarter_driver_ridesx.qdl.firmware_id import identify_firmware_variant
+from jumpstarter_driver_ridesx.qdl.schema import QdlConfig, QdlStep
 
 
 def test_identify_firmware_variant_known_es22():

@@ -1,8 +1,11 @@
 # RideSX Driver
 
-`jumpstarter-driver-ridesx` provides functionality for Qualcomm RideSX devices,
-supporting fastboot flashing operations and power control through serial communication.
-It includes automatic compression handling (`.gz`, `.gzip`, `.xz`), built-in storage
+`jumpstarter-driver-ridesx` provides functionality for Qualcomm automotive platforms:
+
+- **RideSX** fastboot partition flashing (automotive-image-builder artifacts)
+- **QDL platform flashing** (`QualcommFlasher`) for full firmware updates on SA8775P, SA8650P, and related SoCs
+
+RideSX support includes automatic compression handling (`.gz`, `.gzip`, `.xz`), built-in storage
 for firmware images with upload/download capabilities, and direct access to the
 underlying serial interface for custom commands.
 
@@ -154,3 +157,43 @@ power_client.cycle(wait=5)  # Wait 5 seconds between off/on
 .. autoclass:: jumpstarter_driver_ridesx.client.RideSXPowerClient()
     :members: on, off, cycle, rescue, serial
 ```
+
+## QDL platform flashing (`QualcommFlasher`)
+
+Manifest-driven QDL/fastboot flashing for vendor firmware packages (ES13, ES21, ES22, CS4, CS5, …).
+See `examples/exporter-platform.yaml` and reference manifests in
+`jumpstarter_driver_ridesx/qdl/examples/manifests/`.
+
+**driver**: `jumpstarter_driver_ridesx.qdl.driver.QualcommFlasher`
+
+TAC serial handles power on/off and mode switching (EDL/fastboot). Export as `firmware` with
+`tac`, `serial`, and `sail` children for identification.
+
+### CLI
+
+Both the firmware archive and `--manifest` accept local paths or `http://` / `https://` URLs.
+Firmware URLs are downloaded on the exporter. Manifest URLs are fetched by the client.
+
+```bash
+j firmware flash ./sx4-r00021.1a.tar.xz
+j firmware flash https://example.com/firmware/sx4-r00021.1a.tar.xz --manifest ./es22.yaml
+j firmware flash https://example.com/firmware/sx4-r00021.1a.tar.xz \
+  --manifest https://example.com/manifests/es22.yaml
+j firmware flash ./sx4-r00021.1a.tar.xz --manifest ./es22.yaml --cached
+j firmware flash --manifest ./es22.yaml --cached
+j firmware id -v
+j firmware boot-to-edl
+j firmware boot-to-fastboot
+```
+
+Use `--cached` to keep extracted firmware under `work_dir/<manifest.data.folder>` on the exporter.
+
+Archives may embed `jumpstarter_manifest.yaml`. See `examples/exporter-platform.yaml` for
+exporter configuration and the QDL module for manifest schema details.
+
+### Requirements on exporter host
+
+- `qdl` (Qualcomm download tool)
+- `fastboot`
+- USB access to the DUT in EDL/fastboot modes
+- TAC serial device for mode switching

@@ -6,9 +6,9 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
-from jumpstarter_driver_qualcomm.client import QualcommFlasherClient
-from jumpstarter_driver_qualcomm.driver import QualcommFlasher
-from jumpstarter_driver_qualcomm.schema import (
+from jumpstarter_driver_ridesx.qdl.client import QualcommFlasherClient
+from jumpstarter_driver_ridesx.qdl.driver import QualcommFlasher
+from jumpstarter_driver_ridesx.qdl.schema import (
     FirmwareData,
     FirmwareManifest,
     find_embedded_manifest,

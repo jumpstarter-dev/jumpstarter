@@ -6,6 +6,7 @@ import asyncio
 import subprocess
 from pathlib import Path
 
+from ..tac import send_tac_sequence
 from .schema import (
     FastbootStep,
     FirmwareManifest,
@@ -15,7 +16,6 @@ from .schema import (
     Step,
 )
 from .soc_profiles import SoCProfile
-from .tac import send_tac_sequence
 from jumpstarter.client.flasher import FlashStatus
 
 
@@ -26,6 +26,7 @@ def fix_provision_default_xml(workdir: Path) -> None:
     content = provision.read_text(encoding="utf-8", errors="replace")
     if content.lstrip().startswith("<?xml"):
         return
+    # Qualcomm PCAT/provisioning tools prepend a 9-line text header before the XML.
     lines = content.splitlines()
     if len(lines) <= 9:
         return

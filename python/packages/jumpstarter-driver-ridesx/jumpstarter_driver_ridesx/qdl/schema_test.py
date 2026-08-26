@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from jumpstarter_driver_qualcomm.schema import (
+from jumpstarter_driver_ridesx.qdl.schema import (
     FastbootStep,
     QdlStep,
     SetModeStep,
@@ -10,7 +10,7 @@ from jumpstarter_driver_qualcomm.schema import (
     load_firmware_manifest,
     select_cdt_image_path,
 )
-from jumpstarter_driver_qualcomm.soc_profiles import SA8775P, get_soc_profile
+from jumpstarter_driver_ridesx.qdl.soc_profiles import SA8775P, get_soc_profile
 
 MANIFEST_DIR = Path(__file__).parent / "examples" / "manifests"
 

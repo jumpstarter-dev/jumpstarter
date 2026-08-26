@@ -15,6 +15,7 @@ from typing import Any
 import yaml
 from anyio.streams.file import FileWriteStream
 
+from ..tac import send_tac_sequence
 from .executor import execute_manifest, resolve_firmware_root
 from .schema import (
     EMBEDDED_MANIFEST_NAMES,
@@ -26,7 +27,6 @@ from .schema import (
     select_cdt_image_path,
 )
 from .soc_profiles import SoCType, get_soc_profile
-from .tac import send_tac_sequence
 from jumpstarter.client.flasher import FlashStatus
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver, export
@@ -69,7 +69,7 @@ class QualcommFlasher(Driver):
 
     @classmethod
     def client(cls) -> str:
-        return "jumpstarter_driver_qualcomm.client.QualcommFlasherClient"
+        return "jumpstarter_driver_ridesx.qdl.client.QualcommFlasherClient"
 
     @property
     def profile(self):

@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from jumpstarter_driver_qualcomm.client import (
+from jumpstarter_driver_ridesx.qdl.client import (
     QualcommFlasherClient,
     _load_manifest_source,
 )
@@ -19,7 +19,7 @@ def test_load_manifest_source_from_https_url():
     response.read.return_value = MANIFEST_YAML.encode("utf-8")
     response.__enter__.return_value = response
 
-    with patch("jumpstarter_driver_qualcomm.client.urlopen", return_value=response) as urlopen:
+    with patch("jumpstarter_driver_ridesx.qdl.client.urlopen", return_value=response) as urlopen:
         manifest = _load_manifest_source("https://example.com/manifests/es22.yaml")
 
     urlopen.assert_called_once_with("https://example.com/manifests/es22.yaml")
@@ -32,7 +32,7 @@ def test_flash_stream_uses_http_adapter_for_firmware_url():
     client.flash_stream = QualcommFlasherClient.flash_stream.__get__(client, QualcommFlasherClient)
     client._iter_flash_status = MagicMock(return_value=iter([]))
 
-    with patch("jumpstarter_driver_qualcomm.client._http_url_adapter") as http_adapter:
+    with patch("jumpstarter_driver_ridesx.qdl.client._http_url_adapter") as http_adapter:
         http_adapter.return_value.__enter__.return_value = {"url": "https://example.com/fw.tar.xz"}
         http_adapter.return_value.__exit__.return_value = None
 
@@ -57,8 +57,8 @@ def test_flash_stream_uses_local_adapter_for_file_path():
     client._iter_flash_status = MagicMock(return_value=iter([]))
 
     with (
-        patch("jumpstarter_driver_qualcomm.client._local_file_adapter") as local_adapter,
-        patch("jumpstarter_driver_qualcomm.client._http_url_adapter") as http_adapter,
+        patch("jumpstarter_driver_ridesx.qdl.client._local_file_adapter") as local_adapter,
+        patch("jumpstarter_driver_ridesx.qdl.client._http_url_adapter") as http_adapter,
     ):
         local_adapter.return_value.__enter__.return_value = "local-handle"
         local_adapter.return_value.__exit__.return_value = None
@@ -79,8 +79,8 @@ def test_flash_stream_loads_manifest_from_https_url():
     response.__enter__.return_value = response
 
     with (
-        patch("jumpstarter_driver_qualcomm.client.urlopen", return_value=response),
-        patch("jumpstarter_driver_qualcomm.client._http_url_adapter") as http_adapter,
+        patch("jumpstarter_driver_ridesx.qdl.client.urlopen", return_value=response),
+        patch("jumpstarter_driver_ridesx.qdl.client._http_url_adapter") as http_adapter,
     ):
         http_adapter.return_value.__enter__.return_value = {"url": "https://example.com/fw.tar.xz"}
         http_adapter.return_value.__exit__.return_value = None

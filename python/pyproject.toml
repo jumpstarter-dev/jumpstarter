@@ -32,7 +32,6 @@ jumpstarter-driver-power = { workspace = true }
 jumpstarter-driver-pi-pico = { workspace = true }
 jumpstarter-driver-probe-rs = { workspace = true }
 jumpstarter-driver-pyserial = { workspace = true }
-jumpstarter-driver-qualcomm = { workspace = true }
 jumpstarter-driver-qemu = { workspace = true }
 jumpstarter-driver-renode = { workspace = true }
 jumpstarter-driver-sdwire = { workspace = true }
