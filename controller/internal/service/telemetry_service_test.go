@@ -19,17 +19,22 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/config"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -423,6 +428,208 @@ func TestTelemetryService_Start_FailsWhenExternalCertFileMissing(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "TLS") {
 		t.Errorf("expected 'TLS' in error, got: %v", err)
+	}
+}
+
+// startTelemetryGRPCServer starts a TelemetryService on a random local port and
+// returns the listen address, a log buffer capturing structured output, and a cleanup func.
+func startTelemetryGRPCServer(t *testing.T, signer *oidc.Signer) (addr string, logBuf *bytes.Buffer, cleanup func()) {
+	t.Helper()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	addr = lis.Addr().String()
+	if err := lis.Close(); err != nil {
+		t.Fatalf("close listener: %v", err)
+	}
+
+	t.Setenv("EXTERNAL_CERT_PEM", "")
+	t.Setenv("EXTERNAL_KEY_PEM", "")
+	t.Setenv("GRPC_TELEMETRY_ENDPOINT", addr)
+
+	logBuf = &bytes.Buffer{}
+	testLogger := zap.New(zap.WriteTo(logBuf))
+
+	svc := &TelemetryService{BindAddr: addr, Signer: signer, Logger: &testLogger}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- svc.Start(ctx)
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	var client pb.TelemetryServiceClient
+	var conn *grpc.ClientConn
+	tlsCreds := credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // test-only self-signed cert
+	for time.Now().Before(deadline) {
+		conn, err = grpc.NewClient(addr, grpc.WithTransportCredentials(tlsCreds))
+		if err != nil {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		client = pb.NewTelemetryServiceClient(conn)
+		probeCtx := metadata.NewOutgoingContext(
+			context.Background(),
+			metadata.Pairs("authorization", "Bearer "+mustToken(t, signer, "exporter:jumpstarter:probe:1")),
+		)
+		_, err = client.PushLogs(probeCtx, &pb.PushLogsRequest{})
+		if err == nil || status.Code(err) != codes.Unavailable {
+			break
+		}
+		_ = conn.Close()
+		conn = nil
+		time.Sleep(10 * time.Millisecond)
+	}
+	if conn == nil {
+		cancel()
+		<-errCh
+		t.Fatal("telemetry gRPC server did not become ready")
+	}
+
+	cleanup = func() {
+		_ = conn.Close()
+		cancel()
+		<-errCh
+	}
+	_ = client // returned via dialTelemetryClient helper below
+	return addr, logBuf, cleanup
+}
+
+func mustToken(t *testing.T, signer *oidc.Signer, subject string) string {
+	t.Helper()
+	token, err := signer.Token(subject)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+	return token
+}
+
+func dialTelemetryClient(t *testing.T, addr string) (pb.TelemetryServiceClient, func()) {
+	t.Helper()
+	tlsCreds := credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // test-only self-signed cert
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(tlsCreds))
+	if err != nil {
+		t.Fatalf("grpc.NewClient: %v", err)
+	}
+	return pb.NewTelemetryServiceClient(conn), func() { _ = conn.Close() }
+}
+
+func TestTelemetryService_PushLogs_OverGRPC(t *testing.T) {
+	signer := testSigner(t)
+	addr, logBuf, cleanup := startTelemetryGRPCServer(t, signer)
+	defer cleanup()
+
+	client, closeConn := dialTelemetryClient(t, addr)
+	defer closeConn()
+
+	token := mustToken(t, signer, "exporter:jumpstarter:test-exporter:abc123")
+	ctx := metadata.NewOutgoingContext(
+		context.Background(),
+		metadata.Pairs("authorization", "Bearer "+token),
+	)
+
+	resp, err := client.PushLogs(ctx, &pb.PushLogsRequest{
+		Entries: []*pb.LogEntry{
+			{Severity: "info", Message: "grpc integration hello", Component: "exporter", Exporter: "test-exporter"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("PushLogs over gRPC: %v", err)
+	}
+	if resp.GetAccepted() != 1 {
+		t.Errorf("Accepted = %d, want 1", resp.GetAccepted())
+	}
+	if resp.GetDropped() != 0 {
+		t.Errorf("Dropped = %d, want 0", resp.GetDropped())
+	}
+
+	logged := logBuf.String()
+	if !strings.Contains(logged, "grpc integration hello") {
+		t.Errorf("expected log message in output, got:\n%s", logged)
+	}
+	if !strings.Contains(logged, `"exporter":"test-exporter"`) {
+		t.Errorf("expected exporter label in output, got:\n%s", logged)
+	}
+}
+
+func TestTelemetryService_PushLogs_OverGRPC_RejectsMissingToken(t *testing.T) {
+	signer := testSigner(t)
+	addr, _, cleanup := startTelemetryGRPCServer(t, signer)
+	defer cleanup()
+
+	client, closeConn := dialTelemetryClient(t, addr)
+	defer closeConn()
+
+	_, err := client.PushLogs(context.Background(), &pb.PushLogsRequest{
+		Entries: []*pb.LogEntry{{Severity: "info", Message: "unauthenticated"}},
+	})
+	if err == nil {
+		t.Fatal("expected error without authorization metadata")
+	}
+	if status.Code(err) != codes.Unauthenticated {
+		t.Errorf("expected Unauthenticated, got %v", status.Code(err))
+	}
+}
+
+func TestTelemetryService_PushLogs_OverGRPC_RejectsInvalidToken(t *testing.T) {
+	signer := testSigner(t)
+	addr, _, cleanup := startTelemetryGRPCServer(t, signer)
+	defer cleanup()
+
+	client, closeConn := dialTelemetryClient(t, addr)
+	defer closeConn()
+
+	ctx := metadata.NewOutgoingContext(
+		context.Background(),
+		metadata.Pairs("authorization", "Bearer not-a-real-token"),
+	)
+	_, err := client.PushLogs(ctx, &pb.PushLogsRequest{
+		Entries: []*pb.LogEntry{{Severity: "info", Message: "bad token"}},
+	})
+	if err == nil {
+		t.Fatal("expected error with invalid token")
+	}
+	if status.Code(err) != codes.Unauthenticated {
+		t.Errorf("expected Unauthenticated, got %v", status.Code(err))
+	}
+}
+
+func TestTelemetryService_PushLogs_OverGRPC_BatchLimit(t *testing.T) {
+	signer := testSigner(t)
+	addr, _, cleanup := startTelemetryGRPCServer(t, signer)
+	defer cleanup()
+
+	client, closeConn := dialTelemetryClient(t, addr)
+	defer closeConn()
+
+	token := mustToken(t, signer, "exporter:jumpstarter:test-exporter:abc123")
+	ctx := metadata.NewOutgoingContext(
+		context.Background(),
+		metadata.Pairs("authorization", "Bearer "+token),
+	)
+
+	entries := make([]*pb.LogEntry, 600)
+	for i := range entries {
+		entries[i] = &pb.LogEntry{
+			Severity:  "info",
+			Message:   fmt.Sprintf("batch entry %d", i),
+			Exporter:  "test-exporter",
+			Component: "exporter",
+		}
+	}
+
+	resp, err := client.PushLogs(ctx, &pb.PushLogsRequest{Entries: entries})
+	if err != nil {
+		t.Fatalf("PushLogs over gRPC: %v", err)
+	}
+	if resp.GetAccepted() != 500 {
+		t.Errorf("Accepted = %d, want 500", resp.GetAccepted())
+	}
+	if resp.GetDropped() != 100 {
+		t.Errorf("Dropped = %d, want 100", resp.GetDropped())
 	}
 }
 

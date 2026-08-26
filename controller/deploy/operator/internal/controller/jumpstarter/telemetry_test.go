@@ -315,6 +315,44 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			"telemetry should not appear in ConfigMap after disabling")
 	})
 
+	It("includes telemetry CA from issued TLS secret when external issuer has no CABundle", func() {
+		By("creating a Jumpstarter CR with telemetry, cert-manager, and external issuer")
+		spec := makeJumpstarterSpec()
+		spec.CertManager = operatorv1alpha1.CertManagerConfig{
+			Enabled: true,
+			Server: &operatorv1alpha1.ServerCertConfig{
+				IssuerRef: &operatorv1alpha1.IssuerReference{
+					Name: "my-issuer",
+					Kind: "ClusterIssuer",
+				},
+			},
+		}
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled: true,
+			Image:   "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+		}
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		}
+
+		By("pre-creating the issued telemetry TLS secret with ca.crt")
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      GetTelemetryCertSecretName(js),
+				Namespace: crNamespace,
+			},
+			Data: map[string][]byte{
+				"ca.crt": []byte(testPEM),
+			},
+		})).To(Succeed())
+
+		cfg, err := newReconciler().buildConfig(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Telemetry).NotTo(BeNil())
+		Expect(cfg.Telemetry.Certificate).To(ContainSubstring("BEGIN CERTIFICATE"))
+	})
+
 	It("propagates telemetry config into the controller ConfigMap", func() {
 		By("creating a Jumpstarter CR with telemetry and a custom minSeverity")
 		spec := makeJumpstarterSpec()
@@ -438,13 +476,14 @@ var _ = Describe("Telemetry Lifecycle", func() {
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
-		// Should have CONTROLLER_KEY + TLS env vars
-		Expect(container.Env).To(HaveLen(3))
+		// Should have CONTROLLER_KEY, GRPC_TELEMETRY_ENDPOINT, and TLS env vars
+		Expect(container.Env).To(HaveLen(4))
 		envNames := make(map[string]string)
 		for _, env := range container.Env {
 			envNames[env.Name] = env.Value
 		}
 		Expect(envNames).To(HaveKey("CONTROLLER_KEY"))
+		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor("default")))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_CERT_PEM", "/tls/tls.crt"))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_KEY_PEM", "/tls/tls.key"))
 
@@ -485,13 +524,14 @@ var _ = Describe("Telemetry Lifecycle", func() {
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
-		// Should have CONTROLLER_KEY + TLS env vars
-		Expect(container.Env).To(HaveLen(3))
+		// Should have CONTROLLER_KEY, GRPC_TELEMETRY_ENDPOINT, and TLS env vars
+		Expect(container.Env).To(HaveLen(4))
 		envNames := make(map[string]string)
 		for _, env := range container.Env {
 			envNames[env.Name] = env.Value
 		}
 		Expect(envNames).To(HaveKey("CONTROLLER_KEY"))
+		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor("default")))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_CERT_PEM", "/tls/tls.crt"))
 		Expect(envNames).To(HaveKeyWithValue("EXTERNAL_KEY_PEM", "/tls/tls.key"))
 
@@ -528,8 +568,14 @@ var _ = Describe("Telemetry Lifecycle", func() {
 
 		container := dep.Spec.Template.Spec.Containers[0]
 
-		// Only CONTROLLER_KEY should be set (no TLS env vars)
-		Expect(container.Env).To(HaveLen(1))
+		Expect(container.Env).To(HaveLen(2))
+		envNames := make(map[string]string)
+		for _, env := range container.Env {
+			if env.Value != "" {
+				envNames[env.Name] = env.Value
+			}
+		}
+		Expect(envNames).To(HaveKeyWithValue("GRPC_TELEMETRY_ENDPOINT", telemetryEndpointFor("default")))
 		Expect(container.Env[0].Name).To(Equal("CONTROLLER_KEY"))
 
 		// No volume mounts or volumes
@@ -811,7 +857,39 @@ var _ = Describe("resolveTelemetryCA", func() {
 		Expect(err.Error()).To(ContainSubstring("missing tls.crt"))
 	})
 
-	It("returns ('', nil) when an external IssuerRef has a nil CABundle", func() {
+	It("returns ca.crt from the telemetry TLS secret when an external IssuerRef has no CABundle", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-ca-from-secret", Namespace: crNamespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				CertManager: operatorv1alpha1.CertManagerConfig{
+					Enabled: true,
+					Server: &operatorv1alpha1.ServerCertConfig{
+						IssuerRef: &operatorv1alpha1.IssuerReference{
+							Name: "my-issuer",
+							Kind: "ClusterIssuer",
+						},
+					},
+				},
+			},
+		}
+
+		Expect(k8sClient.Create(ctx, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      GetTelemetryCertSecretName(js),
+				Namespace: crNamespace,
+			},
+			Data: map[string][]byte{
+				"ca.crt": []byte(testPEM),
+			},
+		})).To(Succeed())
+
+		r := &JumpstarterReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		ca, err := r.resolveTelemetryCA(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ca).To(ContainSubstring("BEGIN CERTIFICATE"))
+	})
+
+	It("returns ('', nil) when an external IssuerRef has a nil CABundle and no telemetry TLS secret", func() {
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: "test-ca-no-bundle", Namespace: crNamespace},
 			Spec: operatorv1alpha1.JumpstarterSpec{
