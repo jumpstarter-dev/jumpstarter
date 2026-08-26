@@ -1,5 +1,6 @@
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
@@ -56,14 +57,33 @@ def _wait_for_interrupt(client: DriverClient) -> None:
 
 
 def _read_tunnel_state() -> dict | None:
-    """Read the tunnel state file and verify the tunnel process is still alive."""
+    """Return the recorded tunnel, or None if it is not actually usable.
+
+    Liveness is decided by **connecting to the port**, not by checking the
+    process. A `j adb tunnel` orphaned by its parent shell keeps running and stays
+    reparented to init, so ``os.kill(pid, 0)`` succeeds long after the lease that
+    carried the tunnel is gone — and then every later ``j adb`` command reuses a
+    port with nothing behind it and fails with "cannot connect to daemon at
+    tcp:127.0.0.1:<port>". Observed on macOS with a tunnel orphaned hours earlier.
+
+    The process check is kept as a cheap first filter, and a stale file is removed
+    so the next invocation falls straight through to an ephemeral tunnel.
+    """
     try:
         with open(_TUNNEL_STATE_FILE) as f:
             state = json.load(f)
-        # Verify the tunnel process is still running
         os.kill(state["pid"], 0)
-        return state
-    except (FileNotFoundError, json.JSONDecodeError, KeyError, OSError):
+        host, port = state["host"], int(state["port"])
+    except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError, OSError):
+        _remove_tunnel_state()
+        return None
+
+    # The authoritative check: is anything accepting connections there?
+    try:
+        with socket.create_connection((host, port), timeout=2):
+            return state
+    except OSError:
+        _remove_tunnel_state()
         return None
 
 
