@@ -76,6 +76,7 @@ def _make_base_exporter(**overrides):
         "_request_lease_release": AsyncMock(),
         "_telemetry_handler": None,
         "_telemetry_channel": None,
+        "_metrics_stream": None,
     }
     defaults.update(overrides)
     exporter = Exporter.__new__(Exporter)
