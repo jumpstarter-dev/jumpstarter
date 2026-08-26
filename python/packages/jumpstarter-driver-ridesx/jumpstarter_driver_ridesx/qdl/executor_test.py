@@ -1,4 +1,6 @@
-from jumpstarter_driver_ridesx.qdl.executor import build_qdl_command, fix_provision_default_xml
+import subprocess
+
+from jumpstarter_driver_ridesx.qdl.executor import build_qdl_command, check_dmesg, fix_provision_default_xml
 from jumpstarter_driver_ridesx.qdl.firmware_id import identify_firmware_variant
 from jumpstarter_driver_ridesx.qdl.schema import QdlConfig, QdlStep
 
@@ -59,3 +61,25 @@ def test_fix_provision_default_xml_strips_invalid_header(tmp_path):
     fix_provision_default_xml(ufs_dir)
     content = provision.read_text(encoding="utf-8")
     assert content.startswith("<?xml")
+
+
+def test_check_dmesg_does_not_clear_kernel_log(monkeypatch):
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="line1\nUSB QTI_HS seen\n")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    check_dmesg("USB QTI_HS", baseline="line1\n")
+    assert calls == [["dmesg"]]
+    assert "-c" not in calls[0]
+
+
+def test_check_dmesg_finds_marker_in_tail(monkeypatch):
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, stdout="old\nProduct: Android\n"),
+    )
+    check_dmesg("Product: Android")

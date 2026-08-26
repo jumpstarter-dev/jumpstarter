@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 from collections.abc import AsyncGenerator
@@ -59,6 +60,10 @@ class QualcommFlasher(Driver):
         default=2.0,
         metadata={"help": "Delay between power off and on when identifying firmware (seconds)"},
     )
+    tac_command_timeout: float = field(
+        default=10.0,
+        metadata={"help": "Timeout for each TAC serial command acknowledgement (seconds)"},
+    )
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
@@ -78,7 +83,13 @@ class QualcommFlasher(Driver):
     async def _set_mode(self, mode: str, check_dmesg: str | None = None) -> None:
         from .executor import set_device_mode
 
-        await set_device_mode(tac=self.children["tac"], profile=self.profile, mode=mode, check=check_dmesg)
+        await set_device_mode(
+            tac=self.children["tac"],
+            profile=self.profile,
+            mode=mode,
+            check=check_dmesg,
+            tac_timeout=self.tac_command_timeout,
+        )
 
     @export
     async def boot_to_edl(self) -> None:
@@ -91,9 +102,27 @@ class QualcommFlasher(Driver):
     @export
     async def power_cycle(self) -> None:
         tac = self.children["tac"]
-        await send_tac_sequence(tac, self.profile.power_off_commands)
+        await send_tac_sequence(tac, self.profile.power_off_commands, timeout=self.tac_command_timeout)
         await asyncio.sleep(self.power_cycle_delay)
-        await send_tac_sequence(tac, self.profile.power_on_commands)
+        await send_tac_sequence(tac, self.profile.power_on_commands, timeout=self.tac_command_timeout)
+
+    @staticmethod
+    def _safe_extractall(archive: tarfile.TarFile, extract_root: Path) -> None:
+        if sys.version_info >= (3, 12):
+            archive.extractall(path=extract_root, filter="data")
+            return
+        destination = extract_root.resolve()
+        for member in archive.getmembers():
+            if member.isdev() or member.issym() or member.islnk():
+                raise tarfile.ExtractError(f"Blocked special file in archive: {member.name}")
+            target = (destination / member.name).resolve()
+            try:
+                target.relative_to(destination)
+            except ValueError as exc:
+                raise tarfile.ExtractError(
+                    f"Blocked path traversal in archive: {member.name}"
+                ) from exc
+        archive.extractall(path=extract_root)
 
     def _extract_archive(self, archive_path: Path, work_dir: Path, manifest: FirmwareManifest | None) -> None:
         extract_root = work_dir
@@ -101,7 +130,7 @@ class QualcommFlasher(Driver):
             extract_root = work_dir / manifest.data.folder
             extract_root.mkdir(parents=True, exist_ok=True)
         with tarfile.open(archive_path, mode="r:*") as archive:
-            archive.extractall(path=extract_root)
+            self._safe_extractall(archive, extract_root)
 
     def _load_manifest_from_archive(self, archive_path: Path) -> FirmwareManifest | None:
         with tarfile.open(archive_path, mode="r:*") as archive:
@@ -268,6 +297,7 @@ class QualcommFlasher(Driver):
             firmware_root=firmware_root,
             qdl_timeout=self.qdl_timeout,
             fastboot_timeout=self.fastboot_timeout,
+            tac_timeout=self.tac_command_timeout,
         ):
             yield status
 
@@ -304,7 +334,7 @@ class QualcommFlasher(Driver):
             yield FlashStatus(phase="error", message=str(exc))
             if ctx.cache_dir is not None and not self._cache_is_valid(ctx.cache_dir):
                 shutil.rmtree(ctx.cache_dir, ignore_errors=True)
-            raise
+            return
         finally:
             if ctx.temp_work_dir is not None:
                 shutil.rmtree(ctx.temp_work_dir, ignore_errors=True)

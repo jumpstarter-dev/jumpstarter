@@ -1,3 +1,4 @@
+import tarfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -25,6 +26,7 @@ async def test_execute_manifest_sleep_step():
             firmware_root=Path("/tmp/firmware"),
             qdl_timeout=1,
             fastboot_timeout=1,
+            tac_timeout=1,
         )
     ]
     assert statuses[0].phase == "step"
@@ -62,3 +64,19 @@ async def test_qualcomm_flasher_boot_to_edl(tmp_path):
     driver = QualcommFlasher(children={"tac": mock_tac}, work_dir=str(tmp_path))
     await driver.boot_to_edl()
     assert stream.send.await_count > 0
+
+
+def test_safe_extractall_rejects_path_traversal(tmp_path):
+    archive_path = tmp_path / "bad.tar"
+    extract_root = tmp_path / "extract"
+    extract_root.mkdir()
+    with tarfile.open(archive_path, "w") as archive:
+        info = tarfile.TarInfo(name="../escape.txt")
+        info.size = 4
+        import io
+
+        archive.addfile(info, io.BytesIO(b"evil"))
+
+    with tarfile.open(archive_path, "r") as archive:
+        with pytest.raises(tarfile.ExtractError, match="path traversal"):
+            QualcommFlasher._safe_extractall(archive, extract_root)

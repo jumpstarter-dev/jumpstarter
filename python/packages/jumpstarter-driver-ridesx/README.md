@@ -22,6 +22,9 @@ automotive-image-builder build --target ridesx4 --export aboot.simg --mode packa
 $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-ridesx
 ```
 
+The QDL platform flasher (`QualcommFlasher`) is included in this package and in the
+`jumpstarter-all` meta-package. The exporter host must provide `qdl` and `fastboot`.
+
 ## Configuration
 
 The RideSX driver supports two main components:

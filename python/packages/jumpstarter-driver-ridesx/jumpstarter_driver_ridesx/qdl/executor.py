@@ -18,6 +18,29 @@ from .schema import (
 from .soc_profiles import SoCProfile
 from jumpstarter.client.flasher import FlashStatus
 
+RETRY_MODE_DMESG = {
+    "edl": "USB QTI_HS",
+    "fastboot": "Product: Android",
+}
+
+
+def read_dmesg() -> str:
+    result = subprocess.run(["dmesg"], capture_output=True, text=True, check=False)
+    return result.stdout
+
+
+def check_dmesg(expected: str, *, baseline: str | None = None, tail_lines: int = 200) -> None:
+    output = read_dmesg()
+    if baseline is not None:
+        baseline_lines = set(baseline.splitlines())
+        for line in output.splitlines():
+            if line not in baseline_lines and expected in line:
+                return
+    tail = "\n".join(output.splitlines()[-tail_lines:])
+    if expected in tail:
+        return
+    raise RuntimeError(f"Expected dmesg marker '{expected}' not found in recent kernel log")
+
 
 def fix_provision_default_xml(workdir: Path) -> None:
     provision = workdir / "provision_default.xml"
@@ -111,28 +134,24 @@ def run_fastboot_step(step: FastbootStep, firmware_root: Path, *, timeout: int) 
             raise RuntimeError(f"fastboot continue failed: {result.stderr or result.stdout}")
 
 
-def check_dmesg(expected: str) -> None:
-    result = subprocess.run(["dmesg", "-c"], capture_output=True, text=True, check=False)
-    if expected not in result.stdout:
-        raise RuntimeError(f"Expected dmesg marker '{expected}' not found")
-
-
 async def set_device_mode(
     *,
     tac,
     profile: SoCProfile,
     mode: str,
     check: str | None,
+    tac_timeout: float,
 ) -> None:
+    baseline = read_dmesg() if check else None
     if mode == "edl":
-        await send_tac_sequence(tac, profile.edl_commands)
+        await send_tac_sequence(tac, profile.edl_commands, timeout=tac_timeout)
     elif mode == "fastboot":
-        await send_tac_sequence(tac, profile.fastboot_commands)
+        await send_tac_sequence(tac, profile.fastboot_commands, timeout=tac_timeout)
     else:
         raise ValueError(f"Unsupported mode: {mode}")
     if check:
         await asyncio.sleep(1)
-        check_dmesg(check)
+        check_dmesg(check, baseline=baseline)
 
 
 def step_label(step: Step) -> str:
@@ -157,9 +176,16 @@ async def execute_step(
     firmware_root: Path,
     qdl_timeout: int,
     fastboot_timeout: int,
+    tac_timeout: float,
 ) -> None:
     if isinstance(step, SetModeStep):
-        await set_device_mode(tac=tac, profile=profile, mode=step.set_mode, check=step.check_dmesg)
+        await set_device_mode(
+            tac=tac,
+            profile=profile,
+            mode=step.set_mode,
+            check=step.check_dmesg,
+            tac_timeout=tac_timeout,
+        )
         return
     if isinstance(step, SleepStep):
         await asyncio.sleep(step.sleep)
@@ -183,6 +209,7 @@ async def execute_manifest(
     firmware_root: Path,
     qdl_timeout: int,
     fastboot_timeout: int,
+    tac_timeout: float,
     max_attempts: int = 3,
 ):
     total_steps = len(manifest.steps)
@@ -204,6 +231,7 @@ async def execute_manifest(
                     firmware_root=firmware_root,
                     qdl_timeout=qdl_timeout,
                     fastboot_timeout=fastboot_timeout,
+                    tac_timeout=tac_timeout,
                 )
                 break
             except Exception as exc:
@@ -222,7 +250,8 @@ async def execute_manifest(
                     tac=tac,
                     profile=profile,
                     mode=step.retry_mode,
-                    check=None,
+                    check=RETRY_MODE_DMESG.get(step.retry_mode),
+                    tac_timeout=tac_timeout,
                 )
 
 
