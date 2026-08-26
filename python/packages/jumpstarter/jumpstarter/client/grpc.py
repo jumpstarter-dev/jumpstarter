@@ -164,7 +164,14 @@ class Lease(BaseModel):
     effective_begin_time: datetime | None = None
     effective_end_time: datetime | None = None
     deprecated_labels: dict[str, str] = Field(default_factory=dict)
+    # The owner's desired sharing intent (Lease.spec.sharedWith). May include names
+    # that were denied by exporter access policy or that don't exist. Use this only
+    # when surfacing intent (e.g. `jmp share list`); route access decisions through
+    # effective_shared_with / is_accessible_by instead.
     shared_with: list[str] = Field(default_factory=list)
+    # The controller-derived set actually granted access (Lease.status.sharedWith),
+    # after policy/existence filtering. A name in shared_with but not here was denied.
+    effective_shared_with: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -224,7 +231,18 @@ class Lease(BaseModel):
             conditions=data.conditions,
             deprecated_labels=dict(data.deprecated_labels),
             shared_with=list(data.shared_with),
+            effective_shared_with=list(data.effective_shared_with),
         )
+
+    def is_accessible_by(self, client_name: str) -> bool:
+        """Whether client_name may actually connect to this lease.
+
+        Mirrors the controller's Lease.IsAccessibleBy: the owner always has
+        access, and shared clients have access only if they survived policy
+        filtering (i.e. appear in effective_shared_with, not merely the owner's
+        desired shared_with intent).
+        """
+        return client_name == self.client or client_name in self.effective_shared_with
 
     @classmethod
     def rich_add_columns(cls, table, **kwargs):
@@ -272,10 +290,12 @@ class Lease(BaseModel):
         remaining_str = self._format_remaining(expires_at)
 
         tags_str = ",".join(f"{k}={v}" for k, v in sorted(self.tags.items()))
-        shared_str = ",".join(self.shared_with)
+        # Show the effective (granted) set here: this overview should reflect who
+        # actually has access, not unfiltered intent. `jmp share list` renders both.
+        shared_str = ",".join(self.effective_shared_with)
 
         client_str = self.client
-        if viewer and viewer != self.client and viewer in self.shared_with:
+        if viewer and viewer != self.client and self.is_accessible_by(viewer):
             client_str = f"{self.client} (shared)"
 
         table.add_row(
@@ -448,11 +468,7 @@ class LeaseList(BaseModel):
         return LeaseList(leases=filtered, next_page_token=None)
 
     def filter_by_client(self, client_name: str) -> LeaseList:
-        filtered = [
-            lease
-            for lease in self.leases
-            if lease.client == client_name or client_name in lease.shared_with
-        ]
+        filtered = [lease for lease in self.leases if lease.is_accessible_by(client_name)]
         return LeaseList(leases=filtered, next_page_token=None)
 
 

@@ -719,6 +719,86 @@ class TestLeaseListFilterBySelector:
         assert "unknown label selector operator: 'bogus'" in caplog.text
 
 
+class TestLeaseAccessControl:
+    def create_lease(self, *, client="owner", shared=None, effective=None):
+        return Lease(
+            namespace="default",
+            name="test-lease",
+            selector="board=rpi",
+            duration=timedelta(hours=1),
+            client=client,
+            exporter="test-exporter",
+            conditions=[],
+            shared_with=shared or [],
+            effective_shared_with=effective or [],
+        )
+
+    def test_owner_is_always_accessible(self):
+        lease = self.create_lease(client="owner")
+        assert lease.is_accessible_by("owner")
+
+    def test_effective_shared_client_is_accessible(self):
+        lease = self.create_lease(shared=["alice"], effective=["alice"])
+        assert lease.is_accessible_by("alice")
+
+    def test_desired_but_not_effective_is_denied(self):
+        # alice is in the owner's intent but was filtered out by policy.
+        lease = self.create_lease(shared=["alice"], effective=[])
+        assert not lease.is_accessible_by("alice")
+
+    def test_unrelated_client_is_denied(self):
+        lease = self.create_lease(shared=["alice"], effective=["alice"])
+        assert not lease.is_accessible_by("mallory")
+
+    def test_filter_by_client_uses_effective_set(self):
+        owned = self.create_lease(client="me")
+        shared_ok = Lease(
+            namespace="default",
+            name="shared-ok",
+            selector="board=rpi",
+            duration=timedelta(hours=1),
+            client="other",
+            exporter="e",
+            conditions=[],
+            shared_with=["me"],
+            effective_shared_with=["me"],
+        )
+        shared_denied = Lease(
+            namespace="default",
+            name="shared-denied",
+            selector="board=rpi",
+            duration=timedelta(hours=1),
+            client="other",
+            exporter="e",
+            conditions=[],
+            shared_with=["me"],
+            effective_shared_with=[],
+        )
+        result = LeaseList(leases=[owned, shared_ok, shared_denied], next_page_token=None).filter_by_client("me")
+        assert [lease.name for lease in result.leases] == ["test-lease", "shared-ok"]
+
+
+@pytest.mark.asyncio
+async def test_lease_from_protobuf_parses_shared_with_fields():
+    from jumpstarter_protocol import client_pb2
+
+    pb = client_pb2.Lease(
+        name="namespaces/default/leases/test",
+        selector="board=rpi",
+        client="namespaces/default/clients/owner",
+    )
+    pb.duration.FromTimedelta(timedelta(hours=1))
+    pb.shared_with.extend(["alice", "bob"])
+    pb.effective_shared_with.extend(["alice"])
+
+    lease = Lease.from_protobuf(pb)
+    assert lease.shared_with == ["alice", "bob"]
+    assert lease.effective_shared_with == ["alice"]
+    # bob was requested but denied → not accessible; alice survived filtering.
+    assert lease.is_accessible_by("alice")
+    assert not lease.is_accessible_by("bob")
+
+
 @pytest.mark.asyncio
 async def test_create_lease_sets_tags_on_protobuf():
     from jumpstarter_protocol import client_pb2

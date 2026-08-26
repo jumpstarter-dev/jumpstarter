@@ -176,10 +176,15 @@ type Lease struct {
 	// Selector keys on this lease that the controller has marked as deprecated.
 	// Keys are the deprecated label names; values are optional human-readable messages.
 	DeprecatedLabels map[string]string `protobuf:"bytes,16,rep,name=deprecated_labels,json=deprecatedLabels,proto3" json:"deprecated_labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// The list of client resource names that this lease is shared with.
-	SharedWith    []string `protobuf:"bytes,17,rep,name=shared_with,json=sharedWith,proto3" json:"shared_with,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// The requested list of client names to share this lease with (desired intent).
+	SharedWith []string `protobuf:"bytes,17,rep,name=shared_with,json=sharedWith,proto3" json:"shared_with,omitempty"`
+	// The server-computed effective set of client names actually granted shared
+	// access, after the controller evaluates exporter access policies and client
+	// existence. A name present in shared_with but absent here was denied by
+	// policy or does not exist. Use this for access decisions and display.
+	EffectiveSharedWith []string `protobuf:"bytes,18,rep,name=effective_shared_with,json=effectiveSharedWith,proto3" json:"effective_shared_with,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *Lease) Reset() {
@@ -327,6 +332,13 @@ func (x *Lease) GetDeprecatedLabels() map[string]string {
 func (x *Lease) GetSharedWith() []string {
 	if x != nil {
 		return x.SharedWith
+	}
+	return nil
+}
+
+func (x *Lease) GetEffectiveSharedWith() []string {
+	if x != nil {
+		return x.EffectiveSharedWith
 	}
 	return nil
 }
@@ -1020,7 +1032,7 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:_\xeaA\\\n" +
 	"\x18jumpstarter.dev/Exporter\x12+namespaces/{namespace}/exporters/{exporter}*\texporters2\bexporterB\n" +
 	"\n" +
-	"\b_enabled\"\xb3\v\n" +
+	"\b_enabled\"\xec\v\n" +
 	"\x05Lease\x12\x17\n" +
 	"\x04name\x18\x01 \x01(\tB\x03\xe0A\bR\x04name\x12\"\n" +
 	"\bselector\x18\x02 \x01(\tB\x06\xe0A\x02\xe0A\x05R\bselector\x12:\n" +
@@ -1045,7 +1057,8 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\acontext\x18\x0f \x03(\v2).jumpstarter.client.v1.Lease.ContextEntryB\x03\xe0A\x05R\acontext\x12d\n" +
 	"\x11deprecated_labels\x18\x10 \x03(\v22.jumpstarter.client.v1.Lease.DeprecatedLabelsEntryB\x03\xe0A\x03R\x10deprecatedLabels\x12\x1f\n" +
 	"\vshared_with\x18\x11 \x03(\tR\n" +
-	"sharedWith\x1a7\n" +
+	"sharedWith\x127\n" +
+	"\x15effective_shared_with\x18\x12 \x03(\tB\x03\xe0A\x03R\x13effectiveSharedWith\x1a7\n" +
 	"\tTagsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a:\n" +
@@ -1098,13 +1111,13 @@ const file_jumpstarter_client_v1_client_proto_rawDesc = "" +
 	"\x12CreateLeaseRequest\x125\n" +
 	"\x06parent\x18\x01 \x01(\tB\x1d\xe0A\x02\xfaA\x17\x12\x15jumpstarter.dev/LeaseR\x06parent\x12\x1e\n" +
 	"\blease_id\x18\x02 \x01(\tB\x03\xe0A\x01R\aleaseId\x127\n" +
-	"\x05lease\x18\x03 \x01(\v2\x1c.jumpstarter.client.v1.LeaseB\x03\xe0A\x02R\x05lease\"\xe5\x01\n" +
+	"\x05lease\x18\x03 \x01(\v2\x1c.jumpstarter.client.v1.LeaseB\x03\xe0A\x02R\x05lease\"\xeb\x01\n" +
 	"\x12UpdateLeaseRequest\x127\n" +
 	"\x05lease\x18\x01 \x01(\v2\x1c.jumpstarter.client.v1.LeaseB\x03\xe0A\x02R\x05lease\x12@\n" +
 	"\vupdate_mask\x18\x02 \x01(\v2\x1a.google.protobuf.FieldMaskB\x03\xe0A\x01R\n" +
 	"updateMask\x12&\n" +
 	"\x0fadd_shared_with\x18\x04 \x03(\tR\raddSharedWith\x12,\n" +
-	"\x12remove_shared_with\x18\x05 \x03(\tR\x10removeSharedWith\"G\n" +
+	"\x12remove_shared_with\x18\x05 \x03(\tR\x10removeSharedWithJ\x04\b\x03\x10\x04\"G\n" +
 	"\x12DeleteLeaseRequest\x121\n" +
 	"\x04name\x18\x01 \x01(\tB\x1d\xe0A\x02\xfaA\x17\n" +
 	"\x15jumpstarter.dev/LeaseR\x04name\"L\n" +

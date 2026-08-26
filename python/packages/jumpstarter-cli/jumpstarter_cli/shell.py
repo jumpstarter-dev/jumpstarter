@@ -611,7 +611,7 @@ async def _shell_with_signal_handling(  # noqa: C901
 
 def _format_lease_display(lease, viewer: str | None = None) -> str:
     parts = []
-    if viewer and viewer != lease.client and viewer in lease.shared_with:
+    if viewer and viewer != lease.client and lease.is_accessible_by(viewer):
         parts.append(f"shared by {lease.client}")
     if lease.exporter:
         parts.append(f"exporter={lease.exporter}")
@@ -628,11 +628,7 @@ def _format_lease_display(lease, viewer: str | None = None) -> str:
 async def _resolve_lease_from_active_async(config) -> str:
     lease_list = await config.list_leases(only_active=True)
     client_name = config.metadata.name
-    leases = [
-        lease
-        for lease in lease_list.leases
-        if lease.client == client_name or client_name in lease.shared_with
-    ]
+    leases = [lease for lease in lease_list.leases if lease.is_accessible_by(client_name)]
 
     if not leases:
         raise click.UsageError(

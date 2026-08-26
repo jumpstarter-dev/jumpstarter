@@ -374,10 +374,32 @@ class TestRequestAsyncOwnership:
     async def test_raises_when_lease_belongs_to_different_client(self):
         """request_async should raise LeaseError when the lease belongs to another client."""
         lease = self._make_lease(client_name="my-client")
-        lease.get.return_value = Mock(client="other-client", selector=None, effective_end_time=None, shared_with=[])
+        # Not accessible: not the owner and not in the effective share set.
+        lease.get.return_value = Mock(
+            client="other-client",
+            selector=None,
+            effective_end_time=None,
+            is_accessible_by=Mock(return_value=False),
+        )
 
         with pytest.raises(LeaseError, match="belongs to client 'other-client'"):
             await lease.request_async()
+
+    @pytest.mark.anyio
+    async def test_allows_when_client_has_shared_access(self):
+        """request_async should proceed when the client has effective shared access."""
+        lease = self._make_lease(client_name="my-client")
+        # Owned by someone else, but my-client is in the effective share set.
+        lease.get.return_value = Mock(
+            client="other-client",
+            selector=None,
+            effective_end_time=None,
+            is_accessible_by=Mock(return_value=True),
+        )
+        lease._acquire = AsyncMock(return_value=lease)
+
+        result = await lease.request_async()
+        assert result is lease
 
     @pytest.mark.anyio
     async def test_skips_check_when_client_name_is_none(self):

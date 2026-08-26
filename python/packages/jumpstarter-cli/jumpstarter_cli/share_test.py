@@ -41,6 +41,7 @@ def test_share_remove_calls_update_lease():
 def test_share_list_shows_shared_clients(capsys):
     lease_entry = Mock()
     lease_entry.shared_with = ["alice", "bob"]
+    lease_entry.effective_shared_with = ["alice", "bob"]
 
     config = Mock()
     config.get_lease.return_value = lease_entry
@@ -52,6 +53,26 @@ def test_share_list_shows_shared_clients(capsys):
     assert "my-lease" in captured.out
     assert "alice" in captured.out
     assert "bob" in captured.out
+    # Both are effective, so neither should be flagged as inactive.
+    assert "not active" not in captured.out
+
+
+def test_share_list_flags_denied_clients(capsys):
+    # bob is in the owner's desired intent but was denied by policy / not found,
+    # so it must be rendered as inactive while alice (effective) is not.
+    lease_entry = Mock()
+    lease_entry.shared_with = ["alice", "bob"]
+    lease_entry.effective_shared_with = ["alice"]
+
+    config = Mock()
+    config.get_lease.return_value = lease_entry
+
+    inspect.unwrap(share_list.callback)(config=config, lease="my-lease")
+
+    captured = capsys.readouterr()
+    lines = {line.strip().split("  ")[0]: line for line in captured.out.splitlines() if line.startswith("  ")}
+    assert "not active" in lines["bob"]
+    assert "not active" not in lines["alice"]
 
 
 def test_share_list_not_shared(capsys):

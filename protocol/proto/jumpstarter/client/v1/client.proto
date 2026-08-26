@@ -155,8 +155,13 @@ message Lease {
   // Selector keys on this lease that the controller has marked as deprecated.
   // Keys are the deprecated label names; values are optional human-readable messages.
   map<string, string> deprecated_labels = 16 [(google.api.field_behavior) = OUTPUT_ONLY];
-  // The list of client names that this lease is shared with.
+  // The requested list of client names to share this lease with (desired intent).
   repeated string shared_with = 17;
+  // The server-computed effective set of client names actually granted shared
+  // access, after the controller evaluates exporter access policies and client
+  // existence. A name present in shared_with but absent here was denied by
+  // policy or does not exist. Use this for access decisions and display.
+  repeated string effective_shared_with = 18 [(google.api.field_behavior) = OUTPUT_ONLY];
 }
 
 // Request to retrieve an exporter.
@@ -247,6 +252,8 @@ message CreateLeaseRequest {
 
 // Request to update a lease.
 message UpdateLeaseRequest {
+  // Field 3 was never assigned; reserved to prevent accidental reuse.
+  reserved 3;
   // The lease resource with updated fields.
   Lease lease = 1 [(google.api.field_behavior) = REQUIRED];
   // The set of fields to update.
