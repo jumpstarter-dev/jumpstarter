@@ -16,8 +16,8 @@ limitations under the License.
 
 // jumpstarter-telemetry reverse-scrapes exporter metrics via MetricsStream and
 // receives structured log entries via PushLogs. Logs are written to structured
-// stdout for downstream log shippers (Promtail, Grafana Alloy, Vector).
-// Loki push is a later Phase 3 PR.
+// stdout for downstream log shippers (Promtail, Grafana Alloy, Vector) and
+// optionally pushed to Loki's HTTP API when -loki-url is set.
 //
 // TLS: always enabled. Set EXTERNAL_CERT_PEM and EXTERNAL_KEY_PEM to file paths of
 // operator-mounted cert/key (e.g. from a cert-manager Secret); when absent a
@@ -78,6 +78,10 @@ func main() {
 	var scrapeTimeout time.Duration
 	var driverTypeEnum string
 	var exemplarKeys string
+	var lokiURL string
+	var lokiQueueDepth int
+	var lokiInsecure bool
+	var lokiCAFile string
 	flag.StringVar(&bindAddr, "grpc-bind", ":9093", "TCP address to bind the gRPC server to")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080",
 		"TCP address for HTTP GET /metrics, /healthz, and /readyz. Use 0 to disable.")
@@ -87,6 +91,14 @@ func main() {
 		"Comma-separated allowlist of driver_type values; others are remapped to other")
 	flag.StringVar(&exemplarKeys, "exemplar-keys", strings.Join(service.DefaultExemplarKeys, ","),
 		"Comma-separated allowlist of Prometheus exemplar keys")
+	flag.StringVar(&lokiURL, "loki-url", "",
+		"Loki HTTP push URL (optional; telemetry runs metrics-only when empty)")
+	flag.IntVar(&lokiQueueDepth, "loki-queue-depth", 10000,
+		"Ring buffer depth for Loki log push")
+	flag.BoolVar(&lokiInsecure, "loki-insecure-skip-verify", false,
+		"Disable TLS certificate verification for Loki (development/testing only)")
+	flag.StringVar(&lokiCAFile, "loki-ca-file", "",
+		"PEM CA bundle used to verify the Loki TLS endpoint")
 
 	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
@@ -124,6 +136,18 @@ func main() {
 		DriverTypeEnum:  splitCSV(driverTypeEnum),
 		ExemplarKeys:    splitCSV(exemplarKeys),
 		Signer:          signer,
+		LokiConfig: service.LokiConfig{
+			URL:                lokiURL,
+			Username:           os.Getenv("LOKI_USERNAME"),
+			Password:           os.Getenv("LOKI_PASSWORD"),
+			Token:              os.Getenv("LOKI_TOKEN"),
+			CAFile:             lokiCAFile,
+			InsecureSkipVerify: lokiInsecure,
+			QueueDepth:         lokiQueueDepth,
+		},
+	}
+	if lokiURL != "" {
+		logger.Info("Loki HTTP push configured", "url", lokiURL, "queueDepth", lokiQueueDepth)
 	}
 
 	// Register signal handler before starting the service so no signal
