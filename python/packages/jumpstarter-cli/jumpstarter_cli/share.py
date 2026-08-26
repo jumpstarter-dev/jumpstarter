@@ -44,6 +44,12 @@ def share_add(config, lease: str, clients: tuple[str, ...], output: OutputType):
 def share_remove(config, lease: str, clients: tuple[str, ...], output: OutputType):
     """Revoke clients' access to a shared lease.
 
+    Removal is a soft guarantee: it stops the controller from granting the
+    client *new* connections, and a shared client's live `jmp shell` session
+    exits on its own within a short poll interval. It does not forcibly kill a
+    router stream the exporter has already established. To hard-stop everyone
+    immediately, end the lease with `jmp delete lease` (or release it).
+
     Example:
 
     \b
