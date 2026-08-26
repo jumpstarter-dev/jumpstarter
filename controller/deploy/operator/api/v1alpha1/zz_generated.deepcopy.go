@@ -134,6 +134,11 @@ func (in *ConfigMapKeySelector) DeepCopy() *ConfigMapKeySelector {
 func (in *ControllerConfig) DeepCopyInto(out *ControllerConfig) {
 	*out = *in
 	in.Resources.DeepCopyInto(&out.Resources)
+	if in.Replicas != nil {
+		in, out := &in.Replicas, &out.Replicas
+		*out = new(int32)
+		**out = **in
+	}
 	if in.PodAnnotations != nil {
 		in, out := &in.PodAnnotations, &out.PodAnnotations
 		*out = make(map[string]string, len(*in))
@@ -779,6 +784,11 @@ func (in *RouteConfig) DeepCopy() *RouteConfig {
 func (in *RoutersConfig) DeepCopyInto(out *RoutersConfig) {
 	*out = *in
 	in.Resources.DeepCopyInto(&out.Resources)
+	if in.Replicas != nil {
+		in, out := &in.Replicas, &out.Replicas
+		*out = new(int32)
+		**out = **in
+	}
 	if in.PodAnnotations != nil {
 		in, out := &in.PodAnnotations, &out.PodAnnotations
 		*out = make(map[string]string, len(*in))
