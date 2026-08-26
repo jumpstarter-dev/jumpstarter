@@ -35,6 +35,10 @@ def make_bare_exporter():
     exp = Exporter.__new__(Exporter)
     exp._telemetry_handler = None
     exp._telemetry_channel = None
+    exp._metrics_stream = None
+    exp.labels = {"jumpstarter.dev/name": "test-exporter"}
+    exp.token = "test-token"
+    exp.namespace = ""
 
     tls = MagicMock()
     tls.insecure = False
@@ -100,6 +104,7 @@ async def test_setup_telemetry_rpc_error_is_silently_ignored():
         await exp._setup_telemetry()
 
     assert exp._telemetry_handler is None
+    assert exp._metrics_stream is None
 
 
 async def test_setup_telemetry_no_endpoints_returns_early():
@@ -113,6 +118,7 @@ async def test_setup_telemetry_no_endpoints_returns_early():
         await exp._setup_telemetry()
 
     assert exp._telemetry_handler is None
+    assert exp._metrics_stream is None
 
 
 async def test_setup_telemetry_insecure_uses_insecure_channel():
@@ -131,6 +137,9 @@ async def test_setup_telemetry_insecure_uses_insecure_channel():
 
     mock_insecure.assert_called_once_with(ep.endpoint)
     assert exp._telemetry_handler is not None
+    assert exp._metrics_stream is not None
+    assert exp._metrics_stream.identity == "test-exporter"
+    assert exp._metrics_stream.token == "test-token"
 
 
 async def test_setup_telemetry_env_var_insecure(monkeypatch):
@@ -202,3 +211,27 @@ async def test_setup_telemetry_applies_min_severity():
 
     assert exp._telemetry_handler is not None
     assert exp._telemetry_handler.level == logging.WARNING
+    assert exp._metrics_stream is not None
+
+
+def test_start_telemetry_tasks_starts_flush_loop_and_metrics_stream():
+    """MetricsStream runs next to PushLogs flush_loop (JEP-0013 reverse-scrape)."""
+    exp = make_bare_exporter()
+    handler = MagicMock()
+    stream = MagicMock()
+    exp._telemetry_handler = handler
+    exp._metrics_stream = stream
+    tg = MagicMock()
+
+    exp._start_telemetry_tasks(tg)
+
+    started = [c.args[0] for c in tg.start_soon.call_args_list]
+    assert handler.flush_loop in started
+    assert stream.run in started
+
+
+def test_start_telemetry_tasks_skips_when_telemetry_disabled():
+    exp = make_bare_exporter()
+    tg = MagicMock()
+    exp._start_telemetry_tasks(tg)
+    tg.start_soon.assert_not_called()
