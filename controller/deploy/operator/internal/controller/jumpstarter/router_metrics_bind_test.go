@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 var _ = Describe("createRouterDeployment metrics bind", func() {
@@ -39,7 +40,7 @@ var _ = Describe("createRouterDeployment metrics bind", func() {
 				Routers: operatorv1alpha1.RoutersConfig{
 					Image:           "example.com/router:test",
 					ImagePullPolicy: corev1.PullIfNotPresent,
-					Replicas:        1,
+					Replicas:        ptr.To(int32(1)),
 				},
 			},
 		}

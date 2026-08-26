@@ -39,6 +39,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
@@ -523,7 +524,7 @@ provisioning:
 			}, jumpstarter)
 			Expect(err).NotTo(HaveOccurred())
 
-			jumpstarter.Spec.Controller.Replicas = 3
+			jumpstarter.Spec.Controller.Replicas = ptr.To(int32(3))
 			Expect(k8sClient.Update(ctx, jumpstarter)).To(Succeed())
 			DeferCleanup(func() {
 				restore := &operatorv1alpha1.Jumpstarter{}
@@ -534,7 +535,7 @@ provisioning:
 				if getErr != nil {
 					return
 				}
-				restore.Spec.Controller.Replicas = 1
+				restore.Spec.Controller.Replicas = ptr.To(int32(1))
 				_ = k8sClient.Update(ctx, restore)
 			})
 
@@ -727,7 +728,7 @@ provisioning:
 			}, jumpstarter)
 			Expect(err).NotTo(HaveOccurred())
 
-			jumpstarter.Spec.Routers.Replicas = 3
+			jumpstarter.Spec.Routers.Replicas = ptr.To(int32(3))
 			err = k8sClient.Update(ctx, jumpstarter)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -735,7 +736,7 @@ provisioning:
 			allRoutersDeploymentsCreated := func(g Gomega) bool {
 				deployment := &appsv1.Deployment{}
 
-				for i := 0; i < int(jumpstarter.Spec.Routers.Replicas); i++ {
+				for i := 0; i < int(*jumpstarter.Spec.Routers.Replicas); i++ {
 					err := k8sClient.Get(ctx, types.NamespacedName{
 						Name:      fmt.Sprintf("jumpstarter-router-%d", i),
 						Namespace: dynamicTestNamespace,
@@ -752,7 +753,7 @@ provisioning:
 			By("verifying the new router services were created")
 			allRoutersServicesCreated := func(g Gomega) bool {
 				service := &corev1.Service{}
-				for i := 0; i < int(jumpstarter.Spec.Routers.Replicas); i++ {
+				for i := 0; i < int(*jumpstarter.Spec.Routers.Replicas); i++ {
 					err := k8sClient.Get(ctx, types.NamespacedName{
 						Name:      fmt.Sprintf("jumpstarter-router-%d-np", i),
 						Namespace: dynamicTestNamespace,
@@ -784,7 +785,7 @@ provisioning:
 			}, jumpstarter)
 			Expect(err).NotTo(HaveOccurred())
 
-			jumpstarter.Spec.Routers.Replicas = 1
+			jumpstarter.Spec.Routers.Replicas = ptr.To(int32(1))
 			err = k8sClient.Update(ctx, jumpstarter)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -2049,20 +2050,20 @@ dSignatureRotatedSignatureRotatedSignatureRotatedSignatureRotatedSig==
 				},
 				Spec: operatorv1alpha1.JumpstarterSpec{
 					BaseDomain: "apps-crc.testing",
-					Controller: operatorv1alpha1.ControllerConfig{
-						Image:           image,
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						Replicas:        1,
-						GRPC: operatorv1alpha1.GRPCConfig{
-							Endpoints: []operatorv1alpha1.Endpoint{
-								{Address: fmt.Sprintf("grpc.%s:8082", jwtCATestNamespace)},
-							},
+				Controller: operatorv1alpha1.ControllerConfig{
+					Image:           image,
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					Replicas:        ptr.To(int32(1)),
+					GRPC: operatorv1alpha1.GRPCConfig{
+						Endpoints: []operatorv1alpha1.Endpoint{
+							{Address: fmt.Sprintf("grpc.%s:8082", jwtCATestNamespace)},
 						},
 					},
-					Routers: operatorv1alpha1.RoutersConfig{
-						Image:           image,
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						Replicas:        1,
+				},
+				Routers: operatorv1alpha1.RoutersConfig{
+					Image:           image,
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					Replicas:        ptr.To(int32(1)),
 						GRPC: operatorv1alpha1.GRPCConfig{
 							Endpoints: []operatorv1alpha1.Endpoint{
 								{Address: fmt.Sprintf("router.%s:8083", jwtCATestNamespace)},

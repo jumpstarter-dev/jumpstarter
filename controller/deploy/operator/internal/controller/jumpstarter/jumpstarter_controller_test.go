@@ -65,10 +65,10 @@ var _ = Describe("Jumpstarter Controller", func() {
 						CertManager: operatorv1alpha1.CertManagerConfig{
 							Enabled: false, // Disable for unit tests - cert-manager CRDs not available in envtest
 						},
-						Controller: operatorv1alpha1.ControllerConfig{
-							Image:           "quay.io/jumpstarter/jumpstarter:latest",
-							ImagePullPolicy: "IfNotPresent",
-							Replicas:        1,
+					Controller: operatorv1alpha1.ControllerConfig{
+						Image:           "quay.io/jumpstarter/jumpstarter:latest",
+						ImagePullPolicy: "IfNotPresent",
+						Replicas:        ptr.To(int32(1)),
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("100m"),
@@ -83,10 +83,10 @@ var _ = Describe("Jumpstarter Controller", func() {
 								},
 							},
 						},
-						Routers: operatorv1alpha1.RoutersConfig{
-							Image:           "quay.io/jumpstarter/jumpstarter:latest",
-							ImagePullPolicy: "IfNotPresent",
-							Replicas:        1,
+					Routers: operatorv1alpha1.RoutersConfig{
+						Image:           "quay.io/jumpstarter/jumpstarter:latest",
+						ImagePullPolicy: "IfNotPresent",
+						Replicas:        ptr.To(int32(1)),
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("100m"),
