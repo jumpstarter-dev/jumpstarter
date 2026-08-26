@@ -55,6 +55,10 @@ var (
 	defaultTelemetryDriverTypeEnum = []string{"power", "storage", "network", "serial", "console", "video", "composite"}
 	defaultTelemetryExemplarKeys   = []string{"client", "lease_id"}
 	defaultTelemetryScrapeTimeout  = 7 * time.Second
+	defaultTelemetryLokiQueueDepth = int32(10000)
+	lokiCAMountPath                = "/loki-ca"
+	lokiCAFilePath                 = "/loki-ca/ca.crt"
+	lokiCAVolumeName               = "loki-ca"
 )
 
 // reconcileTelemetryDeploymentStage reconciles only the telemetry Deployment (and cleanup).
@@ -323,13 +327,28 @@ func telemetryContainerArgs(t *operatorv1alpha1.TelemetryConfig) []string {
 	if len(keys) == 0 {
 		keys = defaultTelemetryExemplarKeys
 	}
-	return []string{
+	args := []string{
 		fmt.Sprintf("--grpc-bind=:%d", telemetryPort),
 		fmt.Sprintf("-metrics-bind-address=:%d", telemetryMetricsPort),
 		fmt.Sprintf("-scrape-timeout=%s", timeout),
 		fmt.Sprintf("-driver-type-enum=%s", strings.Join(enum, ",")),
 		fmt.Sprintf("-exemplar-keys=%s", strings.Join(keys, ",")),
 	}
+	if t.Loki.URL != "" {
+		args = append(args, fmt.Sprintf("-loki-url=%s", t.Loki.URL))
+		depth := t.Backpressure.QueueDepth
+		if depth <= 0 {
+			depth = defaultTelemetryLokiQueueDepth
+		}
+		args = append(args, fmt.Sprintf("-loki-queue-depth=%d", depth))
+		if t.Loki.TLS.InsecureSkipVerify {
+			args = append(args, "-loki-insecure-skip-verify=true")
+		}
+		if t.Loki.TLS.CASecretRef != "" {
+			args = append(args, fmt.Sprintf("-loki-ca-file=%s", lokiCAFilePath))
+		}
+	}
+	return args
 }
 
 // createTelemetryDeployment builds the desired Deployment for the telemetry service.
@@ -392,6 +411,60 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter, tlsSec
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName:  tlsSecretName,
+					DefaultMode: &defaultMode,
+				},
+			},
+		})
+	}
+
+	if t.Loki.URL != "" && t.Loki.SecretRef != "" {
+		optional := ptr.To(true)
+		envVars = append(envVars,
+			corev1.EnvVar{
+				Name: "LOKI_USERNAME",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: t.Loki.SecretRef},
+						Key:                  "username",
+						Optional:             optional,
+					},
+				},
+			},
+			corev1.EnvVar{
+				Name: "LOKI_PASSWORD",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: t.Loki.SecretRef},
+						Key:                  "password",
+						Optional:             optional,
+					},
+				},
+			},
+			corev1.EnvVar{
+				Name: "LOKI_TOKEN",
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{Name: t.Loki.SecretRef},
+						Key:                  "token",
+						Optional:             optional,
+					},
+				},
+			},
+		)
+	}
+
+	if t.Loki.URL != "" && t.Loki.TLS.CASecretRef != "" {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      lokiCAVolumeName,
+			MountPath: lokiCAMountPath,
+			ReadOnly:  true,
+		})
+		defaultMode := int32(420)
+		volumes = append(volumes, corev1.Volume{
+			Name: lokiCAVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  t.Loki.TLS.CASecretRef,
 					DefaultMode: &defaultMode,
 				},
 			},

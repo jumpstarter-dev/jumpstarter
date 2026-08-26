@@ -2100,6 +2100,18 @@ spec:
                   structured log entries from exporters via gRPC. The controller advertises the
                   telemetry endpoint to exporters so they can push logs without cluster credentials.
                 properties:
+                  backpressure:
+                    description: Backpressure configures the Loki log push ring buffer.
+                    properties:
+                      queueDepth:
+                        default: 10000
+                        description: |-
+                          Ring buffer depth for Loki log push. On overflow, dropped entries are
+                          replaced by a single drop-marker LogEntry.
+                        format: int32
+                        minimum: 1
+                        type: integer
+                    type: object
                   enabled:
                     default: false
                     description: |-
@@ -2164,10 +2176,39 @@ spec:
                             type: string
                         type: object
                     type: object
+                  loki:
+                    description: |-
+                      Loki configures optional HTTP push of ingested logs to a Loki-compatible
+                      endpoint. When url is empty, telemetry runs metrics-only.
+                    properties:
+                      secretRef:
+                        description: |-
+                          Secret with Loki credentials (username/password and/or token keys).
+                          See JEP-0013 DD-5: only the telemetry pod holds Loki credentials.
+                        type: string
+                      tls:
+                        description: TLS settings for the Loki endpoint.
+                        properties:
+                          caSecretRef:
+                            description: Secret containing a CA bundle (ca.crt key)
+                              to trust for the Loki endpoint.
+                            type: string
+                          insecureSkipVerify:
+                            default: false
+                            description: Disable TLS certificate verification (development/testing
+                              only).
+                            type: boolean
+                        type: object
+                      url:
+                        description: |-
+                          Loki push endpoint (http:// or https://). Optional — telemetry can run
+                          metrics-only without Loki. grpc:// is reserved but not implemented yet.
+                        type: string
+                    type: object
                   metrics:
                     description: |-
                       Metrics configures reverse-scrape fan-out and Prometheus exposition
-                      (JEP-0013). Loki and ServiceMonitor fields are later phases.
+                      (JEP-0013). ServiceMonitor fields are a later phase.
                     properties:
                       driverTypeEnum:
                         default:

@@ -43,7 +43,12 @@ func (s *TelemetryService) initScrapeTimeouts() {
 		Name: metricsParseErrorsMetric,
 		Help: "Exporter MetricsStream snapshots omitted because OpenMetrics parse failed.",
 	}, []string{labelExporter})
-	s.metricsRegistry.MustRegister(s.scrapeTimeouts, s.parseErrors)
+	s.droppedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: droppedTotalMetric,
+		Help: "Log entries dropped due to Loki backpressure.",
+	}, []string{"destination"})
+	s.metricsRegistry.MustRegister(s.scrapeTimeouts, s.parseErrors, s.droppedTotal)
+	s.droppedTotal.WithLabelValues(droppedDestination).Add(0)
 }
 
 func (s *TelemetryService) recordMetricsParseError(exporter string, err error) {
@@ -105,9 +110,7 @@ func (s *TelemetryService) handleHealthz(w http.ResponseWriter, _ *http.Request)
 }
 
 // handleReadyz is 200 once the gRPC listener is bound.
-// JEP DD-7 also gates on Loki reachability and a connected exporter; Loki is
-// Phase 3 PR D, and requiring an exporter would keep an empty lab unready
-// (Prometheus could not scrape jumpstarter_scrape_timeouts_total).
+// Loki is optional (metrics-only is valid) and is not a readiness gate.
 func (s *TelemetryService) handleReadyz(w http.ResponseWriter, _ *http.Request) {
 	if !s.grpcReady.Load() {
 		http.Error(w, "grpc not ready\n", http.StatusServiceUnavailable)
