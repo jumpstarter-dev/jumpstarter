@@ -91,10 +91,12 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 
 	// Check controller deployment readiness
 	controllerReady, controllerMsg := r.checkControllerDeploymentReady(ctx, js)
+	controllerReason := conditionReason(controllerReady, "DeploymentAvailable", "DeploymentNotAvailable")
+	if js.Spec.Controller.Replicas != nil && *js.Spec.Controller.Replicas == 0 {
+		controllerReason = "Suspended"
+	}
 	setCondition(js, operatorv1alpha1.ConditionTypeControllerDeploymentReady,
-		controllerReady,
-		conditionReason(controllerReady, "DeploymentAvailable", "DeploymentNotAvailable"),
-		controllerMsg)
+		controllerReady, controllerReason, controllerMsg)
 	if !controllerReady {
 		allReady = false
 		messages = append(messages, controllerMsg)
@@ -102,10 +104,12 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 
 	// Check router deployments readiness
 	routersReady, routersMsg := r.checkRouterDeploymentsReady(ctx, js)
+	routersReason := conditionReason(routersReady, "AllDeploymentsAvailable", "DeploymentsNotAvailable")
+	if js.Spec.Routers.Replicas != nil && *js.Spec.Routers.Replicas == 0 {
+		routersReason = "Suspended"
+	}
 	setCondition(js, operatorv1alpha1.ConditionTypeRouterDeploymentsReady,
-		routersReady,
-		conditionReason(routersReady, "AllDeploymentsAvailable", "DeploymentsNotAvailable"),
-		routersMsg)
+		routersReady, routersReason, routersMsg)
 	if !routersReady {
 		allReady = false
 		messages = append(messages, routersMsg)
@@ -114,10 +118,12 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 	// Check telemetry deployment readiness (only if enabled), clear stale condition when disabled.
 	if js.Spec.Telemetry != nil && js.Spec.Telemetry.Enabled {
 		telReady, telMsg := r.checkTelemetryDeploymentReady(ctx, js)
+		telReason := conditionReason(telReady, "DeploymentAvailable", "DeploymentNotAvailable")
+		if js.Spec.Telemetry.Replicas != nil && *js.Spec.Telemetry.Replicas == 0 {
+			telReason = "Suspended"
+		}
 		setCondition(js, operatorv1alpha1.ConditionTypeTelemetryDeploymentReady,
-			telReady,
-			conditionReason(telReady, "DeploymentAvailable", "DeploymentNotAvailable"),
-			telMsg)
+			telReady, telReason, telMsg)
 		if !telReady {
 			allReady = false
 			messages = append(messages, telMsg)
@@ -126,16 +132,26 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 		meta.RemoveStatusCondition(&js.Status.Conditions, operatorv1alpha1.ConditionTypeTelemetryDeploymentReady)
 	}
 
-	// Check ExporterSet controller deployments readiness (only if configured)
-	if js.Spec.ExporterSets != nil && hasEnabledProvisioners(js.Spec.ExporterSets.Provisioners) {
-		esReady, esMsg := r.checkExporterSetControllersReady(ctx, js)
-		setCondition(js, operatorv1alpha1.ConditionTypeExporterSetControllersReady,
-			esReady,
-			conditionReason(esReady, "AllControllersAvailable", "ControllersNotAvailable"),
-			esMsg)
-		if !esReady {
-			allReady = false
-			messages = append(messages, esMsg)
+	// Check ExporterSet controller deployments readiness (only if configured).
+	// When ExporterSets is configured but no active provisioners remain (all disabled or
+	// suspended via replicas: 0), set the condition to True/Suspended so a previous stale
+	// False condition does not block overall readiness.
+	if js.Spec.ExporterSets != nil {
+		if hasEnabledProvisioners(js.Spec.ExporterSets.Provisioners) {
+			esReady, esMsg := r.checkExporterSetControllersReady(ctx, js)
+			setCondition(js, operatorv1alpha1.ConditionTypeExporterSetControllersReady,
+				esReady,
+				conditionReason(esReady, "AllControllersAvailable", "ControllersNotAvailable"),
+				esMsg)
+			if !esReady {
+				allReady = false
+				messages = append(messages, esMsg)
+			}
+		} else {
+			setCondition(js, operatorv1alpha1.ConditionTypeExporterSetControllersReady,
+				true,
+				"Suspended",
+				"All ExporterSet provisioners are suspended or disabled")
 		}
 	}
 
@@ -288,7 +304,11 @@ func (r *JumpstarterReconciler) checkRouterCertificatesReady(ctx context.Context
 	allReady := true
 	var notReadyRouters []int32
 
-	for i := int32(0); i < js.Spec.Routers.Replicas; i++ {
+	certRouterReplicas := int32(0)
+	if js.Spec.Routers.Replicas != nil {
+		certRouterReplicas = *js.Spec.Routers.Replicas
+	}
+	for i := int32(0); i < certRouterReplicas; i++ {
 		secretName := GetRouterCertSecretName(js, i)
 		secret := &corev1.Secret{}
 		err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: js.Namespace}, secret)
@@ -322,13 +342,19 @@ func (r *JumpstarterReconciler) checkRouterCertificatesReady(ctx context.Context
 	}
 
 	if allReady {
-		return true, fmt.Sprintf("All %d router TLS certificates ready", js.Spec.Routers.Replicas)
+		return true, fmt.Sprintf("All %d router TLS certificates ready", certRouterReplicas)
 	}
 	return false, fmt.Sprintf("Router TLS certificates pending for replicas: %v", notReadyRouters)
 }
 
-// checkControllerDeploymentReady checks if the controller deployment is available
+// checkControllerDeploymentReady checks if the controller deployment is available.
+// When spec.controller.replicas == 0 the deployment is intentionally suspended and
+// is reported as ready (true) with a "Suspended" reason.
 func (r *JumpstarterReconciler) checkControllerDeploymentReady(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (bool, string) {
+	if js.Spec.Controller.Replicas != nil && *js.Spec.Controller.Replicas == 0 {
+		return true, "Controller deployment suspended (replicas: 0)"
+	}
+
 	deploymentName := fmt.Sprintf("%s-controller", js.Name)
 	deployment := &appsv1.Deployment{}
 	err := r.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: js.Namespace}, deployment)
@@ -352,13 +378,24 @@ func (r *JumpstarterReconciler) checkControllerDeploymentReady(ctx context.Conte
 	return false, fmt.Sprintf("Controller deployment %s has no Available condition", deploymentName)
 }
 
-// checkRouterDeploymentsReady checks if all router deployments are available
+// checkRouterDeploymentsReady checks if all router deployments are available.
+// When spec.routers.replicas == 0 all routers are intentionally suspended and
+// are reported as ready (true) with a "Suspended" reason.
 func (r *JumpstarterReconciler) checkRouterDeploymentsReady(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (bool, string) {
+	routerReplicas := int32(0)
+	if js.Spec.Routers.Replicas != nil {
+		routerReplicas = *js.Spec.Routers.Replicas
+	}
+
+	if routerReplicas == 0 {
+		return true, "Router deployments suspended (replicas: 0)"
+	}
+
 	log := logf.FromContext(ctx)
 	allReady := true
 	var notReadyRouters []int32
 
-	for i := int32(0); i < js.Spec.Routers.Replicas; i++ {
+	for i := int32(0); i < routerReplicas; i++ {
 		deploymentName := fmt.Sprintf("%s-router-%d", js.Name, i)
 		deployment := &appsv1.Deployment{}
 		err := r.Get(ctx, types.NamespacedName{Name: deploymentName, Namespace: js.Namespace}, deployment)
@@ -394,7 +431,7 @@ func (r *JumpstarterReconciler) checkRouterDeploymentsReady(ctx context.Context,
 	}
 
 	if allReady {
-		return true, fmt.Sprintf("All %d router deployments available", js.Spec.Routers.Replicas)
+		return true, fmt.Sprintf("All %d router deployments available", routerReplicas)
 	}
 	return false, fmt.Sprintf("Router deployments not available for replicas: %v", notReadyRouters)
 }
@@ -432,7 +469,8 @@ func conditionMessage(status bool, trueMessage, falseMessage string) string {
 }
 
 // checkExporterSetControllersReady checks if all enabled ExporterSet provisioner
-// controller deployments are available.
+// controller deployments are available. Provisioners with replicas == 0 are treated
+// as intentionally suspended and do not block readiness.
 func (r *JumpstarterReconciler) checkExporterSetControllersReady(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (bool, string) {
 	log := logf.FromContext(ctx)
 	allReady := true
@@ -441,6 +479,11 @@ func (r *JumpstarterReconciler) checkExporterSetControllersReady(ctx context.Con
 	for _, prov := range js.Spec.ExporterSets.Provisioners {
 		enabled := prov.Enabled == nil || *prov.Enabled
 		if !enabled {
+			continue
+		}
+
+		// A provisioner with replicas == 0 is intentionally suspended; skip readiness check.
+		if prov.Replicas != nil && *prov.Replicas == 0 {
 			continue
 		}
 
@@ -481,7 +524,13 @@ func (r *JumpstarterReconciler) checkExporterSetControllersReady(ctx context.Con
 }
 
 // checkTelemetryDeploymentReady checks if the telemetry deployment is available.
+// When spec.telemetry.replicas == 0 the deployment is intentionally suspended and
+// is reported as ready (true) with a "Suspended" reason.
 func (r *JumpstarterReconciler) checkTelemetryDeploymentReady(ctx context.Context, js *operatorv1alpha1.Jumpstarter) (bool, string) {
+	if js.Spec.Telemetry != nil && js.Spec.Telemetry.Replicas != nil && *js.Spec.Telemetry.Replicas == 0 {
+		return true, "Telemetry deployment suspended (replicas: 0)"
+	}
+
 	log := logf.FromContext(ctx)
 	deploymentName := fmt.Sprintf("%s-telemetry", js.Name)
 	deployment := &appsv1.Deployment{}
@@ -506,12 +555,17 @@ func (r *JumpstarterReconciler) checkTelemetryDeploymentReady(ctx context.Contex
 	return false, fmt.Sprintf("Telemetry deployment %s has no Available condition", deploymentName)
 }
 
-// hasEnabledProvisioners returns true if at least one provisioner is enabled.
+// hasEnabledProvisioners returns true if at least one provisioner is enabled and
+// has replicas > 0 (i.e. not suspended), meaning readiness should be checked.
 func hasEnabledProvisioners(provisioners []operatorv1alpha1.ProvisionerConfig) bool {
 	for _, p := range provisioners {
-		if p.Enabled == nil || *p.Enabled {
-			return true
+		if p.Enabled != nil && !*p.Enabled {
+			continue
 		}
+		if p.Replicas != nil && *p.Replicas == 0 {
+			continue
+		}
+		return true
 	}
 	return false
 }

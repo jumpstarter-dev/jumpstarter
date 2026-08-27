@@ -49,20 +49,20 @@ var _ = Describe("Telemetry Lifecycle", func() {
 			CertManager: operatorv1alpha1.CertManagerConfig{
 				Enabled: false,
 			},
-			Controller: operatorv1alpha1.ControllerConfig{
-				Image:    "quay.io/jumpstarter/jumpstarter:latest",
-				Replicas: 1,
-				GRPC: operatorv1alpha1.GRPCConfig{
-					Endpoints: []operatorv1alpha1.Endpoint{{Address: "controller"}},
-				},
+		Controller: operatorv1alpha1.ControllerConfig{
+			Image:    "quay.io/jumpstarter/jumpstarter:latest",
+			Replicas: ptr.To(int32(1)),
+			GRPC: operatorv1alpha1.GRPCConfig{
+				Endpoints: []operatorv1alpha1.Endpoint{{Address: "controller"}},
 			},
-			Routers: operatorv1alpha1.RoutersConfig{
-				Image:    "quay.io/jumpstarter/jumpstarter:latest",
-				Replicas: 1,
-				GRPC: operatorv1alpha1.GRPCConfig{
-					Endpoints: []operatorv1alpha1.Endpoint{{Address: "router"}},
-				},
+		},
+		Routers: operatorv1alpha1.RoutersConfig{
+			Image:    "quay.io/jumpstarter/jumpstarter:latest",
+			Replicas: ptr.To(int32(1)),
+			GRPC: operatorv1alpha1.GRPCConfig{
+				Endpoints: []operatorv1alpha1.Endpoint{{Address: "router"}},
 			},
+		},
 		}
 	}
 
@@ -355,6 +355,27 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		Expect(configData).NotTo(ContainSubstring("telemetry"))
 	})
 
+	It("does not embed telemetry endpoint in ConfigMap when enabled=true but replicas=0 (suspended)", func() {
+		By("creating a Jumpstarter CR with telemetry enabled but replicas=0")
+		spec := makeJumpstarterSpec()
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled:  true,
+			Image:    "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+			Replicas: ptr.To(int32(0)),
+		}
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		})).To(Succeed())
+
+		doReconcile()
+
+		By("verifying telemetry endpoint is absent from the controller ConfigMap")
+		configData := getConfigData()
+		Expect(configData).NotTo(ContainSubstring("telemetry"),
+			"suspended telemetry (replicas=0) should not embed an endpoint that has no ready pods")
+	})
+
 	It("sets TelemetryDeploymentReady status condition", func() {
 		By("creating a Jumpstarter CR with telemetry enabled")
 		spec := makeJumpstarterSpec()
@@ -502,6 +523,85 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		}, deployment)).To(Succeed())
 		Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(
 			Equal("quay.io/jumpstarter-dev/jumpstarter-telemetry:v2"))
+	})
+
+	It("suspends the telemetry deployment (replicas=0, enabled=true): Deployment stays at 0, Service kept, condition Suspended", func() {
+		By("creating a Jumpstarter CR with telemetry enabled and replicas=0")
+		spec := makeJumpstarterSpec()
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled:  true,
+			Image:    "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+			Replicas: ptr.To(int32(0)),
+		}
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		})).To(Succeed())
+
+		By("reconciling")
+		doReconcile()
+
+		By("verifying the Deployment exists with 0 replicas (not deleted)")
+		deployment := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      crName + "-telemetry",
+			Namespace: crNamespace,
+		}, deployment)).To(Succeed(), "Deployment should exist, not be deleted")
+		Expect(*deployment.Spec.Replicas).To(Equal(int32(0)))
+
+		By("verifying the Service is still present")
+		svc := &corev1.Service{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      telemetryServiceName,
+			Namespace: crNamespace,
+		}, svc)).To(Succeed(), "Service should be preserved when suspended")
+
+		By("verifying the TelemetryDeploymentReady condition reports Suspended (True)")
+		js := &operatorv1alpha1.Jumpstarter{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: crNamespace}, js)).To(Succeed())
+		cond := meta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeTelemetryDeploymentReady)
+		Expect(cond).NotTo(BeNil())
+		Expect(cond.Status).To(Equal(metav1.ConditionTrue), "suspended state should be reported as True, not False")
+		Expect(cond.Message).To(ContainSubstring("suspended"))
+	})
+
+	It("resumes telemetry after suspension: Deployment scales back up when replicas > 0", func() {
+		By("creating a Jumpstarter CR with telemetry enabled and replicas=0")
+		spec := makeJumpstarterSpec()
+		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
+			Enabled:  true,
+			Image:    "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
+			Replicas: ptr.To(int32(0)),
+		}
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       spec,
+		})).To(Succeed())
+
+		doReconcile()
+
+		By("verifying suspended state")
+		deployment := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      crName + "-telemetry",
+			Namespace: crNamespace,
+		}, deployment)).To(Succeed())
+		Expect(*deployment.Spec.Replicas).To(Equal(int32(0)))
+
+		By("resuming by setting replicas=2")
+		js := &operatorv1alpha1.Jumpstarter{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: crNamespace}, js)).To(Succeed())
+		js.Spec.Telemetry.Replicas = ptr.To(int32(2))
+		Expect(k8sClient.Update(ctx, js)).To(Succeed())
+
+		doReconcile()
+
+		By("verifying Deployment is scaled back up to 2")
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name:      crName + "-telemetry",
+			Namespace: crNamespace,
+		}, deployment)).To(Succeed())
+		Expect(*deployment.Spec.Replicas).To(Equal(int32(2)))
 	})
 })
 

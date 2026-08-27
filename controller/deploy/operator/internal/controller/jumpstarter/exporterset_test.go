@@ -284,6 +284,37 @@ var _ = Describe("hasEnabledProvisioners", func() {
 		}
 		Expect(hasEnabledProvisioners(provs)).To(BeTrue())
 	})
+
+	It("should return false when all provisioners have replicas=0 (suspended)", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Replicas: ptr.To(int32(0))},
+			{Name: "corellium.jumpstarter.dev", Replicas: ptr.To(int32(0))},
+		}
+		Expect(hasEnabledProvisioners(provs)).To(BeFalse())
+	})
+
+	It("should return true when at least one provisioner has replicas>0 among suspended ones", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Replicas: ptr.To(int32(0))},
+			{Name: "corellium.jumpstarter.dev", Replicas: ptr.To(int32(1))},
+		}
+		Expect(hasEnabledProvisioners(provs)).To(BeTrue())
+	})
+
+	It("should return false when provisioner is enabled but replicas=0", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Enabled: ptr.To(true), Replicas: ptr.To(int32(0))},
+		}
+		Expect(hasEnabledProvisioners(provs)).To(BeFalse())
+	})
+
+	It("should return false when all provisioners are disabled or suspended", func() {
+		provs := []operatorv1alpha1.ProvisionerConfig{
+			{Name: "qemu.jumpstarter.dev", Enabled: ptr.To(false)},
+			{Name: "corellium.jumpstarter.dev", Replicas: ptr.To(int32(0))},
+		}
+		Expect(hasEnabledProvisioners(provs)).To(BeFalse())
+	})
 })
 
 var _ = Describe("createExporterSetServiceAccount", func() {

@@ -1085,11 +1085,13 @@ spec:
                     default: 1
                     description: |-
                       Number of controller replicas to run.
-                      Currently only 1 replica is supported because the controller uses in-memory
+                      Set to 0 to suspend the controller (Deployment stays but no pods run, all other resources are preserved).
+                      Currently only 1 running replica is supported because the controller uses in-memory
                       state for gRPC stream coordination (Dial/Listen). Values greater than 1 will
-                      be clamped to 1 with a warning. See issue 1013 for HA controller support.
+                      be clamped to 1 with a warning. See https://github.com/jumpstarter-dev/jumpstarter/issues/1013
+                      for the tracking issue on HA controller support.
                     format: int32
-                    minimum: 1
+                    minimum: 0
                     type: integer
                   resources:
                     description: |-
@@ -1412,9 +1414,11 @@ spec:
                           type: string
                         replicas:
                           default: 1
-                          description: Replicas for this provisioner controller Deployment.
+                          description: |-
+                            Replicas for this provisioner controller Deployment.
+                            Set to 0 to suspend the provisioner (Deployment stays but no pods run).
                           format: int32
-                          minimum: 1
+                          minimum: 0
                           type: integer
                         resources:
                           description: Resources overrides the global exporterSets.resources
@@ -1849,9 +1853,11 @@ spec:
                     default: 3
                     description: |-
                       Number of router replicas to run.
-                      Must be a positive integer. Minimum recommended value is 3 for high availability.
+                      Set to 0 to suspend all routers (existing Deployments are scaled to 0 pods, Services and
+                      certificates are preserved so the configuration can be restored without reconfiguration).
+                      Minimum recommended value is 3 for high availability.
                     format: int32
-                    minimum: 1
+                    minimum: 0
                     type: integer
                   resources:
                     description: |-
@@ -2148,8 +2154,10 @@ spec:
                       Multiple replicas provide HA; each exporter connects to exactly one replica
                       via a persistent MetricsStream, so Prometheus sum-by queries across replicas
                       yield exact totals without double-counting (see JEP-0013 DD-8).
+                      Set to 0 to suspend the telemetry deployment (Deployment stays but no pods run,
+                      Service and other resources are preserved).
                     format: int32
-                    minimum: 1
+                    minimum: 0
                     type: integer
                   resources:
                     description: Resource requirements for the telemetry pod.
