@@ -232,9 +232,7 @@ def test_slots_exist_but_are_empty_at_startup(mock_run, _):
     assert server.list_attached() == {}
     # `list_attached` legitimately runs `forward --list`; what matters is that no
     # forward was CREATED at startup.
-    assert not any(
-        "forward" in c.args[0] and "--list" not in c.args[0] for c in mock_run.call_args_list
-    )
+    assert not any("forward" in c.args[0] and "--list" not in c.args[0] for c in mock_run.call_args_list)
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
@@ -308,9 +306,7 @@ def test_detach_frees_the_slot_for_reuse(mock_run, _):
     server.attach_device("a")
     server.detach_device("a")
     assert server.list_attached() == {}
-    assert any(
-        c.args[0][3:] == ["forward", "--remove", "tcp:16000"] for c in mock_run.call_args_list
-    )
+    assert any(c.args[0][3:] == ["forward", "--remove", "tcp:16000"] for c in mock_run.call_args_list)
     # The freed slot must be reusable, or long sessions leak slots.
     assert server.attach_device("b") == "slot0"
 
