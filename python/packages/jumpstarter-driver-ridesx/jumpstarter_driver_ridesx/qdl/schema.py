@@ -142,6 +142,13 @@ def load_firmware_manifest_from_mapping(data: dict) -> FirmwareManifest:
 
 
 def find_embedded_manifest(work_dir: Path) -> Path | None:
+    """Search ``work_dir`` recursively for a manifest file.
+
+    Returns the first match found (sorted alphabetically) or ``None``.
+    When multiple manifests exist in the tree, the alphabetically first
+    path wins.  Firmware archives are expected to contain at most one
+    manifest, so this is typically unambiguous.
+    """
     for filename in EMBEDDED_MANIFEST_NAMES:
         matches = sorted(work_dir.rglob(filename))
         if matches:

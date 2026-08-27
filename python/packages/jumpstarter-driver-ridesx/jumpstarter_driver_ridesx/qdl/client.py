@@ -15,6 +15,7 @@ from .firmware_id import collect_version_info, format_version_report
 from .schema import load_firmware_manifest_from_mapping
 from jumpstarter.client.decorators import driver_click_group
 from jumpstarter.client.flasher import (
+    FlashPhase,
     FlashStatus,
     StreamingFlasherClient,
     _http_url_adapter,
@@ -59,27 +60,18 @@ class QualcommFlasherClient(StreamingFlasherClient, CompositeClient):
         for value in self.streamingcall("flash", handle, manifest, cached):
             status = FlashStatus.model_validate(value, strict=True)
             yield status
-            if status.phase == "error":
+            if status.phase == FlashPhase.ERROR:
                 raise RuntimeError(status.message)
 
     def flash_stream(
         self,
-        path=None,
+        path,
         *,
         manifest: Any | None = None,
         cached: bool = False,
         compression=None,
     ):
         manifest_data = _manifest_data_from_source(manifest)
-        if cached and manifest_data is None:
-            raise ValueError("manifest is required when using --cached")
-
-        if cached and path is None:
-            yield from self._iter_flash_status(handle=None, manifest=manifest_data, cached=True)
-            return
-
-        if path is None:
-            raise ValueError("firmware file or URL is required")
 
         local_path, url = _parse_path(path)
         if url is not None:
@@ -111,28 +103,25 @@ class QualcommFlasherClient(StreamingFlasherClient, CompositeClient):
             pass
 
         @base.command()
-        @click.argument("file", required=False, metavar="FILE|URL")
+        @click.argument("file", metavar="FILE|URL")
         @click.option(
             "--manifest",
             type=str,
             help=(
-                "Manifest YAML file or http(s) URL. Required with --cached. "
+                "Manifest YAML file or http(s) URL. "
                 "Optional when the archive contains jumpstarter_manifest.yaml."
             ),
         )
         @click.option(
             "--cached",
             is_flag=True,
-            help="Keep extracted firmware on the exporter and reuse it on subsequent flashes.",
+            help=(
+                "Reuse previously downloaded firmware if present on the exporter "
+                "and keep extracted files on disk after flashing."
+            ),
         )
         def flash(file, manifest, cached):
             """Flash firmware using QDL from a local path or http(s) URL"""
-            if cached and not manifest:
-                raise click.ClickException("--manifest is required when using --cached")
-            if not cached and not file:
-                raise click.ClickException(
-                    "FILE|URL is required unless re-flashing from an existing cache with --cached"
-                )
             try:
                 for status in self.flash_stream(file, manifest=manifest, cached=cached):
                     click.echo(self.render_flash_status(status))

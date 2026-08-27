@@ -23,6 +23,9 @@ steps:
       files:
         - provision_default.xml
 
+  # TODO: consider adding set_mode: edl before QDL steps for reliability.
+  #       In some cases QDL dmesg check passes but SPINOR flash fails
+  #       (e.g. "waiting for Firehose programmer... failed to setup programming").
   - sleep: 10
 
   - name: "Flash UFS"

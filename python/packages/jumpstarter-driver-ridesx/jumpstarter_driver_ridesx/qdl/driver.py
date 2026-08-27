@@ -28,9 +28,10 @@ from .schema import (
     select_cdt_image_path,
 )
 from .soc_profiles import SoCType, get_soc_profile
-from jumpstarter.client.flasher import FlashStatus
+from jumpstarter.client.flasher import FlashPhase, FlashStatus
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver, export
+from jumpstarter.driver.flasher import StreamingFlasherInterface
 from jumpstarter.streams.encoding import AutoDecompressIterator
 
 
@@ -44,10 +45,8 @@ class _FlashContext:
 
 
 @dataclass(kw_only=True)
-class QualcommFlasher(Driver):
+class QualcommFlasher(StreamingFlasherInterface, Driver):
     """Qualcomm firmware flasher and identification driver using QDL and fastboot."""
-
-    driver_type = "storage"
     soc_type: SoCType = "sa8775p"
     work_dir: str = field(default="/var/lib/jumpstarter/qualcomm")
     qdl_timeout: int = field(default=30 * 60)
@@ -113,6 +112,8 @@ class QualcommFlasher(Driver):
             return
         destination = extract_root.resolve()
         for member in archive.getmembers():
+            if member.name.startswith("/"):
+                raise tarfile.ExtractError(f"Blocked absolute path in archive: {member.name}")
             if member.isdev() or member.issym() or member.islnk():
                 raise tarfile.ExtractError(f"Blocked special file in archive: {member.name}")
             target = (destination / member.name).resolve()
@@ -174,7 +175,16 @@ class QualcommFlasher(Driver):
                 return candidate
         raise FileNotFoundError(f"Image not found: {relative_path}")
 
-    async def _flash_post_steps(self, manifest: FirmwareManifest, work_dir: Path, firmware_root: Path) -> None:
+    async def _flash_post_steps(
+        self, manifest: FirmwareManifest, work_dir: Path, firmware_root: Path
+    ) -> list[tuple[str, str, str]]:
+        """Flash ABL/CDT images via fastboot.
+
+        Returns a list of (partition, stdout, stderr) tuples from each
+        fastboot invocation so the caller can attach them to FlashStatus.
+        """
+        results: list[tuple[str, str, str]] = []
+
         if manifest.data.abl_image:
             abl_path = self._find_image_path(work_dir, firmware_root, manifest.data.abl_image)
             for slot in ("abl_a", "abl_b"):
@@ -186,6 +196,7 @@ class QualcommFlasher(Driver):
                     check=False,
                     timeout=self.fastboot_timeout,
                 )
+                results.append((slot, result.stdout, result.stderr))
                 if result.returncode != 0:
                     raise RuntimeError(f"fastboot flash {slot} failed: {result.stderr or result.stdout}")
 
@@ -200,8 +211,11 @@ class QualcommFlasher(Driver):
                 check=False,
                 timeout=self.fastboot_timeout,
             )
+            results.append(("cdt", result.stdout, result.stderr))
             if result.returncode != 0:
                 raise RuntimeError(f"fastboot flash cdt failed: {result.stderr or result.stdout}")
+
+        return results
 
     def _firmware_root(self, manifest: FirmwareManifest) -> Path:
         return resolve_firmware_root(Path(self.work_dir), manifest)
@@ -226,7 +240,7 @@ class QualcommFlasher(Driver):
 
         if self._cache_is_valid(firmware_root):
             yield FlashStatus(
-                phase="cache",
+                phase=FlashPhase.CACHE,
                 message=f"Using cached firmware at {firmware_root}",
             )
             return
@@ -238,7 +252,7 @@ class QualcommFlasher(Driver):
         async for status in self._download_and_extract(source, work_dir, manifest):
             yield status
         yield FlashStatus(
-            phase="cache",
+            phase=FlashPhase.CACHE,
             message=f"Cached firmware at {firmware_root}",
         )
 
@@ -265,8 +279,11 @@ class QualcommFlasher(Driver):
         work_dir: Path,
         manifest: FirmwareManifest | None,
     ) -> AsyncGenerator[FlashStatus, None]:
+        # TODO: consider streaming extraction (tarfile r| mode) to avoid writing
+        # the full archive to disk before extracting, reducing disk usage for
+        # multi-GB firmware images.
         archive_path = work_dir / "firmware.tar"
-        yield FlashStatus(phase="download", message="Receiving firmware archive", progress=0.0)
+        yield FlashStatus(phase=FlashPhase.DOWNLOAD, message="Receiving firmware archive", progress=0.0)
         bytes_written = 0
         async with self.resource(source) as res:
             async with await FileWriteStream.from_path(archive_path) as stream:
@@ -274,12 +291,12 @@ class QualcommFlasher(Driver):
                     await stream.send(chunk)
                     bytes_written += len(chunk)
                     yield FlashStatus(
-                        phase="download",
+                        phase=FlashPhase.DOWNLOAD,
                         message=f"Received {bytes_written} bytes",
                         bytes_transferred=bytes_written,
                     )
 
-        yield FlashStatus(phase="extract", message="Extracting firmware archive")
+        yield FlashStatus(phase=FlashPhase.EXTRACT, message="Extracting firmware archive")
         extract_manifest = manifest or self._load_manifest_from_archive(archive_path)
         self._extract_archive(archive_path, work_dir, extract_manifest)
         archive_path.unlink(missing_ok=True)
@@ -302,10 +319,18 @@ class QualcommFlasher(Driver):
             yield status
 
         if manifest.data.abl_image or cdt_images_configured(manifest.data.cdt_image):
-            yield FlashStatus(phase="step", message="Flashing ABL/CDT images via fastboot")
-            await self._flash_post_steps(manifest, work_dir, firmware_root)
+            yield FlashStatus(phase=FlashPhase.STEP, message="Flashing ABL/CDT images via fastboot")
+            post_results = await self._flash_post_steps(manifest, work_dir, firmware_root)
+            combined_stdout = "".join(out for _, out, _ in post_results)
+            combined_stderr = "".join(err for _, _, err in post_results)
+            yield FlashStatus(
+                phase=FlashPhase.STEP,
+                message="Completed ABL/CDT fastboot flash",
+                stdout=combined_stdout or None,
+                stderr=combined_stderr or None,
+            )
 
-        yield FlashStatus(phase="complete", message=f"Firmware update complete: {manifest.name}")
+        yield FlashStatus(phase=FlashPhase.COMPLETE, message=f"Firmware update complete: {manifest.name}")
 
     @export
     async def flash(
@@ -331,7 +356,7 @@ class QualcommFlasher(Driver):
             async for status in self._run_manifest_flash(ctx.manifest, ctx.work_dir, ctx.firmware_root):
                 yield status
         except Exception as exc:
-            yield FlashStatus(phase="error", message=str(exc))
+            yield FlashStatus(phase=FlashPhase.ERROR, message=str(exc))
             if ctx.cache_dir is not None and not self._cache_is_valid(ctx.cache_dir):
                 shutil.rmtree(ctx.cache_dir, ignore_errors=True)
             return

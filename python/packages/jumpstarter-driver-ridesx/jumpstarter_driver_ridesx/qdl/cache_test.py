@@ -1,12 +1,9 @@
 import io
 import tarfile
 from pathlib import Path
-from unittest.mock import MagicMock
 
-import pytest
 import yaml
 
-from jumpstarter_driver_ridesx.qdl.client import QualcommFlasherClient
 from jumpstarter_driver_ridesx.qdl.driver import QualcommFlasher
 from jumpstarter_driver_ridesx.qdl.schema import (
     FirmwareData,
@@ -35,13 +32,6 @@ def test_cache_is_valid_empty_directory(tmp_path):
     firmware_root = driver._firmware_root(manifest)
     firmware_root.mkdir(parents=True)
     assert not driver._cache_is_valid(firmware_root)
-
-
-def test_manifest_required_for_cached_flash_stream():
-    client = MagicMock()
-    client.flash_stream = QualcommFlasherClient.flash_stream.__get__(client, QualcommFlasherClient)
-    with pytest.raises(ValueError, match="manifest is required"):
-        list(client.flash_stream(cached=True))
 
 
 def test_find_embedded_manifest(tmp_path):

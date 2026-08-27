@@ -24,6 +24,28 @@ from jumpstarter.streams.progress import ProgressAttribute
 PathBuf = str | PathLike
 
 
+class FlashPhase:
+    """Standard phase constants for ``FlashStatus`` updates."""
+
+    DOWNLOAD = "download"
+    """Firmware archive is being received / downloaded."""
+
+    EXTRACT = "extract"
+    """Archive is being extracted to disk."""
+
+    STEP = "step"
+    """A manifest step (QDL, fastboot, mode switch, etc.) is running."""
+
+    CACHE = "cache"
+    """Cached firmware is being reused or has been stored."""
+
+    COMPLETE = "complete"
+    """The flash operation finished successfully."""
+
+    ERROR = "error"
+    """The flash operation failed."""
+
+
 class FlashStatus(BaseModel):
     """Progress update emitted during a streaming flash operation."""
 
@@ -35,6 +57,8 @@ class FlashStatus(BaseModel):
     progress: float | None = None
     bytes_transferred: int | None = None
     bytes_total: int | None = None
+    stdout: str | None = None
+    stderr: str | None = None
 
 
 @dataclass(kw_only=True)
@@ -327,7 +351,7 @@ class StreamingFlasherClient(FlasherClient, StreamingFlasherClientInterface):
         for value in self.streamingcall("flash", handle, manifest):
             status = FlashStatus.model_validate(value, strict=True)
             yield status
-            if status.phase == "error":
+            if status.phase == FlashPhase.ERROR:
                 raise RuntimeError(status.message)
 
     def flash_stream(
@@ -373,12 +397,12 @@ class StreamingFlasherClient(FlasherClient, StreamingFlasherClientInterface):
             last = status
         if last is None:
             raise RuntimeError("flash completed without status updates")
-        if last.phase != "complete":
+        if last.phase != FlashPhase.COMPLETE:
             raise RuntimeError(last.message or "flash did not complete successfully")
         return last
 
     @staticmethod
-    def render_flash_status(status: FlashStatus) -> str:
+    def render_flash_status(status: FlashStatus, *, verbose: bool = False) -> str:
         parts = [status.phase.upper(), status.message]
         if status.step_index is not None and status.total_steps is not None:
             parts.append(f"step {status.step_index}/{status.total_steps}")
@@ -388,7 +412,13 @@ class StreamingFlasherClient(FlasherClient, StreamingFlasherClientInterface):
             parts.append(f"{status.progress * 100:.1f}%")
         if status.bytes_transferred is not None and status.bytes_total is not None:
             parts.append(f"{status.bytes_transferred}/{status.bytes_total} bytes")
-        return " | ".join(parts)
+        result = " | ".join(parts)
+        if verbose:
+            if status.stdout:
+                result += f"\n  [stdout] {status.stdout.rstrip()}"
+            if status.stderr:
+                result += f"\n  [stderr] {status.stderr.rstrip()}"
+        return result
 
     def cli(self) -> click.Group:
         @driver_click_group(self)

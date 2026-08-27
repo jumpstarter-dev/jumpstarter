@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
+
+import pexpect
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,91 +40,135 @@ class _SerialCapture:
         return "".join(self._chunks)
 
 
-def extract_sail_version(sail, timeout=30, log_buffer=None) -> dict[str, str]:
-    sail.logfile_read = log_buffer
-    version_info: dict[str, str] = {}
-    start_time = time.time()
-    patterns = [
-        (r"FW Version:\s*([\d.]+)", "sail_fw_version", 1),
-        (r"(?:Info:\s+)?Platform type:\s*(\S+)", "platform_type", 1),
-        (r"(?:Info:\s+)?SOC1 Board ID corresponds to SOC Type:\s*([^\r\n]+)", "soc_type", 1),
-        (r"(?:Info:\s+)?SIP1 Board ID corresponds to SIP Type:\s*([^\r\n]+)", "sip_type", 1),
-        (r"Hypervisor\s+cold\s+boot[^:]*:\s*gunyah-[^\s]+\s+(perf|debug|prod)", "hypervisor", 1),
-        (r"Hypervisor.*?(perf|debug)", "hypervisor", 1),
-    ]
-    found_patterns: set[str] = set()
+PatternSpec = tuple[str, str, int]
+"""(regex, key, group) tuple for serial pattern matching."""
 
-    while time.time() - start_time < timeout and len(found_patterns) < len(patterns):
-        try:
-            expect_patterns = [pattern for pattern, key, _ in patterns if key not in found_patterns]
-            if not expect_patterns:
-                break
-            index = sail.expect(expect_patterns, timeout=5)
-            pattern_idx = 0
-            for _pattern, key, group in patterns:
-                if key not in found_patterns:
-                    if pattern_idx == index and sail.match:
-                        value = sail.match.group(group)
-                        if isinstance(value, bytes):
-                            value = value.decode("utf-8", errors="ignore")
-                        version_info[key] = value.strip()
-                        found_patterns.add(key)
-                    pattern_idx += 1
-        except Exception:
-            if len(found_patterns) >= 2:
-                break
-            continue
-    return version_info
+ValidateCallback = Callable[[str, str], bool] | None
+"""Optional ``(key, value) -> bool`` callback; return False to reject a match."""
 
 
-def extract_main_version(serial, timeout=30, log_buffer=None) -> dict[str, str]:
+def _scan_serial_patterns(
+    serial,
+    patterns: list[PatternSpec],
+    *,
+    timeout: int = 30,
+    min_found: int = 0,
+    log_buffer=None,
+    label: str = "version",
+    validate: ValidateCallback = None,
+) -> dict[str, str]:
+    """Drive a pexpect session looking for *patterns*, returning matched values.
+
+    Args:
+        serial: A pexpect spawn-like object.
+        patterns: List of ``(regex, key, capture_group)`` tuples.
+        timeout: Overall wall-clock timeout in seconds.
+        min_found: Stop early on timeout/EOF once at least this many
+            distinct keys have been captured.
+        log_buffer: Optional writable object attached to
+            ``serial.logfile_read``.
+        label: Human-readable label used in warning messages.
+        validate: Optional callback ``(key, value) -> bool``.  When it
+            returns ``False`` the captured value is silently discarded.
+    """
     serial.logfile_read = log_buffer
     version_info: dict[str, str] = {}
-    start_time = time.time()
-    patterns = [
-        (r"QC_IMAGE_VERSION_STRING=([^\r\n]+)", "qc_image_version", 1),
-        (r"IMAGE_VARIANT_STRING=([^\r\n]+)", "image_variant", 1),
-        (r"OEM_IMAGE_VERSION_STRING=([^\r\n]+)", "oem_image_version", 1),
-        (r"UEFI Ver\s+:\s*([\d.]+\.BOOT\.[^\r\n]+)", "uefi_version", 1),
-        (r"UEFI Ver\s*:\s*([\d.]+\.BOOT\.[^\r\n]+)", "uefi_version", 1),
-        (r"UEFI Ver\s+:\s*([^\r\n]+)", "uefi_version", 1),
-        (r"UEFI Ver\s*:\s*([^\r\n]+)", "uefi_version", 1),
-        (r"SBL1 BUILD @ ([^\r\n]+)", "sbl1_build", 1),
-        (r"Chip Name\s*:\s*([^\r\n]+)", "chip_name", 1),
-        (r"Chip Ver\s*:\s*([^\r\n]+)", "chip_version", 1),
-        (r"Loader Build Info:\s*([^\r\n]+)[\r\n]", "abl_build", 1),
-        (r"CDT Version:\d+,Platform ID:(\d+),Major ID:(\d+),Minor ID:(\d+),Subtype:(\d+)", "cdt_platform_id", 1),
-        (r"\[RM\]Resource Manager version:\s*(\S+)", "rm_version", 1),
-        (r"Hypervisor\s+cold\s+boot[^:]*:\s*gunyah-[^\s]+\s+(perf|debug|prod)", "hypervisor", 1),
-        (r"Hypervisor.*?(perf|debug|prod)", "hypervisor", 1),
-    ]
     found_patterns: set[str] = set()
+    start_time = time.time()
 
     while time.time() - start_time < timeout and len(found_patterns) < len(patterns):
         try:
-            expect_patterns = [pattern for pattern, key, _ in patterns if key not in found_patterns]
+            expect_patterns = [p for p, k, _ in patterns if k not in found_patterns]
             if not expect_patterns:
                 break
             index = serial.expect(expect_patterns, timeout=5)
-            pattern_idx = 0
-            for _pattern, key, group in patterns:
-                if key not in found_patterns:
-                    if pattern_idx == index and serial.match:
-                        value = serial.match.group(group)
-                        if isinstance(value, bytes):
-                            value = value.decode("utf-8", errors="ignore")
-                        value = value.strip()
-                        if key == "uefi_version" and (len(value) < 10 or ("BOOT" not in value and len(value) < 20)):
-                            pattern_idx += 1
-                            continue
-                        version_info[key] = value
-                        found_patterns.add(key)
-                    pattern_idx += 1
-        except Exception:
-            if len(found_patterns) >= 3:
+            _process_match(serial, patterns, found_patterns, version_info, index, validate)
+        except (pexpect.TIMEOUT, pexpect.EOF):
+            if len(found_patterns) >= min_found:
                 break
-            continue
+        except Exception:
+            logger.warning("Unexpected error during %s extraction", label, exc_info=True)
+            if len(found_patterns) >= min_found:
+                break
     return version_info
+
+
+def _process_match(
+    serial,
+    patterns: list[PatternSpec],
+    found: set[str],
+    results: dict[str, str],
+    matched_index: int,
+    validate: ValidateCallback,
+) -> None:
+    """Record the captured value for the pattern that matched at *matched_index*."""
+    pattern_idx = 0
+    for _regex, key, group in patterns:
+        if key not in found:
+            if pattern_idx == matched_index and serial.match:
+                value = serial.match.group(group)
+                if isinstance(value, bytes):
+                    value = value.decode("utf-8", errors="ignore")
+                value = value.strip()
+                if validate and not validate(key, value):
+                    return
+                results[key] = value
+                found.add(key)
+                return
+            pattern_idx += 1
+
+
+def _validate_main_version(key: str, value: str) -> bool:
+    """Reject spurious UEFI version matches that are too short or lack BOOT."""
+    if key == "uefi_version" and (len(value) < 10 or ("BOOT" not in value and len(value) < 20)):
+        return False
+    return True
+
+
+def extract_sail_version(sail, timeout=30, log_buffer=None) -> dict[str, str]:
+    return _scan_serial_patterns(
+        sail,
+        patterns=[
+            (r"FW Version:\s*([\d.]+)", "sail_fw_version", 1),
+            (r"(?:Info:\s+)?Platform type:\s*(\S+)", "platform_type", 1),
+            (r"(?:Info:\s+)?SOC1 Board ID corresponds to SOC Type:\s*([^\r\n]+)", "soc_type", 1),
+            (r"(?:Info:\s+)?SIP1 Board ID corresponds to SIP Type:\s*([^\r\n]+)", "sip_type", 1),
+            (r"Hypervisor\s+cold\s+boot[^:]*:\s*gunyah-[^\s]+\s+(perf|debug|prod)", "hypervisor", 1),
+            (r"Hypervisor.*?(perf|debug)", "hypervisor", 1),
+        ],
+        timeout=timeout,
+        min_found=2,
+        log_buffer=log_buffer,
+        label="SAIL version",
+    )
+
+
+def extract_main_version(serial, timeout=30, log_buffer=None) -> dict[str, str]:
+    return _scan_serial_patterns(
+        serial,
+        patterns=[
+            (r"QC_IMAGE_VERSION_STRING=([^\r\n]+)", "qc_image_version", 1),
+            (r"IMAGE_VARIANT_STRING=([^\r\n]+)", "image_variant", 1),
+            (r"OEM_IMAGE_VERSION_STRING=([^\r\n]+)", "oem_image_version", 1),
+            (r"UEFI Ver\s+:\s*([\d.]+\.BOOT\.[^\r\n]+)", "uefi_version", 1),
+            (r"UEFI Ver\s*:\s*([\d.]+\.BOOT\.[^\r\n]+)", "uefi_version", 1),
+            (r"UEFI Ver\s+:\s*([^\r\n]+)", "uefi_version", 1),
+            (r"UEFI Ver\s*:\s*([^\r\n]+)", "uefi_version", 1),
+            (r"SBL1 BUILD @ ([^\r\n]+)", "sbl1_build", 1),
+            (r"Chip Name\s*:\s*([^\r\n]+)", "chip_name", 1),
+            (r"Chip Ver\s*:\s*([^\r\n]+)", "chip_version", 1),
+            (r"Loader Build Info:\s*([^\r\n]+)[\r\n]", "abl_build", 1),
+            (r"CDT Version:\d+,Platform ID:(\d+),Major ID:(\d+),Minor ID:(\d+),Subtype:(\d+)", "cdt_platform_id", 1),
+            (r"\[RM\]Resource Manager version:\s*(\S+)", "rm_version", 1),
+            (r"Hypervisor\s+cold\s+boot[^:]*:\s*gunyah-[^\s]+\s+(perf|debug|prod)", "hypervisor", 1),
+            (r"Hypervisor.*?(perf|debug|prod)", "hypervisor", 1),
+        ],
+        timeout=timeout,
+        min_found=3,
+        log_buffer=log_buffer,
+        label="main version",
+        validate=_validate_main_version,
+    )
 
 
 def identify_firmware_variant(qc_image_version: str | None, rm_version: str | None = None) -> str | None:
@@ -154,10 +205,10 @@ def collect_version_info(serial, sail, power_cycle_callable, *, verbose=False, c
     with sail:
         with serial:
             if verbose:
-                print("Power cycling device...")
+                logger.info("Power cycling device...")
             power_cycle_callable()
             if verbose:
-                print("Collecting version information...")
+                logger.info("Collecting version information...")
             result.sail_versions = extract_sail_version(sail, timeout=30, log_buffer=sail_capture)
             result.main_versions = extract_main_version(serial, timeout=30, log_buffer=main_capture)
             if "hypervisor" in result.sail_versions and "hypervisor" not in result.main_versions:
@@ -172,13 +223,10 @@ def collect_version_info(serial, sail, power_cycle_callable, *, verbose=False, c
     result.raw_output = result.sail_raw + result.main_raw
 
     if capture_dir:
-        import os
-
-        os.makedirs(capture_dir, exist_ok=True)
-        with open(os.path.join(capture_dir, "sail.log"), "w", encoding="utf-8") as handle:
-            handle.write(result.sail_raw)
-        with open(os.path.join(capture_dir, "main.log"), "w", encoding="utf-8") as handle:
-            handle.write(result.main_raw)
+        capture_path = Path(capture_dir)
+        capture_path.mkdir(parents=True, exist_ok=True)
+        (capture_path / "sail.log").write_text(result.sail_raw, encoding="utf-8")
+        (capture_path / "main.log").write_text(result.main_raw, encoding="utf-8")
 
     return result
 

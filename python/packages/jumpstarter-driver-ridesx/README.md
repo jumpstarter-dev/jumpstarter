@@ -2,8 +2,8 @@
 
 `jumpstarter-driver-ridesx` provides functionality for Qualcomm automotive platforms:
 
-- **RideSX** fastboot partition flashing (automotive-image-builder artifacts)
-- **QDL platform flashing** (`QualcommFlasher`) for full firmware updates on SA8775P, SA8650P, and related SoCs
+- **RideSX** fastboot partition flashing
+- **QDL platform flashing** (`QualcommFlasher`) for full firmware/bootloader updates on SA8775P, SA8650P, and related SoCs
 
 RideSX support includes automatic compression handling (`.gz`, `.gzip`, `.xz`), built-in storage
 for firmware images with upload/download capabilities, and direct access to the
@@ -22,8 +22,7 @@ automotive-image-builder build --target ridesx4 --export aboot.simg --mode packa
 $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-ridesx
 ```
 
-The QDL platform flasher (`QualcommFlasher`) is included in this package and in the
-`jumpstarter-all` meta-package. The exporter host must provide `qdl` and `fastboot`.
+The QDL platform flasher (`QualcommFlasher`) is included in this package. The exporter host must provide `qdl` and `fastboot`.
 
 ## Configuration
 
@@ -172,6 +171,68 @@ See `examples/exporter-platform.yaml` and reference manifests in
 TAC serial handles power on/off and mode switching (EDL/fastboot). Export as `firmware` with
 `tac`, `serial`, and `sail` children for identification.
 
+### Example exporter configuration
+
+```yaml
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: jumpstarter-lab
+  name: qualcomm-sa8775p
+endpoint:
+token:
+export:
+  firmware:
+    type: "jumpstarter_driver_ridesx.qdl.driver.QualcommFlasher"
+    config:
+      soc_type: sa8775p
+      work_dir: /var/lib/jumpstarter/qualcomm
+      board_revision: v3
+      power_cycle_delay: 2.0
+    children:
+      tac:
+        ref: tac
+      serial:
+        ref: serial
+      sail:
+        ref: sail
+  tac:
+    type: "jumpstarter_driver_pyserial.driver.PySerial"
+    config:
+      url: "/dev/ttyACM0"
+      baudrate: 115200
+  serial:
+    type: "jumpstarter_driver_pyserial.driver.PySerial"
+    config:
+      url: "/dev/ttyUSB1"
+      baudrate: 115200
+  sail:
+    type: "jumpstarter_driver_pyserial.driver.PySerial"
+    config:
+      url: "/dev/ttyUSB2"
+      baudrate: 115200
+```
+
+### Config parameters
+
+| Parameter            | Description                                          | Type  | Required | Default                        |
+| -------------------- | ---------------------------------------------------- | ----- | -------- | ------------------------------ |
+| soc_type             | SoC profile (`sa8775p`, `sa8540p1`, `sa8540p2`)      | str   | no       | sa8775p                        |
+| work_dir             | Base directory for firmware extraction                | str   | no       | /var/lib/jumpstarter/qualcomm  |
+| board_revision       | Board revision for CDT image selection (`v1`–`v4`)   | str   | no       |                                |
+| qdl_timeout          | Timeout for QDL subprocess steps (seconds)           | int   | no       | 1800                           |
+| fastboot_timeout     | Timeout for fastboot subprocess steps (seconds)      | int   | no       | 600                            |
+| power_cycle_delay    | Delay between power off/on (seconds)                 | float | no       | 2.0                            |
+| tac_command_timeout  | Timeout for TAC command acknowledgement (seconds)    | float | no       | 10.0                           |
+
+### Required children
+
+| Child  | Description                            | Required for flash | Required for `id` |
+| ------ | -------------------------------------- | ------------------ | ----------------- |
+| tac    | TAC serial for power and mode control  | Yes                | Yes               |
+| serial | Main boot serial console               | No                 | Yes               |
+| sail   | SAIL boot serial console               | No                 | Yes               |
+
 ### CLI
 
 Both the firmware archive and `--manifest` accept local paths or `http://` / `https://` URLs.
@@ -183,13 +244,13 @@ j firmware flash https://example.com/firmware/sx4-r00021.1a.tar.xz --manifest ./
 j firmware flash https://example.com/firmware/sx4-r00021.1a.tar.xz \
   --manifest https://example.com/manifests/es22.yaml
 j firmware flash ./sx4-r00021.1a.tar.xz --manifest ./es22.yaml --cached
-j firmware flash --manifest ./es22.yaml --cached
 j firmware id -v
 j firmware boot-to-edl
 j firmware boot-to-fastboot
 ```
 
-Use `--cached` to keep extracted firmware under `work_dir/<manifest.data.folder>` on the exporter.
+Use `--cached` to keep extracted firmware under `work_dir/<manifest.data.folder>` on the
+exporter and reuse it on subsequent flashes.
 
 Archives may embed `jumpstarter_manifest.yaml`. See `examples/exporter-platform.yaml` for
 exporter configuration and the QDL module for manifest schema details.

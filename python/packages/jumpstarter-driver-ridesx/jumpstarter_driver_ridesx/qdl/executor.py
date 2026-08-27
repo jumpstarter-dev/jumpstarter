@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
+import logging
 import subprocess
 from pathlib import Path
 
@@ -16,7 +18,17 @@ from .schema import (
     Step,
 )
 from .soc_profiles import SoCProfile
-from jumpstarter.client.flasher import FlashStatus
+from jumpstarter.client.flasher import FlashPhase, FlashStatus
+
+logger = logging.getLogger(__name__)
+
+
+@dataclasses.dataclass
+class StepResult:
+    """Collected stdout/stderr from one or more subprocess calls in a step."""
+
+    stdout: str = ""
+    stderr: str = ""
 
 RETRY_MODE_DMESG = {
     "edl": "USB QTI_HS",
@@ -30,6 +42,14 @@ def read_dmesg() -> str:
 
 
 def check_dmesg(expected: str, *, baseline: str | None = None, tail_lines: int = 200) -> None:
+    """Check kernel ring buffer for an expected marker.
+
+    When *baseline* is provided, only lines **not** in the baseline are
+    inspected (diff-based check).  Otherwise the last *tail_lines* lines
+    are searched.  On systems with very high dmesg throughput (USB
+    enumeration storms, etc.) the default 200 lines may scroll past the
+    marker; increase *tail_lines* if this becomes an issue.
+    """
     output = read_dmesg()
     if baseline is not None:
         baseline_lines = set(baseline.splitlines())
@@ -49,12 +69,16 @@ def fix_provision_default_xml(workdir: Path) -> None:
     content = provision.read_text(encoding="utf-8", errors="replace")
     if content.lstrip().startswith("<?xml"):
         return
-    # Qualcomm PCAT/provisioning tools prepend a 9-line text header before the XML.
+    # Qualcomm PCAT/provisioning tools may prepend a text header before the
+    # actual XML declaration.  Search for the first line starting with "<?xml"
+    # instead of assuming a fixed number of header lines.
     lines = content.splitlines()
-    if len(lines) <= 9:
-        return
-    fixed = "\n".join(lines[9:]) + "\n"
-    provision.write_text(fixed, encoding="utf-8")
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("<?xml"):
+            fixed = "\n".join(lines[i:]) + "\n"
+            provision.write_text(fixed, encoding="utf-8")
+            return
+    logger.warning("provision_default.xml has no <?xml declaration in %s; leaving unchanged", workdir)
 
 
 def build_qdl_command(step: QdlStep, firmware_root: Path) -> tuple[list[str], Path]:
@@ -91,8 +115,10 @@ def run_qdl_step(step: QdlStep, firmware_root: Path, *, timeout: int) -> subproc
     )
 
 
-def run_fastboot_step(step: FastbootStep, firmware_root: Path, *, timeout: int) -> None:
+def run_fastboot_step(step: FastbootStep, firmware_root: Path, *, timeout: int) -> StepResult:
     config = step.fastboot
+    collected = StepResult()
+
     if config.erase:
         for partition in config.erase:
             result = subprocess.run(
@@ -102,6 +128,8 @@ def run_fastboot_step(step: FastbootStep, firmware_root: Path, *, timeout: int) 
                 check=False,
                 timeout=timeout,
             )
+            collected.stdout += result.stdout
+            collected.stderr += result.stderr
             if result.returncode != 0:
                 raise RuntimeError(f"fastboot erase {partition} failed: {result.stderr or result.stdout}")
 
@@ -117,6 +145,8 @@ def run_fastboot_step(step: FastbootStep, firmware_root: Path, *, timeout: int) 
                 check=False,
                 timeout=timeout,
             )
+            collected.stdout += result.stdout
+            collected.stderr += result.stderr
             if result.returncode != 0:
                 raise RuntimeError(
                     f"fastboot flash {operation.partition} failed: {result.stderr or result.stdout}"
@@ -130,8 +160,12 @@ def run_fastboot_step(step: FastbootStep, firmware_root: Path, *, timeout: int) 
             check=False,
             timeout=timeout,
         )
+        collected.stdout += result.stdout
+        collected.stderr += result.stderr
         if result.returncode != 0:
             raise RuntimeError(f"fastboot continue failed: {result.stderr or result.stdout}")
+
+    return collected
 
 
 async def set_device_mode(
@@ -177,7 +211,7 @@ async def execute_step(
     qdl_timeout: int,
     fastboot_timeout: int,
     tac_timeout: float,
-) -> None:
+) -> StepResult | None:
     if isinstance(step, SetModeStep):
         await set_device_mode(
             tac=tac,
@@ -186,18 +220,17 @@ async def execute_step(
             check=step.check_dmesg,
             tac_timeout=tac_timeout,
         )
-        return
+        return None
     if isinstance(step, SleepStep):
         await asyncio.sleep(step.sleep)
-        return
+        return None
     if isinstance(step, QdlStep):
         result = await asyncio.to_thread(run_qdl_step, step, firmware_root, timeout=qdl_timeout)
         if result.returncode != 0:
             raise RuntimeError(f"QDL failed ({result.returncode}): {result.stderr or result.stdout}")
-        return
+        return StepResult(stdout=result.stdout, stderr=result.stderr)
     if isinstance(step, FastbootStep):
-        await asyncio.to_thread(run_fastboot_step, step, firmware_root, timeout=fastboot_timeout)
-        return
+        return await asyncio.to_thread(run_fastboot_step, step, firmware_root, timeout=fastboot_timeout)
     raise TypeError(f"Unsupported step type: {type(step)!r}")
 
 
@@ -216,15 +249,16 @@ async def execute_manifest(
     for index, step in enumerate(manifest.steps, start=1):
         label = step_label(step)
         yield FlashStatus(
-            phase="step",
+            phase=FlashPhase.STEP,
             message=f"Running {label}",
             step_index=index,
             total_steps=total_steps,
             step_name=label,
         )
+        step_result: StepResult | None = None
         for attempt in range(1, max_attempts + 1):
             try:
-                await execute_step(
+                step_result = await execute_step(
                     step,
                     tac=tac,
                     profile=profile,
@@ -240,19 +274,36 @@ async def execute_manifest(
                 if not step.retry_mode:
                     raise
                 yield FlashStatus(
-                    phase="step",
+                    phase=FlashPhase.STEP,
                     message=f"Retrying {label} in {step.retry_mode} mode (attempt {attempt + 1}/{max_attempts})",
                     step_index=index,
                     total_steps=total_steps,
                     step_name=label,
                 )
+                retry_check = RETRY_MODE_DMESG.get(step.retry_mode)
+                if step.retry_mode and retry_check is None:
+                    logger.warning(
+                        "No dmesg verification configured for retry mode '%s'; "
+                        "skipping post-retry device check",
+                        step.retry_mode,
+                    )
                 await set_device_mode(
                     tac=tac,
                     profile=profile,
                     mode=step.retry_mode,
-                    check=RETRY_MODE_DMESG.get(step.retry_mode),
+                    check=retry_check,
                     tac_timeout=tac_timeout,
                 )
+        if step_result:
+            yield FlashStatus(
+                phase=FlashPhase.STEP,
+                message=f"Completed {label}",
+                step_index=index,
+                total_steps=total_steps,
+                step_name=label,
+                stdout=step_result.stdout or None,
+                stderr=step_result.stderr or None,
+            )
 
 
 def resolve_firmware_root(work_dir: Path, manifest: FirmwareManifest) -> Path:

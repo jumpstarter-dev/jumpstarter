@@ -9,6 +9,7 @@ from jumpstarter_driver_ridesx.qdl.executor import execute_manifest
 from jumpstarter_driver_ridesx.qdl.schema import SleepStep, load_firmware_manifest
 from jumpstarter_driver_ridesx.qdl.soc_profiles import SA8775P
 
+from jumpstarter.client.flasher import FlashPhase
 from jumpstarter.common.exceptions import ConfigurationError
 
 
@@ -29,7 +30,7 @@ async def test_execute_manifest_sleep_step():
             tac_timeout=1,
         )
     ]
-    assert statuses[0].phase == "step"
+    assert statuses[0].phase == FlashPhase.STEP
     assert statuses[0].step_name == "sleep 0s"
 
 
