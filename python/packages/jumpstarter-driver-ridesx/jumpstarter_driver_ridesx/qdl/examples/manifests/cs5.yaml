@@ -24,6 +24,9 @@ steps:
 
   - sleep: 10
 
+  - set_mode: edl
+    check_dmesg: "USB QTI_HS"
+
   - name: "Flash UFS"
     retry_mode: edl
     qdl:

@@ -21,6 +21,9 @@ steps:
 
   - sleep: 5
 
+  - set_mode: edl
+    check_dmesg: "USB QTI_HS"
+
   - name: "Flash UFS"
     retry_mode: edl
     qdl:
@@ -31,6 +34,9 @@ steps:
         - "patch*.xml"
 
   - sleep: 10
+
+  - set_mode: edl
+    check_dmesg: "USB QTI_HS"
 
   - name: "Flash SPINOR"
     retry_mode: edl
