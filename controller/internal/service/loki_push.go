@@ -297,7 +297,7 @@ func (p *LokiPusher) push(ctx context.Context, entries []*pb.LogEntry) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
 		slurp, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return fmt.Errorf("loki push %s: %s", resp.Status, bytes.TrimSpace(slurp))

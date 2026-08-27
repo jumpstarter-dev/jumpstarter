@@ -112,7 +112,7 @@ type TelemetryService struct {
 // controller-runtime logger (structured JSON to stdout), and enqueues them for
 // Loki when a pusher is configured.
 func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest) (*pb.PushLogsResponse, error) {
-	id, err := s.authenticateExporter(ctx)
+	id, err := s.authenticatePushLogs(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +134,12 @@ func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest
 		// Drop entries that claim to be from a different exporter or namespace
 		// than what the token authorises. Counted as dropped rather than failing
 		// the whole batch so valid entries in the same request are still written.
-		if entry.Exporter != "" && entry.Exporter != claimedName {
+		if id.kind == "exporter" {
+			if entry.Exporter != "" && entry.Exporter != claimedName {
+				dropped++
+				continue
+			}
+		} else if entry.Client != "" && entry.Client != claimedName {
 			dropped++
 			continue
 		}
@@ -151,9 +156,11 @@ func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest
 		// stream labels even when the entry omitted them.
 		kvs := []any{
 			"component", prepared.Component,
-			logFieldExporter, claimedName,
 			"namespace", claimedNamespace,
 			"severity", prepared.Severity,
+		}
+		if prepared.Exporter != "" {
+			kvs = append(kvs, logFieldExporter, prepared.Exporter)
 		}
 		if prepared.Timestamp != nil {
 			kvs = append(kvs, "ts", prepared.Timestamp.AsTime().Format(time.RFC3339Nano))
@@ -198,19 +205,24 @@ func (s *TelemetryService) PushLogs(ctx context.Context, req *pb.PushLogsRequest
 
 // prepareLogEntry copies entry with identity overwritten from the token and
 // extra_fields truncated / stripped of reserved keys.
-func prepareLogEntry(id exporterIdentity, entry *pb.LogEntry) *pb.LogEntry {
+func prepareLogEntry(id telemetryIdentity, entry *pb.LogEntry) *pb.LogEntry {
 	out := &pb.LogEntry{
 		Timestamp:  entry.Timestamp,
 		Severity:   entry.Severity,
 		Message:    entry.Message,
 		Component:  entry.Component,
-		Exporter:   id.name,
 		Lease:      entry.Lease,
 		Client:     entry.Client,
 		Operation:  entry.Operation,
 		Result:     entry.Result,
 		DriverType: entry.DriverType,
 		Namespace:  id.namespace,
+		Exporter:   entry.Exporter,
+	}
+	if id.kind == "exporter" {
+		out.Exporter = id.name
+	} else {
+		out.Client = id.name
 	}
 	if len(entry.ExtraFields) == 0 {
 		return out

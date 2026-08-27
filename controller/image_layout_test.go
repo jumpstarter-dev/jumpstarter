@@ -57,6 +57,7 @@ func TestMakefileBuildProducesTelemetry(t *testing.T) {
 func TestMakefileDockerBuildCIStagesTelemetry(t *testing.T) {
 	content := mustRead(t, "Makefile")
 	if !strings.Contains(content, "-o bin/ci-stage/controller/telemetry") {
-		t.Error("make docker-build-ci must stage telemetry next to manager and router so Containerfile.prebuilt COPY . . places /telemetry")
+		t.Error("make docker-build-ci must stage telemetry next to manager and router " +
+			"so Containerfile.prebuilt COPY . . places /telemetry")
 	}
 }

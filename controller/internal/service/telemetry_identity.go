@@ -60,3 +60,45 @@ func (s *TelemetryService) authenticateExporter(ctx context.Context) (exporterId
 	}
 	return parseExporterSubject(subject)
 }
+
+type telemetryIdentity struct {
+	kind      string // "exporter" or "client"
+	namespace string
+	name      string
+}
+
+func parseClientSubject(subject string) (telemetryIdentity, error) {
+	parts := strings.SplitN(subject, ":", 4)
+	if len(parts) != 4 || parts[0] != "client" {
+		return telemetryIdentity{}, status.Errorf(codes.PermissionDenied, "token is not a client or exporter token")
+	}
+	if parts[1] == "" || parts[2] == "" {
+		return telemetryIdentity{}, status.Errorf(codes.PermissionDenied, "token has incomplete client identity")
+	}
+	return telemetryIdentity{kind: "client", namespace: parts[1], name: parts[2]}, nil
+}
+
+func (s *TelemetryService) authenticatePushLogs(ctx context.Context) (telemetryIdentity, error) {
+	token, err := authentication.BearerTokenFromContext(ctx)
+	if err != nil {
+		return telemetryIdentity{}, err
+	}
+	if s.Signer == nil {
+		return telemetryIdentity{}, status.Error(codes.Internal, "telemetry signer is not configured")
+	}
+	subject, err := s.Signer.ParseSubject(token)
+	if err != nil {
+		return telemetryIdentity{}, status.Errorf(codes.Unauthenticated, "invalid token: %v", err)
+	}
+	if strings.HasPrefix(subject, "exporter:") {
+		id, err := parseExporterSubject(subject)
+		if err != nil {
+			return telemetryIdentity{}, err
+		}
+		return telemetryIdentity{kind: "exporter", namespace: id.namespace, name: id.name}, nil
+	}
+	if strings.HasPrefix(subject, "client:") {
+		return parseClientSubject(subject)
+	}
+	return telemetryIdentity{}, status.Errorf(codes.PermissionDenied, "token is not a client or exporter token")
+}
