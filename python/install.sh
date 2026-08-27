@@ -25,7 +25,7 @@ fi
 INSTALL_DIR="${INSTALL_DIR:-${HOME}/.local/jumpstarter}"
 VENV_DIR="${VENV_DIR:-${INSTALL_DIR}/venv}"
 SET_SCRIPT="${INSTALL_DIR}/set"
-DEFAULT_SOURCE="release-0.8"
+DEFAULT_SOURCE="release-0.9"
 
 # Function to print colored output
 print_info() {
@@ -52,9 +52,9 @@ Jumpstarter Installer
 Usage: $0 [OPTIONS]
 
 OPTIONS:
-    -s, --source SOURCE    Installation source (default: release-0.8)
+    -s, --source SOURCE    Installation source (default: release-0.9)
                           Available sources:
-                          - release-0.8: Stable release 0.8 (recommended)
+                          - release-0.9: Stable release (recommended)
                           - latest: Latest stable release (when available)
                           - rc: Latest release candidate (when available)
                           - main: Latest development version
@@ -62,7 +62,7 @@ OPTIONS:
     -h, --help            Show this help message
 
 EXAMPLES:
-    $0                    # Install stable release 0.8 (recommended)
+    $0                    # Install stable release 0.9 (recommended)
     $0 -s release-0.8    # Install stable release 0.8
     $0 -s main           # Install latest development version
     $0 -s rc             # Install latest release candidate (when available)
