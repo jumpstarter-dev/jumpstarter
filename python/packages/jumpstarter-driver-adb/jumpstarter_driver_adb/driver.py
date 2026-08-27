@@ -162,9 +162,7 @@ class AdbServer(TcpNetwork):
             if occupant is None:
                 continue
             if live.get(slot_port) != occupant:
-                self.logger.info(
-                    "slot tcp:%d claimed %s but ADB has no such forward; releasing", slot_port, occupant
-                )
+                self.logger.info("slot tcp:%d claimed %s but ADB has no such forward; releasing", slot_port, occupant)
                 self._slots[slot_port] = None
 
         for slot_port, occupant in self._slots.items():
@@ -253,9 +251,7 @@ class AdbServer(TcpNetwork):
         """
         live = self._live_forwards()
         return {
-            str(port): device
-            for port, device in self._slots.items()
-            if device is not None and live.get(port) == device
+            str(port): device for port, device in self._slots.items() if device is not None and live.get(port) == device
         }
 
     def adb_env(self) -> dict[str, str]:

@@ -4,7 +4,7 @@ import socket
 import subprocess
 import sys
 import tempfile
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from typing import Generator
 
 import anyio
@@ -218,6 +218,30 @@ class AdbClient(DriverClient):
                 except Exception as e:  # noqa: BLE001 - teardown is best-effort
                     self.logger.debug("detach %s failed: %s", device, e)
 
+    def _cli_attach(self, targets: list[str], *, adb: str, local_port: int) -> int:
+        """Body of `j adb attach`. Attaches every target, then blocks until Ctrl+C."""
+        if not targets:
+            # Whatever the exporter's ADB server sees right now, including anything
+            # hotplugged since the lease began.
+            targets = self.devices()
+        if not targets:
+            click.echo("No usable devices on the exporter.", err=True)
+            return 1
+
+        with ExitStack() as stack:
+            for device in targets:
+                try:
+                    attached = stack.enter_context(self.attach(device, adb=adb, local_port=local_port))
+                except (RuntimeError, subprocess.CalledProcessError) as e:
+                    click.echo(f"error: could not attach {device}: {e}", err=True)
+                    return 1
+                click.echo(f"{device} -> {attached}")
+            click.echo("\nAttached to your local ADB server; Android Studio will list them.")
+            click.echo("Press Ctrl+C to detach.")
+            _wait_for_interrupt(self)
+        click.echo("detached")
+        return 0
+
     def cli(self):
         @click.command(context_settings={"ignore_unknown_options": True})
         @click.option(
@@ -290,30 +314,8 @@ class AdbClient(DriverClient):
             _validate_adb_args(args)
 
             if args[0] == "attach":
-                targets = [a for a in args[1:] if not a.startswith("-")]
-                if not targets:
-                    # Whatever the exporter's ADB server sees right now, including
-                    # anything hotplugged since the lease began.
-                    targets = self.devices()
-                if not targets:
-                    click.echo("No usable devices on the exporter.", err=True)
-                    return 1
-
-                from contextlib import ExitStack
-
-                with ExitStack() as stack:
-                    for device in targets:
-                        try:
-                            attached = stack.enter_context(self.attach(device, adb=adb, local_port=port))
-                        except (RuntimeError, subprocess.CalledProcessError) as e:
-                            click.echo(f"error: could not attach {device}: {e}", err=True)
-                            return 1
-                        click.echo(f"{device} -> {attached}")
-                    click.echo("\nAttached to your local ADB server; Android Studio will list them.")
-                    click.echo("Press Ctrl+C to detach.")
-                    _wait_for_interrupt(self)
-                click.echo("detached")
-                return 0
+                serials = [a for a in args[1:] if not a.startswith("-")]
+                return self._cli_attach(serials, adb=adb, local_port=port)
 
             if args[0] == "tunnel":
                 state = _read_tunnel_state()
