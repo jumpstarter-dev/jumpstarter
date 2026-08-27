@@ -273,6 +273,31 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv
 		replicas = *t.Replicas
 	}
 
+	var tlsEnv []corev1.EnvVar
+	var volumeMounts []corev1.VolumeMount
+	var volumes []corev1.Volume
+	if jumpstarter.Spec.CertManager.Enabled {
+		tlsEnv = []corev1.EnvVar{
+			{Name: "EXTERNAL_CERT_PEM", Value: "/tls/tls.crt"},
+			{Name: "EXTERNAL_KEY_PEM", Value: "/tls/tls.key"},
+		}
+		defaultMode := int32(420)
+		volumeMounts = []corev1.VolumeMount{{
+			Name:      "tls-certs",
+			MountPath: "/tls",
+			ReadOnly:  true,
+		}}
+		volumes = []corev1.Volume{{
+			Name: "tls-certs",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  getTelemetryCertSecretName(jumpstarter),
+					DefaultMode: &defaultMode,
+				},
+			},
+		}}
+	}
+
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-telemetry", jumpstarter.Name),
@@ -310,7 +335,7 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv
 							Args: []string{
 								fmt.Sprintf("--grpc-bind=:%d", telemetryPort),
 							},
-							Env: []corev1.EnvVar{
+							Env: append([]corev1.EnvVar{
 								{
 									Name: "CONTROLLER_KEY",
 									ValueFrom: &corev1.EnvVarSource{
@@ -322,7 +347,10 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv
 										},
 									},
 								},
-							},
+								// Advertised endpoint for self-signed SAN generation (must match controller ConfigMap).
+								{Name: "GRPC_TELEMETRY_ENDPOINT", Value: telemetryEndpointFor(jumpstarter.Namespace)},
+							}, tlsEnv...),
+							VolumeMounts: volumeMounts,
 							Ports: []corev1.ContainerPort{
 								{
 									ContainerPort: int32(telemetryPort),
@@ -371,6 +399,7 @@ func createTelemetryDeployment(jumpstarter *operatorv1alpha1.Jumpstarter) *appsv
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
 					},
+					Volumes:            volumes,
 					ServiceAccountName: jumpstarter.Name + telemetrySASuffix,
 				},
 			},
@@ -425,14 +454,16 @@ func getTelemetryCertSecretName(js *operatorv1alpha1.Jumpstarter) string {
 }
 
 // resolveTelemetryCA reads the CA certificate that exporters need to verify the
-// telemetry TLS connection. For self-signed CA mode, the cert is in the CA secret;
-// for external issuers, the user-provided caBundle is used.
+// telemetry TLS connection. For self-signed CA mode, the cert is in the CA secret.
+// For external issuers, the user-provided caBundle is preferred; when absent, ca.crt
+// from the issued telemetry TLS secret is used if present. An empty return with no
+// error means exporters should rely on the system trust store (public CA issuers).
 func (r *JumpstarterReconciler) resolveTelemetryCA(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) (string, error) {
 	if jumpstarter.Spec.CertManager.Server != nil && jumpstarter.Spec.CertManager.Server.IssuerRef != nil {
 		if len(jumpstarter.Spec.CertManager.Server.IssuerRef.CABundle) > 0 {
 			return string(jumpstarter.Spec.CertManager.Server.IssuerRef.CABundle), nil
 		}
-		return "", nil
+		return r.telemetryCAFromCertSecret(ctx, jumpstarter)
 	}
 
 	// Self-signed CA mode — read from the CA secret created by cert-manager
@@ -445,6 +476,27 @@ func (r *JumpstarterReconciler) resolveTelemetryCA(ctx context.Context, jumpstar
 		return string(cert), nil
 	}
 	return "", fmt.Errorf("CA secret %s missing tls.crt", caSecretName)
+}
+
+// telemetryCAFromCertSecret returns ca.crt from the issued telemetry TLS secret,
+// when cert-manager includes it. Missing secret or key is not an error: external
+// issuers backed by public CAs may not need an explicit bundle in the controller config.
+func (r *JumpstarterReconciler) telemetryCAFromCertSecret(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) (string, error) {
+	secret := &corev1.Secret{}
+	err := r.Get(ctx, client.ObjectKey{
+		Name:      getTelemetryCertSecretName(jumpstarter),
+		Namespace: jumpstarter.Namespace,
+	}, secret)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("telemetry TLS secret not found: %w", err)
+	}
+	if ca, ok := secret.Data["ca.crt"]; ok && len(ca) > 0 {
+		return string(ca), nil
+	}
+	return "", nil
 }
 
 // telemetryEndpointFor returns the in-cluster gRPC endpoint for the telemetry service.
