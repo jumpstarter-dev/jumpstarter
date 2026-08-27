@@ -2,6 +2,7 @@ import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
+from jumpstarter_driver_network.driver import TcpNetwork
 
 from .driver import AdbServer
 from jumpstarter.common.exceptions import ConfigurationError
@@ -239,8 +240,13 @@ def test_slots_exist_but_are_empty_at_startup(mock_run, _):
 @patch("subprocess.run", return_value=_mock_adb_ok())
 def test_slot_children_bind_sequential_ports(mock_run, _):
     server = AdbServer(attach_slots=2, attach_base_port=16000)
-    assert (server.children["slot0"].host, server.children["slot0"].port) == ("127.0.0.1", 16000)
-    assert server.children["slot1"].port == 16001
+    slot0, slot1 = server.children["slot0"], server.children["slot1"]
+    # `children` is typed dict[str, Driver]; assert the concrete type so host/port
+    # resolve, and so a slot silently becoming some other Driver fails here.
+    assert isinstance(slot0, TcpNetwork)
+    assert isinstance(slot1, TcpNetwork)
+    assert (slot0.host, slot0.port) == ("127.0.0.1", 16000)
+    assert slot1.port == 16001
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
