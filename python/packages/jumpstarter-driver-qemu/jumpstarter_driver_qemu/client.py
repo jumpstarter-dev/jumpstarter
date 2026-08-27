@@ -23,8 +23,13 @@ class QemuFlasherClient(FlasherClient):
         compression: Compression | None = None,
     ):
         if isinstance(path, str) and path.startswith("oci://"):
+            from jumpstarter.common.oci import resolve_oci_credentials
+
+            creds = resolve_oci_credentials(path)
             returncode = 0
-            for stdout, stderr, code in self.streamingcall("flash_oci", path, target):
+            for stdout, stderr, code in self.streamingcall(
+                "flash_oci", path, target, creds.username, creds.plain_password
+            ):
                 if stdout:
                     print(stdout, end="", flush=True)
                 if stderr:
