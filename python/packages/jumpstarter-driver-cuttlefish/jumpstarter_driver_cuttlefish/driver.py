@@ -20,6 +20,10 @@ class CuttlefishTimeout(CuttlefishError):
     """Raised when an operation doesn't complete in time."""
 
 
+class _StaleHostState(CuttlefishError):
+    """Internal signal: HO state looks stale/inconsistent, eligible for one auto_reset retry."""
+
+
 @dataclass(kw_only=True)
 class Cuttlefish(Driver):
     """Cuttlefish Host Orchestrator driver for managing Android virtual devices.
@@ -37,6 +41,13 @@ class Cuttlefish(Driver):
     instance_num: int = 1
     adb_server_port: int = 15037
     boot_timeout: int = 300
+    # Auto-recover from stale HO state (orphaned CVDs, port drift) by calling
+    # reset_host() and retrying power.on() once. Off by default: HO's /reset is
+    # host-wide and stops every CVD on the host, so it is only safe when this
+    # exporter is the sole tenant of the host orchestrator. A 1:1 CVD-to-exporter
+    # mapping does NOT imply that - several exporters can still share one HO on
+    # a packed host, and enabling this would silently kill their CVDs too.
+    auto_reset: bool = False
     env_config: dict = field(default_factory=dict)
     webrtc_url: str = ""
     _cvd_group: str | None = field(default=None, init=False, repr=False)
@@ -348,6 +359,13 @@ class CvdPower(VirtualPowerInterface, Driver):
     on() creates a CVD if none exists, or starts an existing one.
     If multiple CVDs exist in the configured group, all are deleted before
     creating a fresh one (assumes single-tenant host orchestrator).
+    If HO state looks stale (orphaned CVDs won't delete, creation fails with
+    "in use"/"already running") and `auto_reset` is enabled, on() calls
+    reset_host() once and retries - see `auto_reset` for the host-wide caveat.
+    An ADB port mismatch after creation is deliberately NOT auto-reset-eligible:
+    the occupied slot may belong to a different tenant's legitimately running
+    CVD on a shared host, and reset_host() would destroy it too - that case
+    always raises for manual investigation instead of retrying.
     off() stops the CVD; off(destroy=True) deletes it entirely.
     """
 
@@ -358,7 +376,28 @@ class CvdPower(VirtualPowerInterface, Driver):
         return "jumpstarter_driver_cuttlefish.client.CvdPowerClient"
 
     @export
-    def on(self) -> None:  # noqa: C901
+    def on(self) -> None:
+        auto_reset_attempted = False
+        while True:
+            try:
+                self._create_or_start()
+                break
+            except _StaleHostState as e:
+                if not self.parent.auto_reset or auto_reset_attempted:
+                    raise
+                auto_reset_attempted = True
+                self.logger.warning(
+                    "auto_reset: %s -- resetting Host Orchestrator and retrying once. "
+                    "This is HOST-WIDE: it stops every CVD on this host, not just this driver's.",
+                    e,
+                )
+                self.parent.reset_host()
+
+        self.parent._auto_connect_adb()
+        if self.parent.boot_timeout:
+            self.parent._wait_boot(self.parent.boot_timeout)
+
+    def _create_or_start(self) -> None:  # noqa: C901
         existing = self.parent._get_existing_cvds()
 
         if len(existing) > 1:
@@ -375,7 +414,7 @@ class CvdPower(VirtualPowerInterface, Driver):
                     self.logger.warning("Failed to delete stale CVD %s/%s", group, name)
                     failed.append(f"{group}/{name}")
             if failed:
-                raise CuttlefishError(
+                raise _StaleHostState(
                     f"cannot create CVD - failed to delete stale CVDs: {', '.join(failed)}. "
                     f"Run 'j cuttlefish reset' then retry."
                 )
@@ -402,7 +441,7 @@ class CvdPower(VirtualPowerInterface, Driver):
             except CuttlefishError as e:
                 msg = str(e)
                 if "in use" in msg or "already running" in msg or "ValidateTapDevices" in msg:
-                    raise CuttlefishError(
+                    raise _StaleHostState(
                         f"CVD creation failed - orphaned processes from a previous session. "
                         f"Run 'j cuttlefish reset' then retry. Original error: {msg}"
                     ) from e
@@ -419,6 +458,9 @@ class CvdPower(VirtualPowerInterface, Driver):
                             self.logger.warning("Failed to clean up CVD after port mismatch")
                         self.parent._cvd_group = None
                         self.parent._cvd_name = None
+                        # Not auto_reset-eligible: the slot may be occupied by a different
+                        # tenant's legitimately running CVD on a shared host, and reset_host()
+                        # would destroy it too. Requires manual investigation.
                         raise CuttlefishError(
                             f"HO assigned adb_port {actual_port} but expected "
                             f"{self.parent._expected_adb_port} — stale state may have leaked. "

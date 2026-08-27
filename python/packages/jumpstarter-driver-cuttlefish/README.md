@@ -112,6 +112,37 @@ Or restart the container - ephemeral `/var/tmp/cvd` means a restart is
 equivalent to a full reset. Fetched images in the `cvd-images` volume
 are preserved.
 
+Prefer `cvd reset -y --clean-runtime-dir` over the manual `rm -rf` above when
+you have shell access - it's the supported cleanup path (stops instances,
+resets lock files, clears `/var/tmp/cvd/<id>/`).
+
+**Operational hazard: `cvd reset` must run as the `httpcvd` user, not root.**
+`cvd` tracks running instance groups in a per-user instance database, and HO
+launches CVDs as `httpcvd`. Running the command as root (e.g. plain
+`podman exec`) reports "Found 0 untracked running instance groups" and
+silently does nothing, even with a CVD actively running - this is dangerous
+precisely because it *looks* like a clean result rather than a permissions
+failure:
+
+```bash
+podman exec -u httpcvd cuttlefish-orchestrator cvd reset -y --clean-runtime-dir
+```
+
+The driver's `reset_host()` (`j cuttlefish reset`) doesn't hit this problem -
+it calls HO's own `POST /reset`, which HO executes as itself (`httpcvd`).
+
+**Operational hazard: `auto_reset` is host-wide, not per-CVD.** Setting
+`auto_reset: true` makes `power.on()` call `reset_host()` automatically and
+retry once when it detects stale state (orphaned CVDs that won't delete, or
+creation failing with "in use"/"already running"). Off by default because
+`POST /reset` stops every CVD on the host, so it is only safe when this
+exporter is the sole tenant of the host orchestrator - a 1:1 CVD-to-exporter
+mapping does **not** imply that, since several exporters can still share one
+HO on a packed host, and `auto_reset` would silently kill their CVDs too. An
+ADB port mismatch after creation is excluded from `auto_reset` for the same
+reason: the occupied slot may be a different tenant's legitimately running
+CVD, so that case always raises for manual investigation instead of retrying.
+
 ### Teardown
 
 Delete CVDs and snapshots when done to avoid accumulation:
@@ -169,6 +200,7 @@ export:
 | instance_num    | CVD instance number (determines ADB/netsim/HCI ports). Must match HO's assigned slot. Pinning avoids drift (see `env_config` example). | int  | no       | 1           |
 | adb_server_port | ADB server port on the exporter     | int  | no       | 15037       |
 | boot_timeout    | Seconds to wait for boot on power on| int  | no       | 300         |
+| auto_reset      | On stale HO state (orphaned CVDs, port drift), call the HO-wide reset and retry `power.on()` once. See "Resetting stale state" below - only safe when this exporter is the sole tenant of the host. | bool | no | false |
 | env_config      | Default env_config for CVD creation | dict | no       | {}          |
 
 This is a **composite driver** with three children:
