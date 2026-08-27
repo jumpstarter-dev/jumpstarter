@@ -16,7 +16,7 @@ from jumpstarter.common.exceptions import ConfigurationError
 @pytest.mark.asyncio
 async def test_execute_manifest_sleep_step():
     manifest = load_firmware_manifest(Path(__file__).parent / "examples" / "manifests" / "es22.yaml")
-    manifest = type(manifest)(**{**manifest.model_dump(), "steps": [SleepStep(sleep=0)]})
+    manifest = manifest.model_copy(update={"steps": [SleepStep(sleep=0)]})
     tac = MagicMock()
     statuses = [
         status
