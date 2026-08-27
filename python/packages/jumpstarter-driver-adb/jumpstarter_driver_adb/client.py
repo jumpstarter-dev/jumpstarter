@@ -198,8 +198,8 @@ class AdbClient(DriverClient):
             adbd_port: adbd's TCP port on the device.
             adb: path to the local adb binary.
             local_port: local port to bind; 0 lets the OS choose. The device's
-                address is whatever this resolves to — deliberately not something
-                this driver invents, since ADB owns device addressing.
+            address is whatever this resolves to — deliberately not something this
+            driver invents, since ADB owns device addressing.
 
         Yields:
             The ``host:port`` the device was attached as.
