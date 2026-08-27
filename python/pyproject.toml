@@ -103,7 +103,6 @@ known-local-folder = ["packages", "examples", "jumpstarter"]
 locale = "en-us"
 
 [tool.typos.default.extend-words]
-abl = "abl"
 ser = "ser"
 Pn = "Pn"
 mosquitto = "mosquitto"
