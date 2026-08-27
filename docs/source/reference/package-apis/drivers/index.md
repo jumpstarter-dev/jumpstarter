@@ -86,6 +86,7 @@ Drivers for flashing firmware and programming devices:
 Drivers for virtual and emulated targets:
 
 - {doc}`Android Emulator <androidemulator>` (`jumpstarter-driver-androidemulator`) - Android emulator lifecycle management with ADB tunneling
+- {doc}`KubeVirt <kubevirt>` (`jumpstarter-driver-kubevirt`) - KubeVirt virtual machine provisioning on remote clusters
 - {doc}`QEMU <qemu>` (`jumpstarter-driver-qemu`) - QEMU virtual machine management
 - {doc}`Renode <renode>` (`jumpstarter-driver-renode`) - Renode embedded systems emulation
 - {doc}`Corellium <corellium>` (`jumpstarter-driver-corellium`) - Corellium virtualization platform
@@ -118,6 +119,7 @@ gpiod.md
 http.md
 http-power.md
 iscsi.md
+kubevirt.md
 mitmproxy.md
 network.md
 noyito-relay.md

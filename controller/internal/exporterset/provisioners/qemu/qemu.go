@@ -321,8 +321,11 @@ func (p *Provisioner) RenderPod(
 // - Auto-injects hostfwd.ssh if not present
 // - Auto-injects tcp wrapper driver entry
 func (p *Provisioner) EnrichExporterExport(
+	_ context.Context,
+	_ *virtualtargetv1alpha1.VirtualTargetClass,
 	drivers []virtualtargetv1alpha1.DriverConfig,
 	mergedParameters map[string]interface{},
+	_ *jumpstarterdevv1alpha1.Exporter,
 ) ([]virtualtargetv1alpha1.DriverConfig, error) {
 	result := make([]virtualtargetv1alpha1.DriverConfig, 0, len(drivers)+1)
 	hasTCP := false
