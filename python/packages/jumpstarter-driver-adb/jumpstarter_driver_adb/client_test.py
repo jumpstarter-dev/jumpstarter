@@ -212,6 +212,8 @@ class _FakeClient:
         self._failing = set(failing)
         # Raised instead of the default behaviour, to script a specific failure.
         self._on_attach = on_attach
+        # Set to an exception to make the next device listing fail.
+        self.fail_listing: Exception | None = None
         self.logger = MagicMock()
         self.attached = []  # every device attach() was called for
         self.detached = []  # every device whose context was exited
@@ -223,6 +225,8 @@ class _FakeClient:
 
     def devices(self):
         """Serials the exporter reports right now."""
+        if self.fail_listing is not None:
+            raise self.fail_listing
         return list(self._devices)
 
     @contextmanager
@@ -313,7 +317,7 @@ def test_a_failed_poll_keeps_the_session_alive():
     client = _FakeClient(["tablet"])
     with _AttachSet(client, [], adb="adb", local_port=0) as attachments:
         attachments.reconcile(first_pass=True)
-        client.devices = MagicMock(side_effect=RuntimeError("exporter busy"))
+        client.fail_listing = RuntimeError("exporter busy")
         attachments.reconcile(first_pass=False)  # must not raise
         assert sorted(attachments.attached) == ["tablet"]
         assert client.detached == []
