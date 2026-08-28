@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import socket
@@ -7,7 +8,6 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
-from anyio import get_cancelled_exc_class
 
 from .client import (
     AdbClient,
@@ -488,18 +488,19 @@ def test_an_interrupt_ends_the_wait_without_propagating(exc):
     assert _sleep_through_portal(client, 1) is False
 
 
-async def test_anyio_cancellation_ends_the_wait():
-    """anyio's cancelled exception is a BaseException, so it needs its own arm.
+def test_anyio_cancellation_ends_the_wait():
+    """Cancellation is a BaseException, not an Exception, so it needs its own arm.
 
-    Async because `get_cancelled_exc_class()` resolves the running backend, and
-    raises NoEventLoopError outside a loop.
+    Deliberately synchronous and with no event loop: these waits run in a worker
+    thread, and `get_cancelled_exc_class()` in the except arm used to raise
+    NoEventLoopError there, masking the cancellation it was meant to detect.
     """
-    client = MagicMock(portal=_Portal(get_cancelled_exc_class()()))
+    client = MagicMock(portal=_Portal(asyncio.CancelledError()))
     _wait_for_interrupt(client)
     assert _sleep_through_portal(client, 1) is False
 
 
-async def test_an_unexpected_error_is_not_swallowed():
+def test_an_unexpected_error_is_not_swallowed():
     """A real bug must surface, not look like a clean Ctrl+C."""
     client = MagicMock(portal=_Portal(ValueError("something else")))
     with pytest.raises(ValueError):
