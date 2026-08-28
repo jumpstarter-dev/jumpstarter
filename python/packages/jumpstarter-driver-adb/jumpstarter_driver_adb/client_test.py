@@ -7,12 +7,16 @@ from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pytest
+from anyio import get_cancelled_exc_class
 
 from .client import (
+    AdbClient,
     _adb_connect,
     _AttachSet,
     _read_tunnel_state,
     _remove_tunnel_state,
+    _sleep_through_portal,
+    _wait_for_interrupt,
     _write_tunnel_state,
 )
 
@@ -353,3 +357,158 @@ def test_an_unresponsive_adb_costs_only_that_device():
     with _AttachSet(client, [], adb="adb", local_port=0) as attachments:
         attachments.reconcile(first_pass=True)  # must not raise
         assert sorted(attachments.attached) == ["tablet"]
+
+
+# ------------------------------------------------------- parsing `adb devices`
+#
+# The exporter's ADB server is the device inventory; this driver keeps no list of
+# its own. So the parse has to be right, including the states that cannot be
+# forwarded.
+
+
+@pytest.mark.parametrize(
+    ("output", "expected"),
+    [
+        ("List of devices attached\nHVA1234567\tdevice\n", ["HVA1234567"]),
+        # offline/unauthorized devices have no working adbd to forward.
+        ("List of devices attached\nHVA1\tdevice\nHVA2\toffline\nHVA3\tunauthorized\n", ["HVA1"]),
+        ("List of devices attached\n", []),
+        ("", []),
+        # `* daemon started successfully` and friends must not be read as serials.
+        ("* daemon not running; starting now at tcp:15037\n* daemon started successfully\n", []),
+        ("List of devices attached\nemulator-5554\tdevice\n", ["emulator-5554"]),
+        # `devices -l` appends properties; only the serial and state matter.
+        ("List of devices attached\nHVA1\tdevice product:x model:y device:z\n", ["HVA1"]),
+        ("List of devices attached\n10.0.0.2:5555\tdevice\n", ["10.0.0.2:5555"]),
+    ],
+)
+def test_only_forwardable_devices_are_listed(output, expected):
+    client = AdbClient.__new__(AdbClient)
+    with patch.object(AdbClient, "list_devices", return_value=output):
+        assert client.devices() == expected
+
+
+# --------------------------------------------------------------- `attach` body
+#
+# `_cli_attach` is what `j adb attach` runs. Driven here with a scripted client so
+# the exit statuses and the wait/poll choice are covered without an exporter.
+
+
+class _CliClient(_FakeClient):
+    """A fake that also stands in for the client passed to the portal helpers."""
+
+    def __init__(self, devices, failing=(), interrupts_after=0):
+        super().__init__(devices, failing=failing)
+        # How many poll ticks to allow before reporting an interrupt.
+        self.interrupts_after = interrupts_after
+        self.polls = 0
+        self.waited = False
+
+
+def _run_cli_attach(client, targets=(), **kwargs):
+    """Invoke `_cli_attach` with the portal waits stubbed out."""
+
+    def sleep(_client, _seconds):
+        client.polls += 1
+        return client.polls <= client.interrupts_after
+
+    def wait(_client):
+        client.waited = True
+
+    with (
+        patch("jumpstarter_driver_adb.client._sleep_through_portal", side_effect=sleep),
+        patch("jumpstarter_driver_adb.client._wait_for_interrupt", side_effect=wait),
+    ):
+        return AdbClient._cli_attach(client, list(targets), adb="adb", local_port=0, **kwargs)
+
+
+def test_attach_reports_failure_when_nothing_is_attachable():
+    """Exit 1, so a script does not carry on believing it has a device."""
+    client = _CliClient([])
+    assert _run_cli_attach(client) == 1
+    assert client.attached == []
+
+
+def test_attach_returns_zero_after_a_clean_detach():
+    client = _CliClient(["tablet"])
+    assert _run_cli_attach(client) == 0
+    assert client.attached == ["tablet"]
+    assert client.detached == ["tablet"]  # released, not left connected
+    assert client.waited is True  # blocked for Ctrl+C rather than polling
+
+
+def test_attach_does_not_poll_unless_hotplug_is_asked_for():
+    """Default is a static bench; polling a fixed list is only noise."""
+    client = _CliClient(["tablet"])
+    assert _run_cli_attach(client) == 0
+    assert client.polls == 0
+
+
+def test_hotplug_polls_and_picks_up_a_new_device():
+    client = _CliClient(["tablet"], interrupts_after=3)
+    with patch.object(_CliClient, "devices", autospec=True) as devices:
+        # Third poll is when the head unit appears.
+        devices.side_effect = [["tablet"], ["tablet"], ["tablet", "headunit"], ["tablet", "headunit"]]
+        assert _run_cli_attach(client, hotplug=True, poll_interval=0.01) == 0
+    assert sorted(client.attached) == ["headunit", "tablet"]
+
+
+def test_attach_only_the_named_serial():
+    client = _CliClient(["tablet", "headunit"])
+    assert _run_cli_attach(client, targets=["tablet"]) == 0
+    assert client.attached == ["tablet"]
+
+
+def test_attach_fails_when_the_named_serial_is_absent():
+    client = _CliClient(["headunit"])
+    assert _run_cli_attach(client, targets=["not-plugged-in"]) == 1
+
+
+# ------------------------------------------------- waiting inside the event loop
+#
+# Both helpers must return rather than propagate, or Ctrl+C leaves a stale
+# `adb connect` entry behind and a second Ctrl+C hangs in threading._shutdown.
+
+
+class _Portal:
+    def __init__(self, raises):
+        self._raises = raises
+
+    def call(self, *args, **kwargs):
+        raise self._raises
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [KeyboardInterrupt(), SystemExit(), GeneratorExit(), RuntimeError("portal is closed")],
+)
+def test_an_interrupt_ends_the_wait_without_propagating(exc):
+    client = MagicMock(portal=_Portal(exc))
+    _wait_for_interrupt(client)  # must return, so teardown can run
+    assert _sleep_through_portal(client, 1) is False
+
+
+async def test_anyio_cancellation_ends_the_wait():
+    """anyio's cancelled exception is a BaseException, so it needs its own arm.
+
+    Async because `get_cancelled_exc_class()` resolves the running backend, and
+    raises NoEventLoopError outside a loop.
+    """
+    client = MagicMock(portal=_Portal(get_cancelled_exc_class()()))
+    _wait_for_interrupt(client)
+    assert _sleep_through_portal(client, 1) is False
+
+
+async def test_an_unexpected_error_is_not_swallowed():
+    """A real bug must surface, not look like a clean Ctrl+C."""
+    client = MagicMock(portal=_Portal(ValueError("something else")))
+    with pytest.raises(ValueError):
+        _wait_for_interrupt(client)
+    with pytest.raises(ValueError):
+        _sleep_through_portal(client, 1)
+
+
+def test_a_completed_sleep_keeps_polling():
+    client = MagicMock()
+    client.portal.call.return_value = None
+    assert _sleep_through_portal(client, 0.01) is True
