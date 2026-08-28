@@ -1,6 +1,10 @@
 import io
+import shutil
+import subprocess
+import sys
 import webbrowser
 from base64 import b64decode
+from pathlib import Path
 
 import click
 from aiohttp import web
@@ -81,8 +85,82 @@ async def _iter_body(tunnel, buf: bytes, chunked: bool):
         buf = buf[size + 2 :]  # drop the CRLF terminating the chunk
 
 
-def run_video_server(client, app, port, open_browser):
-    """Run an aiohttp app, opening the browser and blocking until Ctrl+C."""
+# Candidate native players, best first. VLC leads because it survives the stream
+# dropping (a lease ending, the camera re-enumerating) instead of exiting, and
+# handles bare MJPEG-over-HTTP without a container. Each entry is
+# (binary, extra argv) -- the URL is appended last.
+#
+# macOS installs VLC and IINA as .app bundles whose binaries are not on PATH, so
+# those are probed separately.
+_PLAYERS = {
+    # --demux=mjpeg is required: without it VLC probes for a container format and
+    # usually fails on a raw MJPEG stream.
+    "vlc": ["--demux=mjpeg", "--network-caching=300"],
+    "mpv": ["--demuxer-lavf-format=mjpeg", "--profile=low-latency", "--untimed"],
+    # ffplay has no reconnect logic, so it is the last resort of the three.
+    "ffplay": ["-fflags", "nobuffer", "-flags", "low_delay", "-loglevel", "warning"],
+}
+
+_MACOS_APP_BINARIES = (
+    "/Applications/VLC.app/Contents/MacOS/VLC",
+    "/Applications/IINA.app/Contents/MacOS/IINA",
+    "/Applications/mpv.app/Contents/MacOS/mpv",
+)
+
+
+def find_player(preferred: str | None = None) -> tuple[str, list[str]] | None:
+    """Locate a native video player.
+
+    Returns ``(executable, extra_args)`` or ``None`` when nothing is installed.
+    Works the same on Linux (players on PATH) and macOS (also .app bundles).
+    """
+    if preferred:
+        path = shutil.which(preferred)
+        if path:
+            return path, _PLAYERS.get(Path(preferred).name, [])
+        # Allow an explicit absolute path to a player binary.
+        if Path(preferred).is_file():
+            return preferred, _PLAYERS.get(Path(preferred).name, [])
+        return None
+
+    for name, args in _PLAYERS.items():
+        path = shutil.which(name)
+        if path:
+            return path, args
+
+    if sys.platform == "darwin":
+        for path in _MACOS_APP_BINARIES:
+            if Path(path).is_file():
+                # Key the args off the binary name, lowercased: the VLC bundle's
+                # binary is "VLC" while the flags are registered under "vlc".
+                return path, _PLAYERS.get(Path(path).name.lower(), [])
+
+    return None
+
+
+def open_in_player(url: str, preferred: str | None = None) -> subprocess.Popen | None:
+    """Launch a native player on ``url``. Returns the process, or None if none found."""
+    found = find_player(preferred)
+    if found is None:
+        return None
+    executable, extra = found
+    click.echo(f"Opening in {Path(executable).name}: {url}")
+    # stdout/stderr discarded: players are chatty on stderr about codec probing
+    # and would bury the server's own output.
+    return subprocess.Popen(
+        [executable, *extra, url],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def run_video_server(client, app, port, open_browser, player=None):
+    """Run an aiohttp app, opening a viewer and blocking until Ctrl+C.
+
+    ``open_browser`` opens the landing page in a web browser. ``player`` opens the
+    MJPEG stream directly in a native player instead -- pass ``"auto"`` to pick
+    whichever of vlc/mpv/ffplay is installed, or a specific binary name/path.
+    """
     runner = web.AppRunner(app)
 
     async def serve():
@@ -100,10 +178,28 @@ def run_video_server(client, app, port, open_browser):
             click.echo(f"Snapshot endpoint: {url}/snapshot")
             click.echo("Press Ctrl+C to stop.")
 
-            if open_browser:
+            proc = None
+            if player:
+                # The stream endpoint, not the landing page: a player wants the
+                # MJPEG bytes, not HTML.
+                proc = open_in_player(f"{url}/stream", None if player == "auto" else player)
+                if proc is None:
+                    click.echo(
+                        "No native player found (tried vlc, mpv, ffplay). "
+                        "Install one, or use --browser.",
+                        err=True,
+                    )
+                    click.echo(f"The stream is still available at {url}/stream")
+            elif open_browser:
                 webbrowser.open(url)
 
-            await sleep_forever()
+            try:
+                await sleep_forever()
+            finally:
+                # Close the player when the server stops, so Ctrl+C does not
+                # leave an orphaned window showing a frozen frame.
+                if proc is not None and proc.poll() is None:
+                    proc.terminate()
         finally:
             with move_on_after(2, shield=True):
                 await runner.cleanup()
@@ -214,11 +310,24 @@ class VideoClient(DriverClient):
         @video.command()
         @click.option("-p", "--port", default=0, type=int, help="Local server port (0 = auto)")
         @click.option("--browser/--no-browser", default=True, help="Open in web browser")
-        def stream(port, browser):
+        @click.option(
+            "--player",
+            is_flag=False,
+            flag_value="auto",
+            default=None,
+            help="Open in a native player instead of a browser. "
+            "Bare --player picks vlc/mpv/ffplay automatically; "
+            "--player=vlc names one (works on macOS .app bundles too).",
+        )
+        def stream(port, browser, player):
             """Start local MJPEG streaming server
 
             Proxies the source's native MJPEG stream through the jumpstarter
             tunnel. Frame rate is controlled by the video source.
+
+            By default the landing page opens in a web browser. Pass --player to
+            open the raw stream in VLC, mpv, or ffplay instead, which is usually
+            smoother for watching a bench for a long time.
             """
             path = self.stream_path()
 
@@ -237,6 +346,6 @@ class VideoClient(DriverClient):
             app.router.add_get("/snapshot", handle_snapshot)
             app.router.add_get("/stream", handle_stream)
 
-            run_video_server(self, app, port, browser)
+            run_video_server(self, app, port, browser, player)
 
         return video
