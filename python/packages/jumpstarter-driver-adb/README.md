@@ -72,6 +72,33 @@ export:
 | connect_timeout | Timeout (seconds) for `connect`/`disconnect` commands | float | no       | 30.0                       |
 | attach_slots     | Number of devices that can be attached at once (see `attach`) | int   | no       | 8                          |
 | attach_base_port | First exporter-side port used for attach slots         | int   | no       | 16000                      |
+| adopt_existing_server | Use an ADB server already listening on `port` instead of starting another (see below) | bool  | no       | true                       |
+
+### An ADB server already running on the exporter
+
+An ADB server **claims** the USB devices it finds, and only one server can hold a
+given device. So if a server is already listening on the driver's `port` — started
+by hand, by udev, by a previous run, or by a developer working on the exporter
+directly — a second one does not give a second view of those devices. It gives an
+*empty* one, and `adb start-server` reports success either way, so the driver would
+come up seeing no devices at all while looking healthy.
+
+By default the driver therefore **adopts** a server already on its port, and leaves
+it running at teardown rather than killing a server other processes are using. You
+will see:
+
+```
+adopting the ADB server already listening on 127.0.0.1:15037; it owns the
+connected devices, and this driver will leave it running
+```
+
+Set `adopt_existing_server: false` to always insist on starting (and later killing)
+its own server. Note this only helps when nothing else is holding the devices.
+
+If something that is *not* an ADB server holds the port, the driver declines to
+adopt it and logs a warning. This matters because `adb start-server` and
+`adb devices` both block forever against such a listener rather than failing, so all
+of the driver's adb calls are bounded by `connect_timeout`.
 
 ### Port Assignment
 
@@ -120,6 +147,7 @@ single question decides which one you want.
 |---|---|---|
 | Your tooling talks to | **your own** ADB server (5037) | the exporter's ADB server |
 | Server ownership | you don't need to own it | you must own it |
+| If you have no local ADB server | fine — `adb connect` starts one on 5037 | fine — you own it by definition |
 | Devices visible at once | many, from many exporters | those of one exporter |
 | Coexists with Android Studio | yes | only if you win port 5037 |
 | Configuration needed | none | `ANDROID_ADB_SERVER_PORT` |
@@ -178,11 +206,40 @@ Requirements and limits:
   across sessions. Anything that remembers a device by address (an IDE run
   target) should re-select it after re-attaching.
 - `attach` blocks while holding the tunnel, and detaches on Ctrl+C. If the client
-  is killed rather than interrupted, the local `adb connect` entry and the
-  exporter's slot are not released until the exporter restarts; clear a leftover
-  with `adb disconnect <address>`.
+  is killed rather than interrupted, two things are left behind, and they need
+  different remedies:
+  - the local `adb connect` entry — clear it with `adb disconnect <address>`;
+  - the **exporter's slot**, which `adb disconnect` does *not* touch, because
+    releasing it means calling `detach_device` on the exporter. Re-run
+    `j adb attach <serial>` and exit with Ctrl+C to release it (attaching is
+    idempotent and reuses the same slot), or restart the exporter. Otherwise the
+    slot stays occupied and, after `attach_slots` of these, attaching fails with
+    "no free attach slot".
 - Direct mode has no lease arbitration, so two clients attaching the same device
   will interfere. Use distributed mode for a shared fleet.
+
+#### Devices that come and go
+
+By default `attach` takes the device list once, at startup: most exporters have a
+fixed set of devices bolted to a bench, and polling a list that never changes only
+adds noise.
+
+Pass `--hotplug` when the hardware really does change while you work — a device
+being re-flashed, rebooted into a different mode, or physically re-plugged:
+
+```bash
+j adb attach --hotplug                       # follow devices as they appear/vanish
+j adb attach --hotplug --poll-interval 5     # check every 5s instead of 2s
+```
+
+Then the exporter's device list is re-read on each tick: a device that appears is
+attached and announced, one that disappears is detached and its slot released. A
+device that cannot be attached (no `adbd` on TCP) is reported once and not retried
+until it disappears and comes back, so a broken device does not spam every tick.
+
+Note this only makes *attachment* follow the hardware. It does not make the local
+address stable — a re-plugged device generally comes back on a new
+`127.0.0.1:<port>`, so an IDE run target pinned to the old one needs re-selecting.
 
 ### Persistent tunnel
 
@@ -376,7 +433,7 @@ with client.adb.forward_adb(port=0) as (host, port):
 
 | Usage                     | Description                                                             |
 | ------------------------- | ----------------------------------------------------------------------- |
-| `j adb attach [SERIAL...]` | Add the exporter's devices to your own ADB server (works with Android Studio). Defaults to every usable device. Blocks; Ctrl+C detaches. |
+| `j adb attach [SERIAL...]` | Add the exporter's devices to your own ADB server (works with Android Studio, and starts a local server if you have none). Defaults to every usable device. Blocks; Ctrl+C detaches. Add `--hotplug` to follow device changes. |
 | `j adb tunnel [-P PORT]`  | Create a persistent ADB tunnel (auto-assigned port, or specify with -P) |
 
 #### Options
@@ -386,6 +443,8 @@ with client.adb.forward_adb(port=0) as (host, port):
 | `-H HOST`    | Local address to tunnel ADB to       | 127.0.0.1 |
 | `-P PORT`    | Local port to tunnel ADB to (0=auto) | 0         |
 | `--adb PATH` | Path to local adb executable         | adb       |
+| `--hotplug`  | `attach`: keep following devices that appear or vanish while running | off |
+| `--poll-interval SECS` | `attach`: seconds between device checks, with `--hotplug` | 2.0 |
 
 ## API Reference
 

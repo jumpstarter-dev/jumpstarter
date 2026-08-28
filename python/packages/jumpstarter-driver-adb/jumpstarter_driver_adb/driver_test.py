@@ -390,3 +390,132 @@ def test_a_reclaimed_slot_can_serve_a_different_device(mock_which):
         server.attach_device("old-device")
     with patch("subprocess.run", side_effect=[_forward_list(), _mock_adb_ok()]):
         assert server.attach_device("new-device") == "slot0"
+
+
+# ------------------------------------------------- adopting an existing server
+#
+# An ADB server *claims* the USB devices it finds, and only one server can hold a
+# given device. So on a host that already runs one, starting a second does not give
+# us "another view" of the devices -- it gives us an empty one, while `start-server`
+# reports success. Adopting the running server is the only way to see the hardware.
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection")
+@patch("subprocess.run", return_value=_mock_adb_ok())
+def test_adopts_a_server_already_on_our_port(mock_run, mock_conn, _):
+    """The running server owns the devices; ours would see none."""
+    server = AdbServer()
+    assert server._owns_server is False
+    argvs = [c.args[0] for c in mock_run.call_args_list]
+    assert ["/usr/bin/adb", "start-server"] not in argvs
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection")
+@patch("subprocess.run", return_value=_mock_adb_ok())
+def test_an_adopted_server_is_left_running_on_close(mock_run, mock_conn, _):
+    """Killing it would drop the device claims of everything else on the host."""
+    server = AdbServer()
+    server.close()
+    argvs = [c.args[0] for c in mock_run.call_args_list]
+    assert ["/usr/bin/adb", "kill-server"] not in argvs
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+@patch("subprocess.run", return_value=_mock_adb_ok())
+def test_starts_a_server_when_the_port_is_free(mock_run, mock_conn, _):
+    server = AdbServer()
+    assert server._owns_server is True
+    argvs = [c.args[0] for c in mock_run.call_args_list]
+    assert ["/usr/bin/adb", "start-server"] in argvs
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection")
+@patch("subprocess.run", return_value=_mock_adb_ok())
+def test_a_server_we_started_is_killed_on_close(mock_run, mock_conn, _):
+    server = AdbServer(adopt_existing_server=False)
+    assert server._owns_server is True
+    server.close()
+    argvs = [c.args[0] for c in mock_run.call_args_list]
+    assert ["/usr/bin/adb", "kill-server"] in argvs
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection")
+def test_a_non_adb_listener_is_not_adopted(mock_conn, _):
+    """`adb version` against a plain TCP listener hangs rather than failing.
+
+    Verified against adb 1.0.41: both `start-server` and `devices` block forever on
+    a non-ADB listener. Adopting it would wedge every later call, so we decline and
+    fall through to starting our own.
+    """
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        if argv[1:] == ["version"] and kwargs.get("check") is False:
+            # The probe: the socket accepted, but nothing answers as ADB.
+            raise subprocess.TimeoutExpired("adb version", 10)
+        return _mock_adb_ok()
+
+    with patch("subprocess.run", side_effect=run):
+        server = AdbServer()
+
+    # Declined the adoption, so it started its own and owns it.
+    assert server._owns_server is True
+    assert ["/usr/bin/adb", "start-server"] in calls
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_start_server_survives_a_hung_port(mock_conn, _):
+    """`adb start-server` blocks forever on a non-ADB listener; bound it."""
+
+    def run(argv, **kwargs):
+        if argv[1:] == ["start-server"]:
+            assert kwargs.get("timeout"), "start-server must be bounded"
+            raise subprocess.TimeoutExpired("adb start-server", 30.0)
+        return _mock_adb_ok()
+
+    with patch("subprocess.run", side_effect=run):
+        server = AdbServer()  # must not hang or raise
+    assert server.port == 15037
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_teardown_completes_when_forward_removal_hangs(mock_conn, _):
+    """An unresponsive ADB server must not be able to wedge close()."""
+    with patch("subprocess.run", return_value=_mock_adb_ok()):
+        server = AdbServer(attach_slots=1)
+        server.attach_device("HVA1234567")
+
+    def run(argv, **kwargs):
+        if "--remove" in argv:
+            raise subprocess.TimeoutExpired("adb forward --remove", 30.0)
+        return _mock_adb_ok()
+
+    with patch("subprocess.run", side_effect=run):
+        server.close()  # must not raise
+
+    # The slot is freed regardless, or it is leaked for the exporter's lifetime.
+    assert server._slots[16000] is None
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection", side_effect=OSError("refused"))
+def test_list_devices_is_bounded(mock_conn, _):
+    """Hotplug polls this; `adb devices` hangs forever on a non-ADB listener."""
+
+    def run(argv, **kwargs):
+        if "devices" in argv:
+            assert kwargs.get("timeout"), "devices must be bounded"
+            raise subprocess.TimeoutExpired("adb devices", 30.0)
+        return _mock_adb_ok()
+
+    with patch("subprocess.run", side_effect=run):
+        server = AdbServer()
+        assert "Error" in server.list_devices()  # reported, not raised
