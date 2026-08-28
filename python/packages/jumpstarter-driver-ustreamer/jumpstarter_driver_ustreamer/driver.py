@@ -145,11 +145,22 @@ class UStreamer(VideoInterface, Driver):
         # whoever is still using it.
         if self.process is None:
             return
+
+        socketp = getattr(self, "socketp", None)
+
         self.process.terminate()
         try:
             self.process.wait(timeout=5)
         except TimeoutExpired:
             self.process.kill()
+
+        # ustreamer does not remove its socket file on SIGTERM. A leftover file
+        # makes the NEXT instance's liveness probe fail with ECONNREFUSED instead
+        # of the ENOENT it expects, which reads as a mysterious connection error
+        # rather than "no server running". --unix-rm covers the same case on
+        # startup; doing it here too keeps /tmp clean when the exporter stops.
+        if socketp is not None:
+            Path(socketp).unlink(missing_ok=True)
 
     @export
     async def state(self):
