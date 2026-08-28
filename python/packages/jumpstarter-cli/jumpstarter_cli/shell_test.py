@@ -16,6 +16,7 @@ from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentic
 from jumpstarter_cli.shell import (
     _attempt_token_recovery,
     _cancel_if_connection_lost,
+    _monitor_shared_access,
     _monitor_token_expiry,
     _resolve_lease_from_active_async,
     _run_shell_with_lease_async,
@@ -1339,3 +1340,139 @@ class TestRetryLoopLeaseExpired:
 
         assert exit_code == 0
         assert state["call_count"] == 3
+
+
+class TestRetryLoopUserInterrupt:
+    """SIGINT must exit, not reacquire, even if Dial surfaces as Unreachable."""
+
+    def _config_with_lease(self, lease):
+        config = _DummyConfig()
+
+        @asynccontextmanager
+        async def lease_async(
+            selector, exporter_name, lease_name, duration, portal,
+            acquisition_timeout, retry_timeout=None, dial_timeout=None, **kwargs,
+        ):
+            yield lease
+
+        config.lease_async = lease_async
+        return config
+
+    def _lease(self):
+        lease = Mock()
+        lease.release = True
+        lease.name = "test-lease"
+        lease.exporter_name = "test-exporter"
+        lease.retry_timeout = 10.0
+        lease.lease_ended = False
+        lease.lease_transferred = False
+        return lease
+
+    async def test_does_not_retry_when_cancel_scope_already_cancelled(self):
+        lease = self._lease()
+        config = self._config_with_lease(lease)
+        state = {"call_count": 0}
+
+        async def fake_run(*args):
+            state["call_count"] += 1
+            cancel_scope = args[4]
+            cancel_scope.cancel()
+            raise ExporterUnreachableError("dial cancelled")
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run),
+        ):
+            exit_code = await _shell_with_signal_handling(
+                config, None, None, None, timedelta(minutes=1), False, (), None
+            )
+
+        assert exit_code == 2
+        assert state["call_count"] == 1
+
+    async def test_does_not_retry_when_unreachable_is_mixed_with_cancellation(self):
+        lease = self._lease()
+        config = self._config_with_lease(lease)
+        state = {"call_count": 0}
+        cancelled_exc_class = anyio.get_cancelled_exc_class()
+
+        async def fake_run(*_):
+            state["call_count"] += 1
+            raise BaseExceptionGroup(
+                "task group",
+                [ExporterUnreachableError("dial cancelled"), cancelled_exc_class()],
+            )
+
+        with (
+            patch("jumpstarter_cli.shell._monitor_token_expiry", new_callable=AsyncMock),
+            patch("jumpstarter_cli.shell._run_shell_with_lease_async", side_effect=fake_run),
+        ):
+            exit_code = await _shell_with_signal_handling(
+                config, None, None, None, timedelta(minutes=1), False, (), None
+            )
+
+        assert exit_code == 2
+        assert state["call_count"] == 1
+
+
+class _FakeCancelScope:
+    """Minimal stand-in for anyio.CancelScope used by the shared-access monitor."""
+
+    def __init__(self):
+        self.cancel_called = False
+
+    def cancel(self):
+        self.cancel_called = True
+
+
+async def test_monitor_shared_access_exits_when_revoked(capsys):
+    # A shared client that has dropped out of the effective set must set the
+    # revoked flag and cancel the shell scope so the live session tears down.
+    lease = Mock()
+    lease.name = "test-lease"
+    lease.client_name = "alice"
+    lease.lease_revoked = False
+    fresh = Mock(client="owner")
+    fresh.is_accessible_by = Mock(return_value=False)
+    lease.get = AsyncMock(return_value=fresh)
+    scope = _FakeCancelScope()
+
+    await _monitor_shared_access(lease, scope)
+
+    assert lease.lease_revoked is True
+    assert scope.cancel_called is True
+    fresh.is_accessible_by.assert_called_once_with("alice")
+    assert "revoked" in capsys.readouterr().out.lower()
+
+
+async def test_monitor_shared_access_keeps_session_while_granted():
+    # A shared client that still has effective access is left alone.
+    lease = Mock()
+    lease.name = "test-lease"
+    lease.client_name = "alice"
+    lease.lease_revoked = False
+    fresh = Mock(client="owner")
+    fresh.is_accessible_by = Mock(return_value=True)
+    lease.get = AsyncMock(return_value=fresh)
+    scope = _FakeCancelScope()
+
+    async def fake_sleep(_):
+        scope.cancel_called = True  # break the poll loop after one iteration
+
+    with patch("jumpstarter_cli.shell.anyio.sleep", side_effect=fake_sleep):
+        await _monitor_shared_access(lease, scope)
+
+    assert lease.lease_revoked is False
+
+
+async def test_monitor_shared_access_noop_without_client_name():
+    # Without a known client identity the monitor cannot make a decision.
+    lease = Mock()
+    lease.client_name = None
+    lease.get = AsyncMock()
+    scope = _FakeCancelScope()
+
+    await _monitor_shared_access(lease, scope)
+
+    lease.get.assert_not_called()
+    assert scope.cancel_called is False

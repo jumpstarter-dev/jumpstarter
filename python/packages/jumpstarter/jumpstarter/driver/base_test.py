@@ -96,3 +96,28 @@ def test_redact_url_with_query_params():
 def test_redact_url_without_query_params():
     url = "https://s3.amazonaws.com/bucket/key"
     assert Driver._redact_url(url) == url
+
+
+def test_driver_package_import_does_not_cycle():
+    """Driver packages import jumpstarter.driver first; session must not pull fanout back.
+
+    Regression: session.py imported fanout, which did `from jumpstarter.driver import
+    export` while driver/__init__.py was still loading Driver from base.py.
+    Isolated driver tests then failed with:
+      ImportError: cannot import name 'export' from partially initialized module
+      'jumpstarter.driver'
+    """
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from jumpstarter.driver import Driver, export, exportstream",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr

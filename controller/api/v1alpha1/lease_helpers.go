@@ -274,6 +274,7 @@ func LeaseFromProtobuf(
 			AllowDisabled: req.AllowDisabled,
 			BeginTime:     beginTime,
 			EndTime:       endTime,
+			SharedWith:    req.SharedWith,
 		},
 	}, nil
 }
@@ -302,6 +303,11 @@ func (l *Lease) ToProtobuf() *cpb.Lease {
 		Tags:          l.Spec.Tags,
 		AllowDisabled: l.Spec.AllowDisabled,
 		Context:       l.Spec.Context,
+		// shared_with is the owner's desired intent (Spec); effective_shared_with is
+		// the controller-derived set actually granted (Status), after policy/existence
+		// filtering. A name in the former but not the latter was denied or doesn't exist.
+		SharedWith:          l.Spec.SharedWith,
+		EffectiveSharedWith: l.Status.SharedWith,
 	}
 	if l.Spec.ExporterRef != nil {
 		lease.ExporterName = ptr.To(l.Spec.ExporterRef.Name)
@@ -394,6 +400,47 @@ func (l *Lease) SetStatusCondition(
 		Reason:  reason,
 		Message: fmt.Sprintf(messageFormat, a...),
 	})
+}
+
+func (l *Lease) IsAccessibleBy(clientName string) bool {
+	if l.Spec.ClientRef.Name == clientName {
+		return true
+	}
+	// Access is granted based on the effective, policy-filtered set the controller
+	// computes in Status.SharedWith, not the owner's raw Spec.SharedWith intent.
+	return slices.Contains(l.Status.SharedWith, clientName)
+}
+
+func (l *Lease) IsOwnedBy(clientName string) bool {
+	return l.Spec.ClientRef.Name == clientName
+}
+
+func ClientAllowedByPolicy(
+	policies []ExporterAccessPolicy,
+	exporter *Exporter,
+	jclient *Client,
+) (bool, error) {
+	for _, policy := range policies {
+		exporterSelector, err := metav1.LabelSelectorAsSelector(&policy.Spec.ExporterSelector)
+		if err != nil {
+			return false, fmt.Errorf("failed to convert exporter selector: %w", err)
+		}
+		if !exporterSelector.Matches(labels.Set(exporter.Labels)) {
+			continue
+		}
+		for _, p := range policy.Spec.Policies {
+			for _, from := range p.From {
+				clientSelector, err := metav1.LabelSelectorAsSelector(&from.ClientSelector)
+				if err != nil {
+					return false, fmt.Errorf("failed to convert client selector: %w", err)
+				}
+				if clientSelector.Matches(labels.Set(jclient.Labels)) {
+					return true, nil
+				}
+			}
+		}
+	}
+	return false, nil
 }
 
 func (l *Lease) GetExporterName() string {

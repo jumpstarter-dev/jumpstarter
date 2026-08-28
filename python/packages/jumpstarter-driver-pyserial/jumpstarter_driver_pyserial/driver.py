@@ -13,7 +13,8 @@ from anyio.streams.stapled import StapledObjectStream
 from serial import serial_for_url
 from serial_asyncio import open_serial_connection
 
-from jumpstarter.driver import Driver, export, exportstream
+from jumpstarter.driver import Driver, export
+from jumpstarter.streams.fanout import FanOutStreamMixin
 
 try:
     import termios
@@ -93,7 +94,7 @@ class AsyncSerial(ObjectStream):
 
 
 @dataclass(kw_only=True)
-class PySerial(Driver):
+class PySerial(FanOutStreamMixin, Driver):
     driver_type = "serial"
 
     url: str
@@ -131,45 +132,8 @@ class PySerial(Driver):
         except (AttributeError, OSError, TypeError):
             self.logger.warning("Failed to disable HUPCL on %s", self.url)
 
-    @export
-    def close(self):
-        """Force-close any active serial connection by closing the underlying transport.
-
-        The asyncio stream reader/writer will naturally receive errors or EOF
-        when the fd is closed, causing the stream to tear down without needing
-        explicit signalling.
-
-        Safe to call when no stream is active (no-op).
-        """
-        transport = self._transport
-        if transport is None:
-            self.logger.debug("close() called but no active connection (no-op)")
-            return
-
-        self.logger.debug("close() closing transport for %s", self.url)
-        transport.close()
-
-    @export
-    def set_dtr(self, value: bool):
-        """Set the DTR control signal."""
-        s = serial_for_url(self.url, baudrate=self.baudrate)
-        try:
-            s.dtr = value
-        finally:
-            s.close()
-
-    @export
-    def set_rts(self, value: bool):
-        """Set the RTS control signal."""
-        s = serial_for_url(self.url, baudrate=self.baudrate)
-        try:
-            s.rts = value
-        finally:
-            s.close()
-
-    @exportstream
     @asynccontextmanager
-    async def connect(self):
+    async def _open_source(self):
         cps_info = f", cps: {self.cps}" if self.cps is not None else ""
         self.logger.info("Connecting to %s, baudrate: %d%s", self.url, self.baudrate, cps_info)
 
@@ -195,3 +159,33 @@ class PySerial(Driver):
         finally:
             self._transport = None
         self.logger.info("Disconnected from %s", self.url)
+
+    @export
+    def close(self):
+        transport = self._transport
+        if transport is None:
+            self.logger.debug("close() called but no active connection")
+        else:
+            self.logger.debug("close() closing transport for %s", self.url)
+            transport.close()
+        # Always chain up so FanOutStreamMixin.close() shuts down the reader
+        # task and client buffers, then the base Driver.close() runs.
+        super().close()
+
+    @export
+    def set_dtr(self, value: bool):
+        """Set the DTR control signal."""
+        s = serial_for_url(self.url, baudrate=self.baudrate)
+        try:
+            s.dtr = value
+        finally:
+            s.close()
+
+    @export
+    def set_rts(self, value: bool):
+        """Set the RTS control signal."""
+        s = serial_for_url(self.url, baudrate=self.baudrate)
+        try:
+            s.rts = value
+        finally:
+            s.close()

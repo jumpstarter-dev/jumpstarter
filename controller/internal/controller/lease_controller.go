@@ -112,6 +112,12 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return result, err
 	}
 
+	// Recompute the effective shared-with set before persisting status so the
+	// derived Status.SharedWith is saved by the single Status().Update below.
+	if err := r.reconcileSharedWithPolicies(ctx, &lease); err != nil {
+		return result, err
+	}
+
 	if err := r.Status().Update(ctx, &lease); err != nil {
 		return RequeueConflict(logger, result, err)
 	}
@@ -539,6 +545,74 @@ func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jum
 		}
 	}
 	return approvedExporters, unmatchedDescriptions, nil
+}
+
+func (r *LeaseReconciler) reconcileSharedWithPolicies(
+	ctx context.Context,
+	lease *jumpstarterdevv1alpha1.Lease,
+) error {
+	// Status.SharedWith is derived state: the effective, policy-filtered access
+	// set. It is recomputed on every reconcile so the controller never mutates the
+	// owner-controlled Spec.SharedWith.
+	if len(lease.Spec.SharedWith) == 0 || lease.Status.Ended {
+		lease.Status.SharedWith = nil
+		return nil
+	}
+
+	// Without an assigned exporter, exporter-scoped policies cannot be evaluated
+	// yet; grant the desired set for now. It is filtered once an exporter is bound.
+	if lease.Status.ExporterRef == nil {
+		lease.Status.SharedWith = slices.Clone(lease.Spec.SharedWith)
+		return nil
+	}
+
+	var policies jumpstarterdevv1alpha1.ExporterAccessPolicyList
+	if err := r.List(ctx, &policies, client.InNamespace(lease.Namespace)); err != nil {
+		return fmt.Errorf("reconcileSharedWithPolicies: failed to list policies: %w", err)
+	}
+
+	// No policies configured means sharing is unrestricted.
+	if len(policies.Items) == 0 {
+		lease.Status.SharedWith = slices.Clone(lease.Spec.SharedWith)
+		return nil
+	}
+
+	var exporter jumpstarterdevv1alpha1.Exporter
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: lease.Namespace,
+		Name:      lease.Status.ExporterRef.Name,
+	}, &exporter); err != nil {
+		return fmt.Errorf("reconcileSharedWithPolicies: failed to get exporter: %w", err)
+	}
+
+	logger := log.FromContext(ctx)
+	var allowed []string
+	for _, clientName := range lease.Spec.SharedWith {
+		var jclient jumpstarterdevv1alpha1.Client
+		if err := r.Get(ctx, types.NamespacedName{
+			Namespace: lease.Namespace,
+			Name:      clientName,
+		}, &jclient); err != nil {
+			if k8serrors.IsNotFound(err) {
+				logger.Info("excluding shared client from effective access: not found", "client", clientName)
+				continue
+			}
+			return fmt.Errorf("reconcileSharedWithPolicies: failed to get shared client %s: %w", clientName, err)
+		}
+		allowedByPolicy, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies.Items, &exporter, &jclient)
+		if err != nil {
+			// A malformed policy selector must not silently exclude the shared client;
+			// return the error so the reconcile is retried and the misconfiguration surfaces.
+			return fmt.Errorf("reconcileSharedWithPolicies: failed to evaluate access policy for client %s: %w", clientName, err)
+		}
+		if allowedByPolicy {
+			allowed = append(allowed, clientName)
+		} else {
+			logger.Info("excluding shared client from effective access: denied by policy", "client", clientName)
+		}
+	}
+	lease.Status.SharedWith = allowed
+	return nil
 }
 
 // ListMatchingExporters returns a list of exporters that match the selector of the lease

@@ -122,4 +122,4 @@ def get_leases(
     if not all_clients:
         leases = leases.filter_by_client(config.metadata.name)
 
-    model_print(leases, output)
+    model_print(leases, output, viewer=config.metadata.name)

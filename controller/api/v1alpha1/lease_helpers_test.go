@@ -645,3 +645,153 @@ var _ = Describe("LeaseFromProtobuf context", func() {
 		Expect(lease.Spec.Context).To(BeNil())
 	})
 })
+
+var _ = Describe("IsAccessibleBy", func() {
+	var lease *Lease
+
+	BeforeEach(func() {
+		lease = &Lease{
+			Spec: LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "owner"},
+			},
+		}
+	})
+
+	It("should grant access to owner", func() {
+		Expect(lease.IsAccessibleBy("owner")).To(BeTrue())
+	})
+
+	It("should grant access to shared user in the effective Status.SharedWith set", func() {
+		lease.Status.SharedWith = []string{"alice", "bob"}
+		Expect(lease.IsAccessibleBy("alice")).To(BeTrue())
+		Expect(lease.IsAccessibleBy("bob")).To(BeTrue())
+	})
+
+	It("should deny access to unrelated client", func() {
+		lease.Status.SharedWith = []string{"alice"}
+		Expect(lease.IsAccessibleBy("mallory")).To(BeFalse())
+	})
+
+	It("should deny access when Status.SharedWith is empty", func() {
+		Expect(lease.IsAccessibleBy("alice")).To(BeFalse())
+	})
+
+	It("should not grant access from Spec.SharedWith before reconciliation", func() {
+		// Spec is the owner's desired intent; access follows the controller-derived
+		// Status.SharedWith, which is empty until the lease is reconciled.
+		lease.Spec.SharedWith = []string{"alice"}
+		Expect(lease.IsAccessibleBy("alice")).To(BeFalse())
+	})
+})
+
+var _ = Describe("IsOwnedBy", func() {
+	var lease *Lease
+
+	BeforeEach(func() {
+		lease = &Lease{
+			Spec: LeaseSpec{
+				ClientRef:  corev1.LocalObjectReference{Name: "owner"},
+				SharedWith: []string{"alice"},
+			},
+		}
+	})
+
+	It("should return true for owner", func() {
+		Expect(lease.IsOwnedBy("owner")).To(BeTrue())
+	})
+
+	It("should return false for shared user", func() {
+		Expect(lease.IsOwnedBy("alice")).To(BeFalse())
+	})
+
+	It("should return false for unrelated client", func() {
+		Expect(lease.IsOwnedBy("mallory")).To(BeFalse())
+	})
+})
+
+var _ = Describe("LeaseFromProtobuf SharedWith", func() {
+	It("should map shared_with from proto to spec", func() {
+		pbLease := &cpb.Lease{
+			Selector:   "board=rpi4",
+			Duration:   durationpb.New(time.Hour),
+			SharedWith: []string{"alice", "bob"},
+		}
+		key := types.NamespacedName{Name: "test-lease", Namespace: "default"}
+		clientRef := corev1.LocalObjectReference{Name: "test-client"}
+
+		lease, err := LeaseFromProtobuf(pbLease, key, clientRef)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(lease.Spec.SharedWith).To(ConsistOf("alice", "bob"))
+	})
+
+	It("should leave SharedWith nil when proto has no shared_with", func() {
+		pbLease := &cpb.Lease{
+			Selector: "board=rpi4",
+			Duration: durationpb.New(time.Hour),
+		}
+		key := types.NamespacedName{Name: "test-lease", Namespace: "default"}
+		clientRef := corev1.LocalObjectReference{Name: "test-client"}
+
+		lease, err := LeaseFromProtobuf(pbLease, key, clientRef)
+
+		Expect(err).NotTo(HaveOccurred())
+		Expect(lease.Spec.SharedWith).To(BeNil())
+	})
+})
+
+var _ = Describe("Lease.ToProtobuf SharedWith", func() {
+	It("should include SharedWith in protobuf output", func() {
+		lease := &Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-lease",
+				Namespace: "default",
+			},
+			Spec: LeaseSpec{
+				ClientRef:  corev1.LocalObjectReference{Name: "owner"},
+				Duration:   &metav1.Duration{Duration: time.Hour},
+				Selector:   metav1.LabelSelector{MatchLabels: map[string]string{"board": "rpi4"}},
+				SharedWith: []string{"alice", "bob"},
+			},
+		}
+
+		pb := lease.ToProtobuf()
+
+		Expect(pb.SharedWith).To(ConsistOf("alice", "bob"))
+	})
+
+	It("should handle nil SharedWith", func() {
+		lease := &Lease{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-lease",
+				Namespace: "default",
+			},
+			Spec: LeaseSpec{
+				ClientRef: corev1.LocalObjectReference{Name: "owner"},
+				Duration:  &metav1.Duration{Duration: time.Hour},
+				Selector:  metav1.LabelSelector{MatchLabels: map[string]string{"board": "rpi4"}},
+			},
+		}
+
+		pb := lease.ToProtobuf()
+
+		Expect(pb.SharedWith).To(BeEmpty())
+	})
+
+	It("should roundtrip SharedWith through proto", func() {
+		original := []string{"alice", "bob"}
+		pbLease := &cpb.Lease{
+			Selector:   "board=rpi4",
+			Duration:   durationpb.New(time.Hour),
+			SharedWith: original,
+		}
+		key := types.NamespacedName{Name: "test-lease", Namespace: "default"}
+		clientRef := corev1.LocalObjectReference{Name: "owner"}
+
+		lease, err := LeaseFromProtobuf(pbLease, key, clientRef)
+		Expect(err).NotTo(HaveOccurred())
+
+		roundtripped := lease.ToProtobuf()
+		Expect(roundtripped.SharedWith).To(ConsistOf("alice", "bob"))
+	})
+})
