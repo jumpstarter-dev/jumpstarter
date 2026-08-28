@@ -1,14 +1,16 @@
 import ctypes
 import signal
+import socket
 import sys
 from base64 import b64encode
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from hashlib import sha256
 from shutil import which
 from subprocess import Popen, TimeoutExpired
-from tempfile import TemporaryDirectory
+from tempfile import gettempdir
 
 from aiohttp import ClientSession, UnixConnector
 from anyio import connect_unix
@@ -57,7 +59,23 @@ def _get_preexec_fn() -> Callable[[], None] | None:
 class UStreamer(VideoInterface, Driver):
     executable: str = field(default_factory=find_ustreamer)
     args: dict[str, str] = field(default_factory=dict)
-    tempdir: TemporaryDirectory = field(default_factory=TemporaryDirectory)
+
+    # Where the ustreamer control socket lives. Defaults to a path DERIVED FROM
+    # THE CONFIG rather than a fresh TemporaryDirectory.
+    #
+    # This used to be `tempdir: TemporaryDirectory = field(default_factory=...)`,
+    # which made the socket path per-INSTANCE. The exporter constructs a driver
+    # more than once for the same export (measured: 4 instances across 3 leases),
+    # so whichever instance served a DriverCall computed a socket path belonging
+    # to a different instance's ustreamer process, and every `state`/`snapshot`
+    # failed intermittently with:
+    #
+    #   Cannot connect to unix socket /tmp/tmpXXXXXXXX/socket
+    #     [No such file or directory]
+    #
+    # Hashing the config makes the path stable across instances while still
+    # keeping two differently-configured cameras apart.
+    runtime_dir: str | None = None
 
     @classmethod
     def client(cls) -> str:
@@ -72,9 +90,33 @@ class UStreamer(VideoInterface, Driver):
         for key, value in self.args.items():
             cmdline += [f"--{key}", value]
 
-        self.socketp = Path(self.tempdir.name) / "socket"
+        # Stable, config-derived socket directory. Two UStreamer exports with
+        # different args (e.g. two cameras) still get separate sockets, while
+        # repeated construction of the SAME export converges on one path.
+        if self.runtime_dir is None:
+            digest = sha256(
+                repr(sorted(self.args.items())).encode() + self.executable.encode()
+            ).hexdigest()[:16]
+            base = Path(gettempdir()) / f"jmp-ustreamer-{digest}"
+        else:
+            base = Path(self.runtime_dir)
+        base.mkdir(parents=True, exist_ok=True)
 
-        cmdline += ["--unix", self.socketp]
+        self.socketp = base / "socket"
+
+        # Reuse a live server instead of racing a second one onto the same
+        # socket. `--unix-rm` below means a starting ustreamer would delete the
+        # socket the running one is serving, which is precisely the failure this
+        # is meant to avoid.
+        if self._socket_is_live():
+            self.logger.info("Reusing ustreamer already listening on %s", self.socketp)
+            self.process = None
+            return
+
+        # A socket file left behind by a dead server would make the connect
+        # attempt fail with ECONNREFUSED rather than ENOENT; --unix-rm tells
+        # ustreamer to clear it on startup.
+        cmdline += ["--unix", str(self.socketp), "--unix-rm"]
 
         self.process = Popen(
             cmdline,
@@ -83,7 +125,26 @@ class UStreamer(VideoInterface, Driver):
             preexec_fn=_get_preexec_fn(),
         )
 
+    def _socket_is_live(self) -> bool:
+        """True if something is accepting connections on the socket right now."""
+        if not self.socketp.exists():
+            return False
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            s.settimeout(0.5)
+            s.connect(str(self.socketp))
+            return True
+        except OSError:
+            return False
+        finally:
+            s.close()
+
     def close(self):
+        # None when we adopted a server started by another instance of this same
+        # export -- tearing it down here would kill the stream out from under
+        # whoever is still using it.
+        if self.process is None:
+            return
         self.process.terminate()
         try:
             self.process.wait(timeout=5)
