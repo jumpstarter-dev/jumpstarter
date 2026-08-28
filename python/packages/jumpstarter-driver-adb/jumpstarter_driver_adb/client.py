@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import socket
@@ -8,7 +9,6 @@ from typing import Any, Generator, Protocol
 
 import anyio
 import click
-from anyio import get_cancelled_exc_class
 from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 from xdg_base_dirs import xdg_state_home
 
@@ -36,6 +36,23 @@ def _validate_adb_args(args: tuple[str, ...]) -> None:
             raise click.UsageError(f"'{arg}' is not supported through the Jumpstarter ADB tunnel")
 
 
+def _is_cancelled(exc: BaseException) -> bool:
+    """Whether *exc* is a task cancellation.
+
+    Checked without ``anyio.get_cancelled_exc_class()``, which resolves the *running*
+    backend and raises ``NoEventLoopError`` when there is none. These waits run in a
+    worker thread, off the loop, so asking there would raise from the except arm and
+    mask the very cancellation being handled -- reproduced as a test failure.
+
+    Both backends' cancellations are matched directly: asyncio's ``CancelledError``
+    (which trio's also subclasses on recent versions) and trio's ``Cancelled`` by
+    name, so trio need not be installed.
+    """
+    if isinstance(exc, asyncio.CancelledError):
+        return True
+    return type(exc).__name__ == "Cancelled" and type(exc).__module__.startswith("trio")
+
+
 def _wait_for_interrupt(client: DriverClient) -> None:
     """Block until the CLI is interrupted, then return so teardown can run.
 
@@ -60,8 +77,9 @@ def _wait_for_interrupt(client: DriverClient) -> None:
         # RuntimeError covers the portal already being shut down when we ask.
         return
     except BaseException as e:
-        # anyio's cancelled exception derives from BaseException, not Exception.
-        if type(e) is get_cancelled_exc_class():
+        # Cancellation derives from BaseException, not Exception, so it needs its
+        # own arm.
+        if _is_cancelled(e):
             return
         raise
 
@@ -118,7 +136,7 @@ def _sleep_through_portal(client: DriverClient, seconds: float) -> bool:
     except (KeyboardInterrupt, SystemExit, GeneratorExit, RuntimeError):
         return False
     except BaseException as e:
-        if type(e) is get_cancelled_exc_class():
+        if _is_cancelled(e):
             return False
         raise
 
