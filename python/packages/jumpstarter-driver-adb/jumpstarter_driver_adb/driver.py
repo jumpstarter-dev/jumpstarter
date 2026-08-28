@@ -1,6 +1,7 @@
 import math
 import os
 import shutil
+import socket
 import subprocess
 from dataclasses import dataclass
 
@@ -23,6 +24,20 @@ class AdbServer(TcpNetwork):
     host: str = "127.0.0.1"
     port: int = 15037
     connect_timeout: float = 30.0
+
+    # Whether to use an ADB server that is already listening on `port` instead of
+    # insisting on one we started ourselves.
+    #
+    # This matters because an ADB server *claims* the USB devices it finds. Only one
+    # server can hold a given device, so on a host that already runs one — a
+    # developer's desktop, an exporter with adb started by hand or by udev — a second
+    # server does not "also" see the devices: it sees an empty list, and the driver
+    # comes up blind while reporting success.
+    #
+    # `adb start-server` cannot detect this for us. It is silent and returns 0 both
+    # when it starts a server and when it finds one already there, so the exit status
+    # says nothing about which server we ended up talking to.
+    adopt_existing_server: bool = True
 
     # Forward slots for attaching devices into a *client-owned* ADB server.
     #
@@ -47,9 +62,11 @@ class AdbServer(TcpNetwork):
 
     @classmethod
     def client(cls) -> str:
+        """Import path of the matching client class."""
         return "jumpstarter_driver_adb.client.AdbClient"
 
     def __post_init__(self):
+        """Validate the config, declare the attach slots, and get an ADB server up."""
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
 
@@ -95,26 +112,91 @@ class AdbServer(TcpNetwork):
             self._slots[slot_port] = None
             self.children[f"slot{index}"] = TcpNetwork(host="127.0.0.1", port=slot_port)
 
-        # Auto-start the ADB server on the configured port
-        self.start_server()
-        self.logger.info(f"ADB server running on {self.host}:{self.port}")
+        # Adopt an ADB server that is already on our port rather than starting a
+        # second one. See `adopt_existing_server`: the running server owns the USB
+        # devices, so a server we start alongside it would see nothing.
+        self._owns_server = False
+        if self.adopt_existing_server and self._server_is_listening():
+            self.logger.info(
+                "adopting the ADB server already listening on %s:%d; "
+                "it owns the connected devices, and this driver will leave it running",
+                self.host,
+                self.port,
+            )
+        else:
+            self.start_server()
+            self._owns_server = True
+            self.logger.info(f"ADB server running on {self.host}:{self.port}")
+
+    def _server_is_listening(self) -> bool:
+        """Whether a usable ADB server is already serving our port.
+
+        Two checks, because a listening socket alone is not enough. Something that
+        is *not* adb holding the port is the dangerous case: `adb start-server` and
+        `adb devices` both block forever against such a listener rather than failing
+        (verified against a plain TCP listener), which would hang exporter startup.
+        So we connect first, then confirm the peer speaks ADB by asking it for its
+        version under a timeout.
+        """
+        try:
+            with socket.create_connection((self.host, self.port), timeout=2):
+                pass
+        except OSError:
+            return False
+
+        try:
+            result = subprocess.run(
+                [self.adb_path, "version"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=min(self.connect_timeout, 10),
+                env=self.adb_env(),
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            self.logger.warning(
+                "something is listening on %s:%d but does not answer as an ADB server; "
+                "not adopting it. Free the port, or set a different 'port' in the exporter config.",
+                self.host,
+                self.port,
+            )
+            return False
+        return result.returncode == 0
 
     def close(self):
+        """Release every attach slot, and kill the ADB server only if we started it."""
         for slot_port, device in list(self._slots.items()):
             if device is not None:
                 self._remove_forward(device, slot_port)
-        self.kill_server()
+        # Only kill a server we started. Killing an adopted one would take down
+        # whatever else on the host is using it, and drop its device claims.
+        if self._owns_server:
+            self.kill_server()
+        else:
+            self.logger.debug("leaving the adopted ADB server on %s:%d running", self.host, self.port)
 
     def _remove_forward(self, device: str, slot_port: int) -> None:
-        """Drop an `adb forward`, best-effort."""
-        subprocess.run(
-            [self.adb_path, "-s", device, "forward", "--remove", f"tcp:{slot_port}"],
-            check=False,  # already-gone is fine; teardown must not raise
-            capture_output=True,
-            text=True,
-            env=self.adb_env(),
-        )
-        self._slots[slot_port] = None
+        """Drop an `adb forward`, best-effort.
+
+        Bounded and non-raising: this runs from `detach_device` and from `close`, so
+        an unresponsive ADB server must not be able to wedge teardown. The slot is
+        freed locally whatever happens — a slot we refuse to reuse after a failed
+        removal is a slot leaked for the exporter's lifetime, and `attach_device`
+        reconciles against `adb forward --list` before trusting the mapping anyway.
+        """
+        try:
+            subprocess.run(
+                [self.adb_path, "-s", device, "forward", "--remove", f"tcp:{slot_port}"],
+                check=False,  # already-gone is fine; teardown must not raise
+                capture_output=True,
+                text=True,
+                timeout=self.connect_timeout,
+                env=self.adb_env(),
+            )
+        except (subprocess.TimeoutExpired, OSError) as e:
+            self.logger.warning("could not remove forward tcp:%d for %s (%s); freeing the slot", slot_port, device, e)
+        finally:
+            self._slots[slot_port] = None
 
     @export
     def attach_device(self, device: str, adbd_port: int = 5555) -> str:
@@ -260,7 +342,12 @@ class AdbServer(TcpNetwork):
 
     @export
     def start_server(self) -> int:
-        """Start the ADB server on the exporter. Returns the port number."""
+        """Start the ADB server on the exporter. Returns the port number.
+
+        Note this is silent and succeeds when a server is already listening, so the
+        result does not tell you whether the server is ours — see
+        `adopt_existing_server`.
+        """
         self.logger.info(f"Starting ADB server on port {self.port}")
         try:
             result = subprocess.run(
@@ -269,6 +356,9 @@ class AdbServer(TcpNetwork):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                # Bounded: `start-server` blocks forever if a non-ADB process holds
+                # the port, which would otherwise hang exporter startup.
+                timeout=self.connect_timeout,
                 env=self.adb_env(),
             )
             if result.stdout.strip():
@@ -277,6 +367,13 @@ class AdbServer(TcpNetwork):
                 self.logger.debug(result.stderr.strip())
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to start ADB server: {e}")
+        except subprocess.TimeoutExpired:
+            self.logger.error(
+                "`adb start-server` timed out after %ss on port %d. Something that is not "
+                "an ADB server may hold that port; free it or configure a different 'port'.",
+                self.connect_timeout,
+                self.port,
+            )
         return self.port
 
     @export
@@ -290,15 +387,19 @@ class AdbServer(TcpNetwork):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                timeout=self.connect_timeout,  # bounded: this runs from close()
                 env=self.adb_env(),
             )
             if result.stdout.strip():
                 self.logger.info(result.stdout.strip())
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to kill ADB server: {e}")
+        except subprocess.TimeoutExpired:
+            self.logger.error(f"`adb kill-server` timed out after {self.connect_timeout}s")
         return self.port
 
     def _connect_device(self, device: str) -> str:
+        """Run `adb connect` on the exporter, raising on failure or timeout."""
         self.logger.info(f"Connecting to device {device}")
         try:
             result = subprocess.run(
@@ -361,7 +462,13 @@ class AdbServer(TcpNetwork):
 
     @export
     def list_devices(self) -> str:
-        """List devices visible to the exporter's ADB server."""
+        """List devices visible to the exporter's ADB server.
+
+        Read live from the ADB server on every call, which is what makes hotplug
+        work: a device connected after the lease began shows up here, and a device
+        unplugged disappears. Bounded, since hotplug polling calls this repeatedly
+        and `adb devices` blocks forever if a non-ADB process holds the port.
+        """
         try:
             result = subprocess.run(
                 [self.adb_path, "devices", "-l"],
@@ -369,9 +476,13 @@ class AdbServer(TcpNetwork):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                timeout=self.connect_timeout,
                 env=self.adb_env(),
             )
             return result.stdout
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to list devices: {e}")
+            return f"Error: {e}"
+        except subprocess.TimeoutExpired as e:
+            self.logger.error(f"`adb devices` timed out after {self.connect_timeout}s")
             return f"Error: {e}"
