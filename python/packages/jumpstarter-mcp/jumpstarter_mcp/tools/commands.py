@@ -12,7 +12,8 @@ import anyio.to_thread
 import click
 
 from jumpstarter_mcp.connections import ConnectionManager
-from jumpstarter_mcp.introspect import get_driver_methods, list_drivers, walk_click_tree
+
+from jumpstarter.client.introspect import get_driver_methods, list_drivers, walk_click_tree
 
 logger = logging.getLogger(__name__)
 
