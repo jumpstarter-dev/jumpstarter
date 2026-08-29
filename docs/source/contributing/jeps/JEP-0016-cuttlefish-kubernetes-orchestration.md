@@ -1251,6 +1251,23 @@ Explicitly **not** part of this proposal:
     the forgotten-CO-host waste problem is solved by construction, with
     renewal as the deliberate act. Every action lands as audited K8s
     objects (`Lease.spec.clientRef` + tags).
+  - *Web UI hosting and tenancy:* the invariant is that **visibility
+    scoping lives in the façade's device-listing and signaling
+    endpoints, never in a UI** — each caller's `/devices`,
+    `/devices/{id}/connect`, `/polled_connections`, and `/infra_config`
+    answer only for that client's leases, so any UI inherits per-client
+    visibility. Three hosting tiers follow: per-lease
+    `j cuttlefish serve` (today; one device, inherently scoped); the
+    façade serving the upstream operator webui assets over its scoped
+    endpoints (the deferred multi-device UI, per-caller, with a
+    cookie/OIDC-code-flow session for browsers — bearer headers don't
+    fit them); and the CO web UI via the CO backend, which must
+    propagate user identity to the façade on the internal hop (a
+    trusted-header contract), never act as a blanket bypass. Per-Pod
+    operator ports are never exposed via Ingress or cluster-wide
+    Services — they are unauthenticated and identity-blind, reachable
+    only through lease forwards and the NetworkPolicy-guarded
+    controller path.
 - **CVD groups / multi-device leases** (DD-8) — Bluetooth/Wi-Fi topologies,
   via composite leases across single-CVD exporters or a group modeled as
   one composite DUT; never N independently leased devices behind one
