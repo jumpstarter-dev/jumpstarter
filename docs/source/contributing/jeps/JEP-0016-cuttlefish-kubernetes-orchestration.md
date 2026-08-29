@@ -168,6 +168,15 @@ podman's role and an exporter sidecar added for remote access. The
 container boundary is what structurally enforces exporter = DUT, rather
 than convention inside a shared host.
 
+Seen at the right altitude, the roles map one level up: **the ExporterSet
+provisioner is the Host Orchestrator of the cluster, and Pods are its
+CVDs.** The HO creates, lists, and destroys device processes against one
+host's resources; the provisioner creates, lists, and destroys device
+Pods against the cluster's resources, with the scheduler and autoscaler
+as its resource allocator and leases as its access control. What remains
+of the HO inside each Pod is the per-device launcher shim — the `run_cvd`
+wrapper and its localhost API — never a fleet manager.
+
 ```text
 ExporterSet cuttlefish-pixel
 ├── Exporter cuttlefish-pixel-aaa ──► Pod
