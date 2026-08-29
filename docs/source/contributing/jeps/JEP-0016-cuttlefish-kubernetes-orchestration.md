@@ -438,11 +438,26 @@ differing per concern:
 | Power | `power` (QemuPower) | `power` (CvdPower) |
 | Shell | SSH via `tcp` child (hostfwd :22) / serial | `adb shell` via `adb` child (SSH via `TcpNetwork` if the image runs sshd) |
 | Display | `vnc` child + client `novnc()` adapter | `ui` child (operator web UI + WebRTC, port 1080) + client `serve()` |
-| Image | `storage.flash` + boot | `env_config` boot (prewarmed or lessee-driven) |
+| Image | `storage.flash` + boot | `storage.flash` (HO user-artifacts + image dirs) or `env_config` boot (prewarmed or lessee-driven) |
 
 The display row is the same architecture on both sides — a driver-owned
 network child to the device's display endpoint plus a client-side
 adapter that makes it locally browsable — not a Cuttlefish special case.
+
+**Flashing for rapid iteration** completes the storage row: `CvdFlasher`
+implements the standard `FlasherInterface` over the HO's artifact
+machinery — `flash(source)` uploads the rebuilt image(s) through the
+SHA256-content-addressed `PUT /v1/userartifacts/{checksum}` (unchanged
+artifacts skip re-upload, which is what makes tight loops fast), extracts
+archives via `:extract`, registers or updates an image directory
+(`/cvd_imgs_dirs`), then recreates the CVD with `env_config` referencing
+it through upstream's `@image_dirs` substitution and waits for boot. One
+driver call swaps the build on the same leased device — the Cuttlefish
+analog of re-flashing a QEMU disk mid-lease. `dump` remains unsupported
+(virtual images are build artifacts, not state worth extracting).
+Partition-level in-band flashing over fastboot (CVDs expose it) is a
+future fidelity mode for exercising the physical-device flash path
+itself.
 
 The same guarantee binds the CO-seam future track: the pool façade is a
 **view over ordinary `Lease` CRs, never a parallel booking system**. A
@@ -1045,6 +1060,10 @@ these Pods; this is documented with the provisioner.
       scale-out in a documented reference setup (MachineSet example)
 - [ ] `ExitAndReplace` yields a pristine HO per lease; `InPlaceReuse`
       resets via `/reset`
+- [ ] `storage.flash` replaces the leased CVD's images via the HO
+      user-artifacts + image-dirs flow (content-addressed skip on
+      unchanged artifacts) and reboots to the new build within the same
+      lease
 - [ ] e2e `exporterset-cuttlefish` suite green in CI; `e2e/README.md`
       updated in the same PR
 - [ ] Documentation: provisioner guide with class/set examples, security
