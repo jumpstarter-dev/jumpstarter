@@ -1,6 +1,7 @@
 import json
 import threading
 import time
+import warnings
 from contextlib import contextmanager
 
 import click
@@ -9,6 +10,14 @@ from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 from jumpstarter_driver_power.client import VirtualPowerClient
 
 from jumpstarter.client.base import StubDriverClient
+from jumpstarter.client.flasher import (
+    FlasherClient,
+    PathBuf,
+    _http_url_adapter,
+    _local_file_adapter,
+    _parse_path,
+)
+from jumpstarter.streams.encoding import Compression
 
 
 def _parse(raw: str) -> dict | list | str:
@@ -90,6 +99,66 @@ class CvdPowerClient(VirtualPowerClient):
             _run_with_progress("Power cycling", lambda: self.cycle(wait))
 
         return power
+
+
+class CvdFlasherClient(FlasherClient):
+    """Flasher client for Cuttlefish devices.
+
+    Same interface and CLI as the generic ``FlasherClient`` (``flash FILE``,
+    ``flash -t name:file ...``), with one Cuttlefish-specific refinement:
+    flashing multiple artifacts (the dict / repeated ``--target`` form)
+    recreates the CVD once after the last artifact instead of once per
+    artifact. Valid target names are ``default_build`` (the images archive,
+    also the default for a bare ``flash FILE``) and ``host_package``.
+    """
+
+    def _flash_single(
+        self,
+        image: PathBuf,
+        *,
+        target: str | None,
+        compression: Compression | None,
+        recreate: bool = True,
+    ):
+        local_path, url = _parse_path(image)
+
+        if url is not None:
+            if compression is not None:
+                warnings.warn(
+                    "compression parameter is ignored for HTTP URLs",
+                    stacklevel=2,
+                )
+            with _http_url_adapter(client=self, url=url, mode="rb") as handle:
+                return self.call("flash", handle, target, recreate)
+
+        with _local_file_adapter(client=self, path=local_path, mode="rb", compression=compression) as handle:
+            return self.call("flash", handle, target, recreate)
+
+    def flash(
+        self,
+        path: PathBuf | dict[str, PathBuf],
+        *,
+        target: str | None = None,
+        compression: Compression | None = None,
+    ):
+        if isinstance(path, dict):
+            if target is not None:
+                from jumpstarter.common.exceptions import ArgumentError
+
+                raise ArgumentError("'target' parameter is not valid when flashing multiple images")
+
+            items = list(path.items())
+            results: dict[str, object] = {}
+            for index, (part, img) in enumerate(items):
+                results[part] = self._flash_single(
+                    img,
+                    target=part,
+                    compression=compression,
+                    recreate=index == len(items) - 1,
+                )
+            return results
+
+        return self._flash_single(path, target=target, compression=compression)
 
 
 class CuttlefishClient(CompositeClient):

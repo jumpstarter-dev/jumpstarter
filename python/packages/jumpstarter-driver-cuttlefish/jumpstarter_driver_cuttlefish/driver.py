@@ -1,11 +1,19 @@
+import copy
+import hashlib
 import json
+import os
 import subprocess
+import tempfile
 import threading
 import time
 from collections.abc import Generator
 from dataclasses import dataclass, field
+from functools import partial
+from typing import ClassVar
 
+import anyio
 import requests
+from anyio import to_thread
 from jumpstarter_driver_adb.driver import AdbServer
 from jumpstarter_driver_network.driver import TcpNetwork
 from jumpstarter_driver_power.driver import PowerReading, VirtualPowerInterface
@@ -13,9 +21,28 @@ from jumpstarter_driver_power.driver import PowerReading, VirtualPowerInterface
 from jumpstarter.driver import Driver, export
 from jumpstarter.driver.flasher import FlasherInterface
 
+# Upload chunk size for the HO user-artifacts API; matches upstream
+# libhoclient's DefaultUploadOptions (16 MB).
+UPLOAD_CHUNK_SIZE = 16 * 1024 * 1024
+
+# Prefix for referencing image directories from env_config; substituted
+# server-side by the HO (upstream api/v1/messages.go
+# EnvConfigImageDirectoriesVar, applied in createcvdaction.go).
+ENV_CONFIG_IMAGE_DIRS_VAR = "@image_dirs"
+
 
 class CuttlefishError(Exception):
-    """Raised when a Host Orchestrator API call fails."""
+    """Raised when a Host Orchestrator API call fails.
+
+    ``status_code`` carries the HTTP status when the failure came from an
+    HTTP error response, else ``None`` — callers classify errors by it,
+    never by substring-matching the message (which embeds URLs containing
+    hex checksums that can accidentally contain digit runs like "404").
+    """
+
+    def __init__(self, message: str, status_code: int | None = None):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class CuttlefishTimeout(CuttlefishError):
@@ -93,9 +120,25 @@ class Cuttlefish(Driver):
     def _fmt(self, result) -> str:
         return json.dumps(result, indent=2) if isinstance(result, (dict, list)) else str(result)
 
-    def _request(self, method: str, path: str, data: dict | None = None, timeout: float = 10) -> dict | list | str:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        data: dict | None = None,
+        timeout: float = 10,
+        files: dict | None = None,
+    ) -> dict | list | str:
+        """Perform an HO API request.
+
+        ``data`` is sent as JSON, unless ``files`` is given, in which case a
+        multipart form is sent with ``data`` as the plain form fields (the
+        shape the HO user-artifacts upload endpoint expects).
+        """
         try:
-            r = requests.request(method, f"{self._base_url}{path}", json=data, timeout=timeout)
+            if files is not None:
+                r = requests.request(method, f"{self._base_url}{path}", data=data, files=files, timeout=timeout)
+            else:
+                r = requests.request(method, f"{self._base_url}{path}", json=data, timeout=timeout)
             r.raise_for_status()
             try:
                 return r.json()
@@ -106,7 +149,22 @@ class Cuttlefish(Driver):
         except requests.Timeout as e:
             raise CuttlefishError(f"{method} {path} timed out after {timeout}s") from e
         except requests.HTTPError as e:
-            raise CuttlefishError(f"{method} {path} failed: {e}") from e
+            status = e.response.status_code if e.response is not None else None
+            raise CuttlefishError(f"{method} {path} failed: {e}", status_code=status) from e
+
+    @staticmethod
+    def _raise_operation_failed(r) -> None:
+        """Raise the driver-terminal error for a 500 :wait response."""
+        body = None
+        try:
+            body = r.json()
+        except (ValueError, requests.JSONDecodeError):
+            pass
+        if body and isinstance(body, dict):
+            msg = body.get("error", "unknown error")
+            details = body.get("details", "")
+            raise CuttlefishError(f"operation failed: {msg}\n{details}", status_code=500)
+        raise CuttlefishError(f"operation failed with status 500: {r.text}", status_code=500)
 
     def _wait_for_operation(self, op_name: str, timeout: float = 300) -> dict:
         deadline = time.monotonic() + timeout
@@ -133,21 +191,19 @@ class Cuttlefish(Driver):
                 time.sleep(2)
                 continue
             if r.status_code == 500:
-                body = None
-                try:
-                    body = r.json()
-                except (ValueError, requests.JSONDecodeError):
-                    pass
-                if body and isinstance(body, dict):
-                    msg = body.get("error", "unknown error")
-                    details = body.get("details", "")
-                    raise CuttlefishError(f"operation failed: {msg}\n{details}")
-                raise CuttlefishError(f"operation failed with status 500: {r.text}")
+                self._raise_operation_failed(r)
             try:
                 r.raise_for_status()
             except requests.HTTPError as e:
-                raise CuttlefishError(f"operation {op_name} failed: {e}") from e
-            return r.json()
+                raise CuttlefishError(f"operation {op_name} failed: {e}", status_code=r.status_code) from e
+            try:
+                return r.json()
+            except requests.JSONDecodeError:
+                # Upstream answers :wait for a nil-result operation (e.g.
+                # :extract, image-directory updates) with a bare 200 and an
+                # EMPTY body (waitOperationHandler -> httpHandler res == nil,
+                # controller.go); its own client decodes nothing there either.
+                return {}
         raise CuttlefishTimeout(f"operation {op_name} timed out after {timeout}s")
 
     def _do_operation(
@@ -178,6 +234,35 @@ class Cuttlefish(Driver):
         all_cvds = result.get("cvds", [])
         own_group = self._cvd_group or self.group
         return [c for c in all_cvds if c.get("group") == own_group]
+
+    def _adopt_created_cvd(self, result) -> None:
+        """Adopt group/name from a create-CVD result, guarding the ADB port.
+
+        If the HO assigned an adb_port other than the config-pinned
+        expectation, stale state may have leaked (e.g. orphaned launchers
+        holding the instance's ports): delete the just-created CVD and fail
+        fast with an actionable error instead of hanging for boot_timeout
+        against the wrong port.
+        """
+        if not isinstance(result, dict):
+            return
+        for cvd in result.get("cvds", []):
+            self._cvd_group = cvd.get("group")
+            self._cvd_name = cvd.get("name")
+            actual_port = cvd.get("adb_port")
+            if actual_port and actual_port != self._expected_adb_port:
+                try:
+                    self._do_operation("DELETE", self._cvd_path)
+                except CuttlefishError:
+                    self.logger.warning("Failed to clean up CVD after port mismatch")
+                self._cvd_group = None
+                self._cvd_name = None
+                raise CuttlefishError(
+                    f"HO assigned adb_port {actual_port} but expected "
+                    f"{self._expected_adb_port} — stale state may have leaked. "
+                    f"Run 'j cuttlefish reset' then retry."
+                )
+            break
 
     @property
     def _cvd_device(self) -> str:
@@ -422,7 +507,10 @@ class CvdPower(VirtualPowerInterface, Driver):
             self.logger.info("Creating CVD from env_config")
             try:
                 result = self.parent._do_operation(
-                    "POST", "/cvds", {"env_config": self.parent.env_config}, timeout=600,
+                    "POST",
+                    "/cvds",
+                    {"env_config": self.parent.env_config},
+                    timeout=600,
                 )
             except CuttlefishError as e:
                 msg = str(e)
@@ -432,24 +520,7 @@ class CvdPower(VirtualPowerInterface, Driver):
                         f"Run 'j cuttlefish reset' then retry. Original error: {msg}"
                     ) from e
                 raise
-            if isinstance(result, dict):
-                for cvd in result.get("cvds", []):
-                    self.parent._cvd_group = cvd.get("group")
-                    self.parent._cvd_name = cvd.get("name")
-                    actual_port = cvd.get("adb_port")
-                    if actual_port and actual_port != self.parent._expected_adb_port:
-                        try:
-                            self.parent._do_operation("DELETE", self.parent._cvd_path)
-                        except CuttlefishError:
-                            self.logger.warning("Failed to clean up CVD after port mismatch")
-                        self.parent._cvd_group = None
-                        self.parent._cvd_name = None
-                        raise CuttlefishError(
-                            f"HO assigned adb_port {actual_port} but expected "
-                            f"{self.parent._expected_adb_port} — stale state may have leaked. "
-                            f"Run 'j cuttlefish reset' then retry."
-                        )
-                    break
+            self.parent._adopt_created_cvd(result)
 
         self.parent._auto_connect_adb()
         if self.parent.boot_timeout:
@@ -476,17 +547,203 @@ class CvdPower(VirtualPowerInterface, Driver):
 
 @dataclass(kw_only=True)
 class CvdFlasher(FlasherInterface, Driver):
-    """Flasher for Cuttlefish devices (not yet implemented).
+    """Flasher for Cuttlefish devices via the HO user-artifacts machinery.
 
-    Planned: upload artifacts to Host Orchestrator via its upload API.
+    ``flash(source, target)`` uploads the image artifact through the
+    SHA256-content-addressed user-artifacts API (an artifact the HO already
+    holds is not re-uploaded, which is what makes tight rebuild loops fast),
+    extracts archives, registers or updates an image directory
+    (``/cvd_imgs_dirs``), then recreates the CVD with the pool env_config
+    referencing the image directory through upstream's ``@image_dirs``
+    substitution and waits for boot (JEP-0016 "Flashing for rapid
+    iteration").
+
+    ``target`` selects where the image directory is wired into env_config:
+    ``"default_build"`` (the default, ``instances[*].disk.default_build``)
+    or ``"host_package"`` (``common.host_package``) — the two attachment
+    points upstream's e2e tests use.
     """
 
     parent: Cuttlefish
+    _image_dirs: dict = field(default_factory=dict, init=False, repr=False)
+
+    TARGETS: ClassVar[tuple[str, ...]] = ("default_build", "host_package")
+
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter_driver_cuttlefish.client.CvdFlasherClient"
 
     @export
-    def flash(self, source, target: str | None = None) -> None:
-        raise NotImplementedError("CvdFlasher.flash() not yet implemented")
+    async def flash(self, source, target: str | None = None, recreate: bool = True) -> None:
+        """Flash an image artifact and (by default) recreate the CVD from it.
+
+        ``recreate=False`` uploads and registers the artifact without
+        recreating the CVD, so multiple artifacts can be flashed with a
+        single recreation at the end (the client does this for dict
+        flashes).
+        """
+        role = self._resolve_target(target)
+        path, checksum = await self._stage_source(source)
+        try:
+            await to_thread.run_sync(partial(self._flash_staged, path, checksum, role, recreate))
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
     @export
     def dump(self, target, partition: str | None = None) -> None:
         raise NotImplementedError("dump not supported for Cuttlefish devices")
+
+    def _resolve_target(self, target: str | None) -> str:
+        if target is None:
+            return "default_build"
+        if target not in self.TARGETS:
+            raise CuttlefishError(f"unknown flash target {target!r}; expected one of {', '.join(self.TARGETS)}")
+        return target
+
+    async def _stage_source(self, source) -> tuple[str, str]:
+        """Stream the source resource to a temp file, returning (path, sha256)."""
+        sha = hashlib.sha256()
+        tmp = tempfile.NamedTemporaryFile(prefix="cvd-flash-", delete=False)
+        tmp.close()
+        try:
+            async with await anyio.open_file(tmp.name, "wb") as f:
+                async with self.resource(source) as res:
+                    async for chunk in res:
+                        sha.update(chunk)
+                        await f.write(chunk)
+        except BaseException:
+            try:
+                os.unlink(tmp.name)
+            except OSError:
+                pass
+            raise
+        return tmp.name, sha.hexdigest()
+
+    @staticmethod
+    def _detect_extension(path: str) -> str:
+        """Pick the stored filename extension from the file's magic bytes.
+
+        The HO extracts by filename suffix (upstream userartifacts.go
+        extractFile supports only ``.zip`` and ``.tar.gz``); anything else
+        is stored as-is and symlinked unextracted into the image dir.
+        """
+        with open(path, "rb") as f:
+            magic = f.read(4)
+        if magic.startswith(b"PK\x03\x04"):
+            return ".zip"
+        if magic.startswith(b"\x1f\x8b"):
+            return ".tar.gz"
+        return ".img"
+
+    def _flash_staged(self, path: str, checksum: str, role: str, recreate: bool) -> None:
+        ext = self._detect_extension(path)
+        # The stored filename is CONSTANT for a given content type — never
+        # role- or build-dependent. Content addressing is by the checksum
+        # directory, and two invariants depend on the name being stable:
+        # (a) upstream UpdateImageDirectory only replaces an existing symlink
+        # of the SAME name, so a raw-image re-flash into the reused image dir
+        # must reuse the name or stale images accumulate; (b) upstream stores
+        # upload chunks at WorkDir/{checksum}/{filename} and extract requires
+        # the moved artifact dir to hold a single file, so the same content
+        # uploaded under different names (partial + complete) would wedge the
+        # checksum permanently.
+        filename = f"artifact{ext}"
+        if self._artifact_exists(checksum):
+            self.logger.info("Artifact %s already on HO, skipping upload", checksum)
+        else:
+            self._upload_artifact(path, checksum, filename)
+        if ext in (".zip", ".tar.gz"):
+            self._extract_artifact(checksum)
+        dir_id = self._ensure_image_dir(role)
+        self.logger.info("Updating image directory %s with artifact %s", dir_id, checksum)
+        self.parent._do_operation("PUT", f"/cvd_imgs_dirs/{dir_id}", {"user_artifact_checksum": checksum}, timeout=300)
+        if recreate:
+            self._recreate_cvd()
+
+    def _artifact_exists(self, checksum: str) -> bool:
+        try:
+            self.parent._request("GET", f"/v1/userartifacts/{checksum}")
+        except CuttlefishError as e:
+            if e.status_code == 404:
+                return False
+            raise
+        return True
+
+    def _upload_artifact(self, path: str, checksum: str, filename: str) -> None:
+        size = os.path.getsize(path)
+        self.logger.info("Uploading %s (%d bytes) as artifact %s", filename, size, checksum)
+        with open(path, "rb") as f:
+            offset = 0
+            while True:
+                chunk = f.read(UPLOAD_CHUNK_SIZE)
+                self.parent._request(
+                    "PUT",
+                    f"/v1/userartifacts/{checksum}",
+                    data={"chunk_offset_bytes": str(offset), "file_size_bytes": str(size)},
+                    files={"file": (filename, chunk)},
+                    timeout=600,
+                )
+                offset += len(chunk)
+                if offset >= size:
+                    break
+
+    def _extract_artifact(self, checksum: str) -> None:
+        try:
+            self.parent._do_operation("POST", f"/v1/userartifacts/{checksum}/:extract", timeout=300)
+        except CuttlefishError as e:
+            # The HO answers 409 Conflict when the artifact is already
+            # extracted; upstream's own client treats that as success.
+            if e.status_code == 409:
+                self.logger.info("Artifact %s already extracted", checksum)
+                return
+            raise
+
+    def _ensure_image_dir(self, role: str) -> str:
+        dir_id = self._image_dirs.get(role)
+        if dir_id:
+            return dir_id
+        result = self.parent._do_operation("POST", "/cvd_imgs_dirs", timeout=60)
+        if not isinstance(result, dict) or not result.get("id"):
+            raise CuttlefishError(f"unexpected response creating image directory: {result!r}")
+        dir_id = str(result["id"])
+        self._image_dirs[role] = dir_id
+        return dir_id
+
+    def _render_env_config(self) -> dict:
+        """Pool env_config with flashed image dirs injected, non-destructively."""
+        cfg = copy.deepcopy(self.parent.env_config)
+        build_dir = self._image_dirs.get("default_build")
+        if build_dir:
+            instances = cfg.get("instances")
+            if not instances:
+                instances = [{}]
+                cfg["instances"] = instances
+            for inst in instances:
+                inst.setdefault("disk", {})["default_build"] = f"{ENV_CONFIG_IMAGE_DIRS_VAR}/{build_dir}"
+        pkg_dir = self._image_dirs.get("host_package")
+        if pkg_dir:
+            cfg.setdefault("common", {})["host_package"] = f"{ENV_CONFIG_IMAGE_DIRS_VAR}/{pkg_dir}"
+        return cfg
+
+    def _recreate_cvd(self) -> None:
+        p = self.parent
+        p._auto_disconnect_adb()
+        for cvd in p._get_existing_cvds():
+            group = cvd.get("group", p.group)
+            name = cvd.get("name", p.name)
+            self.logger.info("Deleting CVD %s/%s before recreation", group, name)
+            p._do_operation("DELETE", f"/cvds/{group}/{name}")
+        p._cvd_group = None
+        p._cvd_name = None
+        self.logger.info("Recreating CVD from flashed image dirs")
+        result = p._do_operation("POST", "/cvds", {"env_config": self._render_env_config()}, timeout=600)
+        # Same adoption + adb_port guard as CvdPower.on: a port leak after
+        # flashing must fail fast with the actionable stale-state error, not
+        # hang in the boot wait below against the wrong port.
+        p._adopt_created_cvd(result)
+        p._auto_connect_adb()
+        if p.boot_timeout:
+            p._wait_boot(p.boot_timeout)

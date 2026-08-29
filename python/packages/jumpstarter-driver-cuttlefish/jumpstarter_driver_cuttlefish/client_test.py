@@ -356,3 +356,105 @@ def test_ui_child_cli_mounted():
         r = CliRunner().invoke(client.cli(), ["ui", "address"])
         assert r.exit_code == 0
         assert ":1080" in r.output
+
+
+# --- CvdFlasherClient (storage child) ---
+
+ZIP_BYTES = b"PK\x03\x04" + b"fake zip payload"
+TGZ_BYTES = b"\x1f\x8b\x08\x00" + b"fake tarball payload"
+
+
+def _mock_flash_backend(requests_mock, checksum, *, dir_ids=("dir-1",)):
+    """Register every HO endpoint the flash flow touches for one checksum."""
+    requests_mock.get(f"{BASE}/v1/userartifacts/{checksum}", status_code=404, json={"error": "user artifact not found"})
+    requests_mock.put(f"{BASE}/v1/userartifacts/{checksum}", text="")
+    requests_mock.post(f"{BASE}/v1/userartifacts/{checksum}/:extract", json={"name": "op-x", "done": False})
+    requests_mock.post(f"{BASE}/operations/op-x/:wait", json={})
+    requests_mock.post(f"{BASE}/cvd_imgs_dirs", json={"name": "op-d", "done": False})
+    requests_mock.post(f"{BASE}/operations/op-d/:wait", [{"json": {"id": d}} for d in dir_ids])
+    for d in dir_ids:
+        requests_mock.put(f"{BASE}/cvd_imgs_dirs/{d}", json={"name": "op-u", "done": False})
+    requests_mock.post(f"{BASE}/operations/op-u/:wait", json={})
+    requests_mock.get(f"{BASE}/cvds", json={"cvds": []})
+    requests_mock.post(f"{BASE}/cvds", json={"name": "op-c", "done": False})
+    requests_mock.post(
+        f"{BASE}/operations/op-c/:wait",
+        json={"cvds": [{"group": "cvd", "name": "1", "adb_port": 6520}]},
+    )
+
+
+def _checksum(data: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(data).hexdigest()
+
+
+def test_flash_local_file_streams_and_recreates(requests_mock, tmp_path):
+    """flash() streams the local file to the exporter, uploads it, recreates the CVD."""
+    path = tmp_path / "images.zip"
+    path.write_bytes(ZIP_BYTES)
+    checksum = _checksum(ZIP_BYTES)
+    _mock_flash_backend(requests_mock, checksum)
+    with serve(Cuttlefish(boot_timeout=0)) as client:
+        client.storage.flash(str(path))
+    uploads = [
+        r for r in requests_mock.request_history if r.method == "PUT" and r.path == f"/v1/userartifacts/{checksum}"
+    ]
+    assert len(uploads) == 1
+    creates = [r for r in requests_mock.request_history if r.method == "POST" and r.path == "/cvds"]
+    assert len(creates) == 1
+    cfg = creates[0].json()["env_config"]
+    assert cfg["instances"][0]["disk"]["default_build"] == "@image_dirs/dir-1"
+
+
+def test_flash_dict_recreates_once(requests_mock, tmp_path):
+    """Flashing multiple artifacts recreates the CVD once, after the last upload."""
+    pkg = tmp_path / "cvd-host_package.tar.gz"
+    pkg.write_bytes(TGZ_BYTES)
+    img = tmp_path / "images.zip"
+    img.write_bytes(ZIP_BYTES)
+    _mock_flash_backend(requests_mock, _checksum(TGZ_BYTES), dir_ids=("dir-a", "dir-b"))
+    _mock_flash_backend(requests_mock, _checksum(ZIP_BYTES), dir_ids=("dir-a", "dir-b"))
+    # re-register shared endpoints clobbered by the second call
+    requests_mock.post(f"{BASE}/cvd_imgs_dirs", json={"name": "op-d", "done": False})
+    requests_mock.post(f"{BASE}/operations/op-d/:wait", [{"json": {"id": "dir-a"}}, {"json": {"id": "dir-b"}}])
+    with serve(Cuttlefish(boot_timeout=0)) as client:
+        client.storage.flash({"host_package": str(pkg), "default_build": str(img)})
+    creates = [r for r in requests_mock.request_history if r.method == "POST" and r.path == "/cvds"]
+    assert len(creates) == 1
+    cfg = creates[0].json()["env_config"]
+    assert cfg["common"]["host_package"] == "@image_dirs/dir-a"
+    assert cfg["instances"][0]["disk"]["default_build"] == "@image_dirs/dir-b"
+
+
+def test_cli_storage_flash(requests_mock, tmp_path):
+    path = tmp_path / "images.zip"
+    path.write_bytes(ZIP_BYTES)
+    _mock_flash_backend(requests_mock, _checksum(ZIP_BYTES))
+    with serve(Cuttlefish(boot_timeout=0)) as client:
+        r = CliRunner().invoke(client.cli(), ["storage", "flash", str(path)])
+        assert r.exit_code == 0, r.output
+
+
+def test_flash_error_surfaces_to_client(requests_mock, tmp_path):
+    path = tmp_path / "images.zip"
+    path.write_bytes(ZIP_BYTES)
+    checksum = _checksum(ZIP_BYTES)
+    _mock_flash_backend(requests_mock, checksum)
+    requests_mock.post(
+        f"{BASE}/operations/op-c/:wait",
+        status_code=500,
+        json={"error": "failed to launch cvd", "details": "boom"},
+    )
+
+    def _leaf_messages(exc):
+        if isinstance(exc, BaseExceptionGroup):
+            for sub in exc.exceptions:
+                yield from _leaf_messages(sub)
+        else:
+            yield str(exc)
+
+    with serve(Cuttlefish(boot_timeout=0)) as client:
+        with pytest.raises(Exception) as excinfo:
+            client.storage.flash(str(path))
+        assert any("failed to launch cvd" in m for m in _leaf_messages(excinfo.value)), excinfo.value

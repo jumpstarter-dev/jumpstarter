@@ -1,4 +1,7 @@
+import hashlib
 import json
+import os
+import re
 import subprocess
 from unittest.mock import MagicMock, patch
 
@@ -134,10 +137,20 @@ def test_wait_connection_lost(requests_mock, drv):
 
 
 def test_wait_unexpected_http_error(requests_mock, drv):
-    """Non-500/503/504 error should raise."""
+    """Non-500/503/504 error should raise, carrying the HTTP status code."""
     requests_mock.post(f"{BASE}/operations/op-1/:wait", status_code=403, text="forbidden")
-    with pytest.raises(CuttlefishError, match="failed"):
+    with pytest.raises(CuttlefishError, match="failed") as excinfo:
         drv._wait_for_operation("op-1")
+    err = excinfo.value
+    assert isinstance(err, CuttlefishError) and err.status_code == 403
+
+
+def test_wait_empty_body_success(requests_mock, drv):
+    """Upstream replies to :wait with a bare 200 and an EMPTY body for
+    nil-result operations (:extract, image-dir updates); that is success {},
+    not a JSON decode crash."""
+    requests_mock.post(f"{BASE}/operations/op-1/:wait", text="")
+    assert drv._wait_for_operation("op-1") == {}
 
 
 def _mock_op(requests_mock, method, path, op_name="op-1"):
@@ -488,16 +501,419 @@ def test_cvd_power_read_not_implemented(drv):
         list(power.read())
 
 
-def test_cvd_flasher_flash_not_implemented(drv):
-    flasher = drv.children["storage"]
-    with pytest.raises(NotImplementedError):
-        flasher.flash("source")
-
-
 def test_cvd_flasher_dump_not_implemented(drv):
     flasher = drv.children["storage"]
     with pytest.raises(NotImplementedError):
         flasher.dump("target")
+
+
+# --- CvdFlasher.flash ---
+#
+# Wire shapes pinned against upstream google/android-cuttlefish@main:
+# - PUT /v1/userartifacts/{checksum}: multipart form with fields
+#   file (with filename), chunk_offset_bytes, file_size_bytes
+#   (orchestrator/controller.go uploadUserArtifactHandler)
+# - GET /v1/userartifacts/{checksum}: 200 {} if present, 404 if not
+#   (userartifacts.go StatArtifact)
+# - POST /v1/userartifacts/{checksum}/:extract -> Operation; 409 when
+#   already extracted (userartifacts.go ExtractArtifact)
+# - POST /cvd_imgs_dirs -> Operation whose result is {"id": ...}
+# - PUT /cvd_imgs_dirs/{id} with {"user_artifact_checksum": ...} -> Operation
+# - env_config references image dirs via "@image_dirs/<id>"
+#   (api/v1/messages.go EnvConfigImageDirectoriesVar)
+
+ZIP_BYTES = b"PK\x03\x04" + b"fake zip payload"
+TGZ_BYTES = b"\x1f\x8b\x08\x00" + b"fake tarball payload"
+RAW_BYTES = b"\xde\xad\xbe\xefraw image payload"
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _write(tmp_path, name: str, data: bytes) -> str:
+    p = tmp_path / name
+    p.write_bytes(data)
+    return str(p)
+
+
+def _mock_flash_backend(requests_mock, checksum, *, artifact_exists=False, dir_id="dir-1", existing_cvds=None):
+    """Register the full HO endpoint set one flash call touches."""
+    if artifact_exists:
+        requests_mock.get(f"{BASE}/v1/userartifacts/{checksum}", json={})
+    else:
+        requests_mock.get(
+            f"{BASE}/v1/userartifacts/{checksum}", status_code=404, json={"error": "user artifact not found"}
+        )
+    requests_mock.put(f"{BASE}/v1/userartifacts/{checksum}", text="")
+    requests_mock.post(f"{BASE}/v1/userartifacts/{checksum}/:extract", json={"name": "op-x", "done": False})
+    # Upstream answers :wait for nil-result operations (:extract, image-dir
+    # updates) with a bare 200 and an EMPTY body, not {} — pin the real wire
+    # behavior (waitOperationHandler res.Value == nil -> bare 200).
+    requests_mock.post(f"{BASE}/operations/op-x/:wait", text="")
+    requests_mock.post(f"{BASE}/cvd_imgs_dirs", json={"name": "op-d", "done": False})
+    requests_mock.post(f"{BASE}/operations/op-d/:wait", json={"id": dir_id})
+    requests_mock.put(f"{BASE}/cvd_imgs_dirs/{dir_id}", json={"name": "op-u", "done": False})
+    requests_mock.post(f"{BASE}/operations/op-u/:wait", text="")
+    requests_mock.get(f"{BASE}/cvds", json={"cvds": existing_cvds or []})
+    for cvd in existing_cvds or []:
+        requests_mock.delete(f"{BASE}/cvds/{cvd['group']}/{cvd['name']}", json={"name": "op-del", "done": False})
+    requests_mock.post(f"{BASE}/operations/op-del/:wait", json={})
+    requests_mock.post(f"{BASE}/cvds", json={"name": "op-c", "done": False})
+    requests_mock.post(
+        f"{BASE}/operations/op-c/:wait",
+        json={"cvds": [{"group": "cvd_1", "name": "dev1", "adb_port": 6520}]},
+    )
+
+
+@pytest.fixture
+def flash_drv(drv):
+    drv.boot_timeout = 0
+    drv.children["adb"] = MagicMock()
+    return drv
+
+
+def _reqs(requests_mock, method, path_suffix):
+    return [r for r in requests_mock.request_history if r.method == method and r.path.endswith(path_suffix)]
+
+
+def test_flash_uploads_new_artifact_multipart(requests_mock, flash_drv, tmp_path):
+    """A new artifact is uploaded via multipart PUT with the upstream form fields."""
+    checksum = _sha256(RAW_BYTES)
+    _mock_flash_backend(requests_mock, checksum)
+    flasher = flash_drv.children["storage"]
+    flasher._flash_staged(_write(tmp_path, "img", RAW_BYTES), checksum, "default_build", True)
+
+    uploads = _reqs(requests_mock, "PUT", f"/v1/userartifacts/{checksum}")
+    assert len(uploads) == 1
+    body = uploads[0].body
+    if hasattr(body, "read"):
+        body = body.read()
+    assert b"chunk_offset_bytes" in body
+    assert b"file_size_bytes" in body
+    assert str(len(RAW_BYTES)).encode() in body
+    assert RAW_BYTES in body
+    # The stored filename is constant (never role- or build-dependent):
+    # upstream replaces image-dir symlinks only for a same-named file, and
+    # stores upload chunks at WorkDir/{checksum}/{filename}, so a varying
+    # name would accumulate stale images / wedge partially-uploaded checksums.
+    assert b'filename="artifact.img"' in body
+    # raw (non-archive) artifacts are not extracted
+    assert not _reqs(requests_mock, "POST", "/:extract")
+
+
+def test_flash_artifact_stat_server_error_not_treated_as_absent(requests_mock, flash_drv, tmp_path):
+    """Non-404 stat failures surface as errors; classification is by HTTP
+    status code, never by substring (a checksum containing '404' must not
+    turn a 500 into 'artifact absent')."""
+    checksum = _sha256(RAW_BYTES)
+    _mock_flash_backend(requests_mock, checksum)
+    requests_mock.get(f"{BASE}/v1/userartifacts/{checksum}", status_code=500, text="boom")
+    flasher = flash_drv.children["storage"]
+    with pytest.raises(CuttlefishError) as excinfo:
+        flasher._flash_staged(_write(tmp_path, "img", RAW_BYTES), checksum, "default_build", True)
+    err = excinfo.value
+    assert isinstance(err, CuttlefishError) and err.status_code == 500
+    assert not _reqs(requests_mock, "PUT", f"/v1/userartifacts/{checksum}")
+
+
+def test_flash_checksum_skip(requests_mock, flash_drv, tmp_path):
+    """An artifact the HO already holds (GET 200) is not re-uploaded."""
+    checksum = _sha256(ZIP_BYTES)
+    _mock_flash_backend(requests_mock, checksum, artifact_exists=True)
+    flasher = flash_drv.children["storage"]
+    flasher._flash_staged(_write(tmp_path, "img.zip", ZIP_BYTES), checksum, "default_build", True)
+
+    assert not _reqs(requests_mock, "PUT", f"/v1/userartifacts/{checksum}")
+    # archive is still extracted and wired into an image dir
+    assert _reqs(requests_mock, "POST", f"/v1/userartifacts/{checksum}/:extract")
+    assert _reqs(requests_mock, "PUT", "/cvd_imgs_dirs/dir-1")
+
+
+def test_flash_chunked_upload(requests_mock, flash_drv, tmp_path, monkeypatch):
+    """Files larger than the chunk size are uploaded in multiple offset chunks."""
+    monkeypatch.setattr("jumpstarter_driver_cuttlefish.driver.UPLOAD_CHUNK_SIZE", 8)
+    data = RAW_BYTES  # 21 bytes -> 3 chunks of 8/8/5
+    checksum = _sha256(data)
+    _mock_flash_backend(requests_mock, checksum)
+    flasher = flash_drv.children["storage"]
+    flasher._flash_staged(_write(tmp_path, "img", data), checksum, "default_build", True)
+
+    uploads = _reqs(requests_mock, "PUT", f"/v1/userartifacts/{checksum}")
+    assert len(uploads) == 3
+    offsets = []
+    for r in uploads:
+        body = r.body
+        if hasattr(body, "read"):
+            body = body.read()
+        m = re.search(rb'name="chunk_offset_bytes"\r\n\r\n(\d+)', body)
+        assert m
+        offsets.append(int(m.group(1)))
+    assert offsets == [0, 8, 16]
+
+
+def test_flash_extracts_zip_archive(requests_mock, flash_drv, tmp_path):
+    """zip-magic content is stored under a .zip name and extracted."""
+    checksum = _sha256(ZIP_BYTES)
+    _mock_flash_backend(requests_mock, checksum)
+    flasher = flash_drv.children["storage"]
+    flasher._flash_staged(_write(tmp_path, "blob", ZIP_BYTES), checksum, "default_build", True)
+
+    uploads = _reqs(requests_mock, "PUT", f"/v1/userartifacts/{checksum}")
+    body = uploads[0].body
+    if hasattr(body, "read"):
+        body = body.read()
+    assert b'.zip"' in body
+    assert _reqs(requests_mock, "POST", f"/v1/userartifacts/{checksum}/:extract")
+
+
+def test_flash_extracts_targz_archive(requests_mock, flash_drv, tmp_path):
+    """gzip-magic content is stored under a .tar.gz name and extracted."""
+    checksum = _sha256(TGZ_BYTES)
+    _mock_flash_backend(requests_mock, checksum)
+    flasher = flash_drv.children["storage"]
+    flasher._flash_staged(_write(tmp_path, "blob", TGZ_BYTES), checksum, "host_package", True)
+
+    uploads = _reqs(requests_mock, "PUT", f"/v1/userartifacts/{checksum}")
+    body = uploads[0].body
+    if hasattr(body, "read"):
+        body = body.read()
+    assert b'.tar.gz"' in body
+    assert _reqs(requests_mock, "POST", f"/v1/userartifacts/{checksum}/:extract")
+
+
+def test_flash_extract_conflict_is_success(requests_mock, flash_drv, tmp_path):
+    """409 from :extract (already extracted) is tolerated like upstream's client."""
+    checksum = _sha256(ZIP_BYTES)
+    _mock_flash_backend(requests_mock, checksum, artifact_exists=True)
+    requests_mock.post(
+        f"{BASE}/v1/userartifacts/{checksum}/:extract",
+        status_code=409,
+        json={"error": "user artifact already extracted"},
+    )
+    flasher = flash_drv.children["storage"]
+    flasher._flash_staged(_write(tmp_path, "img.zip", ZIP_BYTES), checksum, "default_build", True)
+    assert _reqs(requests_mock, "POST", "/cvds")
+
+
+def test_flash_env_config_injection_preserves_pool_config(requests_mock, flash_drv, tmp_path):
+    """@image_dirs injection merges into the pool env_config without clobbering it."""
+    flash_drv.env_config = {
+        "common": {"group_name": "cvd_1"},
+        "instances": [{"vm": {"cpus": 8}, "disk": {"default_build": "gs://some/build"}}],
+    }
+    checksum = _sha256(ZIP_BYTES)
+    _mock_flash_backend(requests_mock, checksum)
+    flasher = flash_drv.children["storage"]
+    flasher._flash_staged(_write(tmp_path, "img.zip", ZIP_BYTES), checksum, "default_build", True)
+
+    creates = _reqs(requests_mock, "POST", "/cvds")
+    assert len(creates) == 1
+    cfg = creates[0].json()["env_config"]
+    assert cfg["common"]["group_name"] == "cvd_1"
+    assert cfg["instances"][0]["vm"] == {"cpus": 8}
+    assert cfg["instances"][0]["disk"]["default_build"] == "@image_dirs/dir-1"
+    # pool config object is not mutated
+    assert flash_drv.env_config["instances"][0]["disk"]["default_build"] == "gs://some/build"
+
+
+def test_flash_host_package_target(requests_mock, flash_drv, tmp_path):
+    """target='host_package' wires the image dir into common.host_package."""
+    flash_drv.env_config = {"instances": [{"vm": {"cpus": 2}}]}
+    checksum = _sha256(TGZ_BYTES)
+    _mock_flash_backend(requests_mock, checksum, dir_id="dir-hp")
+    flasher = flash_drv.children["storage"]
+    flasher._flash_staged(_write(tmp_path, "pkg.tar.gz", TGZ_BYTES), checksum, "host_package", True)
+
+    cfg = _reqs(requests_mock, "POST", "/cvds")[0].json()["env_config"]
+    assert cfg["common"]["host_package"] == "@image_dirs/dir-hp"
+    assert cfg["instances"][0]["vm"] == {"cpus": 2}
+    # host_package flash alone must not invent a disk.default_build
+    assert "disk" not in cfg["instances"][0]
+
+
+def test_flash_default_build_creates_instances_when_missing(requests_mock, flash_drv, tmp_path):
+    """An empty pool env_config still gets a bootable instances entry."""
+    flash_drv.env_config = {}
+    checksum = _sha256(ZIP_BYTES)
+    _mock_flash_backend(requests_mock, checksum)
+    flasher = flash_drv.children["storage"]
+    flasher._flash_staged(_write(tmp_path, "img.zip", ZIP_BYTES), checksum, "default_build", True)
+
+    cfg = _reqs(requests_mock, "POST", "/cvds")[0].json()["env_config"]
+    assert cfg["instances"][0]["disk"]["default_build"] == "@image_dirs/dir-1"
+
+
+def test_flash_unknown_target_rejected(flash_drv):
+    flasher = flash_drv.children["storage"]
+    with pytest.raises(CuttlefishError, match="unknown flash target"):
+        flasher._resolve_target("bootloader")
+
+
+def test_flash_reuses_image_dir(requests_mock, flash_drv, tmp_path):
+    """A second flash for the same target updates the same image dir."""
+    checksum = _sha256(ZIP_BYTES)
+    _mock_flash_backend(requests_mock, checksum)
+    flasher = flash_drv.children["storage"]
+    path = _write(tmp_path, "img.zip", ZIP_BYTES)
+    flasher._flash_staged(path, checksum, "default_build", True)
+    flasher._flash_staged(path, checksum, "default_build", True)
+
+    assert len(_reqs(requests_mock, "POST", "/cvd_imgs_dirs")) == 1
+    assert len(_reqs(requests_mock, "PUT", "/cvd_imgs_dirs/dir-1")) == 2
+
+
+def test_flash_recreate_false_skips_recreate(requests_mock, flash_drv, tmp_path):
+    checksum = _sha256(ZIP_BYTES)
+    _mock_flash_backend(requests_mock, checksum)
+    flasher = flash_drv.children["storage"]
+    flasher._flash_staged(_write(tmp_path, "img.zip", ZIP_BYTES), checksum, "default_build", False)
+
+    assert not _reqs(requests_mock, "POST", "/cvds")
+    assert not _reqs(requests_mock, "GET", "/cvds")
+
+
+def test_flash_recreate_deletes_existing_and_adopts(requests_mock, flash_drv, tmp_path):
+    """Recreate deletes the leased CVD first, adopts the new one, reconnects ADB."""
+    checksum = _sha256(ZIP_BYTES)
+    existing = [{"group": "cvd_1", "name": "dev1", "status": "Running"}]
+    _mock_flash_backend(requests_mock, checksum, existing_cvds=existing)
+    flasher = flash_drv.children["storage"]
+    flasher._flash_staged(_write(tmp_path, "img.zip", ZIP_BYTES), checksum, "default_build", True)
+
+    assert _reqs(requests_mock, "DELETE", "/cvds/cvd_1/dev1")
+    assert _reqs(requests_mock, "POST", "/cvds")
+    assert flash_drv._cvd_group == "cvd_1"
+    assert flash_drv._cvd_name == "dev1"
+    flash_drv.children["adb"].disconnect_device.assert_called_once()
+    flash_drv.children["adb"].connect_device.assert_called_once()
+
+
+def test_flash_recreate_waits_boot(requests_mock, flash_drv, tmp_path, monkeypatch):
+    """With a nonzero boot_timeout, recreate waits for boot via _wait_boot
+    (the JEP's 'recreates the CVD ... and waits for boot')."""
+    flash_drv.boot_timeout = 120
+    waited = []
+    monkeypatch.setattr(flash_drv, "_wait_boot", lambda t: waited.append(t))
+    checksum = _sha256(ZIP_BYTES)
+    _mock_flash_backend(requests_mock, checksum)
+    flasher = flash_drv.children["storage"]
+    flasher._flash_staged(_write(tmp_path, "img.zip", ZIP_BYTES), checksum, "default_build", True)
+    assert waited == [120]
+
+
+def test_flash_recreate_port_mismatch_fails_fast(requests_mock, flash_drv, tmp_path, monkeypatch):
+    """A stale-state adb_port leak after flashing fails fast with the
+    actionable reset hint (same guard as CvdPower.on), never a boot-wait
+    hang; the mismatched CVD is deleted and adoption rolled back."""
+    flash_drv.boot_timeout = 120
+
+    def _no_boot_wait(t):
+        raise AssertionError("must not wait for boot on port mismatch")
+
+    monkeypatch.setattr(flash_drv, "_wait_boot", _no_boot_wait)
+    checksum = _sha256(ZIP_BYTES)
+    _mock_flash_backend(requests_mock, checksum)
+    requests_mock.post(
+        f"{BASE}/operations/op-c/:wait",
+        json={"cvds": [{"group": "cvd_1", "name": "dev1", "adb_port": 6521}]},
+    )
+    requests_mock.delete(f"{BASE}/cvds/cvd_1/dev1", json={"name": "op-del", "done": False})
+    requests_mock.post(f"{BASE}/operations/op-del/:wait", text="")
+
+    flasher = flash_drv.children["storage"]
+    with pytest.raises(CuttlefishError, match="stale state may have leaked"):
+        flasher._flash_staged(_write(tmp_path, "img.zip", ZIP_BYTES), checksum, "default_build", True)
+    assert _reqs(requests_mock, "DELETE", "/cvds/cvd_1/dev1")
+    assert flash_drv._cvd_group is None
+    assert flash_drv._cvd_name is None
+
+
+def test_flash_error_surfaced_from_operation(requests_mock, flash_drv, tmp_path):
+    """A failed HO operation surfaces its error body."""
+    checksum = _sha256(ZIP_BYTES)
+    _mock_flash_backend(requests_mock, checksum)
+    requests_mock.post(
+        f"{BASE}/operations/op-u/:wait",
+        status_code=500,
+        json={"error": "disk full", "details": "no space left"},
+    )
+    flasher = flash_drv.children["storage"]
+    with pytest.raises(CuttlefishError, match="disk full"):
+        flasher._flash_staged(_write(tmp_path, "img.zip", ZIP_BYTES), checksum, "default_build", True)
+
+
+def test_flash_image_dir_create_bad_response(requests_mock, flash_drv, tmp_path):
+    """An image-dir create whose result lacks an id is an error, not a KeyError."""
+    checksum = _sha256(ZIP_BYTES)
+    _mock_flash_backend(requests_mock, checksum)
+    requests_mock.post(f"{BASE}/operations/op-d/:wait", json={})
+    flasher = flash_drv.children["storage"]
+    with pytest.raises(CuttlefishError, match="image directory"):
+        flasher._flash_staged(_write(tmp_path, "img.zip", ZIP_BYTES), checksum, "default_build", True)
+
+
+@pytest.mark.asyncio
+async def test_flash_export_stages_checksums_and_delegates(flash_drv, monkeypatch):
+    """The flash export streams the resource to disk, hashes it, then flashes."""
+    from contextlib import asynccontextmanager
+
+    flasher = flash_drv.children["storage"]
+    payload = [b"PK\x03\x04", b"rest-of-zip"]
+
+    @asynccontextmanager
+    async def fake_resource(handle, timeout=7200):
+        async def gen():
+            for c in payload:
+                yield c
+
+        yield gen()
+
+    captured = {}
+
+    def fake_flash_staged(path, checksum, role, recreate):
+        with open(path, "rb") as f:
+            captured["data"] = f.read()
+        captured["checksum"] = checksum
+        captured["role"] = role
+        captured["recreate"] = recreate
+
+    monkeypatch.setattr(flasher, "resource", fake_resource)
+    monkeypatch.setattr(flasher, "_flash_staged", fake_flash_staged)
+    await flasher.flash({"fake": "handle"})
+
+    joined = b"".join(payload)
+    assert captured["data"] == joined
+    assert captured["checksum"] == hashlib.sha256(joined).hexdigest()
+    assert captured["role"] == "default_build"
+    assert captured["recreate"] is True
+
+
+@pytest.mark.asyncio
+async def test_flash_export_cleans_up_temp_file(flash_drv, monkeypatch):
+    """The staged temp file is removed even when the flash flow fails."""
+    from contextlib import asynccontextmanager
+
+    flasher = flash_drv.children["storage"]
+
+    @asynccontextmanager
+    async def fake_resource(handle, timeout=7200):
+        async def gen():
+            yield b"data"
+
+        yield gen()
+
+    staged = {}
+
+    def fake_flash_staged(path, checksum, role, recreate):
+        staged["path"] = path
+        raise CuttlefishError("boom")
+
+    monkeypatch.setattr(flasher, "resource", fake_resource)
+    monkeypatch.setattr(flasher, "_flash_staged", fake_flash_staged)
+    with pytest.raises(CuttlefishError, match="boom"):
+        await flasher.flash({"fake": "handle"})
+    assert not os.path.exists(staged["path"])
 
 
 def test_prewarm_boots_power_on_in_background():

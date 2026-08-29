@@ -173,7 +173,7 @@ export:
 
 This is a **composite driver** with three children:
 - **power** — `VirtualPowerInterface`: `j power on`, `j power off [--destroy]`, `j power cycle`
-- **storage** — `FlasherInterface`: not yet implemented (planned: HO artifact upload API)
+- **storage** — `FlasherInterface`: `j storage flash IMAGE` uploads the artifact via the HO's SHA256-content-addressed user-artifacts API (unchanged artifacts skip re-upload), extracts archives, registers an image directory, and recreates the CVD from it (`dump` is unsupported). Targets: `default_build` (default) and `host_package`, e.g. `j storage flash -t default_build:images.zip -t host_package:cvd-host_package.tar.gz`
 - **adb** — ADB server for device communication
 
 The exporter config also typically includes sibling drivers:
