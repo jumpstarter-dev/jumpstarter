@@ -124,6 +124,7 @@ build: manifests generate fmt vet ## Build manager binary.
 	go build -ldflags "$(LDFLAGS)" -o bin/manager cmd/main.go
 	go build -ldflags "$(LDFLAGS)" -o bin/router ./cmd/router
 	go build -ldflags "$(LDFLAGS)" -o bin/exporter-set-controller cmd/exporter-set-controller/main.go
+	go build -ldflags "$(LDFLAGS)" -o bin/ho-facade ./cmd/ho-facade
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
