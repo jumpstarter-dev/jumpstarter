@@ -424,6 +424,33 @@ modes follow directly from that constraint:
   its proxy layer — or an `--ice_servers` flag is contributed upstream (a
   small, obviously useful patch).
 
+### Parity with existing device types
+
+Seamlessness with existing Jumpstarter mechanisms is a hard requirement:
+leasing a Cuttlefish device looks and feels exactly like leasing a QEMU
+device — same `jmp lease` flow, same lease objects, same driver-child +
+client-adapter patterns, with only the device-appropriate technology
+differing per concern:
+
+| Concern | QEMU exporter | Cuttlefish exporter |
+| --- | --- | --- |
+| Lease | `jmp lease -l board=...` | `jmp lease -l device=cuttlefish` |
+| Power | `power` (QemuPower) | `power` (CvdPower) |
+| Shell | SSH via `tcp` child (hostfwd :22) / serial | `adb shell` via `adb` child (SSH via `TcpNetwork` if the image runs sshd) |
+| Display | `vnc` child + client `novnc()` adapter | `ui` child (operator web UI + WebRTC, port 1080) + client `serve()` |
+| Image | `storage.flash` + boot | `env_config` boot (prewarmed or lessee-driven) |
+
+The display row is the same architecture on both sides — a driver-owned
+network child to the device's display endpoint plus a client-side
+adapter that makes it locally browsable — not a Cuttlefish special case.
+
+The same guarantee binds the CO-seam future track: the pool façade is a
+**view over ordinary `Lease` CRs, never a parallel booking system**. A
+device leased through the façade shows up in `jmp` exactly like any
+lease (and can be released there); a device leased with `jmp` appears as
+that client's running CVD in the façade listing. Whichever door a client
+walks through, there is one lease underneath.
+
 ### Scaling with the cluster autoscaler and MachineSets
 
 The headline goal of this JEP is that Cuttlefish capacity behaves like any
