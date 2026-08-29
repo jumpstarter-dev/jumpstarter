@@ -177,6 +177,16 @@ as its resource allocator and leases as its access control. What remains
 of the HO inside each Pod is the per-device launcher shim — the `run_cvd`
 wrapper and its localhost API — never a fleet manager.
 
+The mapping composes into upstream's own two-tier architecture: Google's
+stack is Cloud Orchestrator (manages hosts) → Host Orchestrator (manages
+CVDs). Treating **each pool as one logical Host Orchestrator** reproduces
+that layering with Jumpstarter as the implementation of both tiers — a
+pool-level façade speaking the HO wire API backed by the ExporterSet, and
+an `instances.Manager` backend mapping CO "hosts" onto pools — so
+Google's clients (`cvdr`, the CO web UI) could one day drive Jumpstarter
+pools natively. This stays future-track (see *Future Possibilities*);
+under any such façade, every CVD remains exactly one Pod/exporter/lease.
+
 ```text
 ExporterSet cuttlefish-pixel
 ├── Exporter cuttlefish-pixel-aaa ──► Pod
@@ -1178,10 +1188,29 @@ Explicitly **not** part of this proposal:
 - **Upstream Kubernetes `instances.Manager` backend** contributed to
   `google/cloud-android-orchestration`, sharing the Pod-rendering logic, so
   non-Jumpstarter users get Kubernetes hosts too.
-- **Cloud Orchestrator UI adapter** (DD-9 option 2) — a lease-backed
-  `instances.Manager` implementation making the upstream fleet web UI and
-  `cvdr` CLI optional frontends over Jumpstarter leases, with
-  `accounts.Manager` implemented against cluster OIDC.
+- **Pool-as-Host-Orchestrator façade** — a pool-level service speaking
+  the upstream HO wire API backed by the `ExporterSet`: `GET /cvds` lists
+  the pool's instances, `POST /cvds` acquires a lease and boots the
+  request's `env_config` on it (demand-driven scale-up = on-demand
+  creation), `DELETE` releases/recycles, the operations API surfaces
+  lease/boot progress, and per-device ADB/WebRTC endpoints proxy to each
+  Pod's shim. `env_config` passes through opaquely (it is upstream's
+  unstable "black box"; the façade never interprets it). Open design
+  points: the HO API is unauthenticated by design (CO fronts auth), so
+  the façade must hold a Jumpstarter client credential and scope device
+  listings per caller to avoid cross-lessee leakage; and HO
+  group/instance-number semantics must map onto N single-CVD instances.
+  The exporter = DUT invariant is untouched — the façade is a view, not a
+  topology change — and the deferred multi-device UI aggregation falls
+  out of it (one "host" listing N devices).
+- **Cloud Orchestrator backend over pools** (DD-9 option 2, refined by
+  the façade above) — an `instances.Manager` implementation mapping CO
+  "hosts" onto pools, with `GetHostClient` returning the upstream
+  `NetHostClient` pointed at the pool façade and `accounts.Manager`
+  implemented against cluster OIDC. Because the façade speaks the real HO
+  API, `cvdr` and the CO web UI would drive Jumpstarter pools natively,
+  reproducing Google's CO → HO two-tier architecture with Jumpstarter as
+  both tiers' implementation.
 - **CVD groups / multi-device leases** (DD-8) — Bluetooth/Wi-Fi topologies,
   via composite leases across single-CVD exporters or a group modeled as
   one composite DUT; never N independently leased devices behind one
