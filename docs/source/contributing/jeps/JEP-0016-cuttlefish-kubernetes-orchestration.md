@@ -187,6 +187,12 @@ Google's clients (`cvdr`, the CO web UI) could one day drive Jumpstarter
 pools natively. This stays future-track (see *Future Possibilities*);
 under any such façade, every CVD remains exactly one Pod/exporter/lease.
 
+In one sentence: **Jumpstarter becomes the cloud-native Cuttlefish
+orchestrator** — the Cloud Orchestrator's role delivered through
+Kubernetes primitives (Pods, the scheduler, the autoscaler, leases)
+rather than a bespoke service, wire-compatible with Google's stack at
+both of its API seams.
+
 ```text
 ExporterSet cuttlefish-pixel
 ├── Exporter cuttlefish-pixel-aaa ──► Pod
@@ -1203,6 +1209,16 @@ Explicitly **not** part of this proposal:
   The exporter = DUT invariant is untouched — the façade is a view, not a
   topology change — and the deferred multi-device UI aggregation falls
   out of it (one "host" listing N devices).
+
+  The façade also gives the controller a **native downward control
+  plane**: the same per-Pod HO API `podcvd` uses per-container becomes
+  how the orchestrator speaks to its devices — backing the façade's
+  calls, driving `POST /reset` for `InPlaceReuse` recycling, and
+  polling device state for boot-gated readiness / JEP-0015 dynamic
+  labels. This deliberately revisits DD-7's render-only stance, in a
+  dedicated component outside the reconcile loop (reconciles must never
+  block on long HO operations), with a NetworkPolicy restricting the
+  unauthenticated per-Pod HO port to the controller/façade.
 - **Cloud Orchestrator backend over pools** (DD-9 option 2, refined by
   the façade above) — an `instances.Manager` implementation mapping CO
   "hosts" onto pools, with `GetHostClient` returning the upstream
