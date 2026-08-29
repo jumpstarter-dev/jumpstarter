@@ -151,7 +151,22 @@ spec:
 ### Instance model
 
 Each pool instance is **one Pod = one Exporter = one Host Orchestrator = one
-CVD** (see DD-2, DD-3):
+CVD** (see DD-2, DD-3). The governing invariant is Jumpstarter's own:
+**an exporter is 1:1 with its DUT.** The Host Orchestrator can manage many
+CVDs on its host, but this design deliberately never uses that capability —
+inside a pool instance the HO is runtime plumbing (the way the QEMU
+provisioner's runtime could technically run many machines and doesn't), not
+a device-fleet surface. The driver is already built this way: it manages a
+single named CVD group and treats extra CVDs on its HO as stale state to
+remove.
+
+This is upstream's own **container-per-DUT model** — the Cloud
+Orchestrator Docker backend and `podcvd` both run one
+`cuttlefish-orchestration` container per device — expressed in Kubernetes:
+same image, same one-DUT-per-container boundary, with the kubelet in
+podman's role and an exporter sidecar added for remote access. The
+container boundary is what structurally enforces exporter = DUT, rather
+than convention inside a shared host.
 
 ```text
 ExporterSet cuttlefish-pixel
@@ -426,6 +441,16 @@ awareness. This JEP is, in effect, the cluster-wide version of the same
 per-instance-container model, with the kubelet playing podman's role and
 the ExporterSet controller playing the operator's.
 
+The client-side symmetry is the point: **`jmp` is to the cluster what
+`podcvd` is to one host.** `podcvd create` spins up a container-per-DUT on
+the local machine; `jmp lease` against a pool with
+`minAvailableReplicas: 0` spins one up on demand anywhere the cluster has
+capacity (warm pools trade that latency away when desired), with the
+device landing wherever the scheduler places it — including on a
+different architecture than the caller — behind an authenticated,
+expiring lease instead of a client-ID label, from a CLI that also fronts
+QEMU boards, cloud virtual devices, and physical hardware.
+
 The Cloud Orchestrator itself is **not** deployed. Its
 `instances.Manager` interface (`pkg/app/instances`) was evaluated as an
 integration point; a Kubernetes backend for it remains a possible upstream
@@ -517,7 +542,10 @@ non-Jumpstarter users.
 
 **Decision:** Option 1 — one CVD per Pod.
 
-**Rationale:** JEP-0014 models Exporter = leased unit = Pod, with
+**Rationale:** First and foremost, Jumpstarter's model is that an
+**exporter is 1:1 with its DUT** — one CVD is the device; the HO's
+capacity for more is deliberately unused plumbing (see *Instance model*).
+Mechanically, JEP-0014 models Exporter = leased unit = Pod, with
 `ExitAndReplace` recycling implemented as main-container exit; a shared
 multi-CVD Pod breaks that 1:1 lifecycle (one lessee's recycle would tear
 down neighbors, or recycling degrades to in-place-only). Per-Pod resource
@@ -650,21 +678,28 @@ instant-on devices.
 3. **Implement the Cloud Orchestrator's `instances.Manager` interface
    shape** inside Jumpstarter as a compatibility layer.
 
-**Decision:** Option 1 — import `libhoclient` (and `apiv1` types) in the
-provisioner for readiness probing beyond HTTP 200 (e.g. `cvd` availability),
-recycle-time `/reset`, and future artifact management. Option 3 is rejected:
-Jumpstarter's `Provisioner` interface is the plug point (per DD-1), and
+**Decision (revised after prototyping):** **No HO client in the
+controller at all** — the provisioner's `RenderPod`/`EnrichExporterExport`/
+`Cleanup` only render Pod specs and never call the Host Orchestrator at
+runtime; readiness is an HTTP probe on the runtime sidecar and recycle-time
+`/reset` is driven by the exporter (the Python driver), not the
+controller. `libhoclient` (or its `FakeHostOrchestratorClient`) remains an
+option for **e2e tests only**. Option 3 is rejected: Jumpstarter's
+`Provisioner` interface is the plug point (per DD-1), and
 `instances.Manager`'s host-centric contract (zones, per-user hosts,
 operations) doesn't map onto Pod rendering.
 
-**Rationale:** The HO API is long-lived and versioned upstream alongside
-the runtime image we deploy; importing the client keeps request/response
-types in lockstep instead of hand-maintaining a parallel client (the
-Python driver already demonstrates how much surface that is). Both repos
-are Apache-2.0. Risk: `libhoclient` lives in a subdirectory of
-`android-cuttlefish`; its Go-module consumption path (submodule tag vs.
-pseudo-version) is an implementation detail to verify, with option 2 as
-the fallback if the module proves impractical to depend on.
+**Rationale:** An earlier draft chose option 1, but an empirical probe
+during prototyping (2026-08-29) reversed it: `libhoclient@main` resolves
+as a Go module but compiles only when three sibling modules
+(`libhoclient`, `host_orchestrator`, `liboperator`) are hand-pinned to the
+same pseudo-version — upstream tags only the parent repo, so any
+dependency bump that moves one module without the others breaks the
+build — and it pulls the full pion WebRTC stack (~17 modules) into the
+controller's supply chain for RPCs a provisioner never calls. Since the
+render-only design needs no HO client in the controller, the import buys
+nothing at real cost. The Python driver remains the runtime HO client, as
+today.
 
 ### DD-8: Multi-CVD lease groups
 
@@ -679,9 +714,26 @@ the fallback if the module proves impractical to depend on.
 
 **Rationale:** Multi-device topologies align with JEP-0014's deferred
 "multiple/spawned-on-lease VirtualTargets per Exporter" and composite
-leases; solving them only for Cuttlefish would fragment the model. The
-1-CVD-per-Pod topology (DD-2) does not preclude a future group mode (an HO
-can host a group within one Pod when that Pod is a single leased unit).
+leases; solving them only for Cuttlefish would fragment the model.
+
+Any future group mode must also reconcile with the exporter = DUT
+invariant (see *Instance model*), and there are exactly two honest ways to
+do that:
+
+1. **Composite leases across single-CVD exporters** — preserves strict
+   per-device 1:1; each device stays its own Pod/exporter, and the lease
+   layer binds N of them. Requires a cross-Pod virtual-radio story
+   (rootcanal/netsim connectivity between instances in different Pods) —
+   real upstream-facing work.
+2. **A CVD group as one composite DUT** — one Pod, one exporter, one
+   lease, where the *bench* is the DUT (the way a physical exporter can
+   front a board plus its peripherals). The HO then manages the group's
+   members as internals of a single device, which keeps the exporter
+   model honest at the cost of coarser leasing granularity.
+
+What is **not** acceptable is N independently leased devices behind one
+exporter — that breaks the 1:1 model outright. Deferring keeps both
+legitimate paths open.
 
 ### DD-9: Device UI — per-Pod operator UI vs. Cloud Orchestrator web UI
 
@@ -1066,9 +1118,9 @@ Fully additive:
   device-plugin capacity of 1. Leaning `vhost_user_vsock` by default with
   `parameters.vsock.enabled` opting into the kernel device.
   (Implementation-time; does not block the design.)
-- **`libhoclient` dependency mechanics:** consumable as a Go module at a
-  pinned upstream tag, or vendored? (Implementation-time; DD-7 fallback
-  exists.)
+- ~~**`libhoclient` dependency mechanics**~~ — resolved by the 2026-08-29
+  prototype probe; see DD-7 (no controller import; sibling-module
+  pseudo-version pinning and pion dependency drag documented there).
 - **WebRTC media over the lease forward:** the design direction is set
   (see *WebRTC media path*: direct-reachability mode, or in-Pod
   TURN-over-TCP for fully tunneled leases — gRPC's TCP transport rules
@@ -1103,8 +1155,10 @@ Explicitly **not** part of this proposal:
   `instances.Manager` implementation making the upstream fleet web UI and
   `cvdr` CLI optional frontends over Jumpstarter leases, with
   `accounts.Manager` implemented against cluster OIDC.
-- **CVD groups / multi-device leases** (DD-8) — Bluetooth/Wi-Fi topologies
-  as one leased unit, aligned with JEP-0014 composite-lease futures.
+- **CVD groups / multi-device leases** (DD-8) — Bluetooth/Wi-Fi topologies,
+  via composite leases across single-CVD exporters or a group modeled as
+  one composite DUT; never N independently leased devices behind one
+  exporter (the exporter = DUT invariant).
 - **Artifact caching** — node-level or PVC-backed cache of Android build
   artifacts (content-addressed via the HO user-artifacts API) to cut
   lease-to-boot latency; possibly a pool-level pre-fetch hook.
