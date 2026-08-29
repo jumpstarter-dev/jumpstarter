@@ -1328,20 +1328,32 @@ Explicitly **not** part of this proposal:
 - **Restricted seccomp** for the runtime sidecar — retire `Unconfined`
   once upstream makes userspace vsock the default (b/383428636), or via a
   tailored profile (DD-5 option 3).
-- **Exec-mode slim runtime via `jumpstarter-exec`** — the existing Rust
-  component already serves general `Exec{argv,env,cwd}` over
-  `launcher.sock`, so a slim sidecar (cvd tools + operator, no HO/nginx)
-  driven podcvd-style through the QEMU provisioner's exact staging
-  pattern needs no Rust changes and removes the Pod's unauthenticated
-  HTTP surface entirely. Not chosen for the standard runtime because the
-  HO HTTP path is **location-transparent** (one driver serves laptop,
-  remote-host, and in-Pod HOs) and the flasher rides HO's
-  content-addressed artifact API; exec control would be a second,
-  co-located-only transport mode. Revisit alongside the
-  `cuttlefish-runtime` image question. Cheap standalone win meanwhile:
-  `jumpstarter-exec` as the sidecar's PID 1 for clean
-  `Shutdown`/teardown during `ExitAndReplace`, with the control plane
-  unchanged.
+- **Exec-mode slim runtime via `jumpstarter-exec`** — a second,
+  co-located-only transport mode mirroring the QEMU driver's sidecar
+  pathway verbatim, fully specified by that precedent:
+  - The driver gains `launcher_socket: str | None = None` — the same
+    single mode-switch field the QEMU driver uses. Unset (default) is
+    today's location-transparent HO HTTP, serving laptop, remote-host,
+    and in-Pod deployments alike.
+  - When set (injected by provisioner enrichment, exactly as for QEMU),
+    a `_wrap_command` twin prefixes `cvd` invocations with
+    `jumpstarter-exec exec --socket <path> --`, teleporting them into
+    the runtime container — podcvd's `podman exec` move rebuilt on the
+    one channel Pod containers share, a volume. `cvd fleet`/`create`
+    emit JSON, so no `cvd ps`-style scraping.
+  - The runtime image slims to cvd tools + operator (no HO, no nginx —
+    the Pod's unauthenticated HTTP surface disappears), with
+    `jumpstarter-exec serve` as PID 1 and the `copy-jumpstarter-exec`
+    init container staging the client — restoring full Pod-shape
+    symmetry with the QEMU provisioner.
+  - Consequences owned: readiness probes become socket/exec-based
+    (statusz is HO), and `storage.flash` falls back to the QEMU
+    flasher's shared-volume pattern (stream image, point `cvd` at local
+    paths), giving up HO's content-addressed skip.
+  `jumpstarter-exec` itself needs no changes (`Exec{argv,env,cwd}` is
+  already general). Sequence after the standard-runtime prototype
+  validates on a real cluster; the PID 1 supervision half can land
+  earlier, alone, with the control plane unchanged.
 - **GPU acceleration** via the NVIDIA device plugin/CDI, following the CDI
   integration `podcvd` already ships for single hosts.
 - **arm64 pools** on arm64 MachineSets using upstream arm64 host images.
