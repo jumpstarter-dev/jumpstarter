@@ -1227,6 +1227,30 @@ Explicitly **not** part of this proposal:
   API, `cvdr` and the CO web UI would drive Jumpstarter pools natively,
   reproducing Google's CO → HO two-tier architecture with Jumpstarter as
   both tiers' implementation.
+- **Identity, lease, and RBAC mapping for the CO seam** — largely
+  existing machinery, composed rather than invented:
+  - *Authentication:* `Client` CRs already federate external identities
+    (`spec.username: "oidc:user@example.com"`) against the controller's
+    `AuthenticationConfiguration`. With one OIDC issuer behind both CO's
+    `accounts.Manager` and Jumpstarter authn, the user's token passes
+    through and every CO action executes as the user's **own** Client —
+    no façade god-credential, no stored per-user secrets. First-sight
+    users get a Client CR via JIT provisioning (labels stamped from OIDC
+    claims/groups) or GitOps pre-provisioning.
+  - *Authorization:* `ExporterAccessPolicy` is the lease-plane RBAC —
+    `exporterSelector` over pool labels, `from.clientSelector` over
+    client labels, `priority`, `maximumDuration`. CO's `ListHosts`
+    filters to pools the caller's Client may lease; a denied
+    `CreateHost` is a policy denial. The admin plane (who may create
+    classes/sets) stays plain Kubernetes RBAC on the CRDs.
+  - *Lease lifecycle:* `CreateHost` → `Lease{clientRef, selector: pool
+    labels, duration ≤ policy maximumDuration}`; the CO long-running
+    operation is lease acquisition + prewarm boot, and pool exhaustion
+    surfaces as a pending operation rather than an error. `DeleteHost` →
+    release → `ExitAndReplace`. Lease **expiry becomes host reaping** —
+    the forgotten-CO-host waste problem is solved by construction, with
+    renewal as the deliberate act. Every action lands as audited K8s
+    objects (`Lease.spec.clientRef` + tags).
 - **CVD groups / multi-device leases** (DD-8) — Bluetooth/Wi-Fi topologies,
   via composite leases across single-CVD exporters or a group modeled as
   one composite DUT; never N independently leased devices behind one
