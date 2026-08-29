@@ -1328,6 +1328,20 @@ Explicitly **not** part of this proposal:
 - **Restricted seccomp** for the runtime sidecar — retire `Unconfined`
   once upstream makes userspace vsock the default (b/383428636), or via a
   tailored profile (DD-5 option 3).
+- **Exec-mode slim runtime via `jumpstarter-exec`** — the existing Rust
+  component already serves general `Exec{argv,env,cwd}` over
+  `launcher.sock`, so a slim sidecar (cvd tools + operator, no HO/nginx)
+  driven podcvd-style through the QEMU provisioner's exact staging
+  pattern needs no Rust changes and removes the Pod's unauthenticated
+  HTTP surface entirely. Not chosen for the standard runtime because the
+  HO HTTP path is **location-transparent** (one driver serves laptop,
+  remote-host, and in-Pod HOs) and the flasher rides HO's
+  content-addressed artifact API; exec control would be a second,
+  co-located-only transport mode. Revisit alongside the
+  `cuttlefish-runtime` image question. Cheap standalone win meanwhile:
+  `jumpstarter-exec` as the sidecar's PID 1 for clean
+  `Shutdown`/teardown during `ExitAndReplace`, with the control plane
+  unchanged.
 - **GPU acceleration** via the NVIDIA device plugin/CDI, following the CDI
   integration `podcvd` already ships for single hosts.
 - **arm64 pools** on arm64 MachineSets using upstream arm64 host images.
