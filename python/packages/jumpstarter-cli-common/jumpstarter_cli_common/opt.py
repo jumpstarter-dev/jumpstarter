@@ -157,6 +157,16 @@ opt_output_all = click.option(
     help='Output mode. Use "-o name" for shorter output (resource/name).',
 )
 
+DataOutputType = Optional[Literal["json", "yaml"]]
+
+opt_output_json_yaml = click.option(
+    "-o",
+    "--output",
+    type=click.Choice([OutputMode.JSON, OutputMode.YAML]),
+    default=None,
+    help='Output mode. Use "-o json" or "-o yaml" for machine-readable output.',
+)
+
 NameOutputType = Optional[Literal["name"]]
 
 opt_output_name_only = click.option(
