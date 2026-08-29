@@ -19,6 +19,7 @@ class AliasedGroup(click.Group):
         "move": ["mv"],
         "config": ["conf"],
         "delete": ["del", "d"],
+        "describe": ["desc"],
         "shell": ["sh", "s"],
         "exporter": ["exporters", "e"],
         "exporters": ["exporter"],

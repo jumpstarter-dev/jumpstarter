@@ -10,6 +10,7 @@ from .completion import completion
 from .config import config
 from .create import create
 from .delete import delete
+from .describe import describe
 from .get import get
 from .login import login
 from .run import run
@@ -30,6 +31,7 @@ jmp.add_command(create)
 jmp.add_command(delete)
 jmp.add_command(update)
 jmp.add_command(get)
+jmp.add_command(describe)
 jmp.add_command(shell)
 jmp.add_command(run)
 jmp.add_command(login)
