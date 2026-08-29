@@ -21,6 +21,7 @@ from anyio.to_thread import run_sync
 warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"authlib\.")
 
 from authlib.integrations.requests_client import OAuth2Session  # noqa: E402
+from joserfc.errors import JoseError  # noqa: E402
 from joserfc.jws import extract_compact  # noqa: E402
 from yarl import URL  # noqa: E402
 
@@ -328,7 +329,7 @@ class Config:
 def decode_jwt(token: str):
     try:
         return json.loads(extract_compact(token.encode()).payload)
-    except (ValueError, KeyError, TypeError) as e:
+    except (ValueError, KeyError, TypeError, JoseError) as e:
         raise ValueError(f"Invalid JWT format: {e}") from e
 
 
