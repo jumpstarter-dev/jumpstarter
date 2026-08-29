@@ -22,16 +22,17 @@ This JEP proposes a `cuttlefish.jumpstarter.dev` provisioner for the JEP-0014
 Virtual Scalable Exporter subsystem that runs
 [Cuttlefish](https://github.com/google/android-cuttlefish) Android virtual
 devices as native Kubernetes Pods. Each pool instance is a Pod pairing a
-Cuttlefish Host Orchestrator runtime sidecar with a Jumpstarter exporter
-running the existing `jumpstarter-driver-cuttlefish` driver, giving each
+slim `cvd` runtime sidecar (cvd tools + operator signaling, supervised by
+`jumpstarter-exec` exactly as in the QEMU provisioner) with a Jumpstarter
+exporter running the `jumpstarter-driver-cuttlefish` driver, giving each
 Android virtual device (CVD) the same lease, scaling, and recycling semantics
 as any other `ExporterSet`-managed exporter. Because instances are ordinary
 Pods with resource requests and device-plugin claims, Cuttlefish capacity
 scales with the cluster autoscaler and MachineSets on Kubernetes and
 OpenShift — no Google Cloud instances, Docker/Podman hosts, or external Cloud
-Orchestrator service required. Google's Cloud Orchestrator Go packages are
-reused as libraries (Host Orchestrator client, API types) rather than
-deployed as a service.
+Orchestrator service required. The Host Orchestrator wire API is retained
+where it belongs: the driver speaks it to hand-managed hosts, and the pool
+façade speaks it upward to Google's own clients.
 
 ## Motivation
 
@@ -201,20 +202,24 @@ ExporterSet cuttlefish-pixel
 └── Exporter cuttlefish-pixel-bbb ──► Pod ...
 ```
 
-- The **`cvd` runtime sidecar** is the device runtime: it runs the Host
-  Orchestrator and cvd tools in service of exactly one CVD (the
-  `cuttlefish-orchestration` image, or a Jumpstarter-built derivative). It is
-  a native sidecar init container (`restartPolicy: Always`, KEP-753) so the
-  HO API is up before the exporter starts, and it is torn down automatically
-  when the exporter exits.
-- The **exporter main container** runs `jmp run` with an `ExporterConfig`
-  whose export map contains the existing `Cuttlefish` composite driver
-  pointed at `127.0.0.1:2080` — the driver's control path is unchanged
-  (see *Driver additions* for the small additive UI-serving surface); its
-  deployment target moves from a hand-built host into the Pod.
-- Exporter ↔ runtime communication is plain localhost HTTP (the HO API),
-  simpler than the QEMU provisioner's Unix-socket protocol; no shared-socket
-  volume or `jumpstarter-exec` staging is required. A shared `emptyDir` (or
+- The **`cvd` runtime sidecar** is the device runtime: a slim image
+  carrying the cvd tools and the operator (signaling broker + device
+  registration) in service of exactly one CVD, supervised by
+  `jumpstarter-exec serve` as PID 1 — no Host Orchestrator daemon, no
+  nginx, no unauthenticated HTTP API in the Pod. It is a native sidecar
+  init container (`restartPolicy: Always`, KEP-753), torn down cleanly
+  via `jumpstarter-exec`'s `Shutdown` when the exporter exits.
+- The **exporter main container** runs `jmp run` with the `Cuttlefish`
+  driver in **sidecar mode** (`launcher_socket` set by enrichment): `cvd`
+  invocations are teleported into the runtime container over the shared
+  launcher socket, exactly as the QEMU driver drives its runtime (DD-10).
+  With `launcher_socket` unset the same driver speaks the Host
+  Orchestrator HTTP API — the hand-managed/remote mode, unchanged for
+  every deployment that exists today.
+- Exporter ↔ runtime communication follows the QEMU provisioner's
+  conventions verbatim: a one-shot `copy-jumpstarter-exec` init container
+  stages the client binary, `cvd` control rides `launcher.sock`, and the
+  operator's signaling endpoints ride localhost. A shared `emptyDir` (or
   optional ephemeral PVC) holds CVD artifacts and runtime state.
 
 ### Example configuration
@@ -250,8 +255,8 @@ spec:
     runtime:
       image: quay.io/jumpstarter-dev/virtual/cuttlefish-runtime:latest
   parameters:
-    hostOrchestrator:
-      port: 2080
+    operator:
+      port: 1080                       # signaling broker inside the Pod
     storage:
       size: 40Gi                       # artifact/runtime emptyDir size limit
     vsock:
@@ -311,11 +316,9 @@ fetch via `env_config`, or user-artifact upload through the HO
 `/v1/userartifacts` API) — the Cuttlefish analog of JEP-0014's
 flash-at-lease model (DD-7 there, DD-6 here).
 
-**Viewing the device:** every instance already ships the Host
-Orchestrator's operator web UI (the WebRTC device-screen frontend built
-into `cuttlefish-orchestration`). One command serves it locally — no
-manual port juggling, no additional management service or UI deployment
-(DD-9):
+**Viewing the device:** one command serves the Cuttlefish web UI locally —
+no manual port juggling, no additional management service or UI
+deployment (DD-9, DD-11):
 
 ```bash
 j cuttlefish serve
@@ -323,10 +326,12 @@ j cuttlefish serve
 ```
 
 `serve` follows the same philosophy as `j adb attach` (PR #1033): meet the
-client's existing tools where they are with zero configuration. It
-forwards the leased instance's operator UI through the lease to
-`localhost:6080` (`--port` to override, `--port 0` for an ephemeral port),
-prints the URL, and tears the forward down cleanly on Ctrl+C. The Python
+client's existing tools where they are with zero configuration. It hosts
+the operator webui's static assets **client-side** (vendored,
+version-matched to the runtime) at `localhost:6080` (`--port` to
+override, `--port 0` for ephemeral) and forwards only the dynamic
+surface through the lease — signaling and WebRTC traffic, never asset
+bytes — tearing everything down cleanly on Ctrl+C. The Python
 equivalent is a context manager:
 
 ```python
@@ -336,23 +341,28 @@ with client.cuttlefish.serve() as url:
 
 ### Driver additions
 
-The `jumpstarter-driver-cuttlefish` driver gains two small, additive
-pieces (useful for today's hand-managed Host Orchestrator hosts too, not
-just this provisioner):
+The `jumpstarter-driver-cuttlefish` driver gains three additive pieces
+(the first two useful for today's hand-managed Host Orchestrator hosts
+too, not just this provisioner):
 
 - **A `ui` network child**, auto-created in `__post_init__` exactly like
-  the existing `adb` child: a `TcpNetwork` stream to the operator frontend
-  (new `operator_port` config, default 1080). Because the driver owns the
-  child, every Cuttlefish exporter exposes the UI with no template
-  configuration.
+  the existing `adb` child: a `TcpNetwork` stream to the operator's
+  signaling surface (new `operator_port` config, default 1080). Because
+  the driver owns the child, every Cuttlefish exporter exposes it with no
+  template configuration.
 - **A `serve` client command** on `CuttlefishClient` (CLI and Python
-  context manager) that port-forwards the `ui` child to a local port
-  (default 6080) and reports the URL. The existing `webrtc` command
-  remains for printing the raw URL when the client has direct network
-  reachability.
+  context manager) that hosts the vendored operator webui assets locally
+  (default port 6080) and forwards signaling/WebRTC through the `ui`
+  child (DD-11). The existing `webrtc` command remains for printing the
+  raw URL when the client has direct network reachability.
+- **A `launcher_socket: str | None = None` mode switch** (DD-10) — the
+  QEMU driver's exact convention: unset, the driver is the HO HTTP
+  client it is today; set (by provisioner enrichment), a
+  `_wrap_command` twin drives `cvd` through `jumpstarter-exec` over the
+  shared socket.
 
-Both are backward compatible: existing configs need no changes, and the
-new child appears alongside `power`/`storage`/`adb`.
+All are backward compatible: existing configs need no changes, and the
+new children appear alongside `power`/`storage`/`adb`.
 
 **Android Studio for Platform (ASfP) integration.** ASfP ships a built-in
 Cuttlefish webview that renders the operator UI, and standard IDE device
@@ -377,14 +387,15 @@ Host Orchestrator in the `cuttlefish-orchestration` container. Ports, per
 | Standalone host tools (`launch_cvd` spawns its own operator) | `https://localhost:8443` |
 | HO REST API (nginx 2080/2443 → HO 2081) | no UI — API + ADB websockets only |
 
-The driver's `ui` child targets the in-Pod operator (1080), and a `ui-tls`
-child targets its HTTPS listener (1443). `serve --port <n>` picks the
-local port and `--tls` selects the HTTPS child, so either local layout is
-reproducible verbatim — `j cuttlefish serve --tls --port 8443` for the
-standalone convention, `--port 1443` for the deb convention. Certificate
-trust for the operator's cert is an upstream-tracked concern
-(android-cuttlefish PR #2819 added trusted-TLS support for operators on
-container instances). The one fact still to pin against a real ASfP build
+The driver's `ui` child targets the in-Pod operator's signaling surface
+(1080; `ui-tls` its HTTPS listener where deployed). Under DD-11, `serve`
+hosts the webui assets client-side, so reproducing either local layout is
+purely local: `serve --port <n>` picks the port and `--tls` serves the
+local endpoint over HTTPS — `j cuttlefish serve --tls --port 8443` for
+the standalone convention, `--port 1443` for the deb convention — with
+certificate trust now a client-local concern rather than a tunnel-through
+of the Pod's cert (upstream's trusted-TLS operator work, PR #2819,
+remains relevant only for hand-managed HTTP-mode hosts). The one fact still to pin against a real ASfP build
 is which of these URLs (or a configurable one) the webview loads — see
 Unresolved Questions.
 
@@ -437,7 +448,7 @@ differing per concern:
 | Lease | `jmp lease -l board=...` | `jmp lease -l device=cuttlefish` |
 | Power | `power` (QemuPower) | `power` (CvdPower) |
 | Shell | SSH via `tcp` child (hostfwd :22) / serial | `adb shell` via `adb` child (SSH via `TcpNetwork` if the image runs sshd) |
-| Display | `vnc` child + client `novnc()` adapter | `ui` child (operator web UI + WebRTC, port 1080) + client `serve()` |
+| Display | `vnc` child + client `novnc()` adapter | client-hosted webui + `ui` child streams (signaling/WebRTC only) via `serve()` |
 | Image | `storage.flash` + boot | `storage.flash` (HO user-artifacts + image dirs) or `env_config` boot (prewarmed or lessee-driven) |
 
 The display row is the same architecture on both sides — a driver-owned
@@ -727,7 +738,7 @@ provisioner is enabled, so admins review one auditable object.
 the pool declares `parameters.envConfig`, enrichment injects
 `prewarm: true` into the driver config (overridable in the template) so
 the exporter boots the device as it starts. A pool without `envConfig`
-degrades to option 1 (HO-ready shell; lessee boots), preserving the
+degrades to option 1 (idle-runtime shell; lessee boots), preserving the
 flash-at-lease workflow where wanted.
 
 **Rationale:** An earlier draft chose option 1 by analogy to JEP-0014
@@ -849,6 +860,71 @@ option: WebRTC media prefers UDP/ICE, so interactive streaming through a
 TCP forward depends on the operator's TCP fallback — see Unresolved
 Questions.
 
+### DD-10: In-Pod control transport — jumpstarter-exec/cvd vs. HO HTTP
+
+**Alternatives considered:**
+
+1. **Host Orchestrator HTTP sidecar** — the full `cuttlefish-orchestration`
+   image in the Pod; the driver speaks the HO API over localhost (the
+   2026-08-29 prototype's rendering).
+2. **`jumpstarter-exec` driving `cvd`** — the QEMU provisioner's exact
+   runtime convention: `copy-jumpstarter-exec` staging, `launcher.sock`
+   on the shared volume, a `_wrap_command` twin teleporting `cvd`
+   invocations into a slim runtime (cvd tools + operator, `jumpstarter-exec
+   serve` as PID 1).
+
+**Decision (revised after prototyping):** Option 2 for provisioner-rendered
+Pods. The driver keeps both dialects behind one mode switch, exactly as
+the QEMU driver does: `launcher_socket` set (by enrichment) → exec mode;
+unset → the HO HTTP client, which remains the unchanged mode for every
+hand-managed and remote deployment that exists today.
+
+**Rationale:** Following the established convention is worth more than the
+HTTP sidecar's in-Pod conveniences: one runtime pattern across all
+in-cluster provisioners (staging init, launcher socket, PID 1
+supervision, clean `Shutdown` on `ExitAndReplace`), a slimmer image, and
+the Pod's unauthenticated HTTP surface eliminated — `launcher.sock` on an
+`emptyDir` is unreachable outside the Pod by construction, so no
+NetworkPolicy is needed for a port that no longer exists. It is also
+`podcvd`'s own control model (`podman exec cvd …`), rebuilt on the one
+channel Pod containers share; `cvd fleet`/`create` emit JSON, so no
+output scraping. The HO wire API does not disappear — it moves to its
+right altitude, the pool façade, which is lease-backed and unaffected.
+Costs owned: readiness probes become exec/socket-based (`statusz` was an
+HO endpoint), and exec-mode flashing uses the QEMU flasher's
+shared-volume pattern (stream the image, point `cvd` at local paths),
+giving up HO's content-addressed skip; the HO-artifacts flasher remains
+the HTTP-mode path. The prototype's HTTP rendering stands as the
+validation vehicle for the driver's HO dialect and the façade's wire
+contract.
+
+### DD-11: UI delivery — client-hosted assets, forwarded streams
+
+**Alternatives considered:**
+
+1. **Forward the Pod-hosted UI** — `serve` tunnels the operator's whole
+   web UI (assets + endpoints) from the Pod (the prototype's behavior).
+2. **Host the UI client-side** — `serve` serves the operator webui's
+   static assets from the client machine (vendored, version-matched to
+   the runtime image) and forwards only the dynamic surface: signaling
+   (`/devices`, `/devices/{id}/connect` websockets, `/polled_connections`,
+   `/infra_config`) and the WebRTC traffic itself.
+
+**Decision:** Option 2.
+
+**Rationale:** The lease should carry streams, not static files: assets
+cross the tunnel zero times instead of once per page load, the gRPC
+streams stay light, and the UI version is pinned client-side rather than
+to whatever the Pod runs. It also fits the slim runtime naturally — the
+operator remains in the Pod purely as the signaling broker the device's
+WebRTC process registers with, not as a web server the client depends
+on. The upstream webui is already built for this split
+(`server_connector.js` abstracts the connection; the operator's own
+`--webui_url` flag proves the assets are separable). The WebRTC media
+path itself is unchanged from the earlier analysis: direct Pod
+reachability on flat networks, or the in-Pod TURN-over-TCP relay for
+fully tunneled leases.
+
 ## Design Details
 
 ### Provisioner implementation
@@ -862,8 +938,14 @@ three-method `Provisioner` interface:
 spec:
   restartPolicy: Never                     # ExitAndReplace: exporter exit completes the Pod
   initContainers:
+    - name: copy-jumpstarter-exec          # one-shot: stage client binary (QEMU-identical)
+      image: quay.io/jumpstarter-dev/jumpstarter:<version>
+      command: ["cp", "/jumpstarter/bin/jumpstarter-exec", "/shared/jumpstarter-exec"]
+      volumeMounts:
+        - { name: shared, mountPath: /shared }
     - name: cvd                            # native sidecar (KEP-753)
       image: quay.io/jumpstarter-dev/virtual/cuttlefish-runtime:<version>
+      command: ["jumpstarter-exec", "serve"]   # PID 1; launcher.sock on /shared
       restartPolicy: Always
       securityContext:
         capabilities:
@@ -879,12 +961,13 @@ spec:
           devices.kubevirt.io/tun: "1"
           devices.kubevirt.io/vhost-net: "1"
       startupProbe:
-        httpGet: { path: /_debug/statusz, port: 2080 }
+        exec: { command: ["test", "-S", "/shared/launcher.sock"] }
         periodSeconds: 2
         failureThreshold: 60
       readinessProbe:
-        httpGet: { path: /_debug/statusz, port: 2080 }
+        httpGet: { path: /devices, port: 1080 }   # operator signaling broker
       volumeMounts:
+        - { name: shared, mountPath: /shared }
         - { name: cuttlefish-state, mountPath: /var/lib/cuttlefish }
   containers:
     - name: exporter                       # main; restricted; default kubectl logs
@@ -892,20 +975,25 @@ spec:
       command: ["jmp", "run", "--exporter-config", "/etc/jumpstarter/exporters/config.yaml"]
       securityContext:
         runAsNonRoot: true
+      volumeMounts:
+        - { name: shared, mountPath: /shared }
   volumes:
+    - name: shared
+      emptyDir: {}                         # launcher.sock + staged binary
     - name: cuttlefish-state
       emptyDir:
         sizeLimit: 40Gi                    # parameters.storage.size
 ```
 
-Differences from the QEMU provisioner, by design:
+Alignment with the QEMU provisioner, by design (DD-10):
 
-- **No `copy-jumpstarter-exec` init container and no launcher socket** —
-  control is localhost HTTP to the HO, so the shared volume carries only
-  CVD state, not a socket protocol.
-- **Probes on the runtime sidecar** gate exporter start on HO API
-  availability (native sidecars support startup/readiness probes), instead
-  of socket-existence ordering.
+- **Same runtime convention** — `copy-jumpstarter-exec` staging,
+  `launcher.sock` on the shared volume, `jumpstarter-exec serve` as the
+  sidecar's PID 1 with clean `Shutdown` teardown; the driver's
+  `_wrap_command` twin teleports `cvd` invocations into the runtime.
+- **Probes**: startup gates on the launcher socket existing; readiness on
+  the operator's `/devices` (the signaling broker the device registers
+  with). No HO daemon, no `statusz`.
 - **CVD resource sizing is Pod-level** (`scheduling.resources` on the
   sidecar), while per-boot Android configuration flows through the driver's
   `env_config` at lease time.
@@ -917,30 +1005,32 @@ OwnerReferences, `exitOnLeaseEnd` derivation from `recycleStrategy`.
 **`EnrichExporterExport`** injects into the `Cuttlefish` driver entry (never
 overriding explicit template values):
 
-- `host: 127.0.0.1`, `port` from merged `parameters.hostOrchestrator.port`
-  (default 2080);
+- `launcher_socket: /shared/launcher.sock` — the mode switch selecting
+  exec-mode `cvd` control (DD-10), exactly as the QEMU provisioner
+  injects its launcher socket;
+- `operator_port` from merged `parameters.operator.port` (default 1080);
 - `boot_timeout` default;
-- driver-level defaults from merged parameters (e.g. a default `env_config`
-  block if the class provides one for convenience — still overridable by
-  the lessee via `create_cvd`).
+- `env_config` and `prewarm: true` from merged parameters (a pool that
+  pins a build boots it at instance start — still overridable by the
+  lessee).
 
 It does not auto-inject wrapper drivers in v1 — UI access needs none,
 because the driver's own `ui` child (see *Driver additions*) covers the
-operator frontend; enrichment only sets `operator_port` from parameters if
-overridden.
+operator's signaling surface.
 
 **`Cleanup`** is a no-op for in-cluster resources (OwnerReference cascade
 deletes the Pod). For `InPlaceReuse` recycling, the exporter drives
-`POST /reset` on the HO (already exposed as `reset_host` by the driver)
-before returning to Ready.
+`cvd reset` through the launcher (exec mode) or `POST /reset` on the HO
+(HTTP mode) before returning to Ready.
 
 ### Instance lifecycle
 
 ```text
-Pod scheduled ─► cvd sidecar starts ─► HO /_debug/statusz OK
+Pod scheduled ─► exec binary staged ─► cvd sidecar (jumpstarter-exec PID 1)
+  ─► launcher.sock up · operator /devices OK
   ─► exporter starts, registers
   ─► prewarm (pool pins envConfig): device boots in background ─► Ready (booted device)
-     no envConfig: Ready (HO-ready shell; lessee boots at lease)
+     no envConfig: Ready (idle-runtime shell; lessee boots at lease)
   ─► leased ─► session (mid-boot lease waits in wait_boot)
   ─► lease released ─► ExitAndReplace: exporter exits ─► Pod completes
   ─► controller replaces instance (fresh Pod re-boots the pinned build)
@@ -975,7 +1065,7 @@ CI pool re-fetching the same build wants.
 
 | Container | Posture |
 | --- | --- |
-| `cvd` (sidecar) | `NET_ADMIN`, `seccompProfile: Unconfined`, device-plugin devices, root inside container, Pod-scoped netns (no hostNetwork), no hostPath |
+| `cvd` (sidecar) | slim image (cvd tools + operator, `jumpstarter-exec` PID 1 — no HO/nginx, no unauthenticated HTTP API); `NET_ADMIN`, `seccompProfile: Unconfined`, device-plugin devices, Pod-scoped netns (no hostNetwork), no hostPath |
 | `exporter` (main) | non-root, no added capabilities, `RuntimeDefault` seccomp, holds exporter credentials |
 
 On OpenShift the operator ships a `jumpstarter-cuttlefish` SCC (allowing
@@ -1034,14 +1124,18 @@ these Pods; this is documented with the provisioner.
 - [ ] A pool declaring `parameters.envConfig` prewarms: instances boot the
       pinned build at start (DD-6) and a lease is ADB-ready without the
       lessee creating a CVD; a pool without `envConfig` behaves as an
-      HO-ready shell with lessee-driven boot
-- [ ] Existing `jumpstarter-driver-cuttlefish` driver works against the
-      in-Pod HO with no template configuration beyond the driver entry
-      (lease → create → boot → adb → release)
-- [ ] `j cuttlefish serve` serves the operator web UI at
-      `http://localhost:6080` by default through the lease, and tears
-      down cleanly on Ctrl+C; Python `client.cuttlefish.serve()` context
-      manager equivalent
+      idle-runtime shell with lessee-driven boot
+- [ ] Provisioner-rendered Pods drive `cvd` through `jumpstarter-exec`
+      (DD-10): `launcher_socket` injected by enrichment, `_wrap_command`
+      teleporting invocations, `jumpstarter-exec serve` as sidecar PID 1
+      with clean `Shutdown` on recycle; the driver with `launcher_socket`
+      unset still works unchanged against hand-managed HO hosts
+      (lease → create → boot → adb → release in both modes)
+- [ ] `j cuttlefish serve` hosts the webui assets client-side at
+      `http://localhost:6080` by default and forwards only
+      signaling/WebRTC through the lease (DD-11), tearing down cleanly on
+      Ctrl+C; Python `client.cuttlefish.serve()` context manager
+      equivalent
 - [ ] A leased CVD appears natively in Android Studio for Platform:
       visible in the IDE's device list via `j adb attach`, and rendered in
       the built-in Cuttlefish webview against the served operator UI
@@ -1058,12 +1152,13 @@ these Pods; this is documented with the provisioner.
       `vsock.enabled`; missing plugins surface as ExporterSet conditions
 - [ ] Pending Pods from pool scale-up trigger cluster-autoscaler node
       scale-out in a documented reference setup (MachineSet example)
-- [ ] `ExitAndReplace` yields a pristine HO per lease; `InPlaceReuse`
-      resets via `/reset`
-- [ ] `storage.flash` replaces the leased CVD's images via the HO
-      user-artifacts + image-dirs flow (content-addressed skip on
-      unchanged artifacts) and reboots to the new build within the same
-      lease
+- [ ] `ExitAndReplace` yields a pristine runtime per lease; `InPlaceReuse`
+      resets via `cvd reset` through the launcher (exec mode) or
+      `/reset` (HTTP mode)
+- [ ] `storage.flash` replaces the leased CVD's images within the same
+      lease in both modes: shared-volume streaming + `cvd` local paths
+      (exec mode), or the HO user-artifacts + image-dirs flow with
+      content-addressed skip (HTTP mode)
 - [ ] e2e `exporterset-cuttlefish` suite green in CI; `e2e/README.md`
       updated in the same PR
 - [ ] Documentation: provisioner guide with class/set examples, security
@@ -1221,9 +1316,15 @@ Fully additive:
 - **`cuttlefish-runtime` image contents:** thin wrapper over upstream
   `cuttlefish-orchestration` vs. Jumpstarter-built image from the upstream
   Debian packages (base/user/orchestration) for supply-chain control.
-- **Exporter readiness vs. HO readiness:** should the exporter delay
-  registration until a deeper HO check (e.g. `cvd version`) passes, to keep
-  "Ready" honest beyond a 200 from `statusz`?
+- **Exporter readiness depth:** should the exporter delay registration
+  until a deeper runtime check passes (e.g. `cvd version` through the
+  launcher in exec mode, or `statusz` in HTTP mode), to keep "Ready"
+  honest beyond probe-level liveness?
+- **Vendored webui refresh cadence (DD-11):** the client-hosted operator
+  webui assets version with the client package while the signaling
+  endpoints version with the runtime image; pin the compatibility
+  contract (likely: assets track the upstream release the runtime image
+  is built from, with `serve --webui-dir` as the escape hatch).
 - **ASfP webview URL:** the webview renders the operator UI (confirmed:
   the operator component owns the UI; the android-cuttlefish repo contains
   no ASfP-specific hooks, so the contract lives on ASfP's side). Which
@@ -1257,14 +1358,14 @@ Explicitly **not** part of this proposal:
   out of it (one "host" listing N devices).
 
   The façade also gives the controller a **native downward control
-  plane**: the same per-Pod HO API `podcvd` uses per-container becomes
-  how the orchestrator speaks to its devices — backing the façade's
-  calls, driving `POST /reset` for `InPlaceReuse` recycling, and
-  polling device state for boot-gated readiness / JEP-0015 dynamic
-  labels. This deliberately revisits DD-7's render-only stance, in a
+  plane**: with DD-10, the orchestrator's channel to its devices is the
+  same one `podcvd` uses per-container — exec — carried by
+  `jumpstarter-exec` over each Pod's launcher socket (or, for
+  HTTP-mode instances, the HO API). Backing the façade's calls, driving
+  resets for `InPlaceReuse` recycling, and polling device state for
+  boot-gated readiness / JEP-0015 dynamic labels all ride it, in a
   dedicated component outside the reconcile loop (reconciles must never
-  block on long HO operations), with a NetworkPolicy restricting the
-  unauthenticated per-Pod HO port to the controller/façade.
+  block on long device operations).
 - **Cloud Orchestrator backend over pools** (DD-9 option 2, refined by
   the façade above) — an `instances.Manager` implementation mapping CO
   "hosts" onto pools, with `GetHostClient` returning the upstream
@@ -1328,32 +1429,11 @@ Explicitly **not** part of this proposal:
 - **Restricted seccomp** for the runtime sidecar — retire `Unconfined`
   once upstream makes userspace vsock the default (b/383428636), or via a
   tailored profile (DD-5 option 3).
-- **Exec-mode slim runtime via `jumpstarter-exec`** — a second,
-  co-located-only transport mode mirroring the QEMU driver's sidecar
-  pathway verbatim, fully specified by that precedent:
-  - The driver gains `launcher_socket: str | None = None` — the same
-    single mode-switch field the QEMU driver uses. Unset (default) is
-    today's location-transparent HO HTTP, serving laptop, remote-host,
-    and in-Pod deployments alike.
-  - When set (injected by provisioner enrichment, exactly as for QEMU),
-    a `_wrap_command` twin prefixes `cvd` invocations with
-    `jumpstarter-exec exec --socket <path> --`, teleporting them into
-    the runtime container — podcvd's `podman exec` move rebuilt on the
-    one channel Pod containers share, a volume. `cvd fleet`/`create`
-    emit JSON, so no `cvd ps`-style scraping.
-  - The runtime image slims to cvd tools + operator (no HO, no nginx —
-    the Pod's unauthenticated HTTP surface disappears), with
-    `jumpstarter-exec serve` as PID 1 and the `copy-jumpstarter-exec`
-    init container staging the client — restoring full Pod-shape
-    symmetry with the QEMU provisioner.
-  - Consequences owned: readiness probes become socket/exec-based
-    (statusz is HO), and `storage.flash` falls back to the QEMU
-    flasher's shared-volume pattern (stream image, point `cvd` at local
-    paths), giving up HO's content-addressed skip.
-  `jumpstarter-exec` itself needs no changes (`Exec{argv,env,cwd}` is
-  already general). Sequence after the standard-runtime prototype
-  validates on a real cluster; the PID 1 supervision half can land
-  earlier, alone, with the control plane unchanged.
+- **Content-addressed flash cache for exec mode** — DD-10's exec-mode
+  flashing streams images to the shared volume, giving up the HO
+  artifact API's checksum-skip; a jumpstarter-side cache (client-side
+  checksum + skip when the staged file matches) would restore
+  fast-iteration parity with the HTTP mode's flasher.
 - **GPU acceleration** via the NVIDIA device plugin/CDI, following the CDI
   integration `podcvd` already ships for single hosts.
 - **arm64 pools** on arm64 MachineSets using upstream arm64 host images.
