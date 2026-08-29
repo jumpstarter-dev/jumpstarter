@@ -171,12 +171,13 @@ than convention inside a shared host.
 ```text
 ExporterSet cuttlefish-pixel
 ├── Exporter cuttlefish-pixel-aaa ──► Pod
-│     ├── cuttlefish-host   (native sidecar: Host Orchestrator + CVD runtime)
+│     ├── cvd               (native sidecar: single-CVD device runtime)
 │     └── exporter          (main: jmp run + jumpstarter-driver-cuttlefish)
 └── Exporter cuttlefish-pixel-bbb ──► Pod ...
 ```
 
-- The **`cuttlefish-host` runtime sidecar** runs the Host Orchestrator (the
+- The **`cvd` runtime sidecar** is the device runtime: it runs the Host
+  Orchestrator and cvd tools in service of exactly one CVD (the
   `cuttlefish-orchestration` image, or a Jumpstarter-built derivative). It is
   a native sidecar init container (`restartPolicy: Always`, KEP-753) so the
   HO API is up before the exporter starts, and it is torn down automatically
@@ -644,27 +645,38 @@ credential-holding exporter container restricted; only the device runtime
 is relaxed. The operator ships the SCC and ServiceAccount when the
 provisioner is enabled, so admins review one auditable object.
 
-### DD-6: Warm-pool readiness — Host-Orchestrator-ready vs. pre-booted CVD
+### DD-6: What a pool instance is — a booted device vs. a waiting host
 
 **Alternatives considered:**
 
-1. **Ready = HO healthy + exporter registered; CVD created by the lessee**
-   (via `power.on` / `create_cvd` with their chosen build).
-2. **Ready = CVD pre-created and booted** from an admin-pinned
-   `env_config` in class parameters.
+1. **Instance = HO-ready shell**: Ready = HO healthy + exporter
+   registered; the CVD is created by the lessee (via `power.on` /
+   `create_cvd` with their chosen build).
+2. **Instance = the device**: a pool that pins a build via
+   `parameters.envConfig` boots that CVD as the instance starts
+   (`prewarm`); Ready converges on a **booted Android device**.
 
-**Decision:** Option 1 for v1.
+**Decision (revised):** Option 2 — the Pod is exactly one CVD, and when
+the pool declares `parameters.envConfig`, enrichment injects
+`prewarm: true` into the driver config (overridable in the template) so
+the exporter boots the device as it starts. A pool without `envConfig`
+degrades to option 1 (HO-ready shell; lessee boots), preserving the
+flash-at-lease workflow where wanted.
 
-**Rationale:** This is the Cuttlefish analog of JEP-0014 DD-7
-(flash-at-lease, no admin-pinned images): the pool absorbs Pod scheduling,
-image pull, and HO startup — the infrastructure cold start — while the
-lessee controls *which Android build* runs, exactly as they would on a
-physical bench. Pre-booting (option 2) would pin a build per pool, drift
-stale in warm pools, and reintroduce the virtual-only lifecycle semantics
-JEP-0014 rejected. The remaining lease-time cost (artifact fetch + Android
-boot, minutes for cold fetches) is real; artifact caching and pre-warmed
-CVDs are listed under *Future Possibilities* for pools that need
-instant-on devices.
+**Rationale:** An earlier draft chose option 1 by analogy to JEP-0014
+DD-7 (flash-at-lease, no admin-pinned images). The analogy is wrong for
+Cuttlefish: **the Android build is the device's identity**, not a flashed
+payload on separate hardware — a pool pinning `envConfig` is a rack of
+one board type (JEP-0014 DD-4's pool-flavors pattern), not the rejected
+image-refresh machinery. With prewarm, warm pools hold *booted devices*
+and a lease is ADB-ready in seconds — the `podcvd create` experience at
+cluster scale. Lessees lose nothing: `powerwash` gives clean state,
+`power.off(destroy) + create_cvd` swaps in a custom build, and
+per-build pools are separate `ExporterSet` flavors. Staleness is handled
+by recycle (`ExitAndReplace` re-boots the pinned build fresh per lease).
+A lease acquired mid-boot waits in `wait_boot` exactly as today.
+Follow-on synergy: JEP-0015 dynamic exporter labels can surface boot
+state and build identity as lease-matchable labels.
 
 ### DD-7: Go reuse — import `libhoclient` vs. reimplement
 
@@ -783,7 +795,7 @@ three-method `Provisioner` interface:
 spec:
   restartPolicy: Never                     # ExitAndReplace: exporter exit completes the Pod
   initContainers:
-    - name: cuttlefish-host                # native sidecar (KEP-753)
+    - name: cvd                            # native sidecar (KEP-753)
       image: quay.io/jumpstarter-dev/virtual/cuttlefish-runtime:<version>
       restartPolicy: Always
       securityContext:
@@ -858,11 +870,13 @@ before returning to Ready.
 ### Instance lifecycle
 
 ```text
-Pod scheduled ─► runtime sidecar starts ─► HO /_debug/statusz OK
-  ─► exporter starts, registers ─► Ready (warm, no CVD)
-  ─► leased ─► lessee create_cvd/power.on ─► CVD boots ─► session
+Pod scheduled ─► cvd sidecar starts ─► HO /_debug/statusz OK
+  ─► exporter starts, registers
+  ─► prewarm (pool pins envConfig): device boots in background ─► Ready (booted device)
+     no envConfig: Ready (HO-ready shell; lessee boots at lease)
+  ─► leased ─► session (mid-boot lease waits in wait_boot)
   ─► lease released ─► ExitAndReplace: exporter exits ─► Pod completes
-  ─► controller replaces instance (fresh HO, empty state)
+  ─► controller replaces instance (fresh Pod re-boots the pinned build)
 ```
 
 `ExitAndReplace` (default) guarantees a pristine HO and empty artifact
@@ -894,7 +908,7 @@ CI pool re-fetching the same build wants.
 
 | Container | Posture |
 | --- | --- |
-| `cuttlefish-host` (sidecar) | `NET_ADMIN`, `seccompProfile: Unconfined`, device-plugin devices, root inside container, Pod-scoped netns (no hostNetwork), no hostPath |
+| `cvd` (sidecar) | `NET_ADMIN`, `seccompProfile: Unconfined`, device-plugin devices, root inside container, Pod-scoped netns (no hostNetwork), no hostPath |
 | `exporter` (main) | non-root, no added capabilities, `RuntimeDefault` seccomp, holds exporter credentials |
 
 On OpenShift the operator ships a `jumpstarter-cuttlefish` SCC (allowing
@@ -947,9 +961,13 @@ these Pods; this is documented with the provisioner.
       existing `Provisioner` interface; no CRD schema changes
 - [ ] `cuttlefish-runtime` image built and published for x86_64 (arm64
       stretch), versioned with the controller release
-- [ ] Warm pool of HO-ready exporters maintained per
+- [ ] Warm pool of ready device instances maintained per
       `minAvailableReplicas`; demand scale-up and cooldown scale-down work
       per JEP-0014 semantics
+- [ ] A pool declaring `parameters.envConfig` prewarms: instances boot the
+      pinned build at start (DD-6) and a lease is ADB-ready without the
+      lessee creating a CVD; a pool without `envConfig` behaves as an
+      HO-ready shell with lessee-driven boot
 - [ ] Existing `jumpstarter-driver-cuttlefish` driver works against the
       in-Pod HO with no template configuration beyond the driver entry
       (lease → create → boot → adb → release)
@@ -1162,9 +1180,10 @@ Explicitly **not** part of this proposal:
 - **Artifact caching** — node-level or PVC-backed cache of Android build
   artifacts (content-addressed via the HO user-artifacts API) to cut
   lease-to-boot latency; possibly a pool-level pre-fetch hook.
-- **Pre-warmed CVDs** — optional pre-created/booted CVD per instance for
-  instant-on pools, revisiting DD-6 once JEP-0014's lifecycle-controller
-  direction (its DD-7) matures.
+- **Boot-gated readiness** — registering the exporter (or surfacing a
+  JEP-0015 dynamic label) only once the prewarmed device is fully booted,
+  so `availableReplicas` counts booted devices rather than
+  booting-in-background ones; needs an exporter-level lifecycle hook.
 - **Restricted seccomp** for the runtime sidecar — retire `Unconfined`
   once upstream makes userspace vsock the default (b/383428636), or via a
   tailored profile (DD-5 option 3).
