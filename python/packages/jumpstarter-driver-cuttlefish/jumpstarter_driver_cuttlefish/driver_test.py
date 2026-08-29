@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from jumpstarter_driver_network.driver import TcpNetwork
 
 from .driver import Cuttlefish, CuttlefishError, CuttlefishTimeout
 
@@ -497,6 +498,65 @@ def test_cvd_flasher_dump_not_implemented(drv):
     flasher = drv.children["storage"]
     with pytest.raises(NotImplementedError):
         flasher.dump("target")
+
+
+def test_ui_children_created(drv):
+    ui = drv.children["ui"]
+    ui_tls = drv.children["ui-tls"]
+    assert isinstance(ui, TcpNetwork)
+    assert isinstance(ui_tls, TcpNetwork)
+    assert ui.port == 1080
+    assert ui_tls.port == 1443
+    assert ui.host == drv.host
+    assert ui_tls.host == drv.host
+    assert "power" in drv.children
+    assert "storage" in drv.children
+    assert "adb" in drv.children
+
+
+def test_operator_ports_configurable():
+    for p in _ADB_PATCHES:
+        p.start()
+    try:
+        drv = Cuttlefish(operator_port=9080, operator_tls_port=9443)
+        ui = drv.children["ui"]
+        ui_tls = drv.children["ui-tls"]
+        assert isinstance(ui, TcpNetwork)
+        assert isinstance(ui_tls, TcpNetwork)
+        assert ui.port == 9080
+        assert ui_tls.port == 9443
+    finally:
+        for p in _ADB_PATCHES:
+            p.stop()
+
+
+def test_ui_child_targets_driver_host():
+    for p in _ADB_PATCHES:
+        p.start()
+    try:
+        drv = Cuttlefish(host="cf.example")
+        ui = drv.children["ui"]
+        ui_tls = drv.children["ui-tls"]
+        assert isinstance(ui, TcpNetwork)
+        assert isinstance(ui_tls, TcpNetwork)
+        assert ui.host == "cf.example"
+        assert ui_tls.host == "cf.example"
+    finally:
+        for p in _ADB_PATCHES:
+            p.stop()
+
+
+def test_webrtc_url_uses_operator_port():
+    for p in _ADB_PATCHES:
+        p.start()
+    try:
+        drv = Cuttlefish(operator_port=9080, webrtc_url="")
+        assert drv.get_webrtc_url() == "http://localhost:9080"
+        drv = Cuttlefish(webrtc_url="https://cf.example/ui")
+        assert drv.get_webrtc_url() == "https://cf.example/ui"
+    finally:
+        for p in _ADB_PATCHES:
+            p.stop()
 
 
 def test_cvd_power_on_ignores_other_groups(requests_mock, drv):

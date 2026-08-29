@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 import requests
 from jumpstarter_driver_adb.driver import AdbServer
+from jumpstarter_driver_network.driver import TcpNetwork
 from jumpstarter_driver_power.driver import PowerReading, VirtualPowerInterface
 
 from jumpstarter.driver import Driver, export
@@ -24,7 +25,7 @@ class CuttlefishTimeout(CuttlefishError):
 class Cuttlefish(Driver):
     """Cuttlefish Host Orchestrator driver for managing Android virtual devices.
 
-    Composite driver with children: power, storage, adb.
+    Composite driver with children: power, storage, adb, ui, ui-tls.
     """
 
     driver_type = "composite"
@@ -36,6 +37,8 @@ class Cuttlefish(Driver):
     name: str = "1"
     instance_num: int = 1
     adb_server_port: int = 15037
+    operator_port: int = 1080
+    operator_tls_port: int = 1443
     boot_timeout: int = 300
     env_config: dict = field(default_factory=dict)
     webrtc_url: str = ""
@@ -48,6 +51,12 @@ class Cuttlefish(Driver):
         self.children["power"] = CvdPower(parent=self)
         self.children["storage"] = CvdFlasher(parent=self)
         self.children["adb"] = AdbServer(host="127.0.0.1", port=self.adb_server_port)
+        # Operator web UI listeners; host=self.host (not hardcoded loopback) so
+        # hand-managed remote Host Orchestrator hosts work too. In-Pod
+        # deployments still target loopback because provisioner enrichment
+        # injects host=127.0.0.1 into the driver config.
+        self.children["ui"] = TcpNetwork(host=self.host, port=self.operator_port)
+        self.children["ui-tls"] = TcpNetwork(host=self.host, port=self.operator_tls_port)
 
     @classmethod
     def client(cls) -> str:
@@ -254,7 +263,7 @@ class Cuttlefish(Driver):
     def get_webrtc_url(self) -> str:
         if self.webrtc_url:
             return self.webrtc_url
-        return f"{self.scheme}://{self.host}:1080"
+        return f"{self.scheme}://{self.host}:{self.operator_port}"
 
     @export
     def list_cvds(self) -> str:

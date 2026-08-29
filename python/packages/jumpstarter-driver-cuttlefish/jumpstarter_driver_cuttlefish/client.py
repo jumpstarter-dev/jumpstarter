@@ -1,9 +1,11 @@
 import json
 import threading
 import time
+from contextlib import contextmanager
 
 import click
 from jumpstarter_driver_composite.client import CompositeClient
+from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 from jumpstarter_driver_power.client import VirtualPowerClient
 
 from jumpstarter.client.base import StubDriverClient
@@ -21,6 +23,20 @@ def _echo(obj) -> None:
         click.echo(json.dumps(obj, indent=2))
     else:
         click.echo(obj)
+
+
+def _display_host(host: str) -> str:
+    """Format a bind address for display, showing loopback as localhost."""
+    if host in ("127.0.0.1", "::1"):
+        return "localhost"
+    if ":" in host:
+        return f"[{host}]"
+    return host
+
+
+def _wait_forever() -> None:
+    """Block until interrupted; factored out so CLI tests can patch it."""
+    threading.Event().wait()
 
 
 def _run_with_progress(label: str, fn):
@@ -112,6 +128,23 @@ class CuttlefishClient(CompositeClient):
     def wait_boot(self, timeout: int = 0) -> str:
         return self.call("wait_boot", timeout)
 
+    @contextmanager
+    def serve(self, host: str = "127.0.0.1", port: int = 6080, tls: bool = False):
+        """Forward the operator web UI to a local port, yielding its URL.
+
+        >>> with client.serve() as url:  # doctest: +SKIP
+        ...     print(url)  # http://localhost:6080
+        """
+        name = "ui-tls" if tls else "ui"
+        child = self.children.get(name)
+        if child is None or isinstance(child, StubDriverClient):
+            raise RuntimeError(
+                f"exporter does not expose the {name!r} child; update the exporter's jumpstarter-driver-cuttlefish"
+            )
+        with TcpPortforwardAdapter(client=child, local_host=host, local_port=port) as addr:
+            scheme = "https" if tls else "http"
+            yield f"{scheme}://{_display_host(addr[0])}:{addr[1]}"
+
     def cli(self):  # noqa: C901
         @click.group()
         def cuttlefish():
@@ -171,6 +204,24 @@ class CuttlefishClient(CompositeClient):
         def webrtc_cmd():
             """Print the WebRTC display URL."""
             click.echo(self.get_webrtc_url())
+
+        @cuttlefish.command("serve")
+        @click.option(
+            "--port",
+            default=6080,
+            show_default=True,
+            type=click.IntRange(0, 65535),
+            help="Local port to serve the UI on (0 = ephemeral)",
+        )
+        @click.option("--tls", is_flag=True, help="Serve the operator's HTTPS listener (ui-tls child)")
+        def serve_cmd(port: int, tls: bool):
+            """Serve the Cuttlefish operator web UI locally through the lease."""
+            with self.serve(port=port, tls=tls) as url:
+                click.echo(f"Serving Cuttlefish UI at {url} (Ctrl+C to stop)")
+                try:
+                    _wait_forever()
+                except KeyboardInterrupt:
+                    pass  # clean teardown via the with-block
 
         for k, v in self.children.items():
             if isinstance(v, StubDriverClient):

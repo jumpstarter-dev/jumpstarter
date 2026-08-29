@@ -1,9 +1,14 @@
+import inspect
+import re
+import socket
 import subprocess
+import threading
+from contextlib import contextmanager
 
 import pytest
 from click.testing import CliRunner
 
-from .client import _echo, _parse
+from .client import CuttlefishClient, _echo, _parse
 from .driver import Cuttlefish
 from jumpstarter.common.utils import serve
 
@@ -221,3 +226,133 @@ def test_run_with_progress_error():
 
     with pytest.raises(ValueError, match="kaboom"):
         _run_with_progress("Testing", boom)
+
+
+# --- serve ---
+
+
+@contextmanager
+def _echo_server():
+    """Echo server on 127.0.0.1:<ephemeral>, yields the port."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("127.0.0.1", 0))
+    sock.listen()
+
+    def worker():
+        while True:
+            try:
+                conn, _ = sock.accept()
+            except OSError:
+                return
+            with conn:
+                while True:
+                    try:
+                        data = conn.recv(1024)
+                    except OSError:
+                        break
+                    if not data:
+                        break
+                    conn.sendall(data)
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    try:
+        yield sock.getsockname()[1]
+    finally:
+        sock.close()
+
+
+def _free_port() -> int:
+    """Pick a free local port by binding and releasing an ephemeral socket."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _url_port(url: str) -> int:
+    m = re.search(r":(\d+)$", url)
+    assert m, f"no port in url: {url}"
+    return int(m.group(1))
+
+
+def test_serve_forwards_ui_child():
+    with _echo_server() as p:
+        with serve(Cuttlefish(operator_port=p, boot_timeout=0)) as client:
+            with client.serve(port=0) as url:
+                assert re.fullmatch(r"http://localhost:\d+", url)
+                with socket.create_connection(("127.0.0.1", _url_port(url))) as s:
+                    s.sendall(b"ping")
+                    assert s.recv(4) == b"ping"
+
+
+def test_serve_default_port_is_6080():
+    # JEP-0016 names http://localhost:6080 as the default; pin the method
+    # signature without binding the port in CI.
+    assert inspect.signature(CuttlefishClient.serve).parameters["port"].default == 6080
+
+
+def test_serve_explicit_port():
+    port = _free_port()
+    with serve(Cuttlefish(boot_timeout=0)) as client:
+        with client.serve(port=port) as url:
+            assert url == f"http://localhost:{port}"
+
+
+def test_serve_tls_uses_ui_tls_child():
+    with _echo_server() as p:
+        with serve(Cuttlefish(operator_tls_port=p, boot_timeout=0)) as client:
+            with client.serve(port=0, tls=True) as url:
+                assert url.startswith("https://")
+                with socket.create_connection(("127.0.0.1", _url_port(url))) as s:
+                    s.sendall(b"ping")
+                    assert s.recv(4) == b"ping"
+
+
+def test_serve_teardown():
+    with serve(Cuttlefish(boot_timeout=0)) as client:
+        with client.serve(port=0) as url:
+            port = _url_port(url)
+        with pytest.raises(ConnectionRefusedError):
+            socket.create_connection(("127.0.0.1", port))
+
+
+def test_serve_missing_ui_child_raises():
+    with serve(Cuttlefish(boot_timeout=0)) as client:
+        client.children.pop("ui")
+        with pytest.raises(RuntimeError, match="does not expose"):
+            with client.serve(port=0):
+                pass
+
+
+def test_serve_cli_prints_url(monkeypatch):
+    monkeypatch.setattr("jumpstarter_driver_cuttlefish.client._wait_forever", lambda: None)
+    with serve(Cuttlefish(boot_timeout=0)) as client:
+        r = CliRunner().invoke(client.cli(), ["serve", "--port", "0"])
+        assert r.exit_code == 0
+        assert "Serving Cuttlefish UI at http://localhost:" in r.output
+        assert "(Ctrl+C to stop)" in r.output
+
+
+def test_serve_cli_tls_flag(monkeypatch):
+    monkeypatch.setattr("jumpstarter_driver_cuttlefish.client._wait_forever", lambda: None)
+    with serve(Cuttlefish(boot_timeout=0)) as client:
+        r = CliRunner().invoke(client.cli(), ["serve", "--port", "0", "--tls"])
+        assert r.exit_code == 0
+        assert "https://" in r.output
+
+
+def test_serve_cli_help():
+    with serve(Cuttlefish(boot_timeout=0)) as client:
+        r = CliRunner().invoke(client.cli(), ["serve", "--help"])
+        assert r.exit_code == 0
+        assert "--port" in r.output
+        assert "--tls" in r.output
+        assert "6080" in r.output
+
+
+def test_ui_child_cli_mounted():
+    with serve(Cuttlefish()) as client:
+        r = CliRunner().invoke(client.cli(), ["ui", "address"])
+        assert r.exit_code == 0
+        assert ":1080" in r.output
