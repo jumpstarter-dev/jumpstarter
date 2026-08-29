@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from jumpstarter.common.exceptions import FileNotFoundError
 from jumpstarter.config.client import (
+    ClientConfigListV1Alpha1,
     ClientConfigV1Alpha1,
     ClientConfigV1Alpha1Drivers,
     ClientConfigV1Alpha1Lease,
@@ -634,3 +635,27 @@ async def test_list_exporters_with_leases_propagates_page_size():
 
     lease_calls = mock_service.ListLeases.call_args_list
     assert lease_calls[0].kwargs["page_size"] == 50
+
+
+def test_client_config_list_redacts_credentials_by_default():
+    config = ClientConfigV1Alpha1(
+        alias="testclient",
+        metadata=ObjectMeta(namespace="default", name="testclient"),
+        endpoint="jumpstarter.my-lab.com:1443",
+        token="secret-token",
+        refresh_token="secret-refresh-token",
+        drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*"], unsafe=False),
+    )
+    configs = ClientConfigListV1Alpha1(current_config="testclient", items=[config])
+
+    dumped = configs.model_dump(mode="json", by_alias=True)
+    assert "token" not in dumped["items"][0]
+    assert "refresh_token" not in dumped["items"][0]
+    assert "secret-token" not in configs.model_dump_json()
+    assert "secret-token" not in configs.dump_json()
+    assert "secret-token" not in configs.dump_yaml()
+
+    configs.include_credentials = True
+    dumped = configs.model_dump(mode="json", by_alias=True)
+    assert dumped["items"][0]["token"] == "secret-token"
+    assert dumped["items"][0]["refresh_token"] == "secret-refresh-token"

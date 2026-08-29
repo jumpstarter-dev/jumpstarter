@@ -536,11 +536,23 @@ class ClientConfigListV1Alpha1(BaseModel):
     items: list[ClientConfigV1Alpha1]
     kind: Literal["ClientConfigList"] = Field(default="ClientConfigList")
 
+    include_credentials: bool = Field(default=False, exclude=True)
+
+    def _redact_credentials(self, kwargs: dict) -> dict:
+        if not self.include_credentials and "exclude" not in kwargs:
+            kwargs["exclude"] = {"items": {"__all__": {"token", "refresh_token"}}}
+        return kwargs
+
+    def model_dump(self, **kwargs):
+        return super().model_dump(**self._redact_credentials(kwargs))
+
+    def model_dump_json(self, **kwargs):
+        return super().model_dump_json(**self._redact_credentials(kwargs))
+
     def dump_json(self):
         return self.model_dump_json(
             indent=4,
             by_alias=True,
-            exclude={"items": {"__all__": {"refresh_token"}}},
         )
 
     def dump_yaml(self):
@@ -548,7 +560,6 @@ class ClientConfigListV1Alpha1(BaseModel):
             self.model_dump(
                 mode="json",
                 by_alias=True,
-                exclude={"items": {"__all__": {"refresh_token"}}},
             ),
             indent=2,
         )
