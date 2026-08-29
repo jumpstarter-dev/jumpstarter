@@ -1,5 +1,6 @@
 import json
 import subprocess
+import threading
 import time
 from collections.abc import Generator
 from dataclasses import dataclass, field
@@ -41,6 +42,7 @@ class Cuttlefish(Driver):
     operator_tls_port: int = 1443
     boot_timeout: int = 300
     env_config: dict = field(default_factory=dict)
+    prewarm: bool = False
     webrtc_url: str = ""
     _cvd_group: str | None = field(default=None, init=False, repr=False)
     _cvd_name: str | None = field(default=None, init=False, repr=False)
@@ -57,6 +59,20 @@ class Cuttlefish(Driver):
         # injects host=127.0.0.1 into the driver config.
         self.children["ui"] = TcpNetwork(host=self.host, port=self.operator_port)
         self.children["ui-tls"] = TcpNetwork(host=self.host, port=self.operator_tls_port)
+        # Prewarm boots the pinned env_config as the exporter starts so the
+        # pool holds booted devices (JEP-0016 DD-6). Background thread:
+        # registration must not block on a minutes-long Android boot; a
+        # lease acquired mid-boot waits in wait_boot as usual.
+        self._prewarm_thread = None
+        if self.prewarm:
+            self._prewarm_thread = threading.Thread(target=self._prewarm_boot, daemon=True)
+            self._prewarm_thread.start()
+
+    def _prewarm_boot(self):
+        try:
+            self.children["power"].on()
+        except Exception:
+            self.logger.exception("prewarm boot failed; device remains lessee-bootable")
 
     @classmethod
     def client(cls) -> str:

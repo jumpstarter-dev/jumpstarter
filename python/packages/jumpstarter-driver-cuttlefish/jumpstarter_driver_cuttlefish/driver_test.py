@@ -6,7 +6,7 @@ import pytest
 import requests
 from jumpstarter_driver_network.driver import TcpNetwork
 
-from .driver import Cuttlefish, CuttlefishError, CuttlefishTimeout
+from .driver import Cuttlefish, CuttlefishError, CuttlefishTimeout, CvdPower
 
 BASE = "http://localhost:2080"
 
@@ -498,6 +498,42 @@ def test_cvd_flasher_dump_not_implemented(drv):
     flasher = drv.children["storage"]
     with pytest.raises(NotImplementedError):
         flasher.dump("target")
+
+
+def test_prewarm_boots_power_on_in_background():
+    for p in _ADB_PATCHES:
+        p.start()
+    try:
+        with patch.object(CvdPower, "on") as mock_on:
+            drv = Cuttlefish(group="cvd_1", name="dev1", prewarm=True)
+            assert drv._prewarm_thread is not None
+            drv._prewarm_thread.join(timeout=10)
+            assert not drv._prewarm_thread.is_alive()
+            mock_on.assert_called_once()
+    finally:
+        for p in _ADB_PATCHES:
+            p.stop()
+
+
+def test_prewarm_default_off(drv):
+    assert drv.prewarm is False
+    assert drv._prewarm_thread is None
+
+
+def test_prewarm_boot_failure_is_nonfatal():
+    for p in _ADB_PATCHES:
+        p.start()
+    try:
+        with patch.object(CvdPower, "on", side_effect=CuttlefishError("no HO")):
+            drv = Cuttlefish(group="cvd_1", name="dev1", prewarm=True)
+            assert drv._prewarm_thread is not None
+            drv._prewarm_thread.join(timeout=10)
+            assert not drv._prewarm_thread.is_alive()
+            # Driver remains usable; children intact.
+            assert "power" in drv.children
+    finally:
+        for p in _ADB_PATCHES:
+            p.stop()
 
 
 def test_ui_children_created(drv):

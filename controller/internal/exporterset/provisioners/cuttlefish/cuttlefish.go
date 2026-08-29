@@ -55,7 +55,10 @@ const (
 	// runtimeContainerName is the native sidecar that runs the
 	// Cuttlefish Host Orchestrator. Kept as a const so scheduling
 	// and RenderPod stay in sync.
-	runtimeContainerName = "cuttlefish-host"
+	// Named "cvd", not "cuttlefish-host": the sidecar is the device
+	// runtime for exactly one CVD, never a multi-device host (JEP-0016
+	// exporter = DUT invariant).
+	runtimeContainerName = "cvd"
 
 	// exporterContainerName must match the container the reconciler
 	// targets when injecting the config volume.
@@ -459,6 +462,9 @@ func enrichCuttlefishDriver(d virtualtargetv1alpha1.DriverConfig, params map[str
 	}
 	if v, ok := lookupParam(params, paramKeyEnvConfig); ok {
 		setIfAbsent(config, "env_config", v)
+		// A pool that pins a build boots it at instance start (DD-6):
+		// the instance is the device, not a waiting host.
+		setIfAbsent(config, "prewarm", true)
 	}
 
 	raw, _ := json.Marshal(config)

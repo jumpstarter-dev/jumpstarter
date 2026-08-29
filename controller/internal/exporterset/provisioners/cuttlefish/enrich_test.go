@@ -198,6 +198,53 @@ func TestEnrichOperatorPortOnlyWhenParameterSet(t *testing.T) {
 	}
 }
 
+func TestEnrichPrewarmWithEnvConfig(t *testing.T) {
+	envConfig := map[string]interface{}{"instances": []interface{}{}}
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{Name: "cuttlefish", Type: cuttlefishDriverType},
+	}
+	params := map[string]interface{}{"envConfig": envConfig}
+
+	result, err := New("dev").EnrichExporterExport(drivers, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := unmarshalConfig(t, findDriver(result, "cuttlefish").Config)
+	if config["prewarm"] != true {
+		t.Errorf("prewarm = %v, want true when envConfig parameter is set (DD-6)", config["prewarm"])
+	}
+
+	// Template-provided prewarm is never overridden.
+	drivers = []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "cuttlefish",
+			Type:   cuttlefishDriverType,
+			Config: mustJSON(map[string]interface{}{"prewarm": false}),
+		},
+	}
+	result, err = New("dev").EnrichExporterExport(drivers, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config = unmarshalConfig(t, findDriver(result, "cuttlefish").Config)
+	if config["prewarm"] != false {
+		t.Errorf("prewarm = %v, want template-provided false preserved", config["prewarm"])
+	}
+
+	// No envConfig parameter: no prewarm key injected.
+	result, err = New("dev").EnrichExporterExport(
+		[]virtualtargetv1alpha1.DriverConfig{{Name: "cuttlefish", Type: cuttlefishDriverType}},
+		map[string]interface{}{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config = unmarshalConfig(t, findDriver(result, "cuttlefish").Config)
+	if _, ok := config["prewarm"]; ok {
+		t.Error("prewarm injected without envConfig parameter")
+	}
+}
+
 func TestEnrichEnvConfigFromParameters(t *testing.T) {
 	envConfig := map[string]interface{}{
 		"instances": []interface{}{
