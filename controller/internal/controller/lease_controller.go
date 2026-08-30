@@ -24,6 +24,7 @@ import (
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
 	jmpmetrics "github.com/jumpstarter-dev/jumpstarter/controller/internal/metrics"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -63,6 +64,7 @@ type ApprovedExporter struct {
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=leases/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=leases/finalizers,verbs=update
+// +kubebuilder:rbac:groups=virtualtarget.jumpstarter.dev,resources=exportersets,verbs=get;list;watch
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // TODO(user): Modify the Reconcile function to compare the state specified by
@@ -288,6 +290,27 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			listed, err := r.ListMatchingExporters(ctx, lease, selector)
 			if err != nil {
 				return fmt.Errorf("reconcileStatusExporterRef: failed to list matching exporters: %w", err)
+			}
+			if len(listed.Items) == 0 {
+				// Nothing matches yet, which is the normal state of a pool that
+				// keeps nothing warm. An exporter set that could provision a
+				// match makes this lease pending rather than unsatisfiable —
+				// and pending is what the set counts as demand to scale up on.
+				// Calling it unsatisfiable here ends the lease in this same
+				// reconcile, so the set would never see it.
+				set, err := r.exporterSetCanProvision(ctx, lease, selector)
+				if err != nil {
+					return fmt.Errorf("reconcileStatusExporterRef: %w", err)
+				}
+				if set != "" {
+					lease.SetStatusPending(
+						"Provisioning",
+						"No exporter matches the selector yet; exporter set %s can provision one",
+						set,
+					)
+					result.RequeueAfter = pendingRequeueAfter(lease)
+					return nil
+				}
 			}
 			// Filter out disabled exporters from selector-based listing
 			matchingExporters = filterOutDisabledExporters(listed.Items)
@@ -555,6 +578,51 @@ func (r *LeaseReconciler) ListMatchingExporters(ctx context.Context, lease *jump
 		return nil, fmt.Errorf("ListMatchingExporters: failed to list exporters matching selector: %w", err)
 	}
 	return &matchingExporters, nil
+}
+
+// exporterSetCanProvision reports the name of an exporter set that could
+// provision an exporter matching the lease's selector, or "" if none can.
+//
+// It answers the question the lease controller cannot otherwise ask: is there
+// nothing for this lease because nothing will ever match, or because the pool
+// that would match keeps nothing warm? The two look identical from the exporter
+// listing and mean opposite things to the caller.
+//
+// A set qualifies when the labels it stamps on its members satisfy the selector
+// and it is not already at its ceiling. Whether it is actually willing to scale
+// right now is the set's own decision, made in its reconciler; this only has to
+// be right about whether waiting is worthwhile.
+func (r *LeaseReconciler) exporterSetCanProvision(
+	ctx context.Context,
+	lease *jumpstarterdevv1alpha1.Lease,
+	selector labels.Selector,
+) (string, error) {
+	var sets virtualtargetv1alpha1.ExporterSetList
+	if err := r.List(ctx, &sets, client.InNamespace(lease.Namespace)); err != nil {
+		if k8serrors.IsForbidden(err) || meta.IsNoMatchError(err) {
+			// A controller running against an operator that has not granted
+			// this read, or a cluster without the exporter set CRDs at all.
+			// Neither is transient, and neither is a reason to fail a lease:
+			// fall back to the behaviour from before pools existed.
+			log.FromContext(ctx).V(1).Info(
+				"cannot read exporter sets, treating the selector as unsatisfiable",
+				"lease", lease.Name, "reason", err.Error())
+			return "", nil
+		}
+		return "", fmt.Errorf("exporterSetCanProvision: failed to list exporter sets: %w", err)
+	}
+
+	for i := range sets.Items {
+		set := &sets.Items[i]
+		if !selector.Matches(labels.Set(set.Spec.Template.Metadata.Labels)) {
+			continue
+		}
+		if set.Spec.MaxReplicas > 0 && set.Status.Replicas >= set.Spec.MaxReplicas {
+			continue
+		}
+		return set.Name, nil
+	}
+	return "", nil
 }
 
 // ListActiveLeases returns a list of active leases in the namespace
