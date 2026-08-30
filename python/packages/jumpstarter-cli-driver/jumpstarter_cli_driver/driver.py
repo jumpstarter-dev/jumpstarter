@@ -44,6 +44,9 @@ class DriverSchema(BaseModel):
 
     name: str
     type: str
+    # Client class this driver is consumed through — what a client config's
+    # drivers.allow patterns are matched against.
+    client: str | None = None
     package: str | None = None
     version: str | None = None
     description: str | None = None
@@ -97,6 +100,18 @@ def _first_docstring_line(cls: type) -> str | None:
     return doc.strip().splitlines()[0]
 
 
+def _client_class_path(cls: type) -> str | None:
+    """The driver client class path, which drivers.allow patterns are matched against."""
+    client = getattr(cls, "client", None)
+    if not callable(client):
+        return None
+    try:
+        value = client()
+    except Exception:
+        return None
+    return value if isinstance(value, str) else None
+
+
 def _fields_without_schema(cls: type, base_fields: set[str]) -> tuple[dict[str, Any], list[str]]:
     """Config keys recovered from the dataclass when JSON Schema generation fails.
 
@@ -134,6 +149,7 @@ def _schema_for_entry_point(entry_point, base_fields: set[str]) -> DriverSchema:
         return entry
 
     entry.description = _first_docstring_line(cls)
+    entry.client = _client_class_path(cls)
     try:
         schema = TypeAdapter(cls).json_schema()
     except Exception as e:
