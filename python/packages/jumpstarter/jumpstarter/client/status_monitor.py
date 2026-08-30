@@ -361,7 +361,12 @@ class StatusMonitor:
 
                 # Fire events if status changed
                 if old_status != new_status:
-                    logger.info(f"Status changed: {old_status} -> {new_status} (version={new_version})")
+                    # The first poll is an observation, not a transition: reporting
+                    # it as one is noise when attaching to an already-ready lease.
+                    if old_status is None:
+                        logger.debug(f"Exporter status: {new_status} (version={new_version})")
+                    else:
+                        logger.info(f"Status changed: {old_status} -> {new_status} (version={new_version})")
 
                     # Fire specific status event
                     if new_status in self._status_events:
