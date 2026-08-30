@@ -5,6 +5,7 @@ from typing import Literal, Optional
 
 import click
 from rich import traceback
+from rich.console import Console
 from rich.logging import RichHandler
 
 
@@ -39,7 +40,9 @@ def _opt_log_level_callback(ctx, param, value):
         level = logging.getLevelName(value.upper()) if value else logging.INFO
         setup_logging(component="exporter", log_format=_log_format_value, level=level)
     else:
-        handler = RichHandler(show_path=False)
+        # Logs go to stderr so they never interleave with the machine-readable
+        # payload that -o json/yaml writes to stdout.
+        handler = RichHandler(console=Console(stderr=True), show_path=False)
         handler.setFormatter(SourcePrefixFormatter())
         basicConfig = partial(logging.basicConfig, handlers=[handler])
 

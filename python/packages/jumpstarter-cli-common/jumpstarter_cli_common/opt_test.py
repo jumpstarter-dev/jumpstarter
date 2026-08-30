@@ -6,7 +6,12 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from jumpstarter_cli_common.opt import SourcePrefixFormatter, opt_insecure_tls, validate_name
+from jumpstarter_cli_common.opt import (
+    SourcePrefixFormatter,
+    _opt_log_level_callback,
+    opt_insecure_tls,
+    validate_name,
+)
 
 
 class TestSourcePrefixFormatter:
@@ -129,3 +134,27 @@ class TestValidateName:
 
     def test_accepts_valid_name(self) -> None:
         validate_name("my-resource")
+
+
+class TestLogHandlerStream:
+    def test_logs_go_to_stderr_not_stdout(self, capsys) -> None:
+        """Logs must not corrupt the JSON/YAML payload written to stdout.
+
+        `-o json` consumers (IDE integrations, CI) parse stdout; a log line
+        interleaved there makes the output unparseable.
+        """
+        root = logging.getLogger()
+        saved_handlers, saved_level = root.handlers[:], root.level
+        root.handlers.clear()
+        try:
+            _opt_log_level_callback(None, None, "INFO")
+            logging.getLogger("jumpstarter.client.lease").info("Lease acquired successfully!")
+            for handler in root.handlers:
+                handler.flush()
+            captured = capsys.readouterr()
+        finally:
+            root.handlers[:] = saved_handlers
+            root.setLevel(saved_level)
+
+        assert "Lease acquired" in captured.err
+        assert captured.out == ""
