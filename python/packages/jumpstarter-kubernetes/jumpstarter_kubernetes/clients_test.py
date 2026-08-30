@@ -430,3 +430,25 @@ async def test_get_client_config_without_credentials():
         await api.get_client_config("fresh-client", allow=[], unsafe=False)
 
     api.core_api.read_namespaced_secret.assert_not_awaited()
+
+
+def test_client_from_dict_keeps_labels():
+    """Labels are how clients are grouped, so from_dict must not drop them"""
+    client = V1Alpha1Client.from_dict(
+        {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Client",
+            "metadata": {
+                "creationTimestamp": "2021-10-01T00:00:00Z",
+                "generation": 1,
+                "labels": {"team": "platform"},
+                "name": "test-client",
+                "namespace": "default",
+                "resourceVersion": "1",
+                "uid": "7a25eb81-6443-47ec-a62f-50165bffede8",
+            },
+            "status": {"endpoint": "https://test-client"},
+        }
+    )
+    assert client.metadata.labels == {"team": "platform"}
+    assert '"team": "platform"' in client.dump_json()

@@ -41,6 +41,9 @@ class V1Alpha1Client(JsonBaseModel):
             metadata=V1ObjectMeta(
                 creation_timestamp=dict["metadata"]["creationTimestamp"],
                 generation=dict["metadata"]["generation"],
+                # Labels are how a client is grouped and found, so they belong
+                # in the output rather than only in the stored object.
+                labels=dict["metadata"].get("labels"),
                 name=dict["metadata"]["name"],
                 namespace=dict["metadata"]["namespace"],
                 resource_version=dict["metadata"]["resourceVersion"],

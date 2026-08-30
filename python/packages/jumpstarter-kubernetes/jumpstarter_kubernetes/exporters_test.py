@@ -424,3 +424,25 @@ def test_exporter_rich_add_rows_without_status():
     exporter.rich_add_rows(mock_table)
     name, status, endpoint, devices, _age = mock_table.add_row.call_args.args
     assert (name, status, endpoint, devices) == ("fresh-exporter", "Unknown", "", "0")
+
+
+def test_exporter_from_dict_keeps_labels():
+    """Labels are what an exporter is selected by, so from_dict must keep them"""
+    exporter = V1Alpha1Exporter.from_dict(
+        {
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Exporter",
+            "metadata": {
+                "creationTimestamp": "2021-10-01T00:00:00Z",
+                "generation": 1,
+                "labels": {"board": "rpi4"},
+                "name": "test-exporter",
+                "namespace": "default",
+                "resourceVersion": "1",
+                "uid": "7a25eb81-6443-47ec-a62f-50165bffede8",
+            },
+            "status": {"credential": {"name": "c"}, "devices": [], "endpoint": "https://e"},
+        }
+    )
+    assert exporter.metadata.labels == {"board": "rpi4"}
+    assert '"board": "rpi4"' in exporter.dump_json()

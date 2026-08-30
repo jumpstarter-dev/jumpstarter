@@ -48,6 +48,9 @@ class V1Alpha1Exporter(JsonBaseModel):
             metadata=V1ObjectMeta(
                 creation_timestamp=dict["metadata"]["creationTimestamp"],
                 generation=dict["metadata"]["generation"],
+                # Labels are what a client selects an exporter by, so they are
+                # part of what an admin needs to see about one.
+                labels=dict["metadata"].get("labels"),
                 name=dict["metadata"]["name"],
                 namespace=dict["metadata"]["namespace"],
                 resource_version=dict["metadata"]["resourceVersion"],
