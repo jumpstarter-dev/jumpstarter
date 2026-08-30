@@ -2037,6 +2037,10 @@ func TestScaleUp_stampsIdentityLabels(t *testing.T) {
 	if got := exporters[0].Labels[labelVirtualTargetClass]; got != "qemu-class" {
 		t.Errorf("%s = %q, want %q", labelVirtualTargetClass, got, "qemu-class")
 	}
+	// The provisioner lives on the class, which a client cannot read.
+	if got := exporters[0].Labels[labelProvisioner]; got != qemu.ProvisionerName {
+		t.Errorf("%s = %q, want %q", labelProvisioner, got, qemu.ProvisionerName)
+	}
 	// Template labels still come through.
 	if got := exporters[0].Labels["exporterset"]; got != "demo-set" {
 		t.Errorf("template label lost: got %q", got)
@@ -2066,13 +2070,17 @@ func TestReconcile_backfillsIdentityLabelsOnExistingExporters(t *testing.T) {
 	if got.Labels[labelVirtualTargetClass] != "qemu-class" {
 		t.Errorf("existing exporter missing class label: %v", got.Labels)
 	}
+	if got.Labels[labelProvisioner] != qemu.ProvisionerName {
+		t.Errorf("existing exporter missing provisioner label: %v", got.Labels)
+	}
 }
 
 func TestExporterLabels_survivesNilTemplateLabels(t *testing.T) {
 	es := makeExporterSet(func(es *virtualtargetv1alpha1.ExporterSet) {
 		es.Spec.Template.Metadata.Labels = nil
 	})
-	labels := exporterLabels(es)
+	r, _ := newReconciler(t, es, makeVTC())
+	labels := r.exporterLabels(es)
 	if labels[labelExporterSetName] != "demo-set" {
 		t.Errorf("expected set name label, got %v", labels)
 	}

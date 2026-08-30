@@ -67,9 +67,12 @@ const (
 	// lives only in ownerReferences, which the client API does not expose.
 	labelExporterSetName = "exporterset.jumpstarter.dev/name"
 
-	// The VirtualTargetClass backing the pool, so clients can tell how an
-	// exporter is provisioned without cluster access.
+	// The VirtualTargetClass backing the pool, and the provisioner that
+	// class names, so clients can tell how an exporter is provisioned without
+	// cluster access. The provisioner is a property of the class, which a
+	// client cannot read, so it has to be carried here.
 	labelVirtualTargetClass = "exporterset.jumpstarter.dev/class"
+	labelProvisioner        = "exporterset.jumpstarter.dev/provisioner"
 
 	defaultScaleDownCooldown = 5 * time.Minute
 
@@ -347,7 +350,7 @@ func (r *ExporterSetReconciler) scaleUp(
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: es.Name + "-",
 				Namespace:    es.Namespace,
-				Labels:       exporterLabels(es),
+				Labels:       r.exporterLabels(es),
 				Annotations:  maps.Clone(es.Spec.Template.Metadata.Annotations),
 			},
 			Spec: jumpstarterdevv1alpha1.ExporterSpec{
@@ -931,18 +934,32 @@ func (r *ExporterSetReconciler) clearSurplusAnnotation(ctx context.Context, es *
 	}
 }
 
+// identityLabels mark which pool an exporter belongs to and how it is
+// provisioned. Reconcile has already established that the referenced class
+// names this reconciler's provisioner, so it is the provisioner in effect.
+func (r *ExporterSetReconciler) identityLabels(
+	es *virtualtargetv1alpha1.ExporterSet,
+) map[string]string {
+	labels := map[string]string{labelExporterSetName: es.Name}
+	if es.Spec.VirtualTargetClassName != "" {
+		labels[labelVirtualTargetClass] = es.Spec.VirtualTargetClassName
+	}
+	if r.Provisioner != nil {
+		labels[labelProvisioner] = r.Provisioner.Name()
+	}
+	return labels
+}
+
 // exporterLabels are the labels an Exporter of this set carries: the set's
-// template labels plus the identity labels that let a client tell which pool
-// an exporter belongs to and how it is provisioned.
-func exporterLabels(es *virtualtargetv1alpha1.ExporterSet) map[string]string {
+// template labels plus the identity labels above.
+func (r *ExporterSetReconciler) exporterLabels(
+	es *virtualtargetv1alpha1.ExporterSet,
+) map[string]string {
 	labels := maps.Clone(es.Spec.Template.Metadata.Labels)
 	if labels == nil {
 		labels = map[string]string{}
 	}
-	labels[labelExporterSetName] = es.Name
-	if es.Spec.VirtualTargetClassName != "" {
-		labels[labelVirtualTargetClass] = es.Spec.VirtualTargetClassName
-	}
+	maps.Copy(labels, r.identityLabels(es))
 	return labels
 }
 
@@ -956,13 +973,10 @@ func (r *ExporterSetReconciler) reconcileExporterLabels(
 ) error {
 	logger := log.FromContext(ctx)
 
+	desired := r.identityLabels(es)
+
 	for i := range owned {
 		exporter := &owned[i]
-		desired := map[string]string{labelExporterSetName: es.Name}
-		if es.Spec.VirtualTargetClassName != "" {
-			desired[labelVirtualTargetClass] = es.Spec.VirtualTargetClassName
-		}
-
 		missing := map[string]string{}
 		for key, value := range desired {
 			if exporter.Labels[key] != value {
