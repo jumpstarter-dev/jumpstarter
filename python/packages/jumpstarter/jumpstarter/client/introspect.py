@@ -31,6 +31,33 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
+def _describe_param(param: click.Parameter) -> dict[str, Any]:
+    """Describe one Click parameter well enough to prompt for it.
+
+    Beyond name and help, a caller building a command line needs to know
+    whether the parameter is positional or an option (and which flag spells
+    it), whether it is a boolean flag that takes no value, whether it repeats,
+    and the values it accepts when it is a choice.
+    """
+    described: dict[str, Any] = {
+        "name": param.name,
+        "kind": param.param_type_name,
+        # Click's own type name ("integer", "path", "choice"); str() on some
+        # types renders an object repr, which is no use in a prompt.
+        "type": getattr(param.type, "name", None) or str(param.type),
+        "help": getattr(param, "help", None),
+        "required": getattr(param, "required", False),
+        "default": _json_safe(param.default) if param.default is not None else None,
+        "opts": list(param.opts),
+        "is_flag": bool(getattr(param, "is_flag", False)),
+        "multiple": bool(getattr(param, "multiple", False)),
+        "nargs": param.nargs,
+    }
+    if isinstance(param.type, click.Choice):
+        described["choices"] = [str(choice) for choice in param.type.choices]
+    return described
+
+
 def walk_click_tree(cmd: click.core.BaseCommand, path: list[str] | None = None) -> dict[str, Any]:  # ty: ignore[unresolved-attribute]
     """Recursively walk a Click command tree and return structured JSON.
 
@@ -42,15 +69,7 @@ def walk_click_tree(cmd: click.core.BaseCommand, path: list[str] | None = None) 
         "name": cmd.name,
         "help": cmd.help,
         "params": [
-            {
-                "name": p.name,
-                "type": str(p.type),
-                "help": getattr(p, "help", None),
-                "required": getattr(p, "required", False),
-                "default": _json_safe(p.default) if p.default is not None else None,
-            }
-            for p in cmd.params
-            if not getattr(p, "hidden", False) and p.name != "help"
+            _describe_param(p) for p in cmd.params if not getattr(p, "hidden", False) and p.name != "help"
         ],
     }
     if isinstance(cmd, click.Group):

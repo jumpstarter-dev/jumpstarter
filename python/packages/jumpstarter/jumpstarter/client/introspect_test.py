@@ -319,3 +319,48 @@ class TestDescribeDevices:
         kwargs = mock_config.lease_async.call_args.kwargs
         assert kwargs["lease_name"] == "existing-lease"
         assert result["cli_tree"]["name"] == "j"
+
+
+class TestParamDescription:
+    def test_describes_arguments_and_options(self):
+        @click.group()
+        def root():
+            pass
+
+        @root.command()
+        @click.argument("port", type=int)
+        @click.option("--address", help="Local address to bind")
+        @click.option("--verbose", is_flag=True)
+        @click.option("--mode", type=click.Choice(["fast", "slow"]), default="fast")
+        @click.option("--tag", multiple=True)
+        def forward(port, address, verbose, mode, tag):
+            """Forward a port."""
+
+        tree = walk_click_tree(root)
+        params = {p["name"]: p for p in tree["subcommands"]["forward"]["params"]}
+
+        # A positional argument is spelled by name and an option by its flag,
+        # so a caller building a command line has to tell them apart.
+        assert params["port"]["kind"] == "argument"
+        assert params["port"]["required"] is True
+        assert params["port"]["type"] == "integer"
+        assert params["address"]["kind"] == "option"
+        assert params["address"]["opts"] == ["--address"]
+        assert params["address"]["help"] == "Local address to bind"
+        assert params["verbose"]["is_flag"] is True
+        assert params["mode"]["choices"] == ["fast", "slow"]
+        assert params["tag"]["multiple"] is True
+
+    def test_type_name_is_readable(self):
+        @click.group()
+        def root():
+            pass
+
+        @root.command()
+        @click.argument("path", type=click.Path())
+        def send(path):
+            pass
+
+        params = walk_click_tree(root)["subcommands"]["send"]["params"]
+        # str(click.Path()) is an object repr, which is useless in a prompt.
+        assert params[0]["type"] == "path"
