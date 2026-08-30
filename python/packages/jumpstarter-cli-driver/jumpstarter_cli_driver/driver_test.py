@@ -93,3 +93,19 @@ def test_driver_schema_unknown_name_errors():
     result = CliRunner().invoke(driver, ["schema", "NoSuchDriver", "-o", "json"])
     assert result.exit_code != 0
     assert "No installed driver matches" in result.output
+
+
+def test_driver_schema_includes_referenced_defs():
+    result = CliRunner().invoke(driver, ["schema", "Xcp", "-o", "json"])
+    assert result.exit_code == 0
+    entry = _schema_payload(result.output)["drivers"][0]
+
+    # Properties may reference nested models and enums; the definitions they
+    # point at have to travel with them, or the refs dangle for consumers.
+    refs = {
+        value["$ref"].removeprefix("#/$defs/")
+        for value in entry["properties"].values()
+        if isinstance(value, dict) and "$ref" in value
+    }
+    assert refs
+    assert refs <= set(entry["defs"])

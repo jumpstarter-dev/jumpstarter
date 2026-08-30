@@ -50,6 +50,9 @@ class DriverSchema(BaseModel):
     # JSON Schema fragment for the exporter config's `config:` block.
     properties: dict[str, Any] = {}
     required: list[str] = []
+    # Definitions the properties reference (enums, nested models). Kept so a
+    # consumer can resolve the "#/$defs/..." refs inside properties.
+    defs: dict[str, Any] = {}
     # Set instead of the schema when the driver class could not be loaded
     # (an optional dependency is missing, most often).
     error: str | None = None
@@ -141,6 +144,7 @@ def _schema_for_entry_point(entry_point, base_fields: set[str]) -> DriverSchema:
 
     entry.properties = {k: v for k, v in schema.get("properties", {}).items() if k not in base_fields}
     entry.required = [r for r in schema.get("required", []) if r not in base_fields]
+    entry.defs = schema.get("$defs", {})
     return entry
 
 
