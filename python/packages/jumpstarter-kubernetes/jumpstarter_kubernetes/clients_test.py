@@ -7,6 +7,7 @@ from kubernetes_asyncio.client.models import V1ConfigMap, V1ObjectMeta, V1Secret
 
 from jumpstarter_kubernetes import V1Alpha1Client, V1Alpha1ClientStatus
 from jumpstarter_kubernetes.clients import ClientsV1Alpha1Api
+from jumpstarter_kubernetes.exceptions import CredentialNotReadyError
 
 TEST_CLIENT = V1Alpha1Client(
     api_version="jumpstarter.dev/v1alpha1",
@@ -255,9 +256,7 @@ async def test_get_ca_bundle_with_ca_cert():
     # Verify it's base64-encoded
     expected = base64.b64encode(ca_cert_pem.encode("utf-8")).decode("utf-8")
     assert result == expected
-    api.core_api.read_namespaced_config_map.assert_called_once_with(
-        "jumpstarter-service-ca-cert", "test-namespace"
-    )
+    api.core_api.read_namespaced_config_map.assert_called_once_with("jumpstarter-service-ca-cert", "test-namespace")
 
 
 @pytest.mark.asyncio
@@ -297,9 +296,7 @@ async def test_get_ca_bundle_configmap_not_found():
     api.core_api = AsyncMock()
 
     # Mock 404 error
-    api.core_api.read_namespaced_config_map = AsyncMock(
-        side_effect=ApiException(status=404, reason="Not Found")
-    )
+    api.core_api.read_namespaced_config_map = AsyncMock(side_effect=ApiException(status=404, reason="Not Found"))
 
     result = await api.get_ca_bundle()
 
@@ -313,9 +310,7 @@ async def test_get_ca_bundle_other_api_error():
     api.core_api = AsyncMock()
 
     # Mock 403 error
-    api.core_api.read_namespaced_config_map = AsyncMock(
-        side_effect=ApiException(status=403, reason="Forbidden")
-    )
+    api.core_api.read_namespaced_config_map = AsyncMock(side_effect=ApiException(status=403, reason="Forbidden"))
 
     with pytest.raises(ApiException) as exc_info:
         await api.get_ca_bundle()
@@ -400,9 +395,7 @@ async def test_get_client_config_without_ca_bundle():
     api.core_api.read_namespaced_secret = AsyncMock(return_value=mock_secret)
 
     # Mock ConfigMap not found
-    api.core_api.read_namespaced_config_map = AsyncMock(
-        side_effect=ApiException(status=404, reason="Not Found")
-    )
+    api.core_api.read_namespaced_config_map = AsyncMock(side_effect=ApiException(status=404, reason="Not Found"))
 
     config = await api.get_client_config("test-client", allow=[], unsafe=False)
 
@@ -410,3 +403,30 @@ async def test_get_client_config_without_ca_bundle():
     assert config.tls.ca == ""
     assert config.endpoint == "https://test-endpoint:8082"
     assert config.token == token
+
+
+@pytest.mark.asyncio
+async def test_get_client_config_without_credentials():
+    """A client whose credentials the controller has not issued yet is reported, not crashed on"""
+    api = ClientsV1Alpha1Api(namespace="test-namespace")
+    api.api = AsyncMock()
+    api.core_api = AsyncMock()
+    api.api.get_namespaced_custom_object = AsyncMock(
+        return_value={
+            "apiVersion": "jumpstarter.dev/v1alpha1",
+            "kind": "Client",
+            "metadata": {
+                "creationTimestamp": "2021-10-01T00:00:00Z",
+                "generation": 1,
+                "name": "fresh-client",
+                "namespace": "test-namespace",
+                "resourceVersion": "1",
+                "uid": "test-uid",
+            },
+        }
+    )
+
+    with pytest.raises(CredentialNotReadyError, match="fresh-client"):
+        await api.get_client_config("fresh-client", allow=[], unsafe=False)
+
+    api.core_api.read_namespaced_secret.assert_not_awaited()
