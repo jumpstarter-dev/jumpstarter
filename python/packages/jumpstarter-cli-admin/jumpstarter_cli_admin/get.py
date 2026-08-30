@@ -13,6 +13,7 @@ from jumpstarter_cli_common.opt import (
 from jumpstarter_cli_common.print import model_print
 from jumpstarter_kubernetes import (
     ClientsV1Alpha1Api,
+    ExporterSetsV1Alpha1Api,
     ExportersV1Alpha1Api,
     LeasesV1Alpha1Api,
     get_cluster_info,
@@ -82,6 +83,40 @@ async def get_exporter(
             else:
                 exporters = await api.list_exporters()
                 model_print(exporters, output, devices=devices, namespace=namespace)
+    except ApiException as e:
+        handle_k8s_api_exception(e)
+    except ConfigException as e:
+        handle_k8s_config_exception(e)
+
+
+@get.command("exporterset")
+@click.argument("name", type=str, required=False, default=None)
+@opt_namespace
+@opt_kubeconfig
+@opt_context
+@opt_output_all
+@blocking
+async def get_exporterset(
+    name: Optional[str],
+    kubeconfig: Optional[str],
+    context: Optional[str],
+    namespace: str,
+    output: OutputType,
+):
+    """Get the exporter set objects in a Kubernetes cluster
+
+    An exporter set is a pool: its selector is what a lease selects on to be
+    served by the set, and the controller provisions an exporter to satisfy a
+    lease even when the set currently has none.
+    """
+    try:
+        async with ExporterSetsV1Alpha1Api(namespace, kubeconfig, context) as api:
+            if name is not None:
+                exporter_set = await api.get_exporter_set(name)
+                model_print(exporter_set, output, namespace=namespace)
+            else:
+                exporter_sets = await api.list_exporter_sets()
+                model_print(exporter_sets, output, namespace=namespace)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:

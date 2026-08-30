@@ -23,6 +23,8 @@ class AliasedGroup(click.Group):
         "shell": ["sh", "s"],
         "exporter": ["exporters", "e"],
         "exporters": ["exporter"],
+        "exporterset": ["exportersets", "es"],
+        "exportersets": ["exporterset"],
         "client": ["clients", "c"],
         "clients": ["client"],
         "lease": ["leases", "l"],

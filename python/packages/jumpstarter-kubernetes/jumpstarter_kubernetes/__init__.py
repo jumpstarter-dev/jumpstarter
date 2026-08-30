@@ -26,6 +26,14 @@ from .exporters import (
     V1Alpha1ExporterList,
     V1Alpha1ExporterStatus,
 )
+from .exportersets import (
+    ExporterSetsV1Alpha1Api,
+    V1Alpha1ExporterSet,
+    V1Alpha1ExporterSetList,
+    V1Alpha1ExporterSetMember,
+    V1Alpha1ExporterSetSpec,
+    V1Alpha1ExporterSetStatus,
+)
 from .leases import (
     LeasesV1Alpha1Api,
     V1Alpha1Lease,
@@ -45,8 +53,14 @@ __all__ = [
     "V1Alpha1ClusterList",
     "V1Alpha1JumpstarterInstance",
     "ExportersV1Alpha1Api",
+    "ExporterSetsV1Alpha1Api",
     "V1Alpha1Exporter",
     "V1Alpha1ExporterList",
+    "V1Alpha1ExporterSet",
+    "V1Alpha1ExporterSetList",
+    "V1Alpha1ExporterSetMember",
+    "V1Alpha1ExporterSetSpec",
+    "V1Alpha1ExporterSetStatus",
     "V1Alpha1ExporterStatus",
     "V1Alpha1ExporterDevice",
     "LeasesV1Alpha1Api",
