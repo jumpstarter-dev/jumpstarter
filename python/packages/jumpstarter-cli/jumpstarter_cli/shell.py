@@ -54,6 +54,11 @@ logger = logging.getLogger(__name__)
 # Refresh token when less than this many seconds remain
 _TOKEN_REFRESH_THRESHOLD_SECONDS = 120
 
+# Total time to wait for the beforeLease hook, and the initial slice of it spent
+# settling the exporter's current status before announcing that we are waiting.
+HOOK_TIMEOUT = 300.0
+HOOK_PROBE_TIMEOUT = 2.0
+
 
 def _run_shell_only(lease, config, command, path: str, motd: str | None = None) -> int:
     """Run just the shell command without log streaming."""
@@ -336,12 +341,18 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                             # Wait for beforeLease hook to complete while logs are streaming
                             # This allows hook output to be displayed in real-time
                             # Uses non-blocking polling instead of streaming for robustness
-                            logger.info("Waiting for beforeLease hook to complete...")
+                            targets = [ExporterStatus.LEASE_READY, ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
 
-                            # Wait for LEASE_READY or hook failure using background monitor
-                            result = await monitor.wait_for_any_of(
-                                [ExporterStatus.LEASE_READY, ExporterStatus.BEFORE_LEASE_HOOK_FAILED], timeout=300.0
-                            )
+                            # The monitor reports no status until its first poll, so settle
+                            # that first: attaching to a lease that is already LEASE_READY
+                            # must not claim to be waiting on a hook that already ran.
+                            result = await monitor.wait_for_any_of(targets, timeout=HOOK_PROBE_TIMEOUT)
+
+                            if result is None and not monitor.connection_lost:
+                                logger.info("Waiting for beforeLease hook to complete...")
+                                result = await monitor.wait_for_any_of(
+                                    targets, timeout=HOOK_TIMEOUT - HOOK_PROBE_TIMEOUT
+                                )
 
                             if result == ExporterStatus.BEFORE_LEASE_HOOK_FAILED:
                                 reason = monitor.status_message or "beforeLease hook failed"
