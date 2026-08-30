@@ -28,7 +28,7 @@ from .env import JMP_DIAL_TIMEOUT, JMP_LEASE, JMP_RETRY_TIMEOUT
 from .grpc import call_credentials
 from .shell import ShellConfigV1Alpha1
 from .tls import TLSConfigV1Alpha1
-from jumpstarter.client.grpc import ClientService, Exporter
+from jumpstarter.client.grpc import ClientService
 from jumpstarter.common.exceptions import (
     ConfigurationError,
     ConnectionError,
@@ -236,20 +236,11 @@ class ClientConfigV1Alpha1(BaseSettings):
                     if latest_condition.type == "Ready" and latest_condition.status == "True":
                         lease_map[lease.exporter] = lease
 
-        exporters_with_leases = []
-        for exporter in result.exporters:
-            lease = lease_map.get(exporter.name)
-            exporter_with_lease = Exporter(
-                namespace=exporter.namespace,
-                name=exporter.name,
-                labels=exporter.labels,
-                online=exporter.online,
-                enabled=exporter.enabled,
-                lease=lease,
-            )
-            exporters_with_leases.append(exporter_with_lease)
         result.include_leases = True
-        result.exporters = exporters_with_leases
+        result.exporters = [
+            exporter.model_copy(update={"lease": lease_map.get(exporter.name)})
+            for exporter in result.exporters
+        ]
         return result
 
     @_blocking_compat
