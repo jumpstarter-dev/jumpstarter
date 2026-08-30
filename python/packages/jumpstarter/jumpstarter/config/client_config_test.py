@@ -1,11 +1,12 @@
 import os
 import tempfile
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 import yaml
+from jumpstarter_protocol import kubernetes_pb2
 from pydantic import ValidationError
 
 from jumpstarter.common.exceptions import FileNotFoundError
@@ -659,3 +660,77 @@ def test_client_config_list_redacts_credentials_by_default():
     dumped = configs.model_dump(mode="json", by_alias=True)
     assert dumped["items"][0]["token"] == "secret-token"
     assert dumped["items"][0]["refresh_token"] == "secret-refresh-token"
+
+
+@pytest.mark.asyncio
+async def test_list_exporters_with_leases_preserves_exporter_fields():
+    from jumpstarter.client.grpc import Exporter, ExporterList, Lease, LeaseList
+    from jumpstarter.common.enums import ExporterStatus
+
+    exp = Exporter(
+        namespace="default",
+        name="exporter-a",
+        labels={"env": "test"},
+        online=True,
+        status=ExporterStatus.LEASE_READY,
+        enabled=True,
+        deprecated_labels={"old": "label"},
+        lease=None,
+    )
+    unleased = Exporter(
+        namespace="default",
+        name="exporter-b",
+        labels={},
+        online=False,
+        status=ExporterStatus.OFFLINE,
+        enabled=False,
+        lease=None,
+    )
+    condition = kubernetes_pb2.Condition(type="Ready", status="True")
+    lease = Lease(
+        namespace="default",
+        name="lease-a",
+        selector="env=test",
+        duration=timedelta(hours=1),
+        client="c",
+        exporter="exporter-a",
+        effective_begin_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        conditions=[condition],
+    )
+
+    exporter_page = ExporterList(exporters=[exp, unleased], next_page_token="")
+    lease_page = LeaseList(leases=[lease], next_page_token="")
+
+    config = ClientConfigV1Alpha1(
+        alias="testclient",
+        metadata=ObjectMeta(namespace="default", name="testclient"),
+        endpoint="jumpstarter.my-lab.com:1443",
+        token="token",
+        drivers=ClientConfigV1Alpha1Drivers(allow=["jumpstarter.drivers.*"], unsafe=False),
+    )
+
+    mock_service = Mock()
+    mock_service.ListExporters = AsyncMock(return_value=exporter_page)
+    mock_service.ListLeases = AsyncMock(return_value=lease_page)
+
+    with (
+        patch("jumpstarter.config.client.ClientConfigV1Alpha1.channel", AsyncMock(return_value=Mock())),
+        patch("jumpstarter.config.client.ClientService", return_value=mock_service),
+    ):
+        result = await config.list_exporters(
+            filter=None, include_leases=True, include_online=True, include_status=True
+        )
+
+    leased, offline = result.exporters
+    assert leased.lease is not None and leased.lease.name == "lease-a"
+    assert leased.status == ExporterStatus.LEASE_READY
+    assert leased.enabled is True
+    assert leased.online is True
+    assert leased.deprecated_labels == {"old": "label"}
+    assert offline.lease is None
+    assert offline.status == ExporterStatus.OFFLINE
+    assert offline.enabled is False
+
+    dumped = result.model_dump(mode="json")["exporters"][0]
+    assert dumped["status"] is not None
+    assert dumped["lease"]["name"] == "lease-a"
