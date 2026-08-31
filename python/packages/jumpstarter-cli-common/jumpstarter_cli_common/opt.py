@@ -153,7 +153,8 @@ opt_insecure_tls_config = opt_insecure_tls
 def confirm_insecure_tls(insecure_tls: bool, nointeractive: bool):
     if nointeractive is False and insecure_tls:
         if not click.confirm(
-            "Insecure TLS mode is enabled. Certificate verification will be disabled for HTTPS connections. Continue?"
+            "Insecure TLS mode is enabled. Certificate verification will be"
+            " disabled for HTTPS connections. Continue?"
         ):
             click.echo("Aborting.")
             raise click.Abort()
@@ -211,7 +212,11 @@ opt_nointeractive = click.option(
 
 def _normalize_tokens(items: list[str], normalize_case: bool) -> list[str]:
     """Extract and normalize tokens from comma-separated values."""
-    tokens = (token.strip().lower() if normalize_case else token.strip() for item in items for token in item.split(","))
+    tokens = (
+        token.strip().lower() if normalize_case else token.strip()
+        for item in items
+        for token in item.split(',')
+    )
     return [token for token in tokens if token]
 
 
@@ -226,7 +231,9 @@ def _validate_tokens(tokens: list[str], allowed_values: set[str], ctx, param) ->
     if invalid:
         allowed_list = ", ".join(sorted(allowed_values))
         raise click.BadParameter(
-            f"Invalid value(s) {invalid}. Allowed values are: {allowed_list}", ctx=ctx, param=param
+            f"Invalid value(s) {invalid}. Allowed values are: {allowed_list}",
+            ctx=ctx,
+            param=param
         )
 
 
@@ -235,7 +242,7 @@ def parse_comma_separated(
     param: click.Parameter | None,
     value: str | tuple[str, ...] | None,
     allowed_values: set[str] | None = None,
-    normalize_case: bool = True,
+    normalize_case: bool = True
 ) -> list[str]:
     """Generic comma-separated value parser with validation and normalization.
 
@@ -274,7 +281,10 @@ def parse_comma_separated(
 
 
 def opt_comma_separated(
-    name: str, allowed_values: set[str] | None = None, normalize_case: bool = True, help_text: str | None = None
+    name: str,
+    allowed_values: set[str] | None = None,
+    normalize_case: bool = True,
+    help_text: str | None = None
 ):
     """Create a click option for comma-separated values with optional validation.
 
@@ -299,4 +309,10 @@ def opt_comma_separated(
         else:
             help_text = "Comma-separated values (comma-separated or repeated)"
 
-    return click.option(f"--{name}", f"{name}_options", callback=callback, multiple=True, help=help_text)
+    return click.option(
+        f"--{name}",
+        f"{name}_options",
+        callback=callback,
+        multiple=True,
+        help=help_text
+    )

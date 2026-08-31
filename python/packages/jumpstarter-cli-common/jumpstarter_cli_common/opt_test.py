@@ -7,6 +7,8 @@ import sys
 import click
 import pytest
 from click.testing import CliRunner
+from rich.console import Console
+from rich.logging import RichHandler
 
 from jumpstarter_cli_common.opt import (
     SourcePrefixFormatter,
@@ -199,6 +201,27 @@ class TestLogHandlerStream:
         root.addHandler(elsewhere)
         try:
             _opt_log_level_callback(None, None, "INFO")
+            assert elsewhere in root.handlers
+        finally:
+            root.handlers[:] = saved_handlers
+            root.setLevel(saved_level)
+
+    def test_a_rich_handler_on_stdout_is_detached_too(self) -> None:
+        """RichHandler holds a Console, not a stream, and still writes somewhere.
+
+        The CLI installs one itself, so a second one left pointing at stdout
+        would be the easiest way to reintroduce the corruption.
+        """
+        root = logging.getLogger()
+        saved_handlers, saved_level = root.handlers[:], root.level
+        root.handlers.clear()
+        on_stdout = RichHandler(console=Console(file=sys.stdout))
+        elsewhere = RichHandler(console=Console(file=io.StringIO()))
+        root.addHandler(on_stdout)
+        root.addHandler(elsewhere)
+        try:
+            _opt_log_level_callback(None, None, "INFO")
+            assert on_stdout not in root.handlers
             assert elsewhere in root.handlers
         finally:
             root.handlers[:] = saved_handlers
