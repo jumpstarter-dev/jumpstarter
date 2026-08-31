@@ -7,6 +7,7 @@ from jumpstarter_kubernetes import (
     V1Alpha1AppliedResource,
     V1Alpha1AppliedResourceList,
 )
+from kubernetes_asyncio.client.exceptions import ApiException
 
 from .apply import apply
 
@@ -148,3 +149,55 @@ def test_apply_requires_a_manifest():
 
     assert result.exit_code != 0
     assert "Missing option" in result.output
+
+
+CONFLICT_BODY = json.dumps(
+    {
+        "kind": "Status",
+        "reason": "Conflict",
+        "message": 'Apply failed with 1 conflict: conflict with "other-controller": .metadata.labels.owner',
+    }
+)
+
+
+def conflict() -> ApiException:
+    error = ApiException(status=409, reason="Conflict")
+    error.body = CONFLICT_BODY
+    return error
+
+
+def test_apply_says_how_to_resolve_a_field_ownership_conflict():
+    apply_all = AsyncMock(side_effect=conflict())
+
+    result = run(["-f", "client.yaml"], {"client.yaml": CLIENT_MANIFEST}, apply_all)
+
+    assert result.exit_code != 0
+    assert ".metadata.labels.owner" in result.output
+    assert "--force-conflicts" in result.output
+
+
+def test_apply_does_not_suggest_a_flag_that_is_already_set():
+    apply_all = AsyncMock(side_effect=conflict())
+
+    result = run(["--force-conflicts", "-f", "client.yaml"], {"client.yaml": CLIENT_MANIFEST}, apply_all)
+
+    assert result.exit_code != 0
+    assert "--force-conflicts" not in result.output
+
+
+def test_apply_asks_the_cluster_to_take_ownership_when_told_to():
+    apply_all = AsyncMock(return_value=V1Alpha1AppliedResourceList(items=[applied("Client", "hello", "configured")]))
+
+    result = run(["--force-conflicts", "-f", "client.yaml"], {"client.yaml": CLIENT_MANIFEST}, apply_all)
+
+    assert result.exit_code == 0
+    assert apply_all.call_args.kwargs["force_conflicts"] is True
+
+
+def test_apply_leaves_conflicting_fields_alone_by_default():
+    apply_all = AsyncMock(return_value=V1Alpha1AppliedResourceList(items=[applied("Client", "hello", "configured")]))
+
+    result = run(["-f", "client.yaml"], {"client.yaml": CLIENT_MANIFEST}, apply_all)
+
+    assert result.exit_code == 0
+    assert apply_all.call_args.kwargs["force_conflicts"] is False

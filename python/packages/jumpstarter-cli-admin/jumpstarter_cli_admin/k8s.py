@@ -13,6 +13,11 @@ def handle_k8s_api_exception(e: ApiException):
     except (json.decoder.JSONDecodeError, TypeError):
         raise click.ClickException(f"Server error: {e.body}") from e
 
+    # Valid JSON is not necessarily a Status: a proxy in front of the API server
+    # can answer with a bare string, a list, or null.
+    if not isinstance(json_body, dict):
+        raise click.ClickException(f"Server error: {e.body}") from e
+
     # Not every Status carries a reason: a 500 from an admission or schema
     # check often has only a message, and losing it leaves nothing to act on.
     message = json_body.get("message") or e.reason or "unknown error"

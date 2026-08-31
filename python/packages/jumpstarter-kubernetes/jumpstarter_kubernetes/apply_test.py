@@ -142,7 +142,8 @@ async def test_apply_creates_a_resource_the_cluster_does_not_have():
     }
     assert call.kwargs["header_params"]["Content-Type"] == APPLY_PATCH_CONTENT_TYPE
     assert ("fieldManager", FIELD_MANAGER) in call.kwargs["query_params"]
-    assert ("force", "true") in call.kwargs["query_params"]
+    # Conflicts are reported, not won, unless the caller asks for it.
+    assert not any(param == "force" for param, _ in call.kwargs["query_params"])
     assert not any(param == "dryRun" for param, _ in call.kwargs["query_params"])
     # The body has to carry the namespace it is being sent to.
     assert call.kwargs["body"]["metadata"]["namespace"] == "default"
@@ -185,12 +186,55 @@ async def test_apply_keeps_the_namespace_the_manifest_asks_for():
 
 
 @pytest.mark.asyncio
+async def test_apply_takes_ownership_of_conflicting_fields_when_asked():
+    api = make_api()
+
+    await api.apply(load_manifests(CLIENT_MANIFEST)[0], force_conflicts=True)
+
+    assert ("force", "true") in patch_call(api).kwargs["query_params"]
+
+
+@pytest.mark.asyncio
 async def test_apply_passes_a_dry_run_through_to_the_server():
     api = make_api()
 
     await api.apply(load_manifests(CLIENT_MANIFEST)[0], dry_run=True)
 
     assert ("dryRun", "All") in patch_call(api).kwargs["query_params"]
+
+
+@pytest.mark.asyncio
+async def test_a_dry_run_reports_a_change_the_resource_version_cannot_show():
+    # Nothing is persisted, so the resource version stays put even though the
+    # manifest would change the labels. The answer has to come from the content.
+    api = make_api(
+        existing={"metadata": {"name": "hello", "resourceVersion": "7", "labels": {"env": "dev"}}},
+        applied={"metadata": {"name": "hello", "resourceVersion": "7", "labels": {"env": "prod"}}},
+    )
+
+    applied = await api.apply(load_manifests(CLIENT_MANIFEST)[0], dry_run=True)
+
+    assert applied.action == "configured"
+
+
+@pytest.mark.asyncio
+async def test_a_dry_run_ignores_fields_the_server_owns():
+    api = make_api(
+        existing={
+            "metadata": {"name": "hello", "resourceVersion": "7", "generation": 3, "managedFields": []},
+            "spec": {"username": "hello"},
+            "status": {"credential": {"name": "hello-client"}},
+        },
+        applied={
+            "metadata": {"name": "hello", "resourceVersion": "7", "generation": 4, "managedFields": [{"a": 1}]},
+            "spec": {"username": "hello"},
+            "status": {},
+        },
+    )
+
+    applied = await api.apply(load_manifests(CLIENT_MANIFEST)[0], dry_run=True)
+
+    assert applied.action == "unchanged"
 
 
 @pytest.mark.asyncio

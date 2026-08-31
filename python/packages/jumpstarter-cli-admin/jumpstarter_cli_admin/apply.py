@@ -1,3 +1,4 @@
+from http import HTTPStatus
 from typing import IO, Optional
 
 import click
@@ -31,6 +32,12 @@ from .k8s import (
     help="Manifest to apply, or '-' to read from stdin. Can be set multiple times.",
 )
 @click.option(
+    "--force-conflicts",
+    is_flag=True,
+    default=False,
+    help="Take ownership of fields another manager holds, instead of reporting the conflict.",
+)
+@click.option(
     "--dry-run",
     is_flag=True,
     default=False,
@@ -43,6 +50,7 @@ from .k8s import (
 @blocking
 async def apply(
     filenames: tuple[IO, ...],
+    force_conflicts: bool,
     dry_run: bool,
     namespace: str,
     kubeconfig: Optional[str],
@@ -64,11 +72,17 @@ async def apply(
 
     try:
         async with ApplyV1Alpha1Api(namespace, kubeconfig, context) as api:
-            applied = await api.apply_all(manifests, dry_run=dry_run)
+            applied = await api.apply_all(manifests, dry_run=dry_run, force_conflicts=force_conflicts)
     except ManifestError as e:
         raise click.ClickException(str(e)) from e
     except ApiException as e:
-        handle_k8s_api_exception(e)
+        try:
+            handle_k8s_api_exception(e)
+        except click.ClickException as error:
+            if e.status == HTTPStatus.CONFLICT and not force_conflicts:
+                # The conflict names the fields; say how to win them on purpose.
+                error.message += "\nRe-run with --force-conflicts to take ownership of those fields."
+            raise
     except ConfigException as e:
         handle_k8s_config_exception(e)
 

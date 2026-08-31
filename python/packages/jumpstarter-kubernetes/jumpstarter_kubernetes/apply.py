@@ -198,7 +198,7 @@ class ApplyV1Alpha1Api(AbstractAsyncCustomObjectApi):
             raise
 
     async def _server_side_apply(
-        self, group, version, plural, name, namespace, manifest: dict, *, dry_run: bool
+        self, group, version, plural, name, namespace, manifest: dict, *, dry_run: bool, force: bool
     ) -> dict:
         """PATCH a resource with a server-side apply, creating it if needed.
 
@@ -219,7 +219,12 @@ class ApplyV1Alpha1Api(AbstractAsyncCustomObjectApi):
                 "name": name,
             }
 
-        query_params = [("fieldManager", FIELD_MANAGER), ("force", "true")]
+        query_params = [("fieldManager", FIELD_MANAGER)]
+        if force:
+            # Take ownership of fields another manager holds. Off by default,
+            # as in kubectl: a conflict means something else is managing the
+            # field, which the caller should see rather than silently win.
+            query_params.append(("force", "true"))
         if dry_run:
             query_params.append(("dryRun", "All"))
 
@@ -235,7 +240,9 @@ class ApplyV1Alpha1Api(AbstractAsyncCustomObjectApi):
             _return_http_data_only=True,
         )
 
-    async def apply(self, manifest: dict, *, dry_run: bool = False) -> V1Alpha1AppliedResource:
+    async def apply(
+        self, manifest: dict, *, dry_run: bool = False, force_conflicts: bool = False
+    ) -> V1Alpha1AppliedResource:
         """Server-side apply one resource and report what it did."""
         validate_manifest(manifest, f"{manifest.get('kind', 'resource')} manifest")
         api_version = manifest["apiVersion"]
@@ -253,35 +260,68 @@ class ApplyV1Alpha1Api(AbstractAsyncCustomObjectApi):
             raise ManifestError(f"{kind} is cluster scoped, remove metadata.namespace")
 
         existing = await self._read(group, version, plural, name, namespace)
-        applied = await self._server_side_apply(group, version, plural, name, namespace, manifest, dry_run=dry_run)
+        applied = await self._server_side_apply(
+            group, version, plural, name, namespace, manifest, dry_run=dry_run, force=force_conflicts
+        )
 
         return V1Alpha1AppliedResource(
             apiVersion=api_version,
             kind=kind,
             name=name,
             namespace=namespace,
-            action=_action_taken(existing, applied),
+            action=_action_taken(existing, applied, dry_run=dry_run),
             resource=applied,
         )
 
-    async def apply_all(self, manifests: list[dict], *, dry_run: bool = False) -> V1Alpha1AppliedResourceList:
+    async def apply_all(
+        self, manifests: list[dict], *, dry_run: bool = False, force_conflicts: bool = False
+    ) -> V1Alpha1AppliedResourceList:
         """Apply resources in the order they were written."""
         applied = []
         for manifest in manifests:
-            applied.append(await self.apply(manifest, dry_run=dry_run))
+            applied.append(await self.apply(manifest, dry_run=dry_run, force_conflicts=force_conflicts))
         return V1Alpha1AppliedResourceList(items=applied)
 
 
-def _action_taken(existing: Optional[dict], applied: dict) -> Literal["created", "configured", "unchanged"]:
-    """Describe an apply by what the cluster did with it.
+def _action_taken(
+    existing: Optional[dict], applied: dict, *, dry_run: bool = False
+) -> Literal["created", "configured", "unchanged"]:
+    """Describe an apply by what the cluster did, or would do, with it.
 
-    A server-side apply that changes nothing leaves the resource version alone,
-    which is how an unchanged re-apply is told apart from a real update.
+    A persisted apply that changes nothing leaves the resource version alone,
+    which is how an unchanged re-apply is told apart from a real update. A dry
+    run is never persisted, so its resource version never moves either — there
+    the answer has to come from comparing what the server says the object would
+    become against what it is now.
     """
     if existing is None:
         return "created"
+    if dry_run:
+        return "unchanged" if _same_content(existing, applied) else "configured"
     before = existing.get("metadata", {}).get("resourceVersion")
     after = applied.get("metadata", {}).get("resourceVersion")
     if before is not None and before == after:
         return "unchanged"
     return "configured"
+
+
+# Set by the server on every write, so they say nothing about whether the
+# manifest changed anything.
+_SERVER_OWNED_METADATA = frozenset(
+    {"resourceVersion", "generation", "managedFields", "creationTimestamp", "uid", "selfLink"}
+)
+
+
+def _same_content(before: dict, after: dict) -> bool:
+    """Whether two versions of a resource differ in anything the user wrote."""
+    return _without_server_fields(before) == _without_server_fields(after)
+
+
+def _without_server_fields(obj: dict) -> dict:
+    trimmed = {key: value for key, value in obj.items() if key != "status"}
+    trimmed["metadata"] = {
+        key: value
+        for key, value in (obj.get("metadata") or {}).items()
+        if key not in _SERVER_OWNED_METADATA
+    }
+    return trimmed

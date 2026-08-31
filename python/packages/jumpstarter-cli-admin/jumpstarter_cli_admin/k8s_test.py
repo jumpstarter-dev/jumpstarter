@@ -40,6 +40,16 @@ def test_passes_through_a_body_that_is_not_json():
         handle_k8s_api_exception(error)
 
 
+@pytest.mark.parametrize("body", ["null", '"just a string"', "[1,2,3]"])
+def test_passes_through_json_that_is_not_a_status(body):
+    # A proxy in front of the API server can answer with valid JSON that is not
+    # a Status object; reading it as one used to raise AttributeError.
+    error = api_exception(502, body)
+
+    with pytest.raises(click.ClickException, match="Server error: "):
+        handle_k8s_api_exception(error)
+
+
 def test_passes_through_a_missing_body():
     error = api_exception(500, None)
 
