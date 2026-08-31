@@ -175,7 +175,7 @@ class ApplyV1Alpha1Api(AbstractAsyncCustomObjectApi):
             raise
 
         for resource in listing.get("resources", []):
-            # Subresources ("exportersets/status") are not applyable kinds.
+            # Subresources ("exportersets/status") are not kinds of their own.
             if "/" in resource.get("name", ""):
                 continue
             if resource.get("kind") == kind:
