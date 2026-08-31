@@ -44,8 +44,11 @@ def _mock_adb_ok():
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")
+# Without this the probe opens a real socket to 15037, so the test would depend
+# on whether the machine running it happens to have an ADB server there.
+@patch("socket.create_connection", side_effect=OSError("refused"))
 @patch("subprocess.run", return_value=_mock_adb_ok())
-def test_init_validates_adb(mock_run, mock_which):
+def test_init_validates_adb(mock_run, mock_conn, mock_which):
     server = AdbServer()
     assert server.adb_path == "/usr/bin/adb"
     assert server.port == 15037
@@ -446,19 +449,19 @@ def test_a_server_we_started_is_killed_on_close(mock_run, mock_conn, _):
 @patch("shutil.which", return_value="/usr/bin/adb")
 @patch("socket.create_connection")
 def test_a_non_adb_listener_is_not_adopted(mock_conn, _):
-    """`adb version` against a plain TCP listener hangs rather than failing.
+    """A plain TCP listener hangs the probe rather than failing it.
 
-    Verified against adb 1.0.41: both `start-server` and `devices` block forever on
-    a non-ADB listener. Adopting it would wedge every later call, so we decline and
-    fall through to starting our own.
+    Verified against adb 1.0.41: `start-server` and `devices` both block forever
+    against a non-ADB listener. Adopting it would wedge every later call, so we
+    decline and fall through to starting our own.
     """
     calls = []
 
     def run(argv, **kwargs):
         calls.append(argv)
-        if argv[1:] == ["version"] and kwargs.get("check") is False:
+        if argv[1:] == ["devices"] and kwargs.get("check") is False:
             # The probe: the socket accepted, but nothing answers as ADB.
-            raise subprocess.TimeoutExpired("adb version", 10)
+            raise subprocess.TimeoutExpired("adb devices", 10)
         return _mock_adb_ok()
 
     with patch("subprocess.run", side_effect=run):
@@ -467,6 +470,31 @@ def test_a_non_adb_listener_is_not_adopted(mock_conn, _):
     # Declined the adoption, so it started its own and owns it.
     assert server._owns_server is True
     assert ["/usr/bin/adb", "start-server"] in calls
+
+
+@patch("shutil.which", return_value="/usr/bin/adb")
+@patch("socket.create_connection")
+def test_the_adoption_probe_asks_the_server_not_the_client(mock_conn, _):
+    """The probe has to be a command the server answers.
+
+    `adb version` reports the local client's own version without contacting the
+    server at all — verified against adb 1.0.41, where it exits 0 with zero
+    connections to the port. Probing with it would adopt any listener.
+    """
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs.get("check")))
+        return _mock_adb_ok()
+
+    with patch("subprocess.run", side_effect=run):
+        server = AdbServer()
+
+    probes = [argv for argv, check in calls if check is False]
+    assert probes == [["/usr/bin/adb", "devices"]]
+    # It answered, so the running server was adopted and left alone.
+    assert server._owns_server is False
+    assert ["/usr/bin/adb", "start-server"] not in [argv for argv, _ in calls]
 
 
 @patch("shutil.which", return_value="/usr/bin/adb")

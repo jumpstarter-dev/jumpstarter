@@ -552,7 +552,9 @@ class AdbClient(DriverClient):
         )
         @click.option(
             "--poll-interval",
-            type=float,
+            # Zero or negative makes anyio.sleep return at once, turning the
+            # hotplug loop into an unthrottled poll of the exporter's ADB server.
+            type=click.FloatRange(min=0, min_open=True),
             default=2.0,
             show_default=True,
             help="attach: seconds between device checks, with --hotplug",

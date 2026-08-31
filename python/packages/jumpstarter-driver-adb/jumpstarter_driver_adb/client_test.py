@@ -513,3 +513,20 @@ def test_a_completed_sleep_keeps_polling():
     client = MagicMock()
     client.portal.call.return_value = None
     assert _sleep_through_portal(client, 0.01) is True
+
+
+def test_poll_interval_must_be_positive():
+    """Zero or negative turns the hotplug loop into an unthrottled poll.
+
+    anyio.sleep(0) returns at once, so the loop would hammer the exporter's ADB
+    server and the gRPC link for the whole session.
+    """
+    from click.testing import CliRunner
+
+    client = _CliClient(["tablet"])
+    runner = CliRunner()
+
+    for bad in ("0", "-1"):
+        result = runner.invoke(AdbClient.cli(client), ["--hotplug", "--poll-interval", bad, "attach"])
+        assert result.exit_code != 0
+        assert "poll-interval" in result.output
