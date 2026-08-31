@@ -54,10 +54,8 @@ logger = logging.getLogger(__name__)
 # Refresh token when less than this many seconds remain
 _TOKEN_REFRESH_THRESHOLD_SECONDS = 120
 
-# Total time to wait for the beforeLease hook, and the initial slice of it spent
-# settling the exporter's current status before announcing that we are waiting.
-HOOK_TIMEOUT = 300.0
-HOOK_PROBE_TIMEOUT = 2.0
+# Total time to wait for the beforeLease hook.
+_HOOK_TIMEOUT: float = 300.0
 
 
 def _run_shell_only(lease, config, command, path: str, motd: str | None = None) -> int:
@@ -343,15 +341,21 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
                             # Uses non-blocking polling instead of streaming for robustness
                             targets = [ExporterStatus.LEASE_READY, ExporterStatus.BEFORE_LEASE_HOOK_FAILED]
 
-                            # The monitor reports no status until its first poll, so settle
-                            # that first: attaching to a lease that is already LEASE_READY
-                            # must not claim to be waiting on a hook that already ran.
-                            result = await monitor.wait_for_any_of(targets, timeout=HOOK_PROBE_TIMEOUT)
+                            # The monitor reports no status until its first poll, so
+                            # wait for that observation before saying anything:
+                            # attaching to a lease that is already LEASE_READY must
+                            # not claim to be waiting on a hook that already ran.
+                            # Waiting on the observation rather than a fixed settle
+                            # time keeps that true on a slow or distant link, where a
+                            # wall-clock probe would expire before the first answer.
+                            deadline = anyio.current_time() + _HOOK_TIMEOUT
+                            await monitor.wait_for_first_observation(timeout=_HOOK_TIMEOUT)
+                            result = monitor.current_status if monitor.current_status in targets else None
 
                             if result is None and not monitor.connection_lost:
                                 logger.info("Waiting for beforeLease hook to complete...")
                                 result = await monitor.wait_for_any_of(
-                                    targets, timeout=HOOK_TIMEOUT - HOOK_PROBE_TIMEOUT
+                                    targets, timeout=max(0.0, deadline - anyio.current_time())
                                 )
 
                             if result == ExporterStatus.BEFORE_LEASE_HOOK_FAILED:
