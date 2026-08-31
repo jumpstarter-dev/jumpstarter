@@ -226,3 +226,47 @@ class TestLogHandlerStream:
         finally:
             root.handlers[:] = saved_handlers
             root.setLevel(saved_level)
+
+    def test_a_surviving_handler_does_not_suppress_the_cli_handler(self, capsys) -> None:
+        """A handler the CLI leaves alone must not cost it its own output.
+
+        basicConfig does nothing when the root logger already has handlers, so
+        relying on it meant an unrelated file handler silenced the CLI's stderr
+        output and left --log-level with no effect at all.
+        """
+        root = logging.getLogger()
+        saved_handlers, saved_level = root.handlers[:], root.level
+        root.handlers.clear()
+        kept = logging.StreamHandler(io.StringIO())
+        root.addHandler(kept)
+        try:
+            _opt_log_level_callback(None, None, "DEBUG")
+            # The handler that was there is still there...
+            assert kept in root.handlers
+            # ...and so is ours, with the level actually applied.
+            assert root.level == logging.DEBUG
+            logging.getLogger("jumpstarter.client.lease").debug("a debug line")
+            for handler in root.handlers:
+                handler.flush()
+            captured = capsys.readouterr()
+        finally:
+            root.handlers[:] = saved_handlers
+            root.setLevel(saved_level)
+
+        assert "a debug line" in captured.err
+        assert captured.out == ""
+
+    def test_the_cli_handler_is_not_added_twice(self) -> None:
+        """The callback is eager and can run more than once in one process."""
+        root = logging.getLogger()
+        saved_handlers, saved_level = root.handlers[:], root.level
+        root.handlers.clear()
+        try:
+            _opt_log_level_callback(None, None, "INFO")
+            _opt_log_level_callback(None, None, "DEBUG")
+            assert len(root.handlers) == 1
+            # The second invocation still applies its level.
+            assert root.level == logging.DEBUG
+        finally:
+            root.handlers[:] = saved_handlers
+            root.setLevel(saved_level)
