@@ -91,20 +91,32 @@ class V1Alpha1Exporter(JsonBaseModel):
     def rich_add_rows(self, table, devices: bool = False):
         status = self.status.exporter_status if self.status else "Unknown"
         if devices:
-            if self.status is not None:
-                for d in self.status.devices:
-                    labels = []
-                    if d.labels is not None:
-                        for label in d.labels:
-                            labels.append(f"{label}:{str(d.labels[label])}")
-                    table.add_row(
-                        self.metadata.name,
-                        status or "Unknown",
-                        self.status.endpoint,
-                        time_since(self.metadata.creation_timestamp),
-                        ",".join(labels),
-                        d.uuid,
-                    )
+            if not (self.status and self.status.devices):
+                # An exporter with no devices to enumerate — never run, or not
+                # reconciled yet — still exists, so it still gets a row. Without
+                # this it disappears from the listing entirely.
+                table.add_row(
+                    self.metadata.name,
+                    status or "Unknown",
+                    self.status.endpoint if self.status else "",
+                    time_since(self.metadata.creation_timestamp),
+                    "",
+                    "",
+                )
+                return
+            for d in self.status.devices:
+                labels = []
+                if d.labels is not None:
+                    for label in d.labels:
+                        labels.append(f"{label}:{str(d.labels[label])}")
+                table.add_row(
+                    self.metadata.name,
+                    status or "Unknown",
+                    self.status.endpoint,
+                    time_since(self.metadata.creation_timestamp),
+                    ",".join(labels),
+                    d.uuid,
+                )
 
         else:
             table.add_row(

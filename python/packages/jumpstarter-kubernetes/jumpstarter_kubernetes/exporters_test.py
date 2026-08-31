@@ -446,3 +446,32 @@ def test_exporter_rich_add_rows_without_status():
     exporter.rich_add_rows(mock_table)
     name, status, endpoint, devices, _age = mock_table.add_row.call_args.args
     assert (name, status, endpoint, devices) == ("fresh-exporter", "Unknown", "", "0")
+
+
+def test_exporter_rich_add_rows_devices_without_status():
+    """A status-less exporter is still listed when devices are requested"""
+    exporter = V1Alpha1Exporter(
+        api_version="jumpstarter.dev/v1alpha1",
+        kind="Exporter",
+        metadata=V1ObjectMeta(name="fresh-exporter", namespace="default", creation_timestamp="2021-10-01T00:00:00Z"),
+        status=None,
+    )
+    mock_table = MagicMock()
+    exporter.rich_add_rows(mock_table, devices=True)
+    name, status, endpoint, _age, labels, uuid = mock_table.add_row.call_args.args
+    assert (name, status, endpoint, labels, uuid) == ("fresh-exporter", "Unknown", "", "", "")
+
+
+def test_exporter_rich_add_rows_devices_when_it_has_none():
+    """An exporter that has never run has no devices, but has not disappeared"""
+    exporter = V1Alpha1Exporter(
+        api_version="jumpstarter.dev/v1alpha1",
+        kind="Exporter",
+        metadata=V1ObjectMeta(name="never-run", namespace="default", creation_timestamp="2021-10-01T00:00:00Z"),
+        status=V1Alpha1ExporterStatus(endpoint="https://e", devices=[]),
+    )
+    mock_table = MagicMock()
+    exporter.rich_add_rows(mock_table, devices=True)
+    assert mock_table.add_row.call_count == 1
+    name, status, endpoint, _age, labels, uuid = mock_table.add_row.call_args.args
+    assert (name, status, endpoint, labels, uuid) == ("never-run", "Unknown", "https://e", "", "")
