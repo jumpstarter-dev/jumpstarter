@@ -209,6 +209,98 @@ func (r *LeaseReconciler) reconcileStatusBeginEndTimes(
 	return nil
 }
 
+// candidateExporters resolves the exporters a lease could be given: the one it
+// names, or every exporter its selector matches.
+//
+// It reports decided=true when it has already settled the lease's status and
+// the caller should stop — the named exporter is missing, does not match, or is
+// disabled; every match is disabled; or nothing matches yet and a pool can
+// provide one.
+func (r *LeaseReconciler) candidateExporters(
+	ctx context.Context,
+	result *ctrl.Result,
+	lease *jumpstarterdevv1alpha1.Lease,
+	selector labels.Selector,
+) ([]jumpstarterdevv1alpha1.Exporter, bool, error) {
+	if lease.Spec.ExporterRef != nil {
+		var exporter jumpstarterdevv1alpha1.Exporter
+		if err := r.Get(ctx, types.NamespacedName{
+			Namespace: lease.Namespace,
+			Name:      lease.Spec.ExporterRef.Name,
+		}, &exporter); err != nil {
+			if k8serrors.IsNotFound(err) {
+				lease.SetStatusUnsatisfiable(
+					"ExporterNotFound",
+					"Requested exporter %s was not found",
+					lease.Spec.ExporterRef.Name,
+				)
+				return nil, true, nil
+			}
+			return nil, false, fmt.Errorf("candidateExporters: failed to get requested exporter: %w", err)
+		}
+		if !selector.Empty() && !selector.Matches(labels.Set(exporter.Labels)) {
+			lease.SetStatusUnsatisfiable(
+				"SelectorMismatch",
+				"Requested exporter %s does not match selector %s",
+				exporter.Name,
+				metav1.FormatLabelSelector(&lease.Spec.Selector),
+			)
+			return nil, true, nil
+		}
+		// Check if the explicitly requested exporter is disabled
+		if !exporter.IsEnabled() && !lease.Spec.AllowDisabled {
+			lease.SetStatusUnsatisfiable(
+				"ExporterDisabled",
+				"Requested exporter %s is disabled. "+
+					"To lease a disabled exporter, set spec.allowDisabled: true on the Lease, "+
+					"or use --allow-disabled with jmp create lease or jmp shell",
+				exporter.Name,
+			)
+			return nil, true, nil
+		}
+		return []jumpstarterdevv1alpha1.Exporter{exporter}, false, nil
+	}
+
+	// List all exporters matching selector
+	listed, err := r.ListMatchingExporters(ctx, lease, selector)
+	if err != nil {
+		return nil, false, fmt.Errorf("candidateExporters: failed to list matching exporters: %w", err)
+	}
+	if len(listed.Items) == 0 {
+		// Nothing matches yet, which is the normal state of a pool that
+		// keeps nothing warm. An exporter set that could provision a
+		// match makes this lease pending rather than unsatisfiable —
+		// and pending is what the set counts as demand to scale up on.
+		// Calling it unsatisfiable here ends the lease in this same
+		// reconcile, so the set would never see it.
+		set, err := r.exporterSetCanProvision(ctx, lease, selector)
+		if err != nil {
+			return nil, false, fmt.Errorf("candidateExporters: %w", err)
+		}
+		if set != "" {
+			lease.SetStatusPending(
+				"Provisioning",
+				"No exporter matches the selector yet; exporter set %s can provision one",
+				set,
+			)
+			result.RequeueAfter = pendingRequeueAfter(lease)
+			return nil, true, nil
+		}
+	}
+
+	// Filter out disabled exporters from selector-based listing
+	matchingExporters := filterOutDisabledExporters(listed.Items)
+	if len(matchingExporters) == 0 && len(listed.Items) > 0 {
+		lease.SetStatusUnsatisfiable(
+			"AllDisabled",
+			"All %d exporters matching the selector are disabled",
+			len(listed.Items),
+		)
+		return nil, true, nil
+	}
+	return matchingExporters, false, nil
+}
+
 // Also manages LeaseConditionTypeUnsatisfiable and LeaseConditionTypePending
 func (r *LeaseReconciler) reconcileStatusExporterRef(
 	ctx context.Context,
@@ -247,81 +339,12 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 			return nil
 		}
 
-		var matchingExporters []jumpstarterdevv1alpha1.Exporter
-		if lease.Spec.ExporterRef != nil {
-			var exporter jumpstarterdevv1alpha1.Exporter
-			if err := r.Get(ctx, types.NamespacedName{
-				Namespace: lease.Namespace,
-				Name:      lease.Spec.ExporterRef.Name,
-			}, &exporter); err != nil {
-				if k8serrors.IsNotFound(err) {
-					lease.SetStatusUnsatisfiable(
-						"ExporterNotFound",
-						"Requested exporter %s was not found",
-						lease.Spec.ExporterRef.Name,
-					)
-					return nil
-				}
-				return fmt.Errorf("reconcileStatusExporterRef: failed to get requested exporter: %w", err)
-			}
-			if !selector.Empty() && !selector.Matches(labels.Set(exporter.Labels)) {
-				lease.SetStatusUnsatisfiable(
-					"SelectorMismatch",
-					"Requested exporter %s does not match selector %s",
-					exporter.Name,
-					metav1.FormatLabelSelector(&lease.Spec.Selector),
-				)
-				return nil
-			}
-			// Check if the explicitly requested exporter is disabled
-			if !exporter.IsEnabled() && !lease.Spec.AllowDisabled {
-				lease.SetStatusUnsatisfiable(
-					"ExporterDisabled",
-					"Requested exporter %s is disabled. "+
-						"To lease a disabled exporter, set spec.allowDisabled: true on the Lease, "+
-						"or use --allow-disabled with jmp create lease or jmp shell",
-					exporter.Name,
-				)
-				return nil
-			}
-			matchingExporters = []jumpstarterdevv1alpha1.Exporter{exporter}
-		} else {
-			// List all exporters matching selector
-			listed, err := r.ListMatchingExporters(ctx, lease, selector)
-			if err != nil {
-				return fmt.Errorf("reconcileStatusExporterRef: failed to list matching exporters: %w", err)
-			}
-			if len(listed.Items) == 0 {
-				// Nothing matches yet, which is the normal state of a pool that
-				// keeps nothing warm. An exporter set that could provision a
-				// match makes this lease pending rather than unsatisfiable —
-				// and pending is what the set counts as demand to scale up on.
-				// Calling it unsatisfiable here ends the lease in this same
-				// reconcile, so the set would never see it.
-				set, err := r.exporterSetCanProvision(ctx, lease, selector)
-				if err != nil {
-					return fmt.Errorf("reconcileStatusExporterRef: %w", err)
-				}
-				if set != "" {
-					lease.SetStatusPending(
-						"Provisioning",
-						"No exporter matches the selector yet; exporter set %s can provision one",
-						set,
-					)
-					result.RequeueAfter = pendingRequeueAfter(lease)
-					return nil
-				}
-			}
-			// Filter out disabled exporters from selector-based listing
-			matchingExporters = filterOutDisabledExporters(listed.Items)
-			if len(matchingExporters) == 0 && len(listed.Items) > 0 {
-				lease.SetStatusUnsatisfiable(
-					"AllDisabled",
-					"All %d exporters matching the selector are disabled",
-					len(listed.Items),
-				)
-				return nil
-			}
+		matchingExporters, decided, err := r.candidateExporters(ctx, result, lease, selector)
+		if err != nil {
+			return err
+		}
+		if decided {
+			return nil
 		}
 
 		approvedExporters, unmatchedDescriptions, err := r.attachMatchingPolicies(ctx, lease, matchingExporters)
