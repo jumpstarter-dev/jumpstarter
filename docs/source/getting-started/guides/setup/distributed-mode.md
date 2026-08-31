@@ -89,6 +89,78 @@ development purposes, and saves the configuration locally in
 $ jmp admin create client hello --save --unsafe --insecure-tls
 ```
 
+### Inspect Exporters and Leases
+
+List the {term}`exporter`s your client can reach, to find one to select:
+
+```console
+$ jmp get exporters
+NAME                 LABELS
+example-distributed  foo=bar
+```
+
+`jmp describe` shows one resource in full, including the labels you select on
+and the {term}`lease` holding it, if any:
+
+```console
+$ jmp describe exporter example-distributed
+Name:       example-distributed
+Namespace:  jumpstarter-lab
+Labels:
+  foo=bar
+Online:   yes
+Status:   AVAILABLE
+Enabled:  yes
+Lease:  <none>
+```
+
+Describing a {term}`lease` reports its conditions, which is the quickest way to
+see why one is still waiting:
+
+```console
+$ jmp describe lease 01a05822-e378-71cc-a98c-a216ad4a9432
+Name:                  01a05822-e378-71cc-a98c-a216ad4a9432
+Namespace:             jumpstarter-lab
+Selector:              foo=bar
+Exporter:              example-distributed
+Client:                hello
+Status:                In-Use
+Duration:              0:05:00
+Effective Begin Time:  2026-08-31 10:04:36 EDT
+Effective End Time:    <none>
+Tags:  <none>
+Context:  <none>
+Conditions:
+  Type   Status  Reason  Message                                       Last Transition Time
+  ----   ------  ------  -------                                       --------------------
+  Ready  True    Ready   An exporter has been acquired for the client  2026-08-31 14:04:36 UTC
+```
+
+Describing a client reads the local configuration rather than the cluster, so it
+works without a connection and reports whether the client's token is still valid:
+
+```console
+$ jmp describe client hello
+Alias:      hello
+Path:       /home/user/.config/jumpstarter/clients/hello.yaml
+Current:    yes
+Name:       hello
+Namespace:  jumpstarter-lab
+Endpoint:   grpc.jumpstarter.example.com:443
+TLS:
+  CA:        configured
+  Insecure:  yes
+Drivers:
+  Allow:   <none>
+  Unsafe:  yes
+Token:
+  Expiry:  2027-08-30 02:00:56 UTC
+  Status:  valid (8723h 53m remaining)
+Refresh Token Stored:  no
+```
+
+Add `-o json` or `-o yaml` to any of these for machine-readable output.
+
 ### Spawn an Exporter Shell
 
 Interact with your distributed {term}`exporter` using the {term}`exporter shell` functionality

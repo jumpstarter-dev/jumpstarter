@@ -11,7 +11,7 @@ from jumpstarter_protocol import kubernetes_pb2
 
 from jumpstarter_cli.describe import describe
 
-from jumpstarter.client.grpc import Exporter, Lease
+from jumpstarter.client.grpc import Exporter, Lease, LeaseList
 from jumpstarter.common import ExporterStatus
 from jumpstarter.common.exceptions import ConnectionError
 
@@ -37,14 +37,14 @@ def _make_condition(type="Ready", status="True", reason="Ready", message="lease 
     return condition
 
 
-def _make_lease(name="lease-1", conditions=None, **kwargs):
+def _make_lease(name="lease-1", conditions=None, exporter="exporter-1", **kwargs):
     return Lease(
         namespace="default",
         name=name,
         selector="board=rpi4",
         duration=timedelta(minutes=30),
         client="my-client",
-        exporter="exporter-1",
+        exporter=exporter,
         conditions=conditions if conditions is not None else [_make_condition()],
         effective_begin_time=datetime(2023, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
         tags={"build": "1234"},
@@ -63,6 +63,18 @@ def _make_exporter(lease=None):
         enabled=True,
         lease=lease,
     )
+
+
+def _exporter_config(exporter=None, leases=()):
+    """A client config that answers the way the real one does.
+
+    GetExporter never carries a lease, so a test that hangs one on the exporter
+    is testing something the server cannot do.
+    """
+    config = MagicMock()
+    config.get_exporter.return_value = exporter if exporter is not None else _make_exporter()
+    config.list_leases.return_value = LeaseList(leases=list(leases), next_page_token=None)
+    return config
 
 
 def _patch_remote_config(config):
@@ -104,8 +116,7 @@ class TestDescribeExporter:
         self.runner = CliRunner()
 
     def test_pretty_output(self):
-        config = MagicMock()
-        config.get_exporter.return_value = _make_exporter()
+        config = _exporter_config()
         with _patch_remote_config(config):
             result = self.runner.invoke(describe, ["exporter", "exporter-1", "--client", "test"])
         assert result.exit_code == 0, result.output
@@ -121,8 +132,8 @@ class TestDescribeExporter:
         config.get_exporter.assert_called_once_with("exporter-1")
 
     def test_pretty_output_with_lease(self):
-        config = MagicMock()
-        config.get_exporter.return_value = _make_exporter(lease=_make_lease())
+        # The lease comes from ListLeases, not from the exporter itself.
+        config = _exporter_config(leases=[_make_lease()])
         with _patch_remote_config(config):
             result = self.runner.invoke(describe, ["exporter", "exporter-1", "--client", "test"])
         assert result.exit_code == 0, result.output
@@ -131,12 +142,20 @@ class TestDescribeExporter:
         assert "my-client" in result.output
         assert "In-Use" in result.output
         assert "0:30:00" in result.output
+        config.list_leases.assert_called_once_with(only_active=True)
+
+    def test_a_lease_on_another_exporter_is_not_reported(self):
+        config = _exporter_config(leases=[_make_lease(name="lease-2", exporter="exporter-2")])
+        with _patch_remote_config(config):
+            result = self.runner.invoke(describe, ["exporter", "exporter-1", "--client", "test"])
+        assert result.exit_code == 0, result.output
+        assert "Lease:  <none>" in result.output
+        assert "lease-2" not in result.output
 
     def test_pretty_output_deprecated_labels(self):
         exporter = _make_exporter()
         exporter.deprecated_labels = {"old-key": "Use new-key instead"}
-        config = MagicMock()
-        config.get_exporter.return_value = exporter
+        config = _exporter_config(exporter)
         with _patch_remote_config(config):
             result = self.runner.invoke(describe, ["exporter", "exporter-1", "--client", "test"])
         assert result.exit_code == 0, result.output
@@ -144,8 +163,7 @@ class TestDescribeExporter:
         assert "old-key=Use new-key instead" in result.output
 
     def test_json_output(self):
-        config = MagicMock()
-        config.get_exporter.return_value = _make_exporter()
+        config = _exporter_config(leases=[_make_lease()])
         with _patch_remote_config(config):
             result = self.runner.invoke(describe, ["exporter", "exporter-1", "--client", "test", "-o", "json"])
         assert result.exit_code == 0, result.output
@@ -154,9 +172,10 @@ class TestDescribeExporter:
         assert data["namespace"] == "default"
         assert data["labels"] == {"board": "rpi4", "env": "test"}
         assert data["online"] is True
+        assert data["lease"]["name"] == "lease-1"
 
     def test_unknown_name(self):
-        config = MagicMock()
+        config = _exporter_config()
         config.get_exporter.side_effect = ConnectionError("exporter 'missing' not found")
         with _patch_remote_config(config):
             result = self.runner.invoke(describe, ["exporter", "missing", "--client", "test"])
