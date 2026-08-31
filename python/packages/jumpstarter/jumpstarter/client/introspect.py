@@ -252,8 +252,16 @@ def describe_client(client: Any) -> dict[str, Any]:
     (including when the root client itself is a stub).
     """
     cli_tree = None
+    # Inherited counts: QemuFlasherClient, for one, defines no cli of its own and
+    # gets a real one from FlasherClientInterface, so looking only at
+    # type(client).__dict__ would drop the CLI of every such driver.
     if not isinstance(client, StubDriverClient) and getattr(type(client), "cli", None) is not None:
-        cli_tree = walk_click_tree(client.cli())
+        try:
+            cli_tree = walk_click_tree(client.cli())
+        except Exception:
+            # A driver whose cli() is broken should cost us its CLI tree, not the
+            # whole description — the driver listing below is still worth having.
+            logger.warning("could not build the CLI tree for %s", type(client).__name__, exc_info=True)
     return {
         "drivers": list_drivers(client),
         "cli_tree": cli_tree,
@@ -271,7 +279,11 @@ async def _connect_lease(config: ClientConfigV1Alpha1, lease_name: str, portal: 
         selector=None,
         exporter_name=None,
         lease_name=lease_name,
-        duration=timedelta(minutes=30),
+        # Attaching by name never reaches Lease._create, and with selector None
+        # the "selector changed, make a new one" branch cannot fire either, so
+        # no duration is ever sent to the controller. Naming 30 minutes here
+        # only suggested this call could extend a lease that it cannot.
+        duration=timedelta(0),
         portal=portal,
     ) as lease:
         async with lease.serve_unix_async() as path:

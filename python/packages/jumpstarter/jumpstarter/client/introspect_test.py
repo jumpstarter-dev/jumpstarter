@@ -212,6 +212,32 @@ class TestDescribeClient:
         assert result["cli_tree"] is None
         assert result["drivers"][0]["path"] == "client"
 
+    def test_an_inherited_cli_still_counts(self):
+        """A driver client is free to inherit its CLI rather than define one.
+
+        QemuFlasherClient is a real example: it has no cli of its own and takes
+        one from FlasherClientInterface. Looking only at type(client).__dict__
+        would drop the CLI tree for every such driver.
+        """
+
+        class InheritsCli(FakeCompositeClient):
+            pass
+
+        assert "cli" not in InheritsCli.__dict__
+        result = describe_client(InheritsCli())
+        assert result["cli_tree"]["name"] == "j"
+
+    def test_a_broken_cli_costs_only_the_cli_tree(self):
+        """The driver listing is worth having even when cli() raises."""
+
+        class BrokenCli(FakeCompositeClient):
+            def cli(self):
+                raise RuntimeError("this driver's cli is broken")
+
+        result = describe_client(BrokenCli())
+        assert result["cli_tree"] is None
+        assert [d["path"] for d in result["drivers"]] != []
+
     def test_composite_client_e2e(self):
         from jumpstarter_driver_composite.driver import Composite
         from jumpstarter_driver_power.driver import MockPower
