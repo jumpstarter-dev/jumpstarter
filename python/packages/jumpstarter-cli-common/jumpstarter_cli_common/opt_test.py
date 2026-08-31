@@ -1,6 +1,8 @@
 """Tests for opt.py utilities."""
 
+import io
 import logging
+import sys
 
 import click
 import pytest
@@ -141,7 +143,7 @@ class TestLogHandlerStream:
         """Logs must not corrupt the JSON/YAML payload written to stdout.
 
         `-o json` consumers (IDE integrations, CI) parse stdout; a log line
-        interleaved there makes the output unparseable.
+        interleaved there leaves the output impossible to parse.
         """
         root = logging.getLogger()
         saved_handlers, saved_level = root.handlers[:], root.level
@@ -158,3 +160,46 @@ class TestLogHandlerStream:
 
         assert "Lease acquired" in captured.err
         assert captured.out == ""
+
+    def test_logs_stay_off_stdout_when_a_handler_is_already_installed(self, capsys) -> None:
+        """A root handler installed before the CLI ran must not keep stdout.
+
+        logging.basicConfig does nothing when the root logger already has
+        handlers, so simply configuring a stderr handler is not enough: the
+        pre-existing one would go on writing into the -o json payload.
+        """
+        root = logging.getLogger()
+        saved_handlers, saved_level = root.handlers[:], root.level
+        root.handlers.clear()
+        # Something configured logging before us, pointing at stdout.
+        root.addHandler(logging.StreamHandler(sys.stdout))
+        try:
+            _opt_log_level_callback(None, None, "INFO")
+            logging.getLogger("jumpstarter.client.lease").info("Lease acquired successfully!")
+            for handler in root.handlers:
+                handler.flush()
+            captured = capsys.readouterr()
+        finally:
+            root.handlers[:] = saved_handlers
+            root.setLevel(saved_level)
+
+        assert captured.out == ""
+        assert "Lease acquired" in captured.err
+
+    def test_unrelated_handlers_are_left_alone(self) -> None:
+        """Only stdout writers are detached; other handlers are not ours to remove.
+
+        pytest's own caplog handler lives on the root logger, and so may a
+        file handler the user configured.
+        """
+        root = logging.getLogger()
+        saved_handlers, saved_level = root.handlers[:], root.level
+        root.handlers.clear()
+        elsewhere = logging.StreamHandler(io.StringIO())
+        root.addHandler(elsewhere)
+        try:
+            _opt_log_level_callback(None, None, "INFO")
+            assert elsewhere in root.handlers
+        finally:
+            root.handlers[:] = saved_handlers
+            root.setLevel(saved_level)

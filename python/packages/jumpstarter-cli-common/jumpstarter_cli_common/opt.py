@@ -29,6 +29,30 @@ class SourcePrefixFormatter(logging.Formatter):
         return super().format(record)
 
 
+def _handler_stream(handler: logging.Handler):
+    """The stream a handler writes to, or None when it cannot be determined."""
+    stream = getattr(handler, "stream", None)
+    if stream is not None:
+        return stream
+    # RichHandler writes through a Console rather than holding a stream.
+    console = getattr(handler, "console", None)
+    return getattr(console, "file", None)
+
+
+def _detach_stdout_handlers(root: logging.Logger) -> None:
+    """Remove root handlers that write to stdout.
+
+    basicConfig does nothing at all when the root logger already has handlers,
+    so configuring ours is not enough: a handler installed before the CLI ran
+    would keep writing log lines into the payload that -o json/yaml puts on
+    stdout. Only stdout writers are detached — anything else on the root
+    logger belongs to whoever put it there.
+    """
+    for handler in list(root.handlers):
+        if _handler_stream(handler) is sys.stdout:
+            root.removeHandler(handler)
+
+
 def _opt_log_level_callback(ctx, param, value):
     traceback.install()
     # there is no way to determine if the command is invoked for jmp run or something else at this
@@ -42,6 +66,7 @@ def _opt_log_level_callback(ctx, param, value):
     else:
         # Logs go to stderr so they never interleave with the machine-readable
         # payload that -o json/yaml writes to stdout.
+        _detach_stdout_handlers(logging.getLogger())
         handler = RichHandler(console=Console(stderr=True), show_path=False)
         handler.setFormatter(SourcePrefixFormatter())
         basicConfig = partial(logging.basicConfig, handlers=[handler])
@@ -128,8 +153,7 @@ opt_insecure_tls_config = opt_insecure_tls
 def confirm_insecure_tls(insecure_tls: bool, nointeractive: bool):
     if nointeractive is False and insecure_tls:
         if not click.confirm(
-            "Insecure TLS mode is enabled. Certificate verification will be"
-            " disabled for HTTPS connections. Continue?"
+            "Insecure TLS mode is enabled. Certificate verification will be disabled for HTTPS connections. Continue?"
         ):
             click.echo("Aborting.")
             raise click.Abort()
@@ -187,11 +211,7 @@ opt_nointeractive = click.option(
 
 def _normalize_tokens(items: list[str], normalize_case: bool) -> list[str]:
     """Extract and normalize tokens from comma-separated values."""
-    tokens = (
-        token.strip().lower() if normalize_case else token.strip()
-        for item in items
-        for token in item.split(',')
-    )
+    tokens = (token.strip().lower() if normalize_case else token.strip() for item in items for token in item.split(","))
     return [token for token in tokens if token]
 
 
@@ -206,9 +226,7 @@ def _validate_tokens(tokens: list[str], allowed_values: set[str], ctx, param) ->
     if invalid:
         allowed_list = ", ".join(sorted(allowed_values))
         raise click.BadParameter(
-            f"Invalid value(s) {invalid}. Allowed values are: {allowed_list}",
-            ctx=ctx,
-            param=param
+            f"Invalid value(s) {invalid}. Allowed values are: {allowed_list}", ctx=ctx, param=param
         )
 
 
@@ -217,7 +235,7 @@ def parse_comma_separated(
     param: click.Parameter | None,
     value: str | tuple[str, ...] | None,
     allowed_values: set[str] | None = None,
-    normalize_case: bool = True
+    normalize_case: bool = True,
 ) -> list[str]:
     """Generic comma-separated value parser with validation and normalization.
 
@@ -256,10 +274,7 @@ def parse_comma_separated(
 
 
 def opt_comma_separated(
-    name: str,
-    allowed_values: set[str] | None = None,
-    normalize_case: bool = True,
-    help_text: str | None = None
+    name: str, allowed_values: set[str] | None = None, normalize_case: bool = True, help_text: str | None = None
 ):
     """Create a click option for comma-separated values with optional validation.
 
@@ -284,10 +299,4 @@ def opt_comma_separated(
         else:
             help_text = "Comma-separated values (comma-separated or repeated)"
 
-    return click.option(
-        f"--{name}",
-        f"{name}_options",
-        callback=callback,
-        multiple=True,
-        help=help_text
-    )
+    return click.option(f"--{name}", f"{name}_options", callback=callback, multiple=True, help=help_text)
