@@ -726,6 +726,7 @@ async def test_list_exporters_with_leases_preserves_exporter_fields():
     assert leased.status == ExporterStatus.LEASE_READY
     assert leased.enabled is True
     assert leased.online is True
+    assert leased.labels == {"env": "test"}
     assert leased.deprecated_labels == {"old": "label"}
     assert offline.lease is None
     assert offline.status == ExporterStatus.OFFLINE
