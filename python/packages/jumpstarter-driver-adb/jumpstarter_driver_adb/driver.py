@@ -135,8 +135,13 @@ class AdbServer(TcpNetwork):
         is *not* adb holding the port is the dangerous case: `adb start-server` and
         `adb devices` both block forever against such a listener rather than failing
         (verified against a plain TCP listener), which would hang exporter startup.
-        So we connect first, then confirm the peer speaks ADB by asking it for its
-        version under a timeout.
+        So we connect first, then ask the peer something only a server can answer.
+
+        That question has to be `devices`, not `version`: `adb version` reports the
+        local client's own version without contacting the server at all (verified —
+        it exits 0 with zero connections to the port), so it would accept any
+        listener. `devices` does contact the server, which answers it immediately,
+        while a non-ADB listener leaves it to hit the timeout below.
         """
         try:
             with socket.create_connection((self.host, self.port), timeout=2):
@@ -146,7 +151,7 @@ class AdbServer(TcpNetwork):
 
         try:
             result = subprocess.run(
-                [self.adb_path, "version"],
+                [self.adb_path, "devices"],
                 check=False,
                 capture_output=True,
                 text=True,

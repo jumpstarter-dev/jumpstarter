@@ -7,7 +7,7 @@
 Devices are plugged into the **exporter** over USB. Jumpstarter moves the ADB
 protocol to your machine; ADB and Android Studio do everything else.
 
-```
+```text
 DUT ──USB──▶ EXPORTER ──Jumpstarter tunnel──▶ YOU
              (owns the USB                    (your own adb,
               connection)                      Studio, tradefed…)
@@ -87,7 +87,7 @@ By default the driver therefore **adopts** a server already on its port, and lea
 it running at teardown rather than killing a server other processes are using. You
 will see:
 
-```
+```text
 adopting the ADB server already listening on 127.0.0.1:15037; it owns the
 connected devices, and this driver will leave it running
 ```
@@ -176,7 +176,7 @@ to it, which is exactly wrong when an IDE is running.
 
 #### How `attach` works
 
-```
+```text
 EXPORTER   adb server (dynamic — it already knows what is plugged in)
              │  adb forward tcp:<slot> tcp:5555      ← per device, on demand
              ↓
