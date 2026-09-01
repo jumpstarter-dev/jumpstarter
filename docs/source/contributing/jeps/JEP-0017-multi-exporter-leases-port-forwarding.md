@@ -1046,6 +1046,16 @@ guest-side shim means the Bluetooth stack being exercised is not the one that
 ships, invalidating precisely the pairing and handover behavior these tests
 exist to verify.
 
+Worth noting that option 2 is an instance of a general pattern rather than a
+Bluetooth special case. What a bench needs is a **counterparty component**:
+something that presents itself to the DUT as whatever the DUT expects on the
+other side of the medium. For Bluetooth that is a controller shared by two
+hosts; for a vehicle bus it is a *restbus* — a simulation of the remaining
+ECUs, a long-established practice in automotive integration testing. Both are
+ordinary `provides` ports under this design, so the same forward machinery
+serves them and no medium-specific mechanism is required. Integrating a
+concrete restbus is future work (see Future Possibilities).
+
 Two caveats are carried rather than hidden. Bumble's netsim controller mode
 is documented against the Android emulator, not Cuttlefish, so pointing a CVD
 at an external controller is unverified (see Unresolved Questions). And a
@@ -1840,6 +1850,23 @@ Not part of this proposal:
   additive `FRAME_TYPE_DATAGRAM` extension to `RouterService.Stream` (and,
   further out, QUIC unreliable datagrams) is a separate protocol JEP, for
   which Phase 4 is the most compelling justification.
+- **Vehicle-bus counterparty integration.** The restbus pattern described in
+  DD-9 has mature tooling behind it, and a broker that exposes CAN, LIN,
+  FlexRay, and Automotive Ethernet over a gRPC socket is already a `provides`
+  port needing nothing new from this JEP. RemotiveLabs is the obvious
+  candidate — RemotiveBroker plus RemotiveTopology's DBC/ARXML-driven restbus
+  — and it composes with the automotive drivers Jumpstarter already ships
+  (`can`, `doip`, `someip`, `uds`, `xcp`, `obd`) as the counterparty they
+  talk to rather than a replacement for any of them. Their AAOS emulator
+  integration, which feeds VHAL from broker signals, suggests a three-member
+  bench worth building eventually: a virtual head unit driven by real vehicle
+  signals, a restbus supplying the rest of the vehicle, and a phone for
+  projection, with every pairwise connection an ordinary forward. **This is
+  deliberately out of scope here and should get its own JEP** — the broker is
+  a commercial product, so a driver is an integration against something the
+  user licenses rather than a dependency this project can ship, and that
+  distinction deserves its own design discussion rather than a line in this
+  one's acceptance criteria.
 - **Jumpstarter under ATS** — a Mobile Harness `Device` or Mobly-controller
   shim backed by a Jumpstarter lease, so Google's results pipeline keeps
   working while gaining non-Android and cross-host devices. Complements
