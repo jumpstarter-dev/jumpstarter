@@ -144,9 +144,16 @@ def delete_client_config(name: str, output: PathOutputType):
 
 @config_client.command("list", short_help="List available client configurations.")
 @opt_output_all
+@click.option(
+    "--show-credentials",
+    is_flag=True,
+    default=False,
+    help="Include tokens in json/yaml output instead of redacting them.",
+)
 @handle_exceptions
-def list_client_configs(output: OutputType):
+def list_client_configs(output: OutputType, show_credentials: bool):
     configs = ClientConfigV1Alpha1.list()
+    configs.include_credentials = show_credentials
 
     model_print(configs, output)
 

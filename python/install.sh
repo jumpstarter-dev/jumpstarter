@@ -25,7 +25,10 @@ fi
 INSTALL_DIR="${INSTALL_DIR:-${HOME}/.local/jumpstarter}"
 VENV_DIR="${VENV_DIR:-${INSTALL_DIR}/venv}"
 SET_SCRIPT="${INSTALL_DIR}/set"
+
+INSTALL_SOURCE_FILE="${INSTALL_DIR}/install_source"
 DEFAULT_SOURCE="release-0.9"
+
 
 # Function to print colored output
 print_info() {
@@ -179,6 +182,7 @@ create_venv() {
     print_success "Virtual environment created"
 }
 
+
 # Function to install jumpstarter-all
 install_jumpstarter() {
     local source="$1"
@@ -207,6 +211,10 @@ install_jumpstarter() {
         print_error "This might be due to network issues or the package not being available"
         exit 1
     fi
+
+    cat > "${INSTALL_SOURCE_FILE}" << EOF
+${source}
+EOF
 
     print_success "jumpstarter-all==${version} installed successfully"
 }
@@ -288,6 +296,7 @@ while [[ $# -gt 0 ]]; do
             INSTALL_DIR="$2"
             VENV_DIR="${INSTALL_DIR}/venv"
             SET_SCRIPT="${INSTALL_DIR}/set"
+            INSTALL_SOURCE_FILE="${INSTALL_DIR}/install_source"
             shift 2
             ;;
         -h|--help)
@@ -302,6 +311,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Set cached source from file
+if [[ -z "${SOURCE}" && -f "${INSTALL_SOURCE_FILE}" ]]; then
+    SOURCE=$(<"${INSTALL_SOURCE_FILE}")
+fi
 # Set default source if not specified
 SOURCE="${SOURCE:-${DEFAULT_SOURCE}}"
 
