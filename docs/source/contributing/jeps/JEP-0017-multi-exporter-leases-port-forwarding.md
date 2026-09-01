@@ -1096,7 +1096,7 @@ because `--vhost_user_mac80211_hwsim` is the mechanism Cuttlefish documents
 for sharing a Wi-Fi medium between separately-launched instances, and
 `wmediumd` is where RSSI and delivery modeling live. Option 1 is also the
 hardest thing in this JEP and the most likely to need upstream work — it is
-scheduled last (Phase 4) and its risk is called out explicitly.
+scheduled last (Phase 3) and its risk is called out explicitly.
 
 ### DD-11: Mixed physical/virtual benches — deferred
 
@@ -1467,7 +1467,7 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 
 - **Virtual ↔ virtual**: two `jumpstarter-driver-cuttlefish` exporters in
   separate Pods (JEP-0016 `ExporterSet`), joined through a shared virtual
-  controller (DD-9). Assert BT discovery and pairing, and — Phase 4 — Wi-Fi
+  controller (DD-9). Assert BT discovery and pairing, and — Phase 3 — Wi-Fi
   association. `jumpstarter-driver-netsim` supplies the pcap capture used to
   evidence what actually crossed the air.
   Runnable in CI on KVM-capable nodes with no lab hardware. This is the
@@ -1560,7 +1560,7 @@ JEP-0015 dependency.
 
 ### Stable
 
-- Phases 1–4 complete, with Phase 4 green in CI for 30 consecutive days
+- Phases 1–3 complete, with Phase 3 green in CI for 30 consecutive days
 - At least two `requires`-side drivers outside this JEP's reference set
   (evidence the port model generalizes)
 - No API changes to `members` / `forwards` / `PortReport` for one release
@@ -1656,14 +1656,14 @@ risk in one field, handled by DD-2.
   optional direct fast-path listener.
 - **Latency is a first-class risk**, not a footnote, and some timing-sensitive
   protocols may not work in router mode.
-- **Phase 4 depends on upstream behavior** we do not control.
+- **Phase 3 depends on upstream behavior** we do not control.
 
 ### Risks
 
 - **Wi-Fi frame forwarding may not be viable over the router.** `wmediumd`
   assumes medium-like timing; head-of-line blocking on a TCP substrate may
   make association flaky or impossible except on the direct fast path.
-  Mitigation: Phase 4 is last, may conclude "direct mode only", and the
+  Mitigation: Phase 3 is last, may conclude "direct mode only", and the
   datagram work in Future Possibilities is the escalation path.
 - **Bluetooth timing may be tighter than measured** — pairing may work while
   A2DP streaming does not. Mitigation: latency characterization is an
@@ -1864,7 +1864,7 @@ Not part of this proposal:
   datagram semantics with real boundaries and no head-of-line blocking; the
   additive `FRAME_TYPE_DATAGRAM` extension to `RouterService.Stream` (and,
   further out, QUIC unreliable datagrams) is a separate protocol JEP, for
-  which Phase 4 is the most compelling justification.
+  which Phase 3 is the most compelling justification.
 - **Vehicle-bus counterparty integration.** The restbus pattern described in
   DD-9 has mature tooling behind it, and a broker that exposes CAN, LIN,
   FlexRay, and Automotive Ethernet over a gRPC socket is already a `provides`
