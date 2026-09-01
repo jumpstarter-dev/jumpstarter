@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -292,16 +293,25 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         archive_path = work_dir / "firmware.tar"
         yield FlashStatus(phase=FlashPhase.DOWNLOAD, message="Receiving firmware archive", progress=0.0)
         bytes_written = 0
+        last_update = time.monotonic()
         async with self.resource(source) as res:
             async with await FileWriteStream.from_path(archive_path) as stream:
                 async for chunk in AutoDecompressIterator(source=res):
                     await stream.send(chunk)
                     bytes_written += len(chunk)
-                    yield FlashStatus(
-                        phase=FlashPhase.DOWNLOAD,
-                        message=f"Received {bytes_written} bytes",
-                        bytes_transferred=bytes_written,
-                    )
+                    now = time.monotonic()
+                    if now - last_update >= 0.5:
+                        last_update = now
+                        yield FlashStatus(
+                            phase=FlashPhase.DOWNLOAD,
+                            message="Receiving firmware archive",
+                            bytes_transferred=bytes_written,
+                        )
+        yield FlashStatus(
+            phase=FlashPhase.DOWNLOAD,
+            message="Download complete",
+            bytes_transferred=bytes_written,
+        )
 
         yield FlashStatus(phase=FlashPhase.EXTRACT, message="Extracting firmware archive")
         extract_manifest = manifest or self._load_manifest_from_archive(archive_path)
