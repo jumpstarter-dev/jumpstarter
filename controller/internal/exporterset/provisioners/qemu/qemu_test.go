@@ -479,8 +479,8 @@ func TestRenderPod_diskEphemeralWhenStorageClassSet(t *testing.T) {
 			Provisioner: ProvisionerName,
 		},
 	}
-	params := map[string]interface{}{
-		"storage": map[string]interface{}{
+	params := map[string]any{
+		"storage": map[string]any{
 			"size":             "20Gi",
 			"storageClassName": "fast-ssd",
 		},
@@ -525,8 +525,8 @@ func TestRenderPod_diskEmptyDirUsesParamSize(t *testing.T) {
 	vtc := &virtualtargetv1alpha1.VirtualTargetClass{
 		Spec: virtualtargetv1alpha1.VirtualTargetClassSpec{Provisioner: ProvisionerName},
 	}
-	params := map[string]interface{}{
-		"storage": map[string]interface{}{
+	params := map[string]any{
+		"storage": map[string]any{
 			"size":       "7Gi",
 			"fsOverhead": "0%",
 		},

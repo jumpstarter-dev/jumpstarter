@@ -78,7 +78,7 @@ func Mount() corev1.VolumeMount {
 
 // FromParameters reads disk size and optional storage backend from merged
 // ExporterSet/VirtualTargetClass parameters.
-func FromParameters(params map[string]interface{}) (Spec, error) {
+func FromParameters(params map[string]any) (Spec, error) {
 	spec := Spec{
 		AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 	}
@@ -91,7 +91,7 @@ func FromParameters(params map[string]interface{}) (Spec, error) {
 		spec.VolumeSize = applyOverhead(size, defaultOverheadPercent())
 		return spec, nil
 	}
-	storage, ok := params["storage"].(map[string]interface{})
+	storage, ok := params["storage"].(map[string]any)
 	if !ok {
 		if params["storage"] != nil {
 			return Spec{}, fmt.Errorf("parameters.storage must be an object, got %T", params["storage"])
@@ -148,7 +148,7 @@ func FromParameters(params map[string]interface{}) (Spec, error) {
 }
 
 // SizeFromParameters reads parameters.storage.size, defaulting to DefaultSize.
-func SizeFromParameters(params map[string]interface{}) (resource.Quantity, error) {
+func SizeFromParameters(params map[string]any) (resource.Quantity, error) {
 	spec, err := FromParameters(params)
 	if err != nil {
 		return resource.Quantity{}, err
@@ -224,7 +224,7 @@ func defaultOverheadPercent() int {
 	return percent
 }
 
-func parseFSOverhead(v interface{}) (int, error) {
+func parseFSOverhead(v any) (int, error) {
 	raw := DefaultFSOverhead
 	if v != nil {
 		s, ok := v.(string)
@@ -262,8 +262,8 @@ func applyOverhead(size resource.Quantity, overheadPercent int) resource.Quantit
 	return *resource.NewQuantity(inflated, size.Format)
 }
 
-func parseAccessModes(v interface{}) ([]corev1.PersistentVolumeAccessMode, error) {
-	items, ok := v.([]interface{})
+func parseAccessModes(v any) ([]corev1.PersistentVolumeAccessMode, error) {
+	items, ok := v.([]any)
 	if !ok {
 		return nil, fmt.Errorf("parameters.storage.accessModes must be a list of strings, got %T", v)
 	}

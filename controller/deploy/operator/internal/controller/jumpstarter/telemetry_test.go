@@ -30,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
@@ -201,7 +200,7 @@ var _ = Describe("Telemetry Lifecycle", func() {
 		spec.Telemetry = &operatorv1alpha1.TelemetryConfig{
 			Enabled:  true,
 			Image:    "quay.io/jumpstarter-dev/jumpstarter-telemetry:latest",
-			Replicas: ptr.To(int32(3)),
+			Replicas: new(int32(3)),
 		}
 		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},

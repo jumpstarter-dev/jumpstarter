@@ -17,6 +17,7 @@ limitations under the License.
 package disk
 
 import (
+	"maps"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -44,11 +45,11 @@ func TestFromParameters_defaults(t *testing.T) {
 }
 
 func TestFromParameters_storageClassAndSize(t *testing.T) {
-	spec, err := FromParameters(map[string]interface{}{
-		"storage": map[string]interface{}{
+	spec, err := FromParameters(map[string]any{
+		"storage": map[string]any{
 			"size":             "15Gi",
 			"storageClassName": "gp3",
-			"accessModes":      []interface{}{"ReadWriteOnce", "ReadWriteMany"},
+			"accessModes":      []any{"ReadWriteOnce", "ReadWriteMany"},
 		},
 	})
 	if err != nil {
@@ -69,8 +70,8 @@ func TestFromParameters_storageClassAndSize(t *testing.T) {
 }
 
 func TestFromParameters_emptyStorageClassForcesEmptyDir(t *testing.T) {
-	spec, err := FromParameters(map[string]interface{}{
-		"storage": map[string]interface{}{
+	spec, err := FromParameters(map[string]any{
+		"storage": map[string]any{
 			"storageClassName": "",
 		},
 	})
@@ -83,8 +84,8 @@ func TestFromParameters_emptyStorageClassForcesEmptyDir(t *testing.T) {
 }
 
 func TestFromParameters_rejectsNumericStorage(t *testing.T) {
-	_, err := FromParameters(map[string]interface{}{
-		"storage": map[string]interface{}{"size": 10.0},
+	_, err := FromParameters(map[string]any{
+		"storage": map[string]any{"size": 10.0},
 	})
 	if err == nil {
 		t.Fatal("expected error for numeric storage")
@@ -92,8 +93,8 @@ func TestFromParameters_rejectsNumericStorage(t *testing.T) {
 }
 
 func TestFromParameters_fsOverhead(t *testing.T) {
-	spec, err := FromParameters(map[string]interface{}{
-		"storage": map[string]interface{}{
+	spec, err := FromParameters(map[string]any{
+		"storage": map[string]any{
 			"size":       "10Gi",
 			"fsOverhead": "0%",
 		},
@@ -108,8 +109,8 @@ func TestFromParameters_fsOverhead(t *testing.T) {
 		t.Errorf("VolumeSize = %v, want 10Gi with 0%% overhead", spec.VolumeSize)
 	}
 
-	spec, err = FromParameters(map[string]interface{}{
-		"storage": map[string]interface{}{
+	spec, err = FromParameters(map[string]any{
+		"storage": map[string]any{
 			"size":       "10Gi",
 			"fsOverhead": "10%",
 		},
@@ -124,8 +125,8 @@ func TestFromParameters_fsOverhead(t *testing.T) {
 }
 
 func TestFromParameters_rejectsInvalidFSOverhead(t *testing.T) {
-	_, err := FromParameters(map[string]interface{}{
-		"storage": map[string]interface{}{
+	_, err := FromParameters(map[string]any{
+		"storage": map[string]any{
 			"fsOverhead": "ten",
 		},
 	})
@@ -202,13 +203,13 @@ func TestSetEphemeralStorage(t *testing.T) {
 }
 
 func TestFromParameters_mergedEmptyStorageClassForcesEmptyDir(t *testing.T) {
-	merged := deepMerge(map[string]interface{}{
-		"storage": map[string]interface{}{
+	merged := deepMerge(map[string]any{
+		"storage": map[string]any{
 			"storageClassName": "gp3",
 			"size":             "20Gi",
 		},
-	}, map[string]interface{}{
-		"storage": map[string]interface{}{
+	}, map[string]any{
+		"storage": map[string]any{
 			"storageClassName": "",
 		},
 	})
@@ -226,14 +227,12 @@ func TestFromParameters_mergedEmptyStorageClassForcesEmptyDir(t *testing.T) {
 }
 
 // deepMerge mirrors exporterset.deepMerge for merge-semantics tests.
-func deepMerge(base, override map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{}, len(base)+len(override))
-	for k, v := range base {
-		result[k] = v
-	}
+func deepMerge(base, override map[string]any) map[string]any {
+	result := make(map[string]any, len(base)+len(override))
+	maps.Copy(result, base)
 	for k, v := range override {
-		if baseMap, ok := result[k].(map[string]interface{}); ok {
-			if overrideMap, ok := v.(map[string]interface{}); ok {
+		if baseMap, ok := result[k].(map[string]any); ok {
+			if overrideMap, ok := v.(map[string]any); ok {
 				result[k] = deepMerge(baseMap, overrideMap)
 				continue
 			}
