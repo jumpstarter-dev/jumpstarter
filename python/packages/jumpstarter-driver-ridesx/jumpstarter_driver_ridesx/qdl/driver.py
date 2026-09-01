@@ -92,24 +92,15 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             tac_timeout=self.tac_command_timeout,
         )
 
-    @staticmethod
-    async def _fastboot_device_present() -> bool:
-        """Check if any fastboot device is currently connected."""
-        result = await asyncio.to_thread(
-            subprocess.run,
-            ["fastboot", "devices"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=5,
-        )
-        return bool(result.stdout.strip())
-
     async def _ensure_fastboot_mode(self) -> None:
-        """Ensure the device is in fastboot mode, rebooting only if needed."""
-        if await self._fastboot_device_present():
-            return
+        """Power-cycle the device into fastboot mode and verify via dmesg.
 
+        After QDL flashing the device may enumerate as a Qualcomm USB
+        device (idProduct=4ee7) that responds to ``fastboot devices``
+        but is NOT in real Android fastboot mode.  A full power-cycle
+        through the TAC GPIO sequence is always required to reach the
+        actual fastboot bootloader (idProduct=d00d, Product: Android).
+        """
         from .executor import RETRY_MODE_DMESG
 
         await self._set_mode("fastboot", check_dmesg=RETRY_MODE_DMESG["fastboot"])

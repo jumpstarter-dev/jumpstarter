@@ -138,8 +138,13 @@ async def test_flash_post_steps_skips_fastboot_check_without_cdt(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_ensure_fastboot_skips_reboot_when_device_present(tmp_path):
-    """_ensure_fastboot_mode should not power-cycle if fastboot device is already present."""
+async def test_ensure_fastboot_always_power_cycles(tmp_path):
+    """_ensure_fastboot_mode must always power-cycle into real fastboot.
+
+    After QDL flashing the device may enumerate as a Qualcomm USB device
+    (idProduct=4ee7) that responds to ``fastboot devices`` but is NOT in
+    real Android fastboot.  A full power-cycle is always required.
+    """
     mock_tac = MagicMock()
     stream = AsyncMock()
     stream.__aenter__ = AsyncMock(return_value=stream)
@@ -149,41 +154,7 @@ async def test_ensure_fastboot_skips_reboot_when_device_present(tmp_path):
 
     driver = QualcommFlasher(children={"tac": mock_tac}, work_dir=str(tmp_path))
 
-    fastboot_devices_result = subprocess.CompletedProcess(
-        args=[], returncode=0, stdout="9554782e\tfastboot\n", stderr=""
-    )
-
-    with (
-        patch("jumpstarter_driver_ridesx.qdl.driver.subprocess") as mock_subprocess,
-        patch.object(driver, "_set_mode", new_callable=AsyncMock) as mock_set_mode,
-    ):
-        mock_subprocess.run.return_value = fastboot_devices_result
-        await driver._ensure_fastboot_mode()
-
-    mock_set_mode.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_ensure_fastboot_reboots_when_no_device(tmp_path):
-    """_ensure_fastboot_mode should power-cycle into fastboot when no device is found."""
-    mock_tac = MagicMock()
-    stream = AsyncMock()
-    stream.__aenter__ = AsyncMock(return_value=stream)
-    stream.__aexit__ = AsyncMock(return_value=None)
-    stream.receive = AsyncMock(return_value=b"ok")
-    mock_tac.connect.return_value = stream
-
-    driver = QualcommFlasher(children={"tac": mock_tac}, work_dir=str(tmp_path))
-
-    fastboot_devices_result = subprocess.CompletedProcess(
-        args=[], returncode=0, stdout="", stderr=""
-    )
-
-    with (
-        patch("jumpstarter_driver_ridesx.qdl.driver.subprocess") as mock_subprocess,
-        patch.object(driver, "_set_mode", new_callable=AsyncMock) as mock_set_mode,
-    ):
-        mock_subprocess.run.return_value = fastboot_devices_result
+    with patch.object(driver, "_set_mode", new_callable=AsyncMock) as mock_set_mode:
         await driver._ensure_fastboot_mode()
 
     mock_set_mode.assert_awaited_once_with("fastboot", check_dmesg="Product: Android")
