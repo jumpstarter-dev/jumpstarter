@@ -80,11 +80,9 @@ holds for Android Auto and for Apple CarPlay, and for a head unit running
 Android, Linux, or QNX; the pairing-then-handover pattern is a property of
 projection, not of one vendor's stack.
 
-This is not hypothetical. Teams running phone-projection validation operate
-fleets in the ~1000-device range across multiple labs, and the two things
-they cannot get from existing tooling are (a) heterogeneous benches — a Linux
-or QNX head unit alongside an Android phone — and (b) pairing two *virtual*
-devices to each other.
+Two capabilities are missing from existing tooling, and projection tests need
+both: **heterogeneous benches** — a Linux or QNX head unit alongside an
+Android phone — and **pairing two virtual devices to each other**.
 
 Running that on Jumpstarter today requires the test author to hand-roll
 everything the lease layer should provide:
