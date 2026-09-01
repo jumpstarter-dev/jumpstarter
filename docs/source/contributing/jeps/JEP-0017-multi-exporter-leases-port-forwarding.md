@@ -494,28 +494,38 @@ subsystem and becomes a question of which port each stack exposes. Radios are
 the demanding case, but nothing in the table below is privileged — a CAN bus
 or a serial cross-over is the same declaration:
 
+First, the **data plane** — ports that a forward carries:
+
 | Stack | Port | Direction | Notes |
 | --- | --- | --- | --- |
+| Shared virtual controller (Bumble) | `controller` | provides | Accepts multiple hosts and mediates between them (DD-9) |
+| `jumpstarter-driver-bt-peer` | `controller` | requires | A Bumble `Device` dialing an external controller |
 | rootcanal (Cuttlefish, emulator) | `rootcanal` | provides | HCI on TCP; hosts attach to it |
-| `bt-peer` (bumble) | `controller` | requires | Dials an HCI controller |
-| netsim | `netsim` | provides | gRPC `PacketStreamer`; attaching side must originate `ChipInfo` |
 | `wmediumd` / `mac80211_hwsim` | `hwsim` | provides | Frame socket |
 | Gateway exporter (real adapter) | `hci` | provides | A real radio, presented as HCI |
 | `socketcand` / CAN-over-TCP bridge | `can` | provides | A CAN segment reachable as a socket |
 | Serial bridge (pty or TCP) | `console` | requires/provides | Cross-over between a DUT and a companion |
 
-Two consequences worth stating plainly, both of which generalize beyond
-radios. First, HCI is **asymmetric**: a host
-attaches to a controller. Forwarding one rootcanal's port into another
-rootcanal wires controller to controller and nothing happens — which is
-precisely why forwards are directional and why a `provides → provides`
-forward is rejected (DD-6). Second, netsim's port is not a transparent
-splice: the attaching side must speak `StreamPackets` and send `ChipInfo`
-first, so the consumer is a protocol-terminating driver rather than a raw
-socket. Whether two CVDs can be joined at rootcanal directly, or whether
-netsim must sit in the middle because it is the component that presents a
-controller to multiple hosts, is an open question the Phase 1 prototype
-answers (see Unresolved Questions).
+Second, the **control plane** — drivers that configure and observe a medium
+without carrying its traffic. `jumpstarter-driver-netsim` is the worked
+example: it speaks netsim's REST API (`7681 + netsim_instance_num`) to list
+devices, toggle radios, patch state, reset, and start/stop/download **pcap
+captures** of the simulated air. It is not a forward endpoint and needs none
+of this JEP's machinery; the two compose, with the netsim driver observing
+the medium a forward connects.
+
+Two consequences of the data-plane table are worth stating plainly, and both
+generalize beyond radios. First, HCI is **asymmetric**: a host attaches to a
+controller. Forwarding one rootcanal's port into another rootcanal wires
+controller to controller and nothing happens — which is precisely why
+forwards are directional and why a `provides → provides` forward is rejected
+(DD-6). It is also why the first row exists: joining two devices needs a
+component that *is* a controller to both of them (DD-9). Second, not every
+port is a transparent splice — netsim's `PacketStreamer` requires the
+attaching side to originate a `StreamPackets` call carrying `ChipInfo` before
+traffic flows, so its consumer is a protocol-terminating driver rather than a
+raw socket. Forwards carry both kinds; the difference lives in the driver at
+the `requires` end.
 
 For **physical ↔ virtual** there is no way to relay a real phone's internal
 HCI: the radio is inside the device. The bridge happens in RF, at a
@@ -697,10 +707,11 @@ message DialPeerResponse {
 - **Wi-Fi frame forwarding is the most latency-sensitive path.** `wmediumd`
   models RSSI-based delivery and expects medium-like timing; a TCP substrate
   introduces head-of-line blocking a real air interface does not have (DD-10).
-- **Listener collisions.** A `requires` port binds a fixed local address. In
-  a Pod that is free; on a physical lab host already running its own
-  rootcanal it is not. This is a real deployment constraint, called out in
-  Unresolved Questions.
+- **Listener addresses.** A `requires` port binds a fixed local address,
+  which is safe because each exporter owns its network namespace (see
+  *Deployment assumptions*). The one configuration that breaks this is a
+  host-networked container sharing a machine with other exporters, which is
+  outside the supported deployment model.
 - **Degraded hardware.** If a member's exporter goes offline mid-lease, the
   lease reports `Ready=False` naming the role and does *not* silently
   continue with a partial bench (DD-3).
@@ -988,36 +999,59 @@ validation and is recorded as such.
 
 **Alternatives considered:**
 
-1. **At the simulators' existing sockets** — rootcanal's HCI TCP port,
-   netsim's `PacketStreamer`, `wmediumd`'s frame socket — each exposed as a
-   port and joined by an ordinary forward.
-2. **A dedicated bridge driver tier** — purpose-built `LinkEndpoint` drivers
+1. **Forward one simulator's socket into another** — e.g. one CVD's
+   rootcanal port forwarded to the other CVD.
+2. **A shared virtual controller** that both devices attach to as hosts,
+   using Bumble's virtual `Controller`.
+3. **A dedicated bridge driver tier** — purpose-built `LinkEndpoint` drivers
    that know about radios.
-3. **Inside the guest** — a shim in Android proxying Bluetooth/Wi-Fi at the
+4. **Inside the guest** — a shim in Android proxying Bluetooth/Wi-Fi at the
    HAL or socket layer.
 
-**Decision:** Option 1.
+**Decision:** Option 2, implemented over the ordinary forward machinery.
 
-**Rationale:** Every simulator involved is already something a process
-connects to over a socket, and `jumpstarter-driver-bt-peer` already proves
-the pattern by attaching `bumble` to rootcanal at
-`tcp-client:127.0.0.1:7300`. Once forwards exist, "bridge a radio" reduces to
-"forward the socket that was always there", and a `TcpNetwork` child pointed
-at `127.0.0.1:7300` is configuration rather than code.
+**Rationale:** Option 1 is the obvious first idea and it does not work for
+the motivating topology. rootcanal is a *controller*; two CVDs each have one;
+forwarding either into the other joins controller to controller and nothing
+happens. Option 1 remains correct wherever one side genuinely is a host — a
+`bt-peer` exporter attaching to a CVD's rootcanal is exactly that, and is the
+cheapest thing to build first — but it cannot join two devices that each
+already own a controller.
 
-Option 2 was in an earlier draft of this JEP and is now rejected as invented
+Option 2 supplies the missing piece: a component that is a controller to
+*both* devices. Bumble already implements it. Its virtual `Controller`
+attaches to a link-layer bus, several controllers on one bus exchange
+broadcast advertising and unicast ACL data, and `RemoteLink` carries that bus
+over a WebSocket relay hosting virtual *rooms*. Bumble's `android-netsim`
+transport additionally has a `mode=controller` that accepts host connections
+speaking netsim's protocol — documented as a way to replace netsim outright,
+with `bumble-hci-bridge` as the worked example. So the medium becomes a
+Jumpstarter driver in Python rather than a dependency on where upstream
+components happen to be placed, and the thing crossing between exporters is a
+WebSocket — a plain TCP forward this JEP already carries.
+
+Bumble is also already a dependency: `jumpstarter-driver-bt-peer` is built on
+it and passes its `transport` string directly to `bumble.transport.
+open_transport`, then uses the result as `controller_source`/`controller_sink`
+for a Bumble `Device`. Any Bumble moniker therefore already works with no
+Python change, which is what makes the `requires` side of this design free.
+The gap is that the driver only ever constructs a `Device` — a host — so the
+controller side is new code, and it is small.
+
+Option 3 was in an earlier draft of this JEP and is rejected as invented
 machinery: it added a driver interface, a driver tier, and a medium taxonomy
-to express something the existing network drivers plus a direction already
-express. Option 3 is rejected because it changes the device under test — a
+to express something existing network drivers plus a direction already
+express. Option 4 is rejected because it changes the device under test — a
 guest-side shim means the Bluetooth stack being exercised is not the one that
 ships, invalidating precisely the pairing and handover behavior these tests
 exist to verify.
 
-One consequence to be explicit about: not every port is a transparent splice.
-netsim's `PacketStreamer` requires the attaching side to originate a
-`StreamPackets` call with `ChipInfo` before traffic flows, so its consumer is
-a protocol-terminating driver, not a raw socket. Forwards carry both kinds;
-the difference lives in the driver at the `requires` end.
+Two caveats are carried rather than hidden. Bumble's netsim controller mode
+is documented against the Android emulator, not Cuttlefish, so pointing a CVD
+at an external controller is unverified (see Unresolved Questions). And a
+radio medium in Python is comfortable for advertising, pairing, and control
+while being an open question for sustained A2DP-class traffic — which
+compounds, rather than relieves, the latency risk already recorded.
 
 ### DD-10: Wi-Fi medium forwarding
 
@@ -1120,6 +1154,48 @@ Option 3 is a real requirement but separable, and should be designed once
 there is operational experience with what benches people actually build.
 
 ## Design Details
+
+### Deployment assumptions
+
+Several properties below depend on one deployment invariant, stated here so a
+reviewer deploying differently finds out from the document rather than from a
+port conflict:
+
+> **Each exporter owns its own network namespace.** In practice this is
+> either a container running exactly one exporter, or a single-exporter edge
+> device.
+
+Both supported shapes satisfy it. For virtual targets, JEP-0016 supplies it
+*by construction*: its `cuttlefish.jumpstarter.dev` provisioner renders one
+CVD per Pod under a JEP-0014 `ExporterSet`, and a Pod is a network namespace,
+so every provisioned exporter gets a private loopback without anyone having
+to arrange it. For physical targets an edge device is a single exporter and
+the question does not arise.
+
+Three consequences follow, and they are why this JEP can be as small as it is:
+
+- **`requires` ports can bind fixed local addresses.** A driver that dials
+  `127.0.0.1:7300` is dialing *its own* loopback, so two exporters both using
+  7300 never collide. This is what makes the zero-driver-changes property
+  (DD-6) structural rather than coincidental — under a shared namespace it
+  would be luck that breaks on the second exporter.
+- **Control-plane blast radius equals lease scope.** A simulator control API
+  scoped to "this host" is scoped to one exporter, hence to one lease. This
+  matters concretely: the netsim driver's `reset` is documented as affecting
+  every device on its netsim instance, which would cross lease boundaries if
+  two exporters shared one.
+- **DD-4's two transports map onto the two shapes.** Containers on a common
+  host are mutually routable, so the direct fast path applies; edge devices
+  behind NAT are exactly why the router path is the default and why pure
+  peer-to-peer was rejected.
+
+The exception to watch is host networking. The `jumpstarter-driver-cuttlefish`
+container recipe currently documents `--network=host` (so that netsim and
+rootcanal are reachable from outside the container), which places every
+exporter on that machine in one namespace and forces port-offset schemes such
+as `7681 + instance_num`. That arrangement is fine for a hand-managed
+single-exporter host or local development, and is **not** a supported basis
+for multiple exporters on one machine under this JEP.
 
 ### Binding: one pass, one write
 
@@ -1306,6 +1382,16 @@ actually used, direct-dial fallback rate). Time-to-bench (lease create →
 `Ready`) is the headline metric; it is the existing lease-acquisition metric
 extended to record the member count.
 
+For simulated media there is a stronger signal available than byte counters.
+`jumpstarter-driver-netsim` exposes netsim's pcap capture (start, stop,
+download) over its REST control API, so a bench can capture the *over-the-air*
+traffic of a pairing and attach it to the run — the interaction itself, not
+just the fact that bytes crossed a forward. Because the control API is scoped
+to one exporter's namespace, that capture is scoped to the lease. This is the
+clearest illustration of the control-plane / data-plane split described under
+*Attaching media*: the netsim driver controls and observes the medium, while
+a forward carries it.
+
 ## Test Plan
 
 ### Unit Tests
@@ -1357,8 +1443,10 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 ### Hardware-in-the-Loop Tests
 
 - **Virtual ↔ virtual**: two `jumpstarter-driver-cuttlefish` exporters in
-  separate Pods (JEP-0016 `ExporterSet`), forwarded at rootcanal/netsim.
-  Assert BT discovery and pairing, and — Phase 4 — Wi-Fi association.
+  separate Pods (JEP-0016 `ExporterSet`), joined through a shared virtual
+  controller (DD-9). Assert BT discovery and pairing, and — Phase 4 — Wi-Fi
+  association. `jumpstarter-driver-netsim` supplies the pcap capture used to
+  evidence what actually crossed the air.
   Runnable in CI on KVM-capable nodes with no lab hardware. This is the
   headline result and should run on every merge once it exists.
 - **Physical ↔ physical**: a physical phone and head unit on two exporters
@@ -1414,15 +1502,19 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 - [ ] Direct fast path is authenticated, falls back automatically, and is
       observable (mode + fallback-rate metrics)
 - [ ] `bt-peer` participates as a `requires` endpoint with **no Python
-      changes** — exporter configuration only
+      changes** — exporter configuration only, relying on its existing
+      `open_transport(self.transport)` passthrough
+- [ ] A shared virtual controller component (Bumble `Controller` plus link
+      relay) exists as a driver exposing a `provides` port, and two hosts
+      attached to it exchange advertising and ACL data
 - [ ] Byte fidelity and reset semantics verified by the `EchoNetwork`
       integration test
 
 **Topologies** (each a phase gate, in order)
 
-- [ ] **Phase 1 — Virtual ↔ virtual Bluetooth**: two CVDs in separate Pods on
-      separate nodes complete BR/EDR discovery and pairing over a forwarded
-      rootcanal/netsim port, in CI
+- [ ] **Phase 1 — Virtual ↔ virtual Bluetooth**: two CVDs in separate Pods
+      on separate nodes complete BR/EDR discovery and pairing through a
+      shared virtual controller reached by a forward, in CI
 - [ ] **Phase 2 — Physical ↔ physical across hosts**: a phone and head unit
       on exporters on different lab hosts complete a phone projection
       session (Android Auto in the reference implementation)
@@ -1557,10 +1649,13 @@ risk in one field, handled by DD-2.
 - **Bluetooth timing may be tighter than measured** — pairing may work while
   A2DP streaming does not. Mitigation: latency characterization is an
   acceptance criterion whose answer is published, not assumed.
-- **`listen` collisions on physical hosts.** A lab host already running the
-  service a `requires` port wants to shadow cannot host that endpoint.
-  Mitigation: validation names the conflict explicitly; ephemeral-port
-  allocation is a Future Possibility.
+- **The namespace invariant may be violated in the field.** Fixed `listen`
+  addresses and lease-scoped control-plane blast radius both assume one
+  exporter per network namespace. A host-networked deployment silently
+  breaks both — colliding ports, and simulator resets that reach another
+  lease's devices. Mitigation: bind failures are reported as `Invalid`
+  naming the port and address, and the assumption is stated explicitly;
+  JEP-0016 removes the question entirely for provisioned virtual targets.
 - **Multi-member leases amplify the pre-existing binding race** — N chances
   to lose a race, so re-bind churn grows with bench size. Mitigation:
   `MaxItems=8` bounds it; the real fix is the global scheduler the code
@@ -1682,12 +1777,14 @@ risk in one field, handled by DD-2.
 
 To resolve during review:
 
-- **Can two CVDs be joined at rootcanal directly, or is netsim required?**
-  HCI is host-to-controller, and two rootcanals are both controllers — so the
-  Phase 1 topology may need netsim in the middle as the component that
-  presents a controller to multiple hosts. This determines whether Phase 1's
-  forward is `rootcanal → controller` or `netsim → chip`, and it is a
-  prototype question, not a design one.
+- **Confirm the Phase 1 topology against a real CVD.** The design answer is
+  settled (DD-9: a shared virtual controller, with Bumble the leading
+  candidate). What is unverified is whether a Cuttlefish guest can be pointed
+  at an *external* controller speaking the netsim protocol — Bumble documents
+  `mode=controller` for the Android emulator, and Cuttlefish routes radios
+  through netsim, but no source ties the two together. If it cannot, the
+  fallback is a Bumble host attached per device with the relay between them,
+  which costs an extra hop. This is a prototype question, not a design one.
 - **Should the scalar and members forms really be mutually exclusive?** The
   alternative is `spec.selector` as a default for members that omit their
   own — convenient for homogeneous benches, but two ways to express one thing.
@@ -1725,11 +1822,17 @@ Not part of this proposal:
 - **A global lease scheduler** with a view of all leases and exporters, which
   the controller already carries a `TODO` for; it would close the binding race
   for single- and multi-member leases alike.
-- **Ephemeral `listen` allocation** for `requires` ports, removing the
-  collision constraint at the cost of driver coupling.
-- **Fan-out forwards** — one `provides` port serving several `requires` ports,
-  for shared media with more than two participants. Today's forward is
-  strictly point-to-point.
+- **Fan-out forwards** — one `provides` port serving several `requires`
+  ports, for shared media with more than two participants. Today's forward is
+  strictly point-to-point. Bumble's link relay already implements the
+  underlying idea: a WebSocket relay hosting virtual *rooms*, each room a set
+  of virtual controllers that can advertise and exchange ACL data with one
+  another. A room is the N-way medium DD-6 deferred, so this is an
+  integration rather than an invention.
+- **Ephemeral `listen` allocation** for `requires` ports. Only needed if the
+  one-exporter-per-namespace assumption is relaxed; it trades the fixed
+  address for driver coupling, so it is not worth doing while the assumption
+  holds.
 - **Bench-level access policy and quota** (DD-12).
 - **Per-member early release**, if the all-or-nothing lifetime proves coarse.
 - **Datagram forwards.** `wmediumd` and other frame-oriented media want
@@ -1773,7 +1876,15 @@ Not part of this proposal:
 - [Cuttlefish: test connectivity of multiple devices](https://source.android.com/docs/devices/cuttlefish/connectivity)
 - [Mobly](https://github.com/google/mobly) — [testbed tutorial](https://github.com/google/mobly/blob/master/docs/tutorial.md)
 - [Bumble, a Python Bluetooth stack](https://google.github.io/bumble/) —
-  [transports](https://google.github.io/bumble/transports/index.html)
+  [transports](https://google.github.io/bumble/transports/index.html),
+  [Android / `android-netsim` `mode=controller`](https://google.github.io/bumble/platforms/android.html),
+  [apps and tools](https://google.github.io/bumble/apps_and_tools/index.html)
+- [jumpstarter-dev/jumpstarter#986](https://github.com/jumpstarter-dev/jumpstarter/pull/986)
+  — `jumpstarter-driver-bt-peer` (merged); the reference `requires`-side
+  endpoint
+- [jumpstarter-dev/jumpstarter#980](https://github.com/jumpstarter-dev/jumpstarter/pull/980)
+  — `jumpstarter-driver-netsim` (open); the control-plane companion, incl.
+  pcap capture
 - [netsim (`platform/tools/netsim`)](https://android.googlesource.com/platform/tools/netsim/) —
   `proto/netsim/packet_streamer.proto`
 - [google/android-cuttlefish](https://github.com/google/android-cuttlefish)
