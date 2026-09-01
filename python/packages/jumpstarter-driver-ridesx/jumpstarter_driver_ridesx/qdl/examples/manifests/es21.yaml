@@ -47,7 +47,7 @@ steps:
       files:
         - "rawprogram*.xml"
 
-  - sleep: 5
+  - sleep: 30
 
   - set_mode: fastboot
     check_dmesg: "Product: Android"
