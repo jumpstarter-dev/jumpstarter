@@ -18,12 +18,31 @@ package service
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 )
+
+func labeledCounterValue(t *testing.T, mfs []*dto.MetricFamily, name, label, want string) float64 {
+	t.Helper()
+	for _, mf := range mfs {
+		if mf.GetName() != name && mf.GetName()+"_total" != name {
+			continue
+		}
+		for _, m := range mf.Metric {
+			for _, lp := range m.GetLabel() {
+				if lp.GetName() == label && lp.GetValue() == want {
+					return m.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	t.Fatalf("%s{%s=%q} missing from gathered families", name, label, want)
+	return 0
+}
 
 func TestApplyMetric_OverwritesExporterRemapsDriverTypeAndFiltersExemplars(t *testing.T) {
 	one := 1.0
@@ -91,14 +110,32 @@ func TestApplyMetric_KeepsAllowlistedDriverType(t *testing.T) {
 	}
 }
 
-func TestMergeSnapshots_CombinesExportersAndSkipsInvalidText(t *testing.T) {
-	cfg := func(name string) mergeConfig {
-		return mergeConfig{
-			exporterName: name,
-			driverTypes:  setToMap(DefaultDriverTypeEnum),
-			exemplarKeys: setToMap(DefaultExemplarKeys),
-		}
+// pythonOpenMetricsWithExemplar is the prometheus_client OpenMetrics form
+// that prometheus/common v0.62's text fallback cannot parse (it treats '#' as
+// a timestamp). This is the body exporters send after driver operations.
+const pythonOpenMetricsWithExemplar = `# TYPE jumpstarter_operation_duration_seconds histogram
+jumpstarter_operation_duration_seconds_bucket{exporter="sidekick",le="0.005",operation="on",result="success",driver_type="power"} 1.0 # {lease_id="lease-1"} 0.00262 1788299670.149
+jumpstarter_operation_duration_seconds_sum{exporter="sidekick",operation="on",result="success",driver_type="power"} 0.00262
+jumpstarter_operation_duration_seconds_count{exporter="sidekick",operation="on",result="success",driver_type="power"} 1.0
+# EOF
+`
+
+func testMergeCfg(name string) mergeConfig {
+	return mergeConfig{
+		exporterName: name,
+		driverTypes:  setToMap(DefaultDriverTypeEnum),
+		exemplarKeys: setToMap(DefaultExemplarKeys),
 	}
+}
+
+func TestParseMetricFamilies_OpenMetricsExemplarSuffixFails(t *testing.T) {
+	_, err := parseMetricFamilies([]byte(pythonOpenMetricsWithExemplar))
+	if err == nil {
+		t.Fatal("expected parse error for OpenMetrics exemplar suffix")
+	}
+}
+
+func TestMergeSnapshots_CombinesExportersAndReportsInvalidText(t *testing.T) {
 	textA := []byte(`# TYPE jumpstarter_operations_total counter
 # HELP jumpstarter_operations_total Total operations performed.
 jumpstarter_operations_total{exporter="a",operation="on",result="success",driver_type="power"} 2.0
@@ -108,11 +145,18 @@ jumpstarter_operations_total{exporter="a",operation="on",result="success",driver
 jumpstarter_operations_total{exporter="b",operation="off",result="success",driver_type="power"} 3.0
 # EOF
 `)
+	type parseErrCall struct {
+		exporter string
+		err      error
+	}
+	var calls []parseErrCall
 	families := mergeSnapshots([]exporterSnapshot{
 		{name: "exp-a", text: textA},
 		{name: "exp-b", text: textB},
 		{name: "bad", text: []byte("not metrics")},
-	}, nil, cfg)
+	}, nil, testMergeCfg, func(exporter string, err error) {
+		calls = append(calls, parseErrCall{exporter: exporter, err: err})
+	})
 
 	var ops *dto.MetricFamily
 	for _, f := range families {
@@ -134,6 +178,52 @@ jumpstarter_operations_total{exporter="b",operation="off",result="success",drive
 	}
 	if !exporters["exp-a"] || !exporters["exp-b"] {
 		t.Errorf("exporters = %v, want exp-a and exp-b", exporters)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("parse-error callbacks = %d, want 1", len(calls))
+	}
+	if calls[0].exporter != "bad" {
+		t.Errorf("parse-error exporter = %q, want bad", calls[0].exporter)
+	}
+	if calls[0].err == nil {
+		t.Fatal("parse-error callback err is nil")
+	}
+}
+
+func TestMergeSnapshots_ReportsOpenMetricsExemplarParseError(t *testing.T) {
+	var gotExporter string
+	var gotErr error
+	families := mergeSnapshots([]exporterSnapshot{
+		{name: "sidekick", text: []byte(pythonOpenMetricsWithExemplar)},
+	}, nil, testMergeCfg, func(exporter string, err error) {
+		gotExporter = exporter
+		gotErr = err
+	})
+	for _, f := range families {
+		if strings.HasPrefix(f.GetName(), "jumpstarter_operation_duration_seconds") {
+			t.Fatalf("unparseable snapshot must be omitted, got family %s", f.GetName())
+		}
+	}
+	if gotExporter != "sidekick" {
+		t.Errorf("parse-error exporter = %q, want sidekick", gotExporter)
+	}
+	if gotErr == nil {
+		t.Fatal("parse-error callback err is nil")
+	}
+}
+
+func TestRecordMetricsParseError_IncrementsLabeledCounter(t *testing.T) {
+	svc := &TelemetryService{}
+	svc.initScrapeTimeouts()
+	svc.recordMetricsParseError("sidekick", errors.New("parse failed"))
+
+	mfs, err := svc.metricsRegistry.Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	value := labeledCounterValue(t, mfs, metricsParseErrorsMetric, labelExporter, "sidekick")
+	if value != 1 {
+		t.Fatalf("%s{exporter=sidekick} = %v, want 1", metricsParseErrorsMetric, value)
 	}
 }
 
