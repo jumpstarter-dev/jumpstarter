@@ -178,9 +178,11 @@ This JEP targets exactly that seam:
   refuses.
 - **Virtual ↔ virtual**: two CVDs in two Pods, on two nodes, pairing over
   Bluetooth and Wi-Fi — the thing that has not been done anywhere.
-- **Physical ↔ virtual (hybrid)**: a real phone in a lab rack paired to a
-  virtual head unit running in the cluster, via a gateway exporter that owns
-  a real radio.
+**Scope.** This JEP covers **homogeneous benches** — two virtual devices, or
+two physical devices. Mixing them in one bench (a real phone paired to a
+virtual head unit) is a natural extension and the eventual prize, but it
+requires real radio hardware bridging the two worlds and is deferred to keep
+v1 tractable (DD-11).
 
 The last one is the interesting business case: labs have scarce physical
 head units and abundant phones (or the reverse), and virtualizing the
@@ -502,7 +504,6 @@ First, the **data plane** — ports that a forward carries:
 | `jumpstarter-driver-bt-peer` | `controller` | requires | A Bumble `Device` dialing an external controller |
 | rootcanal (Cuttlefish, emulator) | `rootcanal` | provides | HCI on TCP; hosts attach to it |
 | `wmediumd` / `mac80211_hwsim` | `hwsim` | provides | Frame socket |
-| Gateway exporter (real adapter) | `hci` | provides | A real radio, presented as HCI |
 | `socketcand` / CAN-over-TCP bridge | `can` | provides | A CAN segment reachable as a socket |
 | Serial bridge (pty or TCP) | `console` | requires/provides | Cross-over between a DUT and a companion |
 
@@ -527,10 +528,13 @@ traffic flows, so its consumer is a protocol-terminating driver rather than a
 raw socket. Forwards carry both kinds; the difference lives in the driver at
 the `requires` end.
 
-For **physical ↔ virtual** there is no way to relay a real phone's internal
-HCI: the radio is inside the device. The bridge happens in RF, at a
-**gateway exporter** owning a real adapter and physically near the physical
-device (DD-11). This is a lab-hardware requirement, not a software trick.
+Note the asymmetry between the two supported bench kinds. For **two virtual
+devices** the medium is simulated, so a forward carries it and a shared
+controller mediates it. For **two physical devices** the radio medium is the
+air: real devices in RF range pair without any forward at all, and forwards
+carry only the *wired* media of such a bench — a CAN segment, a serial
+cross-over. The lease plane is what physical benches need most, because it is
+what lets their two exporters live on different hosts.
 
 ### API / Protocol Changes
 
@@ -688,10 +692,10 @@ message DialPeerResponse {
 
 ### Hardware Considerations
 
-- **Gateway exporters** for hybrid benches need a real Bluetooth adapter (a
-  USB HCI dongle is sufficient — `bumble` already supports `usb:0`) and, for
-  Wi-Fi, a 5 GHz-capable radio in the same RF space as the physical device.
-  This is new lab hardware, and the JEP does not pretend otherwise.
+- **No new lab hardware is required.** Homogeneous benches use what a lab
+  already has: two physical devices pair over the air as they always have,
+  and two virtual devices need no radio at all. The radio bridging hardware
+  that a mixed physical/virtual bench would need is out of scope (DD-11).
 - **RF isolation.** Multiple physical benches in one room share the air. Labs
   running more than one need shielded enclosures or channel planning; the
   controller cannot schedule around collisions it cannot observe. Express RF
@@ -851,7 +855,7 @@ sustained throughput. It is retained as an explicit `mode: client-relay`
 debug transport, not as the architecture.
 
 Option 3 has the best data plane and fails at exactly the case this JEP is
-for: the hybrid bench, where a lab exporter behind NAT and a cluster Pod are
+for: an edge-device exporter behind NAT and a cluster Pod, which are
 not mutually routable. Jumpstarter's value in that topology is that the
 controller and router are the only things both sides must reach.
 
@@ -1094,31 +1098,40 @@ for sharing a Wi-Fi medium between separately-launched instances, and
 hardest thing in this JEP and the most likely to need upstream work — it is
 scheduled last (Phase 4) and its risk is called out explicitly.
 
-### DD-11: Physical ↔ virtual — gateway exporter
+### DD-11: Mixed physical/virtual benches — deferred
 
 **Alternatives considered:**
 
-1. **Gateway exporter with a real radio**, presenting the adapter as a
-   `provides` port; the virtual side attaches as if to any other controller.
-2. **Emulate the physical device's peer in software** and never involve RF.
-3. **Require both halves to be the same kind** — no hybrid benches.
+1. **Defer** — v1 supports homogeneous benches only: two virtual devices or
+   two physical devices.
+2. **In scope now**, via a gateway exporter owning a real radio adapter,
+   presented as a `provides` port that the virtual side attaches to as it
+   would to any other controller.
 
-**Decision:** Option 1.
+**Decision:** Option 1 — defer.
 
-**Rationale:** A physical device's radio is inside the device; its HCI is not
-reachable from outside, so no software path puts a real phone and a simulated
-head unit on the same medium without a real radio somewhere. Option 1 puts
-that radio in exactly one place and keeps it a normal exporter with a normal
-driver, so it schedules, leases, and reports like everything else.
+**Rationale:** Nothing about the lease plane or the forward mechanism
+distinguishes a mixed bench; the obstacle is entirely physical. A real
+device's radio is inside the device, and its HCI is not reachable from
+outside, so no software path puts a real phone and a simulated head unit on
+the same medium. The bridge has to happen in RF, which means new lab hardware
+(a USB HCI dongle suffices for Bluetooth; Wi-Fi needs a 5 GHz radio),
+physically near the device, shared between whoever is using it. Requiring
+that to accept this JEP couples a software design to a hardware procurement,
+and homogeneous benches already deliver both headline results — cross-host
+physical benches and cross-Pod virtual pairing.
 
-Option 2 is a useful *test double* but is not a hybrid bench: it is a virtual
-bench with a hand-written model of the physical device, and it cannot find
-bugs in the physical device's stack. Option 3 gives up the differentiator in
-the Motivation.
+The path when it returns is option 2, and the analysis is recorded here so it
+does not have to be redone. A gateway exporter stays a normal Jumpstarter
+exporter with a normal driver, so it schedules, leases, and reports like
+everything else, and its adapter is an ordinary `provides` port — no new
+mechanism is needed, only the hardware and a decision about how to model a
+shared RF resource (see Future Possibilities).
 
-The consequence is stated plainly: hybrid benches require lab hardware and
-physical proximity between the gateway and the device, and the gateway is a
-shared RF resource that must be modelled as such.
+Worth naming a tempting non-answer: emulating the physical device's peer in
+software and never involving RF. That is a useful *test double*, but it is
+not a mixed bench — it is a virtual bench with a hand-written model of the
+physical device, and it cannot find bugs in the physical device's stack.
 
 ### DD-12: Access policy and port validation timing
 
@@ -1379,9 +1392,9 @@ two-object design would face does not arise.
   configuration.
 - **`members` is immutable after creation**, so a bound lease cannot be
   widened beyond what it was authorized for.
-- **Physical RF is not access-controlled.** A gateway exporter's radio is
-  audible to anything in range; labs must treat RF proximity as a trust
-  boundary.
+- **Physical RF is not access-controlled.** Two physical devices pairing in
+  a shared lab space are audible to anything in range; labs must treat RF
+  proximity as a trust boundary.
 
 ### Observability
 
@@ -1462,8 +1475,6 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 - **Physical ↔ physical**: a physical phone and head unit on two exporters
   **on different lab hosts** — the allocation ATS's `SimpleScheduler`
   refuses. Requires lab hardware; runs on a labeled runner.
-- **Hybrid**: physical phone + gateway exporter (USB HCI dongle) + virtual
-  head unit in-cluster.
 - **Latency characterization**: HCI round-trip through a router forward vs. a
   direct forward vs. host-local rootcanal, reported as a distribution. Its
   result determines whether A2DP-class workloads are in scope for router mode.
@@ -1528,9 +1539,7 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 - [ ] **Phase 2 — Physical ↔ physical across hosts**: a phone and head unit
       on exporters on different lab hosts complete a phone projection
       session (Android Auto in the reference implementation)
-- [ ] **Phase 3 — Hybrid**: a physical phone pairs with a virtual head unit
-      through a gateway exporter
-- [ ] **Phase 4 — Virtual Wi-Fi**: two CVDs in separate Pods associate over a
+- [ ] **Phase 3 — Virtual Wi-Fi**: two CVDs in separate Pods associate over a
       forwarded `mac80211_hwsim`/`wmediumd` medium, and a projection
       session completes the Bluetooth → Wi-Fi handover end to end
 - [ ] Measured HCI round-trip latency through a router forward is published,
@@ -1618,8 +1627,9 @@ risk in one field, handled by DD-2.
   form expressible *in CI without a lab*.
 - Cross-host virtual device pairing, which no shipping tool does, reduces to
   forwarding a socket.
-- Hybrid benches let labs virtualize the abundant half of a bench and keep the
-  scarce half real.
+- Homogeneous benches are the tractable half of the problem and already
+  deliver both headline results; mixing physical and virtual devices in one
+  bench needs no new software mechanism, only radio hardware (DD-11).
 - Nothing here is Android-specific: CAN cross-connects between two ECUs,
   serial cross-overs, and SOME/IP peer benches are all ports and forwards.
 - The exporter = DUT invariant survives; JEP-0016 DD-8's option 1 becomes
@@ -1646,7 +1656,6 @@ risk in one field, handled by DD-2.
   optional direct fast-path listener.
 - **Latency is a first-class risk**, not a footnote, and some timing-sensitive
   protocols may not work in router mode.
-- **Hybrid benches need new lab hardware** and physical proximity.
 - **Phase 4 depends on upstream behavior** we do not control.
 
 ### Risks
@@ -1716,8 +1725,8 @@ risk in one field, handled by DD-2.
   report entries and two parallel key namespaces.
 - **Client-relayed forwards** — DD-4. Retained as an explicit
   `mode: client-relay` debug transport, not the architecture.
-- **Direct peer-to-peer only** — DD-4. Fails on the hybrid topology that
-  motivates the design.
+- **Direct peer-to-peer only** — DD-4. Fails whenever an edge-device
+  exporter and a cluster Pod are not mutually routable.
 - **A peer-specific RPC in `router.proto`** — DD-5.
 - **Guest-side Bluetooth/Wi-Fi shims** — DD-9. Changes the device under test.
 - **L4 forwarding of the projection session's socket** — DD-10. Skips the
@@ -1797,7 +1806,8 @@ To resolve during review:
   which costs an extra hop. This is a prototype question, not a design one.
 - **Should the scalar and members forms really be mutually exclusive?** The
   alternative is `spec.selector` as a default for members that omit their
-  own — convenient for homogeneous benches, but two ways to express one thing.
+  own — convenient when several members share a selector, but two ways to
+  express one thing.
 - **How should `listen` collisions be handled?** A fixed address keeps drivers
   unchanged but can collide on a physical host; an ephemeral port avoids
   collisions but requires telling the driver its address, reintroducing
@@ -1809,9 +1819,6 @@ To resolve during review:
   forwards from `jmp shell --lease` couple the export to a live session; a
   long-lived per-member forward managed by the client library is the
   alternative.
-- **How are gateway exporters modeled?** As a member with its own role
-  (schedulable and auditable, but benches become three members where users
-  think in two), or as an attribute of the physical member's exporter?
 
 To resolve during implementation:
 
@@ -1826,6 +1833,14 @@ To resolve during implementation:
 
 Not part of this proposal:
 
+- **Mixed physical/virtual benches** (DD-11) — a real device paired to a
+  virtual one through a gateway exporter owning a real radio adapter. This
+  needs no new software mechanism: the adapter is an ordinary `provides`
+  port and the lease plane is unchanged. What it needs is lab hardware near
+  the physical device, and a decision about how to model a shared RF
+  resource — as a member with its own role, which makes it schedulable and
+  auditable but turns a two-device bench into three members, or as an
+  attribute of the physical member's exporter.
 - **Selection-time port validation** via JEP-0015 dynamic exporter labels, so
   a bench whose ports cannot be satisfied reports `Unsatisfiable` without
   holding anything (DD-12).
