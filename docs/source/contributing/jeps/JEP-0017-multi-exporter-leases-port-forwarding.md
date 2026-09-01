@@ -308,12 +308,15 @@ spec:
           device-type: aaos-headunit
   forwards:
     - name: bt
-      from: { member: headunit, port: rootcanal }   # provides
-      to:   { member: phone,    port: controller }  # requires
+      between:
+        - { member: headunit, port: rootcanal }
+        - { member: phone,    port: controller }
 ```
 
-No addresses, no ports numbers, no medium taxonomy. The lease names roles and
-port names; both sides' internals stay inside their exporters (DD-6).
+No addresses, no port numbers, no medium taxonomy — and no statement of which
+side listens. The lease names roles and port names; both sides' internals
+stay inside their exporters (DD-6), and the controller resolves direction
+from the reported ports at bind time (DD-13).
 
 `members[].selector` and `members[].exporterRef` are the *same* fields as
 the top-level `spec.selector` and `spec.exporterRef` — a member is the
@@ -339,8 +342,9 @@ spec:
       selector: { matchLabels: { ecu-role: body-controller } }
   forwards:
     - name: powertrain-bus
-      from: { member: gateway, port: can0 }    # provides
-      to:   { member: node,    port: can }     # requires
+      between:
+        - { member: gateway, port: can0 }
+        - { member: node,    port: can }
 ```
 
 Only the port names differ. The controller applies the same validation —
@@ -590,9 +594,20 @@ type LeaseMember struct {
 }
 
 type LeaseForward struct {
-    Name string          `json:"name"`
-    From ForwardEndpoint `json:"from"`   // must resolve to a `provides` port
-    To   ForwardEndpoint `json:"to"`     // must resolve to a `requires` port
+    Name string `json:"name"`
+
+    // Symmetric form (preferred): exactly two endpoints, in any order. The
+    // controller resolves which is `provides` and which is `requires` from
+    // the reported ports at bind time (DD-13).
+    // +kubebuilder:validation:MinItems=2
+    // +kubebuilder:validation:MaxItems=2
+    Between []ForwardEndpoint `json:"between,omitempty"`
+
+    // Explicit form: use when the wiring should be pinned regardless of what
+    // the exporters report. Mutually exclusive with Between.
+    From *ForwardEndpoint `json:"from,omitempty"`  // must resolve to `provides`
+    To   *ForwardEndpoint `json:"to,omitempty"`    // must resolve to `requires`
+
     // Auto (default) | Router | Direct | ClientRelay
     Mode string `json:"mode,omitempty"`
 }
@@ -636,7 +651,8 @@ validate forwards against bound exporters.
 The existing CEL rules are extended, not replaced — the current
 "one of selector or exporterRef is required" rule gains a `members` arm, plus
 new rules for mutual exclusion, unique role names, forwards referencing
-declared members, and member immutability (mirroring `tags` and `context`).
+declared members, member immutability (mirroring `tags` and `context`), and
+exactly one of `between` or `from`+`to` per forward.
 
 **Protocol** — three additive fields and one new RPC:
 
@@ -683,7 +699,9 @@ message DialPeerResponse {
 
 **CLI surface** — existing commands, new flags:
 
-- `jmp create lease --member role=selector --forward name=m.port:m.port`
+- `jmp create lease --member role=selector --forward name=m.port,m.port`
+  (endpoint order is irrelevant — direction is resolved at bind time; where a
+  lab uses the same port name on both sides, `--forward bt` expands to it)
 - `jmp get lease[s]` prints per-role exporters; `-o json|yaml|name` unchanged
 - `jmp get lease <name> -o mobly`
 - `jmp get exporter <name>` shows declared ports
@@ -1176,6 +1194,64 @@ them.
 Option 3 is a real requirement but separable, and should be designed once
 there is operational experience with what benches people actually build.
 
+### DD-13: Infer direction, never infer topology
+
+**Alternatives considered:**
+
+1. **Infer direction only.** A forward names its two endpoints in any order
+   (`between`); the controller decides which is `provides` and which is
+   `requires` from the reported ports. Which ports are joined stays explicit.
+2. **Infer topology too** — auto-forward every `provides`/`requires` pair the
+   bound exporters happen to expose, with no `forwards` stanza at all.
+3. **Infer nothing** — the author states `from` and `to` on every forward.
+
+**Decision:** Option 1, with option 3 retained as an explicit form.
+
+**Rationale:** These two kinds of inference look similar and are opposites,
+because they sit on different sides of the line DD-6 and DD-10 already drew.
+
+Direction is a **property of the drivers**, not a choice. Whether rootcanal is
+the listening end is a fact about how rootcanal works, already declared in the
+exporter's report and already validated by the controller. Making the author
+write it down asks them to know exporter internals — exactly what DD-6
+removed addresses to avoid. Worse, it is knowledge that can go stale: a lab
+that swaps a `provides` implementation for one that dials would silently
+invalidate every lease manifest naming it as `from`. Inferring direction is
+therefore not a convenience but a correctness improvement, and it costs
+nothing — the controller already checks the reported roles, so option 1 uses
+that check to *assign* rather than merely to *reject*.
+
+Topology is a **property of the test**. DD-10 settled this: the same two
+exporters are a Bluetooth bench in one test and two independent devices in
+another, so the wiring belongs to whoever wrote the test. Option 2 makes it a
+property of whatever drivers happen to be configured on whichever exporters
+the selectors happened to bind, which fails in three ways:
+
+- **Nondeterminism across bindings.** A selector-based member binds to
+  different exporters on different runs. If those exporters declare different
+  ports, the bench wires itself differently run to run — the worst property a
+  reproducible test can have.
+- **Ambiguity is not rare.** Two members each exposing several ports turns
+  matching into a bipartite matching problem — the same one ATS's
+  `AdhocTestbedSchedulingUtil` solves for device allocation. Tractable, but a
+  silently wrong wiring is worse than an error.
+- **It weakens a security property.** This JEP states that a forward is not a
+  general exporter-to-exporter tunnel, because an exporter can reach only a
+  peer *a lease it is bound to explicitly names*. Option 2 relaxes "explicitly
+  names" to "happened to match", and an unintended pairing of two `console`
+  ports is a data path nobody requested.
+
+Option 3 remains available as `from`/`to` for the case where wiring should be
+pinned regardless of what the exporters report, and the controller then checks
+the stated roles against the reported ones rather than assigning them.
+
+The ergonomic complaint that motivates option 2 — `member.port:member.port`
+is verbose — is better answered in the client. The CLI expands shorthand into
+an explicit `spec.forwards[]` entry before submission, so the stored object
+stays auditable and `kubectl get lease -o yaml` shows the real wiring. Where a
+lab adopts the same port name on both sides, `--forward bt` can expand to it;
+that is a naming convention worth offering and not worth depending on.
+
 ## Design Details
 
 ### Deployment assumptions
@@ -1310,10 +1386,13 @@ exists belongs to a bound exporter, not to a selector (DD-12). For each
 `spec.forwards[]` entry the controller checks, against
 `ExporterStatus.Devices[].Ports`:
 
-1. `from.member` and `to.member` name declared members — enforced by CEL at
-   admission, before this point.
+1. Every endpoint names a declared member — enforced by CEL at admission,
+   before this point.
 2. Both named ports exist on the respective bound exporters.
-3. `from` resolves to a `PROVIDES` port and `to` to a `REQUIRES` port.
+3. **Direction resolves.** For a `between` forward, exactly one endpoint must
+   report `PROVIDES` and the other `REQUIRES`; the controller assigns the
+   roles accordingly (DD-13). For an explicit `from`/`to` forward, the stated
+   roles must match what the exporters report.
 4. If both ports declare `protocol`, the values are equal (DD-8).
 
 A failure sets `Invalid` with the offending forward and reason named, and
@@ -1345,7 +1424,8 @@ Establishment then reuses the existing port-forward primitives:
 | Failure | Behavior |
 | --- | --- |
 | Named port absent on a bound exporter | Lease `Invalid`; members stay bound for inspection |
-| `provides → provides` or `requires → requires` | Lease `Invalid` (DD-6) |
+| Both endpoints `provides`, or both `requires` | Lease `Invalid`; direction cannot resolve (DD-6, DD-13) |
+| Explicit `from`/`to` contradicts the reported directions | Lease `Invalid` naming the forward and the reported roles |
 | Declared protocols disagree | Lease `Invalid` (DD-8) |
 | Protocols differ but neither declared | Connects, fails at first byte — accepted (DD-8) |
 | Forward references an undeclared member | Rejected by CEL at admission; lease never created |
