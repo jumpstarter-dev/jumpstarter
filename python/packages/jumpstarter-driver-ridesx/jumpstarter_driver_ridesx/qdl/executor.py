@@ -173,6 +173,34 @@ def run_fastboot_step(step: FastbootStep, firmware_root: Path, *, timeout: int) 
     return collected
 
 
+async def _poll_dmesg(
+    marker: str,
+    baseline: str,
+    *,
+    timeout: float,
+    interval: float,
+    mode: str,
+    log: logging.Logger | None,
+) -> None:
+    """Poll dmesg for *marker* among lines added after *baseline*."""
+    if log:
+        log.info("Waiting for device in %s mode (marker: %s)", mode, marker)
+    elapsed = 0.0
+    while True:
+        await asyncio.sleep(interval)
+        elapsed += interval
+        try:
+            check_dmesg(marker, baseline=baseline)
+            if log:
+                log.info("Device entered %s mode (%.0fs)", mode, elapsed)
+            return
+        except RuntimeError:
+            if elapsed >= timeout:
+                if log:
+                    log.warning("Device did not enter %s mode after %.0fs", mode, elapsed)
+                raise
+
+
 async def set_device_mode(
     *,
     tac,
@@ -182,7 +210,10 @@ async def set_device_mode(
     tac_timeout: float,
     check_timeout: float = 30.0,
     check_interval: float = 2.0,
+    on_status: logging.Logger | None = None,
 ) -> None:
+    if on_status:
+        on_status.info("Entering %s mode", mode)
     baseline = read_dmesg() if check else None
     if mode == "edl":
         await send_tac_sequence(tac, profile.edl_commands, timeout=tac_timeout)
@@ -191,16 +222,10 @@ async def set_device_mode(
     else:
         raise ValueError(f"Unsupported mode: {mode}")
     if check:
-        elapsed = 0.0
-        while True:
-            await asyncio.sleep(check_interval)
-            elapsed += check_interval
-            try:
-                check_dmesg(check, baseline=baseline)
-                return
-            except RuntimeError:
-                if elapsed >= check_timeout:
-                    raise
+        await _poll_dmesg(
+            check, baseline, timeout=check_timeout, interval=check_interval,
+            mode=mode, log=on_status,
+        )
 
 
 def step_label(step: Step) -> str:

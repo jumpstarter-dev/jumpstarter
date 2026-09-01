@@ -192,17 +192,12 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
 
     async def _flash_post_steps(
         self, manifest: FirmwareManifest, work_dir: Path, firmware_root: Path
-    ) -> list[tuple[str, str, str]]:
-        """Flash ABL/CDT images via fastboot.
-
-        Returns a list of (partition, stdout, stderr) tuples from each
-        fastboot invocation so the caller can attach them to FlashStatus.
-        """
-        results: list[tuple[str, str, str]] = []
-
+    ) -> AsyncGenerator[FlashStatus, None]:
+        """Flash ABL/CDT images via fastboot, yielding progress updates."""
         if manifest.data.abl_image:
             abl_path = self._find_image_path(work_dir, firmware_root, manifest.data.abl_image)
             for slot in ("abl_a", "abl_b"):
+                yield FlashStatus(phase=FlashPhase.STEP, message=f"Flashing ABL to {slot}")
                 result = await asyncio.to_thread(
                     subprocess.run,
                     ["fastboot", "flash", slot, str(abl_path)],
@@ -211,14 +206,22 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
                     check=False,
                     timeout=self.fastboot_timeout,
                 )
-                results.append((slot, result.stdout, result.stderr))
                 if result.returncode != 0:
                     raise RuntimeError(f"fastboot flash {slot} failed: {result.stderr or result.stdout}")
+                yield FlashStatus(
+                    phase=FlashPhase.STEP,
+                    message=f"Completed ABL flash to {slot}",
+                    stdout=result.stdout or None,
+                    stderr=result.stderr or None,
+                )
 
         cdt_image = self._select_cdt_image(manifest)
         if cdt_image:
+            yield FlashStatus(phase=FlashPhase.STEP, message="Entering fastboot mode for CDT flash")
             await self._ensure_fastboot_mode()
+            yield FlashStatus(phase=FlashPhase.STEP, message="Device in fastboot mode")
             cdt_path = self._find_image_path(work_dir, firmware_root, cdt_image)
+            yield FlashStatus(phase=FlashPhase.STEP, message=f"Flashing CDT from {cdt_path.name}")
             result = await asyncio.to_thread(
                 subprocess.run,
                 ["fastboot", "flash", "cdt", str(cdt_path)],
@@ -227,11 +230,14 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
                 check=False,
                 timeout=self.fastboot_timeout,
             )
-            results.append(("cdt", result.stdout, result.stderr))
             if result.returncode != 0:
                 raise RuntimeError(f"fastboot flash cdt failed: {result.stderr or result.stdout}")
-
-        return results
+            yield FlashStatus(
+                phase=FlashPhase.STEP,
+                message="Completed CDT flash",
+                stdout=result.stdout or None,
+                stderr=result.stderr or None,
+            )
 
     def _firmware_root(self, manifest: FirmwareManifest) -> Path:
         return resolve_firmware_root(Path(self.work_dir), manifest)
@@ -347,16 +353,8 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             yield status
 
         if manifest.data.abl_image or cdt_images_configured(manifest.data.cdt_image):
-            yield FlashStatus(phase=FlashPhase.STEP, message="Flashing ABL/CDT images via fastboot")
-            post_results = await self._flash_post_steps(manifest, work_dir, firmware_root)
-            combined_stdout = "".join(out for _, out, _ in post_results)
-            combined_stderr = "".join(err for _, _, err in post_results)
-            yield FlashStatus(
-                phase=FlashPhase.STEP,
-                message="Completed ABL/CDT fastboot flash",
-                stdout=combined_stdout or None,
-                stderr=combined_stderr or None,
-            )
+            async for status in self._flash_post_steps(manifest, work_dir, firmware_root):
+                yield status
 
         yield FlashStatus(phase=FlashPhase.COMPLETE, message=f"Firmware update complete: {manifest.name}")
 

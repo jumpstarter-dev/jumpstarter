@@ -105,11 +105,13 @@ async def test_flash_post_steps_ensures_fastboot_before_cdt(tmp_path):
         patch("jumpstarter_driver_ridesx.qdl.executor.read_dmesg", return_value="Product: Android"),
     ):
         mock_subprocess.run.return_value = fastboot_result
-        results = await driver._flash_post_steps(manifest, tmp_path, firmware_root)
+        statuses = [s async for s in driver._flash_post_steps(manifest, tmp_path, firmware_root)]
 
     mock_ensure.assert_awaited_once()
-    assert len(results) == 1
-    assert results[0][0] == "cdt"
+    messages = [s.message for s in statuses]
+    assert any("fastboot" in m.lower() for m in messages)
+    assert any("CDT" in m for m in messages)
+    assert any("Completed" in m for m in messages)
 
 
 @pytest.mark.asyncio
@@ -131,10 +133,10 @@ async def test_flash_post_steps_skips_fastboot_check_without_cdt(tmp_path):
     )
 
     with patch.object(driver, "_ensure_fastboot_mode", new_callable=AsyncMock) as mock_ensure:
-        results = await driver._flash_post_steps(manifest, tmp_path, tmp_path)
+        statuses = [s async for s in driver._flash_post_steps(manifest, tmp_path, tmp_path)]
 
     mock_ensure.assert_not_awaited()
-    assert results == []
+    assert statuses == []
 
 
 @pytest.mark.asyncio
