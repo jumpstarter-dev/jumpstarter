@@ -139,12 +139,7 @@ async def test_flash_post_steps_skips_fastboot_check_without_cdt(tmp_path):
 
 @pytest.mark.asyncio
 async def test_ensure_fastboot_always_power_cycles(tmp_path):
-    """_ensure_fastboot_mode must always power-cycle into real fastboot.
-
-    After QDL flashing the device may enumerate as a Qualcomm USB device
-    (idProduct=4ee7) that responds to ``fastboot devices`` but is NOT in
-    real Android fastboot.  A full power-cycle is always required.
-    """
+    """_ensure_fastboot_mode must always power-cycle into real fastboot."""
     mock_tac = MagicMock()
     stream = AsyncMock()
     stream.__aenter__ = AsyncMock(return_value=stream)
@@ -158,6 +153,50 @@ async def test_ensure_fastboot_always_power_cycles(tmp_path):
         await driver._ensure_fastboot_mode()
 
     mock_set_mode.assert_awaited_once_with("fastboot", check_dmesg="Product: Android")
+
+
+@pytest.mark.asyncio
+async def test_ensure_fastboot_retries_on_failure(tmp_path):
+    """_ensure_fastboot_mode retries up to max_attempts on failure."""
+    mock_tac = MagicMock()
+    stream = AsyncMock()
+    stream.__aenter__ = AsyncMock(return_value=stream)
+    stream.__aexit__ = AsyncMock(return_value=None)
+    stream.receive = AsyncMock(return_value=b"ok")
+    mock_tac.connect.return_value = stream
+
+    driver = QualcommFlasher(children={"tac": mock_tac}, work_dir=str(tmp_path))
+
+    # Fail twice, succeed on third attempt
+    with patch.object(
+        driver, "_set_mode", new_callable=AsyncMock,
+        side_effect=[RuntimeError("not found"), RuntimeError("not found"), None],
+    ) as mock_set_mode:
+        await driver._ensure_fastboot_mode(max_attempts=3)
+
+    assert mock_set_mode.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_ensure_fastboot_raises_after_max_attempts(tmp_path):
+    """_ensure_fastboot_mode raises after exhausting all attempts."""
+    mock_tac = MagicMock()
+    stream = AsyncMock()
+    stream.__aenter__ = AsyncMock(return_value=stream)
+    stream.__aexit__ = AsyncMock(return_value=None)
+    stream.receive = AsyncMock(return_value=b"ok")
+    mock_tac.connect.return_value = stream
+
+    driver = QualcommFlasher(children={"tac": mock_tac}, work_dir=str(tmp_path))
+
+    with (
+        patch.object(
+            driver, "_set_mode", new_callable=AsyncMock,
+            side_effect=RuntimeError("not found"),
+        ),
+        pytest.raises(RuntimeError, match="not found"),
+    ):
+        await driver._ensure_fastboot_mode(max_attempts=2)
 
 
 def test_safe_extractall_rejects_path_traversal(tmp_path):

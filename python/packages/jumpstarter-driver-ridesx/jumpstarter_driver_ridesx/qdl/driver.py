@@ -92,7 +92,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             tac_timeout=self.tac_command_timeout,
         )
 
-    async def _ensure_fastboot_mode(self) -> None:
+    async def _ensure_fastboot_mode(self, max_attempts: int = 3) -> None:
         """Power-cycle the device into fastboot mode and verify via dmesg.
 
         After QDL flashing the device may enumerate as a Qualcomm USB
@@ -100,10 +100,20 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         but is NOT in real Android fastboot mode.  A full power-cycle
         through the TAC GPIO sequence is always required to reach the
         actual fastboot bootloader (idProduct=d00d, Product: Android).
+
+        Retries up to *max_attempts* times because the first boot after
+        QDL flashing may not reach fastboot reliably.
         """
         from .executor import RETRY_MODE_DMESG
 
-        await self._set_mode("fastboot", check_dmesg=RETRY_MODE_DMESG["fastboot"])
+        for attempt in range(1, max_attempts + 1):
+            try:
+                await self._set_mode("fastboot", check_dmesg=RETRY_MODE_DMESG["fastboot"])
+                return
+            except RuntimeError:
+                if attempt >= max_attempts:
+                    raise
+                await asyncio.sleep(2)
 
     @export
     async def boot_to_edl(self) -> None:
