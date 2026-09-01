@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -40,7 +39,18 @@ func (s *TelemetryService) initScrapeTimeouts() {
 		Name: scrapeTimeoutsMetric,
 		Help: "Exporter MetricsStream scrapes that exceeded scrapeTimeout.",
 	})
-	s.metricsRegistry.MustRegister(s.scrapeTimeouts)
+	s.parseErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: metricsParseErrorsMetric,
+		Help: "Exporter MetricsStream snapshots omitted because OpenMetrics parse failed.",
+	}, []string{labelExporter})
+	s.metricsRegistry.MustRegister(s.scrapeTimeouts, s.parseErrors)
+}
+
+func (s *TelemetryService) recordMetricsParseError(exporter string, err error) {
+	if s.parseErrors != nil {
+		s.parseErrors.WithLabelValues(exporter).Inc()
+	}
+	ctrl.Log.WithName("telemetry").Error(err, "exporter metrics snapshot omitted", logFieldExporter, exporter)
 }
 
 func metricsHTTPEnabled(addr string) bool {
@@ -110,18 +120,18 @@ func (s *TelemetryService) handleReadyz(w http.ResponseWriter, _ *http.Request) 
 func (s *TelemetryService) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	s.initScrapeTimeouts()
 	snaps := s.fanoutScrapes(r.Context())
+	// Merge exporter snapshots first so parse failures increment parseErrors
+	// before hub metrics are gathered into the same /metrics response.
+	families := mergeSnapshots(snaps, nil, s.mergeConfigFor, s.recordMetricsParseError)
 
-	var extra []*dto.MetricFamily
 	if s.metricsRegistry != nil {
 		gathered, err := s.metricsRegistry.Gather()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		extra = gathered
+		families = mergeSnapshots(nil, append(gathered, families...), s.mergeConfigFor, nil)
 	}
-
-	families := mergeSnapshots(snaps, extra, s.mergeConfigFor)
 
 	var buf bytes.Buffer
 	if err := encodeMetricFamilies(&buf, families); err != nil {

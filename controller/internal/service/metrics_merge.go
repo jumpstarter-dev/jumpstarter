@@ -35,6 +35,10 @@ const (
 	// scrapeTimeoutsMetric is incremented once per exporter that does not
 	// answer a MetricsStream scrape within scrapeTimeout (JEP-0013).
 	scrapeTimeoutsMetric = "jumpstarter_scrape_timeouts_total"
+
+	// metricsParseErrorsMetric is incremented once per exporter snapshot that
+	// MetricsStream delivered but OpenMetrics parse rejected (JEP-0013).
+	metricsParseErrorsMetric = "jumpstarter_metrics_parse_errors_total"
 )
 
 // DefaultDriverTypeEnum is the JEP-0013 default allowlist for driver_type.
@@ -119,7 +123,7 @@ func encodeMetricFamilies(w io.Writer, families []*dto.MetricFamily) error {
 	return nil
 }
 
-func mergeSnapshots(snapshots []exporterSnapshot, extra []*dto.MetricFamily, cfgFor func(string) mergeConfig) []*dto.MetricFamily {
+func mergeSnapshots(snapshots []exporterSnapshot, extra []*dto.MetricFamily, cfgFor func(string) mergeConfig, onParseError func(exporter string, err error)) []*dto.MetricFamily {
 	byName := map[string]*dto.MetricFamily{}
 	for _, f := range extra {
 		if f == nil || f.GetName() == "" {
@@ -133,6 +137,9 @@ func mergeSnapshots(snapshots []exporterSnapshot, extra []*dto.MetricFamily, cfg
 		}
 		families, err := parseMetricFamilies(snap.text)
 		if err != nil {
+			if onParseError != nil {
+				onParseError(snap.name, err)
+			}
 			continue
 		}
 		cfg := cfgFor(snap.name)
