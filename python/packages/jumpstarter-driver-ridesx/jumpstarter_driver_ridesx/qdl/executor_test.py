@@ -1,5 +1,7 @@
 import subprocess
 
+import pytest
+
 from jumpstarter_driver_ridesx.qdl.executor import build_qdl_command, check_dmesg, fix_provision_default_xml
 from jumpstarter_driver_ridesx.qdl.firmware_id import identify_firmware_variant
 from jumpstarter_driver_ridesx.qdl.schema import QdlConfig, QdlStep
@@ -74,6 +76,20 @@ def test_check_dmesg_does_not_clear_kernel_log(monkeypatch):
     check_dmesg("USB QTI_HS", baseline="line1\n")
     assert calls == [["dmesg"]]
     assert "-c" not in calls[0]
+
+
+def test_check_dmesg_baseline_rejects_stale_marker(monkeypatch):
+    """When a baseline is provided, stale markers from before the baseline must not match."""
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, stdout="old\nProduct: Android\nnew unrelated line\n"
+        ),
+    )
+    # "Product: Android" is in the baseline (old output) — should NOT match
+    with pytest.raises(RuntimeError, match="not found in new kernel log"):
+        check_dmesg("Product: Android", baseline="old\nProduct: Android\n")
 
 
 def test_check_dmesg_finds_marker_in_tail(monkeypatch):

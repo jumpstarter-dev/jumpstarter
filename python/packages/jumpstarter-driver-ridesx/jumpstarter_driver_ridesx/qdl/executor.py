@@ -45,10 +45,14 @@ def check_dmesg(expected: str, *, baseline: str | None = None, tail_lines: int =
     """Check kernel ring buffer for an expected marker.
 
     When *baseline* is provided, only lines **not** in the baseline are
-    inspected (diff-based check).  Otherwise the last *tail_lines* lines
-    are searched.  On systems with very high dmesg throughput (USB
-    enumeration storms, etc.) the default 200 lines may scroll past the
-    marker; increase *tail_lines* if this becomes an issue.
+    inspected (diff-based check) and the function raises if the marker
+    is not found among the new lines.  This prevents false positives
+    from stale markers left by previous operations.
+
+    Without a baseline the last *tail_lines* lines are searched.  On
+    systems with very high dmesg throughput (USB enumeration storms,
+    etc.) the default 200 lines may scroll past the marker; increase
+    *tail_lines* if this becomes an issue.
     """
     output = read_dmesg()
     if baseline is not None:
@@ -56,6 +60,7 @@ def check_dmesg(expected: str, *, baseline: str | None = None, tail_lines: int =
         for line in output.splitlines():
             if line not in baseline_lines and expected in line:
                 return
+        raise RuntimeError(f"Expected dmesg marker '{expected}' not found in new kernel log entries")
     tail = "\n".join(output.splitlines()[-tail_lines:])
     if expected in tail:
         return
