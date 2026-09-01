@@ -1,10 +1,17 @@
 import subprocess
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from jumpstarter_driver_ridesx.qdl.executor import build_qdl_command, check_dmesg, fix_provision_default_xml
+from jumpstarter_driver_ridesx.qdl.executor import (
+    build_qdl_command,
+    check_dmesg,
+    fix_provision_default_xml,
+    set_device_mode,
+)
 from jumpstarter_driver_ridesx.qdl.firmware_id import identify_firmware_variant
 from jumpstarter_driver_ridesx.qdl.schema import QdlConfig, QdlStep
+from jumpstarter_driver_ridesx.qdl.soc_profiles import SA8775P
 
 
 def test_identify_firmware_variant_known_es22():
@@ -99,3 +106,57 @@ def test_check_dmesg_finds_marker_in_tail(monkeypatch):
         lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, stdout="old\nProduct: Android\n"),
     )
     check_dmesg("Product: Android")
+
+
+@pytest.mark.asyncio
+async def test_set_device_mode_polls_dmesg_until_marker_found():
+    """set_device_mode should poll dmesg until the expected marker appears."""
+    tac = MagicMock()
+    stream = AsyncMock()
+    stream.__aenter__ = AsyncMock(return_value=stream)
+    stream.__aexit__ = AsyncMock(return_value=None)
+    stream.receive = AsyncMock(return_value=b"ok")
+    tac.connect.return_value = stream
+
+    call_count = 0
+
+    def fake_check_dmesg(expected, *, baseline=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count < 3:
+            raise RuntimeError("not found")
+
+    with (
+        patch("jumpstarter_driver_ridesx.qdl.executor.read_dmesg", return_value="baseline"),
+        patch("jumpstarter_driver_ridesx.qdl.executor.check_dmesg", side_effect=fake_check_dmesg),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+    ):
+        await set_device_mode(
+            tac=tac, profile=SA8775P, mode="fastboot",
+            check="Product: Android", tac_timeout=1.0,
+        )
+
+    assert call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_set_device_mode_raises_after_timeout():
+    """set_device_mode should raise after check_timeout if marker never appears."""
+    tac = MagicMock()
+    stream = AsyncMock()
+    stream.__aenter__ = AsyncMock(return_value=stream)
+    stream.__aexit__ = AsyncMock(return_value=None)
+    stream.receive = AsyncMock(return_value=b"ok")
+    tac.connect.return_value = stream
+
+    with (
+        patch("jumpstarter_driver_ridesx.qdl.executor.read_dmesg", return_value="baseline"),
+        patch("jumpstarter_driver_ridesx.qdl.executor.check_dmesg", side_effect=RuntimeError("not found")),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+        pytest.raises(RuntimeError, match="not found"),
+    ):
+        await set_device_mode(
+            tac=tac, profile=SA8775P, mode="fastboot",
+            check="Product: Android", tac_timeout=1.0,
+            check_timeout=5.0, check_interval=2.0,
+        )

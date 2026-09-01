@@ -180,6 +180,8 @@ async def set_device_mode(
     mode: str,
     check: str | None,
     tac_timeout: float,
+    check_timeout: float = 30.0,
+    check_interval: float = 2.0,
 ) -> None:
     baseline = read_dmesg() if check else None
     if mode == "edl":
@@ -189,8 +191,16 @@ async def set_device_mode(
     else:
         raise ValueError(f"Unsupported mode: {mode}")
     if check:
-        await asyncio.sleep(1)
-        check_dmesg(check, baseline=baseline)
+        elapsed = 0.0
+        while True:
+            await asyncio.sleep(check_interval)
+            elapsed += check_interval
+            try:
+                check_dmesg(check, baseline=baseline)
+                return
+            except RuntimeError:
+                if elapsed >= check_timeout:
+                    raise
 
 
 def step_label(step: Step) -> str:
