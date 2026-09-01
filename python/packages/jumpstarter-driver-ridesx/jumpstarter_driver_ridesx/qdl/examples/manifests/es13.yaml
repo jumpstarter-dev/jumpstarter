@@ -3,10 +3,10 @@ description: "ES13 firmware update package (QDL)"
 data:
   folder: "r00022.2a"
   cdt_image:
-    v1: "cdt/LEMANSAU_QAM_1.1.0.bin"
-    v2: "cdt/LEMANSAU_QAM_1.1.0.bin"
-    v3: "cdt/LEMANSAU_QAM_1.2.0.bin"
-    v4: "cdt/LEMANSAU_QAM_1.2.0.bin"
+    v1: "ufs/LEMANSAU_QAM_1.1.0.bin"
+    v2: "ufs/LEMANSAU_QAM_1.1.0.bin"
+    v3: "ufs/LEMANSAU_QAM_1.2.0.bin"
+    v4: "ufs/LEMANSAU_QAM_1.2.0.bin"
 steps:
   - set_mode: edl
     check_dmesg: "USB QTI_HS"

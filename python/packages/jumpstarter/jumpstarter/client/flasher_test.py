@@ -622,6 +622,28 @@ class TestStreamingFlasherClient:
         assert results[0].phase == FlashPhase.STEP
         assert results[1].phase == FlashPhase.COMPLETE
 
+    def test_iter_flash_status_coerces_float_to_int(self):
+        """Protobuf struct_pb2.Value stores all numbers as doubles, so integer
+        fields like bytes_transferred arrive as floats after round-tripping
+        through gRPC.  model_validate must accept them without strict mode."""
+        client = self._make_client()
+        statuses_data = [
+            {
+                "phase": "download",
+                "message": "Received 480285 bytes",
+                "bytes_transferred": 480285.0,
+                "bytes_total": 1000000.0,
+            },
+            {"phase": "complete", "message": "done"},
+        ]
+        client.streamingcall = MagicMock(return_value=iter(statuses_data))
+        results = list(client._iter_flash_status(handle=None, manifest=None))
+        assert len(results) == 2
+        assert results[0].bytes_transferred == 480285
+        assert isinstance(results[0].bytes_transferred, int)
+        assert results[0].bytes_total == 1000000
+        assert isinstance(results[0].bytes_total, int)
+
     def test_iter_flash_status_raises_on_error(self):
         client = self._make_client()
         statuses_data = [

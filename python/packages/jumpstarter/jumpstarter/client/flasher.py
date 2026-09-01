@@ -349,7 +349,7 @@ class StreamingFlasherClient(FlasherClient, StreamingFlasherClientInterface):
         manifest: Any | None,
     ) -> Generator[FlashStatus, None, None]:
         for value in self.streamingcall("flash", handle, manifest):
-            status = FlashStatus.model_validate(value, strict=True)
+            status = FlashStatus.model_validate(value)
             yield status
             if status.phase == FlashPhase.ERROR:
                 raise RuntimeError(status.message)

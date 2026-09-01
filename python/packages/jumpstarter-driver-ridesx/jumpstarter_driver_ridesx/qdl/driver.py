@@ -90,6 +90,12 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             tac_timeout=self.tac_command_timeout,
         )
 
+    async def _ensure_fastboot_mode(self) -> None:
+        """Boot the device into fastboot mode and verify via dmesg."""
+        from .executor import RETRY_MODE_DMESG
+
+        await self._set_mode("fastboot", check_dmesg=RETRY_MODE_DMESG["fastboot"])
+
     @export
     async def boot_to_edl(self) -> None:
         await self._set_mode("edl")
@@ -202,6 +208,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
 
         cdt_image = self._select_cdt_image(manifest)
         if cdt_image:
+            await self._ensure_fastboot_mode()
             cdt_path = self._find_image_path(work_dir, firmware_root, cdt_image)
             result = await asyncio.to_thread(
                 subprocess.run,

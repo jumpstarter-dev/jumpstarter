@@ -58,7 +58,7 @@ class QualcommFlasherClient(StreamingFlasherClient, CompositeClient):
         cached: bool,
     ):
         for value in self.streamingcall("flash", handle, manifest, cached):
-            status = FlashStatus.model_validate(value, strict=True)
+            status = FlashStatus.model_validate(value)
             yield status
             if status.phase == FlashPhase.ERROR:
                 raise RuntimeError(status.message)

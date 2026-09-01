@@ -27,6 +27,30 @@ def test_load_manifest_source_from_https_url():
     assert manifest["data"]["folder"] == "r00002.2a_AWE"
 
 
+def test_iter_flash_status_coerces_float_to_int():
+    """Protobuf struct_pb2.Value stores all numbers as doubles, so integer
+    fields like bytes_transferred arrive as floats after gRPC round-tripping.
+    model_validate must accept them without strict mode."""
+    client = QualcommFlasherClient.__new__(QualcommFlasherClient)
+    client.streamingcall = MagicMock(
+        return_value=iter(
+            [
+                {
+                    "phase": "download",
+                    "message": "Received 450019 bytes",
+                    "bytes_transferred": 450019.0,
+                    "bytes_total": 2000000.0,
+                },
+                {"phase": "complete", "message": "done"},
+            ]
+        )
+    )
+    results = list(client._iter_flash_status(handle=None, manifest=None, cached=False))
+    assert len(results) == 2
+    assert results[0].bytes_transferred == 450019
+    assert isinstance(results[0].bytes_transferred, int)
+
+
 def test_flash_stream_uses_http_adapter_for_firmware_url():
     client = MagicMock()
     client.flash_stream = QualcommFlasherClient.flash_stream.__get__(client, QualcommFlasherClient)
