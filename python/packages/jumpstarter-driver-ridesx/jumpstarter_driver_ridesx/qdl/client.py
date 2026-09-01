@@ -92,7 +92,10 @@ def _flash_rich(client: QualcommFlasherClient, file, *, manifest, cached) -> Non
         if status.phase == FlashPhase.DOWNLOAD:
             if download_task is None:
                 download_progress.start()
-                download_task = download_progress.add_task("download", total=None)
+                total = status.bytes_total if status.bytes_total else None
+                download_task = download_progress.add_task("download", total=total)
+            elif status.bytes_total and download_progress.tasks[download_task].total is None:
+                download_progress.update(download_task, total=status.bytes_total)
             if status.bytes_transferred is not None:
                 download_progress.update(download_task, completed=status.bytes_transferred)
         else:

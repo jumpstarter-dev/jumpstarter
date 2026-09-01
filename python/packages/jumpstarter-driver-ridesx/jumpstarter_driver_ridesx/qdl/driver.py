@@ -34,6 +34,7 @@ from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver, export
 from jumpstarter.driver.flasher import StreamingFlasherInterface
 from jumpstarter.streams.encoding import AutoDecompressIterator
+from jumpstarter.streams.progress import ProgressAttribute
 
 
 @dataclass
@@ -295,6 +296,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         bytes_written = 0
         last_update = time.monotonic()
         async with self.resource(source) as res:
+            bytes_total = int(res.extra(ProgressAttribute.total)) if res.extra(ProgressAttribute.total, None) else None
             async with await FileWriteStream.from_path(archive_path) as stream:
                 async for chunk in AutoDecompressIterator(source=res):
                     await stream.send(chunk)
@@ -306,11 +308,13 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
                             phase=FlashPhase.DOWNLOAD,
                             message="Receiving firmware archive",
                             bytes_transferred=bytes_written,
+                            bytes_total=bytes_total,
                         )
         yield FlashStatus(
             phase=FlashPhase.DOWNLOAD,
             message="Download complete",
             bytes_transferred=bytes_written,
+            bytes_total=bytes_total,
         )
 
         yield FlashStatus(phase=FlashPhase.EXTRACT, message="Extracting firmware archive")
