@@ -506,7 +506,8 @@ First, the **data plane** — ports that a forward carries:
 | --- | --- | --- | --- |
 | Shared virtual controller (Bumble) | `controller` | provides | Accepts multiple hosts and mediates between them (DD-9) |
 | `jumpstarter-driver-bt-peer` | `controller` | requires | A Bumble `Device` dialing an external controller |
-| rootcanal (Cuttlefish, emulator) | `rootcanal` | provides | HCI on TCP; hosts attach to it |
+| rootcanal HCI (Cuttlefish, emulator) | `rootcanal` | provides | HCI on TCP (`7300 + rootcanal_instance_num`); hosts attach to it |
+| rootcanal link layer | `rootcanal-link` | provides | Controller-to-controller federation (`7400`, `7600` BLE); standalone rootcanal only, not netsim |
 | `wmediumd` / `mac80211_hwsim` | `hwsim` | provides | Frame socket |
 | `socketcand` / CAN-over-TCP bridge | `can` | provides | A CAN segment reachable as a socket |
 | Serial bridge (pty or TCP) | `console` | requires/provides | Cross-over between a DUT and a companion |
@@ -521,11 +522,12 @@ the medium a forward connects.
 
 Two consequences of the data-plane table are worth stating plainly, and both
 generalize beyond radios. First, HCI is **asymmetric**: a host attaches to a
-controller. Forwarding one rootcanal's port into another rootcanal wires
-controller to controller and nothing happens — which is precisely why
-forwards are directional and why a `provides → provides` forward is rejected
-(DD-6). It is also why the first row exists: joining two devices needs a
-component that *is* a controller to both of them (DD-9). Second, not every
+controller, so forwarding one device's *HCI* port into another's achieves
+nothing — which is precisely why forwards are directional and why a
+`provides → provides` forward is rejected (DD-6). Note this is a statement
+about HCI specifically, not about controllers: rootcanal exposes a separate
+**link-layer** port for joining controllers to each other, which is why the
+table lists both (DD-9). Second, not every
 port is a transparent splice — netsim's `PacketStreamer` requires the
 attaching side to originate a `StreamPackets` call carrying `ChipInfo` before
 traffic flows, so its consumer is a protocol-terminating driver rather than a
@@ -1021,36 +1023,60 @@ validation and is recorded as such.
 
 **Alternatives considered:**
 
-1. **Forward one simulator's socket into another** — e.g. one CVD's
-   rootcanal port forwarded to the other CVD.
-2. **A shared virtual controller** that both devices attach to as hosts,
-   using Bumble's virtual `Controller`.
-3. **A dedicated bridge driver tier** — purpose-built `LinkEndpoint` drivers
+1. **Share one rootcanal** — the second CVD is launched with
+   `--rootcanal_instance_num` pointing at the first, and a forward supplies
+   that instance's HCI port.
+2. **Federate two rootcanals at the link layer** — each CVD keeps its own
+   controller, and a forward joins them at rootcanal's `link_port`.
+3. **A shared virtual controller from Bumble** — its virtual `Controller`
+   plus `RemoteLink` relay, replacing the simulator entirely.
+4. **A dedicated bridge driver tier** — purpose-built `LinkEndpoint` drivers
    that know about radios.
-4. **Inside the guest** — a shim in Android proxying Bluetooth/Wi-Fi at the
+5. **Inside the guest** — a shim in Android proxying Bluetooth/Wi-Fi at the
    HAL or socket layer.
 
-**Decision:** Option 2, implemented over the ordinary forward machinery.
+**Decision:** Options 1–3 are all ordinary forwards and all supported.
+Option 2 is the Phase 1 default, option 1 the fallback, option 3 the general
+answer beyond Cuttlefish.
 
-**Rationale:** Option 1 is the obvious first idea and it does not work for
-the motivating topology. rootcanal is a *controller*; two CVDs each have one;
-forwarding either into the other joins controller to controller and nothing
-happens. Option 1 remains correct wherever one side genuinely is a host — a
-`bt-peer` exporter attaching to a CVD's rootcanal is exactly that, and is the
-cheapest thing to build first — but it cannot join two devices that each
-already own a controller.
+**Rationale:** Cuttlefish already solves multi-device Bluetooth on one host,
+and reading how tells us what to forward. In
+`assemble_cvd`, all four rootcanal ports are derived from
+`rootcanal_instance_num` rather than from the CVD's own instance number —
+`hci 7300+N`, `link 7400+N`, `test 7500+N`, `link_ble 7600+N` — and
+`--rootcanal_instance_num` is documented as *"use an existing rootcanal
+instance which is launched from cuttlefish instance with
+rootcanal_instance_num."* Sharing a controller between devices is therefore a
+first-class, supported configuration, and the guest reaches it through a TCP
+connector on `rootcanal_hci_port`. Everything host-local about it is a
+**port**, which is exactly what this JEP forwards.
 
-Option 2 supplies the missing piece: a component that is a controller to
-*both* devices. Bumble already implements it. Its virtual `Controller`
-attaches to a link-layer bus, several controllers on one bus exchange
-broadcast advertising and unicast ACL data, and `RemoteLink` carries that bus
-over a WebSocket relay hosting virtual *rooms*. Bumble's `android-netsim`
-transport additionally has a `mode=controller` that accepts host connections
-speaking netsim's protocol — documented as a way to replace netsim outright,
-with `bumble-hci-bridge` as the worked example. So the medium becomes a
-Jumpstarter driver in Python rather than a dependency on where upstream
-components happen to be placed, and the thing crossing between exporters is a
-WebSocket — a plain TCP forward this JEP already carries.
+Option 2 is preferred because it is symmetric. Each device keeps its own
+controller, so neither exporter's failure removes the other's radio, and
+rootcanal exposes `link_port` / `link_ble_port` specifically for joining
+controllers to one another — distinct from the HCI port that hosts use. It
+needs no new code at all: a `TcpNetwork` child on 7400 and a forward.
+
+Option 1 is the fallback if link-layer federation does not behave as the flag
+names imply. It is equally free of new code, but asymmetric — one exporter's
+rootcanal becomes the medium for both, so that Pod becomes a single point of
+failure for the bench.
+
+Option 3 is the general answer, and the only one that works outside
+Cuttlefish. Bumble's virtual `Controller` attaches to a link-layer bus,
+several controllers on one bus exchange broadcast advertising and unicast ACL
+data, and `RemoteLink` carries that bus over a WebSocket relay hosting
+virtual *rooms* — the N-way medium DD-6 deferred. Its `android-netsim`
+transport has a `mode=controller` documented as replacing netsim outright.
+Choose it when a bench includes a non-Cuttlefish device, when more than two
+participants share a medium, or when the medium itself needs to be scripted
+or instrumented — a Python controller can inject faults a C++ simulator will
+not.
+
+One constraint separates them in practice: `link_port` is passed only to
+standalone rootcanal, never to netsim, which takes `--hci_port` alone. A
+device configured to route its radios through netsim therefore has options 1
+and 3 available but not option 2.
 
 Bumble is also already a dependency: `jumpstarter-driver-bt-peer` is built on
 it and passes its `transport` string directly to `bumble.transport.
@@ -1078,12 +1104,14 @@ ordinary `provides` ports under this design, so the same forward machinery
 serves them and no medium-specific mechanism is required. Integrating a
 concrete restbus is future work (see Future Possibilities).
 
-Two caveats are carried rather than hidden. Bumble's netsim controller mode
-is documented against the Android emulator, not Cuttlefish, so pointing a CVD
-at an external controller is unverified (see Unresolved Questions). And a
-radio medium in Python is comfortable for advertising, pairing, and control
-while being an open question for sustained A2DP-class traffic — which
-compounds, rather than relieves, the latency risk already recorded.
+Two caveats are carried rather than hidden. Every option above depends on the
+same unverified step — that the relevant port still works when it is a
+forward from another host rather than a local socket (see Unresolved
+Questions). And for option 3 specifically, a radio medium in Python is
+comfortable for advertising, pairing, and control while being an open
+question for sustained A2DP-class traffic, which compounds rather than
+relieves the latency risk already recorded; options 1 and 2 keep the medium
+in native C++ and avoid that entirely.
 
 ### DD-10: Wi-Fi medium forwarding
 
@@ -1546,8 +1574,8 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 ### Hardware-in-the-Loop Tests
 
 - **Virtual ↔ virtual**: two `jumpstarter-driver-cuttlefish` exporters in
-  separate Pods (JEP-0016 `ExporterSet`), joined through a shared virtual
-  controller (DD-9). Assert BT discovery and pairing, and — Phase 3 — Wi-Fi
+  separate Pods (JEP-0016 `ExporterSet`), joined by a forwarded rootcanal
+  port (DD-9). Assert BT discovery and pairing, and — Phase 3 — Wi-Fi
   association. `jumpstarter-driver-netsim` supplies the pcap capture used to
   evidence what actually crossed the air.
   Runnable in CI on KVM-capable nodes with no lab hardware. This is the
@@ -1605,17 +1633,19 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 - [ ] `bt-peer` participates as a `requires` endpoint with **no Python
       changes** — exporter configuration only, relying on its existing
       `open_transport(self.transport)` passthrough
-- [ ] A shared virtual controller component (Bumble `Controller` plus link
-      relay) exists as a driver exposing a `provides` port, and two hosts
-      attached to it exchange advertising and ACL data
+- [ ] Phase 1 is achieved with **no new driver code** — a `TcpNetwork` child
+      on the rootcanal port plus a forward
+- [ ] A Bumble-based shared controller exists as a driver exposing a
+      `provides` port, for benches outside Cuttlefish and for N-way media
 - [ ] Byte fidelity and reset semantics verified by the `EchoNetwork`
       integration test
 
 **Topologies** (each a phase gate, in order)
 
 - [ ] **Phase 1 — Virtual ↔ virtual Bluetooth**: two CVDs in separate Pods
-      on separate nodes complete BR/EDR discovery and pairing through a
-      shared virtual controller reached by a forward, in CI
+      on separate nodes complete BR/EDR discovery and pairing over a
+      forwarded rootcanal port (link-layer federation, or a shared HCI
+      instance), in CI
 - [ ] **Phase 2 — Physical ↔ physical across hosts**: a phone and head unit
       on exporters on different lab hosts complete a phone projection
       session (Android Auto in the reference implementation)
@@ -1876,14 +1906,16 @@ risk in one field, handled by DD-2.
 
 To resolve during review:
 
-- **Confirm the Phase 1 topology against a real CVD.** The design answer is
-  settled (DD-9: a shared virtual controller, with Bumble the leading
-  candidate). What is unverified is whether a Cuttlefish guest can be pointed
-  at an *external* controller speaking the netsim protocol — Bumble documents
-  `mode=controller` for the Android emulator, and Cuttlefish routes radios
-  through netsim, but no source ties the two together. If it cannot, the
-  fallback is a Bumble host attached per device with the relay between them,
-  which costs an extra hop. This is a prototype question, not a design one.
+- **Confirm the Phase 1 topology against real CVDs.** DD-9 leaves three
+  forwardable options, and all three turn on one unverified step: whether a
+  rootcanal port still works when it is a forward from another Pod rather
+  than a local socket. Three cheap experiments settle it, none needing new
+  code: (a) forward `7400` between two CVDs and see whether their controllers
+  federate; (b) launch the second CVD with `--rootcanal_instance_num` and
+  forward `7300` from the first; (c) point a CVD at a Bumble
+  `mode=controller` endpoint, which is documented for the Android emulator
+  but not for Cuttlefish. Whichever works becomes the Phase 1 default. This
+  is a prototype question, not a design one.
 - **Should the scalar and members forms really be mutually exclusive?** The
   alternative is `spec.selector` as a default for members that omit their
   own — convenient when several members share a selector, but two ways to
