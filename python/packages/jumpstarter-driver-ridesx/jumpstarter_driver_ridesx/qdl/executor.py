@@ -110,7 +110,8 @@ def run_qdl_step(step: QdlStep, firmware_root: Path, *, timeout: int) -> subproc
     if any("provision_default.xml" in pattern for pattern in step.qdl.files):
         fix_provision_default_xml(firmware_root / (step.qdl.workdir or step.qdl.storage))
     cmd, workdir = build_qdl_command(step, firmware_root)
-    return subprocess.run(
+    logger.info("Running QDL: %s (cwd=%s)", " ".join(cmd), workdir)
+    result = subprocess.run(
         cmd,
         cwd=workdir,
         capture_output=True,
@@ -118,6 +119,8 @@ def run_qdl_step(step: QdlStep, firmware_root: Path, *, timeout: int) -> subproc
         check=False,
         timeout=timeout,
     )
+    logger.info("QDL finished: returncode=%d", result.returncode)
+    return result
 
 
 def run_fastboot_step(step: FastbootStep, firmware_root: Path, *, timeout: int) -> StepResult:
@@ -126,6 +129,7 @@ def run_fastboot_step(step: FastbootStep, firmware_root: Path, *, timeout: int) 
 
     if config.erase:
         for partition in config.erase:
+            logger.info("fastboot erase %s", partition)
             result = subprocess.run(
                 ["fastboot", "erase", partition],
                 capture_output=True,
@@ -143,6 +147,7 @@ def run_fastboot_step(step: FastbootStep, firmware_root: Path, *, timeout: int) 
             image_path = firmware_root / operation.file
             if not image_path.exists():
                 raise FileNotFoundError(f"Fastboot image not found: {image_path}")
+            logger.info("fastboot flash %s %s", operation.partition, image_path.name)
             result = subprocess.run(
                 ["fastboot", "flash", operation.partition, str(image_path)],
                 capture_output=True,
@@ -158,6 +163,7 @@ def run_fastboot_step(step: FastbootStep, firmware_root: Path, *, timeout: int) 
                 )
 
     if config.continue_:
+        logger.info("fastboot continue")
         result = subprocess.run(
             ["fastboot", "continue"],
             capture_output=True,
@@ -180,24 +186,20 @@ async def _poll_dmesg(
     timeout: float,
     interval: float,
     mode: str,
-    log: logging.Logger | None,
 ) -> None:
     """Poll dmesg for *marker* among lines added after *baseline*."""
-    if log:
-        log.info("Waiting for device in %s mode (marker: %s)", mode, marker)
+    logger.info("Waiting for device in %s mode (marker: %s)", mode, marker)
     elapsed = 0.0
     while True:
         await asyncio.sleep(interval)
         elapsed += interval
         try:
             check_dmesg(marker, baseline=baseline)
-            if log:
-                log.info("Device entered %s mode (%.0fs)", mode, elapsed)
+            logger.info("Device entered %s mode (%.0fs)", mode, elapsed)
             return
         except RuntimeError:
             if elapsed >= timeout:
-                if log:
-                    log.warning("Device did not enter %s mode after %.0fs", mode, elapsed)
+                logger.warning("Device did not enter %s mode after %.0fs", mode, elapsed)
                 raise
 
 
@@ -210,10 +212,8 @@ async def set_device_mode(
     tac_timeout: float,
     check_timeout: float = 30.0,
     check_interval: float = 2.0,
-    on_status: logging.Logger | None = None,
 ) -> None:
-    if on_status:
-        on_status.info("Entering %s mode", mode)
+    logger.info("Entering %s mode", mode)
     baseline = read_dmesg() if check else None
     if mode == "edl":
         await send_tac_sequence(tac, profile.edl_commands, timeout=tac_timeout)
@@ -224,7 +224,7 @@ async def set_device_mode(
     if check:
         await _poll_dmesg(
             check, baseline, timeout=check_timeout, interval=check_interval,
-            mode=mode, log=on_status,
+            mode=mode,
         )
 
 

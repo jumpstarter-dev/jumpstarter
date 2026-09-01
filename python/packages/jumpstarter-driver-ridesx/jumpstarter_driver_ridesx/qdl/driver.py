@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,8 @@ from jumpstarter.driver import Driver, export
 from jumpstarter.driver.flasher import StreamingFlasherInterface
 from jumpstarter.streams.encoding import AutoDecompressIterator
 from jumpstarter.streams.progress import ProgressAttribute
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -196,8 +199,10 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         """Flash ABL/CDT images via fastboot, yielding progress updates."""
         if manifest.data.abl_image:
             abl_path = self._find_image_path(work_dir, firmware_root, manifest.data.abl_image)
+            logger.info("ABL image: %s", abl_path)
             for slot in ("abl_a", "abl_b"):
                 yield FlashStatus(phase=FlashPhase.STEP, message=f"Flashing ABL to {slot}")
+                logger.info("fastboot flash %s %s", slot, abl_path)
                 result = await asyncio.to_thread(
                     subprocess.run,
                     ["fastboot", "flash", slot, str(abl_path)],
@@ -208,6 +213,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
                 )
                 if result.returncode != 0:
                     raise RuntimeError(f"fastboot flash {slot} failed: {result.stderr or result.stdout}")
+                logger.info("fastboot flash %s completed", slot)
                 yield FlashStatus(
                     phase=FlashPhase.STEP,
                     message=f"Completed ABL flash to {slot}",
@@ -218,10 +224,13 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         cdt_image = self._select_cdt_image(manifest)
         if cdt_image:
             yield FlashStatus(phase=FlashPhase.STEP, message="Entering fastboot mode for CDT flash")
+            logger.info("Entering fastboot mode for CDT flash")
             await self._ensure_fastboot_mode()
+            logger.info("Device in fastboot mode, ready for CDT flash")
             yield FlashStatus(phase=FlashPhase.STEP, message="Device in fastboot mode")
             cdt_path = self._find_image_path(work_dir, firmware_root, cdt_image)
             yield FlashStatus(phase=FlashPhase.STEP, message=f"Flashing CDT from {cdt_path.name}")
+            logger.info("fastboot flash cdt %s", cdt_path)
             result = await asyncio.to_thread(
                 subprocess.run,
                 ["fastboot", "flash", "cdt", str(cdt_path)],
@@ -232,6 +241,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             )
             if result.returncode != 0:
                 raise RuntimeError(f"fastboot flash cdt failed: {result.stderr or result.stdout}")
+            logger.info("fastboot flash cdt completed")
             yield FlashStatus(
                 phase=FlashPhase.STEP,
                 message="Completed CDT flash",
@@ -305,6 +315,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         # the full archive to disk before extracting, reducing disk usage for
         # multi-GB firmware images.
         archive_path = work_dir / "firmware.tar"
+        logger.info("Downloading firmware archive to %s", archive_path)
         yield FlashStatus(phase=FlashPhase.DOWNLOAD, message="Receiving firmware archive", progress=0.0)
         bytes_written = 0
         last_update = time.monotonic()
@@ -323,6 +334,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
                             bytes_transferred=bytes_written,
                             bytes_total=bytes_total,
                         )
+        logger.info("Download complete: %d bytes written", bytes_written)
         yield FlashStatus(
             phase=FlashPhase.DOWNLOAD,
             message="Download complete",
@@ -330,10 +342,12 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
             bytes_total=bytes_total,
         )
 
+        logger.info("Extracting firmware archive %s", archive_path)
         yield FlashStatus(phase=FlashPhase.EXTRACT, message="Extracting firmware archive")
         extract_manifest = manifest or self._load_manifest_from_archive(archive_path)
         self._extract_archive(archive_path, work_dir, extract_manifest)
         archive_path.unlink(missing_ok=True)
+        logger.info("Extraction complete")
 
     async def _run_manifest_flash(
         self,
