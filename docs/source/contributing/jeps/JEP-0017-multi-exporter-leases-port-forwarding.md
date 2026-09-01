@@ -32,7 +32,12 @@ all of its devices or none. The data plane is the existing
 `TcpPortforwardAdapter` with one substitution — a router peer stream in place
 of a client stream — so `RouterService` and every driver work unchanged. This
 realizes JEP-0014's deferred "composite leases — multiple exporters linked into
-one logical lease" literally, and takes option 1 of JEP-0016's DD-8.
+one logical lease" literally, and takes option 1 of JEP-0016's DD-8. The
+worked example throughout is phone projection — a phone and a head unit
+pairing over Bluetooth, then handing off to Wi-Fi — but nothing in the
+mechanism is radio- or platform-specific: two ECUs joined over CAN, a BLE
+peripheral and its gateway, or a plain serial cross-over are the same
+declaration with different port names.
 
 ## Motivation
 
@@ -47,21 +52,39 @@ That is the right primitive for the majority of HiL work — one board, one
 harness — but an entire class of tests is about *interaction between
 devices*, and today Jumpstarter cannot express it.
 
-### The concrete problem: Android Auto phone projection
+### The concrete problem: devices that must talk to each other
 
-Android Auto phone projection is a two-device protocol by construction. The
-phone and the head unit first pair over **Bluetooth**; the head unit then
-hands the session off to a peer-to-peer **5 GHz Wi-Fi** link, because
-Bluetooth lacks the bandwidth for continuous video projection. Validating it
-means holding a phone and a head unit *simultaneously*, keeping them
+A large class of tests is not about a device but about an *interaction*
+between two of them. The shape recurs across domains:
+
+| Domain | Bench | What is exercised |
+| --- | --- | --- |
+| Phone projection | Phone + head unit | Pairing, then session handover to a high-bandwidth link |
+| Wireless peripherals | Peripheral + host, or peripheral + gateway | Advertising, pairing, reconnection, roaming |
+| Automotive networks | Two ECUs, or ECU + gateway | Bus arbitration, routing, diagnostics across a segment |
+| Device-to-device apps | Two handsets | Discovery, transfer, sync over Bluetooth or Wi-Fi Direct |
+| Serial / console harnesses | DUT + companion | Protocol conformance over a cross-over link |
+
+Every one of these needs the same two things Jumpstarter cannot give: **two
+devices held at once**, and **a path between them**.
+
+**Phone projection is the worked example** used throughout this JEP, because
+it exercises the hardest version of both requirements. It is a two-device
+protocol by construction: the phone and the head unit first pair over
+**Bluetooth**, then the head unit hands the session off to a peer-to-peer
+**Wi-Fi** link, because Bluetooth lacks the bandwidth for continuous video.
+Validating it means holding both devices *simultaneously*, keeping them
 connected, driving both, and asserting on both — a phone-only or
-head-unit-only lease cannot observe the handover at all.
+head-unit-only lease cannot observe the handover at all. The same structure
+holds for Android Auto and for Apple CarPlay, and for a head unit running
+Android, Linux, or QNX; the pairing-then-handover pattern is a property of
+projection, not of one vendor's stack.
 
 This is not hypothetical. Teams running phone-projection validation operate
 fleets in the ~1000-device range across multiple labs, and the two things
-they cannot get from existing tooling are (a) non-Android devices in the same
-bench as Android ones — Linux and QNX IVI head units — and (b) pairing two
-*virtual* devices to each other.
+they cannot get from existing tooling are (a) heterogeneous benches — a Linux
+or QNX head unit alongside an Android phone — and (b) pairing two *virtual*
+devices to each other.
 
 Running that on Jumpstarter today requires the test author to hand-roll
 everything the lease layer should provide:
@@ -168,20 +191,26 @@ throughput win no host-local scheduler can offer.
 
 ### User Stories
 
-- **As an** Android Auto QA engineer, **I want to** lease a phone and a head
-  unit as one bench with roles, **so that** my projection test either gets
-  both devices or waits — never half a bench, never a deadlock against a
+- **As a** phone-projection QA engineer, **I want to** lease a phone and a
+  head unit as one bench with roles, **so that** my test either gets both
+  devices or waits — never half a bench, never a deadlock against a
   concurrent run.
-- **As an** AAOS platform developer, **I want to** pair two Cuttlefish
+- **As an** automotive platform developer, **I want to** pair two *virtual*
   devices running in different cluster Pods over Bluetooth and then hand off
   to Wi-Fi, **so that** I can validate wireless projection in CI without a
   physical lab or a single fat host.
-- **As a** lab operator whose phones and head units are in different racks
-  or different buildings, **I want** one lease to span them, **so that** my
-  bench is not limited to devices plugged into the same machine.
+- **As a** lab operator whose devices are in different racks or different
+  buildings, **I want** one lease to span them, **so that** my bench is not
+  limited to devices plugged into the same machine.
 - **As a** test author with a mixed bench, **I want** a QNX or Linux head
   unit alongside an Android phone, **so that** device type is a driver
   choice rather than a platform limit.
+- **As an** embedded engineer testing a CAN gateway, **I want** two ECU
+  exporters joined over a forwarded bus, **so that** I can exercise routing
+  between segments without physically cabling them to one machine.
+- **As a** BLE peripheral developer, **I want** my DUT leased alongside a
+  central acting as its phone, **so that** pairing and reconnection are
+  covered in CI rather than by hand at a desk.
 - **As a** Jumpstarter user who already knows leases, **I want** a bench to
   be *a lease*, **so that** everything I know about `jmp create lease`,
   expiry, release, and access policy carries over without learning a second
@@ -294,6 +323,30 @@ already the degenerate case rather than a legacy shape to migrate (DD-2).
 
 A member may be marked `optional: true`, in which case the lease binds
 without it and the role resolves to `None` on the client.
+
+#### A bench with no radios in it
+
+Nothing above is projection-specific. The same two fields express two ECUs
+sharing a CAN segment, where one exporter fronts the bus over TCP (via
+`socketcand` or an equivalent bridge) and the other dials it:
+
+```yaml
+spec:
+  members:
+    - name: gateway
+      selector: { matchLabels: { ecu-role: gateway } }
+    - name: node
+      selector: { matchLabels: { ecu-role: body-controller } }
+  forwards:
+    - name: powertrain-bus
+      from: { member: gateway, port: can0 }    # provides
+      to:   { member: node,    port: can }     # requires
+```
+
+Only the port names differ. The controller applies the same validation —
+both ports exist, `provides` meets `requires`, declared protocols agree — and
+the same forward machinery carries the bytes. A serial cross-over between a
+DUT and a companion board is the same shape again.
 
 ### Acquiring and using a bench
 
@@ -436,10 +489,12 @@ with one substitution — a router peer stream in place of the client stream:
 
 The client is not in the data path.
 
-### Attaching virtual radios
+### Attaching media, simulated and physical
 
-With forwards as the mechanism, "bridging a radio" stops being a special
-subsystem and becomes a question of which port each stack exposes:
+With forwards as the mechanism, "bridging a medium" stops being a special
+subsystem and becomes a question of which port each stack exposes. Radios are
+the demanding case, but nothing in the table below is privileged — a CAN bus
+or a serial cross-over is the same declaration:
 
 | Stack | Port | Direction | Notes |
 | --- | --- | --- | --- |
@@ -448,8 +503,11 @@ subsystem and becomes a question of which port each stack exposes:
 | netsim | `netsim` | provides | gRPC `PacketStreamer`; attaching side must originate `ChipInfo` |
 | `wmediumd` / `mac80211_hwsim` | `hwsim` | provides | Frame socket |
 | Gateway exporter (real adapter) | `hci` | provides | A real radio, presented as HCI |
+| `socketcand` / CAN-over-TCP bridge | `can` | provides | A CAN segment reachable as a socket |
+| Serial bridge (pty or TCP) | `console` | requires/provides | Cross-over between a DUT and a companion |
 
-Two consequences worth stating plainly. First, HCI is **asymmetric**: a host
+Two consequences worth stating plainly, both of which generalize beyond
+radios. First, HCI is **asymmetric**: a host
 attaches to a controller. Forwarding one rootcanal's port into another
 rootcanal wires controller to controller and nothing happens — which is
 precisely why forwards are directional and why a `provides → provides`
@@ -928,7 +986,7 @@ is the same guarantee `kubectl port-forward` gives, which nobody treats as a
 defect, but it is a deliberate retreat from admission-time protocol
 validation and is recorded as such.
 
-### DD-9: Where virtual radios attach
+### DD-9: Where simulated media attach
 
 **Alternatives considered:**
 
@@ -972,14 +1030,16 @@ the difference lives in the driver at the `requires` end.
 2. **Attach at netsim's 802.11 MAC chip** — Wi-Fi as another chip kind on the
    `PacketStreamer` port.
 3. **Forward the projection socket at L4** — skip radio simulation and carry
-   the Android Auto TCP session directly.
+   the projection session's TCP connection directly.
 
 **Decision:** Option 1 as the target, with option 2 taken first where
 netsim's Wi-Fi support covers the configuration; option 3 rejected as a
 fidelity failure but retained as a diagnostic.
 
-**Rationale:** Wireless Android Auto's defining behavior is the *handover*:
-pair over Bluetooth, then move the session to a peer-to-peer 5 GHz link. A
+**Rationale:** Wireless phone projection's defining behavior is the
+*handover*: pair over Bluetooth, then move the session to a peer-to-peer
+Wi-Fi link. This holds for Android Auto and CarPlay alike, and it is the
+reason the medium cannot be skipped. A
 test that forwards the projection socket at L4 never exercises the handover,
 the Wi-Fi Direct negotiation, or the failure modes that matter — it verifies
 that a TCP proxy works. So the medium has to be simulated.
@@ -1366,11 +1426,12 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
       separate nodes complete BR/EDR discovery and pairing over a forwarded
       rootcanal/netsim port, in CI
 - [ ] **Phase 2 — Physical ↔ physical across hosts**: a phone and head unit
-      on exporters on different lab hosts complete Android Auto projection
+      on exporters on different lab hosts complete a phone projection
+      session (Android Auto in the reference implementation)
 - [ ] **Phase 3 — Hybrid**: a physical phone pairs with a virtual head unit
       through a gateway exporter
 - [ ] **Phase 4 — Virtual Wi-Fi**: two CVDs in separate Pods associate over a
-      forwarded `mac80211_hwsim`/`wmediumd` medium, and an Android Auto
+      forwarded `mac80211_hwsim`/`wmediumd` medium, and a projection
       session completes the Bluetooth → Wi-Fi handover end to end
 - [ ] Measured HCI round-trip latency through a router forward is published,
       with a documented statement of which workloads it does and does not
@@ -1452,7 +1513,8 @@ risk in one field, handled by DD-2.
   resource, no second RBAC surface, no second lifecycle.
 - **Ports are discoverable**, so a client can construct a forward from
   `jmp get exporter` output instead of tribal knowledge or someone's YAML.
-- Android Auto projection becomes expressible, and in the virtual-to-virtual
+- Phone projection becomes expressible — Android Auto, CarPlay, and
+  head units on Android, Linux, or QNX alike — and in the virtual-to-virtual
   form expressible *in CI without a lab*.
 - Cross-host virtual device pairing, which no shipping tool does, reduces to
   forwarding a socket.
@@ -1555,7 +1617,7 @@ risk in one field, handled by DD-2.
   motivates the design.
 - **A peer-specific RPC in `router.proto`** — DD-5.
 - **Guest-side Bluetooth/Wi-Fi shims** — DD-9. Changes the device under test.
-- **L4 forwarding of the Android Auto projection socket** — DD-10. Skips the
+- **L4 forwarding of the projection session's socket** — DD-10. Skips the
   handover, which is the thing under test. Kept as a diagnostic.
 - **N independently-leased devices behind one exporter.** Ruled out by
   JEP-0016's exporter = DUT invariant. A group as a single composite DUT
