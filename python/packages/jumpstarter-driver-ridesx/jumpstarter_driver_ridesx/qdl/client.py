@@ -11,16 +11,19 @@ from urllib.request import urlopen
 import click
 import yaml
 from jumpstarter_driver_composite.client import CompositeClient
-from rich.console import Console
+from rich.console import Console, Group
+from rich.live import Live
 from rich.progress import (
     BarColumn,
     DownloadColumn,
     Progress,
     SpinnerColumn,
+    TaskProgressColumn,
     TextColumn,
     TimeElapsedColumn,
     TransferSpeedColumn,
 )
+from rich.text import Text
 
 from .firmware_id import collect_version_info, format_version_report
 from .schema import load_firmware_manifest_from_mapping
@@ -57,55 +60,116 @@ def _manifest_data_from_source(manifest: Any | None) -> dict[str, Any] | None:
     return load_firmware_manifest_from_mapping(manifest).model_dump(mode="json")
 
 
-def _print_status(console: Console, status: FlashStatus) -> None:
-    """Print a non-download flash status to the console."""
-    if status.phase == FlashPhase.EXTRACT:
-        console.print("[yellow]Extracting[/yellow] firmware archive...")
-    elif status.phase == FlashPhase.CACHE:
-        console.print(f"[cyan]Cache[/cyan] {status.message}")
-    elif status.phase == FlashPhase.STEP:
-        step_info = ""
+class _FlashPanel:
+    """Live-updating panel for firmware flash progress."""
+
+    def __init__(self, console: Console) -> None:
+        self._console = console
+        self._overall = Progress(
+            SpinnerColumn(),
+            TextColumn("{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        )
+        self._download = Progress(
+            TextColumn("  "),
+            BarColumn(),
+            DownloadColumn(),
+            TransferSpeedColumn(),
+            TimeElapsedColumn(),
+            console=console,
+        )
+        self._overall_task = self._overall.add_task("[bold]Flashing firmware", total=None)
+        self._download_task = self._download.add_task("download", total=None, visible=False)
+        self._status_text = Text()
+        self._log_lines: list[Text] = []
+        self._live = Live(self._build(), console=console, refresh_per_second=8)
+
+    def _build(self) -> Group:
+        parts: list[Any] = list(self._log_lines)
+        parts.append(self._overall)
+        if self._download.tasks[self._download_task].visible:
+            parts.append(self._download)
+        if self._status_text:
+            parts.append(self._status_text)
+        return Group(*parts)
+
+    def _log(self, text: Text) -> None:
+        self._log_lines.append(text)
+
+    def _refresh(self) -> None:
+        self._live.update(self._build())
+
+    def start(self) -> None:
+        self._live.start()
+
+    def stop(self) -> None:
+        self._live.stop()
+
+    def update(self, status: FlashStatus) -> None:
+        if status.phase == FlashPhase.DOWNLOAD:
+            self._handle_download(status)
+        elif status.phase == FlashPhase.EXTRACT:
+            self._hide_download()
+            self._status_text = Text.assemble(("  Extracting ", "yellow"), "firmware archive...")
+        elif status.phase == FlashPhase.CACHE:
+            self._hide_download()
+            self._status_text = Text.assemble(("  Cache ", "cyan"), status.message)
+        elif status.phase == FlashPhase.STEP:
+            self._handle_step(status)
+        elif status.phase == FlashPhase.COMPLETE:
+            self._handle_complete(status)
+        self._refresh()
+
+    def _handle_download(self, status: FlashStatus) -> None:
+        task = self._download.tasks[self._download_task]
+        if not task.visible:
+            self._download.update(self._download_task, visible=True)
+            self._overall.update(self._overall_task, description="[bold blue]Downloading firmware")
+        if status.bytes_total and task.total is None:
+            self._download.update(self._download_task, total=status.bytes_total)
+        if status.bytes_transferred is not None:
+            self._download.update(self._download_task, completed=status.bytes_transferred)
+
+    def _hide_download(self) -> None:
+        if self._download.tasks[self._download_task].visible:
+            self._download.update(self._download_task, visible=False)
+            self._log(Text.assemble(("  \u2714 ", "green"), "Download complete"))
+
+    def _handle_step(self, status: FlashStatus) -> None:
+        self._hide_download()
         if status.step_index is not None and status.total_steps is not None:
-            step_info = f" [{status.step_index}/{status.total_steps}]"
-        console.print(f"[bold green]Step{step_info}[/bold green] {status.message}")
-    elif status.phase == FlashPhase.COMPLETE:
-        console.print(f"[bold green]Done[/bold green] {status.message}")
+            self._overall.update(
+                self._overall_task,
+                description="[bold]Flashing firmware",
+                completed=status.step_index,
+                total=status.total_steps,
+            )
+        if status.message.startswith("Completed ") or status.message.startswith("Completed ABL"):
+            self._log(Text.assemble(("  \u2714 ", "green"), status.message.removeprefix("Completed ")))
+            self._status_text = Text()
+        else:
+            label = status.message.removeprefix("Running ")
+            self._status_text = Text.assemble(("  \u25b6 ", "blue"), label)
+
+    def _handle_complete(self, status: FlashStatus) -> None:
+        self._overall.update(self._overall_task, description="[bold green]Done", completed=100, total=100)
+        self._status_text = Text()
+        self._log(Text.assemble(("\u2714 ", "bold green"), status.message))
 
 
 def _flash_rich(client: QualcommFlasherClient, file, *, manifest, cached) -> None:
-    """Render flash progress using rich progress bars and console output."""
+    """Render flash progress using a live-updating rich panel."""
     console = Console(stderr=True)
-
-    download_progress = Progress(
-        SpinnerColumn(),
-        TextColumn("[bold blue]Downloading"),
-        BarColumn(),
-        DownloadColumn(),
-        TransferSpeedColumn(),
-        TimeElapsedColumn(),
-        console=console,
-        transient=True,
-    )
-    download_task = None
-
-    for status in client.flash_stream(file, manifest=manifest, cached=cached):
-        if status.phase == FlashPhase.DOWNLOAD:
-            if download_task is None:
-                download_progress.start()
-                total = status.bytes_total if status.bytes_total else None
-                download_task = download_progress.add_task("download", total=total)
-            elif status.bytes_total and download_progress.tasks[download_task].total is None:
-                download_progress.update(download_task, total=status.bytes_total)
-            if status.bytes_transferred is not None:
-                download_progress.update(download_task, completed=status.bytes_transferred)
-        else:
-            if download_task is not None:
-                download_progress.stop()
-                download_task = None
-            _print_status(console, status)
-
-    if download_task is not None:
-        download_progress.stop()
+    panel = _FlashPanel(console)
+    panel.start()
+    try:
+        for status in client.flash_stream(file, manifest=manifest, cached=cached):
+            panel.update(status)
+    finally:
+        panel.stop()
 
 
 @dataclass(kw_only=True)
