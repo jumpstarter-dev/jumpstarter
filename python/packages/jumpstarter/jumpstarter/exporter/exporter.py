@@ -943,6 +943,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         with Session(
             uuid=self.uuid,
             labels=self.labels,
+            exporter_name=self.exporter_name,
             root_device=self.device_factory(),
             motd=self.motd,
         ) as session:
@@ -979,6 +980,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         with Session(
             uuid=self.uuid,
             labels=self.labels,
+            exporter_name=self.exporter_name,
             root_device=self.device_factory(),
             motd=self.motd,
         ) as session:
@@ -1547,6 +1549,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             with Session(
                 uuid=self.uuid,
                 labels=self.labels,
+                exporter_name=self.exporter_name,
                 root_device=self.device_factory(),
                 motd=self.motd,
             ) as session:

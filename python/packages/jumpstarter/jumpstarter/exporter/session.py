@@ -45,6 +45,7 @@ class Session(
     ContextManagerMixin,
 ):
     root_device: "Driver"
+    exporter_name: str = "unknown"
     mapping: dict[UUID, "Driver"]
     motd: str | None = None
     lease_context: "LeaseContext | None" = field(init=False, default=None)
@@ -61,17 +62,17 @@ class Session(
     def __contextmanager__(self) -> Generator[Self]:
         logging.getLogger().addHandler(self._logging_handler)
         self.root_device.reset()
-        set_log_context(exporter=self.name)
-        get_registry().adjust_active_sessions(exporter=self.name, delta=1.0)
+        set_log_context(exporter=self.exporter_name)
+        get_registry().adjust_active_sessions(exporter=self.exporter_name, delta=1.0)
         try:
             yield self
         finally:
             try:
-                get_registry().adjust_active_sessions(exporter=self.name, delta=-1.0)
+                get_registry().adjust_active_sessions(exporter=self.exporter_name, delta=-1.0)
             except Exception:
                 logger.warning(
                     "Failed to decrement active sessions metric for exporter %s",
-                    self.name,
+                    self.exporter_name,
                     exc_info=True,
                 )
             unbind_log_context("exporter")
@@ -88,10 +89,11 @@ class Session(
             finally:
                 logging.getLogger().removeHandler(self._logging_handler)
 
-    def __init__(self, *args, root_device, motd=None, **kwargs):
+    def __init__(self, *args, root_device, exporter_name="unknown", motd=None, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.root_device = root_device
+        self.exporter_name = exporter_name
         self.motd = motd
         self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
 
