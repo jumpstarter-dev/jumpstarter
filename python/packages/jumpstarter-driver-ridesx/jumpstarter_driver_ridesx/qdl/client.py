@@ -215,7 +215,9 @@ def _register_check_command(group, client: QualcommFlasherClient) -> None:
             click.echo("FAIL: firmware mismatch", err=True)
             for m in mismatches:
                 click.echo(f"  {m}", err=True)
-            raise click.exceptions.Exit(1)
+            from click.exceptions import Exit
+
+            raise Exit(1)
 
         click.echo(f"OK: firmware matches {variant}")
 

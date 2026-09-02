@@ -121,9 +121,9 @@ async def test_set_device_mode_polls_dmesg_until_marker_found():
     call_count = 0
 
     def fake_check_dmesg(expected, *, baseline=None):
-        nonlocal call_count
-        call_count += 1
-        if call_count < 3:
+        nonlocal call_count  # ty: ignore[unresolved-reference]
+        call_count += 1  # ty: ignore[unresolved-reference]
+        if call_count < 3:  # ty: ignore[unresolved-reference]
             raise RuntimeError("not found")
 
     with (

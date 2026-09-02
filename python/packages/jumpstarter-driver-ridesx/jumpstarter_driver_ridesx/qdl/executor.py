@@ -221,7 +221,7 @@ async def set_device_mode(
         await send_tac_sequence(tac, profile.fastboot_commands, timeout=tac_timeout)
     else:
         raise ValueError(f"Unsupported mode: {mode}")
-    if check:
+    if check and baseline is not None:
         await _poll_dmesg(
             check, baseline, timeout=check_timeout, interval=check_interval,
             mode=mode,
