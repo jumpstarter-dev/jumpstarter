@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -16,7 +17,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from anyio.streams.file import FileWriteStream
 
 from ..tac import send_tac_sequence
 from .executor import execute_manifest, resolve_firmware_root
@@ -124,23 +124,29 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         await send_tac_sequence(tac, self.profile.power_on_commands, timeout=self.tac_command_timeout)
 
     @staticmethod
+    def _validate_member(member: tarfile.TarInfo, extract_root: Path) -> None:
+        """Validate a tar member for path traversal and special files (Python <3.12)."""
+        if member.name.startswith("/"):
+            raise tarfile.ExtractError(f"Blocked absolute path in archive: {member.name}")
+        if member.isdev() or member.issym() or member.islnk():
+            raise tarfile.ExtractError(f"Blocked special file in archive: {member.name}")
+        destination = extract_root.resolve()
+        target = (destination / member.name).resolve()
+        try:
+            target.relative_to(destination)
+        except ValueError as exc:
+            raise tarfile.ExtractError(
+                f"Blocked path traversal in archive: {member.name}"
+            ) from exc
+
+    @staticmethod
     def _safe_extractall(archive: tarfile.TarFile, extract_root: Path) -> None:
         if sys.version_info >= (3, 12):
             archive.extractall(path=extract_root, filter="data")
             return
         destination = extract_root.resolve()
         for member in archive.getmembers():
-            if member.name.startswith("/"):
-                raise tarfile.ExtractError(f"Blocked absolute path in archive: {member.name}")
-            if member.isdev() or member.issym() or member.islnk():
-                raise tarfile.ExtractError(f"Blocked special file in archive: {member.name}")
-            target = (destination / member.name).resolve()
-            try:
-                target.relative_to(destination)
-            except ValueError as exc:
-                raise tarfile.ExtractError(
-                    f"Blocked path traversal in archive: {member.name}"
-                ) from exc
+            QualcommFlasher._validate_member(member, destination)
         archive.extractall(path=extract_root)
 
     def _extract_archive(self, archive_path: Path, work_dir: Path, manifest: FirmwareManifest | None) -> None:
@@ -330,43 +336,72 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         work_dir: Path,
         manifest: FirmwareManifest | None,
     ) -> AsyncGenerator[FlashStatus, None]:
-        # TODO: consider streaming extraction (tarfile r| mode) to avoid writing
-        # the full archive to disk before extracting, reducing disk usage for
-        # multi-GB firmware images.
-        archive_path = work_dir / "firmware.tar"
-        logger.info("Downloading firmware archive to %s", archive_path)
         yield FlashStatus(phase=FlashPhase.DOWNLOAD, message="Receiving firmware archive", progress=0.0)
-        bytes_written = 0
+        logger.info("Streaming firmware archive to %s", work_dir)
+        bytes_received = 0
         last_update = time.monotonic()
+
+        extract_root = work_dir
+        if manifest and manifest.data.extract_to_folder:
+            extract_root = work_dir / manifest.data.folder
+            extract_root.mkdir(parents=True, exist_ok=True)
+
         async with self.resource(source) as res:
             bytes_total = int(res.extra(ProgressAttribute.total)) if res.extra(ProgressAttribute.total, None) else None
-            async with await FileWriteStream.from_path(archive_path) as stream:
-                async for chunk in AutoDecompressIterator(source=res):
-                    await stream.send(chunk)
-                    bytes_written += len(chunk)
-                    now = time.monotonic()
-                    if now - last_update >= 0.5:
-                        last_update = now
-                        yield FlashStatus(
-                            phase=FlashPhase.DOWNLOAD,
-                            message="Receiving firmware archive",
-                            bytes_transferred=bytes_written,
-                            bytes_total=bytes_total,
-                        )
-        logger.info("Download complete: %d bytes written", bytes_written)
+
+            # Wrap the async decompressed stream as a blocking file-like
+            # object so tarfile can read from it in streaming mode.
+            read_fd, write_fd = os.pipe()
+            read_file = os.fdopen(read_fd, "rb")
+
+            async def _feed_pipe() -> int:
+                nonlocal bytes_received  # ty: ignore[unresolved-reference]
+                try:
+                    async for chunk in AutoDecompressIterator(source=res):
+                        os.write(write_fd, chunk)
+                        bytes_received += len(chunk)  # ty: ignore[unresolved-reference]
+                finally:
+                    os.close(write_fd)
+                return bytes_received
+
+            feed_task = asyncio.ensure_future(_feed_pipe())
+
+            def _extract_streaming() -> None:
+                with tarfile.open(fileobj=read_file, mode="r|") as archive:
+                    for member in archive:
+                        if sys.version_info >= (3, 12):
+                            archive.extract(member, path=extract_root, filter="data")
+                        else:
+                            self._validate_member(member, extract_root)
+                            archive.extract(member, path=extract_root)
+
+            extract_task = asyncio.get_event_loop().run_in_executor(None, _extract_streaming)
+
+            # Poll for progress while both tasks run.
+            while not feed_task.done() or not extract_task.done():
+                await asyncio.sleep(0.5)
+                now = time.monotonic()
+                if now - last_update >= 0.5:
+                    last_update = now
+                    yield FlashStatus(
+                        phase=FlashPhase.DOWNLOAD,
+                        message="Receiving and extracting firmware",
+                        bytes_transferred=bytes_received,
+                        bytes_total=bytes_total,
+                    )
+
+            # Await both to propagate exceptions.
+            await feed_task
+            await extract_task
+            read_file.close()
+
+        logger.info("Download and extraction complete: %d bytes received", bytes_received)
         yield FlashStatus(
             phase=FlashPhase.DOWNLOAD,
-            message="Download complete",
-            bytes_transferred=bytes_written,
+            message="Download and extraction complete",
+            bytes_transferred=bytes_received,
             bytes_total=bytes_total,
         )
-
-        logger.info("Extracting firmware archive %s", archive_path)
-        yield FlashStatus(phase=FlashPhase.EXTRACT, message="Extracting firmware archive")
-        extract_manifest = manifest or self._load_manifest_from_archive(archive_path)
-        self._extract_archive(archive_path, work_dir, extract_manifest)
-        archive_path.unlink(missing_ok=True)
-        logger.info("Extraction complete")
 
     async def _run_manifest_flash(
         self,
