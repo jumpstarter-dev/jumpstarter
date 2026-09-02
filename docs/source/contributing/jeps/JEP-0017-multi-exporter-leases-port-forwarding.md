@@ -1298,6 +1298,91 @@ unchanged.
 The Phase 1 rootcanal hook is therefore three concrete things: a private
 test channel, per-member addresses, and a controller watch.
 
+**Verified over a real router forward, with Bumble as the phone
+(2026-09-02, third pass).** The second pass reached rootcanal through a
+`kubectl port-forward`; this pass replaced it with Jumpstarter's own data
+path and removed the phone CVD entirely. Three Pods: the head unit's Pod
+gained a second, hook-less exporter identity that exports its rootcanal
+`hci_port` as a `TcpNetwork` (plus an echo port, for measurement); a bt-peer
+Pod ran the merged driver with `transport: "tcp-client:127.0.0.1:7300"`; and
+a sidecar in that Pod held a lease on the rootcanal exporter and published
+both ports locally with `TcpPortforwardAdapter` — a hand-rolled stand-in for
+the forward endpoint this JEP specifies, with the same shape: one lease, a
+listener on the `requires` side, `RouterService.Stream` in the middle. Every
+HCI byte the peer sent crossed bt-peer Pod → router → head unit Pod, and the
+head unit paired with it: discovered *Bumble-Phone*, SSP-bonded, encrypted
+ACL, listed `Connected` with **Phone and Media both on**.
+
+*A phone, not just a headset.* The merged `BtPeer` presents an A2DP source,
+which lights Media. Subclassing it to add an HFP **Audio Gateway** — a
+`bumble.rfcomm` server, `hfp.AgProtocol` with the call/callsetup/callheld,
+service, signal, roam and battery indicators, and `hfp.make_ag_sdp_records`
+in the device's SDP database — lit Phone as well: `hfp_slc_complete`,
+codecs `CVSD`/`MSBC` negotiated, `avdtp_connected`, and the head unit's
+`HeadsetClientStateMachine` `Connected`. Ringing the head unit from the peer
+(`callsetup=1` + `RING` + `+CLIP`) put a call into AAOS Telecom —
+`SET_RINGING (successful incoming call)` against
+`HfpClientConnectionService`, phone account `HFP …:00:01`. So the phone-facing
+half of a head-unit bench needs no second guest at all: the cheapest bench
+is one CVD and a Python process, and the `bt-peer` driver should grow a
+`profiles:` config (`a2dp-source`, `hfp-ag`, later AVRCP target and PBAP
+server) rather than a second driver.
+
+*What the router costs.* On the same endpoint, from the same Pod: a
+round-trip through the forward was **0.70 ms median** (p90 0.91 ms, n=100)
+against **0.05 ms** direct Pod-to-Pod — about 0.65 ms of router. An HCI
+command round-trip to rootcanal was **~45 ms median through the forward and
+~45 ms direct**: the simulator's own scheduling dominates by two orders of
+magnitude, and the router is ~1.5% of an HCI exchange. For simulated
+Bluetooth, DD-4's fast path is an optimization with nothing to optimize;
+`mode: router` is the sensible default, and the *Latency characterization*
+test exists to find where that stops being true (A2DP-class throughput,
+cross-node, physical controllers).
+
+*Three operational constraints, all in the forward endpoint's lap.*
+
+- **An ingress reload cuts every long-lived stream, and nothing re-dials.**
+  This cluster's nginx ingress reloads on any `Ingress` change — 85 times in
+  one log — and each reload drains its old workers with
+  `worker_shutdown_timeout 240s`. The arithmetic is visible end to end: a
+  reload at 04:00:13, the exporter's controller status stream cut at
+  04:04:13.6, the forwarded HCI splice broken at 04:04:55, and the client's
+  next driver call failing `UNAVAILABLE: Socket closed`. The exporter
+  reconnected its own status stream in half a second; the *forward* did not,
+  so the peer's HCI transport stayed dead and the bench looked bound while
+  the simulated phone was off the air. Immediately after such an event the
+  first new connection to the listener is also reset, and the next one
+  succeeds. Nothing about this is Bluetooth-specific or exotic — any
+  cluster whose proxy reloads has it — so reconnection belongs to the
+  forward endpoint, not to each driver: the `requires` side re-dials its
+  peer stream and re-splices transparently, because a driver that opens its
+  transport once at start, as `bt-peer` and every HCI or serial-style client
+  does, has no way to notice or recover. Drivers that genuinely must know —
+  the head unit server of DD-10 — get the reset as an event, which is the
+  same rule *Reference drivers for projection* already states.
+- **One identity, one process.** Running the exporter twice under the same
+  identity — trivially, a Deployment scaled to two — leaves both registered;
+  connections then land on whichever process the router picks, and the one
+  that does not own the lease's session answers `RouterService.Stream` with
+  a `KeyError` on the driver UUID and closes. It cost an hour of chasing a
+  "flaky tunnel". A member exporter is single-writer: the deployment runs
+  one replica, and a duplicate registration is worth detecting rather than
+  tolerating.
+- **Both ends must be the same build.** A forward endpoint running a newer
+  `jumpstarter-driver-network` than the exporter's runtime accepted
+  connections and returned EOF on the first byte, with no error on either
+  side. Version skew between the two halves of a splice is silent, which is
+  an argument for the forward endpoint being the exporter's own code —
+  as specified — rather than an arbitrary client-side helper.
+
+Two smaller notes for whoever writes the tests. Bumble's bonds live in
+memory unless a keystore is configured, so restarting the peer invalidates
+the DUT's stored link key and the DUT must forget the bond before re-pairing
+— the driver should persist its keystore per lease, or the test should
+forget first. And deleting a `Lease` object out from under a waiting client
+leaves that client retrying `not found` forever instead of re-queueing:
+leases are released, not deleted (*Lease state*).
+
 ### DD-10: Wi-Fi and projection — what a forward carries
 
 **Alternatives considered:**
@@ -1719,6 +1804,7 @@ Establishment then reuses the existing port-forward primitives:
 | Forward references an undeclared member | Rejected by CEL at admission; lease never created |
 | `listen` address already bound on the exporter | Lease `Invalid` naming the port and address |
 | Router stream drops mid-lease | Re-dial with backoff; `Reconnecting`; `Degraded` after a grace period |
+| Ingress/proxy reload cuts the peer stream | `requires` side re-dials and re-splices transparently; the first attempt after the cut is expected to fail. Observed in DD-9's third pass, and invisible to drivers that dial once |
 | Direct dial fails (fast path) | Silent fallback to the router path; recorded as a metric |
 | A member's exporter disappears | Peer's stream resets; lease `Degraded` naming the role (DD-3) |
 | Client releases the lease | Forwards torn down first, then the lease ends normally |
@@ -1755,6 +1841,13 @@ of the same kind as DD-9's rootcanal control hook:
   instant it starts, so the driver starts it only on a client call, after
   the forward is Ready, which is the same ordering rule `bt-peer` already
   follows.
+
+- **`bt-peer` (phone).** The third pass of DD-9 showed the driver is one
+  config away from being a phone rather than an audio source: with an HFP
+  Audio Gateway alongside its A2DP source it satisfies both of a head unit's
+  phone-facing profiles, and can ring it. That belongs in the driver as a
+  `profiles:` list, with the bond keystore persisted for the life of the
+  lease so a peer restart does not strand the DUT's link key.
 
 Both drivers are the reference `requires`/`provides` pair for projection.
 What they must not do is know about each other: the phone driver exposes
@@ -1889,8 +1982,11 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
   `jumpstarter-driver-bt-peer` exporter, joined by
   `bt=headunit.rootcanal:phone.controller`. Assert the CVD discovers and
   pairs the peer and the driver reports `avdtp_connected` — the smallest
-  bench, no second guest to boot, and the one the second pass of DD-9 ran
-  by hand. Cheapest CI tier; runs on every merge.
+  bench, no second guest to boot. With the peer's HFP AG enabled, assert the
+  head unit's `HeadsetClientConnectionService` takes a ringing call from it,
+  which covers the phone-facing profiles without a phone. DD-9's third pass
+  ran exactly this by hand, over the router. Cheapest CI tier; runs on every
+  merge.
 - **Virtual projection**: a GMS-GSI phone CVD and a `dhu` exporter in
   separate Pods, joined by the `projection` forward over `aa-hu-wifi`
   (DD-10). Assert the receiver reaches the launcher and a screenshot of the
@@ -2392,6 +2488,13 @@ Not part of this proposal:
   against a CVD's rootcanal through a port-forward; rootcanal test-channel
   crash, address reuse and the identical guest address plan recorded as
   driver duties, a Security bullet and a Risk
+- 2026-09-02: DD-9 third pass — the same bench over Jumpstarter's own data
+  path: a rootcanal `TcpNetwork` exporter, a bt-peer Pod, and a lease-holding
+  forward endpoint splicing them through `RouterService.Stream`, with a
+  Bumble HFP-AG + A2DP peer standing in for the phone (pairing, Phone and
+  Media, a ringing call into AAOS Telecom). Router overhead measured at
+  0.65 ms against ~45 ms of rootcanal; proxy-reload stream loss, duplicate
+  registration and version skew recorded as forward-endpoint duties
 
 ## References
 
