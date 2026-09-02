@@ -1219,6 +1219,85 @@ changes the decision — option 2 stays the Phase 1 default on its symmetry —
 but the address and join findings above are why the Phase 1 driver work is
 "a rootcanal control hook", not "nothing".
 
+**Verified again with a GMS phone and the merged `bt-peer` driver
+(2026-09-01, second pass).** The same two Pods, with Pod B now running the
+GMS GSI phone of DD-10 instead of the AOSP phone, and the peer role played
+by real Jumpstarter code for the first time.
+
+*Regular pairing with a GMS phone.* The UI-driven flow — inquiry, SSP
+numeric comparison, bond — succeeded as before, then stalled: no profile
+connected, the head unit logged `CachedBluetoothDevice: No profiles`, and
+the ACL dropped on `l2c_link_timeout` after SDP. The medium was not the
+cause. The GSI enables only the LE-audio `bluetooth.profile.*` properties;
+the classic set — A2DP source, AVRCP target, HFP AG, MAP and PBAP server,
+PAN, HID, OPP — is product configuration in `/system/build.prop` (the AAOS
+image carries its own sink-side set there), and the GSI's `system.img`
+replaced it. Injecting the phone-side set into the GSI's `build.prop`, the
+same in-place ext4 edit as the ADB fix, produced the full stack: A2DP sink,
+AVRCP controller with browsing and BIP cover art, HFP client carrying the
+phone's network and subscriber indicators, and PBAP client pulling the
+phonebook over L2CAP, all `Connected`. YouTube Music on the phone then
+streamed AAC 44.1 kHz stereo to the head unit over the federated link, and
+the phone reconnected on its own after a Bluetooth off/on. Which profiles a
+bench has is decided by the phone image, which makes this a second
+image-preparation duty for the `cuttlefish` phone driver next to the ADB
+one (*Reference drivers for projection*).
+
+*`jumpstarter-driver-bt-peer` as the `requires` side.* The driver's
+`BtPeer` class was run unchanged with
+`transport: "tcp-client:127.0.0.1:17300"`, where `17300` was a
+`kubectl port-forward` to Pod A's rootcanal `hci_port` — byte for byte what
+a `bt=headunit.rootcanal:phone.controller` forward delivers, with the peer
+end outside the cluster. rootcanal attached it as a second HCI device on the
+head unit's own medium; the head unit discovered *Bumble-Phone*, SSP-paired
+it (bond, encrypted ACL), listed it *Connected* with Media active, and
+opened AVDTP to the peer's SBC source (`avdtp_connected` in the driver's
+event log). That is the claim under *Ports* — "`bt-peer`'s Python is
+untouched" — demonstrated on the merged driver. It exercises Bumble as a
+*host*; the open question about Bumble as the *controller* (option 3) is
+unchanged.
+
+*Three constraints that change the driver's duties.*
+
+- **The test channel is fragile, and the guest does not recover.** A
+  latency probe that opened and closed rootcanal's `test_port` twenty times
+  aborted rootcanal in *both* Pods — `test_channel_transport.cc: Check
+  failed: written == size, errno = 32` in `SendResponse`: a client that
+  closes before the banner is written is fatal. `process_restarter`
+  respawned rootcanal within a second, but the guest's side of the HCI link
+  (`tcp_connector`) took `SIGPIPE`, is not under the restarter, and the
+  guest's Bluetooth sat in `BLE_TURNING_ON` until `cvd restart` (about
+  20 s; userdata, bonds and installed apps survive it, where `cvd rm`
+  discards them). So: the test channel is never a `provides` port — the
+  rootcanal driver keeps it private and forwards only the HCI and link
+  ports; a forward endpoint must not verify liveness by connect-and-close,
+  which is why forward state comes from the splice and not from probing;
+  and a controller crash on one exporter strands every peer's guest with a
+  dead controller while the lease still looks bound, so the driver watches
+  its controller and reports the forward `Failed` and the lease `Degraded`
+  rather than leaving a bench that cannot pair.
+- **Addresses follow attachment order, and numbers are reused.** rootcanal
+  names the *n*-th live HCI device `da:4c:10:de:00:<n>` per model, so the
+  Bumble peer took `:00:01` on attaching — the address the federated phone
+  already held. The BD_ADDR finding above therefore generalises from "two
+  CVDs" to "any host that attaches": the rootcanal driver assigns a
+  per-member address (from the member index, say) with `set_device_address`
+  in its post-establish hook, and before the host powers on, because SC
+  pairing binds the address into the key derivation.
+- **Every Cuttlefish guest has the same address plan.** Both instances came
+  up with mobile data at `192.168.97.2`, Ethernet on `192.168.98.0/24` and
+  Wi-Fi on `192.168.99.0/25` behind an AP built from the same OpenWrt
+  rootfs. An L4 forward never sees this; anything that bridges guests at L2
+  or L3 — the Phase 4 frame bridge, a Wi-Fi Direct emulation — must NAT or
+  re-address, one more reason DD-10's option 3 goes first. Pod-to-Pod TCP
+  connect on this single-node cluster was ~0.1 ms median; cross-node is
+  still unmeasured. And because standalone rootcanal binds every port on
+  `0.0.0.0`, it is the cluster's network policy, not the simulator, that
+  keeps another Pod from `add_remote`-ing into a bench (*Security*).
+
+The Phase 1 rootcanal hook is therefore three concrete things: a private
+test channel, per-member addresses, and a controller watch.
+
 ### DD-10: Wi-Fi and projection — what a forward carries
 
 **Alternatives considered:**
@@ -1653,8 +1732,13 @@ of the same kind as DD-9's rootcanal control hook:
 - **`cuttlefish` (phone).** A GMS GSI is a `user` build: `adbd` is off and
   stays off, so the image the driver boots must carry
   `persist.sys.usb.config=adb` and the exporter's ADB public key in
-  `/adb_keys`. That is an image-preparation step the driver documents and
-  JEP-0016's provisioner can run once per image, not a per-lease action.
+  `/adb_keys`. The same image decides which Bluetooth profiles the phone
+  offers — a GSI ships only the LE-audio `bluetooth.profile.*` properties,
+  and the classic phone-side set has to be added to `/system/build.prop`
+  (DD-9, second pass). Both are image-preparation steps the driver
+  documents and JEP-0016's provisioner can run once per image, not
+  per-lease actions. Recovery is `cvd restart`, which keeps userdata —
+  bonds and sideloaded apps included — where `cvd rm` does not.
   For `aa-hu-wifi` the driver brings the guest onto the instance's OpenWrt
   AP, adds the host route to the AP's LAN and the `wan→wifi` forwarding
   rule on the AP — and cuts the guest's Ethernet first, because Android
@@ -1717,6 +1801,13 @@ two-object design would face does not arise.
 - **Physical RF is not access-controlled.** Two physical devices pairing in
   a shared lab space are audible to anything in range; labs must treat RF
   proximity as a trust boundary.
+- **Simulator control ports are not access-controlled either.** Standalone
+  rootcanal binds its HCI, link and test-channel ports on `0.0.0.0` and
+  accepts any client; the test channel can re-address devices, join
+  models, and — by accident — crash the controller (DD-9, second pass). A
+  driver exposes only the HCI and link ports as `provides`, never the test
+  channel, and the exporter's network policy is what limits who can reach
+  them; JEP-0016 should ship that policy with the Pod.
 
 ### Observability
 
@@ -1794,6 +1885,12 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
   evidence what actually crossed the air.
   Runnable in CI on KVM-capable nodes with no lab hardware. This is the
   headline result and should run on every merge once it exists.
+- **Virtual ↔ peer**: one `jumpstarter-driver-cuttlefish` exporter and one
+  `jumpstarter-driver-bt-peer` exporter, joined by
+  `bt=headunit.rootcanal:phone.controller`. Assert the CVD discovers and
+  pairs the peer and the driver reports `avdtp_connected` — the smallest
+  bench, no second guest to boot, and the one the second pass of DD-9 ran
+  by hand. Cheapest CI tier; runs on every merge.
 - **Virtual projection**: a GMS-GSI phone CVD and a `dhu` exporter in
   separate Pods, joined by the `projection` forward over `aa-hu-wifi`
   (DD-10). Assert the receiver reaches the launcher and a screenshot of the
@@ -2018,6 +2115,13 @@ risk in one field, handled by DD-2.
 - **Bluetooth timing may be tighter than measured** — pairing may work while
   A2DP streaming does not. Mitigation: latency characterization is an
   acceptance criterion whose answer is published, not assumed.
+- **The simulators are less robust than a lab needs.** rootcanal aborts
+  when a test-channel client disconnects early, its restart does not
+  reattach the guest, and a crash on one exporter strands every bench
+  member's controller (DD-9, second pass). Mitigation: the rootcanal
+  driver keeps the test channel private, never probes, watches its
+  controller and reports `Degraded`, and owns `cvd restart` as the recovery
+  action; the abort itself is an upstream fix worth contributing.
 - **The namespace invariant may be violated in the field.** Fixed `listen`
   addresses and lease-scoped control-plane blast radius both assume one
   exporter per network namespace. A host-networked deployment silently
@@ -2157,7 +2261,9 @@ To resolve during review:
   federation experiment showed that option 2 needs a control step
   (`add_remote` on the test channel) after the forward is up, and that
   standalone rootcanals collide on `da:4c:10:de:00:00` unless one is
-  re-addressed. The candidates are a post-establish hook on the `requires`
+  re-addressed — and the second pass showed any attaching host collides
+  too, since numbering is per model and reused. The candidates are a
+  post-establish hook on the `requires`
   side driver, a lease-level `forwards[].onEstablish` action, or leaving it
   to the test. The first keeps the controller ignorant of Bluetooth, which
   DD-8 and DD-13 argue for.
@@ -2278,6 +2384,14 @@ Not part of this proposal:
   promoted from diagnostic to the Phase 2 deliverable, the Wi-Fi medium
   reframed as a frame bridge; projection bench, `aa-hu`/`aa-hu-wifi` ports,
   `dhu` driver and phase renumbering (1–4) added
+- 2026-09-01: DD-9 second pass — regular pairing and the full classic
+  profile stack (plus A2DP streaming) between the GMS GSI phone and the
+  AAOS CVD over federated rootcanals, after adding the phone-side
+  `bluetooth.profile.*` set to the GSI; the merged
+  `jumpstarter-driver-bt-peer` run unchanged as a `requires`-side host
+  against a CVD's rootcanal through a port-forward; rootcanal test-channel
+  crash, address reuse and the identical guest address plan recorded as
+  driver duties, a Security bullet and a Risk
 
 ## References
 
