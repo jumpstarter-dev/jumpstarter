@@ -1086,10 +1086,10 @@ Python change, which is what makes the `requires` side of this design free.
 The gap is that the driver only ever constructs a `Device` — a host — so the
 controller side is new code, and it is small.
 
-Option 3 was in an earlier draft of this JEP and is rejected as invented
+Option 4 was in an earlier draft of this JEP and is rejected as invented
 machinery: it added a driver interface, a driver tier, and a medium taxonomy
 to express something existing network drivers plus a direction already
-express. Option 4 is rejected because it changes the device under test — a
+express. Option 5 is rejected because it changes the device under test — a
 guest-side shim means the Bluetooth stack being exercised is not the one that
 ships, invalidating precisely the pairing and handover behavior these tests
 exist to verify.
@@ -1104,14 +1104,72 @@ ordinary `provides` ports under this design, so the same forward machinery
 serves them and no medium-specific mechanism is required. Integrating a
 concrete restbus is future work (see Future Possibilities).
 
-Two caveats are carried rather than hidden. Every option above depends on the
-same unverified step — that the relevant port still works when it is a
-forward from another host rather than a local socket (see Unresolved
-Questions). And for option 3 specifically, a radio medium in Python is
-comfortable for advertising, pairing, and control while being an open
-question for sustained A2DP-class traffic, which compounds rather than
+One caveat is carried rather than hidden: for option 3 a radio medium in
+Python is comfortable for advertising, pairing, and control while being an
+open question for sustained A2DP-class traffic, which compounds rather than
 relieves the latency risk already recorded; options 1 and 2 keep the medium
 in native C++ and avoid that entirely.
+
+**Verified against real CVDs (2026-09-01).** Options 1 and 2 were both
+exercised by hand on a single-node kind cluster with two Cuttlefish exporter
+Pods — an `aosp_cf_x86_64_auto` head unit in Pod A and an
+`aosp_cf_x86_64_only_phone` in Pod B (AOSP build 16102939, cuttlefish host
+package 1.55.1). No Jumpstarter code was involved: the forward endpoint was
+played by a 50-line asyncio TCP relay inside each Pod, and Pod-to-Pod
+traffic went over the Pod network directly, which is what DD-4's Direct mode
+will do. The router path is therefore still unmeasured; everything below is
+about whether the *ports* behave when the other end is in another Pod.
+
+Both options produced the same result, driven purely through `adb` and
+`uiautomator`: BR/EDR inquiry lists the phone on the head unit, SSP numeric
+comparison shows the same passkey on both screens, the bond completes with a
+16-byte link key, and HFP, A2DP and AVRCP connect. Under option 2 the phone
+then streamed a ringtone to the head unit over A2DP for ~38 s at ~42 KB/s
+on the federated link, with no disconnect. Boot-to-bond is about two minutes
+of wall clock, most of it guest boot.
+
+*Option 2 — link-layer federation.* Both CVDs launched with
+`--netsim_bt=false`, so each Pod runs its own rootcanal. Standalone rootcanal
+binds **all four** ports (`hci`, `link`, `test`, `link_ble`) on `0.0.0.0`,
+so the join needed no relay at all: from Pod B's test channel,
+`add_remote <A> 7400 BR_EDR` and `add_remote <A> 7600 LOW_ENERGY` produced a
+`link_layer_socket_device` on the BR/EDR and LE phys of *both* models. Three
+things the flag names do not tell you:
+
+- **BD_ADDR collision.** Every standalone rootcanal numbers its first HCI
+  device `da:4c:10:de:00:00`, so two federated CVDs start with the same
+  address and cannot pair. The fix used was `set_device_address` on B's test
+  channel followed by a Bluetooth off/on in the guest so the stack re-reads
+  its address; `--rootcanal_default_commands_file` is the launch-time
+  equivalent. Under option 1 a single model numbers every device and the
+  problem does not arise.
+- **The join is an action, not a wiring.** `add_remote` is a runtime
+  test-channel command that dials outward, so option 2 needs *two* forwarded
+  ports (BR/EDR and LE link) plus a control step on the `requires` side
+  after the forward is up — a natural post-establish hook for a rootcanal
+  driver, but not something a static `forwards[]` entry expresses alone.
+  Standalone rootcanal is also not the Cuttlefish default; netsim is.
+- **Beacons leak.** The remote model's two default LE beacons appear in the
+  peer's scan results, because the LE phys are joined wholesale.
+
+*Option 1 — shared medium.* Pod A kept the default (netsim-backed) radio;
+Pod B launched with `--netsim_bt=false --rootcanal_instance_num=2`, whose
+effect is that B starts no controller at all and its `tcp_connector` dials
+`127.0.0.1:7301` for HCI. A relay listening on B's `7301` and delivering to
+A's `7300` made netsim in Pod A list both chips in `/v1/devices`. Two facts
+matter for the design: netsimd binds its HCI port on **loopback only**, so a
+forward endpoint *inside* Pod A is required rather than merely tidy (which
+the design already provides); and the guest dials at boot, so the forward
+must be up before the second CVD launches — a pre-launch ordering constraint
+where option 2 has a post-launch one. The entire discovery-pairing-profile
+flow moved ~140 KB phone→controller and ~13 KB back.
+
+*Both.* crosvm's minijail sandbox cannot mount `/dev` inside a Pod, so both
+launches needed `--enable_sandbox=false`; this is a JEP-0016 deployment
+detail, recorded here because it cost the most time. Neither experiment
+changes the decision — option 2 stays the Phase 1 default on its symmetry —
+but the address and join findings above are why the Phase 1 driver work is
+"a rootcanal control hook", not "nothing".
 
 ### DD-10: Wi-Fi medium forwarding
 
@@ -1645,7 +1703,9 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 - [ ] **Phase 1 — Virtual ↔ virtual Bluetooth**: two CVDs in separate Pods
       on separate nodes complete BR/EDR discovery and pairing over a
       forwarded rootcanal port (link-layer federation, or a shared HCI
-      instance), in CI
+      instance), in CI. *Demonstrated by hand for both variants on
+      2026-09-01 with two Pods on one node and a stand-in relay (DD-9);
+      the router path and the multi-node case remain.*
 - [ ] **Phase 2 — Physical ↔ physical across hosts**: a phone and head unit
       on exporters on different lab hosts complete a phone projection
       session (Android Auto in the reference implementation)
@@ -1906,16 +1966,25 @@ risk in one field, handled by DD-2.
 
 To resolve during review:
 
-- **Confirm the Phase 1 topology against real CVDs.** DD-9 leaves three
-  forwardable options, and all three turn on one unverified step: whether a
-  rootcanal port still works when it is a forward from another Pod rather
-  than a local socket. Three cheap experiments settle it, none needing new
-  code: (a) forward `7400` between two CVDs and see whether their controllers
-  federate; (b) launch the second CVD with `--rootcanal_instance_num` and
-  forward `7300` from the first; (c) point a CVD at a Bumble
-  `mode=controller` endpoint, which is documented for the Android emulator
-  but not for Cuttlefish. Whichever works becomes the Phase 1 default. This
-  is a prototype question, not a design one.
+- **Bumble as a Cuttlefish controller.** DD-9's options 1 and 2 are now
+  verified against real CVDs; option 3 is not. Pointing a CVD at a Bumble
+  `mode=controller` endpoint is documented for the Android emulator but not
+  for Cuttlefish, and it is the only option that reaches beyond Cuttlefish.
+  One more prototype run settles it.
+- **Who issues the link-layer join, and who owns addresses?** The
+  federation experiment showed that option 2 needs a control step
+  (`add_remote` on the test channel) after the forward is up, and that
+  standalone rootcanals collide on `da:4c:10:de:00:00` unless one is
+  re-addressed. The candidates are a post-establish hook on the `requires`
+  side driver, a lease-level `forwards[].onEstablish` action, or leaving it
+  to the test. The first keeps the controller ignorant of Bluetooth, which
+  DD-8 and DD-13 argue for.
+- **Forward-before-launch ordering.** Under option 1 the guest dials its HCI
+  port at boot, so the forward must exist before the second CVD is created;
+  under option 2 the join must happen after. The JEP-0016 provisioner creates
+  the CVD at lease time, so the forward has to be established in the window
+  between binding and `cvd create`. Whether that is a lease-status condition
+  the provisioner waits on, or a retrying connector, is open.
 - **Should the scalar and members forms really be mutually exclusive?** The
   alternative is `spec.selector` as a default for members that omit their
   own — convenient when several members share a selector, but two ways to
@@ -2009,6 +2078,9 @@ Not part of this proposal:
 ## Implementation History
 
 - 2026-09-01: JEP drafted
+- 2026-09-01: DD-9 options 1 and 2 verified by hand with two CVD Pods on a
+  kind cluster (pairing, HFP/A2DP/AVRCP, A2DP streaming); findings recorded
+  in DD-9 and Unresolved Questions
 
 ## References
 
