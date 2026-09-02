@@ -1250,6 +1250,27 @@ transport and radios, not about whether projection tolerates a proxy. It
 also gives Phase 1 and Phase 3 a real workload to sit under rather than a
 synthetic one.
 
+**Wi-Fi, same setup, two more facts.** First, the stock Cuttlefish Wi-Fi is
+`virtio_mac80211_hwsim` into a per-environment `wmediumd` over a vhost-user
+Unix socket, with an OpenWrt VM as the access point. vhost-user is shared
+memory and fd passing, not a byte stream, so option 1's "forward the frame
+socket" cannot reuse the L4 forward across hosts: it needs a frame-level
+bridge between two `wmediumd` instances (or a datagram forward under a
+future substrate). That sharpens the Phase 3 risk rather than changing the
+decision. Second, the guests' Wi-Fi is nonetheless IP-reachable. Both
+guests joined their local OpenWrt AP — the GSI phone only after its
+Ethernet network was cut, because Android never asks Wi-Fi to connect while
+a validated Ethernet default exists, which a phone-CVD driver has to handle
+— and the projection session above was re-run with the phone end on `wlan0`
+instead of ADB: DHU → forward → OpenWrt WAN (one host route and one
+`wan→wifi0` forwarding rule on the AP) → phone `wlan0:5277`. Same
+handshake, same launcher, session established on the phone's Wi-Fi
+address. That is still option 3 — no shared medium, no handover — but it is
+carried over the guest's real Wi-Fi NIC, which is what a physical Phase 2
+bench looks like at L3, and it shows the per-instance OpenWrt AP is a
+workable stand-in for the head unit's Wi-Fi Direct group when the medium
+is not simulated.
+
 ### DD-11: Mixed physical/virtual benches — deferred
 
 **Alternatives considered:**
@@ -1884,7 +1905,9 @@ risk in one field, handled by DD-2.
 
 - **Wi-Fi frame forwarding may not be viable over the router.** `wmediumd`
   assumes medium-like timing; head-of-line blocking on a TCP substrate may
-  make association flaky or impossible except on the direct fast path.
+  make association flaky or impossible except on the direct fast path. Its
+  transport is also vhost-user (shared memory), so a cross-host medium needs
+  a frame bridge first, not just a forward (DD-10).
   Mitigation: Phase 3 is last, may conclude "direct mode only", and the
   datagram work in Future Possibilities is the escalation path.
 - **Bluetooth timing may be tighter than measured** — pairing may work while
@@ -2135,7 +2158,8 @@ Not part of this proposal:
   in DD-9 and Unresolved Questions
 - 2026-09-01: DD-10 option 3 verified by hand: Android Auto 17.4 on a GMS
   GSI phone CVD projected to the Desktop Head Unit in the other Pod over a
-  single forwarded port; findings recorded in DD-10 and Phase 2
+  single forwarded port, then again with the phone end on its Wi-Fi NIC via
+  the per-instance OpenWrt AP; findings recorded in DD-10, Phase 2 and Risks
 
 ## References
 
