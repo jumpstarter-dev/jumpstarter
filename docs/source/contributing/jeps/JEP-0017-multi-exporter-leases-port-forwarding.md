@@ -85,24 +85,20 @@ between two of them. The shape recurs across domains:
 Every one of these needs the same two things Jumpstarter cannot give: **two
 devices held at once**, and **a path between them**.
 
-**Phone projection is the worked example** used throughout this JEP, because
-it exercises the hardest version of both requirements. It is a two-device
-protocol by construction: the phone and the head unit first pair over
-**Bluetooth**, then the head unit hands the session off to a peer-to-peer
-**Wi-Fi** link, because Bluetooth lacks the bandwidth for continuous video.
-Validating it means holding both devices *simultaneously*, keeping them
-connected, driving both, and asserting on both — a phone-only or
-head-unit-only lease cannot observe the handover at all. The same structure
-holds for Android Auto and for Apple CarPlay, and for a head unit running
-Android, Linux, or QNX; the pairing-then-handover pattern is a property of
-projection, not of one vendor's stack.
+**Phone projection is the worked example** throughout this JEP, because it
+exercises the hardest version of both requirements. It is a two-device
+protocol by construction: phone and head unit pair over **Bluetooth**, then
+the head unit hands the session to a peer-to-peer **Wi-Fi** link, Bluetooth
+having nowhere near the bandwidth for continuous video. Validating it means
+holding both devices at once, driving both and asserting on both — a
+phone-only lease cannot observe the handover at all. That structure holds for
+every projection protocol in use and for head units running Android, Linux or
+QNX; it is a property of projection, not of one vendor's stack. It also needs
+two things existing tooling lacks: **heterogeneous benches**, and **pairing
+two virtual devices to each other**.
 
-Two capabilities are missing from existing tooling, and projection tests need
-both: **heterogeneous benches** — a Linux or QNX head unit alongside an
-Android phone — and **pairing two virtual devices to each other**.
-
-Running that on Jumpstarter today requires the test author to hand-roll
-everything the lease layer should provide:
+Running that on Jumpstarter today means hand-rolling everything the lease
+layer should provide:
 
 - **No atomic acquisition.** The client requests two independent leases. If
   the second selector is unsatisfiable the first is already held, so the
@@ -125,86 +121,60 @@ ergonomics change.
 
 For virtual devices the connectivity problem is sharper. Cuttlefish and the
 Android emulator can already pair virtual devices to each other — but only
-within one host:
+within one host. Cuttlefish shares its virtual radio media between instances
+launched together, or launched separately against the *same* `wmediumd`
+socket and rootcanal/netsim daemon; both are host-local Unix sockets and
+loopback TCP ports. The emulator's networking backplane is explicitly scoped
+to "all running instances on the same host machine", and container wrappers
+publish each container's ports while keeping radio simulation inside the
+container group.
 
-- Cuttlefish shares its virtual radio media between instances launched from
-  a single `launch_cvd --num_instances=n`, or from separate `launch_cvd`
-  invocations that are pointed at the *same* `--vhost_user_mac80211_hwsim`
-  socket path and the same rootcanal/netsim daemon. Both mechanisms are
-  host-local Unix sockets and loopback TCP ports.
-- The Android emulator's new networking backplane (36.5) is explicitly
-  described as bridging "all running instances on the same host machine".
-- `podcvd`, Google's container wrapper, publishes each container's ports on
-  its own IP but keeps radio simulation inside the container group.
-
-So the state of the art for virtual multi-device Android testing is: *both
-devices must live on one machine*. That constraint is exactly what a
-cluster-scheduled, autoscaled pool of one-CVD-per-Pod exporters (JEP-0016)
-breaks — and it is why JEP-0016's DD-8 deferred multi-CVD groups pending
-"a cross-Pod virtual-radio story… real upstream-facing work."
+So the state of the art for virtual multi-device testing is: *both devices
+must live on one machine*. That is exactly the constraint a cluster-scheduled
+pool of one-device-per-Pod exporters (JEP-0016) breaks, and why its DD-8
+deferred multi-device groups pending "a cross-Pod virtual-radio story… real
+upstream-facing work."
 
 The encouraging part is that these simulators are reached over ordinary
-sockets. `rootcanal`, the virtual Bluetooth controller, accepts HCI on a TCP
-port — which is why `jumpstarter-driver-bt-peer` can already attach a
-`bumble` peer to a CVD with `transport: "tcp-client:127.0.0.1:7300"`.
-`netsim`, the Rust simulator that orchestrates Bluetooth, BLE, Wi-Fi and UWB
-for both Cuttlefish and the emulator, accepts virtual chips over a
-bidirectional gRPC stream (`PacketStreamer.StreamPackets`, whose first
-`PacketRequest` carries a `ChipInfo` naming the device and chip kind).
-`wmediumd` speaks over a frame socket. Every one of them is something a
-process connects to. Nothing about "same host" is fundamental; it is an
-artifact of the fact that nobody has forwarded those sockets between
-machines under a common lease.
+sockets: rootcanal accepts HCI on TCP — which is why
+`jumpstarter-driver-bt-peer` can already attach a `bumble` peer with
+`transport: "tcp-client:127.0.0.1:7300"` — netsim accepts virtual chips over
+a bidirectional gRPC stream, and `wmediumd` speaks over a frame socket.
+Nothing about "same host" is fundamental; it is an artifact of nobody having
+forwarded those sockets between machines under a common lease.
 
-### Prior art's ceiling, precisely
+### Prior art's ceiling
 
-Google's OmniLab Android Test Station is the closest existing system, and
-being exact about what it can and cannot do matters, because the naive
-version of this comparison is wrong.
-
-ATS 2.0 runs on Mobile Harness (open-sourced as `google/device-infra`), and
-it **does** do multi-device. Ad-hoc testbeds gang-schedule N devices for one
-job: `AdhocTestbedSchedulingUtil.findSubDevicesSupportingJob` performs
-maximum-cardinality bipartite matching of `SubDeviceSpec`s against idle
-devices, and `TestbedDevice`, `CompositeDevice`, and
-`SubDeviceSynchronizationDriver` all exist. It also has a multi-host mode.
-So "ATS cannot do multi-device" and "ATS is single-host" are both too strong.
-
-The actual constraint is one check in
-`infra/controller/scheduler/simple/SimpleScheduler.java`. In `allocate`,
-every device locator in an allocation must share a single `LabLocator`;
-otherwise the allocation is refused with *"Lab locators do not match. Can not
-create allocation"*. **A multi-device job is therefore confined to one lab
-host.** Multi-host mode is one controller with N workers for fleet-level
-pooling — it does not make a single job span hosts. And in either case there
-is no bridged medium between roles: Tradefed states its own version of the
-gap verbatim — *"No APIs yet exist to conduct operations from one device to
-another, such as `device1.sync(device2)`."*
-
-Two further limits shape the opportunity. Mobile Harness's `Device`
-abstraction is ADB-shaped and runs inside the lab-server JVM next to the
-device, and its open-source platform coverage is `platform/android`,
-`platform/androiddesktop`, and `platform/testbed` — there is no Linux, QNX,
-serial, power, or CAN support, and extending it means in-tree Java and Bazel
-rather than an out-of-tree package.
+Existing multi-device test frameworks stop in the same place, and the limit
+is structural rather than accidental. They *can* gang-schedule several
+devices into one job — role declarations, composite devices and coordinated
+setup steps are all standard — but the devices must hang off a single lab
+host: allocation refuses a job whose devices are attached to different hosts,
+and where a multi-host mode exists it pools jobs across hosts rather than
+letting one job span them. None of them offers a path *between* two devices;
+the frameworks say so themselves, noting the absence of any API for
+conducting an operation from one device against another. Their device
+abstractions also tend to be single-platform in practice, so a bench pairing
+a phone with a Linux or QNX head unit is out of reach before scheduling is
+even a question.
 
 This JEP targets exactly that seam:
 
-- **Physical ↔ physical**: a phone and a head unit on two exporters, on
-  **different lab hosts**, in one lease — the allocation `SimpleScheduler`
-  refuses.
-- **Virtual ↔ virtual**: two CVDs in two Pods, on two nodes, pairing over
-  Bluetooth and Wi-Fi — the thing that has not been done anywhere.
+- **Physical ↔ physical**: two devices on two exporters on **different lab
+  hosts**, in one lease.
+- **Virtual ↔ virtual**: two emulated devices in two Pods, on two nodes,
+  pairing over Bluetooth and handing a session to Wi-Fi.
+
 **Scope.** This JEP covers **homogeneous benches** — two virtual devices, or
 two physical devices. Mixing them in one bench (a real phone paired to a
 virtual head unit) is a natural extension and the eventual prize, but it
-requires real radio hardware bridging the two worlds and is deferred to keep
-v1 tractable (DD-11).
+needs real radio hardware bridging the two worlds and is deferred to keep v1
+tractable (DD-11).
 
-The last one is the interesting business case: labs have scarce physical
-head units and abundant phones (or the reverse), and virtualizing the
-abundant half while keeping the scarce half real is a direct cost and
-throughput win no host-local scheduler can offer.
+The virtual case is the interesting business case: labs have scarce physical
+head units and abundant phones, or the reverse, and virtualizing the abundant
+half while keeping the scarce half real is a cost and throughput win no
+host-local scheduler can offer.
 
 ### User Stories
 
@@ -278,9 +248,8 @@ export:
             protocol: hci-h4        # optional
 ```
 
-`requires` is the genuinely new concept: a declaration that the driver will
-dial a local address, and that the exporter should bind an inbound forward
-there.
+`requires` is the genuinely new concept: the driver will dial a local
+address, and the exporter binds an inbound forward there.
 
 ```yaml
 export:
@@ -295,11 +264,10 @@ export:
         protocol: hci-h4                       # optional
 ```
 
-Note what did *not* change: `bt-peer`'s Python is untouched, and its
-`transport` string still points at `127.0.0.1:7300`. The lease simply makes
-that address resolve to a rootcanal in another Pod on another node. A driver
-that can talk to a local service can now talk to a remote one without
-knowing the difference.
+Note what did *not* change: `bt-peer`'s Python is untouched and its
+`transport` still points at `127.0.0.1:7300`. The lease makes that address
+resolve to a rootcanal in another Pod on another node — a driver that can
+talk to a local service now talks to a remote one without knowing.
 
 ### Declaring a bench
 
@@ -307,7 +275,7 @@ knowing the difference.
 apiVersion: jumpstarter.dev/v1alpha1
 kind: Lease
 metadata:
-  name: android-auto-bench
+  name: projection-bench
   namespace: jumpstarter-lab
 spec:
   clientRef:
@@ -376,34 +344,34 @@ command set.
 
 ```console
 $ jmp create lease \
-    --member phone=device-type=android-phone \
-    --member headunit=device-type=aaos-headunit \
+    --member phone=device-type=phone \
+    --member headunit=device-type=headunit \
     --forward bt=headunit.rootcanal:phone.controller \
     --duration 45m
-android-auto-bench
+projection-bench
 
-$ jmp get lease android-auto-bench
+$ jmp get lease projection-bench
 NAME                 ENDED   CLIENT      EXPORTER                       AGE
-android-auto-bench   false   ci-runner   phone=rack3-pixel8,            12s
-                                         headunit=cf-auto-7b2c
+projection-bench   false   ci-runner   phone=rack3-phone-4,            12s
+                                         headunit=virt-hu-7b2c
 ```
 
 Port names are discoverable rather than tribal knowledge, which is the point
 of putting them in the report (DD-7):
 
 ```console
-$ jmp get exporter cf-auto-7b2c -o json | jq '.status.devices[].ports'
+$ jmp get exporter virt-hu-7b2c -o json | jq '.status.devices[].ports'
 [{"name":"rootcanal","direction":"provides","protocol":"hci-h4"}]
 ```
 
 In a shell, roles become top-level names alongside the usual driver clients:
 
 ```console
-$ jmp shell --lease android-auto-bench
-jumpstarter ⚡ android-auto-bench ➤ j phone adb shell getprop ro.product.model
-Pixel 8
-jumpstarter ⚡ android-auto-bench ➤ j headunit power on
-jumpstarter ⚡ android-auto-bench ➤ j forward status
+$ jmp shell --lease projection-bench
+jumpstarter ⚡ projection-bench ➤ j phone adb shell getprop ro.product.model
+phone-under-test
+jumpstarter ⚡ projection-bench ➤ j headunit power on
+jumpstarter ⚡ projection-bench ➤ j forward status
 NAME   FROM                  TO                  MODE     STATE       A→B       B→A
 bt     headunit.rootcanal    phone.controller    direct   connected   1.2 MiB   0.9 MiB
 ```
@@ -418,7 +386,7 @@ from jumpstarter.config.client import ClientConfigV1Alpha1
 config = ClientConfigV1Alpha1.load("default")
 
 with config.lease(
-    members={"phone": "device-type=android-phone", "headunit": "device-type=aaos-headunit"},
+    members={"phone": "device-type=phone", "headunit": "device-type=headunit"},
     forwards=[Forward("bt", frm=("headunit", "rootcanal"), to=("phone", "controller"))],
     duration=timedelta(minutes=45),
 ) as lease:
@@ -434,7 +402,7 @@ with config.lease(
         phone.bt_peer.start({"name": "Bumble-Phone"})
         phone.bt_peer.wait_connection(timeout=60)
 
-        assert phone.adb.shell("dumpsys activity | grep -c CarProjection") == "1"
+        assert phone.adb.shell("dumpsys bluetooth_manager | grep -c Connected") == "1"
 ```
 
 `config.lease(selector=...)` without `members` behaves exactly as it does
@@ -451,17 +419,17 @@ projected into the config formats existing Android multi-device tests already
 consume:
 
 ```console
-$ jmp get lease android-auto-bench -o mobly > testbed.yml
-$ mobly_test.py -c testbed.yml --test_bed android-auto-bench
+$ jmp get lease projection-bench -o mobly > testbed.yml
+$ mobly_test.py -c testbed.yml --test_bed projection-bench
 ```
 
 which emits a Mobly testbed whose `AndroidDevice` controllers point at the
 per-member ADB endpoints Jumpstarter has forwarded locally, with the role
-name carried through as the Mobly device label. A Mobile Harness
-`SubDeviceSpec` mapping follows the same shape. This is the integration seam
-with ATS/OmniLab: the tests and the results pipeline do not change, the
-*bench* changes from "devices sharing one `LabLocator`" to "any mix of
-physical and virtual devices anywhere the controller can reach."
+name carried through as the Mobly device label; other frameworks' device-set
+formats map the same way. This is the integration seam: the tests and the
+results pipeline do not change, while the *bench* changes from "devices
+sharing one lab host" to "any mix of physical and virtual devices anywhere
+the controller can reach."
 
 ### How a forward comes up
 
@@ -492,14 +460,14 @@ with one substitution — a router peer stream in place of the client stream:
    reach.
 
 ```text
-       ┌──────── Lease: android-auto-bench (one object) ─────────┐
+       ┌──────── Lease: projection-bench (one object) ─────────┐
        │  status.members:                                        │
-       │    phone    → Exporter/rack3-pixel8                     │
-       │    headunit → Exporter/cf-auto-7b2c                     │
+       │    phone    → Exporter/rack3-phone-4                     │
+       │    headunit → Exporter/virt-hu-7b2c                     │
        └───────┬─────────────────────────────────┬───────────────┘
                │                                 │
   ┌────────────▼────────────┐       ┌────────────▼────────────┐
-  │ Exporter: rack3-pixel8  │       │ Exporter: cf-auto-7b2c  │
+  │ Exporter: rack3-phone-4  │       │ Exporter: virt-hu-7b2c  │
   │  bt_peer                │       │  cuttlefish             │
   │   requires: controller  │       │   provides: rootcanal   │
   │   listener 127.0.0.1:7300│      │   dials 127.0.0.1:7300  │
@@ -530,81 +498,74 @@ First, the **data plane** — ports that a forward carries:
 | rootcanal HCI (Cuttlefish, emulator) | `rootcanal` | provides | HCI on TCP (`7300 + rootcanal_instance_num`); hosts attach to it |
 | rootcanal link layer | `rootcanal-link` | provides | Controller-to-controller federation (`7400`, `7600` BLE); standalone rootcanal only, not netsim |
 | `wmediumd` / `mac80211_hwsim` | `hwsim` | provides | vhost-user, not a byte stream — reached through a frame bridge (DD-10) |
-| Android Auto head unit server (phone, developer mode) | `aa-hu`, `aa-hu-wifi` | provides | Same service, via `adb forward` (USB-like) or the guest's Wi-Fi address (wireless-like); the head unit dials it |
-| Android Auto receiver (Desktop Head Unit) | `phone` | requires | Google's public receiver; dials the phone's port (DD-10) |
-| Android Auto wireless receiver (GAS head unit) | `aa-wireless` | provides | TCP 5288 on the head unit; the phone dials it after the Bluetooth handover — physical head units only |
+| Projection server on a phone (developer mode) | `projection`, `projection-wifi` | provides | Same service, reached over ADB (USB-like) or the guest's Wi-Fi address (wireless-like); the receiver dials it |
+| Projection receiver (desktop or head unit) | `phone` | requires | Dials the phone's port (DD-10) |
+| Wireless projection receiver on a head unit | `projection-rx` | provides | A TCP port on the head unit; the phone dials it after the Bluetooth handover — physical head units only |
 | `socketcand` / CAN-over-TCP bridge | `can` | provides | A CAN segment reachable as a socket |
 | Serial bridge (pty or TCP) | `console` | requires/provides | Cross-over between a DUT and a companion |
 
 Second, the **control plane** — drivers that configure and observe a medium
 without carrying its traffic. `jumpstarter-driver-netsim` is the worked
-example: it speaks netsim's REST API (`7681 + netsim_instance_num`) to list
-devices, toggle radios, patch state, reset, and start/stop/download **pcap
-captures** of the simulated air. It is not a forward endpoint and needs none
-of this JEP's machinery; the two compose, with the netsim driver observing
-the medium a forward connects.
+example: it speaks netsim's REST API to list devices, toggle radios, patch
+state, reset, and start/stop/download **pcap captures** of the simulated air.
+It is not a forward endpoint and needs none of this JEP's machinery; the two
+compose, with the netsim driver observing the medium a forward connects.
 
-Two consequences of the data-plane table are worth stating plainly, and both
-generalize beyond radios. First, HCI is **asymmetric**: a host attaches to a
-controller, so forwarding one device's *HCI* port into another's achieves
-nothing — which is precisely why forwards are directional and why a
-`provides → provides` forward is rejected (DD-6). Note this is a statement
-about HCI specifically, not about controllers: rootcanal exposes a separate
-**link-layer** port for joining controllers to each other, which is why the
-table lists both (DD-9). Second, not every
-port is a transparent splice — netsim's `PacketStreamer` requires the
-attaching side to originate a `StreamPackets` call carrying `ChipInfo` before
+Two consequences of the table generalize beyond radios. HCI is
+**asymmetric** — a host attaches to a controller, so forwarding one device's
+HCI port into another's achieves nothing, which is why forwards are
+directional and `provides → provides` is rejected (DD-6); joining two
+controllers is a different port, which is why the table lists both (DD-9).
+And not every port is a transparent splice: netsim's `PacketStreamer`
+requires the attaching side to originate a call carrying `ChipInfo` before
 traffic flows, so its consumer is a protocol-terminating driver rather than a
 raw socket. Forwards carry both kinds; the difference lives in the driver at
 the `requires` end.
 
-Note the asymmetry between the two supported bench kinds. For **two virtual
-devices** the medium is simulated, so a forward carries it and a shared
-controller mediates it. For **two physical devices** the radio medium is the
-air: real devices in RF range pair without any forward at all, and forwards
-carry only the *wired* media of such a bench — a CAN segment, a serial
-cross-over. The lease plane is what physical benches need most, because it is
-what lets their two exporters live on different hosts.
+The two bench kinds are asymmetric too. For **two virtual devices** the
+medium is simulated, so a forward carries it. For **two physical devices**
+the medium is the air: devices in RF range pair with no forward at all, and
+forwards carry only that bench's wired media — a CAN segment, a serial
+cross-over. What a physical bench needs is the lease plane, which is what
+lets its two exporters live on different hosts.
 
 ### A projection bench, concretely
 
-The Android Auto bench in the reference implementation has one shape that
-was verified end to end (DD-10) and one that follows from it.
-
-**Virtual.** The phone is a Cuttlefish exporter booting Google's GMS GSI —
-the phone stack Google ships, not an AOSP approximation — with Android Auto
-installed and its developer-mode head unit server started by the driver. The
-head unit is *not* an AAOS CVD, which cannot receive projection because the
-receiver is part of GAS; it is Google's Desktop Head Unit, run by a `dhu`
-driver as a process inside the head-unit exporter. The DHU is a TCP client,
-so it is the `requires` side, and the phone `provides` the port it dials:
+**Virtual.** The phone is a Cuttlefish exporter booting a vendor phone image
+— the stack that ships on retail devices, not an AOSP approximation — with
+the projection app installed and its developer-mode server started by the
+driver. The head unit is a *receiver* run as a process inside the head-unit
+exporter by a `projection-rx` driver, because an automotive Android CVD
+cannot receive a session: the receiver is part of the vendor stack, not of
+AOSP. The receiver is a TCP client, so it is the `requires` side and the
+phone `provides` the port it dials:
 
 ```yaml
 spec:
   members:
     - name: phone
-      selector: { matchLabels: { device-type: android-phone, gms: "true" } }
+      selector: { matchLabels: { device-type: phone, projection: "true" } }
     - name: headunit
-      selector: { matchLabels: { device-type: aa-headunit } }
+      selector: { matchLabels: { device-type: projection-receiver } }
   forwards:
-    - name: projection
+    - name: session
       between:
-        - { member: phone,    port: aa-hu-wifi }
+        - { member: phone,    port: projection-wifi }
         - { member: headunit, port: phone }
 ```
 
-`aa-hu-wifi` reaches the head unit server through the guest's Wi-Fi
-interface — the phone's side of a wireless session — where `aa-hu` would
-reach it through `adb forward`, the shape of a USB session. The forward is
-the same either way; the port name is the test's statement of which cable it
-is pretending to be (DD-13).
+`projection-wifi` reaches the phone's server through the guest's Wi-Fi
+interface — the shape of a wireless session — where `projection` reaches it
+over ADB, the shape of a USB session. The forward is the same either way; the
+port name is the test's statement of which cable it is pretending to be
+(DD-13).
 
-**Physical.** A GAS head unit on one exporter and a phone on another, on
+**Physical.** A head unit on one exporter and a phone on another, on
 different hosts. The radios are the air, so the handover needs no forward;
-the lease plane is what this bench needs, and its forwards carry only wired
-media — a CAN segment feeding the head unit's VHAL, a serial console. A
-`dhu` member can stand in for the head unit here too, which gives a
-physical phone a hardware-free receiver.
+what this bench needs is the lease plane, and its forwards carry only wired
+media — a CAN segment feeding the head unit, a serial console. A software
+receiver can stand in for the head unit here too, giving a physical phone a
+hardware-free counterpart.
 
 ### API / Protocol Changes
 
@@ -983,7 +944,7 @@ if that dial does not complete. Three reasons, in order of weight:
    also mean paying to leave and re-enter the network.
 2. **The router path in a typical install leaves the cluster and comes
    back.** It therefore inherits the ingress's failure modes — the reload
-   that cut a live bench's HCI splice in DD-9's third pass was an ingress
+   that cut a live bench's HCI splice during verification was an ingress
    worker drain, not a Jumpstarter fault. A direct forward between two Pods
    stays inside the CNI and never meets that machinery.
 3. **The workloads that are latency-sensitive are the ones still ahead.**
@@ -1156,302 +1117,149 @@ Option 2 is the Phase 1 default, option 1 the fallback, option 3 the general
 answer beyond Cuttlefish.
 
 **Rationale:** Cuttlefish already solves multi-device Bluetooth on one host,
-and reading how tells us what to forward. In
-`assemble_cvd`, all four rootcanal ports are derived from
-`rootcanal_instance_num` rather than from the CVD's own instance number —
-`hci 7300+N`, `link 7400+N`, `test 7500+N`, `link_ble 7600+N` — and
-`--rootcanal_instance_num` is documented as *"use an existing rootcanal
-instance which is launched from cuttlefish instance with
-rootcanal_instance_num."* Sharing a controller between devices is therefore a
-first-class, supported configuration, and the guest reaches it through a TCP
-connector on `rootcanal_hci_port`. Everything host-local about it is a
-**port**, which is exactly what this JEP forwards.
+and how it does so says what to forward: all four rootcanal ports derive from
+`rootcanal_instance_num` rather than the CVD's own instance number
+(`hci 7300+N`, `link 7400+N`, `test 7500+N`, `link_ble 7600+N`), and sharing
+one controller between devices is a documented, first-class configuration
+that the guest reaches through a TCP connector. Everything host-local about
+it is a **port**, which is what this JEP forwards.
 
-Option 2 is preferred because it is symmetric. Each device keeps its own
-controller, so neither exporter's failure removes the other's radio, and
-rootcanal exposes `link_port` / `link_ble_port` specifically for joining
-controllers to one another — distinct from the HCI port that hosts use. It
-needs no new code at all: a `TcpNetwork` child on 7400 and a forward.
+Option 2 is preferred for symmetry: each device keeps its own controller, so
+neither exporter's failure removes the other's radio, and rootcanal exposes
+`link_port`/`link_ble_port` specifically for joining controllers to each
+other. It needs no new code — a `TcpNetwork` child and a forward. Option 1 is
+the fallback if federation misbehaves; equally free, but asymmetric, since one
+Pod becomes the medium and therefore a single point of failure. One
+constraint separates them: `link_port` exists only on standalone rootcanal,
+never on netsim, so a device routing its radios through netsim has options 1
+and 3 but not 2.
 
-Option 1 is the fallback if link-layer federation does not behave as the flag
-names imply. It is equally free of new code, but asymmetric — one exporter's
-rootcanal becomes the medium for both, so that Pod becomes a single point of
-failure for the bench.
+Option 3 is the general answer and the only one that works outside
+Cuttlefish. Bumble's virtual `Controller` attaches to a link-layer bus that
+several controllers can share, and its `RemoteLink` carries that bus over a
+relay — the N-way medium DD-6 deferred. Choose it for a non-Cuttlefish
+device, for more than two participants, or when the medium itself must be
+scripted or fault-injected, which a Python controller does and a C++
+simulator does not. Bumble is already a dependency:
+`jumpstarter-driver-bt-peer` passes its `transport` string straight to
+`bumble.transport.open_transport`, so any transport moniker works with no
+Python change — that is what makes the `requires` side free. The driver only
+ever builds a `Device`, a host, so the controller side is new code, and small.
 
-Option 3 is the general answer, and the only one that works outside
-Cuttlefish. Bumble's virtual `Controller` attaches to a link-layer bus,
-several controllers on one bus exchange broadcast advertising and unicast ACL
-data, and `RemoteLink` carries that bus over a WebSocket relay hosting
-virtual *rooms* — the N-way medium DD-6 deferred. Its `android-netsim`
-transport has a `mode=controller` documented as replacing netsim outright.
-Choose it when a bench includes a non-Cuttlefish device, when more than two
-participants share a medium, or when the medium itself needs to be scripted
-or instrumented — a Python controller can inject faults a C++ simulator will
-not.
+Options 4 and 5 are rejected. Option 4 invents machinery — a driver
+interface, a driver tier and a medium taxonomy — to express what network
+drivers plus a direction already express. Option 5 changes the device under
+test: a guest-side shim means the stack being exercised is not the one that
+ships, invalidating the pairing and handover behavior these tests exist to
+verify.
 
-One constraint separates them in practice: `link_port` is passed only to
-standalone rootcanal, never to netsim, which takes `--hci_port` alone. A
-device configured to route its radios through netsim therefore has options 1
-and 3 available but not option 2.
+Option 2 is an instance of a general pattern rather than a Bluetooth special
+case. What a bench needs is a **counterparty**: something presenting itself
+to the DUT as whatever it expects on the other side of the medium. For
+Bluetooth that is a shared controller; for a vehicle bus it is a *restbus*,
+simulating the remaining ECUs. Both are ordinary `provides` ports, so the
+same machinery serves them (integrating a real restbus is future work).
 
-Bumble is also already a dependency: `jumpstarter-driver-bt-peer` is built on
-it and passes its `transport` string directly to `bumble.transport.
-open_transport`, then uses the result as `controller_source`/`controller_sink`
-for a Bumble `Device`. Any Bumble moniker therefore already works with no
-Python change, which is what makes the `requires` side of this design free.
-The gap is that the driver only ever constructs a `Device` — a host — so the
-controller side is new code, and it is small.
+One caveat is carried rather than hidden: a Python medium is comfortable for
+advertising, pairing and control but an open question for sustained
+A2DP-class traffic, which compounds the latency risk already recorded.
+Options 1 and 2 keep the medium in native C++ and avoid it.
 
-Option 4 was in an earlier draft of this JEP and is rejected as invented
-machinery: it added a driver interface, a driver tier, and a medium taxonomy
-to express something existing network drivers plus a direction already
-express. Option 5 is rejected because it changes the device under test — a
-guest-side shim means the Bluetooth stack being exercised is not the one that
-ships, invalidating precisely the pairing and handover behavior these tests
-exist to verify.
+**Verified on real devices (2026-09-01 and 2026-09-02).** Options 1 and 2
+were exercised by hand on a single-node kind cluster with two Cuttlefish
+exporter Pods — an automotive head unit in one, a phone in the other — first
+with a 50-line TCP relay standing in for the forward endpoint, then over
+Jumpstarter's own router path with the merged `jumpstarter-driver-bt-peer`
+playing the phone. Driven through `adb` alone, every variant produced the
+same result: inquiry, SSP numeric comparison showing one passkey on both
+screens, a bond, and HFP, A2DP and AVRCP `Connected`, with music streaming
+continuously over the link and the phone reconnecting by itself after a
+Bluetooth off/on. Boot-to-bond is about two minutes, most of it guest boot.
+Which profiles appear at all is decided by the phone *image*, not by the
+medium: a plain GSI enables only the LE-audio profile properties, and the
+classic set had to be added to the image before anything beyond the bond
+connected. None of this changes the decision — option 2 stays the Phase 1
+default on its symmetry — but it turns "nothing to build" into a specific
+list of duties.
 
-Worth noting that option 2 is an instance of a general pattern rather than a
-Bluetooth special case. What a bench needs is a **counterparty component**:
-something that presents itself to the DUT as whatever the DUT expects on the
-other side of the medium. For Bluetooth that is a controller shared by two
-hosts; for a vehicle bus it is a *restbus* — a simulation of the remaining
-ECUs, a long-established practice in automotive integration testing. Both are
-ordinary `provides` ports under this design, so the same forward machinery
-serves them and no medium-specific mechanism is required. Integrating a
-concrete restbus is future work (see Future Possibilities).
+*What the ports actually require.* Under option 2 both CVDs run standalone
+rootcanal (`--netsim_bt=false`), which binds all four ports on `0.0.0.0`;
+the join itself is a runtime `add_remote` command on the *test* channel, so
+federation needs two forwarded link ports **plus a control step after the
+forward is up** — a post-establish hook, not something a static `forwards[]`
+entry expresses. It also joins the LE phys wholesale, so the peer's beacons
+appear in local scans. Under option 1 the second CVD starts no controller and
+its guest dials the shared HCI port at boot, so the forward must exist
+*before* that CVD launches — a pre-launch ordering constraint where option 2
+has a post-launch one — and because netsim binds its HCI port on loopback
+only, the forward endpoint must live inside the owning Pod rather than
+merely nearby, which is what this design already provides.
 
-One caveat is carried rather than hidden: for option 3 a radio medium in
-Python is comfortable for advertising, pairing, and control while being an
-open question for sustained A2DP-class traffic, which compounds rather than
-relieves the latency risk already recorded; options 1 and 2 keep the medium
-in native C++ and avoid that entirely.
+*The peer side is free, and can be the whole phone.* `bt-peer` ran unchanged
+as the `requires` end, its `transport` pointed at a forwarded HCI port: the
+head unit discovered it, SSP-paired it, and opened AVDTP to its A2DP source
+— the claim under *Ports* that the driver's Python is untouched, demonstrated
+on merged code. Adding an HFP Audio Gateway alongside that source (a
+`bumble.rfcomm` server plus `hfp.AgProtocol` and its SDP record) made the
+head unit show both Phone and Media, and a simulated inbound call from the
+peer arrived in the head unit's telephony stack as a ringing call. The
+cheapest useful bench is therefore one virtual device and a Python process,
+and `bt-peer` should grow a `profiles:` config rather than a sibling driver.
+This exercises Bumble as a *host*; option 3, Bumble as the *controller*, is
+still unverified.
 
-**Verified against real CVDs (2026-09-01).** Options 1 and 2 were both
-exercised by hand on a single-node kind cluster with two Cuttlefish exporter
-Pods — an `aosp_cf_x86_64_auto` head unit in Pod A and an
-`aosp_cf_x86_64_only_phone` in Pod B (AOSP build 16102939, cuttlefish host
-package 1.55.1). No Jumpstarter code was involved: the forward endpoint was
-played by a 50-line asyncio TCP relay inside each Pod, and Pod-to-Pod
-traffic went over the Pod network directly, which is what DD-4's Direct mode
-will do. The router path is therefore still unmeasured; everything below is
-about whether the *ports* behave when the other end is in another Pod.
+*What the router costs.* Measured from one Pod against the same endpoint: a
+round-trip through a router-carried forward was **0.70 ms** median (p90
+0.91 ms, n=100) against **0.05 ms** direct Pod-to-Pod, while an HCI command
+to rootcanal took **~45 ms either way** — the simulator's own scheduling
+dominates by two orders of magnitude. Pairing cannot tell the transports
+apart, which is what makes DD-4's preference for a direct in-cluster
+connection free rather than a gamble. Where that stops being true is what the
+*Latency characterization* test is for.
 
-Both options produced the same result, driven purely through `adb` and
-`uiautomator`: BR/EDR inquiry lists the phone on the head unit, SSP numeric
-comparison shows the same passkey on both screens, the bond completes with a
-16-byte link key, and HFP, A2DP and AVRCP connect. Under option 2 the phone
-then streamed a ringtone to the head unit over A2DP for ~38 s at ~42 KB/s
-on the federated link, with no disconnect. Boot-to-bond is about two minutes
-of wall clock, most of it guest boot.
+*Duties this puts on the drivers and the forward endpoint.*
 
-*Option 2 — link-layer federation.* Both CVDs launched with
-`--netsim_bt=false`, so each Pod runs its own rootcanal. Standalone rootcanal
-binds **all four** ports (`hci`, `link`, `test`, `link_ble`) on `0.0.0.0`,
-so the join needed no relay at all: from Pod B's test channel,
-`add_remote <A> 7400 BR_EDR` and `add_remote <A> 7600 LOW_ENERGY` produced a
-`link_layer_socket_device` on the BR/EDR and LE phys of *both* models. Three
-things the flag names do not tell you:
+- **Keep the test channel private, and watch the controller.** A client that
+  connects to rootcanal's test port and closes before its banner is written
+  aborts the process (`Check failed: written == size, errno = 32`).
+  `process_restarter` brings rootcanal back, but the guest's connector took
+  `SIGPIPE`, is not restarted, and its Bluetooth stays half-up until a `cvd
+  restart`. So the test channel is never a `provides` port, a forward
+  endpoint never probes liveness by connect-and-close — state comes from the
+  splice — and a driver whose controller dies reports the forward `Failed`
+  and the lease `Degraded` instead of leaving a bench that cannot pair.
+- **Assign addresses per member, before the host powers on.** rootcanal names
+  the *n*-th live device on a model `da:4c:10:de:00:<n>` and reuses numbers,
+  so two federated CVDs start life with the same BD_ADDR and any attaching
+  peer collides with an existing one. The rootcanal driver sets an address
+  per member in its post-establish hook, ahead of power-on, because secure
+  pairing binds the address into key derivation.
+- **Expect identical guest networks.** Every Cuttlefish guest boots the same
+  address plan behind an identical AP, so anything bridging guests at L2 or
+  L3 — the Phase 4 frame bridge, a Wi-Fi Direct emulation — must NAT or
+  re-address. An L4 forward never sees it.
+- **Reconnect, and do it in the endpoint.** The verification cluster's
+  ingress reloads on any unrelated `Ingress` change and drains its workers
+  240 s later, which cut the exporter's controller stream and the forwarded
+  HCI splice within seconds of each other; the exporter re-dialed its own
+  stream, the forward did not, and the bench stayed `Ready` with the
+  simulated phone off the air. A driver that opens its transport once at
+  start cannot notice this, so the `requires` side re-dials and re-splices
+  transparently and the reconnect reaches drivers that care as an event.
+- **One process per exporter identity.** Two processes registered under one
+  identity split connections between them; the one that does not own the
+  lease's session fails `RouterService.Stream` with a `KeyError` and closes,
+  which presents as a flaky forward rather than a misconfiguration.
+- **Match versions across a splice.** A forward endpoint built against a
+  newer network driver than the exporter's runtime accepted connections and
+  returned EOF at the first byte, silently — an argument for the endpoint
+  being the exporter's own code, as specified.
 
-- **BD_ADDR collision.** Every standalone rootcanal numbers its first HCI
-  device `da:4c:10:de:00:00`, so two federated CVDs start with the same
-  address and cannot pair. The fix used was `set_device_address` on B's test
-  channel followed by a Bluetooth off/on in the guest so the stack re-reads
-  its address; `--rootcanal_default_commands_file` is the launch-time
-  equivalent. Under option 1 a single model numbers every device and the
-  problem does not arise.
-- **The join is an action, not a wiring.** `add_remote` is a runtime
-  test-channel command that dials outward, so option 2 needs *two* forwarded
-  ports (BR/EDR and LE link) plus a control step on the `requires` side
-  after the forward is up — a natural post-establish hook for a rootcanal
-  driver, but not something a static `forwards[]` entry expresses alone.
-  Standalone rootcanal is also not the Cuttlefish default; netsim is.
-- **Beacons leak.** The remote model's two default LE beacons appear in the
-  peer's scan results, because the LE phys are joined wholesale.
-
-*Option 1 — shared medium.* Pod A kept the default (netsim-backed) radio;
-Pod B launched with `--netsim_bt=false --rootcanal_instance_num=2`, whose
-effect is that B starts no controller at all and its `tcp_connector` dials
-`127.0.0.1:7301` for HCI. A relay listening on B's `7301` and delivering to
-A's `7300` made netsim in Pod A list both chips in `/v1/devices`. Two facts
-matter for the design: netsimd binds its HCI port on **loopback only**, so a
-forward endpoint *inside* Pod A is required rather than merely tidy (which
-the design already provides); and the guest dials at boot, so the forward
-must be up before the second CVD launches — a pre-launch ordering constraint
-where option 2 has a post-launch one. The entire discovery-pairing-profile
-flow moved ~140 KB phone→controller and ~13 KB back.
-
-*Both.* crosvm's minijail sandbox cannot mount `/dev` inside a Pod, so both
-launches needed `--enable_sandbox=false`; this is a JEP-0016 deployment
-detail, recorded here because it cost the most time. Neither experiment
-changes the decision — option 2 stays the Phase 1 default on its symmetry —
-but the address and join findings above are why the Phase 1 driver work is
-"a rootcanal control hook", not "nothing".
-
-**Verified again with a GMS phone and the merged `bt-peer` driver
-(2026-09-01, second pass).** The same two Pods, with Pod B now running the
-GMS GSI phone of DD-10 instead of the AOSP phone, and the peer role played
-by real Jumpstarter code for the first time.
-
-*Regular pairing with a GMS phone.* The UI-driven flow — inquiry, SSP
-numeric comparison, bond — succeeded as before, then stalled: no profile
-connected, the head unit logged `CachedBluetoothDevice: No profiles`, and
-the ACL dropped on `l2c_link_timeout` after SDP. The medium was not the
-cause. The GSI enables only the LE-audio `bluetooth.profile.*` properties;
-the classic set — A2DP source, AVRCP target, HFP AG, MAP and PBAP server,
-PAN, HID, OPP — is product configuration in `/system/build.prop` (the AAOS
-image carries its own sink-side set there), and the GSI's `system.img`
-replaced it. Injecting the phone-side set into the GSI's `build.prop`, the
-same in-place ext4 edit as the ADB fix, produced the full stack: A2DP sink,
-AVRCP controller with browsing and BIP cover art, HFP client carrying the
-phone's network and subscriber indicators, and PBAP client pulling the
-phonebook over L2CAP, all `Connected`. YouTube Music on the phone then
-streamed AAC 44.1 kHz stereo to the head unit over the federated link, and
-the phone reconnected on its own after a Bluetooth off/on. Which profiles a
-bench has is decided by the phone image, which makes this a second
-image-preparation duty for the `cuttlefish` phone driver next to the ADB
-one (*Reference drivers for projection*).
-
-*`jumpstarter-driver-bt-peer` as the `requires` side.* The driver's
-`BtPeer` class was run unchanged with
-`transport: "tcp-client:127.0.0.1:17300"`, where `17300` was a
-`kubectl port-forward` to Pod A's rootcanal `hci_port` — byte for byte what
-a `bt=headunit.rootcanal:phone.controller` forward delivers, with the peer
-end outside the cluster. rootcanal attached it as a second HCI device on the
-head unit's own medium; the head unit discovered *Bumble-Phone*, SSP-paired
-it (bond, encrypted ACL), listed it *Connected* with Media active, and
-opened AVDTP to the peer's SBC source (`avdtp_connected` in the driver's
-event log). That is the claim under *Ports* — "`bt-peer`'s Python is
-untouched" — demonstrated on the merged driver. It exercises Bumble as a
-*host*; the open question about Bumble as the *controller* (option 3) is
-unchanged.
-
-*Three constraints that change the driver's duties.*
-
-- **The test channel is fragile, and the guest does not recover.** A
-  latency probe that opened and closed rootcanal's `test_port` twenty times
-  aborted rootcanal in *both* Pods — `test_channel_transport.cc: Check
-  failed: written == size, errno = 32` in `SendResponse`: a client that
-  closes before the banner is written is fatal. `process_restarter`
-  respawned rootcanal within a second, but the guest's side of the HCI link
-  (`tcp_connector`) took `SIGPIPE`, is not under the restarter, and the
-  guest's Bluetooth sat in `BLE_TURNING_ON` until `cvd restart` (about
-  20 s; userdata, bonds and installed apps survive it, where `cvd rm`
-  discards them). So: the test channel is never a `provides` port — the
-  rootcanal driver keeps it private and forwards only the HCI and link
-  ports; a forward endpoint must not verify liveness by connect-and-close,
-  which is why forward state comes from the splice and not from probing;
-  and a controller crash on one exporter strands every peer's guest with a
-  dead controller while the lease still looks bound, so the driver watches
-  its controller and reports the forward `Failed` and the lease `Degraded`
-  rather than leaving a bench that cannot pair.
-- **Addresses follow attachment order, and numbers are reused.** rootcanal
-  names the *n*-th live HCI device `da:4c:10:de:00:<n>` per model, so the
-  Bumble peer took `:00:01` on attaching — the address the federated phone
-  already held. The BD_ADDR finding above therefore generalises from "two
-  CVDs" to "any host that attaches": the rootcanal driver assigns a
-  per-member address (from the member index, say) with `set_device_address`
-  in its post-establish hook, and before the host powers on, because SC
-  pairing binds the address into the key derivation.
-- **Every Cuttlefish guest has the same address plan.** Both instances came
-  up with mobile data at `192.168.97.2`, Ethernet on `192.168.98.0/24` and
-  Wi-Fi on `192.168.99.0/25` behind an AP built from the same OpenWrt
-  rootfs. An L4 forward never sees this; anything that bridges guests at L2
-  or L3 — the Phase 4 frame bridge, a Wi-Fi Direct emulation — must NAT or
-  re-address, one more reason DD-10's option 3 goes first. Pod-to-Pod TCP
-  connect on this single-node cluster was ~0.1 ms median; cross-node is
-  still unmeasured. And because standalone rootcanal binds every port on
-  `0.0.0.0`, it is the cluster's network policy, not the simulator, that
-  keeps another Pod from `add_remote`-ing into a bench (*Security*).
-
-The Phase 1 rootcanal hook is therefore three concrete things: a private
-test channel, per-member addresses, and a controller watch.
-
-**Verified over a real router forward, with Bumble as the phone
-(2026-09-02, third pass).** The second pass reached rootcanal through a
-`kubectl port-forward`; this pass replaced it with Jumpstarter's own data
-path and removed the phone CVD entirely. Three Pods: the head unit's Pod
-gained a second, hook-less exporter identity that exports its rootcanal
-`hci_port` as a `TcpNetwork` (plus an echo port, for measurement); a bt-peer
-Pod ran the merged driver with `transport: "tcp-client:127.0.0.1:7300"`; and
-a sidecar in that Pod held a lease on the rootcanal exporter and published
-both ports locally with `TcpPortforwardAdapter` — a hand-rolled stand-in for
-the forward endpoint this JEP specifies, with the same shape: one lease, a
-listener on the `requires` side, `RouterService.Stream` in the middle. Every
-HCI byte the peer sent crossed bt-peer Pod → router → head unit Pod, and the
-head unit paired with it: discovered *Bumble-Phone*, SSP-bonded, encrypted
-ACL, listed `Connected` with **Phone and Media both on**.
-
-*A phone, not just a headset.* The merged `BtPeer` presents an A2DP source,
-which lights Media. Subclassing it to add an HFP **Audio Gateway** — a
-`bumble.rfcomm` server, `hfp.AgProtocol` with the call/callsetup/callheld,
-service, signal, roam and battery indicators, and `hfp.make_ag_sdp_records`
-in the device's SDP database — lit Phone as well: `hfp_slc_complete`,
-codecs `CVSD`/`MSBC` negotiated, `avdtp_connected`, and the head unit's
-`HeadsetClientStateMachine` `Connected`. Ringing the head unit from the peer
-(`callsetup=1` + `RING` + `+CLIP`) put a call into AAOS Telecom —
-`SET_RINGING (successful incoming call)` against
-`HfpClientConnectionService`, phone account `HFP …:00:01`. So the phone-facing
-half of a head-unit bench needs no second guest at all: the cheapest bench
-is one CVD and a Python process, and the `bt-peer` driver should grow a
-`profiles:` config (`a2dp-source`, `hfp-ag`, later AVRCP target and PBAP
-server) rather than a second driver.
-
-*What the router costs.* On the same endpoint, from the same Pod: a
-round-trip through the forward was **0.70 ms median** (p90 0.91 ms, n=100)
-against **0.05 ms** direct Pod-to-Pod — about 0.65 ms of router. An HCI
-command round-trip to rootcanal was **~45 ms median through the forward and
-~45 ms direct**: the simulator's own scheduling dominates by two orders of
-magnitude, and the router is ~1.5% of an HCI exchange. Simulated Bluetooth
-pairing therefore cannot tell the two transports apart — which is what makes
-DD-4's preference for a direct in-cluster connection free rather than a
-gamble, since falling back to the router is undetectable on this path. The
-*Latency characterization* test exists to find where that stops being true
-(A2DP-class throughput, cross-node, physical controllers, and the Phase 4
-frame bridge, where it is expected to).
-
-*Three operational constraints, all in the forward endpoint's lap.*
-
-- **An ingress reload cuts every long-lived stream, and nothing re-dials.**
-  This cluster's nginx ingress reloads on any `Ingress` change — 85 times in
-  one log — and each reload drains its old workers with
-  `worker_shutdown_timeout 240s`. The arithmetic is visible end to end: a
-  reload at 04:00:13, the exporter's controller status stream cut at
-  04:04:13.6, the forwarded HCI splice broken at 04:04:55, and the client's
-  next driver call failing `UNAVAILABLE: Socket closed`. The exporter
-  reconnected its own status stream in half a second; the *forward* did not,
-  so the peer's HCI transport stayed dead and the bench looked bound while
-  the simulated phone was off the air. Immediately after such an event the
-  first new connection to the listener is also reset, and the next one
-  succeeds. Nothing about this is Bluetooth-specific or exotic — any
-  cluster whose proxy reloads has it — so reconnection belongs to the
-  forward endpoint, not to each driver: the `requires` side re-dials its
-  peer stream and re-splices transparently, because a driver that opens its
-  transport once at start, as `bt-peer` and every HCI or serial-style client
-  does, has no way to notice or recover. Drivers that genuinely must know —
-  the head unit server of DD-10 — get the reset as an event, which is the
-  same rule *Reference drivers for projection* already states.
-- **One identity, one process.** Running the exporter twice under the same
-  identity — trivially, a Deployment scaled to two — leaves both registered;
-  connections then land on whichever process the router picks, and the one
-  that does not own the lease's session answers `RouterService.Stream` with
-  a `KeyError` on the driver UUID and closes. It cost an hour of chasing a
-  "flaky tunnel". A member exporter is single-writer: the deployment runs
-  one replica, and a duplicate registration is worth detecting rather than
-  tolerating.
-- **Both ends must be the same build.** A forward endpoint running a newer
-  `jumpstarter-driver-network` than the exporter's runtime accepted
-  connections and returned EOF on the first byte, with no error on either
-  side. Version skew between the two halves of a splice is silent, which is
-  an argument for the forward endpoint being the exporter's own code —
-  as specified — rather than an arbitrary client-side helper.
-
-Two smaller notes for whoever writes the tests. Bumble's bonds live in
-memory unless a keystore is configured, so restarting the peer invalidates
-the DUT's stored link key and the DUT must forget the bond before re-pairing
-— the driver should persist its keystore per lease, or the test should
-forget first. And deleting a `Lease` object out from under a waiting client
-leaves that client retrying `not found` forever instead of re-queueing:
-leases are released, not deleted (*Lease state*).
+Two notes for whoever writes the tests: a Bumble peer keeps its bonds in
+memory unless a keystore is configured, so restarting it invalidates the
+DUT's link key and the DUT must forget the bond first; and deleting a `Lease`
+object out from under a waiting client leaves that client retrying
+`not found` forever — leases are released, not deleted (*Lease state*).
 
 ### DD-10: Wi-Fi and projection — what a forward carries
 
@@ -1474,45 +1282,41 @@ the byte forward. That is Phase 4.
 
 **Rationale:** An earlier draft rejected option 3 as a fidelity failure —
 "it verifies that a TCP proxy works" — and kept it only as a diagnostic.
-Running it changed that judgment. With the two Pods of the DD-9 experiment,
-a GMS phone image and Google's own receiver projected a live Android Auto
-session across a single forwarded port (the verification below). Version
-negotiation, the TLS authentication between GMS and the receiver library,
-service discovery, the phone-side first-run flow, and the rendered launcher
-with video, audio and input all ran unchanged. That is not a proxy check;
-it is the whole projection stack running on two exporters.
+Running it changed that judgment. With the two Pods of the DD-9 experiment, a
+vendor phone image and a publicly available receiver projected a live session
+across a single forwarded port (the verification below): version negotiation,
+the TLS authentication between the phone stack and the receiver, service
+discovery, the phone-side first-run flow, and the rendered launcher with
+video, audio and input all ran unchanged. That is not a proxy check; it is
+the whole projection stack running on two exporters.
 
-What option 3 does not exercise is precisely bounded: the **handover** —
-the credential exchange over Bluetooth, the phone joining the head unit's
-Wi-Fi Direct group — and the radio-layer failure modes (RSSI, roaming,
-channel loss). Those are the reasons the medium must eventually be
-simulated, and they are all that Phase 4 is for. Everything downstream of
-the handover runs over the forward, so a lab gets a real projection
-workload on day one, in CI, on hardware-free nodes, and Phase 4 arrives as
-a fidelity upgrade rather than as the first time anything projects.
+What option 3 does not exercise is precisely bounded: the **handover** — the
+credential exchange over Bluetooth and the phone joining the head unit's
+Wi-Fi Direct group — and radio-layer failure modes such as RSSI, roaming and
+channel loss. Those are what Phase 4 is for. Everything downstream of the
+handover runs over the forward, so a lab gets a real projection workload on
+day one, in CI, on hardware-free nodes, and Phase 4 arrives as a fidelity
+upgrade rather than as the first time anything projects.
 
 Two facts from the same experiment shape how the medium options are built:
 
 - **The Cuttlefish Wi-Fi medium is not a byte stream.** The guest's
   `virtio_mac80211_hwsim` feeds a per-environment `wmediumd` over a
-  **vhost-user** Unix socket (shared memory plus fd passing), with an
-  OpenWrt VM as the access point. `--vhost_user_mac80211_hwsim` is
-  Cuttlefish's documented way to share one medium between instances, but
-  only on one host. Across hosts, option 1 is therefore a *bridge* — a
-  component on each exporter that terminates vhost-user locally and
-  exchanges 802.11 frames with its peer — and the forward is only the pipe
-  between the two bridges. This is why option 1 is the general answer and
-  also the one that needs new code and datagram semantics (Future
-  Possibilities).
-- **The guest's Wi-Fi is already IP-reachable.** Each CVD's guest joins its
-  own OpenWrt AP and reaches the exporter's network through the AP's WAN
-  link; with one host route and one forwarding rule on the AP, the exporter
-  reaches the guest's Wi-Fi address in turn. So a Cuttlefish driver can
-  expose a guest-side port two ways: through `adb forward`, which models
-  the USB cable, or through the guest's `wlan0` address, which models the
-  Wi-Fi link. The projection session was run both ways with the same
-  result. They are two `provides` ports, not two mechanisms, and which one
-  a test forwards is a topology choice DD-13 leaves to the test.
+  **vhost-user** Unix socket (shared memory plus fd passing), with an OpenWrt
+  VM as the access point. `--vhost_user_mac80211_hwsim` shares one medium
+  between instances on one host only. Across hosts, option 1 is therefore a
+  *bridge* — a component on each exporter terminating vhost-user locally and
+  exchanging 802.11 frames with its peer — and the forward is only the pipe
+  between the two bridges. Hence option 1 is both the general answer and the
+  one needing new code and datagram semantics (Future Possibilities).
+- **The guest's Wi-Fi is already IP-reachable.** Each guest joins its own
+  OpenWrt AP and reaches the exporter's network through the AP's WAN link;
+  one host route and one forwarding rule make the guest's Wi-Fi address
+  reachable in return. So a Cuttlefish driver can expose a guest-side port
+  two ways — over ADB, which models the USB cable, or at the guest's `wlan0`
+  address, which models the Wi-Fi link. Both were run with the same result.
+  They are two `provides` ports, not two mechanisms, and which one a test
+  forwards is a topology choice DD-13 leaves to the test.
 
 Between 1 and 2, option 2 is far cheaper when it applies, because it reuses
 the same forward machinery as Bluetooth and netsim already owns the frames.
@@ -1521,41 +1325,25 @@ delivery modeling live. Option 1 is also the hardest thing in this JEP and
 the most likely to need upstream work — it is scheduled last and its risk
 is called out explicitly.
 
-**Verified against real CVDs (2026-09-01).** Same two Pods, same stand-in
-relays, same Direct-mode caveat as DD-9. The pieces, all public:
+**Verified against real devices (2026-09-01).** Same two Pods and stand-in
+relays as DD-9. The phone was a Cuttlefish exporter running a vendor phone
+image — a `user` build, so enabling ADB meant preparing the image rather than
+configuring the guest — with the projection app sideloaded and its
+developer-mode server started on the port the phone `provides`. The head unit
+was a desktop receiver process in the other Pod, a plain TCP client and hence
+the `requires` side; direction fell out of DD-13 as expected. The forward ran
+first over ADB and then over the guest's Wi-Fi address through its AP.
 
-- *Phone.* Google's GSI with GMS for x86-64 (`gsi_gms_x86_64`, Android 17,
-  a `user` build) dropped into the Cuttlefish AOSP image set: `super.img`
-  rebuilt with the GSI `system.img` over the AOSP vendor partitions, and the
-  GSI `vbmeta.img` (verification disabled) in place of Cuttlefish's. Being a
-  `user` build it boots with `adbd` stopped; enabling it meant editing the
-  ext4 `system.img` in place (`persist.sys.usb.config=adb` in `build.prop`,
-  the exporter's public key in `/adb_keys`). Android Auto 17.4 (x86-64
-  split APKs) was then sideloaded and its developer-mode *head unit server*
-  started on port 5277 — the port the phone `provides`.
-- *Head unit.* Google's Desktop Head Unit 2.1 in the AAOS Pod, under Xvfb,
-  in its `--adb=5277` mode, which is a plain TCP client. This is the only
-  publicly available Android Auto receiver: the AAOS CVD cannot receive
-  projection because the receiver ships with GAS, so for a virtual bench
-  the head unit's projection endpoint is a process inside the head-unit
-  exporter that `requires` the phone's port (see *A projection bench,
-  concretely*). Direction falls out of DD-13 as expected.
-- *Forward.* DHU → `127.0.0.1:5277` in Pod A → Pod B → the phone, first via
-  `adb forward tcp:5277` and then via the guest's `wlan0` address through
-  the OpenWrt AP.
-
-The session negotiated protocol 1.7, completed TLS 1.2
-(ECDHE-RSA-AES128-GCM-SHA256 — the relay must be byte-transparent), ran
-service discovery, walked the phone-side first-run flow (consent, car
-authorization, notification access — each driven by `uiautomator`), and
-rendered the full launcher with Maps, YouTube Music and the phone app live.
-Video is phone→head-unit and was about 0.6 MB for three minutes of a mostly
-static screen, so the L4 path is not bandwidth-limited in Direct mode.
-Three operational findings are folded into *Reference drivers for
-projection* under Design Details: the DHU quits on stdin EOF and needs a
-display; Android Auto's head unit server does not survive an aborted
-session (`IllegalStateException: Already connected`); and the GSI phone
-would not join Wi-Fi at all while it held a validated Ethernet network.
+The session negotiated its protocol version, completed a TLS handshake (so
+the path must be byte-transparent), ran service discovery, walked the
+phone-side first-run flow, and rendered the full launcher with maps, media
+and telephony live. Video is phone→head-unit and cost about 0.6 MB for three
+minutes of a mostly static screen, so an L4 forward is not the bandwidth
+constraint. Three operational findings are folded into *Reference drivers for
+projection*: the receiver quits on stdin EOF and needs a display; the phone's
+projection server does not survive an aborted session and must be restarted;
+and the phone would not join Wi-Fi while it held a validated Ethernet
+network.
 
 ### DD-11: Mixed physical/virtual benches — deferred
 
@@ -1648,52 +1436,46 @@ there is operational experience with what benches people actually build.
 
 **Decision:** Option 1, with option 3 retained as an explicit form.
 
-**Rationale:** These two kinds of inference look similar and are opposites,
-because they sit on different sides of the line DD-6 and DD-10 already drew.
+**Rationale:** The two kinds of inference look similar and are opposites.
 
-Direction is a **property of the drivers**, not a choice. Whether rootcanal is
-the listening end is a fact about how rootcanal works, already declared in the
-exporter's report and already validated by the controller. Making the author
-write it down asks them to know exporter internals — exactly what DD-6
-removed addresses to avoid. Worse, it is knowledge that can go stale: a lab
-that swaps a `provides` implementation for one that dials would silently
-invalidate every lease manifest naming it as `from`. Inferring direction is
-therefore not a convenience but a correctness improvement, and it costs
-nothing — the controller already checks the reported roles, so option 1 uses
-that check to *assign* rather than merely to *reject*.
+Direction is a **property of the drivers**. Whether rootcanal is the listening
+end is a fact about rootcanal, already in the exporter's report and already
+validated. Making the author restate it asks them to know exporter internals
+— what DD-6 removed addresses to avoid — and the knowledge goes stale: swap a
+`provides` implementation for one that dials, and every manifest naming it as
+`from` is silently wrong. Inferring direction is a correctness improvement
+that costs nothing, since the controller already checks the reported roles;
+option 1 uses that check to *assign* rather than only to *reject*.
 
-Topology is a **property of the test**. DD-10 makes this concrete: the
-same phone exporter is a USB-attached phone when a test forwards `aa-hu`
-and a wireless one when it forwards `aa-hu-wifi`, and two exporters are a
-bench in one test and independent devices in another, so the wiring belongs
-to whoever wrote the test. Option 2 makes it a
-property of whatever drivers happen to be configured on whichever exporters
-the selectors happened to bind, which fails in three ways:
+Topology is a **property of the test**. The same phone exporter is a
+USB-attached phone when a test forwards `projection` and a wireless one when
+it forwards `projection-wifi`; two exporters are a bench in one test and
+independent devices in another. Option 2 makes that a property of whichever
+drivers happen to be configured on whichever exporters the selectors bound,
+which fails in three ways:
 
 - **Nondeterminism across bindings.** A selector-based member binds to
   different exporters on different runs. If those exporters declare different
   ports, the bench wires itself differently run to run — the worst property a
   reproducible test can have.
 - **Ambiguity is not rare.** Two members each exposing several ports turns
-  matching into a bipartite matching problem — the same one ATS's
-  `AdhocTestbedSchedulingUtil` solves for device allocation. Tractable, but a
-  silently wrong wiring is worse than an error.
+  matching into a bipartite matching problem. Tractable, but a silently wrong
+  wiring is worse than an error.
 - **It weakens a security property.** This JEP states that a forward is not a
   general exporter-to-exporter tunnel, because an exporter can reach only a
   peer *a lease it is bound to explicitly names*. Option 2 relaxes "explicitly
   names" to "happened to match", and an unintended pairing of two `console`
   ports is a data path nobody requested.
 
-Option 3 remains available as `from`/`to` for the case where wiring should be
-pinned regardless of what the exporters report, and the controller then checks
-the stated roles against the reported ones rather than assigning them.
+Option 3 stays available as `from`/`to` for wiring that should be pinned
+regardless of what the exporters report; the controller then checks the stated
+roles against the reported ones instead of assigning them.
 
-The ergonomic complaint that motivates option 2 — `member.port:member.port`
-is verbose — is better answered in the client. The CLI expands shorthand into
-an explicit `spec.forwards[]` entry before submission, so the stored object
-stays auditable and `kubectl get lease -o yaml` shows the real wiring. Where a
-lab adopts the same port name on both sides, `--forward bt` can expand to it;
-that is a naming convention worth offering and not worth depending on.
+The ergonomic complaint behind option 2 — `member.port:member.port` is
+verbose — is better answered in the client: the CLI expands shorthand into an
+explicit `spec.forwards[]` entry before submission, so the stored object stays
+auditable. Where a lab uses one port name on both sides, `--forward bt` can
+expand to it — a convention worth offering, not worth depending on.
 
 ## Design Details
 
@@ -1735,18 +1517,15 @@ Three consequences follow, and they are why this JEP can be as small as it is:
   bench on someone's desk.
 
 A second invariant is narrower, and cost a verification session before it
-was noticed, so it is stated rather than assumed:
+was noticed:
 
 > **Each exporter identity is served by exactly one process.**
 
-Two processes sharing one identity both register and both look healthy; the
-controller hands a lease to one of them, and connections that the router
-routes to the other are answered with a `KeyError` on a driver UUID that
-process has never heard of, closing the stream with no useful error on
-either side. The symptom presents as a flaky forward, not as a
-misconfiguration. A member exporter therefore runs one replica, and a second
-registration under a live identity is worth detecting and refusing rather
-than tolerating.
+Two processes under one identity both register and both look healthy, but
+only one owns the lease's session; connections routed to the other die on a
+`KeyError` for a driver UUID it has never heard of, with no useful error on
+either side. It presents as a flaky forward, not a misconfiguration. A member
+exporter runs one replica, and a duplicate registration is worth refusing.
 
 The exception to watch is host networking. The `jumpstarter-driver-cuttlefish`
 container recipe currently documents `--network=host` (so that netsim and
@@ -1791,16 +1570,15 @@ Two properties follow, and they are the reason for DD-1:
   resolving to the same exporter — which is what a `phone` + `phone`
   two-handset bench needs.
 
-The single-exporter path is the same code with one member: `spec.selector` is
-normalized into a synthetic member at admission, and on success the result is
-written to `status.exporterRef` rather than `status.members` (DD-2). There is
-one selection implementation, not two.
+The single-exporter path is the same code with one member: `spec.selector`
+normalizes into a synthetic member at admission and the result is written to
+`status.exporterRef` instead of `status.members` (DD-2). One selection
+implementation, not two.
 
 **What is unchanged, and still imperfect.** Exclusivity is still a read-scan
 of other leases' claims against a possibly-stale cache, so two leases can
-race for one exporter and both write, because they write different objects.
-This is pre-existing and neither improved nor worsened here; the loser is
-detected on a later reconcile and re-bound.
+race for one exporter and both write. Pre-existing, neither improved nor
+worsened here; the loser is detected on a later reconcile and re-bound.
 
 ### Lease state
 
@@ -1883,34 +1661,30 @@ Establishment then reuses the existing port-forward primitives:
    `mode: router` never attempts it. Which transport a forward ended up on is
    in `LeaseForwardStatus.Mode`, and a fallback records why.
 
-**Direct eligibility.** The controller offers `prefer_direct` when both
-bound members report the same non-empty `NetworkZone` and the `provides`
-side reports a `PeerEndpoint` (DD-4). Zone is deliberately opaque: an
-in-cluster exporter takes it from the deployment — one value per cluster
-network, which JEP-0016's provisioner sets for every Pod it renders — and an
-edge exporter that reports none is never a direct candidate, so it keeps the
-router path without any per-lease configuration. This keeps reachability a
-statement someone made about the deployment rather than something the
-controller infers from addresses it cannot test, which is the same reasoning
-DD-13 applies to topology. A pair that claims a shared zone but cannot
-actually connect is not a failure mode the user sees: the dial times out and
-the router stream, already minted, carries the forward.
+**Direct eligibility.** The controller offers `prefer_direct` when both bound
+members report the same non-empty `NetworkZone` and the `provides` side
+reports a `PeerEndpoint` (DD-4). Zone is deliberately opaque and comes from
+deployment configuration — one value per cluster network, which JEP-0016's
+provisioner sets on every Pod it renders — so an edge exporter reporting none
+is never a direct candidate and keeps the router path with no per-lease
+setup. Reachability stays a statement someone made about the deployment
+rather than something the controller infers from addresses it cannot test,
+the same reasoning DD-13 applies to topology. A pair that claims a zone but
+cannot connect is not a user-visible failure: the dial times out and the
+router stream, already minted, carries the forward.
 
 **Reconnection belongs to the endpoint.** A forward outlives any single
-stream: an ingress reload, a router restart, or a node's network blip cuts
-the peer stream, and in a cluster whose proxy reloads on every unrelated
-`Ingress` change that is a routine event, not an incident (DD-9, third
-pass). The `requires` side therefore re-dials with backoff and re-splices
-accepted connections without tearing down its listener, and the first
-attempt immediately after a cut is expected to fail and be retried. The
-alternative — surfacing the reset to the driver — does not work, because the
-drivers this JEP is for open their transport once at start: `bt-peer` dials
-its HCI port when the peer is created, and after a silent cut the bench
-still reports `Ready` while the simulated device is off the air. Drivers
-that must know still learn of it: a reconnect is an event on the forward
-(*Observability*), which is how the head unit server of DD-10 gets its
-mandatory restart. Forward state comes from the splice, never from probing
-the far end (DD-9, second pass).
+stream: an ingress reload, a router restart or a network blip cuts the peer
+stream, and in a cluster whose proxy reloads on unrelated `Ingress` changes
+that is routine rather than exceptional (DD-9). The `requires` side therefore
+re-dials with backoff and re-splices without tearing down its listener, and
+the first attempt right after a cut is expected to fail and be retried.
+Surfacing the reset to the driver instead does not work: these drivers open
+their transport once at start, so after a silent cut the bench still reports
+`Ready` while the device is off the air. Drivers that must know still learn
+of it — a reconnect is an event on the forward (*Observability*), which is
+how DD-10's projection server gets its mandatory restart. Forward state comes
+from the splice, never from probing the far end.
 
 **Failure modes and handling:**
 
@@ -1924,7 +1698,7 @@ the far end (DD-9, second pass).
 | Forward references an undeclared member | Rejected by CEL at admission; lease never created |
 | `listen` address already bound on the exporter | Lease `Invalid` naming the port and address |
 | Router stream drops mid-lease | Re-dial with backoff; `Reconnecting`; `Degraded` after a grace period |
-| Ingress/proxy reload cuts the peer stream | `requires` side re-dials and re-splices transparently; the first attempt after the cut is expected to fail. Observed in DD-9's third pass, and invisible to drivers that dial once |
+| Ingress/proxy reload cuts the peer stream | `requires` side re-dials and re-splices transparently; the first attempt after the cut is expected to fail. Observed in verification, and invisible to drivers that dial once |
 | Direct dial fails or times out | Fall back to the already-minted router stream; recorded as a metric, and conspicuous for a same-zone pair that should have connected |
 | A member's exporter disappears | Peer's stream resets; lease `Degraded` naming the role (DD-3) |
 | Client releases the lease | Forwards torn down first, then the lease ends normally |
@@ -1935,42 +1709,35 @@ Nothing in the projection bench needs new forward machinery, but the
 verification (DD-10) showed that the two reference drivers own real work,
 of the same kind as DD-9's rootcanal control hook:
 
-- **`cuttlefish` (phone).** A GMS GSI is a `user` build: `adbd` is off and
-  stays off, so the image the driver boots must carry
-  `persist.sys.usb.config=adb` and the exporter's ADB public key in
-  `/adb_keys`. The same image decides which Bluetooth profiles the phone
-  offers — a GSI ships only the LE-audio `bluetooth.profile.*` properties,
-  and the classic phone-side set has to be added to `/system/build.prop`
-  (DD-9, second pass). Both are image-preparation steps the driver
-  documents and JEP-0016's provisioner can run once per image, not
-  per-lease actions. Recovery is `cvd restart`, which keeps userdata —
-  bonds and sideloaded apps included — where `cvd rm` does not.
-  For `aa-hu-wifi` the driver brings the guest onto the instance's OpenWrt
-  AP, adds the host route to the AP's LAN and the `wan→wifi` forwarding
-  rule on the AP — and cuts the guest's Ethernet first, because Android
-  never asks Wi-Fi to connect while it holds a validated Ethernet default.
-  The head unit server is started on request and **restarted whenever the
-  forward resets**: Android Auto does not survive an aborted session, so a
-  forward reconnect must reach the driver as an event, not be hidden in the
+- **`cuttlefish` (phone).** A retail phone image is a `user` build, so the
+  image the driver boots must be prepared rather than configured: ADB enabled
+  and the exporter's key installed, and the classic Bluetooth profile
+  properties present, since a plain GSI ships only the LE-audio set (DD-9).
+  Both are per-image steps JEP-0016's provisioner can run once, not per-lease
+  actions; recovery is `cvd restart`, which keeps userdata where `cvd rm`
+  does not. For `projection-wifi` the driver brings the guest onto the
+  instance's AP, routes to it, and cuts the guest's Ethernet first, because
+  Android will not join Wi-Fi while it holds a validated Ethernet default.
+  The projection server is started on request and **restarted whenever the
+  forward resets**, because a projection session does not survive an abort —
+  so a reconnect must reach the driver as an event, not be hidden in the
   splice.
-- **`dhu` (head unit).** Runs the Desktop Head Unit as a process: an X
-  display (Xvfb), a dummy audio driver, stdin held open — the DHU exits on
-  stdin EOF because stdin is its interactive console, which is also the
-  head-unit-side stimulus API (key presses, day/night, microphone) the
-  driver exposes. Screenshots come from the display. The DHU dials the
-  instant it starts, so the driver starts it only on a client call, after
-  the forward is Ready, which is the same ordering rule `bt-peer` already
-  follows.
-- **`bt-peer` (phone).** The third pass of DD-9 showed the driver is one
+- **`projection-rx` (head unit).** Runs a receiver as a process: a display,
+  a dummy audio device, and its console held open, since receivers typically
+  exit on stdin EOF and use that console as their stimulus API (key presses,
+  day/night, microphone). Screenshots come from the display. The receiver
+  dials the instant it starts, so the driver starts it only on a client call,
+  after the forward is Ready — the same ordering rule `bt-peer` follows.
+- **`bt-peer` (phone).** DD-9's verification showed the driver is one
   config away from being a phone rather than an audio source: with an HFP
   Audio Gateway alongside its A2DP source it satisfies both of a head unit's
   phone-facing profiles, and can ring it. That belongs in the driver as a
   `profiles:` list, with the bond keystore persisted for the life of the
   lease so a peer restart does not strand the DUT's link key.
 
-The `cuttlefish` and `dhu` drivers are the reference `requires`/`provides`
-pair for projection.
-What they must not do is know about each other: the phone driver exposes
+The `cuttlefish` and `projection-rx` drivers are the reference
+`provides`/`requires` pair for projection. What they must not do is know
+about each other: the phone driver exposes
 ports and the head unit driver dials `127.0.0.1:5277`, and the lease is the
 only place the two are joined.
 
@@ -2023,7 +1790,7 @@ two-object design would face does not arise.
 - **Simulator control ports are not access-controlled either.** Standalone
   rootcanal binds its HCI, link and test-channel ports on `0.0.0.0` and
   accepts any client; the test channel can re-address devices, join
-  models, and — by accident — crash the controller (DD-9, second pass). A
+  models, and — by accident — crash the controller (DD-9). A
   driver exposes only the HCI and link ports as `provides`, never the test
   channel, and the exporter's network policy is what limits who can reach
   them; JEP-0016 should ship that policy with the Pod.
@@ -2110,38 +1877,32 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 - **Virtual ↔ virtual**: two `jumpstarter-driver-cuttlefish` exporters in
   separate Pods (JEP-0016 `ExporterSet`), joined by a forwarded rootcanal
   port (DD-9). Assert BT discovery and pairing, and — Phase 4 — Wi-Fi
-  association. `jumpstarter-driver-netsim` supplies the pcap capture used to
-  evidence what actually crossed the air.
-  Runnable in CI on KVM-capable nodes with no lab hardware. This is the
-  headline result and should run on every merge once it exists.
-- **Virtual ↔ peer**: one `jumpstarter-driver-cuttlefish` exporter and one
-  `jumpstarter-driver-bt-peer` exporter, joined by
-  `bt=headunit.rootcanal:phone.controller`. Assert the CVD discovers and
-  pairs the peer and the driver reports `avdtp_connected` — the smallest
-  bench, no second guest to boot. With the peer's HFP AG enabled, assert the
-  head unit's `HeadsetClientConnectionService` takes a ringing call from it,
-  which covers the phone-facing profiles without a phone. DD-9's third pass
-  ran exactly this by hand, over the router. Cheapest CI tier; runs on every
-  merge.
-- **Virtual projection**: a GMS-GSI phone CVD and a `dhu` exporter in
-  separate Pods, joined by the `projection` forward over `aa-hu-wifi`
-  (DD-10). Assert the receiver reaches the launcher and a screenshot of the
-  head-unit display matches. Same CI tier as the Bluetooth test; the two
-  compose into one bench once Phase 1 and Phase 2 are both green.
+  association, with `jumpstarter-driver-netsim` supplying a pcap of what
+  actually crossed the air. Runs in CI on KVM-capable nodes with no lab
+  hardware: the headline result, on every merge once it exists.
+- **Virtual ↔ peer**: a `cuttlefish` exporter and a `bt-peer` exporter joined
+  by `bt=headunit.rootcanal:phone.controller`. Assert the CVD discovers and
+  pairs the peer and the driver reports `avdtp_connected`, and — with the
+  peer's HFP AG enabled — that a ringing call from it reaches the head unit's
+  telephony stack, covering the phone-facing profiles without a phone. The
+  smallest bench, no second guest to boot; DD-9's verification ran it by hand
+  over the router. Cheapest CI tier, every merge.
+- **Virtual projection**: a phone CVD and a `projection-rx` exporter in
+  separate Pods joined over `projection-wifi` (DD-10). Assert the receiver
+  reaches the launcher and a screenshot matches. Same CI tier; the two
+  compose into one bench once Phases 1 and 2 are green.
 - **Physical ↔ physical**: a physical phone and head unit on two exporters
-  **on different lab hosts** — the allocation ATS's `SimpleScheduler`
-  refuses. Requires lab hardware; runs on a labeled runner.
-- **Latency characterization**: HCI round-trip through a router forward vs. a
-  direct forward vs. host-local rootcanal, reported as a distribution. Its
-  result determines whether A2DP-class workloads are in scope for router mode.
-  The by-hand version (DD-9, third pass) found the simulator, not the
-  transport, to be the cost on a single node; the test exists to find where
-  that inverts — cross-node, sustained A2DP, and physical controllers.
-- **Forward resilience**: cut the peer stream of a live bench (restart the
-  router, or reload the ingress in front of it) and assert the forward
-  re-establishes, the reconnect is counted and emitted, and a driver that
-  dialed its transport once at start is still talking to the far end
-  afterwards. Runs in the same CI tier as the Bluetooth bench.
+  **on different lab hosts** — the allocation no existing framework will
+  make. Requires lab hardware; runs on a labeled runner.
+- **Latency characterization**: HCI round-trip through a router forward, a
+  direct forward and host-local rootcanal, reported as a distribution, which
+  decides whether A2DP-class workloads are in scope for router mode. By hand
+  the simulator dominated on a single node (DD-9); the test looks for where
+  that inverts — cross-node, sustained A2DP, physical controllers.
+- **Forward resilience**: cut a live bench's peer stream (restart the router,
+  or reload the ingress in front of it) and assert the forward re-establishes,
+  the reconnect is counted and emitted, and a driver that dialed once at start
+  is still talking to the far end.
 
 ### Manual Verification
 
@@ -2216,15 +1977,15 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
       rootcanal to a `bt-peer` Pod through `RouterService.Stream`, pairing
       and profiles included. CVD ↔ CVD over the router and the multi-node
       case remain.*
-- [ ] **Phase 2 — Virtual projection**: a GMS phone CVD and a `dhu` head
-      unit in separate Pods complete an Android Auto session to the
+- [ ] **Phase 2 — Virtual projection**: a phone CVD and a `projection-rx`
+      head unit in separate Pods complete a projection session to the
       launcher over one forwarded port, in CI, with no lab hardware.
-      *Demonstrated by hand on 2026-09-01 over both `aa-hu` and
-      `aa-hu-wifi` with a stand-in relay (DD-10); the drivers, the router
+      *Demonstrated by hand on 2026-09-01 over both `projection` and
+      `projection-wifi` with a stand-in relay (DD-10); the drivers, the router
       path and CI remain.*
 - [ ] **Phase 3 — Physical ↔ physical across hosts**: a phone and head unit
       on exporters on different lab hosts complete a phone projection
-      session (Android Auto in the reference implementation)
+      session
 - [ ] **Phase 4 — Virtual Wi-Fi medium**: two CVDs in separate Pods
       associate over a bridged `mac80211_hwsim`/`wmediumd` medium or a
       shared netsim 802.11 chip, and a projection session completes the
@@ -2232,7 +1993,7 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 - [ ] Measured HCI round-trip latency through a router forward is published,
       with a documented statement of which workloads it does and does not
       support. *First data point, 2026-09-02: 0.65 ms of router against a
-      ~45 ms rootcanal command round-trip, single node (DD-9, third pass);
+      ~45 ms rootcanal command round-trip, single node (DD-9);
       cross-node and A2DP-class throughput remain.*
 
 ## Graduation Criteria
@@ -2268,18 +2029,16 @@ risk in one field, handled by DD-2.
   existing field changes type, meaning, or default. `Exporter`,
   `ExporterAccessPolicy`, `ExporterSet`, and `VirtualTargetClass` are
   otherwise untouched. Every lease that exists today validates unchanged.
-- **`status.exporterRef`**: unchanged for single-exporter leases — every
-  lease created before this feature and every one created after that does not
-  pass `members`. Multi-member leases leave it nil, which existing consumers
-  already read as "not bound yet" (DD-2). The JEP-0016 façade,
-  `jmp get leases`, the `Dial` path, and JEP-0013 telemetry need no changes
-  to keep working correctly; they need changes only to *support* benches.
-- **Driver report**: `ports` is a new optional repeated field. An exporter
-  built before this JEP reports nothing and is treated as non-forwardable —
-  the correct answer. No version negotiation, no migration.
-- **Drivers**: unchanged. Ports are declared in exporter configuration; the
-  reference `requires` endpoint (`bt-peer`) needs no Python changes at all.
-  A driver with no ports is simply not a forward endpoint.
+- **`status.exporterRef`**: unchanged for every lease that does not pass
+  `members`. Multi-member leases leave it nil, which existing consumers
+  already read as "not bound yet" (DD-2), so the JEP-0016 façade,
+  `jmp get leases`, `Dial` and JEP-0013 telemetry keep working; they change
+  only to *support* benches.
+- **Driver report and drivers**: `ports` is a new optional repeated field, so
+  an exporter built before this JEP reports none and is treated as
+  non-forwardable — the correct answer, with no version negotiation or
+  migration. Ports are declared in exporter configuration, and the reference
+  `requires` endpoint (`bt-peer`) needs no Python changes at all.
 - **Protocol**: three new fields on existing messages and one new RPC.
   Unknown fields are ignored by proto3, so an N-1 client talks to an N
   controller unchanged. An N client requesting `members` from an N-1
@@ -2296,34 +2055,27 @@ risk in one field, handled by DD-2.
 
 ### Positive
 
-- Multi-device testing becomes a first-class Jumpstarter concept, with atomic
-  acquisition, shared lifetime, and no deadlock.
-- **Acquisition atomicity is structural, not engineered.** All of a lease's
-  claims are in one object written once, so there is no partial-hold state,
-  no acquisition timeout, no release-and-retry, and no gang scheduler.
-- **A bench can span hosts** — the specific allocation ATS's `SimpleScheduler`
-  refuses, and the reason multi-device testing is capped at one lab machine
-  everywhere today.
-- **The data plane is existing code.** Forwards are `TemporaryTcpListener` +
-  `forward_stream` with a router peer stream substituted for a client stream;
+- Multi-device testing becomes a first-class concept, with atomic
+  acquisition, shared lifetime and no deadlock — and the atomicity is
+  structural, not engineered: all of a lease's claims are one object written
+  once, so there is no partial-hold state, no acquisition timeout, no
+  release-and-retry and no gang scheduler.
+- **A bench can span hosts** — the allocation existing frameworks refuse, and
+  the reason multi-device testing is capped at one lab machine today.
+- **The data plane is existing code**: `TemporaryTcpListener` +
+  `forward_stream` with a router peer stream substituted for a client stream.
   `router.proto` is untouched and no driver changes.
 - A bench is a lease, so `jmp create lease`, expiry, `spec.release`, access
-  policy, telemetry, and `kubectl get leases` all apply unchanged. No second
-  resource, no second RBAC surface, no second lifecycle.
-- **Ports are discoverable**, so a client can construct a forward from
-  `jmp get exporter` output instead of tribal knowledge or someone's YAML.
-- Phone projection becomes expressible — Android Auto, CarPlay, and
-  head units on Android, Linux, or QNX alike — and in the virtual-to-virtual
-  form expressible *in CI without a lab*.
-- Cross-host virtual device pairing, which no shipping tool does, reduces to
-  forwarding a socket.
-- Homogeneous benches are the tractable half of the problem and already
-  deliver both headline results; mixing physical and virtual devices in one
-  bench needs no new software mechanism, only radio hardware (DD-11).
-- Nothing here is Android-specific: CAN cross-connects between two ECUs,
-  serial cross-overs, and SOME/IP peer benches are all ports and forwards.
-- The exporter = DUT invariant survives; JEP-0016 DD-8's option 1 becomes
-  available.
+  policy, telemetry and `kubectl get leases` apply unchanged — no second
+  resource, RBAC surface or lifecycle. Ports are discoverable, so a forward
+  can be built from `jmp get exporter` output rather than tribal knowledge.
+- Phone projection and Bluetooth pairing become expressible for any protocol
+  and any head unit OS, and in virtual-to-virtual form expressible *in CI
+  without a lab* — cross-host virtual device pairing, which no shipping tool
+  does, reduces to forwarding a socket.
+- Nothing here is Android-specific: CAN cross-connects, serial cross-overs
+  and SOME/IP peer benches are all ports and forwards. The exporter = DUT
+  invariant survives, and JEP-0016 DD-8's option 1 becomes available.
 
 ### Negative
 
@@ -2358,40 +2110,33 @@ risk in one field, handled by DD-2.
   Mitigation: Phase 4 is last, may conclude "direct mode only", and the
   datagram work in Future Possibilities is the escalation path; Phase 2
   already delivers a real projection workload without it.
-- **The projection bench depends on Google artifacts this project cannot
-  ship.** The GMS GSI and the Desktop Head Unit are published by Google
-  under their own terms; the Android Auto APK is not published outside
-  Google Play, and the verification sideloaded a mirror copy. A lab must
-  supply these itself, and CI for Phase 2 needs an artifact path that does
-  not redistribute them. Mitigation: the drivers take image and APK
-  locations as configuration, the reference documents where each artifact
-  comes from, and the Bluetooth phase carries the CI headline on AOSP-only
-  images.
+- **The projection bench depends on vendor artifacts this project cannot
+  ship** — the phone image, the projection app and the receiver, one of which
+  is not distributed outside an app store. A lab must supply them, and Phase
+  2 CI needs an artifact path that does not redistribute them. Mitigation:
+  the drivers take artifact locations as configuration, and the Bluetooth
+  phase carries the CI headline on freely available images.
 - **Bluetooth timing may be tighter than measured** — pairing may work while
   A2DP streaming does not. Mitigation: latency characterization is an
   acceptance criterion whose answer is published, not assumed.
-- **The simulators are less robust than a lab needs.** rootcanal aborts
-  when a test-channel client disconnects early, its restart does not
-  reattach the guest, and a crash on one exporter strands every bench
-  member's controller (DD-9, second pass). Mitigation: the rootcanal
-  driver keeps the test channel private, never probes, watches its
-  controller and reports `Degraded`, and owns `cvd restart` as the recovery
-  action; the abort itself is an upstream fix worth contributing.
+- **The simulators are less robust than a lab needs.** rootcanal aborts when
+  a test-channel client disconnects early, its restart does not reattach the
+  guest, and a crash on one exporter strands every member's controller
+  (DD-9). Mitigation: the driver keeps the test channel private, never
+  probes, watches its controller and reports `Degraded`, and owns the restart
+  as a recovery action; the abort is an upstream fix worth contributing.
 - **The cluster data path is less stable than a bench assumes.** Long-lived
   streams do not survive ordinary cluster events: an nginx ingress reloads
   on any `Ingress` change and drains its workers on a timer, cutting every
   gRPC stream through it — measured on the verification cluster as a reload
   at 04:00:13 and the exporter's controller stream cut at 04:04:13, with
-  the forwarded HCI splice going down 40 s later (DD-9, third pass). A
-  multi-hour bench will meet this repeatedly. Mitigation: reconnection is
-  the forward endpoint's responsibility, reconnects are observable, and the
-  HIL suite includes a bench that survives a deliberate stream cut. An
-  in-cluster bench also avoids the machinery altogether, which is part of
-  why `Auto` prefers a direct connection there (DD-4). A
-  related hazard is version skew across a splice — a newer client-side
-  network driver against an older exporter closed every forwarded
-  connection at the first byte with no error — which is an argument for the
-  endpoint being the exporter's own code, as specified.
+  the forwarded HCI splice going down 40 s later (DD-9). A
+  multi-hour bench will meet this repeatedly. Mitigation: reconnection is the
+  forward endpoint's responsibility, reconnects are observable, the HIL suite
+  includes a bench that survives a deliberate stream cut, and an in-cluster
+  bench avoids the machinery altogether (DD-4). A related hazard is silent
+  version skew across a splice — an argument for the endpoint being the
+  exporter's own code, as specified.
 - **The namespace invariant may be violated in the field.** Fixed `listen`
   addresses and lease-scoped control-plane blast radius both assume one
   exporter per network namespace. A host-networked deployment silently
@@ -2461,36 +2206,22 @@ risk in one field, handled by DD-2.
   JEP-0016's exporter = DUT invariant. A group as a single composite DUT
   (JEP-0016 DD-8 option 2) remains legitimate and orthogonal.
 - **Building a Jumpstarter multi-device *test runner*.** This JEP stops at the
-  bench. Tradefed, Mobly, and pytest already run multi-device tests well;
-  Jumpstarter's contribution is the bench they run against.
-- **Adopting ATS/OmniLab as the fleet layer.** Mobile Harness's `Device`
-  abstraction is ADB-shaped and runs in the lab-server JVM beside the device,
-  its OSS platform coverage is Android-only, and extending it means in-tree
-  Java and Bazel. Adopting it would import the one-`LabLocator` constraint
-  this JEP removes. The complementary direction — Jumpstarter *under* ATS via
-  a Mobile Harness `Device` or Mobly-controller shim, so existing results
-  pipelines keep working — is a Future Possibility, not a rejection.
+  bench. Existing runners already run multi-device tests well; Jumpstarter's
+  contribution is the bench they run against.
+- **Adopting an existing mobile test framework as the fleet layer.** Their
+  device abstractions are Android-shaped and run beside the device on the lab
+  host, and adopting one would import the single-host allocation constraint
+  this JEP removes. The complementary direction — Jumpstarter *under* such a
+  framework via a device shim, so existing results pipelines keep working — is
+  a Future Possibility, not a rejection.
 
 ## Prior Art
 
-- **OmniLab Android Test Station / Mobile Harness** (`google/device-infra`)
-  is the closest system and the one to be precise about. It **does**
-  gang-schedule multi-device jobs: `AdhocTestbedSchedulingUtil` performs
-  maximum-cardinality bipartite matching of `SubDeviceSpec`s onto idle
-  devices, with `TestbedDevice`, `CompositeDevice`, and
-  `SubDeviceSynchronizationDriver` all present, and it has a multi-host mode
-  (one controller, N workers) for fleet pooling. The structural limit is in
-  `SimpleScheduler.allocate`: every device locator in an allocation must
-  share one `LabLocator`, so a multi-device job cannot span lab hosts. That
-  single check is the gap this JEP targets. *Terminology note for reviewers:*
-  a Mobile Harness `Driver` is a **test runner** (TradefedTest, MoblyTest),
-  not a device abstraction — its `Device`/`BaseDevice` is the analog of a
-  Jumpstarter driver.
-- **Tradefed multi-device** contributes the role/requirement declaration
-  pattern (`<device name="...">`) and `multi_target_preparer` for coordinated
-  setup such as Bluetooth pairing, and documents its own gap verbatim: *"No
-  APIs yet exist to conduct operations from one device to another, such as
-  `device1.sync(device2)`."*
+- **Android/mobile multi-device test frameworks** contribute the role
+  declaration pattern (a job naming `phone`, `headunit`) and coordinated
+  setup steps such as pairing two devices before a test. They gang-schedule
+  device sets, but allocation is confined to one lab host and none of them
+  bridges a medium between roles — the gap this JEP targets.
 - **LAVA MultiNode** is the closest HiL prior art: one job spans multiple
   devices with named roles, and — notably — makes the multi-device unit *the
   job itself* rather than a wrapper around N jobs, which independently
@@ -2522,27 +2253,21 @@ risk in one field, handled by DD-2.
 
 To resolve during review:
 
-- **Bumble as a Cuttlefish controller.** DD-9's options 1 and 2 are now
-  verified against real CVDs; option 3 is not. Pointing a CVD at a Bumble
-  `mode=controller` endpoint is documented for the Android emulator but not
-  for Cuttlefish, and it is the only option that reaches beyond Cuttlefish.
-  One more prototype run settles it.
-- **Who issues the link-layer join, and who owns addresses?** The
-  federation experiment showed that option 2 needs a control step
-  (`add_remote` on the test channel) after the forward is up, and that
-  standalone rootcanals collide on `da:4c:10:de:00:00` unless one is
-  re-addressed — and the second pass showed any attaching host collides
-  too, since numbering is per model and reused. The candidates are a
-  post-establish hook on the `requires`
-  side driver, a lease-level `forwards[].onEstablish` action, or leaving it
-  to the test. The first keeps the controller ignorant of Bluetooth, which
-  DD-8 and DD-13 argue for.
-- **Forward-before-launch ordering.** Under option 1 the guest dials its HCI
-  port at boot, so the forward must exist before the second CVD is created;
-  under option 2 the join must happen after. The JEP-0016 provisioner creates
-  the CVD at lease time, so the forward has to be established in the window
-  between binding and `cvd create`. Whether that is a lease-status condition
-  the provisioner waits on, or a retrying connector, is open.
+- **Bumble as a Cuttlefish controller.** DD-9's options 1 and 2 are verified;
+  option 3 is not. `mode=controller` is documented for the Android emulator
+  but not for Cuttlefish, and it is the only option that reaches beyond
+  Cuttlefish. One prototype run settles it.
+- **Who issues the link-layer join, and who owns addresses?** Option 2 needs
+  a control step after the forward is up, and rootcanal's address numbering
+  collides for any attaching host (DD-9). Candidates: a post-establish hook
+  on the `requires`-side driver, a lease-level `forwards[].onEstablish`
+  action, or leaving it to the test. The first keeps the controller ignorant
+  of Bluetooth, which DD-8 and DD-13 argue for.
+- **Forward-before-launch ordering.** Option 1's guest dials at boot, so the
+  forward must exist before the second device is created; option 2's join
+  must happen after. JEP-0016's provisioner creates the device at lease time,
+  so the forward has to come up between binding and creation — as a
+  lease-status condition the provisioner waits on, or a retrying connector.
 - **Should the scalar and members forms really be mutually exclusive?** The
   alternative is `spec.selector` as a default for members that omit their
   own — convenient when several members share a selector, but two ways to
@@ -2572,16 +2297,14 @@ To resolve during implementation:
   the least clever and the only one that works for an edge exporter that is
   routable from the cluster but not the reverse.
 - Whether forward reconnect should preserve the medium's logical state or
-  force a fresh pairing; likely protocol-specific. Two data points so far:
-  Android Auto's head unit server must be restarted after a dropped session,
-  so the reconnect has to be visible to the endpoint drivers; and a Bumble
-  peer whose transport is cut loses its in-memory bonds, so the DUT's stored
-  link key is stale and pairing has to be redone unless the driver persists
-  its keystore for the life of the lease. The Bluetooth answer may simply be
-  "persist the keystore and re-attach", which would make reconnect
-  invisible for that medium.
-- How Phase 2's CI obtains the GMS GSI, the Desktop Head Unit and the
-  Android Auto APK without redistributing them (see Risks).
+  force a fresh pairing; likely protocol-specific. Two data points: a
+  projection server must be restarted after a dropped session, so the
+  reconnect must be visible to endpoint drivers; and a Bumble peer loses its
+  in-memory bonds when its transport is cut, stranding the DUT's link key
+  unless the driver persists a keystore. For Bluetooth the answer may simply
+  be "persist and re-attach", making reconnect invisible.
+- How Phase 2's CI obtains the phone image, projection app and receiver
+  without redistributing them (see Risks).
 - How `jmp get leases` renders N exporters in a table column readably.
 
 ## Future Possibilities
@@ -2589,111 +2312,81 @@ To resolve during implementation:
 Not part of this proposal:
 
 - **Mixed physical/virtual benches** (DD-11) — a real device paired to a
-  virtual one through a gateway exporter owning a real radio adapter. This
-  needs no new software mechanism: the adapter is an ordinary `provides`
-  port and the lease plane is unchanged. What it needs is lab hardware near
-  the physical device, and a decision about how to model a shared RF
-  resource — as a member with its own role, which makes it schedulable and
-  auditable but turns a two-device bench into three members, or as an
-  attribute of the physical member's exporter.
-- **Selection-time port validation** via JEP-0015 dynamic exporter labels, so
-  a bench whose ports cannot be satisfied reports `Unsatisfiable` without
-  holding anything (DD-12).
-- **A global lease scheduler** with a view of all leases and exporters, which
-  the controller already carries a `TODO` for; it would close the binding race
-  for single- and multi-member leases alike.
+  virtual one through a gateway exporter owning a real radio adapter. No new
+  software mechanism: the adapter is an ordinary `provides` port. What it
+  needs is lab hardware and a decision on how to model a shared RF resource —
+  as its own member, schedulable and auditable but making a two-device bench
+  three, or as an attribute of the physical member's exporter.
+- **Selection-time port validation** via JEP-0015 dynamic labels, so a bench
+  whose ports cannot be satisfied reports `Unsatisfiable` without holding
+  anything (DD-12).
+- **A global lease scheduler**, which the controller already carries a `TODO`
+  for; it closes the binding race for single- and multi-member leases alike.
 - **Fan-out forwards** — one `provides` port serving several `requires`
-  ports, for shared media with more than two participants. Today's forward is
-  strictly point-to-point. Bumble's link relay already implements the
-  underlying idea: a WebSocket relay hosting virtual *rooms*, each room a set
-  of virtual controllers that can advertise and exchange ACL data with one
-  another. A room is the N-way medium DD-6 deferred, so this is an
-  integration rather than an invention.
-- **Ephemeral `listen` allocation** for `requires` ports. Only needed if the
-  one-exporter-per-namespace assumption is relaxed; it trades the fixed
-  address for driver coupling, so it is not worth doing while the assumption
-  holds.
-- **Bench-level access policy and quota** (DD-12).
-- **Per-member early release**, if the all-or-nothing lifetime proves coarse.
-- **Datagram forwards.** `wmediumd` and other frame-oriented media want
-  datagram semantics with real boundaries and no head-of-line blocking; the
-  additive `FRAME_TYPE_DATAGRAM` extension to `RouterService.Stream` (and,
-  further out, QUIC unreliable datagrams) is a separate protocol JEP, for
-  which Phase 4 is the most compelling justification. The frame bridge
-  DD-10 describes is the consumer: it terminates vhost-user on each
-  exporter and needs a datagram pipe between the two halves.
-- **Vehicle-bus counterparty integration.** The restbus pattern described in
-  DD-9 has mature tooling behind it, and a broker that exposes CAN, LIN,
-  FlexRay, and Automotive Ethernet over a gRPC socket is already a `provides`
-  port needing nothing new from this JEP. RemotiveLabs is the obvious
-  candidate — RemotiveBroker plus RemotiveTopology's DBC/ARXML-driven restbus
-  — and it composes with the automotive drivers Jumpstarter already ships
-  (`can`, `doip`, `someip`, `uds`, `xcp`, `obd`) as the counterparty they
-  talk to rather than a replacement for any of them. Their AAOS emulator
-  integration, which feeds VHAL from broker signals, suggests a three-member
-  bench worth building eventually: a virtual head unit driven by real vehicle
-  signals, a restbus supplying the rest of the vehicle, and a phone for
-  projection, with every pairwise connection an ordinary forward. **This is
-  deliberately out of scope here and should get its own JEP** — the broker is
-  a commercial product, so a driver is an integration against something the
-  user licenses rather than a dependency this project can ship, and that
-  distinction deserves its own design discussion rather than a line in this
-  one's acceptance criteria.
-- **Jumpstarter under ATS** — a Mobile Harness `Device` or Mobly-controller
-  shim backed by a Jumpstarter lease, so Google's results pipeline keeps
-  working while gaining non-Android and cross-host devices. Complements
-  JEP-0016's Cloud Orchestrator seam.
+  ports, for media with more than two participants. Bumble's link relay
+  already implements the idea as virtual *rooms*, so this is an integration
+  rather than an invention.
+- **Ephemeral `listen` allocation**, needed only if the
+  one-exporter-per-namespace assumption is relaxed.
+- **Bench-level access policy and quota** (DD-12), and **per-member early
+  release** if the all-or-nothing lifetime proves coarse.
+- **Datagram forwards.** Frame-oriented media want datagram semantics with
+  real boundaries and no head-of-line blocking; an additive datagram frame
+  type on `RouterService.Stream` (and, further out, QUIC datagrams) is a
+  separate protocol JEP that Phase 4's frame bridge would consume.
+- **Vehicle-bus counterparty integration.** A broker exposing CAN, LIN,
+  FlexRay and Automotive Ethernet over a socket is already a `provides` port
+  needing nothing new here, and composes with the automotive drivers
+  Jumpstarter ships (`can`, `doip`, `someip`, `uds`, `xcp`, `obd`) as the
+  counterparty they talk to. It suggests a three-member bench — a virtual
+  head unit driven by real vehicle signals, a restbus supplying the rest of
+  the vehicle, and a phone — but the mature options are commercial products,
+  so integrating one is an out-of-scope decision deserving its own JEP.
+- **Jumpstarter under an existing test framework** — a device or
+  Mobly-controller shim backed by a lease, so an established results pipeline
+  keeps working while gaining non-Android and cross-host devices.
 - **A `Bench` template CRD** — a reusable named topology instantiated by
   reference, the way `VirtualTargetClass` is to `ExporterSet`. A *template*,
   not a second lease-like object, so it does not reopen DD-1.
-- **Spawned-on-lease members** — a member satisfied by provisioning a new
-  JEP-0014 pool instance on demand, making a bench elastic in its virtual half.
+- **Spawned-on-lease members** — a member satisfied by provisioning a
+  JEP-0014 pool instance on demand, making a bench elastic in its virtual
+  half.
 - **Agent-facing bench skills** — an agent leasing a two-device bench to
   reproduce an interaction bug, following JEP-0016's agent-native framing.
 
 ## Implementation History
 
-- 2026-09-01: JEP drafted
+- 2026-09-01: JEP drafted.
 - 2026-09-01: DD-9 options 1 and 2 verified by hand with two CVD Pods on a
-  kind cluster (pairing, HFP/A2DP/AVRCP, A2DP streaming); findings recorded
-  in DD-9 and Unresolved Questions
-- 2026-09-01: DD-10 option 3 verified by hand: Android Auto 17.4 on a GMS
-  GSI phone CVD projected to the Desktop Head Unit in the other Pod over a
-  single forwarded port, then again with the phone end on its Wi-Fi NIC via
-  the per-instance OpenWrt AP
-- 2026-09-01: DD-10 decision revised on that evidence — L4 projection
-  promoted from diagnostic to the Phase 2 deliverable, the Wi-Fi medium
-  reframed as a frame bridge; projection bench, `aa-hu`/`aa-hu-wifi` ports,
-  `dhu` driver and phase renumbering (1–4) added
-- 2026-09-01: DD-9 second pass — regular pairing and the full classic
-  profile stack (plus A2DP streaming) between the GMS GSI phone and the
-  AAOS CVD over federated rootcanals, after adding the phone-side
-  `bluetooth.profile.*` set to the GSI; the merged
-  `jumpstarter-driver-bt-peer` run unchanged as a `requires`-side host
-  against a CVD's rootcanal through a port-forward; rootcanal test-channel
-  crash, address reuse and the identical guest address plan recorded as
-  driver duties, a Security bullet and a Risk
+  kind cluster — pairing, HFP/A2DP/AVRCP, A2DP streaming.
+- 2026-09-01: DD-10 option 3 verified by hand — a phone CVD projected a live
+  session to a receiver in another Pod over one forwarded port, then again
+  with the phone end on its Wi-Fi NIC. The decision was revised on that
+  evidence: L4 projection promoted from diagnostic to the Phase 2
+  deliverable, the Wi-Fi medium reframed as a frame bridge, and the
+  projection bench, its ports, the `projection-rx` driver and the phase
+  renumbering added.
+- 2026-09-01: DD-9 second pass — full classic profile stack between a
+  retail-image phone CVD and the head unit over federated rootcanals, and
+  `jumpstarter-driver-bt-peer` run unchanged as a `requires` endpoint.
+  rootcanal's test-channel crash, address reuse and the identical guest
+  address plan became driver duties, a Security bullet and a Risk.
 - 2026-09-02: DD-9 third pass — the same bench over Jumpstarter's own data
-  path: a rootcanal `TcpNetwork` exporter, a bt-peer Pod, and a lease-holding
-  forward endpoint splicing them through `RouterService.Stream`, with a
-  Bumble HFP-AG + A2DP peer standing in for the phone (pairing, Phone and
-  Media, a ringing call into AAOS Telecom). Router overhead measured at
-  0.65 ms against ~45 ms of rootcanal; proxy-reload stream loss, duplicate
-  registration and version skew recorded as forward-endpoint duties
-- 2026-09-02: those findings made normative — DD-4's fast path given a
-  measured price, a single-process invariant per exporter identity,
-  reconnection assigned to the forward endpoint with reconnects as events, a
-  cluster-data-path Risk, a *Forward resilience* HIL test, and two acceptance
-  criteria
-- 2026-09-02: Motivation gained *Why the exporter, not the device, is the
-  unit of a lease* — harnessed multi-device benches are already one exporter
-  and stay that way; the gap is physically separate benches on separate
-  hosts, and the gain is gang-scheduling any combination of them
+  path, with a Bumble HFP-AG + A2DP peer standing in for the phone. Router
+  overhead measured at 0.65 ms against ~45 ms of rootcanal; proxy-reload
+  stream loss, duplicate registration and version skew became
+  forward-endpoint duties, then normative text: a measured price on DD-4's
+  fast path, one process per exporter identity, endpoint-owned reconnection
+  with reconnects as events, a cluster-data-path Risk, a *Forward resilience*
+  test and two acceptance criteria.
 - 2026-09-02: `Auto` changed to **prefer a direct peer connection between
-  same-zone members** rather than defaulting to the router — DD-4 rewritten,
-  `PeerEndpoint`/`NetworkZone` added to `ExporterStatus`, `prefer_direct`
-  added to `DialPeerResponse`, direct-first-with-fallback replacing the
-  raced dial, and a *Direct eligibility* rule added to Design Details
+  same-zone members** rather than defaulting to the router —
+  `PeerEndpoint`/`NetworkZone`, `prefer_direct`, direct-first-with-fallback
+  and a *Direct eligibility* rule.
+- 2026-09-02: Motivation gained *Why the exporter, not the device, is the
+  unit of a lease*; vendor-specific naming replaced with generic phone
+  projection and Bluetooth pairing throughout, and the verification
+  narratives consolidated.
 
 ## References
 
@@ -2707,11 +2400,6 @@ Not part of this proposal:
 - [JEP-0013: Metrics, Tracing, and Log Observability](JEP-0013-observability-telemetry-logs.md)
 - [JEP-0011: Protobuf Introspection and Interface Generation](JEP-0011-protobuf-introspection-interface-generation.md)
   — the introspection direction port reporting extends
-- [google/device-infra](https://github.com/google/device-infra) — Mobile
-  Harness, the ATS 2.0 engine (`SimpleScheduler`, `AdhocTestbedSchedulingUtil`)
-- [OmniLab Android Test Station user guide](https://source.android.com/docs/core/tests/development/android-test-station/ats-user-guide)
-- [Virtual devices in OmniLab ATS](https://source.android.com/docs/core/tests/development/android-test-station/ats-virtual-devices)
-- [Tradefed: run tests with multiple devices](https://source.android.com/devices/tech/test_infra/tradefed/architecture/advanced/multi-device)
 - [Cuttlefish: test connectivity of multiple devices](https://source.android.com/docs/devices/cuttlefish/connectivity)
 - [Mobly](https://github.com/google/mobly) — [testbed tutorial](https://github.com/google/mobly/blob/master/docs/tutorial.md)
 - [Bumble, a Python Bluetooth stack](https://google.github.io/bumble/) —
