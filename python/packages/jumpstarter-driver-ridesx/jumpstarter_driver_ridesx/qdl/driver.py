@@ -258,31 +258,50 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
     async def _prepare_cached_flash(
         self,
         source: Any,
-        manifest_data: dict,
+        manifest_data: dict | None,
         ctx: _FlashContext,
     ) -> AsyncGenerator[FlashStatus, None]:
-        manifest = load_firmware_manifest_from_mapping(manifest_data)
         work_dir = Path(self.work_dir)
         work_dir.mkdir(parents=True, exist_ok=True)
+
+        manifest = load_firmware_manifest_from_mapping(manifest_data) if manifest_data else None
+
+        # When a manifest is provided we can check the cache immediately.
+        if manifest is not None:
+            firmware_root = self._firmware_root(manifest)
+            if self._cache_is_valid(firmware_root):
+                ctx.work_dir = work_dir
+                ctx.firmware_root = firmware_root
+                ctx.manifest = manifest
+                ctx.cache_dir = firmware_root
+                yield FlashStatus(
+                    phase=FlashPhase.CACHE,
+                    message=f"Using cached firmware at {firmware_root}",
+                )
+                return
+
+        # Need to download — either to populate the cache or to discover
+        # the embedded manifest.
+        if source is None:
+            if manifest is not None:
+                firmware_root = self._firmware_root(manifest)
+                raise FileNotFoundError(
+                    f"No cached firmware at {firmware_root}; provide a firmware archive to populate the cache"
+                )
+            raise ValueError("firmware source is required when no manifest is provided")
+
+        async for status in self._download_and_extract(source, work_dir, manifest):
+            yield status
+
+        # If no manifest was provided, discover it from the extracted archive.
+        if manifest is None:
+            manifest = self._resolve_manifest(None, work_dir)
+
         firmware_root = self._firmware_root(manifest)
         ctx.work_dir = work_dir
         ctx.firmware_root = firmware_root
         ctx.manifest = manifest
         ctx.cache_dir = firmware_root
-
-        if self._cache_is_valid(firmware_root):
-            yield FlashStatus(
-                phase=FlashPhase.CACHE,
-                message=f"Using cached firmware at {firmware_root}",
-            )
-            return
-
-        if source is None:
-            raise FileNotFoundError(
-                f"No cached firmware at {firmware_root}; provide a firmware archive to populate the cache"
-            )
-        async for status in self._download_and_extract(source, work_dir, manifest):
-            yield status
         yield FlashStatus(
             phase=FlashPhase.CACHE,
             message=f"Cached firmware at {firmware_root}",
@@ -382,8 +401,6 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         ctx = _FlashContext()
         try:
             if cached:
-                if not manifest_data:
-                    raise ValueError("manifest is required when using cached firmware")
                 async for status in self._prepare_cached_flash(source, manifest_data, ctx):
                     yield status
             else:
