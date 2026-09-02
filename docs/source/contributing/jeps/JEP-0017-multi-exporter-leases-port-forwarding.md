@@ -52,6 +52,23 @@ That is the right primitive for the majority of HiL work — one board, one
 harness — but an entire class of tests is about *interaction between
 devices*, and today Jumpstarter cannot express it.
 
+### Why the exporter, not the device, is the unit of a lease
+
+That granularity is deliberate, and this JEP keeps it. An exporter is a
+bench: a DUT plus its harness, and often several devices bolted to that
+harness and wired to each other. They share cabling, power and a host, so one
+composite driver exposes them and one lease hands over the whole assembly.
+Leasing a device *inside* such a bench would let two clients hold opposite
+ends of one cable.
+
+The gap is the opposite arrangement: a phone racked on one side of the lab
+and a head unit bench on the other — two exporters, possibly on two hosts (a
+host can run several), with nothing physical between them and no reason to
+add it. Only the scheduler and a data path can join those. So the unit stays
+the exporter and only the count changes, which is what makes the gain
+combinatorial: N phones and M head unit benches give N×M benches out of N+M
+exporters, any pairing gang-scheduled, none pre-wired.
+
 ### The concrete problem: devices that must talk to each other
 
 A large class of tests is not about a device but about an *interaction*
@@ -2668,6 +2685,10 @@ Not part of this proposal:
   reconnection assigned to the forward endpoint with reconnects as events, a
   cluster-data-path Risk, a *Forward resilience* HIL test, and two acceptance
   criteria
+- 2026-09-02: Motivation gained *Why the exporter, not the device, is the
+  unit of a lease* — harnessed multi-device benches are already one exporter
+  and stay that way; the gap is physically separate benches on separate
+  hosts, and the gain is gang-scheduling any combination of them
 - 2026-09-02: `Auto` changed to **prefer a direct peer connection between
   same-zone members** rather than defaulting to the router — DD-4 rewritten,
   `PeerEndpoint`/`NetworkZone` added to `ExporterStatus`, `prefer_direct`
