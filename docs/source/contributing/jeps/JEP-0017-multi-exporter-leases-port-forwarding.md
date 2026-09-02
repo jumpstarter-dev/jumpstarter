@@ -388,7 +388,7 @@ Pixel 8
 jumpstarter ⚡ android-auto-bench ➤ j headunit power on
 jumpstarter ⚡ android-auto-bench ➤ j forward status
 NAME   FROM                  TO                  MODE     STATE       A→B       B→A
-bt     headunit.rootcanal    phone.controller    router   connected   1.2 MiB   0.9 MiB
+bt     headunit.rootcanal    phone.controller    direct   connected   1.2 MiB   0.9 MiB
 ```
 
 In Python, the existing `lease()` context manager grows `members` and
@@ -466,9 +466,13 @@ with one substitution — a router peer stream in place of the client stream:
    it to the stream with `forward_stream`. The `requires` side opens a
    `TemporaryTcpListener` on its declared `listen` address and splices each
    accepted connection to the stream.
-5. **Fast path**: if `DialPeer` returned a peer hint, each exporter races a
-   direct dial against the router path and keeps whichever completes first
-   (DD-4).
+5. **Fast path**: if `DialPeer` says the pair is direct-eligible — both
+   members in one network zone, which two exporter Pods in a cluster are —
+   the `requires` side dials the peer directly first and uses the router
+   stream only if that does not complete quickly (DD-4). Two virtual targets
+   in a cluster therefore talk over the Pod network, and the same lease keeps
+   working unchanged when one member is an edge device the other cannot
+   reach.
 
 ```text
        ┌──────── Lease: android-auto-bench (one object) ─────────┐
@@ -653,7 +657,10 @@ type LeaseForward struct {
     From *ForwardEndpoint `json:"from,omitempty"`  // must resolve to `provides`
     To   *ForwardEndpoint `json:"to,omitempty"`    // must resolve to `requires`
 
-    // Auto (default) | Router | Direct | ClientRelay
+    // Auto (default) | Router | Direct | ClientRelay.
+    // Auto prefers a direct peer connection when both members are in the
+    // same network zone and falls back to the router; Direct fails rather
+    // than falling back; Router never attempts a direct dial (DD-4).
     Mode string `json:"mode,omitempty"`
 }
 
@@ -691,7 +698,17 @@ type LeaseForwardStatus struct {
 ```
 
 `ExporterStatus.Devices[]` gains the reported ports so the controller can
-validate forwards against bound exporters.
+validate forwards against bound exporters. `ExporterStatus` itself gains two
+optional fields used only to decide direct eligibility:
+
+```go
+    // Address peers in the same zone can dial for a direct forward, if this
+    // exporter runs a peer listener. Never a device port (see Security).
+    PeerEndpoint string `json:"peerEndpoint,omitempty"`
+    // Opaque reachability domain. Two exporters are candidates for a direct
+    // forward only if both report the same value.
+    NetworkZone  string `json:"networkZone,omitempty"`
+```
 
 The existing CEL rules are extended, not replaced — the current
 "one of selector or exporterRef is required" rule gains a `members` arm, plus
@@ -734,8 +751,9 @@ message DialPeerRequest {
 message DialPeerResponse {
   string router_endpoint = 1;
   string router_token = 2;              // `stream` claim shared by both ends
-  optional string peer_endpoint = 3;    // fast-path hint
+  optional string peer_endpoint = 3;    // set when the pair is direct-eligible
   optional string peer_token = 4;       // authenticates a direct dial
+  bool prefer_direct = 5;               // Auto resolved to direct-first
 }
 ```
 
@@ -769,8 +787,9 @@ message DialPeerResponse {
 - **Latency budgets.** Bluetooth HCI is timing-sensitive: supervision
   timeouts are seconds, but L2CAP/HCI flow control and A2DP jitter buffers
   are far tighter. A router-relayed forward adds two gRPC hops; measuring
-  that budget is an acceptance criterion, and it is the main reason the
-  direct fast path exists.
+  that budget is an acceptance criterion, and it is why an in-cluster bench
+  takes the direct path by default (DD-4) and keeps the router as the
+  fallback that works everywhere.
 - **Wi-Fi frame forwarding is the most latency-sensitive path.** `wmediumd`
   models RSSI-based delivery and expects medium-like timing; a TCP substrate
   introduces head-of-line blocking a real air interface does not have, and
@@ -929,21 +948,42 @@ controller and router are the only things both sides must reach.
 
 Option 1 keeps one authentication model — a forward is authorized by the
 lease that names it, exactly as a stream is authorized by the lease that
-names it — while permitting the fast data plane where it is available. The
-fast path is an *optimization*, not a requirement: a bench that works over
-the router works everywhere, and `mode: router` makes the slow path explicit
-for tests that need reproducible timing.
+names it — while permitting the fast data plane where it is available. A
+bench that works over the router works everywhere, and `mode: router` makes
+the slow path explicit for tests that need reproducible timing.
 
-How much of an optimization is now measured, for one workload. Carrying a
-CVD's HCI port between two Pods (DD-9, third pass), the router added
-**0.65 ms** to a round-trip — 0.70 ms through the forward against 0.05 ms
-direct to the same endpoint — while an HCI command took **~45 ms either
-way**, because rootcanal answers on its own schedule. For simulated
-Bluetooth the fast path has nothing to optimize, and `mode: router` is the
-honest default. The fast path is therefore justified by the workloads where
-the medium is *not* the bottleneck — physical controllers, projection
-throughput, and the Phase 4 frame bridge — which is also where the
-*Latency characterization* test should point next.
+**Direct is preferred, not merely permitted, when both members sit in the
+same network zone.** For two virtual targets in one cluster — the case this
+JEP is mostly for, and the case JEP-0016 produces by construction, since its
+provisioner renders both benches as Pods under one `ExporterSet` — `Auto`
+resolves to a direct Pod-to-Pod connection and falls back to the router only
+if that dial does not complete. Three reasons, in order of weight:
+
+1. **The router is a shared component and bench traffic is sustained.** A
+   projection session or an A2DP stream is not a burst; N benches funnelling
+   media through one router deployment makes a central bottleneck out of
+   something the CNI would carry for free, and in a cloud install it can
+   also mean paying to leave and re-enter the network.
+2. **The router path in a typical install leaves the cluster and comes
+   back.** It therefore inherits the ingress's failure modes — the reload
+   that cut a live bench's HCI splice in DD-9's third pass was an ingress
+   worker drain, not a Jumpstarter fault. A direct forward between two Pods
+   stays inside the CNI and never meets that machinery.
+3. **The workloads that are latency-sensitive are the ones still ahead.**
+   Measured on the bench, the router costs **0.65 ms** on a round-trip
+   (0.70 ms through the forward against 0.05 ms direct to the same
+   endpoint), while an HCI command takes **~45 ms either way** because
+   rootcanal answers on its own schedule. Simulated Bluetooth pairing
+   therefore cannot tell the two apart — which is exactly why preferring
+   direct is free — but the Phase 4 frame bridge, where `wmediumd` expects
+   medium-like timing, and sustained projection throughput are where a 14×
+   round-trip difference starts to decide whether a bench works at all.
+
+That last measurement is what makes the preference safe rather than a
+gamble: falling back to the router costs sub-millisecond on the path that
+has been measured, so a bench that cannot get a direct connection is slower
+in a way nothing so far can detect. Eligibility is a property of the pair,
+not a user decision — see *Direct eligibility* under Design Details.
 
 ### DD-5: Router changes — none
 
@@ -1344,11 +1384,13 @@ round-trip through the forward was **0.70 ms median** (p90 0.91 ms, n=100)
 against **0.05 ms** direct Pod-to-Pod — about 0.65 ms of router. An HCI
 command round-trip to rootcanal was **~45 ms median through the forward and
 ~45 ms direct**: the simulator's own scheduling dominates by two orders of
-magnitude, and the router is ~1.5% of an HCI exchange. For simulated
-Bluetooth, DD-4's fast path is an optimization with nothing to optimize;
-`mode: router` is the sensible default, and the *Latency characterization*
-test exists to find where that stops being true (A2DP-class throughput,
-cross-node, physical controllers).
+magnitude, and the router is ~1.5% of an HCI exchange. Simulated Bluetooth
+pairing therefore cannot tell the two transports apart — which is what makes
+DD-4's preference for a direct in-cluster connection free rather than a
+gamble, since falling back to the router is undetectable on this path. The
+*Latency characterization* test exists to find where that stops being true
+(A2DP-class throughput, cross-node, physical controllers, and the Phase 4
+frame bridge, where it is expected to).
 
 *Three operational constraints, all in the forward endpoint's lap.*
 
@@ -1667,10 +1709,13 @@ Three consequences follow, and they are why this JEP can be as small as it is:
   matters concretely: the netsim driver's `reset` is documented as affecting
   every device on its netsim instance, which would cross lease boundaries if
   two exporters shared one.
-- **DD-4's two transports map onto the two shapes.** Containers on a common
-  host are mutually routable, so the direct fast path applies; edge devices
-  behind NAT are exactly why the router path is the default and why pure
-  peer-to-peer was rejected.
+- **DD-4's two transports map onto the two shapes.** Exporter Pods in one
+  cluster are mutually routable, so the direct path applies and is preferred;
+  edge devices behind NAT are exactly why the router path is the universal
+  fallback and why pure peer-to-peer was rejected. The split is not a
+  user-visible choice: a virtual bench gets the fast path because of where it
+  runs, and the same lease spec keeps working when one member moves to a
+  bench on someone's desk.
 
 A second invariant is narrower, and cost a verification session before it
 was noticed, so it is stated rather than assumed:
@@ -1811,11 +1856,28 @@ Establishment then reuses the existing port-forward primitives:
 5. The `provides` side dials its local service and splices with
    `forward_stream`. The `requires` side opens a `TemporaryTcpListener` on
    its declared `listen` address and splices each accepted connection.
-6. **Fast path**: with a `peer_endpoint`/`peer_token`, each exporter races a
-   direct dial against the router path; first handshake wins, loser is reset.
+6. **Fast path**: with `prefer_direct` set, the `requires` side dials
+   `peer_endpoint` first and gives it a short bounded timeout (a couple of
+   round-trips, not seconds), falling back to the already-minted router
+   stream if it does not complete; the router dial is not raced, so an
+   eligible pair does not pay for two connections on every establishment.
    The direct listener authenticates `peer_token`, so a direct forward is not
    a weaker trust boundary. `mode: direct` fails rather than falling back;
-   `mode: router` never attempts it.
+   `mode: router` never attempts it. Which transport a forward ended up on is
+   in `LeaseForwardStatus.Mode`, and a fallback records why.
+
+**Direct eligibility.** The controller offers `prefer_direct` when both
+bound members report the same non-empty `NetworkZone` and the `provides`
+side reports a `PeerEndpoint` (DD-4). Zone is deliberately opaque: an
+in-cluster exporter takes it from the deployment — one value per cluster
+network, which JEP-0016's provisioner sets for every Pod it renders — and an
+edge exporter that reports none is never a direct candidate, so it keeps the
+router path without any per-lease configuration. This keeps reachability a
+statement someone made about the deployment rather than something the
+controller infers from addresses it cannot test, which is the same reasoning
+DD-13 applies to topology. A pair that claims a shared zone but cannot
+actually connect is not a failure mode the user sees: the dial times out and
+the router stream, already minted, carries the forward.
 
 **Reconnection belongs to the endpoint.** A forward outlives any single
 stream: an ingress reload, a router restart, or a node's network blip cuts
@@ -1846,7 +1908,7 @@ the far end (DD-9, second pass).
 | `listen` address already bound on the exporter | Lease `Invalid` naming the port and address |
 | Router stream drops mid-lease | Re-dial with backoff; `Reconnecting`; `Degraded` after a grace period |
 | Ingress/proxy reload cuts the peer stream | `requires` side re-dials and re-splices transparently; the first attempt after the cut is expected to fail. Observed in DD-9's third pass, and invisible to drivers that dial once |
-| Direct dial fails (fast path) | Silent fallback to the router path; recorded as a metric |
+| Direct dial fails or times out | Fall back to the already-minted router stream; recorded as a metric, and conspicuous for a same-zone pair that should have connected |
 | A member's exporter disappears | Peer's stream resets; lease `Degraded` naming the role (DD-3) |
 | Client releases the lease | Forwards torn down first, then the lease ends normally |
 
@@ -1882,7 +1944,6 @@ of the same kind as DD-9's rootcanal control hook:
   instant it starts, so the driver starts it only on a client call, after
   the forward is Ready, which is the same ordering rule `bt-peer` already
   follows.
-
 - **`bt-peer` (phone).** The third pass of DD-9 showed the driver is one
   config away from being a phone rather than an audio source: with an HFP
   Audio Gateway alongside its A2DP source it satisfies both of a head unit's
@@ -1890,7 +1951,8 @@ of the same kind as DD-9's rootcanal control hook:
   `profiles:` list, with the bond keystore persisted for the life of the
   lease so a peer restart does not strand the DUT's link key.
 
-Both drivers are the reference `requires`/`provides` pair for projection.
+The `cuttlefish` and `dhu` drivers are the reference `requires`/`provides`
+pair for projection.
 What they must not do is know about each other: the phone driver exposes
 ports and the head unit driver dials `127.0.0.1:5277`, and the lease is the
 only place the two are joined.
@@ -1929,7 +1991,13 @@ two-object design would face does not arise.
 - **The fast path is authenticated** — a direct peer connection presents
   `peer_token`; it is not trusted for being on the same network. Exporters
   supporting it open a listener, disabled by default and enabled per exporter
-  configuration.
+  configuration. Preferring it in-cluster (DD-4) does not widen what is
+  exposed: the peer listener is one authenticated port per exporter, distinct
+  from any device port, so a cluster can keep a `NetworkPolicy` that blocks
+  Pod-to-Pod access to simulator ports — which are *not* access-controlled —
+  while allowing the peer port between exporters. Shipping that policy with
+  the Pod is JEP-0016's job, and preferring direct makes it load-bearing
+  rather than advisory.
 - **`members` is immutable after creation**, so a bound lease cannot be
   widened beyond what it was authorized for.
 - **Physical RF is not access-controlled.** Two physical devices pairing in
@@ -1948,7 +2016,11 @@ two-object design would face does not arise.
 JEP-0013 telemetry gains `lease.member` as a span attribute wherever
 `lease.name` already appears, so per-role activity is separable within one
 lease, plus per-forward counters (bytes each direction, reconnects, mode
-actually used, direct-dial fallback rate). Reconnects are also an *event* on
+actually used, direct-dial fallback rate). Because `Auto` now prefers direct
+for same-zone pairs (DD-4), the fallback rate is a health signal rather than
+a curiosity: an in-cluster bench silently running over the router means the
+peer listener, the zone configuration or a `NetworkPolicy` is wrong, and it
+should be visible as such. Reconnects are also an *event* on
 the forward, not only a counter: an endpoint driver that must re-establish
 protocol state after a cut (DD-10's head unit server) subscribes to it, and
 a bench whose forward is re-dialing is visibly degraded rather than quietly
@@ -2006,7 +2078,10 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
   every lease is either fully bound or holding nothing.
 - Lease expiry, explicit release, and client disconnect; assert no leaked
   router streams, no exporters left claimed, and no listeners left bound.
-- Router-mode vs. direct-mode selection, including forced fallback.
+- Router-mode vs. direct-mode selection: `Auto` picks direct for two
+  same-zone exporters, falls back to the router when the peer dial is
+  blocked, records the mode actually used, and never falls back under
+  `mode: direct`.
 - `jmp get lease -o mobly` output validated against Mobly's testbed schema.
 - **Compatibility**: an N-1 client against an N controller for the full
   single-exporter workflow; an N client issuing a single-exporter lease
@@ -2094,6 +2169,9 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 - [ ] Forwards establish over `RouterService` with no `router.proto` change
 - [ ] Direct fast path is authenticated, falls back automatically, and is
       observable (mode + fallback-rate metrics)
+- [ ] `Auto` resolves to a direct peer connection for two same-zone
+      in-cluster exporters, and the fallback to the router is a measurable
+      event rather than the silent normal case
 - [ ] `bt-peer` participates as a `requires` endpoint with **no Python
       changes** — exporter configuration only, relying on its existing
       `open_transport(self.transport)` passthrough
@@ -2146,7 +2224,8 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
 
 `members`, `forwards`, and port reporting ship behind a controller feature
 gate, with Phases 1–3 complete. Signals sought: do real benches stay at two
-members or grow; how often does the direct fast path apply; does anyone hit
+members or grow; how often does the direct path actually apply, and how
+often does a same-zone pair fall back; does anyone hit
 `MaxItems=8`; how often do `listen` collisions occur on physical hosts; does
 the nil-`status.exporterRef` convention (DD-2) surprise any consumer; is
 bind-time port validation (DD-12) painful enough to justify accelerating the
@@ -2289,7 +2368,9 @@ risk in one field, handled by DD-2.
   the forwarded HCI splice going down 40 s later (DD-9, third pass). A
   multi-hour bench will meet this repeatedly. Mitigation: reconnection is
   the forward endpoint's responsibility, reconnects are observable, and the
-  HIL suite includes a bench that survives a deliberate stream cut. A
+  HIL suite includes a bench that survives a deliberate stream cut. An
+  in-cluster bench also avoids the machinery altogether, which is part of
+  why `Auto` prefers a direct connection there (DD-4). A
   related hazard is version skew across a splice — a newer client-side
   network driver against an older exporter closed every forwarded
   connection at the first byte with no error — which is an argument for the
@@ -2464,10 +2545,15 @@ To resolve during review:
 To resolve during implementation:
 
 - Exact `ListenResponse` variant shape for forward setup instructions.
-- Whether the fast path should race the router dial or attempt direct first
-  with a short timeout — a measurable question, and one whose stakes are now
-  bounded for simulated media: the router costs ~0.65 ms where the simulator
-  costs ~45 ms (DD-4).
+- What the direct-dial timeout should be before falling back to the router.
+  Direct-first rather than racing is now the decision (DD-4); the number is
+  measurable and the stakes are bounded, since falling back costs ~0.65 ms on
+  the path measured so far.
+- How an exporter's network zone is established: taken from deployment
+  configuration (the assumption in *Direct eligibility*), derived by the
+  controller from where the registration arrived, or probed. Configuration is
+  the least clever and the only one that works for an edge exporter that is
+  routable from the cluster but not the reverse.
 - Whether forward reconnect should preserve the medium's logical state or
   force a fresh pairing; likely protocol-specific. Two data points so far:
   Android Auto's head unit server must be restarted after a dropped session,
@@ -2577,11 +2663,16 @@ Not part of this proposal:
   Media, a ringing call into AAOS Telecom). Router overhead measured at
   0.65 ms against ~45 ms of rootcanal; proxy-reload stream loss, duplicate
   registration and version skew recorded as forward-endpoint duties
-- 2026-09-02: those findings made normative — DD-4's fast path reframed as
-  an optimization with a measured price, a single-process invariant per
-  exporter identity, reconnection assigned to the forward endpoint with
-  reconnects as events, a cluster-data-path Risk, a *Forward resilience*
-  HIL test, and two acceptance criteria
+- 2026-09-02: those findings made normative — DD-4's fast path given a
+  measured price, a single-process invariant per exporter identity,
+  reconnection assigned to the forward endpoint with reconnects as events, a
+  cluster-data-path Risk, a *Forward resilience* HIL test, and two acceptance
+  criteria
+- 2026-09-02: `Auto` changed to **prefer a direct peer connection between
+  same-zone members** rather than defaulting to the router — DD-4 rewritten,
+  `PeerEndpoint`/`NetworkZone` added to `ExporterStatus`, `prefer_direct`
+  added to `DialPeerResponse`, direct-first-with-fallback replacing the
+  raced dial, and a *Direct eligibility* rule added to Design Details
 
 ## References
 
