@@ -37,6 +37,7 @@ def make_bare_exporter():
     exp._telemetry_channel = None
     exp._metrics_stream = None
     exp.labels = {"jumpstarter.dev/name": "test-exporter"}
+    exp.exporter_name = "test-exporter"
     exp.token = "test-token"
     exp.namespace = ""
 
