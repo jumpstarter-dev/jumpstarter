@@ -1202,6 +1202,54 @@ for sharing a Wi-Fi medium between separately-launched instances, and
 hardest thing in this JEP and the most likely to need upstream work — it is
 scheduled last (Phase 3) and its risk is called out explicitly.
 
+**Verified against real CVDs (2026-09-01): option 3 works, and it is worth
+more than a diagnostic.** With the same two Pods as the DD-9 experiment, a
+real Android Auto session was projected from the phone exporter to the head
+unit exporter over nothing but one forwarded TCP port. The pieces, all
+public:
+
+- *Phone.* Google's GSI with GMS for x86-64 (`gsi_gms_x86_64`, Android 17,
+  a `user` build) dropped into the Cuttlefish AOSP image set: `super.img`
+  rebuilt with the GSI `system.img` over the AOSP vendor partitions, and the
+  GSI `vbmeta.img` (verification disabled) in place of Cuttlefish's. Being a
+  `user` build it boots with `adbd` stopped; enabling it meant editing the
+  ext4 `system.img` in place (`persist.sys.usb.config=adb` in `build.prop`,
+  the exporter's public key in `/adb_keys`), which is the kind of image
+  preparation a `cuttlefish` driver would own. Android Auto 17.4 (x86-64
+  split APKs) was then sideloaded, and its developer-mode *head unit
+  server* started on port 5277 — the port the phone `provides`.
+- *Head unit.* Google's Desktop Head Unit 2.1 in the AAOS Pod, under Xvfb,
+  in its `--adb=5277` mode, which is a plain TCP client. This is the only
+  publicly available Android Auto receiver: the AAOS CVD cannot receive
+  projection because the receiver is part of GAS, so for projection the
+  "virtual head unit" is a process inside the head-unit exporter that
+  `requires` the phone's port. Direction falls out of DD-13 as expected.
+- *Forward.* The same stand-in relays as DD-9: DHU → `127.0.0.1:5277` in
+  Pod A → Pod B → `adb forward tcp:5277` → the phone.
+
+The session negotiated protocol 1.7, completed TLS 1.2
+(ECDHE-RSA-AES128-GCM-SHA256 — the receiver-lib and GMS authenticate each
+other across the forward, so any relay must be byte-transparent), ran
+service discovery, walked the phone-side first-run flow (consent, car
+authorization, notification access — each driven by `uiautomator`), and
+rendered the full Coolwalk launcher on the DHU with Maps, YouTube Music and
+the phone app live. Video is phone→head-unit and was about 0.6 MB for three
+minutes of a mostly static screen, so the L4 path is not bandwidth-limited
+in Direct mode. Two operational findings: the DHU quits on stdin EOF (it has
+an interactive console, which is a feature — HU-side input can be scripted
+through it), and Android Auto's head unit server does not survive an
+aborted handoff (`IllegalStateException: Already connected`), so a forward
+that drops mid-session needs the server restarted, not just the client.
+
+What this does and does not change: DD-10's decision stands — the
+Bluetooth→Wi-Fi handover is still not exercised, so this is not Phase 3.
+But it is the app-level half of Phase 2 done virtually: the whole
+GMS/gearhead/receiver-lib stack is shown to run across two exporters with a
+single `forwards[]` entry, which means the physical Phase 2 gate is about
+transport and radios, not about whether projection tolerates a proxy. It
+also gives Phase 1 and Phase 3 a real workload to sit under rather than a
+synthetic one.
+
 ### DD-11: Mixed physical/virtual benches — deferred
 
 **Alternatives considered:**
@@ -1708,7 +1756,11 @@ Against a kind cluster with the controller and mock exporters (`e2e/`):
       the router path and the multi-node case remain.*
 - [ ] **Phase 2 — Physical ↔ physical across hosts**: a phone and head unit
       on exporters on different lab hosts complete a phone projection
-      session (Android Auto in the reference implementation)
+      session (Android Auto in the reference implementation). *The
+      projection half was demonstrated virtually on 2026-09-01: a GMS GSI
+      phone CVD projected a live Android Auto session to the Desktop Head
+      Unit in the other Pod over one forwarded port (DD-10); the physical
+      transport and radios remain.*
 - [ ] **Phase 3 — Virtual Wi-Fi**: two CVDs in separate Pods associate over a
       forwarded `mac80211_hwsim`/`wmediumd` medium, and a projection
       session completes the Bluetooth → Wi-Fi handover end to end
@@ -2081,6 +2133,9 @@ Not part of this proposal:
 - 2026-09-01: DD-9 options 1 and 2 verified by hand with two CVD Pods on a
   kind cluster (pairing, HFP/A2DP/AVRCP, A2DP streaming); findings recorded
   in DD-9 and Unresolved Questions
+- 2026-09-01: DD-10 option 3 verified by hand: Android Auto 17.4 on a GMS
+  GSI phone CVD projected to the Desktop Head Unit in the other Pod over a
+  single forwarded port; findings recorded in DD-10 and Phase 2
 
 ## References
 
