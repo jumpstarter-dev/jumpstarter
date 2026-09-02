@@ -2,8 +2,10 @@ from unittest.mock import MagicMock, patch
 
 from jumpstarter_driver_ridesx.qdl.client import (
     QualcommFlasherClient,
+    _check_firmware,
     _load_manifest_source,
 )
+from jumpstarter_driver_ridesx.qdl.firmware_id import VersionInfo
 
 MANIFEST_YAML = """
 name: "SA8775P ES22 AWE Firmware"
@@ -118,3 +120,54 @@ def test_flash_stream_loads_manifest_from_https_url():
 
     client._iter_flash_status.assert_called_once()
     assert client._iter_flash_status.call_args.kwargs["manifest"]["name"] == "SA8775P ES22 AWE Firmware"
+
+
+def _make_version_info(**overrides):
+    defaults = {
+        "firmware_variant": "ES22",
+        "sail_versions": {"sail_fw_version": "1.3.0", "platform_type": "RIDE_SX"},
+        "main_versions": {
+            "qc_image_version": "BOOT.MXF.1.2-00541-LEMANS-1",
+            "uefi_version": "6.0.250710.BOOT.MXF.1.2-00541-LEMANS-1",
+            "hypervisor": "prod",
+            "abl_build": "Mar  3 2026 13:24:15",
+            "cdt_platform_id": "37",
+        },
+    }
+    defaults.update(overrides)
+    return VersionInfo(**defaults)
+
+
+def test_check_firmware_all_match():
+    versions = _make_version_info()
+    mismatches = _check_firmware(versions, "ES22", hypervisor="prod", sail_fw_version="1.3.0")
+    assert mismatches == []
+
+
+def test_check_firmware_variant_mismatch():
+    versions = _make_version_info()
+    mismatches = _check_firmware(versions, "CS4")
+    assert len(mismatches) == 1
+    assert "variant" in mismatches[0]
+
+
+def test_check_firmware_variant_case_insensitive():
+    versions = _make_version_info()
+    assert _check_firmware(versions, "es22") == []
+
+
+def test_check_firmware_field_mismatch():
+    versions = _make_version_info()
+    mismatches = _check_firmware(versions, "ES22", hypervisor="debug", cdt_platform_id="99")
+    assert len(mismatches) == 2
+    assert any("hypervisor" in m for m in mismatches)
+    assert any("cdt_platform_id" in m for m in mismatches)
+
+
+def test_check_firmware_none_fields_ignored():
+    versions = _make_version_info()
+    mismatches = _check_firmware(
+        versions, "ES22",
+        sail_fw_version=None, qc_image_version=None, hypervisor=None,
+    )
+    assert mismatches == []

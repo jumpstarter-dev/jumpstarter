@@ -160,6 +160,66 @@ class _FlashPanel:
         self._log(Text.assemble(("\u2714 ", "bold green"), status.message))
 
 
+def _check_firmware(versions, variant, **expected_fields) -> list[str]:
+    """Compare detected firmware against expected values, return mismatches."""
+    mismatches: list[str] = []
+
+    detected = versions.firmware_variant or "unknown"
+    if detected.upper() != variant.upper():
+        mismatches.append(f"variant: expected {variant}, got {detected}")
+
+    field_sources = {
+        "sail_fw_version": versions.sail_versions,
+        "qc_image_version": versions.main_versions,
+        "uefi_version": versions.main_versions,
+        "hypervisor": versions.main_versions,
+        "abl_build": versions.main_versions,
+        "cdt_platform_id": versions.main_versions,
+    }
+    for field_name, expected in expected_fields.items():
+        if expected is None:
+            continue
+        source = field_sources.get(field_name, versions.main_versions)
+        actual = source.get(field_name)
+        if expected != actual:
+            mismatches.append(f"{field_name}: expected {expected!r}, got {actual!r}")
+
+    return mismatches
+
+
+def _register_check_command(group, client: QualcommFlasherClient) -> None:
+    @group.command()
+    @click.argument("variant")
+    @click.option("--sail-fw-version", type=str, help="Expected SAIL firmware version (e.g. 1.3.0)")
+    @click.option("--qc-image-version", type=str, help="Expected QC image version string")
+    @click.option("--uefi-version", type=str, help="Expected UEFI version string")
+    @click.option("--hypervisor", type=str, help="Expected hypervisor mode (prod, perf, debug)")
+    @click.option("--abl-build", type=str, help="Expected ABL build info string")
+    @click.option("--cdt-platform-id", type=str, help="Expected CDT platform ID")
+    def check(variant, sail_fw_version, qc_image_version, uefi_version, hypervisor, abl_build, cdt_platform_id):
+        """Check that firmware matches VARIANT and optional details.
+
+        Exits 0 if all specified fields match, 1 if any mismatch.
+        """
+        versions = client.identify()
+        mismatches = _check_firmware(
+            versions, variant,
+            sail_fw_version=sail_fw_version,
+            qc_image_version=qc_image_version,
+            uefi_version=uefi_version,
+            hypervisor=hypervisor,
+            abl_build=abl_build,
+            cdt_platform_id=cdt_platform_id,
+        )
+        if mismatches:
+            click.echo("FAIL: firmware mismatch", err=True)
+            for m in mismatches:
+                click.echo(f"  {m}", err=True)
+            raise click.exceptions.Exit(1)
+
+        click.echo(f"OK: firmware matches {variant}")
+
+
 def _flash_rich(client: QualcommFlasherClient, file, *, manifest, cached) -> None:
     """Render flash progress using a live-updating rich panel."""
     console = Console(stderr=True)
@@ -265,6 +325,8 @@ class QualcommFlasherClient(StreamingFlasherClient, CompositeClient):
             """Identify firmware variant and version strings"""
             versions = self.identify(verbose=verbose, capture_dir=capture)
             click.echo(format_version_report(versions))
+
+        _register_check_command(base, self)
 
         @base.command("boot-to-edl")
         def boot_to_edl():
